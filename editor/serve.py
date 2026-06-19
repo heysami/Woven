@@ -15763,25 +15763,26 @@ class H(http.server.SimpleHTTPRequestHandler):
         # pick overlay (registers its capture-phase listeners before the page's
         # own scripts run). The iframe sandbox runs this in an OPAQUE origin, so
         # the page is walled off from the editor; picks come back via postMessage.
-        # Opaque-origin sandbox makes document.cookie / localStorage /
-        # sessionStorage THROW (SecurityError), which crashes SPAs at boot. A
-        # tiny shim installs in-memory stand-ins BEFORE any page script runs so
-        # the app renders. Local to the opaque iframe — never touches the editor.
+        # The proxied page is sandboxed. When the editor can hand it a real
+        # SIBLING origin (localhost <-> 127.0.0.1, same daemon) the iframe keeps
+        # allow-same-origin, so cookies/localStorage/history work natively and
+        # the SPA renders/routes like the real site — while staying cross-origin
+        # to the editor (can't reach it). With no sibling origin (e.g. a tunnel)
+        # the iframe is opaque and those APIs THROW, so we install harmless
+        # in-memory stand-ins, but ONLY when native access actually throws (so we
+        # never clobber real storage). We also rewrite the document path to the
+        # target's path so SPA routers keyed off location.pathname don't land on
+        # /__web_proxy (which renders a blank/404 route).
+        _tp = urllib.parse.urlsplit(page["finalUrl"])
+        target_path = (_tp.path or "/") + (("?" + _tp.query) if _tp.query else "")
         shim = ('<script>(function(){'
-                'try{Object.defineProperty(document,"cookie",{configurable:true,get:function(){return "";},set:function(){return true;}});}'
-                'catch(e){try{Object.defineProperty(Document.prototype,"cookie",{configurable:true,get:function(){return "";},set:function(){return true;}});}catch(e2){}}'
+                'try{history.replaceState(history.state,"",' + json.dumps(target_path) + ');}catch(e){}'
                 'function mk(){var m={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null;},'
                 'setItem:function(k,v){m[k]=String(v);},removeItem:function(k){delete m[k];},clear:function(){m={};},'
                 'key:function(i){return Object.keys(m)[i]||null;},get length(){return Object.keys(m).length;}};}'
-                'var ls=mk(),ss=mk();'
-                'try{Object.defineProperty(window,"localStorage",{configurable:true,get:function(){return ls;}});}'
-                'catch(e){try{Object.defineProperty(Window.prototype,"localStorage",{configurable:true,get:function(){return ls;}});}catch(e2){}}'
-                'try{Object.defineProperty(window,"sessionStorage",{configurable:true,get:function(){return ss;}});}'
-                'catch(e){try{Object.defineProperty(Window.prototype,"sessionStorage",{configurable:true,get:function(){return ss;}});}catch(e2){}}'
-                # history.pushState/replaceState reject cross-origin URLs (the
-                # page thinks it is on brik.space via <base>, but the document
-                # origin is opaque/localhost) -> SecurityError crashes SPA
-                # routers. Retry without the url arg so the state still lands.
+                'try{void document.cookie;}catch(e){try{Object.defineProperty(document,"cookie",{configurable:true,get:function(){return "";},set:function(){return true;}});}catch(e2){}}'
+                'try{void window.localStorage;}catch(e){var ls=mk();try{Object.defineProperty(window,"localStorage",{configurable:true,get:function(){return ls;}});}catch(e2){}}'
+                'try{void window.sessionStorage;}catch(e){var ss=mk();try{Object.defineProperty(window,"sessionStorage",{configurable:true,get:function(){return ss;}});}catch(e2){}}'
                 'try{var _ps=history.pushState,_rs=history.replaceState;'
                 'history.pushState=function(s,t,u){try{return _ps.call(history,s,t,u);}catch(e){try{return _ps.call(history,s,t);}catch(e2){}}};'
                 'history.replaceState=function(s,t,u){try{return _rs.call(history,s,t,u);}catch(e){try{return _rs.call(history,s,t);}catch(e2){}}};}catch(e){}'

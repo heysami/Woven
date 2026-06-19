@@ -7338,6 +7338,23 @@ function apiUrl(path) {
   return path + sep + "project=" + encodeURIComponent(proj);
 }
 
+// Sibling origin for the web-proxy iframe: localhost <-> 127.0.0.1 — distinct
+// origins served by the same local daemon (it binds all interfaces). Lets a
+// proxied page run on a REAL origin that is cross-origin to the editor, so it
+// can't reach the editor yet keeps native cookies/storage/history (SPAs render
+// and route correctly). Returns "" when there is no sibling (non-local host,
+// e.g. a tunnel) — caller then uses the same origin with an opaque sandbox.
+function webProxyAltOrigin() {
+  try {
+    const loc = window.location;
+    if (loc.protocol !== "http:" && loc.protocol !== "https:") return "";
+    const port = loc.port ? ":" + loc.port : "";
+    if (loc.hostname === "localhost") return loc.protocol + "//127.0.0.1" + port;
+    if (loc.hostname === "127.0.0.1") return loc.protocol + "//localhost" + port;
+  } catch {}
+  return "";
+}
+
 // Human-readable label for the active project (the rename label from
 // /__projects), used in place of the generic "Workflow canvas" title. The one
 // fetch is shared via window.__TH_PROJECT_LABEL; until it lands we show the raw
@@ -50508,8 +50525,14 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
     }, 700);
   };
 
+  // Proxy from a SIBLING origin (localhost <-> 127.0.0.1) when available so the
+  // page gets a real origin (native cookies/storage/history → SPAs render and
+  // route correctly) while staying cross-origin to the editor. No sibling
+  // (e.g. a tunnel) → same-origin proxy rendered in an opaque sandbox.
+  const proxyAlt = webProxyAltOrigin();
+  const proxyIsolated = !!proxyAlt;
   const iframeSrc = !hasUrl ? null
-    : mode === "proxy" ? apiUrl("/__web_proxy?url=" + encodeURIComponent(liveUrl))
+    : mode === "proxy" ? (proxyAlt + apiUrl("/__web_proxy?url=" + encodeURIComponent(liveUrl)))
     : liveUrl;
 
   return html`
@@ -50559,14 +50582,16 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
             src=${iframeSrc}
             title=${"Browser: " + liveUrl}
             sandbox=${mode === "proxy"
-              /* Proxied pages run in an OPAQUE origin (NO allow-same-origin):
-                 scripts run so SPAs render, but the page is walled off from the
-                 editor — it can't reach window.top/parent or read editor DOM,
-                 and allow-top-navigation stays off so it can't navigate us away.
-                 The daemon proxy injects a pick overlay that posts picked
-                 elements + selection text back over postMessage. Direct embeds
-                 are cross-origin-isolated, so same-origin scripts are safe. */
-              ? "allow-scripts allow-forms allow-popups"
+              /* Proxy gets a real SIBLING origin when possible (proxyIsolated):
+                 keep allow-same-origin so the page has native storage/history
+                 and routes like the real site, while still being cross-origin
+                 to the editor (can't hijack it). No sibling origin → opaque
+                 (no allow-same-origin), walled off but less faithful. Direct
+                 embeds are cross-origin-isolated, so same-origin scripts are
+                 safe. allow-top-navigation stays OFF in every case. */
+              ? (proxyIsolated
+                  ? "allow-scripts allow-same-origin allow-forms allow-popups"
+                  : "allow-scripts allow-forms allow-popups")
               : "allow-scripts allow-same-origin allow-forms allow-popups"}
             referrerPolicy="no-referrer"
             style=${{ pointerEvents: selected ? "auto" : "none" }}
