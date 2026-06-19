@@ -339,6 +339,10 @@ function buildWiredRuntimeLayers(){
     L._trigSpec = trigK ? trigSpec : null;
     L._opacity = spec.opacity!=null?spec.opacity:1;
     L._blend = spec.blend||'source-over';
+    // Re-apply any composer-local mask override (wired layers are re-synthesized
+    // on every WIRED change, so the editable mask lives in STATE, not the node).
+    const mo = (typeof STATE!=='undefined' && STATE.wiredMasks) ? STATE.wiredMasks[L.id] : null;
+    if(mo && mo.by) L.mask = Object.assign({by:'',src:'lum',dst:'alpha'}, mo);
     return L;
   });
 }
@@ -349,7 +353,7 @@ function allRuntimeLayers(){
 }
 
 function defaultState(){
-  return {v:1,canvasW:1280,canvasH:720,background:'#000000',inputs:{camera:false,mic:false},
+  return {v:1,canvasW:1280,canvasH:720,background:'#000000',inputs:{camera:false,mic:false},wiredMasks:{},
     layers:[
       { id:'L1', name:'Grid pulse', z:0, visible:true,
         content:{kind:'shape', shape:'rect', color:'#6ee7ff', text:''},
@@ -443,6 +447,7 @@ function normalizeState(s){
   s.v=1; s.canvasW=s.canvasW||1280; s.canvasH=s.canvasH||720;
   s.background=hexOf(s.background||'#000000');
   s.inputs=Object.assign({camera:false,mic:false},s.inputs||{});
+  s.wiredMasks=(s.wiredMasks && typeof s.wiredMasks==='object') ? s.wiredMasks : {};
   s.layers=(s.layers||[]).map(fillLayer);
   if(!s.layers.length) s=defaultState();
   return s;
@@ -1516,6 +1521,36 @@ function accordion(title,bodyFn,openKey){
 }
 const OPEN={content:true,pos:true,trig:false,fx:false};
 
+/* Mask is editable on inline AND wired layers. For a wired layer the override
+   is mirrored into STATE.wiredMasks[id] so it survives node re-synthesis + the
+   round-trip to the host; the renderer reads L.mask directly either way. */
+function persistMask(L){
+  if(!L._wired) return;
+  const store=STATE.wiredMasks||(STATE.wiredMasks={});
+  if(L.mask && L.mask.by) store[L.id]=Object.assign({},L.mask);
+  else delete store[L.id];
+}
+function maskAccordion(L){
+  return accordion('Mask',(b)=>{
+    const m=L.mask;
+    const cands=allRuntimeLayers().filter(x=>x.id!==L.id);
+    b.appendChild(fSelect('Masked by',m.by||'',
+      [['','None'],...cands.map(x=>[x.id,x.name])],
+      v=>{ m.by=v; persistMask(L); renderInspector(); }));
+    if(m.by){
+      b.appendChild(fSelect('Read',m.src||'lum',
+        [['lum','Luminance'],['alpha','Alpha'],['r','Red'],['g','Green'],['b','Blue']],
+        v=>{ m.src=v; persistMask(L); }));
+      b.appendChild(fSelect('Apply to',m.dst||'alpha',
+        [['alpha','Alpha (cutout)'],['rgb','Color (RGB)'],['r','Red'],['g','Green'],['b','Blue']],
+        v=>{ m.dst=v; persistMask(L); }));
+      b.appendChild(html('<p class="hint">Multiplies this layer\'s "Apply to" channel by the mask layer\'s "Read" channel. The mask layer can be hidden.</p>'));
+    } else {
+      b.appendChild(html('<p class="hint">Pick a layer whose pixels mask this one.</p>'));
+    }
+  },'mask');
+}
+
 /* asset dropdown options from wired content */
 function assetOpts(kindFilter){
   const list=CONTENT.filter(c=>!kindFilter||kindFilter.includes(c.kind));
@@ -1528,11 +1563,12 @@ function renderInspector(){
   const L=selectedLayer();
   document.getElementById('inspTitle').textContent=L?L.name:'No layer';
   if(!L){ body.innerHTML='<p class="hint" style="padding:12px">Add a layer to begin.</p>'; return; }
-  // Wired layers are driven by the node graph — show read-only spec summary.
+  // Wired layers are driven by the node graph — show a read-only spec summary,
+  // but the Mask is editable here (the override is stored composer-side).
   if(L._wired){
     const spec=WIRED.layers.find(wl=>wl.id===L.id)?.spec||{};
-    body.innerHTML=`<div style="padding:12px;display:flex;flex-direction:column;gap:8px">
-      <p class="hint" style="margin:0">Driven by a wired Layer node. Edit properties on the canvas node.</p>
+    body.appendChild(html(`<div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+      <p class="hint" style="margin:0">Driven by a wired Layer node. Edit properties on the canvas node — except Mask, which is set here.</p>
       <div class="fld"><label>Opacity</label><input type="range" min="0" max="1" step="0.01" value="${spec.opacity??1}" disabled></div>
       <div class="fld"><label>Blend</label><select disabled><option>${spec.blend||'normal'}</option></select></div>
       <div class="fld"><label>Z</label><input type="number" value="${spec.z??0}" disabled style="width:60px"></div>
@@ -1540,7 +1576,8 @@ function renderInspector(){
       <div class="fld"><label>Position</label><span class="tag">${L.positioning.mode}</span></div>
       <div class="fld"><label>Trigger</label><span class="tag">${L.trigger.source}</span></div>
       <div class="fld"><label>Effects</label><span class="tag">${L.effects.stack.length} fx</span></div>
-    </div>`;
+    </div>`));
+    body.appendChild(maskAccordion(L));
     return;
   }
 
@@ -1694,24 +1731,7 @@ function renderInspector(){
   },'trig'));
 
   /* MASK accordion — use another layer's pixels to mask this one */
-  body.appendChild(accordion('Mask',(b)=>{
-    const m=L.mask;
-    const cands=allRuntimeLayers().filter(x=>x.id!==L.id);
-    b.appendChild(fSelect('Masked by',m.by||'',
-      [['','None'],...cands.map(x=>[x.id,x.name])],
-      v=>{ m.by=v; renderInspector(); }));
-    if(m.by){
-      b.appendChild(fSelect('Read',m.src||'lum',
-        [['lum','Luminance'],['alpha','Alpha'],['r','Red'],['g','Green'],['b','Blue']],
-        v=>m.src=v));
-      b.appendChild(fSelect('Apply to',m.dst||'alpha',
-        [['alpha','Alpha (cutout)'],['rgb','Color (RGB)'],['r','Red'],['g','Green'],['b','Blue']],
-        v=>m.dst=v));
-      b.appendChild(html('<p class="hint">Multiplies this layer\'s "Apply to" channel by the mask layer\'s "Read" channel. The mask layer can be hidden.</p>'));
-    } else {
-      b.appendChild(html('<p class="hint">Pick a layer whose pixels mask this one.</p>'));
-    }
-  },'mask'));
+  body.appendChild(maskAccordion(L));
 
   /* EFFECTS accordion */
   body.appendChild(accordion('Effects',(b)=>{
