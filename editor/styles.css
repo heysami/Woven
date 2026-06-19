@@ -2520,6 +2520,7 @@ button {
 .landing-header .daemon-indicator,
 .landing-header .cli-indicator,
 .landing-header .model-status-indicator,
+.landing-header .landing-gh-btn,
 .landing-header .workflow-toolbar-gear {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
@@ -2528,11 +2529,15 @@ button {
 .landing-header .daemon-indicator:hover,
 .landing-header .cli-indicator:hover,
 .landing-header .model-status-indicator:hover,
+.landing-header .landing-gh-btn:hover,
 .landing-header .workflow-toolbar-gear:hover {
   background: rgba(255, 255, 255, 0.10);
   border-color: rgba(255, 255, 255, 0.18);
   color: #f4f6f5;
 }
+/* Re-assert the signed-in accent border — the override above would otherwise
+   flatten it back to the neutral pill border (equal specificity, later source). */
+.landing-header .landing-gh-btn.is-in { border-color: var(--accent); }
 .landing-header .cli-label,
 .landing-header .model-status-label { color: rgba(235, 240, 238, 0.82); }
 .landing-header .workflow-toolbar-gear svg { color: rgba(235, 240, 238, 0.82); }
@@ -3982,7 +3987,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .th-tasks-row {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -3990,8 +3995,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   color: var(--text);
 }
 .th-tasks-row:hover { background: var(--surface-2); }
-/* Subagent rows are buttons that expand to reveal prompt + result. Reset the
-   button chrome but keep the .th-tasks-row grid layout. */
+/* Subagent rows are buttons that open the prompt + result in their own dock
+   pane. Reset the button chrome but keep the .th-tasks-row grid layout. */
 .th-tasks-row-btn {
   width: 100%;
   border: 0;
@@ -3999,14 +4004,17 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   text-align: left;
   cursor: pointer;
 }
-.th-tasks-row-btn.is-open { background: var(--surface-2); }
-.th-tasks-agent { display: flex; flex-direction: column; }
-.th-tasks-agent-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 6px 8px 10px 29px;
+/* The right-chevron "opens a panel" affordance (Icon.Chev rotated to point
+   right). Faint at rest, brighter on row hover. */
+.th-tasks-row-go {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: color 0.12s ease;
 }
+.th-tasks-row-btn:hover .th-tasks-row-go { color: var(--text-muted); }
+.th-tasks-agent { display: flex; flex-direction: column; }
 .th-tasks-agent-sec { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .th-tasks-agent-sec-h {
   font-family: var(--font-mono);
@@ -4067,6 +4075,35 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   text-align: center;
   padding: 8px;
 }
+
+/* Subagent detail pane — one subagent's prompt + result, opened from a Tasks
+   row into its own dock tile (not a collapsible inline list row). */
+.th-subagent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.th-subagent-head > svg { width: 14px; height: 14px; color: var(--text-faint); flex: 0 0 auto; }
+.th-subagent-head-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; }
+.th-subagent-head-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-subagent-body { gap: 10px; padding: 10px 12px; }
+.th-subagent-run {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+/* In a dedicated pane the prompt/result can use the full tile height rather
+   than the rail list's 320px cap. */
+.th-subagent-pre { max-height: none; }
 
 /* Live & shares panel (third rail entry). */
 .th-live-section { padding: 4px 4px 12px; }

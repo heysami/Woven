@@ -8938,7 +8938,7 @@ function dockSlot(i, count) {
    ChatDrawer's wiring stays in App; tasks/comments/git render their embedded
    panels here. The left edge resizes the whole dock; the column/row dividers
    resize the panes. Only polls /__runs while a tasks tile is open. */
-function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating }) {
+function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating }) {
   const [runs, setRuns] = useState([]);
   // Drag-to-swap state: dragId = the tile being dragged by its grip; overId =
   // the tile currently under the pointer (the swap target). Tile rects are
@@ -9000,7 +9000,8 @@ function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, on
 
   const tileBody = (w) => {
     if (w.kind === "thread")   return renderThread(w);
-    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} />`;
+    if (w.kind === "subagent") return html`<${SubagentPanel} agent=${w.agent} runTitle=${w.runTitle} />`;
+    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} />`;
     if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} />`;
     if (w.kind === "git")      return html`<${GitPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     return null;
@@ -9401,16 +9402,12 @@ const TASKS_PANEL_RUN_CAP = 40;
    run's transcript (/__chat?runId=…) and lists every subagent dispatch + Task,
    grouped by run, newest first, FINISHED ones included. Runs with neither are
    omitted. Read-only over existing endpoints (no daemon change needed). */
-function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
+function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagent, embedded }) {
   // Per-run extracted { subagents, tasks }, keyed by runId.
   const [byRun, setByRun] = useState({});
   const [loading, setLoading] = useState(true);
   // "all" | "subagents" | "tasks" — which kinds to show.
   const [filter, setFilter] = useState("all");
-  // Which subagent row is expanded to reveal its prompt + result, keyed
-  // `${runId}:${subagentId}`. Subagent chats aren't shown inline in the
-  // transcript anymore — this panel is where you open them.
-  const [openAgent, setOpenAgent] = useState(null);
 
   const capped = (runs || []).slice(0, TASKS_PANEL_RUN_CAP);
   const overflow = Math.max(0, (runs || []).length - capped.length);
@@ -9507,16 +9504,12 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
               <span className="th-tasks-group-title">${g.run.title || g.run.kind}</span>
               <span className="runs-row-age">${formatRunAge(g.run.startedAt)}</span>
             </button>
-            ${g.subagents.map(a => {
-              const akey = `${g.run.runId}:${a.id}`;
-              const open = openAgent === akey;
-              return html`
+            ${g.subagents.map(a => html`
               <div className="th-tasks-agent" key=${a.id}>
                 <button
-                  className=${"th-tasks-row th-tasks-row-btn" + (open ? " is-open" : "")}
-                  onClick=${() => setOpenAgent(p => p === akey ? null : akey)}
-                  title=${`Open this subagent's prompt + result\n${a.label}`}
-                  aria-expanded=${open}
+                  className="th-tasks-row th-tasks-row-btn"
+                  onClick=${() => onOpenSubagent && onOpenSubagent(a, g.run)}
+                  title=${`Open this subagent's prompt + result in a panel\n${a.label}`}
                 >
                   <span className="runs-row-dot" data-status=${a.error ? "fail" : a.done ? "done" : "live"}/>
                   <${Icon.Bot}/>
@@ -9525,24 +9518,10 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
                     <span className="th-tasks-row-label">${a.label}</span>
                   </span>
                   <span className="th-tasks-row-state">${a.error ? "failed" : a.done ? "done" : "running"}</span>
+                  <span className="th-tasks-row-go" aria-hidden="true"><${Icon.Chev}/></span>
                 </button>
-                ${open && html`
-                  <div className="th-tasks-agent-detail">
-                    ${a.prompt && html`
-                      <div className="th-tasks-agent-sec">
-                        <div className="th-tasks-agent-sec-h">Prompt</div>
-                        <pre className="th-tasks-agent-pre">${a.prompt}</pre>
-                      </div>`}
-                    ${a.result
-                      ? html`
-                        <div className="th-tasks-agent-sec">
-                          <div className="th-tasks-agent-sec-h">Result</div>
-                          <pre className="th-tasks-agent-pre" data-error=${a.error}>${a.result}</pre>
-                        </div>`
-                      : html`<div className="th-tasks-agent-empty">Still running — no result yet.</div>`}
-                  </div>`}
               </div>
-            `;})}
+            `)}
             ${g.tasks.map(t => html`
               <div className="th-tasks-row" key=${t.id} title=${t.subject}>
                 <span className="runs-row-dot" data-status=${taskDot(t.status)}/>
@@ -9560,6 +9539,46 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, embedded }) {
     </div>
   `;
   return embedded ? __node : createPortal(__node, document.body);
+}
+
+/* SubagentPanel — a dock tile that shows ONE subagent's prompt + result in
+   full. Opened from a Tasks & subagents row (onOpenSubagent), so the content
+   gets its own resizable pane instead of an inline collapsible in the narrow
+   rail list. The payload is a snapshot taken at click time (frozen prompt +
+   result); a still-running subagent shows its prompt and a "no result yet"
+   placeholder until reopened. Always embedded in the dock. */
+function SubagentPanel({ agent, runTitle }) {
+  const a = agent || {};
+  const state = a.error ? "failed" : a.done ? "done" : "running";
+  const dot   = a.error ? "fail"   : a.done ? "done" : "live";
+  return html`
+    <div className="th-rail-panel th-rail-panel-embedded th-subagent-panel">
+      <div className="runs-panel-head th-subagent-head">
+        <span className="runs-row-dot" data-status=${dot}/>
+        <${Icon.Bot}/>
+        <span className="th-subagent-head-main">
+          <span className="th-tasks-row-type">${a.type || "subagent"}</span>
+          <span className="th-subagent-head-label">${a.label || "Subagent"}</span>
+        </span>
+        <span className="th-tasks-row-state">${state}</span>
+      </div>
+      <div className="th-rail-panel-body th-subagent-body">
+        ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
+        ${a.prompt && html`
+          <div className="th-tasks-agent-sec">
+            <div className="th-tasks-agent-sec-h">Prompt</div>
+            <pre className="th-tasks-agent-pre th-subagent-pre">${a.prompt}</pre>
+          </div>`}
+        ${a.result
+          ? html`
+            <div className="th-tasks-agent-sec">
+              <div className="th-tasks-agent-sec-h">Result</div>
+              <pre className="th-tasks-agent-pre th-subagent-pre" data-error=${a.error}>${a.result}</pre>
+            </div>`
+          : html`<div className="th-tasks-agent-empty">Still running — no result yet. Close and reopen to refresh.</div>`}
+      </div>
+    </div>
+  `;
 }
 
 /* LiveSharesPanel — third right-rail panel, scoped to the ACTIVE project. Two
@@ -21818,20 +21837,33 @@ function WorkflowCanvas() {
   const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
-  const serializeDock = (ws) => ws.map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
   const openWindow = useCallback((descOrKind) => {
     // Callers pass either a kind string (rail buttons) or a descriptor object
     // ({ kind, run }) — normalise so desc.kind is always defined.
     const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
-      if (desc.kind !== "thread") {
+      if (desc.kind === "subagent") {
+        // A subagent detail tile — keyed by the subagent id so each opens its
+        // own pane; reopening the same one refreshes its frozen snapshot.
+        const wid = "w_sub_" + (desc.agent?.id || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind !== "thread") {
         const idx = prev.findIndex(w => w.kind === desc.kind);
         if (idx >= 0) next = prev.filter((_, i) => i !== idx);
         else { const w = { id: "w_" + desc.kind, kind: desc.kind }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else {
         const rid = desc.run?.runId;
-        const at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        let at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        // "+ New chat" tiles a placeholder thread window with no runId yet. When
+        // the first message is sent the run mints a real runId — upgrade that
+        // SAME placeholder in place (keep its id so the keyed ChatDrawer cold-
+        // switches runId instead of remounting and dropping its SSE stream)
+        // rather than opening a duplicate second thread.
+        if (at < 0 && rid) at = prev.findIndex(w => w.kind === "thread" && !w.run?.runId);
         if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], run: desc.run }; }
         else { const w = { id: "w_thread_" + rid, kind: "thread", run: desc.run }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       }
@@ -23034,6 +23066,7 @@ function WorkflowCanvas() {
       onRowResize=${startDockSplit("row")}
       onStartChatWithPrompt=${spawnWorkflowChat}
       onOpenRun=${reopenWorkflowRun}
+      onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
       renderThread=${(w) => html`<${ChatDrawer}
         key=${w.id}
         run=${w.run}
@@ -68136,7 +68169,7 @@ function App() {
   const dockRowRef   = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
 
   // Serialise windows for persistence (threads keep only their runId).
-  const serializeDock = (ws) => ws.map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
 
   const openWindow = useCallback((descOrKind) => {
     // Callers pass either a kind string (rail buttons) or a descriptor object
@@ -68144,13 +68177,26 @@ function App() {
     const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
-      if (desc.kind !== "thread") {
+      if (desc.kind === "subagent") {
+        // A subagent detail tile — keyed by the subagent id so each opens its
+        // own pane; reopening the same one refreshes its frozen snapshot.
+        const wid = "w_sub_" + (desc.agent?.id || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind !== "thread") {
         const idx = prev.findIndex(w => w.kind === desc.kind);
         if (idx >= 0) next = prev.filter((_, i) => i !== idx);          // toggle off
         else { const w = { id: "w_" + desc.kind, kind: desc.kind }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else {
         const rid = desc.run?.runId;
-        const at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        let at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        // "+ New chat" tiles a placeholder thread window with no runId yet. When
+        // the first message is sent the run mints a real runId — upgrade that
+        // SAME placeholder in place (keep its id so the keyed ChatDrawer cold-
+        // switches runId instead of remounting and dropping its SSE stream)
+        // rather than opening a duplicate second thread.
+        if (at < 0 && rid) at = prev.findIndex(w => w.kind === "thread" && !w.run?.runId);
         if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], run: desc.run }; }
         else { const w = { id: "w_thread_" + rid, kind: "thread", run: desc.run }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       }
@@ -68929,6 +68975,7 @@ function App() {
             saveSettings({ lastRunId: run.runId });
           }
         }}
+        onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
         renderThread=${(w) => html`<${ChatDrawer}
           key=${w.id}
           run=${w.run}
