@@ -46198,10 +46198,13 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
 // switching device reflows the prototype through its real responsive
 // breakpoints instead of squashing it. Widths are the canonical desktop /
 // iPad-portrait / iPhone breakpoints prototypes target.
+// Dims are the PORTRAIT orientation; tablet/mobile are `rotatable` — clicking
+// an already-active device a second time swaps w↔h to flip landscape⇄portrait.
+// Desktop is inherently landscape and has no orientation toggle.
 const PROTO_DEVICE_PRESETS = [
-  { id: "desktop", label: "Desktop", w: 1440, h: 900,  Icon: Icon.Monitor },
-  { id: "tablet",  label: "Tablet",  w: 834,  h: 1112, Icon: Icon.Tablet  },
-  { id: "mobile",  label: "Mobile",  w: 390,  h: 844,  Icon: Icon.Phone   },
+  { id: "desktop", label: "Desktop", w: 1440, h: 900,  Icon: Icon.Monitor, rotatable: false },
+  { id: "tablet",  label: "Tablet",  w: 834,  h: 1112, Icon: Icon.Tablet,  rotatable: true  },
+  { id: "mobile",  label: "Mobile",  w: 390,  h: 844,  Icon: Icon.Phone,   rotatable: true  },
 ];
 
 function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
@@ -47033,18 +47036,31 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // letterboxing and stays the size the user had it. The active preset is
   // whichever one matches the current viewport (defaults to desktop).
   const _vpNow = node.viewport || {};
+  // A device matches the current viewport in EITHER orientation (rotatable ones
+  // also match w↔h swapped). isLandscape only means something for an active
+  // rotatable device — it drives the icon rotation + the rotate-to-flip tip.
+  const _deviceMatches = (d) =>
+    (d.w === _vpNow.w && d.h === _vpNow.h) ||
+    (d.rotatable && d.w === _vpNow.h && d.h === _vpNow.w);
   const activeDevice =
-    PROTO_DEVICE_PRESETS.find(d => d.w === _vpNow.w && d.h === _vpNow.h)?.id
+    PROTO_DEVICE_PRESETS.find(_deviceMatches)?.id
     || (_vpNow.w ? null : "desktop");
+  const isLandscape = !!(_vpNow.w && _vpNow.h && _vpNow.w > _vpNow.h);
   const setDevice = useCallback((preset) => {
     const cur = node.viewport || { w: 1440, h: 900 };
     const curScale = Math.min((node.w || 720) / (cur.w || 1440),
                               (node.h || 480) / (cur.h || 900));
     const scale = curScale > 0 ? curScale : 0.5;
+    // Click an already-active rotatable device again → rotate (swap current
+    // w↔h). First selection of any device lands on its portrait dims.
+    const active = (preset.w === cur.w && preset.h === cur.h) ||
+                   (preset.rotatable && preset.w === cur.h && preset.h === cur.w);
+    let vw = preset.w, vh = preset.h;
+    if (preset.rotatable && active) { vw = cur.h; vh = cur.w; }
     onChange && onChange({
-      viewport: { w: preset.w, h: preset.h },
-      w: Math.max(160, Math.round(preset.w * scale)),
-      h: Math.max(120, Math.round(preset.h * scale)),
+      viewport: { w: vw, h: vh },
+      w: Math.max(160, Math.round(vw * scale)),
+      h: Math.max(120, Math.round(vh * scale)),
     });
   }, [node.viewport, node.w, node.h, onChange]);
 
@@ -47080,16 +47096,27 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Forward}/><//>
         <span className="workflow-node-device-toggle" onMouseDown=${(e) => e.stopPropagation()}>
-          ${PROTO_DEVICE_PRESETS.map(d => html`
-            <${HoverTip}
-              key=${d.id}
-              className=${"workflow-node-action workflow-node-action-device" + (activeDevice === d.id ? " is-active" : "")}
-              tip=${"Preview as " + d.label + " (" + d.w + "×" + d.h + ") — reflows the prototype at this viewport."}
-              ariaLabel=${"Preview as " + d.label}
-              onClick=${(e) => { e.stopPropagation(); setDevice(d); }}
-              onMouseDown=${(e) => e.stopPropagation()}
-            ><${d.Icon}/><//>
-          `)}
+          ${PROTO_DEVICE_PRESETS.map(d => {
+            const isActive = activeDevice === d.id;
+            const land = isActive && d.rotatable && isLandscape;
+            const tip = d.rotatable
+              ? (isActive
+                  ? "Preview as " + d.label + " — " + (isLandscape ? "landscape" : "portrait")
+                      + " (" + _vpNow.w + "×" + _vpNow.h + "). Click again to rotate."
+                  : "Preview as " + d.label + " (portrait, " + d.w + "×" + d.h + "). Click again to rotate.")
+              : "Preview as " + d.label + " (" + d.w + "×" + d.h + ").";
+            return html`
+              <${HoverTip}
+                key=${d.id}
+                className=${"workflow-node-action workflow-node-action-device"
+                  + (isActive ? " is-active" : "") + (land ? " is-landscape" : "")}
+                tip=${tip}
+                ariaLabel=${"Preview as " + d.label + (land ? " (landscape)" : "")}
+                onClick=${(e) => { e.stopPropagation(); setDevice(d); }}
+                onMouseDown=${(e) => e.stopPropagation()}
+              ><${d.Icon}/><//>
+            `;
+          })}
         </span>
         <span className="workflow-node-label">source/${branch}/</span>
         ${locked && html`

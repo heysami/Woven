@@ -2886,10 +2886,11 @@ _VECTOR_AUTHORING = (
     "motion/HTML asset, or anything that is not SVG shapes.\n"
     "  Write the canonical file `source/{branch}/svg/vector-{id}.json` (read the existing file first; "
     "re-imported live on write). ONLY these keys are honored:\n"
-    "      {\"canvasW\":<px>,\"canvasH\":<px>,\"background\":\"<css color>\",\"shapes\":[ ... ]}\n"
+    "      {\"canvasW\":<px>,\"canvasH\":<px>,\"background\":\"<css color>\",\"groups\":[ ... ],\"shapes\":[ ... ]}\n"
     "  Coordinates are in canvas units (the viewBox is canvasW×canvasH). Every shape carries a unique "
     "`id` plus optional style fields: `fill`,`stroke`,`strokeWidth`,`strokeDasharray`,`strokeLinecap`,"
-    "`opacity`(0..1),`rotation`(deg),`name`,`visible`(default true),`locked`,`shadow`,`blur`. "
+    "`opacity`(0..1),`rotation`(deg),`name`,`visible`(default true),`locked`,`shadow`,`blur`, and an "
+    "optional `groupId` binding the shape to a group (see below). "
     "Shape types + their geometry:\n"
     "      • rect    — {\"type\":\"rect\",\"x\":,\"y\":,\"w\":,\"h\":,\"rx\":<corner radius, optional>}\n"
     "      • ellipse — {\"type\":\"ellipse\",\"cx\":,\"cy\":,\"rx\":,\"ry\":}\n"
@@ -2897,7 +2898,14 @@ _VECTOR_AUTHORING = (
     "      • path    — {\"type\":\"path\",\"d\":\"<SVG path data>\"}  (the workhorse for any custom curve)\n"
     "      • text    — {\"type\":\"text\",\"x\":,\"y\":,\"content\":\"...\",\"fontSize\":,\"fontWeight\":,"
     "\"textAnchor\":\"start|middle|end\",\"fontFamily\":\"<family id>\"}\n"
-    "  Compose the illustration from these primitives; array order is paint order (later = on top)."
+    "  Compose the illustration from these primitives; array order is paint order (later = on top).\n"
+    "  GROUPS — `groups[]` holds layer groups: {\"id\":\"grp_…\",\"name\":\"…\",\"visible\":true,\"locked\":false,"
+    "\"collapsed\":false,\"src\":null}. A shape joins a group by setting its `groupId` to that group's `id`. "
+    "Keep a group's member shapes CONTIGUOUS in `shapes[]` (the editor renders/serialises each group as one "
+    "<g> run). A group with a non-null `src` is LIVE-LINKED to a connected `layer` building block — its "
+    "shapes are regenerated from that block's wired SVG (or traced from its wired image), so do not hand-edit "
+    "members of a `src` group; leave `src` null for groups you author. A hidden group (`visible:false`) hides "
+    "all its members."
 )
 
 _FONT_AUTHORING = (
@@ -2923,12 +2931,15 @@ _IMAGE_AUTHORING = (
     "      {\"v\":1,\"w\":1024,\"h\":1024,\n"
     "       \"layers\":[\n"
     "         {\"id\":\"l1\",\"name\":\"paint\",\"type\":\"raster\",\"src\":\"image-{id}/l1.png\",\"opacity\":1,\"blend\":\"normal|multiply|screen|overlay\",\"visible\":true},\n"
-    "         {\"id\":\"m1\",\"name\":\"mask\",\"type\":\"alpha-mask\",\"target\":\"l1\",\"src\":\"image-{id}/m1.png\"},\n"
+    "         {\"id\":\"m1\",\"name\":\"mask\",\"type\":\"alpha-mask\",\"target\":\"l1\",\"src\":\"image-{id}/m1.png\",\"srcChannel\":\"lum\",\"dstChannel\":\"alpha\"},\n"
     "         {\"id\":\"g1\",\"name\":\"grade\",\"type\":\"gradient-map\",\"target\":\"l1\",\"stops\":[{\"t\":0,\"color\":\"#000\"},{\"t\":1,\"color\":\"#fff\"}]}\n"
     "       ],\n"
     "       \"selection\":{\"type\":\"lasso\",\"points\":[[x,y],[x,y]]}}\n"
     "  Array order is z-order (later = on top). A gradient-map layer maps its target's luminance through "
-    "the color `stops` (t in 0..1). An alpha-mask layer multiplies its target's alpha by the mask's luminance."
+    "the color `stops` (t in 0..1). An alpha-mask layer (or a raster layer with `maskBy`:\"<otherLayerId>\") "
+    "multiplies the target's `dstChannel` (alpha|rgb|r|g|b, default alpha) by the mask's `srcChannel` "
+    "(lum|alpha|r|g|b, default lum). For `maskBy` the channel keys are `maskSrcChannel`/`maskDstChannel`. "
+    "Defaults (lum→alpha) give the classic luminance cutout."
 )
 
 _PIXEL_AUTHORING = (

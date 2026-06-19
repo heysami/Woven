@@ -7311,6 +7311,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   border-right: 1px solid var(--border, rgba(255,255,255,0.08));
 }
 .workflow-node-action-device { width: 20px; height: 20px; }
+/* Landscape orientation — rotate the device glyph 90° so the icon itself
+   reads as turned-on-its-side. Only rotatable devices (tablet/mobile) get it. */
+.workflow-node-action-device.is-landscape svg { transform: rotate(90deg); }
 
 /* Permission-gates row — interactive only. Sits between the title bar and
    the iframe; visually scoped tightly to ~22px height so it doesn't eat
