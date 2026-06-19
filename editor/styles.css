@@ -21983,6 +21983,25 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-ds-picker-select:focus { border-color: var(--accent); background-color: var(--surface); }
 .workflow-ds-picker-select:hover { border-color: var(--border-strong, var(--text-faint)); }
+/* Static chip — shown when there's ≤1 DS (no dropdown chrome). Matches the
+   select's box, minus the caret + interactive affordances. */
+.workflow-ds-picker-static {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font: 500 11px/1.2 var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.workflow-ds-picker.is-compact .workflow-ds-picker-static {
+  padding: 3px 6px;
+  font-size: 10.5px;
+  max-width: 110px;
+}
 .workflow-ds-picker.is-compact { gap: 0; }
 .workflow-ds-picker.is-compact .workflow-ds-picker-select {
   padding: 3px 20px 3px 6px;

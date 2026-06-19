@@ -62351,6 +62351,25 @@ function applyDsFixes(content, audit) {
 function WorkflowDsPicker({ value, onChange, label, compact, title }) {
   const list = listDesignSystems();
   const sel = value || "";
+  // Human label for a DS id — skip the "v?" version placeholder so it reads
+  // as plain "main" rather than "main · v?".
+  const dsText = (d) => d.id + (d.label && d.label !== "v?" ? " · " + d.label : "");
+  // ≤1 DS → nothing to choose between. A dropdown would be pure chrome, so
+  // render the single (or sole) DS as a static chip instead. The selected DS
+  // is whatever `value` already points at, falling back to the only DS.
+  if (list.length <= 1) {
+    const only = list.find(d => d.id === sel) || list[0] || null;
+    const tt0 = title || (only
+      ? "DS scope: " + only.id + " — generation stays within this DS's tokens + primitives."
+      : "DS scope: none — no design system built yet.");
+    return html`
+      <span className=${"workflow-ds-picker is-static" + (compact ? " is-compact" : "")} title=${tt0}
+        onMouseDown=${(e) => e.stopPropagation()}>
+        ${!compact && html`<span className="workflow-ds-picker-label">${label || "DS"}</span>`}
+        <span className="workflow-ds-picker-static">${only ? dsText(only) : "DS: (none built)"}</span>
+      </span>
+    `;
+  }
   const tt = title || (sel
     ? "DS scope: " + sel + " — generation will stay within this DS's tokens + primitives."
     : "DS scope: none — generation runs without a DS constraint. Pick one to scope this generation to a design system."
@@ -62368,7 +62387,7 @@ function WorkflowDsPicker({ value, onChange, label, compact, title }) {
       >
         <option value="">${list.length === 0 ? "DS: (none built)" : "DS: none"}</option>
         ${list.map(d => html`
-          <option key=${d.id} value=${d.id}>${d.id}${d.label ? " · " + d.label : ""}</option>
+          <option key=${d.id} value=${d.id}>${dsText(d)}</option>
         `)}
       </select>
     </label>
