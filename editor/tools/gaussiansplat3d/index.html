@@ -682,7 +682,7 @@ function reportPanels(){
   const panelR = floating ? (rightEl ? rightEl.offsetWidth + 8 : 0) : 0;
   // The full-width header (#top) now floats too — reserve its height + 8px gap
   // so #coreCanvas drops below it and the bar isn't covered by the canvas.
-  const panelT = floating ? (topEl ? topEl.offsetHeight + 8 : 0) : 0;
+  const panelT = floating ? (topEl ? topEl.offsetHeight + 8 + 30 : 0) : 0; /* +30 = node title-bar height, so the floated header sits ABOVE it, not over it */
   const panelB = 0;   // …no bottom panel
   if (floating){
     document.body.style.setProperty('--panel-l', panelL+'px');

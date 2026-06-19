@@ -1359,7 +1359,7 @@
     const panelR = (side ? side.offsetWidth : 0) + 8;
     // The top bar now floats (data-float-panel="top"); measure its height (+8px gap)
     // so the host leaves room above the core rect and the bar isn't covered by the canvas.
-    const tb = document.querySelector('.topbar'); const panelT = tb ? tb.offsetHeight + 8 : 0;
+    const tb = document.querySelector('.topbar'); const panelT = tb ? tb.offsetHeight + 8 + 30 : 0; /* +30 = node title-bar height, so the floated bar sits ABOVE it, not over it */
     const panelB = 0;
     document.body.style.setProperty("--panel-l", panelL + "px");
     document.body.style.setProperty("--panel-r", panelR + "px");

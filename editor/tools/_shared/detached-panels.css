@@ -30,8 +30,11 @@ body.detached-panels {
   position: relative;
 }
 /* The page <html> also paints a chrome background in most tools — clear it too,
-   else the grown iframe shows a solid fill instead of being see-through. */
-html:has(body.detached-panels) { background: transparent !important; }
+   else the grown iframe shows a solid fill instead of being see-through. And set
+   pointer-events:none on the root so clicks over the transparent grown area fall
+   THROUGH to the node behind it (title bar × / canvas); panels + #coreCanvas
+   re-enable pointer-events on themselves below. */
+html:has(body.detached-panels) { background: transparent !important; pointer-events: none; }
 
 /* Panels exist ONLY while the node is selected. When NOT selected (no
    detached-panels class) hide every floating panel and let the central canvas

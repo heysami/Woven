@@ -1824,7 +1824,7 @@ function reportPanels(){
   // Float the full-width #topbar across the top: reserve its own height (+8px gap)
   // so the floated bar clears the node's core rect.
   const tb = document.querySelector('#topbar');
-  const panelT = tb ? tb.offsetHeight + 8 : 0;
+  const panelT = tb ? tb.offsetHeight + 8 + 30 : 0; /* +30 = node title-bar height, so the floated bar sits ABOVE it, not over it */
   const panelB=0;   // this tool has no floating bottom panel
   const b=document.body.style;
   b.setProperty('--panel-l',panelL+'px');

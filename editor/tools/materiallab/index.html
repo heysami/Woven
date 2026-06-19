@@ -1813,7 +1813,7 @@ function reportPanels(){
   // top bar now floats too (data-float-panel="top") — measure its height + 8px gap
   // so the host can offset the node core rect below the floated header.
   const tb=document.getElementById('top');
-  const panelT=tb?tb.offsetHeight+8:0, panelB=0;
+  const panelT=tb?tb.offsetHeight+8+30:0, panelB=0; /* +30 = node title-bar height, so the floated header sits ABOVE it, not over it */
   const bs=document.body.style;
   bs.setProperty('--panel-l', panelL+'px');
   bs.setProperty('--panel-r', panelR+'px');
