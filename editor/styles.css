@@ -7252,6 +7252,20 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: rgb(160, 195, 255);
 }
 
+/* v3.9 — device-preview segmented control in the prototype node bar. Groups
+   the three device buttons tight together, flanked by faint hairline dividers
+   so they read as one control distinct from the nav chevrons + actions. */
+.workflow-node-device-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 6px;
+  margin: 0 2px;
+  border-left: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-right: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+.workflow-node-action-device { width: 20px; height: 20px; }
+
 /* Permission-gates row — interactive only. Sits between the title bar and
    the iframe; visually scoped tightly to ~22px height so it doesn't eat
    into the iframe area. The chips use the universal emoji glyphs so the

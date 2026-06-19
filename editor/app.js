@@ -711,6 +711,10 @@ const Icon = {
   // rest of this icon set so the bar reads as one family.
   Back:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M10 4L6 8l4 4"/></svg>`,
   Forward:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4l4 4-4 4"/></svg>`,
+  // v3.9 — device-preview presets for the prototype node bar. Same line family.
+  Monitor:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></svg>`,
+  Tablet:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="4" y="2" width="8" height="12" rx="1.2"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>`,
+  Phone:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="5" y="1.5" width="6" height="13" rx="1.4"/><path d="M7 12.5h2"/></svg>`,
 };
 
 // v2.51 — skill glyphs live as plain strings in media-models.js (a data-only
@@ -46001,6 +46005,17 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   `;
 }
 
+// v3.9 — quick device-preview presets for the prototype node bar. Each preset
+// is the iframe's NATURAL viewport (vw×vh); the node body CSS-scales to fit, so
+// switching device reflows the prototype through its real responsive
+// breakpoints instead of squashing it. Widths are the canonical desktop /
+// iPad-portrait / iPhone breakpoints prototypes target.
+const PROTO_DEVICE_PRESETS = [
+  { id: "desktop", label: "Desktop", w: 1440, h: 900,  Icon: Icon.Monitor },
+  { id: "tablet",  label: "Tablet",  w: 834,  h: 1112, Icon: Icon.Tablet  },
+  { id: "mobile",  label: "Mobile",  w: 390,  h: 844,  Icon: Icon.Phone   },
+];
+
 function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
@@ -46824,6 +46839,27 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   const h = node.h || 480;
   const locked = !!node.lockedState;
 
+  // v3.9 — device preview. Switching device sets the iframe's natural viewport
+  // (so responsive breakpoints fire) AND reshapes the node to that viewport's
+  // aspect at the SAME on-canvas scale, so the embed fills the box with no
+  // letterboxing and stays the size the user had it. The active preset is
+  // whichever one matches the current viewport (defaults to desktop).
+  const _vpNow = node.viewport || {};
+  const activeDevice =
+    PROTO_DEVICE_PRESETS.find(d => d.w === _vpNow.w && d.h === _vpNow.h)?.id
+    || (_vpNow.w ? null : "desktop");
+  const setDevice = useCallback((preset) => {
+    const cur = node.viewport || { w: 1440, h: 900 };
+    const curScale = Math.min((node.w || 720) / (cur.w || 1440),
+                              (node.h || 480) / (cur.h || 900));
+    const scale = curScale > 0 ? curScale : 0.5;
+    onChange && onChange({
+      viewport: { w: preset.w, h: preset.h },
+      w: Math.max(160, Math.round(preset.w * scale)),
+      h: Math.max(120, Math.round(preset.h * scale)),
+    });
+  }, [node.viewport, node.w, node.h, onChange]);
+
   return html`
     <div
       className="workflow-node workflow-node-proto"
@@ -46855,6 +46891,18 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onClick=${(e) => { e.stopPropagation(); goForward(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Forward}/><//>
+        <span className="workflow-node-device-toggle" onMouseDown=${(e) => e.stopPropagation()}>
+          ${PROTO_DEVICE_PRESETS.map(d => html`
+            <${HoverTip}
+              key=${d.id}
+              className=${"workflow-node-action workflow-node-action-device" + (activeDevice === d.id ? " is-active" : "")}
+              tip=${"Preview as " + d.label + " (" + d.w + "×" + d.h + ") — reflows the prototype at this viewport."}
+              ariaLabel=${"Preview as " + d.label}
+              onClick=${(e) => { e.stopPropagation(); setDevice(d); }}
+              onMouseDown=${(e) => e.stopPropagation()}
+            ><${d.Icon}/><//>
+          `)}
+        </span>
         <span className="workflow-node-label">source/${branch}/</span>
         ${locked && html`
           <span
