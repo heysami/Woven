@@ -13981,6 +13981,15 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: grid;
   gap: 14px;
 }
+/* Dialog (uiAlert/uiConfirm/uiPrompt) message — preserves the \n line breaks
+   carried over from the native-dialog strings they replaced. */
+.modal-dialog-message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-line;
+  word-break: break-word;
+}
 .modal-field { display: grid; gap: 6px; }
 .modal-label {
   font-size: 11px;

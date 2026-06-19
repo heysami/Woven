@@ -3068,14 +3068,14 @@ function DSFontsPanel({ scope }) {
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       } catch (e) {
-        alert(`Font install failed for ${file.name}: ${e?.message || e}`);
+        uiAlert(`Font install failed for ${file.name}: ${e?.message || e}`);
       }
     }
     setBusy(false);
     await refresh(true);
   };
   const removeFont = async (f) => {
-    if (!confirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
+    if (!await uiConfirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
     try {
       // Global faces (ds="global") delete via scope=global no matter which
       // panel they're shown in — they live in the workspace collection.
@@ -3086,7 +3086,7 @@ function DSFontsPanel({ scope }) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     } catch (e) {
-      alert(`Remove failed: ${e?.message || e}`);
+      uiAlert(`Remove failed: ${e?.message || e}`);
       return;
     }
     await refresh(true);
@@ -3745,20 +3745,20 @@ function EntitiesView({ model, setEdits }) {
   // Stores the line object so the tool bar can read its `from`, `to`, and
   // owner field/link without re-scanning.
   const [selectedEdge, setSelectedEdge] = useState(null);
-  const severFk = (line) => {
-    const ok = window.confirm(`Sever FK reference ${line._ownerId}.${line._fieldName} → ${line.to}? The field stays; only the relationship is removed.`);
+  const severFk = async (line) => {
+    const ok = await uiConfirm(`Sever FK reference ${line._ownerId}.${line._fieldName} → ${line.to}? The field stays; only the relationship is removed.`);
     if (!ok) return;
     queue({ target: "entity", kind: "property.fk.unset", entityId: line._ownerId, fieldName: line._fieldName });
     setSelectedEdge(null);
   };
-  const severExtends = (line) => {
-    const ok = window.confirm(`Sever inheritance: ${line.from} no longer extends ${line.to}?`);
+  const severExtends = async (line) => {
+    const ok = await uiConfirm(`Sever inheritance: ${line.from} no longer extends ${line.to}?`);
     if (!ok) return;
     queue({ target: "entity", kind: "extends.unset", entityId: line.from });
     setSelectedEdge(null);
   };
-  const deleteLinkEdge = (line) => {
-    const ok = window.confirm(`Delete relationship ${line.from} ↔ ${line.to}?`);
+  const deleteLinkEdge = async (line) => {
+    const ok = await uiConfirm(`Delete relationship ${line.from} ↔ ${line.to}?`);
     if (!ok) return;
     queue({ target: "link", kind: "delete", id: line.linkId });
     setSelectedEdge(null);
@@ -3851,9 +3851,9 @@ function EntitiesView({ model, setEdits }) {
   }, [entities, links]);
 
   // Add new entity at a fresh position
-  const addEntity = () => {
-    const id = window.prompt("New entity name (PascalCase):"); if (!id) return;
-    if (entities.find(e => e.id === id)) { alert(`Entity "${id}" already exists.`); return; }
+  const addEntity = async () => {
+    const id = await uiPrompt("New entity name (PascalCase):"); if (!id) return;
+    if (entities.find(e => e.id === id)) { uiAlert(`Entity "${id}" already exists.`); return; }
     const baseX = 120 + (entities.length * 280) % 1400;
     const baseY = 800 + Math.floor(entities.length / 5) * 320;
     queue({
@@ -3862,39 +3862,39 @@ function EntitiesView({ model, setEdits }) {
     });
   };
 
-  const renameEntity = (entityId) => {
-    const newId = window.prompt(`Rename "${entityId}" to:`, entityId);
+  const renameEntity = async (entityId) => {
+    const newId = await uiPrompt(`Rename "${entityId}" to:`, entityId);
     if (!newId || newId === entityId) return;
-    if (entities.find(e => e.id === newId)) { alert(`"${newId}" already exists.`); return; }
+    if (entities.find(e => e.id === newId)) { uiAlert(`"${newId}" already exists.`); return; }
     queue({ target: "entity", kind: "rename", entityId, newId });
   };
 
-  const deleteEntity = (entityId) => {
-    if (!confirm(`Delete entity "${entityId}"? This is queued for the LLM — source data.js is updated when edits.json is applied.`)) return;
+  const deleteEntity = async (entityId) => {
+    if (!await uiConfirm(`Delete entity "${entityId}"? This is queued for the LLM — source data.js is updated when edits.json is applied.`)) return;
     queue({ target: "entity", kind: "delete", entityId });
   };
 
-  const addProperty = (entityId) => {
-    const raw = window.prompt(`Add property to ${entityId} (name:type, e.g. "email:string"):`);
+  const addProperty = async (entityId) => {
+    const raw = await uiPrompt(`Add property to ${entityId} (name:type, e.g. "email:string"):`);
     if (!raw) return;
     const [name, type] = raw.split(":").map(s => s.trim());
     if (!name) return;
     queue({ target: "entity", kind: "property.add", entityId, field: { name, type: type || "string" } });
   };
 
-  const renameProperty = (entityId, oldName) => {
-    const newName = window.prompt(`Rename "${oldName}" to:`, oldName);
+  const renameProperty = async (entityId, oldName) => {
+    const newName = await uiPrompt(`Rename "${oldName}" to:`, oldName);
     if (!newName || newName === oldName) return;
     const e = entities.find(x => x.id === entityId);
     if (e && e.fields.some(f => f.name === newName)) {
-      alert(`"${newName}" already exists on ${entityId}. Pick a different name.`);
+      uiAlert(`"${newName}" already exists on ${entityId}. Pick a different name.`);
       return;
     }
     queue({ target: "entity", kind: "property.rename", entityId, oldName, newName });
   };
 
-  const deleteProperty = (entityId, fieldName) => {
-    if (!confirm(`Delete ${entityId}.${fieldName}?`)) return;
+  const deleteProperty = async (entityId, fieldName) => {
+    if (!await uiConfirm(`Delete ${entityId}.${fieldName}?`)) return;
     queue({ target: "entity", kind: "property.delete", entityId, fieldName });
   };
 
@@ -4542,34 +4542,34 @@ function FlowView({ model, setEdits }) {
   const decisionCount = layout.nodes.filter(n => n.isDecision).length;
 
   // ───── mutations ─────
-  const addLane = () => {
-    const label = window.prompt("New swimlane label (e.g. 'Customer', 'Backend API', 'Stripe'):");
+  const addLane = async () => {
+    const label = await uiPrompt("New swimlane label (e.g. 'Customer', 'Backend API', 'Stripe'):");
     if (!label) return;
-    const kind = window.prompt("Lane kind — user, system, or service?", "user") || "user";
+    const kind = await uiPrompt("Lane kind — user, system, or service?", "user") || "user";
     queue({ target: "meta", kind: "lane.add", lane: { id: slugify(label), label, kind } });
   };
-  const renameLane = (laneId) => {
+  const renameLane = async (laneId) => {
     const l = lanes.find(x => x.id === laneId); if (!l) return;
-    const newLabel = window.prompt(`Rename lane "${l.label}" to:`, l.label);
+    const newLabel = await uiPrompt(`Rename lane "${l.label}" to:`, l.label);
     if (!newLabel || newLabel === l.label) return;
     queue({ target: "meta", kind: "lane.rename", laneId, newLabel });
   };
-  const deleteLane = (laneId) => {
-    if (lanes.length <= 1) { alert("Can't delete the last lane — at least one must remain."); return; }
+  const deleteLane = async (laneId) => {
+    if (lanes.length <= 1) { uiAlert("Can't delete the last lane — at least one must remain."); return; }
     const l = lanes.find(x => x.id === laneId); if (!l) return;
     const occupants = frames.filter(f => (f.lane || lanes[0].id) === laneId);
     const reassigned = lanes.find(x => x.id !== laneId)?.label || "another";
     const msg = occupants.length
       ? `Delete lane "${l.label}"?\n\n${occupants.length} step${occupants.length === 1 ? "" : "s"} live in this lane. They'll fall back to "${reassigned}".`
       : `Delete lane "${l.label}"?`;
-    if (!confirm(msg)) return;
+    if (!await uiConfirm(msg)) return;
     queue({ target: "meta", kind: "lane.delete", laneId });
   };
 
-  const addStep = (laneId, opts = {}) => {
-    const label = window.prompt("New step label:"); if (!label) return;
+  const addStep = async (laneId, opts = {}) => {
+    const label = await uiPrompt("New step label:"); if (!label) return;
     const id = slugify(label);
-    if (frames.find(f => f.id === id)) { alert(`Step "${id}" already exists.`); return; }
+    if (frames.find(f => f.id === id)) { uiAlert(`Step "${id}" already exists.`); return; }
     queue({
       target: "frame", kind: "add",
       frame: { id, label, kind: opts.kind || "page", lane: laneId, x: 0, y: 0, w: model.defaultFrame.w, h: model.defaultFrame.h },
@@ -4578,30 +4578,30 @@ function FlowView({ model, setEdits }) {
     if (opts.fromFrameId) queue({ target: "arrow", kind: "add", from: opts.fromFrameId, to: id, action: opts.action || "" });
   };
 
-  const renameStep = (frameId) => {
+  const renameStep = async (frameId) => {
     const f = frames.find(x => x.id === frameId); if (!f) return;
-    const next = window.prompt(`Rename "${f.label}" to:`, f.label);
+    const next = await uiPrompt(`Rename "${f.label}" to:`, f.label);
     if (!next || next === f.label) return;
     queue({ target: "frame", kind: "rename", frameId, newLabel: next });
   };
 
-  const deleteStep = (frameId) => {
-    if (!confirm(`Delete step "${frameId}"? Outgoing/incoming arrows are removed too.`)) return;
+  const deleteStep = async (frameId) => {
+    if (!await uiConfirm(`Delete step "${frameId}"? Outgoing/incoming arrows are removed too.`)) return;
     queue({ target: "frame", kind: "delete", frameId });
     setSelectedNode(null);
   };
 
   // Add a new step *after* an existing one, with an arrow connecting them. The
   // new step lands in the same lane as the source.
-  const addNextStep = (fromFrameId, kind) => {
+  const addNextStep = async (fromFrameId, kind) => {
     const from = frames.find(f => f.id === fromFrameId); if (!from) return;
     const kindLabels = { page: "step", decision: "decision", input: "human-input step", overlay: "overlay" };
-    const label = window.prompt(`New ${kindLabels[kind] || "step"} label:`); if (!label) return;
+    const label = await uiPrompt(`New ${kindLabels[kind] || "step"} label:`); if (!label) return;
     const id = slugify(label);
-    if (frames.find(f => f.id === id)) { alert(`Step "${id}" already exists.`); return; }
+    if (frames.find(f => f.id === id)) { uiAlert(`Step "${id}" already exists.`); return; }
     const action = (kind === "decision")
       ? "" // decision branches usually carry the condition; leave blank for the user to fill
-      : (window.prompt(`Action that goes from "${from.label}" → "${label}":`, "") || "");
+      : (await uiPrompt(`Action that goes from "${from.label}" → "${label}":`, "") || "");
     queue({
       target: "frame", kind: "add",
       frame: { id, label, kind, lane: laneIdOf(from), parent: kind === "overlay" ? from.id : undefined, x: 0, y: 0, w: model.defaultFrame.w, h: model.defaultFrame.h },
@@ -4616,10 +4616,10 @@ function FlowView({ model, setEdits }) {
     setSelectedNode(null);
   };
 
-  const completeArrow = (toFrameId) => {
+  const completeArrow = async (toFrameId) => {
     if (!arrowFrom) return;
     if (arrowFrom === toFrameId) { setArrowFrom(null); return; }
-    const action = window.prompt(`Action label for arrow (${arrowFrom} → ${toFrameId}):`, "");
+    const action = await uiPrompt(`Action label for arrow (${arrowFrom} → ${toFrameId}):`, "");
     queue({ target: "arrow", kind: "add", from: arrowFrom, to: toFrameId, action: action || "" });
     setArrowFrom(null);
   };
@@ -4629,7 +4629,7 @@ function FlowView({ model, setEdits }) {
   };
   const performSplit = ({ label, actionA, actionB, kind }) => {
     const id = slugify(label);
-    if (frames.find(f => f.id === id)) { alert(`Step "${id}" already exists.`); return; }
+    if (frames.find(f => f.id === id)) { uiAlert(`Step "${id}" already exists.`); return; }
     const A = frames.find(f => f.id === splitFor.from);
     const newFrame = { id, label, kind: kind || "page", lane: laneIdOf(A) || lanes[0].id, x: 0, y: 0, w: model.defaultFrame.w, h: model.defaultFrame.h };
     queue({ target: "arrow", kind: "split", arrowId: splitFor.id, newFrame, actionA, actionB });
@@ -5299,28 +5299,28 @@ function IAView({ model, setEdits }) {
   const active = frames.find(f => f.id === activeId);
   const pickHash = (f) => f.hash || "";
 
-  const addPage = () => {
-    const label = window.prompt("New page label:"); if (!label) return;
+  const addPage = async () => {
+    const label = await uiPrompt("New page label:"); if (!label) return;
     const id = slugify(label);
-    if (frames.find(f => f.id === id)) { alert(`Frame "${id}" already exists.`); return; }
+    if (frames.find(f => f.id === id)) { uiAlert(`Frame "${id}" already exists.`); return; }
     queue({ target: "frame", kind: "add", frame: { id, label, kind: "page", x: 0, y: 0, w: model.defaultFrame.w, h: model.defaultFrame.h } });
     setActiveId(id);
   };
-  const addChild = (parentId, kind) => {
-    const label = window.prompt(`New ${kind} label:`); if (!label) return;
+  const addChild = async (parentId, kind) => {
+    const label = await uiPrompt(`New ${kind} label:`); if (!label) return;
     const id = slugify(label);
-    if (frames.find(f => f.id === id)) { alert(`Frame "${id}" already exists.`); return; }
+    if (frames.find(f => f.id === id)) { uiAlert(`Frame "${id}" already exists.`); return; }
     queue({ target: "frame", kind: "add", frame: { id, label, kind, parent: parentId, x: 0, y: 0, w: model.defaultFrame.w, h: model.defaultFrame.h } });
     setActiveId(id);
   };
-  const renameFrame = (frameId) => {
+  const renameFrame = async (frameId) => {
     const f = frames.find(x => x.id === frameId); if (!f) return;
-    const next = window.prompt(`Rename "${f.label}" to:`, f.label);
+    const next = await uiPrompt(`Rename "${f.label}" to:`, f.label);
     if (!next || next === f.label) return;
     queue({ target: "frame", kind: "rename", frameId, newLabel: next });
   };
-  const deleteFrame = (frameId) => {
-    if (!confirm(`Delete "${frameId}" and its incoming/outgoing arrows?`)) return;
+  const deleteFrame = async (frameId) => {
+    if (!(await uiConfirm(`Delete "${frameId}" and its incoming/outgoing arrows?`))) return;
     queue({ target: "frame", kind: "delete", frameId });
     if (activeId === frameId) setActiveId(topLevel.find(p => p.id !== frameId)?.id || null);
   };
@@ -6017,10 +6017,10 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
     setSelected(null);
     setSelectedArrow(null);
   };
-  const completeArrow = (toFrameId) => {
+  const completeArrow = async (toFrameId) => {
     if (!arrowFrom) return;
     if (arrowFrom === toFrameId) { setArrowFrom(null); return; }
-    const action = window.prompt(`Action label for arrow (${arrowFrom} → ${toFrameId}):`, "");
+    const action = await uiPrompt(`Action label for arrow (${arrowFrom} → ${toFrameId}):`, "");
     if (action == null) { setArrowFrom(null); return; }
     setEdits(es => [...es, { target: "arrow", kind: "add", from: arrowFrom, to: toFrameId, action: action || "" }]);
     setArrowFrom(null);
@@ -7572,10 +7572,10 @@ function protoSlugify(name) {
 async function duplicatePrototype(proto) {
   if (!proto || !proto.id) return null;
   const name = proto.label || proto.id;
-  const newName = window.prompt(`Duplicate prototype "${name}" as:`, name + "-copy");
+  const newName = await uiPrompt(`Duplicate prototype "${name}" as:`, name + "-copy");
   if (newName === null) return null;                  // cancelled
   const slug = protoSlugify(newName);
-  if (!slug) { if (newName.trim()) alert("That name has no usable letters or numbers — try another."); return null; }
+  if (!slug) { if (newName.trim()) uiAlert("That name has no usable letters or numbers — try another."); return null; }
   try {
     const r = await fetch(apiUrl("/__prototypes/duplicate"), {
       method: "POST",
@@ -7587,7 +7587,7 @@ async function duplicatePrototype(proto) {
     try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
     return j;
   } catch (e) {
-    alert("Duplicate failed: " + (e.message || e));
+    uiAlert("Duplicate failed: " + (e.message || e));
     return null;
   }
 }
@@ -7600,12 +7600,12 @@ async function duplicatePrototype(proto) {
 async function renamePrototype(proto) {
   if (!proto || !proto.id) return null;
   const cur = proto.label || proto.id;
-  const newName = window.prompt(
+  const newName = await uiPrompt(
     `Rename prototype "${cur}" to:\n\n(Repoints its folder, canvas data, stars, thumbnail, and workflow nodes.)`,
     cur);
   if (newName === null) return null;                  // cancelled
   const slug = protoSlugify(newName);
-  if (!slug) { if (newName.trim()) alert("That name has no usable letters or numbers — try another."); return null; }
+  if (!slug) { if (newName.trim()) uiAlert("That name has no usable letters or numbers — try another."); return null; }
   if (slug === proto.id) return null;                 // no change
   try {
     const r = await fetch(apiUrl("/__prototypes/rename"), {
@@ -7618,7 +7618,7 @@ async function renamePrototype(proto) {
     try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
     return j;
   } catch (e) {
-    alert("Rename failed: " + (e.message || e));
+    uiAlert("Rename failed: " + (e.message || e));
     return null;
   }
 }
@@ -7629,7 +7629,7 @@ async function renamePrototype(proto) {
 async function deletePrototype(proto) {
   if (!proto || !proto.id) return null;
   const name = proto.label || proto.id;
-  if (!window.confirm(`Delete prototype "${name}"?\n\nMoved to source/.trash/${proto.id}-<timestamp>/ — recoverable, not hard-deleted.`)) return null;
+  if (!(await uiConfirm(`Delete prototype "${name}"?\n\nMoved to source/.trash/${proto.id}-<timestamp>/ — recoverable, not hard-deleted.`))) return null;
   try {
     const r = await fetch(apiUrl("/__prototypes/delete"), {
       method: "POST",
@@ -7641,7 +7641,7 @@ async function deletePrototype(proto) {
     try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
     return j;
   } catch (e) {
-    alert("Delete failed: " + (e.message || e));
+    uiAlert("Delete failed: " + (e.message || e));
     return null;
   }
 }
@@ -9073,7 +9073,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
   // Optimistically drops it from the list, then reconciles via reload().
   const deleteRun = useCallback(async (r) => {
     const label = r.title || r.kind || "this run";
-    if (!window.confirm(`Delete run "${label}"?\nThis stops it if running and removes its chat history.`)) return;
+    if (!(await uiConfirm(`Delete run "${label}"?\nThis stops it if running and removes its chat history.`))) return;
     setRuns(prev => prev.filter(x => x.runId !== r.runId));
     try {
       const resp = await fetch(apiUrl(`/__run/${r.runId}/delete`), { method: "POST" });
@@ -9082,7 +9082,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
         throw new Error(j.error || `HTTP ${resp.status}`);
       }
     } catch (e) {
-      alert("Delete failed: " + (e.message || e));
+      uiAlert("Delete failed: " + (e.message || e));
     } finally {
       reload();
     }
@@ -9718,7 +9718,7 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
                 <div className="th-live-actions">
                   <button className="th-live-end" disabled=${isBusy}
                     title="End the live session — guests are disconnected; the tunnel keeps running for comments"
-                    onClick=${() => { if (confirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
+                    onClick=${async () => { if (await uiConfirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
                     <${Icon.Stop}/> End session
                   </button>
                 </div>
@@ -9931,7 +9931,7 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
   };
   const isResolved = (c) => c.status === "done" || c.status === "archived";
   const toggleResolve = (c) => cop({ op: "status", prototype: c.prototype, commentId: c.id, status: isResolved(c) ? "open" : "done" });
-  const del = (c) => { if (confirm("Delete this comment? This can't be undone.")) cop({ op: "delete", prototype: c.prototype, commentId: c.id }); };
+  const del = async (c) => { if (await uiConfirm("Delete this comment? This can't be undone.")) cop({ op: "delete", prototype: c.prototype, commentId: c.id }); };
   const sendReply = (c) => {
     const t = replyText.trim();
     if (!t) return;
@@ -10210,10 +10210,10 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
     if (ahead) lost.push(ahead + " local commit" + (ahead === 1 ? "" : "s"));
     if (st && st.dirty) lost.push((st.changedCount || st.changed?.length || 0) + " uncommitted change(s)");
     const what = lost.length ? lost.join(" + ") : "any local changes";
-    if (!window.confirm(
+    if (!(await uiConfirm(
       "Discard local changes and reset this project to match GitHub?\n\n" +
       "This throws away " + what + " and makes the project exactly match " +
-      "origin/" + ((st && st.branch) || "main") + ". This can't be undone.")) return;
+      "origin/" + ((st && st.branch) || "main") + ". This can't be undone."))) return;
     const j = await op("discard-remote", {});
     if (j) {
       flashNote("Reset to GitHub" + (j.head ? " (" + j.head + ")" : ""));
@@ -10225,9 +10225,9 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const doDiscardLocal = async () => {
     if (!(st && st.dirty)) { flashNote("Nothing to discard"); return; }
     const n = st.changedCount || (st.changed && st.changed.length) || 0;
-    if (!window.confirm(
+    if (!(await uiConfirm(
       "Discard " + n + " uncommitted change(s)?\n\n" +
-      "The project reverts to your last commit. This can't be undone.")) return;
+      "The project reverts to your last commit. This can't be undone."))) return;
     const j = await op("discard-local", {});
     if (j) { flashNote("Discarded uncommitted changes"); reload(); }
   };
@@ -10265,7 +10265,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   };
   const doMergeBranch = async (name) => {
     if (st && st.dirty) { flashErr("Commit or discard changes before merging"); return; }
-    if (!window.confirm("Merge '" + name + "' into '" + curBranch + "'?")) return;
+    if (!(await uiConfirm("Merge '" + name + "' into '" + curBranch + "'?"))) return;
     const j = await op("branch-merge", { name });
     if (j) {
       if (j.conflicts && j.conflicts.length)
@@ -10275,10 +10275,10 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
     }
   };
   const doDeleteBranch = async (name) => {
-    if (!window.confirm("Delete branch '" + name + "'? This can't be undone.")) return;
+    if (!(await uiConfirm("Delete branch '" + name + "'? This can't be undone."))) return;
     let j = await op("branch-delete", { name });
     // Unmerged branch → offer a force delete (the daemon surfaces a clear error).
-    if (j === null && window.confirm("'" + name + "' has unmerged commits. Force-delete and discard them?"))
+    if (j === null && (await uiConfirm("'" + name + "' has unmerged commits. Force-delete and discard them?")))
       j = await op("branch-delete", { name, force: true });
     if (j) { flashNote("Deleted " + name); reload(); }
   };
@@ -15648,8 +15648,8 @@ function StateMachineView({ model, setEdits }) {
   // machine doesn't haunt the new view.
   useEffect(() => { setSelectedEdge(null); }, [activeId]);
   const queue = (ed) => setEdits && setEdits(es => [...es, ed]);
-  const renameEdge = (e) => {
-    const next = window.prompt("Transition label (on):", e.on || "");
+  const renameEdge = async (e) => {
+    const next = await uiPrompt("Transition label (on):", e.on || "");
     if (next == null) return;
     const trimmed = next.trim();
     if (trimmed === (e.on || "")) return;
@@ -15657,10 +15657,10 @@ function StateMachineView({ model, setEdits }) {
             machineId: active.id, fromId: e.from, toId: e.to, matchOn: e.on, newOn: trimmed });
     setSelectedEdge(null);
   };
-  const deleteEdge = (e) => {
+  const deleteEdge = async (e) => {
     const fromLabel = (active.states || []).find(s => s.id === e.from)?.label || e.from;
     const toLabel   = (active.states || []).find(s => s.id === e.to)?.label   || e.to;
-    const ok = window.confirm(`Delete transition "${fromLabel} → ${toLabel}"${e.on ? ` (on: ${e.on})` : ""}?`);
+    const ok = await uiConfirm(`Delete transition "${fromLabel} → ${toLabel}"${e.on ? ` (on: ${e.on})` : ""}?`);
     if (!ok) return;
     queue({ target: "stateMachine", kind: "transition.delete",
             machineId: active.id, fromId: e.from, toId: e.to, matchOn: e.on });
@@ -17869,7 +17869,7 @@ function OnboardingAssetProviderRow({ provider, covers, status, onChanged }) {
     } finally { setBusy(false); }
   };
   const clear = async () => {
-    if (!confirm(`Remove the saved ${provider.label} key?`)) return;
+    if (!(await uiConfirm(`Remove the saved ${provider.label} key?`))) return;
     setBusy(true); setErr(null);
     try {
       await fetch(apiUrl("/__media_config"), {
@@ -19245,7 +19245,7 @@ function CcSkillCard({ skill: sk, reload }) {
 
   const onRemove = async (e) => {
     e.stopPropagation();
-    if (!confirm(`Delete skill "${sk.name}" from ~/.claude/skills/${sk.slug}/?`)) return;
+    if (!(await uiConfirm(`Delete skill "${sk.name}" from ~/.claude/skills/${sk.slug}/?`))) return;
     setRemoving(true);
     try {
       const r = await fetch(apiUrl("/__cc_skills/delete"), {
@@ -19259,7 +19259,7 @@ function CcSkillCard({ skill: sk, reload }) {
       }
       if (reload) await reload();
     } catch (err) {
-      alert("Delete failed: " + (err.message || err));
+      uiAlert("Delete failed: " + (err.message || err));
     } finally {
       setRemoving(false);
     }
@@ -19756,7 +19756,7 @@ function McpLanding() {
     }
   };
   const removeServer = async (sid) => {
-    if (!window.confirm(`Remove MCP server '${sid}'? It will be unwired from the runtime config.`)) return;
+    if (!(await uiConfirm(`Remove MCP server '${sid}'? It will be unwired from the runtime config.`))) return;
     try {
       const res = await fetch("/__mcp_catalog/remove", {
         method: "POST",
@@ -20622,7 +20622,7 @@ function SharesLanding({ onCountChange }) {
                 >${s.emailGate ? "Gate: email" : "Gate: open"}</button>
                 <button className="shares-btn shares-btn-danger" disabled=${isBusy}
                   title="Delete the share — kills the tunnel and revokes the link (comments are kept in the project)"
-                  onClick=${() => { if (confirm(`Delete share "${s.label}"? The link stops working immediately.`)) op(s.id, "delete"); }}
+                  onClick=${async () => { if (await uiConfirm(`Delete share "${s.label}"? The link stops working immediately.`)) op(s.id, "delete"); }}
                 >Delete</button>
               </div>
             </div>
@@ -21040,7 +21040,7 @@ function ProjectsLanding({ info, projects, onReload }) {
     // Local copy — no LLM. Server clones the tree and rewrites every reference
     // to the old project name (id slug + meta.project label) to the new one.
     const suggested = (label || pid) + " copy";
-    const newLabel = window.prompt(`Duplicate "${label || pid}" as:`, suggested);
+    const newLabel = await uiPrompt(`Duplicate "${label || pid}" as:`, suggested);
     if (newLabel === null) return;            // user cancelled
     const trimmed = newLabel.trim();
     if (!trimmed) { setErr("label required"); return; }
@@ -21063,7 +21063,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   };
 
   const deleteProject = async (pid, label) => {
-    if (!confirm(`Delete project "${label || pid}"?\n\nMoved to .trash/${pid}-<timestamp>/ inside the workspace — recoverable, not hard-deleted.`)) return;
+    if (!(await uiConfirm(`Delete project "${label || pid}"?\n\nMoved to .trash/${pid}-<timestamp>/ inside the workspace — recoverable, not hard-deleted.`))) return;
     setErr(null);
     setBusyId(pid);
     try {
@@ -27202,7 +27202,7 @@ function runExportForNode(nodeId, nodeLabel) {
       detail: { nodeId, nodeLabel: nodeLabel || "" },
     }));
   } catch (e) {
-    alert(`Export failed: ${e.message || e}`);
+    uiAlert(`Export failed: ${e.message || e}`);
   }
 }
 
@@ -27293,7 +27293,7 @@ function ExportNameModal({ nodeId, nodeLabel, onClose }) {
       const detail = fileCount
         ? `${fileCount} file${fileCount === 1 ? "" : "s"} bundled.`
         : "Bundle written (no copied files — see README).";
-      const wantReveal = window.confirm(
+      const wantReveal = await uiConfirm(
         `Exported ${nodeLabel || nodeId}\n\n${path}\n\n${detail}\n\nCopy path to clipboard?`
       );
       if (wantReveal && path) {
@@ -29055,7 +29055,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // prompt mirrors `updateFromSource`'s shape but restricts scope to
     // frames + arrows (skip primitives / entities / state machines /
     // timelines / grids). Streams into the workflow-mode chat drawer.
-    const ok = confirm(
+    const ok = await uiConfirm(
       "No canvas frames exist for source/" + branch + "/ yet.\n\n" +
       "Generate them now? (Runs the frames + arrows slice of Workflow 1; " +
       "streams in the chat drawer. The Canvas-frames node will appear here " +
@@ -29090,9 +29090,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // from source." Same prompt as the auto-dispatch in openCanvasFrames,
   // just gated behind an explicit confirm so the user can't trigger it
   // accidentally.
-  const regenerateCanvasFrames = useCallback((branch) => {
+  const regenerateCanvasFrames = useCallback(async (branch) => {
     if (!branch) return;
-    const ok = confirm(
+    const ok = await uiConfirm(
       "Regenerate canvas frames for source/" + branch + "/?\n\n" +
       "This re-runs the Workflow 1 frames + arrows agent: it rescans every " +
       "HTML page under the prototype, rebuilds frames[] + arrows[] in " +
@@ -30349,7 +30349,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             } catch (err) {
               // Surface font failures like the node's ⤒ upload does — a
               // silent console line reads as "the drop did nothing".
-              alert(`Font install failed for ${file.name}: ${err?.message || err}`);
+              uiAlert(`Font install failed for ${file.name}: ${err?.message || err}`);
             }
             return;
           }
@@ -30490,7 +30490,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const r = await fetch(apiUrl(`/__groups/${encodeURIComponent(slug)}`));
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       clip = await r.json();
-    } catch (e) { alert("Couldn't load group: " + (e?.message || e)); return 0; }
+    } catch (e) { uiAlert("Couldn't load group: " + (e?.message || e)); return 0; }
     if (!clip || !Array.isArray(clip.nodes) || !clip.nodes.length) return 0;
     const originX = typeof clip.originX === "number" ? clip.originX : 0;
     const originY = typeof clip.originY === "number" ? clip.originY : 0;
@@ -30543,7 +30543,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const saveSelectionAsGroup = useCallback(async () => {
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
     const picked = (data.nodes || []).filter(n => sel.has(n.id));
-    if (picked.length < 1) { alert("Select at least one node to save as a group."); return false; }
+    if (picked.length < 1) { uiAlert("Select at least one node to save as a group."); return false; }
     const pickedIdSet = new Set(picked.map(n => n.id));
     const internalEdges = (data.edges || []).filter(e => {
       const f = (e.from || "").split(".", 1)[0];
@@ -30558,7 +30558,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!Number.isFinite(minX)) minX = 0;
     if (!Number.isFinite(minY)) minY = 0;
     const defaultTitle = `Group of ${picked.length}`;
-    const title = prompt(`Save ${picked.length} node${picked.length === 1 ? "" : "s"} as a group.\nName (shown in Local library):`, defaultTitle);
+    const title = await uiPrompt(`Save ${picked.length} node${picked.length === 1 ? "" : "s"} as a group.\nName (shown in Local library):`, defaultTitle);
     if (title == null) return false;
     const cleanTitle = title.trim() || defaultTitle;
     const slug = (cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50))
@@ -30578,7 +30578,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
       window.dispatchEvent(new CustomEvent("th:library-refresh"));
       return true;
-    } catch (e) { alert("Save failed: " + (e?.message || e)); return false; }
+    } catch (e) { uiAlert("Save failed: " + (e?.message || e)); return false; }
   }, [selectionRef, data]);
 
   // v3.4.32 — Duplicate selected nodes in-place (Cmd+D). Behaves like
@@ -36550,7 +36550,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const target = resolveReplaceTarget(srcAssetId);
     if (!target) {
       if (typeof window !== "undefined" && window.alert) {
-        window.alert(
+        uiAlert(
           "No connected asset to replace.\n\n" +
           "Wire this asset (directly, or via a Remix / Blend / Repeater) to another asset on disk first."
         );
@@ -36559,7 +36559,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
     if (!src.path || !src.path.startsWith("source/")) {
       if (typeof window !== "undefined" && window.alert) {
-        window.alert("This asset has no file bytes on disk to copy from.");
+        uiAlert("This asset has no file bytes on disk to copy from.");
       }
       return;
     }
@@ -36617,7 +36617,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             `  2. Rewrite the prototype's <img src="..."> tags to point at the new file\n` +
             `  3. Update the asset card to the new path\n\n` +
             `Proceed?`;
-        const ok = (typeof window !== "undefined" && window.confirm) ? window.confirm(promptMsg) : true;
+        const ok = await uiConfirm(promptMsg);
         if (!ok) return;
         try {
           // 1. Copy bytes to the new extension's path.
@@ -36627,7 +36627,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           });
           const cj = await cr.json().catch(() => ({}));
           if (!cr.ok) {
-            if (typeof window !== "undefined" && window.alert) window.alert("Copy failed: " + (cj.error || ("HTTP " + cr.status)));
+            if (typeof window !== "undefined" && window.alert) uiAlert("Copy failed: " + (cj.error || ("HTTP " + cr.status)));
             return;
           }
           // 2. Rewrite prototype HTML — kind change uses the smart endpoint
@@ -36644,7 +36644,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const rj = await rr.json().catch(() => ({}));
           if (!rr.ok) {
             if (typeof window !== "undefined" && window.alert) {
-              window.alert(
+              uiAlert(
                 "Rewrite failed: " + (rj.error || ("HTTP " + rr.status)) + "\n\n" +
                 "The new file was copied to " + newTargetPath + " but the prototype HTML still " +
                 "references " + targetNode.path + ". You'll need to update the prototype by hand."
@@ -36692,7 +36692,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             },
           }));
         } catch (e) {
-          if (typeof window !== "undefined" && window.alert) window.alert("Replace failed: " + String(e?.message || e));
+          if (typeof window !== "undefined" && window.alert) uiAlert("Replace failed: " + String(e?.message || e));
         }
         return;
       }
@@ -36700,7 +36700,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // Same-format replace: byte-copy preserves the URL, prototype renders
       // the new bytes after a refresh nonce bump. Unchanged from before.
       const ok = (typeof window !== "undefined" && window.confirm)
-        ? window.confirm(`Replace ${targetNode.path}\nwith bytes from ${src.path}?\n\nThis overwrites the existing file.`)
+        ? await uiConfirm(`Replace ${targetNode.path}\nwith bytes from ${src.path}?\n\nThis overwrites the existing file.`)
         : true;
       if (!ok) return;
       try {
@@ -36710,12 +36710,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
-          if (typeof window !== "undefined" && window.alert) window.alert("Replace failed: " + (j.error || ("HTTP " + r.status)));
+          if (typeof window !== "undefined" && window.alert) uiAlert("Replace failed: " + (j.error || ("HTTP " + r.status)));
           return;
         }
         window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [targetNode.path] } }));
       } catch (e) {
-        if (typeof window !== "undefined" && window.alert) window.alert("Replace failed: " + String(e?.message || e));
+        if (typeof window !== "undefined" && window.alert) uiAlert("Replace failed: " + String(e?.message || e));
       }
       return;
     }
@@ -36724,7 +36724,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const branch = "main";
       const protoNode = (data.nodes || []).find(n => n.id === targetNode.boundTo.node);
       const ok = (typeof window !== "undefined" && window.confirm)
-        ? window.confirm(
+        ? await uiConfirm(
             `Rewrite the prototype HTML?\n\n` +
             `The inline SVG inside ${protoNode ? "the prototype" : "the bound prototype"} will be replaced with\n` +
             `<img src="${src.path}">.\n\n` +
@@ -36747,7 +36747,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
-          if (typeof window !== "undefined" && window.alert) window.alert("Replace failed: " + (j.error || ("HTTP " + r.status)));
+          if (typeof window !== "undefined" && window.alert) uiAlert("Replace failed: " + (j.error || ("HTTP " + r.status)));
           return;
         }
         // Flip the target asset card to file-backed mode so its preview
@@ -36780,13 +36780,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           detail: { paths: [oldPath, src.path].filter(Boolean) }
         }));
       } catch (e) {
-        if (typeof window !== "undefined" && window.alert) window.alert("Replace failed: " + String(e?.message || e));
+        if (typeof window !== "undefined" && window.alert) uiAlert("Replace failed: " + String(e?.message || e));
       }
       return;
     }
 
     if (typeof window !== "undefined" && window.alert) {
-      window.alert(
+      uiAlert(
         "The connected asset (" + (targetNode.path || "(inline)") + ") isn't replaceable yet.\n\n" +
         "Supported targets: file-backed assets (source/…) and inline SVGs exposed from a prototype."
       );
@@ -36814,7 +36814,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!target || target.kind !== "asset") return;
     if (!target.boundTo || !target.boundTo.node) {
       if (typeof window !== "undefined" && window.alert) {
-        window.alert("This asset card isn't bound to a prototype, so there's no HTML to rewrite. " +
+        uiAlert("This asset card isn't bound to a prototype, so there's no HTML to rewrite. " +
                      "The Replace flow only works on cards that were exposed from a prototype.");
       }
       return;
@@ -36832,7 +36832,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const dstExt = extOf(target.path || "");
     if (!srcExt) {
       if (typeof window !== "undefined" && window.alert) {
-        window.alert("Picked file has no extension — can't determine its kind.");
+        uiAlert("Picked file has no extension — can't determine its kind.");
       }
       return;
     }
@@ -36857,7 +36857,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const cj = await cr.json().catch(() => ({}));
         if (!cr.ok) {
           if (typeof window !== "undefined" && window.alert) {
-            window.alert("Copy failed: " + (cj.error || ("HTTP " + cr.status)));
+            uiAlert("Copy failed: " + (cj.error || ("HTTP " + cr.status)));
           }
           return;
         }
@@ -36881,7 +36881,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const rj = await rr.json().catch(() => ({}));
         if (!rr.ok) {
           if (typeof window !== "undefined" && window.alert) {
-            window.alert(
+            uiAlert(
               "Rewrite failed: " + (rj.error || ("HTTP " + rr.status)) + "\n\n" +
               "The new file was copied to " + newTargetPath + " but the prototype HTML " +
               "still references " + target.path + ". Edit the prototype by hand to fix it."
@@ -36933,7 +36933,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }));
     } catch (e) {
       if (typeof window !== "undefined" && window.alert) {
-        window.alert("Replace failed: " + String(e?.message || e));
+        uiAlert("Replace failed: " + String(e?.message || e));
       }
     }
   }, [data.nodes, updateNode]);
@@ -37249,7 +37249,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             ? { ...n, lastBuildStatus: "error", lastBuildError: String(e?.message || e) }
             : n),
         }));
-        alert("Brainstorm suggestion failed: " + (e?.message || String(e)));
+        uiAlert("Brainstorm suggestion failed: " + (e?.message || String(e)));
         return;
       }
       const patch = {};
@@ -37289,7 +37289,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (needsPage  && patch.samplePage)  bits.push("Sample page");
         if (needsImages && patch.sampleImages) bits.push("Sample images");
         if (suggested.revised === true)      bits.push("Revised image list to fit the page");
-        alert(
+        uiAlert(
           bits.join("; ") +
           (suggested.revisionReason ? "\n\nWhy: " + suggested.revisionReason : "") +
           "\n\nReview the values above, then click Brainstorm again to generate."
@@ -37305,7 +37305,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // so they share the agent's internally-planned palette, typography,
     // voice, and shape language.
     if (!samplePage) {
-      alert("Sample page is empty after suggestion — type a screen label and click Brainstorm again.");
+      uiAlert("Sample page is empty after suggestion — type a screen label and click Brainstorm again.");
       return;
     }
     const skipImages = sampleImages === "(none)";
@@ -37313,7 +37313,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       ? []
       : sampleImages.split(",").map(s => s.trim()).filter(Boolean);
     if (!skipImages && images.length === 1) {
-      alert(
+      uiAlert(
         "Sample images must have at least 2 entries (or type \"(none)\" to skip).\n" +
         "Add a second image subject and click Brainstorm again."
       );
@@ -37664,7 +37664,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           return n;
         }),
       }));
-      alert("DS brainstorm dispatch failed: " + (e?.message || String(e)));
+      uiAlert("DS brainstorm dispatch failed: " + (e?.message || String(e)));
       return;
     }
 
@@ -40486,35 +40486,35 @@ function WorkflowLibrary({ tab = "nodes" }) {
   }, [assets]);
 
   const deleteAsset = async (path) => {
-    if (!confirm(`Delete ${path} from disk?\nThis is destructive — nodes referencing it will show "missing".`)) return;
+    if (!await uiConfirm(`Delete ${path} from disk?\nThis is destructive — nodes referencing it will show "missing".`)) return;
     try {
       const r = await fetch(apiUrl("/__assets/delete"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
       });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert("Delete failed: " + (j.error || r.status)); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
       reload();
-    } catch (e) { alert("Delete failed: " + (e?.message || e)); }
+    } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
   };
   // HTML pages share the same delete endpoint (any source/* file works) —
   // it walks to the path and removes the file. Used by the per-card × on
   // the HTML pages library section.
   const deleteHtml = deleteAsset;
   const deletePrompt = async (slug) => {
-    if (!confirm(`Delete saved prompt "${slug}"?\nNodes referencing it stay as-is with their current text.`)) return;
+    if (!await uiConfirm(`Delete saved prompt "${slug}"?\nNodes referencing it stay as-is with their current text.`)) return;
     try {
       const r = await fetch(apiUrl(`/__prompts/${encodeURIComponent(slug)}/delete`), { method: "POST" });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert("Delete failed: " + (j.error || r.status)); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
       reload();
-    } catch (e) { alert("Delete failed: " + (e?.message || e)); }
+    } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
   };
   const deleteGroup = async (slug) => {
-    if (!confirm(`Delete saved node group "${slug}"?\nGroups already placed on a canvas are unaffected.`)) return;
+    if (!await uiConfirm(`Delete saved node group "${slug}"?\nGroups already placed on a canvas are unaffected.`)) return;
     try {
       const r = await fetch(apiUrl(`/__groups/${encodeURIComponent(slug)}/delete`), { method: "POST" });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert("Delete failed: " + (j.error || r.status)); return; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
       reload();
-    } catch (e) { alert("Delete failed: " + (e?.message || e)); }
+    } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
   };
 
   // Glyph lookup for the visual-asset thumbnails (grid mode fallback when
@@ -43041,10 +43041,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // Routed by Esc, the toolbar × button, and the backdrop click. If the
   // user has uncommitted DOM mutations, surface a confirm dialog before
   // wiping them — accidentally closing the overlay shouldn't lose work.
-  const closeWithConfirm = useCallback(() => {
+  const closeWithConfirm = useCallback(async () => {
     if (dirty) {
       const count = opHistory.length;
-      if (!confirm("You have " + count + " unsaved change" + (count === 1 ? "" : "s") +
+      if (!await uiConfirm("You have " + count + " unsaved change" + (count === 1 ? "" : "s") +
                    " — close zoom and discard?")) return;
     }
     onClose();
@@ -43358,9 +43358,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   }, [dirty, filePath, showToast, opHistory, historyIdx]);
 
   // ─── Discard (revert in-memory mutations back to disk state) ─────────
-  const discardChanges = useCallback(() => {
+  const discardChanges = useCallback(async () => {
     if (!dirty) return;
-    if (!confirm("Discard all unsaved changes? The iframe will revert to the on-disk version.")) return;
+    if (!await uiConfirm("Discard all unsaved changes? The iframe will revert to the on-disk version.")) return;
     if (savedHtmlRef.current) {
       replaceDocFromHtml(savedHtmlRef.current);
     } else {
@@ -44025,7 +44025,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         if (r.status === 409) {
-          if (confirm("File " + targetPath + " exists. Overwrite?")) {
+          if (await uiConfirm("File " + targetPath + " exists. Overwrite?")) {
             const r2 = await fetch(apiUrl("/__component_export"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -44514,9 +44514,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       const path = el.getAttribute("data-zoom-import") ||
                    ((el.getAttribute("src") || "").split("?")[0].replace(/^\//, ""));
       if (!path || !path.startsWith("source/") || !onSwitchTarget) return null;
-      return () => {
+      return async () => {
         if (dirty) {
-          if (!confirm("You have unsaved changes. Discard and drill into this component?")) return;
+          if (!await uiConfirm("You have unsaved changes. Discard and drill into this component?")) return;
         }
         const m = path.match(/^source\/([^/]+)\//);
         const nextBranch = (m && m[1]) || branch || "main";
@@ -45818,7 +45818,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                 ${st !== "done" && html`<button className="sv-mini-btn" title="Mark resolved" onClick=${() => cop({ op: "status", commentId: c.id, status: "done" })}>✓</button>`}
                 ${st === "done" && html`<button className="sv-mini-btn" title="Reopen" onClick=${() => cop({ op: "status", commentId: c.id, status: "open" })}>↺</button>`}
                 ${st !== "archived" && html`<button className="sv-mini-btn" title="Archive" onClick=${() => cop({ op: "status", commentId: c.id, status: "archived" })}>🗄</button>`}
-                <button className="sv-mini-btn danger" title="Delete thread" onClick=${() => { if (confirm("Delete this comment thread?")) cop({ op: "delete", commentId: c.id }); }}>🗑</button>
+                <button className="sv-mini-btn danger" title="Delete thread" onClick=${async () => { if (await uiConfirm("Delete this comment thread?")) cop({ op: "delete", commentId: c.id }); }}>🗑</button>
               </div>
             </div>
           `;
@@ -48047,7 +48047,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     } catch { return; }
     const assets = scanIframeAssets(doc);
     if (assets.length === 0) {
-      alert(
+      uiAlert(
         "No visual assets found on this screen.\n\n" +
         "Scanned (Phase 4 categories):\n" +
         "  • Raster image — <img>, CSS background-image url(...) under /source/\n" +
@@ -48968,10 +48968,10 @@ function WorkflowVersionPicker({ node, allNodes, allEdges, onClose, onChange }) 
                           subVersions[fromId] = up.activeVersionId;
                         }
                       }
-                      const label = prompt("Composition name (optional)", "") || null;
+                      const label = await uiPrompt("Composition name (optional)", "") || null;
                       const r = await VersioningApi.saveComposition(
                         node.id, selectedVersion.id, subVersions, {}, label);
-                      if (r && r.error) alert("Save failed: " + r.error);
+                      if (r && r.error) uiAlert("Save failed: " + r.error);
                     }}
                   >+ Save current<span className="tab-tip">Save current sub-asset versions as a new combination on this version</span></button>
                 </div>
@@ -49012,7 +49012,7 @@ function VersionRow({ version, node, seq, isActive, isSelected, onSelect, onChan
     } finally { setBusy(false); }
   };
   const doRename = async () => {
-    const next = prompt("Version label", version.label || "");
+    const next = await uiPrompt("Version label", version.label || "");
     if (next === null) return;
     setBusy(true);
     try { await VersioningApi.labelVersion(node.id, version.id, next || null); }
@@ -49104,7 +49104,7 @@ function CompositionRow({ composition, node, version, isActive, onChange, onClos
     finally { setBusy(false); }
   };
   const doRename = async () => {
-    const next = prompt("Composition label", composition.label || "");
+    const next = await uiPrompt("Composition label", composition.label || "");
     if (next === null) return;
     setBusy(true);
     try { await VersioningApi.labelComposition(node.id, version.id, composition.id, next || null); }
@@ -51316,13 +51316,13 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
           className="workflow-node-prompt-save"
           tip="Save this text as a reusable .md under workflow/prompts/. Shows up in Library → Text on every project session."
           ariaLabel="Save text to library"
-          onClick=${(e) => {
+          onClick=${async (e) => {
             e.stopPropagation();
             const fl = (text || "").split("\n").map(l => l.trim()).find(l => l) || "";
             const defaultSlug = (fl.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50)) || "untitled";
-            const slug = prompt("Save as slug (lowercase, letters/digits/hyphens):", defaultSlug);
+            const slug = await uiPrompt("Save as slug (lowercase, letters/digits/hyphens):", defaultSlug);
             if (!slug) return;
-            const title = prompt("Title (shown in Library):", fl.slice(0, 60) || slug) || slug;
+            const title = await uiPrompt("Title (shown in Library):", fl.slice(0, 60) || slug) || slug;
             fetch(apiUrl("/__prompts"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -51331,7 +51331,7 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
               const j = await r.json().catch(() => ({}));
               if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
               window.dispatchEvent(new CustomEvent("th:library-refresh"));
-            }).catch(err => alert("Save failed: " + (err.message || err)));
+            }).catch(err => uiAlert("Save failed: " + (err.message || err)));
           }}
           onMouseDown=${(e) => e.stopPropagation()}
         >save<//>
@@ -51724,7 +51724,7 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
   const revealPath = useCallback((p) => fsPost("/__fs_reveal", { path: p }), [fsPost]);
 
   const renameEntry = useCallback(async (entry) => {
-    const next = (typeof window !== "undefined" && window.prompt) ? window.prompt("Rename to:", entry.name) : "";
+    const next = (typeof window !== "undefined" && window.prompt) ? await uiPrompt("Rename to:", entry.name) : "";
     if (!next || !next.trim() || next.trim() === entry.name) return;
     const j = await fsPost("/__fs_rename", { root: curPath, name: entry.name, to: next.trim() });
     if (j) refresh();
@@ -51732,7 +51732,7 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
 
   const deleteEntry = useCallback(async (entry) => {
     const ok = (typeof window !== "undefined" && window.confirm)
-      ? window.confirm(`Delete "${entry.name}"${entry.kind === "dir" ? " and everything inside it" : ""}?\n\nThis is permanent.`)
+      ? await uiConfirm(`Delete "${entry.name}"${entry.kind === "dir" ? " and everything inside it" : ""}?\n\nThis is permanent.`)
       : true;
     if (!ok) return;
     const j = await fsPost("/__fs_delete", { root: curPath, name: entry.name });
@@ -51740,7 +51740,7 @@ function WorkflowFolderNode({ node, zoom, selected, onSelect, onMove, onResize, 
   }, [curPath, fsPost, refresh]);
 
   const newFolder = useCallback(async () => {
-    const name = (typeof window !== "undefined" && window.prompt) ? window.prompt("New folder name:") : "";
+    const name = (typeof window !== "undefined" && window.prompt) ? await uiPrompt("New folder name:") : "";
     if (!name || !name.trim()) return;
     const j = await fsPost("/__fs_mkdir", { root: curPath, name: name.trim() });
     if (j) refresh();
@@ -52378,7 +52378,7 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
           : { fontSource: "uploaded", fontCdn: apiUrl(j.cssUrl), ...(node.fontFamily ? {} : { fontFamily: j.family }) }),
       });
     } catch (e) {
-      alert("Upload failed: " + (e?.message || e));
+      uiAlert("Upload failed: " + (e?.message || e));
     }
   };
   const updateLevel = (i, patch) => {
@@ -61345,7 +61345,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   const build = async () => {
     if (building) return;
     if (!spec.genre || !spec.genre.trim()) {
-      alert("Fill in the Genre field before building. Without it the DS-builder defaults to median light-mode SaaS.");
+      uiAlert("Fill in the Genre field before building. Without it the DS-builder defaults to median light-mode SaaS.");
       return;
     }
     setBuilding(true);
@@ -61503,7 +61503,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
       window.dispatchEvent(new CustomEvent("th:ds-refresh"));
       await refresh();
     } catch (e) {
-      alert("Build dispatch failed: " + (e?.message || String(e)));
+      uiAlert("Build dispatch failed: " + (e?.message || String(e)));
     } finally {
       setBuilding(false);
     }
@@ -63284,7 +63284,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
 
   const onClickBuild = async () => {
     if (!hasCore) {
-      alert("Fill in at least one of Genre, Target audience, or Emotion before brainstorming.");
+      uiAlert("Fill in at least one of Genre, Target audience, or Emotion before brainstorming.");
       return;
     }
     setBuilding(true);
@@ -65715,7 +65715,7 @@ function WorkflowExportsSection({ activeProjectId: activePid }) {
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       await reload();
     } catch (e) {
-      alert(`Save failed: ${e.message || e}`);
+      uiAlert(`Save failed: ${e.message || e}`);
     } finally { setBusyFor(pid, false); }
   };
   return html`
@@ -65749,7 +65749,7 @@ function WorkflowExportRow({ project, busy, onSave }) {
         onSave(j.path);
       }
     } catch (e) {
-      alert(`Folder picker unavailable: ${e.message || e}`);
+      uiAlert(`Folder picker unavailable: ${e.message || e}`);
     }
   };
   return html`
@@ -65924,7 +65924,7 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
       await onChanged();
       setKeyInput("");
     } catch (e) {
-      alert(`Save failed: ${e.message || e}`);
+      uiAlert(`Save failed: ${e.message || e}`);
     } finally { setBusy(false); }
   };
   const test = async () => {
@@ -65945,7 +65945,7 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
     } finally { setBusy(false); }
   };
   const clear = async () => {
-    if (!confirm(`Remove the saved ${provider.label} API key?`)) return;
+    if (!await uiConfirm(`Remove the saved ${provider.label} API key?`)) return;
     setBusy(true);
     try {
       await fetch(apiUrl("/__media_config"), {
@@ -66051,8 +66051,8 @@ function LlmPromptPreviewSection({ node, onChange }) {
   useEffect(() => { if (open && composed === null) fetchPreview(); }, [open, composed, fetchPreview]);
 
   const onRefresh = (e) => { e.preventDefault(); e.stopPropagation(); setComposed(null); fetchPreview(); };
-  const onRevert  = (e) => { e.preventDefault(); e.stopPropagation();
-    if (!confirm("Revert this node's prompt to auto-composed only? Your current text will be cleared.")) return;
+  const onRevert  = async (e) => { e.preventDefault(); e.stopPropagation();
+    if (!await uiConfirm("Revert this node's prompt to auto-composed only? Your current text will be cleared.")) return;
     onChange({ text: "" });
     setComposed(null);
   };
@@ -66841,9 +66841,9 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
           className="workflow-node-agent-rename"
           tip="Rename this agent."
           ariaLabel="Rename agent"
-          onClick=${(e) => {
+          onClick=${async (e) => {
             e.stopPropagation();
-            const next = window.prompt("Agent name:", name);
+            const next = await uiPrompt("Agent name:", name);
             if (next != null && next.trim()) onChange && onChange({ name: next.trim() });
           }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -67170,7 +67170,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                   setApplyErr(null);
                 } catch (err) {
                   setApplyErr(String(err?.message || err));
-                  alert("Apply outputs failed: " + (err?.message || err));
+                  uiAlert("Apply outputs failed: " + (err?.message || err));
                 } finally {
                   setApplying(false);
                 }
@@ -67862,7 +67862,7 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
   const refresh = () => setReloadTick(t => t + 1);
   const onNewFolder = async () => {
     if (!data) return;
-    const name = (typeof window !== "undefined" && window.prompt) ? window.prompt("New folder name (lowercase letters, digits, hyphens / underscores):") : "";
+    const name = (typeof window !== "undefined" && window.prompt) ? await uiPrompt("New folder name (lowercase letters, digits, hyphens / underscores):") : "";
     if (!name || !name.trim()) return;
     // Slug-clean: lowercase + replace any run of non-slug chars with a
     // single hyphen, trim leading/trailing hyphens. Matches the daemon's
@@ -67872,11 +67872,11 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
       .replace(/[^a-z0-9_-]+/g, "-")
       .replace(/^-+|-+$/g, "");
     if (!safe) {
-      if (window.alert) window.alert("Name can't be empty after sanitizing — try letters/digits/hyphens.");
+      if (window.alert) uiAlert("Name can't be empty after sanitizing — try letters/digits/hyphens.");
       return;
     }
     if (safe !== name.trim().toLowerCase() && window.confirm) {
-      const ok = window.confirm(`Folder names need to be slug-safe.\n\n"${name}" → "${safe}"\n\nCreate as "${safe}"?`);
+      const ok = await uiConfirm(`Folder names need to be slug-safe.\n\n"${name}" → "${safe}"\n\nCreate as "${safe}"?`);
       if (!ok) return;
     }
     const newPath = (data.root_rel || rootRel).replace(/\/?$/, "/") + safe;
@@ -67895,21 +67895,21 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
   };
   const onRenameFolder = async (dir) => {
     if (!dir || !dir.rel) {
-      if (window.alert) window.alert("Can't rename a folder outside the project tree.");
+      if (window.alert) uiAlert("Can't rename a folder outside the project tree.");
       return;
     }
     const cur = dir.name;
-    const next = (typeof window !== "undefined" && window.prompt) ? window.prompt("Rename folder (lowercase letters, digits, hyphens / underscores):", cur) : "";
+    const next = (typeof window !== "undefined" && window.prompt) ? await uiPrompt("Rename folder (lowercase letters, digits, hyphens / underscores):", cur) : "";
     if (!next || !next.trim() || next.trim() === cur) return;
     const safe = next.trim().toLowerCase()
       .replace(/[^a-z0-9_-]+/g, "-")
       .replace(/^-+|-+$/g, "");
     if (!safe) {
-      if (window.alert) window.alert("Name can't be empty after sanitizing — try letters/digits/hyphens.");
+      if (window.alert) uiAlert("Name can't be empty after sanitizing — try letters/digits/hyphens.");
       return;
     }
     if (safe !== next.trim().toLowerCase() && window.confirm) {
-      const ok = window.confirm(`Folder names need to be slug-safe.\n\n"${next}" → "${safe}"\n\nRename to "${safe}"?`);
+      const ok = await uiConfirm(`Folder names need to be slug-safe.\n\n"${next}" → "${safe}"\n\nRename to "${safe}"?`);
       if (!ok) return;
     }
     const parent = dir.rel.replace(/\/[^/]+$/, "");
@@ -67929,11 +67929,11 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
   };
   const onDeleteFolder = async (dir) => {
     if (!dir || !dir.rel) {
-      if (window.alert) window.alert("Can't delete a folder outside the project tree.");
+      if (window.alert) uiAlert("Can't delete a folder outside the project tree.");
       return;
     }
     const ok = (typeof window !== "undefined" && window.confirm)
-      ? window.confirm(`Delete ${dir.rel} and everything inside it?\n\nThis is permanent.`)
+      ? await uiConfirm(`Delete ${dir.rel} and everything inside it?\n\nThis is permanent.`)
       : true;
     if (!ok) return;
     setBusy(true);
@@ -68402,7 +68402,7 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        alert("Save failed: " + (j.error || ("HTTP " + r.status)));
+        uiAlert("Save failed: " + (j.error || ("HTTP " + r.status)));
         return;
       }
       setSavedAt(Date.now());
@@ -68419,7 +68419,7 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
         }
       }
     } catch (e) {
-      alert("Save failed: " + (e?.message || e));
+      uiAlert("Save failed: " + (e?.message || e));
     } finally {
       setSaving(false);
     }
@@ -68427,9 +68427,9 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
 
   const copyDispatchPrompt = () => {
     try {
-      navigator.clipboard.writeText(dispatchPromptText).then(() => alert("Dispatch prompt copied. Paste into an agent surface to run Workflow 6."));
+      navigator.clipboard.writeText(dispatchPromptText).then(() => uiAlert("Dispatch prompt copied. Paste into an agent surface to run Workflow 6."));
     } catch {
-      alert("Clipboard unavailable. Dispatch prompt:\n\n" + dispatchPromptText);
+      uiAlert("Clipboard unavailable. Dispatch prompt:\n\n" + dispatchPromptText);
     }
   };
 
@@ -69072,7 +69072,7 @@ function App() {
   // nothing is destroyed.
   const updateFromSource = useCallback(async () => {
     if (runActive) {
-      alert("An agent run is already active. Wait for it to finish (or stop it from the chat drawer) before triggering Update from source.");
+      uiAlert("An agent run is already active. Wait for it to finish (or stop it from the chat drawer) before triggering Update from source.");
       return null;
     }
     // Scope the regen to the prototype the editor is CURRENTLY viewing — NOT a
@@ -69082,7 +69082,7 @@ function App() {
     // file, or the refresh serves stale per-prototype data.
     const slug = activePrototypeSlug();
     const srcRoot = `source/${slug}/`;
-    const ok = confirm(
+    const ok = await uiConfirm(
       `Trigger Workflow 1 (regenerate) against ${srcRoot}?\n\n` +
       `The agent will read prototype "${slug}" and rewrite its editor data file. ` +
       `Existing edits.json and unsubmitted changes are preserved on disk; only the editor data is regenerated.\n\n` +
@@ -69119,7 +69119,7 @@ function App() {
       setRunFinished(false);
       saveSettings({ lastRunId: run.runId });
     } catch (e) {
-      alert("Update from source dispatch failed: " + (e?.message || String(e)));
+      uiAlert("Update from source dispatch failed: " + (e?.message || String(e)));
       return null;
     }
     return run;
@@ -69407,7 +69407,7 @@ function App() {
     } catch (e) {
       const detail = e?.detail;
       const hint = detail?.hint ? `\n\nHint: ${detail.hint}` : "";
-      alert(
+      uiAlert(
         `edits.json saved (${r.path}). Could not launch the agent automatically:\n\n${e.message}${hint}\n\n` +
         `Falling back to manual mode — open Claude in this folder and ask it to "Apply edits.json".`
       );
@@ -69434,7 +69434,7 @@ function App() {
     ].join("\n");
     const r = await saveFile("UPDATE_SOURCE.txt", prompt, "text/plain");
     if (r.cancelled) return;
-    alert(`Saved to ${r.path}. Open Claude in this folder and reference the file as instructions.`);
+    uiAlert(`Saved to ${r.path}. Open Claude in this folder and reference the file as instructions.`);
   };
 
   return html`
@@ -69750,4 +69750,107 @@ function Root() {
   <//>`;
 }
 
-createRoot(document.getElementById("root")).render(html`<${Root}/>`);
+/* ────────── In-app dialogs (replace native alert / confirm / prompt) ──────────
+   Native window.alert/confirm/prompt are banned across the editor: after a few
+   in a row Chrome shows a "Prevent this page from creating additional dialogs"
+   checkbox, and once ticked EVERY later confirm silently returns false / prompt
+   returns null — which quietly breaks destructive-action guards and rename
+   flows. These three Promise-based helpers render the app's own .modal chrome
+   instead, so there is never a native checkbox to poison the rest of the app.
+
+   API (all return Promises — await them):
+     uiAlert(message, opts?)            → Promise<void>
+     uiConfirm(message, opts?)          → Promise<boolean>   (true = confirmed)
+     uiPrompt(message, default?, opts?) → Promise<string|null> (null = cancelled)
+   opts: { title, okLabel, cancelLabel, danger, placeholder, multiline }
+   Dialogs queue FIFO and show one at a time, mirroring native blocking order. */
+const _dlgListeners = new Set();
+let _dlgQueue = [];
+let _dlgSeq = 0;
+function _dlgEmit() { for (const fn of _dlgListeners) { try { fn(); } catch {} } }
+function _dlgPush(desc) {
+  return new Promise((resolve) => {
+    _dlgQueue = [..._dlgQueue, { ...desc, id: ++_dlgSeq, resolve }];
+    _dlgEmit();
+  });
+}
+function _dlgResolve(id, value) {
+  const item = _dlgQueue.find(d => d.id === id);
+  if (!item) return;
+  _dlgQueue = _dlgQueue.filter(d => d.id !== id);
+  _dlgEmit();
+  try { item.resolve(value); } catch {}
+}
+function uiAlert(message, opts = {}) {
+  return _dlgPush({ type: "alert", message: message == null ? "" : String(message), ...opts });
+}
+function uiConfirm(message, opts = {}) {
+  return _dlgPush({ type: "confirm", message: message == null ? "" : String(message), ...opts });
+}
+function uiPrompt(message, defaultValue = "", opts = {}) {
+  return _dlgPush({
+    type: "prompt",
+    message: message == null ? "" : String(message),
+    defaultValue: defaultValue == null ? "" : String(defaultValue),
+    ...opts,
+  });
+}
+
+function DialogModal({ desc }) {
+  const isPrompt = desc.type === "prompt";
+  const isAlert  = desc.type === "alert";
+  const [val, setVal] = useState(isPrompt ? (desc.defaultValue || "") : "");
+  const inputRef = useRef(null);
+  useEffect(() => {
+    if (isPrompt && inputRef.current) {
+      inputRef.current.focus();
+      try { inputRef.current.select(); } catch {}
+    }
+  }, [isPrompt]);
+  const ok     = () => _dlgResolve(desc.id, isPrompt ? val : true);
+  const cancel = () => _dlgResolve(desc.id, isPrompt ? null : false);
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); cancel(); }
+    else if (e.key === "Enter" && (!isPrompt || !desc.multiline)) { e.preventDefault(); ok(); }
+  };
+  const title = desc.title || (isAlert ? "Notice" : isPrompt ? "" : "Please confirm");
+  return html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) cancel(); }}>
+      <div className="modal modal-narrow" role=${isAlert ? "alertdialog" : "dialog"} aria-modal="true" onKeyDown=${onKeyDown}>
+        <div className="modal-head">
+          <div>
+            ${title ? html`<div className="modal-title">${title}</div>` : null}
+          </div>
+          <button className="modal-x" onClick=${cancel} aria-label="Close">×</button>
+        </div>
+        <div className="modal-body">
+          ${desc.message ? html`<div className="modal-dialog-message">${desc.message}</div>` : null}
+          ${isPrompt ? (desc.multiline
+            ? html`<textarea className="modal-textarea" ref=${inputRef} value=${val}
+                placeholder=${desc.placeholder || ""}
+                onInput=${(e) => setVal(e.target.value)} onChange=${(e) => setVal(e.target.value)}/>`
+            : html`<input className="modal-input" type="text" ref=${inputRef} value=${val}
+                placeholder=${desc.placeholder || ""}
+                onInput=${(e) => setVal(e.target.value)} onChange=${(e) => setVal(e.target.value)}/>`) : null}
+        </div>
+        <div className="modal-foot">
+          ${!isAlert ? html`<button className="tbtn" onClick=${cancel}>${desc.cancelLabel || "Cancel"}</button>` : null}
+          <button
+            className=${"tbtn " + (desc.danger ? "tbtn-danger" : "tbtn-primary")}
+            onClick=${ok}
+          >${desc.okLabel || (isAlert ? "OK" : isPrompt ? "Save" : "Confirm")}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function DialogHost() {
+  const [, force] = useReducer((x) => x + 1, 0);
+  useEffect(() => { _dlgListeners.add(force); return () => { _dlgListeners.delete(force); }; }, []);
+  const top = _dlgQueue[0];
+  if (!top) return null;
+  return createPortal(html`<${DialogModal} key=${top.id} desc=${top}/>`, document.body);
+}
+
+createRoot(document.getElementById("root")).render(html`<${React.Fragment}><${Root}/><${DialogHost}/><//>`);
