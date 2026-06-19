@@ -254,6 +254,12 @@ _PROVIDER_ENV_KEYS = {
     "elevenlabs":  "TH_ELEVENLABS_API_KEY",
     "imagerouter": "TH_IMAGEROUTER_API_KEY",
     "quiver":      "TH_QUIVER_API_KEY",
+    # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
+    # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) —
+    # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be
+    # unauthenticated); the endpoint URL lives in media-config 'sam3d'.endpoint
+    # or env TH_SAM3D_ENDPOINT. See services/sam3d-splat/.
+    "sam3d":       "TH_SAM3D_API_KEY",
 }
 
 # Live Session — per-request guest API key. A guest editing through the gate
@@ -672,6 +678,68 @@ def _fal_generate_3d(api_key, prompt, model, aspect, options):
     payload = _fal_request(api_key, model, body, timeout=600)
     mesh_url = _fal_extract_3d_url(payload)
     return _download_bytes(mesh_url)
+
+
+def _fal_extract_url_by_ext(payload, exts):
+    """Recursively find the first URL in a fal response that ends in one of
+    `exts` (e.g. ('.ply',) or ('.glb','.gltf')). fal's image-to-3D shapes vary
+    per model (model_mesh / model_gaussian / pbr_model / output[...]), so a
+    tolerant walk beats hardcoding one key."""
+    want = tuple(e.lower() for e in exts)
+
+    def _u(s):
+        return isinstance(s, str) and s.lower().split("?")[0].rstrip("/").endswith(want)
+
+    def _walk(o, depth=0):
+        if depth > 4:
+            return None
+        if isinstance(o, str):
+            return o if _u(o) else None
+        if isinstance(o, dict):
+            if _u(o.get("url")):
+                return o["url"]
+            for v in o.values():
+                r = _walk(v, depth + 1)
+                if r:
+                    return r
+        elif isinstance(o, list):
+            for v in o:
+                r = _walk(v, depth + 1)
+                if r:
+                    return r
+        return None
+
+    return _walk(payload)
+
+
+def _fal_image_to_3d(api_key, model, input_abs_path, options, want_ply):
+    """fal.ai image → 3D (no GPU on our side). Splat path (want_ply) defaults to
+    a Gaussian-splat .ply model (e.g. tripo3d/triposplat); mesh path returns a
+    .glb (e.g. fal-ai/trellis). The image is sent as a data-URI `image_url`."""
+    if not os.path.isfile(input_abs_path):
+        raise RuntimeError(f"input image not found: {input_abs_path}")
+    body = {"image_url": _file_to_data_uri(input_abs_path)}
+    if isinstance(options, dict):
+        for k in ("seed", "texture", "texture_size", "mesh_simplify", "art_style",
+                  "topology", "quad", "ss_guidance_strength", "ss_sampling_steps",
+                  "slat_guidance_strength", "slat_sampling_steps", "pbr"):
+            if options.get(k) is not None:
+                body[k] = options[k]
+    payload = _fal_request(api_key, model, body, timeout=900)
+    if want_ply:
+        url = _fal_extract_url_by_ext(payload, (".ply",))
+        if not url:
+            raise RuntimeError(
+                "fal: model " + str(model) + " returned no .ply (Gaussian splat) — use a "
+                "splat model like tripo3d/triposplat or fal-ai/trellis-2 (with ply export). "
+                "keys: " + str(list(payload.keys()) if isinstance(payload, dict) else "?"))
+    else:
+        url = (_fal_extract_url_by_ext(payload, (".glb", ".gltf", ".usdz", ".obj"))
+               or _fal_extract_3d_url(payload))
+        if not url:
+            raise RuntimeError("fal: no mesh url in response (keys: "
+                               + str(list(payload.keys()) if isinstance(payload, dict) else "?") + ")")
+    return _download_bytes(url, timeout=300)
 
 
 def _fal_generate_lottie(api_key, prompt, model, aspect, options):
@@ -1159,6 +1227,15 @@ _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
     ("rembg",   "fal"):   "fal_transform",
     ("upscale", "fal"):   "fal_transform",
+    # Image → 3D. Both are transforms (image in → 3D file out), so they slot
+    # beside rembg. image-to-ply emits a Gaussian splat .ply (Splat Lab);
+    # image-to-glb emits a textured mesh .glb (Spline 3D / Voxel / model-viewer).
+    #   fal   = hosted, no local GPU (default — triposplat / trellis).
+    #   sam3d = self-hosted SAM 3D Objects GPU service (services/sam3d-splat/).
+    ("image-to-ply", "fal"):   "fal_image_to_3d",
+    ("image-to-glb", "fal"):   "fal_image_to_3d",
+    ("image-to-ply", "sam3d"): "sam3d_convert",
+    ("image-to-glb", "sam3d"): "sam3d_convert",
 }
 
 
@@ -1205,6 +1282,86 @@ def _local_rembg(input_abs_path, model_name, options):
             )
         raise RuntimeError(f"rembg failed: {stderr.strip()[:500]}")
     return result.stdout
+
+
+# ── SAM 3D Objects: image → Gaussian-splat (.ply) via an external GPU service ─
+# facebookresearch/sam-3d-objects outputs a 3D Gaussian splat .ply from a single
+# image (+ object mask). Its deps (kaolin, gsplat) REQUIRE a CUDA GPU, so it
+# cannot run in this daemon — it runs as a separate HTTP service the user
+# deploys (Modal / RunPod / Replicate / own box; see services/sam3d-splat/).
+# This daemon is only an HTTP client: POST the (ideally background-removed)
+# image, get back .ply bytes that Splat Lab loads directly.
+def _sam3d_resolve_endpoint():
+    v = os.environ.get("TH_SAM3D_ENDPOINT")
+    if v and v.strip():
+        return v.strip()
+    cfg = _media_config_load()
+    p = cfg.get("sam3d") if isinstance(cfg, dict) else None
+    if isinstance(p, dict):
+        e = p.get("endpoint")
+        if isinstance(e, str) and e.strip():
+            return e.strip()
+    return None
+
+
+def _sam3d_convert(api_key, input_abs_path, options):
+    """POST an image to the SAM 3D Objects service and return raw .ply bytes.
+
+    The configured endpoint is the FULL POST URL of the service's /convert
+    route. It receives {image: <data-uri>, seed, mask?: <data-uri>} and replies
+    with either raw .ply bytes (Content-Type model/ply or application/octet-
+    stream) or JSON {ply_b64} / {ply_url}. Long timeout — splat reconstruction
+    can take minutes on cold GPUs.
+    """
+    if not os.path.isfile(input_abs_path):
+        raise RuntimeError(f"input image not found: {input_abs_path}")
+    endpoint = _sam3d_resolve_endpoint()
+    if not endpoint:
+        raise RuntimeError(
+            "SAM 3D endpoint not configured. Set env TH_SAM3D_ENDPOINT=<full convert URL>, "
+            "or add {\"sam3d\": {\"endpoint\": \"https://…/convert\", \"api_key\": \"…\"}} to "
+            "~/.test-harness/media-config.json. The service runs on a CUDA GPU — deploy "
+            "services/sam3d-splat/ to Modal / RunPod / Replicate.")
+    opts = options or {}
+    fmt = str(opts.get("format") or "splat").lower()
+    payload = {"image": _file_to_data_uri(input_abs_path), "format": fmt}
+    try:
+        payload["seed"] = int(opts.get("seed", 42))
+    except (TypeError, ValueError):
+        payload["seed"] = 42
+    mask = opts.get("mask")
+    if isinstance(mask, str) and mask.strip():
+        payload["mask"] = mask.strip()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = "Bearer " + api_key
+    req = urllib.request.Request(
+        endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=900) as resp:
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        raw = resp.read()
+    # JSON response → pull the asset out of it. Accept both the splat (.ply)
+    # and mesh (.glb) shapes so the same renderer serves image-to-ply and
+    # image-to-glb.
+    if "application/json" in ctype or raw[:1] == b"{":
+        try:
+            j = json.loads(raw.decode("utf-8", "replace"))
+        except Exception:
+            j = None
+        if isinstance(j, dict):
+            for b64key in ("ply_b64", "glb_b64", "b64"):
+                if isinstance(j.get(b64key), str):
+                    return base64.b64decode(j[b64key])
+            for urlkey in ("ply_url", "glb_url", "mesh_url", "url"):
+                if isinstance(j.get(urlkey), str):
+                    return _download_bytes(j[urlkey], timeout=300)
+            raise RuntimeError("sam3d: JSON response had no ply/glb b64 or url: " + str(j)[:300])
+    # Otherwise assume raw bytes — PLY ('ply' header) or binary glTF ('glTF' magic).
+    if raw[:3] == b"ply" or raw[:4] == b"glTF":
+        return raw
+    raise RuntimeError(
+        "sam3d: unexpected response (Content-Type " + (ctype or "?") + ", "
+        + str(len(raw)) + " bytes) — expected a .ply / .glb or JSON {ply_b64|glb_b64|*_url}.")
 
 
 # Phase 4c — text-output skills (LLM call, describe image). These don't
@@ -10990,6 +11147,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                     and skill == "generate-image"
                     and detect_agent_bin("codex") is not None):
                     use_codex_image_fallback = True
+                elif provider == "sam3d":
+                    # Key is optional — a self-hosted SAM 3D endpoint may be
+                    # unauthenticated. The renderer enforces endpoint config and
+                    # only sends an Authorization header when a key IS present.
+                    pass
                 else:
                     return self._reply(502, {
                         "error": f"no {provider} API key configured — open Settings (⚙ in the workflow toolbar) and paste your key",
@@ -11109,7 +11271,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 else:
                     return self._reply(400, {"error": f"unhandled provider: {provider}"})
             else:  # transform
-                if provider == "fal":
+                if provider == "fal" and skill in ("image-to-ply", "image-to-glb"):
+                    if not input_abs:
+                        return self._reply(400, {"error":
+                            f"{skill} needs a file-backed image (input_path), not a data URI."})
+                    bytes_ = _fal_image_to_3d(api_key, model, input_abs, options,
+                                              want_ply=(skill == "image-to-ply"))
+                elif provider == "fal":
                     bytes_ = _fal_transform_image(api_key, model, input_abs, options, input_data_uri=input_data_uri)
                 elif provider == "local" and skill == "rembg":
                     if input_data_uri:
@@ -11117,6 +11285,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "local rembg can't read SVG / data URIs — needs raster bytes. "
                             "Use a file-backed asset or a fal-based rembg in a later phase."})
                     bytes_ = _local_rembg(input_abs, model, options)
+                elif provider == "sam3d" and skill in ("image-to-ply", "image-to-glb"):
+                    if not input_abs:
+                        return self._reply(400, {"error":
+                            f"{skill} needs a file-backed image (input_path), not a data URI."})
+                    sam_opts = dict(options or {})
+                    sam_opts["format"] = "mesh" if skill == "image-to-glb" else "splat"
+                    bytes_ = _sam3d_convert(api_key, input_abs, sam_opts)
                 else:
                     return self._reply(400, {"error": f"unhandled transform provider: {provider}"})
         except urllib.error.HTTPError as e:

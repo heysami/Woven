@@ -105,7 +105,8 @@ def _parse_media_models() -> dict:
     for m in skill_block_re.finditer(src):
         block = m.group(0)
         # Heuristic: it's a skill if the block has modelsFilter OR provider:"local" OR a model: "..." key
-        if "modelsFilter" in block or "modelKind" in block or 'provider: "local"' in block:
+        if ("modelsFilter" in block or "modelKind" in block
+                or 'provider: "local"' in block or "pathwayBExt" in block):
             sid = m.group(1)
             # Avoid double-listing providers / image models we already captured
             if sid in seen_provider_ids: continue

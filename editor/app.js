@@ -730,6 +730,8 @@ const SKILL_ICON = {
   "generate-image": Icon.Image,
   "rembg":          Icon.Scissors,
   "upscale":        Icon.ArrowUp,
+  "image-to-ply":   Icon.Cube,
+  "image-to-glb":   Icon.Cube,
   "llm":            Icon.Text,
   "describe":       Icon.Eye,
   "shader":         Icon.Shader,
@@ -7208,7 +7210,7 @@ const EXT_TO_ASSET_KIND = {
   html: "html", htm: "html",
   json: "lottie",
   mp4:  "video", webm: "video", mov: "video",
-  glb:  "3d", gltf: "3d",
+  glb:  "3d", gltf: "3d", ply: "3d", splat: "3d", ksplat: "3d",
   css:  "text", js: "text", txt: "text", md: "text",
 };
 // Logical output kind → file extension. The iterator nodes (remix / blend /
@@ -23807,6 +23809,16 @@ const WORKFLOW_CONNECT_DEFS = {
         id: "skill-upscale", label: "Upscale image", payload: { skill: "upscale" },
         provides: { out: { label: "Upscaled image", tags: ["asset-gen", "runnable"] } },
         accepts:  { in:  { label: "Image to upscale", tags: ["asset", "section"] } },
+      },
+      {
+        id: "skill-image-to-ply", label: "Image → 3D splat", payload: { skill: "image-to-ply" },
+        provides: { out: { label: "Splat (.ply)", tags: ["asset-gen", "runnable"] } },
+        accepts:  { in:  { label: "Image (background-removed)", tags: ["asset", "section"] } },
+      },
+      {
+        id: "skill-image-to-glb", label: "Image → 3D mesh", payload: { skill: "image-to-glb" },
+        provides: { out: { label: "Mesh (.glb)", tags: ["asset-gen", "runnable"] } },
+        accepts:  { in:  { label: "Image (background-removed)", tags: ["asset", "section"] } },
       },
       {
         id: "skill-describe", label: "Describe image", payload: { skill: "describe" },

@@ -1,0 +1,8 @@
+# HTTP layer for the SAM 3D Objects → splat service (server.py).
+# The MODEL deps (torch, kaolin, gsplat, …) come from the cloned repo's
+# requirements.inference.txt and need a CUDA GPU — install those separately
+# on the GPU host (see README / modal_app.py).
+fastapi[standard]==0.115.*
+uvicorn==0.30.*
+pillow
+numpy

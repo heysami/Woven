@@ -102,6 +102,15 @@
       integrated: true,
       testable: false, // Meshy has no free test endpoint; first real Run validates the key
     },
+    sam3d: {
+      id: "sam3d",
+      label: "SAM 3D (splat)",
+      hint: "image → 3D Gaussian splat .ply · self-hosted GPU service (Modal/RunPod). Set endpoint in media-config.json sam3d.endpoint; key optional.",
+      envKey: "TH_SAM3D_API_KEY",
+      docsUrl: "https://github.com/facebookresearch/sam-3d-objects",
+      integrated: false,
+      testable: false, // no free endpoint; the endpoint URL is user-provided
+    },
     elevenlabs: {
       id: "elevenlabs",
       label: "ElevenLabs",
@@ -298,6 +307,34 @@
       hasModelDropdown: false,
       hasAspect: false,
       defaultOptions: { upscale_factor: 2 },
+    },
+    {
+      id: "image-to-ply",
+      label: "Image → 3D splat",
+      hint: "asset → 3D Gaussian splat .ply (hosted on fal · tripo3d/triposplat · no local GPU · needs a fal key). Pipe a background-removed PNG in; out feeds Splat Lab.",
+      glyph: "✦",
+      pathway: "A",
+      provider: "fal",
+      model: "tripo3d/triposplat",   // hosted image→splat; daemon also supports provider "sam3d" (self-hosted GPU)
+      inputs: ["asset"],
+      output: "3d",
+      pathwayBExt: "ply",
+      hasModelDropdown: false,
+      hasAspect: false,
+    },
+    {
+      id: "image-to-glb",
+      label: "Image → 3D mesh",
+      hint: "asset → textured 3D mesh .glb (hosted on fal · fal-ai/trellis · no local GPU · needs a fal key). Pipe a background-removed PNG in; out feeds Spline 3D / Voxel / model-viewer.",
+      glyph: "◈",
+      pathway: "A",
+      provider: "fal",
+      model: "fal-ai/trellis",       // hosted image→mesh; daemon also supports provider "sam3d" (self-hosted GPU)
+      inputs: ["asset"],
+      output: "3d",
+      pathwayBExt: "glb",
+      hasModelDropdown: false,
+      hasAspect: false,
     },
     {
       id: "llm",
