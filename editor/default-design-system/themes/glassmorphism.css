@@ -127,17 +127,14 @@
 }
 
 /* --------------------------------------------------------------------------
-   Buttons.
-   .btn--primary carries the DISPERSION-PRISM accent — a subtle conic rainbow
-   border-image fringe at the edges (never a rainbow fill, never on body text).
-   This is the single hero element wearing the prism edge.
+   Buttons — frosted glass tints. The dispersion (spectral fringe) is produced
+   by the WebGL material at the bezel; it is NOT a painted conic-gradient border
+   (that reads as a fake rainbow frame, not refraction).
    -------------------------------------------------------------------------- */
 [data-theme="glassmorphism"] .btn--primary{
-  position:relative;
   background:linear-gradient(135deg, rgba(10,132,255,.92), rgba(94,92,230,.92));
   color:#fff;
-  border:2px solid transparent;
-  border-image:var(--prism-edge) 1;
+  border:1px solid var(--glass-border);
   box-shadow:0 6px 20px -6px rgba(10,90,200,.55), var(--glass-specular);
   -webkit-backdrop-filter:blur(6px) saturate(160%);
   backdrop-filter:blur(6px) saturate(160%);
@@ -206,8 +203,9 @@ html.glass-gl [data-theme="glassmorphism"] :is(.app,.main,.content,.workflow-roo
 html.glass-gl [data-theme="glassmorphism"] :is(.card,.section-card,.stat-hero,.chart-card,.modal,.slideout,.topbar,.sidebar,.btn--primary,.btn--outline,.input,.select,.textarea,.badge,.tag,.kpi,.metric-tile,.phone__tabbar){
   background:transparent !important;
   -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
-  border-color:rgba(255,255,255,.40);
-  box-shadow:none;
+  border:1px solid rgba(255,255,255,.28) !important;
+  border-image:none !important;
+  box-shadow:none !important;
 }
 /* light, legible text on the dark refractive glass */
 html.glass-gl [data-theme="glassmorphism"]{ color:#fff; }
