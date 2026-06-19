@@ -232,6 +232,33 @@ def _r_section(up, prov, ctx):
             + "\n".join(parts))
 
 
+def _r_custom_app(up, prov, ctx):
+    """A custom-app node wired upstream: resolve to whatever its captured OUTPUT
+    node produces, by delegating to that inner node's own provider resolver run
+    over the embedded subgraph (snapshot semantics — the inner node's bakedPath
+    points at a real on-disk file authored when the section was built)."""
+    sg = up.get("subgraph") or {}
+    io = up.get("io") or {}
+    out_id = io.get("outputNodeId")
+    if not out_id:
+        return None
+    out_node = next((n for n in (sg.get("nodes") or [])
+                     if n and n.get("id") == out_id), None)
+    if not out_node:
+        return None
+    inner_prov = _pick((_io(out_node).get("provides") or []), "out")
+    if not inner_prov:
+        return None
+    fn = _UP_RESOLVERS.get(inner_prov.get("resolve"))
+    if not fn:
+        return None
+    # Run the inner resolver with the subgraph as its node universe so resolvers
+    # that walk peers (e.g. sectionBundle) see the captured nodes, not the canvas.
+    inner_ctx = dict(ctx)
+    inner_ctx["wf"] = {"nodes": sg.get("nodes") or [], "edges": sg.get("edges") or []}
+    return fn(out_node, inner_prov, inner_ctx)
+
+
 _UP_RESOLVERS = {
     "text": _r_text,
     "folder": _r_folder,
@@ -241,6 +268,7 @@ _UP_RESOLVERS = {
     "typed": _r_typed,
     "dsRef": _r_dsref,
     "sectionBundle": _r_section,
+    "customAppOutput": _r_custom_app,
 }
 
 

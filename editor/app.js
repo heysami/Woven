@@ -678,6 +678,10 @@ const Icon = {
   Circle:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="5.5"/></svg>`,
   Stop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3.5" y="3.5" width="9" height="9" rx="2" fill="currentColor"/></svg>`,
   Save:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 2.5h8.5L13.5 5v8.5a.5.5 0 01-.5.5H3a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"/><path d="M5 2.5v3.5h5V2.5M5.5 9.5h5"/></svg>`,
+  // Package: a box with a seam — the "packaged section → reusable app" mark.
+  Package:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8l5.5 2.9v6.6L8 14.2l-5.5-2.9V4.7z"/><path d="M2.5 4.7L8 7.6l5.5-2.9M8 7.6v6.6"/></svg>`,
+  // Expand: four corner arrows pointing outward — "unfold this node".
+  Expand:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 6V2.5H6M14 6V2.5h-3.5M2.5 10v3.5H6M14 10v3.5h-3.5"/></svg>`,
   // v2.51 — TE icon sweep, round 2: the last emoji holdouts in node chrome
   // (audit shield, zoom magnifier, strict lock, rembg scissors, eye preview).
   Search:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="7" cy="7" r="4.2"/><path d="M10 10l3.5 3.5"/></svg>`,
@@ -16450,10 +16454,30 @@ const DS_PREVIEW_VIEWS = [
   { id: "gallery.html",                 label: "Components" },
   { id: "templates/basic-form.html",    label: "App shell" },
   { id: "templates/dashboard.html",     label: "Dashboard" },
+  { id: "templates/density.html",       label: "Dense" },
+  { id: "templates/document.html",      label: "Document" },
+  { id: "templates/tables.html",        label: "Tables" },
+  { id: "templates/mobile-home.html",   label: "Mobile" },
   { id: "templates/technical-logs.html", label: "Logs" },
   { id: "templates/user-profile.html",  label: "Profile" },
   { id: "templates/login.html",         label: "Login" },
   { id: "templates/exception.html",     label: "Exception" },
+];
+
+/* Style overlays the user can preview live. Values map to the design system's
+   <html data-theme="…"> overlays (themes/*.css, loaded via all.css). "" =
+   the base/default style; "dark" is handled by the Light/Dark preview switch,
+   so it's omitted here. Keep in sync with default-design-system/meta.json styles. */
+const DS_PREVIEW_STYLES = [
+  { v: "",               label: "Default style" },
+  { v: "minimal",        label: "Minimal" },
+  { v: "pastel",         label: "Pastel" },
+  { v: "glassmorphism",  label: "Glassmorphism" },
+  { v: "claymorphism",   label: "Claymorphism" },
+  { v: "neumorphism",    label: "Neumorphism" },
+  { v: "techminimalism", label: "Tech-minimalism" },
+  { v: "neobrutalism",   label: "Neobrutalism" },
+  { v: "grainism",       label: "Grainism" },
 ];
 
 const DS_SPACE_RATIOS = [
@@ -24267,7 +24291,42 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Timeline", tags: ["number"] } },
     accepts:  { edit: { label: "Edit timeline", tags: ["text-gen", "asset-gen"] } },
   },
+  // A section packaged into a reusable mini-app. Its left input stands in for
+  // the captured INPUT node and its right output resolves through the captured
+  // OUTPUT node, so the effective port tags are derived per-instance from those
+  // inner nodes' own contracts (reusing workflowConnectEffectiveDef so skill /
+  // preset resolution carries through). The left port is omitted entirely when
+  // no input role was chosen.
+  "custom-app": {
+    label: "Custom app",
+    provides: { out: { label: "Output", tags: ["asset", "remixable", "blendable"] } },
+    accepts:  { in:  { label: "Input", tags: ["asset"] } },
+    resolve(node) {
+      const inner = (node && node.subgraph && node.subgraph.nodes) || [];
+      const io = (node && node.io) || {};
+      const inputNode  = inner.find(n => n && n.id === io.inputNodeId);
+      const outputNode = inner.find(n => n && n.id === io.outputNodeId);
+      const provTags = (outputNode && _innerPortTags(outputNode, "provides", "out"))
+        || ["asset", "remixable", "blendable"];
+      const provides = { out: { label: "Output", tags: provTags } };
+      let accepts = {};
+      if (inputNode) {
+        const accTags = _innerPortTags(inputNode, "accepts", "in") || ["asset"];
+        accepts = { in: { label: "Input", tags: accTags } };
+      }
+      return { label: node.title || "Custom app", provides, accepts };
+    },
+  },
 };
+
+// The tags an inner captured node exposes on a given side/port, via its OWN
+// effective connect def (so skill/preset resolution is honoured). side is
+// "provides" | "accepts".
+function _innerPortTags(innerNode, side, port) {
+  const eff = workflowConnectEffectiveDef(innerNode);
+  const spec = eff && eff[side] && eff[side][port];
+  return (spec && Array.isArray(spec.tags) && spec.tags.length) ? spec.tags : null;
+}
 
 // Resolve the EFFECTIVE def for an existing node (presets / resolve hook).
 function workflowConnectEffectiveDef(node) {
@@ -30084,6 +30143,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const nodeClipboardRef = useRef(null);
   const lastCanvasCursorRef = useRef({ x: 200, y: 200 });
   const _freshNodeId = () => "n" + Math.random().toString(36).slice(2, 10);
+  // Section → custom-app conversion modal config (null when closed). Shape:
+  // { sectionId, inner:[{id,kind,label,isEditor,canIn,canOut}], inputNodeId,
+  //   previewNodeId, outputNodeId, removeSection }
+  const [convertCfg, setConvertCfg] = useState(null);
+  // Active expand-edit session (null when not editing). Shape:
+  // { appNodeId, sectionId, originalNode, newToOrig:{canvasId→subgraphId}, appSlug }
+  const [editingApp, setEditingApp] = useState(null);
 
   const copySelectedNodes = useCallback(() => {
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
@@ -30544,6 +30610,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         runId: undefined, versions: [], activeVersionId: null, lastRunId: undefined,
       };
       if (node.kind === "prototype") node.instanceId = id;
+      // custom-app carries an embedded subgraph — give its inner nodes fresh ids
+      // too so two placed copies stay fully independent. Drop the library-slug
+      // link (this is a new instance until re-saved).
+      if (node.kind === "custom-app") {
+        const remapped = _remapCustomAppInner(node, _freshNodeId);
+        node.subgraph = remapped.subgraph;
+        node.io = remapped.io;
+        node.settings = remapped.settings;
+        delete node._appSlug;
+      }
       return node;
     });
     const newEdges = (clip.edges || []).map(e => {
@@ -30658,6 +30734,278 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return true;
     } catch (e) { uiAlert("Save failed: " + (e?.message || e)); return false; }
   }, [data]);
+
+  // Open the "Convert section → custom app" modal: gather the contained nodes
+  // with their role eligibility + heuristic default role assignments.
+  const openConvertSectionModal = useCallback((sectionId) => {
+    const nodes = data.nodes || [];
+    const section = nodes.find(n => n.id === sectionId && n.kind === "section");
+    if (!section) return;
+    const contained = workflowSectionContainedNodes(section, nodes);
+    if (!contained.length) { uiAlert("This section has no nodes to package."); return; }
+    const ids = new Set(contained.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to   || "").split(".", 1)[0];
+      return ids.has(f) && ids.has(t);
+    });
+    const hasInbound  = new Set(internalEdges.map(e => (e.to   || "").split(".", 1)[0]));
+    const hasOutbound = new Set(internalEdges.map(e => (e.from || "").split(".", 1)[0]));
+    const inner = contained.map(n => {
+      const eff = workflowConnectEffectiveDef(n) || {};
+      return {
+        id: n.id, kind: n.kind,
+        label: n.title || n.name || (APP_NODE_TOOLS[n.kind] && APP_NODE_TOOLS[n.kind].label) || n.kind,
+        isEditor: !!APP_NODE_TOOLS[n.kind],
+        canIn:  !!(eff.accepts && eff.accepts.in),
+        canOut: !!(eff.provides && eff.provides.out),
+      };
+    });
+    const editors = inner.filter(n => n.isEditor);
+    // heuristics: input = an in-capable node with no internal inbound edge;
+    // output = an out-capable node with no internal outbound edge; preview = an
+    // editor (prefer the output node if it is one, else the first editor).
+    const inputGuess  = (inner.find(n => n.canIn && !hasInbound.has(n.id)) || inner.find(n => n.canIn) || null);
+    const outputGuess = (inner.find(n => n.canOut && !hasOutbound.has(n.id)) || inner.find(n => n.canOut) || null);
+    const previewGuess = (outputGuess && editors.find(e => e.id === outputGuess.id))
+      || editors[0] || null;
+    setConvertCfg({
+      sectionId, inner,
+      inputNodeId:   inputGuess ? inputGuess.id : "",
+      previewNodeId: previewGuess ? previewGuess.id : "",
+      outputNodeId:  outputGuess ? outputGuess.id : "",
+      removeSection: true,
+    });
+  }, [data]);
+
+  // Build the custom-app node from a confirmed convert config and drop it on the
+  // canvas (replacing the section + its contained nodes when removeSection).
+  const convertSectionToCustomApp = useCallback((cfg) => {
+    const nodes = data.nodes || [];
+    const section = nodes.find(n => n.id === cfg.sectionId && n.kind === "section");
+    if (!section) { setConvertCfg(null); return; }
+    const contained = workflowSectionContainedNodes(section, nodes);
+    const ids = new Set(contained.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to   || "").split(".", 1)[0];
+      return ids.has(f) && ids.has(t);
+    });
+    const minX = Math.min(...contained.map(n => (typeof n.x === "number" ? n.x : 0)));
+    const minY = Math.min(...contained.map(n => (typeof n.y === "number" ? n.y : 0)));
+    let newNode = {
+      id: _freshNodeId(), kind: "custom-app",
+      x: typeof section.x === "number" ? section.x : 0,
+      y: typeof section.y === "number" ? section.y : 0,
+      w: Math.max(520, section.w || 720), h: Math.max(360, section.h || 520),
+      title: (section.title || "Custom app").trim() || "Custom app",
+      subgraph: {
+        nodes: contained.map(n => JSON.parse(JSON.stringify(n))),
+        edges: internalEdges.map(e => ({ from: e.from, to: e.to })),
+        originX: Number.isFinite(minX) ? minX : 0,
+        originY: Number.isFinite(minY) ? minY : 0,
+      },
+      io: {
+        inputNodeId:   cfg.inputNodeId || null,
+        previewNodeId: cfg.previewNodeId || null,
+        outputNodeId:  cfg.outputNodeId || null,
+      },
+      settings: [], values: {},
+    };
+    // Remap the embedded ids so the subgraph is fully self-contained and never
+    // collides with the canvas nodes it was captured from (which matters when
+    // the section is KEPT — the preview iframe's nodeId would otherwise clash).
+    const keepId = newNode.id;
+    newNode = _remapCustomAppInner(newNode, _freshNodeId);
+    newNode.id = keepId;
+    // Persist to the Local library as a one-node group; remember the slug so a
+    // later "Save existing" overwrites the same entry.
+    const baseSlug = (newNode.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50))
+      || ("custom-app-" + Date.now().toString(36));
+    newNode._appSlug = baseSlug;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__groups"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug: baseSlug, title: newNode.title,
+            nodes: [JSON.parse(JSON.stringify(newNode))], edges: [],
+            originX: newNode.x, originY: newNode.y,
+          }),
+        });
+        if (r.ok) window.dispatchEvent(new CustomEvent("th:library-refresh"));
+      } catch (_e) {}
+    })();
+    setData(d => {
+      const removeIds = cfg.removeSection ? new Set([section.id, ...ids]) : new Set();
+      const keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id));
+      const keptEdges = (d.edges || []).filter(e => {
+        const f = (e.from || "").split(".", 1)[0];
+        const t = (e.to   || "").split(".", 1)[0];
+        return !removeIds.has(f) && !removeIds.has(t);
+      });
+      return { ...d, nodes: [...keptNodes, newNode], edges: keptEdges };
+    });
+    setConvertCfg(null);
+    setSelectedNodeId(newNode.id);
+  }, [data, setData]);
+
+  // Expand a custom-app back into a section + its individual nodes for editing.
+  // The app node is removed from the canvas (its data preserved in editing state)
+  // so "Save existing" can rebuild it in place. Inner nodes get fresh canvas ids.
+  const expandCustomApp = useCallback((appNodeId) => {
+    if (editingApp) { uiAlert("Finish the current expand-edit first."); return; }
+    const node = (data.nodes || []).find(n => n.id === appNodeId && n.kind === "custom-app");
+    if (!node) return;
+    const sg = node.subgraph || {};
+    const innerNodes = sg.nodes || [];
+    if (!innerNodes.length) { uiAlert("This custom app has no inner nodes to expand."); return; }
+    const dx = (typeof node.x === "number" ? node.x : 0) - (sg.originX || 0);
+    const dy = (typeof node.y === "number" ? node.y : 0) - (sg.originY || 0);
+    const idMap = new Map();   // origSubgraphId → newCanvasId
+    for (const n of innerNodes) idMap.set(n.id, _freshNodeId());
+    const placed = innerNodes.map(n => ({
+      ...JSON.parse(JSON.stringify(n)), id: idMap.get(n.id),
+      x: (n.x || 0) + dx, y: (n.y || 0) + dy,
+      runStatus: undefined, runError: undefined,
+    }));
+    const placedEdges = (sg.edges || []).map(e => {
+      const f = workflowParseEdgeRef(e.from || ""), t = workflowParseEdgeRef(e.to || "");
+      const nf = f && idMap.get(f.node), nt = t && idMap.get(t.node);
+      if (!nf || !nt) return null;
+      return { from: nf + "." + f.port, to: nt + "." + t.port };
+    }).filter(Boolean);
+    const minX = Math.min(...placed.map(n => n.x));
+    const minY = Math.min(...placed.map(n => n.y));
+    const maxX = Math.max(...placed.map(n => n.x + (n.w || 280)));
+    const maxY = Math.max(...placed.map(n => n.y + (n.h || 200)));
+    const pad = 48;
+    const sectionId = _freshNodeId();
+    const section = {
+      id: sectionId, kind: "section", title: node.title || "Custom app",
+      x: minX - pad, y: minY - pad - 14, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 + 14,
+    };
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []).filter(n => n.id !== appNodeId), section, ...placed],
+      edges: [...(d.edges || []), ...placedEdges],
+    }));
+    setEditingApp({
+      appNodeId, sectionId,
+      originalNode: JSON.parse(JSON.stringify(node)),
+      newToOrig: Object.fromEntries(Array.from(idMap.entries()).map(([orig, nu]) => [nu, orig])),
+      appSlug: node._appSlug || null,
+    });
+    setSelectedNodeId(sectionId);
+  }, [data, setData, editingApp]);
+
+  // Abandon an expand-edit: remove the section + its nodes, restore the original
+  // custom-app node untouched.
+  const cancelExpandCustomApp = useCallback(() => {
+    const ed = editingApp; if (!ed) return;
+    setData(d => {
+      const sec = (d.nodes || []).find(n => n.id === ed.sectionId);
+      const inside = sec ? workflowSectionContainedNodes(sec, d.nodes) : [];
+      const removeIds = new Set([ed.sectionId, ...inside.map(n => n.id)]);
+      const keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id));
+      const keptEdges = (d.edges || []).filter(e => {
+        const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
+        return !removeIds.has(f) && !removeIds.has(t);
+      });
+      return { ...d, nodes: [...keptNodes, ed.originalNode], edges: keptEdges };
+    });
+    setEditingApp(null);
+  }, [editingApp, setData]);
+
+  // Re-collapse an expand-edit into a custom-app node. mode "existing" overwrites
+  // the same node + library entry; "new" creates a fresh node + library slug.
+  // Settings bindings are re-aligned to the (possibly edited) subgraph: surviving
+  // nodes keep their subgraph id, so most bindings carry over; bindings whose
+  // target node or param vanished are dropped, and settings left with none are
+  // removed.
+  const saveExpandedCustomApp = useCallback((mode) => {
+    const ed = editingApp; if (!ed) return;
+    const nodes = data.nodes || [];
+    const section = nodes.find(n => n.id === ed.sectionId && n.kind === "section");
+    if (!section) { setEditingApp(null); return; }
+    const contained = workflowSectionContainedNodes(section, nodes);
+    if (!contained.length) { uiAlert("Nothing inside the section to save."); return; }
+    const ids = new Set(contained.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
+      return ids.has(f) && ids.has(t);
+    });
+    // canvas id → subgraph id: surviving nodes keep their original subgraph id;
+    // freshly-added nodes get a new stable subgraph id.
+    const canvasToSub = new Map();
+    for (const n of contained) canvasToSub.set(n.id, ed.newToOrig[n.id] || ("n" + Math.random().toString(36).slice(2, 10)));
+    const minX = Math.min(...contained.map(n => (typeof n.x === "number" ? n.x : 0)));
+    const minY = Math.min(...contained.map(n => (typeof n.y === "number" ? n.y : 0)));
+    const subNodes = contained.map(n => ({ ...JSON.parse(JSON.stringify(n)), id: canvasToSub.get(n.id) }));
+    const subEdges = internalEdges.map(e => {
+      const f = workflowParseEdgeRef(e.from || ""), t = workflowParseEdgeRef(e.to || "");
+      if (!f || !t || !canvasToSub.has(f.node) || !canvasToSub.has(t.node)) return null;
+      return { from: canvasToSub.get(f.node) + "." + f.port, to: canvasToSub.get(t.node) + "." + t.port };
+    }).filter(Boolean);
+    const subIds = new Set(subNodes.map(n => n.id));
+    const subById = Object.fromEntries(subNodes.map(n => [n.id, n]));
+    const paramExists = (nid, param) => {
+      const n = subById[nid]; if (!n) return false;
+      return _specParamDescriptors(n).some(d => d.key === param);
+    };
+    const remapIo = (origId) => (origId && subIds.has(origId)) ? origId : null;
+    const origIo = ed.originalNode.io || {};
+    const io = {
+      inputNodeId:   remapIo(origIo.inputNodeId),
+      previewNodeId: remapIo(origIo.previewNodeId),
+      outputNodeId:  remapIo(origIo.outputNodeId),
+    };
+    const settings = (ed.originalNode.settings || []).map(s => ({
+      ...s,
+      bindings: (s.bindings || []).filter(b => subIds.has(b.nodeId) && paramExists(b.nodeId, b.param)),
+    })).filter(s => s.bindings.length);
+    const values = {};
+    for (const s of settings) {
+      const v = (ed.originalNode.values || {})[s.key];
+      values[s.key] = v !== undefined ? v : s.default;
+    }
+    const isNew = mode === "new";
+    const title = (section.title || ed.originalNode.title || "Custom app").trim() || "Custom app";
+    let slug = ed.appSlug;
+    if (isNew || !slug) {
+      const base = (title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 46)) || "custom-app";
+      slug = base + (isNew ? "-" + Date.now().toString(36).slice(-4) : "");
+    }
+    const newId = isNew ? _freshNodeId() : ed.appNodeId;
+    const finalNode = {
+      ...JSON.parse(JSON.stringify(ed.originalNode)),
+      id: newId, title,
+      x: typeof section.x === "number" ? section.x : ed.originalNode.x,
+      y: typeof section.y === "number" ? section.y : ed.originalNode.y,
+      subgraph: { nodes: subNodes, edges: subEdges, originX: Number.isFinite(minX) ? minX : 0, originY: Number.isFinite(minY) ? minY : 0 },
+      io, settings, values, _appSlug: slug,
+    };
+    setData(d => {
+      const removeIds = new Set([section.id, ...contained.map(n => n.id)]);
+      const keptNodes = (d.nodes || []).filter(n => !removeIds.has(n.id));
+      const keptEdges = (d.edges || []).filter(e => {
+        const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
+        return !removeIds.has(f) && !removeIds.has(t);
+      });
+      return { ...d, nodes: [...keptNodes, finalNode], edges: keptEdges };
+    });
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__groups"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug, title, nodes: [JSON.parse(JSON.stringify(finalNode))], edges: [], originX: finalNode.x, originY: finalNode.y }),
+        });
+        if (r.ok) window.dispatchEvent(new CustomEvent("th:library-refresh"));
+      } catch (_e) {}
+    })();
+    setEditingApp(null);
+    setSelectedNodeId(newId);
+  }, [editingApp, data, setData]);
 
   // v3.4.32 — Duplicate selected nodes in-place (Cmd+D). Behaves like
   // copy-then-paste-at-+30/+30 but DOES NOT touch nodeClipboardRef, so
@@ -38459,12 +38807,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onChange=${(patch) => updateNode(n.id, patch)}
                 onTidy=${() => tidySection(n.id)}
                 hasContents=${workflowSectionContainedNodes(n, data.nodes).length > 0}
+                hasEditorNode=${workflowSectionContainedNodes(n, data.nodes).some(c => APP_NODE_TOOLS[c.kind])}
                 onSaveToLibrary=${() => saveSectionToLibrary(n.id)}
+                onConvertToApp=${() => openConvertSectionModal(n.id)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            ${convertCfg && html`<${ConvertSectionModal}
+              cfg=${convertCfg}
+              onPatch=${(p) => setConvertCfg(c => ({ ...c, ...p }))}
+              onCancel=${() => setConvertCfg(null)}
+              onConfirm=${() => convertSectionToCustomApp(convertCfg)}
+            />`}
+            ${editingApp && createPortal(html`
+              <div className="workflow-expand-bar">
+                <span className="workflow-expand-bar-label">
+                  Editing <b>${editingApp.originalNode.title || "Custom app"}</b> — change the nodes, then save back into the app.
+                </span>
+                <button type="button" className="tbtn" onClick=${cancelExpandCustomApp}>Cancel</button>
+                <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp("existing")}>Save existing</button>
+                <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp("new")}>Save as new</button>
+              </div>`, document.body)}
             <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
             <${WorkflowEdgesLayer}
               nodes=${data.nodes || []}
@@ -39385,6 +39750,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDeselect=${() => setSelectedNodeIds(new Set())}
                 reportAppNodeLayout=${reportAppNodeLayout}
                 reportLayerGeom=${reportLayerGeom}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "custom-app").map(n => html`
+              <${WorkflowCustomAppNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onDeselect=${() => setSelectedNodeIds(new Set())}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onExpand=${() => expandCustomApp(n.id)}
+                reportAppNodeLayout=${reportAppNodeLayout}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -52912,6 +53298,25 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
       out.push({ ...base, type: "glb-import", label: (up.path || "").split("/").pop() || label, url: _composerAssetUrl(up) });
       continue;
     }
+    // custom-app delegates its downstream contribution to the captured output
+    // node — resolve to that node's asset (snapshot). Routed before the generic
+    // asset branch because up.kind is "custom-app", not "asset".
+    if (resolve === "customAppOutput" || up.kind === "custom-app") {
+      const outN = _customAppOutputNode(up);
+      if (!outN || (WORKFLOW_BAKED_EDITABLE_KINDS.has(outN.kind) && !outN.bakedPath)) {
+        out.push({ ...base, type: "unbaked", label: _composerLayerLabel(up) || label });
+        continue;
+      }
+      out.push({
+        ...base, type: "asset",
+        label: _composerLayerLabel(up) || label,
+        url: _composerAssetUrl(up),
+        assetKind: _composerAssetKind(up),
+        bakedPath: outN.bakedPath || null,
+        path: outN.path || outN.bakedPath || null,
+      });
+      continue;
+    }
     if (resolve === "bakedFile" || resolve === "assetFile" || up.kind === "asset") {
       const editable = WORKFLOW_BAKED_EDITABLE_KINDS.has(up.kind);
       if (editable && !up.bakedPath) {
@@ -53012,11 +53417,25 @@ const WORKFLOW_BAKED_EDITABLE_KINDS = new Set([
   "font-editor", "image-editor", "pixel-editor", "voxel-3d",
   "synth", "music", "material-lab", "mm-composer", "gaussian-splat-3d",
 ]);
+// The captured OUTPUT node inside a custom-app's embedded subgraph. The
+// custom-app's downstream contribution delegates to whatever that node
+// produces (snapshot semantics — see io_resolve._r_custom_app on the backend).
+function _customAppOutputNode(assetNode) {
+  if (!assetNode || assetNode.kind !== "custom-app") return null;
+  const sg = assetNode.subgraph || {};
+  const id = (assetNode.io || {}).outputNodeId;
+  if (!id) return null;
+  return (sg.nodes || []).find(n => n && n.id === id) || null;
+}
 function _composerAssetUrl(assetNode) {
   // Resolve the same kind of version-aware path the asset card iframe
   // uses, so the composer renders the live bytes — not a stale source/
   // file that may not exist (versioned-only assets).
   if (!assetNode) return null;
+  if (assetNode.kind === "custom-app") {
+    const outN = _customAppOutputNode(assetNode);
+    return outN ? _composerAssetUrl(outN) : null;
+  }
   // v3.4.44 — formatted-text and composer nodes contribute a baked HTML
   // file path (set by their respective Bake buttons). Resolve those
   // through apiUrl so they render against the daemon-served source.
@@ -53038,6 +53457,10 @@ function _composerAssetUrl(assetNode) {
 // formatted-text / composer = its bakedPath filename; fallback = node id.
 function _composerLayerLabel(assetNode) {
   if (!assetNode) return null;
+  if (assetNode.kind === "custom-app") {
+    const outN = _customAppOutputNode(assetNode);
+    return (assetNode.title || "custom app") + (outN ? " → " + (_composerLayerLabel(outN) || outN.id) : "");
+  }
   if (assetNode.kind === "formatted-text" && assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
   if (assetNode.kind === "formatted-text") return "formatted-text (unbaked)";
   if (assetNode.kind === "composer" && assetNode.bakedPath) return assetNode.bakedPath.split("/").pop();
@@ -53058,6 +53481,10 @@ function _composerAssetKind(assetNode) {
   // anything else gets an <iframe>. Falls back to a labeled placeholder
   // when there's no path to render.
   if (!assetNode) return "missing";
+  if (assetNode.kind === "custom-app") {
+    const outN = _customAppOutputNode(assetNode);
+    return outN ? _composerAssetKind(outN) : "missing";
+  }
   // v3.4.44 — Baked text / composer compositions always render as iframes.
   if (assetNode.kind === "formatted-text" || assetNode.kind === "composer") return "iframe";
   // Baked vector-editor outputs are SVG — render via <img> so they
@@ -59021,6 +59448,255 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
   });
 }
 
+// A section packaged into a reusable mini-app. Hosts the captured PREVIEW
+// node's iframe, hydrated LIVE from the embedded subgraph (not the canvas):
+// settings drive synthetic constant sources into the inner spec nodes, and an
+// external node wired to the left `in` port stands in for the captured input
+// node. Read-only preview (panels stay hidden); the right column renders the
+// agent-constructed settings as live sliders / selects. Output resolves through
+// the captured output node (see _customAppOutputNode / io_resolve._r_custom_app).
+function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onExpand, reportAppNodeLayout, allNodes, allEdges }) {
+  const w = node.w || 720;
+  const h = node.h || 520;
+  const io = node.io || {};
+  const subgraph = node.subgraph || {};
+  const previewNode = useMemo(
+    () => (subgraph.nodes || []).find(n => n && n.id === io.previewNodeId) || null,
+    [subgraph.nodes, io.previewNodeId]);
+  const cfg = previewNode ? APP_NODE_TOOLS[previewNode.kind] : null;
+
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const iframeRef = useRef(null);
+  const readyRef = useRef(false);
+  const [settingModalOpen, setSettingModalOpen] = useState(false);
+
+  // Branch (for the tool's canonical/baked paths) from a wired prototype, same
+  // rule as WorkflowDrivenToolNode.
+  const branch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const f = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === f);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+
+  // The single external input wired to our left port (replaces the captured
+  // input node inside the subgraph).
+  const extInputs = useUpstreamInputs(node, allNodes, allEdges, { toPort: "in" });
+  const liveInput = (extInputs && extInputs[0]) || null;
+
+  // Live scoped graph: subgraph + setting sources + external-input substitution.
+  const valuesKey = JSON.stringify(node.values || {});
+  const settingsKey = JSON.stringify(node.settings || []);
+  const liveInputKey = liveInput ? (liveInput.url || liveInput.path || liveInput.fromId || "") : "";
+  const { scopedNodes, scopedEdges } = useMemo(
+    () => buildCustomAppScopedGraph(node, liveInput),
+    [JSON.stringify(subgraph), valuesKey, settingsKey, liveInputKey]);
+
+  // Resolve the preview node's upstream content + specs over the SCOPED graph.
+  const previewInputs = useMemo(
+    () => (previewNode ? resolveUpstreamInputs(previewNode, scopedNodes, scopedEdges) : []),
+    [previewNode && previewNode.id, scopedNodes, scopedEdges]);
+
+  const contentAssets = useMemo(() => previewInputs
+    .filter(i => i.type === "asset")
+    .map(i => ({ id: i.fromId, url: i.url, kind: _appNodeMediumKind(i), label: i.label })),
+    [previewInputs]);
+  const importUrls = useMemo(() => {
+    if (!cfg || !cfg.imports) return [];
+    const wired = previewInputs.filter(i => i.type === "glb-import").map(i => i.url);
+    const own = (Array.isArray(previewNode && previewNode.imports) ? previewNode.imports : [])
+      .map(p => /^(https?:)?\//.test(p) ? p : apiUrl("/" + String(p).replace(/^\//, "")));
+    return Array.from(new Set([...wired, ...own]));
+  }, [previewInputs, cfg, previewNode]);
+  const specs = useMemo(() => {
+    const wb = (spec, id) => _specWithBindings(spec, id, scopedNodes, scopedEdges);
+    return {
+      effects:   previewInputs.filter(i => i.type === "effect").map(i => wb(i.spec || {}, i.fromId)),
+      positions: previewInputs.filter(i => i.type === "position").map(i => wb(i.spec || {}, i.fromId)),
+      triggers:  previewInputs.filter(i => i.type === "trigger").map(i => wb(i.spec || {}, i.fromId)),
+      layers:    previewInputs.filter(i => i.type === "layer").map(i => ({
+        id: i.layerId, spec: i.spec || {},
+        children: (i.children || []).map(c => (
+          (c.type === "position" || c.type === "effect" || c.type === "trigger")
+            ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
+        )),
+      })),
+    };
+  }, [previewInputs, scopedNodes, scopedEdges]);
+
+  const contentKey = JSON.stringify(contentAssets);
+  const importKey = importUrls.join("|");
+  const specKey = JSON.stringify(specs);
+  const previewState = previewNode ? previewNode[cfg && cfg.stateField] : null;
+
+  const iframeSrc = useMemo(() => {
+    if (!cfg || !previewNode) return "about:blank";
+    const p = new URLSearchParams();
+    const pid = activeProjectId();
+    if (pid) p.set("project", pid);
+    p.set("nodeId", previewNode.id);
+    p.set("preview", "1");   // hint: render preview-only (panels hidden)
+    return cfg.tool + "?" + p.toString();
+  }, [cfg, previewNode && previewNode.id]);
+
+  const postToIframe = useCallback((msg) => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win && previewNode) { try { win.postMessage({ ...msg, nodeId: previewNode.id }, "*"); } catch (_e) {} }
+  }, [previewNode && previewNode.id]);
+
+  const contentRef = useRef(contentAssets); contentRef.current = contentAssets;
+  const importsRef = useRef(importUrls); importsRef.current = importUrls;
+  const specsRef = useRef(specs); specsRef.current = specs;
+  const stateRef = useRef(previewState); stateRef.current = previewState;
+
+  // iframe → node: on ready, push init + force preview-mode (panels hidden).
+  // We deliberately IGNORE :state (the preview is read-only here — settings
+  // drive it, so we never persist back over the captured canonical file).
+  useEffect(() => {
+    if (!cfg || !previewNode) return undefined;
+    const onMsg = (ev) => {
+      const d = ev && ev.data;
+      if (!d || d.nodeId !== previewNode.id) return;
+      if (d.type === cfg.prefix + ":ready") {
+        readyRef.current = true;
+        postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
+                       content: contentRef.current, imports: importsRef.current,
+                       effects: specsRef.current.effects, positions: specsRef.current.positions,
+                       triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
+        // Keep panels collapsed: never report selected — the preview is chrome-free.
+        postToIframe({ type: cfg.prefix + ":select", selected: false });
+        postToIframe({ type: cfg.prefix + ":preview-mode", on: true });
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [cfg, previewNode && previewNode.id, branch, postToIframe]);
+
+  // Reactive content/imports/specs push → live preview as settings / input change.
+  useEffect(() => {
+    if (readyRef.current && cfg) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls,
+      effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentKey, importKey, specKey, cfg, postToIframe]);
+
+  // Settings panel state writer.
+  const setValue = useCallback((key, val) => {
+    onChange({ values: { ...(node.values || {}), [key]: val } });
+  }, [onChange, node.values]);
+
+  const addSetting = useCallback((setting) => {
+    const next = [...(Array.isArray(node.settings) ? node.settings : []), setting];
+    const values = { ...(node.values || {}) };
+    if (setting.type === "select") values[setting.key] = setting.default ?? (setting.options && setting.options[0] && setting.options[0].value);
+    else values[setting.key] = setting.default ?? setting.min ?? 0;
+    onChange({ settings: next, values });
+    setSettingModalOpen(false);
+  }, [node.settings, node.values, onChange]);
+
+  const removeSetting = useCallback((key) => {
+    const next = (Array.isArray(node.settings) ? node.settings : []).filter(s => s.key !== key);
+    const values = { ...(node.values || {}) }; delete values[key];
+    onChange({ settings: next, values });
+  }, [node.settings, node.values, onChange]);
+
+  const settings = Array.isArray(node.settings) ? node.settings : [];
+  const hasIn = !!io.inputNodeId;
+
+  const renderSetting = (s) => {
+    const cur = (node.values && node.values[s.key] !== undefined) ? node.values[s.key] : s.default;
+    if (s.type === "select") {
+      return html`<label className="workflow-customapp-setting" key=${s.key}>
+        <span className="workflow-customapp-setting-label" title=${s.description || ""}>${s.label || s.key}
+          <button className="workflow-customapp-setting-del" title="Remove setting"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => { e.stopPropagation(); removeSetting(s.key); }}>×</button>
+        </span>
+        <select className="workflow-customapp-select" value=${cur ?? ""}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onChange=${(e) => setValue(s.key, e.target.value)}>
+          ${(s.options || []).map(o => html`<option key=${String(o.value)} value=${o.value}>${o.label || o.value}</option>`)}
+        </select>
+      </label>`;
+    }
+    // slider + paired numeric text entry
+    const min = s.min ?? 0, max = s.max ?? 100, step = s.step ?? 1;
+    return html`<label className="workflow-customapp-setting" key=${s.key}>
+      <span className="workflow-customapp-setting-label" title=${s.description || ""}>${s.label || s.key}</span>
+      <div className="workflow-customapp-slider-row">
+        <input type="range" className="workflow-customapp-range"
+          min=${min} max=${max} step=${step} value=${Number(cur) || 0}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onInput=${(e) => setValue(s.key, Number(e.target.value))} />
+        <input type="text" className="workflow-customapp-num" value=${cur ?? ""}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onChange=${(e) => { const v = Number(e.target.value); setValue(s.key, Number.isFinite(v) ? v : cur); }} />
+      </div>
+    </label>`;
+  };
+
+  return html`
+    <div
+      className=${"workflow-node workflow-node-customapp"}
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+    >
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-glyph"><${Icon.Package}/></span>
+        <span className="workflow-node-label">${node.title || "Custom app"}</span>
+        <span className="workflow-node-bar-spacer"/>
+        <button className="workflow-node-customapp-expand"
+          title="Expand back into the section + its individual nodes for editing"
+          onClick=${(e) => { e.stopPropagation(); onExpand && onExpand(); }}
+          onMouseDown=${(e) => e.stopPropagation()}><${Icon.Expand}/></button>
+        <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
+      </div>
+      <div className="workflow-customapp-body" style=${{ height: "calc(100% - 30px)" }}>
+        <div className="workflow-customapp-preview">
+          ${cfg && previewNode
+            ? html`<iframe ref=${iframeRef} src=${iframeSrc}
+                className="workflow-apptool-frame workflow-customapp-frame workflow-driven-frame"
+                title=${(cfg.label || "Preview")}
+                onMouseDown=${(e) => e.stopPropagation()} />`
+            : html`<div className="workflow-customapp-empty">No preview node configured</div>`}
+        </div>
+        <div className="workflow-customapp-settings" onMouseDown=${(e) => e.stopPropagation()}>
+          <div className="workflow-customapp-settings-head">
+            <span className="workflow-customapp-settings-title">Settings</span>
+            <button className="workflow-customapp-setting-add" title="Describe a new control — the agent proposes how it drives the inner params"
+              onClick=${(e) => { e.stopPropagation(); setSettingModalOpen(true); }}>+ Add</button>
+          </div>
+          ${settings.length ? settings.map(renderSetting)
+            : html`<div className="workflow-customapp-settings-empty">No settings yet. Click <b>+ Add</b> to describe one.</div>`}
+        </div>
+      </div>
+      ${settingModalOpen && html`<${CustomAppSettingModal}
+        node=${node} existing=${settings}
+        onClose=${() => setSettingModalOpen(false)}
+        onAdd=${addSetting} />`}
+      ${hasIn && html`<div
+        className="workflow-port-zone workflow-port-zone-in"
+        data-port-node=${node.id}
+        data-port-side="in"
+        title="Wire a node to replace the captured input"
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}
+      ><div className="workflow-port-dot"/></div>`}
+      <div
+        className="workflow-port-zone workflow-port-zone-out"
+        data-port-node=${node.id}
+        data-port-side="out"
+        title="Pipe this custom app's output downstream"
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}
+      ><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
 /* ── Composable source nodes: Layer / Position / Trigger / Effect ──────────
    The editable artifact is source/<branch>/<kind>-<id>.js: controls +
    buildSpec(values). The node compiles that source into the strict JSON spec
@@ -59797,6 +60473,333 @@ function _specParamKeys(node) {
   if (_PARAM_KEYS_CACHE.size > 500) _PARAM_KEYS_CACHE.clear();
   _PARAM_KEYS_CACHE.set(cacheKey, keys);
   return keys;
+}
+
+// Richer than _specParamKeys: the tunable numeric controls of a spec node with
+// their current value + range. Drives the custom-app setting builder's "param
+// surface" handed to the agent (WS-D) and any binding UI. Returns
+// [{key,label,type,value,min,max,step}].
+function _specParamDescriptors(node) {
+  if (!node || !WORKFLOW_PARAM_PORT_KINDS.has(node.kind)) return [];
+  let src = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : null);
+  if (!src) { try { src = _specToScript(node.kind, node.spec || {}); } catch (_e) { src = ""; } }
+  let out = [];
+  try {
+    const { controls } = _compileSpecSource(node.kind, src);
+    const params = (node.spec && node.spec.params) || {};
+    out = Object.entries(controls || {})
+      .filter(([, d]) => { const t = (d && d.type) || "text"; return t === "number" || t === "range"; })
+      .map(([k, d]) => ({
+        key: k,
+        label: (d && d.label) || k,
+        type: (d && d.type) || "number",
+        value: (params[k] !== undefined ? params[k] : (d && d.value)),
+        min: (d && d.min !== undefined) ? d.min : null,
+        max: (d && d.max !== undefined) ? d.max : null,
+        step: (d && d.step !== undefined) ? d.step : null,
+      }));
+  } catch (_e) { out = []; }
+  return out;
+}
+
+// Evaluate a custom-app setting binding expr — a `v`-only scalar JS expression
+// with a small allowlisted helper set. Falls back to the raw value on error.
+function _customAppEvalExpr(expr, v) {
+  const x = Number(v); const num = Number.isFinite(x) ? x : 0;
+  if (expr === undefined || expr === null || expr === "") return num;
+  try {
+    const clamp = (n, a, b) => Math.min(Math.max(n, a), b);
+    const fn = new Function("v", "round", "clamp", "min", "max", "abs",
+      "return (" + String(expr) + ");");
+    const r = fn(num, Math.round, clamp, Math.min, Math.max, Math.abs);
+    return Number.isFinite(+r) ? +r : num;
+  } catch (_e) { return num; }
+}
+
+// Remap a custom-app node's INNER ids (subgraph nodes/edges, io roles, setting
+// binding targets) to fresh ids. Used when a library copy is placed so two
+// instances never share inner ids (which would collide on the preview iframe's
+// nodeId + any disk-backed canonical file). Pure — returns a new node.
+function _remapCustomAppInner(node, mkId) {
+  const sg = node.subgraph || {};
+  const innerMap = new Map();
+  for (const n of (sg.nodes || [])) if (n && n.id) innerMap.set(n.id, mkId());
+  const remapRef = (ref) => {
+    const p = workflowParseEdgeRef(ref || "");
+    if (!p) return ref;
+    const nid = innerMap.get(p.node);
+    return nid ? (nid + "." + p.port) : ref;
+  };
+  const newNodes = (sg.nodes || []).map(n => ({ ...JSON.parse(JSON.stringify(n)), id: innerMap.get(n.id) || n.id }));
+  const newEdges = (sg.edges || []).map(e => ({ from: remapRef(e.from), to: remapRef(e.to) }));
+  const io = node.io || {};
+  const newIo = {
+    inputNodeId:   io.inputNodeId   ? (innerMap.get(io.inputNodeId)   || io.inputNodeId)   : null,
+    previewNodeId: io.previewNodeId ? (innerMap.get(io.previewNodeId) || io.previewNodeId) : null,
+    outputNodeId:  io.outputNodeId  ? (innerMap.get(io.outputNodeId)  || io.outputNodeId)  : null,
+  };
+  const newSettings = (node.settings || []).map(s => ({
+    ...s,
+    bindings: (s.bindings || []).map(b => ({ ...b, nodeId: innerMap.get(b.nodeId) || b.nodeId })),
+  }));
+  return { ...node, subgraph: { ...sg, nodes: newNodes, edges: newEdges }, io: newIo, settings: newSettings };
+}
+
+// Build the live SCOPED graph a custom-app's preview renders against: the
+// captured subgraph + synthetic constant number-generators driving each
+// setting binding + (optionally) the external live input standing in for the
+// captured input node. Pure — memoize on (subgraph, values, settings, liveInput).
+function buildCustomAppScopedGraph(node, liveInput) {
+  const sg = (node && node.subgraph) || {};
+  const io = (node && node.io) || {};
+  const values = (node && node.values) || {};
+  let scopedNodes = (sg.nodes || []).map(n => JSON.parse(JSON.stringify(n)));
+  let scopedEdges = (sg.edges || []).map(e => ({ from: e.from, to: e.to }));
+  // settings → synthetic constant sources wired to param:<key> ports
+  for (const s of (node.settings || [])) {
+    const v = (values[s.key] !== undefined) ? values[s.key] : s.default;
+    const bindings = (s && s.bindings) || [];
+    for (let bi = 0; bi < bindings.length; bi++) {
+      const b = bindings[bi];
+      if (!b || !b.nodeId || !b.param) continue;
+      if (!scopedNodes.some(n => n.id === b.nodeId)) continue;
+      const synthId = "__set_" + s.key + "_" + bi;
+      scopedNodes.push({
+        id: synthId, kind: "number-generator",
+        spec: { kind: "number", sub: "constant", params: { value: _customAppEvalExpr(b.expr, v) }, vector: false },
+      });
+      scopedEdges.push({ from: synthId + ".out", to: b.nodeId + ".param:" + b.param });
+    }
+  }
+  // external input substitution: re-point edges originating from the captured
+  // input node to a synthetic asset carrying the live wired content.
+  if (liveInput && io.inputNodeId) {
+    const medium = (liveInput.node && liveInput.node.assetKind) || liveInput.assetKind || "image";
+    scopedNodes.push({
+      id: "__extin__", kind: "asset", assetKind: medium,
+      path: liveInput.path || liveInput.bakedPath || null,
+      bakedPath: liveInput.bakedPath || null,
+    });
+    scopedEdges = scopedEdges.map(e => {
+      const f = workflowParseEdgeRef(e.from || "");
+      return (f && f.node === io.inputNodeId) ? { ...e, from: "__extin__." + f.port } : e;
+    });
+  }
+  return { scopedNodes, scopedEdges };
+}
+
+// The tunable-param surface of a custom-app's inner nodes — handed to the agent
+// when it proposes how a named setting maps to / combines underlying params.
+function customAppParamSurface(node) {
+  const sg = (node && node.subgraph) || {};
+  const io = (node && node.io) || {};
+  return (sg.nodes || []).map(n => ({
+    nodeId: n.id, kind: n.kind,
+    label: n.title || n.name || n.id,
+    role: n.id === io.inputNodeId ? "input" : n.id === io.previewNodeId ? "preview" : n.id === io.outputNodeId ? "output" : null,
+    params: _specParamDescriptors(n).map(d => ({ key: d.key, value: d.value, min: d.min, max: d.max, step: d.step })),
+  }));
+}
+
+// Compose the messages for a one-shot /__llm_run that proposes a setting schema
+// + binding map from a natural-language description. Returns {system, user}.
+function composeSettingProposalPrompt(node, description, existing) {
+  const surface = customAppParamSurface(node);
+  const bindable = surface.filter(n => (n.params || []).length);
+  const system = [
+    "You design ONE named control for a packaged node-graph (a \"custom app\").",
+    "The user describes a control in plain language; you decide how its single value",
+    "maps to — and may COMBINE — the tunable numeric params of the inner nodes below.",
+    "A control can drive MANY params across MANY nodes (e.g. \"density\" raises a grid's",
+    "column count WHILE tightening its gap).",
+    "",
+    "Reply with EXACTLY one fenced ```json block, no prose outside it, matching:",
+    "{",
+    '  "key": "kebab-id", "label": "Human Label",',
+    '  "type": "slider" | "select",',
+    '  "min": <number>, "max": <number>, "step": <number>, "default": <number>,',
+    '  "options": [ {"value":"...","label":"..."} ],   // ONLY for type "select"',
+    '  "description": "one short line",',
+    '  "bindings": [ {"nodeId":"<inner id>","param":"<param key>","expr":"<expression in v>"} ],',
+    '  "rationale": "one sentence on how the combination works"',
+    "}",
+    "",
+    "`v` is the control value in [min,max]. `expr` is a small JS expression of `v` only,",
+    "using just: + - * / ( ), and the helpers round(), clamp(x,a,b), min(), max(), abs().",
+    "Every binding MUST target a (nodeId, param) that exists in the surface below.",
+    "Keep ranges sensible for the params you drive.",
+  ].join("\n");
+  const user = [
+    existing && existing.length
+      ? "Existing settings already defined (do not duplicate their keys): " + existing.map(s => s.key).join(", ")
+      : "No settings defined yet.",
+    "",
+    "User's description of the new control:",
+    JSON.stringify(description),
+    "",
+    "Inner nodes and their tunable params (bind only to these):",
+    JSON.stringify(bindable, null, 2),
+    "",
+    "Full node list (for context — non-bindable nodes have no params):",
+    JSON.stringify(surface.map(s => ({ nodeId: s.nodeId, kind: s.kind, label: s.label, role: s.role })), null, 2),
+  ].join("\n");
+  return { system, user };
+}
+
+// Extract the proposed setting object from an LLM reply (fenced json, bare
+// json, or first {...} block). Returns the parsed object or null.
+function parseSettingProposal(text) {
+  if (!text || typeof text !== "string") return null;
+  let body = null;
+  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
+  if (fence) body = fence[1];
+  if (!body) { const i = text.indexOf("{"), j = text.lastIndexOf("}"); if (i >= 0 && j > i) body = text.slice(i, j + 1); }
+  if (!body) return null;
+  let obj = null;
+  try { obj = JSON.parse(body); } catch (_e) { return null; }
+  if (!obj || typeof obj !== "object" || !Array.isArray(obj.bindings)) return null;
+  // normalize
+  const type = obj.type === "select" ? "select" : "slider";
+  return {
+    key: String(obj.key || "setting").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "setting",
+    label: String(obj.label || obj.key || "Setting"),
+    type,
+    min: Number.isFinite(+obj.min) ? +obj.min : 0,
+    max: Number.isFinite(+obj.max) ? +obj.max : 100,
+    step: Number.isFinite(+obj.step) ? +obj.step : 1,
+    default: Number.isFinite(+obj.default) ? +obj.default : (type === "select" ? undefined : 50),
+    options: Array.isArray(obj.options) ? obj.options.map(o => ({ value: o.value, label: o.label || String(o.value) })) : [],
+    description: String(obj.description || ""),
+    rationale: String(obj.rationale || ""),
+    bindings: obj.bindings.filter(b => b && b.nodeId && b.param).map(b => ({ nodeId: String(b.nodeId), param: String(b.param), expr: String(b.expr || "v") })),
+  };
+}
+
+// One-shot LLM call → a proposed setting (validated). Throws on failure.
+async function requestSettingProposal(node, description, existing) {
+  const { system, user } = composeSettingProposalPrompt(node, description, existing);
+  const r = await fetch(apiUrl("/__llm_run"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      skill: "llm", provider: "anthropic", model: _resolveLiveModel("claude-opus-4-7"),
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      options: { max_tokens: 2000 },
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  const setting = parseSettingProposal(j.text || "");
+  if (!setting) throw new Error("The model did not return a valid setting proposal.");
+  return setting;
+}
+
+/* Custom-app "add setting" modal: the user describes a control, the agent
+   proposes a schema + binding map, the user edits/confirms, and it's baked onto
+   the node. `existing` are the already-defined settings (key-collision guard). */
+function CustomAppSettingModal({ node, existing, onClose, onAdd }) {
+  const [desc, setDesc] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [proposal, setProposal] = useState(null);   // editable copy of the proposed setting
+  const surface = useMemo(() => customAppParamSurface(node).filter(n => (n.params || []).length), [node]);
+  const paramsForNode = (nid) => {
+    const n = surface.find(s => s.nodeId === nid);
+    return (n && n.params) || [];
+  };
+
+  const propose = useCallback(async () => {
+    if (!desc.trim()) return;
+    setBusy(true); setError("");
+    try {
+      const s = await requestSettingProposal(node, desc.trim(), existing);
+      if (existing && existing.some(e => e.key === s.key)) s.key = s.key + "-" + ((existing.length) + 1);
+      setProposal(s);
+    } catch (e) { setError(e?.message || String(e)); }
+    finally { setBusy(false); }
+  }, [desc, node, existing]);
+
+  const patch = (p) => setProposal(cur => ({ ...cur, ...p }));
+  const patchBinding = (i, p) => setProposal(cur => {
+    const bindings = (cur.bindings || []).map((b, j) => j === i ? { ...b, ...p } : b);
+    return { ...cur, bindings };
+  });
+  const addBinding = () => setProposal(cur => ({ ...cur, bindings: [...(cur.bindings || []), { nodeId: surface[0]?.nodeId || "", param: paramsForNode(surface[0]?.nodeId)[0]?.key || "", expr: "v" }] }));
+  const removeBinding = (i) => setProposal(cur => ({ ...cur, bindings: (cur.bindings || []).filter((_b, j) => j !== i) }));
+
+  const canAdd = proposal && proposal.key && (proposal.bindings || []).length > 0;
+
+  return createPortal(html`
+    <div className="workflow-modal-backdrop" onMouseDown=${onClose}>
+      <div className="workflow-modal workflow-setting-modal" onMouseDown=${e => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div>
+            <div className="workflow-modal-title">Add a setting</div>
+            <div className="workflow-modal-sub">Describe a control; the agent proposes how it drives the inner params.</div>
+          </div>
+          <button type="button" className="workflow-modal-close" onClick=${onClose} aria-label="Close">×</button>
+        </div>
+        <div className="workflow-setting-body">
+          <label className="workflow-convert-field">
+            <span className="workflow-convert-field-label">Describe the control <em>(e.g. "density — more, smaller cells")</em></span>
+            <textarea className="workflow-setting-desc" rows="2" value=${desc}
+              placeholder="What should this control feel like, and what should it affect?"
+              onInput=${e => setDesc(e.target.value)} />
+          </label>
+          <div className="workflow-setting-propose-row">
+            <button type="button" className="tbtn tbtn-primary" disabled=${busy || !desc.trim()} onClick=${propose}>
+              ${busy ? "Proposing…" : proposal ? "Re-propose" : "Propose"}
+            </button>
+            ${error ? html`<span className="workflow-convert-warn">${error}</span>` : null}
+          </div>
+
+          ${proposal ? html`<div className="workflow-setting-proposal">
+            <div className="workflow-setting-grid">
+              <label className="workflow-convert-field">
+                <span className="workflow-convert-field-label">Label</span>
+                <input value=${proposal.label || ""} onInput=${e => patch({ label: e.target.value })} />
+              </label>
+              <label className="workflow-convert-field">
+                <span className="workflow-convert-field-label">Type</span>
+                <select value=${proposal.type} onChange=${e => patch({ type: e.target.value })}>
+                  <option value="slider">slider</option>
+                  <option value="select">select</option>
+                </select>
+              </label>
+            </div>
+            ${proposal.type === "slider" ? html`<div className="workflow-setting-grid workflow-setting-grid-3">
+              <label className="workflow-convert-field"><span className="workflow-convert-field-label">Min</span>
+                <input type="number" value=${proposal.min} onInput=${e => patch({ min: Number(e.target.value) })} /></label>
+              <label className="workflow-convert-field"><span className="workflow-convert-field-label">Max</span>
+                <input type="number" value=${proposal.max} onInput=${e => patch({ max: Number(e.target.value) })} /></label>
+              <label className="workflow-convert-field"><span className="workflow-convert-field-label">Step</span>
+                <input type="number" value=${proposal.step} onInput=${e => patch({ step: Number(e.target.value) })} /></label>
+            </div>` : null}
+            <label className="workflow-convert-field"><span className="workflow-convert-field-label">Default</span>
+              <input type="number" value=${proposal.default ?? ""} onInput=${e => patch({ default: Number(e.target.value) })} /></label>
+            ${proposal.rationale ? html`<div className="workflow-setting-rationale">${proposal.rationale}</div>` : null}
+
+            <div className="workflow-setting-bindings-title">Bindings <em>(value of <code>v</code> → inner params)</em></div>
+            ${(proposal.bindings || []).map((b, i) => html`<div className="workflow-setting-binding" key=${i}>
+              <select value=${b.nodeId} onChange=${e => patchBinding(i, { nodeId: e.target.value, param: paramsForNode(e.target.value)[0]?.key || "" })}>
+                ${surface.map(s => html`<option key=${s.nodeId} value=${s.nodeId}>${s.label} · ${s.kind}</option>`)}
+              </select>
+              <select value=${b.param} onChange=${e => patchBinding(i, { param: e.target.value })}>
+                ${paramsForNode(b.nodeId).map(p => html`<option key=${p.key} value=${p.key}>${p.key}</option>`)}
+              </select>
+              <input className="workflow-setting-expr" value=${b.expr} title="expression in v" onInput=${e => patchBinding(i, { expr: e.target.value })} />
+              <button type="button" className="workflow-setting-binding-del" title="Remove binding" onClick=${() => removeBinding(i)}>×</button>
+            </div>`)}
+            <button type="button" className="tbtn workflow-setting-addbind" onClick=${addBinding}>+ Add binding</button>
+          </div>` : null}
+        </div>
+        <div className="workflow-modal-foot">
+          <button type="button" className="tbtn" onClick=${onClose}>Cancel</button>
+          <button type="button" className="tbtn tbtn-primary" disabled=${!canAdd}
+            onClick=${() => onAdd(proposal)}>Add setting</button>
+        </div>
+      </div>
+    </div>
+  `, document.body);
 }
 
 function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
@@ -63064,7 +64067,7 @@ function formatDirectionForPrompt(d) {
      - Sections do NOT participate in edges; they have no ports.
      - Lower z-index than nodes so dragging passes through to children
        except for the title bar handle area. */
-function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, onSaveToLibrary, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, hasEditorNode, onSaveToLibrary, onConvertToApp, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -63166,6 +64169,12 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
           }}
           onMouseDown=${(e) => e.stopPropagation()}
         >${saved ? html`<${Icon.Check}/>` : html`<${Icon.Library}/>`}</button>` : null}
+        ${hasEditorNode ? html`<button
+          className="workflow-node-section-savelib workflow-node-section-convert"
+          title="Convert this section into a reusable custom app node — one input connector, a live preview, a settings panel, and one output. Saved to the Local library."
+          onClick=${(e) => { e.stopPropagation(); onConvertToApp && onConvertToApp(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Package}/></button>` : null}
         <button
           className="workflow-node-section-tidy"
           title="Tidy — pack the contained nodes into a grid and resize this section to fit. Drag the section wider first for more columns."
@@ -63200,6 +64209,65 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
       </div>
     </div>
   `;
+}
+
+/* Convert-section → custom-app config modal. Picks which inner node becomes the
+   input connector, the live preview, and the output connector. Settings are
+   authored later (agent propose-confirm) on the resulting node. */
+function ConvertSectionModal({ cfg, onPatch, onCancel, onConfirm }) {
+  const inner = (cfg && cfg.inner) || [];
+  const editors = inner.filter(n => n.isEditor);
+  const inCands  = inner.filter(n => n.canIn);
+  const outCands = inner.filter(n => n.canOut);
+  const optLabel = (n) => `${n.label} · ${n.kind}`;
+  const canConfirm = !!cfg.previewNodeId;
+  return createPortal(html`
+    <div className="workflow-modal-backdrop" onMouseDown=${onCancel}>
+      <div className="workflow-modal workflow-convert-modal" onMouseDown=${e => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div>
+            <div className="workflow-modal-title">Convert section to custom app</div>
+            <div className="workflow-modal-sub">Package these nodes into one reusable node. Settings are added afterwards.</div>
+          </div>
+          <button type="button" className="workflow-modal-close" onClick=${onCancel} aria-label="Close">×</button>
+        </div>
+        <div className="workflow-convert-fields">
+          <label className="workflow-convert-field">
+            <span className="workflow-convert-field-label">Input <em>(left connector — replaceable)</em></span>
+            <select value=${cfg.inputNodeId || ""} onChange=${e => onPatch({ inputNodeId: e.target.value })}>
+              <option value="">— none —</option>
+              ${inCands.map(n => html`<option key=${n.id} value=${n.id}>${optLabel(n)}</option>`)}
+            </select>
+          </label>
+          <label className="workflow-convert-field">
+            <span className="workflow-convert-field-label">Preview <em>(shown live; must be an editor)</em></span>
+            <select value=${cfg.previewNodeId || ""} onChange=${e => onPatch({ previewNodeId: e.target.value })}>
+              <option value="">— pick an editor —</option>
+              ${editors.map(n => html`<option key=${n.id} value=${n.id}>${optLabel(n)}</option>`)}
+            </select>
+            ${!editors.length ? html`<span className="workflow-convert-warn">No editor node found inside — a preview needs one.</span>` : null}
+          </label>
+          <label className="workflow-convert-field">
+            <span className="workflow-convert-field-label">Output <em>(right connector)</em></span>
+            <select value=${cfg.outputNodeId || ""} onChange=${e => onPatch({ outputNodeId: e.target.value })}>
+              <option value="">— none —</option>
+              ${outCands.map(n => html`<option key=${n.id} value=${n.id}>${optLabel(n)}</option>`)}
+            </select>
+          </label>
+          <label className="workflow-convert-check">
+            <input type="checkbox" checked=${cfg.removeSection !== false}
+              onChange=${e => onPatch({ removeSection: e.target.checked })} />
+            <span>Remove the section + its loose nodes after packaging</span>
+          </label>
+        </div>
+        <div className="workflow-modal-foot">
+          <button type="button" className="tbtn" onClick=${onCancel}>Cancel</button>
+          <button type="button" className="tbtn tbtn-primary"
+            disabled=${!canConfirm} onClick=${onConfirm}>Convert</button>
+        </div>
+      </div>
+    </div>
+  `, document.body);
 }
 
 /* DS brainstorm node — single-prompt-in, fan-out-on-Build orchestrator.

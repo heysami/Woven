@@ -2828,6 +2828,34 @@ KINDS = {
         "pauseAfter":   False,
         "notes": "Pure UI grouping. No semantics. Never created by the orchestrator; manual only.",
     },
+
+    # ── custom-app (section → reusable mini-app; manual-only) ─────────────────
+    "custom-app": {
+        "title":        "Custom app (packaged section)",
+        "category":     "decoration",
+        "inputs": {
+            "title":    {"type": "text",   "userEditable": True},
+            "w":        {"type": "number", "userEditable": True},
+            "h":        {"type": "number", "userEditable": True},
+            "subgraph": {"type": "object"},
+            "io":       {"type": "object"},
+            "settings": {"type": "object"},
+            "values":   {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "A section packaged into a reusable node: embeds the captured subgraph "
+                 "(nodes + internal edges), exposes one input/preview/output role and a set of "
+                 "agent-constructed settings. Live-embedded; never created by the orchestrator.",
+    },
 }
 
 
@@ -3474,6 +3502,16 @@ KIND_IO = {
         "accepts":  [{"port": "in", "label": "Generate into section",
                        "tags": ["text-gen", "asset-gen"], "ingest": "sectionWrite",
                        "authoring": _SECTION_AUTHORING}],
+    },
+    "custom-app": {
+        # Static, permissive fallback tags. The frontend WORKFLOW_CONNECT_DEFS
+        # resolve(node) hook narrows the in/out tags per instance from the inner
+        # input/output nodes' own contracts.
+        "provides": [{"port": "out", "label": "Output",
+                       "tags": ["asset", "remixable", "blendable"],
+                       "resolve": "customAppOutput"}],
+        "accepts":  [{"port": "in", "label": "Input",
+                       "tags": ["asset"], "ingest": "context"}],
     },
     "skill": {
         "dynamic": True,   # ports depend on node.skill; frontend keeps a capability resolver
