@@ -48408,7 +48408,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         onMouseDown=${(e) => onStartEdge && onStartEdge("source-write", e)}
       >
         <div className="workflow-port-dot"/>
-        <span className="workflow-port-label workflow-port-label-left">writes</span>
+        <span className="workflow-port-label workflow-port-label-left">folder access</span>
       </div>
       <div
         className="workflow-port-zone workflow-proto-port workflow-proto-port-tr"
@@ -48418,7 +48418,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         onMouseDown=${(e) => onStartEdge && onStartEdge("source-read", e)}
       >
         <div className="workflow-port-dot"/>
-        <span className="workflow-port-label workflow-port-label-right">files</span>
+        <span className="workflow-port-label workflow-port-label-right">read-only folder access</span>
       </div>
       <div
         className="workflow-port-zone workflow-proto-port workflow-proto-port-br"
@@ -61762,7 +61762,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
            title=${"Source-read · agents wired to this port read & refine design-systems/" + dsId + "/ (styles.css, gallery.html, DESIGN.md)"}
            onMouseDown=${(e) => onStartEdge && onStartEdge("source-read", e)}>
         <div className="workflow-port-dot"/>
-        <span className="workflow-port-label workflow-port-label-right">files</span>
+        <span className="workflow-port-label workflow-port-label-right">read-only folder access</span>
       </div>
       <div
         className="workflow-node-resize-corner"
@@ -66803,7 +66803,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
   ] : [
     { side: "input",       label: "input",  title: "Connect one or more text nodes → each becomes a labeled input section in the agent's prompt. Multiple inputs allowed." },
     { side: "system-in",   label: "system", title: "Connect a text node → this is the agent's system prompt / instructions" },
-    { side: "folder-read", label: "read",   title: "Connect a prototype's source-read port OR a DS library's source-read port → agent operates in that folder (source/<branch>/ or design-systems/<dsId>/)" },
+    { side: "folder-read", label: "read-only folder access",   title: "Connect a prototype's source-read port OR a DS library's source-read port → agent operates in that folder (source/<branch>/ or design-systems/<dsId>/)" },
   ];
   const PORTS_RIGHT = isPrototypePreset ? [
     { side: "output", label: outputTargets.length === 0 ? "output" : `output (${outputTargets.length})`,
@@ -66811,7 +66811,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         ? "Optional — wire downstream typed targets if you want the agent to also return structured outputs (color palette / typography / etc). For most prototype builds, leave unwired — the build writes files into the target folder directly."
         : `Outputs → ${outputTargets.map(t => `${t.targetType} (${t.label})`).join(", ")}` },
   ] : [
-    { side: "folder-write", label: "write", title: "Folder write access. If nothing connects here, write defaults to the same folder as read." },
+    { side: "folder-write", label: "folder access", title: "Folder write access. If nothing connects here, write defaults to the same folder as read." },
     { side: "output", label: outputTargets.length === 0 ? "output" : `output (${outputTargets.length})`,
       title: outputTargets.length === 0
         ? "Drop one or more edges into Color palette / Typography / Design system / asset / text nodes. Each downstream node's type is inferred and added to the agent's prompt schema."
