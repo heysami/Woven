@@ -23252,8 +23252,15 @@ function workflowPortPosition(node, side, ctx) {
     const idx = i < 0 ? 0 : i;
     return { x: node.x, y: node.y + bodyTop + bodyH * (idx + 0.5) / total };
   }
+  // Default in/out — left/right edge at vertical centre. When the node is
+  // SELECTED with floating panels, push the endpoints out to the panels' OUTER
+  // edges so wires meet the connector at the end of the floating panel (matching
+  // the ⊕ buttons + port dots), not at the hidden core-rect edge.
+  const dlay = (ctx && ctx.selectedIds && ctx.selectedIds.has && ctx.selectedIds.has(node.id) && ctx.appLayout && ctx.appLayout[node.id]) || null;
+  const offL = dlay ? (dlay.panelL || 0) : 0;
+  const offR = dlay ? (dlay.panelR || 0) : 0;
   const cy = node.y + h / 2;
-  return side === "in" ? { x: node.x, y: cy } : { x: node.x + w, y: cy };
+  return side === "in" ? { x: node.x - offL, y: cy } : { x: node.x + w + offR, y: cy };
 }
 
 // Edge refs in workflow.json take the form "nodeId.port". Split safely.
@@ -27730,10 +27737,26 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
       const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"], .workflow-node-section[data-node-id="' + nodeId + '"]');
       if (el) {
         const r = el.getBoundingClientRect();
-        if (!last || last.top !== r.top || last.left !== r.left
-            || last.width !== r.width || last.height !== r.height) {
-          last = { top: r.top, left: r.left, width: r.width, height: r.height,
-                   right: r.right, bottom: r.bottom };
+        // When the node is detached (floating panels), anchor the ⊕ buttons to
+        // the OUTER edges of the floating panels, not the node's core rect. The
+        // panels live in the grown iframe (.workflow-driven-frame) for tool nodes
+        // and in .workflow-node-float-panel children for native vector/composer.
+        // Keep top/height from the node so the buttons stay vertically centred on
+        // the node body; only widen left/right.
+        let left = r.left, right = r.right;
+        if (el.getAttribute("data-detached") === "true") {
+          el.querySelectorAll(".workflow-driven-frame, .workflow-node-float-panel").forEach(f => {
+            const fr = f.getBoundingClientRect();
+            if (fr.width > 0 && fr.height > 0) {
+              if (fr.left < left) left = fr.left;
+              if (fr.right > right) right = fr.right;
+            }
+          });
+        }
+        if (!last || last.top !== r.top || last.left !== left
+            || last.right !== right || last.height !== r.height) {
+          last = { top: r.top, left: left, width: right - left, height: r.height,
+                   right: right, bottom: r.bottom };
           setRect(last);
         }
       } else if (last) {
@@ -58102,7 +58125,7 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-l": (detached ? lay.panelL : 0) + "px", "--node-panel-r": (detached ? lay.panelR : 0) + "px" }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">⬢</span>
@@ -58580,7 +58603,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-l": (detached ? lay.panelL : 0) + "px", "--node-panel-r": (detached ? lay.panelR : 0) + "px" }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">${cfg.glyph}</span>

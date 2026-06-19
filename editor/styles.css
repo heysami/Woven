@@ -6705,6 +6705,16 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   z-index: 12;
   overflow: visible;
 }
+/* Detached: the in/out port dots (the green diamonds you grab to wire) move out
+   to the floating panels' OUTER edges — matching the shifted wire endpoints
+   (workflowPortPosition) and the ⊕ buttons — instead of sitting at the hidden
+   core-rect edge. The node sets --node-panel-l/-r to its reported extents. */
+.workflow-node[data-detached="true"] .workflow-port-zone-in {
+  left: calc(-1 * var(--node-panel-l, 0px)) !important;
+}
+.workflow-node[data-detached="true"] .workflow-port-zone-out {
+  right: calc(-1 * var(--node-panel-r, 0px)) !important;
+}
 /* Native floating-panel editors (vector / composer) use the same convention. */
 .workflow-node[data-detached="true"] .workflow-node-float-panel {
   position: absolute;
