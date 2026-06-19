@@ -30151,9 +30151,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // fetched the same way (request/reply keyed by reqId; waiters live on
   // window so WorkflowBrowserNode can register them).
   const webClipRef = useRef(null);  // last element copied from a browser node (opaque proxy)
-  const spawnWebSnippet = useCallback(async (htmlFrag, srcNodeId) => {
+  const spawnWebSnippet = useCallback(async (htmlFrag, srcNodeId, dims) => {
     const frag = (htmlFrag || "").trim();
     if (!frag) return;
+    // Size the node to the copied element's on-screen box (scaled to a sane
+    // max) so it isn't crammed into a tiny default card.
+    let nw = 360, nh = 260;
+    const dw = dims && dims.w, dh = dims && dims.h;
+    if (dw > 0 && dh > 0) {
+      const sc = Math.min(1, 1000 / dw, 800 / dh);
+      nw = Math.max(140, Math.round(dw * sc));
+      nh = Math.max(100, Math.round(dh * sc));
+    }
     try {
       const project = activeProjectId();
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -30165,7 +30174,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         '<html lang="en"><head>',
         '  <meta charset="utf-8">',
         `  <title>Web snippet ${stamp}</title>`,
-        "  <style>body{margin:16px;background:#fff}</style>",
+        "  <style>html,body{margin:0;background:#fff}</style>",
         "</head>",
         "<body>",
         frag,
@@ -30189,7 +30198,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         ...d,
         nodes: [...(d.nodes || []), {
           id: assetId, kind: "asset", assetKind: "html",
-          x: tx, y: ty, w: 320, h: 240,
+          x: tx, y: ty, w: nw, h: nh,
           path: relPath, spawnedBy: "web-pick",
         }],
       }));
@@ -30233,13 +30242,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return;
       }
       if (T === "th-web-copied") {
-        webClipRef.current = { html: d.html || "", srcNodeId: nodeId };
+        webClipRef.current = { html: d.html || "", srcNodeId: nodeId, w: d.w || 0, h: d.h || 0 };
         flashPickOp("done", "Copied — ⌘V to place");
         return;
       }
       if (T === "th-web-paste") {
         const clip = webClipRef.current;
-        if (clip && clip.html) spawnWebSnippet(clip.html, clip.srcNodeId || nodeId);
+        if (clip && clip.html) spawnWebSnippet(clip.html, clip.srcNodeId || nodeId, clip);
         else flashPickOp("error", "Nothing copied yet — select an element + ⌘C first");
         return;
       }
@@ -30277,7 +30286,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!clip || !clip.html) return;
       e.preventDefault(); e.stopPropagation();
       if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-      spawnWebSnippet(clip.html, clip.srcNodeId || pid);
+      spawnWebSnippet(clip.html, clip.srcNodeId || pid, clip);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
