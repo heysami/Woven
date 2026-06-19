@@ -625,6 +625,7 @@ const Icon = {
   X:        () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 3l10 10M13 3L3 13"/></svg>`,
   Branch:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="3.5" r="1.5"/><circle cx="4" cy="12.5" r="1.5"/><circle cx="12" cy="6" r="1.5"/><path d="M4 5v6M4 9c0-2 1.5-3 4-3"/></svg>`,
   Fork:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="1.5"/><circle cx="12" cy="4" r="1.5"/><circle cx="8" cy="13" r="1.5"/><path d="M4 5.5v2c0 1.5 1.5 2.5 4 2.5s4-1 4-2.5v-2M8 10v1.5"/></svg>`,
+  Merge:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="3.5" r="1.5"/><circle cx="4" cy="12.5" r="1.5"/><circle cx="12" cy="9" r="1.5"/><path d="M4 5v6M4 6c0 2 2 3 6.5 3"/></svg>`,
   Play:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4 3l9 5-9 5z"/></svg>`,
   Flow:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="5" height="3.5" rx="0.6"/><rect x="9" y="6.5" width="5" height="3" rx="0.6"/><rect x="2" y="10.5" width="5" height="3" rx="0.6"/><path d="M7 3.75c1 0 2 1 2 2.25v1.5M4.5 5.5v5"/></svg>`,
   Tree:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="5.5" y="1.5" width="5" height="3" rx="0.6"/><rect x="1" y="11" width="4" height="3" rx="0.6"/><rect x="6" y="11" width="4" height="3" rx="0.6"/><rect x="11" y="11" width="4" height="3" rx="0.6"/><path d="M8 4.5v3M3 11V7.5h10V11"/></svg>`,
@@ -9830,6 +9831,48 @@ function CommentsPanel({ railTop, panelRef }) {
   `, document.body);
 }
 
+/* Render a unified-diff string with add/remove/hunk coloring. No deps — a thin
+   line classifier (`+`→add, `-`→remove, `@@`→hunk, `diff/index/+++/---`→meta).
+   Used by the GitPanel compare modal for working/commit/range diffs. */
+function UnifiedDiff({ text }) {
+  if (!text) return html`<div className="th-git-diff-empty">No changes.</div>`;
+  const lines = text.split("\n");
+  return html`<pre className="th-git-diff-pre">${lines.map((ln, i) => {
+    let cls = "th-git-dl";
+    if (ln.startsWith("+++") || ln.startsWith("---") || ln.startsWith("diff ") || ln.startsWith("index "))
+      cls += " is-meta";
+    else if (ln.startsWith("@@")) cls += " is-hunk";
+    else if (ln.startsWith("+")) cls += " is-add";
+    else if (ln.startsWith("-")) cls += " is-del";
+    return html`<div className=${cls} key=${i}>${ln || " "}</div>`;
+  })}</pre>`;
+}
+
+/* Compare modal body — either a unified diff or, for a conflicted file, the
+   three sides side-by-side (ours = current branch, theirs = incoming) plus the
+   merged working copy with markers. Read-only: resolution still goes through
+   the agent (or a manual edit). */
+function DiffBody({ d }) {
+  if (d.loading) return html`<div className="runs-empty">Loading diff…</div>`;
+  if (d.error) return html`<div className="shares-error-banner">${d.error}</div>`;
+  const data = d.data || {};
+  if (data.kind === "conflict") {
+    const col = (label, body, mod) => html`
+      <div className=${"th-git-conflict-col" + (mod ? " " + mod : "")}>
+        <div className="th-git-conflict-col-head">${label}</div>
+        <pre className="th-git-diff-pre">${body || " "}</pre>
+      </div>`;
+    return html`
+      <div className="th-git-conflict-grid">
+        ${col("Ours (" + (d.curBranch || "current") + ")", data.ours, "is-ours")}
+        ${col("Theirs (incoming)", data.theirs, "is-theirs")}
+      </div>
+      <div className="th-git-conflict-merged-head">Working copy (with conflict markers)</div>
+      <${UnifiedDiff} text=${data.merged} />`;
+  }
+  return html`<${UnifiedDiff} text=${data.diff} />`;
+}
+
 /* GitPanel — fifth (bottom-most) right-rail panel: local git + GitHub for the
    active project. Commit / push / pull / connect over the existing /__git/*
    daemon routes (status, commit, publish, connect, resolve) plus the new
@@ -9855,6 +9898,9 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
   const [tokenInput, setTokenInput] = useState("");          // paste-a-token sign-in field
   const [repoQuery, setRepoQuery] = useState("");            // repo-picker search box
   const [newRepoPrivate, setNewRepoPrivate] = useState(true);
+  const [showBranches, setShowBranches] = useState(false); // branch (fork/merge) section open?
+  const [newBranch, setNewBranch] = useState("");          // new-branch name field
+  const [diff, setDiff] = useState(null);   // compare modal: {title, loading, data, error}
   const searchTimer = useRef(0);
   const msgTouched = useRef(false);           // stop the poll clobbering typed text
   const devTimer = useRef(0);
@@ -9991,6 +10037,78 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
       flashErr("Open the workflow canvas to let the agent resolve conflicts.");
     }
   };
+
+  // ── Branches: fork / switch / merge / delete (real git branches, distinct
+  //    from Woven prototypes). Switch/merge are host-authoritative — the daemon
+  //    refuses them on a dirty tree or active live session. ───────────────────
+  const branchList = (st && st.branches) || [];
+  const curBranch = (st && st.branch) || "main";
+  const doCreateBranch = async () => {
+    const name = newBranch.trim(); if (!name) return;
+    const j = await op("branch-create", { name });
+    if (j) { flashNote("Forked to " + (j.branch || name)); setNewBranch(""); reload(); }
+  };
+  const doSwitchBranch = async (name) => {
+    if (name === curBranch) return;
+    if (st && st.dirty) { flashErr("Commit or discard changes before switching branches"); return; }
+    const j = await op("branch-switch", { name });
+    if (j) { flashNote("Switched to " + (j.branch || name)); msgTouched.current = false; reload(); }
+  };
+  const doMergeBranch = async (name) => {
+    if (st && st.dirty) { flashErr("Commit or discard changes before merging"); return; }
+    if (!window.confirm("Merge '" + name + "' into '" + curBranch + "'?")) return;
+    const j = await op("branch-merge", { name });
+    if (j) {
+      if (j.conflicts && j.conflicts.length)
+        flashErr(j.conflicts.length + " file(s) conflicted — resolve below before committing");
+      else flashNote("Merged " + name + " into " + curBranch);
+      reload();
+    }
+  };
+  const doDeleteBranch = async (name) => {
+    if (!window.confirm("Delete branch '" + name + "'? This can't be undone.")) return;
+    let j = await op("branch-delete", { name });
+    // Unmerged branch → offer a force delete (the daemon surfaces a clear error).
+    if (j === null && window.confirm("'" + name + "' has unmerged commits. Force-delete and discard them?"))
+      j = await op("branch-delete", { name, force: true });
+    if (j) { flashNote("Deleted " + name); reload(); }
+  };
+
+  // ── GitHub fork + pull-request (the collaboration / GitHub-side merge path) ─
+  const doForkRepo = async () => {
+    const j = await ghOp("fork", {});
+    if (j && j.fork) {
+      flashNote("Forked to " + j.fork.full_name);
+      if (j.fork.html_url) window.open(j.fork.html_url, "_blank");
+    }
+  };
+  const doOpenPR = async () => {
+    if (curBranch === "main" || curBranch === "master") {
+      flashErr("Switch to a feature branch first — you can't PR the base branch.");
+      return;
+    }
+    const j = await ghOp("pr", { base: "main", title: curBranch });
+    if (j && j.pr) {
+      flashNote("Opened PR #" + (j.pr.number || ""));
+      if (j.pr.url) window.open(j.pr.url, "_blank");
+    }
+  };
+
+  // ── Compare view (read-only). Fetches /__git/diff and shows it in a modal;
+  //    agent-resolution is unchanged, this just lets you SEE what changed. ─────
+  const openDiff = async (params, title) => {
+    setDiff({ title, loading: true, data: null, error: null });
+    try {
+      const base = apiUrl("/__git/diff");
+      const sep = base.includes("?") ? "&" : "?";
+      const q = Object.entries(params).map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
+      const r = await fetch(base + sep + q);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "diff failed");
+      setDiff({ title, loading: false, data: j, error: null });
+    } catch (e) { setDiff({ title, loading: false, data: null, error: String(e.message || e) }); }
+  };
+  const closeDiff = () => setDiff(null);
 
   // ── GitHub account: device-flow sign-in ──────────────────────────────────
   const pollDevice = (interval) => {
@@ -10198,10 +10316,51 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
         ${!loading && repo && html`
           <div className="th-git-status">
             <div className="th-git-stat-row">
-              <span className="th-git-pill">${st.dirty ? (st.changedCount + " changed") : "clean"}</span>
+              ${st.dirty
+                ? html`<button className="th-git-pill th-git-pill-btn" onClick=${() => openDiff({ kind: "working" }, "Uncommitted changes")}
+                    title="See everything changed since your last commit">${st.changedCount} changed ↗</button>`
+                : html`<span className="th-git-pill">clean</span>`}
               ${st.ahead > 0 && html`<span className="th-git-pill is-ahead">↑ ${st.ahead}</span>`}
               ${st.behind > 0 && html`<span className="th-git-pill is-behind">↓ ${st.behind}</span>`}
             </div>
+
+            ${!isGuest && html`
+              <div className="th-git-branches">
+                <div className="th-git-branch-cur">
+                  <${Icon.Branch}/>
+                  <span className="th-git-branch-name" title="Current git branch (not a Woven prototype)">${curBranch}</span>
+                  <button className="th-git-link" onClick=${() => setShowBranches(v => !v)}>
+                    ${showBranches ? "Hide" : "Branches (" + branchList.length + ")"}</button>
+                </div>
+                ${showBranches && html`
+                  <div className="th-git-branch-body">
+                    <div className="th-git-create">
+                      <input className="th-git-input" placeholder="new-branch-name"
+                        value=${newBranch} onInput=${e => setNewBranch(e.target.value)}
+                        onKeyDown=${e => { if (e.key === "Enter") doCreateBranch(); }} />
+                      <button className="th-git-btn is-primary" disabled=${!newBranch.trim() || busy === "branch-create"} onClick=${doCreateBranch}
+                        title="Fork a new branch off the current one, carrying your edits">
+                        <${Icon.Fork}/> ${busy === "branch-create" ? "Forking…" : "Fork"}</button>
+                    </div>
+                    <div className="th-git-branch-list">
+                      ${branchList.map(b => html`
+                        <div className=${"th-git-branch-item" + (b.current ? " is-current" : "")} key=${b.name}>
+                          <button className="th-git-branch-pick" disabled=${b.current || !!busy} onClick=${() => doSwitchBranch(b.name)}
+                            title=${b.current ? "Current branch" : "Switch to this branch"}>
+                            <span className="th-git-branch-pick-name">${b.name}</span>
+                            ${b.current && html`<span className="th-git-pill">current</span>`}
+                            ${b.ahead > 0 && html`<span className="th-git-pill is-ahead">↑${b.ahead}</span>`}
+                            ${b.behind > 0 && html`<span className="th-git-pill is-behind">↓${b.behind}</span>`}
+                          </button>
+                          ${!b.current && html`
+                            <button className="th-icon-btn" disabled=${!!busy} onClick=${() => doMergeBranch(b.name)}
+                              title=${"Merge " + b.name + " into " + curBranch}><${Icon.Merge}/></button>
+                            <button className="th-icon-btn" disabled=${!!busy} onClick=${() => doDeleteBranch(b.name)}
+                              title=${"Delete " + b.name}><${Icon.Trash}/></button>`}
+                        </div>`)}
+                    </div>
+                  </div>`}
+              </div>`}
 
             ${!isGuest && html`
               <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
@@ -10232,11 +10391,26 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
                   <${Icon.Refresh}/> ${opBusy("discard-remote") ? "Resetting…" : "Reset to GitHub"}</button>
               </div>
             `}
+
+            ${signedIn && hasRemote && html`
+              <div className="th-git-actions">
+                <button className="th-git-btn" disabled=${!!busy} onClick=${doOpenPR}
+                  title="Push this branch and open a pull request to main on GitHub">
+                  <${Icon.ArrowUp}/> ${busy === "pr" ? "Opening PR…" : "Open PR"}</button>
+                <button className="th-git-btn" disabled=${!!busy} onClick=${doForkRepo}
+                  title="Fork this repo on GitHub under your account (to contribute to a repo you don't own)">
+                  <${Icon.Fork}/> ${busy === "fork" ? "Forking…" : "Fork on GitHub"}</button>
+              </div>`}
             `}
 
             ${st.conflicts && st.conflicts.length > 0 && html`
               <div className="shares-error-banner th-git-conflict">
-                <span>${st.conflicts.length} unresolved conflict(s): ${st.conflicts.slice(0, 5).join(", ")}</span>
+                <span>${st.conflicts.length} unresolved conflict(s):</span>
+                <div className="th-git-conflict-files">
+                  ${st.conflicts.slice(0, 8).map(f => html`
+                    <button className="th-git-conflict-file" key=${f} onClick=${() => openDiff({ kind: "conflict", path: f }, "Conflict: " + f)}
+                      title="Compare both sides of this conflict">${f} ↗</button>`)}
+                </div>
                 ${onStartChatWithPrompt && html`
                   <button className="th-git-btn is-primary" disabled=${busy === "resolve"} onClick=${doResolve}
                     title="Let the agent reconcile both sides and remove the conflict markers">
@@ -10247,17 +10421,31 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt }) {
             ${commits === null && html`<div className="runs-empty">Loading…</div>`}
             ${commits !== null && commits.length === 0 && html`<div className="runs-empty">No commits yet — make your first commit above.</div>`}
             ${(commits || []).map(c => html`
-              <div className="th-git-commit" key=${c.sha}>
+              <button className="th-git-commit" key=${c.sha} onClick=${() => openDiff({ kind: "commit", sha: c.sha }, c.short + " · " + c.subject)}
+                title="See what this commit changed">
                 <div className="th-git-commit-subj">${c.subject}</div>
                 <div className="th-git-commit-meta">
                   <span className="th-git-sha">${c.short}</span>
                   <span className="th-git-commit-author">${c.author}</span>
                   <span className="th-git-commit-age">${c.relative}</span>
                 </div>
-              </div>
+              </button>
             `)}
           </div>`}
       </div>
+
+      ${diff && html`
+        <div className="th-git-diff-overlay" onClick=${closeDiff}>
+          <div className="th-git-diff-modal" onClick=${e => e.stopPropagation()}>
+            <div className="th-git-diff-head">
+              <span className="th-git-diff-title" title=${diff.title}>${diff.title}</span>
+              <button className="th-icon-btn" onClick=${closeDiff} title="Close"><${Icon.X}/></button>
+            </div>
+            <div className="th-git-diff-scroll">
+              <${DiffBody} d=${{ ...diff, curBranch }} />
+            </div>
+          </div>
+        </div>`}
     </div>
   `, document.body);
 }
@@ -52721,6 +52909,104 @@ function _vecNextName(shapes, type) {
   return base + " " + (max + 1);
 }
 
+// ── Layer groups ───────────────────────────────────────────────────
+// Shapes carry an optional `groupId`; group metadata lives in
+// `node.groups[]` ({id,name,visible,locked,collapsed,src}). The array
+// order of `shapes` is paint order AND the grouping invariant: every
+// member of a group is kept contiguous so a group is one run that wraps
+// in a single <g> and renders as one block in the Layers panel.
+function _vecNextGroupName(groups) {
+  let max = 0;
+  for (const g of (groups || [])) {
+    if (!g || !g.name) continue;
+    const m = g.name.match(/^Group (\d+)$/);
+    if (m) max = Math.max(max, +m[1]);
+  }
+  return "Group " + (max + 1);
+}
+
+// Reorder `shapes` so each group's members are contiguous, anchored at
+// the position of the group's first member (preserving relative order of
+// members and of everything else). Defensive normalisation after import
+// or an agent edit that interleaved groups.
+function _vecNormalizeGroupOrder(shapes) {
+  const list = Array.isArray(shapes) ? shapes : [];
+  const out = [];
+  const placed = new Set();
+  for (const s of list) {
+    if (!s || placed.has(s.id)) continue;
+    if (s.groupId) {
+      for (const m of list) {
+        if (m && m.groupId === s.groupId && !placed.has(m.id)) { out.push(m); placed.add(m.id); }
+      }
+    } else { out.push(s); placed.add(s.id); }
+  }
+  return out;
+}
+
+// Top-level segments in paint order: a contiguous group run becomes one
+// {kind:"group",gid,ids} segment; an ungrouped shape becomes {kind:"shape",id}.
+function _vecSegments(shapes) {
+  const segs = [];
+  let cur = null;
+  for (const s of (shapes || [])) {
+    if (s.groupId) {
+      if (cur && cur.kind === "group" && cur.gid === s.groupId) cur.ids.push(s.id);
+      else { cur = { kind: "group", gid: s.groupId, ids: [s.id] }; segs.push(cur); }
+    } else { cur = null; segs.push({ kind: "shape", id: s.id }); }
+  }
+  return segs;
+}
+
+// Parse an <svg> string into editor shape objects laid out to fit the
+// canvas. Module-level so both the manual importer and the live-linked
+// layer-group sync reuse it.
+function _vecParseSvgText(txt, canvasW, canvasH) {
+  const doc = new DOMParser().parseFromString(txt, "image/svg+xml");
+  const svg = doc.querySelector("svg");
+  if (!svg) throw new Error("No <svg> root.");
+  let sx = 0, sy = 0, sw = 0, sh = 0;
+  const vb = (svg.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
+  if (vb.length === 4 && vb.every(n => Number.isFinite(n))) { sx = vb[0]; sy = vb[1]; sw = vb[2]; sh = vb[3]; }
+  else { sw = parseFloat(svg.getAttribute("width")) || canvasW; sh = parseFloat(svg.getAttribute("height")) || canvasH; }
+  const scale = Math.min(canvasW / (sw || canvasW), canvasH / (sh || canvasH)) || 1;
+  const ox = (canvasW - sw * scale) / 2 - sx * scale;
+  const oy = (canvasH - sh * scale) / 2 - sy * scale;
+  const X = (v) => v * scale + ox, Y = (v) => v * scale + oy, S = (v) => v * scale;
+  const num = (el, a, d) => { const v = parseFloat(el.getAttribute(a)); return Number.isFinite(v) ? v : d; };
+  const styleOf = (el) => {
+    const o = {};
+    const f = el.getAttribute("fill"); if (f) o.fill = f;
+    const st = el.getAttribute("stroke"); if (st && st !== "none") { o.stroke = st; o.strokeWidth = S(num(el, "stroke-width", 1)); }
+    const op = el.getAttribute("opacity"); if (op != null && op !== "") o.opacity = parseFloat(op);
+    return o;
+  };
+  const mk = (type, geom) => ({
+    id: _vecId("sh"), type, name: type, visible: true, locked: false,
+    fill: type === "line" ? "none" : VECTOR_DEFAULT_FILL,
+    stroke: type === "line" ? VECTOR_DEFAULT_STROKE : "none",
+    strokeWidth: type === "line" ? 2 : 1, strokeDasharray: "", strokeLinecap: "butt",
+    opacity: 1, shadow: null, blur: 0, rotation: 0, ...geom,
+  });
+  const ptsToPath = (raw, close) => {
+    const nums = (raw || "").trim().split(/[\s,]+/).map(Number).filter(n => Number.isFinite(n));
+    let d = ""; for (let i = 0; i + 1 < nums.length; i += 2) d += (i === 0 ? "M" : "L") + X(nums[i]) + " " + Y(nums[i + 1]) + " ";
+    return d ? (d + (close ? "Z" : "")) : null;
+  };
+  const out = [];
+  svg.querySelectorAll("path,rect,circle,ellipse,line,polygon,polyline").forEach((el) => {
+    const tag = el.tagName.toLowerCase(); const st = styleOf(el); let sh2 = null;
+    if (tag === "path") { const d = _vecScaleTranslatePathD(el.getAttribute("d") || "", scale, ox, oy); if (d) sh2 = mk("path", { d }); }
+    else if (tag === "rect") sh2 = mk("rect", { x: X(num(el, "x", 0)), y: Y(num(el, "y", 0)), w: S(num(el, "width", 0)), h: S(num(el, "height", 0)), rx: S(num(el, "rx", 0)) });
+    else if (tag === "circle") sh2 = mk("ellipse", { cx: X(num(el, "cx", 0)), cy: Y(num(el, "cy", 0)), rx: S(num(el, "r", 0)), ry: S(num(el, "r", 0)) });
+    else if (tag === "ellipse") sh2 = mk("ellipse", { cx: X(num(el, "cx", 0)), cy: Y(num(el, "cy", 0)), rx: S(num(el, "rx", 0)), ry: S(num(el, "ry", 0)) });
+    else if (tag === "line") sh2 = mk("line", { x1: X(num(el, "x1", 0)), y1: Y(num(el, "y1", 0)), x2: X(num(el, "x2", 0)), y2: Y(num(el, "y2", 0)) });
+    else if (tag === "polygon" || tag === "polyline") { const d = ptsToPath(el.getAttribute("points"), tag === "polygon"); if (d) sh2 = mk("path", { d }); }
+    if (sh2) { Object.assign(sh2, st); out.push(sh2); }
+  });
+  return out;
+}
+
 function _vecResolvePaint(spec, defId) {
   if (spec == null || spec === "" || spec === "none") return { paintAttr: "none" };
   if (typeof spec === "string") return { paintAttr: spec };
@@ -53077,8 +53363,28 @@ function WorkflowVectorEditorNode({
   const canvasW = node.canvasW || 1200;
   const canvasH = node.canvasH || 800;
   const shapes  = Array.isArray(node.shapes) ? node.shapes : [];
+  const groups  = Array.isArray(node.groups) ? node.groups : [];
   const tool    = node.activeTool || "select";
   const selection = Array.isArray(node.selection) ? node.selection : [];
+
+  const groupById = useMemo(() => {
+    const m = {};
+    for (const g of groups) if (g && g.id) m[g.id] = g;
+    return m;
+  }, [groups]);
+  // A shape is hidden when it (or its group) is hidden; locked when it
+  // (or its group) is locked. Group flags cascade to members.
+  const isShapeHidden = useCallback((s) => {
+    if (!s || s.visible === false) return true;
+    const g = s.groupId && groupById[s.groupId];
+    return !!(g && g.visible === false);
+  }, [groupById]);
+  const isShapeLocked = useCallback((s) => {
+    if (!s) return false;
+    if (s.locked) return true;
+    const g = s.groupId && groupById[s.groupId];
+    return !!(g && g.locked);
+  }, [groupById]);
 
   // v4.0 — Phase B (node-I/O framework). The vector editor's AGENT-EDITABLE
   // canonical is a JSON sidecar (vector-<id>.json) holding the shape model
@@ -53108,7 +53414,8 @@ function WorkflowVectorEditorNode({
         const j = JSON.parse(raw);
         if (!j || typeof j !== "object") return;
         const patch = {};
-        if (Array.isArray(j.shapes)) patch.shapes = j.shapes;
+        if (Array.isArray(j.shapes)) patch.shapes = _vecNormalizeGroupOrder(j.shapes);
+        if (Array.isArray(j.groups)) patch.groups = j.groups;
         if (Number.isFinite(j.canvasW)) patch.canvasW = j.canvasW;
         if (Number.isFinite(j.canvasH)) patch.canvasH = j.canvasH;
         if (typeof j.background === "string") patch.background = j.background;
@@ -53135,20 +53442,55 @@ function WorkflowVectorEditorNode({
     }
     return null;
   }, [inPortInputs]);
-  // Wired SVG/vector asset (direct or via a Layer's child) → IMPORT as shapes.
-  const wiredVectorInput = useMemo(() => {
+  // Wired SVG/vector sources — each becomes a LIVE-LINKED GROUP (one per
+  // wired Layer building block, or one per direct SVG asset). When a
+  // source's SVG changes, that group's member shapes are replaced in
+  // place; disconnecting detaches the group into plain editable shapes.
+  const wiredVectorSources = useMemo(() => {
     const isSvg = (i) => i && i.url
       && (/^(svg|vector)$/i.test(i.assetKind || "") || /\.svg(\?|$)/i.test(i.url || i.path || ""));
-    const direct = inPortInputs.find(i => i.type === "asset" && isSvg(i));
-    if (direct) return direct;
+    const out = [];
     for (const i of inPortInputs) {
+      const node = i.node || null;
+      const nm = (node && (node.title || node.name)) || i.name || null;
       if (i.type === "layer") {
         const child = (i.children || []).find(c => c.type === "asset" && isSvg(c));
-        if (child) return child;
+        if (child && node && node.id) out.push({ srcId: node.id, name: nm || "Layer", url: child.url, isLayer: true });
+      } else if (i.type === "asset" && isSvg(i) && node && node.id) {
+        out.push({ srcId: node.id, name: nm || "Vector", url: i.url, isLayer: false });
       }
     }
-    return null;
+    return out;
   }, [inPortInputs]);
+  // First source backs the manual "Import SVG (wired)" affordance.
+  const wiredVectorInput = wiredVectorSources[0] || null;
+  // Wired IMAGE sources — each becomes a live-linked group too, traced to
+  // vector paths. (A layer that already yields SVG is handled above; we
+  // never make two groups for one block.)
+  const wiredImageSources = useMemo(() => {
+    const isImg = (i) => i && i.url
+      && (/^image$/i.test(i.assetKind || "") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(i.url || i.path || ""));
+    const out = [];
+    for (const i of inPortInputs) {
+      const upn = i.node || null;
+      const nm = (upn && (upn.title || upn.name)) || i.label || null;
+      if (i.type === "layer") {
+        const child = (i.children || []).find(c => c.type === "asset" && isImg(c));
+        if (child && upn && upn.id) out.push({ srcId: upn.id, name: nm || "Layer", url: child.url, isLayer: true });
+      } else if (i.type === "asset" && isImg(i) && upn && upn.id) {
+        out.push({ srcId: upn.id, name: nm || "Image", url: i.url, isLayer: false });
+      }
+    }
+    return out;
+  }, [inPortInputs]);
+  // Combined source list driving the live-linked group sync. SVG wins when
+  // a single block could resolve as both.
+  const wiredGroupSources = useMemo(() => {
+    const vec = wiredVectorSources.map(s => ({ ...s, dataKind: "svg" }));
+    const taken = new Set(vec.map(s => s.srcId));
+    const img = wiredImageSources.filter(s => !taken.has(s.srcId)).map(s => ({ ...s, dataKind: "image" }));
+    return [...vec, ...img];
+  }, [wiredVectorSources, wiredImageSources]);
   const traceFileRef = useRef(null);
 
   const dragRef = useRef(null);
@@ -53224,6 +53566,10 @@ function WorkflowVectorEditorNode({
         setSelection([]);
         return;
       }
+      // Locked shape (or a member of a locked group) — not selectable or
+      // movable from the stage. Use the Layers panel to unlock.
+      const hitShape = shapes.find(x => x.id === id);
+      if (hitShape && isShapeLocked(hitShape)) { e.stopPropagation(); return; }
       // Double-click on an already-selected path → enter node-edit mode.
       if (e.detail >= 2 && selection.length === 1 && selection[0] === id) {
         const s = shapes.find(x => x.id === id);
@@ -53484,7 +53830,9 @@ function WorkflowVectorEditorNode({
         }
       }
       if ((e.key === "Backspace" || e.key === "Delete") && selection.length) {
-        commitShapes(shapes.filter(s => !selection.includes(s.id)), { selection: [] });
+        const nextShapes = shapes.filter(s => !selection.includes(s.id));
+        const used = new Set(nextShapes.map(s => s.groupId).filter(Boolean));
+        commitShapes(nextShapes, { selection: [], groups: groups.filter(g => used.has(g.id) || g.src) });
         e.preventDefault();
         return;
       }
@@ -53595,51 +53943,56 @@ function WorkflowVectorEditorNode({
   // Trace an image bitmap to vector paths via ImageTracer. Source is a
   // wired image asset (preferred) or a hidden file picker. Each traced
   // <path> becomes a path shape, scaled to fit canvasW×canvasH.
+  // Core tracer: bitmap src → array of path shapes fitted to the canvas.
+  // Shared by the manual "Trace image" button and the live-linked image
+  // group sync. Waits briefly for ImageTracer in case it's still loading.
+  const _traceImageToShapes = async (src) => {
+    let tries = 0;
+    while (!window.ImageTracer && tries < 25) { await new Promise(r => setTimeout(r, 200)); tries++; }
+    if (!window.ImageTracer) throw new Error("ImageTracer not loaded yet.");
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error("Could not load image."));
+      im.src = src;
+    });
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    if (!iw || !ih) throw new Error("Image has no dimensions.");
+    const cv = document.createElement("canvas");
+    cv.width = iw; cv.height = ih;
+    const ctx = cv.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const imgdata = ctx.getImageData(0, 0, iw, ih);
+    const svgStr = window.ImageTracer.imagedataToSVG(imgdata, { ltres: 1, qtres: 1, numberofcolors: 16, pathomit: 8 });
+    const doc = new DOMParser().parseFromString(svgStr, "image/svg+xml");
+    const paths = Array.from(doc.querySelectorAll("path"));
+    if (!paths.length) throw new Error("Tracer returned no paths.");
+    // Fit the traced bitmap (iw×ih) into the canvas, preserving aspect, centered.
+    const scale = Math.min(canvasW / iw, canvasH / ih);
+    const ox = (canvasW - iw * scale) / 2;
+    const oy = (canvasH - ih * scale) / 2;
+    const newShapes = [];
+    paths.forEach((p, i) => {
+      const d0 = p.getAttribute("d");
+      if (!d0) return;
+      const d = _vecScaleTranslatePathD(d0, scale, ox, oy);
+      if (!d) return;
+      const sh = _makeShape("path", { d, closed: true });
+      sh.name = "Traced " + (i + 1);
+      const fill = p.getAttribute("fill");
+      if (fill && fill !== "none") sh.fill = fill;
+      sh.stroke = "none";
+      newShapes.push(sh);
+    });
+    if (!newShapes.length) throw new Error("No usable paths after scaling.");
+    return newShapes;
+  };
   const traceImageSrc = async (src, revoke) => {
-    if (!window.ImageTracer) {
-      setOpState({ phase: "error", message: "ImageTracer not loaded yet." });
-      return;
-    }
     setOpState({ phase: "working", message: "Tracing image…" });
     try {
-      const img = await new Promise((resolve, reject) => {
-        const im = new Image();
-        im.crossOrigin = "anonymous";
-        im.onload = () => resolve(im);
-        im.onerror = () => reject(new Error("Could not load image."));
-        im.src = src;
-      });
-      const iw = img.naturalWidth || img.width;
-      const ih = img.naturalHeight || img.height;
-      if (!iw || !ih) throw new Error("Image has no dimensions.");
-      const cv = document.createElement("canvas");
-      cv.width = iw; cv.height = ih;
-      const ctx = cv.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      const imgdata = ctx.getImageData(0, 0, iw, ih);
-      const svgStr = window.ImageTracer.imagedataToSVG(imgdata, { ltres: 1, qtres: 1, numberofcolors: 16, pathomit: 8 });
-      const doc = new DOMParser().parseFromString(svgStr, "image/svg+xml");
-      const paths = Array.from(doc.querySelectorAll("path"));
-      if (!paths.length) throw new Error("Tracer returned no paths.");
-      // Fit the traced bitmap (iw×ih) into the canvas while preserving
-      // aspect ratio, centered.
-      const scale = Math.min(canvasW / iw, canvasH / ih);
-      const ox = (canvasW - iw * scale) / 2;
-      const oy = (canvasH - ih * scale) / 2;
-      const newShapes = [];
-      paths.forEach((p, i) => {
-        const d0 = p.getAttribute("d");
-        if (!d0) return;
-        const d = _vecScaleTranslatePathD(d0, scale, ox, oy);
-        if (!d) return;
-        const sh = _makeShape("path", { d, closed: true });
-        sh.name = "Traced " + (i + 1);
-        const fill = p.getAttribute("fill");
-        if (fill && fill !== "none") sh.fill = fill;
-        sh.stroke = "none";
-        newShapes.push(sh);
-      });
-      if (!newShapes.length) throw new Error("No usable paths after scaling.");
+      const newShapes = await _traceImageToShapes(src);
       commitShapes([...shapes, ...newShapes], { selection: newShapes.map(s => s.id) });
       setOpState({ phase: "done", message: `traced ${newShapes.length} paths ✓` });
       setTimeout(() => setOpState({ phase: "idle", message: "" }), 1200);
@@ -53670,42 +54023,8 @@ function WorkflowVectorEditorNode({
     setOpState({ phase: "working", message: "Importing SVG…" });
     try {
       const txt = await fetch(url).then(r => { if (!r.ok) throw new Error("fetch " + r.status); return r.text(); });
-      const doc = new DOMParser().parseFromString(txt, "image/svg+xml");
-      const svg = doc.querySelector("svg");
-      if (!svg) throw new Error("No <svg> root.");
-      // Source extent: prefer viewBox, else width/height.
-      let sx = 0, sy = 0, sw = 0, sh = 0;
-      const vb = (svg.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
-      if (vb.length === 4 && vb.every(n => Number.isFinite(n))) { sx = vb[0]; sy = vb[1]; sw = vb[2]; sh = vb[3]; }
-      else { sw = parseFloat(svg.getAttribute("width")) || canvasW; sh = parseFloat(svg.getAttribute("height")) || canvasH; }
-      const scale = Math.min(canvasW / (sw || canvasW), canvasH / (sh || canvasH)) || 1;
-      const ox = (canvasW - sw * scale) / 2 - sx * scale;
-      const oy = (canvasH - sh * scale) / 2 - sy * scale;
-      const X = (v) => v * scale + ox, Y = (v) => v * scale + oy, S = (v) => v * scale;
-      const num = (el, a, d) => { const v = parseFloat(el.getAttribute(a)); return Number.isFinite(v) ? v : d; };
-      const styleOf = (el) => {
-        const o = {};
-        const f = el.getAttribute("fill"); if (f) o.fill = f;
-        const st = el.getAttribute("stroke"); if (st && st !== "none") { o.stroke = st; o.strokeWidth = S(num(el, "stroke-width", 1)); }
-        const op = el.getAttribute("opacity"); if (op != null && op !== "") o.opacity = parseFloat(op);
-        return o;
-      };
-      const out = [];
-      const ptsToPath = (raw, close) => {
-        const nums = (raw || "").trim().split(/[\s,]+/).map(Number).filter(n => Number.isFinite(n));
-        let d = ""; for (let i = 0; i + 1 < nums.length; i += 2) d += (i === 0 ? "M" : "L") + X(nums[i]) + " " + Y(nums[i + 1]) + " ";
-        return d ? (d + (close ? "Z" : "")) : null;
-      };
-      svg.querySelectorAll("path,rect,circle,ellipse,line,polygon,polyline").forEach((el) => {
-        const tag = el.tagName.toLowerCase(); const st = styleOf(el); let sh2 = null;
-        if (tag === "path") { const d = _vecScaleTranslatePathD(el.getAttribute("d") || "", scale, ox, oy); if (d) sh2 = _makeShape("path", { d }); }
-        else if (tag === "rect") sh2 = _makeShape("rect", { x: X(num(el, "x", 0)), y: Y(num(el, "y", 0)), w: S(num(el, "width", 0)), h: S(num(el, "height", 0)), rx: S(num(el, "rx", 0)) });
-        else if (tag === "circle") sh2 = _makeShape("ellipse", { cx: X(num(el, "cx", 0)), cy: Y(num(el, "cy", 0)), rx: S(num(el, "r", 0)), ry: S(num(el, "r", 0)) });
-        else if (tag === "ellipse") sh2 = _makeShape("ellipse", { cx: X(num(el, "cx", 0)), cy: Y(num(el, "cy", 0)), rx: S(num(el, "rx", 0)), ry: S(num(el, "ry", 0)) });
-        else if (tag === "line") sh2 = _makeShape("line", { x1: X(num(el, "x1", 0)), y1: Y(num(el, "y1", 0)), x2: X(num(el, "x2", 0)), y2: Y(num(el, "y2", 0)) });
-        else if (tag === "polygon" || tag === "polyline") { const d = ptsToPath(el.getAttribute("points"), tag === "polygon"); if (d) sh2 = _makeShape("path", { d }); }
-        if (sh2) { Object.assign(sh2, st); out.push(sh2); }
-      });
+      const out = _vecParseSvgText(txt, canvasW, canvasH);
+      for (const s of out) s.name = _vecNextName(shapes, s.type);
       if (!out.length) throw new Error("No importable shapes in the SVG.");
       commitShapes([...shapes, ...out], { selection: out.map(s => s.id) });
       setOpState({ phase: "done", message: `imported ${out.length} shapes ✓` });
@@ -53715,15 +54034,63 @@ function WorkflowVectorEditorNode({
     }
   };
   const onImportSvg = () => { if (wiredVectorInput && wiredVectorInput.url) importSvgSrc(wiredVectorInput.url); };
-  // Auto-import when a wired SVG input first appears or changes URL.
-  const _lastImportedSvgUrl = useRef(null);
+
+  // ── Live-linked layer groups ────────────────────────────────────
+  // Keep one group per wired vector source. On first appearance or URL
+  // change, fetch + parse the source SVG and REPLACE that group's member
+  // shapes in place (other groups and hand-drawn shapes untouched).
+  // Disconnecting a source detaches its group into plain shapes (src
+  // cleared) so it stays fully editable.
+  const _layerSyncRef = useRef({});      // { [srcId]: lastSyncedUrl }
   useEffect(() => {
-    const url = wiredVectorInput && wiredVectorInput.url;
-    if (url && url !== _lastImportedSvgUrl.current) {
-      _lastImportedSvgUrl.current = url;
-      importSvgSrc(url);
+    const wiredIds = new Set(wiredGroupSources.map(s => s.srcId));
+
+    // Detach groups whose source is no longer wired.
+    const detached = groups.some(g => g && g.src && !wiredIds.has(g.src));
+    if (detached) {
+      onChange({ groups: groups.map(g => (g && g.src && !wiredIds.has(g.src)) ? { ...g, src: null } : g) });
+      for (const k of Object.keys(_layerSyncRef.current)) if (!wiredIds.has(k)) delete _layerSyncRef.current[k];
+      return; // re-run after the groups patch lands
     }
-  }, [wiredVectorInput]);
+
+    const pending = wiredGroupSources.find(s => s.url && _layerSyncRef.current[s.srcId] !== s.url);
+    if (!pending) return;
+    _layerSyncRef.current[pending.srcId] = pending.url;
+    let cancelled = false;
+    (async () => {
+      setOpState({ phase: "working", message: `Syncing ${pending.name}…` });
+      try {
+        let parsed;
+        if (pending.dataKind === "image") {
+          parsed = await _traceImageToShapes(pending.url);
+        } else {
+          const txt = await fetch(pending.url).then(r => { if (!r.ok) throw new Error("fetch " + r.status); return r.text(); });
+          parsed = _vecParseSvgText(txt, canvasW, canvasH);
+        }
+        if (cancelled) return;
+        if (!parsed.length) throw new Error("No importable shapes.");
+        // Find or create the group bound to this source.
+        let g = groups.find(x => x && x.src === pending.srcId);
+        const gid = g ? g.id : _vecId("grp");
+        for (const s of parsed) s.groupId = gid;
+        const nextGroups = g
+          ? groups.map(x => x.id === gid ? { ...x, name: pending.name || x.name, src: pending.srcId } : x)
+          : [...groups, { id: gid, name: pending.name || _vecNextGroupName(groups), visible: true, locked: false, collapsed: false, src: pending.srcId }];
+        // Replace existing members of this group; append new block at end
+        // (or in place of the old block). Then normalise contiguity.
+        const without = shapes.filter(s => s.groupId !== gid);
+        const nextShapes = _vecNormalizeGroupOrder([...without, ...parsed]);
+        commitShapes(nextShapes, { groups: nextGroups });
+        setOpState({ phase: "done", message: `synced ${pending.name} ✓` });
+        setTimeout(() => setOpState(o => o.phase === "done" ? { phase: "idle", message: "" } : o), 1200);
+      } catch (err) {
+        if (cancelled) return;
+        delete _layerSyncRef.current[pending.srcId]; // allow retry
+        setOpState({ phase: "error", message: "Layer sync failed: " + String(err && err.message || err) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [wiredGroupSources, groups, shapes]);
 
   // ── Glyph import ────────────────────────────────────────────────
   // Fetch a Google font, parse with opentype.js, and add the requested
@@ -53760,16 +54127,128 @@ function WorkflowVectorEditorNode({
   };
 
   const reorderShape = (id, dir) => {
-    const idx = shapes.findIndex(s => s.id === id);
-    if (idx < 0) return;
+    const s = shapes.find(x => x.id === id);
+    if (!s) return;
     const next = shapes.slice();
+    const idx = next.findIndex(x => x.id === id);
     const tgt = idx + dir;
     if (tgt < 0 || tgt >= next.length) return;
-    const tmp = next[idx]; next[idx] = next[tgt]; next[tgt] = tmp;
+    if (s.groupId) {
+      // Stay inside the group's contiguous run — arrows can't pull a
+      // shape out of its group (use Ungroup for that).
+      if (next[tgt].groupId !== s.groupId) return;
+      const tmp = next[idx]; next[idx] = next[tgt]; next[tgt] = tmp;
+      commitShapes(next);
+      return;
+    }
+    // Ungrouped: a plain swap, but hop over a whole adjacent group block
+    // so we never land inside one (which would break contiguity).
+    if (!next[tgt].groupId) {
+      const tmp = next[idx]; next[idx] = next[tgt]; next[tgt] = tmp;
+      commitShapes(next);
+      return;
+    }
+    const gid = next[tgt].groupId;
+    const removed = next.splice(idx, 1)[0];
+    const block = [];
+    next.forEach((x, i) => { if (x.groupId === gid) block.push(i); });
+    if (!block.length) return;
+    const insertAt = dir > 0 ? block[block.length - 1] + 1 : block[0];
+    next.splice(insertAt, 0, removed);
     commitShapes(next);
   };
   const removeShape = (id) => {
-    commitShapes(shapes.filter(s => s.id !== id), { selection: selection.filter(x => x !== id) });
+    const nextShapes = shapes.filter(s => s.id !== id);
+    const used = new Set(nextShapes.map(s => s.groupId).filter(Boolean));
+    // Drop groups that are now empty AND not bound to a live source.
+    const nextGroups = groups.filter(g => used.has(g.id) || g.src);
+    commitShapes(nextShapes, { selection: selection.filter(x => x !== id), groups: nextGroups });
+  };
+
+  // ── Group operations ────────────────────────────────────────────
+  const setGroup = (gid, patch) =>
+    onChange({ groups: groups.map(g => g.id === gid ? { ...g, ...patch } : g) });
+  const groupSelected = () => {
+    const ids = selection.filter(id => shapes.some(s => s.id === id));
+    if (ids.length < 1) return;
+    const idSet = new Set(ids);
+    const gid = _vecId("grp");
+    const g = { id: gid, name: _vecNextGroupName(groups), visible: true, locked: false, collapsed: false, src: null };
+    const anchorIdx = Math.max(...ids.map(id => shapes.findIndex(s => s.id === id)));
+    const moving = [], rest = [];
+    shapes.forEach((s, i) => {
+      if (idSet.has(s.id)) moving.push({ ...s, groupId: gid });
+      else rest.push({ s, i });
+    });
+    const insertPos = rest.filter(({ i }) => i < anchorIdx).length;
+    const out = rest.map(r => r.s);
+    out.splice(insertPos, 0, ...moving);
+    commitShapes(_vecNormalizeGroupOrder(out), { groups: [...groups, g], selection: ids });
+  };
+  const ungroupGroup = (gid) => {
+    commitShapes(
+      shapes.map(s => { if (s.groupId !== gid) return s; const c = { ...s }; delete c.groupId; return c; }),
+      { groups: groups.filter(g => g.id !== gid) }
+    );
+  };
+  const ungroupSelected = () => {
+    const gids = new Set(selectedShapes.map(s => s.groupId).filter(Boolean));
+    if (!gids.size) return;
+    commitShapes(
+      shapes.map(s => { if (!gids.has(s.groupId)) return s; const c = { ...s }; delete c.groupId; return c; }),
+      { groups: groups.filter(g => !gids.has(g.id)) }
+    );
+  };
+  const deleteGroup = (gid) => {
+    commitShapes(
+      shapes.filter(s => s.groupId !== gid),
+      { groups: groups.filter(g => g.id !== gid),
+        selection: selection.filter(id => { const s = shapes.find(x => x.id === id); return s && s.groupId !== gid; }) }
+    );
+  };
+  const reorderGroup = (gid, dir) => {
+    const segs = _vecSegments(shapes);
+    const si = segs.findIndex(sg => sg.kind === "group" && sg.gid === gid);
+    if (si < 0) return;
+    const ti = si + dir;
+    if (ti < 0 || ti >= segs.length) return;
+    const tmp = segs[si]; segs[si] = segs[ti]; segs[ti] = tmp;
+    const byId = new Map(shapes.map(s => [s.id, s]));
+    const out = [];
+    for (const sg of segs) {
+      if (sg.kind === "group") sg.ids.forEach(id => out.push(byId.get(id)));
+      else out.push(byId.get(sg.id));
+    }
+    commitShapes(out.filter(Boolean));
+  };
+  const selectGroupMembers = (gid, additive) => {
+    const ids = shapes.filter(s => s.groupId === gid).map(s => s.id);
+    setSelection(additive ? Array.from(new Set([...selection, ...ids])) : ids);
+  };
+  const hasGroupableSelection = selection.length >= 1;
+  const hasUngroupableSelection = selectedShapes.some(s => s.groupId);
+
+  const renderShapeRow = (s, opts) => {
+    const member = opts && opts.member;
+    const isSel = selection.includes(s.id);
+    const vis = s.visible !== false;
+    return html`
+      <div key=${"l-" + s.id}
+        className=${"workflow-vector-layer-row" + (isSel ? " is-active" : "") + (member ? " is-grouped" : "")}
+        onClick=${(e) => { e.stopPropagation(); setSelection(e.shiftKey && isSel ? selection.filter(x => x !== s.id) : (e.shiftKey ? [...selection, s.id] : [s.id])); }}
+      >
+        <button className="workflow-vector-layer-vis"
+          title=${vis ? "Hide layer" : "Show layer"}
+          onClick=${(e) => { e.stopPropagation(); setShape(s.id, { visible: !vis }); }}
+        >${vis ? "●" : "○"}</button>
+        <span className="workflow-vector-layer-label" title=${s.name}>${s.name || s.type}</span>
+        <button className="workflow-vector-layer-mv"
+          title="Move up" onClick=${(e) => { e.stopPropagation(); reorderShape(s.id, +1); }}>↑</button>
+        <button className="workflow-vector-layer-mv"
+          title="Move down" onClick=${(e) => { e.stopPropagation(); reorderShape(s.id, -1); }}>↓</button>
+        <button className="workflow-vector-layer-rm"
+          title="Delete layer" onClick=${(e) => { e.stopPropagation(); removeShape(s.id); }}>×</button>
+      </div>`;
   };
 
   const [bakeState, setBakeState] = useState({ phase: "idle", error: null });
@@ -53795,7 +54274,7 @@ function WorkflowVectorEditorNode({
       // v4.0 — Phase B: also write the JSON sidecar (agent-editable canonical
       // + re-import source). Lossless: the shape model verbatim.
       const sidecar = JSON.stringify({
-        v: 1, shapes, canvasW, canvasH, background: node.background || null,
+        v: 1, shapes, groups, canvasW, canvasH, background: node.background || null,
       }, null, 2);
       selfWriteRef.current = sidecar;
       try {
@@ -53821,7 +54300,7 @@ function WorkflowVectorEditorNode({
     } catch (err) {
       setBakeState({ phase: "error", error: String(err && err.message || err) });
     }
-  }, [node, onChange, allNodes, allEdges, onBakeAutoCreateOutput, vecBranch, vectorSidecarPath, shapes, canvasW, canvasH]);
+  }, [node, onChange, allNodes, allEdges, onBakeAutoCreateOutput, vecBranch, vectorSidecarPath, shapes, groups, canvasW, canvasH]);
 
   const liveShape = (shape) => {
     const d = dragRef.current;
@@ -54139,31 +54618,47 @@ function WorkflowVectorEditorNode({
             >A Import glyph</button>
           </div>
           <div className="workflow-vector-section workflow-vector-layers-section">
-            <div className="workflow-vector-section-head">Layers <span className="workflow-vector-count">${shapes.length}</span></div>
+            <div className="workflow-vector-section-head">
+              Layers <span className="workflow-vector-count">${shapes.length}</span>
+              <span className="workflow-vector-layer-actions">
+                <button className="workflow-vector-mini-btn" disabled=${!hasGroupableSelection}
+                  title="Group the selected layers" onClick=${(e) => { e.stopPropagation(); groupSelected(); }}>⊞ Group</button>
+                <button className="workflow-vector-mini-btn" disabled=${!hasUngroupableSelection}
+                  title="Ungroup the selected group(s)" onClick=${(e) => { e.stopPropagation(); ungroupSelected(); }}>⊟ Ungroup</button>
+              </span>
+            </div>
             <div className="workflow-vector-layers">
               ${shapes.length === 0 && html`<div className="workflow-vector-hint">No shapes yet. Pick a tool and draw on the stage.</div>`}
-              ${shapes.slice().reverse().map((s, revIdx) => {
-                const i = shapes.length - 1 - revIdx;
-                const isSel = selection.includes(s.id);
+              ${_vecSegments(shapes).slice().reverse().map((seg) => {
+                if (seg.kind === "shape") {
+                  const s = shapes.find(x => x.id === seg.id);
+                  return s ? renderShapeRow(s) : null;
+                }
+                const g = groupById[seg.gid] || { id: seg.gid, name: "Group" };
+                const gvis = g.visible !== false;
+                const collapsed = !!g.collapsed;
+                const members = seg.ids.map(id => shapes.find(x => x.id === id)).filter(Boolean);
+                const groupSel = members.length > 0 && members.every(m => selection.includes(m.id));
                 return html`
-                  <div
-                    key=${"l-" + s.id}
-                    className=${"workflow-vector-layer-row" + (isSel ? " is-active" : "")}
-                    onClick=${(e) => { e.stopPropagation(); setSelection(e.shiftKey && isSel ? selection.filter(x => x !== s.id) : (e.shiftKey ? [...selection, s.id] : [s.id])); }}
-                  >
-                    <button className="workflow-vector-layer-vis"
-                      title=${s.visible !== false ? "Hide layer" : "Show layer"}
-                      onClick=${(e) => { e.stopPropagation(); setShape(s.id, { visible: !(s.visible !== false) }); }}
-                    >${s.visible !== false ? "●" : "○"}</button>
-                    <span className="workflow-vector-layer-label" title=${s.name}>${s.name || s.type}</span>
-                    <button className="workflow-vector-layer-mv" disabled=${i === shapes.length - 1}
-                      title="Move up" onClick=${(e) => { e.stopPropagation(); reorderShape(s.id, +1); }}>↑</button>
-                    <button className="workflow-vector-layer-mv" disabled=${i === 0}
-                      title="Move down" onClick=${(e) => { e.stopPropagation(); reorderShape(s.id, -1); }}>↓</button>
-                    <button className="workflow-vector-layer-rm"
-                      title="Delete layer" onClick=${(e) => { e.stopPropagation(); removeShape(s.id); }}>×</button>
-                  </div>
-                `;
+                  <div key=${"g-" + seg.gid} className="workflow-vector-group">
+                    <div className=${"workflow-vector-group-head" + (groupSel ? " is-active" : "") + (g.src ? " is-linked" : "")}
+                      onClick=${(e) => { e.stopPropagation(); selectGroupMembers(seg.gid, e.shiftKey); }}>
+                      <button className="workflow-vector-group-twist" title=${collapsed ? "Expand" : "Collapse"}
+                        onClick=${(e) => { e.stopPropagation(); setGroup(seg.gid, { collapsed: !collapsed }); }}>${collapsed ? "▸" : "▾"}</button>
+                      <button className="workflow-vector-layer-vis" title=${gvis ? "Hide group" : "Show group"}
+                        onClick=${(e) => { e.stopPropagation(); setGroup(seg.gid, { visible: !gvis }); }}>${gvis ? "●" : "○"}</button>
+                      <span className="workflow-vector-group-label" title=${g.src ? (g.name || "Group") + " — linked to a connected layer block" : (g.name || "Group")}>
+                        ${g.src ? "⛓ " : ""}${g.name || "Group"} <span className="workflow-vector-count">${members.length}</span>
+                      </span>
+                      <button className="workflow-vector-layer-mv" title="Move group up" onClick=${(e) => { e.stopPropagation(); reorderGroup(seg.gid, +1); }}>↑</button>
+                      <button className="workflow-vector-layer-mv" title="Move group down" onClick=${(e) => { e.stopPropagation(); reorderGroup(seg.gid, -1); }}>↓</button>
+                      <button className="workflow-vector-layer-mv" title="Ungroup (keep layers)" onClick=${(e) => { e.stopPropagation(); ungroupGroup(seg.gid); }}>⊟</button>
+                      <button className="workflow-vector-layer-rm" title="Delete group and its layers" onClick=${(e) => { e.stopPropagation(); deleteGroup(seg.gid); }}>×</button>
+                    </div>
+                    ${!collapsed && html`<div className="workflow-vector-group-members">
+                      ${members.slice().reverse().map(m => renderShapeRow(m, { member: true }))}
+                    </div>`}
+                  </div>`;
               })}
             </div>
           </div>
@@ -54197,7 +54692,7 @@ function WorkflowVectorEditorNode({
                 })}
               </defs>
               ${shapes.map((s) => {
-                if (s.visible === false) return null;
+                if (isShapeHidden(s)) return null;
                 return html`<${React.Fragment} key=${"sh-" + s.id}>${_vecRenderShape(liveShape(s), {
                   nodeId: node.id,
                   selected: selection.includes(s.id),
@@ -55218,9 +55713,27 @@ function _vecSerializeSvg(node) {
   const canvasW = node.canvasW || 1200;
   const canvasH = node.canvasH || 800;
   const shapes  = Array.isArray(node.shapes) ? node.shapes : [];
+  const groupsArr = Array.isArray(node.groups) ? node.groups : [];
+  const gById = {};
+  for (const g of groupsArr) if (g && g.id) gById[g.id] = g;
+  const escAttr = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const defs = [];
   const body = [];
+  // Wrap each contiguous group run in a <g>; skip a group entirely when
+  // it (or a shape) is hidden.
+  let openGid = null, skipGid = null;
   for (const s of shapes) {
+    const gid = s.groupId || null;
+    if (gid !== openGid && gid !== skipGid) {
+      if (openGid) { body.push(`</g>`); openGid = null; }
+      skipGid = null;
+      if (gid) {
+        const grp = gById[gid];
+        if (grp && grp.visible === false) skipGid = gid;
+        else { body.push(`<g${grp && grp.name ? ` data-group="${escAttr(grp.name)}"` : ""}>`); openGid = gid; }
+      }
+    }
+    if (skipGid && gid === skipGid) continue;
     if (s.visible === false) continue;
     const filterId = "filter-" + node.id + "-" + s.id;
     const fx = _vecResolveFilterForBake(s, filterId);
@@ -55262,6 +55775,7 @@ function _vecSerializeSvg(node) {
     ].filter(Boolean).join(" ");
     body.push(`<g ${groupAttrs}>${layerEls.join("")}</g>`);
   }
+  if (openGid) body.push(`</g>`);
   const lines = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${canvasW} ${canvasH}" width="${canvasW}" height="${canvasH}">`,

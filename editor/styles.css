@@ -4137,13 +4137,59 @@ button {
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
-.th-git-commit { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+/* History rows are buttons (click → commit diff). Reset button chrome so they
+   read as the rows they replaced. */
+.th-git-commit { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 6px 4px; cursor: pointer; font: inherit; }
 .th-git-commit:last-child { border-bottom: none; }
+.th-git-commit:hover { background: var(--surface-2); }
 .th-git-commit-subj { font-size: 12.5px; color: var(--text); line-height: 1.4; word-break: break-word; }
 .th-git-commit-meta { display: flex; gap: 8px; align-items: center; margin-top: 3px; font-size: 10px; color: var(--text-faint); }
 .th-git-sha { font-family: var(--font-mono); color: var(--text-muted); }
 .th-git-commit-author { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .th-git-commit-age { margin-left: auto; font-family: var(--font-mono); flex: 0 0 auto; }
+
+/* A status pill that's clickable (e.g. "N changed ↗" → opens the working diff). */
+.th-git-pill-btn { border: none; cursor: pointer; font: inherit; }
+.th-git-pill-btn:hover { background: var(--surface-3, var(--surface-2)); color: var(--text); }
+
+/* Branches (fork / switch / merge) — real git branches, not Woven prototypes. */
+.th-git-branches { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.th-git-branch-cur { display: flex; align-items: center; gap: 6px; }
+.th-git-branch-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-git-branch-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.th-git-branch-list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+.th-git-branch-item { display: flex; align-items: center; gap: 4px; padding: 2px; border-radius: 6px; }
+.th-git-branch-item.is-current { background: var(--surface-2); }
+.th-git-branch-pick { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; background: none; border: none; padding: 4px 6px; font: inherit; cursor: pointer; border-radius: 6px; text-align: left; }
+.th-git-branch-pick:hover:not(:disabled) { background: var(--surface-3, var(--surface-2)); }
+.th-git-branch-pick:disabled { cursor: default; }
+.th-git-branch-pick-name { font-family: var(--font-mono); font-size: 11.5px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Clickable conflict file chips inside the conflict banner. */
+.th-git-conflict-files { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+.th-git-conflict-file { background: none; border: none; padding: 2px 0; font: inherit; font-family: var(--font-mono); font-size: 11px; color: var(--accent); cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-git-conflict-file:hover { text-decoration: underline; }
+
+/* Compare modal — read-only diff / conflict viewer. */
+.th-git-diff-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.4); display: grid; place-items: center; }
+.th-git-diff-modal { width: min(900px, 92vw); height: min(78vh, 800px); background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+.th-git-diff-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.th-git-diff-title { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-git-diff-scroll { flex: 1 1 auto; overflow: auto; padding: 8px 0; }
+.th-git-diff-empty { padding: 16px; color: var(--text-faint); font-size: 12px; }
+.th-git-diff-pre { margin: 0; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; white-space: pre; tab-size: 2; }
+.th-git-dl { padding: 0 12px; }
+.th-git-dl.is-add { background: rgba(34,197,94,0.14); color: #15803d; }
+.th-git-dl.is-del { background: rgba(239,68,68,0.13); color: #b91c1c; }
+.th-git-dl.is-hunk { color: var(--accent); background: var(--surface-2); }
+.th-git-dl.is-meta { color: var(--text-faint); }
+/* Conflict side-by-side (ours / theirs). */
+.th-git-conflict-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
+.th-git-conflict-col { background: var(--surface, #fff); min-width: 0; overflow: auto; max-height: 40vh; }
+.th-git-conflict-col-head { position: sticky; top: 0; padding: 4px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.th-git-conflict-col.is-ours .th-git-conflict-col-head { color: #15803d; }
+.th-git-conflict-col.is-theirs .th-git-conflict-col-head { color: #b91c1c; }
+.th-git-conflict-merged-head { padding: 8px 12px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 
 /* GitHub account + per-project repo picker (top of the Git panel). */
 .th-git-account { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
@@ -23746,6 +23792,79 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Layer groups — a group header row + an indented member list. */
+.workflow-vector-layer-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+.workflow-vector-mini-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font: 9.5px var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.workflow-vector-mini-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent, #3b82f6); }
+.workflow-vector-mini-btn:disabled { opacity: 0.35; cursor: default; }
+.workflow-vector-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workflow-vector-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: 600 11px var(--font-mono);
+  cursor: pointer;
+}
+.workflow-vector-group-head:hover { background: var(--surface-3, rgba(0, 0, 0, 0.07)); }
+.workflow-vector-group-head.is-active {
+  border-color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent);
+}
+.workflow-vector-group-head.is-linked .workflow-vector-group-label { color: var(--accent, #3b82f6); }
+.workflow-vector-group-twist {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-faint);
+  padding: 0;
+  width: 14px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-vector-group-twist:hover { color: var(--text); }
+.workflow-vector-group-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.workflow-vector-group-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 10px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
 }
 
 /* Middle pane — SVG stage. Centered, max-fits the pane while keeping

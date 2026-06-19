@@ -6722,10 +6722,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
             if m_live:
                 return self._live_op(m_live.group(1), m_live.group(2), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|discard-local|discard-remote)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
-            m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token)$", parsed.path)
+            m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token|fork|pr)$", parsed.path)
             if m_gh:
                 return self._github_op(m_gh.group(1), qs)
             if parsed.path == "/__live_presence":
@@ -7015,6 +7015,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._git_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/log":
             return self._git_log(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__git/branches":
+            return self._git_branches(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__git/diff":
+            return self._git_diff(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__github/status":
             return self._github_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__github/repos":
@@ -12992,6 +12996,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             st["githubConfigured"] = _gitops.oauth_configured()
             st["gitAvailable"] = _gitops.git_available()
             st["conflicts"] = _gitops.conflicted_files(root) if st.get("repo") else []
+            # Local branches for the fork/switch/merge UI (cheap for-each-ref).
+            st["branches"] = _gitops.branches(root)["branches"] if st.get("repo") else []
             # Local sync version (cheap). The remote comparison is NOT done here
             # (status is polled often, and a remote read is a network round-trip)
             # — a mismatch surfaces as a 409 when the user actually pulls/pushes.
@@ -13113,6 +13119,54 @@ class H(http.server.SimpleHTTPRequestHandler):
                                            description=body.get("description") or "")
                 st = _gitops.connect(root, remote=repo["clone_url"])
                 return self._reply(200, {"ok": True, "repo": repo, "status": st})
+            if op == "fork":
+                # Fork this project's connected origin under the signed-in account
+                # (for contributing to a repo you don't own). Reports the fork URL;
+                # the user decides whether to re-point origin from the picker.
+                try:
+                    root = resolve_project_root(qs, require_explicit=True)
+                except ValueError as e:
+                    return self._reply(400, {"error": str(e)})
+                tok = _gitops.host_token()
+                if not tok:
+                    return self._reply(401, {"error": "not signed in to GitHub"})
+                st = _gitops.status(root)
+                owner, repo = _gitops.parse_owner_repo(st.get("remote") or "")
+                if not owner or not repo:
+                    return self._reply(400, {"error": "no GitHub origin to fork — connect a repo first"})
+                fk = _gitops.fork(tok, owner, repo)
+                return self._reply(200, {"ok": True, "fork": fk})
+            if op == "pr":
+                # Push the current branch, then open a PR back to the base branch
+                # on origin (the GitHub-side merge path for fork/branch work).
+                try:
+                    root = resolve_project_root(qs, require_explicit=True)
+                except ValueError as e:
+                    return self._reply(400, {"error": str(e)})
+                tok = _gitops.host_token()
+                if not tok:
+                    return self._reply(401, {"error": "not signed in to GitHub"})
+                st = _gitops.status(root)
+                owner, repo = _gitops.parse_owner_repo(st.get("remote") or "")
+                if not owner or not repo:
+                    return self._reply(400, {"error": "no GitHub origin — connect a repo first"})
+                branch = _gitops.current_branch(root)
+                base = (body.get("base") or "main").strip() or "main"
+                if branch == base:
+                    return self._reply(400, {"error": f"you're on '{base}' — switch to a feature branch before opening a PR"})
+                # Push the branch first so GitHub can see the head ref.
+                try:
+                    _gitops.publish(root, token=tok)
+                except Exception as e:
+                    return self._reply(500, {"error": f"push before PR failed: {e}"})
+                head = branch
+                ho = (body.get("headOwner") or "").strip()
+                if ho and ho != owner:           # cross-fork PR: owner:branch
+                    head = f"{ho}:{branch}"
+                title = (body.get("title") or branch).strip()
+                pr = _gitops.open_pr(tok, owner, repo, head, title,
+                                     body=body.get("body") or "", base=base)
+                return self._reply(200, {"ok": True, "pr": pr, "branch": branch, "base": base})
         except Exception as e:
             return self._reply(500, {"error": str(e)})
         return self._reply(404, {"error": f"unknown github op: {op}"})
@@ -13133,6 +13187,43 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
+    # GET /__git/branches?project=<id>  → {current, branches:[{name,current,…}]}
+    def _git_branches(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            return self._reply(200, _gitops.branches(root))
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
+    # GET /__git/diff?project=<id>&kind=working|commit|conflict|range[&path=&sha=&a=&b=]
+    # Read-only compare view: uncommitted changes, a single commit, a conflicted
+    # file's three sides, or a branch-vs-branch range. Agent resolution is
+    # unchanged — this just lets the user SEE what changed / what's incoming.
+    def _git_diff(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        kind = (_qs_get(qs, "kind") or "working").strip()
+        path = (_qs_get(qs, "path") or "").strip() or None
+        try:
+            if kind == "working":
+                return self._reply(200, _gitops.diff_working(root, path))
+            if kind == "commit":
+                return self._reply(200, _gitops.diff_commit(root, _qs_get(qs, "sha") or ""))
+            if kind == "conflict":
+                if not path:
+                    return self._reply(400, {"error": "conflict diff needs a path"})
+                return self._reply(200, _gitops.diff_conflict(root, path))
+            if kind == "range":
+                return self._reply(200, _gitops.diff_range(root, _qs_get(qs, "a") or "", _qs_get(qs, "b") or ""))
+            return self._reply(400, {"error": f"unknown diff kind: {kind}"})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
     # POST /__git/(connect|commit|publish|resolve|pull)?project=<id>
     def _git_op(self, op, qs):
         try:
@@ -13147,7 +13238,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = {}
         # Serialise the mutating ops + record them as in-flight so the panel can
         # show progress after a tab reload and a second click is refused cleanly.
-        mutating = op in ("commit", "publish", "pull", "discard-local", "discard-remote")
+        mutating = op in ("commit", "publish", "pull", "discard-local", "discard-remote",
+                          "branch-create", "branch-switch", "branch-merge", "branch-delete")
         if mutating:
             now = time.time()
             with _GIT_INFLIGHT_LOCK:
@@ -13257,6 +13349,40 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if pid:
                     try: _broadcast_workflow_change(pid)
                     except Exception: pass
+                return self._reply(200, {"ok": True, **res})
+            if op == "branch-create":
+                # Fork off HEAD, carrying in-flight edits onto the new branch.
+                res = _gitops.create_branch(root, body.get("name") or "",
+                                            checkout=body.get("checkout", True))
+                pid = (_qs_get(qs, "project") or "").strip()
+                if pid and res.get("ok"):
+                    try: _broadcast_workflow_change(pid)
+                    except Exception: pass
+                return self._reply(200, {"ok": True, **res})
+            if op in ("branch-switch", "branch-merge"):
+                # Switching/merging rewrites the working tree — guard exactly like
+                # pull(): refuse on a dirty tree or an active live session so we
+                # never clobber in-flight host/guest edits (host-authoritative).
+                pid = (_qs_get(qs, "project") or "").strip()
+                st = _gitops.status(root)
+                if not st.get("repo"):
+                    return self._reply(400, {"error": "project is not a git repo — connect it first"})
+                if st.get("dirty"):
+                    return self._reply(409, {"error": "working tree has uncommitted changes — commit or discard them first"})
+                if pid and _live.project_has_live_session(pid):
+                    return self._reply(409, {"error": "a live session is active — end it before switching or merging branches"})
+                if op == "branch-switch":
+                    res = _gitops.switch_branch(root, body.get("name") or "")
+                else:
+                    res = _gitops.merge_branch(root, body.get("name") or "")
+                # Reload the canvas (and any guests) to the new HEAD.
+                if pid:
+                    try: _broadcast_workflow_change(pid)
+                    except Exception: pass
+                return self._reply(200, {"ok": True, **res})
+            if op == "branch-delete":
+                res = _gitops.delete_branch(root, body.get("name") or "",
+                                            force=bool(body.get("force")))
                 return self._reply(200, {"ok": True, **res})
             if op == "resolve":
                 # Agent-assisted conflict resolution: hand the conflicted files

@@ -28,6 +28,7 @@ from __future__ import annotations  # keep annotations 3.9-safe (daemon runs sys
 
 import json
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.parse
@@ -497,6 +498,227 @@ def conflicted_files(root):
         return []
     code, out, _e = _git(root, "diff", "--name-only", "--diff-filter=U")
     return [ln for ln in out.splitlines() if ln.strip()] if code == 0 else []
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# LOCAL — branches (fork / switch / merge), the offline divergent-work engine
+# ═════════════════════════════════════════════════════════════════════════
+# Distinct from Woven "prototypes" (source/<slug>/ subdirs in ONE repo): these
+# are real git branches. Forking = make a branch off HEAD and keep editing it;
+# merging = fold a branch back into the current one. Conflicts land in the tree
+# for the SAME agent-assisted resolve() flow that pull() uses.
+
+# A branch name git accepts but that we still refuse: anything with whitespace,
+# control chars, or the patterns `git check-ref-format` rejects. We keep the
+# check permissive (git is the real gate) but block the obvious foot-guns.
+_BAD_BRANCH = ("..", "~", "^", ":", "?", "*", "[", "\\", " ", "\t", "@{")
+
+
+def current_branch(root):
+    """The checked-out branch name (or 'HEAD' when detached / empty repo)."""
+    _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    return (branch.strip() or "HEAD")
+
+
+def _norm_branch_name(root, name):
+    n = (name or "").strip().strip("/")
+    if not n:
+        raise RuntimeError("branch name required")
+    if n.startswith("-") or n.endswith(".") or n.endswith(".lock"):
+        raise RuntimeError(f"invalid branch name: {name!r}")
+    for bad in _BAD_BRANCH:
+        if bad in n:
+            raise RuntimeError(f"invalid branch name (contains {bad!r}): {name!r}")
+    # Let git have the final say (catches anything our blocklist misses).
+    code, _o, err = _git(root, "check-ref-format", "--branch", n)
+    if code != 0:
+        raise RuntimeError(f"invalid branch name: {err.strip() or name!r}")
+    return n
+
+
+def branches(root):
+    """Local branches with per-branch divergence vs their upstream. Returns
+    {current, branches:[{name, current, upstream, ahead, behind}]}. Cheap enough
+    to fold into status() (a couple of `git for-each-ref` reads)."""
+    if not is_repo(root):
+        return {"current": "", "branches": []}
+    cur = current_branch(root)
+    # name + upstream + ahead/behind in one shot; \x1f field separator.
+    fmt = "%(refname:short)%1f%(upstream:short)%1f%(upstream:track)"
+    code, out, _e = _git(root, "for-each-ref", "--sort=-committerdate",
+                         f"--format={fmt}", "refs/heads/")
+    rows = []
+    if code == 0:
+        for ln in out.splitlines():
+            if not ln.strip():
+                continue
+            parts = ln.split("\x1f")
+            name = parts[0].strip()
+            upstream = parts[1].strip() if len(parts) > 1 else ""
+            track = parts[2].strip() if len(parts) > 2 else ""
+            ahead = behind = 0
+            # `[ahead 2, behind 1]` / `[ahead 3]` / `[behind 4]` / `[gone]`
+            ma = re.search(r"ahead (\d+)", track)
+            mb = re.search(r"behind (\d+)", track)
+            if ma:
+                ahead = int(ma.group(1))
+            if mb:
+                behind = int(mb.group(1))
+            rows.append({"name": name, "current": name == cur,
+                         "upstream": upstream, "ahead": ahead, "behind": behind})
+    return {"current": cur, "branches": rows}
+
+
+def create_branch(root, name, checkout=True):
+    """Make a new branch off the current HEAD (the 'fork'). With checkout=True
+    (default) switch to it, CARRYING any uncommitted edits onto the new branch —
+    so 'fork this' keeps your in-flight work. Returns {ok, branch}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo — connect it first")
+    n = _norm_branch_name(root, name)
+    code, _o, err = _git(root, "show-ref", "--verify", "--quiet", f"refs/heads/{n}")
+    if code == 0:
+        raise RuntimeError(f"branch {n!r} already exists")
+    args = ["checkout", "-b", n] if checkout else ["branch", n]
+    code, out, err = _git(root, *args, timeout=60)
+    if code != 0:
+        raise RuntimeError(f"create branch failed: {(err or out).strip()[:400]}")
+    return {"ok": True, "branch": n}
+
+
+def switch_branch(root, name):
+    """Check out an existing branch. GUARDED by the caller (serve.py refuses on a
+    dirty tree / active live session) so we never carry edits across branches by
+    surprise. Returns {ok, branch}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    n = (name or "").strip()
+    if not n:
+        raise RuntimeError("branch name required")
+    code, out, err = _git(root, "checkout", n, timeout=60)
+    if code != 0:
+        raise RuntimeError(f"switch failed: {(err or out).strip()[:400]}")
+    return {"ok": True, "branch": current_branch(root)}
+
+
+def merge_branch(root, name):
+    """Merge `name` INTO the current branch (`git merge --no-ff --no-edit`). On
+    conflict, leave the tree mid-merge and report the conflicted paths so the
+    existing resolve() flow picks them up — identical to pull()'s contract.
+    Returns {ok, branch, merged, conflicts, detail}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    src = (name or "").strip()
+    if not src:
+        raise RuntimeError("branch to merge required")
+    cur = current_branch(root)
+    if src == cur:
+        raise RuntimeError("can't merge a branch into itself")
+    code, _o, err = _git(root, "show-ref", "--verify", "--quiet", f"refs/heads/{src}")
+    if code != 0:
+        raise RuntimeError(f"branch {src!r} does not exist")
+    # --no-ff keeps a merge commit so the history shows the fork was folded back.
+    code, out, err = _git(root, "merge", "--no-ff", "--no-edit", src, timeout=120)
+    conflicts = conflicted_files(root)
+    if code != 0 and not conflicts:
+        raise RuntimeError(f"merge failed: {(err or out).strip()[:400]}")
+    return {"ok": not conflicts, "branch": cur, "merged": src,
+            "conflicts": conflicts, "detail": (out or err).strip()[:400]}
+
+
+def delete_branch(root, name, force=False):
+    """Delete a local branch (`git branch -d`, or `-D` when force). Refuses to
+    delete the checked-out branch. Returns {ok, branch}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    n = (name or "").strip()
+    if not n:
+        raise RuntimeError("branch name required")
+    if n == current_branch(root):
+        raise RuntimeError("can't delete the branch you're on — switch away first")
+    flag = "-D" if force else "-d"
+    code, out, err = _git(root, "branch", flag, n)
+    if code != 0:
+        msg = (err or out).strip()[:400]
+        if not force and "not fully merged" in msg:
+            raise RuntimeError(
+                f"branch {n!r} has commits not merged into another branch — "
+                "delete with force to discard them.")
+        raise RuntimeError(f"delete branch failed: {msg}")
+    return {"ok": True, "branch": n}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# LOCAL — diff / compare (read-only; powers the panel's compare view)
+# ═════════════════════════════════════════════════════════════════════════
+
+_DIFF_MAX = 400 * 1024  # cap any single diff payload so a huge file can't OOM the panel
+
+
+def _cap(text):
+    if text and len(text) > _DIFF_MAX:
+        return text[:_DIFF_MAX] + "\n… (diff truncated)\n"
+    return text or ""
+
+
+def diff_working(root, path=None):
+    """Unified diff of the working tree vs HEAD (staged + unstaged), optionally
+    scoped to one path. This is 'what changed since my last commit'. Returns
+    {kind:'working', path, diff}."""
+    if not is_repo(root):
+        return {"kind": "working", "path": path or "", "diff": ""}
+    args = ["diff", "HEAD", "--"]
+    if path:
+        args.append(path)
+    else:
+        args = ["diff", "HEAD"]
+    code, out, _e = _git(root, *args, timeout=30)
+    return {"kind": "working", "path": path or "", "diff": _cap(out) if code == 0 else ""}
+
+
+def diff_commit(root, sha):
+    """Unified diff a single commit introduced (`git show`). Returns
+    {kind:'commit', sha, diff}."""
+    if not is_repo(root) or not (sha or "").strip():
+        return {"kind": "commit", "sha": sha or "", "diff": ""}
+    code, out, _e = _git(root, "show", "--no-color", sha.strip(), timeout=30)
+    return {"kind": "commit", "sha": sha.strip(), "diff": _cap(out) if code == 0 else ""}
+
+
+def diff_range(root, a, b):
+    """Unified diff between two refs/branches `a..b` (what b has that a doesn't).
+    Returns {kind:'range', a, b, diff}."""
+    if not is_repo(root):
+        return {"kind": "range", "a": a or "", "b": b or "", "diff": ""}
+    a = (a or "").strip(); b = (b or "").strip()
+    if not a or not b:
+        raise RuntimeError("two refs required to compare")
+    code, out, _e = _git(root, "diff", "--no-color", f"{a}...{b}", timeout=30)
+    return {"kind": "range", "a": a, "b": b, "diff": _cap(out) if code == 0 else ""}
+
+
+def diff_conflict(root, path):
+    """The three sides of a conflicted file for a side-by-side compare:
+    base (merge ancestor, stage :1), ours (stage :2), theirs (stage :3), plus the
+    working copy WITH markers. Empty string for any stage that doesn't exist
+    (add/add conflicts have no base). Returns {kind:'conflict', path, base, ours,
+    theirs, merged}."""
+    if not is_repo(root) or not (path or "").strip():
+        return {"kind": "conflict", "path": path or "", "base": "", "ours": "", "theirs": "", "merged": ""}
+    p = path.strip()
+
+    def _stage(n):
+        code, out, _e = _git(root, "show", f":{n}:{p}", timeout=30)
+        return _cap(out) if code == 0 else ""
+
+    merged = ""
+    try:
+        with open(os.path.join(root, p), "r", encoding="utf-8") as f:
+            merged = _cap(f.read())
+    except (OSError, UnicodeDecodeError):
+        merged = ""
+    return {"kind": "conflict", "path": p, "base": _stage(1),
+            "ours": _stage(2), "theirs": _stage(3), "merged": merged}
 
 
 # ═════════════════════════════════════════════════════════════════════════
