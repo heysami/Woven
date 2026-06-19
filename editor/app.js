@@ -37851,7 +37851,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
-            ${(data.nodes || []).filter(n => PROTOTYPE_VIEW_KINDS.includes(n.kind)).map(n => html`
+            ${(data.nodes || []).filter(n => PROTOTYPE_VIEW_KINDS.includes(n.kind)
+                // `timeline` is BOTH a prototype-view kind AND a spec-source kind
+                // (the ⧖ keyframe driver). A node carries only `kind: "timeline"`,
+                // so without this guard it renders TWICE, stacked. The VIEW node
+                // always has `host` (openPrototypeView); the SOURCE node never
+                // does — render as a view only when hosted.
+                && (n.kind !== "timeline" || !!n.host)).map(n => html`
               <${WorkflowFramesNode}
                 key=${n.id}
                 node=${n}
@@ -38719,7 +38725,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
-            ${(data.nodes || []).filter(n => SPEC_NODE_DEFS[n.kind]).map(n => html`
+            ${(data.nodes || []).filter(n => SPEC_NODE_DEFS[n.kind]
+                // Mirror of the prototype-view guard above: a hosted `timeline`
+                // node is a view embed, not a spec source — skip it here.
+                && (n.kind !== "timeline" || !n.host)).map(n => html`
               <${WorkflowSpecNode}
                 key=${n.id}
                 node=${n}
