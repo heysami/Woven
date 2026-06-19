@@ -185,11 +185,25 @@ def _daemon_endpoints() -> list:
 
 def _node_kinds() -> list:
     try:
-        from .registry import KINDS
+        from .registry import KINDS, KIND_IO
     except Exception:
-        return []
+        try:
+            from .registry import KINDS
+            KIND_IO = {}
+        except Exception:
+            return []
     out = []
     for k, contract in KINDS.items():
+        io = KIND_IO.get(k, {}) if isinstance(KIND_IO, dict) else {}
+        provides = io.get("provides") or []
+        accepts = io.get("accepts") or []
+        # An agent can AUTHOR a node if its io contract exposes an editTarget
+        # accept with a canonical file path (and ideally an authoring schema).
+        edit = None
+        for a in accepts:
+            if isinstance(a, dict) and a.get("ingest") == "editTarget" and a.get("canonical"):
+                edit = a
+                break
         out.append({
             "kind":         k,
             "title":        contract.get("title", k),
@@ -198,6 +212,9 @@ def _node_kinds() -> list:
             "openEnded":    bool(contract.get("openEnded")),
             "outputsRoot":  contract.get("outputsRoot"),
             "fanOut":       (contract.get("fanOut") or {}).get("kind"),
+            "provides":     [p.get("label") for p in provides if isinstance(p, dict) and p.get("label")],
+            "agentEditable": bool(edit),
+            "canonical":    (edit or {}).get("canonical"),
         })
     return out
 
@@ -758,6 +775,35 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     else:
         mcp_inventory_block = ""
 
+    # ── Workflow node kinds, grouped by whether the AGENT can author them ──────
+    # Registry-driven (KINDS ∪ KIND_IO) so newly-added app-node editors and
+    # building blocks surface automatically — no hand-maintained list to drift.
+    # A kind is "authorable" when its io contract has an editTarget canonical
+    # file: the agent creates the node (POST /__workflow/node/<id>/commit with
+    # addNodes) and authors it by writing that file (the node re-imports live).
+    _authorable = [k for k in caps["kinds"] if k.get("agentEditable")]
+    _other_kinds = [k for k in caps["kinds"] if not k.get("agentEditable")]
+
+    def _prov(k):
+        ps = [p for p in (k.get("provides") or []) if p]
+        return (" → " + " / ".join(ps)) if ps else ""
+
+    if _authorable:
+        _authorable_lines = "\n".join(
+            f"  • {k['kind']} ({k['title']}){_prov(k)} — author: {k['canonical']}"
+            for k in _authorable
+        )
+    else:
+        _authorable_lines = "  (none resolved — GET /__kinds/registry)"
+    _other_kinds_line = ", ".join(k["kind"] for k in _other_kinds) or "(none)"
+    node_kinds_block = f"""**Workflow nodes you can BUILD & AUTHOR for the user** ({len(_authorable)} authorable of {len(caps['kinds'])} kinds). You assemble a node graph on the user's canvas by committing nodes (`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` with `addNodes:[…]`) and wiring them with edges. For an *authorable* node you also write its **canonical file** under `source/<branch>/…` following that kind's `authoring` schema (`GET /__kinds/registry`) — the node re-imports it live, so this is how you "fill in" an editor or a building block by code:
+{_authorable_lines}
+
+These split into **app-node editors** (bake a deliverable asset — e.g. Splat Lab → a Gaussian-splat viewer, Voxel/Spline 3D → .glb, Material Lab / Interactive composer → .html, Image/Pixel/Font editors, Music/Synth → audio) and **building blocks** (typed spec providers — Effect / Position / Trigger / Layer / Number generator / Timeline — that you WIRE INTO an editor's port to drive it; e.g. a Timeline or Number generator animating a composer's effect params). Wire an Agent into any of their `edit` ports to delegate the authoring, or write the canonical file yourself.
+
+Other node kinds ({len(_other_kinds)}, structural / not directly agent-authored): {_other_kinds_line}.
+See `GET /__kinds/registry` for full per-kind contracts + each authoring schema."""
+
     _preamble = f"""## App capabilities — read this before saying "I don't have <X>"
 
 If the user asks for a feature, model, provider, subagent, or endpoint and you don't recognize the name, **check this catalog (or `GET $TH_DAEMON_URL/__capabilities`) before answering**. The app catalog is authoritative; your training-data knowledge is not.
@@ -792,6 +838,11 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 
 If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → background-removal) works locally with no API key needed.
 
+**Image → 3D (turn a picture into a 3D object — yes, this is supported, no local GPU needed).** The asset pipeline chains: raster image (`generate-image`) → `rembg` (cutout) → one of two transform skills via `/__asset_generate`:
+  • `image-to-ply` → a 3D **Gaussian splat** `.ply` → feeds a **Splat Lab** (`gaussian-splat-3d`) node.
+  • `image-to-glb` → a textured **mesh** `.glb` → feeds **Spline 3D** / **Voxel** / model-viewer.
+Both default to **fal** (hosted — `tripo3d/triposplat` for splat, `fal-ai/trellis` for mesh; needs a fal key, runs on fal's GPU) and also accept provider `sam3d` (a self-hosted SAM 3D Objects service, `services/sam3d-splat/`). So when a user says "make this image a 3D model / splat", chain generate-image → rembg → image-to-ply/-glb and wire the result into the matching 3D node — do NOT say it's unsupported.
+
 **Subagent drawers available** ({len(caps['subagents'])}, dispatch via the Task tool):
 {subagent_lines}
 
@@ -800,7 +851,7 @@ If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → bac
 
 > **WORKSPACE MODE — every daemon URL needs `?project=$TH_PROJECT_ID`.** The daemon hosts many projects under one process. Your shell already has `TH_PROJECT_ID` set (your project's id) and `TH_DAEMON_URL` set (the daemon root). When you `curl` an endpoint, append `?project=$TH_PROJECT_ID` (or `&project=$TH_PROJECT_ID` if the URL already has a query). Forgetting it returns `400 workspace mode with N projects requires explicit ?project=<id>` — that's the daemon telling you to fix the URL, not asking what to do. Always use `$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID` (and same shape for every other endpoint), never the bare `$TH_DAEMON_URL/__workflow`. Bug history: the musem chat got back the install's brand-landing workflow (27 unrelated nodes) because of this.
 
-**Node kinds** ({len(caps['kinds'])}): {', '.join(k['kind'] for k in caps['kinds'])}. See `GET /__kinds/registry` for full per-kind contracts.
+{node_kinds_block}
 {custom_skills_block}{mcp_inventory_block}
 
 ## Local font library — check it BEFORE proposing typography
