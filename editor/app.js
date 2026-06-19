@@ -51169,7 +51169,53 @@ function _composerLayerStyle(layer, canvasW, canvasH) {
   else if (a === "bottom-right") { style.bottom = pY(-oY); style.right = pX(-oX); }
   else if (a === "stretch-h")  { style.top = pY(oY); }
   else if (a === "stretch-v")  { style.left = pX(oX); }
+  const rot = _composerLayerRotationTransform(layer);
+  if (rot) {
+    style.transform = [style.transform, rot].filter(Boolean).join(" ");
+    style.transformOrigin = "center center";
+    style.transformStyle = "preserve-3d";
+  }
   return style;
+}
+function _composerLayerRotationTransform(layer) {
+  const rx = Number(layer.rotateX || 0);
+  const ry = Number(layer.rotateY || 0);
+  const rz = Number(layer.rotation || 0) + Number(layer.rotateZ || 0) + Number(layer.rot || 0);
+  const parts = [];
+  if (rx || ry) parts.push("perspective(1000px)");
+  if (rx) parts.push(`rotateX(${rx}deg)`);
+  if (ry) parts.push(`rotateY(${ry}deg)`);
+  if (rz) parts.push(`rotateZ(${rz}deg)`);
+  return parts.join(" ");
+}
+function _composerFitCss(v) {
+  return ["cover", "contain", "fill", "none"].includes(v) ? v : "contain";
+}
+function _composerObjectPosition(layer) {
+  const ax = ({ left: "left", center: "center", right: "right" })[layer.alignX] || "center";
+  const ay = ({ top: "top", center: "center", bottom: "bottom" })[layer.alignY] || "center";
+  return ax + " " + ay;
+}
+function _composerMediaStyle(layer) {
+  return {
+    objectFit: _composerFitCss(layer.fit),
+    objectPosition: _composerObjectPosition(layer),
+  };
+}
+function _composerCssUrl(url) {
+  return String(url || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n|\r/g, "");
+}
+function _composerTileStyle(layer, url) {
+  const fit = _composerFitCss(layer.fit);
+  return {
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+    backgroundImage: `url("${_composerCssUrl(url)}")`,
+    backgroundRepeat: "repeat",
+    backgroundPosition: _composerObjectPosition(layer),
+    backgroundSize: fit === "fill" ? "100% 100%" : fit === "none" ? "auto" : fit,
+  };
 }
 // ── Shared, io-contract-driven upstream-input resolver ──────────────────────
 // v4.0 — THE single way the frontend answers "what is wired into this node".
@@ -51559,6 +51605,29 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       const base = Math.min(canvasW, canvasH) * 0.18 * scale;
       return Math.max(48, Math.min(base, Math.min(canvasW, canvasH) * 0.42));
     };
+    const decoration = {
+      fit: p.fit || "contain",
+      alignX: p.alignX || "center",
+      alignY: p.alignY || "center",
+      tile: !!p.tile,
+      rotateX: Number(p.rotateX) || 0,
+      rotateY: Number(p.rotateY) || 0,
+      rotateZ: Number(p.rotateZ) || 0,
+      rotation: Number(p.rotation) || 0,
+    };
+    if (mode === "single") {
+      const scale = Math.max(0.01, Number(p.scale) || 1);
+      const size = boxSize(scale);
+      const x = Number(p.x) || 0;
+      const y = Number(p.y) || 0;
+      return () => ({
+        anchor: "top-left",
+        offsetX: Math.max(0, Math.min(canvasW - size, x)),
+        offsetY: Math.max(0, Math.min(canvasH - size, y)),
+        width: size, height: size,
+        ...decoration,
+      });
+    }
     if (mode === "scatter-3d") {
       const b = Array.isArray(p.bounds) ? p.bounds : [p.boundsX, p.boundsY, p.boundsZ];
       const bx = Math.max(0.01, Number(b[0]) || 6);
@@ -51577,6 +51646,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           offsetX: Math.max(0, Math.min(canvasW - size, x * canvasW - size / 2)),
           offsetY: Math.max(0, Math.min(canvasH - size, y * canvasH - size / 2)),
           width: size, height: size,
+          ...decoration,
         };
       };
     }
@@ -51602,6 +51672,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           offsetX: Math.max(0, Math.min(canvasW - width, x)),
           offsetY: Math.max(0, Math.min(canvasH - height, y)),
           width, height,
+          ...decoration,
         };
       };
     }
@@ -51610,6 +51681,10 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const gap = p.gap != null ? p.gap : 0;
     const cellW = (canvasW - gap * (cols + 1)) / cols;
     const cellH = (canvasH - gap * (rows + 1)) / rows;
+    const spanCols = Math.max(1, Math.min(cols, Math.round(p.spanCols || 1)));
+    const spanRows = Math.max(1, Math.min(rows, Math.round(p.spanRows || 1)));
+    const shiftX = Number(p.shiftX) || 0;
+    const shiftY = Number(p.shiftY) || 0;
     // optional deterministic shuffle for placement:"random"
     const order = layers.map((_, i) => i);
     if (p.placement === "random") {
@@ -51622,12 +51697,16 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         return { anchor: "center", offsetX: 0, offsetY: 0, width: null, height: null };
       }
       const slot = slotByLayer[i] != null ? slotByLayer[i] : i;
-      const col = slot % cols, row = Math.floor(slot / cols);
+      const col = Math.min(slot % cols, Math.max(0, cols - spanCols));
+      const row = Math.min(Math.floor(slot / cols) % rows, Math.max(0, rows - spanRows));
+      const width = cellW * spanCols + gap * Math.max(0, spanCols - 1);
+      const height = cellH * spanRows + gap * Math.max(0, spanRows - 1);
       return {
         anchor: "top-left",
-        offsetX: gap + col * (cellW + gap),
-        offsetY: gap + row * (cellH + gap),
-        width: cellW, height: cellH,
+        offsetX: Math.max(0, Math.min(canvasW - width, gap + col * (cellW + gap) + shiftX)),
+        offsetY: Math.max(0, Math.min(canvasH - height, gap + row * (cellH + gap) + shiftY)),
+        width, height,
+        ...decoration,
       };
     };
   }, [_posActive, _posSpec, layers.length, canvasW, canvasH]);
@@ -51993,6 +52072,16 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           else if (a === "bottom-right")  { rules.push(`bottom: ${pY(-oY)}; right: ${pX(-oX)}`); }
           else if (a === "stretch-h")     { rules.push(`top: ${pY(oY)}`); }
           else if (a === "stretch-v")     { rules.push(`left: ${pX(oX)}`); }
+          const rot = _composerLayerRotationTransform(layer);
+          if (rot) {
+            const idx = rules.findIndex(r => r.includes("transform:"));
+            if (idx >= 0) rules[idx] = rules[idx].replace(/transform:\s*([^;]+)/, (_m, base) => `transform: ${base} ${rot}`);
+            else rules.push(`transform: ${rot}`);
+            rules.push("transform-origin: center center");
+            rules.push("transform-style: preserve-3d");
+          }
+          rules.push(`object-fit: ${_composerFitCss(layer.fit)}`);
+          rules.push(`object-position: ${_composerObjectPosition(layer)}`);
           layerCss.push(`  .layer-${i} { ${rules.join("; ")}; }`);
           // v3.4.46 — Pick the renderer by EXTENSION (path or URL) rather
           // than just by node.assetKind. Catches the "kind says image
@@ -52012,6 +52101,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
             continue;
           }
           const safeUrl = attrEsc(url);
+          const cssUrl = _composerCssUrl(url);
           const ext = (() => {
             const pathExt = (() => {
               const p = String(assetNode.path || "").toLowerCase();
@@ -52032,7 +52122,12 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           // !== "asset" but they DO have a bakedPath (an .html file).
           // Treat their kind as iframe regardless of ext-checks below.
           const isBakedHtml = (assetNode.kind === "composer" || assetNode.kind === "formatted-text") && !!assetNode.bakedPath;
-          if (isBakedHtml || isHtmlExt) {
+          if (isImgExt && layer.tile) {
+            const fit = _composerFitCss(layer.fit);
+            const bgSize = fit === "fill" ? "100% 100%" : fit === "none" ? "auto" : fit;
+            layerCss.push(`  .layer-${i} { background-image: url("${cssUrl}"); background-repeat: repeat; background-position: ${_composerObjectPosition(layer)}; background-size: ${bgSize}; }`);
+            layerTags.push(`    <div class="layer-${i}" role="img" aria-label="${safeLabel}"></div>`);
+          } else if (isBakedHtml || isHtmlExt) {
             layerTags.push(`    <iframe class="layer-${i}" src="${safeUrl}" title="${safeLabel}" loading="lazy"></iframe>`);
           } else if (isVideoExt) {
             layerTags.push(`    <video class="layer-${i}" src="${safeUrl}" autoplay loop muted playsinline preload="metadata"></video>`);
@@ -52304,6 +52399,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
             // manual anchor/offset/size.
             const liveLayer = _gridGeomFor ? { ...liveLayerAt(i), ..._gridGeomFor(i) } : liveLayerAt(i);
             const style = _composerLayerStyle(liveLayer, canvasW, canvasH);
+            const mediaStyle = _composerMediaStyle(liveLayer);
             // Allow pointer events on the layer wrapper so the user can grab
             // it and drag to move; let inner img/video keep their default
             // pointer-events: none from CSS so they don't intercept.
@@ -52330,11 +52426,13 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
                 title=${label + " — drag to move (when selected)"}
               >
                 ${url
-                  ? (kind === "video"
-                      ? html`<video src=${url} autoPlay loop muted playsInline/>`
+                  ? (kind === "img" && liveLayer.tile
+                      ? html`<div className="workflow-composer-layer-tile" style=${_composerTileStyle(liveLayer, url)}/>`
+                      : kind === "video"
+                      ? html`<video src=${url} autoPlay loop muted playsInline style=${mediaStyle}/>`
                       : kind === "iframe"
-                        ? html`<iframe src=${url} title=${label} sandbox="allow-scripts allow-same-origin"/>`
-                        : html`<img src=${url} alt=${label}/>`)
+                        ? html`<iframe src=${url} title=${label} sandbox="allow-scripts allow-same-origin" style=${mediaStyle}/>`
+                        : html`<img src=${url} alt=${label} style=${mediaStyle}/>`)
                   : html`<div className="workflow-composer-layer-missing">${label}</div>`}
                 ${isActive && html`
                   <div
@@ -56683,6 +56781,7 @@ function _specControlUnit(key, def) {
   if (k === "x" || k === "y") return "px";
   if (k === "z") return "units";
   if (k.includes("angle") || k.includes("rotation") || k === "rot") return "deg";
+  if (k === "rotatex" || k === "rotatey" || k === "rotatez") return "deg";
   if (k.includes("duration")) return "s";
   if (k.includes("gravity")) return "px/s^2";
   if (k === "scale") return "x";
@@ -56692,8 +56791,9 @@ function _specControlUnit(key, def) {
       k.includes("grain") || k.includes("curvature") || k.includes("vignette") ||
       k.includes("scanline")) return "0-1";
   if (["count", "cols", "rows", "layers", "segments", "samples", "levels", "band"].includes(k)) return "count";
+  if (k.includes("span")) return "cells";
   if (k.includes("size") || k.includes("offset") || k.includes("distance") || k.includes("amount") ||
-      k.includes("gap") || k.includes("cell")) return "px";
+      k.includes("gap") || k.includes("cell") || k.includes("shift")) return "px";
   if (k.includes("speed")) return "rate";
   if (k.includes("spacing") || k.includes("bounds")) return "units";
   return "";
@@ -56917,33 +57017,66 @@ export function buildSpec(values) {
       x: { type: "number", value: 0, min: -5000, max: 5000, step: 1 },
       y: { type: "number", value: 0, min: -5000, max: 5000, step: 1 },
       scale: { type: "number", value: 1, min: 0.01, max: 10, step: 0.01 },
-      rotation: { type: "number", value: 0, min: -360, max: 360, step: 1 }
-    }, ["x: values.x", "y: values.y", "scale: values.scale", "rotation: values.rotation"], `export function layout(items, bounds, values) {
+      rotation: { type: "number", value: 0, min: -360, max: 360, step: 1 },
+      rotateX: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateY: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateZ: { type: "number", value: 0, min: -360, max: 360, step: 1 }
+    }, ["x: values.x", "y: values.y", "scale: values.scale", "rotation: values.rotation", "rotateX: values.rotateX", "rotateY: values.rotateY", "rotateZ: values.rotateZ"], `export function layout(items, bounds, values) {
   return items.map((item) => ({
     ...item,
     x: values.x,
     y: values.y,
     scale: values.scale,
-    rotation: values.rotation
+    rotation: values.rotation,
+    rotateX: values.rotateX,
+    rotateY: values.rotateY,
+    rotateZ: values.rotateZ
   }));
 }`),
     _positionTemplate("grid", "Grid layout", "grid", {
-      cols: { type: "number", value: 4, min: 1, max: 24, step: 1 },
-      rows: { type: "number", value: 4, min: 1, max: 24, step: 1 },
+      cols: { type: "number", value: 20, min: 1, max: 200, step: 1 },
+      rows: { type: "number", value: 20, min: 1, max: 200, step: 1 },
+      spanCols: { type: "number", value: 1, min: 1, max: 200, step: 1 },
+      spanRows: { type: "number", value: 1, min: 1, max: 200, step: 1 },
       gap: { type: "number", value: 0, min: 0, max: 120, step: 1 },
-      placement: { type: "select", value: "fixed", options: ["fixed", "random"] }
-    }, ["cols: values.cols", "rows: values.rows", "gap: values.gap", "placement: values.placement"], `export function layout(items, bounds, values) {
+      placement: { type: "select", value: "fixed", options: ["fixed", "random"] },
+      fit: { type: "select", value: "contain", options: ["contain", "cover", "fill", "none"] },
+      alignX: { type: "select", value: "center", options: ["left", "center", "right"] },
+      alignY: { type: "select", value: "center", options: ["top", "center", "bottom"] },
+      tile: { type: "boolean", value: false },
+      shiftX: { type: "number", value: 0, min: -1000, max: 1000, step: 1 },
+      shiftY: { type: "number", value: 0, min: -1000, max: 1000, step: 1 },
+      rotation: { type: "number", value: 0, min: -360, max: 360, step: 1 },
+      rotateX: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateY: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      rotateZ: { type: "number", value: 0, min: -360, max: 360, step: 1 }
+    }, [
+      "cols: values.cols", "rows: values.rows", "spanCols: values.spanCols", "spanRows: values.spanRows",
+      "gap: values.gap", "placement: values.placement", "fit: values.fit", "alignX: values.alignX", "alignY: values.alignY",
+      "tile: values.tile", "shiftX: values.shiftX", "shiftY: values.shiftY",
+      "rotation: values.rotation", "rotateX: values.rotateX", "rotateY: values.rotateY", "rotateZ: values.rotateZ"
+    ], `export function layout(items, bounds, values) {
   const cellW = (bounds.width - values.gap * (values.cols + 1)) / values.cols;
   const cellH = (bounds.height - values.gap * (values.rows + 1)) / values.rows;
   return items.map((item, index) => {
     const col = index % values.cols;
     const row = Math.floor(index / values.cols) % values.rows;
+    const spanCols = Math.max(1, Math.min(values.cols, values.spanCols));
+    const spanRows = Math.max(1, Math.min(values.rows, values.spanRows));
     return {
       ...item,
-      x: values.gap + col * (cellW + values.gap),
-      y: values.gap + row * (cellH + values.gap),
-      width: cellW,
-      height: cellH
+      x: values.gap + col * (cellW + values.gap) + values.shiftX,
+      y: values.gap + row * (cellH + values.gap) + values.shiftY,
+      width: cellW * spanCols + values.gap * (spanCols - 1),
+      height: cellH * spanRows + values.gap * (spanRows - 1),
+      fit: values.fit,
+      alignX: values.alignX,
+      alignY: values.alignY,
+      tile: values.tile,
+      rotation: values.rotation,
+      rotateX: values.rotateX,
+      rotateY: values.rotateY,
+      rotateZ: values.rotateZ
     };
   });
 }`),
@@ -57300,11 +57433,11 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       writeNodeFiles(null, nextSource);
     }
   }, [node.kind, onChange, writeNodeFiles]);
-  const commitSpec = useCallback((nextSpec, nextSource) => {
+  const commitSpec = useCallback((nextSpec, nextSource, extraPatch) => {
     const source = nextSource != null ? nextSource : _specToScript(node.kind, nextSpec);
     setScriptText(source);
     setScriptError(null);
-    onChange({ spec: nextSpec, source });
+    onChange({ spec: nextSpec, source, ...(extraPatch || {}) });
     writeNodeFiles(nextSpec, source);
   }, [node.kind, onChange, writeNodeFiles]);
   const updateControl = useCallback((key, value) => {
@@ -57319,11 +57452,12 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     const nextSource = tpl.source;
     try {
       const nextSpec = _scriptToSpec(node.kind, nextSource);
-      commitSpec(nextSpec, nextSource);
+      commitSpec(nextSpec, nextSource, { templateId: tpl.id });
     } catch (_err) {
       commitSource(nextSource);
+      onChange({ templateId: tpl.id });
     }
-  }, [node.kind, commitSpec, commitSource]);
+  }, [node.kind, commitSpec, commitSource, onChange]);
   const applyScript = useCallback((text) => {
     commitSource(text);
   }, [commitSource]);
@@ -57398,6 +57532,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     </label>`;
   };
   const templates = SPEC_SOURCE_TEMPLATES[node.kind] || [];
+  const selectedTemplateId = node.templateId || "";
 
   const hasIn = node.kind === "layer";
   return html`
@@ -57412,12 +57547,20 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
       <div className="workflow-spec-body" onMouseDown=${(e) => e.stopPropagation()} style=${{ padding: "8px 10px", overflow: "auto", height: "calc(100% - 30px)" }}>
-        ${templates.length > 1 && html`<select className="workflow-spec-input" style=${{ width: "100%", marginBottom: "8px" }}
-          value="" onChange=${(e) => { if (e.target.value) applyTemplate(e.target.value); e.target.value = ""; }}
-          onMouseDown=${(e) => e.stopPropagation()}>
-          <option value="">Choose source template...</option>
-          ${templates.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
-        </select>`}
+        ${templates.length > 1 && html`<div style=${{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px", marginBottom: "8px" }}>
+          <select className="workflow-spec-input"
+            value=${selectedTemplateId}
+            onChange=${(e) => { if (e.target.value) applyTemplate(e.target.value); }}
+            onMouseDown=${(e) => e.stopPropagation()}>
+            <option value="">Choose source template...</option>
+            ${templates.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
+          </select>
+          <button className="workflow-spec-tab"
+            style=${{ border: "1px solid var(--line, #ddd)", borderRadius: "6px", padding: "5px 8px", background: "transparent", fontSize: "11px", whiteSpace: "nowrap" }}
+            title=${selectedTemplateId ? "Reset this building block to the saved template" : "Reset this building block to the first template"}
+            onClick=${(e) => { e.stopPropagation(); const id = selectedTemplateId || (templates[0] && templates[0].id); if (id) applyTemplate(id); }}
+            onMouseDown=${(e) => e.stopPropagation()}>Reset</button>
+        </div>`}
         <div className="workflow-spec-tabs" style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginBottom: "8px" }}>
           ${["code","ui"].map(v => html`<button key=${v} className=${"workflow-spec-tab" + (view === v ? " is-on" : "")}
             style=${{ border: "1px solid var(--line, #ddd)", borderRadius: "6px", padding: "5px 6px", background: view === v ? "var(--accent-soft, #eef)" : "transparent", fontSize: "11px" }}

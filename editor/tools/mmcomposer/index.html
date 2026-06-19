@@ -214,7 +214,7 @@ function finiteNumber(v,fallback){
 function composerPositioningFromSpec(spec){
   const src=spec||{};
   const p=Object.assign({mode:src.mode||'single'}, src.params||{});
-  if(p.rotation!=null && p.rot==null) p.rot=finiteNumber(p.rotation,0)*Math.PI/180;
+  if((p.rotation!=null || p.rotateZ!=null) && p.rot==null) p.rot=(finiteNumber(p.rotation,0)+finiteNumber(p.rotateZ,0))*Math.PI/180;
   if(p.mode==='grid-3d'){
     p.cols=Math.max(1,finiteNumber(p.cols,1)|0);
     p.rows=Math.max(1,finiteNumber(p.rows,1)|0);
@@ -259,7 +259,7 @@ function normalizeRuntimePositioning(p,W,H){
   if(p.mode==='single'){
     p.x=normalizedCoord(p.x,W,0.5);
     p.y=normalizedCoord(p.y,H,0.5);
-    if(p.rotation!=null && p.rot==null) p.rot=finiteNumber(p.rotation,0)*Math.PI/180;
+    if((p.rotation!=null || p.rotateZ!=null) && p.rot==null) p.rot=(finiteNumber(p.rotation,0)+finiteNumber(p.rotateZ,0))*Math.PI/180;
   }
   if(p.mode==='drawn') p.paths=parsePointList(p.paths,W,H);
   if(p.mode==='rope') p.anchors=parsePointList(p.anchors,W,H)[0]||[[0.2,0.2],[0.8,0.2]];
@@ -360,8 +360,8 @@ function fillLayer(L){
 }
 function fillPositioning(p){
   const d={
-    single:{x:0.5,y:0.5,scale:1,rot:0},
-    grid:{cols:6,rows:4,placement:'fixed',gap:0.1,size:0.6},
+    single:{x:0.5,y:0.5,scale:1,rot:0,rotateX:0,rotateY:0,rotateZ:0},
+    grid:{cols:20,rows:20,spanCols:1,spanRows:1,placement:'fixed',gap:0,size:1,fit:'contain',alignX:'center',alignY:'center',tile:false,shiftX:0,shiftY:0,rotation:0,rotateX:0,rotateY:0,rotateZ:0},
     'grid-3d':{cols:4,rows:4,layers:3,spacing:1,size:0.08},
     'scatter-3d':{count:80,bounds:[6,6,6],size:0.05},
     instances:{source:'mouse',count:40,physics:false,size:0.05,spread:0.4},
@@ -611,7 +611,7 @@ const Positioning = {
     const p=normalizeRuntimePositioning(L.positioning,W,H);
     switch(p.mode){
       case 'single':      return [{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
-      case 'grid':        return this.grid(L,p);
+      case 'grid':        return this.grid(L,p,W,H);
       case 'grid-3d':     return this.grid3d(L,p);
       case 'scatter-3d':  return this.scatter3d(L,p);
       case 'instances':   return this.instances(L,p,dt);
@@ -623,13 +623,29 @@ const Positioning = {
       default:            return [{x:.5,y:.5,scale:1,rot:0}];
     }
   },
-  grid(L,p){
+  grid(L,p,W,H){
     const out=[], cols=Math.max(1,p.cols|0), rows=Math.max(1,p.rows|0);
+    const gap=Math.max(0,finiteNumber(p.gap,0));
+    const spanCols=Math.max(1,Math.min(cols,finiteNumber(p.spanCols,1)|0));
+    const spanRows=Math.max(1,Math.min(rows,finiteNumber(p.spanRows,1)|0));
+    const cellW=(W-gap*(cols+1))/cols;
+    const cellH=(H-gap*(rows+1))/rows;
+    const boxW=Math.max(1,cellW*spanCols+gap*(spanCols-1));
+    const boxH=Math.max(1,cellH*spanRows+gap*(spanRows-1));
+    const shiftX=finiteNumber(p.shiftX,0), shiftY=finiteNumber(p.shiftY,0);
+    const rot=(finiteNumber(p.rotation,0)+finiteNumber(p.rotateZ,0))*Math.PI/180;
     let rng=mulberry(hash(L.id));
     for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
       if(p.placement==='random' && rng()<0.25) continue;
-      out.push({x:(c+0.5)/cols, y:(r+0.5)/rows,
-        scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1), rot:0});
+      const col=Math.min(c,Math.max(0,cols-spanCols));
+      const row=Math.min(r,Math.max(0,rows-spanRows));
+      const left=Math.max(0,Math.min(W-boxW,gap+col*(cellW+gap)+shiftX));
+      const top=Math.max(0,Math.min(H-boxH,gap+row*(cellH+gap)+shiftY));
+      out.push({
+        x:(left+boxW/2)/W, y:(top+boxH/2)/H, w:boxW/W, h:boxH/H,
+        scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1), rot,
+        fit:p.fit||'contain', alignX:p.alignX||'center', alignY:p.alignY||'center', tile:!!p.tile,
+      });
     }
     return out;
   },
@@ -1098,21 +1114,37 @@ class GLFx {
 /* ===========================================================================
    CONTENT RENDERING  (2D) — draw an instance's content into the 2D layer buf
    ===========================================================================*/
+function drawMediaInBox(ctx, media, ar, boxW, boxH, fit, alignX, alignY, tile){
+  fit = ['cover','contain','fill','none'].includes(fit) ? fit : 'contain';
+  alignX = alignX || 'center'; alignY = alignY || 'center';
+  if(tile && media){
+    const pattern=ctx.createPattern(media,'repeat');
+    if(pattern){ ctx.save(); ctx.fillStyle=pattern; ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH); ctx.restore(); return; }
+  }
+  let w=boxW, h=boxH;
+  if(fit==='contain'){ const s=Math.min(boxW/(ar||1),boxH); w=s*(ar||1); h=s; }
+  else if(fit==='cover'){ const s=Math.max(boxW/(ar||1),boxH); w=s*(ar||1); h=s; }
+  else if(fit==='none'){ h=boxH; w=h*(ar||1); }
+  const x=alignX==='left' ? -boxW/2 : alignX==='right' ? boxW/2-w : -w/2;
+  const y=alignY==='top' ? -boxH/2 : alignY==='bottom' ? boxH/2-h : -h/2;
+  ctx.drawImage(media,x,y,w,h);
+}
 function drawContent(ctx, L, inst, W, H, baseScale){
   const c=L.content;
   const cx=inst.x*W, cy=inst.y*H;
   const sz=Math.min(W,H)*(inst.scale||1)*baseScale;
+  const boxW=(inst.w?inst.w*W:sz), boxH=(inst.h?inst.h*H:sz);
   ctx.save();
   ctx.translate(cx,cy); ctx.rotate(inst.rot||0);
   if(c.kind==='asset'){
     const m=Assets.meta(c.assetId);
     if(m && m.kind==='video'){ const v=Assets.video(c.assetId);
-      if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1; const w=sz, h=sz/ar;
-        ctx.drawImage(v,-w/2,-h/2,w,h); } }
+      if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1;
+        drawMediaInBox(ctx,v,ar,boxW,boxH,inst.fit,inst.alignX,inst.alignY,inst.tile); } }
     else { const im=Assets.image(c.assetId);
-      if(im&&im._ready){ const ar=im.width/im.height||1; const w=sz, h=sz/ar;
-        ctx.drawImage(im,-w/2,-h/2,w,h); }
-      else { ctx.fillStyle='#333'; ctx.fillRect(-sz/2,-sz/2,sz,sz); ctx.fillStyle='#888';
+      if(im&&im._ready){ const ar=im.width/im.height||1;
+        drawMediaInBox(ctx,im,ar,boxW,boxH,inst.fit,inst.alignX,inst.alignY,inst.tile); }
+      else { ctx.fillStyle='#333'; ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH); ctx.fillStyle='#888';
         ctx.font=`${Math.max(8,sz*0.12)}px ${getMono()}`; ctx.textAlign='center';
         ctx.fillText(m?m.label||'asset':'no asset',0,0); } }
   } else if(c.kind==='text'){
@@ -1126,10 +1158,10 @@ function drawContent(ctx, L, inst, W, H, baseScale){
       ctx.arc(0,0, sz*0.12*i*(0.8+0.2*Math.sin(Input.clock*2+i)),0,Math.PI*2); ctx.stroke(); }
   } else { // shape
     ctx.fillStyle=c.color||'#6ee7ff';
-    if(c.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,sz/2,0,Math.PI*2); ctx.fill(); }
-    else if(c.shape==='tri'){ ctx.beginPath(); ctx.moveTo(0,-sz/2); ctx.lineTo(sz/2,sz/2);
-      ctx.lineTo(-sz/2,sz/2); ctx.closePath(); ctx.fill(); }
-    else { ctx.fillRect(-sz/2,-sz/2,sz,sz); }
+    if(c.shape==='circle'){ ctx.beginPath(); ctx.ellipse(0,0,boxW/2,boxH/2,0,0,Math.PI*2); ctx.fill(); }
+    else if(c.shape==='tri'){ ctx.beginPath(); ctx.moveTo(0,-boxH/2); ctx.lineTo(boxW/2,boxH/2);
+      ctx.lineTo(-boxW/2,boxH/2); ctx.closePath(); ctx.fill(); }
+    else { ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH); }
   }
   ctx.restore();
 }
@@ -1479,11 +1511,26 @@ function renderInspector(){
       b.appendChild(fSlider('Y',p.y,0,1,0.01,v=>p.y=v));
       b.appendChild(fSlider('Scale',p.scale,0.05,3,0.01,v=>p.scale=v));
       b.appendChild(fSlider('Rotation',p.rot,0,6.28,0.01,v=>p.rot=v));
+      b.appendChild(fSlider('Rotate X',p.rotateX||0,-180,180,1,v=>p.rotateX=v));
+      b.appendChild(fSlider('Rotate Y',p.rotateY||0,-180,180,1,v=>p.rotateY=v));
+      b.appendChild(fSlider('Rotate Z',p.rotateZ||0,-360,360,1,v=>{p.rotateZ=v;p.rot=v*Math.PI/180;}));
     } else if(p.mode==='grid'){
       b.appendChild(fSlider('Columns',p.cols,1,24,1,v=>p.cols=v));
       b.appendChild(fSlider('Rows',p.rows,1,24,1,v=>p.rows=v));
+      b.appendChild(fSlider('Span columns',p.spanCols||1,1,Math.max(1,p.cols||24),1,v=>p.spanCols=v));
+      b.appendChild(fSlider('Span rows',p.spanRows||1,1,Math.max(1,p.rows||24),1,v=>p.spanRows=v));
       b.appendChild(fSelect('Placement',p.placement,[['fixed','Fixed'],['random','Random occupancy']],v=>p.placement=v));
-      b.appendChild(fSlider('Cell size',p.size,0.1,1.5,0.01,v=>p.size=v));
+      b.appendChild(fSelect('Fit',p.fit||'contain',[['contain','Fit / contain'],['cover','Cover'],['fill','Fill'],['none','None']],v=>p.fit=v));
+      b.appendChild(fSelect('Align X',p.alignX||'center',[['left','Left'],['center','Center'],['right','Right']],v=>p.alignX=v));
+      b.appendChild(fSelect('Align Y',p.alignY||'center',[['top','Top'],['center','Center'],['bottom','Bottom']],v=>p.alignY=v));
+      b.appendChild(fToggle('Tile image',!!p.tile,v=>p.tile=v));
+      b.appendChild(fSlider('Shift X',p.shiftX||0,-1000,1000,1,v=>p.shiftX=v));
+      b.appendChild(fSlider('Shift Y',p.shiftY||0,-1000,1000,1,v=>p.shiftY=v));
+      b.appendChild(fSlider('Scale',p.size,0.1,1.5,0.01,v=>p.size=v));
+      b.appendChild(fSlider('Rotation',p.rotation||0,-360,360,1,v=>p.rotation=v));
+      b.appendChild(fSlider('Rotate X',p.rotateX||0,-180,180,1,v=>p.rotateX=v));
+      b.appendChild(fSlider('Rotate Y',p.rotateY||0,-180,180,1,v=>p.rotateY=v));
+      b.appendChild(fSlider('Rotate Z',p.rotateZ||0,-360,360,1,v=>p.rotateZ=v));
     } else if(p.mode==='grid-3d'){
       b.appendChild(fSlider('Columns',p.cols,1,24,1,v=>p.cols=v));
       b.appendChild(fSlider('Rows',p.rows,1,24,1,v=>p.rows=v));
@@ -1791,9 +1838,10 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   const SIM={};
   function positions(L,dt){ const p=L.positioning;
     if(p.mode==='single')return[{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
-    if(p.mode==='grid'){ const out=[],cols=Math.max(1,p.cols|0),rows=Math.max(1,p.rows|0),rng=mb(hash(L.id));
+    if(p.mode==='grid'){ const out=[],cols=Math.max(1,p.cols|0),rows=Math.max(1,p.rows|0),rng=mb(hash(L.id)),gap=Math.max(0,num(p.gap,0)),sc=Math.max(1,Math.min(cols,num(p.spanCols,1)|0)),sr=Math.max(1,Math.min(rows,num(p.spanRows,1)|0)),cw=(W-gap*(cols+1))/cols,ch=(H-gap*(rows+1))/rows,bw=Math.max(1,cw*sc+gap*(sc-1)),bh=Math.max(1,ch*sr+gap*(sr-1)),sx=num(p.shiftX,0),sy=num(p.shiftY,0),rot=(num(p.rotation,0)+num(p.rotateZ,0))*Math.PI/180;
       for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){ if(p.placement==='random'&&rng()<0.25)continue;
-        out.push({x:(c+0.5)/cols,y:(r+0.5)/rows,scale:p.size*(p.placement==='random'?0.6+rng()*0.8:1),rot:0});} return out; }
+        const col=Math.min(c,Math.max(0,cols-sc)),row=Math.min(r,Math.max(0,rows-sr)),left=Math.max(0,Math.min(W-bw,gap+col*(cw+gap)+sx)),top=Math.max(0,Math.min(H-bh,gap+row*(ch+gap)+sy));
+        out.push({x:(left+bw/2)/W,y:(top+bh/2)/H,w:bw/W,h:bh/H,scale:(p.size||1)*(p.placement==='random'?0.6+rng()*0.8:1),rot,fit:p.fit||'contain',alignX:p.alignX||'center',alignY:p.alignY||'center',tile:!!p.tile});} return out; }
     if(p.mode==='grid-3d'){ const out=[],cols=Math.max(1,num(p.cols,4)|0),rows=Math.max(1,num(p.rows,4)|0),layers=Math.max(1,num(p.layers,3)|0),total=Math.min(cols*rows*layers,600),base=num(p.size,0.08),depth=0.035;
       for(let i=0;i<total;i++){const c=i%cols,r=Math.floor(i/cols)%rows,l=Math.floor(i/(cols*rows))%layers,z=layers>1?l/(layers-1):0;
         out.push({x:clamp((c+0.5)/cols+(z-0.5)*depth,0.02,0.98),y:clamp((r+0.5)/rows+(z-0.5)*depth,0.02,0.98),scale:base*(1.18-z*0.36),rot:(z-0.5)*0.35});} return out; }
@@ -1837,12 +1885,13 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   function applyMap(v,map,range){const[lo,hi]=range||[0,1];return map==='threshold'?(v>=0.5?hi:lo):lerp(lo,hi,clamp(v,0,1));}
   function impacts(tv){const ov={};for(const L of CFG.layers){const t=tv[L.id];if(!t)continue;for(const im of (L.trigger.impacts||[])){if(!im||!im.target)continue;const val=applyMap(t.v,im.map,im.range);const o=ov[im.target]||(ov[im.target]={});if(im.param==='opacity')o.opacity=val;else if(im.param==='scale')o.scale=val;else if(im.param==='position')o.position=[t.vec?t.vec[0]:val,t.vec?t.vec[1]:val];else if(im.param==='effect.intensity')o.eInt=val;}}return ov;}
   /* content draw */
-  function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul;
+  function drawM(media,ar,bw,bh,fit,ax,ay,tile){fit=['cover','contain','fill','none'].includes(fit)?fit:'contain';ax=ax||'center';ay=ay||'center';if(tile&&media){const pat=lctx.createPattern(media,'repeat');if(pat){lctx.fillStyle=pat;lctx.fillRect(-bw/2,-bh/2,bw,bh);return;}}let w=bw,h=bh;if(fit==='contain'){const s=Math.min(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='cover'){const s=Math.max(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='none'){h=bh;w=h*(ar||1);}const x=ax==='left'?-bw/2:ax==='right'?bw/2-w:-w/2,y=ay==='top'?-bh/2:ay==='bottom'?bh/2-h:-h/2;lctx.drawImage(media,x,y,w,h);}
+  function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul,bw=inst.w?inst.w*W:sz,bh=inst.h?inst.h*H:sz;
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
-    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.drawImage(v,-sz/2,-sz/2/ar,sz,sz/ar);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;lctx.drawImage(im,-sz/2,-sz/2/ar,sz,sz/ar);}else{lctx.fillStyle='#333';lctx.fillRect(-sz/2,-sz/2,sz,sz);}}}
+    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
-    else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.arc(0,0,sz/2,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-sz/2);lctx.lineTo(sz/2,sz/2);lctx.lineTo(-sz/2,sz/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-sz/2,-sz/2,sz,sz);}
+    else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.ellipse(0,0,bw/2,bh/2,0,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-bh/2);lctx.lineTo(bw/2,bh/2);lctx.lineTo(-bw/2,bh/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-bw/2,-bh/2,bw,bh);}
     lctx.restore();}
   /* WebGL effects (same shaders as editor) — EFF/FH/VS injected as args */
   const gl=cgl.getContext('webgl2',{premultipliedAlpha:true,alpha:true}); let GLOK=!!gl,progs={},fbos=[],texs=[],quad,srcTex,_w,_h;
