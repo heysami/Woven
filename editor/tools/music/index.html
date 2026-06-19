@@ -125,6 +125,33 @@
   .overlay .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:28px 34px; text-align:center; max-width:340px}
   .overlay h2{margin:0 0 8px; font-size:18px}
   .overlay p{color:var(--dim); margin:0 0 18px}
+  /* ---------- mode toggle (UI ⇄ Code, mutually exclusive) ---------- */
+  .modeseg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--bg)}
+  .modeseg button{border:0; border-radius:0; background:transparent; padding:6px 13px; color:var(--dim); font-size:11px; font-weight:600; letter-spacing:.4px; text-transform:uppercase}
+  .modeseg button:hover{background:var(--panel2); color:var(--ink)}
+  .modeseg button.on{background:var(--accent); color:#08101f}
+  .modeseg button.on:hover{background:#84b6ff}
+  .modeseg button+button{border-left:1px solid var(--line)}
+  /* ---------- code pane ---------- */
+  .codepane{flex:1; display:none; flex-direction:column; min-height:0}
+  .codepane.show{display:flex}
+  .codewrap{flex:1; display:flex; min-height:0}
+  .codeedit{
+    flex:1; resize:none; border:0; outline:none; padding:16px 18px;
+    background:var(--bg); color:var(--ink); tab-size:2;
+    font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.2px;
+  }
+  .codeside{width:230px; flex:0 0 auto; border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:14px}
+  .codeside h3{margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--dim)}
+  .codeside .ref{color:var(--faint); font-size:11px; line-height:1.7}
+  .codeside .ref code{background:var(--bg); padding:1px 5px; border-radius:4px; color:var(--accent2); font-family:ui-monospace,monospace}
+  .codebar{
+    display:flex; align-items:center; gap:12px; padding:8px 14px;
+    border-top:1px solid var(--line); background:var(--panel); flex:0 0 auto;
+  }
+  .codebar .err{flex:1; font:11px ui-monospace,monospace; color:var(--warn); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .codebar .ok{color:var(--on)}
+  .codebar .muted{color:var(--faint)}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:#222a3d;border-radius:6px;border:2px solid var(--bg)}
   ::-webkit-scrollbar-track{background:transparent}
@@ -134,17 +161,47 @@
 <div class="app">
   <div class="bar">
     <div class="brand"><span class="dot"></span>WOVEN · MUSIC</div>
+    <div class="modeseg" id="modeSeg">
+      <button data-mode="ui" class="on">UI</button>
+      <button data-mode="code">Code</button>
+    </div>
     <button class="play" id="playBtn">▶ Play</button>
-    <div class="sep"></div>
-    <div class="ctrl"><label>BPM</label><input type="number" id="bpm" min="20" max="300" step="1" value="120"></div>
-    <div class="ctrl"><label>Swing</label><input type="range" id="swing" min="0" max="0.5" step="0.01" value="0"><span id="swingVal" class="badge">0%</span></div>
-    <div class="ctrl"><label>Bars</label><input type="number" id="bars" min="1" max="16" step="1" value="4"></div>
-    <div class="sep"></div>
-    <button id="addSampler" class="ghost">+ Sampler track</button>
-    <button id="addSynth" class="ghost">+ Synth track</button>
+    <span id="uiOnly" class="ctrl" style="display:flex;align-items:center;gap:14px">
+      <span class="sep"></span>
+      <div class="ctrl"><label>BPM</label><input type="number" id="bpm" min="20" max="300" step="1" value="120"></div>
+      <div class="ctrl"><label>Swing</label><input type="range" id="swing" min="0" max="0.5" step="0.01" value="0"><span id="swingVal" class="badge">0%</span></div>
+      <div class="ctrl"><label>Bars</label><input type="number" id="bars" min="1" max="16" step="1" value="4"></div>
+      <span class="sep"></span>
+      <button id="addSampler" class="ghost">+ Sampler track</button>
+      <button id="addSynth" class="ghost">+ Synth track</button>
+    </span>
     <div class="spacer"></div>
     <span id="status" class="badge">standalone</span>
     <button id="renderBtn" class="primary">Render WAV</button>
+  </div>
+
+  <div class="codepane" id="codePane">
+    <div class="codewrap">
+      <textarea class="codeedit" id="codeEdit" spellcheck="false" placeholder="// write your set in code…"></textarea>
+      <div class="codeside">
+        <h3>Strudel-flavoured</h3>
+        <div class="ref">
+          <code>tempo(120)</code> · <code>swing(0.2)</code> · <code>bars(4)</code><br><br>
+          <code>samples({ bd:"kick" })</code> maps a sample id to a wired asset id.<br><br>
+          <code>stack(</code><br>
+          &nbsp;&nbsp;<code>s("bd ~ sd ~").gain(.9)</code><br>
+          &nbsp;&nbsp;<code>note("c2 eb2 g2").sound("saw")</code><br>
+          <code>)</code><br><br>
+          <b>s()</b> = sampler, <b>note()</b> = synth. Rest = <code>~</code>, sub-step = <code>[bd sd]</code>. Prefix <code>_</code> mutes a line. A trailing <code>// name</code> names the track.<br><br>
+          <b>⌘/Ctrl + Enter</b> evaluates.
+          <div id="codeAssets" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="codebar">
+      <button class="primary" id="runBtn">▶ Run <span class="muted" style="font-weight:400">⌘↵</span></button>
+      <div class="err" id="codeErr"></div>
+    </div>
   </div>
 
   <div class="main">
@@ -189,7 +246,7 @@
   /* ================= Model ================= */
   function defaultState(){
     return {
-      v:1, bpm:120, swing:0, bars:4,
+      v:1, mode:"ui", code:"", bpm:120, swing:0, bars:4,
       samples:[
         {id:"bd", src:""},
         {id:"sd", src:""},
@@ -295,6 +352,95 @@
       }
     }
     return out;
+  }
+
+  /* ================= Code mode (Strudel-flavoured) =================
+     A line-based, Strudel-looking surface that round-trips losslessly to the
+     same model the UI edits. Code mode and UI mode are MUTUALLY EXCLUSIVE —
+     one editing surface is live at a time (never a hybrid). */
+
+  // model -> source text
+  function serializeCode(m){
+    const L=[];
+    L.push("// Woven Music — code mode (Strudel-flavoured)");
+    L.push("tempo("+(m.bpm||120)+")"+"   // BPM");
+    if(m.swing) L.push("swing("+round2(m.swing)+")");
+    L.push("bars("+(m.bars||4)+")");
+    L.push("");
+    const mapped=(m.samples||[]).filter(s=>s.src);
+    if(mapped.length){
+      L.push("samples({ "+mapped.map(s=>jsId(s.id)+": "+JSON.stringify(s.src)).join(", ")+" })");
+      L.push("");
+    }
+    const tr=(m.tracks||[]);
+    if(tr.length){
+      L.push("stack(");
+      tr.forEach((t,i)=>{
+        const synth=t.instrument==="synth";
+        const fn=(t.muted?"_":"")+(synth?"note":"s");
+        let line="  "+fn+"("+JSON.stringify(t.pattern||"")+")";
+        if(synth) line+='.sound("sawtooth")';
+        if(t.gain!=null && +t.gain!==0.9) line+=".gain("+round2(t.gain)+")";
+        line+=",";
+        if(t.name) line+="   // "+t.name;
+        L.push(line);
+      });
+      L.push(")");
+    } else {
+      L.push("stack(");
+      L.push(")");
+    }
+    return L.join("\n")+"\n";
+  }
+  function round2(n){ return Math.round((+n||0)*100)/100; }
+  function jsId(s){ return /^[a-zA-Z_$][\w$]*$/.test(s) ? s : JSON.stringify(s); }
+
+  // source text -> { bpm,swing,bars,samples,tracks } or throws on hard error
+  function parseCode(text){
+    const out={ bpm:null, swing:null, bars:null, samples:null, tracks:[] };
+    // strip line comments but keep a trailing `// name` capture for track lines
+    const raw=String(text||"");
+    // transport directives — tolerate tempo()/setcpm()/setcps()
+    let m;
+    if((m=/\btempo\s*\(\s*([\d.]+)\s*\)/.exec(raw))) out.bpm=clamp(+m[1],20,300);
+    else if((m=/\bsetcpm\s*\(\s*([\d.]+)\s*\)/.exec(raw))) out.bpm=clamp(+m[1]*4,20,300);
+    else if((m=/\bsetcps\s*\(\s*([\d.]+)\s*\)/.exec(raw))) out.bpm=clamp(+m[1]*240,20,300);
+    if((m=/\bswing\s*\(\s*([\d.]+)\s*\)/.exec(raw))) out.swing=Math.max(0,Math.min(0.5,+m[1]));
+    if((m=/\bbars\s*\(\s*(\d+)\s*\)/.exec(raw))) out.bars=clamp(+m[1],1,16);
+    // samples({ id: "asset", ... })
+    if((m=/\bsamples\s*\(\s*\{([\s\S]*?)\}\s*\)/.exec(raw))){
+      const body=m[1]; const map=[]; const re=/([a-zA-Z_$][\w$]*|"[^"]*"|'[^']*')\s*:\s*("[^"]*"|'[^']*')/g; let mm;
+      while((mm=re.exec(body))){ map.push({ id:unq(mm[1]), src:unq(mm[2]) }); }
+      out.samples=map;
+    }
+    // track lines: [_]s("…")…  /  [_]note("…")…   one per line
+    let order=0;
+    raw.split(/\r?\n/).forEach(lineRaw=>{
+      // ignore fully-commented lines
+      const noLead=lineRaw.replace(/^\s+/,"");
+      if(noLead.startsWith("//")) return;
+      const tm=/(^|[\s(,])(_?)(s|note)\s*\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*\)([^\n]*)/.exec(lineRaw);
+      if(!tm) return;
+      const muted=tm[2]==="_";
+      const isSynth=tm[3]==="note";
+      const pattern=unq(tm[4]);
+      const rest=tm[5]||"";
+      let gain=0.9; const gm=/\.gain\s*\(\s*([\d.]+)\s*\)/.exec(rest); if(gm) gain=+gm[1];
+      // trailing `// name`
+      let name=""; const nm=/\/\/\s*(.+?)\s*$/.exec(rest); if(nm) name=nm[1];
+      order++;
+      const t={ name:name||("track"+order), pattern, gain, muted };
+      if(isSynth) t.instrument="synth";
+      out.tracks.push(t);
+    });
+    if(!out.tracks.length) throw new Error("no s(\"…\") / note(\"…\") tracks found");
+    return out;
+  }
+  function unq(s){
+    if(s==null) return "";
+    s=String(s).trim();
+    if((s[0]==='"'&&s.endsWith('"'))||(s[0]==="'"&&s.endsWith("'"))) return s.slice(1,-1);
+    return s;
   }
 
   /* ================= Voices ================= */
@@ -508,7 +654,7 @@
   const assetsEl  = document.getElementById("assets");
   const gridOpen  = new Set();   // track indices showing grid
 
-  function renderAll(){ renderTracks(); renderSlots(); renderAssets(); syncTransport(); }
+  function renderAll(){ renderTracks(); renderSlots(); renderAssets(); syncTransport(); applyMode(); renderCodeAssets(); }
 
   function renderTracks(){
     trackList.innerHTML="";
@@ -725,6 +871,7 @@
   };
   document.getElementById("renderBtn").onclick=async()=>{
     ensureCtx();
+    if(M.mode==="code" && !evalCode(false)){ toast("Fix code before rendering"); return; }
     const btn=document.getElementById("renderBtn");
     btn.disabled=true; btn.textContent="Rendering…";
     const url=await bakedDataUrl();
@@ -738,6 +885,96 @@
       toast("WAV downloaded");
     }
   };
+
+  /* ================= Mode toggle (UI ⇄ Code) ================= */
+  const codePane=document.getElementById("codePane");
+  const mainPane=document.querySelector(".main");
+  const uiOnly=document.getElementById("uiOnly");
+  const modeSeg=document.getElementById("modeSeg");
+  const codeEdit=document.getElementById("codeEdit");
+  const codeErr=document.getElementById("codeErr");
+  const codeAssetsEl=document.getElementById("codeAssets");
+
+  // reflect M.mode into the DOM (which surface is live). Never both.
+  function applyMode(){
+    const code = M.mode==="code";
+    codePane.classList.toggle("show", code);
+    mainPane.style.display = code ? "none" : "";
+    uiOnly.style.display = code ? "none" : "flex";
+    modeSeg.querySelectorAll("button").forEach(b=>{
+      b.classList.toggle("on", (b.dataset.mode==="code")===code);
+    });
+    if(code){
+      if(!M.code) M.code=serializeCode(M);   // never show an empty editor
+      if(codeEdit.value!==M.code) codeEdit.value=M.code;
+    }
+  }
+  function renderCodeAssets(){
+    if(!codeAssetsEl) return;
+    if(!CONTENT.length){ codeAssetsEl.innerHTML='<span class="muted">No wired audio assets.</span>'; return; }
+    codeAssetsEl.innerHTML='<b>Wired assets</b> &mdash; reference by id in <code>samples({…})</code>:<br>'
+      + CONTENT.map(a=>'<code>'+a.id+'</code>').join(" ");
+  }
+  // switch surface. UI→Code regenerates code from the model; Code→UI evaluates
+  // the code into the model first (blocks the switch on a hard parse error).
+  function setMode(mode){
+    if(mode===M.mode){ return; }
+    if(mode==="code"){
+      M.code = serializeCode(M);
+      codeEdit.value = M.code;
+      M.mode = "code";
+      applyMode(); commit();
+    } else {
+      if(!evalCode(false)) return;   // failed parse → stay in code
+      M.mode = "ui";
+      applyMode(); renderTracks(); renderSlots(); syncTransport(); commit();
+    }
+  }
+  modeSeg.querySelectorAll("button").forEach(b=>{
+    b.onclick=()=>setMode(b.dataset.mode);
+  });
+
+  // evaluate the editor text into the live model. Returns true on success.
+  function evalCode(silent){
+    M.code = codeEdit.value;
+    let parsed;
+    try{ parsed = parseCode(M.code); }
+    catch(e){ showCodeErr(String(e.message||e)); if(!silent) toast("Parse error"); return false; }
+    if(parsed.bpm!=null) M.bpm=parsed.bpm;
+    if(parsed.swing!=null) M.swing=parsed.swing;
+    if(parsed.bars!=null) M.bars=parsed.bars;
+    if(parsed.samples) M.samples=parsed.samples.map(s=>({id:String(s.id||"smp"), src:s.src||""}));
+    M.tracks=parsed.tracks.map(t=>({
+      name:String(t.name||"track"), pattern:String(t.pattern||""),
+      gain:t.gain==null?0.9:+t.gain,
+      instrument:t.instrument||undefined, muted:!!t.muted,
+    }));
+    buffers.clear(); preloadAll();
+    showCodeErr("ok", true);
+    syncTransport(); renderSlots(); renderCodeAssets();
+    return true;
+  }
+  function showCodeErr(msg, ok){
+    codeErr.textContent = ok ? "✓ evaluated" : ("⚠ "+msg);
+    codeErr.classList.toggle("ok", !!ok);
+  }
+  document.getElementById("runBtn").onclick=()=>{ ensureCtx(); if(evalCode(false)){ commit(); if(!playing) startTransport(); } };
+  codeEdit.oninput=()=>{ M.code=codeEdit.value; commitCodeText(); };
+  codeEdit.addEventListener("keydown",(e)=>{
+    if((e.metaKey||e.ctrlKey) && e.key==="Enter"){
+      e.preventDefault(); ensureCtx(); if(evalCode(false)){ commit(); if(!playing) startTransport(); }
+    }
+  });
+  // persist raw code text edits (debounced) without re-evaluating audio
+  let codeTextTimer=null;
+  function commitCodeText(){
+    if(applyingExternal) return;
+    if(codeTextTimer) clearTimeout(codeTextTimer);
+    codeTextTimer=setTimeout(()=>{
+      if(!EMBEDDED) return;
+      parent.postMessage({type:"music:state", nodeId:NODE_ID, state:cleanState()}, "*");
+    }, 800);
+  }
 
   /* ================= Commit (debounced emit) ================= */
   let commitTimer=null;
@@ -753,7 +990,8 @@
   // produce schema-clean state (drop UI-only fields kept minimal)
   function cleanState(){
     return {
-      v:1, bpm:M.bpm, swing:M.swing||0, bars:M.bars,
+      v:1, mode:M.mode==="code"?"code":"ui", code:M.code||"",
+      bpm:M.bpm, swing:M.swing||0, bars:M.bars,
       samples:M.samples.map(s=>({id:s.id, src:s.src||""})),
       tracks:M.tracks.map(t=>{
         const o={name:t.name, pattern:t.pattern||"", gain:t.gain==null?0.9:t.gain};
@@ -780,6 +1018,8 @@
     const d=defaultState();
     return {
       v:1,
+      mode:s.mode==="code"?"code":"ui",
+      code:typeof s.code==="string"?s.code:"",
       bpm:clamp(+s.bpm||120,20,300),
       swing:Math.max(0,Math.min(0.5,+s.swing||0)),
       bars:clamp(+s.bars||4,1,16),
