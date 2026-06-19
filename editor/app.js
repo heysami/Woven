@@ -21811,7 +21811,10 @@ function WorkflowCanvas() {
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
   const serializeDock = (ws) => ws.map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
-  const openWindow = useCallback((desc) => {
+  const openWindow = useCallback((descOrKind) => {
+    // Callers pass either a kind string (rail buttons) or a descriptor object
+    // ({ kind, run }) — normalise so desc.kind is always defined.
+    const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
       if (desc.kind !== "thread") {
@@ -68121,7 +68124,10 @@ function App() {
   // Serialise windows for persistence (threads keep only their runId).
   const serializeDock = (ws) => ws.map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
 
-  const openWindow = useCallback((desc) => {
+  const openWindow = useCallback((descOrKind) => {
+    // Callers pass either a kind string (rail buttons) or a descriptor object
+    // ({ kind, run }) — normalise so desc.kind is always defined.
+    const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
       if (desc.kind !== "thread") {
