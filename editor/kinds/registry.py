@@ -1950,52 +1950,68 @@ KINDS = {
     },
 
     # ── Composable spec nodes (Layer / Position / Trigger / Effect) ────────
-    # Typed providers (like color-palette/typography): a small JSON `spec` on
-    # the node flows into a host editor which APPLIES it. Also agent-editable
-    # (editTarget → a JSON sidecar the node re-imports). io contracts in KIND_IO.
+    # Source-code-first providers: the editable artifact is `source`, a small
+    # JavaScript module exporting controls + buildSpec(). The compiled `spec`
+    # still flows into host editors as the strict typed contract.
     "effect": {
         "title":        "Effect",
         "category":     "container",
-        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
         "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
         "dispatch":     "none", "fanOut": None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": False, "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []}, "pauseAfter": False,
-        "notes": "Composable GPU/shader post-effect (shader-lab taxonomy). Wire into a host editor's effect port; agent edits source/<branch>/effect-<id>.json.",
+        "notes": "Composable GPU/shader post-effect (shader-lab taxonomy). Wire into a layer; author source/<branch>/effect-<id>.js, compiled JSON is emitted for host editors.",
     },
     "position": {
         "title":        "Position",
         "category":     "container",
-        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
         "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
         "dispatch":     "none", "fanOut": None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": False, "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []}, "pauseAfter": False,
-        "notes": "Composable placement scheme (grid/instances/physics/drawn/rope/camera-feed + 3D modes). Wire into a host's position port; agent edits source/<branch>/position-<id>.json.",
+        "notes": "Composable placement source (grid/instances/physics/drawn/rope/camera-feed + 3D modes). Wire into a layer, or directly into editors with no layer concept; author source/<branch>/position-<id>.js.",
     },
     "trigger": {
         "title":        "Trigger",
         "category":     "container",
-        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
         "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
         "dispatch":     "none", "fanOut": None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": False, "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []}, "pauseAfter": False,
-        "notes": "Composable reactivity source + cross-layer impacts (mouse/hover/position/timeline/audio/camera). Wire into a layer/host; agent edits source/<branch>/trigger-<id>.json.",
+        "notes": "Composable reactivity source + cross-layer impacts (mouse/hover/position/timeline/audio/camera). Wire into a layer; author source/<branch>/trigger-<id>.js.",
     },
     "layer": {
         "title":        "Layer",
         "category":     "container",
-        "inputs":       {"spec": {"type": "object", "userEditable": True}},
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
         "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
         "dispatch":     "none", "fanOut": None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": False, "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []}, "pauseAfter": False,
-        "notes": "One composition layer. Wire asset (content) + optional position/trigger/effect into its in-port, then wire its out into a host (mm-composer/image/composer). Agent edits source/<branch>/layer-<id>.json.",
+        "notes": "One composition layer. Wire asset (content) + optional position/trigger/effect into its in-port, then wire its out into a host (mm-composer/image/composer). Author source/<branch>/layer-<id>.js.",
     },
 
     # ── formatted-text ───────────────────────────────────────────────────
@@ -3017,44 +3033,51 @@ _MM_AUTHORING = (
 )
 
 # ── Composable spec-node authoring (Layer / Position / Trigger / Effect) ──────
-# These four are "typed" providers (like color-palette/typography) whose JSON
-# spec flows into a host editor which APPLIES it. They are ALSO agent-editable
-# (editTarget): the agent writes the canonical file, the node re-imports it.
+# These four are source-code-first providers. The editable sidecar is a small
+# JavaScript source module; buildSpec(values) compiles to the strict JSON spec
+# host editors consume.
 _EFFECT_AUTHORING = (
     "This is an EFFECT spec node — a GPU/shader post-effect (shader-lab taxonomy) that a host "
-    "editor applies to its output. Write `source/{branch}/effect-{id}.json`: "
-    "{\"v\":1,\"type\":\"chromatic-aberration|pixelate|dither|posterize|pixel-sort|ascii|crt|halftone|"
-    "ink|edge-detect|directional-blur|displacement|particle-grid|pattern|custom\","
-    "\"intensity\":0..1,\"params\":{ ...effect-specific... },"
-    "\"glsl\":\"<optional custom WebGL2 fragment shader, used only when type=custom>\"}. "
-    "Wire this node's out into a host (image / pixel / voxel / mm-composer / material-lab); the host "
-    "runs it as a fullscreen pass over its rendered frame. Keep `intensity` in 0..1."
+    "editor applies to its output. Write `source/{branch}/effect-{id}.js`, not JSON. Shape:\n"
+    "export const controls = { intensity:{type:'number',value:0.5,min:0,max:1,step:0.01} };\n"
+    "export function fragmentShader(values) { return `#version 300 es ...`; }\n"
+    "export function buildSpec(values) { return {v:1,type:'custom',intensity:values.intensity,"
+    "params:{},glsl:fragmentShader(values)}; }\n"
+    "The editor compiles buildSpec(values) into source/{branch}/effect-{id}.json for strict host use. "
+    "Wire effect into a layer; keep intensity in 0..1."
 )
 _POSITION_AUTHORING = (
-    "This is a POSITION spec node — how a host places its content/instances. Write "
-    "`source/{branch}/position-{id}.json`: {\"v\":1,\"mode\":\"single|grid|instances|physics|drawn|rope|"
-    "camera-feed|grid-3d|scatter-3d|surface\",\"params\":{ ... }}. 2D modes: grid{cols,rows,placement:"
-    "'fixed|random'}; instances{source:'mouse|random',count}; physics{gravity:[x,y]}; drawn{paths:"
-    "[[x,y]]}; rope{anchors,segments,stiffness}; camera-feed{detector:'hand|face|object|ocr'}. 3D modes "
-    "(voxel/spline): grid-3d{cols,rows,layers,spacing}; scatter-3d{count,bounds:[x,y,z]}; surface{meshId}. "
-    "Wire out into a host editor to arrange its content."
+    "This is a POSITION spec node — real source code for placing content/instances. Write "
+    "`source/{branch}/position-{id}.js`, not JSON. Shape:\n"
+    "export const controls = { gravity:{type:'number',value:980}, bounce:{type:'number',value:0.55} };\n"
+    "export function step(body, dt, values) { body.velocity.y += values.gravity * dt; "
+    "body.position.y += body.velocity.y * dt; return body; }\n"
+    "export function layout(items, bounds, values) { return items.map(...); }\n"
+    "export function buildSpec(values) { return {v:1,mode:'physics|grid|instances|drawn|rope|camera-feed|"
+    "grid-3d|scatter-3d|surface',params:{...}}; }\n"
+    "The editor compiles buildSpec(values) into source/{branch}/position-{id}.json. "
+    "Wire position into a layer, except direct-to-pixel/spline/voxel editors that have no layer concept."
 )
 _TRIGGER_AUTHORING = (
-    "This is a TRIGGER spec node — what drives reactivity and which other layers it impacts. Write "
-    "`source/{branch}/trigger-{id}.json`: {\"v\":1,\"source\":\"none|mouse-click|hover|position|timeline|"
-    "audio|camera\",\"params\":{ ... },\"impacts\":[{\"target\":\"<layer id>\",\"param\":\"opacity|scale|"
-    "position|effect.intensity\",\"map\":\"linear|threshold\",\"range\":[0,1]}]}. params per source: "
-    "timeline{keys:[{t,...}],loop}; audio{sourceId,feature:'loudness|pitch|band'}; camera{detector,event:"
-    "'present|gesture|count'}. Wire out into a layer or a host; `impacts` routes the trigger's value onto "
-    "other layers' params."
+    "This is a TRIGGER spec node — real source code for sampling reactivity and mapping it to layers. Write "
+    "`source/{branch}/trigger-{id}.js`, not JSON. Shape:\n"
+    "export const controls = { targetLayerId:{type:'text',value:''}, off:{type:'number',value:0}, "
+    "on:{type:'number',value:1} };\n"
+    "export function sample(pointer, layerBounds, values) { return inside ? 1 : 0; }\n"
+    "export function buildSpec(values) { return {v:1,source:'hover|mouse-click|position|timeline|audio|camera',"
+    "params:{},impacts:[{target:values.targetLayerId,param:'opacity|scale|position|effect.intensity',"
+    "map:'linear|threshold',range:[values.off,values.on]}]}; }\n"
+    "The editor compiles buildSpec(values) into source/{branch}/trigger-{id}.json. Wire trigger into a layer."
 )
 _LAYER_AUTHORING = (
-    "This is a LAYER node — one layer of a composition. Write `source/{branch}/layer-{id}.json`: "
-    "{\"v\":1,\"name\":\"...\",\"z\":0,\"opacity\":0..1,\"blend\":\"normal|multiply|screen|overlay\","
-    "\"visible\":true}. The layer's CONTENT + behaviour come from what you WIRE into its in-port: an "
-    "asset (the content), and optionally a position / trigger / effect spec node. Then wire this layer's "
-    "out into a host (mm-composer / image / composer). The layer binds content+position+trigger+effect "
-    "together as one stackable unit — do not inline content here, wire it."
+    "This is a LAYER node — one layer of a composition. Write `source/{branch}/layer-{id}.js`, not JSON. "
+    "Shape:\n"
+    "export const controls = { name:{type:'text',value:'Layer'}, opacity:{type:'number',value:1}, "
+    "blend:{type:'select',value:'normal',options:['normal','multiply','screen','overlay']} };\n"
+    "export function buildSpec(values) { return {v:1,name:values.name,z:values.z,opacity:values.opacity,"
+    "blend:values.blend,visible:values.visible}; }\n"
+    "The layer's content + behaviour come from what you wire into its in-port: an asset, and optionally "
+    "position / trigger / effect nodes. The editor compiles buildSpec(values) into source/{branch}/layer-{id}.json."
 )
 
 # Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
@@ -3451,13 +3474,13 @@ KIND_IO = {
               "authoring": _MM_AUTHORING},
         ],
     },
-    # ── Composable spec nodes (typed providers + agent-editable) ───────────
+    # ── Composable source nodes (typed providers + agent-editable) ─────────
     "effect": {
         "provides": [{"port": "out", "label": "Effect", "tags": ["effect"],
                        "resolve": "typed", "resolveArgs": {"flavor": "effect"}}],
         "accepts":  [
             {"port": "edit", "label": "Edit effect", "tags": ["text-gen", "asset-gen"],
-              "ingest": "editTarget", "canonical": "source/{branch}/effect-{id}.json",
+              "ingest": "editTarget", "canonical": "source/{branch}/effect-{id}.js",
               "authoring": _EFFECT_AUTHORING},
         ],
     },
@@ -3466,7 +3489,7 @@ KIND_IO = {
                        "resolve": "typed", "resolveArgs": {"flavor": "position"}}],
         "accepts":  [
             {"port": "edit", "label": "Edit position", "tags": ["text-gen", "asset-gen"],
-              "ingest": "editTarget", "canonical": "source/{branch}/position-{id}.json",
+              "ingest": "editTarget", "canonical": "source/{branch}/position-{id}.js",
               "authoring": _POSITION_AUTHORING},
         ],
     },
@@ -3475,7 +3498,7 @@ KIND_IO = {
                        "resolve": "typed", "resolveArgs": {"flavor": "trigger"}}],
         "accepts":  [
             {"port": "edit", "label": "Edit trigger", "tags": ["text-gen", "asset-gen"],
-              "ingest": "editTarget", "canonical": "source/{branch}/trigger-{id}.json",
+              "ingest": "editTarget", "canonical": "source/{branch}/trigger-{id}.js",
               "authoring": _TRIGGER_AUTHORING},
         ],
     },
@@ -3485,7 +3508,7 @@ KIND_IO = {
         "accepts":  [
             {"port": "in", "label": "Content + behaviour", "tags": ["asset", "position", "trigger", "effect"], "ingest": "context"},
             {"port": "edit", "label": "Edit layer", "tags": ["text-gen", "asset-gen"],
-              "ingest": "editTarget", "canonical": "source/{branch}/layer-{id}.json",
+              "ingest": "editTarget", "canonical": "source/{branch}/layer-{id}.js",
               "authoring": _LAYER_AUTHORING},
         ],
     },

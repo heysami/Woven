@@ -23540,8 +23540,6 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Image editor",
     provides: { out: { label: "Baked image", tags: ["asset", "remixable", "blendable"] } },
     accepts:  { in:   { label: "Layer", tags: ["asset", "layer"] },
-                fx:   { label: "Effect", tags: ["effect"] },
-                pos:  { label: "Position", tags: ["position"] },
                 edit: { label: "Edit image", tags: ["text-gen", "asset-gen"] } },
   },
   "pixel-editor": {
@@ -23549,7 +23547,6 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Baked pixels", tags: ["asset", "remixable"] } },
     accepts:  { in:   { label: "Source image", tags: ["asset"] },
                 pos:  { label: "Position", tags: ["position"] },
-                fx:   { label: "Effect", tags: ["effect"] },
                 edit: { label: "Edit pixels", tags: ["text-gen", "asset-gen"] } },
   },
   "voxel-3d": {
@@ -23574,16 +23571,12 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Material Lab",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
     accepts:  { in:   { label: "Element content", tags: ["asset", "layer"] },
-                fx:   { label: "Effect", tags: ["effect"] },
                 edit: { label: "Edit materials", tags: ["text-gen", "asset-gen"] } },
   },
   "mm-composer": {
     label: "Interactive composer",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
     accepts:  { in:   { label: "Layer content", tags: ["asset", "layer"] },
-                fx:   { label: "Effect", tags: ["effect"] },
-                pos:  { label: "Position", tags: ["position"] },
-                trig: { label: "Trigger", tags: ["trigger"] },
                 edit: { label: "Edit composition", tags: ["text-gen", "asset-gen"] } },
   },
   // ── Composable spec nodes ─────────────────────────────────────────────
@@ -56549,34 +56542,38 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
 const SPEC_NODE_DEFS = {
   "effect": {
     glyph: "✲", label: "Effect", canonical: (b, id) => `source/${b}/effect-${id}.json`,
+    source: (b, id) => `source/${b}/effect-${id}.js`,
     fields: [
       { key: "type", label: "Type", type: "select", options: [
         "chromatic-aberration","pixelate","dither","posterize","pixel-sort","ascii","crt",
         "halftone","ink","edge-detect","directional-blur","displacement","particle-grid","pattern","custom"] },
       { key: "intensity", label: "Intensity", type: "range", min: 0, max: 1, step: 0.01 },
-      { key: "params", label: "Params (JSON)", type: "json" },
+      { key: "params", label: "Params", type: "object" },
       { key: "glsl", label: "Custom GLSL (type=custom)", type: "textarea" },
     ],
   },
   "position": {
     glyph: "⊞", label: "Position", canonical: (b, id) => `source/${b}/position-${id}.json`,
+    source: (b, id) => `source/${b}/position-${id}.js`,
     fields: [
       { key: "mode", label: "Mode", type: "select", options: [
         "single","grid","instances","physics","drawn","rope","camera-feed","grid-3d","scatter-3d","surface"] },
-      { key: "params", label: "Params (JSON)", type: "json" },
+      { key: "params", label: "Params", type: "object" },
     ],
   },
   "trigger": {
     glyph: "◇", label: "Trigger", canonical: (b, id) => `source/${b}/trigger-${id}.json`,
+    source: (b, id) => `source/${b}/trigger-${id}.js`,
     fields: [
       { key: "source", label: "Source", type: "select", options: [
         "none","mouse-click","hover","position","timeline","audio","camera"] },
-      { key: "params", label: "Params (JSON)", type: "json" },
-      { key: "impacts", label: "Impacts (JSON array)", type: "json" },
+      { key: "params", label: "Params", type: "object" },
+      { key: "impacts", label: "Impacts", type: "impacts" },
     ],
   },
   "layer": {
     glyph: "▤", label: "Layer", canonical: (b, id) => `source/${b}/layer-${id}.json`,
+    source: (b, id) => `source/${b}/layer-${id}.js`,
     fields: [
       { key: "name", label: "Name", type: "text" },
       { key: "z", label: "Z", type: "number" },
@@ -56587,6 +56584,292 @@ const SPEC_NODE_DEFS = {
   },
 };
 
+function _specDefault(kind) {
+  if (kind === "effect")   return { v: 1, type: "chromatic-aberration", intensity: 0.5, params: {} };
+  if (kind === "position") return { v: 1, mode: "grid", params: { cols: 4, rows: 4, placement: "fixed" } };
+  if (kind === "trigger")  return { v: 1, source: "hover", params: {}, impacts: [] };
+  if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true };
+  return { v: 1 };
+}
+function _specInputValue(v) {
+  if (v === undefined || v === null) return "";
+  if (typeof v === "object") {
+    try { return JSON.stringify(v); } catch { return ""; }
+  }
+  return String(v);
+}
+function _parseSpecLiteral(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  if (s === "true") return true;
+  if (s === "false") return false;
+  if (s === "null") return null;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+  if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]")) || (s.startsWith('"') && s.endsWith('"'))) {
+    return JSON.parse(s);
+  }
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith("`") && s.endsWith("`"))) return s.slice(1, -1);
+  if (s.includes(",") && !/\s/.test(s)) return s.split(",").map(x => _parseSpecLiteral(x));
+  return s;
+}
+const SPEC_SOURCE_TEMPLATES = {
+  "effect": [
+    {
+      id: "custom-shader",
+      label: "Custom shader effect",
+      source: `export const controls = {
+  intensity: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
+  cellSize: { type: "number", value: 9, min: 2, max: 64, step: 1 }
+};
+
+export function fragmentShader(values) {
+  return \`#version 300 es
+precision highp float;
+uniform sampler2D tex;
+uniform vec2 uRes;
+uniform float uIntensity;
+in vec2 uv;
+out vec4 outColor;
+
+void main() {
+  vec2 cell = vec2(\${values.cellSize}.0) / uRes;
+  vec2 snapped = floor(uv / cell) * cell + cell * 0.5;
+  vec4 color = texture(tex, mix(uv, snapped, uIntensity));
+  outColor = color;
+}\`;
+}
+
+export function buildSpec(values) {
+  return {
+    v: 1,
+    type: "custom",
+    intensity: values.intensity,
+    params: { cellSize: values.cellSize },
+    glsl: fragmentShader(values)
+  };
+}`
+    }
+  ],
+  "position": [
+    {
+      id: "grid",
+      label: "Grid layout",
+      source: `export const controls = {
+  cols: { type: "number", value: 4, min: 1, max: 24, step: 1 },
+  rows: { type: "number", value: 4, min: 1, max: 24, step: 1 },
+  gap: { type: "number", value: 0, min: 0, max: 120, step: 1 },
+  placement: { type: "select", value: "fixed", options: ["fixed", "random"] }
+};
+
+export function layout(items, bounds, values) {
+  const cellW = (bounds.width - values.gap * (values.cols + 1)) / values.cols;
+  const cellH = (bounds.height - values.gap * (values.rows + 1)) / values.rows;
+  return items.map((item, index) => {
+    const col = index % values.cols;
+    const row = Math.floor(index / values.cols) % values.rows;
+    return {
+      ...item,
+      x: values.gap + col * (cellW + values.gap),
+      y: values.gap + row * (cellH + values.gap),
+      width: cellW,
+      height: cellH
+    };
+  });
+}
+
+export function buildSpec(values) {
+  return {
+    v: 1,
+    mode: "grid",
+    params: {
+      cols: values.cols,
+      rows: values.rows,
+      gap: values.gap,
+      placement: values.placement
+    }
+  };
+}`
+    },
+    {
+      id: "gravity",
+      label: "Gravity physics",
+      source: `export const controls = {
+  gravity: { type: "number", value: 980, min: -2000, max: 2000, step: 10 },
+  bounce: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 }
+};
+
+export function step(body, dt, values) {
+  body.velocity.y += values.gravity * dt;
+  body.position.x += body.velocity.x * dt;
+  body.position.y += body.velocity.y * dt;
+
+  if (body.position.y > 1) {
+    body.position.y = 1;
+    body.velocity.y *= -values.bounce;
+  }
+
+  return body;
+}
+
+export function buildSpec(values) {
+  return {
+    v: 1,
+    mode: "physics",
+    params: {
+      engine: "matter",
+      gravity: [0, values.gravity / 980],
+      bounce: values.bounce
+    }
+  };
+}`
+    }
+  ],
+  "trigger": [
+    {
+      id: "hover-opacity",
+      label: "Hover controls opacity",
+      source: `export const controls = {
+  targetLayerId: { type: "text", value: "" },
+  off: { type: "number", value: 0.25, min: 0, max: 1, step: 0.01 },
+  on: { type: "number", value: 1, min: 0, max: 1, step: 0.01 }
+};
+
+export function sample(pointer, layerBounds) {
+  return pointer.x >= layerBounds.x &&
+    pointer.x <= layerBounds.x + layerBounds.width &&
+    pointer.y >= layerBounds.y &&
+    pointer.y <= layerBounds.y + layerBounds.height ? 1 : 0;
+}
+
+export function buildSpec(values) {
+  return {
+    v: 1,
+    source: "hover",
+    params: {},
+    impacts: [{
+      target: values.targetLayerId,
+      param: "opacity",
+      map: "linear",
+      range: [values.off, values.on]
+    }]
+  };
+}`
+    }
+  ],
+  "layer": [
+    {
+      id: "basic-layer",
+      label: "Basic layer",
+      source: `export const controls = {
+  name: { type: "text", value: "Layer" },
+  z: { type: "number", value: 0, step: 1 },
+  opacity: { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
+  blend: { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
+  visible: { type: "boolean", value: true }
+};
+
+export function buildSpec(values) {
+  return {
+    v: 1,
+    name: values.name,
+    z: values.z,
+    opacity: values.opacity,
+    blend: values.blend,
+    visible: values.visible
+  };
+}`
+    }
+  ]
+};
+function _specTemplate(kind, id) {
+  const list = SPEC_SOURCE_TEMPLATES[kind] || [];
+  return list.find(t => t.id === id) || list[0] || { id: "custom", label: "Custom", source: "export const controls = {};\nexport function buildSpec() { return { v: 1 }; }" };
+}
+function _stripExports(src) {
+  return String(src || "").replace(/\bexport\s+(?=(const|let|var|function|class)\b)/g, "");
+}
+function _compileSpecSource(kind, source) {
+  const transformed = _stripExports(source);
+  let api;
+  try {
+    api = Function(`"use strict";\n${transformed}\nreturn {\n  controls: (typeof controls !== "undefined" ? controls : {}),\n  buildSpec: (typeof buildSpec === "function" ? buildSpec : null)\n};`)();
+  } catch (err) {
+    throw new Error(err.message || String(err));
+  }
+  const controls = api && api.controls && typeof api.controls === "object" ? api.controls : {};
+  const values = {};
+  for (const [k, def] of Object.entries(controls)) {
+    values[k] = def && typeof def === "object" && Object.prototype.hasOwnProperty.call(def, "value") ? def.value : def;
+  }
+  if (!api.buildSpec) throw new Error("source must export function buildSpec(values)");
+  const spec = api.buildSpec(values, controls);
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) throw new Error("buildSpec(values) must return an object");
+  return { controls, values, spec: { ..._specDefault(kind), ...spec, v: spec.v || 1 } };
+}
+function _controlObjectSource(controls) {
+  return JSON.stringify(controls || {}, null, 2);
+}
+function _replaceSourceControls(source, controls) {
+  const src = String(source || "");
+  const marker = src.search(/\bexport\s+const\s+controls\s*=/);
+  if (marker < 0) return src;
+  const open = src.indexOf("{", marker);
+  if (open < 0) return src;
+  let depth = 0, inStr = null, esc = false, close = -1;
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") { inStr = ch; continue; }
+    if (ch === "{") depth++;
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) { close = i; break; }
+    }
+  }
+  if (close < 0) return src;
+  return src.slice(0, open) + _controlObjectSource(controls) + src.slice(close + 1);
+}
+function _sourceWithSpecValues(kind, source, spec) {
+  let compiled;
+  try { compiled = _compileSpecSource(kind, source); } catch { return source; }
+  const controls = JSON.parse(JSON.stringify(compiled.controls || {}));
+  if (kind === "effect") {
+    if (controls.intensity) controls.intensity.value = spec.intensity ?? controls.intensity.value;
+    if (controls.type) controls.type.value = spec.type || controls.type.value;
+    for (const [k, v] of Object.entries(spec.params || {})) if (controls[k]) controls[k].value = v;
+  } else if (kind === "position" && spec.params) {
+    for (const [k, v] of Object.entries(spec.params || {})) {
+      if (!controls[k]) continue;
+      if (k === "gravity" && Array.isArray(v)) controls[k].value = Math.round((Number(v[1]) || 0) * 980);
+      else controls[k].value = v;
+    }
+  } else if (kind === "trigger") {
+    const imp = Array.isArray(spec.impacts) ? spec.impacts[0] : null;
+    if (imp && controls.targetLayerId) controls.targetLayerId.value = imp.target || "";
+    if (imp && Array.isArray(imp.range)) {
+      if (controls.off) controls.off.value = imp.range[0];
+      if (controls.on) controls.on.value = imp.range[1];
+    }
+  } else if (kind === "layer") {
+    for (const key of ["name", "z", "opacity", "blend", "visible"]) if (controls[key]) controls[key].value = spec[key];
+  }
+  return _replaceSourceControls(source, controls);
+}
+function _specToScript(kind, raw) {
+  const spec = { ..._specDefault(kind), ...(raw || {}) };
+  let tpl = _specTemplate(kind);
+  if (kind === "position" && spec.mode === "physics") tpl = _specTemplate(kind, "gravity");
+  return _sourceWithSpecValues(kind, tpl.source, spec);
+}
+function _scriptToSpec(kind, script) {
+  return _compileSpecSource(kind, script).spec;
+}
+
 function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
   const cfg = SPEC_NODE_DEFS[node.kind];
   const w = node.w || 260;
@@ -56594,6 +56877,15 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const spec = node.spec || {};
+  const [view, setView] = useState(node.specView || "code");
+  const generatedScript = useMemo(() => _specToScript(node.kind, spec), [node.kind, JSON.stringify(spec)]);
+  const scriptSource = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : generatedScript);
+  const [scriptText, setScriptText] = useState(scriptSource);
+  const [scriptError, setScriptError] = useState(null);
+  const compiled = useMemo(() => {
+    try { return { ok: true, ..._compileSpecSource(node.kind, scriptSource) }; }
+    catch (err) { return { ok: false, controls: {}, values: {}, spec, error: err.message || String(err) }; }
+  }, [node.kind, scriptSource, JSON.stringify(spec)]);
 
   const branch = useMemo(() => {
     for (const e of (allEdges || [])) {
@@ -56604,61 +56896,129 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     return "main";
   }, [allEdges, allNodes]);
   const canonicalPath = cfg.canonical(branch, node.id);
+  const sourcePath = cfg.source(branch, node.id);
 
-  // Mirror spec → sidecar (debounced) so agents can read/edit it; re-import on
-  // agent edits (th:asset-refresh), echo-suppressed.
+  // Mirror source + compiled spec to sidecars (debounced). The .js is the human
+  // source of truth; the .json is the strict compatibility artifact host tools
+  // consume through the existing typed-node contract.
   const lastWrittenRef = useRef("");
   const saveTimerRef = useRef(null);
-  const writeSidecar = useCallback((nextSpec) => {
+  const writeNodeFiles = useCallback((nextSpec, nextSource) => {
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      const text = JSON.stringify(nextSpec);
-      if (text === lastWrittenRef.current) return;
-      lastWrittenRef.current = text;
+      const sourceText = String(nextSource || "");
+      const jsonText = nextSpec ? JSON.stringify(nextSpec, null, 2) : "";
+      const sig = sourceText + "\n---compiled---\n" + jsonText;
+      if (sig === lastWrittenRef.current) return;
+      lastWrittenRef.current = sig;
       fetch(apiUrl("/__write_text"), { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: canonicalPath, text }) }).catch(() => {});
+        body: JSON.stringify({ path: sourcePath, text: sourceText }) }).catch(() => {});
+      if (nextSpec) {
+        fetch(apiUrl("/__write_text"), { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: canonicalPath, text: jsonText }) }).catch(() => {});
+      }
     }, 700);
-  }, [canonicalPath]);
-  const patchSpec = useCallback((patch) => {
-    const next = { ...(node.spec || {}), ...patch };
-    onChange({ spec: next });
-    writeSidecar(next);
-  }, [node.spec, onChange, writeSidecar]);
+  }, [canonicalPath, sourcePath]);
+  useEffect(() => {
+    const next = node.source || (node.script && /\bexport\s+/.test(node.script) ? node.script : generatedScript);
+    setScriptText(next);
+    try { _scriptToSpec(node.kind, next); setScriptError(null); } catch (err) { setScriptError(err.message || String(err)); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id, node.kind, node.source, node.script, generatedScript]);
+  const commitSource = useCallback((nextSource) => {
+    setScriptText(nextSource);
+    try {
+      const nextSpec = _scriptToSpec(node.kind, nextSource);
+      setScriptError(null);
+      onChange({ source: nextSource, spec: nextSpec });
+      writeNodeFiles(nextSpec, nextSource);
+    } catch (err) {
+      setScriptError(err.message || String(err));
+      onChange({ source: nextSource });
+      writeNodeFiles(null, nextSource);
+    }
+  }, [node.kind, onChange, writeNodeFiles]);
+  const commitSpec = useCallback((nextSpec, nextSource) => {
+    const source = nextSource != null ? nextSource : _specToScript(node.kind, nextSpec);
+    setScriptText(source);
+    setScriptError(null);
+    onChange({ spec: nextSpec, source });
+    writeNodeFiles(nextSpec, source);
+  }, [node.kind, onChange, writeNodeFiles]);
+  const updateControl = useCallback((key, value) => {
+    const nextControls = JSON.parse(JSON.stringify(compiled.controls || {}));
+    if (!nextControls[key] || typeof nextControls[key] !== "object") nextControls[key] = { type: "text", value };
+    else nextControls[key].value = value;
+    const nextSource = _replaceSourceControls(scriptSource, nextControls);
+    commitSource(nextSource);
+  }, [compiled.controls, scriptSource, commitSource]);
+  const applyTemplate = useCallback((templateId) => {
+    const tpl = _specTemplate(node.kind, templateId);
+    const nextSource = tpl.source;
+    try {
+      const nextSpec = _scriptToSpec(node.kind, nextSource);
+      commitSpec(nextSpec, nextSource);
+    } catch (_err) {
+      commitSource(nextSource);
+    }
+  }, [node.kind, commitSpec, commitSource]);
+  const applyScript = useCallback((text) => {
+    commitSource(text);
+  }, [commitSource]);
 
   useEffect(() => {
     const onRefresh = async (ev) => {
       const paths = (ev && ev.detail && ev.detail.paths) || [];
-      if (!paths.includes(canonicalPath)) return;
+      if (!paths.includes(canonicalPath) && !paths.includes(sourcePath)) return;
       try {
+        if (paths.includes(sourcePath)) {
+          const r = await fetch(apiUrl("/" + sourcePath), { cache: "no-store" });
+          if (!r.ok) return;
+          const text = await r.text();
+          const nextSpec = _scriptToSpec(node.kind, text);
+          onChange({ source: text, spec: nextSpec });
+          return;
+        }
         const r = await fetch(apiUrl("/" + canonicalPath), { cache: "no-store" });
         if (!r.ok) return;
         const text = await r.text();
-        if (text === lastWrittenRef.current) return;
-        lastWrittenRef.current = text;
-        onChange({ spec: JSON.parse(text) });
+        const nextSpec = JSON.parse(text);
+        const nextSource = _sourceWithSpecValues(node.kind, scriptSource, nextSpec);
+        onChange({ spec: nextSpec, source: nextSource });
       } catch (_e) {}
     };
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => window.removeEventListener("th:asset-refresh", onRefresh);
-  }, [canonicalPath, onChange]);
+  }, [canonicalPath, sourcePath, node.kind, scriptSource, onChange]);
 
-  const renderField = (f) => {
-    const val = spec[f.key];
-    if (f.type === "select") return html`<select className="workflow-spec-input" value=${val || f.options[0]}
-        onChange=${(e) => patchSpec({ [f.key]: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}>
-        ${f.options.map(o => html`<option key=${o} value=${o}>${o}</option>`)}</select>`;
-    if (f.type === "range") return html`<div className="workflow-spec-range"><input type="range" min=${f.min} max=${f.max} step=${f.step}
-        value=${val != null ? val : f.max} onInput=${(e) => patchSpec({ [f.key]: +e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/><span>${(val != null ? val : f.max)}</span></div>`;
-    if (f.type === "number") return html`<input className="workflow-spec-input" type="number" value=${val != null ? val : 0}
-        onInput=${(e) => patchSpec({ [f.key]: +e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/>`;
-    if (f.type === "checkbox") return html`<input type="checkbox" checked=${val !== false}
-        onChange=${(e) => patchSpec({ [f.key]: e.target.checked })} onMouseDown=${(e) => e.stopPropagation()}/>`;
-    if (f.type === "json") return html`<${SpecJsonField} value=${val} onCommit=${(v) => patchSpec({ [f.key]: v })}/>`;
-    if (f.type === "textarea") return html`<textarea className="workflow-spec-input workflow-spec-textarea" value=${val || ""}
-        onInput=${(e) => patchSpec({ [f.key]: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/>`;
-    return html`<input className="workflow-spec-input" type="text" value=${val || ""}
-        onInput=${(e) => patchSpec({ [f.key]: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}/>`;
+  const renderControl = ([key, def]) => {
+    const d = def && typeof def === "object" ? def : { type: "text", value: def };
+    const type = d.type || "text";
+    const value = Object.prototype.hasOwnProperty.call(d, "value") ? d.value : "";
+    const label = d.label || key;
+    if (type === "select") return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
+      <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${label}</span>
+      <select className="workflow-spec-input" value=${value} onChange=${(e) => updateControl(key, e.target.value)} onMouseDown=${(e) => e.stopPropagation()}>
+        ${(d.options || []).map(o => html`<option key=${o} value=${o}>${o}</option>`)}
+      </select>
+    </label>`;
+    if (type === "boolean") return html`<label key=${key} className="workflow-spec-row" style=${{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", fontSize: "11px" }}>
+      <input type="checkbox" checked=${value !== false} onChange=${(e) => updateControl(key, e.target.checked)} onMouseDown=${(e) => e.stopPropagation()}/>
+      <span>${label}</span>
+    </label>`;
+    if (type === "number") return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
+      <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${label}</span>
+      <input className="workflow-spec-input" type="number" min=${d.min} max=${d.max} step=${d.step || 1} value=${value}
+        onInput=${(e) => updateControl(key, Number(e.target.value))} onMouseDown=${(e) => e.stopPropagation()}/>
+    </label>`;
+    return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
+      <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${label}</span>
+      <input className="workflow-spec-input" type="text" value=${_specInputValue(value)}
+        onInput=${(e) => { try { updateControl(key, _parseSpecLiteral(e.target.value)); } catch { updateControl(key, e.target.value); } }}
+        onMouseDown=${(e) => e.stopPropagation()}/>
+    </label>`;
   };
+  const templates = SPEC_SOURCE_TEMPLATES[node.kind] || [];
 
   const hasIn = node.kind === "layer";
   return html`
@@ -56673,10 +57033,32 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
       <div className="workflow-spec-body" onMouseDown=${(e) => e.stopPropagation()} style=${{ padding: "8px 10px", overflow: "auto", height: "calc(100% - 30px)" }}>
-        ${cfg.fields.map(f => html`<label key=${f.key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
-          <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${f.label}</span>
-          ${renderField(f)}
-        </label>`)}
+        ${templates.length > 1 && html`<select className="workflow-spec-input" style=${{ width: "100%", marginBottom: "8px" }}
+          value="" onChange=${(e) => { if (e.target.value) applyTemplate(e.target.value); e.target.value = ""; }}
+          onMouseDown=${(e) => e.stopPropagation()}>
+          <option value="">Choose source template...</option>
+          ${templates.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
+        </select>`}
+        <div className="workflow-spec-tabs" style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", marginBottom: "8px" }}>
+          ${["code","ui"].map(v => html`<button key=${v} className=${"workflow-spec-tab" + (view === v ? " is-on" : "")}
+            style=${{ border: "1px solid var(--line, #ddd)", borderRadius: "6px", padding: "5px 6px", background: view === v ? "var(--accent-soft, #eef)" : "transparent", fontSize: "11px" }}
+            onClick=${(e) => { e.stopPropagation(); setView(v); onChange({ specView: v }); }}
+            onMouseDown=${(e) => e.stopPropagation()}>${v === "code" ? "Code" : "UI"}</button>`)}
+        </div>
+        ${view === "code" ? html`<div className="workflow-spec-code-view">
+          <textarea className="workflow-spec-input workflow-spec-code" value=${scriptText}
+            spellCheck=${false}
+            style=${{ width: "100%", minHeight: "170px", resize: "vertical", fontFamily: "var(--font-mono, monospace)", fontSize: "11px", lineHeight: 1.45 }}
+            onInput=${(e) => applyScript(e.target.value)}
+            onMouseDown=${(e) => e.stopPropagation()}/>
+          <div className="workflow-spec-code-hint" style=${{ marginTop: "6px", fontSize: "10px", color: scriptError ? "var(--danger, #d33)" : "var(--muted, #777)" }}>
+            ${scriptError ? scriptError : `Writes ${sourcePath}; compiled JSON stays strict for connected editors.`}
+          </div>
+        </div>` : html`
+          ${compiled.ok
+            ? Object.entries(compiled.controls || {}).map(renderControl)
+            : html`<div style=${{ color: "var(--danger, #d33)", fontSize: "11px" }}>Fix the source code before the UI can render controls.</div>`}
+        `}
       </div>
       ${hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
         title="Wire an asset (content) + optional Position / Trigger / Effect into this layer."
@@ -56687,18 +57069,6 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
     </div>
   `;
-}
-
-// A JSON textarea that only commits valid JSON (red border while invalid).
-function SpecJsonField({ value, onCommit }) {
-  const [text, setText] = useState(() => { try { return JSON.stringify(value ?? {}, null, 0); } catch { return "{}"; } });
-  const [bad, setBad] = useState(false);
-  useEffect(() => { try { setText(JSON.stringify(value ?? {}, null, 0)); setBad(false); } catch {} }, [JSON.stringify(value ?? {})]);
-  return html`<textarea className="workflow-spec-input workflow-spec-textarea"
-    style=${bad ? { borderColor: "var(--danger, #e5484d)" } : null}
-    value=${text}
-    onInput=${(e) => { const v = e.target.value; setText(v); try { onCommit(JSON.parse(v)); setBad(false); } catch { setBad(true); } }}
-    onMouseDown=${(e) => e.stopPropagation()}/>`;
 }
 
 /* v3.4.38 — Mermaid diagram node.
