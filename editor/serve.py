@@ -10099,7 +10099,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not SLUG_OK.match(ds_id):
             return self._reply(400, {"error": "invalid ds id", "id": ds_id})
         ds_dir = os.path.join(ds_root, ds_id)
-        if not os.path.isdir(ds_dir):
+        # Not "built" until the full rendered trio is on disk. A bare directory
+        # (e.g. only _build/ from an aborted/in-progress build) does not count
+        # as a published design system.
+        built = os.path.isdir(ds_dir) and all(
+            os.path.isfile(os.path.join(ds_dir, n))
+            for n in ("styles.css", "gallery.html", "DESIGN.md")
+        )
+        if not built:
             return self._reply(404, {"error": "design system not found", "id": ds_id})
         styles_css   = self._design_system_read_file(ds_dir, "styles.css")
         gallery_html = self._design_system_read_file(ds_dir, "gallery.html")

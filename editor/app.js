@@ -62632,7 +62632,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     ? html`<span className="workflow-node-ds-badge workflow-node-ds-badge-loading">…</span>`
     : status.exists
       ? html`<span className="workflow-node-ds-badge workflow-node-ds-badge-built" title=${"Built · version " + (status.version || "")}>Built ${status.label && html`· ${status.label}`}</span>`
-      : html`<span className="workflow-node-ds-badge workflow-node-ds-badge-draft" title="No design-systems/${dsId}/ on disk yet — run Workflow 0 to build">Draft</span>`;
+      : html`<span className="workflow-node-ds-badge workflow-node-ds-badge-draft" title="No design system — run Workflow 0 to build">None</span>`;
 
   return html`
     <div
