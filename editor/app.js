@@ -53592,7 +53592,7 @@ const COMPOSER_ALIGN_PRESETS = [
   { id: "fill",          label: "▣", anchor: "fill",          zeroAll: true, nullW: true, nullH: true, hint: "Fill canvas (anchor every edge)" },
 ];
 
-function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onUnwireAsset, onBakeAutoCreateOutput, allNodes, allEdges }) {
+function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onUnwireAsset, onBakeAutoCreateOutput, allNodes, allEdges, embedded }) {
   const w = node.w || 520;
   const h = node.h || 460;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
@@ -54448,12 +54448,14 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
 
   return html`
     <div
-      className="workflow-node workflow-node-composer"
+      className=${"workflow-node workflow-node-composer" + (embedded ? " workflow-node-composer-embedded" : "")}
       data-selected=${selected ? "true" : "false"}
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
-      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
+      style=${embedded
+        ? { position: "absolute", inset: 0, width: "100%", height: "100%" }
+        : { left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">▣</span>
@@ -59764,6 +59766,12 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
                 title=${(cfg.label || "Preview")}
                 onLoad=${() => sendInit()}
                 onMouseDown=${(e) => e.stopPropagation()} />`
+            : previewNode && previewNode.kind === "composer"
+              ? html`<${WorkflowComposerNode} embedded node=${previewNode} zoom=${1}
+                  allNodes=${scopedNodes} allEdges=${scopedEdges}
+                  onChange=${() => {}} onSelect=${() => {}} onMove=${() => {}} onResize=${() => {}}
+                  onRemove=${() => {}} onStartEdge=${() => {}} onDragStart=${() => {}} onDragEnd=${() => {}}
+                  onUnwireAsset=${() => {}} onBakeAutoCreateOutput=${() => {}} />`
             : bakedPreview && bakedPreview.unbaked
               ? html`<div className="workflow-customapp-empty">Bake the ${previewNode.kind} (open it and hit Bake) to preview it here.</div>`
             : bakedPreview

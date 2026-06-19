@@ -6658,6 +6658,32 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   display: block;
   background: #0b0b0f;
 }
+/* Composer rendered as a live custom-app preview: strip its chrome (bar, layer
+   panel, ports, resize) and fill the preview area, non-interactive. */
+.workflow-node-composer-embedded {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  box-shadow: none;
+  background: #0b0b0f;
+  pointer-events: none;
+}
+.workflow-node-composer-embedded > .workflow-node-bar,
+.workflow-node-composer-embedded .workflow-composer-left,
+.workflow-node-composer-embedded .workflow-port-zone,
+.workflow-node-composer-embedded .workflow-node-resize-corner { display: none !important; }
+.workflow-node-composer-embedded .workflow-composer-body {
+  width: 100%;
+  height: 100%;
+}
+.workflow-node-composer-embedded .workflow-composer-middle {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
 .workflow-customapp-empty {
   display: flex;
   align-items: center;
