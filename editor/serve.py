@@ -10253,19 +10253,56 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # ── GET /__ds_bootstrap ──────────────────────────────────────────────
-    # Concatenates every editor/design-systems/*.js runtime mirror into a
-    # single JS response, plus a window.EDITOR_DS_REGISTRY index of available
-    # ids. The editor's index.html includes this as a <script> tag right
-    # after data.js so window.EDITOR_DS_<id> is available globally before
-    # app.js mounts. Per-DS files are produced by POST /__design_system.
+    # Emits one window.EDITOR_DS_<id> per CANONICAL design-systems/<id>/ folder
+    # (read straight off disk — the source of truth), then concatenates every
+    # editor/design-systems/*.js runtime mirror AFTER, so an editor-mode mirror
+    # overrides the canonical payload where one exists. Closes with a
+    # window.EDITOR_DS_REGISTRY index of all available ids. The editor's
+    # index.html includes this as a <script> tag right after data.js so the
+    # globals are available before app.js mounts. A canonical DS therefore
+    # shows up in the picker the moment its folder exists — no separate
+    # "build the mirror" step (POST /__design_system) required.
     def _ds_bootstrap(self, qs):
         try:
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
+        # The canonical design-systems/<id>/ folders are the source of truth.
+        # We emit a window.EDITOR_DS_<id> for every canonical DS by reading its
+        # trio + meta straight off disk, so a DS shows up in the picker the
+        # moment it exists — no separate "build the mirror" step required.
+        # editor/design-systems/<id>.js mirrors (which may deviate slightly for
+        # editor mode) are then concatenated AFTER, re-assigning the same global
+        # so the mirror wins where one is present.
+        ds_root    = os.path.join(project_root, "design-systems")
         mirror_dir = os.path.join(project_root, "editor", "design-systems")
         ids = []
-        body_parts = ["// /__ds_bootstrap — concatenated DS runtime mirrors\n"]
+        body_parts = ["// /__ds_bootstrap — canonical DS trios + editor-mirror overrides\n"]
+        if os.path.isdir(ds_root):
+            for entry in sorted(os.listdir(ds_root)):
+                sub = os.path.join(ds_root, entry)
+                if not os.path.isdir(sub):
+                    continue
+                if not SLUG_OK.match(entry):
+                    continue
+                meta = self._design_system_read_meta(sub)
+                payload = {
+                    "id":      entry,
+                    "version": meta.get("version") or "",
+                    "label":   meta.get("label") or "",
+                    "trio": {
+                        "stylesCss":   self._design_system_read_file(sub, "styles.css"),
+                        "galleryHtml": self._design_system_read_file(sub, "gallery.html"),
+                        "designMd":    self._design_system_read_file(sub, "DESIGN.md"),
+                    },
+                    "meta": meta,
+                }
+                body_parts.append(
+                    "window.EDITOR_DS_" + entry + " = "
+                    + json.dumps(payload, ensure_ascii=False) + ";\n"
+                )
+                ids.append(entry)
+        # Editor-mode mirrors — override the canonical payload where present.
         if os.path.isdir(mirror_dir):
             for entry in sorted(os.listdir(mirror_dir)):
                 if not entry.endswith(".js"):
@@ -10278,7 +10315,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     with open(fp, "r", encoding="utf-8") as f:
                         body_parts.append(f.read())
                         body_parts.append("\n")
-                    ids.append(ds_id)
+                    if ds_id not in ids:
+                        ids.append(ds_id)
                 except Exception:
                     # Skip unreadable files; surfacing wouldn't help here
                     # — the per-DS GET will produce a useful error.
