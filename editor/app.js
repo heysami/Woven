@@ -17123,6 +17123,10 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
   // the ONLY scheme the user kept.
   const darkOnly = settings.schemeDark && !settings.schemeLight;
   const [previewDark, setPreviewDark] = useState(false);
+  // Style overlay previewed in the iframe ("" = base style; else a data-theme
+  // value like "pastel"). Orthogonal to the Light/Dark scheme switch — a chosen
+  // style overrides it; "Default style" falls back to the Light/Dark switch.
+  const [previewStyle, setPreviewStyle] = useState("");
   useEffect(() => {
     if (darkOnly && !previewDark) setPreviewDark(true);
     if (!settings.schemeDark && previewDark) setPreviewDark(false);
@@ -17135,10 +17139,22 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     let doc;
     try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.head) return;
-    // Colour scheme — toggle the dark theme on the previewed document.
+    // Style overlay + colour scheme — set <html data-theme>. A chosen style
+    // (pastel, glassmorphism, …) wins; otherwise fall back to the dark toggle.
     if (doc.documentElement) {
-      if (previewDark) doc.documentElement.setAttribute("data-theme", "dark");
+      const theme = previewStyle || (previewDark ? "dark" : "");
+      if (theme) doc.documentElement.setAttribute("data-theme", theme);
       else doc.documentElement.removeAttribute("data-theme");
+    }
+    // Ensure the full bundle (component partials + style overlays) is loaded in
+    // the preview, so the Style picker's data-theme takes effect on ANY preview
+    // file — most templates only link styles.css themselves.
+    if (!doc.getElementById("__ds_all")) {
+      const allLink = doc.createElement("link");
+      allLink.id = "__ds_all";
+      allLink.rel = "stylesheet";
+      allLink.href = apiUrl("/__default_ds/all.css");
+      doc.head.appendChild(allLink);
     }
     // Font webfont link
     let link = doc.getElementById("__ds_custom_font");
@@ -17177,7 +17193,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       const target = (settings.logo && settings.logo.dataUrl) ? settings.logo.dataUrl : defaultLogo;
       if (img.getAttribute("src") !== target) img.setAttribute("src", target);
     });
-  }, [custom, settings.logo, settings.secondary, previewDark]);
+  }, [custom, settings.logo, settings.secondary, previewDark, previewStyle]);
 
   useEffect(() => { if (frameReady) applyToFrame(); }, [frameReady, applyToFrame]);
 
@@ -17358,6 +17374,14 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                   </button>
                 </div>
               `}
+              <label className="dscz-style-pick" style=${{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}
+                title="Preview a style overlay (themes/*.css)">
+                <span className="dscz-stack-label" style=${{ whiteSpace: "nowrap" }}>Style</span>
+                <select className="dscz-select" value=${previewStyle}
+                  onChange=${(e) => setPreviewStyle(e.target.value)}>
+                  ${DS_PREVIEW_STYLES.map(st => html`<option key=${st.v} value=${st.v}>${st.label}</option>`)}
+                </select>
+              </label>
             </div>
             <iframe
               ref=${iframeRef}
