@@ -221,6 +221,9 @@
   <span class="spacer"></span>
   <span class="doc-size" id="docSize">1024 × 1024</span>
   <span class="sep"></span>
+  <button class="btn" id="importLutBtn" title="Import a .cube LUT as a Color Lookup layer">Import LUT</button>
+  <button class="btn" id="exportLutBtn" title="Export the selected adjustment layer as a .cube LUT">Export LUT</button>
+  <input type="file" id="lutFile" accept=".cube,.CUBE" style="display:none">
   <button class="btn" id="exportBtn">Export PNG</button>
   <button class="btn primary" id="bakeBtn">Save to node</button>
 </div>
@@ -303,6 +306,7 @@ const ICON = {
   levels:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8M9 20V4M14 20v-8M19 20V6"/></svg>',
   huesat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18"/></svg>',
   curves:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 C 8 20, 8 4, 20 4"/><path d="M4 20h16" opacity=".4"/></svg>',
+  lut:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9h17M3.5 14.5h17M9 3.5v17M14.5 3.5v17"/></svg>',
 };
 
 // ── Parent-node bridge state ───────────────────────────────────────────────
@@ -438,7 +442,7 @@ function compose(targetCanvas){
   ctx.clearRect(0,0,DOC.w,DOC.h);
 
   // Adjustment/effect layer types that transform their `target` layer's pixels.
-  const ADJ = new Set(['gradient-map','levels-rgb','hue-sat','curves']);
+  const ADJ = new Set(['gradient-map','levels-rgb','hue-sat','curves','color-lookup']);
 
   // Pre-build per-target lookups. `adj[target]` keeps DOC order so adjustments
   // stack predictably; alpha-masks are applied last (after all adjustments).
@@ -467,10 +471,10 @@ function compose(targetCanvas){
     // 2) Masks — multiply alpha. Dedicated paintable alpha-masks AND any layer
     //    assigned as this layer's mask (maskBy → luminance of another layer).
     const ms = masks[l.id];
-    if(ms && ms.length){ for(const m of ms) applyMask(_tmp, m.canvas); }
+    if(ms && ms.length){ for(const m of ms) applyMask(_tmp, m.canvas, m.srcChannel, m.dstChannel); }
     if(l.maskBy){
       const src = layerById(l.maskBy);
-      if(src && src.canvas && src.visible!==false) applyMask(_tmp, src.canvas);
+      if(src && src.canvas && src.visible!==false) applyMask(_tmp, src.canvas, l.maskSrcChannel, l.maskDstChannel);
     }
     if(l.source==='wired' && l.wiredEffects && l.wiredEffects.length){
       applyEffectStack(_tmp, l.wiredEffects);
@@ -512,11 +516,18 @@ function applyAdjustment(canvas, a){
   else if(a.type==='levels-rgb') applyLevels(canvas, a);
   else if(a.type==='hue-sat') applyHueSat(canvas, a);
   else if(a.type==='curves') applyCurves(canvas, a);
+  else if(a.type==='color-lookup') applyColorLookup(canvas, a);
 }
 
-// Multiply `canvas` alpha by the luminance (× own alpha) of `maskCanvas`.
+// Multiply a channel of `canvas` by a channel read from `maskCanvas`.
 // Used both by dedicated alpha-masks and by any layer assigned as another's mask.
-function applyMask(canvas, maskCanvas){
+//   srcChannel — what to READ off the mask: 'lum' (default, luminance × own
+//     alpha), 'alpha', 'r', 'g', 'b'.
+//   dstChannel — what to DRIVE on the target: 'alpha' (default, cutout),
+//     'rgb' (darken all colour channels), 'r', 'g', 'b'.
+// Defaults ('lum' → 'alpha') reproduce the original luminance-to-alpha mask.
+function applyMask(canvas, maskCanvas, srcChannel, dstChannel){
+  srcChannel=srcChannel||'lum'; dstChannel=dstChannel||'alpha';
   const w=DOC.w,h=DOC.h;
   const cx = canvas.getContext('2d');
   const base = cx.getImageData(0,0,w,h);
@@ -524,16 +535,32 @@ function applyMask(canvas, maskCanvas){
   const md = mctx.getImageData(0,0,w,h);
   const bd=base.data, mdd=md.data;
   for(let i=0;i<bd.length;i+=4){
-    // luminance of mask pixel, weighted by the mask pixel's own alpha
-    const ma = mdd[i+3]/255;
-    const lum = (0.2126*mdd[i] + 0.7152*mdd[i+1] + 0.0722*mdd[i+2])/255;
-    bd[i+3] = bd[i+3] * lum * ma;
+    // mask value in 0..1 from the chosen source channel
+    let mv;
+    switch(srcChannel){
+      case 'alpha': mv = mdd[i+3]/255; break;
+      case 'r': mv = mdd[i]/255; break;
+      case 'g': mv = mdd[i+1]/255; break;
+      case 'b': mv = mdd[i+2]/255; break;
+      default: { // 'lum' — luminance weighted by the mask pixel's own alpha
+        const ma = mdd[i+3]/255;
+        mv = ((0.2126*mdd[i] + 0.7152*mdd[i+1] + 0.0722*mdd[i+2])/255) * ma;
+      }
+    }
+    // drive the chosen destination channel
+    switch(dstChannel){
+      case 'r': bd[i] = bd[i]*mv; break;
+      case 'g': bd[i+1] = bd[i+1]*mv; break;
+      case 'b': bd[i+2] = bd[i+2]*mv; break;
+      case 'rgb': bd[i]=bd[i]*mv; bd[i+1]=bd[i+1]*mv; bd[i+2]=bd[i+2]*mv; break;
+      default: bd[i+3] = bd[i+3]*mv; // 'alpha'
+    }
   }
   cx.putImageData(base,0,0);
 }
 
 function applyGradientMap(canvas, grad){
-  const w=DOC.w,h=DOC.h;
+  const w=canvas.width,h=canvas.height;
   const cx = canvas.getContext('2d');
   const img = cx.getImageData(0,0,w,h);
   const d = img.data;
@@ -563,7 +590,7 @@ function levelsChannelLUT(p){
   return lut;
 }
 function applyLevels(canvas, a){
-  const w=DOC.w,h=DOC.h; const cx=canvas.getContext('2d');
+  const w=canvas.width,h=canvas.height; const cx=canvas.getContext('2d');
   const img=cx.getImageData(0,0,w,h); const d=img.data;
   const m=levelsChannelLUT(a.master||{});
   const lr=levelsChannelLUT(a.r||{}), lg=levelsChannelLUT(a.g||{}), lb=levelsChannelLUT(a.b||{});
@@ -595,18 +622,58 @@ function hslToRgb(h,s,l){
   }
   return [r*255,g*255,b*255];
 }
+// Six Photoshop-style colour bands. Each range is [outerLow, innerLow, innerHigh,
+// outerHigh] in degrees, kept MONOTONIC INCREASING (reds wrap past 360 so the band
+// stays contiguous — bandWeight tests both h and h+360). innerLow..innerHigh gets
+// full effect; the outer ramps fall to zero. Matches Photoshop's default spreads
+// (centres 0/60/120/180/240/300, ±15° full, ±45° falloff).
+const HUESAT_BAND_KEYS=['reds','yellows','greens','cyans','blues','magentas'];
+function defaultHueSatBands(){
+  return {
+    reds:    {hue:0,sat:0,light:0, range:[315,345,375,405]},
+    yellows: {hue:0,sat:0,light:0, range:[15,45,75,105]},
+    greens:  {hue:0,sat:0,light:0, range:[75,105,135,165]},
+    cyans:   {hue:0,sat:0,light:0, range:[135,165,195,225]},
+    blues:   {hue:0,sat:0,light:0, range:[195,225,255,285]},
+    magentas:{hue:0,sat:0,light:0, range:[255,285,315,345]},
+  };
+}
+// Falloff weight (0..1) for hue `h` (deg, 0..360) against a monotonic range.
+function bandWeight(h, r){
+  for(let k=0;k<2;k++){
+    const hh = h + k*360;
+    if(hh<r[0] || hh>r[3]) continue;
+    if(hh>=r[1] && hh<=r[2]) return 1;
+    if(hh<r[1]) return (hh-r[0])/((r[1]-r[0])||1);
+    return (r[3]-hh)/((r[3]-r[2])||1);
+  }
+  return 0;
+}
 function applyHueSat(canvas, a){
-  const w=DOC.w,h=DOC.h; const cx=canvas.getContext('2d');
+  const w=canvas.width,h=canvas.height; const cx=canvas.getContext('2d');
   const img=cx.getImageData(0,0,w,h); const d=img.data;
-  const hShift=((a.hue||0)/360);
-  const sMul=1+((a.sat||0)/100);
-  const lAdd=((a.light||0)/100);
+  const mHue=(a.hue||0), mSat=(a.sat||0), mLight=(a.light||0);
+  // Pre-collect only the bands that actually do something.
+  const bands=[];
+  if(a.bands){
+    for(const k of HUESAT_BAND_KEYS){ const b=a.bands[k];
+      if(b && (b.hue||b.sat||b.light)) bands.push(b); }
+  }
+  const noBands=bands.length===0;
   for(let i=0;i<d.length;i+=4){
     if(d[i+3]===0) continue;
     let [hh,ss,ll]=rgbToHsl(d[i],d[i+1],d[i+2]);
-    hh=(hh+hShift)%1; if(hh<0) hh+=1;
-    ss=Math.max(0,Math.min(1,ss*sMul));
-    ll=Math.max(0,Math.min(1,ll+lAdd));
+    let dHue=mHue, dSat=mSat, dLight=mLight;
+    if(!noBands){
+      const hd=hh*360;
+      for(let bi=0;bi<bands.length;bi++){ const b=bands[bi];
+        const wt=bandWeight(hd,b.range);
+        if(wt>0){ dHue+=wt*b.hue; dSat+=wt*b.sat; dLight+=wt*b.light; }
+      }
+    }
+    hh=(hh+dHue/360)%1; if(hh<0) hh+=1;
+    ss=Math.max(0,Math.min(1,ss*(1+dSat/100)));
+    ll=Math.max(0,Math.min(1,ll+dLight/100));
     const [r,g,b]=hslToRgb(hh,ss,ll);
     d[i]=r; d[i+1]=g; d[i+2]=b;
   }
@@ -630,7 +697,7 @@ function curveLUT(points){
   return lut;
 }
 function applyCurves(canvas, a){
-  const w=DOC.w,h=DOC.h; const cx=canvas.getContext('2d');
+  const w=canvas.width,h=canvas.height; const cx=canvas.getContext('2d');
   const img=cx.getImageData(0,0,w,h); const d=img.data;
   const def=[[0,0],[255,255]];
   const m=curveLUT(a.master&&a.master.length?a.master:def);
@@ -669,6 +736,97 @@ function hexToRgb(h){
   return [(n>>16)&255,(n>>8)&255,n&255];
 }
 function rgbToHex(r,g,b){ return '#'+[r,g,b].map(v=>('0'+(v|0).toString(16)).slice(-2)).join(''); }
+
+// ── Color Lookup (.cube 3D/1D LUT) ─────────────────────────────────────────
+// layer params: { type:'color-lookup', name, size, dim(1|3), lut:Float32Array|[],
+//                 domainMin:[0,0,0], domainMax:[1,1,1], amount:0..1 }
+// Parse a .cube text file into a LUT descriptor (3D preferred, 1D supported).
+function parseCube(text){
+  const lines=text.split(/\r?\n/);
+  let size3=0, size1=0, title='LUT';
+  let dmin=[0,0,0], dmax=[1,1,1];
+  const data=[];
+  for(let raw of lines){
+    const line=raw.trim();
+    if(!line || line[0]==='#') continue;
+    const up=line.toUpperCase();
+    if(up.startsWith('TITLE')){ const m=line.match(/"([^"]*)"/); if(m) title=m[1]; continue; }
+    if(up.startsWith('LUT_3D_SIZE')){ size3=parseInt(line.split(/\s+/)[1],10)||0; continue; }
+    if(up.startsWith('LUT_1D_SIZE')){ size1=parseInt(line.split(/\s+/)[1],10)||0; continue; }
+    if(up.startsWith('DOMAIN_MIN')){ const p=line.split(/\s+/); dmin=[+p[1],+p[2],+p[3]]; continue; }
+    if(up.startsWith('DOMAIN_MAX')){ const p=line.split(/\s+/); dmax=[+p[1],+p[2],+p[3]]; continue; }
+    const p=line.split(/\s+/);
+    if(p.length>=3){ const r=parseFloat(p[0]), g=parseFloat(p[1]), b=parseFloat(p[2]);
+      if(!isNaN(r)&&!isNaN(g)&&!isNaN(b)) data.push(r,g,b); }
+  }
+  const dim=size3?3:(size1?1:0), size=size3||size1;
+  if(!dim || data.length<size*(dim===3?size*size:1)*3) throw new Error('Unrecognised or incomplete .cube file');
+  return { dim, size, lut:Float32Array.from(data), domainMin:dmin, domainMax:dmax, title };
+}
+// Sample a 3D LUT (r,g,b in 0..1) with trilinear interpolation. out[] reused.
+function sampleLUT3D(lut,n,r,g,b,out){
+  const fr=r*(n-1), fg=g*(n-1), fb=b*(n-1);
+  const r0=Math.min(n-1,Math.floor(fr)), g0=Math.min(n-1,Math.floor(fg)), b0=Math.min(n-1,Math.floor(fb));
+  const r1=Math.min(n-1,r0+1), g1=Math.min(n-1,g0+1), b1=Math.min(n-1,b0+1);
+  const dr=fr-r0, dg=fg-g0, db=fb-b0;
+  const idx=(ri,gi,bi)=>(ri + gi*n + bi*n*n)*3;   // r fastest, per .cube spec
+  for(let c=0;c<3;c++){
+    const c000=lut[idx(r0,g0,b0)+c], c100=lut[idx(r1,g0,b0)+c];
+    const c010=lut[idx(r0,g1,b0)+c], c110=lut[idx(r1,g1,b0)+c];
+    const c001=lut[idx(r0,g0,b1)+c], c101=lut[idx(r1,g0,b1)+c];
+    const c011=lut[idx(r0,g1,b1)+c], c111=lut[idx(r1,g1,b1)+c];
+    const c00=c000+(c100-c000)*dr, c10=c010+(c110-c010)*dr;
+    const c01=c001+(c101-c001)*dr, c11=c011+(c111-c011)*dr;
+    const c0=c00+(c10-c00)*dg, c1=c01+(c11-c01)*dg;
+    out[c]=c0+(c1-c0)*db;
+  }
+  return out;
+}
+function applyColorLookup(canvas, a){
+  if(!a.lut || !a.size) return;
+  const w=canvas.width,h=canvas.height; const cx=canvas.getContext('2d');
+  const img=cx.getImageData(0,0,w,h); const d=img.data;
+  const n=a.size, lut=a.lut, amt=(a.amount==null?1:a.amount);
+  const dmin=a.domainMin||[0,0,0], dmax=a.domainMax||[1,1,1];
+  const sr=1/((dmax[0]-dmin[0])||1), sg=1/((dmax[1]-dmin[1])||1), sb=1/((dmax[2]-dmin[2])||1);
+  const out=[0,0,0];
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]===0) continue;
+    let r=(d[i]/255-dmin[0])*sr, g=(d[i+1]/255-dmin[1])*sg, b=(d[i+2]/255-dmin[2])*sb;
+    r=r<0?0:r>1?1:r; g=g<0?0:g>1?1:g; b=b<0?0:b>1?1:b;
+    if(a.dim===1){
+      out[0]=lut[Math.round(r*(n-1))*3]; out[1]=lut[Math.round(g*(n-1))*3+1]; out[2]=lut[Math.round(b*(n-1))*3+2];
+    } else {
+      sampleLUT3D(lut,n,r,g,b,out);
+    }
+    d[i]  = d[i]   + (out[0]*255 - d[i])  *amt;
+    d[i+1]= d[i+1] + (out[1]*255 - d[i+1])*amt;
+    d[i+2]= d[i+2] + (out[2]*255 - d[i+2])*amt;
+  }
+  cx.putImageData(img,0,0);
+}
+// Bake ONE adjustment layer into a 3D-LUT lattice + serialise as .cube text.
+function bakeLayerToCube(layer, size, title){
+  size=size||33;
+  const cv=newCanvas(size*size,size); const cx=cv.getContext('2d');
+  const img=cx.createImageData(size*size,size); const d=img.data;
+  const q=255/(size-1);
+  // lattice order: r fastest, then g, then b → laid out so index = r + g*size + b*size*size
+  for(let b=0;b<size;b++) for(let g=0;g<size;g++) for(let r=0;r<size;r++){
+    const i=(r + g*size + b*size*size)*4;
+    d[i]=Math.round(r*q); d[i+1]=Math.round(g*q); d[i+2]=Math.round(b*q); d[i+3]=255;
+  }
+  cx.putImageData(img,0,0);
+  applyAdjustment(cv, layer);           // run the real pipeline on the identity lattice
+  const od=cx.getImageData(0,0,size*size,size).data;
+  let out='# Generated by Woven Image\nTITLE "'+(title||'Woven LUT').replace(/"/g,'')+'"\nLUT_3D_SIZE '+size+'\n';
+  const f=(v)=>(v/255).toFixed(6);
+  for(let b=0;b<size;b++) for(let g=0;g<size;g++) for(let r=0;r<size;r++){
+    const i=(r + g*size + b*size*size)*4;
+    out+=f(od[i])+' '+f(od[i+1])+' '+f(od[i+2])+'\n';
+  }
+  return out;
+}
 
 let composeRAF = 0;
 function render(){
@@ -1130,7 +1288,7 @@ function snapshot(){
     }))
   };
 }
-function stripCanvas(l){ const {canvas,...rest}=l; return JSON.parse(JSON.stringify(rest)); }
+function stripCanvas(l){ const {canvas,lut,...rest}=l; const o=JSON.parse(JSON.stringify(rest)); if(lut) o.lut=lut; return o; }
 function pushHistory(){
   try{ HIST.push(snapshot()); if(HIST.length>HMAX) HIST.shift(); REDO.length=0; updateUndo(); }catch(e){}
 }
@@ -1202,7 +1360,7 @@ function addAdjLayer(kind){
         b:{inLo:0,inHi:255,gamma:1,outLo:0,outHi:255} };
   } else if(kind==='hue-sat'){
     l={ id:uid('hs'), name:'Hue/Sat · '+t.name, type:'hue-sat', target:t.id, visible:true,
-        hue:0, sat:0, light:0 };
+        hue:0, sat:0, light:0, bands:defaultHueSatBands() };
   } else { // curves
     l={ id:uid('cv'), name:'Curves · '+t.name, type:'curves', target:t.id, visible:true,
         master:[[0,0],[255,255]], r:[[0,0],[255,255]], g:[[0,0],[255,255]], b:[[0,0],[255,255]] };
@@ -1423,12 +1581,14 @@ function serializeState(){
       // keep their wired URL too so the node can re-resolve them.
       try{ o.dataUrl = l.canvas.toDataURL('image/png'); }catch(e){}
       if(l.asset){ o.asset=true; o.assetId=l.assetId; o.assetUrl=l.assetUrl; o.assetKind=l.assetKind; }
-      if(l.maskBy) o.maskBy=l.maskBy;   // layer-as-mask assignment
+      if(l.maskBy){ o.maskBy=l.maskBy;   // layer-as-mask assignment
+        o.maskSrcChannel=l.maskSrcChannel||'lum'; o.maskDstChannel=l.maskDstChannel||'alpha'; }
       return o;
     }
     if(l.type==='alpha-mask'){
       const o={ id:l.id, name:l.name, type:'alpha-mask', target:l.target,
-        src:'image-'+(NODE||'doc')+'/'+l.id+'.png', visible:l.visible!==false };
+        src:'image-'+(NODE||'doc')+'/'+l.id+'.png', visible:l.visible!==false,
+        srcChannel:l.srcChannel||'lum', dstChannel:l.dstChannel||'alpha' };
       try{ o.dataUrl=l.canvas.toDataURL('image/png'); }catch(e){}
       return o;
     }
@@ -1441,8 +1601,16 @@ function serializeState(){
                master:{...l.master}, r:{...l.r}, g:{...l.g}, b:{...l.b} };
     }
     if(l.type==='hue-sat'){
+      const bands={}; const src=l.bands||{};
+      for(const k of HUESAT_BAND_KEYS){ const b=src[k]; if(b) bands[k]={hue:b.hue||0,sat:b.sat||0,light:b.light||0,range:(b.range||[]).slice()}; }
       return { id:l.id, name:l.name, type:'hue-sat', target:l.target, visible:l.visible!==false,
-               hue:l.hue||0, sat:l.sat||0, light:l.light||0 };
+               hue:l.hue||0, sat:l.sat||0, light:l.light||0, bands };
+    }
+    if(l.type==='color-lookup'){
+      return { id:l.id, name:l.name, type:'color-lookup', target:l.target, visible:l.visible!==false,
+               size:l.size, dim:l.dim, amount:(l.amount==null?1:l.amount),
+               domainMin:(l.domainMin||[0,0,0]).slice(), domainMax:(l.domainMax||[1,1,1]).slice(),
+               lut:Array.from(l.lut||[]) };
     }
     if(l.type==='curves'){
       const cp=(a)=> (a||[[0,0],[255,255]]).map(p=>[p[0],p[1]]);
@@ -1481,8 +1649,19 @@ function loadFromState(state){
       continue;
     }
     if(ls.type==='hue-sat'){
+      const bands=defaultHueSatBands();
+      if(ls.bands){ for(const k of HUESAT_BAND_KEYS){ const b=ls.bands[k]; if(b){
+        bands[k]={hue:b.hue||0,sat:b.sat||0,light:b.light||0,
+          range:(b.range&&b.range.length===4?b.range.slice():bands[k].range)}; } } }
       DOC.layers.push({ id:ls.id, name:ls.name, type:'hue-sat', target:ls.target, visible:ls.visible!==false,
-        hue:ls.hue||0, sat:ls.sat||0, light:ls.light||0 });
+        hue:ls.hue||0, sat:ls.sat||0, light:ls.light||0, bands });
+      continue;
+    }
+    if(ls.type==='color-lookup'){
+      DOC.layers.push({ id:ls.id, name:ls.name, type:'color-lookup', target:ls.target, visible:ls.visible!==false,
+        size:ls.size, dim:ls.dim||3, amount:(ls.amount==null?1:ls.amount),
+        domainMin:(ls.domainMin||[0,0,0]).slice(), domainMax:(ls.domainMax||[1,1,1]).slice(),
+        lut:Float32Array.from(ls.lut||[]) });
       continue;
     }
     if(ls.type==='curves'){
@@ -1495,7 +1674,8 @@ function loadFromState(state){
     const l={ id:ls.id, name:ls.name, type:ls.type, target:ls.target,
               opacity:(ls.opacity==null?1:ls.opacity), blend:ls.blend||'normal',
               visible:ls.visible!==false, canvas:newCanvas(DOC.w,DOC.h) };
-    if(ls.maskBy) l.maskBy=ls.maskBy;
+    if(ls.maskBy){ l.maskBy=ls.maskBy; l.maskSrcChannel=ls.maskSrcChannel||'lum'; l.maskDstChannel=ls.maskDstChannel||'alpha'; }
+    if(ls.type==='alpha-mask'){ l.srcChannel=ls.srcChannel||'lum'; l.dstChannel=ls.dstChannel||'alpha'; }
     if(ls.asset){ l.asset=true; l.assetId=ls.assetId; l.assetUrl=ls.assetUrl; l.assetKind=ls.assetKind; }
     DOC.layers.push(l);
     const url = ls.dataUrl || ls.assetUrl;
@@ -1701,6 +1881,7 @@ function buildLayers(){
     if(l.type==='levels-rgb'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='levels'; nm.appendChild(b); }
     if(l.type==='hue-sat'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='hue/sat'; nm.appendChild(b); }
     if(l.type==='curves'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='curves'; nm.appendChild(b); }
+    if(l.type==='color-lookup'){ const b=document.createElement('span'); b.className='badge grad'; b.textContent='lut'; nm.appendChild(b); }
     if(l.type==='raster' && l.maskBy){ const b=document.createElement('span'); b.className='badge mask'; b.textContent='masked'; nm.appendChild(b); }
     meta.appendChild(nm);
     const sub=document.createElement('div'); sub.className='sub';
@@ -1732,6 +1913,7 @@ function adjGlyph(type){
   if(type==='levels-rgb') return '<span style="width:13px;height:13px;display:block">'+ICON.levels+'</span>';
   if(type==='hue-sat') return '<span style="width:13px;height:13px;display:block">'+ICON.huesat+'</span>';
   if(type==='curves') return '<span style="width:13px;height:13px;display:block">'+ICON.curves+'</span>';
+  if(type==='color-lookup') return '<span style="width:13px;height:13px;display:block">'+ICON.lut+'</span>';
   if(type==='alpha-mask') return '<span style="width:13px;height:13px;display:block">'+ICON.eye+'</span>';
   return '';
 }
@@ -1747,7 +1929,24 @@ function buildLayerProps(){
   if(!host){ host=document.createElement('div'); host.id='layerProps'; host.style.cssText='padding:8px 10px; border-top:1px solid var(--line); background:var(--bg); display:flex; flex-direction:column; gap:7px;'; document.getElementById('layersWrap').after(host); }
   const l=activeLayer();
   // Adjustment-layer params editors get their own host (built in buildGradEditor area).
-  if(l && (l.type==='levels-rgb'||l.type==='hue-sat'||l.type==='curves')){ host.style.display='none'; return; }
+  if(l && (l.type==='levels-rgb'||l.type==='hue-sat'||l.type==='curves'||l.type==='color-lookup')){ host.style.display='none'; return; }
+  // Mask source/destination channels (shared by maskBy + dedicated alpha-masks).
+  const SRC_OPTS=[['lum','Luminance'],['alpha','Alpha'],['r','Red'],['g','Green'],['b','Blue']];
+  const DST_OPTS=[['alpha','Alpha (cutout)'],['rgb','Color (RGB)'],['r','Red'],['g','Green'],['b','Blue']];
+  const chanSel=(id,opts,cur)=>'<select id="'+id+'">'+opts.map(o=>'<option value="'+o[0]+'"'+((cur||opts[0][0])===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+  // Dedicated alpha-mask layer: expose its read/apply channels.
+  if(l && l.type==='alpha-mask'){
+    host.style.display='flex';
+    const tgt=layerById(l.target);
+    host.innerHTML=
+      '<div class="row"><label>Masks</label><span class="val">'+(tgt?tgt.name.replace(/</g,'&lt;'):'(none)')+'</span></div>'+
+      '<div class="row"><label>Read</label>'+chanSel('lpMSrc',SRC_OPTS,l.srcChannel)+'</div>'+
+      '<div class="row"><label>Apply to</label>'+chanSel('lpMDst',DST_OPTS,l.dstChannel)+'</div>'+
+      '<div class="hint" style="font-size:10px">Multiplies the target\'s <b>Apply to</b> channel by the mask\'s <b>Read</b> channel.</div>';
+    document.getElementById('lpMSrc').onchange=e=>{ pushHistory(); l.srcChannel=e.target.value; render(); emitUserEdit(); };
+    document.getElementById('lpMDst').onchange=e=>{ pushHistory(); l.dstChannel=e.target.value; render(); emitUserEdit(); };
+    return;
+  }
   if(!l || l.type!=='raster'){ host.style.display='none'; return; }
   host.style.display='flex';
   // candidate mask layers: any other layer that has pixels (raster or alpha-mask)
@@ -1759,10 +1958,21 @@ function buildLayerProps(){
       ['normal','multiply','screen','overlay'].map(b=>'<option value="'+b+'"'+((l.blend||'normal')===b?' selected':'')+'>'+b+'</option>').join('')+
     '</select></div>'+
     '<div class="row"><label>Masked by</label><select id="lpMaskBy">'+maskOpts+'</select></div>'+
-    '<div class="hint" style="font-size:10px">"Masked by" multiplies this layer\'s alpha by the chosen layer\'s luminance.</div>';
+    (l.maskBy?
+      '<div class="row"><label>Read</label>'+chanSel('lpMaskSrc',SRC_OPTS,l.maskSrcChannel)+'</div>'+
+      '<div class="row"><label>Apply to</label>'+chanSel('lpMaskDst',DST_OPTS,l.maskDstChannel)+'</div>'+
+      '<div class="hint" style="font-size:10px">Multiplies this layer\'s <b>Apply to</b> channel by the mask layer\'s <b>Read</b> channel.</div>'
+      :
+      '<div class="hint" style="font-size:10px">"Masked by" multiplies this layer by another layer\'s channel — pick the channels once a mask is set.</div>');
   document.getElementById('lpOpac').oninput=e=>{ l.opacity=(+e.target.value)/100; document.getElementById('lpOpacV').textContent=e.target.value+'%'; render(); scheduleMetaEmit(); };
   document.getElementById('lpBlend').onchange=e=>{ pushHistory(); l.blend=e.target.value; render(); buildLayers(); emitUserEdit(); };
-  document.getElementById('lpMaskBy').onchange=e=>{ pushHistory(); l.maskBy=e.target.value||null; render(); buildLayers(); emitUserEdit(); };
+  document.getElementById('lpMaskBy').onchange=e=>{ pushHistory(); l.maskBy=e.target.value||null;
+    if(l.maskBy){ l.maskSrcChannel=l.maskSrcChannel||'lum'; l.maskDstChannel=l.maskDstChannel||'alpha'; }
+    render(); buildLayers(); emitUserEdit(); };
+  if(l.maskBy){
+    document.getElementById('lpMaskSrc').onchange=e=>{ pushHistory(); l.maskSrcChannel=e.target.value; render(); emitUserEdit(); };
+    document.getElementById('lpMaskDst').onchange=e=>{ pushHistory(); l.maskDstChannel=e.target.value; render(); emitUserEdit(); };
+  }
 }
 let metaEmitT=0;
 function scheduleMetaEmit(){ clearTimeout(metaEmitT); metaEmitT=setTimeout(()=>{ buildLayers(); emitUserEdit(); },200); }
@@ -1775,6 +1985,7 @@ function buildGradEditor(){
   if(l && l.type==='levels-rgb'){ buildLevelsEditor(ed,l); return; }
   if(l && l.type==='hue-sat'){ buildHueSatEditor(ed,l); return; }
   if(l && l.type==='curves'){ buildCurvesEditor(ed,l); return; }
+  if(l && l.type==='color-lookup'){ buildColorLookupEditor(ed,l); return; }
   if(!l || l.type!=='gradient-map'){ ed.className=''; ed.innerHTML=''; return; }
   ed.className='show';
   ed.innerHTML=
@@ -1853,17 +2064,90 @@ function buildLevelsEditor(ed,l){
   bind('lvInLo','inLo'); bind('lvInHi','inHi'); bind('lvGamma','gamma',1); bind('lvOutLo','outLo'); bind('lvOutHi','outHi');
 }
 
-// ── Hue/Saturation editor ──────────────────────────────────────────────────
+// ── Hue/Saturation editor (master + 6 Photoshop-style colour bands) ──────────
+let hsChan='master';
+const HS_CHANS=[['master','Master'],['reds','Reds'],['yellows','Yellows'],['greens','Greens'],['cyans','Cyans'],['blues','Blues'],['magentas','Magentas']];
 function buildHueSatEditor(ed,l){
   ed.className='show';
+  if(!l.bands) l.bands=defaultHueSatBands();
+  const tgt = hsChan==='master' ? l : l.bands[hsChan];
+  const chanBtns=HS_CHANS.map(([k,lab])=>
+    '<button class="btn" data-ch="'+k+'" style="padding:3px 7px;'+(hsChan===k?'background:var(--accent);color:#0a0e18;border-color:var(--accent)':'')+'">'+lab+'</button>').join('');
   const sl=(id,label,min,max,v,suf)=>'<div class="row"><label>'+label+'</label><input type="range" id="'+id+'" min="'+min+'" max="'+max+'" value="'+v+'"><span class="val" id="'+id+'V">'+v+(suf||'')+'</span></div>';
   ed.innerHTML=
     '<div class="pane-h" style="padding:0 0 2px; background:none;">Hue / Saturation — '+(layerById(l.target)||{name:''}).name+'</div>'+
-    sl('hsHue','Hue',-180,180,l.hue||0,'°')+
-    sl('hsSat','Saturation',-100,100,l.sat||0)+
-    sl('hsLight','Lightness',-100,100,l.light||0);
-  const bind=(id,key,suf)=>{ document.getElementById(id).oninput=e=>{ l[key]=+e.target.value; document.getElementById(id+'V').textContent=e.target.value+(suf||''); render(); scheduleMetaEmit(); }; };
+    '<div class="row" style="gap:4px;flex-wrap:wrap">'+chanBtns+'</div>'+
+    sl('hsHue','Hue',-180,180,tgt.hue||0,'°')+
+    sl('hsSat','Saturation',-100,100,tgt.sat||0)+
+    sl('hsLight','Lightness',-100,100,tgt.light||0)+
+    (hsChan==='master'
+      ? '<div class="hint" style="font-size:10px">Master affects every pixel. Pick a colour band to bound the adjustment to a hue range.</div>'
+      : '<canvas id="hsRangeCv" width="220" height="34" style="width:100%;background:#14161b;border:1px solid var(--line2);border-radius:5px;cursor:ew-resize;display:block;margin-top:2px"></canvas>'+
+        '<div class="hint" style="font-size:10px">Drag inner handles (full effect) and outer handles (falloff) to set the affected hue range.</div>');
+  ed.querySelectorAll('[data-ch]').forEach(b=>b.onclick=()=>{ hsChan=b.dataset.ch; buildHueSatEditor(ed,l); });
+  const bind=(id,key,suf)=>{ const el=document.getElementById(id); if(!el) return;
+    el.oninput=e=>{ tgt[key]=+e.target.value; document.getElementById(id+'V').textContent=e.target.value+(suf||''); render(); scheduleMetaEmit(); }; };
   bind('hsHue','hue','°'); bind('hsSat','sat'); bind('hsLight','light');
+  if(hsChan!=='master'){ drawHueRange(tgt); wireHueRange(ed,tgt); }
+}
+function drawHueRange(band){
+  const cv=document.getElementById('hsRangeCv'); if(!cv) return;
+  const x=cv.getContext('2d'); const w=cv.width,h=cv.height; const r=band.range;
+  x.clearRect(0,0,w,h);
+  // hue spectrum, dimmed outside the band by its falloff weight
+  for(let px=0;px<w;px++){
+    const hueDeg=px/w*360; const wt=bandWeight(hueDeg,r);
+    const [rr,gg,bb]=hslToRgb(hueDeg/360,0.85,0.5);
+    x.fillStyle='rgb('+(rr|0)+','+(gg|0)+','+(bb|0)+')';
+    x.fillRect(px,0,1,h);
+    if(wt<1){ x.fillStyle='rgba(10,12,18,'+(0.72*(1-wt))+')'; x.fillRect(px,0,1,h); }
+  }
+  // handles (outer = falloff edges, inner = full-effect edges)
+  for(let k=0;k<4;k++){
+    const hx=((r[k]%360+360)%360)/360*w;
+    const inner=(k===1||k===2);
+    x.strokeStyle=inner?'#e8ecf3':'#8a93a6'; x.lineWidth=inner?2:1.4;
+    x.beginPath(); x.moveTo(hx,0); x.lineTo(hx,h); x.stroke();
+    x.fillStyle=inner?'#e8ecf3':'#8a93a6';
+    x.beginPath(); x.moveTo(hx,inner?0:h); x.lineTo(hx-3.5,inner?5:h-5); x.lineTo(hx+3.5,inner?5:h-5); x.closePath(); x.fill();
+  }
+}
+function wireHueRange(ed,band){
+  const cv=document.getElementById('hsRangeCv'); if(!cv) return;
+  const r=band.range;
+  cv.onpointerdown=(e)=>{
+    const rect=cv.getBoundingClientRect();
+    const deg=(e.clientX-rect.left)/rect.width*360;
+    // pick nearest handle by wrapped screen distance
+    let bi=0,bd=1e9; for(let k=0;k<4;k++){ const hd=((r[k]%360+360)%360);
+      let dd=Math.abs(hd-deg); dd=Math.min(dd,360-dd); if(dd<bd){bd=dd;bi=k;} }
+    pushHistory();
+    cv.setPointerCapture&&cv.setPointerCapture(e.pointerId);
+    const mv=(ev)=>{
+      const x=(ev.clientX-rect.left)/rect.width*360;
+      // choose the unwrapped value nearest the handle's current position, then clamp to neighbours
+      let v=x, cur=r[bi];
+      while(v-cur>180) v-=360; while(cur-v>180) v+=360;
+      const lo=(bi>0?r[bi-1]:-1e9)+0.5, hi=(bi<3?r[bi+1]:1e9)-0.5;
+      r[bi]=Math.max(lo,Math.min(hi,v));
+      drawHueRange(band); render();
+    };
+    const up=()=>{ window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); scheduleMetaEmit(); };
+    window.addEventListener('pointermove',mv); window.addEventListener('pointerup',up);
+  };
+}
+
+// ── Color Lookup editor (imported .cube LUT) ────────────────────────────────
+function buildColorLookupEditor(ed,l){
+  ed.className='show';
+  const amt=Math.round((l.amount==null?1:l.amount)*100);
+  ed.innerHTML=
+    '<div class="pane-h" style="padding:0 0 2px; background:none;">Color Lookup — '+(layerById(l.target)||{name:''}).name+'</div>'+
+    '<div class="hint" style="font-size:10px">'+(l.dim===1?'1D':'3D')+' LUT · '+l.size+'³ grid · '+((l.lutName||'imported').replace(/</g,'&lt;'))+'</div>'+
+    '<div class="row"><label>Intensity</label><input type="range" id="clAmt" min="0" max="100" value="'+amt+'"><span class="val" id="clAmtV">'+amt+'%</span></div>'+
+    '<div class="grad-ctrls"><button class="btn" id="clReplace" style="padding:3px 8px">Replace .cube…</button></div>';
+  document.getElementById('clAmt').oninput=e=>{ l.amount=(+e.target.value)/100; document.getElementById('clAmtV').textContent=e.target.value+'%'; render(); scheduleMetaEmit(); };
+  document.getElementById('clReplace').onclick=()=>{ lutReplaceTarget=l.id; document.getElementById('lutFile').click(); };
 }
 
 // ── Curves editor (draggable points → per-channel LUT) ──────────────────────
@@ -1962,6 +2246,54 @@ document.getElementById('exportBtn').onclick=()=>{
     const a=document.createElement('a'); a.href=flat.toDataURL('image/png'); a.download='image.png'; a.click();
     toast('Exported PNG');
   }catch(e){ toast('Export failed'); }
+};
+
+// ── LUT import / export ─────────────────────────────────────────────────────
+let lutReplaceTarget=null;   // layer id when "Replace .cube…" is used, else null
+document.getElementById('importLutBtn').onclick=()=>{ lutReplaceTarget=null; document.getElementById('lutFile').click(); };
+document.getElementById('lutFile').onchange=(e)=>{
+  const file=e.target.files&&e.target.files[0]; e.target.value='';
+  if(!file) return;
+  const fr=new FileReader();
+  fr.onload=()=>{
+    let p; try{ p=parseCube(String(fr.result)); }catch(err){ toast('LUT parse failed: '+err.message); return; }
+    const name=file.name.replace(/\.[^.]+$/,'');
+    if(lutReplaceTarget){
+      const l=layerById(lutReplaceTarget); lutReplaceTarget=null;
+      if(!l){ toast('Layer gone'); return; }
+      pushHistory();
+      l.size=p.size; l.dim=p.dim; l.lut=p.lut; l.domainMin=p.domainMin; l.domainMax=p.domainMax; l.lutName=name;
+      buildGradEditor(); render(); emitUserEdit(); toast('LUT replaced');
+    } else {
+      addColorLookupLayer(p,name);
+    }
+  };
+  fr.readAsText(file);
+};
+function addColorLookupLayer(p,name){
+  const t=activeLayer();
+  const host=(t&&t.type==='raster')?t:rasterLayers()[rasterLayers().length-1];
+  if(!host){ toast('Need a raster layer'); return; }
+  pushHistory();
+  const l={ id:uid('cl'), name:'Color Lookup · '+(name||host.name), type:'color-lookup', target:host.id, visible:true,
+            size:p.size, dim:p.dim, lut:p.lut, domainMin:p.domainMin, domainMax:p.domainMax, amount:1, lutName:name };
+  const ti=DOC.layers.indexOf(host); DOC.layers.splice(ti+1,0,l);
+  activeId=l.id;
+  buildLayers(); buildGradEditor(); render(); emitUserEdit();
+  toast('LUT imported as Color Lookup layer');
+}
+document.getElementById('exportLutBtn').onclick=()=>{
+  const l=activeLayer();
+  const ADJ=new Set(['gradient-map','levels-rgb','hue-sat','curves','color-lookup']);
+  if(!l || !ADJ.has(l.type)){ toast('Select an adjustment layer to export'); return; }
+  try{
+    const cube=bakeLayerToCube(l,33,l.name);
+    const blob=new Blob([cube],{type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=(l.name||'grade').replace(/[^\w.-]+/g,'_')+'.cube'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast('Exported .cube LUT');
+  }catch(err){ toast('LUT export failed'); }
 };
 function doBake(){
   let baked=null; try{ const flat=newCanvas(DOC.w,DOC.h); compose(flat); baked={dataUrl:flat.toDataURL('image/png')}; }catch(e){}
