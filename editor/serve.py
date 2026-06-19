@@ -6952,6 +6952,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             m = re.match(r"^/__prompts/([a-z0-9][a-z0-9-]{0,60})/delete$", parsed.path)
             if m:
                 return self._prompt_delete(qs, m.group(1))
+            if parsed.path == "/__groups":
+                return self._group_save(qs)
+            m = re.match(r"^/__groups/([a-z0-9][a-z0-9-]{0,60})/delete$", parsed.path)
+            if m:
+                return self._group_delete(qs, m.group(1))
             if parsed.path == "/__projects/new":
                 return self._project_create(qs)
             if parsed.path == "/__projects/clone":
@@ -7207,6 +7212,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         m = re.match(r"^/__prompts/([a-z0-9][a-z0-9-]{0,60})$", url_path)
         if m:
             return self._prompt_get(urllib.parse.parse_qs(parsed.query), m.group(1))
+        if url_path == "/__groups":
+            return self._groups_list(urllib.parse.parse_qs(parsed.query))
+        m = re.match(r"^/__groups/([a-z0-9][a-z0-9-]{0,60})$", url_path)
+        if m:
+            return self._group_get(urllib.parse.parse_qs(parsed.query), m.group(1))
         if url_path == "/__history":
             return self._history_get(urllib.parse.parse_qs(parsed.query))
         m_wnget = re.match(r"^/__workflow/node/([A-Za-z0-9_.-]{1,80})$", url_path)
@@ -15823,6 +15833,109 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not self._PROMPT_SLUG_OK.match(slug):
             return self._reply(400, {"error": "invalid slug"})
         fpath = os.path.join(self._prompts_dir(project_root), slug + ".md")
+        if not os.path.isfile(fpath):
+            return self._reply(404, {"error": "not found"})
+        try: os.remove(fpath)
+        except Exception as e: return self._reply(500, {"error": f"delete failed: {e}"})
+        return self._reply(200, {"ok": True, "slug": slug})
+
+    # ── Node groups (Local Library) ──────────────────────────────────────
+    # A saved group is a snapshot of a multi-node selection — its nodes plus
+    # the edges internal to the selection — persisted as JSON under
+    # workflow/groups/<slug>.json so it can be dropped back onto any canvas.
+    # Mirrors the saved-prompts storage (same slug rules, same per-project
+    # dir convention); the canvas re-instantiates with fresh ids + an offset.
+    _GROUP_SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
+
+    def _groups_dir(self, project_root):
+        return os.path.join(project_root, "workflow", "groups")
+
+    def _groups_list(self, qs):
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        d = self._groups_dir(project_root)
+        items = []
+        if os.path.isdir(d):
+            for fname in sorted(os.listdir(d)):
+                if not fname.lower().endswith(".json"): continue
+                slug = fname[:-5]
+                if not self._GROUP_SLUG_OK.match(slug): continue
+                fpath = os.path.join(d, fname)
+                try: st = os.stat(fpath)
+                except Exception: continue
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                except Exception:
+                    continue
+                nodes = payload.get("nodes") if isinstance(payload, dict) else None
+                edges = payload.get("edges") if isinstance(payload, dict) else None
+                title = (payload.get("title") if isinstance(payload, dict) else "") or slug
+                items.append({
+                    "slug": slug, "title": title,
+                    "nodeCount": len(nodes) if isinstance(nodes, list) else 0,
+                    "edgeCount": len(edges) if isinstance(edges, list) else 0,
+                    "size": st.st_size,
+                    "mtime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime)),
+                })
+        items.sort(key=lambda x: x["mtime"], reverse=True)
+        return self._reply(200, {"items": items})
+
+    def _group_get(self, qs, slug):
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        if not self._GROUP_SLUG_OK.match(slug):
+            return self._reply(400, {"error": "invalid slug"})
+        fpath = os.path.join(self._groups_dir(project_root), slug + ".json")
+        if not os.path.isfile(fpath):
+            return self._reply(404, {"error": "not found"})
+        try:
+            with open(fpath, "r", encoding="utf-8") as f: payload = json.load(f)
+        except Exception as e: return self._reply(500, {"error": f"read failed: {e}"})
+        if not isinstance(payload, dict): payload = {}
+        payload["slug"] = slug
+        return self._reply(200, payload)
+
+    def _group_save(self, qs):
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return self._reply(413, {"error": "payload too large"})
+        try: body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e: return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        slug = (body.get("slug") or "").strip().lower()
+        if not self._GROUP_SLUG_OK.match(slug):
+            return self._reply(400, {"error": "invalid slug (lowercase letters/digits/hyphens, 1-60 chars, starting with letter or digit)"})
+        title = (body.get("title") or slug).strip()
+        nodes = body.get("nodes")
+        edges = body.get("edges")
+        if not isinstance(nodes, list) or not nodes:
+            return self._reply(400, {"error": "nodes must be a non-empty list"})
+        if not isinstance(edges, list):
+            edges = []
+        payload = {
+            "title": title,
+            "nodes": nodes,
+            "edges": edges,
+            "originX": body.get("originX") if isinstance(body.get("originX"), (int, float)) else 0,
+            "originY": body.get("originY") if isinstance(body.get("originY"), (int, float)) else 0,
+        }
+        d = self._groups_dir(project_root)
+        try: os.makedirs(d, exist_ok=True)
+        except Exception as e: return self._reply(500, {"error": f"mkdir failed: {e}"})
+        fpath = os.path.join(d, slug + ".json")
+        try:
+            with open(fpath, "w", encoding="utf-8") as f: json.dump(payload, f)
+        except Exception as e: return self._reply(500, {"error": f"write failed: {e}"})
+        return self._reply(200, {"ok": True, "slug": slug, "title": title, "nodeCount": len(nodes)})
+
+    def _group_delete(self, qs, slug):
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        if not self._GROUP_SLUG_OK.match(slug):
+            return self._reply(400, {"error": "invalid slug"})
+        fpath = os.path.join(self._groups_dir(project_root), slug + ".json")
         if not os.path.isfile(fpath):
             return self._reply(404, {"error": "not found"})
         try: os.remove(fpath)

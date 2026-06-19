@@ -27628,7 +27628,7 @@ const WORKFLOW_ALIGN_ACTIONS = [
 // transform, so reading its DOM rect each frame keeps the strip glued
 // through pan/zoom — same pattern as WorkflowNodeTopActions). Icon-only
 // buttons with the shared portal-tip tooltip.
-function WorkflowGroupAlignBar({ onAlign }) {
+function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
   const [rect, setRect] = useState(null);
   const [tipState, setTipState] = useState(null);
   useEffect(() => {
@@ -27654,8 +27654,11 @@ function WorkflowGroupAlignBar({ onAlign }) {
   }, []);
   if (!rect) return null;
   const BTN = 32, GAP = 4, SEP_W = 9; // separator: 1px line + margins
-  const btnCount = WORKFLOW_ALIGN_ACTIONS.filter(a => !a.separator).length;
-  const sepCount = WORKFLOW_ALIGN_ACTIONS.filter(a => a.separator).length;
+  // The trailing "Save group" affordance (when wired) is one separator + one
+  // button wider than the align actions alone.
+  const extraBtn = onSaveGroup ? 1 : 0, extraSep = onSaveGroup ? 1 : 0;
+  const btnCount = WORKFLOW_ALIGN_ACTIONS.filter(a => !a.separator).length + extraBtn;
+  const sepCount = WORKFLOW_ALIGN_ACTIONS.filter(a => a.separator).length + extraSep;
   const totalW = btnCount * BTN + (btnCount + sepCount - 1) * GAP + sepCount * SEP_W;
   let left = rect.left + rect.width / 2 - totalW / 2;
   let top = rect.top - 40;
@@ -27695,6 +27698,19 @@ function WorkflowGroupAlignBar({ onAlign }) {
               aria-label=${a.tip}
             >${a.icon}</button>
           `)}
+        ${onSaveGroup ? html`
+          <div className="workflow-align-sep"/>
+          <button
+            className="workflow-node-top-action"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => { e.stopPropagation(); onSaveGroup(); }}
+            onMouseEnter=${(e) => showTip("save-group", e.currentTarget, "Save selection as a node group → Local library")}
+            onMouseLeave=${clearTip}
+            onFocus=${(e) => showTip("save-group", e.currentTarget, "Save selection as a node group → Local library")}
+            onBlur=${clearTip}
+            aria-label="Save selection as a node group"
+          ><${Icon.Save}/></button>
+        ` : null}
       </div>
       ${tipState ? html`
         <div
@@ -28820,7 +28836,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     try {
       const v = localStorage.getItem("th-workflow-left-panel");
       if (v === "none") return null;
-      if (v === "outputs") return "outputs";
+      // v3.9 — "outputs" split into two panels ("protos" + "visual"); the
+      // old single key migrates to the prototypes panel. "library" is the
+      // new saved-prompts + node-groups panel.
+      if (v === "outputs" || v === "protos") return "protos";
+      if (v === "visual") return "visual";
+      if (v === "library") return "library";
       if (v === "app-nodes") return "app-nodes";
       return "nodes";
     } catch { return "nodes"; }
@@ -29723,6 +29744,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     let payload;
     try { payload = JSON.parse(raw); } catch { return; }
     const { x, y } = screenToWorld(e.clientX, e.clientY);
+    // v3.9 — Saved node group: fetch + instantiate the whole cluster (async),
+    // anchored so the group's top-left lands under the cursor.
+    if (payload.kind === "node-group" && payload.slug) {
+      placeNodeGroup(payload.slug, x, y);
+      return;
+    }
     // v3.8 — ALL per-kind creation defaults live in WORKFLOW_NODE_FACTORY
     // (the same factory the connector-spawn ⊕ menus use), so library drops
     // and ⊕ spawns can't drift. Unknown kinds are ignored, not errors —
@@ -29765,6 +29792,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         ? [...(d.edges || []), { from: `${id}.out`, to: `${composerTarget.id}.in` }]
         : (d.edges || []),
     }));
+    // placeNodeGroup is referenced in the body (resolved at drop time) but
+    // is declared later in this scope, so it's intentionally NOT a dep here —
+    // it's functionally stable (depends only on setData + selectionRef).
   }, [screenToWorld, setData, data]);
 
   const updateNode = useCallback((nid, patchOrFn) => {
@@ -30449,6 +30479,107 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [setData, selectionRef, _findComposerPasteTarget]);
 
   const hasNodeClipboard = useCallback(() => !!nodeClipboardRef.current, []);
+
+  // v3.9 — Instantiate a saved node group (Local library) at a world point.
+  // Same id-remap + edge-rewrite + run-state-reset as paste, but the payload
+  // comes from the server (workflow/groups/<slug>.json) instead of the
+  // in-session clipboard. Called from onCanvasDrop on a kind:node-group drop.
+  const placeNodeGroup = useCallback(async (slug, targetWorldX, targetWorldY) => {
+    let clip;
+    try {
+      const r = await fetch(apiUrl(`/__groups/${encodeURIComponent(slug)}`));
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      clip = await r.json();
+    } catch (e) { alert("Couldn't load group: " + (e?.message || e)); return 0; }
+    if (!clip || !Array.isArray(clip.nodes) || !clip.nodes.length) return 0;
+    const originX = typeof clip.originX === "number" ? clip.originX : 0;
+    const originY = typeof clip.originY === "number" ? clip.originY : 0;
+    const tx = (typeof targetWorldX === "number") ? targetWorldX : (lastCanvasCursorRef.current.x + 30);
+    const ty = (typeof targetWorldY === "number") ? targetWorldY : (lastCanvasCursorRef.current.y + 30);
+    const dx = tx - originX, dy = ty - originY;
+    const idMap = new Map();
+    for (const n of clip.nodes) idMap.set(n.id, _freshNodeId());
+    const newNodes = clip.nodes.map(n => {
+      const id = idMap.get(n.id);
+      const node = {
+        ...n, id,
+        x: (typeof n.x === "number" ? n.x : 0) + dx,
+        y: (typeof n.y === "number" ? n.y : 0) + dy,
+        runStatus: undefined, runError: undefined, runRunId: undefined,
+        runId: undefined, versions: [], activeVersionId: null, lastRunId: undefined,
+      };
+      if (node.kind === "prototype") node.instanceId = id;
+      return node;
+    });
+    const newEdges = (clip.edges || []).map(e => {
+      const fromId = (e.from || "").split(".", 1)[0];
+      const fromPort = (e.from || "").split(".", 2)[1] || "out";
+      const toId = (e.to || "").split(".", 1)[0];
+      const toPort = (e.to || "").split(".", 2)[1] || "in";
+      const nf = idMap.get(fromId), nt = idMap.get(toId);
+      if (!nf || !nt) return null;
+      return { from: `${nf}.${fromPort}`, to: `${nt}.${toPort}` };
+    }).filter(Boolean);
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []), ...newNodes],
+      edges: [...(d.edges || []), ...newEdges],
+    }));
+    const newIds = new Set(newNodes.map(n => n.id));
+    setSelectedNodeIds(newIds);
+    if (selectionRef && selectionRef.current) {
+      selectionRef.current.selectedIds = newIds;
+      window.dispatchEvent(new CustomEvent("th:set-canvas-selection",
+        { detail: { ids: Array.from(newIds) } }));
+    }
+    return newNodes.length;
+  }, [setData, selectionRef]);
+
+  // v3.9 — Save the current multi-selection as a reusable node group under
+  // workflow/groups/. Snapshots the selected nodes + the edges internal to
+  // the selection (same shape as the copy clipboard), then POSTs it so it
+  // shows up in Library → Local library on every session. Returns true on
+  // success. Bound to the "Save group" button on the selection bar.
+  const saveSelectionAsGroup = useCallback(async () => {
+    const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+    const picked = (data.nodes || []).filter(n => sel.has(n.id));
+    if (picked.length < 1) { alert("Select at least one node to save as a group."); return false; }
+    const pickedIdSet = new Set(picked.map(n => n.id));
+    const internalEdges = (data.edges || []).filter(e => {
+      const f = (e.from || "").split(".", 1)[0];
+      const t = (e.to   || "").split(".", 1)[0];
+      return pickedIdSet.has(f) && pickedIdSet.has(t);
+    });
+    let minX = Infinity, minY = Infinity;
+    for (const n of picked) {
+      if (typeof n.x === "number" && n.x < minX) minX = n.x;
+      if (typeof n.y === "number" && n.y < minY) minY = n.y;
+    }
+    if (!Number.isFinite(minX)) minX = 0;
+    if (!Number.isFinite(minY)) minY = 0;
+    const defaultTitle = `Group of ${picked.length}`;
+    const title = prompt(`Save ${picked.length} node${picked.length === 1 ? "" : "s"} as a group.\nName (shown in Local library):`, defaultTitle);
+    if (title == null) return false;
+    const cleanTitle = title.trim() || defaultTitle;
+    const slug = (cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50))
+      || ("group-" + Date.now().toString(36));
+    const payload = {
+      slug, title: cleanTitle,
+      nodes: picked.map(n => JSON.parse(JSON.stringify(n))),
+      edges: internalEdges.map(e => ({ from: e.from, to: e.to })),
+      originX: minX, originY: minY,
+    };
+    try {
+      const r = await fetch(apiUrl("/__groups"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      window.dispatchEvent(new CustomEvent("th:library-refresh"));
+      return true;
+    } catch (e) { alert("Save failed: " + (e?.message || e)); return false; }
+  }, [selectionRef, data]);
 
   // v3.4.32 — Duplicate selected nodes in-place (Cmd+D). Behaves like
   // copy-then-paste-at-+30/+30 but DOES NOT touch nodeClipboardRef, so
@@ -37955,10 +38086,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ><${Icon.Cube}/><//>
           <${HoverTip}
             placement="right"
-            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "outputs" ? " is-active" : "")}
-            ariaLabel="Outputs"
-            tip="Outputs — prototypes, pages + assets"
-            onClick=${() => onRailPanel("outputs")}
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "library" ? " is-active" : "")}
+            ariaLabel="Local library"
+            tip="Local library — saved prompts + node groups"
+            onClick=${() => onRailPanel("library")}
+          ><${Icon.Library}/><//>
+          <${HoverTip}
+            placement="right"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "protos" ? " is-active" : "")}
+            ariaLabel="Prototypes & HTML"
+            tip="Prototypes & HTML — prototypes, designs + other HTML pages"
+            onClick=${() => onRailPanel("protos")}
+          ><${Icon.Monitor}/><//>
+          <${HoverTip}
+            placement="right"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "visual" ? " is-active" : "")}
+            ariaLabel="Visual assets"
+            tip="Visual assets — image / SVG / video / scenes"
+            onClick=${() => onRailPanel("visual")}
           ><${Icon.Image}/><//>
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
@@ -39408,7 +39553,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onClose=${() => setCtxMenu(null)}
       />`}
       ${(selectedNodeIds.size + selectedWbIds.size) > 1 && html`
-        <${WorkflowGroupAlignBar} onAlign=${alignSelection}/>
+        <${WorkflowGroupAlignBar} onAlign=${alignSelection} onSaveGroup=${saveSelectionAsGroup}/>
       `}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
       ${connectorNode && connectorMenus && html`<${WorkflowConnectorSpawn}
@@ -40199,12 +40344,22 @@ function WorkflowProtoViewer({ active, onEditTab }) {
   `;
 }
 
-// v3.6 — `tab` is controlled by the workflow nav rail ("nodes" | "outputs");
+// v3.9 — `tab` is controlled by the workflow nav rail. One of:
+//   "nodes"   — buildable node templates
+//   "app-nodes" — embedded app/editor nodes
+//   "library" — Local library: saved prompts + saved node groups
+//   "protos"  — Prototypes & HTML (sub-tabs: prototypes&designs / other HTMLs)
+//   "visual"  — Visual assets (image / svg / video / scenes)
+// (Legacy note: "outputs" used to combine protos + visual under one panel.)
 // the library no longer renders its own tab strip. Defaults to "nodes" so a
 // bare <WorkflowLibrary/> still renders the palette.
 function WorkflowLibrary({ tab = "nodes" }) {
   const [assets, setAssets] = useState([]);
   const [savedPrompts, setSavedPrompts] = useState([]);
+  // v3.9 — Saved node groups (Local library). Each is a snapshot of a
+  // multi-node selection persisted server-side under workflow/groups/; the
+  // canvas re-instantiates one when its card is dragged in (kind:node-group).
+  const [savedGroups, setSavedGroups] = useState([]);
   // Discovered prototype folders — any `source/<dir>/index.html` (or one
   // level deeper) that we find on disk.
   const [extraProtos, setExtraProtos] = useState([]);
@@ -40228,29 +40383,28 @@ function WorkflowLibrary({ tab = "nodes" }) {
     if (p && typeof p.path === "string" && p.path.startsWith("design-systems/")) return false;
     return true;
   }), [htmlPagesRaw]);
-  // Library is split into two tabs (driven by the `tab` prop / nav rail):
-  //   - "nodes": buildable node templates (Prototypes, DS, Iterator,
-  //     Direction, Text, Tools).
-  //   - "outputs": generated files (HTML pages + visual Assets). Has a
-  //     list/grid view toggle, list is default.
+  // Library panels (driven by the `tab` prop / nav rail) — see the header
+  // comment above this component for the full list. The "protos" and "visual"
+  // panels show generated files and share a list/grid view toggle (below).
   // v3.1 — default to thumbnail grid. Asset cards lean on visual recognition
   // (image / svg / shader thumbs), so the user usually wants to scan the
   // grid first; the list view is the secondary, name-driven mode.
   const [outputsView, setOutputsView] = useState("grid");
-  // v3.4.27 — Two sub-tabs under Outputs:
-  //   "protos"  — Prototypes & components (combined extraProtos + htmlPages)
-  //   "visual"  — Visual assets, further split into scenes / video+motion /
-  //               image+svg sub-sections that hide when empty.
-  const [outputsSubTab, setOutputsSubTab] = useState("protos");
+  // v3.9 — The "protos" panel has two sub-tabs:
+  //   "designs" — Prototypes + Design-system pages (the registered/built UIs)
+  //   "htmls"   — Other generated HTML pages / components
+  // (Visual assets are now their own nav-rail panel, not a sub-tab here.)
+  const [protosSubTab, setProtosSubTab] = useState("designs");
   // Re-fetch the library asset + saved-prompt lists. Wired to th:asset-refresh
   // (fires after any successful Run) and th:library-refresh (manual nudges).
   const [starredProtos, setStarredProtos] = useState(() => getStarredPrototypesSync());
   const [thumbProto, setThumbProto] = useState(() => getThumbnailPrototypeSync());
   const reload = useCallback(async () => {
     try {
-      const [a, p, pr, hp, st, tb] = await Promise.all([
+      const [a, p, gr, pr, hp, st, tb] = await Promise.all([
         fetch(apiUrl("/__assets")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
         fetch(apiUrl("/__prompts")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
+        fetch(apiUrl("/__groups")).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
         fetch(apiUrl("/__source_prototypes")).then(r => r.ok ? r.json() : { prototypes: [] }).catch(() => ({ prototypes: [] })),
         fetch(apiUrl("/__source_htmls")).then(r => r.ok ? r.json() : { htmls: [] }).catch(() => ({ htmls: [] })),
         fetchStarredPrototypes(true),
@@ -40258,6 +40412,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
       ]);
       setAssets((a && a.items) || []);
       setSavedPrompts((p && p.items) || []);
+      setSavedGroups((gr && gr.items) || []);
       setExtraProtos(((pr && pr.prototypes) || []));
       setHtmlPagesRaw((hp && hp.htmls) || []);
       setStarredProtos(Array.isArray(st) ? st : []);
@@ -40349,6 +40504,14 @@ function WorkflowLibrary({ tab = "nodes" }) {
     if (!confirm(`Delete saved prompt "${slug}"?\nNodes referencing it stay as-is with their current text.`)) return;
     try {
       const r = await fetch(apiUrl(`/__prompts/${encodeURIComponent(slug)}/delete`), { method: "POST" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert("Delete failed: " + (j.error || r.status)); return; }
+      reload();
+    } catch (e) { alert("Delete failed: " + (e?.message || e)); }
+  };
+  const deleteGroup = async (slug) => {
+    if (!confirm(`Delete saved node group "${slug}"?\nGroups already placed on a canvas are unaffected.`)) return;
+    try {
+      const r = await fetch(apiUrl(`/__groups/${encodeURIComponent(slug)}/delete`), { method: "POST" });
       if (!r.ok) { const j = await r.json().catch(() => ({})); alert("Delete failed: " + (j.error || r.status)); return; }
       reload();
     } catch (e) { alert("Delete failed: " + (e?.message || e)); }
@@ -40536,7 +40699,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
 
   return html`
     <aside className="workflow-library">
-      ${tab === "outputs" && html`
+      ${(tab === "protos" || tab === "visual") && html`
       <div className="workflow-library-head">
           <div className="workflow-library-viewtoggle" role="radiogroup" aria-label="View mode">
             <button
@@ -40618,29 +40781,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-label">Agent</span>
             <span className="workflow-library-item-id">3in · 2out</span>
           </div>
-          ${savedPrompts.map(p => html`
-            <div
-              key=${p.slug}
-              className="workflow-library-item workflow-library-item-deletable"
-              draggable=${true}
-              onDragStart=${(e) => {
-                e.dataTransfer.effectAllowed = "copy";
-                e.dataTransfer.setData("application/x-th-workflow",
-                  JSON.stringify({ kind: "prompt", title: p.title, text: p.body || "" }));
-              }}
-              title=${"Drag onto canvas — saved prompt \"" + p.title + "\""}
-            >
-              <span className="workflow-library-item-glyph"><${Icon.Star}/></span>
-              <span className="workflow-library-item-label">${p.title}</span>
-              <span className="workflow-library-item-id">${p.slug}</span>
-              <button
-                className="workflow-library-item-del"
-                title=${"Delete saved prompt " + p.slug}
-                onClick=${(ev) => { ev.stopPropagation(); deletePrompt(p.slug); }}
-                onMouseDown=${(ev) => ev.stopPropagation()}
-              >×</button>
-            </div>
-          `)}
         </div>
       </div>
       <div className="workflow-library-section">
@@ -41113,24 +41253,24 @@ function WorkflowLibrary({ tab = "nodes" }) {
         </div>
       </div>
       ` : null}
-      ${tab === "outputs" ? html`
+      ${tab === "protos" ? html`
       <div className="workflow-library-subtabs" role="tablist">
         <button
           role="tab"
-          className=${"workflow-library-subtab" + (outputsSubTab === "protos" ? " is-active" : "")}
-          aria-selected=${outputsSubTab === "protos" ? "true" : "false"}
-          onClick=${() => setOutputsSubTab("protos")}
-          title="Prototypes + generated HTML pages / components"
-        >Prototypes<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length + htmlPages.length}</span></button>
+          className=${"workflow-library-subtab" + (protosSubTab === "designs" ? " is-active" : "")}
+          aria-selected=${protosSubTab === "designs" ? "true" : "false"}
+          onClick=${() => setProtosSubTab("designs")}
+          title="Registered prototypes + design-system pages"
+        >Prototypes & designs<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length}</span></button>
         <button
           role="tab"
-          className=${"workflow-library-subtab" + (outputsSubTab === "visual" ? " is-active" : "")}
-          aria-selected=${outputsSubTab === "visual" ? "true" : "false"}
-          onClick=${() => setOutputsSubTab("visual")}
-          title="Image / SVG / video / scenes — file-backed visuals"
-        >Visual assets<span className="workflow-library-tab-count">${assets.length}</span></button>
+          className=${"workflow-library-subtab" + (protosSubTab === "htmls" ? " is-active" : "")}
+          aria-selected=${protosSubTab === "htmls" ? "true" : "false"}
+          onClick=${() => setProtosSubTab("htmls")}
+          title="Other generated HTML pages / components"
+        >Other HTMLs<span className="workflow-library-tab-count">${htmlPages.length}</span></button>
       </div>
-      ${outputsSubTab === "protos" ? html`
+      ${protosSubTab === "designs" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Prototypes</div>
         ${(extraProtos.length === 0)
@@ -41309,16 +41449,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
               ${dsPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
+      ` : null}
+      ${protosSubTab === "htmls" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">HTML pages · components</div>
         ${htmlPages.length === 0
-          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>) or the DS pages that land in the section above.</div>`
+          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>) or the DS pages that land in the Prototypes &amp; designs tab.</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
               ${htmlPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
       ` : null}
-      ${outputsSubTab === "visual" ? html`
+      ` : null}
+      ${tab === "visual" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Assets</div>
         ${outputsView === "list" ? html`
@@ -41367,6 +41510,67 @@ function WorkflowLibrary({ tab = "nodes" }) {
         `}
       </div>
       ` : null}
+      ${tab === "library" ? html`
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Saved prompts</div>
+        ${savedPrompts.length === 0
+          ? html`<div className="workflow-library-empty">No saved prompts yet. Click <strong>save</strong> on any text node's title bar to store it as a reusable <code>.md</code> under <code>workflow/prompts/</code>.</div>`
+          : html`<div className="workflow-library-list">
+              ${savedPrompts.map(p => html`
+                <div
+                  key=${p.slug}
+                  className="workflow-library-item workflow-library-item-deletable"
+                  draggable=${true}
+                  onDragStart=${(e) => {
+                    e.dataTransfer.effectAllowed = "copy";
+                    e.dataTransfer.setData("application/x-th-workflow",
+                      JSON.stringify({ kind: "prompt", title: p.title, text: p.body || "" }));
+                  }}
+                  title=${"Drag onto canvas — saved prompt \"" + p.title + "\""}
+                >
+                  <span className="workflow-library-item-glyph">¶</span>
+                  <span className="workflow-library-item-label">${p.title}</span>
+                  <span className="workflow-library-item-id">${p.slug}</span>
+                  <button
+                    className="workflow-library-item-del"
+                    title=${"Delete saved prompt " + p.slug}
+                    onClick=${(ev) => { ev.stopPropagation(); deletePrompt(p.slug); }}
+                    onMouseDown=${(ev) => ev.stopPropagation()}
+                  >×</button>
+                </div>
+              `)}
+            </div>`}
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Node groups</div>
+        ${savedGroups.length === 0
+          ? html`<div className="workflow-library-empty">No node groups yet. Select two or more nodes on the canvas, then click <strong>Save group</strong> on the selection bar to store the cluster (nodes + their internal wires). Drag a group back onto the canvas to drop a fresh copy.</div>`
+          : html`<div className="workflow-library-list">
+              ${savedGroups.map(g => html`
+                <div
+                  key=${g.slug}
+                  className="workflow-library-item workflow-library-item-deletable"
+                  draggable=${true}
+                  onDragStart=${(e) => {
+                    e.dataTransfer.effectAllowed = "copy";
+                    e.dataTransfer.setData("application/x-th-workflow",
+                      JSON.stringify({ kind: "node-group", slug: g.slug }));
+                  }}
+                  title=${"Drag onto canvas — node group \"" + g.title + "\" (" + g.nodeCount + " node" + (g.nodeCount === 1 ? "" : "s") + ")"}
+                >
+                  <span className="workflow-library-item-glyph"><${Icon.Grid}/></span>
+                  <span className="workflow-library-item-label">${g.title}</span>
+                  <span className="workflow-library-item-id">${g.nodeCount} node${g.nodeCount === 1 ? "" : "s"}</span>
+                  <button
+                    className="workflow-library-item-del"
+                    title=${"Delete saved group " + g.slug}
+                    onClick=${(ev) => { ev.stopPropagation(); deleteGroup(g.slug); }}
+                    onMouseDown=${(ev) => ev.stopPropagation()}
+                  >×</button>
+                </div>
+              `)}
+            </div>`}
+      </div>
       ` : null}
     </aside>
   `;
