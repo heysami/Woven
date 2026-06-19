@@ -50188,15 +50188,15 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
             data-browser-id=${node.id}
             src=${iframeSrc}
             title=${"Browser: " + liveUrl}
-            sandbox=${mode === "proxy"
-              /* Proxied pages are SAME-ORIGIN with the editor — their
-                 scripts could reach window.parent and hijack the app (seen
-                 live with github.com). So proxy mode renders SCRIPT-LESS:
-                 static reader-style page, selection still readable by ✂.
-                 Direct embeds are cross-origin-isolated, so scripts are
-                 safe there; top-navigation stays blocked in both modes. */
-              ? "allow-same-origin allow-forms"
-              : "allow-scripts allow-same-origin allow-forms allow-popups"}
+            /* Both modes run scripts. Direct embeds are cross-origin-isolated,
+               so scripts are safe. Proxied pages are SAME-ORIGIN with the
+               editor (so the pick overlay + ✂ selection can read the doc) AND
+               run scripts so client-rendered SPAs actually paint something to
+               select — the daemon proxy injects a parent-shadow guard (stubs
+               window.parent / opener) as the first thing in <head>, and
+               allow-top-navigation stays OFF in BOTH modes, so a proxied page
+               can't navigate or hijack the editor away. */
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             referrerPolicy="no-referrer"
             style=${{ pointerEvents: selected ? "auto" : "none" }}
           />

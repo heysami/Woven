@@ -15626,11 +15626,32 @@ class H(http.server.SimpleHTTPRequestHandler):
         # against the REAL origin (sub-resources load directly from the site;
         # only the document itself is re-served from our origin).
         base_tag = '<base href="%s">' % page["finalUrl"].replace('"', "%22")
+        # Inject a parent-shadow guard as the FIRST thing in <head>, before any
+        # of the page's own scripts. The proxied document is re-served
+        # SAME-ORIGIN with the editor (so the element-pick overlay can read it)
+        # and the iframe now runs scripts (so client-rendered SPAs actually
+        # paint something to select). Same-origin + scripts means the page
+        # could reach the editor window — so neutralise its handles. window.top
+        # and frameElement are LegacyUnforgeable and can't be redefined, but the
+        # iframe sandbox omits allow-top-navigation, so the page still can't
+        # navigate or replace the editor; this strips the easy parent / opener
+        # references. (Residual: a hostile same-origin script could still read
+        # editor DOM via window.top — acceptable for a local personal daemon
+        # where the user chooses which URL to open.)
+        guard = (
+            "<script>(function(){try{"
+            "try{window.parent=window;}catch(e){}"
+            "try{window.opener=null;}catch(e){}"
+            "try{Object.defineProperty(window,'frameElement',{configurable:true,get:function(){return null;}});}catch(e){}"
+            "try{Object.defineProperty(window,'top',{configurable:true,get:function(){return window;}});}catch(e){}"
+            "}catch(e){}})();</script>"
+        )
+        inject = guard + base_tag
         m = re.search(r"(?is)<head[^>]*>", body)
         if m:
-            body = body[:m.end()] + base_tag + body[m.end():]
+            body = body[:m.end()] + inject + body[m.end():]
         else:
-            body = base_tag + body
+            body = inject + body
         data = body.encode("utf-8", errors="replace")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
