@@ -189,3 +189,21 @@
 .wv-acc[open] > summary::before { transform: rotate(45deg); }
 .wv-acc > summary:hover { color: var(--wv-text); }
 .wv-acc-body { padding: 2px 12px 12px; }
+
+/* Instant custom tooltip (driven by _shared/tooltip.js). Appended to <body> as
+   position:fixed so it escapes any panel/toolbar overflow clipping. */
+#wv-tip {
+  position: fixed;
+  display: none;
+  z-index: 2147483647;
+  pointer-events: none;
+  background: oklch(24% 0.01 60);
+  color: #fff;
+  font: 600 11px var(--wv-font-sans);
+  letter-spacing: 0.01em;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px oklch(0% 0 0 / 0.28);
+  white-space: nowrap;
+  max-width: 280px;
+}
