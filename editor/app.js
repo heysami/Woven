@@ -56609,6 +56609,41 @@ function _parseSpecLiteral(raw) {
   if (s.includes(",") && !/\s/.test(s)) return s.split(",").map(x => _parseSpecLiteral(x));
   return s;
 }
+function _specNumberValue(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+function _specNumberBounds(value, def) {
+  const min = Number(def && def.min);
+  const max = Number(def && def.max);
+  if (Number.isFinite(min) && Number.isFinite(max) && min < max) return { min, max };
+  const span = Math.max(10, Math.abs(value || 0) * 2);
+  return {
+    min: Math.min(0, Math.floor(value - span)),
+    max: Math.max(1, Math.ceil(value + span)),
+  };
+}
+function _specControlUnit(key, def) {
+  if (def && def.unit) return String(def.unit);
+  const k = String(key || "").toLowerCase();
+  if (k === "x" || k === "y") return "px";
+  if (k === "z") return "units";
+  if (k.includes("angle") || k.includes("rotation") || k === "rot") return "deg";
+  if (k.includes("duration")) return "s";
+  if (k.includes("gravity")) return "px/s^2";
+  if (k === "scale") return "x";
+  if (k.includes("opacity") || k.includes("intensity") || k.includes("threshold") ||
+      k.includes("bounce") || k.includes("stiffness") || k.includes("jitter") ||
+      k.includes("density") || k.includes("confidence") || k.includes("wash") ||
+      k.includes("grain") || k.includes("curvature") || k.includes("vignette") ||
+      k.includes("scanline")) return "0-1";
+  if (["count", "cols", "rows", "layers", "segments", "samples", "levels", "band"].includes(k)) return "count";
+  if (k.includes("size") || k.includes("offset") || k.includes("distance") || k.includes("amount") ||
+      k.includes("gap") || k.includes("cell")) return "px";
+  if (k.includes("speed")) return "rate";
+  if (k.includes("spacing") || k.includes("bounds")) return "units";
+  return "";
+}
 function _controlsSource(controls) {
   return JSON.stringify(controls || {}, null, 2);
 }
@@ -57279,11 +57314,28 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       <input type="checkbox" checked=${value !== false} onChange=${(e) => updateControl(key, e.target.checked)} onMouseDown=${(e) => e.stopPropagation()}/>
       <span>${label}</span>
     </label>`;
-    if (type === "number") return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
-      <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${label}</span>
-      <input className="workflow-spec-input" type="number" min=${d.min} max=${d.max} step=${d.step || 1} value=${value}
-        onInput=${(e) => updateControl(key, Number(e.target.value))} onMouseDown=${(e) => e.stopPropagation()}/>
-    </label>`;
+    if (type === "number" || type === "range") {
+      const numeric = _specNumberValue(value, 0);
+      const bounds = _specNumberBounds(numeric, d);
+      const sliderValue = Math.max(bounds.min, Math.min(bounds.max, numeric));
+      const step = d.step ?? 1;
+      const unit = _specControlUnit(key, d);
+      const setNumber = (raw) => {
+        const n = Number(raw);
+        updateControl(key, Number.isFinite(n) ? n : 0);
+      };
+      return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "10px", fontSize: "11px" }}>
+        <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "4px" }}>${label}</span>
+        <input type="range" min=${bounds.min} max=${bounds.max} step=${step} value=${sliderValue}
+          style=${{ width: "100%", margin: "0 0 5px" }}
+          onInput=${(e) => setNumber(e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
+        <div style=${{ display: "grid", gridTemplateColumns: unit ? "1fr auto" : "1fr", gap: "6px", alignItems: "center" }}>
+          <input className="workflow-spec-input" type="number" step=${step} value=${value}
+            onInput=${(e) => setNumber(e.target.value)} onMouseDown=${(e) => e.stopPropagation()}/>
+          ${unit && html`<span style=${{ color: "var(--muted, #888)", fontSize: "10px", minWidth: "32px" }}>${unit}</span>`}
+        </div>
+      </label>`;
+    }
     return html`<label key=${key} className="workflow-spec-row" style=${{ display: "block", marginBottom: "8px", fontSize: "11px" }}>
       <span className="workflow-spec-label" style=${{ display: "block", color: "var(--muted, #888)", marginBottom: "3px" }}>${label}</span>
       <input className="workflow-spec-input" type="text" value=${_specInputValue(value)}

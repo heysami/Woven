@@ -207,6 +207,68 @@ function wiredRuntimeLayers(){
 function wiredChildSpec(k){
   return (k && k.spec && typeof k.spec === 'object') ? k.spec : (k || {});
 }
+function finiteNumber(v,fallback){
+  const n=Number(v);
+  return Number.isFinite(n)?n:fallback;
+}
+function composerPositioningFromSpec(spec){
+  const src=spec||{};
+  const p=Object.assign({mode:src.mode||'single'}, src.params||{});
+  if(p.rotation!=null && p.rot==null) p.rot=finiteNumber(p.rotation,0)*Math.PI/180;
+  if(p.mode==='grid-3d'){
+    const layers=Math.max(1,finiteNumber(p.layers,1)|0);
+    p.mode='grid';
+    p.rows=Math.max(1,finiteNumber(p.rows,1)|0)*layers;
+    p.cols=Math.max(1,finiteNumber(p.cols,1)|0);
+    p.size=p.size??0.6;
+  }else if(p.mode==='scatter-3d'){
+    p.mode='instances';
+    p.source=p.source||'random';
+    p.count=p.count??80;
+    p.size=p.size??0.05;
+    p.spread=p.spread??0.4;
+  }else if(p.mode==='surface'){
+    p.mode='face-3d';
+    p.size=p.size??1;
+  }
+  return p;
+}
+function normalizedCoord(v,size,fallback){
+  const n=finiteNumber(v,fallback);
+  return Math.abs(n)>1 && size ? n/size : n;
+}
+function normalizePoint(pt,W,H){
+  if(Array.isArray(pt)) return [normalizedCoord(pt[0],W,0), normalizedCoord(pt[1],H,0)];
+  if(pt && typeof pt==='object') return [normalizedCoord(pt.x,W,0), normalizedCoord(pt.y,H,0)];
+  return [0,0];
+}
+function isPointLike(v){
+  return (Array.isArray(v) && !Array.isArray(v[0])) || (v && typeof v==='object' && ('x' in v || 'y' in v));
+}
+function parsePointList(raw,W,H){
+  if(Array.isArray(raw)){
+    if(raw.length && isPointLike(raw[0])) return [raw.map(pt=>normalizePoint(pt,W,H))];
+    return raw.map(path=>Array.isArray(path) ? path.map(pt=>normalizePoint(pt,W,H)) : [normalizePoint(path,W,H)]);
+  }
+  return String(raw||'')
+    .split('|')
+    .map(path=>path.trim().split(/\s+/).filter(Boolean).map(pair=>{
+      const parts=pair.split(',');
+      return normalizePoint([parts[0],parts[1]],W,H);
+    }))
+    .filter(path=>path.length);
+}
+function normalizeRuntimePositioning(p,W,H){
+  if(!p) return p;
+  if(p.mode==='single'){
+    p.x=normalizedCoord(p.x,W,0.5);
+    p.y=normalizedCoord(p.y,H,0.5);
+    if(p.rotation!=null && p.rot==null) p.rot=finiteNumber(p.rotation,0)*Math.PI/180;
+  }
+  if(p.mode==='drawn') p.paths=parsePointList(p.paths,W,H);
+  if(p.mode==='rope') p.anchors=parsePointList(p.anchors,W,H)[0]||[[0.2,0.2],[0.8,0.2]];
+  return p;
+}
 function buildWiredRuntimeLayers(){
   return (WIRED.layers||[]).map((wl,wi)=>{
     const spec=wl.spec||{};
@@ -237,7 +299,7 @@ function buildWiredRuntimeLayers(){
     const posSpec = wiredChildSpec(posK);
     const trigSpec = wiredChildSpec(trigK);
     const positioning = posK
-      ? Object.assign({mode:posSpec.mode||'single'}, posSpec.params||{})
+      ? composerPositioningFromSpec(posSpec)
       : {mode:'single',x:0.5,y:0.5,scale:1,rot:0};
     const trigger = trigK
       ? Object.assign({source:trigSpec.source||'none', impacts:trigSpec.impacts||[]}, trigSpec.params||{})
@@ -548,7 +610,7 @@ const Positioning = {
   sim:{},
   reset(){ this.sim={}; },
   resolve(L, W, H, dt){
-    const p=L.positioning;
+    const p=normalizeRuntimePositioning(L.positioning,W,H);
     switch(p.mode){
       case 'single':      return [{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
       case 'grid':        return this.grid(L,p);
@@ -770,7 +832,7 @@ function computeImpacts(triggerVals, layers, globalTrig){
 function wiredDefaultPositioning(){
   const wp=WIRED.positions && WIRED.positions[0];
   if(!wp) return null;
-  const p=Object.assign({mode:wp.mode||'single'}, wp.params||{});
+  const p=composerPositioningFromSpec(wiredChildSpec(wp));
   fillPositioning(p);
   return p;
 }
@@ -942,7 +1004,9 @@ class GLFx {
     this.ensureFbos(w,h);
     // upload source 2D canvas into srcTex
     gl.bindTexture(gl.TEXTURE_2D,this.srcTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcCanvas);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
@@ -1724,7 +1788,7 @@ function slimPlayer(CFG, ASSETS, EFF, FH, VS, TOPFX){
   function ensure(w,h){if(_w===w&&_h===h&&fbos.length)return;_w=w;_h=h;fbos.forEach(f=>gl.deleteFramebuffer(f));texs.forEach(t=>gl.deleteTexture(t));fbos=[];texs=[];for(let i=0;i<2;i++){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);texs.push(t);fbos.push(fb);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
   function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(FH+'void main(){o=texture(tex,uv);}'));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);const l=gl.getAttribLocation(p,'p');gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'tex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uRes'),w,h);gl.drawArrays(gl.TRIANGLES,0,3);}
   function applyFx(stack,time,iOv){ applyFxFrom(lb,stack,time,iOv); }
-  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
   function applyTop(time){ if(!GLOK||!TOP.length)return; applyFxFrom(c2d,TOP,time,null); ctx.save(); ctx.globalCompositeOperation='copy'; ctx.drawImage(cgl,0,0,W,H); ctx.restore(); }
