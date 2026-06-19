@@ -17161,11 +17161,12 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     // Material Lab dispersion-prism). Inject it so the preview shows the actual
     // glass, not just the CSS fallback. Self-activates on data-theme; tears down
     // when the style changes, so it is harmless for the other styles.
-    if (settings.styleId === "glassmorphism" && doc.body && !doc.getElementById("__ds_glass_js")) {
+    const jsBackedStyle = settings.styleId === "glassmorphism" || settings.styleId === "claymorphism";
+    if (jsBackedStyle && doc.body && !doc.getElementById("__ds_mat_js_" + settings.styleId)) {
       const gs = doc.createElement("script");
-      gs.id = "__ds_glass_js";
+      gs.id = "__ds_mat_js_" + settings.styleId;
       gs.defer = true;
-      gs.src = apiUrl("/__default_ds/themes/glassmorphism.js");
+      gs.src = apiUrl("/__default_ds/themes/" + settings.styleId + ".js");
       doc.body.appendChild(gs);
     }
     // Font webfont link

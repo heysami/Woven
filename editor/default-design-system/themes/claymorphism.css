@@ -384,3 +384,25 @@
   background:var(--primary-surface-subtle);
   box-shadow:var(--clay-inset);
 }
+
+/* ==========================================================================
+   WebGL clay mode — active once themes/claymorphism.js mounts the REAL
+   Material Lab soft-ui-foam material (it adds `html.clay-gl`). The CSS
+   surfaces go transparent so the fixed WebGL foam canvas (z-index:-1) paints
+   them; the page background matches the foam so each panel reads by its
+   embossed edge (the soft-UI signature). Foam is light + opaque, so text
+   stays dark. When JS / WebGL2 is unavailable the dual-shadow clay rules
+   above remain as a graceful fallback.
+   ========================================================================== */
+html.clay-gl [data-theme="claymorphism"] body,
+html.clay-gl[data-theme="claymorphism"] body{
+  background:#e9eef5;
+}
+html.clay-gl [data-theme="claymorphism"] :is(.app,.main,.content,.workflow-root,.workflow-canvas){
+  background:transparent !important;
+}
+html.clay-gl [data-theme="claymorphism"] :is(.card,.section-card,.stat-hero,.chart-card,.modal,.slideout,.topbar,.sidebar,.btn--primary,.btn--outline,.input,.select,.textarea,.badge,.tag,.kpi,.metric-tile,.phone__tabbar){
+  background:transparent !important;
+  box-shadow:none !important;
+  border-color:transparent;
+}
