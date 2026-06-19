@@ -53200,12 +53200,17 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const lockY = anchor === "stretch-v" || anchor === "fill";
     layerDragRef.current = { idx, kind: "move", startOX, startOY };
     const onMv = (ev) => {
+      // Shield on first move: a layer can be an iframe/asset that swallows the
+      // mouseup, leaving a stale resize listener that compounds into the next
+      // gesture (move that also resizes). The overlay guarantees onUp fires.
+      installDragShield("grabbing");
       const { dx, dy } = _composerScreenToCanvas(stage, ev.clientX - startX, ev.clientY - startY, canvasW, canvasH);
       layerDragRef.current.liveOX = lockX ? startOX : Math.round(startOX + dx);
       layerDragRef.current.liveOY = lockY ? startOY : Math.round(startOY + dy);
       forceRerender(t => t + 1);
     };
     const onUp = () => {
+      removeDragShield();
       const d = layerDragRef.current;
       if (d && (d.liveOX !== undefined || d.liveOY !== undefined)) {
         updateLayer(idx, {
@@ -53248,12 +53253,14 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const startX = e.clientX, startY = e.clientY;
     layerDragRef.current = { idx, kind: "resize", startW, startH };
     const onMv = (ev) => {
+      installDragShield("nwse-resize");   // guarantee onUp even over an iframe layer
       const { dx, dy } = _composerScreenToCanvas(stage, ev.clientX - startX, ev.clientY - startY, canvasW, canvasH);
       layerDragRef.current.liveW = lockW ? null : Math.max(8, Math.round(startW + dx));
       layerDragRef.current.liveH = lockH ? null : Math.max(8, Math.round(startH + dy));
       forceRerender(t => t + 1);
     };
     const onUp = () => {
+      removeDragShield();
       const d = layerDragRef.current;
       if (d) {
         const patch = {};
@@ -53310,6 +53317,45 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     if (layer && onUnwireAsset) onUnwireAsset(layer.assetId);
     setActiveLayerIdx(null);
   };
+  // Duplicate a layer in place (same wired asset, nudged so it's visible). The
+  // layers useMemo keys by assetId but keeps duplicate entries, so this persists.
+  const duplicateLayer = (idx) => {
+    if (idx == null || !layers[idx]) return;
+    const src = layers[idx];
+    const clone = { ...src, offsetX: (src.offsetX || 0) + 24, offsetY: (src.offsetY || 0) + 24 };
+    const next = layers.slice(); next.splice(idx + 1, 0, clone);
+    onChange({ layers: next });
+    setActiveLayerIdx(idx + 1);
+  };
+  // Keyboard: when a LAYER is the active selection inside this composer, Delete
+  // removes that layer and Cmd/Ctrl+D duplicates it — intercepted in capture
+  // phase with stopImmediatePropagation so the workspace's node delete/duplicate
+  // handlers don't fire on the whole composer node. With no active layer, the
+  // keys fall through to the workspace (delete/duplicate the node) as before.
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (activeLayerIdx == null || !layers[activeLayerIdx]) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (e.key === "Backspace" || e.key === "Delete") {
+        dropLayer(activeLayerIdx);
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+      if (mod && (e.key === "d" || e.key === "D")) {
+        duplicateLayer(activeLayerIdx);
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, activeLayerIdx, layers, onChange]);
 
   // v4.0 — Phase B (node-I/O framework). The composer's AGENT-EDITABLE
   // canonical representation is a JSON sidecar — NOT the baked presentation
