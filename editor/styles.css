@@ -6383,6 +6383,32 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-marquee="true"] .workflow-node[data-selected="true"] .workflow-node-iframe {
   pointer-events: none !important;
 }
+/* Driven-view tool editors (the app-node family + the Tool/Spline 3D node)
+   get the SAME drift-through behaviour as prototype iframes: until the node is
+   selected, the editor iframe is pointer-events:none so the mouse can pan /
+   drag the canvas while hovering INSIDE the editor; selecting flips it to auto
+   for native interaction. These frames are intentionally NOT tagged
+   `.workflow-node-iframe` (so the Run-complete reload sweep leaves these
+   node-driven views — which hold live postMessage state — untouched), so they
+   need their own rules keyed on `.workflow-driven-frame`. */
+.workflow-node[data-selected="false"] .workflow-driven-frame,
+.workflow-node:not([data-selected]) .workflow-driven-frame {
+  pointer-events: none;
+}
+.workflow-node[data-selected="true"] .workflow-driven-frame {
+  pointer-events: auto;
+}
+/* …and fall through during an in-progress gesture (space-pan / active-pan /
+   node-drag / whiteboard-drag / marquee) even when selected, so the gesture
+   crosses the editor boundary cleanly — mirrors the .workflow-node-iframe rule
+   above. !important beats the selected→auto rule regardless of order. */
+.workflow-canvas-wrap[data-space="true"] .workflow-driven-frame,
+.workflow-canvas-wrap[data-panning="true"] .workflow-driven-frame,
+.workflow-canvas-wrap[data-node-dragging="true"] .workflow-driven-frame,
+.workflow-canvas-wrap[data-wb-dragging="true"] .workflow-driven-frame,
+.workflow-canvas-wrap[data-marquee="true"] .workflow-driven-frame {
+  pointer-events: none !important;
+}
 /* Selected-state outline — subtle accent ring so the user can see which
    card is currently the "interactive" one. */
 .workflow-node[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) {

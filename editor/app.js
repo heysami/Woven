@@ -30234,10 +30234,37 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!d || typeof d !== "object") return;
       const T = d.type;
       if (T !== "th-web-ready" && T !== "th-web-selection" && T !== "th-web-selected"
-          && T !== "th-web-copied" && T !== "th-web-paste") return;
+          && T !== "th-web-copied" && T !== "th-web-paste" && T !== "th-web-wheel") return;
       const ifr = findBrowserIframe(e.source);
       if (!ifr) return;
       const nodeId = ifr.getAttribute("data-browser-id") || "";
+      if (T === "th-web-wheel") {
+        // A proxied (cross-origin) page can't bubble its Cmd/Ctrl+wheel zoom
+        // gesture out to the canvas-wrap's wheel handler — and the browser
+        // would otherwise apply it as PAGE zoom, scaling the whole editor
+        // chrome. The injected overlay preventDefaults it and forwards the
+        // deltas here; we re-dispatch as a synthetic zoom wheel on the wrap so
+        // it zooms the CANVAS instead. Mirrors the same-origin iframe
+        // forwarder in useEndlessCanvas. (Coords mapped inner→host through the
+        // iframe's rendered rect, which may be CSS-scaled by the node.)
+        const wrap = document.querySelector(".workflow-canvas-wrap");
+        if (!wrap) return;
+        const fr = ifr.getBoundingClientRect();
+        const cw = ifr.clientWidth || ifr.offsetWidth || fr.width || 1;
+        const ch = ifr.clientHeight || ifr.offsetHeight || fr.height || 1;
+        const sx = fr.width > 0 ? fr.width / cw : 1;
+        const sy = fr.height > 0 ? fr.height / ch : 1;
+        const clientX = fr.left + (d.clientX || 0) * sx;
+        const clientY = fr.top + (d.clientY || 0) * sy;
+        try {
+          wrap.dispatchEvent(new WheelEvent("wheel", {
+            deltaX: d.deltaX || 0, deltaY: d.deltaY || 0,
+            ctrlKey: true, clientX, clientY,
+            bubbles: false, cancelable: true,
+          }));
+        } catch {}
+        return;
+      }
       if (T === "th-web-ready") {
         try { ifr.contentWindow.postMessage({ type: "th-pick-mode", on: !!window.__thPickModeNodeId }, "*"); } catch {}
         return;
@@ -57358,7 +57385,7 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onMove, onResize
       <iframe
         ref=${iframeRef}
         src=${iframeSrc}
-        className="workflow-spline3d-frame"
+        className="workflow-spline3d-frame workflow-driven-frame"
         title="3D editor"
         style=${{ width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" }}
         onMouseDown=${(e) => e.stopPropagation()}
@@ -57740,7 +57767,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onMove, onResi
       <iframe
         ref=${iframeRef}
         src=${iframeSrc}
-        className="workflow-apptool-frame"
+        className="workflow-apptool-frame workflow-driven-frame"
         title=${cfg.label}
         style=${{ width: "100%", height: "calc(100% - 30px)", border: 0, display: "block", background: "#0b0b0f" }}
         onMouseDown=${(e) => e.stopPropagation()}
