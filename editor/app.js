@@ -16850,7 +16850,7 @@ function buildDsCustomization(s) {
   const overrideCss = lines.length
     ? ":root{\n  " + lines.join("\n  ") + "\n}"
     : "";
-  return { overrideCss, font, dirty: lines.length > 0, darkCss: buildDsDarkCss(s) };
+  return { overrideCss, font, dirty: lines.length > 0 || !!s.styleId, darkCss: buildDsDarkCss(s) };
 }
 
 /* Build the design-system half of a bake payload from the customizer's
@@ -16877,6 +16877,9 @@ function dsBuildBakePayload(s, custom, label) {
     ...(s.schemeDark ? ["dark"] : []),
   ];
   if (!p.dsSchemes.length) p.dsSchemes = ["light"];
+  // Style overlay (pastel / glassmorphism / …) — baked as the project's
+  // DEFAULT look: the server folds themes/<id>.css into styles.css unscoped.
+  p.dsStyleId = s.styleId || null;
   return p;
 }
 
@@ -16897,6 +16900,7 @@ function dsDefaultSettings() {
     spacingBasePx: null, spacingRatio: null, spacingTouched: false,
     logo: null,   // { dataUrl, ext, name } when the user uploads a sidebar logo
     schemeLight: true, schemeDark: false,   // which colour schemes the DS ships
+    styleId: "",   // "" = default style; else a data-theme overlay baked as default
   };
 }
 
@@ -17123,10 +17127,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
   // the ONLY scheme the user kept.
   const darkOnly = settings.schemeDark && !settings.schemeLight;
   const [previewDark, setPreviewDark] = useState(false);
-  // Style overlay previewed in the iframe ("" = base style; else a data-theme
-  // value like "pastel"). Orthogonal to the Light/Dark scheme switch — a chosen
-  // style overrides it; "Default style" falls back to the Light/Dark switch.
-  const [previewStyle, setPreviewStyle] = useState("");
   useEffect(() => {
     if (darkOnly && !previewDark) setPreviewDark(true);
     if (!settings.schemeDark && previewDark) setPreviewDark(false);
@@ -17140,9 +17140,10 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.head) return;
     // Style overlay + colour scheme — set <html data-theme>. A chosen style
-    // (pastel, glassmorphism, …) wins; otherwise fall back to the dark toggle.
+    // (pastel, glassmorphism, …) is the baked default and wins the preview;
+    // otherwise fall back to the Light/Dark toggle.
     if (doc.documentElement) {
-      const theme = previewStyle || (previewDark ? "dark" : "");
+      const theme = settings.styleId || (previewDark ? "dark" : "");
       if (theme) doc.documentElement.setAttribute("data-theme", theme);
       else doc.documentElement.removeAttribute("data-theme");
     }
@@ -17193,7 +17194,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       const target = (settings.logo && settings.logo.dataUrl) ? settings.logo.dataUrl : defaultLogo;
       if (img.getAttribute("src") !== target) img.setAttribute("src", target);
     });
-  }, [custom, settings.logo, settings.secondary, previewDark, previewStyle]);
+  }, [custom, settings.logo, settings.secondary, previewDark, settings.styleId]);
 
   useEffect(() => { if (frameReady) applyToFrame(); }, [frameReady, applyToFrame]);
 
@@ -17236,6 +17237,15 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 disabled=${settings.schemeDark && !settings.schemeLight}
                 onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
               <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
+            </section>
+
+            <section className="dscz-group">
+              <div className="dscz-group-label">Style</div>
+              <select className="dscz-select" value=${settings.styleId || ""}
+                onChange=${(e) => set({ styleId: e.target.value })}>
+                ${DS_PREVIEW_STYLES.map(st => html`<option key=${st.v} value=${st.v}>${st.label}</option>`)}
+              </select>
+              <div className="dscz-row-hint">The visual style baked as this design system's default. Palette, roundness, type &amp; logo above tune on top. The preview updates live.</div>
             </section>
 
             <section className="dscz-group">
@@ -17374,14 +17384,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                   </button>
                 </div>
               `}
-              <label className="dscz-style-pick" style=${{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}
-                title="Preview a style overlay (themes/*.css)">
-                <span className="dscz-stack-label" style=${{ whiteSpace: "nowrap" }}>Style</span>
-                <select className="dscz-select" value=${previewStyle}
-                  onChange=${(e) => setPreviewStyle(e.target.value)}>
-                  ${DS_PREVIEW_STYLES.map(st => html`<option key=${st.v} value=${st.v}>${st.label}</option>`)}
-                </select>
-              </label>
             </div>
             <iframe
               ref=${iframeRef}

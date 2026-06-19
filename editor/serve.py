@@ -17480,6 +17480,38 @@ class H(http.server.SimpleHTTPRequestHandler):
                 with open(styles_path, "w", encoding="utf-8") as f:
                     f.write(styles_css)
 
+        # 2c) Style overlay — if the user picked a named style (pastel, glass-
+        #     morphism, neumorphism, …), fold that theme's overlay into
+        #     styles.css as the DEFAULT look. The overlay ships scoped under
+        #     [data-theme="<id>"]; strip that scoping so every rule applies
+        #     unconditionally — the baked DS simply IS that style (no attribute
+        #     needed, so the editor's single-file styles.css preview renders it).
+        #     Mirrors the dark-scheme bake, but as a string axis recorded in
+        #     meta.defaultStyle. Palette/scheme tuning above already landed in
+        #     :root{}; surface-only styles layer on top, palette-defining styles
+        #     (pastel/minimal/grainism) win on the tokens they redeclare.
+        style_id = (body.get("dsStyleId") or "").strip()
+        default_style = ""
+        if style_id and re.match(r'^[a-z0-9_-]+$', style_id):
+            theme_path = os.path.join(ds_dir, "themes", style_id + ".css")
+            if os.path.isfile(theme_path):
+                try:
+                    with open(theme_path, "r", encoding="utf-8") as f:
+                        theme_css = f.read()
+                    # Unscope: ":root[data-theme=x]" -> ":root", "[data-theme=x] .c" -> ".c"
+                    theme_css = re.sub(
+                        r'\[data-theme="' + re.escape(style_id) + r'"\]\s*',
+                        "", theme_css)
+                    styles_css = styles_css.rstrip() + (
+                        "\n\n/* ===== Baked style: " + style_id
+                        + " (folded from themes/" + style_id + ".css) ===== */\n"
+                        + theme_css + "\n")
+                    with open(styles_path, "w", encoding="utf-8") as f:
+                        f.write(styles_css)
+                    default_style = style_id
+                except Exception:
+                    pass
+
         # 3) meta.json — stamp a content version + label; never carry a
         #    project name. Version = sha256(styles + gallery)[:12], matching
         #    the POST /__design_system convention.
@@ -17508,6 +17540,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         meta["label"] = ds_label
         meta["schemes"] = schemes
         meta["defaultScheme"] = "dark" if dark_only else "light"
+        meta["defaultStyle"] = default_style
         try:
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
