@@ -23527,7 +23527,7 @@ const WORKFLOW_NODE_FACTORY = {
   "trigger":  (p) => ({ kind: "trigger",  w: 260, h: 300, spec: p.spec || { v: 1, source: "hover", params: {}, impacts: [] } }),
   "layer":    (p) => ({ kind: "layer",    w: 240, h: 240, spec: p.spec || { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true } }),
   "number-generator": (p) => ({ kind: "number-generator", w: 240, h: 280, spec: p.spec || { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true } }),
-  "timeline": (p) => ({ kind: "timeline", w: 300, h: 340, spec: p.spec || { v: 1, kind: "timeline", duration: 4, loop: true }, tracks: p.tracks || {} }),
+  "timeline": (p) => ({ kind: "timeline", w: 320, h: 430, spec: p.spec || { v: 1, kind: "timeline", duration: 4, loop: true }, tracks: p.tracks || {} }),
   "formatted-text": (p) => ({
     kind: "formatted-text", w: 380, h: 320,
     html: p.html || "<p>Type or wire a prompt here.</p>",
@@ -58789,6 +58789,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   const spec = node.spec || {};
   const [view, setView] = useState(node.specView || "ui");   // building blocks open in UI, not Code
   const [selCell, setSelCell] = useState(null);   // Phase-2 override editor selection
+  const [selKf, setSelKf] = useState(null);       // timeline: selected keyframe { track, i }
   // Timeline preview playhead — a LOCAL visual clock so the node looks alive;
   // the real runtime playhead is the consumer's (mm-composer / 3D tool).
   const [tlTime, setTlTime] = useState(0);
@@ -59099,17 +59100,30 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     const lane = (tg) => {
       const tr = tracks[tg.key] || { keys: [], perInstance: false, stagger: 0 };
       const keys = (tr.keys || []).slice().sort((a, b) => (a.t || 0) - (b.t || 0));
-      let vmin = Infinity, vmax = -Infinity;
-      for (const k of keys) { vmin = Math.min(vmin, k.value); vmax = Math.max(vmax, k.value); }
-      if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
-      if (vmax - vmin < 1e-6) { vmin -= 1; vmax += 1; }
+      // Vertical scale: an explicitly authored [min,max] range wins; otherwise
+      // derive from the keyframe values; otherwise a neutral 0..1. The explicit
+      // range is what lets you author REAL units (rotation 0..360, x −100..100,
+      // opacity 0..1) from zero keys instead of dragging blind in an auto-scaled
+      // box. Range is editor-only metadata — the runtime sampler ignores it.
+      const hasRange = isFinite(tr.min) && isFinite(tr.max) && (tr.max - tr.min) > 1e-6;
+      let vmin, vmax;
+      if (hasRange) { vmin = tr.min; vmax = tr.max; }
+      else {
+        vmin = Infinity; vmax = -Infinity;
+        for (const k of keys) { vmin = Math.min(vmin, k.value); vmax = Math.max(vmax, k.value); }
+        if (!isFinite(vmin)) { vmin = 0; vmax = 1; }
+        if (vmax - vmin < 1e-6) { vmin -= 1; vmax += 1; }
+      }
       const xf = (t) => Math.max(0, Math.min(1, (t || 0) / dur));
-      const yf = (v) => 1 - (v - vmin) / (vmax - vmin);
+      const yf = (v) => 1 - (Math.max(vmin, Math.min(vmax, v)) - vmin) / (vmax - vmin);
       const pts = keys.map(k => `${(xf(k.t) * 100).toFixed(2)},${(yf(k.value) * 100).toFixed(2)}`).join(" ");
       const H = 36;
       const commit = (nk) => setTrack(tg.key, { keys: nk.slice().sort((a, b) => (a.t || 0) - (b.t || 0)) });
+      const selHere = (selKf && selKf.track === tg.key && keys[selKf.i]) ? selKf.i : -1;
+      const sel = selHere >= 0 ? keys[selHere] : null;
       const dragKey = (ki) => (e) => {
         e.stopPropagation(); e.preventDefault();
+        setSelKf({ track: tg.key, i: ki });
         const rect = e.currentTarget.parentElement.getBoundingClientRect();
         const mv = (ev) => {
           const fx = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
@@ -59127,16 +59141,32 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
         const rect = e.currentTarget.getBoundingClientRect();
         const fx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         const fy = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-        commit([...keys, { t: +(fx * dur).toFixed(3), value: +(vmax - fy * (vmax - vmin)).toFixed(3) }]);
+        const nt = +(fx * dur).toFixed(3), nv = +(vmax - fy * (vmax - vmin)).toFixed(3);
+        const nk = [...keys, { t: nt, value: nv }].sort((a, b) => (a.t || 0) - (b.t || 0));
+        setTrack(tg.key, { keys: nk });
+        setSelKf({ track: tg.key, i: nk.findIndex(k => k.t === nt && k.value === nv) });
       };
-      return html`<div key=${tg.key} style=${{ marginBottom: "7px" }}>
+      // Numeric edit of the selected keyframe. A time edit can reorder the keys,
+      // so we re-find the edited row after sorting and keep it selected.
+      const editSel = (patch) => {
+        if (selHere < 0) return;
+        const edited = { ...keys[selHere], ...patch };
+        const nk = keys.slice(); nk[selHere] = edited;
+        nk.sort((a, b) => (a.t || 0) - (b.t || 0));
+        setTrack(tg.key, { keys: nk });
+        setSelKf({ track: tg.key, i: nk.indexOf(edited) });
+      };
+      const delSel = () => { if (selHere < 0) return; const nk = keys.slice(); nk.splice(selHere, 1); commit(nk); setSelKf(null); };
+      const effMin = isFinite(tr.min) ? tr.min : +vmin.toFixed(3);
+      const effMax = isFinite(tr.max) ? tr.max : +vmax.toFixed(3);
+      return html`<div key=${tg.key} style=${{ marginBottom: "9px" }}>
         <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", marginBottom: "2px", gap: "6px" }}>
           <span style=${{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title=${tg.label + " · " + tg.param}>${tg.label} · ${tg.param}</span>
           <label style=${{ display: "flex", gap: "3px", alignItems: "center", color: "var(--muted,#888)", whiteSpace: "nowrap" }} onMouseDown=${(e) => e.stopPropagation()}>
             <input type="checkbox" checked=${!!tr.perInstance} onChange=${(e) => setTrack(tg.key, { perInstance: e.target.checked })}/>per-inst</label>
         </div>
         <div onPointerDown=${addKey} onMouseDown=${(e) => e.stopPropagation()}
-          title="Click empty space to add a keyframe; drag a diamond to move it; double-click to delete."
+          title="Click empty space to add a keyframe · click a ◆ to select it · drag to move · double-click to delete"
           style=${{ position: "relative", height: H + "px", background: "var(--surface-2,#f4f4f4)", border: "1px solid var(--line,#e3e3e3)", borderRadius: "4px", cursor: "crosshair" }}>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" style=${{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
             ${keys.length > 1 && html`<polyline points=${pts} fill="none" stroke="var(--accent,#79f)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`}
@@ -59145,9 +59175,34 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           ${keys.map((k, ki) => html`<div key=${ki}
             title=${"t=" + (k.t || 0) + "s  value=" + k.value + "  (double-click to delete)"}
             onPointerDown=${dragKey(ki)} onMouseDown=${(e) => e.stopPropagation()}
-            onDblClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.splice(ki, 1); commit(nk); }}
-            style=${{ position: "absolute", left: `calc(${(xf(k.t) * 100).toFixed(2)}% - 5px)`, top: `calc(${(yf(k.value) * 100).toFixed(2)}% - 5px)`, width: "10px", height: "10px", background: "var(--accent,#79f)", clipPath: "polygon(50% 0,100% 50%,50% 100%,0 50%)", cursor: "grab" }}/>`)}
+            onDblClick=${(e) => { e.stopPropagation(); const nk = keys.slice(); nk.splice(ki, 1); commit(nk); setSelKf(null); }}
+            style=${{ position: "absolute", left: `calc(${(xf(k.t) * 100).toFixed(2)}% - 5px)`, top: `calc(${(yf(k.value) * 100).toFixed(2)}% - 5px)`, width: "10px", height: "10px", background: selHere === ki ? "var(--text,#222)" : "var(--accent,#79f)", clipPath: "polygon(50% 0,100% 50%,50% 100%,0 50%)", cursor: "grab" }}/>`)}
         </div>
+        <div style=${{ display: "flex", gap: "5px", alignItems: "center", fontSize: "10px", marginTop: "3px", color: "var(--muted,#888)", flexWrap: "wrap" }} onMouseDown=${(e) => e.stopPropagation()}>
+          <span>range</span>
+          <input className="workflow-spec-input" type="number" step="any" value=${effMin} title="Track minimum — the vertical axis floor (real units, e.g. 0)" style=${{ width: "52px" }}
+            onInput=${(e) => setTrack(tg.key, { min: Number(e.target.value), max: effMax })}/>
+          <span>–</span>
+          <input className="workflow-spec-input" type="number" step="any" value=${effMax} title="Track maximum — the vertical axis ceiling (real units, e.g. 360)" style=${{ width: "52px" }}
+            onInput=${(e) => setTrack(tg.key, { min: effMin, max: Number(e.target.value) })}/>
+        </div>
+        ${sel ? html`<div style=${{ display: "flex", gap: "5px", alignItems: "center", fontSize: "10px", marginTop: "3px", flexWrap: "wrap" }} onMouseDown=${(e) => e.stopPropagation()}>
+          <span style=${{ color: "var(--muted,#888)" }}>t</span>
+          <input className="workflow-spec-input" type="number" step="0.05" min="0" max=${dur} value=${sel.t || 0} title="Keyframe time (seconds)" style=${{ width: "52px" }}
+            onInput=${(e) => editSel({ t: Math.max(0, Math.min(dur, Number(e.target.value) || 0)) })}/>
+          <span style=${{ color: "var(--muted,#888)" }}>value</span>
+          <input className="workflow-spec-input" type="number" step="any" value=${sel.value} title="Keyframe value (the number this param holds at this time)" style=${{ width: "62px" }}
+            onInput=${(e) => editSel({ value: Number(e.target.value) || 0 })}/>
+          <select className="workflow-spec-input" value=${sel.ease || ""} title="Easing of the segment leading into this keyframe" style=${{ width: "66px" }}
+            onChange=${(e) => editSel({ ease: e.target.value || undefined })} onMouseDown=${(e) => e.stopPropagation()}>
+            <option value="">linear</option>
+            <option value="in">ease-in</option>
+            <option value="out">ease-out</option>
+            <option value="inout">ease-both</option>
+          </select>
+          <button title="Delete this keyframe" onClick=${(e) => { e.stopPropagation(); delSel(); }} onMouseDown=${(e) => e.stopPropagation()}
+            style=${{ border: "1px solid var(--line,#ddd)", borderRadius: "4px", background: "transparent", cursor: "pointer", lineHeight: 1, padding: "2px 7px" }}>×</button>
+        </div>` : html`<div style=${{ fontSize: "9.5px", color: "var(--muted,#aaa)", marginTop: "2px" }}>Click the lane to add a keyframe, then select a ◆ to type its exact time &amp; value.</div>`}
         ${tr.perInstance && html`<label style=${{ display: "flex", gap: "6px", alignItems: "center", fontSize: "10px", marginTop: "3px", color: "var(--muted,#888)" }} onMouseDown=${(e) => e.stopPropagation()}>
           stagger <input className="workflow-spec-input" type="number" step="0.05" value=${tr.stagger || 0} style=${{ width: "56px" }} onInput=${(e) => setTrack(tg.key, { stagger: Number(e.target.value) || 0 })}/> s / instance</label>`}
       </div>`;
