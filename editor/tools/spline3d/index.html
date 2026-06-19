@@ -192,8 +192,9 @@
     <div id="empty" class="empty">Add a shape from the toolbar.<br/>Shift-click two objects for a <b>Boolean</b> op.<br/>Try the <b>Cloth</b> &amp; <b>Liquid</b> tools at the bottom.</div>
 
     <div id="inspector" style="display:none">
-      <div class="group">
-        <div class="label">Material <span class="tag" id="mat-kind"></span></div>
+      <details class="wv-acc" open>
+        <summary>Material <span class="tag" id="mat-kind"></span></summary>
+        <div class="wv-acc-body">
         <div class="field"><label>Mode</label>
           <select id="m-mode">
             <option value="liquid">Liquid (glossy)</option>
@@ -213,10 +214,12 @@
         <div class="field"><label>Metalness</label><input type="range" id="m-metal" min="0" max="1" step="0.01"/><span class="val" id="m-metal-v"></span></div>
         <div class="field"><label>Transmission</label><input type="range" id="m-trans" min="0" max="1" step="0.01"/><span class="val" id="m-trans-v"></span></div>
         <div class="field"><label>IOR</label><input type="range" id="m-ior" min="1" max="2.33" step="0.01"/><span class="val" id="m-ior-v"></span></div>
-      </div>
+        </div>
+      </details>
 
-      <div class="group">
-        <div class="label">Texture</div>
+      <details class="wv-acc" open>
+        <summary>Texture</summary>
+        <div class="wv-acc-body">
         <div class="field"><label>Pattern</label>
           <select id="t-pattern">
             <option value="none">None</option>
@@ -232,17 +235,21 @@
         <div class="row"><button class="btn ghost full" id="t-image">Upload image texture…</button></div>
         <input type="file" id="t-file" accept="image/*" style="display:none"/>
         <div class="swatches" id="t-linked" style="margin-top:8px"></div>
-      </div>
+        </div>
+      </details>
 
-      <div class="group">
-        <div class="label">Live blob <span class="tag">smooth · editable</span></div>
+      <details class="wv-acc" open>
+        <summary>Live blob <span class="tag">smooth · editable</span></summary>
+        <div class="wv-acc-body">
         <div class="row"><button class="btn on full" id="b-liveblob"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><circle cx="12" cy="12" r="8"/></svg>Live blob from selected</button></div>
         <div class="row"><button class="btn ghost full" id="b-addball"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>Add metaball</button></div>
         <div class="empty" style="padding:6px 4px;font-size:11px">Fuses into a smooth liquid that stays editable — drag the dots to reshape. (Re-polygonised live, like the water.)</div>
-      </div>
+        </div>
+      </details>
 
-      <div class="group">
-        <div class="label">Boolean (hard CSG) <span class="tag" id="selinfo"></span></div>
+      <details class="wv-acc" open>
+        <summary>Boolean (hard CSG) <span class="tag" id="selinfo"></span></summary>
+        <div class="wv-acc-body">
         <div class="row">
           <button class="btn" data-bool="union">Union</button>
           <button class="btn" data-bool="subtract">Subtract</button>
@@ -251,17 +258,20 @@
         <div class="field"><label>Liquid merge</label><input type="range" id="b-smooth" min="0" max="14" step="1" value="6"/><span class="val" id="b-smooth-v">6</span></div>
         <div class="row"><button class="btn ghost full" id="b-blob">Bake fused mesh (static)</button></div>
         <div class="row"><button class="btn ghost full" id="b-liquefy">Liquefy selected</button></div>
-      </div>
+        </div>
+      </details>
 
-      <div class="group">
-        <div class="label">Deform <span class="tag">non-destructive</span></div>
+      <details class="wv-acc">
+        <summary>Deform <span class="tag">non-destructive</span></summary>
+        <div class="wv-acc-body">
         <div class="field"><label>Twist</label><input type="range" id="d-twist" min="-3.14" max="3.14" step="0.02" value="0"/><span class="val" id="d-twist-v">0</span></div>
         <div class="field"><label>Bend</label><input type="range" id="d-bend" min="-3.14" max="3.14" step="0.02" value="0"/><span class="val" id="d-bend-v">0</span></div>
         <div class="field"><label>Taper</label><input type="range" id="d-taper" min="-1" max="1" step="0.02" value="0"/><span class="val" id="d-taper-v">0</span></div>
         <div class="field"><label>Inflate</label><input type="range" id="d-inflate" min="-0.6" max="0.6" step="0.01" value="0"/><span class="val" id="d-inflate-v">0</span></div>
         <div class="field"><label>Noise / melt</label><input type="range" id="d-noise" min="0" max="0.6" step="0.01" value="0"/><span class="val" id="d-noise-v">0</span></div>
         <div class="row"><button class="btn ghost full" id="d-reset">Reset deform</button></div>
-      </div>
+        </div>
+      </details>
 
       <div class="group" id="anim-group" style="display:none">
         <div class="label">Imported clip <span class="tag">rigged glb</span></div>
@@ -269,8 +279,9 @@
         <div class="row"><button class="btn on full" id="anim-play">Pause</button></div>
       </div>
 
-      <div class="group">
-        <div class="label">Effects</div>
+      <details class="wv-acc">
+        <summary>Effects</summary>
+        <div class="wv-acc-body">
         <div class="row">
           <button class="btn" id="fur-toggle">Fur on/off</button>
           <button class="btn ghost" id="duplicate">Duplicate</button>
@@ -278,38 +289,48 @@
         <div class="field"><label>Fur length</label><input type="range" id="fur-len" min="0.05" max="0.6" step="0.01" value="0.28"/><span class="val" id="fur-len-v">.28</span></div>
         <div class="field"><label>Fur gravity</label><input type="range" id="fur-grav" min="0" max="1.5" step="0.05" value="0.55"/><span class="val" id="fur-grav-v">.55</span></div>
         <div class="row" style="margin-top:6px"><button class="btn ghost full warn" id="delete">Delete object</button></div>
-      </div>
+        </div>
+      </details>
     </div>
 
-    <div class="group">
-      <div class="label">Import 3D</div>
+    <details class="wv-acc" open>
+      <summary>Import 3D</summary>
+      <div class="wv-acc-body">
       <div class="row"><button class="btn ghost full" id="import-btn">Import .glb / .gltf…</button></div>
       <input type="file" id="import-file" accept=".glb,.gltf,model/gltf-binary" style="display:none"/>
       <div class="empty" style="padding:8px 4px;font-size:11px">Upload a model, drag-drop onto the canvas, or link a 3D-gen node into this tool's input.</div>
-    </div>
+      </div>
+    </details>
 
-    <div class="group">
-      <div class="label">Extrude SVG <span class="tag" id="ex-tag"></span></div>
+    <details class="wv-acc">
+      <summary>Extrude SVG <span class="tag" id="ex-tag"></span></summary>
+      <div class="wv-acc-body">
       <div class="row"><button class="btn ghost full" id="ex-btn">Import .svg → extrude…</button></div>
       <input type="file" id="ex-file" accept=".svg,image/svg+xml" style="display:none"/>
       <div class="field"><label>Depth</label><input type="range" id="ex-depth" min="0.05" max="2" step="0.05" value="0.5"/><span class="val" id="ex-depth-v">.50</span></div>
       <div class="field"><label>Corner (bevel)</label><input type="range" id="ex-bevel" min="0" max="0.5" step="0.01" value="0.08"/><span class="val" id="ex-bevel-v">.08</span></div>
-    </div>
+      </div>
+    </details>
 
-    <div class="group">
-      <div class="label">Simulation</div>
+    <details class="wv-acc">
+      <summary>Simulation</summary>
+      <div class="wv-acc-body">
       <div class="field"><label>Physics (gravity)</label><button class="btn" id="sim-toggle" style="flex:0 0 64px">Off</button></div>
       <div class="field"><label>Gravity</label><input type="range" id="sim-gravity" min="-30" max="0" step="0.5" value="-10"/><span class="val" id="sim-gravity-v">-10</span></div>
       <div class="field"><label>Wind (cloth)</label><input type="range" id="sim-wind" min="0" max="3" step="0.05" value="0.6"/><span class="val" id="sim-wind-v">.60</span></div>
-    </div>
+      </div>
+    </details>
 
-    <div class="group">
-      <div class="label">Curated palettes</div>
+    <details class="wv-acc">
+      <summary>Curated palettes</summary>
+      <div class="wv-acc-body">
       <div id="palettes"></div>
-    </div>
+      </div>
+    </details>
 
-    <div class="group">
-      <div class="label">Lighting &amp; environment</div>
+    <details class="wv-acc">
+      <summary>Lighting &amp; environment</summary>
+      <div class="wv-acc-body">
       <div class="field"><label>Environment</label><input type="range" id="l-env" min="0" max="3" step="0.05" value="1"/><span class="val" id="l-env-v">1.0</span></div>
       <div class="field"><label>Key light</label><input type="range" id="l-key" min="0" max="5" step="0.05" value="2"/><span class="val" id="l-key-v">2.0</span></div>
       <div class="field"><label>Soft shadows</label><input type="checkbox" id="l-shadow" checked/></div>
@@ -322,7 +343,8 @@
       <div class="field"><label>Camera</label>
         <select id="cam-mode"><option value="persp">Perspective</option><option value="ortho">Orthographic</option></select>
       </div>
-    </div>
+      </div>
+    </details>
 
     <div class="group"><div class="row"><button class="btn ghost full" id="export">Export .glb</button></div></div>
   </div>

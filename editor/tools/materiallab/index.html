@@ -1525,10 +1525,21 @@ function colorField(parent,label,val,onIn){
   f.querySelector('input').oninput=e=>{ f.querySelector('.v').textContent=e.target.value; onIn(e.target.value); };
   parent.appendChild(f); return f;
 }
-function grp(title, pill){
-  const d=document.createElement('div'); d.className='grp';
-  d.innerHTML=`<h3>${title}${pill?`<span class="pill">${escapeHTML(pill)}</span>`:''}</h3>`;
-  inspector.appendChild(d); return d;
+/* Each right-panel section is a native <details> accordion (.wv-acc) so the long,
+   scrolling inspector can collapse sections — no JS toggle needed. The first
+   section ("Material") stays open; the rest default collapsed to cut the scroll.
+   grp() returns the .wv-acc-body so existing callers keep appending controls
+   into it unchanged; the parent <details> carries the section's id (e.g.
+   #shaderGrp) so id-based refs/CSS still resolve. */
+function grp(title, pill, open){
+  const det=document.createElement('details'); det.className='wv-acc';
+  if(open) det.setAttribute('open','');
+  det.innerHTML=`<summary>${escapeHTML(title)}${pill?`<span class="pill">${escapeHTML(pill)}</span>`:''}</summary>`;
+  const body=document.createElement('div'); body.className='wv-acc-body';
+  det.appendChild(body);
+  inspector.appendChild(det);
+  body._acc=det;          // let callers (e.g. buildShaderEditor) reach the <details>
+  return body;
 }
 function slider(parent,label,val,min,max,step,fmt,onIn){
   const f=document.createElement('div'); f.className='field';
@@ -1557,7 +1568,7 @@ function buildInspector(){
   const entry = MATERIALS[m.type] || MATERIALS['liquid-glass'];
 
   /* ---- material catalog, grouped by family ---- */
-  const gt=grp('Material', entry.cat);
+  const gt=grp('Material', entry.cat, true);   // first section open by default
   MATERIAL_CATS.forEach(cat=>{
     const types = MATERIAL_TYPES.filter(t=>MATERIALS[t].cat===cat);
     const f=document.createElement('div'); f.className='field';
@@ -1575,7 +1586,7 @@ function buildInspector(){
   /* ---- parameters — only the dials this material actually uses ---- */
   const dials = entry.dials || [];
   if(dials.length){
-    const gs=grp('Parameters','uniform');
+    const gs=grp('Parameters','uniform', true);   // primary tuning area — open
     dials.forEach(key=>{
       if(key==='profile'){ chipRow(gs,'Bezel profile',PROFILES,m.profile,p=>{ m.profile=p; emit(); }); return; }
       if(key==='holo'){

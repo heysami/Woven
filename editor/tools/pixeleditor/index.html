@@ -292,9 +292,13 @@
     </div>
 
     <div class="side" data-float-panel="right">
-      <section id="imgSection" style="display:none">
-        <h3>From Image <span class="act" id="imgResync" style="display:none">Re-sync</span></h3>
+      <details class="wv-acc" id="imgSection" open style="display:none">
+        <summary>From Image</summary>
+        <div class="wv-acc-body">
         <div class="code-wrap">
+          <div class="row" style="justify-content:flex-end">
+            <span class="act" id="imgResync" style="display:none; flex:0 0 auto">Re-sync</span>
+          </div>
           <div class="field" style="width:100%">Source
             <select id="imgSource" style="flex:1; background:var(--panel-2); border:1px solid var(--line); color:var(--txt); border-radius:4px; padding:4px 5px; font-family:var(--mono); font-size:12px; min-width:0;"></select>
           </div>
@@ -309,45 +313,60 @@
           <div class="code-status" id="imgStatus"></div>
           <div class="hint" id="imgHint">Wire an image asset to downsample it into the current <span id="imgDims"></span> grid. In ASCII mode it maps brightness to the glyph ramp.</div>
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section>
-        <h3>Palette <span class="act" id="palHint"></span></h3>
+      <details class="wv-acc" open>
+        <summary>Palette <span class="act" id="palHint" style="margin-left:auto; pointer-events:none"></span></summary>
+        <div class="wv-acc-body">
         <div class="palette" id="palette"></div>
         <div class="swatch-editor" id="swatchEditor">
           <input type="color" id="swColor" value="#ffffff">
           <input type="text" id="swText" placeholder="#rrggbb / #rrggbbaa / glyph">
           <button class="btn danger" id="swDelete" title="Remove color">Remove</button>
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section id="codeSection" style="display:none">
-        <h3>Code <span class="act" id="runCode">Run ▸</span></h3>
+      <details class="wv-acc" id="codeSection" open style="display:none">
+        <summary>Code</summary>
+        <div class="wv-acc-body">
         <div class="code-wrap">
+          <div class="row" style="justify-content:flex-end">
+            <span class="act" id="runCode" style="flex:0 0 auto">Run ▸</span>
+          </div>
           <textarea id="code" spellcheck="false">(x,y)=>((x^y)&7)</textarea>
           <div class="code-status" id="codeStatus"></div>
           <div class="presets" id="presets"></div>
           <div class="hint">Arrow fn <code>(x,y)=&gt;index</code>. Available: <code>x y w h palette</code> (palette = entry count). Result is clamped to a valid index. Runs sandboxed with a timeout.</div>
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section>
-        <h3>Canonical JSON <span class="act" id="copyJson">Copy</span></h3>
+      <details class="wv-acc">
+        <summary>Canonical JSON</summary>
+        <div class="wv-acc-body">
+        <div class="row" style="justify-content:flex-end">
+          <span class="act" id="copyJson" style="flex:0 0 auto">Copy</span>
+        </div>
         <textarea id="json" spellcheck="false" readonly></textarea>
         <div class="row" style="margin-top:8px">
           <button class="btn" id="btnLoadJson">Load JSON</button>
           <button class="btn" id="btnCopyCode">Copy code()</button>
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section>
-        <h3>About</h3>
+      <details class="wv-acc">
+        <summary>About</summary>
+        <div class="wv-acc-body">
         <div class="hint">
           Index <b>0</b> = transparent / empty. In ASCII mode palette entries are single
           glyphs and the canvas renders as monospace text.<br>
           <span id="embedNote"></span>
         </div>
-      </section>
+        </div>
+      </details>
     </div>
   </div>
 </div>
