@@ -33,6 +33,16 @@
       ],
       "cwd": ".",
       "port": 4733
+    },
+    {
+      "name": "materiallab-preview",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m", "http.server", "4734",
+        "--directory", "/Users/sami/Documents/Woven/editor/tools/materiallab"
+      ],
+      "cwd": ".",
+      "port": 4734
     }
   ]
 }
