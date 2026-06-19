@@ -3746,7 +3746,8 @@ button {
    width via .workflow-body[data-chat-active] margin, so it shrinks to fit. */
 .right-dock-floating {
   position: fixed;
-  top: 0;
+  top: 44px;   /* sit below the workflow toolbar (the .workflow-root 44px row) —
+                  align with the icon rail, don't cover the top nav */
   right: var(--th-right-rail-w, 44px);
   bottom: 0;
   height: auto;
@@ -3781,6 +3782,8 @@ body[data-panel-resizing="true"] .dock-resize-edge::after {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  height: 100%;            /* definite height so grid 1fr rows don't collapse
+                              through the flex-stretch chain */
   display: grid;
   gap: 1px;
   background: var(--border);  /* shows through gaps as thin tile separators */
@@ -3894,19 +3897,20 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 /* Embedded rail panels (tasks / comments / git) rendered inside a dock tile
    instead of the fixed left-of-rail overlay — neutralise the fixed chrome. */
 .th-rail-panel.th-rail-panel-embedded {
-  position: static;
-  inset: auto;
-  width: 100%;
+  position: absolute;   /* fill the (position:relative) dock-tile outright —
+                           no dependence on flex/grid height resolution */
+  inset: 0;
+  width: auto;
   max-width: none;
-  height: 100%;
+  height: auto;
   z-index: auto;
   box-shadow: none;
   border-left: none;
 }
 /* ChatDrawer as a dock tile — fill the cell, drop the floating drawer chrome. */
 .chat-drawer.chat-drawer-tile {
-  position: static;
-  inset: auto;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   z-index: auto;

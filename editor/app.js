@@ -8992,9 +8992,9 @@ function RightDock({ windows, renderThread, onOpenRun, onStartChatWithPrompt, on
 
   const tileBody = (w) => {
     if (w.kind === "thread")   return renderThread(w);
-    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded runs=${runs} onOpenRun=${onOpenRun} />`;
-    if (w.kind === "comments") return html`<${CommentsPanel} embedded />`;
-    if (w.kind === "git")      return html`<${GitPanel} embedded onStartChatWithPrompt=${onStartChatWithPrompt} />`;
+    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} />`;
+    if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} />`;
+    if (w.kind === "git")      return html`<${GitPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     return null;
   };
 
