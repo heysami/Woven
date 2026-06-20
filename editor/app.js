@@ -17154,7 +17154,9 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       const allLink = doc.createElement("link");
       allLink.id = "__ds_all";
       allLink.rel = "stylesheet";
-      allLink.href = apiUrl("/__default_ds/all.css");
+      const __ds_bust = "v=" + Date.now();
+      const __allUrl = apiUrl("/__default_ds/all.css");
+      allLink.href = __allUrl + (__allUrl.indexOf("?") >= 0 ? "&" : "?") + __ds_bust;
       doc.head.appendChild(allLink);
     }
     // Glassmorphism ships a WebGL runtime (themes/glassmorphism.js — the real
@@ -17166,7 +17168,8 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       const gs = doc.createElement("script");
       gs.id = "__ds_mat_js_" + settings.styleId;
       gs.defer = true;
-      gs.src = apiUrl("/__default_ds/themes/" + settings.styleId + ".js");
+      const __jsUrl = apiUrl("/__default_ds/themes/" + settings.styleId + ".js");
+      gs.src = __jsUrl + (__jsUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
       doc.body.appendChild(gs);
     }
     // Font webfont link
@@ -17190,9 +17193,16 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       style = doc.createElement("style");
       style.id = "__ds_custom_style";
     }
-    // Light overrides (apply always) + the computed dark role block (only
-    // bites under [data-theme="dark"], so safe to always include).
-    style.textContent = (custom.overrideCss || "") + "\n" + (custom.darkCss || "");
+    // Light overrides (apply always) + the computed dark role block. The block is
+    // scoped to :root[data-theme="dark"] — but when a STYLE (glassmorphism/…) is
+    // selected, data-theme is the STYLE, not "dark", so the block never bites and
+    // the Light/Dark toggle does nothing. Re-scope it to ALSO match a class we
+    // toggle from previewDark; the glass runtime then auto-switches dark (it reads
+    // the now-dark --neutral-50 / --surface tokens this block sets).
+    doc.documentElement.classList.toggle("ds-scheme-dark", !!previewDark);
+    let darkCss = custom.darkCss || "";
+    if (darkCss) darkCss = darkCss.replace('[data-theme="dark"]{', '[data-theme="dark"], :root.ds-scheme-dark{');
+    style.textContent = (custom.overrideCss || "") + "\n" + darkCss;
     doc.head.appendChild(style);   // re-append → keep it last
     void previewDark;              // (in deps below — keeps theme in sync)
     // The gallery's token-docs (ramp swatches/hex, spacing bars) are JS-rendered
