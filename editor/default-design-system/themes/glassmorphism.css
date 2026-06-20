@@ -260,6 +260,13 @@ html.lg-dark[data-theme="glassmorphism"] .lg-host :is(a,span,div,p,li,h1,h2,h3,h
   -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
   border-color:rgba(255,255,255,.35) !important; color:#12161f !important;
 }
+/* a FILLED primary button / FAB inside a glass host keeps its OWN light text — the
+   generic dark-on-glass text rule above would otherwise muddy it dark (the nav
+   "Start free" looked dark while the identical hero button was white). */
+[data-theme="glassmorphism"] .lg-host :is(.btn--primary,.fab),
+[data-theme="glassmorphism"] .lg-host :is(.btn--primary,.fab) :is(span,b,i,svg,small){
+  color:var(--on-primary, #fff) !important; text-shadow:none !important;
+}
 /* the landing top nav ships static. Sticky on the <nav> itself does nothing —
    its parent <header class="lp-wrap"> is only nav-height, so there is no room to
    stick within. Make the HEADER (a direct child of body) sticky; the glass nav
