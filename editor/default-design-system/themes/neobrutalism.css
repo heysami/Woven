@@ -418,3 +418,15 @@
 [data-theme="neobrutalism"] .tabbar__item.is-active{
   color:var(--nb-ink); background:var(--nb-paper-shade); border-top:3px solid var(--nb-ink); font-weight:var(--w-semibold);
 }
+
+/* ---- Split-dropdown caret — scheme block + ink frame + hard offset shadow ---- */
+[data-theme="neobrutalism"] .btn-split__caret{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  border:2px solid var(--nb-ink);
+  border-left:0;
+  border-radius:0;
+  box-shadow:4px 4px 0 0 var(--nb-ink);
+}
+[data-theme="neobrutalism"] .btn-split__caret:hover{background:var(--primary-hover);}
+[data-theme="neobrutalism"] .btn-split__caret:active{transform:translate(2px,2px);box-shadow:2px 2px 0 0 var(--nb-ink);}

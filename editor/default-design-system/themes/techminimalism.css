@@ -331,3 +331,14 @@
 [data-theme="techminimalism"] .tabbar__item.is-active .tabbar__icon{
   background:var(--primary-surface-subtle);color:var(--primary-fg);border-radius:2px;
 }
+
+/* ---- Split-dropdown caret — square + hairline, matches the primary button ---- */
+[data-theme="techminimalism"] .btn-split .btn{border-top-right-radius:0;border-bottom-right-radius:0;}
+[data-theme="techminimalism"] .btn-split__caret{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  border:1px solid var(--border-default);
+  border-left:0;
+  border-radius:0 2px 2px 0;
+}
+[data-theme="techminimalism"] .btn-split__caret:hover{background:var(--primary-hover);}

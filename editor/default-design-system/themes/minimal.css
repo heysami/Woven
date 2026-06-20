@@ -282,3 +282,11 @@
 [data-theme="minimal"] .legend__swatch--3{background:var(--series-3);}
 [data-theme="minimal"] .legend__swatch--4{background:var(--series-4);}
 [data-theme="minimal"] .legend__swatch--5{background:var(--series-5);}
+
+/* ---- Split-dropdown caret — flat, matches the primary button ---- */
+[data-theme="minimal"] .btn-split__caret{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  border-left:1px solid rgba(255,255,255,.28);
+}
+[data-theme="minimal"] .btn-split__caret:hover{background:var(--primary-hover);}

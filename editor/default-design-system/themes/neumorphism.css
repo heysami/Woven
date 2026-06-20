@@ -419,3 +419,20 @@
 [data-theme="neumorphism"] .tabbar__item.is-active .tabbar__icon{
   background:var(--neu-base);color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
 }
+
+/* ---- Split-dropdown caret — ONE raised soft container, flat segments inside,
+   accent chevron (was a hard solid-colour block glued onto the soft button). */
+[data-theme="neumorphism"] .btn-split{border-radius:var(--radius-base);box-shadow:var(--neu-raise-sm);}
+[data-theme="neumorphism"] .btn-split .btn{
+  background:var(--neu-base);box-shadow:none;
+  border-radius:var(--radius-base);border-top-right-radius:0;border-bottom-right-radius:0;
+}
+[data-theme="neumorphism"] .btn-split .btn:hover{box-shadow:none;}
+[data-theme="neumorphism"] .btn-split__caret{
+  background:var(--neu-base);
+  color:var(--neu-accent-strong);
+  box-shadow:none;
+  border-radius:0 var(--radius-base) var(--radius-base) 0;
+  border-left:1px solid color-mix(in srgb, var(--neu-dark) 45%, transparent);
+}
+[data-theme="neumorphism"] .btn-split:active{box-shadow:var(--neu-inset-sm);}

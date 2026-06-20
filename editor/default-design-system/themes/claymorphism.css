@@ -434,3 +434,19 @@
   background:var(--primary-surface-subtle);
   box-shadow:var(--clay-inset);
 }
+
+/* ---- Split-dropdown caret — right end of the clay lozenge (same puff + fill) ---- */
+[data-theme="claymorphism"] .btn-split .btn{border-top-right-radius:0;border-bottom-right-radius:0;}
+[data-theme="claymorphism"] .btn-split__caret{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  border-top-right-radius:var(--radius-pill);
+  border-bottom-right-radius:var(--radius-pill);
+  border-left:1px solid color-mix(in srgb, var(--primary-950) 22%, transparent);
+  box-shadow:
+    6px 6px 14px var(--clay-primary-cast),
+    -4px -4px 10px var(--clay-hi),
+    inset 2px 2px 5px rgba(255,255,255,.40),
+    inset -4px -4px 8px var(--clay-primary-lo-in);
+}
+[data-theme="claymorphism"] .btn-split__caret:hover{background:var(--primary-hover);}

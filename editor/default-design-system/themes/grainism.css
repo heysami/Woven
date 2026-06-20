@@ -261,3 +261,11 @@
   box-shadow:var(--shadow-base);
 }
 [data-theme="grainism"] .stat-hero{border-radius:var(--radius-l);}
+
+/* ---- Split-dropdown caret — matches the flat pastel primary button ---- */
+[data-theme="grainism"] .btn-split__caret{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  border-left:1px solid rgba(255,255,255,.28);
+}
+[data-theme="grainism"] .btn-split__caret:hover{background:var(--primary-hover);}

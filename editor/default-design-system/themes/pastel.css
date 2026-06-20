@@ -259,3 +259,12 @@
 }
 [data-theme="pastel"] .tabbar__item.is-active{color:var(--primary-fg);}
 [data-theme="pastel"] .tabbar__item.is-active .tabbar__icon{color:var(--primary-fg);}
+
+/* ---- Split-dropdown caret — matches the soft pastel primary button (token-
+   driven, so it flips with dark) instead of the default dark-fill/white-chevron. */
+[data-theme="pastel"] .btn-split__caret{
+  background:var(--primary-surface);
+  color:var(--on-primary);
+  border-left:1px solid color-mix(in srgb, var(--on-primary) 18%, transparent);
+}
+[data-theme="pastel"] .btn-split__caret:hover{background:var(--primary-hover);}
