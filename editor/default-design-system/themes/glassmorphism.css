@@ -267,6 +267,21 @@ html.lg-dark[data-theme="glassmorphism"] .lg-host :is(a,span,div,p,li,h1,h2,h3,h
 [data-theme="glassmorphism"] .lg-host :is(.btn--primary,.fab) :is(span,b,i,svg,small){
   color:var(--on-primary, #fff) !important; text-shadow:none !important;
 }
+/* selected side-nav item — a LIGHT frosted highlight, not the dark grey shade the
+   base uses (too dark on the bright glass). Text colour is handled by the .lg-host
+   rules above (dark in light mode, light in dark mode). */
+[data-theme="glassmorphism"] .lg-host .nav-link.is-active{
+  background:rgba(255,255,255,.62) !important;
+  box-shadow:0 2px 12px rgba(31,38,135,.14) !important;
+  -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
+}
+html.lg-dark[data-theme="glassmorphism"] .lg-host .nav-link.is-active{
+  background:rgba(255,255,255,.13) !important;
+  box-shadow:0 2px 12px rgba(0,0,0,.30) !important;
+}
+/* landing top nav: internal padding like the storefront so content doesn't touch
+   the glass pill's edge. */
+[data-theme="glassmorphism"] .lp-nav{ padding-left:var(--space-l); padding-right:var(--space-l); }
 /* the landing top nav ships static. Sticky on the <nav> itself does nothing —
    its parent <header class="lp-wrap"> is only nav-height, so there is no room to
    stick within. Make the HEADER (a direct child of body) sticky; the glass nav
