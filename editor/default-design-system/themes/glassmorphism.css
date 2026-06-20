@@ -39,10 +39,12 @@
   --border-default:rgba(255,255,255,.45); --border-subtle:rgba(255,255,255,.30);
   --interactive-hover:rgba(255,255,255,.28); --interactive-active:rgba(255,255,255,.36);
 
-  /* primary roles tuned for contrast against the bright glass canvas */
-  --primary-surface:#0A84FF; --primary-fg:#0742AC; --primary-fg-emphasis:#06348A;
-  --primary-border:rgba(10,132,255,.55); --primary-hover:#3A73E6; --primary-active:#0642AC;
-  --primary-surface-subtle:rgba(10,132,255,.12); --primary-surface-muted:rgba(10,132,255,.22);
+  /* primary roles FOLLOW THE SELECTED SCHEME — reference the --primary-* ramp the
+     customizer writes (var() resolves through this higher-specificity rule to the
+     scheme's value), instead of hardcoding iOS blue which would ignore the scheme. */
+  --primary-surface:var(--primary-500); --primary-fg:var(--primary-700); --primary-fg-emphasis:var(--primary-800);
+  --primary-border:color-mix(in srgb, var(--primary-500) 55%, transparent); --primary-hover:var(--primary-400); --primary-active:var(--primary-600);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 12%, transparent); --primary-surface-muted:color-mix(in srgb, var(--primary-500) 22%, transparent);
 
   /* ---- Soften radii up (glass = generous concentric corners) ---- */
   --radius-l:20px; --radius-xl:28px; --radius-2xl:36px;
