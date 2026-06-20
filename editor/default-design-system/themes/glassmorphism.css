@@ -54,7 +54,7 @@
   --shadow-l:0 12px 40px -10px rgba(31,38,135,.30);
 
   /* charts: brighter, slightly translucent series so they sit on glass */
-  --series-1:#0A84FF; --series-2:#30D158; --series-3:#FF9F0A;
+  --series-1:var(--primary-500); --series-2:#30D158; --series-3:#FF9F0A;
   --series-4:#5EC8FF; --series-5:#FF375F;
   --chart-grid:rgba(22,32,58,.14); --chart-axis:rgba(22,32,58,.45);
 }
@@ -139,8 +139,8 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 [data-theme="glassmorphism"] .input:focus,
 [data-theme="glassmorphism"] .select:focus,
 [data-theme="glassmorphism"] .textarea:focus{
-  border-color:rgba(10,132,255,.70);
-  box-shadow:0 0 0 3px rgba(10,132,255,.20);
+  border-color:color-mix(in srgb, var(--primary-500) 70%, transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--primary-500) 20%, transparent);
 }
 
 /* --------------------------------------------------------------------------
@@ -149,15 +149,15 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
    (that reads as a fake rainbow frame, not refraction).
    -------------------------------------------------------------------------- */
 [data-theme="glassmorphism"] .btn--primary{
-  background:linear-gradient(135deg, rgba(10,132,255,.92), rgba(94,92,230,.92));
-  color:#fff;
+  background:linear-gradient(135deg, color-mix(in srgb, var(--primary-500) 92%, transparent), color-mix(in srgb, var(--primary-700) 92%, transparent));
+  color:var(--on-primary, #fff);
   border:1px solid var(--glass-border);
-  box-shadow:0 6px 20px -6px rgba(10,90,200,.55), var(--glass-specular);
+  box-shadow:0 6px 20px -6px color-mix(in srgb, var(--primary-600) 55%, transparent), var(--glass-specular);
   -webkit-backdrop-filter:blur(6px) saturate(160%);
   backdrop-filter:blur(6px) saturate(160%);
 }
 [data-theme="glassmorphism"] .btn--primary:hover{
-  background:linear-gradient(135deg, rgba(58,115,230,.95), rgba(120,110,240,.95));
+  background:linear-gradient(135deg, color-mix(in srgb, var(--primary-400) 95%, transparent), color-mix(in srgb, var(--primary-600) 95%, transparent));
 }
 
 [data-theme="glassmorphism"] .btn--outline{
@@ -165,15 +165,15 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
   -webkit-backdrop-filter:blur(10px) saturate(130%);
   backdrop-filter:blur(10px) saturate(130%);
   border:1px solid var(--glass-border);
-  color:#0742AC;
+  color:var(--primary-700);
 }
 [data-theme="glassmorphism"] .btn--outline:hover{background:rgba(255,255,255,.26);}
 
 /* Floating action button — frosted glass (CSS fallback; the WebGL shader takes
    over in glass-gl mode since the FAB is fixed and never scrolls). */
 [data-theme="glassmorphism"] .fab{
-  background:linear-gradient(135deg, rgba(10,132,255,.88), rgba(94,92,230,.88));
-  color:#fff; border:1px solid var(--glass-border);
+  background:linear-gradient(135deg, color-mix(in srgb, var(--primary-500) 88%, transparent), color-mix(in srgb, var(--primary-700) 88%, transparent));
+  color:var(--on-primary, #fff); border:1px solid var(--glass-border);
   -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
   box-shadow:var(--glass-shadow), var(--glass-specular);
 }
