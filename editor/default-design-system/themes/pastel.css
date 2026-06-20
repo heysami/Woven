@@ -1,70 +1,68 @@
 /* ==========================================================================
    Pastel theme — a STYLE OVERLAY for the Template Design System.
-   Apply via <html data-theme="pastel">. Light-only.
+   Apply via <html data-theme="pastel">.
 
-   Soft, desaturated palette throughout: primary → periwinkle, secondary →
-   rose, tertiary → mint. Surfaces are warm/cool pastel tints (never pure
-   white). Nav rails wear a soft lavender surface — NOT a bold/dark brand
-   fill. Buttons / tags / badges use pastel tints with a DEEPER-HUE text (e.g.
-   soft-blue fill + indigo text), never white-on-saturated. No gradients, no
-   bold fills, gentle radii, soft low-contrast shadows.
+   Soft, desaturated wash: surfaces are faint tints (never pure white), brand
+   accents are soft tint fills with a DEEP-HUE text (never white-on-saturated),
+   no gradients, gentle radii, soft low-contrast shadows.
 
-   Load AFTER styles.css (and components/charts.css, shells/*.css). Every
-   component override is scoped with the [data-theme="pastel"] attribute so it
-   only fires when the theme is active.  Raw hex is allowed here.
+   COLOUR FOLLOWS THE SELECTED SCHEME. This file never re-defines the
+   --primary-/--secondary-/--tertiary- ramps the customizer writes; instead it
+   DERIVES every surface + accent from those ramps via color-mix(), exactly like
+   glassmorphism. Pick a blue scheme → soft periwinkle; pick a green scheme →
+   soft sage; etc. Dark mode is handled by a parallel block scoped to
+   :root.ds-scheme-dark (the class the editor toggles for dark previews).
+
+   Load AFTER styles.css. Every component override is scoped with the
+   [data-theme="pastel"] attribute so it only fires when the theme is active.
    ========================================================================== */
 
 :root[data-theme="pastel"]{
-  /* ---- Primary ramp → soft periwinkle / blue ---- */
-  --primary-50:#F2F5FE; --primary-100:#E4ECFD; --primary-200:#CFDDFB; --primary-300:#B3C8F7;
-  --primary-400:#90ADF0; --primary-500:#7191E6; --primary-600:#5A78CC; --primary-700:#4A63A8;
-  --primary-800:#3C5089; --primary-900:#2F3E6B; --primary-950:#1E2845;
-
-  /* ---- Secondary ramp → soft pink / rose ---- */
-  --secondary-50:#FDF2F5; --secondary-100:#FBE3EA; --secondary-200:#F7CAD8; --secondary-300:#F2A9BF;
-  --secondary-400:#EC85A3; --secondary-500:#E16A8C; --secondary-600:#C75676; --secondary-700:#A4475F;
-  --secondary-800:#823A4C; --secondary-900:#612C3A; --secondary-950:#3E1B24;
-
-  /* ---- Tertiary ramp → soft mint / lavender ---- */
-  --tertiary-50:#F1F8F4; --tertiary-100:#E1F1E7; --tertiary-200:#C8E6D3; --tertiary-300:#A7D6B9;
-  --tertiary-400:#84C39C; --tertiary-500:#67AD82; --tertiary-600:#54916C; --tertiary-700:#457457;
-  --tertiary-800:#385C46; --tertiary-900:#2A4534; --tertiary-950:#1A2C21;
-
-  /* ---- Neutral → warm/cool soft greys (not stark) ---- */
-  --neutral-50:#F7F6FA; --neutral-70:#F1F0F6; --neutral-80:#EBEAF2; --neutral-100:#E2E1EC;
-  --neutral-150:#D8D6E4; --neutral-200:#CCC9DB; --neutral-300:#B6B3C9; --neutral-400:#9C99B0;
-  --neutral-500:#838098; --neutral-600:#6C6980; --neutral-700:#565368; --neutral-800:#403E4F;
-  --neutral-900:#2B2A36; --neutral-950:#1A1922; --white:#FFFFFF; --black:#1A1922;
-
-  /* ---- Status ramps softened to pastel (50/light steps stay tint-able) ---- */
-  --error-50:#FCEEF0; --error-100:#F8D6DC; --error-500:#DE6B7E; --error-600:#C75A6D; --error-700:#A4495A;
-  --success-50:#EDF8F0; --success-100:#D4EFDD; --success-500:#6FC089; --success-600:#57A672; --success-700:#46855B;
-  --attention-50:#FDF3E7; --attention-100:#FAE3C8; --attention-500:#E6A85C; --attention-600:#CC9046; --attention-700:#A4742F;
-  --info-50:#EAF6F9; --info-100:#D2EBF2; --info-500:#6FBBD0; --info-600:#57A0B5; --info-700:#467F90;
-
-  /* ---- Semantic surfaces → warm/cool pastel tints, never pure white ---- */
-  --surface:#FBFAFE; --surface-default:#F4F2FB; --surface-medium:#ECE9F6; --surface-strong:#E2DEF1;
-  --surface-inverse:#2B2A36;
-  --fg-default:#332F45; --fg-muted:#5E5A72; --fg-subtle:#8B879D; --fg-on-surface:#332F45;
-  --border-default:#E4E1F0; --border-subtle:#ECE9F6;
-  --interactive-hover:#ECE9F6; --interactive-active:#E2DEF1;
-
-  /* ---- Primary roles → pastel fill + DEEP-HUE text (no white-on-saturated) ---- */
-  --primary-surface:#CFDDFB;            /* soft periwinkle fill */
-  --primary-surface-muted:#E4ECFD; --primary-surface-subtle:#F2F5FE;
-  --primary-fg:#3C5089;                 /* deep indigo foreground */
-  --primary-fg-emphasis:#4A63A8; --primary-border:#B3C8F7;
-  --primary-hover:#B3C8F7; --primary-active:#90ADF0;
-
-  /* ---- on-colours → the DEEP hue, never white; gradients go FLAT pastel ---- */
-  --on-primary:#3C5089; --on-secondary:#823A4C; --on-tertiary:#385C46;
-  --secondary-surface:var(--secondary-200); --tertiary-surface:var(--tertiary-200);
-  --primary-grad-from:#DCE6FB; --primary-grad-to:#DCE6FB;   /* flat soft lavender — no gradient */
-  --chip-primary-fg:#3C5089; --chip-secondary-fg:#823A4C; --chip-tertiary-fg:#385C46;
-
   /* ---- Gentle radii (slightly increased) ---- */
   --radius-xs:3px; --radius-s:6px; --radius-base:10px; --radius-m:14px; --radius-l:18px;
   --radius-xl:26px; --radius-2xl:34px;
+
+  /* ---- Semantic surfaces → faint wash of the SCHEME hue, never pure white ---- */
+  --surface:color-mix(in srgb, var(--primary-500) 4%, #ffffff);
+  --surface-default:color-mix(in srgb, var(--primary-500) 8%, #ffffff);
+  --surface-medium:color-mix(in srgb, var(--primary-500) 12%, #ffffff);
+  --surface-strong:color-mix(in srgb, var(--primary-500) 17%, #ffffff);
+  --surface-inverse:#2B2A36;
+  --fg-default:#332F45; --fg-muted:#5E5A72; --fg-subtle:#8B879D; --fg-on-surface:#332F45;
+  --border-default:color-mix(in srgb, var(--primary-500) 15%, #ffffff);
+  --border-subtle:color-mix(in srgb, var(--primary-500) 9%, #ffffff);
+  --interactive-hover:color-mix(in srgb, var(--primary-500) 9%, #ffffff);
+  --interactive-active:color-mix(in srgb, var(--primary-500) 15%, #ffffff);
+
+  /* soft neutrals tilt toward the scheme hue (used as tinted backgrounds) */
+  --neutral-50:color-mix(in srgb, var(--primary-500) 4%, #ffffff);
+  --neutral-70:color-mix(in srgb, var(--primary-500) 7%, #ffffff);
+  --neutral-80:color-mix(in srgb, var(--primary-500) 10%, #ffffff);
+  --neutral-100:color-mix(in srgb, var(--primary-500) 14%, #ffffff);
+  --neutral-150:color-mix(in srgb, var(--primary-500) 19%, #ffffff);
+  --neutral-200:color-mix(in srgb, var(--primary-500) 25%, #ffffff);
+
+  /* ---- Brand roles → soft tint fill + DEEP-HUE text (no white-on-saturated) ---- */
+  --primary-surface:color-mix(in srgb, var(--primary-400) 34%, #ffffff);   /* soft tint fill */
+  --primary-surface-muted:color-mix(in srgb, var(--primary-400) 20%, #ffffff);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-400) 11%, #ffffff);
+  --primary-fg:var(--primary-800);                 /* deep-hue foreground */
+  --primary-fg-emphasis:var(--primary-700);
+  --primary-border:color-mix(in srgb, var(--primary-400) 45%, #ffffff);
+  --primary-hover:color-mix(in srgb, var(--primary-400) 48%, #ffffff);
+  --primary-active:color-mix(in srgb, var(--primary-400) 60%, #ffffff);
+
+  /* ---- on-colours → the DEEP hue, never white; gradients go FLAT pastel ---- */
+  --on-primary:var(--primary-800); --on-secondary:var(--secondary-800); --on-tertiary:var(--tertiary-800);
+  --secondary-surface:color-mix(in srgb, var(--secondary-400) 28%, #ffffff);
+  --tertiary-surface:color-mix(in srgb, var(--tertiary-400) 28%, #ffffff);
+  --primary-grad-from:var(--primary-surface); --primary-grad-to:var(--primary-surface);   /* flat — no gradient */
+  --chip-primary-fg:var(--primary-800); --chip-secondary-fg:var(--secondary-800); --chip-tertiary-fg:var(--tertiary-800);
+
+  /* style helpers (flip in dark) */
+  --pastel-rail:color-mix(in srgb, var(--primary-400) 20%, #ffffff);   /* nav rail surface */
+  --pastel-rail-line:color-mix(in srgb, var(--primary-500) 22%, #ffffff);
+  --pastel-ring:color-mix(in srgb, var(--primary-400) 22%, transparent); /* focus ring */
 
   /* ---- Soft, low-contrast shadows (cool-tinted, gentle) ---- */
   --shadow-xs:0 1px 2px rgba(86,83,104,.08); --shadow-s:0 2px 6px rgba(86,83,104,.08);
@@ -72,50 +70,97 @@
   --shadow-l:0 8px 18px rgba(86,83,104,.10); --shadow-xl:0 12px 28px rgba(86,83,104,.12);
   --shadow-hard:0 4px 10px rgba(86,83,104,.18);
 
-  /* ---- Chart series → pastel palette ---- */
-  --series-1:#90ADF0;   /* periwinkle */
-  --series-2:#84C39C;   /* mint       */
-  --series-3:#E6A85C;   /* peach      */
-  --series-4:#6FBBD0;   /* sky        */
-  --series-5:#EC85A3;   /* rose       */
+  /* ---- Chart series → scheme accents + soft supporting hues ---- */
+  --series-1:var(--primary-400);
+  --series-2:var(--tertiary-400);
+  --series-3:#E6A85C;   /* peach */
+  --series-4:#6FBBD0;   /* sky   */
+  --series-5:var(--secondary-400);
   --chart-grid:var(--border-subtle);
   --chart-axis:var(--fg-subtle);
 }
 
 /* ==========================================================================
+   DARK pastel — the editor toggles html.ds-scheme-dark for a dark preview while
+   data-theme stays "pastel". Remap surfaces dark + brand roles to lighter ramp
+   steps; accents still follow the scheme via --primary-*.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="pastel"]{
+  --surface:color-mix(in srgb, var(--primary-500) 12%, #23222C);
+  --surface-default:color-mix(in srgb, var(--primary-500) 8%, #1C1B24);
+  --surface-medium:color-mix(in srgb, var(--primary-500) 15%, #2A2935);
+  --surface-strong:color-mix(in srgb, var(--primary-500) 20%, #343341);
+  --surface-inverse:#F4F2FB;
+  --fg-default:#ECEAF4; --fg-muted:#ADA9BE; --fg-subtle:#7E7A8E; --fg-on-surface:#1C1B24;
+  --border-default:color-mix(in srgb, var(--primary-500) 24%, #3A3947);
+  --border-subtle:color-mix(in srgb, var(--primary-500) 16%, #2C2B37);
+  --interactive-hover:color-mix(in srgb, var(--primary-500) 18%, #2C2B37);
+  --interactive-active:color-mix(in srgb, var(--primary-500) 26%, #343341);
+
+  --neutral-50:color-mix(in srgb, var(--primary-500) 8%, #1C1B24);
+  --neutral-70:color-mix(in srgb, var(--primary-500) 11%, #23222C);
+  --neutral-80:color-mix(in srgb, var(--primary-500) 14%, #2A2935);
+  --neutral-100:color-mix(in srgb, var(--primary-500) 20%, #343341);
+  --neutral-150:color-mix(in srgb, var(--primary-500) 26%, #3A3947);
+  --neutral-200:color-mix(in srgb, var(--primary-500) 32%, #45444F);
+
+  --primary-surface:color-mix(in srgb, var(--primary-400) 36%, #23222C);
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 26%, #23222C);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 16%, #23222C);
+  --primary-fg:var(--primary-200); --primary-fg-emphasis:var(--primary-100);
+  --primary-border:color-mix(in srgb, var(--primary-400) 50%, transparent);
+  --primary-hover:color-mix(in srgb, var(--primary-400) 46%, #23222C);
+  --primary-active:color-mix(in srgb, var(--primary-400) 56%, #23222C);
+  --on-primary:var(--primary-100); --on-secondary:var(--secondary-100); --on-tertiary:var(--tertiary-100);
+  --secondary-surface:color-mix(in srgb, var(--secondary-400) 34%, #23222C);
+  --tertiary-surface:color-mix(in srgb, var(--tertiary-400) 34%, #23222C);
+  --primary-grad-from:var(--primary-surface); --primary-grad-to:var(--primary-surface);
+  --chip-primary-fg:var(--primary-200); --chip-secondary-fg:var(--secondary-200); --chip-tertiary-fg:var(--tertiary-200);
+
+  --pastel-rail:color-mix(in srgb, var(--primary-500) 16%, #23222C);
+  --pastel-rail-line:color-mix(in srgb, var(--primary-500) 30%, #23222C);
+  --pastel-ring:color-mix(in srgb, var(--primary-400) 36%, transparent);
+
+  --shadow-xs:0 1px 2px rgba(0,0,0,.45); --shadow-s:0 2px 6px rgba(0,0,0,.45);
+  --shadow-base:0 4px 12px rgba(0,0,0,.5); --shadow-m:0 4px 10px rgba(0,0,0,.45);
+  --shadow-l:0 8px 18px rgba(0,0,0,.5); --shadow-xl:0 12px 28px rgba(0,0,0,.55);
+
+  --chart-grid:var(--border-subtle); --chart-axis:var(--fg-subtle);
+}
+
+/* ==========================================================================
    Scoped component overrides — every rule guarded by [data-theme="pastel"].
+   Colours reference tokens (above) so they flip automatically in dark.
    ========================================================================== */
 
-/* ---- Main nav: pastel-surface rails, NOT a bold brand fill ----
-   The base .sidebar paints a primary gradient + white-tint nav text. Re-skin
-   to a soft lavender surface with deep-indigo nav text. */
+/* ---- Main nav: pastel-surface rails, NOT a bold brand fill ---- */
 [data-theme="pastel"] .sidebar{
-  background:#E7ECFA;                 /* soft lavender surface (flat) */
+  background:var(--pastel-rail);
   color:var(--primary-fg);
-  border-right:1px solid #D7DEF4;
+  border-right:1px solid var(--pastel-rail-line);
 }
 [data-theme="pastel"] .sidebar__wave{opacity:.25;}
 [data-theme="pastel"] .sidebar__logo .title{color:var(--primary-fg);}
-[data-theme="pastel"] .sidebar__logo .sep{background:rgba(60,80,137,.2);}
-[data-theme="pastel"] .sidebar__section{color:rgba(60,80,137,.55);}
-[data-theme="pastel"] .sidebar__user{border-top:1px solid rgba(60,80,137,.14);}
+[data-theme="pastel"] .sidebar__logo .sep{background:color-mix(in srgb, var(--primary-fg) 25%, transparent);}
+[data-theme="pastel"] .sidebar__section{color:var(--primary-fg-emphasis);opacity:.7;}
+[data-theme="pastel"] .sidebar__user{border-top:1px solid color-mix(in srgb, var(--primary-fg) 16%, transparent);}
 
 [data-theme="pastel"] .nav-link{color:var(--primary-fg);box-shadow:none;}
 [data-theme="pastel"] .nav-link:hover{
-  background:rgba(255,255,255,.55);box-shadow:none;backdrop-filter:none;color:var(--primary-fg-emphasis);
+  background:color-mix(in srgb, var(--surface) 70%, transparent);box-shadow:none;backdrop-filter:none;color:var(--primary-fg-emphasis);
 }
 [data-theme="pastel"] .nav-link.is-active{
-  background:#CFDDFB;color:#2F3E6B;box-shadow:none;backdrop-filter:none;
+  background:var(--primary-surface);color:var(--primary-fg);box-shadow:none;backdrop-filter:none;
 }
 
 [data-theme="pastel"] .topbar{
-  background:#F4F2FB;border-bottom:1px solid var(--border-default);
+  background:var(--surface-default);border-bottom:1px solid var(--border-default);
 }
 
 /* ---- Cards & sections: pastel tints, soft shadows ---- */
 [data-theme="pastel"] .card{background:var(--surface-default);box-shadow:var(--shadow-xs);}
 [data-theme="pastel"] .card--plain{background:var(--surface);border:1px solid var(--border-default);}
-[data-theme="pastel"] .card--filled{background:#CFDDFB;color:var(--primary-fg);}
+[data-theme="pastel"] .card--filled{background:var(--primary-surface);color:var(--primary-fg);}
 [data-theme="pastel"] .section-card{
   background:var(--surface);border:1px solid var(--border-default);box-shadow:var(--shadow-xs);
 }
@@ -130,7 +175,7 @@
 [data-theme="pastel"] .table--flat td{border-color:var(--border-subtle);}
 [data-theme="pastel"] .table--flat tbody tr:hover td{background:var(--surface-default);}
 
-/* ---- Inputs: pastel surface, soft borders, periwinkle focus ---- */
+/* ---- Inputs: pastel surface, soft borders, scheme focus ---- */
 [data-theme="pastel"] .input,
 [data-theme="pastel"] .select,
 [data-theme="pastel"] .textarea{
@@ -138,22 +183,22 @@
 }
 [data-theme="pastel"] .input:hover,
 [data-theme="pastel"] .select:hover,
-[data-theme="pastel"] .textarea:hover{border-color:var(--primary-300);}
+[data-theme="pastel"] .textarea:hover{border-color:var(--primary-border);}
 [data-theme="pastel"] .input:focus,
 [data-theme="pastel"] .select:focus,
 [data-theme="pastel"] .textarea:focus,
-[data-theme="pastel"] .input.is-focus{border-color:var(--primary-400);box-shadow:0 0 0 3px rgba(113,145,230,.18);}
+[data-theme="pastel"] .input.is-focus{border-color:var(--primary-hover);box-shadow:0 0 0 3px var(--pastel-ring);}
 [data-theme="pastel"] .input--bare{background:transparent;border-color:transparent;}
 [data-theme="pastel"] .input--bare:focus,
-[data-theme="pastel"] .input--bare.is-focus{border-color:var(--primary-400);}
+[data-theme="pastel"] .input--bare.is-focus{border-color:var(--primary-hover);}
 
 /* ---- Buttons: pastel tints + deeper-hue text, no saturated fills ---- */
 [data-theme="pastel"] .btn--primary{background:var(--primary-surface);color:var(--on-primary);}
 [data-theme="pastel"] .btn--primary:hover,
-[data-theme="pastel"] .btn.is-hover.btn--primary{background:var(--primary-hover);color:#2F3E6B;}
+[data-theme="pastel"] .btn.is-hover.btn--primary{background:var(--primary-hover);color:var(--on-primary);}
 [data-theme="pastel"] .btn--primary:active,
-[data-theme="pastel"] .btn.is-pressed.btn--primary{background:var(--primary-active);color:#2F3E6B;}
-[data-theme="pastel"] .btn--outline{background:var(--surface);border-color:var(--primary-300);color:var(--primary-fg);}
+[data-theme="pastel"] .btn.is-pressed.btn--primary{background:var(--primary-active);color:var(--on-primary);}
+[data-theme="pastel"] .btn--outline{background:var(--surface);border-color:var(--primary-border);color:var(--primary-fg);}
 [data-theme="pastel"] .btn--outline:hover{background:var(--primary-surface-subtle);}
 [data-theme="pastel"] .btn--light{background:var(--primary-surface-subtle);color:var(--primary-fg);}
 [data-theme="pastel"] .btn--light:hover{background:var(--primary-surface-muted);}
@@ -161,23 +206,23 @@
 /* ---- Tags: pastel tint + deep-hue text (no bold fill) ---- */
 [data-theme="pastel"] .tag{background:var(--primary-surface-muted);color:var(--primary-fg);}
 [data-theme="pastel"] .tag--light{background:var(--primary-surface-subtle);color:var(--primary-fg);}
-[data-theme="pastel"] .tag--outline{background:transparent;border-color:var(--primary-300);color:var(--primary-fg);}
-[data-theme="pastel"] .tag--secondary{background:var(--secondary-100);color:var(--chip-secondary-fg);}
-[data-theme="pastel"] .tag--secondary.tag--light{background:var(--secondary-50);color:var(--chip-secondary-fg);}
-[data-theme="pastel"] .tag--tertiary{background:var(--tertiary-100);color:var(--chip-tertiary-fg);}
-[data-theme="pastel"] .tag--tertiary.tag--light{background:var(--tertiary-50);color:var(--chip-tertiary-fg);}
+[data-theme="pastel"] .tag--outline{background:transparent;border-color:var(--primary-border);color:var(--primary-fg);}
+[data-theme="pastel"] .tag--secondary{background:var(--secondary-surface);color:var(--chip-secondary-fg);}
+[data-theme="pastel"] .tag--secondary.tag--light{background:color-mix(in srgb, var(--secondary-surface) 55%, var(--surface));color:var(--chip-secondary-fg);}
+[data-theme="pastel"] .tag--tertiary{background:var(--tertiary-surface);color:var(--chip-tertiary-fg);}
+[data-theme="pastel"] .tag--tertiary.tag--light{background:color-mix(in srgb, var(--tertiary-surface) 55%, var(--surface));color:var(--chip-tertiary-fg);}
 [data-theme="pastel"] .tag--mono{background:var(--neutral-100);color:var(--fg-default);}
 
 /* ---- Badges: same pastel-tint + deep-hue treatment ---- */
 [data-theme="pastel"] .badge{background:var(--primary-surface-muted);color:var(--primary-fg);}
 [data-theme="pastel"] .badge--light{background:var(--primary-surface-subtle);color:var(--primary-fg);}
-[data-theme="pastel"] .badge--outline{background:transparent;border-color:var(--primary-300);color:var(--primary-fg);}
-[data-theme="pastel"] .badge--secondary{background:var(--secondary-100);color:var(--chip-secondary-fg);}
-[data-theme="pastel"] .badge--tertiary{background:var(--tertiary-100);color:var(--chip-tertiary-fg);}
+[data-theme="pastel"] .badge--outline{background:transparent;border-color:var(--primary-border);color:var(--primary-fg);}
+[data-theme="pastel"] .badge--secondary{background:var(--secondary-surface);color:var(--chip-secondary-fg);}
+[data-theme="pastel"] .badge--tertiary{background:var(--tertiary-surface);color:var(--chip-tertiary-fg);}
 [data-theme="pastel"] .badge--mono{background:var(--neutral-100);color:var(--fg-default);}
-[data-theme="pastel"] .badge--positive{background:var(--success-100);color:var(--success-700);}
-[data-theme="pastel"] .badge--attention{background:var(--attention-100);color:var(--attention-700);}
-[data-theme="pastel"] .badge--negative{background:var(--error-100);color:var(--error-700);}
+[data-theme="pastel"] .badge--positive{background:color-mix(in srgb, var(--success-500) 22%, var(--surface));color:var(--success-700);}
+[data-theme="pastel"] .badge--attention{background:color-mix(in srgb, var(--attention-500) 22%, var(--surface));color:var(--attention-700);}
+[data-theme="pastel"] .badge--negative{background:color-mix(in srgb, var(--error-500) 22%, var(--surface));color:var(--error-700);}
 
 /* ---- Modal: pastel surface, soft shadow ---- */
 [data-theme="pastel"] .modal{

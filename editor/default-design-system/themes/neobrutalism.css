@@ -1,19 +1,34 @@
 /* ==========================================================================
-   THEME OVERLAY — Neubrutalism (monochrome-editorial / premium-restrained)
+   THEME OVERLAY — Neubrutalism (editorial / structural-monochrome substrate)
    Apply via <html data-theme="neobrutalism">. Load AFTER styles.css (and the
    component CSS) so these overrides win the cascade.
 
    The register: uncoated-paper cream substrate + warm dark ink (never pure
-   black) + mid greige support tone. NO synthetic accent colour — colour
-   discipline IS the brand. The signature is the WHOLE discipline together:
+   black) + mid greige support tone. The signature is the WHOLE discipline:
      - ZERO border-radius everywhere (the softening is in COLOUR, not corners)
      - 2–3px warm-ink borders on every major container
-     - hard-offset shadow with ZERO blur:  box-shadow: 4px 4px 0 0 #181412
+     - hard-offset shadow with ZERO blur:  box-shadow: 4px 4px 0 0 <ink>
      - :active press effect — translate(2px,2px) + shadow shrinks to 2px
      - extreme editorial display:body type ratio
      - subtle uncoated-paper grain overlay (~6%)
 
-   Palette anchor (raw hex, per the aesthetic spec):
+   COLOUR — the PRIMARY ACCENT NOW FOLLOWS THE SELECTED SCHEME. Primary buttons,
+   the --primary-surface role, the active nav block, and primary-filled chips
+   take the scheme colour the customizer writes into --primary-* (a colored
+   block with a black border + hard ink shadow — the classic neobrutalist look).
+   Everything STRUCTURAL stays mono: ink borders, hard offset shadows, card /
+   table / modal frames, the sidebar rail, default tag/badge ink fills. The ink
+   + paper anchors below are the NEUTRAL substrate identity, not the scheme, and
+   secondary/tertiary stay on the mono ramp (the colour-discipline support tone).
+
+   DARK MODE is a clean ink/paper inversion: the editor toggles
+   html.ds-scheme-dark (data-theme stays "neobrutalism"); the parallel block
+   below flips the anchors to dark warm paper + LIGHT "ink" so borders, hard
+   offset shadows and text stay visible, while the primary accent still rides
+   the scheme via --primary-*. Component rules reference the anchor vars
+   (--nb-ink / --nb-paper*) so both light and dark resolve automatically.
+
+   Palette anchor (light — raw hex, per the aesthetic spec):
      #F4EFE2  uncoated paper cream  (primary substrate)
      #FAF6EC  cream highlight       (paper-bright surface)
      #EDE6D3  cream shade           (recessed wells / strong surface)
@@ -24,7 +39,7 @@
    ========================================================================== */
 
 :root[data-theme="neobrutalism"]{
-  /* ---- ink + paper raw anchors (local helpers) ---- */
+  /* ---- ink + paper raw anchors (local helpers — the NEUTRAL substrate) ---- */
   --nb-ink:#181412; --nb-ink-soft:#2E2823; --nb-paper:#F4EFE2;
   --nb-paper-bright:#FAF6EC; --nb-paper-shade:#EDE6D3; --nb-paper-deep:#E3DAC6;
   --nb-greige:#A89E8E; --nb-greige-dark:#7C7264; --nb-greige-light:#C9C0AE;
@@ -46,17 +61,21 @@
   --neutral-500:#7C7264; --neutral-600:#5E564B; --neutral-700:#463F37; --neutral-800:#2E2823;
   --neutral-900:#211C18; --neutral-950:#181412; --white:#FAF6EC; --black:#181412;
 
-  /* ---- the single restrained ink-based "primary" — NO bright hue.
-     Links / active states read as ink, fills are ink, on-ink text is paper. ---- */
-  --primary-surface:#181412; --primary-surface-muted:#E3DAC6; --primary-surface-subtle:#EDE6D3;
-  --primary-fg:#181412; --primary-fg-emphasis:#181412; --primary-border:#181412;
-  --primary-hover:#2E2823; --primary-active:#000000;
-  --primary-grad-from:#181412; --primary-grad-to:#2E2823;
+  /* ---- PRIMARY role → follows the SELECTED SCHEME (the one accent that does).
+     The fill is the scheme colour; the border + offset shadow stay ink, so it
+     reads as the classic neobrutalist coloured-block-with-black-border. ---- */
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:var(--primary-100);
+  --primary-surface-subtle:var(--primary-50);
+  --primary-fg:var(--primary-700); --primary-fg-emphasis:var(--primary-700);
+  --primary-border:var(--nb-ink);
+  --primary-hover:var(--primary-600); --primary-active:var(--primary-700);
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-600);
 
-  /* keep secondary/tertiary on the monochrome ramp too (no synthetic colour) */
+  /* secondary/tertiary stay on the MONO ramp (the colour-discipline support) */
   --secondary-surface:#2E2823; --tertiary-surface:#7C7264;
-  --on-primary:#FAF6EC; --on-secondary:#FAF6EC; --on-tertiary:#FAF6EC;
-  --chip-primary-fg:#181412; --chip-secondary-fg:#2E2823; --chip-tertiary-fg:#5E564B;
+  --on-primary:#FFFFFF; --on-secondary:#FAF6EC; --on-tertiary:#FAF6EC;
+  --chip-primary-fg:var(--primary-700); --chip-secondary-fg:#2E2823; --chip-tertiary-fg:#5E564B;
 
   /* ---- ZERO radius — the no-radius discipline is non-negotiable ---- */
   --radius-xs:0; --radius-s:0; --radius-base:0; --radius-m:0; --radius-l:0;
@@ -65,13 +84,13 @@
   /* ---- THE SIGNATURE: hard-offset shadow, ZERO blur, warm ink.
      Every --shadow-* collapses onto the offset-shadow family so any component
      reading a shadow token inherits the brutalist look automatically. ---- */
-  --shadow-xs:2px 2px 0 0 #181412;
-  --shadow-s:3px 3px 0 0 #181412;
-  --shadow-base:4px 4px 0 0 #181412;
-  --shadow-m:4px 4px 0 0 #181412;
-  --shadow-l:6px 6px 0 0 #181412;
-  --shadow-xl:8px 8px 0 0 #181412;
-  --shadow-hard:4px 4px 0 0 #181412;
+  --shadow-xs:2px 2px 0 0 var(--nb-ink);
+  --shadow-s:3px 3px 0 0 var(--nb-ink);
+  --shadow-base:4px 4px 0 0 var(--nb-ink);
+  --shadow-m:4px 4px 0 0 var(--nb-ink);
+  --shadow-l:6px 6px 0 0 var(--nb-ink);
+  --shadow-xl:8px 8px 0 0 var(--nb-ink);
+  --shadow-hard:4px 4px 0 0 var(--nb-ink);
 
   /* ---- big editorial type scale — bump display/h1 hard, body stays readable.
      Extreme display:body ratio is the rhythm of the register. ---- */
@@ -87,11 +106,71 @@
 }
 
 /* ==========================================================================
+   DARK neobrutalism — the editor toggles html.ds-scheme-dark for a dark preview
+   while data-theme stays "neobrutalism". Clean ink/paper INVERSION: dark warm
+   paper + LIGHT "ink" so borders, hard offset shadows and text stay visible.
+   The anchors flip, so every scoped component rule (which references the anchor
+   vars + scheme-driven --shadow-*) re-skins automatically. The primary accent
+   still rides the scheme via --primary-*.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="neobrutalism"]{
+  /* ---- anchors flip: light "ink", dark warm paper ---- */
+  --nb-ink:#F4EFE2; --nb-ink-soft:#D8CFBE; --nb-paper:#1C1814;
+  --nb-paper-bright:#221D18; --nb-paper-shade:#2A241E; --nb-paper-deep:#332C24;
+  --nb-greige:#8A8071; --nb-greige-dark:#9A9080; --nb-greige-light:#4A4339;
+
+  /* ---- surfaces — dark warm paper ---- */
+  --surface:#221D18; --surface-default:#1C1814; --surface-medium:#2A241E; --surface-strong:#332C24;
+  --surface-inverse:#F4EFE2;
+
+  /* ---- text — light ink ---- */
+  --fg-default:#F4EFE2; --fg-muted:#D8CFBE; --fg-subtle:#9A9080; --fg-on-surface:#F4EFE2;
+
+  /* ---- lines + interaction ---- */
+  --border-default:#F4EFE2; --border-subtle:#6E6557;
+  --interactive-hover:#2A241E; --interactive-active:#332C24;
+
+  /* ---- neutrals remapped dark ---- */
+  --neutral-50:#1C1814; --neutral-70:#221D18; --neutral-80:#2A241E; --neutral-100:#332C24;
+  --neutral-150:#3D352B; --neutral-200:#4A4339; --neutral-300:#6E6557; --neutral-400:#8A8071;
+  --neutral-500:#9A9080; --neutral-600:#B4AB99; --neutral-700:#CCC3B1; --neutral-800:#D8CFBE;
+  --neutral-900:#E8E0D0; --neutral-950:#F4EFE2; --white:#221D18; --black:#F4EFE2;
+
+  /* ---- PRIMARY role still follows the SCHEME, tuned for the dark substrate ---- */
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 24%, #221D18);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 15%, #221D18);
+  --primary-fg:var(--primary-300); --primary-fg-emphasis:var(--primary-300);
+  --primary-border:#F4EFE2;
+  --primary-hover:var(--primary-600); --primary-active:var(--primary-700);
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-600);
+
+  /* secondary/tertiary stay mono on the dark paper ramp */
+  --secondary-surface:#D8CFBE; --tertiary-surface:#9A9080;
+  --on-primary:#FFFFFF; --on-secondary:#1C1814; --on-tertiary:#1C1814;
+  --chip-primary-fg:var(--primary-300); --chip-secondary-fg:#D8CFBE; --chip-tertiary-fg:#B4AB99;
+
+  /* ---- re-skin the hard-offset shadows to the LIGHT ink in dark ---- */
+  --shadow-xs:2px 2px 0 0 #F4EFE2;
+  --shadow-s:3px 3px 0 0 #F4EFE2;
+  --shadow-base:4px 4px 0 0 #F4EFE2;
+  --shadow-m:4px 4px 0 0 #F4EFE2;
+  --shadow-l:6px 6px 0 0 #F4EFE2;
+  --shadow-xl:8px 8px 0 0 #F4EFE2;
+  --shadow-hard:4px 4px 0 0 #F4EFE2;
+
+  /* ---- chart series → light-ink + greige mono ramp on dark ---- */
+  --series-1:#F4EFE2; --series-2:#B4AB99; --series-3:#8A8071;
+  --series-4:#9A9080; --series-5:#4A4339;
+  --chart-grid:#6E6557; --chart-axis:#D8CFBE;
+}
+
+/* ==========================================================================
    PAGE GROUND + uncoated-paper grain overlay (~6%, fractalNoise SVG).
    Pointer-events:none so it never intercepts clicks; fixed full-viewport.
    ========================================================================== */
 [data-theme="neobrutalism"] body{
-  background:#F4EFE2; color:#181412;
+  background:var(--nb-paper); color:var(--nb-ink);
 }
 [data-theme="neobrutalism"] body::after{
   content:""; position:fixed; inset:0; z-index:9999; pointer-events:none;
@@ -108,53 +187,54 @@
 
 /* ==========================================================================
    SHELL — sidebar + topbar. The brand rail goes solid ink (paper text),
-   with a hard ink edge instead of a gradient.
+   with a hard ink edge instead of a gradient. In dark this inverts to a light
+   "ink" rail with dark text — the correct neobrutalist inversion.
    ========================================================================== */
 [data-theme="neobrutalism"] .sidebar,
 [data-theme="neobrutalism"] aside.sidebar,
 [data-theme="neobrutalism"] .app-sidebar{
-  background:#181412; color:#FAF6EC;
-  border-right:3px solid #181412; box-shadow:4px 0 0 0 rgba(24,20,18,.18);
+  background:var(--nb-ink); color:var(--nb-paper-bright);
+  border-right:3px solid var(--nb-ink); box-shadow:4px 0 0 0 color-mix(in srgb, var(--nb-ink) 18%, transparent);
 }
 [data-theme="neobrutalism"] .sidebar__section{
-  color:#A89E8E; letter-spacing:.06em;
+  color:var(--nb-greige); letter-spacing:.06em;
 }
 [data-theme="neobrutalism"] .topbar,
 [data-theme="neobrutalism"] header.topbar,
 [data-theme="neobrutalism"] .app-topbar{
-  background:#FAF6EC; color:#181412;
-  border-bottom:3px solid #181412; box-shadow:0 4px 0 0 rgba(24,20,18,.10);
+  background:var(--nb-paper-bright); color:var(--nb-ink);
+  border-bottom:3px solid var(--nb-ink); box-shadow:0 4px 0 0 color-mix(in srgb, var(--nb-ink) 10%, transparent);
   border-radius:0;
 }
 
-/* ---- nav links — flat on ink rail; active = paper block, zero radius ---- */
+/* ---- nav links — flat on ink rail; active = SCHEME block, zero radius ---- */
 [data-theme="neobrutalism"] .nav-link{
-  color:#C9C0AE; border-radius:0; backdrop-filter:none; box-shadow:none;
+  color:var(--nb-greige-light); border-radius:0; backdrop-filter:none; box-shadow:none;
   border-left:3px solid transparent; font-weight:var(--w-medium);
 }
 [data-theme="neobrutalism"] .nav-link:hover{
-  background:rgba(250,246,236,.10); backdrop-filter:none; box-shadow:none;
-  border-left-color:#A89E8E; color:#FAF6EC;
+  background:color-mix(in srgb, var(--nb-paper-bright) 10%, transparent); backdrop-filter:none; box-shadow:none;
+  border-left-color:var(--nb-greige); color:var(--nb-paper-bright);
 }
 [data-theme="neobrutalism"] .nav-link.is-active{
-  background:#FAF6EC; color:#181412; border-radius:0; backdrop-filter:none;
-  box-shadow:none; border-left:3px solid #181412; font-weight:var(--w-semibold);
+  background:var(--primary-surface); color:var(--on-primary); border-radius:0; backdrop-filter:none;
+  box-shadow:none; border-left:3px solid var(--nb-ink); font-weight:var(--w-semibold);
 }
 
 /* ==========================================================================
    CARDS + SECTION SURFACES — 3px ink border + hard 4px offset shadow.
    ========================================================================== */
 [data-theme="neobrutalism"] .card{
-  background:#FAF6EC; border:3px solid #181412; border-radius:0;
-  box-shadow:4px 4px 0 0 #181412;
+  background:var(--nb-paper-bright); border:3px solid var(--nb-ink); border-radius:0;
+  box-shadow:4px 4px 0 0 var(--nb-ink);
 }
-[data-theme="neobrutalism"] .card--plain{ background:#FAF6EC; border:3px solid #181412; }
+[data-theme="neobrutalism"] .card--plain{ background:var(--nb-paper-bright); border:3px solid var(--nb-ink); }
 [data-theme="neobrutalism"] .card--filled{
-  background:#181412; color:#FAF6EC; border:3px solid #181412; box-shadow:4px 4px 0 0 #A89E8E;
+  background:var(--nb-ink); color:var(--nb-paper-bright); border:3px solid var(--nb-ink); box-shadow:4px 4px 0 0 var(--nb-greige);
 }
 [data-theme="neobrutalism"] .section-card{
-  background:#FAF6EC; border:3px solid #181412; border-radius:0;
-  box-shadow:4px 4px 0 0 #181412;
+  background:var(--nb-paper-bright); border:3px solid var(--nb-ink); border-radius:0;
+  box-shadow:4px 4px 0 0 var(--nb-ink);
 }
 
 /* ==========================================================================
@@ -162,23 +242,23 @@
    but inherits the ink frame.
    ========================================================================== */
 [data-theme="neobrutalism"] .table{
-  border:3px solid #181412; border-radius:0; box-shadow:4px 4px 0 0 #181412;
-  background:#FAF6EC; border-collapse:separate; border-spacing:0;
+  border:3px solid var(--nb-ink); border-radius:0; box-shadow:4px 4px 0 0 var(--nb-ink);
+  background:var(--nb-paper-bright); border-collapse:separate; border-spacing:0;
 }
 [data-theme="neobrutalism"] .table th{
-  background:#EDE6D3; color:#181412; border-bottom:2px solid #181412;
+  background:var(--nb-paper-shade); color:var(--nb-ink); border-bottom:2px solid var(--nb-ink);
   text-transform:uppercase; letter-spacing:.04em; font-weight:var(--w-semibold);
 }
-[data-theme="neobrutalism"] .table td{ border-bottom:1px solid #A89E8E; }
+[data-theme="neobrutalism"] .table td{ border-bottom:1px solid var(--nb-greige); }
 [data-theme="neobrutalism"] .table--flat{
-  border:2px solid #181412; border-radius:0; box-shadow:3px 3px 0 0 #181412; background:#FAF6EC;
+  border:2px solid var(--nb-ink); border-radius:0; box-shadow:3px 3px 0 0 var(--nb-ink); background:var(--nb-paper-bright);
 }
 [data-theme="neobrutalism"] .table--flat th{
-  border-bottom:2px solid #181412; color:#181412; background:transparent;
+  border-bottom:2px solid var(--nb-ink); color:var(--nb-ink); background:transparent;
   text-transform:uppercase; letter-spacing:.04em;
 }
-[data-theme="neobrutalism"] .table--flat td{ border-top:1px solid #A89E8E; }
-[data-theme="neobrutalism"] .table--flat tbody tr:hover td{ background:#EDE6D3; }
+[data-theme="neobrutalism"] .table--flat td{ border-top:1px solid var(--nb-greige); }
+[data-theme="neobrutalism"] .table--flat tbody tr:hover td{ background:var(--nb-paper-shade); }
 
 /* ==========================================================================
    FORM CONTROLS — ink border + offset shadow; inset press on focus.
@@ -186,122 +266,125 @@
 [data-theme="neobrutalism"] .input,
 [data-theme="neobrutalism"] .select,
 [data-theme="neobrutalism"] .textarea{
-  background:#FAF6EC; color:#181412; border:2px solid #181412; border-radius:0;
-  box-shadow:3px 3px 0 0 #181412;
+  background:var(--nb-paper-bright); color:var(--nb-ink); border:2px solid var(--nb-ink); border-radius:0;
+  box-shadow:3px 3px 0 0 var(--nb-ink);
 }
 [data-theme="neobrutalism"] .input::placeholder,
-[data-theme="neobrutalism"] .textarea::placeholder{ color:#7C7264; }
+[data-theme="neobrutalism"] .textarea::placeholder{ color:var(--nb-greige-dark); }
 [data-theme="neobrutalism"] .input:hover,
 [data-theme="neobrutalism"] .select:hover,
-[data-theme="neobrutalism"] .textarea:hover{ border-color:#181412; }
+[data-theme="neobrutalism"] .textarea:hover{ border-color:var(--nb-ink); }
 [data-theme="neobrutalism"] .input:focus,
 [data-theme="neobrutalism"] .select:focus,
 [data-theme="neobrutalism"] .textarea:focus,
 [data-theme="neobrutalism"] .input.is-focus,
 [data-theme="neobrutalism"] .select.is-focus,
 [data-theme="neobrutalism"] .textarea.is-focus{
-  outline:none; border-color:#181412;
-  box-shadow:inset 2px 2px 0 0 #181412;   /* press-into-paper on focus */
+  outline:none; border-color:var(--nb-ink);
+  box-shadow:inset 2px 2px 0 0 var(--nb-ink);   /* press-into-paper on focus */
 }
 [data-theme="neobrutalism"] .input:disabled,
 [data-theme="neobrutalism"] .select:disabled,
 [data-theme="neobrutalism"] .textarea:disabled{
-  background:#E3DAC6; border-color:#A89E8E; color:#7C7264; box-shadow:none;
+  background:var(--nb-paper-deep); border-color:var(--nb-greige); color:var(--nb-greige-dark); box-shadow:none;
 }
 [data-theme="neobrutalism"] .input.is-error,
 [data-theme="neobrutalism"] .select.is-error,
 [data-theme="neobrutalism"] .textarea.is-error{
-  border-color:#181412; box-shadow:3px 3px 0 0 #5E564B;
+  border-color:var(--nb-ink); box-shadow:3px 3px 0 0 var(--error-500);
 }
-/* recolour the select chevron to warm ink */
+/* recolour the select chevron to warm ink (currentColor follows --nb-ink) */
 [data-theme="neobrutalism"] .select{
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23181412' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 /* bare input (doc / inline-edit) — no frame, just an ink underline */
 [data-theme="neobrutalism"] .input--bare{
-  background:transparent; border:0; border-bottom:2px solid #181412; border-radius:0; box-shadow:none;
+  background:transparent; border:0; border-bottom:2px solid var(--nb-ink); border-radius:0; box-shadow:none;
 }
-[data-theme="neobrutalism"] .input--bare:hover{ border-bottom-color:#181412; box-shadow:none; }
+[data-theme="neobrutalism"] .input--bare:hover{ border-bottom-color:var(--nb-ink); box-shadow:none; }
 [data-theme="neobrutalism"] .input--bare:focus,
-[data-theme="neobrutalism"] .input--bare.is-focus{ border-bottom-color:#181412; box-shadow:none; outline:none; }
+[data-theme="neobrutalism"] .input--bare.is-focus{ border-bottom-color:var(--nb-ink); box-shadow:none; outline:none; }
 
 /* ==========================================================================
    BUTTONS — ink border + offset shadow + bold uppercase label.
    :active press effect — translate(2px,2px) and shadow shrinks to 2px.
+   The PRIMARY button is the one accent that follows the scheme: a coloured
+   block with the signature ink border + hard ink offset shadow.
    ========================================================================== */
 [data-theme="neobrutalism"] .btn{
-  border:2px solid #181412; border-radius:0; box-shadow:4px 4px 0 0 #181412;
+  border:2px solid var(--nb-ink); border-radius:0; box-shadow:4px 4px 0 0 var(--nb-ink);
   font-weight:var(--w-semibold); text-transform:uppercase; letter-spacing:.03em;
   transition:transform .04s ease, box-shadow .04s ease, background .12s ease;
 }
 [data-theme="neobrutalism"] .btn:hover{ text-decoration:none; }
 [data-theme="neobrutalism"] .btn:active,
 [data-theme="neobrutalism"] .btn.is-pressed{
-  transform:translate(2px,2px); box-shadow:2px 2px 0 0 #181412;
+  transform:translate(2px,2px); box-shadow:2px 2px 0 0 var(--nb-ink);
 }
 [data-theme="neobrutalism"] .btn--primary{
-  background:#181412; color:#FAF6EC; border-color:#181412;
+  background:var(--primary-surface); color:var(--on-primary); border-color:var(--nb-ink);
 }
 [data-theme="neobrutalism"] .btn--primary:hover,
-[data-theme="neobrutalism"] .btn.is-hover.btn--primary{ background:#2E2823; }
+[data-theme="neobrutalism"] .btn.is-hover.btn--primary{ background:var(--primary-hover); }
 [data-theme="neobrutalism"] .btn--primary:active,
-[data-theme="neobrutalism"] .btn.is-pressed.btn--primary{ background:#000000; }
+[data-theme="neobrutalism"] .btn.is-pressed.btn--primary{ background:var(--primary-active); }
 [data-theme="neobrutalism"] .btn--outline{
-  background:#FAF6EC; color:#181412; border-color:#181412;
+  background:var(--nb-paper-bright); color:var(--nb-ink); border-color:var(--nb-ink);
 }
 [data-theme="neobrutalism"] .btn--outline:hover,
-[data-theme="neobrutalism"] .btn.is-hover.btn--outline{ background:#EDE6D3; }
+[data-theme="neobrutalism"] .btn.is-hover.btn--outline{ background:var(--nb-paper-shade); }
 [data-theme="neobrutalism"] .btn--outline:active,
-[data-theme="neobrutalism"] .btn.is-pressed.btn--outline{ background:#E3DAC6; }
+[data-theme="neobrutalism"] .btn.is-pressed.btn--outline{ background:var(--nb-paper-deep); }
 /* text button stays chromeless — no frame, no offset shadow, no uppercase weight noise */
 [data-theme="neobrutalism"] .btn--text{
-  border:0; box-shadow:none; background:transparent; color:#181412; text-transform:none;
+  border:0; box-shadow:none; background:transparent; color:var(--nb-ink); text-transform:none;
 }
 [data-theme="neobrutalism"] .btn--text:active,
 [data-theme="neobrutalism"] .btn--text.is-pressed{ transform:none; box-shadow:none; }
 [data-theme="neobrutalism"] .btn:disabled,
 [data-theme="neobrutalism"] .btn.is-disabled{
-  background:#E3DAC6; color:#7C7264; border-color:#A89E8E; box-shadow:none; transform:none;
+  background:var(--nb-paper-deep); color:var(--nb-greige-dark); border-color:var(--nb-greige); box-shadow:none; transform:none;
 }
 /* button-group — ink frame, ink dividers, active block fills ink */
-[data-theme="neobrutalism"] .btn-group{ border:2px solid #181412; border-radius:0; box-shadow:3px 3px 0 0 #181412; }
-[data-theme="neobrutalism"] .btn-group .btn{ box-shadow:none; border:0; border-right:2px solid #181412; transform:none; }
+[data-theme="neobrutalism"] .btn-group{ border:2px solid var(--nb-ink); border-radius:0; box-shadow:3px 3px 0 0 var(--nb-ink); }
+[data-theme="neobrutalism"] .btn-group .btn{ box-shadow:none; border:0; border-right:2px solid var(--nb-ink); transform:none; }
 [data-theme="neobrutalism"] .btn-group .btn:active{ transform:none; box-shadow:none; }
-[data-theme="neobrutalism"] .btn-group .btn.is-active{ background:#181412; color:#FAF6EC; }
+[data-theme="neobrutalism"] .btn-group .btn.is-active{ background:var(--nb-ink); color:var(--nb-paper-bright); }
 
 /* ==========================================================================
    BADGES + TAGS — small ink-bordered blocks, zero radius, no offset (too busy
-   at chip scale) but a crisp 1.5px ink frame.
+   at chip scale) but a crisp 1.5px ink frame. The PRIMARY chip rides the scheme;
+   default / secondary / tertiary stay on the mono fills.
    ========================================================================== */
 [data-theme="neobrutalism"] .badge{
-  background:#181412; color:#FAF6EC; border:1.5px solid #181412; border-radius:0;
+  background:var(--primary-surface); color:var(--on-primary); border:1.5px solid var(--nb-ink); border-radius:0;
   font-weight:var(--w-semibold);
 }
-[data-theme="neobrutalism"] .badge--light{ background:#EDE6D3; color:#181412; border-color:#181412; }
-[data-theme="neobrutalism"] .badge--outline{ background:#FAF6EC; color:#181412; border-color:#181412; }
-[data-theme="neobrutalism"] .badge--secondary{ background:#2E2823; color:#FAF6EC; }
-[data-theme="neobrutalism"] .badge--tertiary{ background:#7C7264; color:#FAF6EC; }
-[data-theme="neobrutalism"] .badge--mono{ background:#181412; color:#FAF6EC; }
+[data-theme="neobrutalism"] .badge--light{ background:var(--nb-paper-shade); color:var(--nb-ink); border-color:var(--nb-ink); }
+[data-theme="neobrutalism"] .badge--outline{ background:var(--nb-paper-bright); color:var(--nb-ink); border-color:var(--nb-ink); }
+[data-theme="neobrutalism"] .badge--secondary{ background:var(--secondary-surface); color:var(--nb-paper-bright); }
+[data-theme="neobrutalism"] .badge--tertiary{ background:var(--tertiary-surface); color:var(--nb-paper-bright); }
+[data-theme="neobrutalism"] .badge--mono{ background:var(--nb-ink); color:var(--nb-paper-bright); }
 
 [data-theme="neobrutalism"] .tag{
-  background:#181412; color:#FAF6EC; border:1.5px solid #181412; border-radius:0;
+  background:var(--primary-surface); color:var(--on-primary); border:1.5px solid var(--nb-ink); border-radius:0;
   font-weight:var(--w-medium); text-transform:uppercase; letter-spacing:.03em;
 }
-[data-theme="neobrutalism"] .tag--light{ background:#EDE6D3; color:#181412; border-color:#181412; }
-[data-theme="neobrutalism"] .tag--outline{ background:#FAF6EC; color:#181412; border-color:#181412; }
-[data-theme="neobrutalism"] .tag--secondary{ background:#2E2823; color:#FAF6EC; border-color:#181412; }
-[data-theme="neobrutalism"] .tag--tertiary{ background:#7C7264; color:#FAF6EC; border-color:#181412; }
-[data-theme="neobrutalism"] .tag--mono{ background:#181412; color:#FAF6EC; }
+[data-theme="neobrutalism"] .tag--light{ background:var(--nb-paper-shade); color:var(--nb-ink); border-color:var(--nb-ink); }
+[data-theme="neobrutalism"] .tag--outline{ background:var(--nb-paper-bright); color:var(--nb-ink); border-color:var(--nb-ink); }
+[data-theme="neobrutalism"] .tag--secondary{ background:var(--secondary-surface); color:var(--nb-paper-bright); border-color:var(--nb-ink); }
+[data-theme="neobrutalism"] .tag--tertiary{ background:var(--tertiary-surface); color:var(--nb-paper-bright); border-color:var(--nb-ink); }
+[data-theme="neobrutalism"] .tag--mono{ background:var(--nb-ink); color:var(--nb-paper-bright); }
 
 /* ==========================================================================
    MODAL — heavy ink frame + bold offset shadow (the dialog reads as a
    physical card lifted off the paper).
    ========================================================================== */
 [data-theme="neobrutalism"] .modal{
-  background:#FAF6EC; border:3px solid #181412; border-radius:0;
-  box-shadow:8px 8px 0 0 #181412;
+  background:var(--nb-paper-bright); border:3px solid var(--nb-ink); border-radius:0;
+  box-shadow:8px 8px 0 0 var(--nb-ink);
 }
-[data-theme="neobrutalism"] .modal-row{ border-bottom:1px solid #A89E8E; }
+[data-theme="neobrutalism"] .modal-row{ border-bottom:1px solid var(--nb-greige); }
 [data-theme="neobrutalism"] .modal-row:last-child{ border-bottom:0; }
 
 /* ==========================================================================
@@ -309,16 +392,16 @@
    offset shadow; KPI cells get ink dividers.
    ========================================================================== */
 [data-theme="neobrutalism"] .kpi-strip{
-  border:3px solid #181412; border-radius:0; box-shadow:4px 4px 0 0 #181412; background:#FAF6EC;
+  border:3px solid var(--nb-ink); border-radius:0; box-shadow:4px 4px 0 0 var(--nb-ink); background:var(--nb-paper-bright);
 }
-[data-theme="neobrutalism"] .kpi{ border-left:2px solid #181412; }
+[data-theme="neobrutalism"] .kpi{ border-left:2px solid var(--nb-ink); }
 [data-theme="neobrutalism"] .kpi:first-child{ border-left:0; }
 [data-theme="neobrutalism"] .stat-hero{
-  background:#FAF6EC; border:3px solid #181412; border-radius:0; box-shadow:4px 4px 0 0 #181412;
+  background:var(--nb-paper-bright); border:3px solid var(--nb-ink); border-radius:0; box-shadow:4px 4px 0 0 var(--nb-ink);
 }
 [data-theme="neobrutalism"] .stat-hero__value{ letter-spacing:-.02em; }
 [data-theme="neobrutalism"] .chart-card{
-  background:#FAF6EC; border:3px solid #181412; border-radius:0; box-shadow:4px 4px 0 0 #181412;
+  background:var(--nb-paper-bright); border:3px solid var(--nb-ink); border-radius:0; box-shadow:4px 4px 0 0 var(--nb-ink);
 }
 
 /* ==========================================================================
@@ -326,12 +409,12 @@
    as an ink block with paper label, zero radius.
    ========================================================================== */
 [data-theme="neobrutalism"] .phone{
-  background:#F4EFE2; border:3px solid #181412; border-radius:0; box-shadow:6px 6px 0 0 #181412;
+  background:var(--nb-paper); border:3px solid var(--nb-ink); border-radius:0; box-shadow:6px 6px 0 0 var(--nb-ink);
 }
 [data-theme="neobrutalism"] .tabbar{
-  background:#FAF6EC; border-top:3px solid #181412; border-radius:0;
+  background:var(--nb-paper-bright); border-top:3px solid var(--nb-ink); border-radius:0;
 }
-[data-theme="neobrutalism"] .tabbar__item{ color:#7C7264; border-radius:0; }
+[data-theme="neobrutalism"] .tabbar__item{ color:var(--nb-greige-dark); border-radius:0; }
 [data-theme="neobrutalism"] .tabbar__item.is-active{
-  color:#181412; background:#EDE6D3; border-top:3px solid #181412; font-weight:var(--w-semibold);
+  color:var(--nb-ink); background:var(--nb-paper-shade); border-top:3px solid var(--nb-ink); font-weight:var(--w-semibold);
 }

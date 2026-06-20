@@ -1,27 +1,29 @@
 /* themes/minimal.css — apply via <html data-theme="minimal">
    ==========================================================================
-   A light-only STYLE OVERLAY for the Woven template design system.
+   A STYLE OVERLAY for the Woven template design system.
 
-   Pitch: maximal restraint. One chromatic accent (the primary), everything
-   else neutralised to greys. The brand gradient is gone — nav surfaces are
-   light with a hairline border. Elevation is replaced by hairline borders
-   and near-flat shadows. Modest radii, generous whitespace.
+   Pitch: maximal restraint. ONE chromatic accent (the SCHEME primary),
+   everything else neutralised to greys. The brand gradient is gone — nav
+   surfaces are light with a hairline border. Elevation is replaced by
+   hairline borders and near-flat shadows. Modest radii, generous whitespace.
 
-   PATTERN (mirrors :root[data-theme="dark"] in styles.css): remap the
-   semantic tokens on :root[data-theme="minimal"] so component CSS inherits
-   the new look for free, then scope the few signature component overrides
-   with the [data-theme="minimal"] attribute so the default theme is
-   untouched. Raw hex is allowed here — themes are where colours live.
+   COLOUR FOLLOWS THE SELECTED SCHEME. This file NEVER re-defines the
+   --primary-/--secondary-/--tertiary- ramps the customizer writes; instead it
+   DERIVES the single accent's roles from the live --primary-* ramp (exactly
+   like pastel + glassmorphism). Pick a blue scheme → restrained blue accent;
+   pick a green scheme → restrained green accent; etc.
+
+   DARK MODE is handled by a parallel block scoped to
+   :root.ds-scheme-dark[data-theme="minimal"] (the class the editor toggles for
+   dark previews): surfaces/text/borders remap to dark greys and the accent
+   roles re-point to LIGHTER ramp steps so the one accent still reads.
+
+   Load AFTER styles.css. Every component override is scoped with the
+   [data-theme="minimal"] attribute and references tokens, so it flips for free
+   in dark.
    ========================================================================== */
 
 :root[data-theme="minimal"]{
-  /* ---- single accent hue: a restrained, slightly desaturated blue ----
-     Re-anchor the primary ramp so primary roles, --series-1, focus rings and
-     the (now flattened) gradient all shift together. */
-  --primary-50:#F2F5FB; --primary-100:#E3EAF6; --primary-200:#C7D5ED; --primary-300:#9DB6DF;
-  --primary-400:#6E92CE; --primary-500:#3B68B5; --primary-600:#315699; --primary-700:#28467C;
-  --primary-800:#21385F; --primary-900:#192945; --primary-950:#0E1726;
-
   /* ---- surfaces: light greys / white, hairline-separated ---- */
   --surface:#FFFFFF; --surface-default:#FAFAFA; --surface-medium:#F4F4F5; --surface-strong:#ECECEE;
   --surface-inverse:#1B1C1E;
@@ -31,27 +33,35 @@
   --border-default:#E6E6E8; --border-subtle:#EFEFF1;
   --interactive-hover:#F4F4F5; --interactive-active:#ECECEE;
 
-  /* ---- primary roles — the one accent ---- */
-  --primary-surface:#3B68B5; --primary-surface-muted:#E3EAF6; --primary-surface-subtle:#F2F5FB;
-  --primary-fg:#315699; --primary-fg-emphasis:#3B68B5; --primary-border:#C7D5ED;
-  --primary-hover:#315699; --primary-active:#28467C;
+  /* ---- the ONE accent — derived from the live scheme ramp, never hardcoded ----
+     primary-surface is the saturated fill (filled buttons / active edge); the
+     fg roles are the deeper-hue text; everything else hangs off the ramp so the
+     accent shifts with the chosen scheme. */
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:var(--primary-100);
+  --primary-surface-subtle:var(--primary-50);
+  --primary-fg:var(--primary-700);
+  --primary-fg-emphasis:var(--primary-600);
+  --primary-border:var(--primary-200);
+  --primary-hover:var(--primary-600);
+  --primary-active:var(--primary-700);
 
   /* ---- on-colours + NEUTRALISED secondary/tertiary ----
-     Drain the chroma out of the secondary (was brand red) and tertiary (cool
-     slate) roles so the primary is the only colour on the page. Both collapse
-     onto the neutral ramp; their chips/badges/tags read as quiet greys. */
+     Drain the chroma out of the secondary + tertiary roles so the primary is
+     the only colour on the page. Both collapse onto the neutral ramp; their
+     chips/badges/tags read as quiet greys. */
   --on-primary:#FFFFFF; --on-secondary:#1F2023; --on-tertiary:#1F2023;
   --secondary-surface:#ECECEE; --tertiary-surface:#F4F4F5;
-  --chip-primary-fg:#315699; --chip-secondary-fg:#5C5F66; --chip-tertiary-fg:#5C5F66;
+  --chip-primary-fg:var(--primary-700); --chip-secondary-fg:#5C5F66; --chip-tertiary-fg:#5C5F66;
 
   /* ---- gradient off: flat primary at both anchors ---- */
-  --primary-grad-from:#3B68B5; --primary-grad-to:#3B68B5;
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-500);
 
-  /* ---- chart series: primary + greys, one accent only ---- */
-  --series-1:var(--primary-surface);   /* the accent          */
+  /* ---- chart series: the one accent + greys ---- */
+  --series-1:var(--primary-500);       /* the accent          */
   --series-2:#8A8D94;                  /* grey                */
   --series-3:#B6B8BD;                  /* lighter grey        */
-  --series-4:#6E92CE;                  /* tint of the accent  */
+  --series-4:var(--primary-300);       /* tint of the accent  */
   --series-5:#D4D5D8;                  /* lightest grey       */
   --chart-grid:#EFEFF1; --chart-axis:#8A8D94;
 
@@ -66,8 +76,62 @@
 }
 
 /* ==========================================================================
+   DARK minimal — the editor toggles html.ds-scheme-dark for a dark preview
+   while data-theme stays "minimal". Surfaces/text/borders go to dark greys;
+   the one accent re-points to LIGHTER ramp steps so it still reads. Restraint
+   is preserved: still one accent, still hairline borders, still near-flat.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="minimal"]{
+  /* ---- dark greys, hairline-separated ---- */
+  --surface:#1B1C1E; --surface-default:#202124; --surface-medium:#26282B; --surface-strong:#303236;
+  --surface-inverse:#FFFFFF;
+  /* ---- text: light on dark, calm contrast ---- */
+  --fg-default:#ECECEE; --fg-muted:#A6A8AE; --fg-subtle:#7C7F86; --fg-on-surface:#1B1C1E;
+  /* ---- lines: dark hairlines ---- */
+  --border-default:#34363A; --border-subtle:#2A2C30;
+  --interactive-hover:#26282B; --interactive-active:#303236;
+
+  /* neutral light-end steps remap to dark so token-driven fills don't blow out */
+  --neutral-50:#202124; --neutral-70:#24262A; --neutral-80:#26282B;
+  --neutral-100:#2A2C30; --neutral-150:#303236; --neutral-200:#34363A;
+
+  /* ---- the ONE accent — re-pointed to lighter ramp steps for dark ---- */
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 22%, #1B1C1E);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 14%, #1B1C1E);
+  --primary-fg:var(--primary-300);
+  --primary-fg-emphasis:var(--primary-300);
+  --primary-border:color-mix(in srgb, var(--primary-500) 40%, transparent);
+  --primary-hover:var(--primary-400);
+  --primary-active:var(--primary-600);
+  --on-primary:#FFFFFF;
+
+  /* neutralised secondary/tertiary stay grey in dark */
+  --secondary-surface:#303236; --tertiary-surface:#26282B;
+  --chip-primary-fg:var(--primary-300); --chip-secondary-fg:#A6A8AE; --chip-tertiary-fg:#A6A8AE;
+
+  /* gradient stays flat */
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-500);
+
+  /* chart series: accent + dark-friendly greys */
+  --series-1:var(--primary-400);
+  --series-2:#7C7F86;
+  --series-3:#5C5F66;
+  --series-4:var(--primary-300);
+  --series-5:#454850;
+  --chart-grid:#2A2C30; --chart-axis:#7C7F86;
+
+  /* shadows deepen for dark */
+  --shadow-xs:0 1px 2px rgba(0,0,0,.5); --shadow-s:0 1px 2px rgba(0,0,0,.5);
+  --shadow-base:0 1px 3px rgba(0,0,0,.55); --shadow-m:0 1px 3px rgba(0,0,0,.55);
+  --shadow-l:0 2px 6px rgba(0,0,0,.6); --shadow-xl:0 4px 12px rgba(0,0,0,.65);
+  --shadow-hard:0 2px 8px rgba(0,0,0,.7);
+}
+
+/* ==========================================================================
    Scoped component overrides — every rule attribute-scoped so the default
-   theme is untouched.
+   theme is untouched. Colours reference tokens (above) so they flip
+   automatically in dark.
    ========================================================================== */
 
 /* ---- Navigation: light rail + light topbar, NOT the brand gradient ---- */
@@ -87,7 +151,7 @@
   border-bottom:1px solid var(--border-default);
 }
 
-/* ---- Nav links: dark text, subtle grey hover, thin primary underline active ---- */
+/* ---- Nav links: muted text, subtle hover, thin primary edge active ---- */
 [data-theme="minimal"] .nav-link{
   color:var(--fg-muted);
   border-radius:var(--radius-base);
@@ -138,6 +202,7 @@
 [data-theme="minimal"] .textarea{
   background:var(--surface);
   border:1px solid var(--border-default);
+  color:var(--fg-default);
   box-shadow:none;
 }
 [data-theme="minimal"] .input:focus,
@@ -157,6 +222,8 @@
 }
 [data-theme="minimal"] .btn--primary:hover,
 [data-theme="minimal"] .btn.is-hover.btn--primary{background:var(--primary-hover);}
+[data-theme="minimal"] .btn--primary:active,
+[data-theme="minimal"] .btn.is-pressed.btn--primary{background:var(--primary-active);}
 [data-theme="minimal"] .btn--outline{
   background:var(--surface);
   border-color:var(--border-default);
@@ -208,3 +275,10 @@
   box-shadow:none;
 }
 [data-theme="minimal"] .stat-hero{border-radius:var(--radius-l);}
+
+/* ---- Chart legend swatches ride the --series-* tokens (flip in dark) ---- */
+[data-theme="minimal"] .legend__swatch--1{background:var(--series-1);}
+[data-theme="minimal"] .legend__swatch--2{background:var(--series-2);}
+[data-theme="minimal"] .legend__swatch--3{background:var(--series-3);}
+[data-theme="minimal"] .legend__swatch--4{background:var(--series-4);}
+[data-theme="minimal"] .legend__swatch--5{background:var(--series-5);}

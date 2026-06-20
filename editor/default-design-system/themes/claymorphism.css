@@ -2,16 +2,18 @@
    Claymorphism theme — apply via <html data-theme="claymorphism">.
    A STYLE OVERLAY on top of the Template Design System (styles.css must load
    first). Soft-UI "foam" / puffy 3D clay: chunky rounded everything, matte
-   pastel surfaces, and the signature dual-light clay shadow (outer drop +
-   inner highlight). Buttons puff and DEPRESS on :active; inputs are inset
-   wells. Raw hex/rgba is allowed here (this is a look, not a token ramp), and
-   every override is scoped to the [data-theme="claymorphism"] attribute so it
-   never leaks into the base or dark themes.
+   surfaces, and the signature dual-light clay shadow (outer drop + inner
+   highlight). Buttons puff and DEPRESS on :active; inputs are inset wells.
 
-   Refs: design-library/style-claymorphism.md (the three-shadow clay recipe,
-   warm-pastel wash, graded radii, "one clay layer per screen") +
-   design-library/material-soft-ui-foam.md (committed top-left light, raised↔
-   pressed deform, container-bg == page-bg).
+   COLOUR FOLLOWS THE SELECTED SCHEME. The clay CTA + accents derive from the
+   customizer's --primary-* ramp (never a hardcoded lavender), exactly like
+   glassmorphism + pastel. The warm-cream clay substrate is the style's neutral
+   character (not the scheme). Dark mode is handled by a parallel block scoped
+   to :root.ds-scheme-dark (the class the editor toggles for dark previews); the
+   clay shadow's white highlight / dark cast flip via helper tokens so the
+   dual-light read survives on a dark substrate.
+
+   This theme is PURE CSS — no WebGL / shader runtime.
    ========================================================================== */
 
 :root[data-theme="claymorphism"]{
@@ -41,55 +43,66 @@
   --neutral-50:#F4EFE9; --neutral-70:#EDE6DD; --neutral-80:#E5DCD1;
   --neutral-100:#DCD1C3; --neutral-150:#D2C6B6; --neutral-200:#C8BBA9;
 
-  /* ---- brand roles: one full-saturation pastel-leaning accent for the CTA;
-     keep the supporting roles soft so only the CTA pops ---- */
-  --primary-surface:#7B6CEC;        /* soft lavender-purple CTA               */
-  --primary-surface-muted:#E2DEFB;
-  --primary-surface-subtle:#EFEDFD;
-  --primary-fg:#5B4BD6; --primary-fg-emphasis:#5B4BD6; --primary-border:#C9C2F6;
-  --primary-hover:#897BF0; --primary-active:#6A5AE0;
+  /* ---- brand roles: the ONE saturated CTA + supporting tints, all DERIVED
+     from the selected scheme ramp so the clay accent follows the brand ---- */
+  --primary-surface:var(--primary-500);          /* saturated clay CTA fill   */
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 18%, var(--surface));
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 9%, var(--surface));
+  --primary-fg:var(--primary-700); --primary-fg-emphasis:var(--primary-700);
+  --primary-border:color-mix(in srgb, var(--primary-500) 30%, transparent);
+  --primary-hover:var(--primary-400); --primary-active:var(--primary-600);
   --on-primary:#FFFFFF;
-  --primary-grad-from:#897BF0; --primary-grad-to:#6A5AE0;
+  --primary-grad-from:var(--primary-400); --primary-grad-to:var(--primary-600);
 
-  --secondary-surface:#F0996B;      /* warm peach                             */
-  --tertiary-surface:#7FB7A6;       /* soft mint-slate                        */
-  --chip-primary-fg:#5B4BD6; --chip-secondary-fg:#B65A2E; --chip-tertiary-fg:#3E6E5F;
+  --secondary-surface:var(--secondary-500);
+  --tertiary-surface:var(--tertiary-500);
+  --chip-primary-fg:var(--primary-700); --chip-secondary-fg:var(--secondary-700); --chip-tertiary-fg:var(--tertiary-700);
 
-  /* ---- the clay shadow helpers ----
+  /* ---- clay-shadow ingredient tokens (flip in dark) ----
      CLAY = outer drop (tinted, not pure black) + outer top-left highlight +
-     inner highlight + inner bottom-right shadow. The single committed light
-     comes from the top-left and never deviates.
-     CLAY-INSET = the pressed / well variant (inset only). ---- */
+     inner highlight + inner bottom-right shadow. Single committed top-left
+     light. Parameterised so the dark block can re-cast the highlight/drop. */
+  --clay-cast:rgba(120,108,180,.16);     /* outer drop                        */
+  --clay-cast-sm:rgba(120,108,180,.14);
+  --clay-hi:rgba(255,255,255,.85);       /* outer top-left highlight          */
+  --clay-hi-in:rgba(255,255,255,.60);    /* inner highlight                   */
+  --clay-lo-in:rgba(120,100,70,.10);     /* inner bottom-right shadow         */
+  --clay-press-lo:rgba(40,30,70,.28);    /* pressed inner dark                */
+  --clay-press-hi:rgba(255,255,255,.22);
+  /* primary CTA shadow tint follows the scheme */
+  --clay-primary-cast:color-mix(in srgb, var(--primary-500) 34%, transparent);
+  --clay-primary-lo-in:color-mix(in srgb, var(--primary-950) 26%, transparent);
+
   --clay-shadow:
-    8px 8px 20px rgba(120,108,180,.16),
-    -6px -6px 16px rgba(255,255,255,.85),
-    inset 3px 3px 6px rgba(255,255,255,.60),
-    inset -5px -5px 10px rgba(120,100,70,.10);
+    8px 8px 20px var(--clay-cast),
+    -6px -6px 16px var(--clay-hi),
+    inset 3px 3px 6px var(--clay-hi-in),
+    inset -5px -5px 10px var(--clay-lo-in);
   --clay-shadow-sm:
-    5px 5px 12px rgba(120,108,180,.14),
-    -4px -4px 10px rgba(255,255,255,.85),
-    inset 2px 2px 4px rgba(255,255,255,.55),
-    inset -3px -3px 6px rgba(120,100,70,.09);
+    5px 5px 12px var(--clay-cast-sm),
+    -4px -4px 10px var(--clay-hi),
+    inset 2px 2px 4px var(--clay-hi-in),
+    inset -3px -3px 6px var(--clay-lo-in);
   --clay-inset:
-    inset 5px 5px 10px rgba(120,100,70,.14),
-    inset -5px -5px 10px rgba(255,255,255,.80);
+    inset 5px 5px 10px var(--clay-lo-in),
+    inset -5px -5px 10px var(--clay-hi);
   /* pressed button: shallow inset, sits "into" the dough */
   --clay-press:
-    inset 4px 4px 9px rgba(40,30,70,.28),
-    inset -3px -3px 7px rgba(255,255,255,.22);
+    inset 4px 4px 9px var(--clay-press-lo),
+    inset -3px -3px 7px var(--clay-press-hi);
 
   /* ---- re-skin the system shadows so anything still on a --shadow-* token
      reads as soft foam rather than a hard drop ---- */
-  --shadow-xs:0 2px 6px rgba(120,108,180,.10);
-  --shadow-s:0 3px 10px rgba(120,108,180,.12);
+  --shadow-xs:0 2px 6px var(--clay-cast);
+  --shadow-s:0 3px 10px var(--clay-cast-sm);
   --shadow-base:var(--clay-shadow-sm);
-  --shadow-m:0 6px 16px rgba(120,108,180,.14);
-  --shadow-l:0 10px 24px rgba(120,108,180,.16);
+  --shadow-m:0 6px 16px var(--clay-cast);
+  --shadow-l:0 10px 24px var(--clay-cast);
   --shadow-xl:var(--clay-shadow);
   --shadow-hard:8px 8px 20px rgba(60,48,90,.22);
 
-  /* ---- charts: soft pastel-ish series ---- */
-  --series-1:#7B6CEC;  /* lavender   */
+  /* ---- charts: lead follows the scheme, supporting hues soft pastel ---- */
+  --series-1:var(--primary-500);
   --series-2:#7FB7A6;  /* mint       */
   --series-3:#F0B96B;  /* butter     */
   --series-4:#6FB6D6;  /* sky        */
@@ -99,6 +112,43 @@
 
   /* slightly softer global easing — gentle squash, no hard snap */
   --ease:.25s cubic-bezier(.34,1.56,.64,1);
+}
+
+/* ==========================================================================
+   DARK clay — the editor toggles html.ds-scheme-dark for a dark preview while
+   data-theme stays "claymorphism". Warm dark substrate; the clay highlight
+   drops to a faint light + the cast deepens so the dual-light read survives.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="claymorphism"]{
+  --surface:#2A2620; --surface-default:#221F1A; --surface-medium:#322D26; --surface-strong:#3C362E;
+  --surface-inverse:#F4EFE9;
+  --fg-default:#ECE6DD; --fg-muted:#B8AE9F; --fg-subtle:#8A8173; --fg-on-surface:#221F1A;
+  --border-default:#3C362E; --border-subtle:#322D26;
+  --interactive-hover:#322D26; --interactive-active:#3C362E;
+
+  --neutral-50:#221F1A; --neutral-70:#2A2620; --neutral-80:#322D26;
+  --neutral-100:#3C362E; --neutral-150:#473F36; --neutral-200:#52493E;
+
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 26%, var(--surface));
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 16%, var(--surface));
+  --primary-fg:var(--primary-300); --primary-fg-emphasis:var(--primary-200);
+  --primary-border:color-mix(in srgb, var(--primary-500) 42%, transparent);
+  --primary-hover:var(--primary-400); --primary-active:var(--primary-600);
+  --on-primary:#FFFFFF;
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-700);
+  --chip-primary-fg:var(--primary-300); --chip-secondary-fg:var(--secondary-300); --chip-tertiary-fg:var(--tertiary-300);
+
+  /* clay shadow ingredients re-cast for a dark substrate */
+  --clay-cast:rgba(0,0,0,.45); --clay-cast-sm:rgba(0,0,0,.40);
+  --clay-hi:rgba(255,255,255,.07); --clay-hi-in:rgba(255,255,255,.05);
+  --clay-lo-in:rgba(0,0,0,.38);
+  --clay-press-lo:rgba(0,0,0,.55); --clay-press-hi:rgba(255,255,255,.05);
+  --clay-primary-cast:rgba(0,0,0,.5);
+  --clay-primary-lo-in:rgba(0,0,0,.4);
+
+  --shadow-hard:8px 8px 20px rgba(0,0,0,.5);
+  --chart-grid:#3C362E; --chart-axis:#8A8173;
 }
 
 /* ==========================================================================
@@ -149,7 +199,7 @@
   background:transparent;
 }
 [data-theme="claymorphism"] .kpi + .kpi{
-  box-shadow:inset 1px 0 0 rgba(255,255,255,.7), inset 2px 0 0 rgba(120,100,70,.05);
+  box-shadow:inset 1px 0 0 var(--clay-hi-in), inset 2px 0 0 var(--clay-lo-in);
 }
 
 /* ==========================================================================
@@ -165,10 +215,10 @@
   background:var(--primary-surface);
   color:var(--on-primary);
   box-shadow:
-    6px 6px 14px rgba(91,75,214,.30),
-    -4px -4px 10px rgba(255,255,255,.55),
-    inset 2px 2px 5px rgba(255,255,255,.45),
-    inset -4px -4px 8px rgba(40,30,90,.22);
+    6px 6px 14px var(--clay-primary-cast),
+    -4px -4px 10px var(--clay-hi),
+    inset 2px 2px 5px rgba(255,255,255,.40),
+    inset -4px -4px 8px var(--clay-primary-lo-in);
 }
 [data-theme="claymorphism"] .btn--primary:hover{
   background:var(--primary-hover);
@@ -242,7 +292,7 @@
 [data-theme="claymorphism"] .select.is-focus,
 [data-theme="claymorphism"] .textarea.is-focus{
   outline:none;
-  box-shadow:var(--clay-inset), 0 0 0 3px rgba(123,108,236,.30);
+  box-shadow:var(--clay-inset), 0 0 0 3px color-mix(in srgb, var(--primary-500) 30%, transparent);
 }
 [data-theme="claymorphism"] .input.is-error,
 [data-theme="claymorphism"] .select.is-error,
@@ -265,7 +315,7 @@
 }
 [data-theme="claymorphism"] .input--bare:focus,
 [data-theme="claymorphism"] .input--bare.is-focus{
-  box-shadow:0 0 0 3px rgba(123,108,236,.25);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--primary-500) 25%, transparent);
 }
 
 /* ==========================================================================
@@ -277,8 +327,8 @@
   border:0;
   border-radius:var(--radius-pill);
   box-shadow:
-    2px 2px 5px rgba(120,108,180,.16),
-    -2px -2px 5px rgba(255,255,255,.75);
+    2px 2px 5px var(--clay-cast),
+    -2px -2px 5px var(--clay-hi);
 }
 [data-theme="claymorphism"] .badge--light,
 [data-theme="claymorphism"] .tag--light{
@@ -323,10 +373,10 @@
   border:0;
   border-radius:var(--radius-2xl);
   box-shadow:
-    16px 16px 40px rgba(70,58,110,.22),
-    -10px -10px 28px rgba(255,255,255,.70),
-    inset 3px 3px 8px rgba(255,255,255,.55),
-    inset -6px -6px 12px rgba(120,100,70,.08);
+    16px 16px 40px var(--clay-cast),
+    -10px -10px 28px var(--clay-hi),
+    inset 3px 3px 8px var(--clay-hi-in),
+    inset -6px -6px 12px var(--clay-lo-in);
 }
 [data-theme="claymorphism"] .modal__close{border-radius:var(--radius-pill);}
 [data-theme="claymorphism"] .modal__close:hover{
@@ -345,9 +395,9 @@
   height:calc(100vh - 2 * var(--space-xs));
   border-radius:var(--radius-2xl);
   box-shadow:
-    10px 10px 26px rgba(91,75,214,.26),
-    inset 3px 3px 8px rgba(255,255,255,.22),
-    inset -6px -6px 12px rgba(40,30,90,.20);
+    10px 10px 26px color-mix(in srgb, var(--primary-700) 28%, transparent),
+    inset 3px 3px 8px rgba(255,255,255,.20),
+    inset -6px -6px 12px rgba(0,0,0,.20);
   overflow:hidden;
 }
 [data-theme="claymorphism"] .nav-link{border-radius:var(--radius-m);}
@@ -355,8 +405,8 @@
   background:rgba(255,255,255,.18);
   border-radius:var(--radius-m);
   box-shadow:
-    inset 2px 2px 5px rgba(255,255,255,.25),
-    inset -3px -3px 6px rgba(40,30,90,.18);
+    inset 2px 2px 5px rgba(255,255,255,.22),
+    inset -3px -3px 6px rgba(0,0,0,.18);
 }
 [data-theme="claymorphism"] .topbar{
   background:var(--surface-default);
@@ -371,10 +421,10 @@
   background:var(--surface);
   border-radius:var(--radius-2xl);
   box-shadow:
-    18px 18px 44px rgba(70,58,110,.20),
-    -12px -12px 32px rgba(255,255,255,.75),
-    inset 3px 3px 8px rgba(255,255,255,.55),
-    inset -6px -6px 12px rgba(120,100,70,.08);
+    18px 18px 44px var(--clay-cast),
+    -12px -12px 32px var(--clay-hi),
+    inset 3px 3px 8px var(--clay-hi-in),
+    inset -6px -6px 12px var(--clay-lo-in);
 }
 [data-theme="claymorphism"] .phone__status,
 [data-theme="claymorphism"] .phone__screen{background:var(--surface);}
@@ -383,26 +433,4 @@
   border-radius:var(--radius-l);
   background:var(--primary-surface-subtle);
   box-shadow:var(--clay-inset);
-}
-
-/* ==========================================================================
-   WebGL clay mode — active once themes/claymorphism.js mounts the REAL
-   Material Lab soft-ui-foam material (it adds `html.clay-gl`). The CSS
-   surfaces go transparent so the fixed WebGL foam canvas (z-index:-1) paints
-   them; the page background matches the foam so each panel reads by its
-   embossed edge (the soft-UI signature). Foam is light + opaque, so text
-   stays dark. When JS / WebGL2 is unavailable the dual-shadow clay rules
-   above remain as a graceful fallback.
-   ========================================================================== */
-html.clay-gl [data-theme="claymorphism"] body,
-html.clay-gl[data-theme="claymorphism"] body{
-  background:#e9eef5;
-}
-html.clay-gl [data-theme="claymorphism"] :is(.app,.main,.content,.workflow-root,.workflow-canvas){
-  background:transparent !important;
-}
-html.clay-gl [data-theme="claymorphism"] :is(.card,.section-card,.stat-hero,.chart-card,.modal,.slideout,.topbar,.sidebar,.btn--primary,.btn--outline,.input,.select,.textarea,.badge,.tag,.kpi,.metric-tile,.phone__tabbar){
-  background:transparent !important;
-  box-shadow:none !important;
-  border-color:transparent;
 }

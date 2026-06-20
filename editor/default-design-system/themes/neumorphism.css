@@ -5,32 +5,46 @@
 
    THE LOOK (canonical Soft UI, per design-library/material-soft-ui-foam.md):
    - ONE shared base colour. The page background AND every component background
-     are the SAME mid-tone (#E0E5EC). Components have NO independent fill —
-     depth comes ONLY from shadow. A control that is the same colour as its page
-     but appears extruded/recessed is the entire illusion.
+     are the SAME mid-tone (#E0E5EC light / #2C313C dark). Components have NO
+     independent fill — depth comes ONLY from shadow. A control that is the same
+     colour as its page but appears extruded/recessed is the entire illusion.
    - Light source is FIXED top-left, never per-component. RAISED elements carry a
-     light highlight top-left (#FFFFFF) + a dark shadow bottom-right (#A3B1C6).
-     PRESSED / inset elements carry the same pair, inset.
+     light highlight top-left + a dark shadow bottom-right. PRESSED / inset
+     elements carry the same pair, inset.
    - Never pure #000/#FFF as the only shadow (kills one side of the light).
    - Radius >= 16px (soft-plastic read). Borders mostly removed — depth is shadow.
-   - Text + icons are NOT extruded — only containers. Low contrast, monochrome,
-     a single soft-blue accent kept subtle for active/links.
+   - Text + icons are NOT extruded — only containers. Low contrast, monochrome.
+
+   COLOUR: the monochrome base/highlight/shadow tones are the style's NEUTRAL
+   IDENTITY (the soft-UI substrate) and stay fixed per mode. The single subtle
+   ACCENT (links / active / checkbox tick / chart series) FOLLOWS THE SELECTED
+   SCHEME — it points at the --primary-* ramp the customizer writes, so a blue
+   scheme gives a soft-blue accent, a green scheme a soft-green one, etc. This
+   file never re-defines the --primary-/--secondary-/--tertiary- ramps.
+
+   DARK MODE: a parallel block scoped to :root.ds-scheme-dark[data-theme=
+   "neumorphism"] (the class the editor toggles for dark previews) swaps the
+   monochrome substrate to a dark base + dark dual-shadow pair. The
+   neu-raise / neu-inset shadow tokens reference --neu-dark/--neu-light, so simply
+   redefining the base trio flips every component automatically.
 
    EXACT DUAL-SHADOW RECIPE (the two load-bearing tokens):
-     --neu-raise : 9px 9px 18px #A3B1C6, -9px -9px 18px #FFFFFF;
-     --neu-inset : inset 6px 6px 12px #A3B1C6, inset -6px -6px 12px #FFFFFF;
+     --neu-raise : 9px 9px 18px var(--neu-dark), -9px -9px 18px var(--neu-light);
+     --neu-inset : inset 6px 6px 12px var(--neu-dark), inset -6px -6px 12px var(--neu-light);
    ========================================================================== */
 
 :root[data-theme="neumorphism"]{
   /* ---- the ONE shared base colour ----
      Page and components share this exact value. Everything that used to be a
      distinct surface/neutral fill is remapped onto the base so nothing reads as
-     a separate sheet of paper — only the shadow tells you what's raised/sunk. */
+     a separate sheet of paper — only the shadow tells you what's raised/sunk.
+     The base/highlight/shadow trio is the style's NEUTRAL substrate (not the
+     scheme); it stays fixed in light mode. */
   --neu-base:#E0E5EC;          /* shared page + component tone */
   --neu-dark:#A3B1C6;          /* bottom-right cast shadow (cool grey-blue) */
   --neu-light:#FFFFFF;         /* top-left highlight                        */
-  --neu-accent:#6D8BC4;        /* subtle soft-blue accent (links / active)  */
-  --neu-accent-strong:#4E6FB0; /* pressed/active accent                     */
+  --neu-accent:var(--primary-400);        /* subtle accent FOLLOWS the scheme (links / active) */
+  --neu-accent-strong:var(--primary-600); /* pressed/active accent FOLLOWS the scheme           */
   --neu-text:#4B5566;          /* low-contrast ink, never pure black        */
   --neu-text-muted:#7E8AA0;
   --neu-text-subtle:#9AA4B8;
@@ -59,7 +73,7 @@
   --border-default:transparent; --border-subtle:transparent;
   --interactive-hover:var(--neu-base); --interactive-active:var(--neu-base);
 
-  /* ---- primary role kept SUBTLE (soft blue) for active/links ---- */
+  /* ---- primary role kept SUBTLE; accent follows the scheme for active/links ---- */
   --primary-surface:var(--neu-accent); --primary-surface-muted:var(--neu-base);
   --primary-surface-subtle:var(--neu-base);
   --primary-fg:var(--neu-accent-strong); --primary-fg-emphasis:var(--neu-accent-strong);
@@ -80,10 +94,60 @@
   --shadow-l:var(--neu-raise-lg); --shadow-xl:var(--neu-raise-lg);
   --shadow-hard:var(--neu-raise);
 
-  /* ---- charts: monochrome-with-one-accent, drawn on the base ---- */
+  /* ---- charts: monochrome-with-one-accent (accent follows the scheme) ---- */
   --series-1:var(--neu-accent-strong); --series-2:var(--neu-accent);
   --series-3:#8C9BB5; --series-4:#B0BAC9; --series-5:#5B6B86;
   --chart-grid:#CBD2DD; --chart-axis:var(--neu-text-subtle);
+}
+
+/* ==========================================================================
+   DARK soft-UI — the editor toggles html.ds-scheme-dark for a dark preview
+   while data-theme stays "neumorphism". Swap the monochrome substrate to a
+   dark base + dark dual-shadow pair (darker cast bottom-right, LIGHTER
+   highlight top-left). The accent still follows the scheme via --primary-*.
+   Because the neu-raise / neu-inset tokens reference --neu-dark/--neu-light, simply
+   redefining the base trio re-casts every raised/inset component. (The
+   neu-raise / neu-inset shadow tokens reference neu-dark / neu-light.) Semantic
+   surface / neutral / fg tokens are remapped to the dark base + dark ink so
+   anything reading those tokens stays correct. Borders stay transparent.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="neumorphism"]{
+  --neu-base:#2C313C;          /* shared dark page + component tone */
+  --neu-dark:#1E222A;          /* bottom-right cast — darker than base */
+  --neu-light:#3A4150;         /* top-left highlight — LIGHTER than base */
+  --neu-accent:var(--primary-400);        /* accent still follows the scheme */
+  --neu-accent-strong:var(--primary-300); /* lighter ramp step reads on dark   */
+  --neu-text:#C9CEDA;          /* low-contrast light ink */
+  --neu-text-muted:#9AA1B0;
+  --neu-text-subtle:#767D8C;
+
+  /* remap semantic surfaces onto the dark base */
+  --surface:var(--neu-base); --surface-default:var(--neu-base);
+  --surface-medium:var(--neu-base); --surface-strong:var(--neu-base);
+  --surface-inverse:#EDEFF4;
+
+  --neutral-50:var(--neu-base); --neutral-70:var(--neu-base); --neutral-80:var(--neu-base);
+  --neutral-100:var(--neu-base); --neutral-150:#343A47; --neutral-200:#3E4552;
+
+  --fg-default:var(--neu-text); --fg-muted:var(--neu-text-muted); --fg-subtle:var(--neu-text-subtle);
+  --fg-on-surface:var(--neu-text);
+
+  --border-default:transparent; --border-subtle:transparent;
+  --interactive-hover:var(--neu-base); --interactive-active:var(--neu-base);
+
+  --primary-surface:var(--neu-accent); --primary-surface-muted:var(--neu-base);
+  --primary-surface-subtle:var(--neu-base);
+  --primary-fg:var(--neu-accent-strong); --primary-fg-emphasis:var(--neu-accent-strong);
+  --primary-border:transparent;
+  --primary-hover:var(--neu-accent); --primary-active:var(--neu-accent-strong);
+  --on-primary:#10131A;
+
+  --primary-grad-from:var(--neu-base); --primary-grad-to:var(--neu-base);
+
+  /* charts read on the dark base; accent series follow the scheme */
+  --series-1:var(--neu-accent-strong); --series-2:var(--neu-accent);
+  --series-3:#7E8AA0; --series-4:#5B6478; --series-5:#A6AEBF;
+  --chart-grid:#3E4552; --chart-axis:var(--neu-text-subtle);
 }
 
 /* ==========================================================================
@@ -145,14 +209,14 @@
 [data-theme="neumorphism"] .select:hover,
 [data-theme="neumorphism"] .textarea:hover,
 [data-theme="neumorphism"] .input--bare:hover{box-shadow:var(--neu-inset);}
-/* focus deepens the well + a faint accent glow (no hard ring) */
+/* focus deepens the well + a faint accent glow (no hard ring); glow follows scheme */
 [data-theme="neumorphism"] .input:focus,
 [data-theme="neumorphism"] .select:focus,
 [data-theme="neumorphism"] .textarea:focus,
 [data-theme="neumorphism"] .input--bare:focus,
 [data-theme="neumorphism"] .input--bare.is-focus{
   outline:none;border:0;
-  box-shadow:var(--neu-inset), 0 0 0 2px rgba(109,139,196,.28);
+  box-shadow:var(--neu-inset), 0 0 0 2px color-mix(in srgb, var(--neu-accent) 45%, transparent);
 }
 [data-theme="neumorphism"] .input:disabled,
 [data-theme="neumorphism"] .select:disabled,
@@ -175,7 +239,7 @@
 [data-theme="neumorphism"] .btn:active,
 [data-theme="neumorphism"] .btn.is-pressed{box-shadow:var(--neu-inset-sm);}
 
-/* primary: same extrusion, soft-blue ink (accent stays subtle, not a fill) */
+/* primary: same extrusion, scheme accent ink (accent stays subtle, not a fill) */
 [data-theme="neumorphism"] .btn--primary{
   background:var(--neu-base);color:var(--neu-accent-strong);font-weight:var(--w-semibold);
   box-shadow:var(--neu-raise-sm);
@@ -293,7 +357,7 @@
 [data-theme="neumorphism"] .table--flat th{color:var(--neu-text-muted);}
 [data-theme="neumorphism"] .table--flat tbody tr:hover td{background:rgba(163,177,198,.16);}
 [data-theme="neumorphism"] .table--flat tbody tr.row--selected td,
-[data-theme="neumorphism"] .table--flat tbody tr.row--active td{background:rgba(109,139,196,.14);}
+[data-theme="neumorphism"] .table--flat tbody tr.row--active td{background:color-mix(in srgb, var(--neu-accent) 14%, transparent);}
 
 /* ==========================================================================
    Switch (segmented) — a recessed track with a raised active thumb.
@@ -311,7 +375,10 @@
 }
 
 /* ==========================================================================
-   Checkbox — soft inset well; checked = raised soft chip with accent tick.
+   Checkbox — soft inset well; checked = raised soft chip with a tick.
+   The inline-SVG tick stroke can't read a CSS var, so it carries a fixed
+   mid-blue that sits well on both the light and dark soft-UI base; the rest
+   of the accent system follows the scheme.
    ========================================================================== */
 [data-theme="neumorphism"] .checkbox,
 [data-theme="neumorphism"] .radio{
@@ -322,7 +389,7 @@
 [data-theme="neumorphism"] .checkbox:hover:not(:disabled),
 [data-theme="neumorphism"] .radio:hover:not(:disabled){border:0;box-shadow:var(--neu-inset-sm);}
 [data-theme="neumorphism"] .checkbox:checked{
-  background:var(--neu-base) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%234E6FB0' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") center/14px no-repeat;
+  background:var(--neu-base) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237188B0' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") center/14px no-repeat;
   border:0;box-shadow:var(--neu-raise-sm);
 }
 [data-theme="neumorphism"] .checkbox:disabled,

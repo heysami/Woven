@@ -3,13 +3,23 @@
    Industrial Frutiger / DORFic × Teenage Engineering × Nothing Phone.
 
    Concrete cool off-white ground, graphite inverse, neutral greys, and ONE
-   hot signal: safety orange #FF6600 (remapped onto the PRIMARY role). Square,
-   precise, hairline-ruled, monochrome + orange. SMALL UPPERCASE tracked MONO
-   labels; flattened shadows; near-zero radii.
+   hot signal. Square, precise, hairline-ruled, monochrome + accent. SMALL
+   UPPERCASE tracked MONO labels; flattened shadows; near-zero radii.
 
-   Loads AFTER styles.css (+ component/shell CSS). Raw hex is permitted here;
-   every override is scoped to the [data-theme="techminimalism"] attribute so
-   the base design system is untouched when the theme is off.
+   COLOUR FOLLOWS THE SELECTED SCHEME. The single hot signal (was hardcoded
+   safety orange) now rides the PRIMARY role written by the customizer — this
+   file NEVER re-defines the --primary-/--secondary-/--tertiary- ramps; it
+   DERIVES the brand roles from those ramps. Pick an orange scheme → orange
+   signal; pick a blue scheme → blue signal; etc. The GRAPHITE/CONCRETE
+   neutrals stay the style's fixed identity (they are not the scheme).
+
+   DARK MODE is handled by a parallel block scoped to :root.ds-scheme-dark
+   (the class the editor toggles for dark previews) — the concrete ground
+   inverts to graphite-dark while the hairline-technical look is preserved.
+
+   Loads AFTER styles.css (+ component/shell CSS). Every override is scoped to
+   the [data-theme="techminimalism"] attribute so the base design system is
+   untouched when the theme is off.
    ========================================================================== */
 
 :root[data-theme="techminimalism"]{
@@ -36,20 +46,17 @@
   --neutral-500:#6C7177; --neutral-600:#52565C; --neutral-700:#3A3E43; --neutral-800:#26292D;
   --neutral-900:#16181B; --neutral-950:#0E1014;
 
-  /* ---- PRIMARY role → safety orange #FF6600 (the single hot signal) ---- */
-  --primary-50:#FFF1E6; --primary-100:#FFDCC2; --primary-200:#FFC299; --primary-300:#FFA866;
-  --primary-400:#FF8A33; --primary-500:#FF6600; --primary-600:#E65C00; --primary-700:#B84900;
-  --primary-800:#8A3700; --primary-900:#5C2500; --primary-950:#2E1200;
+  /* ---- PRIMARY role → derived from the SCHEME ramp (the single hot signal) ---- */
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:var(--primary-100); --primary-surface-subtle:var(--primary-50);
+  --primary-fg:var(--primary-700); --primary-fg-emphasis:var(--primary-700);
+  --primary-border:var(--neutral-950);
+  --primary-hover:var(--primary-600); --primary-active:var(--primary-700);
 
-  --primary-surface:#FF6600; --primary-surface-muted:#FFDCC2; --primary-surface-subtle:#FFF1E6;
-  /* primary-fg = darker orange / graphite for text contrast on light grounds */
-  --primary-fg:#B84900; --primary-fg-emphasis:#B84900; --primary-border:#0E1014;
-  --primary-hover:#E65C00; --primary-active:#B84900;
-
-  /* on-orange text is graphite (orange is too light for white at AA) */
-  --on-primary:#0E1014; --on-secondary:#FFFFFF; --on-tertiary:#FFFFFF;
-  --primary-grad-from:#FF6600; --primary-grad-to:#0E1014;
-  --chip-primary-fg:#B84900;
+  /* white text on the filled scheme signal (safe across hues) */
+  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#FFFFFF;
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--neutral-950);
+  --chip-primary-fg:var(--primary-700);
 
   /* ---- Square, precise: near-zero radii. Pills survive only for tags/dots ---- */
   --radius-xs:0px; --radius-s:2px; --radius-base:2px; --radius-m:3px; --radius-l:4px;
@@ -59,8 +66,8 @@
   --shadow-xs:none; --shadow-s:none; --shadow-base:none; --shadow-m:none;
   --shadow-l:none; --shadow-xl:none; --shadow-hard:none;
 
-  /* ---- Charts: graphite/grey series, orange as the single accent ---- */
-  --series-1:#FF6600;  /* lead = the hot signal      */
+  /* ---- Charts: graphite/grey series, scheme as the single accent ---- */
+  --series-1:var(--primary-500);  /* lead = the hot signal      */
   --series-2:#0E1014;  /* graphite                   */
   --series-3:#878C92;  /* mid grey                   */
   --series-4:#C9CDD0;  /* light grey                 */
@@ -68,6 +75,46 @@
   --chart-grid:#DDE0E1; --chart-axis:#878C92;
 
   background:var(--surface-default);
+}
+
+/* ==========================================================================
+   DARK tech-minimalism — the editor toggles html.ds-scheme-dark for a dark
+   preview while data-theme stays "techminimalism". Invert the concrete ground
+   to graphite-dark, keep the hairline-technical feel, and re-point the brand
+   roles to lighter ramp steps. The accent still follows the scheme.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="techminimalism"]{
+  --surface:#16181B;            /* panels float above the dark ground       */
+  --surface-default:#0E1014;    /* graphite-dark — the ground               */
+  --surface-medium:#1C1F23;
+  --surface-strong:#26292D;
+  --surface-inverse:#F2F3F4;    /* a light slab to invert against           */
+
+  --fg-default:#ECEEEF; --fg-muted:#A9AEB3; --fg-subtle:#787D83; --fg-on-surface:#0E1014;
+
+  --border-default:#3A3E43; --border-subtle:#2A2D31;
+  --interactive-hover:#1C1F23; --interactive-active:#26292D;
+
+  /* cool neutral ramp remapped to dark steps */
+  --neutral-50:#1C1F23; --neutral-70:#22262A; --neutral-80:#26292D; --neutral-100:#2A2D31;
+  --neutral-150:#30343A; --neutral-200:#3A3E43; --neutral-300:#52565C; --neutral-400:#6C7177;
+  --neutral-500:#878C92; --neutral-600:#A9AEB3; --neutral-700:#C9CDD0; --neutral-800:#DDE0E1;
+  --neutral-900:#E7E9EA; --neutral-950:#F2F3F4;
+
+  /* brand roles re-pointed lighter so the signal reads on dark */
+  --primary-surface:var(--primary-500);
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 24%, #16181B);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 15%, #16181B);
+  --primary-fg:var(--primary-300); --primary-fg-emphasis:var(--primary-300);
+  --primary-border:#3A3E43;
+  --primary-hover:var(--primary-400); --primary-active:var(--primary-500);
+  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#FFFFFF;
+  --primary-grad-from:var(--primary-500); --primary-grad-to:#0E1014;
+  --chip-primary-fg:var(--primary-300);
+
+  --series-1:var(--primary-500);
+  --series-2:#ECEEEF; --series-3:#A9AEB3; --series-4:#52565C; --series-5:#C9CDD0;
+  --chart-grid:#2A2D31; --chart-axis:#787D83;
 }
 
 /* --------------------------------------------------------------------------
@@ -99,12 +146,13 @@
 
 /* --------------------------------------------------------------------------
    SIDEBAR — flip the brand-gradient rail to a graphite concrete slab with a
-   faint dot-matrix texture + a hairline edge. Mono section labels.
+   faint dot-matrix texture + a hairline edge. Mono section labels. The slab
+   stays graphite (#0E1014) in BOTH modes — fine on a #16181B dark page.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .sidebar{
   background:#0E1014;
   color:#C9CDD0;
-  border-right:1px solid #0E1014;
+  border-right:1px solid var(--border-default);
   /* subtle dot-matrix grid texture */
   background-image:radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
   background-size:12px 12px;background-position:-1px -1px;
@@ -115,7 +163,7 @@
 [data-theme="techminimalism"] .sidebar__section{color:#6C7177;letter-spacing:.18em;}
 [data-theme="techminimalism"] .sidebar__user{border-top:1px solid rgba(255,255,255,.12);}
 
-/* nav links: square, hairline; active row = orange left-marker + faint fill */
+/* nav links: square, hairline; active row = scheme left-marker + faint fill */
 [data-theme="techminimalism"] .nav-link{
   color:#A9AEB3;border-radius:2px;font-weight:500;
   backdrop-filter:none;box-shadow:none;
@@ -126,17 +174,17 @@
 [data-theme="techminimalism"] .nav-link.is-active{
   color:#FFFFFF;background:rgba(255,255,255,.06);
   border-radius:2px;backdrop-filter:none;box-shadow:none;
-  box-shadow:inset 3px 0 0 #FF6600;
+  box-shadow:inset 3px 0 0 var(--primary-500);
 }
 
 /* --------------------------------------------------------------------------
    TOPBAR / APPBAR — flat concrete surface, hairline rule, no shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .topbar{
-  background:var(--surface);border-bottom:1px solid #0E1014;
+  background:var(--surface);border-bottom:1px solid var(--border-default);
 }
 [data-theme="techminimalism"] .appbar{
-  background:var(--surface);border-bottom:1px solid #0E1014;
+  background:var(--surface);border-bottom:1px solid var(--border-default);
 }
 [data-theme="techminimalism"] .appbar__icon-btn{border-radius:2px;}
 
@@ -150,7 +198,7 @@
   background:var(--surface);border:1px solid var(--border-subtle);
 }
 [data-theme="techminimalism"] .card--filled{
-  background:#0E1014;color:#FFFFFF;border:1px solid #0E1014;
+  background:var(--surface-inverse);color:var(--fg-on-surface);border:1px solid var(--border-default);
 }
 [data-theme="techminimalism"] .section-card{
   background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
@@ -162,7 +210,7 @@
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .table th{
   background:var(--surface-default);color:var(--fg-muted);
-  border-bottom:1px solid #0E1014;font-size:11px;
+  border-bottom:1px solid var(--border-default);font-size:11px;
 }
 [data-theme="techminimalism"] .table td{border-top:1px solid var(--border-subtle);}
 [data-theme="techminimalism"] .table tbody tr:hover td{background:var(--surface-default);}
@@ -170,12 +218,12 @@
 
 [data-theme="techminimalism"] .table--flat th{
   background:transparent;color:var(--fg-subtle);
-  border-bottom:1px solid #0E1014;font-size:11px;
+  border-bottom:1px solid var(--border-default);font-size:11px;
 }
 [data-theme="techminimalism"] .table--flat td{border-bottom:1px solid var(--border-subtle);}
 
 /* --------------------------------------------------------------------------
-   INPUTS — square, hairline, orange focus signal. Bare inputs stay invisible.
+   INPUTS — square, hairline, scheme focus signal. Bare inputs stay invisible.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .input,
 [data-theme="techminimalism"] .select,
@@ -189,50 +237,52 @@
 [data-theme="techminimalism"] .select:focus,
 [data-theme="techminimalism"] .textarea:focus,
 [data-theme="techminimalism"] .input.is-focus{
-  border-color:#FF6600;outline:none;box-shadow:inset 0 0 0 1px #FF6600;
+  border-color:var(--primary-500);outline:none;box-shadow:inset 0 0 0 1px var(--primary-500);
 }
 [data-theme="techminimalism"] .input-affix{border:1px solid var(--border-subtle);border-radius:2px;}
-[data-theme="techminimalism"] .input-affix:focus-within{border-color:#FF6600;}
+[data-theme="techminimalism"] .input-affix:focus-within{border-color:var(--primary-500);}
 /* input--bare: no frame, no fill — keep it bare under the theme too */
 [data-theme="techminimalism"] .input--bare{background:transparent;border:0;box-shadow:none;}
 [data-theme="techminimalism"] .input--bare:focus,
 [data-theme="techminimalism"] .input--bare.is-focus{box-shadow:none;border:0;}
 
 /* --------------------------------------------------------------------------
-   BUTTONS — primary = solid safety orange w/ graphite text + hairline edge;
+   BUTTONS — primary = solid scheme signal w/ white text + hairline edge;
    outline = graphite hairline on concrete. Square corners.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .btn{border-radius:2px;box-shadow:none;}
 [data-theme="techminimalism"] .btn--primary{
-  background:#FF6600;color:#0E1014;border:1px solid #0E1014;font-weight:600;
+  background:var(--primary-surface);color:var(--on-primary);border:1px solid var(--border-default);font-weight:600;
 }
-[data-theme="techminimalism"] .btn--primary:hover{background:#E65C00;color:#0E1014;}
-[data-theme="techminimalism"] .btn--primary:active{background:#B84900;color:#FFFFFF;}
+[data-theme="techminimalism"] .btn--primary:hover,
+[data-theme="techminimalism"] .btn.is-hover.btn--primary{background:var(--primary-hover);color:var(--on-primary);}
+[data-theme="techminimalism"] .btn--primary:active,
+[data-theme="techminimalism"] .btn.is-pressed.btn--primary{background:var(--primary-active);color:var(--on-primary);}
 [data-theme="techminimalism"] .btn--outline{
-  background:var(--surface);border:1px solid #0E1014;color:#0E1014;border-radius:2px;
+  background:var(--surface);border:1px solid var(--border-default);color:var(--fg-default);border-radius:2px;
 }
 [data-theme="techminimalism"] .btn--outline:hover{background:var(--surface-default);}
-[data-theme="techminimalism"] .btn--outline svg{color:#0E1014;}
+[data-theme="techminimalism"] .btn--outline svg{color:var(--fg-default);}
 
 /* --------------------------------------------------------------------------
    TAGS / BADGES — mono uppercase technical micro-labels. Tags rectangular;
    the default fill becomes a quiet graphite-outline catalogue stencil, with
-   orange reserved as the single signal variant (.tag--outline / primary).
+   the scheme reserved as the single signal variant (.tag--outline / primary).
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .tag{
-  background:transparent;color:#0E1014;border:1px solid var(--border-subtle);
+  background:transparent;color:var(--fg-default);border:1px solid var(--border-subtle);
   border-radius:2px;letter-spacing:.12em;
 }
-[data-theme="techminimalism"] .tag--light{background:var(--surface-default);color:#0E1014;border-color:var(--border-subtle);}
-[data-theme="techminimalism"] .tag--outline{background:transparent;border-color:#FF6600;color:#B84900;}
-[data-theme="techminimalism"] .tag--mono{background:#0E1014;color:#FFFFFF;border-color:#0E1014;}
+[data-theme="techminimalism"] .tag--light{background:var(--surface-default);color:var(--fg-default);border-color:var(--border-subtle);}
+[data-theme="techminimalism"] .tag--outline{background:transparent;border-color:var(--primary-500);color:var(--primary-fg);}
+[data-theme="techminimalism"] .tag--mono{background:var(--surface-inverse);color:var(--fg-on-surface);border-color:var(--border-default);}
 
 [data-theme="techminimalism"] .badge{
-  background:var(--surface-default);color:#0E1014;border:1px solid var(--border-subtle);
+  background:var(--surface-default);color:var(--fg-default);border:1px solid var(--border-subtle);
   border-radius:2px;letter-spacing:.08em;
 }
-[data-theme="techminimalism"] .badge--outline{background:transparent;border-color:#FF6600;color:#B84900;}
-[data-theme="techminimalism"] .badge--mono{background:#0E1014;color:#FFFFFF;border-color:#0E1014;}
+[data-theme="techminimalism"] .badge--outline{background:transparent;border-color:var(--primary-500);color:var(--primary-fg);}
+[data-theme="techminimalism"] .badge--mono{background:var(--surface-inverse);color:var(--fg-on-surface);border-color:var(--border-default);}
 /* status badges keep their semantic punch but go square */
 [data-theme="techminimalism"] .badge--positive,
 [data-theme="techminimalism"] .badge--attention,
@@ -243,7 +293,7 @@
    KPI STRIP — hairline-divided cells, mono uppercase labels (handled above).
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .kpi-strip{
-  border-top:1px solid #0E1014;border-bottom:1px solid #0E1014;
+  border-top:1px solid var(--border-default);border-bottom:1px solid var(--border-default);
 }
 [data-theme="techminimalism"] .kpi{border-left:1px solid var(--border-subtle);}
 [data-theme="techminimalism"] .kpi__value{font-variant-numeric:tabular-nums;}
@@ -264,20 +314,20 @@
    MODAL — square graphite-framed sheet, no drop shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .modal{
-  background:var(--surface);border:1px solid #0E1014;border-radius:3px;box-shadow:none;
+  background:var(--surface);border:1px solid var(--border-default);border-radius:3px;box-shadow:none;
 }
 
 /* --------------------------------------------------------------------------
    PHONE shell — square device, hairline frame instead of soft shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .phone{
-  border:1px solid #0E1014;border-radius:6px;box-shadow:none;
+  border:1px solid var(--border-default);border-radius:6px;box-shadow:none;
 }
 
 /* --------------------------------------------------------------------------
-   TABBAR active — orange signal instead of brand-blue pill; square marker.
+   TABBAR active — scheme signal instead of brand-blue pill; square marker.
    -------------------------------------------------------------------------- */
-[data-theme="techminimalism"] .tabbar__item.is-active{color:#B84900;}
+[data-theme="techminimalism"] .tabbar__item.is-active{color:var(--primary-fg);}
 [data-theme="techminimalism"] .tabbar__item.is-active .tabbar__icon{
-  background:var(--primary-surface-subtle);color:#B84900;border-radius:2px;
+  background:var(--primary-surface-subtle);color:var(--primary-fg);border-radius:2px;
 }

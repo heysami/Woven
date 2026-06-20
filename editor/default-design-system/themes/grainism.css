@@ -1,43 +1,32 @@
 /* themes/grainism.css — apply via <html data-theme="grainism">
    ==========================================================================
-   A light-only STYLE OVERLAY for the Woven template design system.
+   A STYLE OVERLAY for the Woven template design system.
 
    Pitch: "pastel + a whisper of film". The base reads like a soft pastel
-   theme — desaturated colours, a pastel nav surface, flat (no-gradient)
-   brand fills, gentle shadows. THE SIGNATURE is a fixed full-viewport grain
-   / halftone texture laid over everything at a low opacity, the way Portra
-   400 grain sits over a print (mix-blend-mode:overlay, opacity ~.06) — felt,
-   not seen. An optional `.grain--halftone` variant swaps the fractalNoise
-   grain for a CMYK-style dot screen, and a reusable `.grain` class carries
-   the same overlay on any element/section (not just <body>).
+   theme — warm paper surfaces, a pastel nav surface, flat (no-gradient)
+   brand fills, gentle diffuse shadows. THE SIGNATURE is a fixed full-viewport
+   grain / halftone texture laid over everything at a low opacity, the way
+   Portra 400 grain sits over a print (mix-blend-mode:overlay, opacity ~.06) —
+   felt, not seen. An optional `.grain--halftone` variant swaps the
+   fractalNoise grain for a CMYK-style dot screen, and a reusable `.grain`
+   class carries the same overlay on any element/section (not just <body>).
 
-   PATTERN (mirrors :root[data-theme="dark"] in styles.css): remap the
-   semantic tokens on :root[data-theme="grainism"] so component CSS inherits
-   the pastel look for free, then scope the signature overrides + the grain
-   overlay with the [data-theme="grainism"] attribute so the default theme is
-   untouched. Raw hex / rgba is allowed here — themes are where colours live.
+   COLOUR FOLLOWS THE SELECTED SCHEME. This file never re-defines the
+   --primary-/--secondary-/--tertiary- ramps the customizer writes; instead it
+   DERIVES every brand role from those ramps so the whole overlay shifts with
+   the chosen scheme. Pick a blue scheme → soft periwinkle; pick a green
+   scheme → soft sage; etc. DARK MODE is handled by a parallel block scoped to
+   :root.ds-scheme-dark[data-theme="grainism"] (the class the editor toggles
+   for dark previews) — warm dark paper + brand roles re-pointed to lighter
+   ramp steps. The grain machinery is identical in both modes.
 
    References: material-film-grain-portra-400 (overlay blend, fine warm
    grain), material-halftone-cmyk (radial-dot screen at a ~4px tile).
    ========================================================================== */
 
 :root[data-theme="grainism"]{
-  /* ---- Primary: a soft pastel periwinkle-blue ----
-     Re-anchor the whole primary ramp so primary roles, --series-1, focus
-     rings and the (now flattened) gradient all shift pastel together. */
-  --primary-50:#F3F5FE; --primary-100:#E7ECFC; --primary-200:#D2DBFA; --primary-300:#B3C2F4;
-  --primary-400:#8FA6EC; --primary-500:#6E88E0; --primary-600:#5670C7; --primary-700:#4459A2;
-  --primary-800:#36457D; --primary-900:#28335A; --primary-950:#171D34;
-
-  /* ---- Secondary: a dusty pastel rose (was brand red) ---- */
-  --secondary-50:#FDF0F1; --secondary-100:#FADCDF; --secondary-200:#F4BFC4; --secondary-300:#EC9CA4;
-  --secondary-400:#E27D87; --secondary-500:#D45F6B; --secondary-600:#B44C57; --secondary-700:#8E3B44;
-  --secondary-800:#682A31; --secondary-900:#43191E; --secondary-950:#1F0B0D;
-
-  /* ---- Tertiary: a soft sage / pastel slate ---- */
-  --tertiary-50:#F5F7F5; --tertiary-100:#E8EDE8; --tertiary-200:#D8E0D9; --tertiary-300:#C2CEC4;
-  --tertiary-400:#A6B5A9; --tertiary-500:#8B9C8F; --tertiary-600:#6F7F73; --tertiary-700:#56655A;
-  --tertiary-800:#404C44; --tertiary-900:#2A322D; --tertiary-950:#141815;
+  /* ---- Gentle radii ---- */
+  --radius-base:10px;
 
   /* ---- Surfaces: warm off-white "paper", pastel tinted elevations ---- */
   --surface:#FCFBFA; --surface-default:#F6F4F1; --surface-medium:#EFECE8; --surface-strong:#E7E3DD;
@@ -48,22 +37,27 @@
   --border-default:#E6E1DB; --border-subtle:#EEEAE4;
   --interactive-hover:#EFECE8; --interactive-active:#E7E3DD;
 
-  /* ---- Primary roles: pastel surface, readable pastel-dark text ---- */
-  --primary-surface:#6E88E0; --primary-surface-muted:#D2DBFA; --primary-surface-subtle:#F3F5FE;
-  --primary-fg:#4459A2; --primary-fg-emphasis:#5670C7; --primary-border:#B3C2F4;
-  --primary-hover:#8FA6EC; --primary-active:#5670C7;
+  /* ---- Brand roles → derived from the LIVE scheme ramp (never re-anchored) ---- */
+  --primary-surface:var(--primary-500);
+  --primary-fg:var(--primary-700);
+  --primary-fg-emphasis:var(--primary-600);
+  --primary-hover:var(--primary-400);
+  --primary-active:var(--primary-600);
+  --primary-surface-muted:var(--primary-100);
+  --primary-surface-subtle:var(--primary-50);
+  --primary-border:var(--primary-200);
 
-  /* ---- on-colour text + filled surfaces ---- */
+  /* ---- on-colour text + filled brand surfaces ---- */
   --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#FFFFFF;
-  --secondary-surface:#D45F6B; --tertiary-surface:#8B9C8F;
-  --chip-primary-fg:#4459A2; --chip-secondary-fg:#8E3B44; --chip-tertiary-fg:#56655A;
+  --secondary-surface:var(--secondary-500); --tertiary-surface:var(--tertiary-500);
+  --chip-primary-fg:var(--primary-700); --chip-secondary-fg:var(--secondary-700); --chip-tertiary-fg:var(--tertiary-700);
 
   /* ---- gradient OFF: pastel theme is flat — collapse both anchors to the
      flat primary surface so anything painting the brand gradient reads as a
      single soft fill. ---- */
-  --primary-grad-from:#6E88E0; --primary-grad-to:#6E88E0;
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-500);
 
-  /* ---- Status hues, pastelised so dashboards stay on-theme ---- */
+  /* ---- Status hues, pastelised so dashboards stay on-theme (NOT scheme-bound) ---- */
   --success-500:#7FC79A; --success-600:#5DAE7D; --success-700:#46895F;
   --attention-500:#E8B06A; --attention-600:#CE9148;
   --info-500:#7FC0D2; --info-600:#5BA1B6;
@@ -74,8 +68,8 @@
   --shadow-base:0 6px 16px rgba(46,44,58,.07); --shadow-m:0 6px 14px rgba(46,44,58,.07);
   --shadow-l:0 10px 24px rgba(46,44,58,.08); --shadow-xl:0 16px 36px rgba(46,44,58,.09);
 
-  /* ---- Chart series, pastelised ---- */
-  --series-1:#6E88E0; --series-2:#7FC79A; --series-3:#E8B06A; --series-4:#7FC0D2; --series-5:#D45F6B;
+  /* ---- Chart series: scheme primary + pastel supporting status hues ---- */
+  --series-1:var(--primary-500); --series-2:#7FC79A; --series-3:#E8B06A; --series-4:#7FC0D2; --series-5:var(--secondary-500);
 
   /* ---- Grain tokens (page authors can tune these) ----
      --grain-opacity : whisper-low so the overlay is felt, not seen (.05–.08).
@@ -84,6 +78,46 @@
   --grain-opacity:.06;
   --halftone-size:4px;
   --halftone-color:rgba(46,44,58,.5);
+}
+
+/* ==========================================================================
+   DARK grainism — the editor toggles html.ds-scheme-dark for a dark preview
+   while data-theme stays "grainism". Warm dark "paper" surfaces, neutral dark
+   steps, and brand roles re-pointed to LIGHTER ramp steps so accents still
+   follow the scheme and read well on dark. Grain machinery is unchanged.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="grainism"]{
+  --surface:#211F2B; --surface-default:#1A1925; --surface-medium:#2A2836; --surface-strong:#333040;
+  --surface-inverse:#FCFBFA;
+  --fg-default:#ECEAF2; --fg-muted:#ADA9BE; --fg-subtle:#807C8E; --fg-on-surface:#1A1925;
+  --border-default:#38354A; --border-subtle:#2A2836;
+  --interactive-hover:#2A2836; --interactive-active:#333040;
+
+  /* brand roles re-pointed to lighter ramp steps + warm-dark tinted fills */
+  --primary-surface:var(--primary-500);
+  --primary-fg:var(--primary-300);
+  --primary-fg-emphasis:var(--primary-200);
+  --primary-hover:var(--primary-400);
+  --primary-active:var(--primary-600);
+  --primary-surface-muted:color-mix(in srgb, var(--primary-500) 24%, #211F2B);
+  --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 15%, #211F2B);
+  --primary-border:color-mix(in srgb, var(--primary-500) 40%, transparent);
+
+  --on-primary:#FFFFFF; --on-secondary:#FFFFFF; --on-tertiary:#FFFFFF;
+  --secondary-surface:var(--secondary-500); --tertiary-surface:var(--tertiary-500);
+  --chip-primary-fg:var(--primary-200); --chip-secondary-fg:var(--secondary-200); --chip-tertiary-fg:var(--tertiary-200);
+
+  --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-500);
+
+  /* soft dark shadows */
+  --shadow-xs:0 1px 2px rgba(0,0,0,.45); --shadow-s:0 2px 6px rgba(0,0,0,.45);
+  --shadow-base:0 6px 16px rgba(0,0,0,.5); --shadow-m:0 6px 14px rgba(0,0,0,.45);
+  --shadow-l:0 10px 24px rgba(0,0,0,.5); --shadow-xl:0 16px 36px rgba(0,0,0,.55);
+
+  --series-1:var(--primary-400);
+
+  /* halftone ink flips to light so dots read on dark paper */
+  --halftone-color:rgba(236,234,242,.5);
 }
 
 /* ==========================================================================
@@ -133,13 +167,14 @@
 
 /* ==========================================================================
    Signature component overrides — pastel + flat. Everything else reads
-   pastel from the remapped tokens above; these are the few spots that hard-
-   code the old brand gradient / sharp elevation and need re-pointing.
+   pastel from the remapped tokens above (so it flips automatically in dark);
+   these are the few spots that hard-code the old brand gradient / sharp
+   elevation and need re-pointing.
    ========================================================================== */
 
 /* ---- Navigation: a soft pastel rail + pastel topbar, NOT a brand gradient ---- */
 [data-theme="grainism"] .sidebar{
-  background:var(--primary-surface-subtle);   /* pastel periwinkle wash */
+  background:var(--primary-surface-subtle);   /* pastel scheme wash */
   border-right:1px solid var(--border-default);
   color:var(--fg-muted);
 }
@@ -150,7 +185,7 @@
 [data-theme="grainism"] .sidebar__user{border-top:1px solid var(--border-subtle);}
 
 [data-theme="grainism"] .topbar{
-  background:rgba(252,251,250,.85);
+  background:color-mix(in srgb, var(--surface) 85%, transparent);
   -webkit-backdrop-filter:blur(8px);
   backdrop-filter:blur(8px);
   border-bottom:1px solid var(--border-default);
@@ -163,7 +198,7 @@
 }
 [data-theme="grainism"] .card--filled{
   background:var(--primary-surface);   /* flat pastel fill, no gradient */
-  color:#fff;
+  color:var(--on-primary);
 }
 [data-theme="grainism"] .section-card{
   background:var(--surface);
@@ -183,20 +218,20 @@
 [data-theme="grainism"] .select:focus,
 [data-theme="grainism"] .textarea:focus,
 [data-theme="grainism"] .input.is-focus{
-  border-color:var(--primary-300);
-  box-shadow:0 0 0 3px var(--primary-surface-muted);
+  border-color:var(--primary-hover);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--primary-500) 24%, transparent);
 }
 
 /* ---- Buttons: flat pastel fills (gradient already collapsed via tokens) ---- */
 [data-theme="grainism"] .btn--primary{
   background:var(--primary-surface);
-  color:#fff;
+  color:var(--on-primary);
   box-shadow:var(--shadow-xs);
 }
 [data-theme="grainism"] .btn--primary:hover,
-[data-theme="grainism"] .btn.is-hover.btn--primary{background:var(--primary-hover);}
+[data-theme="grainism"] .btn.is-hover.btn--primary{background:var(--primary-hover);color:var(--on-primary);}
 [data-theme="grainism"] .btn--primary:active,
-[data-theme="grainism"] .btn.is-pressed.btn--primary{background:var(--primary-active);}
+[data-theme="grainism"] .btn.is-pressed.btn--primary{background:var(--primary-active);color:var(--on-primary);}
 
 [data-theme="grainism"] .btn--light{
   background:var(--primary-surface-subtle);

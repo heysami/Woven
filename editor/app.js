@@ -17162,8 +17162,9 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     // Glassmorphism ships a WebGL runtime (themes/glassmorphism.js — the real
     // Material Lab dispersion-prism). Inject it so the preview shows the actual
     // glass, not just the CSS fallback. Self-activates on data-theme; tears down
-    // when the style changes, so it is harmless for the other styles.
-    const jsBackedStyle = settings.styleId === "glassmorphism" || settings.styleId === "claymorphism";
+    // when the style changes, so it is harmless for the other styles. (Claymorphism
+    // is pure CSS — no shader runtime.)
+    const jsBackedStyle = settings.styleId === "glassmorphism";
     if (jsBackedStyle && doc.body && !doc.getElementById("__ds_mat_js_" + settings.styleId)) {
       const gs = doc.createElement("script");
       gs.id = "__ds_mat_js_" + settings.styleId;

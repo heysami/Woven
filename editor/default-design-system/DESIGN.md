@@ -68,17 +68,25 @@ root element; `default` is the plain light style (no attribute). The dark style 
 the other 8 live in `themes/*.css` and load via `all.css`. Components inherit the new look for free because
 every value references a token.
 
+**Colour scheme + dark mode.** Every style FOLLOWS the selected colour scheme: none of them re-define the
+`--primary-/--secondary-/--tertiary-` ramps (the customizer writes those on `:root`); instead each derives
+its accent/brand roles from the ramp via `var(--primary-NNN)` / `color-mix()` (the glassmorphism pattern).
+Each style also ships a dark variant scoped to `:root.ds-scheme-dark[data-theme="x"]` — the class the editor
+toggles for a dark preview while `data-theme` stays the style name. (`default`/`dark`/`glassmorphism` were
+already correct; the rest were brought in line.) All themes are pure CSS — only `glassmorphism` carries a
+WebGL runtime (`themes/glassmorphism.js`); `claymorphism` is CSS-only.
+
 | Style | Attribute | Signature technique · helper tokens |
 | --- | --- | --- |
 | Default | _(none)_ | Base light style — restrained institutional product UI. |
 | Dark | `data-theme="dark"` | Dark scheme — remapped surfaces/text/brand roles (in `styles.css`). |
 | Minimal | `data-theme="minimal"` | Maximal restraint: one accent hue, everything else neutral grey; gradient gone, hairline borders + near-flat shadows in place of elevation. |
-| Pastel | `data-theme="pastel"` | Soft desaturated palette (periwinkle/rose/mint), pastel nav surface, tinted fills with deeper-hue text; no gradients, no bold fills. |
+| Pastel | `data-theme="pastel"` | Soft desaturated wash (a faint tint of the scheme hue), pastel nav surface, tinted fills with deeper-hue text; no gradients, no bold fills. |
 | Glassmorphism | `data-theme="glassmorphism"` | iOS liquid-glass: translucent `backdrop-filter` panes over a gradient-mesh body + dispersion-prism edge. `--glass-bg/-faint/-strong`, `--glass-blur/-strong`, `--glass-border`, `--glass-specular`, `--glass-shadow`. |
-| Claymorphism | `data-theme="claymorphism"` | Soft-UI foam: chunky remapped radii + matte pastel + dual-light clay shadow (outer drop + inner highlight); buttons puff and depress on `:active`. `--clay-shadow/-sm`, `--clay-inset`, `--clay-press`. |
+| Claymorphism | `data-theme="claymorphism"` | Soft-UI foam: chunky remapped radii + warm-cream surfaces + dual-light clay shadow (outer drop + inner highlight); the CTA follows the scheme; buttons puff and depress on `:active`. Pure CSS (no shader). `--clay-shadow/-sm`, `--clay-inset`, `--clay-press`. |
 | Neumorphism | `data-theme="neumorphism"` | Soft UI: ONE shared base colour for page + every control; depth comes only from a fixed top-left dual shadow (raised vs inset), monochrome. `--neu-base/-light/-dark`, `--neu-raise/-sm/-lg`, `--neu-inset/-sm`, `--neu-accent`. |
-| Tech-minimalism | `data-theme="techminimalism"` | Frutiger-DORFic / Teenage Engineering: concrete off-white, ONE safety-orange (`#FF6600`) on the primary role, small uppercase tracked mono labels, near-zero radii, flattened shadows. `--font-mono`. |
-| Neobrutalism | `data-theme="neobrutalism"` | Monochrome editorial: uncoated-cream paper + warm dark ink, ZERO radius, 2–3px ink borders, hard zero-blur offset shadow, `:active` translate(2px,2px) press, ~6% paper grain. `--nb-paper/-bright/-shade/-deep`, `--nb-ink/-soft`, `--nb-greige`. |
+| Tech-minimalism | `data-theme="techminimalism"` | Frutiger-DORFic / Teenage Engineering: concrete off-white + graphite, ONE hot signal on the primary role (follows the scheme), small uppercase tracked mono labels, near-zero radii, flattened shadows. `--font-mono`. |
+| Neobrutalism | `data-theme="neobrutalism"` | Editorial brutalism: uncoated-cream paper + warm dark ink, ZERO radius, 2–3px ink borders, hard zero-blur offset shadow, `:active` translate(2px,2px) press, ~6% paper grain; the primary accent fills follow the scheme (scheme block + ink border + ink shadow). `--nb-paper/-bright/-shade/-deep`, `--nb-ink/-soft`, `--nb-greige`. |
 | Grainism | `data-theme="grainism"` | "Pastel + a whisper of film": pastel base + a fixed full-viewport SVG grain overlay (`mix-blend-mode:overlay`, low opacity), felt not seen. Reusable `.grain` class; `.grain--halftone` swaps grain for a CMYK dot screen. `--grain-opacity`. |
 
 ## Component catalog — by atomic layer
