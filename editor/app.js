@@ -23775,6 +23775,12 @@ const WORKFLOW_WB_FACTORY = {
     color: p.color || "ink", size: p.size ?? 3,
     arrowStart: !!p.arrowStart, arrowEnd: p.arrowEnd !== false,
     dash: !!p.dash,
+    // Endpoint bindings: when an end is drawn/dropped on top of a node or a
+    // box-like wb item, we remember { t:'n'|'w', id, ox, oy } (ox/oy is the
+    // endpoint's offset from that target's top-left). A reconcile effect keeps
+    // the endpoint glued to target.topLeft + offset, so the arrow follows when
+    // the target moves. null = a free endpoint.
+    startBind: p.startBind || null, endBind: p.endBind || null,
   }),
   "image": (p = {}) => ({
     type: "image", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 320, h: p.h ?? 240,
@@ -29538,6 +29544,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return hit || hitSection;
   };
 
+  // Arrow-endpoint binding detection. Given a world point, find the topmost
+  // box-like wb item or node under it and return { t:'w'|'n', id, ox, oy } -
+  // the offset from that target's top-left so the endpoint can be re-pinned as
+  // the target moves. Box-like wb items (which paint above nodes) win; arrows
+  // and ink are never bind targets. excludeId skips the arrow being edited.
+  const WB_BIND_TARGETS = new Set(["sticky", "textbox", "shape", "image", "text"]);
+  const wbDetectBindAt = (wx, wy, excludeId) => {
+    let best = null, bestZ = -Infinity;
+    for (const it of (wbItemsRef.current || [])) {
+      if (!it || it.id === excludeId || !WB_BIND_TARGETS.has(it.type)) continue;
+      const bb = wbItemBBox(it);
+      if (wx < bb.x || wx > bb.x + bb.w || wy < bb.y || wy > bb.y + bb.h) continue;
+      if ((it.z || 0) >= bestZ) { bestZ = it.z || 0; best = { it, bb }; }
+    }
+    if (best) return { t: "w", id: best.it.id, ox: wx - best.bb.x, oy: wy - best.bb.y };
+    const nid = nodeHitAt(wx, wy);
+    if (nid) {
+      const n = (dataNodesRef.current || []).find(nn => nn.id === nid);
+      if (n) return { t: "n", id: nid, ox: wx - (n.x || 0), oy: wy - (n.y || 0) };
+    }
+    return null;
+  };
+
   // Node click resolved geometrically (whiteboard-mode select tool). Same
   // semantics as the wrap's DOM-based node branch, but the drag is a
   // window-listener gesture that moves the node selection + any selected
@@ -29758,13 +29787,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           return;
         }
         if (tool === "arrow") {
+          const ex = dragged ? lastWp.x : x0 + 140;
+          const ey = dragged ? lastWp.y : y0;
+          // Pin each endpoint to whatever node / box-like wb item it lands on,
+          // so the arrow tracks them when they move.
           const arrowProps = {
             color, size: F.size || 3,
             arrowStart: F.arrowStart, arrowEnd: F.arrowEnd, dash: F.dash,
+            startBind: wbDetectBindAt(x0, y0, null),
+            endBind: wbDetectBindAt(ex, ey, null),
           };
-          item = dragged
-            ? wbMakeItem("arrow", { x1: x0, y1: y0, x2: lastWp.x, y2: lastWp.y, ...arrowProps })
-            : wbMakeItem("arrow", { x1: x0, y1: y0, x2: x0 + 140, y2: y0, ...arrowProps });
+          item = wbMakeItem("arrow", { x1: x0, y1: y0, x2: ex, y2: ey, ...arrowProps });
         } else {
           const gx = dragged ? Math.min(x0, lastWp.x) : x0;
           const gy = dragged ? Math.min(y0, lastWp.y) : y0;
@@ -29818,13 +29851,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!item) return;
       const orig = _stableClone(item);
       const startX = e.clientX, startY = e.clientY;
+      // Live endpoint of an arrow handle drag - tracked so onUp can re-detect
+      // the binding at the dropped position.
+      let lastEndX = handle === "start" ? orig.x1 : orig.x2;
+      let lastEndY = handle === "start" ? orig.y1 : orig.y2;
       setWbDragging(true);
       const onMove = (ev) => {
         const dx = (ev.clientX - startX) / Math.max(zoomRef.current, 0.1);
         const dy = (ev.clientY - startY) / Math.max(zoomRef.current, 0.1);
         if (item.type === "arrow") {
-          if (handle === "start") updateWbItem(id, { x1: orig.x1 + dx, y1: orig.y1 + dy });
-          else                    updateWbItem(id, { x2: orig.x2 + dx, y2: orig.y2 + dy });
+          // Clear this end's binding while dragging so the reconcile effect
+          // doesn't snap it back; onUp re-binds to wherever it's dropped.
+          if (handle === "start") { lastEndX = orig.x1 + dx; lastEndY = orig.y1 + dy; updateWbItem(id, { x1: lastEndX, y1: lastEndY, startBind: null }); }
+          else                    { lastEndX = orig.x2 + dx; lastEndY = orig.y2 + dy; updateWbItem(id, { x2: lastEndX, y2: lastEndY, endBind: null }); }
           return;
         }
         let x = orig.x, y = orig.y, w = orig.w, h = orig.h;
@@ -29848,12 +29887,61 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
         setWbDragging(false);
+        if (item.type === "arrow") {
+          const bind = wbDetectBindAt(lastEndX, lastEndY, id);
+          updateWbItem(id, handle === "start" ? { startBind: bind } : { endBind: bind });
+        }
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     };
     return () => { wbHandleDownRef.current = null; };
   }, [updateWbItem]);
+
+  // Arrow-binding reconcile. Whenever nodes or wb items change (a move, a
+  // resize, a tidy), re-pin every bound arrow endpoint to its target's current
+  // top-left + stored offset, so the arrow follows automatically. Dangling
+  // binds (target deleted) are cleared. The updater returns the same array
+  // reference when nothing moved, so React bails out - no render loop.
+  useEffect(() => {
+    const wb = data.wb;
+    if (!Array.isArray(wb) || !wb.some(it => it && it.type === "arrow" && (it.startBind || it.endBind))) return;
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      const nodeById = new Map((d.nodes || []).map(n => [n.id, n]));
+      const wbById = new Map(list.map(it => [it.id, it]));
+      const resolve = (bind) => {
+        if (!bind) return { ok: true, xy: null };
+        if (bind.t === "n") {
+          const n = nodeById.get(bind.id);
+          if (!n) return { ok: false };           // target gone - drop bind
+          return { ok: true, xy: { x: (n.x || 0) + bind.ox, y: (n.y || 0) + bind.oy } };
+        }
+        const it = wbById.get(bind.id);
+        if (!it) return { ok: false };
+        const bb = wbItemBBox(it);
+        return { ok: true, xy: { x: bb.x + bind.ox, y: bb.y + bind.oy } };
+      };
+      let changed = false;
+      const next = list.map(it => {
+        if (!it || it.type !== "arrow" || (!it.startBind && !it.endBind)) return it;
+        let patch = null;
+        const s = resolve(it.startBind);
+        if (!s.ok) { patch = { ...(patch || {}), startBind: null }; }
+        else if (s.xy && (Math.round(s.xy.x) !== Math.round(it.x1) || Math.round(s.xy.y) !== Math.round(it.y1))) {
+          patch = { ...(patch || {}), x1: Math.round(s.xy.x), y1: Math.round(s.xy.y) };
+        }
+        const en = resolve(it.endBind);
+        if (!en.ok) { patch = { ...(patch || {}), endBind: null }; }
+        else if (en.xy && (Math.round(en.xy.x) !== Math.round(it.x2) || Math.round(en.xy.y) !== Math.round(it.y2))) {
+          patch = { ...(patch || {}), x2: Math.round(en.xy.x), y2: Math.round(en.xy.y) };
+        }
+        if (patch) { changed = true; return { ...it, ...patch }; }
+        return it;
+      });
+      return changed ? { ...d, wb: next } : d;
+    });
+  }, [data.nodes, data.wb, setData]);
 
   // Whiteboard keyboard: tool hotkeys + the Esc ladder. Mounted only in
   // whiteboard mode. Cmd+D / Delete live in the main shortcut block below
@@ -30215,27 +30303,42 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const section = nodes.find(n => n.id === sid && n.kind === "section");
       if (!section) return d;
       const contained = workflowSectionContainedNodes(section, nodes);
-      if (!contained.length) return d;
+      // Whiteboard sticky notes + text boxes that sit inside the frame join the
+      // grid too (same center-inside-rect containment rule as nodes).
+      const sx0 = section.x, sy0 = section.y;
+      const sx1 = sx0 + (section.w || 880), sy1 = sy0 + (section.h || 560);
+      const wbAll = Array.isArray(d.wb) ? d.wb : [];
+      const containedWb = wbAll.filter(it => {
+        if (!it || (it.type !== "sticky" && it.type !== "textbox")) return false;
+        const bb = wbItemBBox(it);
+        const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+        return cx >= sx0 && cx <= sx1 && cy >= sy0 && cy <= sy1;
+      });
+      if (!contained.length && !containedWb.length) return d;
       const PAD = 28, GAP = 24, HEADER = 12;
       const kindOrder = { "color-palette": 0, "typography": 1 };
-      const items = [...contained].sort((a, b) => {
+      // Unified cell list - nodes and wb boxes packed in one reading-order flow.
+      const cells = [
+        ...contained.map(n => ({ id: n.id, isWb: false, kind: n.kind, w: n.w || 280, h: n.h || 200, x: n.x || 0, y: n.y || 0 })),
+        ...containedWb.map(it => { const bb = wbItemBBox(it); return { id: it.id, isWb: true, kind: "_wb", w: bb.w || 180, h: bb.h || 180, x: bb.x, y: bb.y }; }),
+      ];
+      cells.sort((a, b) => {
         const oa = kindOrder[a.kind] ?? 2, ob = kindOrder[b.kind] ?? 2;
         if (oa !== ob) return oa - ob;
-        return ((a.y || 0) - (b.y || 0)) || ((a.x || 0) - (b.x || 0));
+        return (a.y - b.y) || (a.x - b.x);
       });
       const secW = Math.max(280, section.w || 880);
       const innerW = secW - PAD * 2;
       const x0 = (section.x || 0) + PAD;
       const y0 = (section.y || 0) + PAD + HEADER;
       let cx = x0, cy = y0, rowH = 0, maxRight = x0;
-      const patch = new Map();
-      for (const n of items) {
-        const nw = n.w || 280, nh = n.h || 200;
-        if (cx > x0 && (cx - x0) + nw > innerW) { cx = x0; cy += rowH + GAP; rowH = 0; }
-        patch.set(n.id, { x: Math.round(cx), y: Math.round(cy) });
-        cx += nw + GAP;
+      const patch = new Map(), wbPatch = new Map();
+      for (const c of cells) {
+        if (cx > x0 && (cx - x0) + c.w > innerW) { cx = x0; cy += rowH + GAP; rowH = 0; }
+        (c.isWb ? wbPatch : patch).set(c.id, { x: Math.round(cx), y: Math.round(cy) });
+        cx += c.w + GAP;
         maxRight = Math.max(maxRight, cx - GAP);
-        rowH = Math.max(rowH, nh);
+        rowH = Math.max(rowH, c.h);
       }
       const newW = Math.max(secW, Math.round(maxRight - (section.x || 0)) + PAD);
       const newH = Math.max(180, Math.round((cy + rowH) - (section.y || 0)) + PAD);
@@ -30246,6 +30349,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const p = patch.get(n.id);
           return p ? { ...n, ...p } : n;
         }),
+        ...(wbPatch.size ? {
+          wb: wbAll.map(it => {
+            const p = wbPatch.get(it.id);
+            return p ? { ...it, x: p.x, y: p.y } : it;
+          }),
+        } : {}),
       };
     });
   }, [setData]);
@@ -64487,7 +64596,7 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
         <button
           className="workflow-node-section-tidy"
           data-tip="Tidy: pack into a grid"
-          aria-label="Tidy: pack the contained nodes into a grid and resize this section to fit. Drag the section wider first for more columns."
+          aria-label="Tidy: pack the contained nodes, sticky notes and text boxes into a grid and resize this section to fit. Drag the section wider first for more columns."
           onClick=${(e) => { e.stopPropagation(); onTidy && onTidy(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         >⊞</button>
