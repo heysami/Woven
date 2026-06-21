@@ -282,6 +282,11 @@
   padding:8px var(--space-base);
 }
 [data-theme="claymorphism"] .textarea{padding:var(--space-s) var(--space-base);}
+/* icon inputs: the clay padding shorthand above wipes the base padding that
+   reserves room for the absolutely-positioned icon — restore it so the leading
+   (or trailing) icon doesn't overlap the text. */
+[data-theme="claymorphism"] .input-icon > .input{padding-left:42px;}
+[data-theme="claymorphism"] .input-icon--right > .input{padding-left:var(--space-base);padding-right:42px;}
 [data-theme="claymorphism"] .input:hover,
 [data-theme="claymorphism"] .select:hover,
 [data-theme="claymorphism"] .textarea:hover{box-shadow:var(--clay-inset);}

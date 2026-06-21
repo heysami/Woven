@@ -134,12 +134,20 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 [data-theme="glassmorphism"] .input,
 [data-theme="glassmorphism"] .select,
 [data-theme="glassmorphism"] .textarea{
-  background:var(--glass-bg-faint);
-  -webkit-backdrop-filter:blur(10px) saturate(130%);
-  backdrop-filter:blur(10px) saturate(130%);
+  /* Stronger frost than the old faint fill: a field over busy/scrolling content
+     (e.g. the sticky search bar above the transaction list) was so see-through
+     that the rows behind bled through as blobs and swallowed the icon. A denser
+     blur + fill diffuses the backdrop into a clean wash so the field reads. */
+  background:var(--glass-bg);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  backdrop-filter:blur(18px) saturate(140%);
   border:1px solid var(--glass-border-soft);
   color:#16203A;
 }
+/* The frosted input is a stacking context (backdrop-filter), which paints it ON
+   TOP of the leading icon (the icon is earlier in the DOM) and blurs it into a
+   blob. Lift the icon above the frost so it stays crisp. */
+[data-theme="glassmorphism"] .input-icon > svg{z-index:1;}
 [data-theme="glassmorphism"] .input::placeholder,
 [data-theme="glassmorphism"] .textarea::placeholder{color:rgba(22,32,58,.50);}
 [data-theme="glassmorphism"] .input:hover,
