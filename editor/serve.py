@@ -7368,6 +7368,26 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         project_id = ""
                 return self._serve_source_html(file_path, project_id)
+        # CSS under source/ or design-systems/ - stamp ?project= onto its
+        # own @import and url() refs. The HTML branch above gets ?project onto
+        # `<link href="all.css">`, but all.css's `@import url("themes/x.css")`
+        # resolves RELATIVE and the browser drops the parent's query, so the
+        # nested CSS is fetched with no project (and a sandboxed iframe's Referer
+        # is stripped) → 404 in workspace mode → the style overlay never loads.
+        # Rewriting the @import/url() targets here threads ?project all the way
+        # down the cascade without relying on Referer. See _stamp_project_on_css.
+        if norm.endswith(".css") and ("source/" in norm or "design-systems/" in norm):
+            file_path = self.translate_path(self.path)
+            if file_path and os.path.isfile(file_path):
+                qs = urllib.parse.parse_qs(parsed.query)
+                project_id = _qs_get(qs, "project") or ""
+                if not project_id and WORKSPACE_DIR:
+                    try:
+                        ref_q = urllib.parse.parse_qs(urllib.parse.urlparse(self.headers.get("Referer", "")).query)
+                        project_id = _qs_get(ref_q, "project") or ""
+                    except Exception:
+                        project_id = ""
+                return self._serve_source_css(file_path, project_id)
         # Live Session - inject the host-side live-cursors overlay into the
         # editor shell when a live session is active for this project, so the
         # host sees guests' cursors (guests get it via the gate). Plain editor
@@ -7495,6 +7515,73 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    # url(...) tokens (cover BOTH `@import url(...)` and property `url(...)`)
+    # plus the bare `@import "..."` string form. Used to stamp ?project= onto
+    # relative CSS refs so nested @imports + asset urls resolve to the right
+    # project even when the browser drops the parent's query on relative
+    # resolution, and even inside a sandboxed iframe whose Referer is stripped.
+    _CSS_URL_RE = re.compile(rb"""url\(\s*(['"]?)([^'")]+?)\1\s*\)""", re.IGNORECASE)
+    _CSS_IMPORT_STR_RE = re.compile(rb"""(@import\s+)(['"])([^'"]+?)\2""", re.IGNORECASE)
+
+    @classmethod
+    def _stamp_project_on_css(cls, data: bytes, project_id: str) -> bytes:
+        """Rewrite relative `@import` and `url()` targets in served CSS to carry
+        ?project=<id>. Skips external (http/https/data/blob/protocol-relative),
+        same-document fragments (`url(#filter)`), daemon endpoints (`/__…`), and
+        anything already carrying project=. Mirrors _stamp_project_on_html for
+        the stylesheet cascade."""
+        if not project_id:
+            return data
+        proj_q = ("project=" + urllib.parse.quote(project_id, safe="")).encode("utf-8")
+
+        def _is_external(val: bytes) -> bool:
+            v = val.lstrip()
+            if not v: return True
+            if v.startswith(b"#"): return True       # SVG fragment / same-doc ref
+            if v.startswith(b"//"): return True      # protocol-relative
+            head = v[:32].lower()
+            for sch in (b"http:", b"https:", b"data:", b"about:", b"blob:"):
+                if head.startswith(sch): return True
+            return False
+
+        def _append(val: bytes) -> bytes:
+            if _is_external(val): return val
+            if val.startswith(b"/__") or val.startswith(b"__"): return val
+            if b"project=" in val: return val
+            if b"?" in val:
+                return val + b"&" + proj_q
+            hash_at = val.find(b"#")
+            if hash_at >= 0:
+                return val[:hash_at] + b"?" + proj_q + val[hash_at:]
+            return val + b"?" + proj_q
+
+        def _stamp_url(m: "re.Match[bytes]") -> bytes:
+            q, val = m.group(1), m.group(2)
+            return b"url(" + q + _append(val) + q + b")"
+
+        def _stamp_import(m: "re.Match[bytes]") -> bytes:
+            pre, q, val = m.group(1), m.group(2), m.group(3)
+            return pre + q + _append(val) + q
+
+        data = cls._CSS_URL_RE.sub(_stamp_url, data)
+        data = cls._CSS_IMPORT_STR_RE.sub(_stamp_import, data)
+        return data
+
+    def _serve_source_css(self, file_path: str, project_id: str = "") -> None:
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            return super().do_GET()
+        if project_id:
+            data = self._stamp_project_on_css(data, project_id)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/css; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
