@@ -5163,7 +5163,19 @@ class RunState:
         it open for follow-ups) but counts as not-live for our purposes: there
         is no way to drive the agent without it."""
         proc = self.proc
-        return proc is not None and proc.stdin is not None and not proc.stdin.closed
+        if proc is None or proc.stdin is None or proc.stdin.closed:
+            return False
+        # The subprocess must also still be RUNNING. After Stop (or a crash)
+        # the child exits, but OUR write-end of its stdin pipe stays open -
+        # proc.stdin.closed is still False - so the old pipe-only check kept
+        # reporting a dead run as "live" FOREVER. That stranded the user: with
+        # the process gone, /resume refused ("run is still active; use
+        # /user-message instead") while /user-message wrote into a dead child's
+        # stdin and vanished - a permanent two-endpoint deadlock the user saw
+        # as "I press Stop and it refuses every follow-up forever." poll() is
+        # the truth: None = still running (live), anything else = exited (not
+        # live -> the recovery path is /resume, which re-spawns with --resume).
+        return proc.poll() is None
 
     def append(self, ev_type: str, data) -> None:
         with self.lock:
@@ -5598,6 +5610,58 @@ def _verify_touched_shaders(state: "RunState") -> None:
                                                      "detail": rel + ": " + "; ".join(bits)})
         except Exception:
             pass
+
+
+def _kill_run_tree(state: "RunState", grace: float = 3.0) -> None:
+    """Tear down a run's subprocess RELIABLY and return immediately.
+
+    The old Stop path was a single `proc.terminate()` (one SIGTERM to the
+    direct child) that then relied 100% on the stdout drain loop hitting EOF
+    to settle the run. Two ways that wedged forever:
+      1. The child ignored / was slow on SIGTERM -> never exited -> is_live
+         stayed True -> /resume refused ("run is still active").
+      2. The child's grandchildren (MCP node servers, bash subshells) inherited
+         the stdout fd and kept the pipe open after the child died -> the drain
+         loop never saw EOF -> finish() never ran -> done stayed False.
+
+    Fix: signal the whole process GROUP (kills grandchildren too), and escalate
+    SIGTERM -> SIGKILL in the background so an unresponsive child still dies.
+    SIGKILL is uncatchable, so after `grace` the child is guaranteed gone,
+    poll() flips, and is_live -> False -> the next message can /resume.
+
+    Safety: only ever killpg when the child LEADS its own group (pgid == pid,
+    i.e. it was spawned start_new_session=True). A run sharing the daemon's
+    group falls back to signalling just that one process - we must never
+    killpg the daemon's own group and take down every session.
+    """
+    proc = state.proc
+    if proc is None:
+        return
+
+    def _sig(sig):
+        try:
+            pid = proc.pid
+            pgid = os.getpgid(pid)
+            if pgid == pid:
+                os.killpg(pgid, sig)      # child leads its own group: safe
+            else:
+                proc.send_signal(sig)     # shares our group: signal only it
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        except Exception:
+            try: proc.send_signal(sig)
+            except Exception: pass
+
+    _sig(signal.SIGTERM)
+
+    def _escalate():
+        try:
+            proc.wait(timeout=grace)
+        except Exception:
+            _sig(signal.SIGKILL)         # still alive after grace: force-kill
+
+    threading.Thread(target=_escalate, daemon=True,
+                     name=f"run-{state.run_id}-reaper").start()
 
 
 def _drain_stdout(state: "RunState") -> None:
@@ -8619,6 +8683,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1,
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except FileNotFoundError:
             return None, (500, {"error": f"{bin_path}: not executable"})
@@ -11853,6 +11918,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1,
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except Exception as e:
             return self._reply(500, {"error": f"planner spawn failed: {type(e).__name__}: {e}"})
@@ -18935,6 +19001,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1,
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except FileNotFoundError:
             return self._reply(500, {"error": f"{bin_path}: not executable"})
@@ -19301,6 +19368,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1,  # line-buffered for stream-json line-at-a-time read
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except FileNotFoundError:
             return self._reply(500, {"error": f"{bin_path}: not executable"})
@@ -19557,10 +19625,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.finish(state.exit_code if state.exit_code is not None else 143)
             state.append("status", {"label": "interrupted"})
             return self._reply(200, {"ok": True, "wasGhost": True})
-        try:
-            state.proc.terminate()
-        except Exception as e:
-            return self._reply(500, {"error": f"terminate failed: {e}"})
+        # Kill the whole tree, escalating SIGTERM -> SIGKILL in the background.
+        # Returns immediately; the child is guaranteed dead within the grace
+        # window, so is_live flips False and the user can /resume right away -
+        # no more "run is still active" lockout (see _kill_run_tree).
+        _kill_run_tree(state)
         state.append("status", {"label": "interrupted"})
         return self._reply(200, {"ok": True})
 
@@ -19580,7 +19649,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if state is not None and getattr(state, "is_live", False):
             try:
                 state.stop_reason = "user-stop"
-                state.proc.terminate()
+                _kill_run_tree(state)
             except Exception:
                 pass
         # Figure out which JSONL(s) hold this run's history and purge it there.
@@ -19776,6 +19845,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1,
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except Exception as e:
             return self._reply(500, {"error": f"codex resume spawn failed: {type(e).__name__}: {e}"})
@@ -19931,6 +20001,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1,
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except Exception as e:
             return self._reply(500, {"error": f"resume spawn failed: {type(e).__name__}: {e}"})
