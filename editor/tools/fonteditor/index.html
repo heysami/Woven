@@ -144,10 +144,11 @@
     <label class="fld"><span>Descender</span><input id="descender" type="number" value="-200"></label>
     <label class="fld"><span>Base font (Google)</span>
       <span style="display:flex; gap:6px">
-        <input id="baseGoogle" type="text" placeholder="e.g. Inter" value="Inter" style="width:130px">
+        <input id="baseGoogle" type="text" list="googleFontList" autocomplete="off" placeholder="type to search…" value="Inter" style="width:130px">
         <button id="loadGoogleBtn" class="tiny">Load</button>
       </span>
     </label>
+    <datalist id="googleFontList"></datalist>
     <label class="fld"><span>Or upload .ttf/.otf</span>
       <input id="uploadFont" type="file" accept=".ttf,.otf,font/ttf,font/otf,application/font-sfnt" style="width:170px">
     </label>
@@ -217,7 +218,7 @@
       <h3>Borrow this glyph from another Google font</h3>
       <div class="note">Loads the family via Google Fonts and copies just the outline for the current glyph.</div>
       <div class="row">
-        <label class="fld"><span>Google family</span><input id="borrowFamily" type="text" placeholder="e.g. Playfair Display"></label>
+        <label class="fld"><span>Google family</span><input id="borrowFamily" type="text" list="googleFontList" autocomplete="off" placeholder="type to search…"></label>
         <button id="borrowLoadBtn" class="primary">Use outline</button>
       </div>
       <div class="actions"><button id="borrowCancel">Cancel</button></div>
@@ -288,6 +289,31 @@ function _pickWiredFontUrl(d){
 /* =========================================================================
  * Google Fonts loading -> opentype.Font
  * =======================================================================*/
+
+/* Populate the <datalist> backing the base-font + borrow-glyph inputs with the
+ * full Google Fonts family list so people pick a real name instead of guessing
+ * spelling/capitalisation. Fontsource serves the directory CORS-open + key-free.
+ * Degrades silently to plain free-text entry if the list can't be fetched. */
+async function populateGoogleFontList(){
+  const dl = document.getElementById("googleFontList");
+  if(!dl) return;
+  try{
+    const fonts = await fetch("https://api.fontsource.org/v1/fonts?type=google")
+      .then(r=>{ if(!r.ok) throw new Error("list "+r.status); return r.json(); });
+    const frag = document.createDocumentFragment();
+    for(const f of fonts){
+      if(!f || !f.family) continue;
+      const o = document.createElement("option");
+      o.value = f.family;
+      frag.appendChild(o);
+    }
+    dl.replaceChildren(frag);
+  }catch(err){
+    // Non-fatal: the inputs still accept a typed family name.
+    console.warn("Google font list unavailable:", err.message);
+  }
+}
+
 async function fetchGoogleFontUrl(family){
   // Ask the CSS API for the regular weight; parse the woff2/ttf url from src.
   const css = await fetch(
@@ -1124,6 +1150,7 @@ function boot(){
     setStatus("opentype.js failed to load","err");
   }
   wireToolbar();
+  populateGoogleFontList();
   setupCanvasInteraction();
   if(EMBEDDED){
     setStatus("ready - waiting for init…","");
