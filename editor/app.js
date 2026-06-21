@@ -30168,9 +30168,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const cy = (n.y || 0) + ((n.h || 0) / 2);
         if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) contained.add(n.id);
       }
+      // Whiteboard items (the top-level `wb` array - sticky notes, ink, shapes,
+      // arrows drawn ON TOP of a section) are siblings of nodes, not nodes, so
+      // they were stranded when the frame moved. Carry the ones whose center
+      // sits inside the frame, by the same delta. Skip items in the active
+      // whiteboard selection - those already ride via onMoveForNode's
+      // mixed-selection shiftWbItems call, so moving them here too would
+      // double-shift them.
+      const wb = Array.isArray(d.wb) ? d.wb : [];
+      const wbSel = selectedWbIdsRef.current;
+      const wbContained = new Set();
+      for (const it of wb) {
+        if (wbSel.has(it.id)) continue;
+        const bb = wbItemBBox(it);
+        const cx = bb.x + (bb.w / 2);
+        const cy = bb.y + (bb.h / 2);
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) wbContained.add(it.id);
+      }
+      const nextNodes = nodes.map(n => contained.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n);
+      if (wbContained.size === 0) return { ...d, nodes: nextNodes };
       return {
         ...d,
-        nodes: nodes.map(n => contained.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n),
+        nodes: nextNodes,
+        wb: wb.map(it => {
+          if (!wbContained.has(it.id)) return it;
+          if (it.type === "arrow") {
+            return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+          }
+          return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
+        }),
       };
     });
   }, [setData]);
@@ -64431,7 +64457,8 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
           : html`<span className="workflow-node-section-title" title="Double-click to rename">${node.title || "Section"}</span>`}
         ${hasContents ? html`<button
           className=${"workflow-node-section-savelib" + (saved ? " is-saved" : "")}
-          title=${"Save this section to the Local library as a node group named \"" + (node.title || "Section") + "\". Everything inside (plus the frame) is stored; drag it back from Library → Local library to re-place a fresh copy."}
+          data-tip=${"Save to Local library"}
+          aria-label=${"Save this section to the Local library as a node group named \"" + (node.title || "Section") + "\". Everything inside (plus the frame) is stored; drag it back from Library to re-place a fresh copy."}
           onClick=${async (e) => {
             e.stopPropagation();
             if (!onSaveToLibrary) return;
@@ -64442,19 +64469,22 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
         >${saved ? html`<${Icon.Check}/>` : html`<${Icon.Library}/>`}</button>` : null}
         ${hasEditorNode ? html`<button
           className="workflow-node-section-savelib workflow-node-section-convert"
-          title="Convert this section into a reusable custom app node - one input connector, a live preview, a settings panel, and one output. Saved to the Local library."
+          data-tip="Convert to custom app node"
+          aria-label="Convert this section into a reusable custom app node: one input connector, a live preview, a settings panel, and one output. Saved to the Local library."
           onClick=${(e) => { e.stopPropagation(); onConvertToApp && onConvertToApp(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Package}/></button>` : null}
         <button
           className="workflow-node-section-tidy"
-          title="Tidy - pack the contained nodes into a grid and resize this section to fit. Drag the section wider first for more columns."
+          data-tip="Tidy: pack into a grid"
+          aria-label="Tidy: pack the contained nodes into a grid and resize this section to fit. Drag the section wider first for more columns."
           onClick=${(e) => { e.stopPropagation(); onTidy && onTidy(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         >⊞</button>
         <button
           className="workflow-node-section-close"
-          title="Remove section (does NOT delete contained nodes)"
+          data-tip="Remove section (keeps contents)"
+          aria-label="Remove section (does NOT delete contained nodes)"
           onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         >×</button>
