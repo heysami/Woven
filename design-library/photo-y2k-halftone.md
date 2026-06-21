@@ -38,7 +38,7 @@ Photo passed through visible CMYK halftone dot pattern.
 
 ## Named references
 
-**Photographers**: n/a — post-processing style
+**Photographers**: n/a - post-processing style
 
 **Magazines**: The Face 1990s, Ray Gun, Sleazenation, Vice 2000s
 

@@ -1,4 +1,4 @@
-"""v3.5 — per-node preamble templates for agent-kind workflow nodes.
+"""v3.5 - per-node preamble templates for agent-kind workflow nodes.
 
 When the daemon dispatches an agent-kind node via
 `POST /__workflow/node/<id>/run`, it spawns a fresh `claude` subprocess
@@ -8,20 +8,20 @@ scoped to that node's task. The subprocess gets:
   • cwd = project root, normal env vars (TH_PROJECT_ROOT etc.)
 
 Per-node preambles let specific node ids ship with bespoke instructions.
-After the v3.5 onboarding cut, no node ids are pre-registered here — every
+After the v3.5 onboarding cut, no node ids are pre-registered here - every
 agent-kind node falls through to `generic_preamble`, which hands the
 dispatch over to the node's own `text` field. Orchestrators populate that text
 when they scaffold their drawers; the user can edit it on the canvas.
 
 If you want to re-introduce a baked preamble for a specific id, add it to
 NODE_AGENT_PREAMBLES below. Format: `id: (short_title, preamble_template)`.
-Use `{branch}` / `{id}` placeholders — `render()` substitutes them.
+Use `{branch}` / `{id}` placeholders - `render()` substitutes them.
 """
 from __future__ import annotations
 from typing import Optional
 
 
-# Registry — { node_id: (title, preamble_template) }. Empty by default after
+# Registry - { node_id: (title, preamble_template) }. Empty by default after
 # the v3.5 onboarding cut. Add entries here for IDs that need a pre-baked
 # system prompt; everything else uses `generic_preamble`.
 NODE_AGENT_PREAMBLES: dict = {}
@@ -34,7 +34,7 @@ def lookup(node_id: str) -> Optional[tuple]:
 
 
 def generic_preamble(node_id: str, node_text: str) -> str:
-    """Fallback for agent-kind nodes not in the registry — typically a
+    """Fallback for agent-kind nodes not in the registry - typically a
     user-added agent node on the canvas. Hands the dispatch over to the
     node's own `text` field after a one-paragraph framing."""
     safe_text = (node_text or "").strip() or "(no instructions on the node)"
@@ -48,7 +48,7 @@ Use the wired upstream context provided above. Write artifacts where instructed;
 
 
 def render(node_id: str, node_text: str, branch: str) -> tuple:
-    """Resolve the preamble for a node id. Returns (title, preamble) — title
+    """Resolve the preamble for a node id. Returns (title, preamble) - title
     is a short label for the run title, preamble is the system-prompt body
     handed to the spawned subprocess.
 

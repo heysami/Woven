@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Claymorphism theme — apply via <html data-theme="claymorphism">.
+   Claymorphism theme - apply via <html data-theme="claymorphism">.
    A STYLE OVERLAY on top of the Template Design System (styles.css must load
    first). Soft-UI "foam" / puffy 3D clay: chunky rounded everything, matte
    surfaces, and the signature dual-light clay shadow (outer drop + inner
@@ -13,19 +13,19 @@
    clay shadow's white highlight / dark cast flip via helper tokens so the
    dual-light read survives on a dark substrate.
 
-   This theme is PURE CSS — no WebGL / shader runtime.
+   This theme is PURE CSS - no WebGL / shader runtime.
    ========================================================================== */
 
 :root[data-theme="claymorphism"]{
-  /* ---- radii: remap LARGE — sharp corners break the soft-plastic read ---- */
+  /* ---- radii: remap LARGE - sharp corners break the soft-plastic read ---- */
   --radius-xs:8px; --radius-s:10px; --radius-base:18px; --radius-m:20px;
   --radius-l:24px; --radius-xl:28px; --radius-2xl:36px; --radius-pill:100px;
 
   /* ---- warm off-white / soft pastel surfaces ----
      The page + container backgrounds share one warm cream so the clay shadow
      has light to push against (foam rule: bg-of-container == bg-of-page). */
-  --surface:#F4EFE9;            /* warm cream — primary card/clay surface     */
-  --surface-default:#EDE6DD;    /* slightly deeper wash — canvas / wells      */
+  --surface:#F4EFE9;            /* warm cream - primary card/clay surface     */
+  --surface-default:#EDE6DD;    /* slightly deeper wash - canvas / wells      */
   --surface-medium:#E5DCD1;     /* recessed                                   */
   --surface-strong:#DCD1C3;     /* most recessed                              */
   --surface-inverse:#3A352F;
@@ -110,12 +110,12 @@
   --chart-grid:#E3DACE;
   --chart-axis:#A89D8F;
 
-  /* slightly softer global easing — gentle squash, no hard snap */
+  /* slightly softer global easing - gentle squash, no hard snap */
   --ease:.25s cubic-bezier(.34,1.56,.64,1);
 }
 
 /* ==========================================================================
-   DARK clay — the editor toggles html.ds-scheme-dark for a dark preview while
+   DARK clay - the editor toggles html.ds-scheme-dark for a dark preview while
    data-theme stays "claymorphism". Warm dark substrate; the clay highlight
    drops to a faint light + the cast deepens so the dual-light read survives.
    ========================================================================== */
@@ -152,12 +152,12 @@
 }
 
 /* ==========================================================================
-   Page substrate — the warm wash the clay pushes against.
+   Page substrate - the warm wash the clay pushes against.
    ========================================================================== */
 [data-theme="claymorphism"] body{background:var(--surface-default);}
 
 /* ==========================================================================
-   Cards — the canonical clay surface. Borders off (inner highlight does the
+   Cards - the canonical clay surface. Borders off (inner highlight does the
    edge); puffed with the full clay recipe.
    ========================================================================== */
 [data-theme="claymorphism"] .card,
@@ -176,7 +176,7 @@
 }
 
 /* ==========================================================================
-   Stat hero / chart card / KPI — flagship dashboard clay tiles.
+   Stat hero / chart card / KPI - flagship dashboard clay tiles.
    ========================================================================== */
 [data-theme="claymorphism"] .stat-hero,
 [data-theme="claymorphism"] .chart-card{
@@ -192,7 +192,7 @@
   box-shadow:var(--clay-shadow);
   overflow:hidden;
 }
-/* KPIs sit inside the strip — drop the hard divider, let the foam read as one
+/* KPIs sit inside the strip - drop the hard divider, let the foam read as one
    puffed bar with soft inset gutters between cells */
 [data-theme="claymorphism"] .kpi{
   border-left:0;
@@ -203,7 +203,7 @@
 }
 
 /* ==========================================================================
-   Buttons — puffy clay. Primary is a raised lozenge; it DEPRESSES on press
+   Buttons - puffy clay. Primary is a raised lozenge; it DEPRESSES on press
    (translate down-right + swap to inset). Outline/light are softer foam pills.
    ========================================================================== */
 [data-theme="claymorphism"] .btn{
@@ -263,7 +263,7 @@
 }
 
 /* ==========================================================================
-   Inputs — soft inset wells. Generous padding, friendly radius, no hard
+   Inputs - soft inset wells. Generous padding, friendly radius, no hard
    border; the inset shadow IS the affordance. Focus deepens the well + a
    soft accent ring.
    ========================================================================== */
@@ -283,7 +283,7 @@
 }
 [data-theme="claymorphism"] .textarea{padding:var(--space-s) var(--space-base);}
 /* icon inputs: the clay padding shorthand above wipes the base padding that
-   reserves room for the absolutely-positioned icon — restore it so the leading
+   reserves room for the absolutely-positioned icon - restore it so the leading
    (or trailing) icon doesn't overlap the text. */
 [data-theme="claymorphism"] .input-icon > .input{padding-left:42px;}
 [data-theme="claymorphism"] .input-icon--right > .input{padding-left:var(--space-base);padding-right:42px;}
@@ -312,7 +312,7 @@
   color:var(--fg-subtle);
 }
 [data-theme="claymorphism"] .input--pill{height:50px;border-radius:var(--radius-pill);}
-/* bare input (inline doc field) — flatten the well, keep it light */
+/* bare input (inline doc field) - flatten the well, keep it light */
 [data-theme="claymorphism"] .input--bare{
   background:transparent;
   box-shadow:none;
@@ -324,8 +324,8 @@
 }
 
 /* ==========================================================================
-   Badges & tags — small puffy pastel pills (pills stay round, get soft lift,
-   never the full clay recipe — that's reserved for the one clay layer).
+   Badges & tags - small puffy pastel pills (pills stay round, get soft lift,
+   never the full clay recipe - that's reserved for the one clay layer).
    ========================================================================== */
 [data-theme="claymorphism"] .badge,
 [data-theme="claymorphism"] .tag{
@@ -348,7 +348,7 @@
 }
 
 /* ==========================================================================
-   Table — flat chrome surrounds the clay; the table itself reads as a soft
+   Table - flat chrome surrounds the clay; the table itself reads as a soft
    puffed panel with hairline warm dividers (no clay-on-every-row).
    ========================================================================== */
 [data-theme="claymorphism"] .table{
@@ -371,7 +371,7 @@
 [data-theme="claymorphism"] .table tr.is-selected td{background:var(--primary-surface-muted);}
 
 /* ==========================================================================
-   Modal — the big clay surface. Chunky radius, full puffed recipe, no border.
+   Modal - the big clay surface. Chunky radius, full puffed recipe, no border.
    ========================================================================== */
 [data-theme="claymorphism"] .modal{
   background:var(--surface);
@@ -391,7 +391,7 @@
 [data-theme="claymorphism"] .modal-row{border-bottom:1px solid var(--border-subtle);}
 
 /* ==========================================================================
-   App shell — sidebar stays a tinted clay rail (keeps the brand gradient but
+   App shell - sidebar stays a tinted clay rail (keeps the brand gradient but
    rounds + lifts it); topbar is flat warm chrome (one clay layer rule).
    ========================================================================== */
 [data-theme="claymorphism"] .main{background:var(--surface-default);}
@@ -419,7 +419,7 @@
 }
 
 /* ==========================================================================
-   Mobile shell — the phone is a single big clay slab; the active tab item
+   Mobile shell - the phone is a single big clay slab; the active tab item
    reads as a small pressed-in chiclet.
    ========================================================================== */
 [data-theme="claymorphism"] .phone{
@@ -440,7 +440,7 @@
   box-shadow:var(--clay-inset);
 }
 
-/* ---- Split-dropdown caret — right end of the clay lozenge (same puff + fill) ---- */
+/* ---- Split-dropdown caret - right end of the clay lozenge (same puff + fill) ---- */
 [data-theme="claymorphism"] .btn-split .btn{border-top-right-radius:0;border-bottom-right-radius:0;}
 [data-theme="claymorphism"] .btn-split__caret{
   background:var(--primary-surface);

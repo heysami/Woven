@@ -1,15 +1,15 @@
-"""editor/kinds/validate.py — synchronous contract checks.
+"""editor/kinds/validate.py - synchronous contract checks.
 
 See WORKFLOW_TRUTHFULNESS_PLAN.md §5. Called at three points with three
 modes:
 
-  save:           PERMISSIVE — drafts always allowed. Only catches structural
+  save:           PERMISSIVE - drafts always allowed. Only catches structural
                   errors (unknown kind, wrong field type on populated fields).
                   Critical: this preserves manual canvas use (Principle 11).
-  status:running  PERMISSIVE — node can be marked running freely.
-  status:done     STRICT — completion.requires must be satisfied.
-  status:error    PERMISSIVE — but runError must be non-empty if set.
-  commit          STRICT — outputs + files + completion + must-consume.
+  status:running  PERMISSIVE - node can be marked running freely.
+  status:done     STRICT - completion.requires must be satisfied.
+  status:error    PERMISSIVE - but runError must be non-empty if set.
+  commit          STRICT - outputs + files + completion + must-consume.
 """
 import glob
 import os
@@ -38,7 +38,7 @@ def _violation(type_, message, **kw):
 # ── Field-shape sanity (used at save time, permissively) ────────────────
 def _coerce_value_type(value, declared_type):
     """Best-effort: is `value` plausibly of `declared_type`?
-    Permissive — we only reject blatantly wrong shapes (an object where the
+    Permissive - we only reject blatantly wrong shapes (an object where the
     contract expects a string, etc.). Empty/missing is always fine at save.
     """
     if value is None or value == "":
@@ -59,7 +59,7 @@ def _coerce_value_type(value, declared_type):
         return isinstance(value, list)
     if declared_type == "ref":
         return isinstance(value, str)
-    # Unknown declared_type — accept (forward-compat).
+    # Unknown declared_type - accept (forward-compat).
     return True
 
 
@@ -102,7 +102,7 @@ def _resolve_path_template(template, node, project_root):
         "variant":  node.get("variant")  or "",
         "dsId":     node.get("dsId")     or "main",
         "id":       node.get("id")       or "",
-        # v3.3 — simulation + interactive-media + narrative-experience families.
+        # v3.3 - simulation + interactive-media + narrative-experience families.
         # The orchestrator sets these on each component node when it scaffolds.
         "simId":    node.get("simId")    or "",
         "imId":     node.get("imId")     or "",
@@ -164,7 +164,7 @@ def _check_files_exist(node, contract, project_root):
                         viols.append(_violation(FILE_MISSING,
                             f"no .{ext} files in {left}", path=left))
         # outputs.X set / non-empty / in {a, b, c}
-        # v3.3 — value-membership assertions are the truthfulness floor for
+        # v3.3 - value-membership assertions are the truthfulness floor for
         # lens-gated completion (see docs/features/simulation-and-interactive-
         # orchestrators.md §12.4). A lens drawer commits outputs.verdict = "pass"
         # or "fail"; the component contract requires outputs.lensVerdict
@@ -190,11 +190,11 @@ def _check_files_exist(node, contract, project_root):
                 if empty:
                     viols.append(_violation(REQUIRED_MISSING,
                         f"required output missing or empty: {field}", field=field))
-        # consumeFrom: 0 unhandled files — caller verifies separately
+        # consumeFrom: 0 unhandled files - caller verifies separately
         elif rs.startswith("consumeFrom:"):
             pass  # handled by validate_consume
         # Other freeform requirements logged as completion checks the
-        # validator can't autoverify — agent must self-report.
+        # validator can't autoverify - agent must self-report.
     return viols
 
 
@@ -219,11 +219,11 @@ def validate_node(node, action, project_root=None):
     Returns list of violations. Empty list = pass.
 
     `action` is one of:
-      'save'           — PERMISSIVE (structural-only)
-      'status:running' — PERMISSIVE
-      'status:done'    — STRICT (completion)
-      'status:error'   — runError must be non-empty if runStatus=error
-      'commit'         — STRICT (completion + must-consume; caller validates upstream)
+      'save'           - PERMISSIVE (structural-only)
+      'status:running' - PERMISSIVE
+      'status:done'    - STRICT (completion)
+      'status:error'   - runError must be non-empty if runStatus=error
+      'commit'         - STRICT (completion + must-consume; caller validates upstream)
     """
     if not isinstance(node, dict):
         return [_violation(SCHEMA_MISMATCH, "node must be an object")]
@@ -243,7 +243,7 @@ def validate_node(node, action, project_root=None):
     viols.extend(_check_schema(node, contract, action))
 
     if action == "save" or action == "status:running":
-        # Save is always permissive — schema check above is the only gate.
+        # Save is always permissive - schema check above is the only gate.
         return viols
 
     if action == "status:error":
@@ -252,7 +252,7 @@ def validate_node(node, action, project_root=None):
                 "runStatus=error requires non-empty runError"))
         return viols
 
-    # status:done OR commit — strict.
+    # status:done OR commit - strict.
     viols.extend(_check_required_outputs(node, contract))
     if project_root:
         viols.extend(_check_files_exist(node, contract, project_root))
@@ -270,11 +270,11 @@ def validate_consume(node, upstream_folder, project_root):
     contract = kind_contract(node.get("kind"), node.get("id"))
     if not contract: return []
     cf = contract.get("consumeFrom")
-    if not cf: return []   # this kind doesn't consume — nothing to check
+    if not cf: return []   # this kind doesn't consume - nothing to check
     rules = cf.get("rules") or []
     unhandled_policy = (cf.get("unhandled") or "reject").lower()
     if not os.path.isdir(upstream_folder):
-        # Upstream missing — that's a different drift (caller checks).
+        # Upstream missing - that's a different drift (caller checks).
         return []
 
     import fnmatch
@@ -299,7 +299,7 @@ def validate_consume(node, upstream_folder, project_root):
                     f"upstream file not routed by any consumeFrom rule: {rel}",
                     file=rel, upstreamFolder=upstream_folder, policy=unhandled_policy))
     if unhandled_policy == "warn":
-        # Demote to warnings — still surfaced, but caller won't 400.
+        # Demote to warnings - still surfaced, but caller won't 400.
         for v in viols:
             v["severity"] = "warn"
     return viols

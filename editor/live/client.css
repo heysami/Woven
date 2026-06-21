@@ -7,7 +7,7 @@
 *{box-sizing:border-box}
 /* The [hidden] attribute MUST win over any class that sets `display`
    (.join/#app/#proto/.modal all set display, which would otherwise keep a
-   hidden element visible — this was the "joined ✓ but join screen stays" bug). */
+   hidden element visible - this was the "joined ✓ but join screen stays" bug). */
 [hidden]{display:none !important}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden}
 button{font:inherit;cursor:pointer}

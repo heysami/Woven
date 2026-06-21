@@ -1,4 +1,4 @@
-/* Live cursors overlay — injected into the REAL editor when served to a guest
+/* Live cursors overlay - injected into the REAL editor when served to a guest
    through the gate (/s/<token>/live/). Joins the live session, broadcasts this
    guest's pointer in CANVAS-WORLD coords, and renders every other guest's
    cursor mapped through the workflow canvas's pan/zoom layer so cursors point
@@ -29,7 +29,7 @@
     }
     return document.querySelector(".workflow-canvas-wrap") || document.body;
   }
-  // Read layer geometry sparingly (never per-frame — see canvas-rect memory).
+  // Read layer geometry sparingly (never per-frame - see canvas-rect memory).
   function readGeom() {
     if (!layer || !layer.isConnected) layer = findLayer();
     if (!layer) return;
@@ -48,7 +48,7 @@
     clipToCanvas(o);
     return o;
   }
-  // Cursors live on the CANVAS, not above the side panels — clip the
+  // Cursors live on the CANVAS, not above the side panels - clip the
   // viewport-covering overlay to the canvas rect so a remote cursor mapping
   // into a panel column is hidden behind it (panels are separate grid columns).
   function clipToCanvas(o) {
@@ -111,7 +111,7 @@
       api("api/presence", { cursor: { x, y, page: "canvas" } }).catch(() => {});
     }, { passive: true });
 
-    // Soft node locks — show "locked by <name>" as collaborators grab nodes.
+    // Soft node locks - show "locked by <name>" as collaborators grab nodes.
     if (window.__thLocks) {
       window.__thLocks.config({
         myGid: GID,
@@ -123,7 +123,7 @@
     }
 
     // Re-place cursors periodically so they stay glued to nodes while *I* pan/
-    // zoom (idle remote guests send no presence). 120ms — not per-frame.
+    // zoom (idle remote guests send no presence). 120ms - not per-frame.
     setInterval(() => { if (!parts.size) return; readGeom(); for (const p of parts.values()) render(p); }, 120);
     // Heartbeat keeps me in the roster while only viewing.
     setInterval(() => { api("api/presence", {}).catch(() => {}); }, 20000);

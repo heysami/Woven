@@ -12,33 +12,33 @@ images:
 **Tag:** aesthetic-y2k-futurism
 
 **Canonical references:**
-- Apple Aqua Mac OS X 10.0–10.2 — the pulsing default button, gel transport controls, brushed-metal headers
-- Sega Dreamcast OS + Sonic Adventure menus — translucent console plates, swirl logos, optimistic boot
-- Windows XP Luna by Frog Design — saturated sky desktop, candy taskbar, friendly gloss
-- Tomb Raider Last Revelation / Chronicles menus — vector-grid environments and inventory plates
-- WinAMP / Sonique skin culture — chrome wordmarks, LCD readouts, blobject media players
+- Apple Aqua Mac OS X 10.0-10.2 - the pulsing default button, gel transport controls, brushed-metal headers
+- Sega Dreamcast OS + Sonic Adventure menus - translucent console plates, swirl logos, optimistic boot
+- Windows XP Luna by Frog Design - saturated sky desktop, candy taskbar, friendly gloss
+- Tomb Raider Last Revelation / Chronicles menus - vector-grid environments and inventory plates
+- WinAMP / Sonique skin culture - chrome wordmarks, LCD readouts, blobject media players
 
 ## Cultural identity
 
-A roughly 1998–2003 optimistic-technocratic moment when consumer software believed the future had arrived and wanted to look *inhabitable* — translucent plastic, candy chrome, blobject hardware (iMac G3, iPod, Dreamcast). The interface is the protagonist: an OS window, a console pause-menu, a media-player skin floating on a saturated environment that the plastic actually refracts. Tone is welcoming, slightly civic, never ironic.
+A roughly 1998-2003 optimistic-technocratic moment when consumer software believed the future had arrived and wanted to look *inhabitable* - translucent plastic, candy chrome, blobject hardware (iMac G3, iPod, Dreamcast). The interface is the protagonist: an OS window, a console pause-menu, a media-player skin floating on a saturated environment that the plastic actually refracts. Tone is welcoming, slightly civic, never ironic.
 
-Not Y2K-Memphis (poster graphics, terrazzo, squiggles — that's a different aesthetic). Not Vaporwave (post-2010 ironic remix). Not Cyberpunk (dystopian, hostile). This is the *sincere* version: the future as a friendly appliance.
+Not Y2K-Memphis (poster graphics, terrazzo, squiggles - that's a different aesthetic). Not Vaporwave (post-2010 ironic remix). Not Cyberpunk (dystopian, hostile). This is the *sincere* version: the future as a friendly appliance.
 
 ## Palette anchor
 
-- Aqua blue `oklch(72% 0.17 235)` — the pulsing default-button blue, the load-bearing accent
-- Bondi teal `oklch(70% 0.12 200)` — iMac G3, the era's signature environment
-- Ultramarine `oklch(40% 0.18 260)` — Dreamcast / XP-Luna deep sky for chrome to refract over
+- Aqua blue `oklch(72% 0.17 235)` - the pulsing default-button blue, the load-bearing accent
+- Bondi teal `oklch(70% 0.12 200)` - iMac G3, the era's signature environment
+- Ultramarine `oklch(40% 0.18 260)` - Dreamcast / XP-Luna deep sky for chrome to refract over
 - Chrome ramp `#e8e8e8 → #c0c0c0 → #6e6e7a → #2a2a32` for mirror-finish wordmarks
-- Citrus accents — tangerine `oklch(75% 0.20 55)` and lime `oklch(85% 0.20 130)` (the candy-iMac flavours)
+- Citrus accents - tangerine `oklch(75% 0.20 55)` and lime `oklch(85% 0.20 130)` (the candy-iMac flavours)
 
-Never neutral white as the base — translucent plastic has nothing to refract over white.
+Never neutral white as the base - translucent plastic has nothing to refract over white.
 
 ## Decoration motifs
 
 **Mandatory vocabulary:**
 - Mirror-finish wordmarks with a horizontal split at x-height, lower half tinted into the environment colour
-- At least one blobject — a 3D-rendered translucent capsule, kidney, or pebble shape with inner gloss
+- At least one blobject - a 3D-rendered translucent capsule, kidney, or pebble shape with inner gloss
 - A vector grid receding to a vanishing point, OR a pinstripe field somewhere on the body
 - Gel buttons with a highlight band breaking at ~48% (the Aqua recipe, not a flat pill)
 

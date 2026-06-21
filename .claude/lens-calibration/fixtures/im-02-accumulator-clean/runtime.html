@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>im-02 — ALL-PASS (accumulator clean) fixture</title>
+<head><meta charset="utf-8"><title>im-02 - ALL-PASS (accumulator clean) fixture</title>
 <style>body,html{margin:0;height:100%;overflow:hidden;background:#000}
 #scene{display:block;width:100%;height:100%}
 #start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;flex-direction:column;gap:16px;font-family:Georgia,serif}
@@ -10,7 +10,7 @@
 <canvas id="scene"></canvas>
 <div id="start-gate"><h2 style="font-weight:300">Voice Painter</h2><p style="opacity:0.7;max-width:480px;text-align:center">Sing softly. The field will hold what you give it.</p><p style="font-size:11px;opacity:0.5">microphone stays in your browser</p><button id="start-btn">Begin</button></div>
 <script type="module">
-// ─── CLEAN PATTERN — accumulative mapping with proper decay; matches
+// ─── CLEAN PATTERN - accumulative mapping with proper decay; matches
 // brief's mapping idiom + watercolor visual register. All 3 lenses pass.
 
 const canvas = document.getElementById('scene');
@@ -23,7 +23,7 @@ const fs = `#version 300 es
 precision highp float;
 out vec4 c;
 uniform vec2 u_res; uniform float u_field;
-// Soft warm-watercolor palette — sand → ochre → terracotta
+// Soft warm-watercolor palette - sand → ochre → terracotta
 vec3 palette(float t){
   vec3 a = vec3(0.36, 0.27, 0.20);
   vec3 b = vec3(0.78, 0.57, 0.32);

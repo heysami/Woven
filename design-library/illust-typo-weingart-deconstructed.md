@@ -19,7 +19,7 @@ letterforms stretched to extreme spacing, layered halftones.
 
 - letterforms stretched to extreme spacing, layered halftones
 - reversed type out of heavy black blocks
-- typographic landscape — letters as terrain
+- typographic landscape - letters as terrain
 - Swiss grid disrupted intentionally
 
 ## Prompt keywords
@@ -30,7 +30,7 @@ letterforms stretched to extreme spacing, layered halftones.
 
 **Line**: bold geometric letterform
 
-**Color**: high contrast — black on cream + 1 accent
+**Color**: high contrast - black on cream + 1 accent
 
 **Style**: disrupted grid, reversed text out of black block
 

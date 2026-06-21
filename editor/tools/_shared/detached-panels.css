@@ -7,7 +7,7 @@
    to <body>, and its side/top/bottom panels float OUTSIDE the central canvas
    while the empty backdrop stays click-through to the canvas underneath.
 
-   CONTRACT each tool must satisfy (additive — no effect unless body.detached-panels):
+   CONTRACT each tool must satisfy (additive - no effect unless body.detached-panels):
      1. Wrap the central viewport/canvas in an element with id="coreCanvas".
      2. Tag each surrounding panel with data-float-panel="left|right|top|bottom".
      3. On `<prefix>:select`, set the panel extents (its own panel sizes, in CSS
@@ -27,19 +27,19 @@ body.detached-panels {
   /* transparent so the backdrop reveals the canvas underneath */
   background: transparent !important;
   /* auto so a click on the transparent backdrop (the gaps/corners outside the
-     panels + core canvas) is caught here — the tool forwards it to the host as a
+     panels + core canvas) is caught here - the tool forwards it to the host as a
      "<prefix>:deselect" so clicking just outside the node collapses it, the same
      as clicking empty canvas. Panels + #coreCanvas keep their own pointer-events. */
   pointer-events: auto;
   position: relative;
 }
-/* The page <html> also paints a chrome background in most tools — clear it too,
+/* The page <html> also paints a chrome background in most tools - clear it too,
    else the grown iframe shows a solid fill instead of being see-through. */
 html:has(body.detached-panels) { background: transparent !important; }
 
 /* Panels exist ONLY while the node is selected. When NOT selected (no
    detached-panels class) hide every floating panel and let the central canvas
-   fill the node rect — so a deselected editor reads as just its canvas, the way
+   fill the node rect - so a deselected editor reads as just its canvas, the way
    Figma/Spline-style editors hide their chrome until focused. */
 body:not(.detached-panels) [data-float-panel] { display: none !important; }
 body:not(.detached-panels) #coreCanvas {
@@ -70,9 +70,9 @@ body.detached-panels #coreCanvas {
   z-index: 2;
 }
 
-/* Floating panels — pinned just outside the core rect. CRITICAL: the panel keeps
+/* Floating panels - pinned just outside the core rect. CRITICAL: the panel keeps
    its OWN width/height (from the tool's CSS); we only control position + the outer
-   inset. (Forcing width here created a circular dependency — the panel measured 0
+   inset. (Forcing width here created a circular dependency - the panel measured 0
    before reportPanels could read it, so panels vanished. The host grows the iframe
    by panelW+8, leaving the panel's own width + an 8px gap to the node edge.)
    NB: !important on the positioning props beats tools' ID selectors (#left/…). */

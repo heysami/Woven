@@ -13,7 +13,7 @@ images:
 
 # Atmosphere rim glow
 
-A matte near-black body whose EDGE carries a thin scattering glow — the planet-limb optic applied to surfaces: dark mass, luminous rim, void beyond.
+A matte near-black body whose EDGE carries a thin scattering glow - the planet-limb optic applied to surfaces: dark mass, luminous rim, void beyond.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A matte near-black body whose EDGE carries a thin scattering glow — the planet
 
 **Transparency**: opaque body; rim glow is additive light, brightest at the contact line, exponential falloff both inward and outward
 
-**Reacts to light**: yes — the rim IS directional light made visible; rim position/intensity shifts with the implied light source (pointer, scroll, time-theme)
+**Reacts to light**: yes - the rim IS directional light made visible; rim position/intensity shifts with the implied light source (pointer, scroll, time-theme)
 
-**Deforms**: no — applies to rigid arcs, cards, section boundaries
+**Deforms**: no - applies to rigid arcs, cards, section boundaries
 
 **Age / wear**: ageless
 
@@ -42,7 +42,7 @@ css: |
      same three-layer glow on its top edge */
 svg: |
   Arc path stroked 3× (1px bright core, 4px mid, 12px blurred halo via
-  feGaussianBlur), additive over a near-black ellipse — the hero limb.
+  feGaussianBlur), additive over a near-black ellipse - the hero limb.
 webgl: |
   Only for true planet heroes: sphere with fresnel-powered atmosphere shell
   (additive, exp falloff), city-light texture on the night side. The card-
@@ -54,13 +54,13 @@ video: slow terminator drift loop on hero limbs
 
 ## Reactive behaviors
 
-**Pointer**: rim brightness/position eases toward the pointer-facing edge (proxy sun direction) — ±20% intensity, 300ms ease; one shared light direction for ALL elements on the page.
+**Pointer**: rim brightness/position eases toward the pointer-facing edge (proxy sun direction) - ±20% intensity, 300ms ease; one shared light direction for ALL elements on the page.
 
-**Scroll**: optional dawn effect — rim warms (blue → blue-white → gold tinge) as a section fully enters view.
+**Scroll**: optional dawn effect - rim warms (blue → blue-white → gold tinge) as a section fully enters view.
 
 ## Common implementation mistakes (avoid these)
 
-- Rim on all four edges (it's directional scattering, not an outline — one edge, matching the page's single light direction)
+- Rim on all four edges (it's directional scattering, not an outline - one edge, matching the page's single light direction)
 - Thick neon border (the optic is thin: core ≤2px; the rest is falloff)
 - Different rim directions on sibling cards (breaks the shared-sun physics)
 - Saturated rim on a light background (the material requires void darkness around it)

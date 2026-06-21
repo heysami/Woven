@@ -15,12 +15,12 @@ images:
 
 ## Surface treatment
 
-ONE iridescent silk ribbon / chrome membrane flows across a near-black field, behind or beneath the hero type. It is a rendered 3D material with specular flow — visible folds, highlights that travel — not a blurred gradient (that's `style-aurorism`). Everything else on the page is severe and achromatic so the ribbon reads as the single living thing.
+ONE iridescent silk ribbon / chrome membrane flows across a near-black field, behind or beneath the hero type. It is a rendered 3D material with specular flow - visible folds, highlights that travel - not a blurred gradient (that's `style-aurorism`). Everything else on the page is severe and achromatic so the ribbon reads as the single living thing.
 
 ### Background
 
-- Base: `#050507` – `#0a0a0f` near-black, slight blue or violet cast
-- The ribbon occupies the lower or trailing third of the hero — never wallpapering the whole viewport
+- Base: `#050507` - `#0a0a0f` near-black, slight blue or violet cast
+- The ribbon occupies the lower or trailing third of the hero - never wallpapering the whole viewport
 - Sections after the hero drop the ribbon entirely; at most a thin echo (a 2px iridescent rule) recalls it
 
 ### Color
@@ -36,13 +36,13 @@ ONE iridescent silk ribbon / chrome membrane flows across a near-black field, be
 ### Type stack
 
 - Display: Inter/Geist/Söhne 500-600, tight tracking (-2%), 56-88px
-- Optional single italic-serif accent word inside the headline (see `style-editorial-italic-accent` — the two styles co-occur constantly in the reference corpus)
+- Optional single italic-serif accent word inside the headline (see `style-editorial-italic-accent` - the two styles co-occur constantly in the reference corpus)
 - Mono for stat chips and nav meta
 
 ### Radius / borders / shadow
 
 - 8-12px cards, 999px pills
-- Hairlines `rgba(255,255,255,0.08)`; no drop shadows — the ribbon's specular glow is the only luminance event
+- Hairlines `rgba(255,255,255,0.08)`; no drop shadows - the ribbon's specular glow is the only luminance event
 - Buttons: 1px hairline ghost + one filled accent
 
 ### Decoration grammar
@@ -51,7 +51,7 @@ Mandatory:
 - ONE ribbon per page, flowing through the hero
 - Visible material behavior: folds, specular streaks, depth-of-field falloff at the edges
 - Grain overlay 4-6% to kill banding
-- Text never sits ON the brightest fold — reserve a quiet dark zone for the headline
+- Text never sits ON the brightest fold - reserve a quiet dark zone for the headline
 
 Forbidden:
 - Two ribbons, or ribbon repeated per section
@@ -61,15 +61,15 @@ Forbidden:
 
 ### Motion
 
-The ribbon flows — slow continuous undulation (20-40s loop), specular highlight traveling along the folds. Implementation: pre-rendered video loop (`motion` medium), WebGL shader (`shader` medium), or a 3D scene (`3d`). Static fallback: a single high-res render frame. Everything else still; type fades in 200ms.
+The ribbon flows - slow continuous undulation (20-40s loop), specular highlight traveling along the folds. Implementation: pre-rendered video loop (`motion` medium), WebGL shader (`shader` medium), or a 3D scene (`3d`). Static fallback: a single high-res render frame. Everything else still; type fades in 200ms.
 
 ## Failure mode
 
-A blurred purple gradient blob labeled "silk", repeated behind every section, with the headline dropped on the brightest fold so contrast dies, plus glass cards floating on top — reads as a template, not a material. The tell of the real thing: you can see the fabric fold.
+A blurred purple gradient blob labeled "silk", repeated behind every section, with the headline dropped on the brightest fold so contrast dies, plus glass cards floating on top - reads as a template, not a material. The tell of the real thing: you can see the fabric fold.
 
 ## Best for
 
-AI/SaaS dark heroes, fintech wealth platforms, premium agency reels, keynote/launch landings — anywhere "premium intelligence" is the one-word brief and the product is mostly text + screenshots.
+AI/SaaS dark heroes, fintech wealth platforms, premium agency reels, keynote/launch landings - anywhere "premium intelligence" is the one-word brief and the product is mostly text + screenshots.
 
 ## Pairs well with
 

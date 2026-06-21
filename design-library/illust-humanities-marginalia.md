@@ -20,7 +20,7 @@ quirky hand-drawn characters echoing medieval-manuscript marginalia.
 - quirky hand-drawn characters echoing medieval-manuscript marginalia
 - black ink line on transparent PNG, works on light or dark
 - playful absurd subjects (knight, monk, hybrid creature)
-- intentionally amateur / naïve quality — stands against AI slop
+- intentionally amateur / naïve quality - stands against AI slop
 - 35 distinct illustrations, transparent PNG
 
 ## Prompt keywords
@@ -50,7 +50,7 @@ quirky hand-drawn characters echoing medieval-manuscript marginalia.
 > Hand-drawn quirky character in medieval manuscript marginalia style,
 > scratchy ink quill line 2px, pure black on transparent background, naive
 > amateur quality intentionally rough, absurd hybrid creature or robed
-> figure, Lev Inunnink Humanities aesthetic — anti-AI human warmth.
+> figure, Lev Inunnink Humanities aesthetic - anti-AI human warmth.
 
 ## When to use
 

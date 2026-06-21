@@ -13,7 +13,7 @@ images:
 
 # Chrome on Velvet (Y2K luxury substrate)
 
-A metallic (chrome) on matte (velvet) surface that reacts to light: yes — strong.
+A metallic (chrome) on matte (velvet) surface that reacts to light: yes - strong.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A metallic (chrome) on matte (velvet) surface that reacts to light: yes — stro
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — strong
+**Reacts to light**: yes - strong
 
 **Deforms**: no
 
@@ -42,7 +42,7 @@ raster: velvet substrate scan + chrome objects
 
 **Light**: chrome reacts; velvet does not
 
-**Highlight**: yes — strong on chrome
+**Highlight**: yes - strong on chrome
 
 **Depth**: no
 

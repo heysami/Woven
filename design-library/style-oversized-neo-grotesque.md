@@ -15,21 +15,21 @@ images:
 
 ## Surface treatment
 
-Display type is the surface. Hero-scale neo-grotesque sits on a flat ground (pure white or pure black, matched to the work's identity — never warm paper). No shadows, no radii, no chrome — the optical event is letterforms crowding the frame.
+Display type is the surface. Hero-scale neo-grotesque sits on a flat ground (pure white or pure black, matched to the work's identity - never warm paper). No shadows, no radii, no chrome - the optical event is letterforms crowding the frame.
 
 **Palette**
-- Ground: `#FFFFFF` or `#000000` — pure, no warm cast
+- Ground: `#FFFFFF` or `#000000` - pure, no warm cast
 - Ink: matched to ground (`#000` on white, `#FFF` on black)
-- Greys: 0-chroma greyscale only — `#111`, `#666`, `#A8A8A8`, `#E8E8E8`
+- Greys: 0-chroma greyscale only - `#111`, `#666`, `#A8A8A8`, `#E8E8E8`
 - Accent: per-piece, picked from the subject's own identity; **no system-wide accent** carried across the page
 
 **Type stack**
-- Display: oversized neo-grotesque — Söhne Breit, Akzidenz-Grotesk Extended, Aktiv Grotesk Extended, GT America Extended
-- Body: utilitarian sans — Söhne, Inter, Maison Neue
+- Display: oversized neo-grotesque - Söhne Breit, Akzidenz-Grotesk Extended, Aktiv Grotesk Extended, GT America Extended
+- Body: utilitarian sans - Söhne, Inter, Maison Neue
 - Mono (labels / metadata only): GT America Mono, Maison Neue Mono
 - Never: a display-sans + decorative-sans mix; never a serif anywhere
 
-**Sizes** (px): 11 / 14 / 18 / 96 / 160 / 240 — display sizes carry the page, body is minimal connective tissue.
+**Sizes** (px): 11 / 14 / 18 / 96 / 160 / 240 - display sizes carry the page, body is minimal connective tissue.
 
 **Letter-spacing:** `-0.04em` on display (tight enough to crowd), `+0.04em` on uppercase labels.
 
@@ -56,11 +56,11 @@ Display type is the surface. Hero-scale neo-grotesque sits on a flat ground (pur
 
 ## Failure mode
 
-Small Lucide icons in a sidebar, soft drop shadows on tiles, an `8px` border-radius "Get in touch" CTA pill, an accent gradient swept across the index — SaaS-disguised-as-studio. Any button labelled "Learn more" or "Get started" means the surface has collapsed into marketing template.
+Small Lucide icons in a sidebar, soft drop shadows on tiles, an `8px` border-radius "Get in touch" CTA pill, an accent gradient swept across the index - SaaS-disguised-as-studio. Any button labelled "Learn more" or "Get started" means the surface has collapsed into marketing template.
 
 ## Best for
 
-Design studios, fashion houses, cultural identities, sports brands, art-director portfolios, magazine masthead pages, exhibition microsites — anywhere the subject's own identity should out-shout the container.
+Design studios, fashion houses, cultural identities, sports brands, art-director portfolios, magazine masthead pages, exhibition microsites - anywhere the subject's own identity should out-shout the container.
 
 ## Pairs well with
 

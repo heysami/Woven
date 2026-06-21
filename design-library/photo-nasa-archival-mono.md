@@ -4,7 +4,7 @@ name: NASA archival monochrome
 category: archival
 era: 1950s-1970s archival
 pairsPrototypes: [aesthetic-monochrome-tech-editorial, aesthetic-atompunk, recipe-newspaper-of-record, recipe-editorial-magazine]
-notForUseWhen: Brief needs current-day color credibility or consumer warmth — the archive reads historical and institutional.
+notForUseWhen: Brief needs current-day color credibility or consumer warmth - the archive reads historical and institutional.
 images:
   - src: photo-nasa-archival-mono.png
     reason: Photography style sample.
@@ -12,15 +12,15 @@ images:
 
 # NASA archival monochrome
 
-Silver-gelatin space-program photography — rockets on pads, suited figures, mission control — with period grain and documentary framing.
+Silver-gelatin space-program photography - rockets on pads, suited figures, mission control - with period grain and documentary framing.
 
 ## Visual signatures
 
 - Program-era subjects: launch vehicles, gantries, clean rooms, control consoles, suit fittings
-- True b/w silver-gelatin tonality — rich mid-grays, dense blacks, slight highlight bloom
+- True b/w silver-gelatin tonality - rich mid-grays, dense blacks, slight highlight bloom
 - Documentary framing: wide establishing shots, technicians dwarfed by hardware
 - Period artifacts: film grain, registration crosses, frame numbers, archive stamps
-- Institutional patience — nothing posed for advertising; everything posed for the record
+- Institutional patience - nothing posed for advertising; everything posed for the record
 
 ## Prompt keywords
 
@@ -44,7 +44,7 @@ Silver-gelatin space-program photography — rockets on pads, suited figures, mi
 
 ## Example prompt template
 
-> An archival black-and-white photograph, 1967: a Saturn V stage suspended from a gantry crane inside the Vehicle Assembly Building, three technicians in white coveralls tiny at its base. Large-format press-camera depth, silver-gelatin tonality with rich mid-grays and dense shadow, fine Tri-X grain, faint frame-number stamp in the border. Available industrial light through high windows. Monumental, procedural, quietly heroic — shot for the record, not for advertising.
+> An archival black-and-white photograph, 1967: a Saturn V stage suspended from a gantry crane inside the Vehicle Assembly Building, three technicians in white coveralls tiny at its base. Large-format press-camera depth, silver-gelatin tonality with rich mid-grays and dense shadow, fine Tri-X grain, faint frame-number stamp in the border. Available industrial light through high windows. Monumental, procedural, quietly heroic - shot for the record, not for advertising.
 
 ## When to use
 

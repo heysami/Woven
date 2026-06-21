@@ -1,6 +1,6 @@
 ---
 name: sim-3d-scene-builder
-description: DEPRECATED — the 3d-environment render is now the shared scene-3d layer. When sim_research commits paradigm=3d-environment, the simulation-orchestrator LINKS scene-3d-orchestrator (mode=host-driven) instead of dispatching this builder; the sim loop drives the scene via window.__scene3d.step(state, alpha). The 2D paradigms (2d-spatial-map / 2d-isometric / text-art / iconographic-anim) keep their own builders. Kept only for in-flight builds.
+description: DEPRECATED - the 3d-environment render is now the shared scene-3d layer. When sim_research commits paradigm=3d-environment, the simulation-orchestrator LINKS scene-3d-orchestrator (mode=host-driven) instead of dispatching this builder; the sim loop drives the scene via window.__scene3d.step(state, alpha). The 2D paradigms (2d-spatial-map / 2d-isometric / text-art / iconographic-anim) keep their own builders. Kept only for in-flight builds.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_snapshot, mcp__Claude_Preview__preview_screenshot
 ---
 

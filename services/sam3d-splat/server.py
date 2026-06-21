@@ -9,7 +9,7 @@ calls (editor/serve.py `_sam3d_convert`):
       ->   raw .ply bytes  (Content-Type: model/ply)
 
 This MUST run on a CUDA GPU (kaolin + gsplat). It is NOT part of the Woven
-daemon — deploy it to Modal / RunPod / Replicate / your own box, then point
+daemon - deploy it to Modal / RunPod / Replicate / your own box, then point
 Woven at it via media-config.json {"sam3d": {"endpoint": "https://…/convert"}}
 or env TH_SAM3D_ENDPOINT.
 
@@ -51,7 +51,7 @@ def _get_inference():
     """Lazily build the SAM3D Inference pipeline once (weights load is slow)."""
     global _inference
     if _inference is None:
-        # Provided by the repo's notebook/ dir — see its README "Inference" block.
+        # Provided by the repo's notebook/ dir - see its README "Inference" block.
         from inference import Inference  # type: ignore
         _inference = Inference(SAM3D_CONFIG, compile=False)
     return _inference
@@ -70,7 +70,7 @@ def _mask_for(img: Image.Image, mask_field: Optional[str]) -> np.ndarray:
     Priority: explicit mask -> alpha channel of a background-removed PNG ->
     full frame. NOTE: if your checkpoint expects a different mask dtype/shape
     than a uint8 HxW array, adapt this to match the repo's load_single_mask()
-    output — this is the single SAM3D-specific spot most likely to need tuning.
+    output - this is the single SAM3D-specific spot most likely to need tuning.
     """
     if mask_field:
         m = _decode_image(mask_field).convert("L")
@@ -116,7 +116,7 @@ def _export_mesh(output, glb_path: str) -> None:
                 break
     if mesh is None:
         raise RuntimeError(
-            "no mesh in pipeline output — keys were: "
+            "no mesh in pipeline output - keys were: "
             + (", ".join(map(str, output.keys())) if isinstance(output, dict) else type(output).__name__))
     for fn in (
         lambda: mesh.save_glb(glb_path),       # custom helpers

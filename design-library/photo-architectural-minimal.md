@@ -4,7 +4,7 @@ name: Architectural minimal
 category: documentary
 era: current
 pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-swiss-grid, aesthetic-swiss-modernist, recipe-warm-restraint]
-notForUseWhen: Brief is playful, maximalist, or character-driven — concrete reads austere.
+notForUseWhen: Brief is playful, maximalist, or character-driven - concrete reads austere.
 images:
   - src: photo-architectural-minimal.png
     reason: Photography style sample.
@@ -17,7 +17,7 @@ Concrete and glass interiors/exteriors in soft natural light, greenery as the si
 ## Visual signatures
 
 - Béton-brut concrete, lime plaster, or pale stone planes filling most of the frame
-- Soft directional daylight raking across surface texture — the material IS the subject
+- Soft directional daylight raking across surface texture - the material IS the subject
 - One organic counterpoint: a fig tree, vine spill, single human figure for scale
 - One-point or two-point perspective, rigorously level horizon and verticals
 - Muted palette: greige, bone, shadow-gray, foliage green

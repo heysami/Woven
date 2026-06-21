@@ -1,15 +1,15 @@
 {
-  "_intent": "ALL-PASS fixture — accumulative mapping with proper decay (0.985 per frame at 60fps ≈ 0.9/s), warm watercolor palette matches brief, Start gate + permission gating clean, injectFakeInput exposed. Concept-lens drives mic input then 0, observes field decays gradually over ~2s — 'painting holds' delivered.",
+  "_intent": "ALL-PASS fixture - accumulative mapping with proper decay (0.985 per frame at 60fps ≈ 0.9/s), warm watercolor palette matches brief, Start gate + permission gating clean, injectFakeInput exposed. Concept-lens drives mic input then 0, observes field decays gradually over ~2s - 'painting holds' delivered.",
   "craft": {
     "verdict": "pass",
     "ground_truth_reason": "getUserMedia inside user-gesture handler; Start gate explanatory + privacy line; injectFakeInput functional; dPR capped at 2"
   },
   "aesthetic": {
     "verdict": "pass",
-    "ground_truth_reason": "warm ochre/sand/terracotta palette + soft serif type + vignette — matches brief.sensoryTargets.visual 'painterly, warm palette'; no antiPatterns present"
+    "ground_truth_reason": "warm ochre/sand/terracotta palette + soft serif type + vignette - matches brief.sensoryTargets.visual 'painterly, warm palette'; no antiPatterns present"
   },
   "concept": {
     "verdict": "pass",
-    "ground_truth_reason": "mapping is accumulative with explicit decay calibrated to ~0.9/sec; drove mic with synthetic input then silence; field decays smoothly over ~2s; successFeel 'painting holds — strokes accumulate' delivered"
+    "ground_truth_reason": "mapping is accumulative with explicit decay calibrated to ~0.9/sec; drove mic with synthetic input then silence; field decays smoothly over ~2s; successFeel 'painting holds - strokes accumulate' delivered"
   }
 }

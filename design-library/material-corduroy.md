@@ -13,7 +13,7 @@ images:
 
 # Corduroy (ribbed pile fabric)
 
-A matte surface that reacts to light: yes — directional pile reflects per-rib and deforms: yes.
+A matte surface that reacts to light: yes - directional pile reflects per-rib and deforms: yes.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — directional pile reflects per-rib 
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — directional pile reflects per-rib
+**Reacts to light**: yes - directional pile reflects per-rib
 
 **Deforms**: yes
 

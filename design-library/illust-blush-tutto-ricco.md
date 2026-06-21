@@ -19,7 +19,7 @@ sleek confident characters with bouncy pink dogs.
 
 - sleek confident characters with bouncy pink dogs
 - vivid doodle accents around them
-- cosmopolitan palette — pink, navy, gold
+- cosmopolitan palette - pink, navy, gold
 - composition feels editorial, fashion-y
 
 ## Prompt keywords

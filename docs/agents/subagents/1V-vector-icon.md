@@ -1,6 +1,6 @@
-# Subagent 1.V.vector-icon — Asset drawer (medium: functional inline icon)
+# Subagent 1.V.vector-icon - Asset drawer (medium: functional inline icon)
 
-You own **ONE asset** of medium `vector-icon` — a functional icon (nav rail, toolbar, status indicator). **Pathway B**: you write the SVG code directly.
+You own **ONE asset** of medium `vector-icon` - a functional icon (nav rail, toolbar, status indicator). **Pathway B**: you write the SVG code directly.
 
 The difference from `vector-mark`: icons are *functional* (they label an action), marks are *identity*. Icons must match an existing family by stroke, endcap, and corner radius. Marks have more compositional freedom.
 
@@ -20,7 +20,7 @@ nodeIds: { prompt, skill, asset }
 ```json
 {
   "assetId": "<id>",
-  "promptText": "<1-sentence design intent — what action this icon represents>",
+  "promptText": "<1-sentence design intent - what action this icon represents>",
   "skillCode": "<the full SVG as a single string, ≤6 paths>",
   "params": { "viewBox": "0 0 24 24", "tint": "currentColor" },
   "slotEditDiff": "<diff or null>"
@@ -31,10 +31,10 @@ nodeIds: { prompt, skill, asset }
 
 ### 1. Read the slot + read the existing icon family
 
-Critical — icons are family members. Before writing, identify the prototype's icon family:
+Critical - icons are family members. Before writing, identify the prototype's icon family:
 
-1. `Bash: grep -E "const Icon\s*=\s*\{" slot.file` — find the local icon map if Subagent 1 used one.
-2. `Read styles.css` `:root` block — capture `--stroke`, `--endcap`, `--icon-fill` tokens.
+1. `Bash: grep -E "const Icon\s*=\s*\{" slot.file` - find the local icon map if Subagent 1 used one.
+2. `Read styles.css` `:root` block - capture `--stroke`, `--endcap`, `--icon-fill` tokens.
 3. Pick one existing icon from the map (`Icon.search`, `Icon.menu`) and read its SVG. **Your icon must match its visual properties exactly**:
    - Same `viewBox`
    - Same `stroke-width`
@@ -42,9 +42,9 @@ Critical — icons are family members. Before writing, identify the prototype's 
    - Same `fill` strategy (none vs currentColor)
    - Same density (number of paths, level of detail)
 
-A `vector-icon` that doesn't match the family looks like an Inter icon dropped into a Material-Symbols app — wrong even if the geometry is correct.
+A `vector-icon` that doesn't match the family looks like an Inter icon dropped into a Material-Symbols app - wrong even if the geometry is correct.
 
-### 2. Write the SVG — same shape as `vector-mark` but stricter on family conformance
+### 2. Write the SVG - same shape as `vector-mark` but stricter on family conformance
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg"
@@ -55,7 +55,7 @@ A `vector-icon` that doesn't match the family looks like an Inter icon dropped i
      stroke-linecap="<from --endcap token>"
      stroke-linejoin="round"
      aria-label="<assetId>">
-  <!-- 1–6 paths max — icons are spare -->
+  <!-- 1-6 paths max - icons are spare -->
 </svg>
 ```
 
@@ -67,7 +67,7 @@ A `vector-icon` that doesn't match the family looks like an Inter icon dropped i
 | No `<g transform>` nesting | Flatten the geometry; transforms make extraction fragile |
 | Letterforms in icons (e.g. `A`, `T`) → vector paths, not `<text>` | Same as `vector-mark` |
 
-### 3. Common icon recipes (consult only if helpful — geometry is not memorized)
+### 3. Common icon recipes (consult only if helpful - geometry is not memorized)
 
 | Icon | Approach |
 |---|---|

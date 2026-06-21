@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// editor/tools/verify-shader.mjs — headless render-verify for a shader HTML file.
+// editor/tools/verify-shader.mjs - headless render-verify for a shader HTML file.
 //
 // Loads the page in real (headless) Chromium via Playwright, captures every
 // WebGL shader compile / program link infolog by wrapping the GL prototypes
@@ -12,7 +12,7 @@
 // Usage:  node verify-shader.mjs <file.html>
 // Output (stdout, always JSON):
 //   { ok, compileErrors: string[], linkErrors: string[], blank: bool, note }
-// Exit 0 when it ran (even if the shader is broken — read the JSON); exit 2 when
+// Exit 0 when it ran (even if the shader is broken - read the JSON); exit 2 when
 // it couldn't run at all (Playwright missing / load failure) with JSON on stderr.
 
 import { readFileSync } from "node:fs";
@@ -59,7 +59,7 @@ for (const Ctx of [self.WebGLRenderingContext, self.WebGL2RenderingContext].filt
 }`;
 
 function blankReport(px) {
-  // px: Uint8 RGBA samples. "blank" = every sample identical (uniform frame) —
+  // px: Uint8 RGBA samples. "blank" = every sample identical (uniform frame) -
   // a button/scene that drew something has variance.
   if (!px || px.length < 8) return true;
   const r0 = px[0], g0 = px[1], b0 = px[2];
@@ -82,7 +82,7 @@ try {
   await page.waitForTimeout(700);   // let a few rAF frames run
 
   const diag = await page.evaluate(() => window.__shaderDiag || { compileErrors: [], linkErrors: [] });
-  // Judge "blank" from a real SCREENSHOT of the canvas — the composited output
+  // Judge "blank" from a real SCREENSHOT of the canvas - the composited output
   // the browser actually shows. (Reading the canvas in-page via drawImage/
   // toDataURL is unreliable for WebGL: without preserveDrawingBuffer the
   // drawing buffer is cleared after each composite, so it reads blank even

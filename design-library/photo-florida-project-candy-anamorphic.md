@@ -12,14 +12,14 @@ images:
 
 # Florida Project candy-anamorphic (Zabe)
 
-Sean Baker's *The Florida Project* (2017), shot by **Alexis Zabe** on **anamorphic 35mm film with Panavision Millennium XL2 + vintage E-series lenses**. The signature is the **already-candy-colored Florida** (purple motel, orange domes, mint pastels — found in the real-world location, not painted) photographed with the colors **"popped by just a degree"** to suggest a child's heightened sensory perception. Baker's rule: *"when I think of childhood, colors seem more vibrant — just enhance everything by a hair, but not hyper-real."*
+Sean Baker's *The Florida Project* (2017), shot by **Alexis Zabe** on **anamorphic 35mm film with Panavision Millennium XL2 + vintage E-series lenses**. The signature is the **already-candy-colored Florida** (purple motel, orange domes, mint pastels - found in the real-world location, not painted) photographed with the colors **"popped by just a degree"** to suggest a child's heightened sensory perception. Baker's rule: *"when I think of childhood, colors seem more vibrant - just enhance everything by a hair, but not hyper-real."*
 
 ## Visual signatures
 
 - anamorphic 35mm film stock with vintage E-series lenses (soft creamy bokeh, slight edge distortion)
-- found candy-color locations — purple motel walls, orange domes, mint pastel siding, hot-pink ice-cream-stand chrome (all REAL, not painted-on)
+- found candy-color locations - purple motel walls, orange domes, mint pastel siding, hot-pink ice-cream-stand chrome (all REAL, not painted-on)
 - colors enhanced just enough to suggest child-perception (saturation +10-15%, NOT hyper-real)
-- bright Florida sun directly — harsh midday + soft golden-hour, both used
+- bright Florida sun directly - harsh midday + soft golden-hour, both used
 - low camera height (often child-eye-level)
 - wide environmental shots that put the subject inside the candy world
 - the kitschy Floridian commercial vernacular (motels with airbrushed signs, novelty shops) becomes the visual vocabulary
@@ -54,11 +54,11 @@ Sean Baker's *The Florida Project* (2017), shot by **Alexis Zabe** on **anamorph
 ## Example prompt template
 
 > Wide environmental photograph at child-eye-level (low camera angle) of
-> [SUBJECT — a child standing in front of a candy-colored purple motel
+> [SUBJECT - a child standing in front of a candy-colored purple motel
 > facade], anamorphic 35mm film aesthetic, vintage Panavision E-series
 > lenses giving **slight edge distortion + soft creamy bokeh**. Bright
-> Florida sun (slightly past midday), real-world found palette — purple
-> motel wall, orange dome roof in background, mint-pastel awning — all
+> Florida sun (slightly past midday), real-world found palette - purple
+> motel wall, orange dome roof in background, mint-pastel awning - all
 > **enhanced just by a hair (saturation +10-15%, NOT hyper-real)** to
 > suggest child-perception. Warm key on skin. Childhood-wonder, candy-bright,
 > kitsch-affectionate mood. The-Florida-Project (Alexis Zabe / Sean Baker)
@@ -75,7 +75,7 @@ premium-luxury, brutalism, restrained-editorial, dark themes, B2B-serious
 ## Pairs with (prototype slugs)
 
 - `aesthetic-positivity-kawaii`
-- `aesthetic-curly-girly` (if we re-add this aesthetic — current library deleted it)
+- `aesthetic-curly-girly` (if we re-add this aesthetic - current library deleted it)
 - `recipe-bento-marketing`
 - `aesthetic-cluttercore`
 - `aesthetic-frutiger-bright-tertiaries`

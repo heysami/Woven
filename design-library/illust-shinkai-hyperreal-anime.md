@@ -20,7 +20,7 @@ near-photographic anime backgrounds with stratus clouds.
 - near-photographic anime backgrounds with stratus clouds
 - golden hour lens flare, dense cityscape
 - quiet two-shot character framing
-- melancholic palette — gold + dusk blue + neon sign
+- melancholic palette - gold + dusk blue + neon sign
 
 ## Prompt keywords
 

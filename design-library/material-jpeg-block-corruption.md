@@ -50,9 +50,9 @@ raster: re-save the source PNG as JPEG at quality 12-18 for the authentic look
 
 **Highlight**: blocks can desaturate locally under pointer (hint of decay)
 
-**Depth**: none — JPEG corruption is structural
+**Depth**: none - JPEG corruption is structural
 
-**Parallax**: stepped — block-grid feels stuck
+**Parallax**: stepped - block-grid feels stuck
 
 ## Common implementation mistakes (avoid these)
 

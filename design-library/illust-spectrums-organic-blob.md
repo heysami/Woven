@@ -1,6 +1,6 @@
 ---
 styleId: spectrums-organic-blob
-name: Spectrums — Organic blob
+name: Spectrums - Organic blob
 category: Abstract / decoration
 subCategory: gradient-blob
 role: decoration
@@ -11,7 +11,7 @@ images:
     reason: Illustration style sample.
 ---
 
-# Spectrums — Organic blob
+# Spectrums - Organic blob
 
 asymmetric organic free-form blob shapes.
 

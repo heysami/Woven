@@ -1,4 +1,4 @@
-# Workflow 6b — Apply accepted DS proposals
+# Workflow 6b - Apply accepted DS proposals
 
 **Triggers:** `DS_ACCEPTED.json` at project root (handed off by Workflow 6).
 
@@ -19,7 +19,7 @@ This is the atomic write path. Either all accepted entries land cleanly and the 
 
 ## Inputs
 
-- `DS_ACCEPTED.json` at project root — list of proposal entries the user accepted. Format:
+- `DS_ACCEPTED.json` at project root - list of proposal entries the user accepted. Format:
 
 ```json
 {
@@ -47,14 +47,14 @@ This is the atomic write path. Either all accepted entries land cleanly and the 
 
 ## Recipe
 
-### Step 1 — Validate stale-state guard
+### Step 1 - Validate stale-state guard
 
 Before any write:
 
 - `DS_ACCEPTED.json → audit.dsVersion` must match `design-systems/<dsId>/meta.json.version`. If not, the DS was bumped by a concurrent operation after the audit ran; abort and surface "DS shifted under accepted proposals; re-audit and re-review."
-- Every proposal entry's `usedIn` files must still exist and still contain the class signature at the listed line (±5 lines for drift tolerance). If any usage has moved or vanished, mark that proposal as `skipped` in the run report — don't abort the rest.
+- Every proposal entry's `usedIn` files must still exist and still contain the class signature at the listed line (±5 lines for drift tolerance). If any usage has moved or vanished, mark that proposal as `skipped` in the run report - don't abort the rest.
 
-### Step 2 — Apply edits to `styles.css`
+### Step 2 - Apply edits to `styles.css`
 
 For each proposal in `proposals[]`:
 
@@ -68,25 +68,25 @@ For each proposal in `proposals[]`:
 
 Validate: every new rule references existing tokens; no raw color / size literals introduced (those would be new proposals).
 
-### Step 3 — Apply edits to `gallery.html`
+### Step 3 - Apply edits to `gallery.html`
 
 For each proposal:
 
 - Locate the section anchor (`#buttons`, `#cards`, `#modals`, …) matching the primitive.
-- Append a `.ds-sample` row (or extend an existing one) rendering the new variant in idle state. Use real product class names — NEVER `.ds-*` prefix on the rendered element.
+- Append a `.ds-sample` row (or extend an existing one) rendering the new variant in idle state. Use real product class names - NEVER `.ds-*` prefix on the rendered element.
 - If the variant is state-gated (modal open, drawer expanded), render it in idle state inline, not behind any handler.
 
-### Step 4 — Workflow 3 regen
+### Step 4 - Workflow 3 regen
 
 After all accepted entries are written to `styles.css` and `gallery.html`, spawn [`Workflow 3`](3-design-md.md) to regenerate `design-systems/<id>/DESIGN.md` from the new trio.
 
-### Step 5 — Bump `version` and `meta.json`
+### Step 5 - Bump `version` and `meta.json`
 
 - Compute new `version` = content hash of `styles.css + gallery.html`.
 - Update `design-systems/<id>/meta.json`:
   - `version` → new hash
   - `label` → bump (if previous was `v3`, new is `v4`; if user provided a label in the proposal, use that)
-  - `builtFrom` stays unchanged — that records the original spec, not incremental edits. Append an `updates: []` array entry recording this proposal cycle:
+  - `builtFrom` stays unchanged - that records the original spec, not incremental edits. Append an `updates: []` array entry recording this proposal cycle:
 
 ```json
 {
@@ -97,22 +97,22 @@ After all accepted entries are written to `styles.css` and `gallery.html`, spawn
 }
 ```
 
-### Step 6 — Rebuild runtime mirror
+### Step 6 - Rebuild runtime mirror
 
 Re-enumerate `tokens` / `primitives` / `library` from the updated trio and write `editor/design-systems/<id>.js` (same logic as Workflow 0 Step 6).
 
-### Step 7 — Propagate to referencing branches
+### Step 7 - Propagate to referencing branches
 
 For every `editor/data.js` with `meta.dsRef.id === <dsId>`:
 
 - Re-stamp `meta.dsRef.version` to the new hash.
 - Re-mirror `tokens` / `primitives` / `library` from the new DS library node.
 
-This is a orchestrator-level field write — same as Step 5 DS mirror in Workflow 1. No view subagent runs.
+This is a orchestrator-level field write - same as Step 5 DS mirror in Workflow 1. No view subagent runs.
 
-Branches that pinned an old `dsRef.version` explicitly (via `meta.dsRef.pinned: true` — TBD config) are skipped and flagged in the run report: "branch X is pinned at version Y; not updated."
+Branches that pinned an old `dsRef.version` explicitly (via `meta.dsRef.pinned: true` - TBD config) are skipped and flagged in the run report: "branch X is pinned at version Y; not updated."
 
-### Step 8 — Cleanup
+### Step 8 - Cleanup
 
 - Delete `DS_ACCEPTED.json` after successful completion.
 - Append a summary to `NOTES.md` under `## YYYY-MM-DD · DS update applied`:
@@ -120,7 +120,7 @@ Branches that pinned an old `dsRef.version` explicitly (via `meta.dsRef.pinned: 
 ```markdown
 ## 2026-05-19 · DS update applied
 
-DS: design-systems/main/ — bumped to version <new hash> (v4)
+DS: design-systems/main/ - bumped to version <new hash> (v4)
 Applied proposals:
 - Button.primary-icon-small (added .small modifier to .btn-primary.icon)
 - Pill.disabled (added [data-state="disabled"] variant to .pill)
@@ -158,4 +158,4 @@ If Step 7 (propagate) fails partway, the DS is already updated but some branches
 - Don't bump `meta.json.version` until all accepted edits have landed in `styles.css` and `gallery.html`.
 - Don't propagate to pinned branches.
 - Don't proceed when stale-state guard fails; re-audit first.
-- Don't introduce raw color / size / spacing literals — every new value goes through a token.
+- Don't introduce raw color / size / spacing literals - every new value goes through a token.

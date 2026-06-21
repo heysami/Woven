@@ -1,4 +1,4 @@
-"""Core live-session state-machine test — no HTTP, drives live.py directly."""
+"""Core live-session state-machine test - no HTTP, drives live.py directly."""
 import os, sys, tempfile, json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

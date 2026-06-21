@@ -1,6 +1,6 @@
 """Regression test for the v3.1 "unknown runId after daemon restart" bug.
 
-Background — `RUNS` is in-memory only, so every daemon restart wipes it.
+Background - `RUNS` is in-memory only, so every daemon restart wipes it.
 When an `/__run/<id>/*` endpoint is hit afterwards, the handler falls
 through to `_rehydrate_run_from_jsonl()` to reload the run from disk.
 
@@ -11,7 +11,7 @@ was missed. Every project created after the migration silently failed
 session resume with `unknown runId`.
 
 The fix unified layout knowledge into `_chat_jsonl_candidate_files()`.
-This test pins that contract — if a future reader bypasses the helper
+This test pins that contract - if a future reader bypasses the helper
 and forgets the flat layout (or someone removes the legacy fallback
 while in-flight installs still need it), CI fails here, not in
 production.
@@ -32,7 +32,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _EDITOR = os.path.dirname(_HERE)
 sys.path.insert(0, _EDITOR)
 
-import serve  # noqa: E402  — import after sys.path mutation; module guards top-level on __main__
+import serve  # noqa: E402  - import after sys.path mutation; module guards top-level on __main__
 
 
 FAILURES = []
@@ -50,7 +50,7 @@ def _make_project_root(tmpdir):
     """Mimic the on-disk shape resolve_project_root() expects.
 
     `_rehydrate_run_from_jsonl` doesn't check for source/, but downstream
-    callers do — including this file kept honest for any future test that
+    callers do - including this file kept honest for any future test that
     pipes the same fixture through `resolve_project_root`."""
     root = os.path.join(tmpdir, "proj")
     os.makedirs(os.path.join(root, "source"), exist_ok=True)
@@ -66,7 +66,7 @@ def _write_jsonl(path, records):
 
 
 def _sample_records(run_id, branch, session_id, title="t"):
-    """A minimal but realistic event sequence — spawn status, an agent
+    """A minimal but realistic event sequence - spawn status, an agent
     frame carrying sessionId, a user/assistant pair. Enough that the
     rehydrator can extract metadata + reconstruct events."""
     return [
@@ -148,7 +148,7 @@ def test_flat_preferred_over_branches():
     with tempfile.TemporaryDirectory() as tmp:
         root = _make_project_root(tmp)
         run_id = "deadbeef00000003"
-        # Same runId in both files but with different session_ids — whichever
+        # Same runId in both files but with different session_ids - whichever
         # candidate is scanned first wins. Helper contract: flat first.
         _write_jsonl(
             os.path.join(root, "editor", "chat.jsonl"),
@@ -265,11 +265,11 @@ def main():
         print()
 
     if FAILURES:
-        print(f"FAIL — {len(FAILURES)} assertion(s) failed:")
+        print(f"FAIL - {len(FAILURES)} assertion(s) failed:")
         for f in FAILURES:
             print(f"  - {f}")
         sys.exit(1)
-    print("PASS — chat-jsonl rehydrate contract upheld")
+    print("PASS - chat-jsonl rehydrate contract upheld")
 
 
 if __name__ == "__main__":

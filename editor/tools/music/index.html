@@ -215,7 +215,7 @@
       <div id="assets"><div class="empty">No wired audio assets.</div></div>
 
       <div class="hint">
-        <b>Mini-notation</b> — steps split a bar evenly.<br>
+        <b>Mini-notation</b> - steps split a bar evenly.<br>
         <code>bd ~ sd ~</code> rest = <code>~</code><br>
         <code>[bd sd]</code> = two hits in one step.<br>
         Synth tracks take notes: <code>c2 eb3 g2</code>.
@@ -356,13 +356,13 @@
 
   /* ================= Code mode (Strudel-flavoured) =================
      A line-based, Strudel-looking surface that round-trips losslessly to the
-     same model the UI edits. Code mode and UI mode are MUTUALLY EXCLUSIVE —
+     same model the UI edits. Code mode and UI mode are MUTUALLY EXCLUSIVE -
      one editing surface is live at a time (never a hybrid). */
 
   // model -> source text
   function serializeCode(m){
     const L=[];
-    L.push("// Woven Music — code mode (Strudel-flavoured)");
+    L.push("// Woven Music - code mode (Strudel-flavoured)");
     L.push("tempo("+(m.bpm||120)+")"+"   // BPM");
     if(m.swing) L.push("swing("+round2(m.swing)+")");
     L.push("bars("+(m.bars||4)+")");
@@ -400,7 +400,7 @@
     const out={ bpm:null, swing:null, bars:null, samples:null, tracks:[] };
     // strip line comments but keep a trailing `// name` capture for track lines
     const raw=String(text||"");
-    // transport directives — tolerate tempo()/setcpm()/setcps()
+    // transport directives - tolerate tempo()/setcpm()/setcps()
     let m;
     if((m=/\btempo\s*\(\s*([\d.]+)\s*\)/.exec(raw))) out.bpm=clamp(+m[1],20,300);
     else if((m=/\bsetcpm\s*\(\s*([\d.]+)\s*\)/.exec(raw))) out.bpm=clamp(+m[1]*4,20,300);
@@ -785,7 +785,7 @@
 
       const lbl=document.createElement("span"); lbl.className="lbl";
       const a=CONTENT.find(c=>c.id===s.src||c.url===s.src);
-      lbl.textContent = a ? (a.label||a.id) : (s.src? s.src : "— unmapped —");
+      lbl.textContent = a ? (a.label||a.id) : (s.src? s.src : "- unmapped -");
       row.appendChild(lbl);
 
       const map=document.createElement("button");

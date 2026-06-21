@@ -5,7 +5,7 @@ category: 3D
 subCategory: scenic-environment
 role: hero
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-surreal-dream-stage, aesthetic-frutiger-eco, shell-scroll-journey-scene]
-notForUseWhen: Brief needs gritty realism or hard-tech credibility — the terrain is idealized and soft.
+notForUseWhen: Brief needs gritty realism or hard-tech credibility - the terrain is idealized and soft.
 images:
   - src: illust-3d-dreamscape-terrain.png
     reason: Illustration style sample.
@@ -13,13 +13,13 @@ images:
 
 # 3D dreamscape terrain
 
-Idealized rolling landscape rendered soft — velvet hills, cotton clouds, glassy water — a Windows-Bliss world rebuilt in gentle 3D.
+Idealized rolling landscape rendered soft - velvet hills, cotton clouds, glassy water - a Windows-Bliss world rebuilt in gentle 3D.
 
 ## Visual signatures
 
-- Rolling terrain with exaggerated smooth curves — hills like resting animals, no rocks or scrub
+- Rolling terrain with exaggerated smooth curves - hills like resting animals, no rocks or scrub
 - Soft-material grass (velvet/felt read, not blade detail), glassy ponds, cotton cloud banks
-- Pastel-hour skies: dawn peach, day cyan, dusk lavender — gradient-pure
+- Pastel-hour skies: dawn peach, day cyan, dusk lavender - gradient-pure
 - Miniature landmarks placed sparsely: one tree, one path, one distant cabin
 - Depth haze layering each ridge; tilt-shift gentleness without full miniature scale
 
@@ -29,7 +29,7 @@ Idealized rolling landscape rendered soft — velvet hills, cotton clouds, glass
 
 **Material**: smooth matte terrain with subtle subsurface warmth, glassy water plane
 
-**Line**: no outlines — soft global illumination carries form
+**Line**: no outlines - soft global illumination carries form
 
 **Color**: meadow greens + pastel sky gradient, one warm accent (path, cabin light)
 
@@ -45,7 +45,7 @@ Idealized rolling landscape rendered soft — velvet hills, cotton clouds, glass
 
 ## Example prompt template
 
-> A soft 3D rendered landscape: three rolling velvet-green hills overlapping into pastel morning haze, a single winding cream path crossing the nearest slope toward one round-crowned tree. A glassy pond mirrors a peach-to-cyan dawn sky with two slow cotton clouds. Smooth matte terrain materials with gentle global illumination, no hard shadows, depth haze separating each ridge. Stylized-sincere, calm, idealized — a dream of countryside rather than a place. Wide hero composition with generous sky for type.
+> A soft 3D rendered landscape: three rolling velvet-green hills overlapping into pastel morning haze, a single winding cream path crossing the nearest slope toward one round-crowned tree. A glassy pond mirrors a peach-to-cyan dawn sky with two slow cotton clouds. Smooth matte terrain materials with gentle global illumination, no hard shadows, depth haze separating each ridge. Stylized-sincere, calm, idealized - a dream of countryside rather than a place. Wide hero composition with generous sky for type.
 
 ## When to use
 

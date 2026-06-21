@@ -151,7 +151,7 @@ Optional packages (for `particle-gl`, `3d`, etc.) can wait. Install them from th
 
 ## 7. Create your first project
 
-Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header now carries two tabs — **Projects** (your gallery) and **System** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with) — reachable from anywhere on the landing.
+Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header now carries two tabs - **Projects** (your gallery) and **System** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with) - reachable from anywhere on the landing.
 
 ![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 
@@ -159,7 +159,7 @@ Click **+ New project** (or **+ Create your first project** in the empty state).
 
 ![New project modal · name only](docs/screenshots/05-new-project-wizard.png)
 
-Type a folder-safe id (alphanumeric + `.` `_` `-`) and click **+ Create**. That's it — no scope picker, no multi-step wizard. The earlier "Blank / Quick designs / Design system / PRD only / Full guided / Custom" branching was removed; every fresh project lands on a clean workflow canvas and you tell the agent what you want from chat. Need one of the old guided runs? Just ask the agent in plain English on the next screen ("brainstorm three design directions", "write a PRD first", "do the full guided flow", …) and the orchestrator skill picks the right stages.
+Type a folder-safe id (alphanumeric + `.` `_` `-`) and click **+ Create**. That's it - no scope picker, no multi-step wizard. The earlier "Blank / Quick designs / Design system / PRD only / Full guided / Custom" branching was removed; every fresh project lands on a clean workflow canvas and you tell the agent what you want from chat. Need one of the old guided runs? Just ask the agent in plain English on the next screen ("brainstorm three design directions", "write a PRD first", "do the full guided flow", …) and the orchestrator skill picks the right stages.
 
 ---
 

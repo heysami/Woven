@@ -13,7 +13,7 @@ images:
 
 # Linen Weave (Apple-linen / textbook substrate)
 
-A matte surface and deforms: yes — fabric drapes.
+A matte surface and deforms: yes - fabric drapes.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — fabric drapes.
 
 **Reacts to light**: no specular
 
-**Deforms**: yes — fabric drapes
+**Deforms**: yes - fabric drapes
 
 **Age / wear**: ageless
 

@@ -1,22 +1,22 @@
-"""editor/kinds/registry.py — single source of truth for node-kind contracts.
+"""editor/kinds/registry.py - single source of truth for node-kind contracts.
 
 See WORKFLOW_TRUTHFULNESS_PLAN.md §3. Every per-kind fact (form fields,
 output shape, dispatch shape, fan-out, completion criteria) lives here.
 The frontend renderer, server-side validator, reconciler drift checks,
-and orchestrator preamble all derive from this dict — no parallel
+and orchestrator preamble all derive from this dict - no parallel
 sources of truth.
 
 CRITICAL RULES (from §1 Principles + §4 AGENT_HARNESS):
-  • Save is PERMISSIVE — drafts with empty optional fields always succeed.
+  • Save is PERMISSIVE - drafts with empty optional fields always succeed.
     "required" in a field spec means required-at-COMMIT, not at save.
-  • Commit is STRICT — completion criteria + must-consume rules enforced.
+  • Commit is STRICT - completion criteria + must-consume rules enforced.
   • Complexity → agent kind (full HTML page, multi-file build, embedded JS).
   • Multiplicity → task-subagents fan-out (siblings-parallel + cold isolation).
-  • Folder-as-handoff — producers drop into outputsRoot; consumers route
+  • Folder-as-handoff - producers drop into outputsRoot; consumers route
     everything in the upstream folder per consumeFrom rules.
 """
 
-# ── STAGES — gone in v3.5 (onboarding cut) ──
+# ── STAGES - gone in v3.5 (onboarding cut) ──
 # The guided pipeline (A through J) was wired to bp_* preambles that no
 # longer exist. STAGES is now an empty list, kept only because /__kinds
 # legacy clients still read the key. `stage_pause_after` always returns
@@ -111,7 +111,7 @@ KINDS = {
 
     # ── skill (LLM, restricted to small text ops) ─────────────────────────
     "skill": {
-        "title":        "Skill — small text op",
+        "title":        "Skill - small text op",
         "category":     "producer",
         "inputs": {
             "text":     {"type": "markdown", "label": "Prompt template", "userEditable": True},
@@ -143,7 +143,7 @@ KINDS = {
 
     # ── agent ─────────────────────────────────────────────────────────────
     "agent": {
-        "title":        "Agent — Claude Code subprocess",
+        "title":        "Agent - Claude Code subprocess",
         "category":     "producer",
         "inputs": {
             "name":         {"type": "text", "label": "Name", "userEditable": True},
@@ -172,12 +172,12 @@ KINDS = {
         ),
         "perIdOverrides": {
             # ──────────────────────────────────────────────────────────────────
-            # v3.5 — Onboarding cut. The guided-new-project pipeline (research,
+            # v3.5 - Onboarding cut. The guided-new-project pipeline (research,
             # PRD, DS, source-scaffold, brainstorm, coherence-pass, vision-verify)
             # was removed wholesale. The visual / simulation / interactive /
             # narrative orchestrators stay; their drawer overrides + per-id wildcards
             # are below. Chat dispatches orchestrators directly via Path A/B in
-            # capabilities.py — no bp_*_build harness intermediary anymore.
+            # capabilities.py - no bp_*_build harness intermediary anymore.
             # Wildcard keys end in "_" per kind_contract's longest-prefix-match.
             # Node-id convention: <family>_<component>_<assetId>
             #   sim_scene_warehouse_floor       (NOT sim_warehouse_floor_scene)
@@ -383,7 +383,7 @@ KINDS = {
                 ),
             },
 
-            # ── Lens agents (wildcard — one dispatch per drawer iteration) ────
+            # ── Lens agents (wildcard - one dispatch per drawer iteration) ────
             "craft_lens_": {
                 "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
                 "completion": {"requires": [
@@ -524,7 +524,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — NARRATIVE-EXPERIENCE orchestrator (the poetic cousin of sim).
+            # v3.3 - NARRATIVE-EXPERIENCE orchestrator (the poetic cousin of sim).
             # See docs/features/simulation-and-interactive-orchestrators.md
             # (narrative addendum). Mirrors sim's contract shape with three
             # substitutions: spine (scripted timeline) instead of loop,
@@ -551,7 +551,7 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Scripted timeline — what's revealed when, by which voice, "
+                    "Scripted timeline - what's revealed when, by which voice, "
                     "at what depth. Lens-gated on craft (clean module shape) + "
                     "concept (do the beats earn the successFeel)."
                 ),
@@ -563,7 +563,7 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "three.js / WebGL scene of the 'place'. §8.7 crux — "
+                    "three.js / WebGL scene of the 'place'. §8.7 crux - "
                     "3-draft remix on aestheticRegister axis (painterly / "
                     "volumetric / sketch-like). All 3 lenses gate."
                 ),
@@ -576,7 +576,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Soundscape (ambient room-tone + optional voice tracks). "
-                    "§8.7 crux — 3-draft remix on sonicRegister axis "
+                    "§8.7 crux - 3-draft remix on sonicRegister axis "
                     "(silence-dominant / room-tone-dominant / voice-led). "
                     "Permission-gated via INTERACTIVITY_PIPELINE pattern "
                     "(canvas-side gate + iframe-side Start)."
@@ -589,7 +589,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Gentle interactive accents (hover to brighten, click to "
-                    "expand, dwell to deepen). Lightly lens-gated — craft + "
+                    "expand, dwell to deepen). Lightly lens-gated - craft + "
                     "restrained aesthetic (must NOT feel gamey)."
                 ),
             },
@@ -612,11 +612,11 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Glue file — composes scene + camera + ambient + reveals + "
+                    "Glue file - composes scene + camera + ambient + reveals + "
                     "overlay + spine + scroll handling + §12.3 dev harness. "
-                    "§8.7 crux — 3-draft remix on pacingFeel axis (slow-bath / "
+                    "§8.7 crux - 3-draft remix on pacingFeel axis (slow-bath / "
                     "progressive-reveal / immediate-immersion). Full lens trio "
-                    "— this IS the composed user-facing artefact."
+                    "- this IS the composed user-facing artefact."
                 ),
             },
 
@@ -657,11 +657,11 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — GAME-EXPERIENCE orchestrator (the fifth sibling).
+            # v3.3 - GAME-EXPERIENCE orchestrator (the fifth sibling).
             # See docs/features/game-experience-orchestrator.md.
             # Inherits simulation-orchestrator's contract shape with three
             # substitutions: objective (goal/score/win-condition) is first-
-            # class; physics is its own engine module; feedback (juice —
+            # class; physics is its own engine module; feedback (juice -
             # particles/screen-shake/audio) is the §8.7 crux drawer alongside
             # world and runtime. Node-id convention: game_<component>_<gameId>
             #   game_world_paper_plane_throw   (NOT game_paper_plane_throw_world)
@@ -687,7 +687,7 @@ KINDS = {
                     "Single source of truth for score / streak / progress / "
                     "win-condition / lose-condition / round reset. Read by "
                     "every other game drawer. Lens-gated on concept (delivers "
-                    "successFeel?) — the gamification core."
+                    "successFeel?) - the gamification core."
                 ),
             },
             "game_world_": {
@@ -697,7 +697,7 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Full-bleed living scene. §8.7 crux — 3-draft remix on "
+                    "Full-bleed living scene. §8.7 crux - 3-draft remix on "
                     "camera/perspective axis (2d-side / 2d-topdown / "
                     "3d-environment / iconographic-physics). Must have "
                     "ambient motion at rest (no flat resting state). All "
@@ -738,7 +738,7 @@ KINDS = {
                 ]},
                 "notes": (
                     "Juice / particles / screen-shake / audio cues. §8.7 crux "
-                    "— 3-draft remix on juice axis (restrained / juicy / "
+                    "- 3-draft remix on juice axis (restrained / juicy / "
                     "juice-overload). All 3 lenses gate. The drawer that "
                     "decides between Vlambeer-juicy and contemplative-restraint."
                 ),
@@ -750,7 +750,7 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Master tick loop — fixed-step accumulator composing "
+                    "Master tick loop - fixed-step accumulator composing "
                     "physics.step → objective.update → feedback.dispatch + "
                     "spawn rules + win/lose check. Lens-gated on craft "
                     "(deterministic, no allocation in tick, 60 FPS at peak)."
@@ -777,11 +777,11 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Glue file — composes world + physics + input(s) + "
+                    "Glue file - composes world + physics + input(s) + "
                     "objective + feedback + loop + overlay + §12.3 dev "
                     "harness + two-gate permission UX (audio + gyro). §8.7 "
-                    "crux — 3-draft remix on pacing axis (meditative / "
-                    "paced / frantic). Full lens trio — this IS the composed "
+                    "crux - 3-draft remix on pacing axis (meditative / "
+                    "paced / frantic). Full lens trio - this IS the composed "
                     "user-facing artefact."
                 ),
             },
@@ -825,11 +825,11 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — SCRAPBOOK-EXPERIENCE orchestrator (the sixth sibling).
+            # v3.3 - SCRAPBOOK-EXPERIENCE orchestrator (the sixth sibling).
             # See docs/features/scrapbook-experience-orchestrator.md.
             # Inherits simulation-orchestrator's contract shape with two
             # distinctives: (1) the composition drawer co-dispatches
-            # visual-orchestrator per IMAGE INVENTORY entry —
+            # visual-orchestrator per IMAGE INVENTORY entry -
             # this is the most visual-orchestrator-heavy drawer in the system;
             # (2) PNG sequences substitute for transparent GIFs (each frame
             # is a separate visual-orchestrator sub-dispatch). Node-id
@@ -862,7 +862,7 @@ KINDS = {
                 "notes": (
                     "Layered HTML/CSS scrapbook composition. Co-dispatches "
                     "visual-orchestrator per inventory entry "
-                    "(this drawer is the cost-heavy one). §8.7 crux — "
+                    "(this drawer is the cost-heavy one). §8.7 crux - "
                     "3-draft remix on density axis (sparse / medium / dense). "
                     "All 3 lenses gate."
                 ),
@@ -891,7 +891,7 @@ KINDS = {
                 "notes": (
                     "CSS drift animations + PNG-sequence loops (transparent "
                     "GIF substitute) + scroll-linked parallax + idle wobbles. "
-                    "§8.7 crux — 3-draft remix on motion register axis "
+                    "§8.7 crux - 3-draft remix on motion register axis "
                     "(still-with-twitches / drifting-ambient / "
                     "aggressive-vaporwave). All 3 lenses gate."
                 ),
@@ -916,11 +916,11 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Composed runtime — inlines composition + typography + "
+                    "Composed runtime - inlines composition + typography + "
                     "motion + interactions; wires Google Fonts; sets pacing. "
-                    "§8.7 crux — 3-draft remix on pacing axis (calm-browse "
+                    "§8.7 crux - 3-draft remix on pacing axis (calm-browse "
                     "/ scroll-revelation / interactive-discovery). Full lens "
-                    "trio — this IS the composed user-facing artefact."
+                    "trio - this IS the composed user-facing artefact."
                 ),
             },
 
@@ -963,7 +963,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 — INTERACTIVE-POLISH orchestrator (the seventh sibling — POST-PASS).
+            # v3.3 - INTERACTIVE-POLISH orchestrator (the seventh sibling - POST-PASS).
             # See docs/features/interactive-polish-orchestrator.md.
             # Unlike the other six orchestrators, this runs LAST in the pipeline:
             # after another primary orchestrator's build phase (or after chat-Claude
@@ -989,7 +989,7 @@ KINDS = {
                     "hover-surprise / shader-overlay), commits polish register "
                     "(subtle / playful / theatrical) per genre. The site map "
                     "drives which drawers fire + which selectors they target. "
-                    "Per orchestrator-vs-drawer split: identifies WHERE + TYPE only — "
+                    "Per orchestrator-vs-drawer split: identifies WHERE + TYPE only - "
                     "drawers decide WHAT the specific improvement looks like."
                 ),
             },
@@ -1048,7 +1048,7 @@ KINDS = {
                     "paper-grain, dither, CRT-scanline, chromatic-aberration, "
                     "glitch, noise-wash, vignette-fade, moire). CO-DISPATCHES "
                     "visual-orchestrator with the shader skill to commission the "
-                    "actual GLSL. §8.7 crux drawer — multi-draft on shader-"
+                    "actual GLSL. §8.7 crux drawer - multi-draft on shader-"
                     "effect axis when research recommends. All 3 lenses gate."
                 ),
             },
@@ -1095,7 +1095,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # MOTION-STUDIO orchestrator (library-backed — cinematic full-bleed
+            # MOTION-STUDIO orchestrator (library-backed - cinematic full-bleed
             # video/raster + UI choreographed as LINEAR full-screen scenes; the
             # Apple-product-page / motionsites register). Library:
             # docs/research/motion-scene-library.index.json → per-technique
@@ -1133,7 +1133,7 @@ KINDS = {
                     "reads: linear scenes[] with techniqueId + asset spec "
                     "(medium, subjectAnchor, quietZone, interactionClause, "
                     "holdFrames) + ui placement + holdBeats + transitions. "
-                    "§8.7 crux — 3-draft remix on the scene-split axis when "
+                    "§8.7 crux - 3-draft remix on the scene-split axis when "
                     "research recommends. Lens-gated on concept + aesthetic."
                 ),
             },
@@ -1145,7 +1145,7 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "CONCEPT PLATES — the cheap-stills-before-expensive-video "
+                    "CONCEPT PLATES - the cheap-stills-before-expensive-video "
                     "planning gate. Per scene, ONE hi-res (1920x1080) generated "
                     "design plate of the full composed frame (asset + UI drawn "
                     "together, real copy) via visual-orchestrator co-dispatch, "
@@ -1153,13 +1153,13 @@ KINDS = {
                     "subject/UI positions, verified quiet zone, palette, type "
                     "tone, scrim needs, assetPromptNotes + uiBuildNotes). The "
                     "caller MUST surface the plates to the user (approve / "
-                    "steer / re-draft) BEFORE dispatching ms_scenes_ — video "
+                    "steer / re-draft) BEFORE dispatching ms_scenes_ - video "
                     "budget is only spent on approved plates, which become the "
                     "composition contract (and the i2v image reference where "
-                    "the provider supports one). §8.7 crux — 3-draft remix on "
+                    "the provider supports one). §8.7 crux - 3-draft remix on "
                     "the layout axis (counterweight / monumental-center / "
                     "cinema-band). Lens-gated on aesthetic + concept; craft "
-                    "light. Plates are PLANS — production text ships as DOM, "
+                    "light. Plates are PLANS - production text ships as DOM, "
                     "never as pixels."
                 ),
             },
@@ -1198,7 +1198,7 @@ KINDS = {
                     "per-technique transitions, within-scene hold beats "
                     "(video pauses on authored frames while UI animates in), "
                     "entrance choreography, always-in-motion ambient duty, "
-                    "reduced-motion branch. §8.7 crux — 3-draft remix on the "
+                    "reduced-motion branch. §8.7 crux - 3-draft remix on the "
                     "transition-register axis (seamless-cinematic / "
                     "staged-theatrical / kinetic-snap). All 3 lenses gate."
                 ),
@@ -1226,12 +1226,12 @@ KINDS = {
                     "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
-                    "Composed runtime — wires scenes + motion + interactions, "
+                    "Composed runtime - wires scenes + motion + interactions, "
                     "implements the preload strategy (poster-first paint, "
                     "current+next preload, off-screen pause), reduced-motion + "
                     "failed-video fallbacks, and the §12.3 devtools harness "
-                    "(window.__ms). §8.7 crux — remix on the pacing axis. "
-                    "Full lens trio — this IS the user-facing artefact."
+                    "(window.__ms). §8.7 crux - remix on the pacing axis. "
+                    "Full lens trio - this IS the user-facing artefact."
                 ),
             },
 
@@ -1301,10 +1301,10 @@ KINDS = {
             "compatibleShells": {"type": "array", "required": True},
         },
         "outputsRoot":  "source/{prototype}/_ds_brainstorm/{variant}/",
-        # v2.50 — idTemplate: when the reconciler finds an orphan variant
+        # v2.50 - idTemplate: when the reconciler finds an orphan variant
         # folder on disk that has no matching node, auto-heal substitutes
         # {variant} here to build the new node id. Without this, auto-heal
-        # would have to hardcode the prefix per kind — exactly the
+        # would have to hardcode the prefix per kind - exactly the
         # "list of names" anti-pattern.
         "idTemplate":         "bs_ds_{variant}",
         # The auto-healed node wires into this checkpoint node so the
@@ -1337,7 +1337,7 @@ KINDS = {
             "Each ds-brainstorm node is a COLD-ISOLATED subagent session that "
             "diverges on its own spec.genre. The producer drops EVERYTHING "
             "(index.html, assets/, sparkline.js, any new modules) into "
-            "outputsRoot. Siblings never see each other's context — divergence "
+            "outputsRoot. Siblings never see each other's context - divergence "
             "is structural.\n\n"
             "VARIANT COUNT IS OPEN-ENDED. Scaffold creates a/b/c by default but "
             "the user may make d/e/f/... via chat refinement. The reconciler "
@@ -1394,7 +1394,7 @@ KINDS = {
                 "consumeFrom: 0 unhandled files",
             ],
         },
-        "pauseAfter":   True,        # stage D — major artifact, pause for review
+        "pauseAfter":   True,        # stage D - major artifact, pause for review
         "notes": (
             "Consumes the picked ds-brainstorm folder EXHAUSTIVELY (must-consume "
             "strict mode). Every file in upstream's outputsRoot MUST be routed "
@@ -1453,7 +1453,7 @@ KINDS = {
 
     # ── iterator-refiner ──────────────────────────────────────────────────
     "iterator-refiner": {
-        "title":        "Iterator — refiner (2-agent interview loop)",
+        "title":        "Iterator - refiner (2-agent interview loop)",
         "category":     "iterator",
         "inputs": {
             "goal":               {"type": "markdown", "userEditable": True},
@@ -1480,7 +1480,7 @@ KINDS = {
 
     # ── iterator-remix ────────────────────────────────────────────────────
     "iterator-remix": {
-        "title":        "Iterator — remix (N parallel HTML variants)",
+        "title":        "Iterator - remix (N parallel HTML variants)",
         "category":     "iterator",
         "inputs": {
             "n":        {"type": "number", "default": 3, "userEditable": True},
@@ -1528,7 +1528,7 @@ KINDS = {
 
     # ── iterator-repeater ─────────────────────────────────────────────────
     "iterator-repeater": {
-        "title":        "Iterator — repeater (N text variants)",
+        "title":        "Iterator - repeater (N text variants)",
         "category":     "iterator",
         "inputs": {
             "n":        {"type": "number", "default": 3, "userEditable": True},
@@ -1556,7 +1556,7 @@ KINDS = {
 
     # ── iterator-blend ────────────────────────────────────────────────────
     "iterator-blend": {
-        "title":        "Iterator — blend (N inputs → 1 output)",
+        "title":        "Iterator - blend (N inputs → 1 output)",
         "category":     "iterator",
         "inputs": {
             "n":          {"type": "number", "default": 2, "userEditable": True},
@@ -1654,7 +1654,7 @@ KINDS = {
     # Canvas-frames button; carries `branch` (which prototype/source it
     # mirrors) and `host` (the prototype node id it was spawned from,
     # used for placement + future "follow the prototype" semantics).
-    # Read-only — no agent dispatch, no versioning, no ports. The
+    # Read-only - no agent dispatch, no versioning, no ports. The
     # underlying frames data lives in editor/data.js, regenerated by
     # Workflow 1 (frames+arrows slice when the user picks "generate
     # now" from the missing-data prompt).
@@ -1679,7 +1679,7 @@ KINDS = {
     },
 
     # ── composer ─────────────────────────────────────────────────────────
-    # v3.4.37 — Responsive layered canvas. Each wired asset becomes a
+    # v3.4.37 - Responsive layered canvas. Each wired asset becomes a
     # layer inside an aspect-ratio frame; per-layer state carries
     # opacity, anchor (12 modes incl. stretch/fill), offset, sizing.
     # Output is a rendered HTML view that downstream prototype/HTML
@@ -1743,8 +1743,8 @@ KINDS = {
     },
 
     # ── spline-3d ─────────────────────────────────────────────────────────
-    # v4.0 — Inline 3D scene editor (three.js), rendered DIRECTLY as a node
-    # like composer / vector-editor — no more run-a-skill-to-spawn-an-asset
+    # v4.0 - Inline 3D scene editor (three.js), rendered DIRECTLY as a node
+    # like composer / vector-editor - no more run-a-skill-to-spawn-an-asset
     # two-step. The editor (editor/tools/spline3d/index.html) is embedded in an
     # iframe; the scene autosaves to a JSON sidecar at
     # source/<branch>/spline-<id>.scene.json (the canonical, shareable,
@@ -1774,7 +1774,7 @@ KINDS = {
             "consumers read that sidecar as a 3D asset via bakedPath. An agent "
             "wired to the `edit` port may rewrite the .scene.json (read it, edit "
             "the JSON, write it back) and the node re-imports it live. "
-            "SCENE JSON IS RIGGABLE + ANIMATABLE — do NOT tell the user it's a "
+            "SCENE JSON IS RIGGABLE + ANIMATABLE - do NOT tell the user it's a "
             "static/posed format. The MOTION IS NOT a fixed preset menu; YOU "
             "derive a rig + animation from the specific model you build, because "
             "you are the only thing that knows what it is (a giraffe's legs, an "
@@ -1928,7 +1928,7 @@ KINDS = {
         "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []},
         "pauseAfter":   False,
-        "notes": "User-driven 2D material/shader editor — UI elements with live materials (Apple Liquid Glass via WebGL refraction over a backdrop texture) that react to mouse / nearby elements / backdrop. Bakes an interactive source/<branch>/material-<id>.html. Agent edits source/<branch>/material-<id>.json.",
+        "notes": "User-driven 2D material/shader editor - UI elements with live materials (Apple Liquid Glass via WebGL refraction over a backdrop texture) that react to mouse / nearby elements / backdrop. Bakes an interactive source/<branch>/material-<id>.html. Agent edits source/<branch>/material-<id>.json.",
     },
     "mm-composer": {
         "title":        "Interactive multimedia composer",
@@ -2037,7 +2037,7 @@ KINDS = {
     # pixel-map). Wire its `out` into any numeric param port of a
     # position / effect / trigger block (the `param:<key>` ports those kinds
     # auto-expose). Algorithmic / random / pixel-map sources are VECTOR sources
-    # — when the target is an instanced/grid position they map PER INSTANCE.
+    # - when the target is an instanced/grid position they map PER INSTANCE.
     "number-generator": {
         "title":        "Number",
         "category":     "container",
@@ -2072,11 +2072,11 @@ KINDS = {
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": False, "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []}, "pauseAfter": False,
-        "notes": "Composable TIMELINE source — keyframes multiple bound numeric params over a live playhead. Wire out into param ports (each = a track); author source/<branch>/timeline-<id>.js + per-track keyframes on the node.",
+        "notes": "Composable TIMELINE source - keyframes multiple bound numeric params over a live playhead. Wire out into param ports (each = a track); author source/<branch>/timeline-<id>.js + per-track keyframes on the node.",
     },
 
     # ── formatted-text ───────────────────────────────────────────────────
-    # v3.4.37 — Rich text node. The body is edited in-place via
+    # v3.4.37 - Rich text node. The body is edited in-place via
     # contentEditable, and the user can select a range to apply a
     # typography level from a wired Typography node. A plain Prompt
     # wired to `text-in` overwrites the body when its content changes.
@@ -2102,7 +2102,7 @@ KINDS = {
     },
 
     # ── mermaid ──────────────────────────────────────────────────────────
-    # v3.4.38 — Mermaid diagram node. The body renders via the mermaid.js
+    # v3.4.38 - Mermaid diagram node. The body renders via the mermaid.js
     # CDN bundle pinned in editor/index.html. Source code is stored
     # inline on the node, edited via a tailored code panel (same </>
     # affordance as the asset code panel) that surfaces a diagram-type
@@ -2128,7 +2128,7 @@ KINDS = {
         "notes": "User-driven. Renders Mermaid source via the CDN bundle in editor/index.html.",
     },
 
-    # ── simulation (v3.3 — live iframe for runnable simulation) ──────────
+    # ── simulation (v3.3 - live iframe for runnable simulation) ──────────
     # See docs/features/simulation-and-interactive-orchestrators.md §6.4.
     # Mirrors `prototype` shape; the component drawers that produce the
     # files this container points at are agent-kind per-id overrides
@@ -2168,7 +2168,7 @@ KINDS = {
         ),
     },
 
-    # ── interactive-media (v3.3 — live iframe for TouchDesigner-grade pieces)
+    # ── interactive-media (v3.3 - live iframe for TouchDesigner-grade pieces)
     # See docs/features/simulation-and-interactive-orchestrators.md §7.4.
     "interactive-media": {
         "title":        "Interactive media (live iframe)",
@@ -2207,7 +2207,7 @@ KINDS = {
         ),
     },
 
-    # ── hero-3d (v1.0 — live iframe for Spline-grade 3D hero scenes) ──────
+    # ── hero-3d (v1.0 - live iframe for Spline-grade 3D hero scenes) ──────
     # The escalation container above the plain `3d` drawer trio. Routed by
     # visual-orchestrator's `3d-hero` classification or direct dispatch.
     # See `hero-3d-orchestrator.md` + docs/research/spline-grade-3d-study.md.
@@ -2247,7 +2247,7 @@ KINDS = {
         ),
     },
 
-    # ── scene-3d (v1.0 — the SHARED WebGL render layer) ──────────────────
+    # ── scene-3d (v1.0 - the SHARED WebGL render layer) ──────────────────
     # Symmetric to visual-orchestrator but for 3D. Built by
     # scene-3d-orchestrator via a per-SUBSYSTEM fan-out (research → N parallel
     # s3d_subsystem_ chunks each rendering standalone → interaction → runtime).
@@ -2298,7 +2298,7 @@ KINDS = {
         ),
     },
 
-    # ── narrative-experience (v3.3 — poetic cousin of `simulation`) ──────
+    # ── narrative-experience (v3.3 - poetic cousin of `simulation`) ──────
     # The user-facing artefact container for one immersive walk-into-this-
     # place piece. Mirrors `simulation` shape with three substitutions:
     # spine (scripted timeline) instead of loop, camera-as-narrator instead
@@ -2315,7 +2315,7 @@ KINDS = {
                                               "iconographic-anim",
                                               "hybrid"],
                                    "userEditable": False,
-                                   "doc": "Same shape as simulation's paradigm field. 3d-environment covers EVERYTHING from scripted three.js flythroughs to walkable WASD/orbit-controlled spaces — how the camera binds + how much freedom the user has is a property of how the spine + camera drawers are written, not a separate field."},
+                                   "doc": "Same shape as simulation's paradigm field. 3d-environment covers EVERYTHING from scripted three.js flythroughs to walkable WASD/orbit-controlled spaces - how the camera binds + how much freedom the user has is a property of how the spine + camera drawers are written, not a separate field."},
             "aestheticRegister": {"type": "enum",
                                    "values": ["painterly", "volumetric", "sketch", "mixed-media"],
                                    "userEditable": False},
@@ -2352,19 +2352,19 @@ KINDS = {
             "replaces loop; reveals (user input → progressive discovery OR "
             "free-roam navigation) replaces controls; ambient (soundscape) is "
             "a new first-class channel. Walkable 3D pieces live inside the "
-            "3d-environment paradigm — how much freedom the user has is a "
+            "3d-environment paradigm - how much freedom the user has is a "
             "property of how spine + camera-handling are written, not a "
             "separate enum. Permission UX gates ambient audio via the two-"
             "gate pattern (canvas-side + iframe-side Start) inherited from "
-            "INTERACTIVITY_PIPELINE — audio context requires user gesture."
+            "INTERACTIVITY_PIPELINE - audio context requires user gesture."
         ),
     },
 
-    # ── game-experience (v3.3 — fifth sibling of simulation/interactive/narrative)
+    # ── game-experience (v3.3 - fifth sibling of simulation/interactive/narrative)
     # The user-facing artefact container for one game-like immersive piece.
     # Same shape as `simulation` with three substitutions: objective (goal /
     # score / win-condition) is first-class; physics is its own engine module;
-    # feedback (juice — particles / screen-shake / audio) is the §8.7 crux
+    # feedback (juice - particles / screen-shake / audio) is the §8.7 crux
     # drawer alongside world and runtime. See `game-experience-orchestrator.md`.
     "game-experience": {
         "title":        "Game experience (live iframe)",
@@ -2413,22 +2413,22 @@ KINDS = {
             "`simulation` / `narrative-experience` with three substitutions in "
             "the drawer family: objective (goal/score/win-condition) is "
             "first-class; physics is its own engine module; feedback (juice "
-            "— particles/shake/audio) is the §8.7 crux drawer alongside world "
+            "- particles/shake/audio) is the §8.7 crux drawer alongside world "
             "and runtime. The world is full-bleed with NO flat resting state "
-            "— ambient motion always plays. The overlay PEEKS at the edges "
-            "(score corner, progress edge, control hint) — never frames the "
+            "- ambient motion always plays. The overlay PEEKS at the edges "
+            "(score corner, progress edge, control hint) - never frames the "
             "action. Permission UX gates audio (and gyro on mobile) via the "
             "two-gate pattern (canvas-side + iframe-side Start) inherited "
-            "from INTERACTIVITY_PIPELINE — audio context requires user gesture."
+            "from INTERACTIVITY_PIPELINE - audio context requires user gesture."
         ),
     },
 
-    # ── scrapbook-experience (v3.3 — sixth sibling of simulation/interactive/narrative/game)
+    # ── scrapbook-experience (v3.3 - sixth sibling of simulation/interactive/narrative/game)
     # The user-facing artefact container for one raster-heavy collage piece.
     # Aesthetic categories: vaporwave / internetcore / cottagecore / dreamcore /
     # weirdcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / hybrid.
     # The composition drawer co-dispatches visual-orchestrator per
-    # IMAGE INVENTORY entry — this is the most visual-orchestrator-heavy container
+    # IMAGE INVENTORY entry - this is the most visual-orchestrator-heavy container
     # in the system. PNG sequences substitute for transparent GIFs (each frame
     # = one visual-orchestrator sub-dispatch). See `scrapbook-experience-orchestrator.md`.
     "scrapbook-experience": {
@@ -2490,11 +2490,11 @@ KINDS = {
         "notes": (
             "Live iframe of a raster-heavy collage piece. Aesthetics are "
             "named cores (vaporwave / cottagecore / dreamcore / Y2K / "
-            "lo-fi / etc.) — the orchestrator DOES NOT serve CSS-driven aesthetics "
+            "lo-fi / etc.) - the orchestrator DOES NOT serve CSS-driven aesthetics "
             "(Bauhaus / Swiss-grid / terminal-on-web etc.); those redirect to "
             "visual-orchestrator for hero assets in a CSS-restrained app. Composition "
             "drawer co-dispatches visual-orchestrator per IMAGE "
-            "INVENTORY entry — N entries = N sub-dispatches. PNG sequences "
+            "INVENTORY entry - N entries = N sub-dispatches. PNG sequences "
             "substitute for transparent GIFs (each frame = one sub-dispatch). "
             "Typography splits between web fonts (body / microtype via "
             "Google Fonts) + raster handlettering (display words / "
@@ -2502,13 +2502,13 @@ KINDS = {
         ),
     },
 
-    # ── interactive-polish (v3.3 — seventh sibling; POST-PASS orchestrator) ────
+    # ── interactive-polish (v3.3 - seventh sibling; POST-PASS orchestrator) ────
     # Different shape from the other six: runs LAST in the pipeline, after
     # another primary orchestrator's build phase (or after chat-Claude has
     # hand-written source), BEFORE Step-8 QA. Reads existing source,
     # identifies SITES of opportunity for interactive enrichment, dispatches
     # per-type drawers that decide the SPECIFIC improvement. Writes
-    # supplemental files to source/<branch>/_polish/<polishId>/ — existing
+    # supplemental files to source/<branch>/_polish/<polishId>/ - existing
     # source stays intact; the caller applies minimal <link>/<script> edits
     # per host page from the runtime drawer's integration-instructions.md.
     # See `interactive-polish-orchestrator.md`.
@@ -2526,7 +2526,7 @@ KINDS = {
             "siteCountByType":    {"type": "object", "userEditable": False,
                                     "doc": "Per-type breakdown: microanimation / pointer-tinted / scroll-driven / hover-surprise / shader-overlay."},
             "drawersDispatched":  {"type": "array",  "userEditable": False,
-                                    "doc": "Subset of {polish_microanimation_, polish_pointer_, polish_hover_, polish_shader_, polish_runtime_} that ran. Drawers may be SKIPPED if their type has 0 sites — unlike the other six orchestrators where every drawer fires."},
+                                    "doc": "Subset of {polish_microanimation_, polish_pointer_, polish_hover_, polish_shader_, polish_runtime_} that ran. Drawers may be SKIPPED if their type has 0 sites - unlike the other six orchestrators where every drawer fires."},
             "pagesIntegrated":    {"type": "array",  "userEditable": False,
                                     "doc": "Host pages that received the <link>/<script>/shader-mount edits applied by the caller."},
             "exposedAssets":      {"type": "array",  "userEditable": False},
@@ -2547,11 +2547,11 @@ KINDS = {
         ]},
         "pauseAfter":   False,
         "notes": (
-            "Post-pass enrichment container — runs after another primary "
+            "Post-pass enrichment container - runs after another primary "
             "orchestrator's build phase, before Step-8 QA. Existing source is "
             "preserved; polish files live in source/<branch>/_polish/<polishId>/. "
             "Each host page in pagesIntegrated received TWO new tags (a "
-            "single <link> + a single <script>) — and ONE more <div> if the "
+            "single <link> + a single <script>) - and ONE more <div> if the "
             "shader-overlay drawer ran. Zero-site outcomes (source already "
             "richly polished, no opportunity types identified) are valid; "
             "the runtime drawer writes an empty composite.css + composite.js "
@@ -2563,7 +2563,7 @@ KINDS = {
         ),
     },
 
-    # ── motion-studio (library-backed — cinematic linear-scene presentation) ──
+    # ── motion-studio (library-backed - cinematic linear-scene presentation) ──
     # Presentation-first sections/pages: full-bleed generated video (or motion
     # raster) + UI choreographed as a LINEAR sequence of full-screen scenes
     # with within-scene hold beats. Library: docs/research/motion-scene-
@@ -2584,7 +2584,7 @@ KINDS = {
                                    "userEditable": False,
                                    "doc": "Committed by research against live provider availability. Degradation ladder: video → raster-sequence → raster + CSS motion → Hyperframes motion (LAST, genre-gated: only vector-native registers; photoreal/immersive registers stop at raster + CSS)."},
             "sceneCount":        {"type": "number", "userEditable": False,
-                                   "doc": "Linear full-screen scenes (2–6, presentation-first)."},
+                                   "doc": "Linear full-screen scenes (2-6, presentation-first)."},
             "transitionRegister": {"type": "enum",
                                     "values": ["seamless-cinematic",
                                                "staged-theatrical",
@@ -2611,11 +2611,11 @@ KINDS = {
         ]},
         "pauseAfter":   False,
         "notes": (
-            "Live iframe of a cinematic linear-scene presentation piece — "
+            "Live iframe of a cinematic linear-scene presentation piece - "
             "the Apple-product-page / motionsites register. The aesthetic "
             "payload is tightly choreographed full-bleed video/raster + UI; "
             "the piece MUST NOT be complex (no app features, no data, no "
-            "branching) — linear back-and-forth scene stepping only, with "
+            "branching) - linear back-and-forth scene stepping only, with "
             "within-scene hold beats (video pauses on an authored frame, UI "
             "animates in, next input releases). Hard composition law: assets "
             "generate hi-res (>=1920x1080) edge-to-edge with subjectAnchor + "
@@ -2635,7 +2635,7 @@ KINDS = {
     # The user-facing artefact container for one photography art-direction
     # pass. Committed by photography-orchestrator AFTER every pe_photo_<slotId>
     # enrichment node is done. visual-orchestrator finds enrichments by id
-    # pattern, not by edges — this container is the audit surface, not a
+    # pattern, not by edges - this container is the audit surface, not a
     # dependency hub. See `photography-orchestrator.md §4`.
     "photography-enrichment": {
         "title":        "Photography enrichments",
@@ -2647,7 +2647,7 @@ KINDS = {
             "stylesUsed":  {"type": "array",  "userEditable": False,
                              "doc": "Library styleIds picked across slots (one or two per project for coherence)."},
             "boundTo":     {"type": "object", "userEditable": False,
-                             "doc": "{documentSetId: <branch>} — which source branch the enrichments target."},
+                             "doc": "{documentSetId: <branch>} - which source branch the enrichments target."},
         },
         "outputs":      {},
         "outputsRoot":  None,
@@ -2663,7 +2663,7 @@ KINDS = {
         ]},
         "pauseAfter":   False,
         "notes": (
-            "Art-direction pre-pass container — committed BEFORE "
+            "Art-direction pre-pass container - committed BEFORE "
             "visual-orchestrator's per-medium dispatch. Each pe_photo_<slotId> "
             "child carries a paste-ready promptForRasterPhoto + negativePrompt "
             "+ film/lens/lighting/mood hints sourced from the photography "
@@ -2676,7 +2676,7 @@ KINDS = {
     },
 
     # ── illustration-enrichment (container) ──────────────────────────────
-    # Sibling of photography-enrichment — same shape, illustration library.
+    # Sibling of photography-enrichment - same shape, illustration library.
     # See `illustration-orchestrator.md §3`.
     "illustration-enrichment": {
         "title":        "Illustration enrichments",
@@ -2706,7 +2706,7 @@ KINDS = {
         ]},
         "pauseAfter":   False,
         "notes": (
-            "Art-direction pre-pass container — committed BEFORE "
+            "Art-direction pre-pass container - committed BEFORE "
             "visual-orchestrator's per-medium dispatch. Each pe_illust_<slotId> "
             "child carries promptForRasterForeground + negativePrompt + "
             "material/line/color/role hints from the illustration library's "
@@ -2718,7 +2718,7 @@ KINDS = {
     },
 
     # ── creative-visual-promotion (container) ────────────────────────────
-    # Post-pass container — flat <img> slots promoted into creative
+    # Post-pass container - flat <img> slots promoted into creative
     # compositions (text-as-mask, asset-bleed, clip-path, drop-cap, bullets,
     # cut-into-letters). Editorial-loud aesthetics only.
     # See `creative-visual-orchestrator.md §5`.
@@ -2749,7 +2749,7 @@ KINDS = {
         ]},
         "pauseAfter":   False,
         "notes": (
-            "Post-pass promotion container — runs AFTER visual-orchestrator "
+            "Post-pass promotion container - runs AFTER visual-orchestrator "
             "completes, BEFORE material-orchestrator and interactive-polish. "
             "Gated on editorial-loud / typography-driven aesthetics (or "
             "explicit user request). Each cv_<slotId> child rewrites the host "
@@ -2760,7 +2760,7 @@ KINDS = {
     },
 
     # ── material-fidelity (container) ─────────────────────────────────────
-    # Late-pass container — material aesthetics (glass / clay / chrome /
+    # Late-pass container - material aesthetics (glass / clay / chrome /
     # holographic / paper / grain / glitch / ...) implemented per element with
     # reactive behaviours, within the committed reactiveBudget.
     # See `material-orchestrator.md §4`.
@@ -2796,7 +2796,7 @@ KINDS = {
         ]},
         "pauseAfter":   False,
         "notes": (
-            "Late material pass — runs AFTER visual-orchestrator + "
+            "Late material pass - runs AFTER visual-orchestrator + "
             "creative-visual-orchestrator (if any), BEFORE interactive-polish "
             "and Step-8 QA. Implementation files live in "
             "source/<branch>/_material/<elementHash>.{css,svg,glsl,js}, "
@@ -2861,7 +2861,7 @@ KINDS = {
 
 # ─── the edge I/O contract (single source of truth) ────────────────────────
 #
-# `KIND_IO` declares, per kind, how that kind behaves on a workflow EDGE — what
+# `KIND_IO` declares, per kind, how that kind behaves on a workflow EDGE - what
 # it PROVIDES to downstream consumers and what it ACCEPTS from upstream / from
 # an agent wiring INTO it. This is the one table that the three previously
 # divergent sites read:
@@ -2871,7 +2871,7 @@ KINDS = {
 #   3. the section bundle resolver (recurses through provider `resolve`s).
 #
 # Because all three read THIS table, adding a new node kind needs only a new
-# KIND_IO entry — the agent node, edge typing, and dispatch adapt with zero
+# KIND_IO entry - the agent node, edge typing, and dispatch adapt with zero
 # other code changes. See kinds/NODE_IO_FRAMEWORK.md for the full guide.
 #
 # Port entry shape:
@@ -2889,7 +2889,7 @@ KINDS = {
 # are compatible when their tag sets intersect (or either is empty = wildcard).
 #
 # `authoring` (editTarget ports only) is the instruction an agent receives so it
-# can actually PRODUCE the target's content — what the node IS, the canonical
+# can actually PRODUCE the target's content - what the node IS, the canonical
 # file's SCHEMA, and the production modes. Without this an agent wired to a
 # complex editor has no idea what format to write and falls back to generic
 # motion/HTML generation (the "agent made a 2D thing in the 3D editor" bug).
@@ -2898,7 +2898,7 @@ KINDS = {
 _SPLINE_AUTHORING = (
     "Accepts: a 3D SCENE, in one of exactly two forms (produce one). It is a "
     "Spline-style WebGL scene editor; the only things it can render are the scene "
-    "JSON below or an imported mesh — that JSON (or registered .glb) IS the deliverable.\n"
+    "JSON below or an imported mesh - that JSON (or registered .glb) IS the deliverable.\n"
     "  (A) Scene JSON at `source/{branch}/spline-{id}.scene.json`, in EXACTLY this schema "
     "(loaded directly; re-imported live on write):\n"
     "      {\"v\":1,\n"
@@ -2913,8 +2913,8 @@ _SPLINE_AUTHORING = (
     "       \"blob\":null}\n"
     "      Build the subject by composing/transforming/colouring those primitives. Units ~metres; "
     "the camera frames about -3..3. Each object needs at least kind+pos; other fields are optional.\n"
-    "      ANIMATION IS SUPPORTED — this format is NOT static/posed-only; never tell the user otherwise. "
-    "DERIVE the rig + motion FROM THE MODEL YOU BUILT (you know which parts are legs / spine / wings — "
+    "      ANIMATION IS SUPPORTED - this format is NOT static/posed-only; never tell the user otherwise. "
+    "DERIVE the rig + motion FROM THE MODEL YOU BUILT (you know which parts are legs / spine / wings - "
     "do NOT apply one generic wiggle to everything):\n"
     "        • `rig.joints` is a parented skeleton; each joint's `pos` is its WORLD pivot. `rig.bind` "
     "attaches a named part to a joint so the part follows that joint (give every animated part a "
@@ -2934,16 +2934,16 @@ _SPLINE_AUTHORING = (
 )
 
 _COMPOSER_AUTHORING = (
-    "This is a COMPOSER — a responsive layered CANVAS that composites WIRED ASSET NODES "
+    "This is a COMPOSER - a responsive layered CANVAS that composites WIRED ASSET NODES "
     "into a stack. It is NOT an HTML/CSS layout surface: it CANNOT render text, shapes, "
     "buttons, gradients, or CSS you write inline. The ONLY thing it draws is a list of "
     "layers, and EVERY layer must be backed by an asset node wired into this composer's "
-    "input — so the composer JSON places assets, it does not author content.\n"
-    "  HARD RULE — each `layers[].assetId` MUST equal the node id of an asset already "
+    "input - so the composer JSON places assets, it does not author content.\n"
+    "  HARD RULE - each `layers[].assetId` MUST equal the node id of an asset already "
     "wired into this composer. A layer whose `assetId` is not wired in is DROPPED at bake; "
     "a composer with no wired assets bakes to nothing but its `background`. So if the brief "
     "needs imagery/video that is not wired yet, you must FIRST create the asset nodes (generate "
-    "the images, e.g. via the visual pipeline) and wire them into this composer — do NOT invent "
+    "the images, e.g. via the visual pipeline) and wire them into this composer - do NOT invent "
     "inline layer content, and do NOT fabricate assetIds. If nothing is wired, say so rather than "
     "writing dead layers.\n"
     "  Write the canonical file `source/{branch}/composer-{id}.json` (read the existing file first; "
@@ -2956,22 +2956,22 @@ _COMPOSER_AUTHORING = (
     "\"width\":<px|null>,\"height\":<px|null>,\"visible\":true}]}\n"
     "  Array order is z-order (later = on top). `width`/`height` null = natural size; `fill` covers "
     "the canvas, `stretch-h`/`stretch-v` span one axis. Preserve the assetIds of layers already "
-    "present. Any other key (type/text/shape/button/css/responsive/layout) is ignored — there is no "
+    "present. Any other key (type/text/shape/button/css/responsive/layout) is ignored - there is no "
     "such thing as a text or shape layer here.\n"
-    "  TEXT — the composer has NO text primitive, so raw text NEVER renders. To put a headline / "
+    "  TEXT - the composer has NO text primitive, so raw text NEVER renders. To put a headline / "
     "label / body text into the composition you MUST first produce a text-bearing ASSET and wire it "
     "in as a layer: either a `formatted-text` node (it bakes to an HTML asset) or an `svg` asset that "
     "renders the words as <text>/paths (a raster image with the text baked in also works). Create that "
     "asset, wire its output into this composer's input, then add a layer referencing its assetId. Do "
-    "NOT write the text as a layer field and expect it to show — it will be dropped.\n"
+    "NOT write the text as a layer field and expect it to show - it will be dropped.\n"
     "  For a hero SECTION with live, selectable text + CTAs, the composer is the WRONG medium; that "
     "is a prototype/HTML job."
 )
 
 _VECTOR_AUTHORING = (
-    "This is a VECTOR EDITOR — an inline-SVG drawing surface. Unlike the composer it DOES author "
+    "This is a VECTOR EDITOR - an inline-SVG drawing surface. Unlike the composer it DOES author "
     "content directly: the deliverable is the `shapes[]` array, which bakes to a self-contained .svg "
-    "(no wired assets needed). It is a VECTOR illustration tool — do NOT produce a raster/photo, a "
+    "(no wired assets needed). It is a VECTOR illustration tool - do NOT produce a raster/photo, a "
     "motion/HTML asset, or anything that is not SVG shapes.\n"
     "  Write the canonical file `source/{branch}/svg/vector-{id}.json` (read the existing file first; "
     "re-imported live on write). ONLY these keys are honored:\n"
@@ -2981,17 +2981,17 @@ _VECTOR_AUTHORING = (
     "`opacity`(0..1),`rotation`(deg),`name`,`visible`(default true),`locked`,`shadow`,`blur`, and an "
     "optional `groupId` binding the shape to a group (see below). "
     "Shape types + their geometry:\n"
-    "      • rect    — {\"type\":\"rect\",\"x\":,\"y\":,\"w\":,\"h\":,\"rx\":<corner radius, optional>}\n"
-    "      • ellipse — {\"type\":\"ellipse\",\"cx\":,\"cy\":,\"rx\":,\"ry\":}\n"
-    "      • line    — {\"type\":\"line\",\"x1\":,\"y1\":,\"x2\":,\"y2\":}\n"
-    "      • path    — {\"type\":\"path\",\"d\":\"<SVG path data>\"}  (the workhorse for any custom curve)\n"
-    "      • text    — {\"type\":\"text\",\"x\":,\"y\":,\"content\":\"...\",\"fontSize\":,\"fontWeight\":,"
+    "      • rect    - {\"type\":\"rect\",\"x\":,\"y\":,\"w\":,\"h\":,\"rx\":<corner radius, optional>}\n"
+    "      • ellipse - {\"type\":\"ellipse\",\"cx\":,\"cy\":,\"rx\":,\"ry\":}\n"
+    "      • line    - {\"type\":\"line\",\"x1\":,\"y1\":,\"x2\":,\"y2\":}\n"
+    "      • path    - {\"type\":\"path\",\"d\":\"<SVG path data>\"}  (the workhorse for any custom curve)\n"
+    "      • text    - {\"type\":\"text\",\"x\":,\"y\":,\"content\":\"...\",\"fontSize\":,\"fontWeight\":,"
     "\"textAnchor\":\"start|middle|end\",\"fontFamily\":\"<family id>\"}\n"
     "  Compose the illustration from these primitives; array order is paint order (later = on top).\n"
-    "  GROUPS — `groups[]` holds layer groups: {\"id\":\"grp_…\",\"name\":\"…\",\"visible\":true,\"locked\":false,"
+    "  GROUPS - `groups[]` holds layer groups: {\"id\":\"grp_…\",\"name\":\"…\",\"visible\":true,\"locked\":false,"
     "\"collapsed\":false,\"src\":null}. A shape joins a group by setting its `groupId` to that group's `id`. "
     "Keep a group's member shapes CONTIGUOUS in `shapes[]` (the editor renders/serialises each group as one "
-    "<g> run). A group with a non-null `src` is LIVE-LINKED to a connected `layer` building block — its "
+    "<g> run). A group with a non-null `src` is LIVE-LINKED to a connected `layer` building block - its "
     "shapes are regenerated from that block's wired SVG (or traced from its wired image), so do not hand-edit "
     "members of a `src` group; leave `src` null for groups you author. A hidden group (`visible:false`) hides "
     "all its members."
@@ -3000,7 +3000,7 @@ _VECTOR_AUTHORING = (
 _FONT_AUTHORING = (
     "This is a FONT CREATOR (opentype.js). The deliverable is a font spec whose glyph outlines "
     "are SVG path data in FONT UNITS (y-up, origin at the baseline). It is NOT a raster/illustration "
-    "tool — produce glyph outlines, not pictures.\n"
+    "tool - produce glyph outlines, not pictures.\n"
     "  Write the canonical file `source/{branch}/font-{id}.json` (read the existing file first; "
     "re-imported live on write). Schema:\n"
     "      {\"v\":1,\"familyName\":\"...\",\"unitsPerEm\":1000,\"ascender\":800,\"descender\":-200,\n"
@@ -3008,13 +3008,13 @@ _FONT_AUTHORING = (
     "       \"glyphs\":{\"A\":{\"from\":\"base|font:<ref>|custom\",\"advanceWidth\":600,\"path\":\"<SVG path data, font units, y-up>\"}}}\n"
     "  `glyphs` is keyed by the character. `from:\"base\"` keeps the base font's outline; `from:\"custom\"` "
     "uses your `path`; `from:\"font:<google family>\"` borrows that character from another font (the tool "
-    "resolves it). Only include glyphs you change — unlisted characters fall back to the base font. "
+    "resolves it). Only include glyphs you change - unlisted characters fall back to the base font. "
     "Coordinates are in font units (unitsPerEm tall); the baseline is y=0, ascenders are POSITIVE y."
 )
 
 _IMAGE_AUTHORING = (
-    "This is an IMAGE EDITOR — a layered raster compositor. You author the layer STRUCTURE, gradient-map "
-    "grades, blend/opacity, and lasso selection — you do NOT paint pixels (raster pixel data lives in "
+    "This is an IMAGE EDITOR - a layered raster compositor. You author the layer STRUCTURE, gradient-map "
+    "grades, blend/opacity, and lasso selection - you do NOT paint pixels (raster pixel data lives in "
     "referenced PNGs the user/asset pipeline produces). Do not invent pixel content inline.\n"
     "  Write the canonical file `source/{branch}/image-{id}.json` (read it first; re-imported live). Schema:\n"
     "      {\"v\":1,\"w\":1024,\"h\":1024,\n"
@@ -3045,7 +3045,7 @@ _PIXEL_AUTHORING = (
 )
 
 _VOXEL_AUTHORING = (
-    "This is a VOXEL editor — voxels on a fixed integer grid (a Minecraft/MagicaVoxel-style block scene). "
+    "This is a VOXEL editor - voxels on a fixed integer grid (a Minecraft/MagicaVoxel-style block scene). "
     "It reuses the 3D editor's materials but the geometry is voxels only; do NOT emit free meshes or "
     "primitives. The deliverable is the voxel list + palette.\n"
     "  Write the canonical file `source/{branch}/voxel-{id}.json` (read it first; re-imported live). Schema:\n"
@@ -3059,7 +3059,7 @@ _VOXEL_AUTHORING = (
 
 _SYNTH_AUTHORING = (
     "This is a SYNTH / percussion patch (WebAudio). The deliverable is a patch the tool renders to audio; "
-    "do NOT write an audio file yourself — describe the synth, the tool renders the .wav.\n"
+    "do NOT write an audio file yourself - describe the synth, the tool renders the .wav.\n"
     "  Write the canonical file `source/{branch}/synth-{id}.json` (read it first; re-imported live). Schema:\n"
     "      {\"v\":1,\n"
     "       \"voice\":{\"osc\":[{\"type\":\"sine|saw|square|triangle|noise\",\"detune\":0,\"gain\":0.6}],\n"
@@ -3073,7 +3073,7 @@ _SYNTH_AUTHORING = (
 )
 
 _MUSIC_AUTHORING = (
-    "This is an ALGORITHMIC MUSIC maker — a sample sequencer using Tidal/Strudel-style mini-notation. "
+    "This is an ALGORITHMIC MUSIC maker - a sample sequencer using Tidal/Strudel-style mini-notation. "
     "The deliverable is the song spec; the tool renders the audio.\n"
     "  Write the canonical file `source/{branch}/music-{id}.json` (read it first; re-imported live). Schema:\n"
     "      {\"v\":1,\"bpm\":120,\"swing\":0,\"bars\":4,\n"
@@ -3082,14 +3082,14 @@ _MUSIC_AUTHORING = (
     "                   {\"name\":\"bass\",\"pattern\":\"c2 ~ eb2 g2\",\"instrument\":\"synth:<node id>\"}]}\n"
     "  In a `pattern` string, tokens are sample ids (or note names for an `instrument`), `~` is a rest, "
     "and the tokens are spread evenly across one bar (space-separated steps). Samples must reference a "
-    "wired audio asset or a wired synth node — do NOT fabricate sample sources."
+    "wired audio asset or a wired synth node - do NOT fabricate sample sources."
 )
 
 _GSPLAT_AUTHORING = (
-    "This is a GAUSSIAN SPLAT 3D scene (Splat Lab) — a Spline-style editor for radiance-field captures "
+    "This is a GAUSSIAN SPLAT 3D scene (Splat Lab) - a Spline-style editor for radiance-field captures "
     "(.ply / .splat / .ksplat point clouds), NOT polygon meshes. Do NOT emit geometry/primitives; the "
     "deliverable is a list of splat captures placed + transformed in a scene. Each splat references an "
-    "external file URL — reference a WIRED import/asset or a real URL; do NOT fabricate splat sources.\n"
+    "external file URL - reference a WIRED import/asset or a real URL; do NOT fabricate splat sources.\n"
     "  Write the canonical file `source/{branch}/gsplat-{id}.json` (read it first; re-imported live). Schema:\n"
     "      {\"v\":1,\n"
     "       \"env\":{\"background\":\"#11151f\",\"grid\":true,\"exposure\":1.0},\n"
@@ -3098,14 +3098,14 @@ _GSPLAT_AUTHORING = (
     "                  \"position\":[0,0,0],\"rotation\":[0,0,0],\"scale\":[1,1,1],\n"
     "                  \"visible\":true,\"alphaThreshold\":1}]}\n"
     "  `rotation` is Euler degrees (XYZ order); `scale` is per-axis (uniform is [s,s,s]). Splat captures "
-    "frequently load upside-down — a rotation of [180,0,0] is the usual fix. `alphaThreshold` (0–50) prunes "
+    "frequently load upside-down - a rotation of [180,0,0] is the usual fix. `alphaThreshold` (0-50) prunes "
     "low-opacity splats. The bake produces a self-contained interactive viewer `source/{branch}/gsplat-{id}.html`."
 )
 
 _MATERIAL_AUTHORING = (
-    "This is MATERIAL LAB — a MATERIAL editor. The UI is a FIXED design-system component set "
+    "This is MATERIAL LAB - a MATERIAL editor. The UI is a FIXED design-system component set "
     "(typography scale, tabs, text input, primary/secondary/tertiary/disabled buttons, a card with "
-    "image, a chip, a colour-palette row). You do NOT place or author UI — you EDIT THE MATERIAL that "
+    "image, a chip, a colour-palette row). You do NOT place or author UI - you EDIT THE MATERIAL that "
     "re-skins the entire fixed set live (Apple Liquid Glass and friends). The deliverable is the "
     "material definition.\n"
     "  Write the canonical file `source/{branch}/material-{id}.json` (read it first; re-imported live). Schema:\n"
@@ -3119,7 +3119,7 @@ _MATERIAL_AUTHORING = (
     "  ONE `material` re-skins ALL components. `type` picks the material family; `profile:\"squircle\"` "
     "(Apple's preference) is the smoothest bezel; `refraction` scales backdrop displacement, `dispersion` "
     "the edge chromatic aberration, `frost` the blur, `specular` the rim light. `palette` are the accent "
-    "colours the components use. There is NO `elements` array and no per-element placement — editing the "
+    "colours the components use. There is NO `elements` array and no per-element placement - editing the "
     "material is the whole job.\n"
     "  WIRED INPUTS augment the material, they do not place UI: a wired IMAGE or LAYER (the `in` port) "
     "becomes the card's image AND the backdrop the glass refracts/interacts with, so you can see how "
@@ -3128,10 +3128,10 @@ _MATERIAL_AUTHORING = (
 )
 
 _MM_AUTHORING = (
-    "This is the INTERACTIVE MULTIMEDIA COMPOSER — a stack of LAYERS where each layer = "
+    "This is the INTERACTIVE MULTIMEDIA COMPOSER - a stack of LAYERS where each layer = "
     "{content + positioning + trigger + effects}. You author the whole reactive graph in JSON; the tool "
     "runs it per frame. Content that is an asset MUST reference a node wired into this composer (like the "
-    "plain composer) — do not fabricate assetIds.\n"
+    "plain composer) - do not fabricate assetIds.\n"
     "  Write the canonical file `source/{branch}/mm-{id}.json` (read it first; re-imported live). Schema:\n"
     "      {\"v\":1,\"canvasW\":1280,\"canvasH\":720,\"background\":\"#000\",\"inputs\":{\"camera\":false,\"mic\":false},\n"
     "       \"layers\":[{\"id\":\"L1\",\"name\":\"...\",\"z\":0,\"visible\":true,\n"
@@ -3145,7 +3145,7 @@ _MM_AUTHORING = (
     "physics {engine:'matter',gravity:[0,1]}; drawn {paths:[[x,y]]}; rope {anchors,segments,stiffness}; "
     "camera-feed {detector:'hand|face|object|ocr',source:'camera|video:<assetId>'}; face-3d {meshId:'<voxel/spline node>'}. "
     "trigger.audio {sourceId:'<synth/music/audio node>',feature:'loudness|pitch|band'}; trigger.camera {detector,event:'present|gesture|count'}; "
-    "trigger.timeline {keys:[{t,...}],loop:true}. A trigger's `impacts` route its value onto OTHER layers' params — "
+    "trigger.timeline {keys:[{t,...}],loop:true}. A trigger's `impacts` route its value onto OTHER layers' params - "
     "that is how layers cross-affect. Effects are a post-process chain (shader-lab taxonomy: one catalog, "
     "rendered by editor/tools/_shared/fx.js). Per-type params: chromatic-aberration{amount,angle}, "
     "directional-blur{angle,length}, displacement{scale}, slice{count,offset,vertical}, pixelate{size}, "
@@ -3159,7 +3159,7 @@ _MM_AUTHORING = (
 # JavaScript source module; buildSpec(values) compiles to the strict JSON spec
 # host editors consume.
 _EFFECT_AUTHORING = (
-    "This is an EFFECT spec node — a composable GPU post-effect from the shared shader-lab "
+    "This is an EFFECT spec node - a composable GPU post-effect from the shared shader-lab "
     "catalog (editor/tools/_shared/fx.js). Write `source/{branch}/effect-{id}.js`, not JSON. "
     "Pick a built-in type and expose its params as controls, e.g.:\n"
     "export const controls = { intensity:{type:'number',value:0.5,min:0,max:1,step:0.01}, "
@@ -3175,7 +3175,7 @@ _EFFECT_AUTHORING = (
     "The editor compiles buildSpec(values) into source/{branch}/effect-{id}.json. Keep intensity in 0..1."
 )
 _POSITION_AUTHORING = (
-    "This is a POSITION spec node — real source code for placing content/instances. Write "
+    "This is a POSITION spec node - real source code for placing content/instances. Write "
     "`source/{branch}/position-{id}.js`, not JSON. Shape:\n"
     "export const controls = { gravity:{type:'number',value:980}, bounce:{type:'number',value:0.55} };\n"
     "export function step(body, dt, values) { body.velocity.y += values.gravity * dt; "
@@ -3187,7 +3187,7 @@ _POSITION_AUTHORING = (
     "Wire position into a layer, except direct-to-pixel/spline/voxel editors that have no layer concept."
 )
 _TRIGGER_AUTHORING = (
-    "This is a TRIGGER spec node — real source code for sampling reactivity and mapping it to layers. Write "
+    "This is a TRIGGER spec node - real source code for sampling reactivity and mapping it to layers. Write "
     "`source/{branch}/trigger-{id}.js`, not JSON. Shape:\n"
     "export const controls = { targetLayerId:{type:'text',value:''}, off:{type:'number',value:0}, "
     "on:{type:'number',value:1} };\n"
@@ -3198,7 +3198,7 @@ _TRIGGER_AUTHORING = (
     "The editor compiles buildSpec(values) into source/{branch}/trigger-{id}.json. Wire trigger into a layer."
 )
 _LAYER_AUTHORING = (
-    "This is a LAYER node — one layer of a composition. Write `source/{branch}/layer-{id}.js`, not JSON. "
+    "This is a LAYER node - one layer of a composition. Write `source/{branch}/layer-{id}.js`, not JSON. "
     "Shape:\n"
     "export const controls = { name:{type:'text',value:'Layer'}, opacity:{type:'number',value:1}, "
     "blend:{type:'select',value:'normal',options:['normal','multiply','screen','overlay']} };\n"
@@ -3208,7 +3208,7 @@ _LAYER_AUTHORING = (
     "position / trigger / effect nodes. The editor compiles buildSpec(values) into source/{branch}/layer-{id}.json."
 )
 _NUMBER_AUTHORING = (
-    "This is a NUMBER-GENERATOR spec node — a value SOURCE that drives a numeric param of another "
+    "This is a NUMBER-GENERATOR spec node - a value SOURCE that drives a numeric param of another "
     "block (position/effect/trigger). Write `source/{branch}/number-{id}.js`, not JSON. Shape:\n"
     "export const controls = { expr:{type:'text',value:'Math.sin(i*0.3 + t)'} };\n"
     "export function value(ctx) { return Math.sin(ctx.index*0.3 + ctx.time); }\n"
@@ -3220,16 +3220,16 @@ _NUMBER_AUTHORING = (
     "Wire `out` into a position/effect/trigger param port; for pixel-map, wire an image asset into the `pixmap` port."
 )
 _TIMELINE_AUTHORING = (
-    "This is a TIMELINE spec node — a live-playhead value SOURCE that keyframes numeric params over time. "
+    "This is a TIMELINE spec node - a live-playhead value SOURCE that keyframes numeric params over time. "
     "Write `source/{branch}/timeline-{id}.js`, not JSON. Shape:\n"
     "export const controls = { duration:{type:'number',value:4}, loop:{type:'boolean',value:true} };\n"
     "export function buildSpec(values) { return {v:1,kind:'timeline',duration:values.duration,loop:values.loop}; }\n"
     "The editor compiles buildSpec(values) into source/{branch}/timeline-{id}.json. Wire `out` into one or more "
-    "numeric param ports — EACH wired param becomes a TRACK on the timeline (keyframes authored per track, stored "
+    "numeric param ports - EACH wired param becomes a TRACK on the timeline (keyframes authored per track, stored "
     "on the node). A per-instance track staggers instance-by-instance. The host runtime drives the playhead."
 )
 
-# Per-assetKind authoring — the `assetWrite` analogue of editTarget's `authoring`.
+# Per-assetKind authoring - the `assetWrite` analogue of editTarget's `authoring`.
 # An `asset` node carries an `assetKind` (see KINDS["asset"].inputs.assetKind enum);
 # "Write your <assetKind> output to <path>" names the medium but leaks no schema, so
 # an agent wired to a shader/3d/lottie node DEFAULTS to plain HTML/CSS (the
@@ -3241,48 +3241,48 @@ _TIMELINE_AUTHORING = (
 # import by io_contract_violations()).
 ASSET_KIND_AUTHORING = {
     "shader": (
-        "This is a SHADER asset — a GLSL fragment shader rendered to a <canvas>, NOT an "
+        "This is a SHADER asset - a GLSL fragment shader rendered to a <canvas>, NOT an "
         "HTML/CSS effect. Do NOT produce a div with `backdrop-filter`/gradients/box-shadow. "
         "Deliverable: a self-contained `.html` (or the file at the target path) whose visible "
-        "output is a full-bleed WebGL/WebGL2 canvas driven by a fragment shader — `precision "
+        "output is a full-bleed WebGL/WebGL2 canvas driven by a fragment shader - `precision "
         "highp float;`, `uniform float u_time;`, `uniform vec2 u_resolution;` (+ `u_mouse` if "
         "interactive), animated in a rAF loop. The look must be MATH in the shader, not DOM. "
         "If the brief is a UI surface that merely looks glassy, that is a CSS/HTML asset, not a "
-        "shader — say so rather than faking a shader with CSS.\n"
-        "  MUST RENDER A VISIBLE RESULT — never a blank/black canvas (the #1 failure). "
+        "shader - say so rather than faking a shader with CSS.\n"
+        "  MUST RENDER A VISIBLE RESULT - never a blank/black canvas (the #1 failure). "
         "Prefer WebGL2 (`getContext('webgl2')`, `#version 300 es`, `out vec4`) so `fwidth`/"
         "derivatives and precision work WITHOUT extensions. GLSL ES 3.00 GOTCHA: a fragment "
         "shader has NO default float precision, so `precision highp float;` MUST come BEFORE any "
-        "float-typed declaration — including `out vec4 fragColor;` — or it fails to compile on "
+        "float-typed declaration - including `out vec4 fragColor;` - or it fails to compile on "
         "strict drivers (ANGLE/Chrome) and you get a blank frame. Also do NOT use GLSL RESERVED "
-        "words as identifiers (`half`, `input`, `output`, `sample`, `filter`, `active`, …) — a "
+        "words as identifiers (`half`, `input`, `output`, `sample`, `filter`, `active`, …) - a "
         "variable named `half` is a compile error. If you stay on WebGL1 AND use "
         "`fwidth`/`dFdx`/`dFdy`, you MUST `getExtension('OES_standard_derivatives')` AND prepend "
-        "`#extension GL_OES_standard_derivatives : enable` — and gracefully degrade (drop the "
+        "`#extension GL_OES_standard_derivatives : enable` - and gracefully degrade (drop the "
         "derivative-based AA) if it's missing rather than failing to compile. ALWAYS check "
         "`COMPILE_STATUS` + `LINK_STATUS`; on failure, clear the canvas to a visible color and "
-        "surface the infoLog — do NOT leave a silent black frame. Size the drawing buffer from "
+        "surface the infoLog - do NOT leave a silent black frame. Size the drawing buffer from "
         "the canvas's own client size (it is embedded in an iframe), and call resize once before "
         "the first frame."
     ),
     "3d": (
-        "This is a 3D asset — an interactive WebGL scene (Three.js or raw WebGL), NOT a flat "
+        "This is a 3D asset - an interactive WebGL scene (Three.js or raw WebGL), NOT a flat "
         "image or CSS pseudo-3D. Deliverable: a self-contained `.html`/JS module that builds a "
         "scene (geometry + materials + lights + camera + rAF render loop), resizes to its "
         "container, and respects prefers-reduced-motion. Do NOT substitute a static PNG or a "
         "CSS transform; if a real 3D scene is overkill for the brief, say so.\n"
-        "  MUST RENDER A VISIBLE RESULT — never a black void: add ambient + key light, point the "
+        "  MUST RENDER A VISIBLE RESULT - never a black void: add ambient + key light, point the "
         "camera AT the subject and frame it, give meshes lit materials (not unlit black). Size the "
         "renderer from the canvas's client size (embedded in an iframe) and resize once before the "
         "first frame."
     ),
     "svg": (
-        "This is an SVG asset — inline vector markup written to the target path. Deliverable: a "
+        "This is an SVG asset - inline vector markup written to the target path. Deliverable: a "
         "valid standalone `<svg>` with a viewBox, authored paths/shapes, and currentColor where "
         "it should inherit. Do NOT embed a raster `<image>` or rasterize; this is vector."
     ),
     "image": (
-        "This is a RASTER image asset. You cannot hand-draw it as quality SVG/CSS — generate it "
+        "This is a RASTER image asset. You cannot hand-draw it as quality SVG/CSS - generate it "
         "(return base64 PNG bytes in the typed-output `imageBase64`, or delegate to the image "
         "pipeline / a raster subagent). Do NOT substitute an emoji, a CSS gradient, or a "
         "stick-figure inline SVG for a real picture."
@@ -3297,28 +3297,28 @@ ASSET_KIND_AUTHORING = {
         "substitute Web Audio synthesis code unless the brief is explicitly a synth."
     ),
     "html": (
-        "This is an HTML asset — a SELF-CONTAINED `.html` document (inline CSS/JS, no external "
+        "This is an HTML asset - a SELF-CONTAINED `.html` document (inline CSS/JS, no external "
         "build step) written to the target path. It is embedded via <iframe>, so it must stand "
         "alone. Realize the brief in HTML/CSS/JS; for non-trivial imagery inside it, delegate "
         "raster/illustration to the visual subagents rather than hand-drawing."
     ),
     "html-set": (
-        "This is an HTML-SET asset — a small set of linked self-contained `.html` pages under "
+        "This is an HTML-SET asset - a small set of linked self-contained `.html` pages under "
         "the target folder (e.g. index + sub-pages), each standalone and inter-linked with "
         "relative hrefs. Same self-containment rule as a single HTML asset."
     ),
     "markdown": (
-        "This is a MARKDOWN asset — write GitHub-flavored Markdown to the target path. Prose + "
+        "This is a MARKDOWN asset - write GitHub-flavored Markdown to the target path. Prose + "
         "structure only; no HTML scaffolding or build artifacts."
     ),
     "text": (
-        "This is a TEXT asset — write plain text to the target path. No markup, no code fences."
+        "This is a TEXT asset - write plain text to the target path. No markup, no code fences."
     ),
 }
 
 # Per-MEDIA-MODEL authoring. `assetKind` is the STORAGE type; `mediaModel` is the
 # PRODUCTION medium. Many Pathway-B generators (see prompts/media-models.js) all
-# write `.html` (assetKind "html") but each expects a SPECIFIC kind of result —
+# write `.html` (assetKind "html") but each expects a SPECIFIC kind of result -
 # a shader scene, a data-viz chart, a three.js scene, a GSAP motion piece, a
 # canvas particle loop. Keyed on the media-model id so an agent wired to such a
 # node gets the right contract instead of the generic-HTML one. Dispatch prefers
@@ -3329,67 +3329,67 @@ ASSET_KIND_AUTHORING = {
 MEDIA_MODEL_AUTHORING = {
     "shader": ASSET_KIND_AUTHORING["shader"],
     "viz": (
-        "This is a DATA-VISUALIZATION asset — a self-contained `.html` page rendering a real "
+        "This is a DATA-VISUALIZATION asset - a self-contained `.html` page rendering a real "
         "chart/graph (D3 v7, Observable Plot, or vanilla SVG; CDN imports OK). If the brief gives "
         "no data, INVENT a small plausible inline dataset and label it synthetic. Responsive SVG "
         "(viewBox + 100% width), accessible color (no red/green-only encoding), restrained axis "
-        "chrome. Do NOT produce a generic page, a static image, or a decorative graphic — the "
+        "chrome. Do NOT produce a generic page, a static image, or a decorative graphic - the "
         "deliverable is an actual data visualization."
     ),
     "threejs": (
-        "This is a 3D-SCENE asset — a self-contained `.html` page with an INTERACTIVE three.js "
+        "This is a 3D-SCENE asset - a self-contained `.html` page with an INTERACTIVE three.js "
         "scene (r155+ via CDN ES modules): PerspectiveCamera, ambient + directional light, "
         "OrbitControls, at least one animated element, full-window <canvas> with resize handling "
         "and pixelRatio capped at 2. Do NOT produce a flat image, a CSS pseudo-3D effect, or a "
-        "static render — it must be a live WebGL scene.\n"
-        "  MUST RENDER A VISIBLE RESULT — never a black void: lights present, camera framed on the "
+        "static render - it must be a live WebGL scene.\n"
+        "  MUST RENDER A VISIBLE RESULT - never a black void: lights present, camera framed on the "
         "subject, lit materials. Size the renderer from the canvas's client size (it's embedded in "
         "an iframe) and resize once before the first frame. If the CDN import fails, surface it "
         "visibly rather than leaving a black canvas."
     ),
     "motion-gen": (
-        "This is a MOTION asset — a self-contained `.html` motion piece on the Hyperframes model: "
+        "This is a MOTION asset - a self-contained `.html` motion piece on the Hyperframes model: "
         "a `#stage`, child `clip` elements timed via data-attributes, driven by a PAUSED GSAP "
         "timeline (GSAP from CDN). It must play standalone AND render deterministically to video. "
-        "Do NOT produce a static page or a loose CSS animation — the deliverable is a timed motion "
+        "Do NOT produce a static page or a loose CSS animation - the deliverable is a timed motion "
         "composition on a GSAP timeline."
     ),
     "canvas-gen": (
-        "This is a CANVAS-MOTION / PARTICLE asset — a self-contained `.html` page driven by a "
+        "This is a CANVAS-MOTION / PARTICLE asset - a self-contained `.html` page driven by a "
         "real-time canvas2D or WebGL requestAnimationFrame loop (particles, dust/snow/confetti/"
         "sparks, flow fields, generative motion). canvas2D for ≤500 particles; WebGL instanced for "
-        "more. Do NOT fake it with CSS keyframes or a static image — the idiom is a live render loop.\n"
-        "  MUST RENDER A VISIBLE RESULT — never a blank/black canvas: clear to a visible background "
+        "more. Do NOT fake it with CSS keyframes or a static image - the idiom is a live render loop.\n"
+        "  MUST RENDER A VISIBLE RESULT - never a blank/black canvas: clear to a visible background "
         "each frame and keep particles within view. Size the canvas from its client size (embedded "
         "in an iframe) and resize once before the first frame. For WebGL, check COMPILE/LINK status "
         "and fall back visibly rather than leaving a silent black frame."
     ),
     "html-page": (
-        "This is a UI-PAGE MOCKUP asset — ONE self-contained `.html` screen mockup (inline <style> "
+        "This is a UI-PAGE MOCKUP asset - ONE self-contained `.html` screen mockup (inline <style> "
         "with CSS-custom-property tokens; a CDN/Google font OK; NO React/Vue/build step, NO chart "
-        "libraries unless the brief is a dashboard). It must be a REALISTIC, POPULATED mockup — "
+        "libraries unless the brief is a dashboard). It must be a REALISTIC, POPULATED mockup - "
         "named entities, specific numbers, voiced microcopy; never 'User 1' / 'Lorem'. Fit a "
         "1280×800 viewport without horizontal scroll."
     ),
     "svg-gen": (
-        "This is an SVG ILLUSTRATION asset — ONE valid self-contained `<svg>` with a viewBox, "
+        "This is an SVG ILLUSTRATION asset - ONE valid self-contained `<svg>` with a viewBox, "
         "cleanly STRUCTURED (layered <g> groups bg→mid→fg with descriptive ids), no bitmap "
         "`<image href>`, no JS unless requested. Do NOT rasterize or embed a photo; this is "
         "authored vector art."
     ),
     "lottie-gen": (
-        "This is a LOTTIE asset — ONE Bodymovin `.json` conforming to the Lottie schema (v 5.7+): "
+        "This is a LOTTIE asset - ONE Bodymovin `.json` conforming to the Lottie schema (v 5.7+): "
         "top-level `v`, `fr` (default 30), `ip`, `op`, `w`, `h`, `layers[]` (with `ty`, `ks` "
         "transforms, `shapes`). Author keyframe-driven path morphs / transforms with Bézier easing; "
-        "NO external asset references. Do NOT write HTML/CSS or a video — the deliverable is Lottie "
+        "NO external asset references. Do NOT write HTML/CSS or a video - the deliverable is Lottie "
         "JSON a player ingests."
     ),
 }
 
-# Section authoring — the sectionWrite analogue. A section is a FRAME/CONTAINER,
+# Section authoring - the sectionWrite analogue. A section is a FRAME/CONTAINER,
 # not a medium, so its contract is a placement+registration PROTOCOL, not a
 # per-medium schema: register one child node per piece of content into the
-# frame's grid. The medium is DELEGATED — each child is an `asset` node whose own
+# frame's grid. The medium is DELEGATED - each child is an `asset` node whose own
 # `assetKind` authoring (ASSET_KIND_AUTHORING) governs how that medium is made.
 # `{rect}` is filled per-target by io_resolve with the live canvas bounds.
 _SECTION_AUTHORING = (
@@ -3398,7 +3398,7 @@ _SECTION_AUTHORING = (
     "with addNodes: [{\"id\": \"<fresh id>\", \"kind\": \"asset\", \"assetKind\": "
     "\"image|html|svg|shader|3d|…\", \"path\": \"source/…\", \"x\": …, \"y\": …, \"w\": 320, "
     "\"h\": 240}]. A section is medium-AGNOSTIC: children may be any assetKind, and EACH child "
-    "asset is produced per ITS OWN medium contract (the assetKind authoring) — the section only "
+    "asset is produced per ITS OWN medium contract (the assetKind authoring) - the section only "
     "governs WHERE/HOW children are placed, not what medium they are. Lay nodes out as a grid "
     "inside the bounds: start ~24px in from the left edge and ~48px below the top (the title "
     "strip), step by node width/height + 40px gaps, and keep every node FULLY inside the rect. "
@@ -3406,13 +3406,13 @@ _SECTION_AUTHORING = (
 )
 
 _FORMATTED_AUTHORING = (
-    "This is a FORMATTED-TEXT node — rich text that bakes to an HTML asset. The deliverable is an "
+    "This is a FORMATTED-TEXT node - rich text that bakes to an HTML asset. The deliverable is an "
     "HTML body fragment (the editable content), NOT a full document.\n"
     "  Write the canonical file `source/{branch}/formatted-text-{id}.json` (read it first if it exists; "
     "re-imported live). Schema:\n"
     "      {\"html\":\"<h1>Title</h1><p>Body copy with <strong>emphasis</strong>…</p>\"}\n"
-    "  Use only inline content tags (h1–h6, p, ul/ol/li, strong/em, a, br, blockquote, span). Do NOT "
-    "include <html>/<head>/<body>, scripts, or external styles — typography comes from a wired Typography "
+    "  Use only inline content tags (h1-h6, p, ul/ol/li, strong/em, a, br, blockquote, span). Do NOT "
+    "include <html>/<head>/<body>, scripts, or external styles - typography comes from a wired Typography "
     "node. Keep it a clean semantic fragment."
 )
 
@@ -3424,11 +3424,11 @@ _MERMAID_AUTHORING = (
     "      flowchart TD\\n  A[Start] --> B{Decision}\\n  B -->|yes| C[Do thing]\\n  B -->|no| D[Stop]\n"
     "  Supported first-line types include flowchart/graph, sequenceDiagram, classDiagram, stateDiagram-v2, "
     "erDiagram, journey, gantt, pie, mindmap, timeline, quadrantChart, gitGraph. Emit ONLY the diagram "
-    "source — no Markdown fences, no prose."
+    "source - no Markdown fences, no prose."
 )
 
 _PALETTE_AUTHORING = (
-    "This is a COLOR-PALETTE node — a list of design-token swatches. The deliverable is the swatch list.\n"
+    "This is a COLOR-PALETTE node - a list of design-token swatches. The deliverable is the swatch list.\n"
     "  Write the canonical file `source/{branch}/palette-{id}.json` (read it first if it exists; re-imported "
     "live). Schema:\n"
     "      {\"name\":\"Brand\",\"swatches\":[{\"name\":\"--bg\",\"value\":\"oklch(98% 0.01 250)\"},\n"
@@ -3439,15 +3439,15 @@ _PALETTE_AUTHORING = (
 )
 
 _TYPOGRAPHY_AUTHORING = (
-    "This is a TYPOGRAPHY node — a type scale + font families. The deliverable is the scale + family names.\n"
+    "This is a TYPOGRAPHY node - a type scale + font families. The deliverable is the scale + family names.\n"
     "  Write the canonical file `source/{branch}/typography-{id}.json` (read it first if it exists; re-imported "
     "live). Schema:\n"
     "      {\"fontFamily\":\"Inter\",\"monoFamily\":\"JetBrains Mono\",\n"
     "       \"levels\":[{\"name\":\"Display\",\"size\":56,\"weight\":700,\"lineHeight\":1.05,\"mono\":false},\n"
     "                 {\"name\":\"Body\",\"size\":16,\"weight\":400,\"lineHeight\":1.6,\"mono\":false}]}\n"
     "  `fontFamily`/`monoFamily` must be real family names (auto-resolved against Google/Bunny/Fontsource). "
-    "Each level is {name, size(px), weight(100–900), lineHeight, mono?}. Order levels largest → smallest. Do "
-    "NOT fabricate font URLs — names only."
+    "Each level is {name, size(px), weight(100-900), lineHeight, mono?}. Order levels largest → smallest. Do "
+    "NOT fabricate font URLs - names only."
 )
 KIND_IO = {
     "prompt": {
@@ -3594,7 +3594,7 @@ KIND_IO = {
         ],
     },
     "mermaid": {
-        # Leaf diagram node: no baked file output, but agent-authorable — an
+        # Leaf diagram node: no baked file output, but agent-authorable - an
         # agent wired into the `in` port writes the .mmd source the node renders.
         "provides": [],
         "accepts":  [
@@ -3608,7 +3608,7 @@ KIND_IO = {
                        "resolve": "bakedFile", "resolveArgs": {"ext": "scene.json"}}],
         "accepts":  [
             # A .glb asset wired here imports directly; an AGENT wired here is told
-            # to AUTHOR the scene (or generate+register a model) — both via the
+            # to AUTHOR the scene (or generate+register a model) - both via the
             # editTarget authoring instruction. The frontend resolver routes a
             # .glb asset → import and the node consumes node.imports the agent sets.
             {"port": "in", "label": "Model / author scene", "tags": ["asset", "3d", "text-gen", "asset-gen"],
@@ -3787,13 +3787,13 @@ for _io_kind, _io_block in KIND_IO.items():
 
 
 def io_contract_violations():
-    """Static integrity check on KIND_IO — returns a list of human-readable
+    """Static integrity check on KIND_IO - returns a list of human-readable
     problems (empty == healthy). The load-bearing rule:
 
       Every `editTarget` accept MUST carry a non-empty `authoring` string.
 
     `editTarget` tells an agent "rewrite this node's canonical JSON", but the
-    canonical path alone leaks no schema — so without `authoring` the agent
+    canonical path alone leaks no schema - so without `authoring` the agent
     GUESSES the file shape and produces something the node can't render (this
     is the composer "blank hero" + spline "2D-instead-of-3D" failure class).
     `authoring` is the slot that carries the target's schema + production modes
@@ -3803,7 +3803,7 @@ def io_contract_violations():
     fails before the broken contract can be synced to the daemon.
     """
     # Productive ingests that hand an agent a SCHEMA/PROTOCOL to follow MUST
-    # carry a non-empty `authoring` string — else the agent guesses and ships
+    # carry a non-empty `authoring` string - else the agent guesses and ships
     # the wrong medium (the composer "blank hero" / shader→CSS / section
     # no-grid failure class). `editTarget` additionally needs a `canonical`
     # file template. `assetWrite` is handled per-assetKind below; `folderWrite`
@@ -3824,7 +3824,7 @@ def io_contract_violations():
             if not (isinstance(authoring, str) and authoring.strip()):
                 problems.append(
                     f"{kind}.{port}: {ingest} accept is missing a non-empty `authoring` "
-                    f"contract — an agent wired here would have to GUESS what to produce. "
+                    f"contract - an agent wired here would have to GUESS what to produce. "
                     f"Add an `authoring` instruction (see _SPLINE_AUTHORING / "
                     f"_COMPOSER_AUTHORING / _SECTION_AUTHORING; NODE_IO_FRAMEWORK.md step 4).")
 
@@ -3836,7 +3836,7 @@ def io_contract_violations():
         auth = ASSET_KIND_AUTHORING.get(ak)
         if not (isinstance(auth, str) and auth.strip()):
             problems.append(
-                f"asset.assetKind={ak!r}: no entry in ASSET_KIND_AUTHORING — an agent wired to "
+                f"asset.assetKind={ak!r}: no entry in ASSET_KIND_AUTHORING - an agent wired to "
                 f"a {ak!r} asset would not be told what the medium is or how to produce it. Add "
                 f"an ASSET_KIND_AUTHORING[{ak!r}] entry (NODE_IO_FRAMEWORK.md step 4).")
     return problems
@@ -3845,7 +3845,7 @@ def io_contract_violations():
 _io_problems = io_contract_violations()
 if _io_problems:
     raise RuntimeError(
-        "KIND_IO contract integrity check failed — productive ingests (editTarget / "
+        "KIND_IO contract integrity check failed - productive ingests (editTarget / "
         "sectionWrite / asset media) need an `authoring` contract (see NODE_IO_FRAMEWORK.md):"
         "\n  - " + "\n  - ".join(_io_problems))
 
@@ -3857,8 +3857,8 @@ def kind_contract(node_kind: str, node_id: str = None):
     Returns a merged dict, or None if the kind is unknown.
 
     Per-id overrides support TWO forms:
-      • exact match — overrides[node_id]
-      • prefix wildcard — overrides["prefix_"] applies to any id starting with
+      • exact match - overrides[node_id]
+      • prefix wildcard - overrides["prefix_"] applies to any id starting with
         "prefix_". Used for openEnded per-instance contracts like the Coherence
         Pass's `v_<assetId>` vision-verify nodes (one per visual trio)."""
     base = KINDS.get(node_kind)
@@ -3886,7 +3886,7 @@ def kind_contract(node_kind: str, node_id: str = None):
     return base
 
 
-def stage_pause_after(code: str) -> bool:  # noqa: ARG001 — kept for API compat
+def stage_pause_after(code: str) -> bool:  # noqa: ARG001 - kept for API compat
     """Legacy stage-pause check. STAGES list is empty post-v3.5, so always False."""
     return False
 
@@ -3895,7 +3895,7 @@ def editable_field_keys(node) -> list:
     """Return the field keys this node's kind treats as user-editable.
     The frontend's dirty-tracking machinery (savedSnapshotRef) consults this.
     Mirrors the legacy app.js _editableFieldsForKind function but derived
-    from the registry — single source of truth (Principle 1)."""
+    from the registry - single source of truth (Principle 1)."""
     if not isinstance(node, dict): return []
     kind = node.get("kind")
     if not kind: return []

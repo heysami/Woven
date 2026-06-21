@@ -44,7 +44,7 @@ svg: |
   Apply to all stroked paths. Use vector geometry only; no fills.
 webgl: |
   line shader with subtle width noise + ink-blot simulation at line ends
-raster: avoid — plotter is inherently vector
+raster: avoid - plotter is inherently vector
 ```
 
 ## Reactive behaviors
@@ -53,14 +53,14 @@ raster: avoid — plotter is inherently vector
 
 **Highlight**: pointer can advance a stroke (drawing-in-progress register)
 
-**Depth**: none — flat ink on paper
+**Depth**: none - flat ink on paper
 
 **Parallax**: none
 
 ## Common implementation mistakes (avoid these)
 
 - variable stroke width (a plotter uses one pen at a time)
-- filled regions (plotters don't fill — they hatch)
+- filled regions (plotters don't fill - they hatch)
 - antialiased curves without ink-jitter
 
 ## Examples in the wild

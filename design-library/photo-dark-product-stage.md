@@ -4,7 +4,7 @@ name: Dark product stage
 category: product
 era: current
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, aesthetic-monochrome-pop-poster, recipe-bento-marketing, style-silk-chrome-flow, aesthetic-surreal-dream-stage]
-notForUseWhen: Brief is friendly, affordable, mass-market, or pastel — theater darkness reads exclusive.
+notForUseWhen: Brief is friendly, affordable, mass-market, or pastel - theater darkness reads exclusive.
 images:
   - src: photo-dark-product-stage.png
     reason: Photography style sample.
@@ -12,7 +12,7 @@ images:
 
 # Dark product stage
 
-Single product spot-lit on dark organic staging — rocks, slate, velvet black — falloff into theater darkness.
+Single product spot-lit on dark organic staging - rocks, slate, velvet black - falloff into theater darkness.
 
 ## Visual signatures
 

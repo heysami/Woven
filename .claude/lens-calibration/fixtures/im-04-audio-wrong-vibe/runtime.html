@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>im-04 — AESTHETIC-FAIL (wrong vibe audio) fixture</title>
+<head><meta charset="utf-8"><title>im-04 - AESTHETIC-FAIL (wrong vibe audio) fixture</title>
 <style>body,html{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui}
 #stage{display:flex;align-items:center;justify-content:center;height:100%}
 #start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);flex-direction:column;gap:16px}
@@ -10,7 +10,7 @@
 <div id="stage"><h2>Tone Painter</h2></div>
 <div id="start-gate"><h2>Tone Painter</h2><p>Move the mouse to play.</p><button id="start-btn">Start</button></div>
 <script type="module">
-// ─── BAD PATTERN — brief committed to "warm FM, low-passed, no synthetic
+// ─── BAD PATTERN - brief committed to "warm FM, low-passed, no synthetic
 // transients" but runtime ships sawtooth lead OscillatorNode + bright
 // resonant filter + no warmth. aesthetic-lens §3.1 antiPattern check +
 // §3.4 sensoryTargets.audio match must catch.
@@ -29,11 +29,11 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   limiter = audioCtx.createDynamicsCompressor(); limiter.threshold.value = -1;
   master.connect(limiter).connect(audioCtx.destination);
 
-  // ❌ Sawtooth LEAD — brief said "warm FM, no synthetic transients"
+  // ❌ Sawtooth LEAD - brief said "warm FM, no synthetic transients"
   osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 220;
   filter = audioCtx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.Q.value = 12;      // ❌ Bright resonant peak — fights "warm" register
+  filter.Q.value = 12;      // ❌ Bright resonant peak - fights "warm" register
   filter.frequency.value = 3000;
   osc.connect(filter).connect(master);
   osc.start();

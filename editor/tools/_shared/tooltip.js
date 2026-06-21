@@ -1,8 +1,8 @@
 /* ───────────────────────────────────────────────────────────────────────────
    Woven instant tooltips for tool-iframe chrome.
 
-   Native `title` tooltips are slow (~1s), can fail to appear, and — worse for us
-   — get CLIPPED by a panel/toolbar that has `overflow:auto` (e.g. the floating
+   Native `title` tooltips are slow (~1s), can fail to appear, and - worse for us
+   - get CLIPPED by a panel/toolbar that has `overflow:auto` (e.g. the floating
    icon toolbar). This replaces them with a custom tooltip that:
      • shows INSTANTLY on hover,
      • is appended to <body> as position:fixed, so it escapes any panel overflow,

@@ -13,11 +13,11 @@ images:
 
 # Corporate-Memphis Energetic Action (Blush)
 
-Bright-palette mid-action flat-vector characters — bouncy, dope, doing hobbies, group celebration. Merges Blush's Happy-Bunch / Hobbies / Shiny-Happy families. Distinct from the Scenes variant (muted, single-prop, everyday-quiet) by saturation and motion energy.
+Bright-palette mid-action flat-vector characters - bouncy, dope, doing hobbies, group celebration. Merges Blush's Happy-Bunch / Hobbies / Shiny-Happy families. Distinct from the Scenes variant (muted, single-prop, everyday-quiet) by saturation and motion energy.
 
 ## Visual signatures
 
-- bouncy characters mid-action — dope poses, slightly comic exaggeration
+- bouncy characters mid-action - dope poses, slightly comic exaggeration
 - active mid-motion (skateboarding, dancing, weight-lifting, travel, celebration)
 - inclusive group compositions, holding hands, laughing
 - bright friendly saturated palette

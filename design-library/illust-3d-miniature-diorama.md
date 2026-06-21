@@ -5,7 +5,7 @@ category: 3D
 subCategory: scenic-miniature
 role: hero
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-positivity-kawaii, recipe-bento-marketing, aesthetic-frutiger-eco, shell-scroll-journey-scene]
-notForUseWhen: Brief needs gravitas, luxury, or enterprise seriousness — miniatures read charming.
+notForUseWhen: Brief needs gravitas, luxury, or enterprise seriousness - miniatures read charming.
 images:
   - src: illust-3d-miniature-diorama.png
     reason: Illustration style sample.
@@ -13,13 +13,13 @@ images:
 
 # 3D miniature diorama world
 
-A tiny self-contained world — floating island, zen garden, micro-village — rendered in soft 3D with toy-scale charm.
+A tiny self-contained world - floating island, zen garden, micro-village - rendered in soft 3D with toy-scale charm.
 
 ## Visual signatures
 
-- Self-contained scene on a floating base or circular plinth — edges visible, world-as-object
+- Self-contained scene on a floating base or circular plinth - edges visible, world-as-object
 - Toy proportions: chunky trees, small houses, rounded terrain
-- Soft studio lighting with gentle ambient occlusion — museum-vitrine feel
+- Soft studio lighting with gentle ambient occlusion - museum-vitrine feel
 - Tilt-shift depth of field reinforcing miniature scale
 - Tiny narrative details: a path, a bench, a lantern, one tiny figure
 
@@ -29,7 +29,7 @@ A tiny self-contained world — floating island, zen garden, micro-village — r
 
 **Material**: soft matte clay-plastic surfaces, subtle subsurface scattering on foliage
 
-**Line**: no outlines — soft shading carries the form
+**Line**: no outlines - soft shading carries the form
 
 **Color**: fresh pastels + natural greens, one warm accent (lantern glow, roof red)
 

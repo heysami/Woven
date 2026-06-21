@@ -12,15 +12,15 @@ images:
 
 # Atkinson dither (original-Macintosh classic)
 
-Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** — created for the original Macintosh in 1984. Distinct from Bayer (regular grid) in that Atkinson is **error-diffusion** but only spreads ¾ of the quantization error (vs Floyd-Steinberg's full error), producing **stronger contrast, blown-out highlights, lots of white space**. The hallmark of early Macintosh screenshots, HyperCard stacks, MacPaint compositions. Bolder and cleaner than Bayer or Floyd-Steinberg.
+Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** - created for the original Macintosh in 1984. Distinct from Bayer (regular grid) in that Atkinson is **error-diffusion** but only spreads ¾ of the quantization error (vs Floyd-Steinberg's full error), producing **stronger contrast, blown-out highlights, lots of white space**. The hallmark of early Macintosh screenshots, HyperCard stacks, MacPaint compositions. Bolder and cleaner than Bayer or Floyd-Steinberg.
 
 ## Visual signatures
 
 - 1-bit black-and-white with **stronger contrast** than other dithering algorithms
-- highlights tend to **blow out to pure white** — Atkinson loses ¼ of the error so brights don't accumulate dots
+- highlights tend to **blow out to pure white** - Atkinson loses ¼ of the error so brights don't accumulate dots
 - shadows have clean dot patterns without the muddy noise of Floyd-Steinberg
-- silhouettes read cleanly — bolder/punchier than Bayer
-- iconic mid-1980s Macintosh screenshot aesthetic — MacPaint, HyperCard, classic Mac apps
+- silhouettes read cleanly - bolder/punchier than Bayer
+- iconic mid-1980s Macintosh screenshot aesthetic - MacPaint, HyperCard, classic Mac apps
 - works well on portraits where the subject's silhouette punches against blown-out background
 - distinct "shimmering" quality in the midtone dot patterns
 
@@ -28,7 +28,7 @@ Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** — created
 
 **Primary**: Atkinson dither, original Macintosh 1984, 1-bit error diffusion, blown highlights, MacPaint aesthetic
 
-**Lighting**: original any — Atkinson tends to favor high-contrast originals
+**Lighting**: original any - Atkinson tends to favor high-contrast originals
 
 **Camera / lens**: any source
 
@@ -49,7 +49,7 @@ Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** — created
 ## Example prompt template
 
 > Editorial portrait of [SUBJECT] reduced to **1-bit using Bill Atkinson's
-> dithering algorithm** (original-Macintosh-1984 style) — strong contrast
+> dithering algorithm** (original-Macintosh-1984 style) - strong contrast
 > with blown-out white highlights (Atkinson loses ¼ of the quantization
 > error so brights don't accumulate dots), clean dot patterns in the
 > shadows without muddy noise, bold punchy silhouette of the subject

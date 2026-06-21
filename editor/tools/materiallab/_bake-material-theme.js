@@ -1,5 +1,5 @@
 // General: extract a Material Lab material (verbatim shader + runtime) and emit
-// a self-activating design-system theme runtime themes/<theme>.js — the same
+// a self-activating design-system theme runtime themes/<theme>.js - the same
 // machinery glassmorphism uses, parameterised by material. Run:  node _bake-material-theme.js
 const fs = require('fs');
 const path = require('path');
@@ -44,13 +44,14 @@ const matToUniforms = funcText('matToUniforms');
 const drawBackdropInto = funcText('drawBackdropInto');
 const glassRuntime = funcText('glassRuntime');
 
-// Material Lab BASE_PARAMS (index.html) — themes layer their material overrides on top.
+// Material Lab BASE_PARAMS (index.html) - themes layer their material overrides on top.
 const BASE_PARAMS = {
   profile: 'convex', ior: 1.50, thickness: 38, bezel: 0.45, dispersion: 0.18, frost: 0.0,
   specular: 0.70, shininess: 80, fresnel: 0.50, tint: '#ffffff', tintAmt: 0.0, alpha: 1.0, holo: false,
   colorA: '#c9d2de', colorB: '#1a1f27', scale: 22, rough: 0.5, anis: 0.6, glow: 1.0,
 };
-const SURF = '.card,.section-card,.stat-hero,.chart-card,.modal,.slideout,.btn--primary,.btn--outline,.input,.select,.textarea,.badge,.tag,.kpi,.metric-tile,.topbar,.sidebar,.phone__tabbar';
+// Shader runs on NON-SCROLLING chrome only - zero lag under native scroll.
+const SURF = '.topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.fab,.fab-stack .fab,[data-float-panel]';
 
 function emitTheme(cfg) {
   // cfg: { theme, materialId, activationClass, params, backdrop }
@@ -62,7 +63,7 @@ function emitTheme(cfg) {
     material: Object.assign({ type: cfg.materialId }, BASE_PARAMS, cfg.params || {}),
   };
   const FRAG_SRC = GLSL_HEAD + '\n' + materialShade(cfg.materialId) + '\n' + GLSL_MAIN;
-  const mod = `/* GENERATED from editor/tools/materiallab — verbatim ${cfg.materialId} runtime. Do not hand-edit. */
+  const mod = `/* GENERATED from editor/tools/materiallab - verbatim ${cfg.materialId} runtime. Do not hand-edit. */
 (function(){
 "use strict";
 var VS_SRC=${JSON.stringify(VS_SRC)};

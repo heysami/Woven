@@ -4,7 +4,7 @@ name: Elemental ocean cinematic
 category: cinematic
 era: current
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, recipe-warm-restraint, shell-scroll-journey-scene]
-notForUseWhen: Brief is cozy, indoor, or small-scale — open water reads vast, powerful, and slightly dangerous.
+notForUseWhen: Brief is cozy, indoor, or small-scale - open water reads vast, powerful, and slightly dangerous.
 images:
   - src: photo-elemental-ocean.png
     reason: Photography style sample.
@@ -12,13 +12,13 @@ images:
 
 # Elemental ocean cinematic
 
-Open water as raw power — towering swell faces, storm texture, spray frozen mid-air — graded dark and reverent.
+Open water as raw power - towering swell faces, storm texture, spray frozen mid-air - graded dark and reverent.
 
 ## Visual signatures
 
 - The water IS the subject: wave faces, swell lines to the horizon, churned foam texture
 - Dramatic marine light: storm-filtered sun, silver backlight through crests, deep slate-blue shadow
-- Frozen kinetic detail — spray and droplets sharp at 1/2000s — or long-exposure silk for the calm variant
+- Frozen kinetic detail - spray and droplets sharp at 1/2000s - or long-exposure silk for the calm variant
 - Horizon discipline: level, placed low or high deliberately, vast sky or vast water
 - No people, or one tiny vessel/swimmer for terrifying scale
 

@@ -35,7 +35,7 @@ css: |
     radial-gradient(circle at center, #000 0.5px, transparent 1.5px) 0 0/4px 4px;
   transform: rotate(45deg);  /* black at 45° */
 svg: |
-  Per-channel halftone: C @ 15°, M @ 75°, Y @ 0°, K @ 45° — the rosette
+  Per-channel halftone: C @ 15°, M @ 75°, Y @ 0°, K @ 45° - the rosette
   pattern that hides moiré. Use <pattern> with rotated transforms.
 webgl: |
   Sample image luminance, per-channel threshold against rotated dot grid.

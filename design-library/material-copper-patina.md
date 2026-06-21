@@ -13,7 +13,7 @@ images:
 
 # Copper with Verdigris Patina
 
-A matte surface that reacts to light: yes — but the patina kills most specular.
+A matte surface that reacts to light: yes - but the patina kills most specular.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — but the patina kills most specular
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — but the patina kills most specular
+**Reacts to light**: yes - but the patina kills most specular
 
 **Deforms**: no
 
@@ -36,7 +36,7 @@ css: |
     radial-gradient(ellipse at 70% 80%, oklch(70% 0.08 165) 0%, transparent 45%),
     oklch(40% 0.10 35);  /* copper base */
 svg: |
-  patina spots — <feTurbulence baseFrequency="0.02"/> + <feColorMatrix> tinted toward verdigris green
+  patina spots - <feTurbulence baseFrequency="0.02"/> + <feColorMatrix> tinted toward verdigris green
 raster: real-world copper-patina photograph as the truth
 ```
 
@@ -44,7 +44,7 @@ raster: real-world copper-patina photograph as the truth
 
 **Light**: highlight only on un-patinated areas (use mask)
 
-**Highlight**: minimal — patina absorbs light
+**Highlight**: minimal - patina absorbs light
 
 **Depth**: none
 

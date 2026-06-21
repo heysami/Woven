@@ -7,7 +7,7 @@ role: subject
 pairsPrototypes: [aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-persona-5-heist-pop, style-pixel-bitmap, recipe-y2k-memphis-loud]
 notForUseWhen: restrained-editorial, cottagecore, B2B-clean, premium-luxury-restraint
 # NEEDS REGENERATION (2026-06-11). Prior illust-spiderverse-comic-halftone.png
-# was pulled — it showed a figure jumping with a box near buildings but
+# was pulled - it showed a figure jumping with a box near buildings but
 # lacked the DEFINING SIGNATURE of this aesthetic: Ben-Day dots, line
 # hatching, halftone screens applied via custom crosshatch shaders, comic-
 # book printing artifacts (color misregistration, paper-grain noise, ink-
@@ -17,7 +17,7 @@ notForUseWhen: restrained-editorial, cottagecore, B2B-clean, premium-luxury-rest
 # When regenerating: the prompt MUST anchor on Ben-Day dot pattern,
 # halftone screen overlays, hatched shading, slight CMYK misregistration on
 # character silhouettes (the multi-colour ink-edge offset), and paper-grain
-# noise. The character can be anything — Spider-Man-adjacent or original —
+# noise. The character can be anything - Spider-Man-adjacent or original -
 # but the print-shader treatment over CG is the whole point. See §Visual
 # signatures below for the full checklist.
 images:
@@ -27,19 +27,19 @@ images:
 
 # Spider-Verse comic-halftone (Sony Imageworks)
 
-*Spider-Man: Into the Spider-Verse* (Sony Pictures Animation, 2018) — the canonical reference for **comic-book printing aesthetic baked into CG**. The signature is **Ben-Day dots, line hatching, halftone screens applied via custom crosshatch shaders** to entire 3D objects/characters/scenes (Sony built the **Hatcher** and **Thresher** tools in Nuke for this). Plus the famous **animating on twos** (12fps poses held over 24fps timeline) that gives it the staccato 2D-animation rhythm audiences subconsciously read as "comic book."
+*Spider-Man: Into the Spider-Verse* (Sony Pictures Animation, 2018) - the canonical reference for **comic-book printing aesthetic baked into CG**. The signature is **Ben-Day dots, line hatching, halftone screens applied via custom crosshatch shaders** to entire 3D objects/characters/scenes (Sony built the **Hatcher** and **Thresher** tools in Nuke for this). Plus the famous **animating on twos** (12fps poses held over 24fps timeline) that gives it the staccato 2D-animation rhythm audiences subconsciously read as "comic book."
 
 ## Visual signatures
 
 - **Ben-Day dots** (halftone color separation dots) applied over 3D color
 - **line hatching** for shadow and texture
-- **comic book printing artifacts** baked in — slight color misregistration, paper-grain noise, ink-bleed
-- characters and environments share the halftone treatment — UNIFIED looking-painted-on-printed-paper
-- **animation on twos** (12fps unique poses held over 24fps) — gives 2D-animation staccato feel
+- **comic book printing artifacts** baked in - slight color misregistration, paper-grain noise, ink-bleed
+- characters and environments share the halftone treatment - UNIFIED looking-painted-on-printed-paper
+- **animation on twos** (12fps unique poses held over 24fps) - gives 2D-animation staccato feel
 - onomatopoeic comic-book caption boxes appearing in environments ("CRASH!", "THWIP!")
 - **multi-color edge offsets** (chromatic-aberration-like, but inked) at character silhouettes
 - 3D motion blur replaced with **stylized streak lines** (speed-line comic shorthand)
-- color palette ranges by Spider character (Miles Morales — purple-magenta-cyan; Peter B Parker — muted browns; Gwen — soft pastels)
+- color palette ranges by Spider character (Miles Morales - purple-magenta-cyan; Peter B Parker - muted browns; Gwen - soft pastels)
 - compositional speech-bubble layouts that read as comic-book panels
 
 ## Prompt keywords
@@ -50,7 +50,7 @@ images:
 
 **Line**: hand-inked-feeling line work, **multi-color chromatic-aberration edge offsets** at silhouettes, comic-book caption boxes
 
-**Color**: vibrant comic-book color palette — pick character register: Miles purple-magenta-cyan, Peter B muted browns, Gwen soft pastels — but always punchy saturated
+**Color**: vibrant comic-book color palette - pick character register: Miles purple-magenta-cyan, Peter B muted browns, Gwen soft pastels - but always punchy saturated
 
 **Style**: comic-book panel composition, speech-bubble layouts, speed-line streak motion shorthand, animation-on-twos staccato pose-holds
 
@@ -71,13 +71,13 @@ images:
 ## Example prompt template
 
 > Comic-book-aesthetic 3D character illustration of [SUBJECT] in the
-> **Spider-Verse Sony Imageworks aesthetic** — 3D character geometry with
+> **Spider-Verse Sony Imageworks aesthetic** - 3D character geometry with
 > **Ben-Day-dot halftone color overlay**, **line-hatching for shadow areas**,
 > comic-book printing artifacts (slight color misregistration, paper-grain
 > noise, ink-bleed at edges), **multi-color chromatic-aberration edge
 > offsets** at the character silhouette. Vibrant saturated color palette
 > (purple-magenta-cyan for Miles register OR muted browns for Peter B OR
-> soft pastels for Gwen — pick ONE), composed like a comic-book panel with
+> soft pastels for Gwen - pick ONE), composed like a comic-book panel with
 > a **speech-bubble caption** ("THWIP!") in the corner. Animation-on-twos
 > staccato pose-hold quality (NOT smooth 24fps interpolation). Speed-line
 > streaks if mid-motion. Spider-Verse (Sony Pictures Imageworks)

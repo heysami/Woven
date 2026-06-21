@@ -15,7 +15,7 @@ images:
 
 ## Surface treatment
 
-System surface with hairline separators, grouped rounded containers, and a precise type scale. Nothing decorative — the only ornament is the radius and the hairline.
+System surface with hairline separators, grouped rounded containers, and a precise type scale. Nothing decorative - the only ornament is the radius and the hairline.
 
 ### Color
 - Background: `oklch(96% 0.002 240)` system grey, or pure white `#FFFFFF`
@@ -28,7 +28,7 @@ System surface with hairline separators, grouped rounded containers, and a preci
 - Destructive: system red `#FF3B30`
 
 ### Type
-- Family: `-apple-system, "SF Pro Text", "SF Pro Display", system-ui` — SF Pro Rounded only for playful subjects, SF Mono only for code/timers
+- Family: `-apple-system, "SF Pro Text", "SF Pro Display", system-ui` - SF Pro Rounded only for playful subjects, SF Mono only for code/timers
 - Scale: 13 (footnote) / 15 (subhead) / 17 (body, default) / 20 (title 3) / 22 (title 2) / 28 (title 1) / 34 (large title)
 - Weights: 400 body, 600 headlines, 700 large title
 - Line-height: 1.29 body, 1.2 titles
@@ -36,7 +36,7 @@ System surface with hairline separators, grouped rounded containers, and a preci
 
 ### Geometry
 - Container radius: `10px` grouped lists, `12-14px` cards, `22px` pill buttons, full-round avatars
-- Hairline: `0.5px solid` separator color — never `1px`
+- Hairline: `0.5px solid` separator color - never `1px`
 - Tap targets: minimum 44×44pt
 - Inset list separator: starts at 16pt from leading edge of content (skips icon column)
 

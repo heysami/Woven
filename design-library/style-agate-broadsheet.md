@@ -23,24 +23,24 @@ images:
 **Ink**
 - Body: near-black `oklch(15% 0.01 80)`
 - Greys: dot-screen `oklch(70% 0.005 80)` for rules, captions, agate scaffolding
-- Accent: a **single** brand colour — WSJ red, FT orange-red, NYT cobalt op-ed, Guardian blue. Never two accents on one page.
+- Accent: a **single** brand colour - WSJ red, FT orange-red, NYT cobalt op-ed, Guardian blue. Never two accents on one page.
 
-**Type stack — three jobs, three faces**
-- **Display serif (optical-size cuts):** Escrow, Cheltenham, Financier, Tiempos Headline — Display / Text / Banner cuts switched by size
-- **Sans deck / kicker:** Exchange, Franklin Gothic, Guardian Sans — uppercase kickers, sentence-case decks
+**Type stack - three jobs, three faces**
+- **Display serif (optical-size cuts):** Escrow, Cheltenham, Financier, Tiempos Headline - Display / Text / Banner cuts switched by size
+- **Sans deck / kicker:** Exchange, Franklin Gothic, Guardian Sans - uppercase kickers, sentence-case decks
 - **Agate numeric face (mandatory for any numeric column):** Retina, Empirica, Benton Modern Compressed, Bureau Grotesque Agate. Tabular figures, condensed widths. Without it the surface dies.
 
 **Sizes**
 - Agate: 9 / 10 px (tables, market data, scores)
-- Body: 13–15 px serif
-- Deck: 16–18 px sans
+- Body: 13-15 px serif
+- Deck: 16-18 px sans
 - Kicker: 12 px sans uppercase, +80 tracking
 - Display: 28 / 36 / 48 / 64 / 96 px serif
 
 **Line-height**
-- Body 1.3–1.4 (denser than magazine; this is a tell)
+- Body 1.3-1.4 (denser than magazine; this is a tell)
 - Agate 1.15
-- Display 0.95–1.05
+- Display 0.95-1.05
 
 **Radius:** 0. Everything. No exceptions.
 
@@ -48,7 +48,7 @@ images:
 - 1px hairline rules between sections (`oklch(70% 0.005 80)`)
 - 2px black masthead rule above **and** below the title
 - 0.5px column rules optional in dense tables
-- Kicker bar: 2px solid accent, 24–40px wide, sitting above the headline
+- Kicker bar: 2px solid accent, 24-40px wide, sitting above the headline
 
 **Shadow:** none. Ever. This is print.
 
@@ -59,7 +59,7 @@ images:
 - Kicker bars in the single accent colour
 - Drop caps on lede paragraphs (3-line, display serif)
 - Byline dingbats (em-dash, bullet, or small caps "BY")
-- Table tombstones — boxed numeric callouts with rule-top, rule-bottom
+- Table tombstones - boxed numeric callouts with rule-top, rule-bottom
 
 **Decoration grammar (forbidden)**
 - Rounded corners
@@ -71,7 +71,7 @@ images:
 
 ## Motion
 
-Ticker marquee only — linear, infinite, ~40s per cycle. No hover lifts, no fades, no parallax. Page loads as a static document.
+Ticker marquee only - linear, infinite, ~40s per cycle. No hover lifts, no fades, no parallax. Page loads as a static document.
 
 ## Failure mode
 

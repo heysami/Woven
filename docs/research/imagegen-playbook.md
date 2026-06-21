@@ -12,7 +12,7 @@ visual / illustration / photography orchestrators author for it.
 
 ## When not to use
 
-- Extending or matching an existing SVG / vector icon set, logo system, or illustration library inside the repo — prefer the `svg-gen` skill or editing the source vector directly
+- Extending or matching an existing SVG / vector icon set, logo system, or illustration library inside the repo - prefer the `svg-gen` skill or editing the source vector directly
 - Simple shapes, diagrams, wireframes, or icons better produced as code (`svg-gen`, `viz`, `html-page`, `shader`)
 - A small project-local edit when the source file already exists in an editable native format
 - Any task where deterministic code-native output beats a generated bitmap
@@ -21,8 +21,8 @@ visual / illustration / photography orchestrators author for it.
 
 Think about two separate axes:
 
-1. **Intent** — new image or edit of an existing image?
-2. **Execution strategy** — one asset or many?
+1. **Intent** - new image or edit of an existing image?
+2. **Execution strategy** - one asset or many?
 
 ### Intent
 
@@ -42,38 +42,38 @@ Assume new image unless the user clearly asks to change an existing one.
 ## Use-case taxonomy
 
 Classify each request into one of these buckets. Keep the slug consistent
-across prompts and downstream references — orchestrators that read this file
+across prompts and downstream references - orchestrators that read this file
 use the slug to look up per-bucket tips and templates.
 
 ### Generate
 
-- `photorealistic-natural` — candid / editorial lifestyle with real texture and natural lighting
-- `product-mockup` — product / packaging shots, catalog imagery, merch concepts
-- `ui-mockup` — app / web interface mockups and wireframes (specify fidelity)
-- `infographic-diagram` — diagrams / infographics with structured layout and text
-- `scientific-educational` — classroom explainers, scientific diagrams, learning visuals with label + accuracy constraints
-- `ads-marketing` — campaign concepts and ad creatives with audience, brand position, scene, exact tagline
-- `productivity-visual` — slide, chart, workflow, data-heavy business visuals
-- `logo-brand` — logo / mark exploration, vector-friendly
-- `illustration-story` — comics, children's book art, narrative scenes
-- `stylized-concept` — style-driven concept art, 3D / stylized renders
-- `historical-scene` — period-accurate world-knowledge scenes
+- `photorealistic-natural` - candid / editorial lifestyle with real texture and natural lighting
+- `product-mockup` - product / packaging shots, catalog imagery, merch concepts
+- `ui-mockup` - app / web interface mockups and wireframes (specify fidelity)
+- `infographic-diagram` - diagrams / infographics with structured layout and text
+- `scientific-educational` - classroom explainers, scientific diagrams, learning visuals with label + accuracy constraints
+- `ads-marketing` - campaign concepts and ad creatives with audience, brand position, scene, exact tagline
+- `productivity-visual` - slide, chart, workflow, data-heavy business visuals
+- `logo-brand` - logo / mark exploration, vector-friendly
+- `illustration-story` - comics, children's book art, narrative scenes
+- `stylized-concept` - style-driven concept art, 3D / stylized renders
+- `historical-scene` - period-accurate world-knowledge scenes
 
 ### Edit
 
-- `text-localization` — translate / replace in-image text, preserve layout
-- `identity-preserve` — try-on, person-in-scene; lock face / body / pose
-- `precise-object-edit` — remove / replace a specific element (including interior swaps)
-- `lighting-weather` — time-of-day / season / atmosphere changes only
-- `background-extraction` — transparent background / clean cutout (see [Transparent backgrounds](#transparent-backgrounds))
-- `style-transfer` — apply reference style while changing subject / scene
-- `compositing` — multi-image insert / merge with matched lighting / perspective
-- `sketch-to-render` — drawing / line art to photoreal render
+- `text-localization` - translate / replace in-image text, preserve layout
+- `identity-preserve` - try-on, person-in-scene; lock face / body / pose
+- `precise-object-edit` - remove / replace a specific element (including interior swaps)
+- `lighting-weather` - time-of-day / season / atmosphere changes only
+- `background-extraction` - transparent background / clean cutout (see [Transparent backgrounds](#transparent-backgrounds))
+- `style-transfer` - apply reference style while changing subject / scene
+- `compositing` - multi-image insert / merge with matched lighting / perspective
+- `sketch-to-render` - drawing / line art to photoreal render
 
 ## Shared prompt schema
 
 Use the following labeled spec as scaffolding. Lines are scaffolding, not a
-closed schema — drop the ones that don't help, add a short extra labeled line
+closed schema - drop the ones that don't help, add a short extra labeled line
 when it materially improves clarity.
 
 ```text
@@ -148,7 +148,7 @@ to every request.
 - For edits, say `change only X; keep Y unchanged` and repeat invariants on
   every iteration to reduce drift.
 - Add negative constraints (`no logos`, `no watermark`, `no text unless
-  requested`) explicitly — image models default to "more, please" otherwise.
+  requested`) explicitly - image models default to "more, please" otherwise.
 
 ## Text in images
 
@@ -173,14 +173,14 @@ to every request.
 ## Iterate deliberately
 
 - Start with a clean base prompt; then make small single-change edits.
-- Re-specify critical constraints when you iterate — image models drop them
+- Re-specify critical constraints when you iterate - image models drop them
   silently between turns.
 - Prefer one targeted follow-up at a time over rewriting the whole prompt.
 
 ## Transparent backgrounds
 
 The right path depends on what the chosen model supports. There's no single
-correct workflow — pick by model and by subject complexity.
+correct workflow - pick by model and by subject complexity.
 
 1. **Model supports `background=transparent` natively** (e.g., gpt-image-1.5,
    FLUX in some configurations, recraft-v3 with the `image_type=png` flag) →
@@ -212,62 +212,62 @@ No cast shadow, no contact shadow, no reflection, no watermark, and no text unle
 
 ### Generate
 
-- **`photorealistic-natural`** — prompt as if a real photo captured in the
+- **`photorealistic-natural`** - prompt as if a real photo captured in the
   moment; use photography language (lens, lighting, framing); call for real
   texture; avoid over-stylized polish unless requested.
-- **`product-mockup`** — describe product / packaging and materials; ensure
+- **`product-mockup`** - describe product / packaging and materials; ensure
   clean silhouette and label clarity; for in-image text, require verbatim
   rendering and specify typography.
-- **`ui-mockup`** — describe target fidelity first (shippable mockup or
+- **`ui-mockup`** - describe target fidelity first (shippable mockup or
   low-fi wireframe), then focus on layout, hierarchy, practical UI elements;
   avoid concept-art language.
-- **`infographic-diagram`** — define audience and layout flow; label parts
+- **`infographic-diagram`** - define audience and layout flow; label parts
   explicitly; require verbatim text; prefer higher model quality for dense
   labels.
-- **`logo-brand`** — keep it simple and scalable; ask for a strong silhouette
+- **`logo-brand`** - keep it simple and scalable; ask for a strong silhouette
   and balanced negative space; avoid decorative flourishes unless requested.
-- **`ads-marketing`** — write like a creative brief; include brand
+- **`ads-marketing`** - write like a creative brief; include brand
   positioning, audience, desired vibe, scene, and exact tagline if text must
   appear.
-- **`productivity-visual`** — name the exact artifact (slide, chart, workflow
+- **`productivity-visual`** - name the exact artifact (slide, chart, workflow
   diagram), define canvas + hierarchy, provide real labels / data, ask for
   readable typography and polished spacing.
-- **`scientific-educational`** — define audience, lesson objective, required
+- **`scientific-educational`** - define audience, lesson objective, required
   labels, scientific constraints, arrows, and scan-friendly whitespace.
-- **`illustration-story`** — define panels or scene beats; keep each action
+- **`illustration-story`** - define panels or scene beats; keep each action
   concrete.
-- **`stylized-concept`** — specify style cues, material finish, rendering
+- **`stylized-concept`** - specify style cues, material finish, rendering
   approach (3D, painterly, clay) without inventing new story elements.
-- **`historical-scene`** — state location / date and required period
+- **`historical-scene`** - state location / date and required period
   accuracy; constrain clothing, props, environment to match the era.
 
 ### Edit
 
-- **`text-localization`** — change only the text; preserve layout,
+- **`text-localization`** - change only the text; preserve layout,
   typography, spacing, hierarchy; no extra words or reflow unless needed.
-- **`identity-preserve`** — lock identity (face, body, pose, hair,
+- **`identity-preserve`** - lock identity (face, body, pose, hair,
   expression); change only the specified elements; match lighting and
   shadows.
-- **`precise-object-edit`** — specify exactly what to remove / replace;
+- **`precise-object-edit`** - specify exactly what to remove / replace;
   preserve surrounding texture and lighting; keep everything else unchanged.
-- **`lighting-weather`** — change only environmental conditions (light,
+- **`lighting-weather`** - change only environmental conditions (light,
   shadows, atmosphere, precipitation); keep geometry, framing, subject
   identity.
-- **`background-extraction`** — for simple opaque subjects, request a clean
+- **`background-extraction`** - for simple opaque subjects, request a clean
   cutout on a flat chroma-key background (see [Transparent backgrounds]);
   crisp silhouette; generous padding; no shadows; no halos; preserve label
   text exactly; no restyling.
-- **`style-transfer`** — specify style cues to preserve (palette, texture,
+- **`style-transfer`** - specify style cues to preserve (palette, texture,
   brushwork) and what must change; add `no extra elements` to prevent drift.
-- **`compositing`** — reference inputs by index; specify what moves where;
+- **`compositing`** - reference inputs by index; specify what moves where;
   match lighting, perspective, scale; keep base framing unchanged.
-- **`sketch-to-render`** — preserve layout, proportions, perspective; choose
+- **`sketch-to-render`** - preserve layout, proportions, perspective; choose
   materials and lighting that support the supplied sketch without adding new
   elements.
 
 ## Sample prompt recipes
 
-Copy-paste starting points. Adapt — don't blindly apply. Specifically, do
+Copy-paste starting points. Adapt - don't blindly apply. Specifically, do
 NOT treat these as the default augmentation budget for every request; they
 are full recipes for thoroughly-specified asks.
 
@@ -462,7 +462,7 @@ Constraints: background must be one uniform color with no shadows, gradients, te
 
 In Woven, chain the result into a `rembg` node to extract the alpha. If the
 subject is too complex for chroma-key (hair, fur, glass, liquids, soft
-shadows), use a model that supports native transparent output instead — see
+shadows), use a model that supports native transparent output instead - see
 [Transparent backgrounds](#transparent-backgrounds).
 
 #### style-transfer
@@ -709,24 +709,24 @@ Constraints: no gradients; no mockups; no 3D; no watermark
 A condensed pass that ties everything above together. Run through this once
 per request before any image-gen call.
 
-1. Decide intent — `generate` or `edit`.
-2. Decide execution strategy — single asset vs many distinct assets (one call
+1. Decide intent - `generate` or `edit`.
+2. Decide execution strategy - single asset vs many distinct assets (one call
    each) vs variants of one prompt (`n` or repeated calls + seeds).
 3. Decide use-case slug from the [Use-case taxonomy](#use-case-taxonomy).
 4. Collect inputs up front: prompt(s), exact text (verbatim), constraints,
    avoid list, input images.
-5. For every input image, label its role explicitly — reference, edit
+5. For every input image, label its role explicitly - reference, edit
    target, supporting insert / style / compositing input.
 6. Apply the [Specificity policy](#specificity-policy). Normalize specific
    prompts; tastefully augment generic ones; do NOT invent.
 7. Fill in the [Shared prompt schema](#shared-prompt-schema). Drop lines that
    don't help.
-8. Pick the right model for the job — text-heavy → a model with strong
+8. Pick the right model for the job - text-heavy → a model with strong
    typography; photorealism → a high-quality general model; transparent
    output → a model with native transparency support, or chain through
    `rembg` after a chroma-key prompt.
 9. Generate. Inspect against subject, style, composition, text accuracy,
    invariants, avoid items.
 10. Iterate with single targeted changes. Re-state critical constraints each
-    iteration — they drop silently otherwise.
+    iteration - they drop silently otherwise.
 11. Report the final prompt and the chosen model so future-you can resume.

@@ -13,16 +13,16 @@ images:
 
 # Fur-rendered mascot 3D (Pixar Sully-grade)
 
-Pixar-Monsters-Inc-grade simulated fur — characters and objects rendered with **millions of individually-simulated hairs**, soft cuddly volume, big-fluffy-touchable form. The "warm hug" / "I want to pet it" register. Sully from Monsters Inc has 2.3M hairs (5.5M in Monsters University) — that's the benchmark. Used for friendly-tech mascots, kids' brands, soft-luxury skincare, anywhere you want a character that feels touchable through the screen.
+Pixar-Monsters-Inc-grade simulated fur - characters and objects rendered with **millions of individually-simulated hairs**, soft cuddly volume, big-fluffy-touchable form. The "warm hug" / "I want to pet it" register. Sully from Monsters Inc has 2.3M hairs (5.5M in Monsters University) - that's the benchmark. Used for friendly-tech mascots, kids' brands, soft-luxury skincare, anywhere you want a character that feels touchable through the screen.
 
 ## Visual signatures
 
-- **visible fur strands** at every silhouette edge — not painted texture, real geometry
-- soft cuddly volume — slightly squashed forms, soft gravity-droop
-- fur catches a directional rim-light along the silhouette — the iconic "halo of light through hair"
-- subsurface scatter at thin parts (ears, fingers, tail tip) — pink translucence
+- **visible fur strands** at every silhouette edge - not painted texture, real geometry
+- soft cuddly volume - slightly squashed forms, soft gravity-droop
+- fur catches a directional rim-light along the silhouette - the iconic "halo of light through hair"
+- subsurface scatter at thin parts (ears, fingers, tail tip) - pink translucence
 - big expressive eyes, friendly proportions, oversized hands/feet
-- studio-soft lighting — large soft key + softer fill, no harsh shadow
+- studio-soft lighting - large soft key + softer fill, no harsh shadow
 - often paired with simple gradient backdrop or matched-tone environment
 - fur color may be saturated-pastel (turquoise Sully, magenta Boo-monster) or naturalistic (caramel bear, white-fluff bunny)
 
@@ -42,7 +42,7 @@ Pixar-Monsters-Inc-grade simulated fur — characters and objects rendered with 
 
 ## Named references
 
-**Studios / films**: Pixar Monsters Inc (2001) — Sully (2.3M hairs), Monsters University (2013) — Sully (5.5M hairs), Inside Out, Onward; DreamWorks Trolls; Illumination Sing
+**Studios / films**: Pixar Monsters Inc (2001) - Sully (2.3M hairs), Monsters University (2013) - Sully (5.5M hairs), Inside Out, Onward; DreamWorks Trolls; Illumination Sing
 
 **Brands**: Beats Studio Pro launch (fluffy ear-cushion 3D marketing), Aardman fluffy characters, IKEA stuffed-toy 3D promo, kids'-streaming-service mascots
 
@@ -50,7 +50,7 @@ Pixar-Monsters-Inc-grade simulated fur — characters and objects rendered with 
 
 ## Example prompt template
 
-> Fur-rendered 3D mascot of [SUBJECT — friendly monster / animal / abstract
+> Fur-rendered 3D mascot of [SUBJECT - friendly monster / animal / abstract
 > creature], **millions of individually-simulated fur strands** visible at
 > every silhouette edge, soft cuddly volume with slight gravity-droop, big
 > expressive eyes and friendly oversized proportions, directional rim-light

@@ -22,7 +22,7 @@ A surface drawn on an integer pixel grid with `image-rendering: pixelated` and `
 ### Palette
 
 - Pick ONE indexed palette and never leave it. Declare as CSS custom properties `--c0`..`--c15`.
-- 4 to 16 swatches max — no interpolation, no `color-mix`, no `oklch` ramps.
+- 4 to 16 swatches max - no interpolation, no `color-mix`, no `oklch` ramps.
 - Greys are stepped: `#fcfcfc -> #bcbcbc -> #7c7c7c -> #000000`. Never `#888`.
 - Exemplars:
   - **NES**: `#fcfcfc` paper / `#7c7c7c` shade / `#000000` ink / `#f83800` action-red / `#0078f8` cobalt link / `#00a800` confirm-green / `#f8b800` coin-yellow / `#d800cc` menu-magenta.
@@ -32,7 +32,7 @@ A surface drawn on an integer pixel grid with `image-rendering: pixelated` and `
 
 ### Type stack
 
-- Headers / CTAs: **Press Start 2P** — only at `8 / 16 / 24 / 32 px`, never 14 or 18.
+- Headers / CTAs: **Press Start 2P** - only at `8 / 16 / 24 / 32 px`, never 14 or 18.
 - Body: **VT323** or **Silkscreen**.
 - Dense dialog: **m5x7** or **monogram**.
 - CJK falls back to a clean system sans (Hiragino, Noto). Do NOT force pixelation on Asian glyphs.
@@ -40,7 +40,7 @@ A surface drawn on an integer pixel grid with `image-rendering: pixelated` and `
 ### Sizes & rhythm
 
 - Sizes: `8 / 16 / 24 / 32 / 48 px` only. Multiples of 8. No half-steps.
-- Line-height: integer pixel values, not unitless ratios. Body `16px / 16px` (1.0) or `24px / 16px` for breathing dialog. Display `1.0` — no leading on headers.
+- Line-height: integer pixel values, not unitless ratios. Body `16px / 16px` (1.0) or `24px / 16px` for breathing dialog. Display `1.0` - no leading on headers.
 - Radius: `0px` everywhere. `border-radius` is forbidden. Cut corners come from a 1px-cut corner sprite.
 
 ### Borders & shadows
@@ -58,7 +58,7 @@ A surface drawn on an integer pixel grid with `image-rendering: pixelated` and `
 
 ## Motion budget
 
-- 0ms or stepped only. `transition: none` on hover — prefer JS class swap.
+- 0ms or stepped only. `transition: none` on hover - prefer JS class swap.
 - Allowed: `animation: blink 1s steps(2, jump-none) infinite` for cursors; 8-step sprite-sheet walks via `animation-timing-function: steps(8)`; 16ms instant state flips.
 - Forbidden: any `cubic-bezier`, `ease-in-out`, `transform: scale` tweens, opacity fades over 100ms, smooth slides.
 

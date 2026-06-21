@@ -1,5 +1,5 @@
 {
-  "_intent": "CRAFT-FAIL (permission leak) fixture — runtime calls navigator.mediaDevices.getUserMedia() AT MODULE LOAD with no Start gate. craft-lens §3.1 'Permission requested behind a user gesture' must catch as block-severity. Aesthetic + concept are downstream and irrelevant once craft blocks.",
+  "_intent": "CRAFT-FAIL (permission leak) fixture - runtime calls navigator.mediaDevices.getUserMedia() AT MODULE LOAD with no Start gate. craft-lens §3.1 'Permission requested behind a user gesture' must catch as block-severity. Aesthetic + concept are downstream and irrelevant once craft blocks.",
   "craft": {
     "verdict": "fail",
     "must_cite": ["getUserMedia", "user gesture", "Start"],
@@ -9,7 +9,7 @@
   },
   "aesthetic": {
     "verdict": "n/a",
-    "skip_reason_hint": "runtime fails to even reach a viewable state due to permission block; aesthetic-lens may pass on the gradient potential or skip — either acceptable"
+    "skip_reason_hint": "runtime fails to even reach a viewable state due to permission block; aesthetic-lens may pass on the gradient potential or skip - either acceptable"
   },
   "concept": {
     "verdict": "n/a",

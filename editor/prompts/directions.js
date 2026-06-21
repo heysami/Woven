@@ -7,7 +7,7 @@ window.TH_DIRECTIONS = [
   {
     id:          "editorial-mono",
     label:       "Editorial Mono",
-    mood:        "Authoritative and precise — long-form reading, editorial credibility, anchored in print tradition.",
+    mood:        "Authoritative and precise - long-form reading, editorial credibility, anchored in print tradition.",
     displayFont: "EB Garamond",
     bodyFont:    "IBM Plex Mono",
     palette:     ["#111111", "#F5F1EB", "#C8B89A", "#E8E2D9", "#6B5B45"],
@@ -16,7 +16,7 @@ window.TH_DIRECTIONS = [
   {
     id:          "warm-craft",
     label:       "Warm Craft",
-    mood:        "Tactile and considered — artisan goods, slow-made products, markets, studios.",
+    mood:        "Tactile and considered - artisan goods, slow-made products, markets, studios.",
     displayFont: "Fraunces",
     bodyFont:    "Space Grotesk",
     palette:     ["#2C1A0E", "#F7F0E6", "#D4956A", "#A85C38", "#EDE0CF"],
@@ -25,7 +25,7 @@ window.TH_DIRECTIONS = [
   {
     id:          "minimal-tech",
     label:       "Minimal Tech",
-    mood:        "Sharp and purposeful — SaaS dashboards, dev tools, data products, B2B.",
+    mood:        "Sharp and purposeful - SaaS dashboards, dev tools, data products, B2B.",
     displayFont: "IBM Plex Sans",
     bodyFont:    "IBM Plex Mono",
     palette:     ["#0F172A", "#F8FAFC", "#3B82F6", "#E2E8F0", "#64748B"],
@@ -34,7 +34,7 @@ window.TH_DIRECTIONS = [
   {
     id:          "bold-type",
     label:       "Bold Type",
-    mood:        "Loud and confident — agencies, launches, fashion, culture, high-contrast statement.",
+    mood:        "Loud and confident - agencies, launches, fashion, culture, high-contrast statement.",
     displayFont: "Fraunces",
     bodyFont:    "IBM Plex Sans",
     palette:     ["#0D0D0D", "#FFED00", "#FF2D55", "#FFFFFF", "#1A1A1A"],
@@ -43,7 +43,7 @@ window.TH_DIRECTIONS = [
   {
     id:          "bright-modern",
     label:       "Bright Modern",
-    mood:        "Optimistic and open — consumer apps, communities, education, wellness.",
+    mood:        "Optimistic and open - consumer apps, communities, education, wellness.",
     displayFont: "Space Grotesk",
     bodyFont:    "IBM Plex Sans",
     palette:     ["#18181B", "#F4F4F5", "#6366F1", "#A5B4FC", "#EDE9FE"],
@@ -52,7 +52,7 @@ window.TH_DIRECTIONS = [
   {
     id:          "hacker-mono",
     label:       "Hacker Mono",
-    mood:        "Terminal-native — CLI tools, open-source projects, technical documentation.",
+    mood:        "Terminal-native - CLI tools, open-source projects, technical documentation.",
     displayFont: "JetBrains Mono",
     bodyFont:    "JetBrains Mono",
     palette:     ["#0D1117", "#F0F6FC", "#39D353", "#21262D", "#7EE787"],

@@ -19,7 +19,7 @@ matte fingerprinted clay surface with subtle thumbprint dents.
 
 - matte fingerprinted clay surface with subtle thumbprint dents
 - soft rounded forms with no sharp edges
-- matte muted palette — terracotta, dusty pink, butter yellow
+- matte muted palette - terracotta, dusty pink, butter yellow
 - characters or objects sit on coordinated paper stage
 
 ## Prompt keywords

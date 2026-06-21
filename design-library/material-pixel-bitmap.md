@@ -23,7 +23,7 @@ A matte surface.
 
 **Reacts to light**: no
 
-**Deforms**: no — instant or stepped state changes only
+**Deforms**: no - instant or stepped state changes only
 
 **Age / wear**: ageless
 

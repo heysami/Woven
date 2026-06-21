@@ -13,7 +13,7 @@ images:
 
 # Smooth Leather (full-grain, polished)
 
-A semi-gloss surface that reacts to light: yes — soft specular sweep and deforms: yes.
+A semi-gloss surface that reacts to light: yes - soft specular sweep and deforms: yes.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A semi-gloss surface that reacts to light: yes — soft specular sweep and defor
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — soft specular sweep
+**Reacts to light**: yes - soft specular sweep
 
 **Deforms**: yes
 

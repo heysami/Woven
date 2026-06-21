@@ -18,4 +18,4 @@ You are Subagent 1.V.shader.
 - Wired into the source HTML's existing scripts (no new external <script src> tags)
 - A node entry in `workflow/workflow.json` if tracked
 
-**Style**: respect DS tokens for color — read the active DS's CSS variables and use those as the shader's uniform colors. Avoid full-screen heavy effects unless explicitly called for; lean toward subtle/ambient.
+**Style**: respect DS tokens for color - read the active DS's CSS variables and use those as the shader's uniform colors. Avoid full-screen heavy effects unless explicitly called for; lean toward subtle/ambient.

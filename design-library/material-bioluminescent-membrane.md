@@ -13,19 +13,19 @@ images:
 
 # Bioluminescent membrane
 
-A translucent organic tissue that reacts to light: inverted — it IS the light source; subsurface glow pulses slowly from within, falling off into true black with no ambient fill.
+A translucent organic tissue that reacts to light: inverted - it IS the light source; subsurface glow pulses slowly from within, falling off into true black with no ambient fill.
 
 ## Physical behavior
 
 **Surface finish**: wet-glossy outer film over soft subsurface interior (jellyfish bell, lantern-flora petal)
 
-**Transparency**: translucent — inner structures (veins, gills, cores) silhouette through the tissue
+**Transparency**: translucent - inner structures (veins, gills, cores) silhouette through the tissue
 
-**Reacts to light**: self-emissive — external light is nearly irrelevant; the membrane glows from inside, brightest at the core/veins, dimming toward edges
+**Reacts to light**: self-emissive - external light is nearly irrelevant; the membrane glows from inside, brightest at the core/veins, dimming toward edges
 
-**Deforms**: yes — slow pulse (4-8s breathing cycle), tendril drift, medusa-bell contraction
+**Deforms**: yes - slow pulse (4-8s breathing cycle), tendril drift, medusa-bell contraction
 
-**Age / wear**: living — variation between individuals, never two identical
+**Age / wear**: living - variation between individuals, never two identical
 
 ## Implementation strategies
 
@@ -50,21 +50,21 @@ video: dark-water loop; organism pulse reads even in 10s loops
 
 ## Reactive behaviors
 
-**Pointer**: organism shies or leans — tendrils ease 2-4° toward/away from cursor with heavy lag (1-2s); glow brightens +15% on approach. Never snaps.
+**Pointer**: organism shies or leans - tendrils ease 2-4° toward/away from cursor with heavy lag (1-2s); glow brightens +15% on approach. Never snaps.
 
-**Scroll** (journey formats): depth increases — glow hue cools, particle density rises, organism count thins.
+**Scroll** (journey formats): depth increases - glow hue cools, particle density rises, organism count thins.
 
 ## Common implementation mistakes (avoid these)
 
-- Ambient fill light in the scene (kills the abyss — the organism must be the ONLY light)
+- Ambient fill light in the scene (kills the abyss - the organism must be the ONLY light)
 - Neon `text-shadow` on every label "to match" (the glow belongs to the organism, not the chrome)
 - Fast pulse (<3s reads as alarm, not breathing)
-- Radial-gradient blob with no internal structure (lava lamp, not life — veins/cores required)
+- Radial-gradient blob with no internal structure (lava lamp, not life - veins/cores required)
 - Electric-blue everywhere: keep UI ink matte and dark; one glow family
 
 ## Examples in the wild
 
-- Hashgraph Ventures (glowing jellyfish — "the next wave of venture capital")
+- Hashgraph Ventures (glowing jellyfish - "the next wave of venture capital")
 - Totem crypto ecosystem totems
 - *Blue Planet II* "The Deep" sequences; *Avatar* night flora
 

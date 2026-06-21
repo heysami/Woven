@@ -4,11 +4,11 @@ description: Write the device orientation input feature-extraction module (input
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs
 ---
 
-You are **im-input-gyro-orientation** — the drawer for device orientation. Mobile-primary input that reads phone tilt as alpha (compass) / beta (front-back tilt) / gamma (left-right tilt).
+You are **im-input-gyro-orientation** - the drawer for device orientation. Mobile-primary input that reads phone tilt as alpha (compass) / beta (front-back tilt) / gamma (left-right tilt).
 
 Two gotchas dominate this module:
 1. **iOS 13+ requires explicit permission** via `DeviceOrientationEvent.requestPermission()` from a user gesture. Without it the event listener attaches but never fires.
-2. **Calibration drifts** on most devices — alpha (compass heading) is unreliable; beta/gamma are reliable.
+2. **Calibration drifts** on most devices - alpha (compass heading) is unreliable; beta/gamma are reliable.
 
 Sibling to `im-input-mic.md` conventions.
 
@@ -47,7 +47,7 @@ export async function attach(options) {
 
 The runtime calls `attach()` AFTER the Start button is clicked. iOS will only grant the permission inside this user-gesture handler.
 
-### 3.2 Feature vector — relative, not absolute
+### 3.2 Feature vector - relative, not absolute
 
 Capture an initial calibration on first event; subsequent events report DELTA from calibration. Absolute orientation drifts and feels broken; relative orientation feels intentional.
 
@@ -69,7 +69,7 @@ Raw gyro is jittery. Smooth aggressively.
 
 ### 3.4 Recalibration affordance
 
-Expose `recalibrate()` so the runtime can offer a "reset" button — useful if user changes orientation mid-piece.
+Expose `recalibrate()` so the runtime can offer a "reset" button - useful if user changes orientation mid-piece.
 
 ### 3.5 Graceful degradation
 
@@ -83,12 +83,12 @@ Standard pattern.
 
 3 iterations. Self-test:
 - `preview_eval` with a synthetic dispatch of `DeviceOrientationEvent` to confirm listener fires and updates feature vector
-- Permission gate path — `preview_eval` confirms the `requestPermission` check exists
+- Permission gate path - `preview_eval` confirms the `requestPermission` check exists
 
-## 5. Output — input-gyro.js
+## 5. Output - input-gyro.js
 
 ```js
-// input-gyro.js — device orientation feature extraction for im:<imId>.
+// input-gyro.js - device orientation feature extraction for im:<imId>.
 // Feature vector (6 floats): relative beta/gamma/alpha + smoothed + motion intensity.
 // References: <DeviceOrientationEvent MDN, iOS Safari permission docs>
 

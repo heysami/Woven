@@ -1,5 +1,5 @@
 /* ===========================================================================
-   SOURCES — shared parametric value-source evaluator.
+   SOURCES - shared parametric value-source evaluator.
 
    A value source (number-generator / timeline) DRIVES a numeric param of a
    position / effect / trigger block. The editor bakes the binding onto the

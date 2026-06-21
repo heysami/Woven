@@ -13,7 +13,7 @@ images:
 
 # Weathered Leather (vintage, distressed)
 
-A matte surface that reacts to light: minor specular at non-worn areas and deforms: yes — creases at handle points.
+A matte surface that reacts to light: minor specular at non-worn areas and deforms: yes - creases at handle points.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface that reacts to light: minor specular at non-worn areas and defor
 
 **Reacts to light**: minor specular at non-worn areas
 
-**Deforms**: yes — creases at handle points
+**Deforms**: yes - creases at handle points
 
 **Age / wear**: acquired patina (cracks, discoloration)
 

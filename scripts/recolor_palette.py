@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-recolor_palette.py — perceptual, palette-based image recoloring.
+recolor_palette.py - perceptual, palette-based image recoloring.
 
 Detects an image's color palette (k color groups), then recolors the image by
 editing one or more of those palette colors. Edits are specified in OKLCH

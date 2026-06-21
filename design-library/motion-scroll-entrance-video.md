@@ -7,7 +7,7 @@ role: product
 binding: scroll-trigger
 medium: video
 pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, recipe-devtools-marketing, recipe-scientific-infra-marketing]
-notForUseWhen: The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival — this technique ends in a still hold frame.
+notForUseWhen: The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival - this technique ends in a still hold frame.
 images:
   - src: motion-scroll-entrance-video-ui.png
     reason: Motion technique UI mockup.
@@ -17,21 +17,21 @@ images:
 
 # Scroll-entrance video (asset arrives, then holds)
 
-A play-once video fires the moment the section scrolls into view: the product slides/rises/unfolds into place and SETTLES on a final hold frame — to the visitor it reads as a static asset that happened to arrive beautifully (the iPhone-17-Pro entrance pattern).
+A play-once video fires the moment the section scrolls into view: the product slides/rises/unfolds into place and SETTLES on a final hold frame - to the visitor it reads as a static asset that happened to arrive beautifully (the iPhone-17-Pro entrance pattern).
 
 ## Motion signature
 
 - Triggered ONCE per page load by `IntersectionObserver` at ~35% visibility; `video.play()`, no loop.
-- Ends on the last frame and stays there (`video.pause()` on `ended`, or simply no `loop` attribute) — the hold frame IS the section's resting layout.
+- Ends on the last frame and stays there (`video.pause()` on `ended`, or simply no `loop` attribute) - the hold frame IS the section's resting layout.
 - The entrance direction agrees with scroll direction: scrolling down → the asset enters from the bottom or scales up from depth. Entering against scroll feels wrong.
-- After the hold, the scene's "always something in motion" duty passes to a secondary layer (specular sweep, ambient particles, type shimmer) — never to the settled product itself.
+- After the hold, the scene's "always something in motion" duty passes to a secondary layer (specular sweep, ambient particles, type shimmer) - never to the settled product itself.
 
 ## Asset generation spec
 
-- **Resolution**: 1920×1080 minimum (2160p preferred for hold-frame crispness — the last frame is stared at).
-- **Composition**: the FINAL frame is the layout contract — generate so the settled subject sits exactly where the storyboard anchored it (e.g. center-bottom, right third), with the quiet zone clean for UI in every frame of the entrance.
-- **Continuity**: one continuous arrival — object enters from off-frame (bottom/back) and decelerates to a full stop; fixed camera; constant lighting; background matches the page's section background EXACTLY (sample the hex into the prompt) so the video rectangle is invisible.
-- **Duration**: 1.5–3.5s. Longer entrances feel like loading.
+- **Resolution**: 1920×1080 minimum (2160p preferred for hold-frame crispness - the last frame is stared at).
+- **Composition**: the FINAL frame is the layout contract - generate so the settled subject sits exactly where the storyboard anchored it (e.g. center-bottom, right third), with the quiet zone clean for UI in every frame of the entrance.
+- **Continuity**: one continuous arrival - object enters from off-frame (bottom/back) and decelerates to a full stop; fixed camera; constant lighting; background matches the page's section background EXACTLY (sample the hex into the prompt) so the video rectangle is invisible.
+- **Duration**: 1.5-3.5s. Longer entrances feel like loading.
 - **Negative prompt**: no text, no watermark, no camera move, no scene cut, no background drift, no flicker.
 
 ## Interaction binding
@@ -54,9 +54,9 @@ v.addEventListener('ended', () => v.pause());
 
 ## UI composition rules
 
-- Headline + copy may pre-exist the arrival (the asset arrives INTO an already-set page) or animate in on `ended` — pick one, never both moving at once.
+- Headline + copy may pre-exist the arrival (the asset arrives INTO an already-set page) or animate in on `ended` - pick one, never both moving at once.
 - UI sits in the quiet zone of the FINAL frame; verify against the hold frame, not the poster.
-- If copy appears on `ended`, stagger ≤120ms after the settle — the arrival's deceleration and the type's entrance should read as one gesture.
+- If copy appears on `ended`, stagger ≤120ms after the settle - the arrival's deceleration and the type's entrance should read as one gesture.
 
 ## Example asset prompt template
 
@@ -70,15 +70,15 @@ v.addEventListener('ended', () => v.pause());
 
 ## When NOT to use
 
-- Heroes at the very top of the page — there's no scroll-into moment; use ambient-loop-atmosphere or mouse-scrub instead.
-- Assets the user then manipulates (rotate/drag) — use scroll-scrub-rotation.
-- When no video provider is wired — degrade to a raster + CSS transform entrance (translateY + scale + blur-out), same storyboard, one generated still of the final frame.
+- Heroes at the very top of the page - there's no scroll-into moment; use ambient-loop-atmosphere or mouse-scrub instead.
+- Assets the user then manipulates (rotate/drag) - use scroll-scrub-rotation.
+- When no video provider is wired - degrade to a raster + CSS transform entrance (translateY + scale + blur-out), same storyboard, one generated still of the final frame.
 
 ## Performance notes
 
 - ≤5MB target; the clip is short. Preload `auto` only when the section is within 1.5 viewports; `metadata` otherwise.
 - The hold frame must be bit-identical to a generated still fallback so reduced-motion can swap it in: `prefers-reduced-motion` shows the final frame immediately, no playback.
-- Background-color match is the #1 failure — QA diffs the video edge pixels against the section background.
+- Background-color match is the #1 failure - QA diffs the video edge pixels against the section background.
 
 ## Pairs with (prototype slugs)
 
@@ -88,4 +88,4 @@ v.addEventListener('ended', () => v.pause());
 - `recipe-scientific-infra-marketing`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference — product settled on its hold frame with copy in the quiet zone -->
+<!-- reason: representative reference - product settled on its hold frame with copy in the quiet zone -->

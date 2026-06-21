@@ -1,6 +1,6 @@
-# Subagent 1.V.shader — Asset drawer (medium: GLSL fragment shader)
+# Subagent 1.V.shader - Asset drawer (medium: GLSL fragment shader)
 
-You own **ONE asset** of medium `shader` — a decorative background loop, ambient gradient wash, aurora, noise field, or generative pattern that runs in WebGL. **Pathway B**: you write the GLSL fragment shader directly.
+You own **ONE asset** of medium `shader` - a decorative background loop, ambient gradient wash, aurora, noise field, or generative pattern that runs in WebGL. **Pathway B**: you write the GLSL fragment shader directly.
 
 **Read [`../conventions.md`](../conventions.md) before starting.**
 
@@ -35,13 +35,13 @@ Slot is typically a `<div data-shader="…">` or a `<canvas data-webgl="…">`. 
 
 ### 1. Read slot + genre
 
-Same start as the other drawers. The shader-allowed genres (Marketing, Bento, Editorial in limited cases) all have different visual languages — pick the right one:
+Same start as the other drawers. The shader-allowed genres (Marketing, Bento, Editorial in limited cases) all have different visual languages - pick the right one:
 
 | Genre | Allowed shader vocabulary |
 |---|---|
 | Marketing / consumer | Aurora gradients, noise washes, animated grain, hue cycles, soft bokeh |
 | Bento / Apple-style | Subtle per-cell gradients, gentle parallax noise, no aggressive motion |
-| Editorial | One section divider at most — gentle paper-grain or scan-line wash. No color shift. |
+| Editorial | One section divider at most - gentle paper-grain or scan-line wash. No color shift. |
 
 ### 2. Write the fragment shader
 
@@ -74,7 +74,7 @@ void main() {
   vec2 uv = gl_FragCoord.xy / iResolution.xy;
   vec2 p  = (uv - 0.5) * vec2(iResolution.x / iResolution.y, 1.0);
 
-  // your composition here — see "Composition primitives" below
+  // your composition here - see "Composition primitives" below
 
   vec3 col = vec3(0.0);
   // …
@@ -101,12 +101,12 @@ The slot's `performance` flag tells you how aggressive to be:
 
 | Performance | Pixel budget | Constraints |
 |---|---|---|
-| `background` | Cheap — runs on every page | ≤30 ALU ops per pixel, no loops > 4 iter, no derivatives, no `texture()` lookups |
+| `background` | Cheap - runs on every page | ≤30 ALU ops per pixel, no loops > 4 iter, no derivatives, no `texture()` lookups |
 | `hero` | One-time hero | Up to 200 ALU ops, loops up to 32 iter, may sample one input texture |
 
-If unsure, default to `background` — slower iteration is better than a stuttering preview.
+If unsure, default to `background` - slower iteration is better than a stuttering preview.
 
-### 5. Palette — anchor to tokens
+### 5. Palette - anchor to tokens
 
 The prototype's `:root` color tokens are the truth source. Open `styles.css :root` and convert the two or three colors you need into vec3 literals:
 
@@ -145,7 +145,7 @@ If the slot isn't already declared with the right data attribute, emit a diff:
 
 ## Don't
 
-- Don't use shader recipes that ignore the genre's restraint. Linear/Vercel/Bloomberg are not allowed to have shaders — your envelope is wrong if you got one of these. Return `error: "genre forbids shader medium"`.
-- Don't write a shader that's beautiful in isolation but fights the UI on top of it. The shader is a background — it should support, not compete.
+- Don't use shader recipes that ignore the genre's restraint. Linear/Vercel/Bloomberg are not allowed to have shaders - your envelope is wrong if you got one of these. Return `error: "genre forbids shader medium"`.
+- Don't write a shader that's beautiful in isolation but fights the UI on top of it. The shader is a background - it should support, not compete.
 - Don't request input textures unless your runtime confirmed `texture()` support.
 - Don't animate so fast that the user's eye is pulled to the background. Decoration is supposed to be felt, not noticed.

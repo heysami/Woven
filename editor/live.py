@@ -1,4 +1,4 @@
-"""Live Session — host-authoritative multiplayer over the share gate.
+"""Live Session - host-authoritative multiplayer over the share gate.
 
 The realtime sibling of share mode (editor/shares.py). Where shares.py exposes a
 prototype for *view + comment*, live.py exposes the host's living project for
@@ -11,22 +11,22 @@ Design of record: docs/features/live-session.md.
 
 Architecture (mirrors shares.py's daemon-side ownership):
 
-  SESSIONS   — in-memory, per share. Volatile by design: a session is presence +
+  SESSIONS   - in-memory, per share. Volatile by design: a session is presence +
                leases + guest tokens + a set of SSE waiters. Nothing here is
-               persisted — close the daemon and sessions are gone (the doc's
+               persisted - close the daemon and sessions are gone (the doc's
                "session dies with the host's laptop" property).
 
-  GATE WIRING — shares.py owns the single gate listener. live.py registers itself
+  GATE WIRING - shares.py owns the single gate listener. live.py registers itself
                via shares.register_live(); the GateHandler delegates any
                /s/<token>/live* route to handle_gate_get/post here. No second
                server, no import cycle (live imports shares; shares late-binds
                live).
 
-  BRIDGE     — the daemon (serve.py) broadcasts workflow/asset changes per
+  BRIDGE     - the daemon (serve.py) broadcasts workflow/asset changes per
                project_id over its own SSE channel; serve.py also calls
                notify_project_changed() here so live guests see the host's edits
                (and each other's, since guest ops route back through the daemon's
-               normal broadcast). live.py never writes workflow.json directly —
+               normal broadcast). live.py never writes workflow.json directly -
                it calls the apply_node_op / dispatch_run callbacks serve.py wired
                at init(), so every write goes through the daemon's locked,
                broadcasting save path.
@@ -56,7 +56,7 @@ _RESOLVE_PROJECT_ROOT = None    # fn(project_id) -> abs path (raises ValueError)
 _READ_WORKFLOW = None           # fn(project_root) -> dict (sanitized workflow)
 _APPLY_NODE_OP = None           # fn(project_id, op, author) -> dict | raises
 _DISPATCH_RUN = None            # fn(project_id, node_id, author) -> {runId} | raises
-DAEMON_PORT = None              # main daemon port — proxied (read-only) so guests run the REAL editor
+DAEMON_PORT = None              # main daemon port - proxied (read-only) so guests run the REAL editor
 
 LEASE_TTL_S      = 30.0         # a lease auto-expires this long after last touch
 PARTICIPANT_TTL_S = 35.0       # a participant goes stale this long after last beat
@@ -110,7 +110,7 @@ def _canon(project_id):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 1. Session state — in-memory, per share
+# 1. Session state - in-memory, per share
 # ═════════════════════════════════════════════════════════════════════════
 
 class _Waiter:
@@ -143,7 +143,7 @@ class _Waiter:
 
 class _Session:
     """One live session, keyed by share_id. All fields guarded by `lock`
-    except the waiter set ops (which take the lock too). Volatile — never
+    except the waiter set ops (which take the lock too). Volatile - never
     persisted."""
     __slots__ = ("share_id", "project_id", "active", "participants",
                  "leases", "tokens", "waiters", "lock", "_last_presence",
@@ -166,7 +166,7 @@ class _Session:
 _SESSIONS = {}                   # share_id -> _Session
 _SESSIONS_LOCK = threading.Lock()
 
-# Palette for participant cursors — assigned round-robin on join.
+# Palette for participant cursors - assigned round-robin on join.
 _COLORS = ["#F5172A", "#2D7FF9", "#16A34A", "#9333EA", "#EA580C",
            "#0891B2", "#DB2777", "#CA8A04", "#4F46E5", "#0D9488"]
 
@@ -268,7 +268,7 @@ def _leases_public(s):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 2. Broadcast — fan out to this session's SSE waiters
+# 2. Broadcast - fan out to this session's SSE waiters
 # ═════════════════════════════════════════════════════════════════════════
 
 def broadcast(share_id, event_type, data):
@@ -306,7 +306,7 @@ def notify_project_changed(project_id, event_type, data):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 3. Identity — join + token auth
+# 3. Identity - join + token auth
 # ═════════════════════════════════════════════════════════════════════════
 
 def _clip(v, n):
@@ -317,7 +317,7 @@ def join(rec, name, email, github=None, client_id=None):
     """Issue a guest a session token. Always needs a display name; the share's
     email gate additionally needs a plausible email (same policy as comments).
 
-    `client_id` is a stable per-browser id (localStorage) — when present, a
+    `client_id` is a stable per-browser id (localStorage) - when present, a
     refresh REUSES the same participant instead of spawning a duplicate user
     (the old one would otherwise linger until the TTL reap)."""
     share_id = rec.get("id")
@@ -377,7 +377,7 @@ def _auth(s, token):
 
 def _require_editor(p):
     if p.get("role") != "editor":
-        raise PermissionError("viewer role cannot edit — ask the host for editor access")
+        raise PermissionError("viewer role cannot edit - ask the host for editor access")
 
 
 WRITE_RATE_LIMIT = 80           # max mutating ops / guest / second (generous: a
@@ -391,7 +391,7 @@ def _rate_guard(s, guest_id):
         while log and log[0] < cutoff:
             log.pop(0)
         if len(log) >= WRITE_RATE_LIMIT:
-            raise PermissionError("too many requests — slow down")
+            raise PermissionError("too many requests - slow down")
         log.append(now)
 
 
@@ -459,7 +459,7 @@ def set_role(share_id, guest_id, role):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 4. Presence — ephemeral cursors, never persisted
+# 4. Presence - ephemeral cursors, never persisted
 # ═════════════════════════════════════════════════════════════════════════
 
 def presence(s, token, cursor, selection):
@@ -468,7 +468,7 @@ def presence(s, token, cursor, selection):
     with s.lock:
         last = s._last_presence.get(guest_id, 0)
         if now - last < PRESENCE_MIN_INTERVAL_S:
-            return  # rate floor — drop silently
+            return  # rate floor - drop silently
         s._last_presence[guest_id] = now
         if isinstance(cursor, dict):
             p["cursor"] = {"x": _num(cursor.get("x")), "y": _num(cursor.get("y")),
@@ -490,7 +490,7 @@ def _num(v):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 5. Leases — per-element locks, server-enforced
+# 5. Leases - per-element locks, server-enforced
 # ═════════════════════════════════════════════════════════════════════════
 
 def lease_acquire(s, token, target):
@@ -543,7 +543,7 @@ def _holds_lease(s, guest_id, target):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 6. Canvas ops — lease-checked, routed through the daemon's locked save
+# 6. Canvas ops - lease-checked, routed through the daemon's locked save
 # ═════════════════════════════════════════════════════════════════════════
 
 def apply_op(s, token, op):
@@ -571,12 +571,12 @@ def apply_op(s, token, op):
     if op_kind != "move":
         with s.lock:
             s.credits[_credit_line(p)] = True
-    # No explicit broadcast here — apply_node_op → daemon broadcast → bridge.
+    # No explicit broadcast here - apply_node_op → daemon broadcast → bridge.
     return {"ok": True, "result": result}
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 7. Run trigger — fire the HOST's agent on a node
+# 7. Run trigger - fire the HOST's agent on a node
 # ═════════════════════════════════════════════════════════════════════════
 
 def trigger_run(s, token, node_id):
@@ -614,10 +614,10 @@ def trigger_run(s, token, node_id):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 7b. GitHub — device-flow OAuth + fork + PR (guest "take it home" path)
+# 7b. GitHub - device-flow OAuth + fork + PR (guest "take it home" path)
 # ═════════════════════════════════════════════════════════════════════════
 # The guest authenticates IN the collab client via GitHub Device Flow (no
-# redirect URI — works through a churning quick-tunnel hostname). The token is
+# redirect URI - works through a churning quick-tunnel hostname). The token is
 # held SERVER-SIDE on the participant record and never sent to the browser; the
 # gate performs fork + PR on the guest's behalf under their identity.
 
@@ -663,7 +663,7 @@ def _project_remote(rec):
     st = _git.status(root)
     remote = st.get("remote")
     if not remote:
-        raise RuntimeError("this project isn't connected to GitHub yet — ask the host to connect it")
+        raise RuntimeError("this project isn't connected to GitHub yet - ask the host to connect it")
     owner, repo = _git.parse_owner_repo(remote)
     if not owner:
         raise RuntimeError("could not parse the GitHub repo from the remote URL")
@@ -693,7 +693,7 @@ def github_pr(s, rec, token, body):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 7c. Host-side presence — so the HOST (in their own editor, on the daemon)
+# 7c. Host-side presence - so the HOST (in their own editor, on the daemon)
 # sees guests' cursors and broadcasts their own. The host editor loads
 # /__live_cursors.js (injected by serve.py) which talks to the daemon endpoints
 # below; no guest token (the host is trusted daemon-side).
@@ -794,7 +794,7 @@ def lease_holders(project_id):
 
 
 def host_lease_acquire(project_id, target, name="Host"):
-    """Host-side counterpart of lease_acquire (no token — host is trusted).
+    """Host-side counterpart of lease_acquire (no token - host is trusted).
     Soft lock: first holder wins; if a guest already holds it the host does
     NOT steal it, just learns the holder so the editor can show 'locked by X'.
     Broadcasts a `lock` frame so every participant's overlay updates."""
@@ -860,19 +860,19 @@ def release_agent_lease(project_id, node_id):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 8. Gate routing — delegated from shares.GateHandler for /s/<token>/live*
+# 8. Gate routing - delegated from shares.GateHandler for /s/<token>/live*
 # ═════════════════════════════════════════════════════════════════════════
 # shares.py calls GATE.handle_get(handler, rec, sub) / handle_post(...) where
 # `sub` already has the "/live" prefix (e.g. "/live", "/live/api/presence").
 # Returns True if it handled the request (replied), False to let the gate fall
 # through to its own 404.
 
-# ── Serve the REAL editor through the gate (Phase A — read-only) ─────────────
+# ── Serve the REAL editor through the gate (Phase A - read-only) ─────────────
 # So guests render with the actual WorkflowCanvas + node components + styles.css
 # (zero interpretation). Static editor files come straight from disk; project-
 # scoped / daemon-generated resources are PROXIED to the local daemon, GET-only,
 # with project FORCED to the share's project (the client cannot widen scope).
-# Writes are refused. This deliberately widens the gate to a read-proxy — scoped
+# Writes are refused. This deliberately widens the gate to a read-proxy - scoped
 # to one project + a read whitelist.
 
 # Editor files served verbatim from <install>/editor/.
@@ -882,12 +882,12 @@ _EDITOR_STATIC_FILES = {
 _EDITOR_STATIC_DIR_PREFIXES = ("prompts/",)
 # Root-absolute daemon GET paths a guest may read. Everything else 404s.
 # Deliberately EXCLUDES writes, chat/run transcripts, project/share/git
-# management, export — reads the canvas needs only.
+# management, export - reads the canvas needs only.
 _PROXY_READ_PREFIXES = (
     "/__workflow", "/__ds_bootstrap", "/__source", "/__asset",
     "/__preview", "/__layout", "/__starred_prototypes", "/__media",
     "/__local_status", "/__fonts", "/__global_fonts",
-    # /__kinds/registry — the node-kind contract. Without it the guest editor
+    # /__kinds/registry - the node-kind contract. Without it the guest editor
     # falls back to a tiny legacy field list, so _editableFieldsForKind returns
     # [] for most kinds and the reload-merge never pulls a collaborator's
     # content edits (input/select/textarea). Proxy it so content syncs too.
@@ -930,7 +930,7 @@ def _serve_editor_static(h, rel):
     except Exception: pass
     return True
 
-# Guest chrome lockdown — injected into the served editor so guests can't reach
+# Guest chrome lockdown - injected into the served editor so guests can't reach
 # host-only affordances: Projects nav (leave to other projects), Settings/Exports
 # (API keys!), and the node-creation rail/library. They keep the canvas, zoom,
 # pan, and can co-edit existing nodes (which now sync). Tighten/loosen here.
@@ -948,7 +948,7 @@ _GUEST_LOCK_CSS = (
     "</style>"
 ).encode("utf-8")
 # Injected before </body> so live cursors + locks + the guest AI bar mount on the
-# real editor. locks.js MUST load first — it defines window.__thLocks that
+# real editor. locks.js MUST load first - it defines window.__thLocks that
 # cursors.js wires. aikey.js adds the guest top bar + fetch key-injection.
 _GUEST_CURSORS_TAG = (b'<script src="locks.js" defer></script>'
                       b'<script src="cursors.js" defer></script>'
@@ -956,7 +956,7 @@ _GUEST_CURSORS_TAG = (b'<script src="locks.js" defer></script>'
 
 def _live_cookie_header(h, token):
     """th_live cookie. Adds Secure when behind the HTTPS tunnel (Cloudflare sets
-    X-Forwarded-Proto: https) — some browsers drop a non-Secure SameSite cookie
+    X-Forwarded-Proto: https) - some browsers drop a non-Secure SameSite cookie
     on HTTPS, which would 404 the editor's root-absolute /app.js etc. → white."""
     proto = (h.headers.get("X-Forwarded-Proto") or "").lower()
     secure = "; Secure" if proto == "https" else ""
@@ -993,7 +993,7 @@ def _serve_editor_index(h, token):
 
 def _proxy_daemon_read(h, path, query, project):
     """GET <daemon>/<path>?<query+project> and stream it back. Streams SSE.
-    project is FORCED — any client-supplied project is overridden."""
+    project is FORCED - any client-supplied project is overridden."""
     import urllib.request as _ur
     if DAEMON_PORT is None:
         return _json(h, 502, {"error": "daemon unavailable"})
@@ -1008,7 +1008,7 @@ def _proxy_daemon_read(h, path, query, project):
         resp = _ur.urlopen(req, timeout=60)
     except _ue.HTTPError as e:
         # Forward the daemon's real status + body (e.g. a 404 layout.js stays a
-        # 404, which the editor handles with onerror — not a scary 502).
+        # 404, which the editor handles with onerror - not a scary 502).
         body = b""
         try: body = e.read()
         except Exception: pass
@@ -1024,7 +1024,7 @@ def _proxy_daemon_read(h, path, query, project):
         return _json(h, 502, {"error": f"proxy failed: {e}"})
     ctype = resp.headers.get("Content-Type", "application/octet-stream")
     if "text/event-stream" in ctype:
-        # LONG-POLL — Cloudflare quick tunnels buffer a streaming body until the
+        # LONG-POLL - Cloudflare quick tunnels buffer a streaming body until the
         # connection CLOSES (proven: 0 bytes over 19s of a held SSE). So we don't
         # hold: forward daemon events until the FIRST real change (or a ~20s
         # idle cap), then CLOSE so the proxy/edge flushes. The browser's
@@ -1074,7 +1074,7 @@ def _proxy_daemon_read(h, path, query, project):
     return True
 
 def _serve_project_file(h, rec, rel):
-    """Serve a whitelisted prototype/design-system file (read-only) — same
+    """Serve a whitelisted prototype/design-system file (read-only) - same
     realpath-contained, extension-checked logic the share viewer's /p/ uses.
     Powers the real editor's prototype iframes (which load /source/… directly)."""
     import mimetypes
@@ -1125,7 +1125,7 @@ def _rooted_get(h, token, path, query):
     # editor static (app.js, styles.css, prompts/*, landing-shaders.js)
     if rel in _EDITOR_STATIC_FILES or any(rel.startswith(p) for p in _EDITOR_STATIC_DIR_PREFIXES):
         return _serve_editor_static(h, rel)
-    # prototype + design-system files — the editor's iframes load these
+    # prototype + design-system files - the editor's iframes load these
     if rel.startswith("source/") or rel.startswith("design-systems/"):
         return _serve_project_file(h, rec, rel)
     # project data files (data.js, <slug>.layout.js) → proxy to /editor/<file>
@@ -1142,10 +1142,10 @@ def _rooted_get(h, token, path, query):
 # management, export) is refused.
 _PROXY_WRITE_PREFIXES = (
     "/__workflow", "/__layout",
-    # Source / prototype editing — guests edit freely (the host's daemon is
+    # Source / prototype editing - guests edit freely (the host's daemon is
     # authoritative; project is forced to the share's project so a guest can't
     # touch other projects). LLM / agent endpoints are intentionally EXCLUDED
-    # here — they require the guest's OWN API key (see _LLM_WRITE_PREFIXES) and
+    # here - they require the guest's OWN API key (see _LLM_WRITE_PREFIXES) and
     # are blocked until the guest connects one. Dangerous endpoints (git /
     # projects / live / share / commit / workspace) are excluded by this
     # whitelist entirely.
@@ -1155,7 +1155,7 @@ _PROXY_WRITE_PREFIXES = (
     "/__rewrite_element_for_kind", "/__rewrite_img_src",
 )
 
-# LLM / agent endpoints — proxied ONLY when the guest supplies their own API key
+# LLM / agent endpoints - proxied ONLY when the guest supplies their own API key
 # (X-Th-Llm-Key, threaded to the daemon). Blocked otherwise.
 _LLM_WRITE_PREFIXES = (
     "/__llm_run", "/__asset_generate", "/__run", "/__runs",
@@ -1250,7 +1250,7 @@ def _rooted_post(h, token, path):
             writer_name = (p or {}).get("name") if p else None
     if path.startswith("/__") and _proxy_write_ok(path):
         return _proxy_daemon_write(h, path, rec.get("project") or "", writer, writer_name=writer_name)
-    # LLM / agent runs — guests spend their OWN credentials, never the host's.
+    # LLM / agent runs - guests spend their OWN credentials, never the host's.
     # The editor sends them in the live bar's "Connect your AI" panel as either
     # X-Th-Llm-Key (legacy single Anthropic key), X-Th-Llm-Keys (base64-JSON map
     # of per-provider keys), and/or a Claude subscription token inside that map.
@@ -1350,7 +1350,7 @@ class _LiveGate:
                                       "leases": _leases_public(s)})
         if sub == "/live/events":
             return _events_stream(h, s)
-        # People-comments for THIS session's prototype — same store the public
+        # People-comments for THIS session's prototype - same store the public
         # gate + host editor read. Lets a live guest see the review thread from
         # inside the multiplayer editor. No token needed for read (any visitor
         # on the live page can see the comments, same as the share viewer).
@@ -1402,7 +1402,7 @@ class _LiveGate:
                 kick(share_id, guest_id)
                 return _json(h, 200, {"ok": True})
             # Guests may ADD + REPLY to people-comments on the session's
-            # prototype (status/delete stay host-only — they're not exposed
+            # prototype (status/delete stay host-only - they're not exposed
             # here). Authored under the guest's joined name; viewers may comment.
             if sub == "/live/api/comments":
                 guest_id, p = _auth(s, token)
@@ -1558,7 +1558,7 @@ def _events_stream(h, s):
                 break
             # Lock/roster changes are RARE + IMPORTANT (someone grabbed/released
             # a node, or joined/left). Forward them, then CLOSE immediately so
-            # the tunnel edge FLUSHES now — a held SSE body buffers until close
+            # the tunnel edge FLUSHES now - a held SSE body buffers until close
             # over Cloudflare, which is what made locks lag ~1.2s. Cursors
             # (presence) keep batching for the rest of the window so we don't
             # reconnect on every pointer move.
@@ -1581,7 +1581,7 @@ def _sse_chunk(h, payload):
     """Write `payload` as ONE HTTP chunk (hex-length + CRLF framing) and flush.
     Chunked transfer-encoding is what makes cloudflared (and other proxies)
     stream each SSE event immediately instead of buffering a read-until-close
-    body — without this, host→guest mirror + cursors never arrive over a tunnel."""
+    body - without this, host→guest mirror + cursors never arrive over a tunnel."""
     if isinstance(payload, str):
         payload = payload.encode("utf-8")
     h.wfile.write(f"{len(payload):X}\r\n".encode("ascii") + payload + b"\r\n")

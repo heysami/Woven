@@ -13,7 +13,7 @@ images:
 
 # Denim (twill weave, indigo fade)
 
-A matte surface and deforms: yes — soft drape.
+A matte surface and deforms: yes - soft drape.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — soft drape.
 
 **Reacts to light**: no specular
 
-**Deforms**: yes — soft drape
+**Deforms**: yes - soft drape
 
 **Age / wear**: acquired patina (whiskers, fade at stress points)
 
@@ -47,7 +47,7 @@ raster: scanned denim is the truth
 
 **Highlight**: no
 
-**Depth**: yes — drape
+**Depth**: yes - drape
 
 **Parallax**: minimal
 

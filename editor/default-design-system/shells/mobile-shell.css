@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Mobile phone shell — frames content as a phone for mobile screen samples
+   Mobile phone shell - frames content as a phone for mobile screen samples
    (home, profile, list). Status bar → scrollable screen → bottom tab bar.
    Depends on styles.css tokens (load styles.css first). Theme-agnostic.
    ========================================================================== */
@@ -73,12 +73,12 @@
 
 /* ---- full-width segmented control variant ----
    Scoped as .segmented.segmented--mobile (2 classes) so it always beats the base
-   .segmented{display:inline-flex} from styles.css regardless of stylesheet ORDER —
+   .segmented{display:inline-flex} from styles.css regardless of stylesheet ORDER -
    the editor injects all.css AFTER this shell file, which (at equal specificity)
    would otherwise let the base inline-flex win and pack the tabs to the left. */
 .segmented.segmented--mobile{display:flex;width:100%;box-sizing:border-box;}
 /* The buttons are flex containers (align-items:center), so the LABEL is centred
-   with justify-content — text-align alone does nothing on a flex child, which left
+   with justify-content - text-align alone does nothing on a flex child, which left
    the labels pinned to the left of each segment. */
 .segmented.segmented--mobile button{flex:1 1 0;height:34px;justify-content:center;text-align:center;}
 

@@ -1,17 +1,17 @@
 /* ==========================================================================
-   Glassmorphism — STYLE OVERLAY for the Template Design System.
+   Glassmorphism - STYLE OVERLAY for the Template Design System.
    Activate with <html data-theme="glassmorphism">.
 
    iOS "Liquid Glass" + dispersion-prism accent. Every rule is scoped with the
    [data-theme="glassmorphism"] attribute so it layers cleanly over styles.css
    (load this file AFTER styles.css + components/*.css). Raw hex/rgba is
-   intentional here — glass surfaces are computed from light, not painted from
+   intentional here - glass surfaces are computed from light, not painted from
    the brand ramp.
 
-   IMPORTANT — backdrop-filter needs something to refract: it only reads if
+   IMPORTANT - backdrop-filter needs something to refract: it only reads if
    there is a NON-OPAQUE (translucent) background on the element AND a busy,
    colourful layer BEHIND it. That's why <body> below gets a soft gradient-mesh
-   — on a flat white page glass collapses to "fogged plastic". The surfaces use
+   - on a flat white page glass collapses to "fogged plastic". The surfaces use
    rgba() fills (never a solid colour) so the blurred page shows through.
    ========================================================================== */
 
@@ -26,11 +26,11 @@
   --glass-blur-strong:blur(24px) saturate(150%);
   --glass-specular:inset 0 1px 0 rgba(255,255,255,.65), inset 0 -1px 0 rgba(255,255,255,.10);
   --glass-shadow:0 8px 32px -8px rgba(31,38,135,.28), 0 2px 8px -4px rgba(31,38,135,.18);
-  /* dispersion-prism spectral edge — conic rainbow, edges only, never fill */
+  /* dispersion-prism spectral edge - conic rainbow, edges only, never fill */
   --prism-edge:conic-gradient(from 210deg,
     #ff5e5e, #ffd75e, #6eff8a, #5ec8ff, #b95eff, #ff5e5e);
 
-  /* ---- Semantic remap — keep text legible over light glass ---- */
+  /* ---- Semantic remap - keep text legible over light glass ---- */
   --surface:rgba(255,255,255,.16); --surface-default:rgba(255,255,255,.10);
   --surface-medium:rgba(255,255,255,.20); --surface-strong:rgba(255,255,255,.28);
   --surface-inverse:#1A2238;
@@ -39,7 +39,7 @@
   --border-default:rgba(255,255,255,.45); --border-subtle:rgba(255,255,255,.30);
   --interactive-hover:rgba(255,255,255,.28); --interactive-active:rgba(255,255,255,.36);
 
-  /* primary roles FOLLOW THE SELECTED SCHEME — reference the --primary-* ramp the
+  /* primary roles FOLLOW THE SELECTED SCHEME - reference the --primary-* ramp the
      customizer writes (var() resolves through this higher-specificity rule to the
      scheme's value), instead of hardcoding iOS blue which would ignore the scheme. */
   --primary-surface:var(--primary-500); --primary-fg:var(--primary-700); --primary-fg-emphasis:var(--primary-800);
@@ -59,7 +59,7 @@
   --chart-grid:rgba(22,32,58,.14); --chart-axis:rgba(22,32,58,.45);
 }
 
-/* DARK glassmorphism — glassmorphism.js adds html.lg-dark when the selected scheme
+/* DARK glassmorphism - glassmorphism.js adds html.lg-dark when the selected scheme
    is dark (read from --neutral-50 luminance). The base glassmorphism :root above is
    a LIGHT iOS-glass palette; this remaps the surfaces/fg/borders to dark so the page
    the glass refracts is dark too (the WebGL glass itself switches to the dark preset
@@ -80,7 +80,7 @@ html.lg-dark[data-theme="glassmorphism"]{
    Page substrate. The OLD CSS-blur look needed a painted rainbow gradient-mesh
    here so backdrop-filter had something colourful to blur. Our WebGL glass
    refracts the REAL page (the rasterise rule) exactly like the POC, so that fake
-   mesh is wrong — it does not exist in _shader_pill_nav_poc.html and made the
+   mesh is wrong - it does not exist in _shader_pill_nav_poc.html and made the
    background never match. Plain light substrate now; the real content is the
    colour the glass bends.
    -------------------------------------------------------------------------- */
@@ -91,7 +91,7 @@ html.lg-dark[data-theme="glassmorphism"]{
 html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid dark substrate */
 
 /* --------------------------------------------------------------------------
-   Translucent surface set — the core of the look.
+   Translucent surface set - the core of the look.
    Each gets: rgba fill + backdrop blur (+ -webkit- prefix) + lens hairline +
    specular inset + soft contact shadow.
    -------------------------------------------------------------------------- */
@@ -108,7 +108,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
   box-shadow:var(--glass-shadow), var(--glass-specular);
 }
 
-/* The mobile STATUS BAR is device chrome, NOT a glass surface — keep it a plain,
+/* The mobile STATUS BAR is device chrome, NOT a glass surface - keep it a plain,
    transparent bar (the time + glyphs sit over the phone's own background). It is
    excluded from the WebGL SURF list in glassmorphism.js for the same reason. */
 [data-theme="glassmorphism"] .phone__status{
@@ -129,7 +129,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 }
 
 /* --------------------------------------------------------------------------
-   Inputs — faint translucent fields with a light hairline.
+   Inputs - faint translucent fields with a light hairline.
    -------------------------------------------------------------------------- */
 [data-theme="glassmorphism"] .input,
 [data-theme="glassmorphism"] .select,
@@ -161,7 +161,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 }
 
 /* --------------------------------------------------------------------------
-   Buttons — frosted glass tints. The dispersion (spectral fringe) is produced
+   Buttons - frosted glass tints. The dispersion (spectral fringe) is produced
    by the WebGL material at the bezel; it is NOT a painted conic-gradient border
    (that reads as a fake rainbow frame, not refraction).
    -------------------------------------------------------------------------- */
@@ -186,7 +186,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 }
 [data-theme="glassmorphism"] .btn--outline:hover{background:rgba(255,255,255,.26);}
 
-/* Floating action button — frosted glass (CSS fallback; the WebGL shader takes
+/* Floating action button - frosted glass (CSS fallback; the WebGL shader takes
    over in glass-gl mode since the FAB is fixed and never scrolls). */
 [data-theme="glassmorphism"] .fab{
   background:linear-gradient(135deg, color-mix(in srgb, var(--primary-500) 88%, transparent), color-mix(in srgb, var(--primary-700) 88%, transparent));
@@ -196,7 +196,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 }
 
 /* --------------------------------------------------------------------------
-   Badges + tags — frosted pills.
+   Badges + tags - frosted pills.
    -------------------------------------------------------------------------- */
 [data-theme="glassmorphism"] .badge,
 [data-theme="glassmorphism"] .tag{
@@ -209,40 +209,40 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 }
 
 /* --------------------------------------------------------------------------
-   KPI cells (data-dense strip) — softer translucent dividers.
+   KPI cells (data-dense strip) - softer translucent dividers.
    -------------------------------------------------------------------------- */
 [data-theme="glassmorphism"] .kpi{border-left-color:rgba(255,255,255,.35);}
 
 /* --------------------------------------------------------------------------
-   Chart legend swatches — a light glass rim so they read on translucent cards.
+   Chart legend swatches - a light glass rim so they read on translucent cards.
    -------------------------------------------------------------------------- */
 [data-theme="glassmorphism"] .legend__swatch{
   box-shadow:0 0 0 1px rgba(255,255,255,.55), 0 1px 2px rgba(31,38,135,.25);
 }
 
 /* ==========================================================================
-   WebGL glass mode — active once themes/glassmorphism.js mounts the REAL
+   WebGL glass mode - active once themes/glassmorphism.js mounts the REAL
    Material Lab dispersion-prism canvas (it adds `html.glass-gl`).
 
    To keep scrolling FULLY NATIVE and lag-free, the shader runs ONLY on the
    non-scrolling chrome: topbar, sidebar, nav / tab bars, modals, floating
    panels. Those don't move while content scrolls past, so a viewport-fixed
-   shader canvas stays glued to them with zero lag — exactly how iOS Liquid
+   shader canvas stays glued to them with zero lag - exactly how iOS Liquid
    Glass uses it (the bars are glass, the content scrolls cleanly behind).
    Scrolling content (cards, inputs, badges) keeps the lightweight CSS glass
-   from the fallback rules above — native, no lag, no WebGL needed. When
+   from the fallback rules above - native, no lag, no WebGL needed. When
    JS / WebGL2 is unavailable, everything is the CSS fallback.
    ========================================================================== */
-/* PER-ELEMENT glass — the POC's own architecture. glassmorphism.js gives every
+/* PER-ELEMENT glass - the POC's own architecture. glassmorphism.js gives every
    non-scrolling chrome element a WebGL canvas AS A CHILD (canvas.lg-canvas,
    absolute inset:0) and marks the host .lg-host, exactly like the POC's #gl inside
    #nav. The host goes transparent so the canvas IS its surface; the host's own
    content is lifted above the canvas (z-index:1); text darkens so it reads on the
    light glass (the POC uses #10131b dark text on a white text-shadow). */
-/* A glass host is a BARE transparent container — the WebGL canvas is the ONLY
+/* A glass host is a BARE transparent container - the WebGL canvas is the ONLY
    glass (its shader draws the rim/bevel). Kill every CSS glass layer (fill, blur,
    border, specular/contact shadow) so we don't stack a fake panel under the real
-   glass. NOTE: do NOT set position here — that would clobber the element's own
+   glass. NOTE: do NOT set position here - that would clobber the element's own
    position:sticky and it would scroll away. glassmorphism.js sets position:relative
    in JS only when the element is static. */
 [data-theme="glassmorphism"] .lg-host{
@@ -256,7 +256,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
   z-index:0; pointer-events:none; display:block; border-radius:inherit;
 }
 /* lift the host's own content above the glass canvas. z-index alone (no position
-   change) — it takes effect on positioned children (e.g. an absolute decorative
+   change) - it takes effect on positioned children (e.g. an absolute decorative
    wave) immediately, and glassmorphism.js sets position:relative on STATIC children
    only. NEVER force position here: forcing an absolute child to relative drops it
    into flow and shoves the rest of the layout away. */
@@ -277,14 +277,14 @@ html.lg-dark[data-theme="glassmorphism"] .lg-host :is(a,span,div,p,li,h1,h2,h3,h
   -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
   border-color:rgba(255,255,255,.35) !important; color:#12161f !important;
 }
-/* a FILLED primary button / FAB inside a glass host keeps its OWN light text — the
+/* a FILLED primary button / FAB inside a glass host keeps its OWN light text - the
    generic dark-on-glass text rule above would otherwise muddy it dark (the nav
    "Start free" looked dark while the identical hero button was white). */
 [data-theme="glassmorphism"] .lg-host :is(.btn--primary,.fab),
 [data-theme="glassmorphism"] .lg-host :is(.btn--primary,.fab) :is(span,b,i,svg,small){
   color:var(--on-primary, #fff) !important; text-shadow:none !important;
 }
-/* selected side-nav item — a LIGHT frosted highlight, not the dark grey shade the
+/* selected side-nav item - a LIGHT frosted highlight, not the dark grey shade the
    base uses (too dark on the bright glass). Text colour is handled by the .lg-host
    rules above (dark in light mode, light in dark mode). */
 [data-theme="glassmorphism"] .lg-host .nav-link.is-active{
@@ -299,7 +299,7 @@ html.lg-dark[data-theme="glassmorphism"] .lg-host .nav-link.is-active{
 /* landing top nav: internal padding like the storefront so content doesn't touch
    the glass pill's edge. */
 [data-theme="glassmorphism"] .lp-nav{ padding-left:var(--space-l); padding-right:var(--space-l); }
-/* the landing top nav ships static. Sticky on the <nav> itself does nothing —
+/* the landing top nav ships static. Sticky on the <nav> itself does nothing -
    its parent <header class="lp-wrap"> is only nav-height, so there is no room to
    stick within. Make the HEADER (a direct child of body) sticky; the glass nav
    inside pins with it and refracts the page scrolling underneath (iOS-style). The

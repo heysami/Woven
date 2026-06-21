@@ -47,7 +47,7 @@ raster: none
 
 **Highlight**: ripple from touch point on press, 0.4s expansion
 
-**Depth**: containment morph — FAB expands into bottom sheet via shared bounds
+**Depth**: containment morph - FAB expands into bottom sheet via shared bounds
 
 **Parallax**: none
 

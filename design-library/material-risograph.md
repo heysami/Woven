@@ -51,11 +51,11 @@ raster: scanned risograph print as ground truth
 
 **Depth**: no
 
-**Parallax**: subtle — each ink layer at slightly different scroll rate
+**Parallax**: subtle - each ink layer at slightly different scroll rate
 
 ## Common implementation mistakes (avoid these)
 
-- perfect registration (riso is famously misregistered — 1–3px offset is the look)
+- perfect registration (riso is famously misregistered - 1-3px offset is the look)
 - smooth gradients (riso halftones, never blends)
 - full opacity inks (riso ink is semi-transparent)
 - warm paper substrate missing (riso usually prints on cream paper)

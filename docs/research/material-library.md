@@ -1,29 +1,29 @@
-# Material Library — research dossier for material-orchestrator
+# Material Library - research dossier for material-orchestrator
 
-> Canonical reference for the `material-orchestrator` subagent. The orchestrator walks source HTML, identifies elements that wear a material aesthetic (glassmorphism / claymorphism / paper / fabric / risograph / film grain / etc.), and commits a fidelity pass that makes the material FEEL like the real thing — including reactive behaviour to light direction, pointer, device tilt, scroll.
+> Canonical reference for the `material-orchestrator` subagent. The orchestrator walks source HTML, identifies elements that wear a material aesthetic (glassmorphism / claymorphism / paper / fabric / risograph / film grain / etc.), and commits a fidelity pass that makes the material FEEL like the real thing - including reactive behaviour to light direction, pointer, device tilt, scroll.
 >
-> Quality > breadth. Each entry is IMPLEMENTABLE TODAY by a competent frontend developer using only the snippets and citations below — no external assets unless noted.
+> Quality > breadth. Each entry is IMPLEMENTABLE TODAY by a competent frontend developer using only the snippets and citations below - no external assets unless noted.
 
 ---
 
 ## 1. Material principles
 
-A material has FELT physical properties. The web fakes those properties by combining (a) a luminance model — how light enters, scatters, exits — with (b) a substrate model — what's beneath, what's pressed, what's torn. The orchestrator's job is to commit BOTH per material instance, not just paint a surface colour.
+A material has FELT physical properties. The web fakes those properties by combining (a) a luminance model - how light enters, scatters, exits - with (b) a substrate model - what's beneath, what's pressed, what's torn. The orchestrator's job is to commit BOTH per material instance, not just paint a surface colour.
 
 ### 1.1 Light interaction by surface finish
 
-- **Matte (uncoated paper, raw cotton, unglazed clay, suede).** Light is absorbed and scattered diffusely; no specular highlight is visible. The web move is to AVOID `box-shadow` with strong specular layers, AVOID gloss gradients, ADD micro-texture (`<feTurbulence>` at high baseFrequency) at low opacity (3–8%) to break the perfect plane. Matte materials read as matte because they have NO highlight — adding one kills the illusion.
-- **Glossy (varnished wood, ceramic glaze, polished plastic, fresh ink on coated paper).** Light bounces off the surface in a coherent specular reflection. The web move is a SINGLE top-edge highlight, usually a `linear-gradient(180deg, rgba(255,255,255,0.4) 0%, transparent 45%)` masked to the top half — never full-height. The canonical iOS-6 / Frutiger Aero "wet button" gloss covers the top 45%; covering the full height collapses the read to "generic gradient button".
-- **Textured (oatmeal paper, linen, brick, concrete, burlap).** Light scatters at micro-scale; the texture reads at the resolution of the screen. The web move is a tile pattern (PNG or SVG `<pattern>`) at 30–60% scale so the weave/grain is legible. A texture larger than the element prints as a single colour swatch.
-- **Semi-gloss (eggshell paint, satin photo paper, polished concrete).** A weak specular under a diffuse base. The web move is a low-opacity gloss gradient (`linear-gradient(...) at opacity 0.10–0.18`) layered over a textured substrate.
-- **Metallic (chrome, brushed aluminium, gold leaf, copper patina).** Light is reflected coherently (specular) AND the colour gradient depends on the angle to the viewer. Real metal needs an ENVIRONMENT MAP — chrome reflects "something nearby", which on the web is faked with a captured photograph of an indoor scene tinted to the metal's hue. A solid silver gradient without an environment lookup reads as plastic.
-- **Iridescent (Pokemon foil, oil-on-water, butterfly wing, soap bubble).** Light splits into wavelengths because the surface has microscale thickness variations. The hue depends on angle — Pokemon-card iridescence shifts cyan→magenta→gold as you tilt. The web move is a `conic-gradient` in OKLCH for perceptual smoothness, masked into a `mix-blend-mode: color-dodge` layer, with `hue-rotate(var(--tilt))` driven by pointer or gyro.
+- **Matte (uncoated paper, raw cotton, unglazed clay, suede).** Light is absorbed and scattered diffusely; no specular highlight is visible. The web move is to AVOID `box-shadow` with strong specular layers, AVOID gloss gradients, ADD micro-texture (`<feTurbulence>` at high baseFrequency) at low opacity (3-8%) to break the perfect plane. Matte materials read as matte because they have NO highlight - adding one kills the illusion.
+- **Glossy (varnished wood, ceramic glaze, polished plastic, fresh ink on coated paper).** Light bounces off the surface in a coherent specular reflection. The web move is a SINGLE top-edge highlight, usually a `linear-gradient(180deg, rgba(255,255,255,0.4) 0%, transparent 45%)` masked to the top half - never full-height. The canonical iOS-6 / Frutiger Aero "wet button" gloss covers the top 45%; covering the full height collapses the read to "generic gradient button".
+- **Textured (oatmeal paper, linen, brick, concrete, burlap).** Light scatters at micro-scale; the texture reads at the resolution of the screen. The web move is a tile pattern (PNG or SVG `<pattern>`) at 30-60% scale so the weave/grain is legible. A texture larger than the element prints as a single colour swatch.
+- **Semi-gloss (eggshell paint, satin photo paper, polished concrete).** A weak specular under a diffuse base. The web move is a low-opacity gloss gradient (`linear-gradient(...) at opacity 0.10-0.18`) layered over a textured substrate.
+- **Metallic (chrome, brushed aluminium, gold leaf, copper patina).** Light is reflected coherently (specular) AND the colour gradient depends on the angle to the viewer. Real metal needs an ENVIRONMENT MAP - chrome reflects "something nearby", which on the web is faked with a captured photograph of an indoor scene tinted to the metal's hue. A solid silver gradient without an environment lookup reads as plastic.
+- **Iridescent (Pokemon foil, oil-on-water, butterfly wing, soap bubble).** Light splits into wavelengths because the surface has microscale thickness variations. The hue depends on angle - Pokemon-card iridescence shifts cyan→magenta→gold as you tilt. The web move is a `conic-gradient` in OKLCH for perceptual smoothness, masked into a `mix-blend-mode: color-dodge` layer, with `hue-rotate(var(--tilt))` driven by pointer or gyro.
 
 ### 1.2 Depth cueing
 
 - **Soft contact shadow vs. drop shadow:** real objects in real light cast a sharp shadow at the contact point and a softer ambient one further away. `0 1px 2px rgba(0,0,0,0.08), 0 8px 24px -12px rgba(0,0,0,0.18)` is closer to physical accuracy than a single `0 4px 12px rgba(0,0,0,0.1)`.
-- **Multi-layer shadow:** the canonical claymorphism / Apple-glass / Frutiger-Aero stack is THREE layers — outer ambient, contact, and inset specular highlight. Never one layer.
-- **Ambient occlusion fakery:** where one surface meets another, darken the intersection 4–6% with an inset shadow on the host element. AO sells the layering — without it, stacked surfaces float.
+- **Multi-layer shadow:** the canonical claymorphism / Apple-glass / Frutiger-Aero stack is THREE layers - outer ambient, contact, and inset specular highlight. Never one layer.
+- **Ambient occlusion fakery:** where one surface meets another, darken the intersection 4-6% with an inset shadow on the host element. AO sells the layering - without it, stacked surfaces float.
 - **Light direction discipline:** commit ONE light direction per page (typically top-left, 315° / 10 o'clock). EVERY shadow on every element MUST agree. The single most common AI-tell is per-component shadow tuning that scrambles the light source.
 
 ### 1.3 Deformation
@@ -38,10 +38,10 @@ Materials flex. Paper bends, wrinkles, tears. Clay deforms on press. Fabric drap
 
 ### 1.4 Translucency and refraction
 
-- **Translucent (vellum, frosted glass, rice paper, tracing paper):** light passes through but is scattered. CSS: `backdrop-filter: blur()`. The substrate beneath MUST be saturated/photographic — translucent material over flat white reads as fogged plastic.
-- **Refraction (real glass, lens, water droplet):** light bends. The 2025 Apple Liquid Glass material uses `<feDisplacementMap scale="20">` driven by a chromatic-noise turbulence source, applied ONLY to chrome shapes (not text — text refraction = unreadable).
-- **Structured refraction (reeded/fluted glass, smoked glass solids):** the refractor has GEOMETRY that decides what survives — vertical ribs slice the subject behind into displaced strips (reeded-fluted-glass), a dark solid smears typography through its body (smoked-obsidian-glass). Hero-register: WebGL transmission through real surface curvature (see `docs/research/prism-glass-reference/prism-hero.html`); DOM-register: per-rib `feDisplacementMap` sawtooth maps. Never refract live text — duplicate/rasterize first.
-- **Light AS material (volumetric-light-shaft, edge-lit-acrylic):** the luminance gradient in air or inside a translucent volume IS the surface. Shafts need a near-black field and one committed origin corner; edge-lit slabs must out-glow at the edges and SPILL onto neighbors — glow without spill floats in a different scene.
+- **Translucent (vellum, frosted glass, rice paper, tracing paper):** light passes through but is scattered. CSS: `backdrop-filter: blur()`. The substrate beneath MUST be saturated/photographic - translucent material over flat white reads as fogged plastic.
+- **Refraction (real glass, lens, water droplet):** light bends. The 2025 Apple Liquid Glass material uses `<feDisplacementMap scale="20">` driven by a chromatic-noise turbulence source, applied ONLY to chrome shapes (not text - text refraction = unreadable).
+- **Structured refraction (reeded/fluted glass, smoked glass solids):** the refractor has GEOMETRY that decides what survives - vertical ribs slice the subject behind into displaced strips (reeded-fluted-glass), a dark solid smears typography through its body (smoked-obsidian-glass). Hero-register: WebGL transmission through real surface curvature (see `docs/research/prism-glass-reference/prism-hero.html`); DOM-register: per-rib `feDisplacementMap` sawtooth maps. Never refract live text - duplicate/rasterize first.
+- **Light AS material (volumetric-light-shaft, edge-lit-acrylic):** the luminance gradient in air or inside a translucent volume IS the surface. Shafts need a near-black field and one committed origin corner; edge-lit slabs must out-glow at the edges and SPILL onto neighbors - glow without spill floats in a different scene.
 - **Dichroic (some films, oil slicks):** colour depends on transmission angle. Layer two `conic-gradient` at different rotations with `mix-blend-mode: difference`.
 - **Layered ink (risograph, screenprint, watercolour):** each ink layer is partially transparent; overlap creates new hues via `mix-blend-mode: multiply`.
 
@@ -51,52 +51,52 @@ Brushed metal looks different at different viewing angles because the micro-groo
 
 ### 1.6 Age and wear
 
-Materials acquire patina. Copper greens, paper yellows, leather creases at the same handle-points. The orchestrator may commit `wearProfile: ageless | shows-wear | acquired-patina` per material. Acquired-patina materials need ASYMMETRIC distress — wear that lives where a hand or hinge would touch, not random global noise.
+Materials acquire patina. Copper greens, paper yellows, leather creases at the same handle-points. The orchestrator may commit `wearProfile: ageless | shows-wear | acquired-patina` per material. Acquired-patina materials need ASYMMETRIC distress - wear that lives where a hand or hinge would touch, not random global noise.
 
-### 1.7 Pointer-interaction reactions — proximity, hover, click
+### 1.7 Pointer-interaction reactions - proximity, hover, click
 
-Every material the orchestrator commits MUST also commit a reaction (or a deliberate non-reaction) for each of the three pointer-interaction intents. These are distinct AXES, not redundant alternatives — a glass card reacts to all three differently, and the combined choreography is what makes the material feel alive instead of static.
+Every material the orchestrator commits MUST also commit a reaction (or a deliberate non-reaction) for each of the three pointer-interaction intents. These are distinct AXES, not redundant alternatives - a glass card reacts to all three differently, and the combined choreography is what makes the material feel alive instead of static.
 
-> Intent ≠ modality. §6 organises pointer events by modality (pointermove / pointerdown / etc.) because the permission/perf profiles differ per API. This section organises the same events by INTENT — what the user is doing — because the FELT reaction is the contract the material is honouring. A material's entry should declare both: "responds to proximity → soft sheen drift" + "responds via pointermove handler at viewport scope".
+> Intent ≠ modality. §6 organises pointer events by modality (pointermove / pointerdown / etc.) because the permission/perf profiles differ per API. This section organises the same events by INTENT - what the user is doing - because the FELT reaction is the contract the material is honouring. A material's entry should declare both: "responds to proximity → soft sheen drift" + "responds via pointermove handler at viewport scope".
 
-**Proximity (pointer NEAR the element but not over it).** The pointer is inside a radius (typically 200–500px) of the element's bounding box, with the cursor still in dead-zone. Subtlest of the three; the highest-craft layer. Used by Vision OS, Apple visionOS-era marketing pages, Linear's CTA hover sheen, Stripe's gradient bloom. Implementation: a SINGLE viewport-level `pointermove` handler writes `--mx` / `--my` to `:root` once per frame; each material computes its own distance via `calc()` on its bounding-box centre vs the cursor.
+**Proximity (pointer NEAR the element but not over it).** The pointer is inside a radius (typically 200-500px) of the element's bounding box, with the cursor still in dead-zone. Subtlest of the three; the highest-craft layer. Used by Vision OS, Apple visionOS-era marketing pages, Linear's CTA hover sheen, Stripe's gradient bloom. Implementation: a SINGLE viewport-level `pointermove` handler writes `--mx` / `--my` to `:root` once per frame; each material computes its own distance via `calc()` on its bounding-box centre vs the cursor.
 
 - **What reacts to proximity:** glass (sheen drift), holographic (hue lean), chrome (environment-map nudge), aurora-mesh (blob centroid pulls toward cursor), iridescent (hue rotation falls off with distance), liquid-glass (refraction centre shifts), oil-on-water (dichroic phase shift).
-- **What MUST NOT react to proximity:** matte materials (uncoated paper, concrete, suede, raw clay) — the illusion is that they DON'T reflect anything. A matte material that leans toward the cursor reads as broken.
+- **What MUST NOT react to proximity:** matte materials (uncoated paper, concrete, suede, raw clay) - the illusion is that they DON'T reflect anything. A matte material that leans toward the cursor reads as broken.
 - **Falloff curve:** linear is too even; inverse-square (1/d²) feels right, clamped at a max distance. Out beyond ~500px, the reaction is zero.
 - **Battery:** highest cost of the three because it runs every frame as long as the cursor moves. Disable entirely under `prefers-reduced-motion` and on `(pointer: coarse)` (touch). Throttle to rAF.
 
 **Hover (pointer OVER the element).** Binary on/off; usually achievable with CSS-only `:hover`. Distinct from proximity in that the reaction is bigger and the cursor's relative position INSIDE the element typically drives a parallax/tilt vector. The middle-cost layer.
 
-- **Glass:** backdrop-blur intensity ticks up (e.g., 12px → 16px); inset 1px white top-edge highlight brightens; saturate boost rises 10–20%.
-- **Clay / soft plastic:** inset shadow grows to suggest finger-impression depth — the "press is about to happen" cue.
-- **Holographic / iridescent:** full conic-gradient rotation driven by `--px` / `--py` (the cursor's local position inside the element); hue travel of 40–50°.
+- **Glass:** backdrop-blur intensity ticks up (e.g., 12px → 16px); inset 1px white top-edge highlight brightens; saturate boost rises 10-20%.
+- **Clay / soft plastic:** inset shadow grows to suggest finger-impression depth - the "press is about to happen" cue.
+- **Holographic / iridescent:** full conic-gradient rotation driven by `--px` / `--py` (the cursor's local position inside the element); hue travel of 40-50°.
 - **Chrome / brushed metal:** specular highlight tracks the pointer; on anisotropic metals the highlight stretches ALONG the grain, never across.
 - **Paper / cardstock:** corner curl reveal (top-right triangle gradient mask appears); subtle lift via `transform: translateY(-1px)`.
-- **Wood / leather:** subtle warm-hue tick + faint specular brighten + 1.01–1.02× lift.
+- **Wood / leather:** subtle warm-hue tick + faint specular brighten + 1.01-1.02× lift.
 - **Liquid-glass:** refraction `feDisplacementMap` scale ticks up.
-- **What MUST NOT react to hover:** concrete, raw uncoated paper, brutalist surfaces — committing hover-lift on these breaks the brief (the genre's whole point is that the surface is honest about its weight).
+- **What MUST NOT react to hover:** concrete, raw uncoated paper, brutalist surfaces - committing hover-lift on these breaks the brief (the genre's whole point is that the surface is honest about its weight).
 
-**Click / press (pointerdown → pointerup).** The deformation/feedback moment. Brief (100–250ms), snappy, then snap back. The cheapest layer; CSS `:active` handles most cases.
+**Click / press (pointerdown → pointerup).** The deformation/feedback moment. Brief (100-250ms), snappy, then snap back. The cheapest layer; CSS `:active` handles most cases.
 
-- **Clay / soft plastic:** `transform: scale(0.97)` + inset shadow growth — the press impression.
+- **Clay / soft plastic:** `transform: scale(0.97)` + inset shadow growth - the press impression.
 - **Glass / liquid-glass:** quick 1px white inset rim-flash; NO scale (glass doesn't squish).
-- **Material M3:** ink ripple expanding from the click point — pure M3 signature.
+- **Material M3:** ink ripple expanding from the click point - pure M3 signature.
 - **Paper:** brief press impression (corner-pinch suggestion) + subtle `translateY(1px)`.
-- **Brittle materials (ceramic glaze, frosted glass, marble):** micro-shake animation (3px lateral wobble over 80ms) — like the surface chimes when struck.
+- **Brittle materials (ceramic glaze, frosted glass, marble):** micro-shake animation (3px lateral wobble over 80ms) - like the surface chimes when struck.
 - **Liquid (oil-on-water, mercury, water-droplet):** `feDisplacementMap` ripple emanates from the click point; CSS-radial-mask travelling outward at ~600px/s.
 - **Metal (brushed-aluminum, chrome, gold-leaf):** brief specular flare at the click point.
-- **Holographic / iridescent:** glint flash at click point — a momentary hue-rotate burst.
-- **Matte materials:** opacity dip (1.0 → 0.92) — no geometric deformation, just the acknowledgement.
+- **Holographic / iridescent:** glint flash at click point - a momentary hue-rotate burst.
+- **Matte materials:** opacity dip (1.0 → 0.92) - no geometric deformation, just the acknowledgement.
 - **Universal rule:** the click reaction MUST resolve back to rest within 250ms. Anything longer reads as a stuck state.
 
-**Three-intent commit per material.** Every entry in §3–§5 SHOULD declare:
+**Three-intent commit per material.** Every entry in §3-§5 SHOULD declare:
 
 ```yaml
 reactiveBehaviors:
-  proximity: "<reaction>, falloff 1/d² over 400px"   # or "none — matte"
-  hover:     "<reaction>"                             # or "none — anti-pattern for this material"
-  click:     "<reaction>, 150ms resolve"              # or "none — surface absorbs"
+  proximity: "<reaction>, falloff 1/d² over 400px"   # or "none - matte"
+  hover:     "<reaction>"                             # or "none - anti-pattern for this material"
+  click:     "<reaction>, 150ms resolve"              # or "none - surface absorbs"
 ```
 
 When the entry does not yet declare these, the orchestrator inherits the default for the surface finish:
@@ -107,13 +107,13 @@ When the entry does not yet declare these, the orchestrator inherits the default
 | semi-gloss | subtle highlight drift | highlight intensify | rim-flash (120ms) |
 | glossy | sheen drift along surface | sheen brighten + lift 1px | scale(0.98) (120ms) |
 | metallic | env-map nudge | specular tracks pointer | specular flare (100ms) |
-| iridescent | hue lean 6–10° | full conic travel | glint burst (180ms) |
+| iridescent | hue lean 6-10° | full conic travel | glint burst (180ms) |
 | translucent | substrate parallax | blur intensify + saturate | rim-flash (120ms) |
 | textured | none (grain is static) | subtle hue tick | opacity dip (150ms) |
 
 **Reduced-motion contract.** Every reactive material MUST honour `prefers-reduced-motion: reduce` by collapsing proximity → none, hover → colour/opacity shift only (no transform), click → opacity shift only (no transform, no ripple, no displacement). Static visual state must remain readable.
 
-**Touch contract.** On `(pointer: coarse)` (touch devices), proximity is meaningless (fingers don't hover from afar) — disable entirely. Hover should be deferred to `:active`/`:focus-visible` only, or fired-and-released on tap. Click reactions are universal.
+**Touch contract.** On `(pointer: coarse)` (touch devices), proximity is meaningless (fingers don't hover from afar) - disable entirely. Hover should be deferred to `:active`/`:focus-visible` only, or fired-and-released on tap. Click reactions are universal.
 
 ---
 
@@ -121,15 +121,15 @@ When the entry does not yet declare these, the orchestrator inherits the default
 
 Each entry below uses YAML-in-markdown. The schema is consistent: `materialId`, `name`, `family` (digital / analog / hybrid), `category`, `physicalBehavior`, `implementationStrategies` (CSS / SVG / WebGL / raster / video), `reactiveBehaviors`, `pairsWith.prototypeStyles`, `killsTheIllusion`, `examples`, `references`.
 
-The `reactiveBehaviors` block declares — at minimum — the three pointer-interaction intents from §1.7 (`proximity`, `hover`, `click`), plus the legacy axes (`light`, `highlight`, `depth`, `parallax`). When an entry omits one of the three intents, the orchestrator inherits the surface-finish default from §1.7's defaults table.
+The `reactiveBehaviors` block declares - at minimum - the three pointer-interaction intents from §1.7 (`proximity`, `hover`, `click`), plus the legacy axes (`light`, `highlight`, `depth`, `parallax`). When an entry omits one of the three intents, the orchestrator inherits the surface-finish default from §1.7's defaults table.
 
 Forty-eight entries follow, organised into Digital (§3), Analog (§4), and Hybrid (§5).
 
 ---
 
-## Entry catalogue — moved to per-file sources
+## Entry catalogue - moved to per-file sources
 
-**Each of the 78 entries in this library is its own source-of-truth file in `design-library/material-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
+**Each of the 78 entries in this library is its own source-of-truth file in `design-library/material-<entryId>.md`** - hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
 
 Where to find an entry:
 
@@ -170,7 +170,7 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
 
 - **Support:** iOS Safari 13+ (with permission), Android Chrome (auto). Desktop browsers do not support.
 - **Permission:** iOS 13+ requires `DeviceOrientationEvent.requestPermission()` called from a user gesture handler; HTTPS only. Android grants without prompt.
-- **Mobile-vs-desktop:** Mobile only — desktop must fall back to `pointermove` or no-op.
+- **Mobile-vs-desktop:** Mobile only - desktop must fall back to `pointermove` or no-op.
 - **Battery cost:** Moderate. Throttle to 30 Hz max.
 - **Reduced-motion fallback:** Freeze to centered (gamma=0, beta=0) state.
 - **Pattern:**
@@ -193,7 +193,7 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
 
 - **Support:** Universal. CSS Scroll-driven Animations (Chrome/Edge 115+, Safari 26+, Firefox behind flag).
 - **Permission:** None.
-- **Battery cost:** Low — use `scroll-timeline` to avoid main-thread blocking.
+- **Battery cost:** Low - use `scroll-timeline` to avoid main-thread blocking.
 - **Reduced-motion fallback:** Disable parallax; keep layers at scroll = 1.
 - **Pattern (CSS scroll-driven):**
   ```css
@@ -214,18 +214,18 @@ The orchestrator dispatches reactive behaviour by INPUT MODALITY, not by materia
   ```
 - **Used by:** all materials with layered substrate (frosted-glass, aurora-mesh, scanned-glass, paper-with-watercolor).
 
-### 6.4 pointermove at viewport scope — proximity (universal)
+### 6.4 pointermove at viewport scope - proximity (universal)
 
-The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one per material instance. A page with twelve glass cards must not bind twelve `pointermove` listeners — every material reads from one shared `--mx` / `--my` written to `:root`, and computes its own distance via CSS `calc()` on its bounding-box centre.
+The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one per material instance. A page with twelve glass cards must not bind twelve `pointermove` listeners - every material reads from one shared `--mx` / `--my` written to `:root`, and computes its own distance via CSS `calc()` on its bounding-box centre.
 
 - **Support:** Universal (W3C Pointer Events).
 - **Permission:** None.
-- **Mobile-vs-desktop:** Desktop only — touch has no "near" state. Gate behind `@media (pointer: fine)` and `@media (hover: hover)`.
-- **Battery cost:** One listener, throttled to rAF, ~1µs work per frame. Cheap. The expensive bit is the per-material `calc()` chain — keep proximity reactions on ≤20 elements per page.
+- **Mobile-vs-desktop:** Desktop only - touch has no "near" state. Gate behind `@media (pointer: fine)` and `@media (hover: hover)`.
+- **Battery cost:** One listener, throttled to rAF, ~1µs work per frame. Cheap. The expensive bit is the per-material `calc()` chain - keep proximity reactions on ≤20 elements per page.
 - **Reduced-motion fallback:** Detach the listener entirely; pin `--mx` / `--my` to neutral (50vw / 50vh).
 - **Pattern:**
   ```js
-  // ONCE per page — not per material
+  // ONCE per page - not per material
   if (matchMedia('(pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     let pending = false;
     addEventListener('pointermove', e => {
@@ -273,7 +273,7 @@ The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one
 ### 6.6 prefers-reduced-motion (universal baseline)
 
 - **Support:** Universal in modern browsers.
-- **Permission:** None — driven by OS setting.
+- **Permission:** None - driven by OS setting.
 - **Battery cost:** Reduces it.
 - **Pattern (CSS):**
   ```css
@@ -290,7 +290,7 @@ The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one
     }
   }
   ```
-- **Discipline:** Every reactive material MUST set sensible defaults for the CSS custom props it reads. The reduced-motion override pins those props to neutral and the material falls back to a static, centered state. NEVER hide a material entirely under reduced-motion — it must still be visible, just still.
+- **Discipline:** Every reactive material MUST set sensible defaults for the CSS custom props it reads. The reduced-motion override pins those props to neutral and the material falls back to a static, centered state. NEVER hide a material entirely under reduced-motion - it must still be visible, just still.
 
 ### 6.7 prefers-reduced-transparency / prefers-contrast (Apple HIG)
 
@@ -318,10 +318,10 @@ The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one
 
 > **Normalised schema (read this before parsing the table below).** Every entry conforms to:
 >
-> - **Column 1 — `Prototype slug`** — kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). May be wrapped in backticks for visual distinction. Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
-> - **Column 2 — `Primary material(s)`** — comma-separated `materialId`s (kebab-case, match §2-§5 entries). Default pick is the FIRST entry; orchestrator may apply multiple primaries to different element roles on the page (e.g. card surface + decorative shape + image bg).
-> - **Column 3 — `Secondary material(s)`** — additional materials for layered application (e.g. paper PRIMARY + foxing-stain SECONDARY overlay). Used to compose effects.
-> - Some rows include explicit "no material — flat is the brief" or "anti-pattern" callouts. Orchestrator MUST honour these — refuse to dispatch material fidelity for those slugs.
+> - **Column 1 - `Prototype slug`** - kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). May be wrapped in backticks for visual distinction. Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
+> - **Column 2 - `Primary material(s)`** - comma-separated `materialId`s (kebab-case, match §2-§5 entries). Default pick is the FIRST entry; orchestrator may apply multiple primaries to different element roles on the page (e.g. card surface + decorative shape + image bg).
+> - **Column 3 - `Secondary material(s)`** - additional materials for layered application (e.g. paper PRIMARY + foxing-stain SECONDARY overlay). Used to compose effects.
+> - Some rows include explicit "no material - flat is the brief" or "anti-pattern" callouts. Orchestrator MUST honour these - refuse to dispatch material fidelity for those slugs.
 >
 > The same schema is mirrored in `photography-library.md §3` and `illustration-library.md §3`.
 
@@ -339,17 +339,17 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `style-material-m3` | material-tonal-surface | (single-material genre) |
 | `style-raster-cutout` | uncoated-paper, kraft-paper, torn-edge, polaroid-instant, photocopy-xerox, ink-bleed-on-paper, dust-scratches | washi-tape (raster decoration) |
 | `style-serif-warm-paper` | uncoated-paper, letterpress-emboss | foxing-stain (optional) |
-| `style-neubrutalism` | (no material — flat) | (anti-pattern: don't apply material) |
+| `style-neubrutalism` | (no material - flat) | (anti-pattern: don't apply material) |
 | `style-pixel-bitmap` | pixel-bitmap, crt-phosphor (overlay) | dithered-1bit |
 | `style-terminal-mono` | ascii-art-surface, crt-phosphor | dithered-1bit |
 | `style-doodle` | uncoated-paper, ink-bleed-on-paper, pencil-graphite | watercolor-wash, marker-stroke-frame |
 | `style-cream-humanist` | uncoated-paper, vellum-translucency | foxing-stain |
-| `style-restrained-hairline` | (no material — restraint is the brief) | (single subtle paper grain at <2%) |
+| `style-restrained-hairline` | (no material - restraint is the brief) | (single subtle paper grain at <2%) |
 | `style-oversized-neo-grotesque` | (no material on type) | film-grain-tri-x (optional), smoked-obsidian-glass (hero object OVER the type) |
 | `style-silk-chrome-flow` | liquid-chrome-silk, filament-strand-ribbon | (dark substrate mandatory) |
 | `style-bold-display` | aurora-mesh (optional) | film-grain-portra-400 (optional) |
 | `style-dense-mono-dark` | crt-phosphor (subtle), ascii-art-surface | (mostly material-less) |
-| `style-flat-design` | (no material — flat is the brief) | (anti-pattern: don't apply material) |
+| `style-flat-design` | (no material - flat is the brief) | (anti-pattern: don't apply material) |
 | `style-brutalist-raw` | concrete | photocopy-xerox |
 | `style-outline-wireframe` | (no material) | (anti-pattern: don't apply material) |
 | `style-material-m1m2` | material-tonal-surface (legacy mode) | (single) |
@@ -386,45 +386,45 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `aesthetic-corporate-grunge` | photocopy-xerox, halftone-cmyk, dust-scratches, charcoal-drawing | torn-edge |
 | `aesthetic-corporate-memphis` | matte-clay, glossy-plastic-aqua | (single) |
 | `aesthetic-web-brutalism` | concrete, dithered-1bit | photocopy-xerox |
-| `aesthetic-neubrutalism` | (no material — flat is the brief) | (anti-pattern) |
+| `aesthetic-neubrutalism` | (no material - flat is the brief) | (anti-pattern) |
 | `aesthetic-acid-design` | risograph, halftone-cmyk, silkscreen | photocopy-xerox |
 | `aesthetic-acid-graphics` | risograph, photocopy-xerox, halftone-cmyk | (single) |
 | `aesthetic-avantropop` | risograph, halftone-cmyk | (single) |
 | `aesthetic-anti-design` | uncoated-paper, ink-wash-sumi-e | charcoal-drawing |
 | `aesthetic-bauhaus` | silkscreen, halftone-cmyk | (constructed) |
 | `aesthetic-constructivism` | silkscreen, halftone-cmyk, photocopy-xerox | (single) |
-| `aesthetic-de-stijl` | (no material — flat) | (anti-pattern) |
+| `aesthetic-de-stijl` | (no material - flat) | (anti-pattern) |
 | `aesthetic-swiss-modernist` | (no material) | (single subtle uncoated paper at most) |
 | `aesthetic-defi-cosmic` | holographic-foil, gold-leaf, chrome-mirror, marble | aurora-mesh |
 | `aesthetic-depin-hardware` | brushed-aluminum, edge-lit-acrylic, concrete | crt-phosphor |
 | `aesthetic-crypto-degen` | chrome-mirror, holographic-foil | crt-phosphor |
 | `aesthetic-rgb-gamer` | crt-phosphor, holographic-foil | (single) |
 | `aesthetic-cluttercore` | (every analog material in the library) | (intentional pile) |
-| `aesthetic-maximalism` | (every material — considered abundance) | (curated pile) |
+| `aesthetic-maximalism` | (every material - considered abundance) | (curated pile) |
 | `aesthetic-urbling` | chrome-mirror, gold-leaf, chrome-on-velvet, chrome-extruded-type (masthead) | holographic-foil |
 | `aesthetic-luxury-cinematic-dark` | volumetric-light-shaft, chrome-extruded-type (one headline), smoked-obsidian-glass | film-grain-tri-x |
-| `aesthetic-sculptural-minimal` | volumetric-light-shaft (dark variant) | (white variant: no material — the plinth is the brief) |
-| `aesthetic-monochrome-pop-poster` | smoked-obsidian-glass (object over type), reeded-fluted-glass | film grain at 3–5% |
+| `aesthetic-sculptural-minimal` | volumetric-light-shaft (dark variant) | (white variant: no material - the plinth is the brief) |
+| `aesthetic-monochrome-pop-poster` | smoked-obsidian-glass (object over type), reeded-fluted-glass | film grain at 3-5% |
 | `aesthetic-wacky-pomo` | glossy-plastic-aqua, halftone-cmyk | (Nickelodeon plastics) |
 | `aesthetic-pixel-*` | pixel-bitmap, crt-phosphor, dithered-1bit | (genre-locked) |
 | `aesthetic-pc-98` | pixel-bitmap, crt-phosphor | (single) |
-| `aesthetic-vector-*` | (no material — vector is the brief) | (anti-pattern) |
+| `aesthetic-vector-*` | (no material - vector is the brief) | (anti-pattern) |
 | `aesthetic-op-art` | (no material) | (anti-pattern) |
 | `aesthetic-8-bit-generic` | pixel-bitmap | (single) |
-| `aesthetic-japanese-poster-layout` | (no material baseline — photo carries) | uncoated-paper at most; film-grain-portra-400 in photos |
-| `aesthetic-jp-recruit-pop` | (no material — flat pop is the brief) | (anti-pattern: pill/token system stays flat) |
+| `aesthetic-japanese-poster-layout` | (no material baseline - photo carries) | uncoated-paper at most; film-grain-portra-400 in photos |
+| `aesthetic-jp-recruit-pop` | (no material - flat pop is the brief) | (anti-pattern: pill/token system stays flat) |
 | `aesthetic-craft-sketchbook` | uncoated-paper, linen-weave, pencil-graphite | marker-stroke-frame, ink-bleed-on-paper; media multiplied into the paper substrate |
 | `aesthetic-zine-type-wall` | marker-stroke-frame | risograph / silkscreen on thumbnails; field stays flat ink |
 | `recipe-editorial-magazine` | uncoated-paper, coated-glossy-paper, halftone-cmyk, film-grain-portra-400 | letterpress-emboss, foxing-stain |
 | `recipe-newspaper-of-record` | uncoated-paper, halftone-cmyk | (newsprint substrate) |
 | `recipe-aurora-marketing` | aurora-mesh | (single) |
-| `recipe-restrained-ai-marketing` | (no material — restraint) | (subtle paper grain at most; reeded-fluted-glass or filament-strand-ribbon allowed as the ONE hero gesture) |
+| `recipe-restrained-ai-marketing` | (no material - restraint) | (subtle paper grain at most; reeded-fluted-glass or filament-strand-ribbon allowed as the ONE hero gesture) |
 | `recipe-scientific-infra-marketing` | (no material) | (subtle aurora-mesh) |
 | `recipe-bento-marketing` | (no material baseline) | aurora-mesh in hero |
 | `recipe-ai-foundry-dark` | aurora-mesh (dark), crt-phosphor (subtle) | anodized-chainmail / filament-strand-ribbon / edge-lit-acrylic / volumetric-light-shaft (ONE hero substrate, pick one) |
 | `recipe-devtools-marketing` | aurora-mesh | (single) |
-| `recipe-bloomberg-dashboard` | (no material — dense) | (anti-pattern) |
-| `recipe-linear-product-ui` | (no material — product) | aurora-mesh in marketing hero only |
+| `recipe-bloomberg-dashboard` | (no material - dense) | (anti-pattern) |
+| `recipe-linear-product-ui` | (no material - product) | aurora-mesh in marketing hero only |
 | `recipe-ios-system` | thin-glass-chip, frosted-glass, liquid-glass | (Apple chrome) |
 | `recipe-material-3` | material-tonal-surface | (single) |
 | `recipe-terminal-on-web` | crt-phosphor, ascii-art-surface, dithered-1bit | (single) |
@@ -433,20 +433,20 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `recipe-neo-grotesque-portfolio` | (no material) | film-grain-tri-x in photos |
 | `recipe-readcv` | polaroid-instant, uncoated-paper | torn-edge |
 | `recipe-warm-restraint` | uncoated-paper, vellum-translucency | (single) |
-| `recipe-brand-story-journey` | paper-construction | film grain at 3–5% over dark chapters |
-| `recipe-jp-corporate-recruit` | (no material — flat token system) | (anti-pattern) |
+| `recipe-brand-story-journey` | paper-construction | film grain at 3-5% over dark chapters |
+| `recipe-jp-corporate-recruit` | (no material - flat token system) | (anti-pattern) |
 | `recipe-y2k-memphis-loud` | coated-glossy-paper, halftone-cmyk | risograph |
 | `shell-scrapbook-substrate` | uncoated-paper, kraft-paper, polaroid-instant, torn-edge, dust-scratches | (the substrate is the material) |
 | `shell-terminal-frame` | crt-phosphor, ascii-art-surface | (single) |
 | `shell-canvas-floating` | frosted-glass, liquid-glass | (over photographic plate) |
 
-Rule of thumb the orchestrator applies: when a slug appears in BOTH the prototype playbook's "Pairs well with" list and this material table, it's a confirmed material pairing. When a slug says "no material — flat is the brief", the orchestrator MUST refuse to apply material (committing siteCount=0 is the correct outcome).
+Rule of thumb the orchestrator applies: when a slug appears in BOTH the prototype playbook's "Pairs well with" list and this material table, it's a confirmed material pairing. When a slug says "no material - flat is the brief", the orchestrator MUST refuse to apply material (committing siteCount=0 is the correct outcome).
 
 ---
 
 ## 8. Anti-patterns
 
-The single highest-value contribution of this dossier — common AI-tells the orchestrator must catch and refuse.
+The single highest-value contribution of this dossier - common AI-tells the orchestrator must catch and refuse.
 
 ### 8.1 Glass anti-patterns
 
@@ -462,15 +462,15 @@ The single highest-value contribution of this dossier — common AI-tells the or
 ### 8.2 Claymorphism anti-patterns
 
 - **Every container puffed.** Clay is a moment, not a system. ONE clay surface per screen.
-- **Black drop shadow instead of surface-hue-tinted.** Clay shadows take a desaturated version of the surface hue — never `rgba(0,0,0,0.25)`.
-- **Saturated 0.20+ chroma.** Claymorphism palette tops out at 0.04–0.08 — anything brighter reads candy, not clay.
+- **Black drop shadow instead of surface-hue-tinted.** Clay shadows take a desaturated version of the surface hue - never `rgba(0,0,0,0.25)`.
+- **Saturated 0.20+ chroma.** Claymorphism palette tops out at 0.04-0.08 - anything brighter reads candy, not clay.
 - **Missing the dark bottom-right inset shadow.** Without it, clay reads as a flat pastel pill with a glow.
 - **Clay extended to dark mode.** The inset highlight stops reading on dark; clay collapses to neumorphism.
 - **Equal outer + inner offsets but blur < 2× offset.** Breaks the doughy read.
 
 ### 8.3 Neumorphism anti-patterns
 
-- **Pure `#FFF` or `#000` background.** Both shadows must stay visible — neutral putty grey only.
+- **Pure `#FFF` or `#000` background.** Both shadows must stay visible - neutral putty grey only.
 - **Symmetric shadows with no implied light source.** Commit ONE light direction (canonical: top-left).
 - **Per-component shadow tuning.** The light source must agree across the entire page.
 - **Sharp <12px radii.** Breaks the soft-plastic read.
@@ -479,9 +479,9 @@ The single highest-value contribution of this dossier — common AI-tells the or
 ### 8.4 Holographic / iridescent anti-patterns
 
 - **Conic-gradient in sRGB.** Produces muddy brown bands at the cyan→magenta crossover. Use `conic-gradient(in oklch ...)`.
-- **Autoplay `hue-rotate(360deg)` spin.** Epileptic + tells AI. Real iridescence travels 40–50° arc.
+- **Autoplay `hue-rotate(360deg)` spin.** Epileptic + tells AI. Real iridescence travels 40-50° arc.
 - **Iridescence on body type or form inputs.** Surface is the spectacle; type stays cool monochrome.
-- **Light substrate.** Iridescence MUST sit on dark — white kills the specular.
+- **Light substrate.** Iridescence MUST sit on dark - white kills the specular.
 
 ### 8.5 Aurora / mesh-gradient anti-patterns
 
@@ -493,7 +493,7 @@ The single highest-value contribution of this dossier — common AI-tells the or
 
 ### 8.6 Film grain anti-patterns
 
-- **Synthetic grain at fixed opacity.** Real grain varies with luminance — heavier in shadows.
+- **Synthetic grain at fixed opacity.** Real grain varies with luminance - heavier in shadows.
 - **Static (non-animating) grain.** Real film moves frame-by-frame. Animate the noise pattern.
 - **Colour grain on B&W stocks.** Tri-X is grayscale; Portra is colour. Match stock.
 - **Grain at the same scale across all stocks.** 16mm is coarser than 35mm; Tri-X is coarser than Portra.
@@ -506,15 +506,15 @@ The single highest-value contribution of this dossier — common AI-tells the or
 
 ### 8.8 Risograph anti-patterns
 
-- **Perfect registration.** Real riso is famously off by 1–3px. The misregistration IS the look.
+- **Perfect registration.** Real riso is famously off by 1-3px. The misregistration IS the look.
 - **Smooth gradients.** Riso halftones; it doesn't blend.
-- **Full-opacity inks.** Riso ink is semi-transparent — `opacity: 0.6` and `mix-blend-mode: multiply` per layer.
+- **Full-opacity inks.** Riso ink is semi-transparent - `opacity: 0.6` and `mix-blend-mode: multiply` per layer.
 - **Pure white substrate.** Riso prints on warm-cream paper.
 
 ### 8.9 Wood grain anti-patterns
 
 - **Regularly repeating tile.** Mask with noise to break the seam.
-- **Isotropic noise.** Wood grain is DIRECTIONAL — use `baseFrequency="0.02 0.3"` (y ≫ x for vertical grain).
+- **Isotropic noise.** Wood grain is DIRECTIONAL - use `baseFrequency="0.02 0.3"` (y ≫ x for vertical grain).
 - **Perfect varnish gloss without visible grain.** Even polished wood shows grain.
 
 ### 8.10 Skeuomorphism anti-patterns
@@ -522,7 +522,7 @@ The single highest-value contribution of this dossier — common AI-tells the or
 - **Stacked metaphors.** Leather header + felt body + wood-shelf footer = trashy by definition. ONE metaphor per surface.
 - **Fake metaphor elements.** Brass screws in Notes corners; tape-reel hubs on a calculator. The metaphor must do functional work.
 - **Marker Felt / Comic Sans + "paper" texture.** Cosplay register.
-- **40% lightness step on a gradient button.** Big steps read plastic-toy; iOS-6 stays at 4–8%.
+- **40% lightness step on a gradient button.** Big steps read plastic-toy; iOS-6 stays at 4-8%.
 
 ### 8.11 Pixel-bitmap anti-patterns
 
@@ -536,7 +536,7 @@ The single highest-value contribution of this dossier — common AI-tells the or
 - **Pure `#FFF` background.** Real paper is always warm-tinted.
 - **Tile pattern visibly repeating.** Mask with noise to hide the seam.
 - **High-contrast specular highlight on uncoated.** Uncoated has NO specular.
-- **`text-align: justify` + 16px body / 1.4 line-height.** Editorial paper wants 18–19px / 1.55.
+- **`text-align: justify` + 16px body / 1.4 line-height.** Editorial paper wants 18-19px / 1.55.
 
 ### 8.13 Letterpress anti-patterns
 
@@ -561,25 +561,25 @@ The single highest-value contribution of this dossier — common AI-tells the or
 
 ### 8.16 Pointer-interaction-reaction anti-patterns
 
-- **Proximity reaction on a matte material.** Concrete, raw paper, suede leaning toward a cursor — the whole illusion of matte is that the surface scatters light diffusely and doesn't track anything. Refuse.
+- **Proximity reaction on a matte material.** Concrete, raw paper, suede leaning toward a cursor - the whole illusion of matte is that the surface scatters light diffusely and doesn't track anything. Refuse.
 - **Hover-lift on `style-neubrutalism` / `aesthetic-neubrutalism` / `recipe-brutalist-web`.** The brief is HONESTY about weight; nothing lifts. Refuse.
 - **Click reaction that doesn't resolve.** Anything held past 250ms reads as a stuck state. Snap back.
 - **Scale on glass.** Glass doesn't squish. Use rim-flash or backdrop-blur tick instead.
 - **Ripple on materials that aren't Material M3.** The ink ripple is an M3 signature; on a glass card it reads as borrowed-from-Android.
 - **Proximity binding per-instance.** Twelve glass cards must NOT bind twelve viewport `pointermove` listeners. ONE handler at `:root`, every material reads `--mx` / `--my` and computes distance via CSS `calc()`.
-- **Proximity reaction firing on touch.** Touch has no "near" state — fingers don't hover from afar. Gate with `@media (pointer: fine) and (hover: hover)`.
+- **Proximity reaction firing on touch.** Touch has no "near" state - fingers don't hover from afar. Gate with `@media (pointer: fine) and (hover: hover)`.
 - **Hover transform driven by JS when CSS `:hover` would do.** Binary on/off doesn't need a JS handler; reserve JS for proximity (continuous distance) and for hover effects that need cursor-local position.
 - **Two materials reacting at the same proximity radius with overlapping bounding boxes.** They appear to chase the cursor in lockstep. Stagger radii or commit ONE proximity material per region.
 - **Click ripple on a held button.** If the action repeats while held (volume up), the ripple stacks and visually thrashes. One ripple per `pointerdown`, ignore re-fires until pointerup.
 - **Hover reaction without click reaction.** Reads as half-finished; the user hovers, the surface lifts, the click does nothing felt. Commit both or commit neither.
-- **Conflicting hover and proximity.** If proximity already brightens the highlight, the hover state must intensify FURTHER — not reset to baseline.
+- **Conflicting hover and proximity.** If proximity already brightens the highlight, the hover state must intensify FURTHER - not reset to baseline.
 
 ### 8.17 General
 
 - **Multiple light sources on one page.** Commit ONE direction.
 - **Material applied to "no material" prototype slugs.** Some genres (neubrutalism, flat-design, vector-vectordelia) WANT the lack of material. Refuse to dispatch.
 - **All materials at full intensity.** Materials whisper. Heavier-than-needed material is the tell.
-- **Material applied without checking the substrate.** Glass / aurora / iridescent / hybrid materials are USELESS on flat white — refuse, OR commit a substrate first.
+- **Material applied without checking the substrate.** Glass / aurora / iridescent / hybrid materials are USELESS on flat white - refuse, OR commit a substrate first.
 - **Reactive behaviour without `prefers-reduced-motion` fallback.** Every reactive material needs a static fallback.
 - **Reactive behaviour without `pointer: fine` gating.** Touch devices fake hover; pointer-driven highlights break.
 - **Battery-draining reactive loops (60+ Hz on every event).** Throttle to `requestAnimationFrame`.
@@ -589,7 +589,7 @@ The single highest-value contribution of this dossier — common AI-tells the or
 ## Appendix: implementation snippets quick-reference
 
 ```css
-/* Tilt-driven CSS custom props skeleton — used by holographic, liquid-glass, chrome */
+/* Tilt-driven CSS custom props skeleton - used by holographic, liquid-glass, chrome */
 .material[data-reactive] {
   --px: 0;  /* pointer X, -0.5..0.5 */
   --py: 0;
@@ -606,7 +606,7 @@ The single highest-value contribution of this dossier — common AI-tells the or
 ```
 
 ```js
-/* Universal reactive-input bootstrap — call once per material instance */
+/* Universal reactive-input bootstrap - call once per material instance */
 function bindReactive(el, opts = {}) {
   const { pointer = true, gyro = false, throttle = true } = opts;
   let raf = 0;
@@ -625,7 +625,7 @@ function bindReactive(el, opts = {}) {
     });
   }
   if (gyro) {
-    /* lazy — only on first tap, since iOS needs requestPermission() from a gesture */
+    /* lazy - only on first tap, since iOS needs requestPermission() from a gesture */
     el.addEventListener('click', async () => {
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
         if (await DeviceOrientationEvent.requestPermission() !== 'granted') return;
@@ -640,7 +640,7 @@ function bindReactive(el, opts = {}) {
 ```
 
 ```svg
-<!-- Reusable filters library — include once at end of <body> -->
+<!-- Reusable filters library - include once at end of <body> -->
 <svg width="0" height="0" style="position:absolute">
   <defs>
     <filter id="paperGrain">
@@ -681,4 +681,4 @@ function bindReactive(el, opts = {}) {
 
 ---
 
-End of dossier. Total entries: **48** (digital: 19, analog: 23, hybrid: 6). Decision tree covers **80+ prototype slugs**. Reactive modalities: **7** (pointermove at element, pointermove at viewport / proximity, DeviceOrientationEvent, scroll, pointerdown, prefers-reduced-motion, prefers-reduced-transparency/contrast). Pointer-interaction intents: **3** (proximity, hover, click) — each material declares a reaction (or deliberate non-reaction) per intent in its `reactiveBehaviors` block.
+End of dossier. Total entries: **48** (digital: 19, analog: 23, hybrid: 6). Decision tree covers **80+ prototype slugs**. Reactive modalities: **7** (pointermove at element, pointermove at viewport / proximity, DeviceOrientationEvent, scroll, pointerdown, prefers-reduced-motion, prefers-reduced-transparency/contrast). Pointer-interaction intents: **3** (proximity, hover, click) - each material declares a reaction (or deliberate non-reaction) per intent in its `reactiveBehaviors` block.

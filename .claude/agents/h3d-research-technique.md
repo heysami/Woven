@@ -1,6 +1,6 @@
 ---
 name: h3d-research-technique
-description: DEPRECATED — superseded by s3d-research-technique. The hero-3d pipeline is now the shared scene-3d render layer; research is a single tech pass that ALSO emits the subsystems[] decomposition. If you were dispatched, read s3d-research-technique.md and write source/{branch}/scene3d/{sceneId}/research.md instead. Kept only for in-flight hero3d/ builds.
+description: DEPRECATED - superseded by s3d-research-technique. The hero-3d pipeline is now the shared scene-3d render layer; research is a single tech pass that ALSO emits the subsystems[] decomposition. If you were dispatched, read s3d-research-technique.md and write source/{branch}/scene3d/{sceneId}/research.md instead. Kept only for in-flight hero3d/ builds.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 ---
 

@@ -1,24 +1,24 @@
-"""Share mode — publish a prototype through a Cloudflare quick tunnel with
+"""Share mode - publish a prototype through a Cloudflare quick tunnel with
 per-element review comments.
 
 Three cooperating pieces, all daemon-side (serve.py imports this module the
 same way it imports exports.py):
 
-  1. REGISTRY  — shares.json at the workspace root (sibling of
+  1. REGISTRY  - shares.json at the workspace root (sibling of
      workspace.json). One record per shared prototype:
        { id, token, project, prototype, label, emailGate, active,
          createdAt, lastUrl, prevUrl, lastUrlChangedAt, lastStartedAt }
-     `active` is USER INTENT (should a tunnel be running), not liveness —
+     `active` is USER INTENT (should a tunnel be running), not liveness -
      liveness comes from the tunnel process table below.
 
-  2. TUNNELS   — one `cloudflared tunnel --url http://127.0.0.1:<gate>`
+  2. TUNNELS   - one `cloudflared tunnel --url http://127.0.0.1:<gate>`
      subprocess per active share. Quick tunnels need no Cloudflare account;
      the price is a random *.trycloudflare.com hostname that CHANGES on
      every restart. We parse the URL from cloudflared's log output, persist
      it on the share record, and keep the previous URL around so the UI can
      surface "URL changed since you last copied it".
 
-  3. GATE      — a second HTTP listener (separate port from the main daemon)
+  3. GATE      - a second HTTP listener (separate port from the main daemon)
      that is the ONLY thing a tunnel ever points at. It serves exactly:
        /s/<token>/                      → review viewer shell (editor/share/)
        /s/<token>/viewer.js|viewer.css  → viewer assets
@@ -28,14 +28,14 @@ same way it imports exports.py):
        /__global_fonts/<file>           → read-only font passthrough (DS
                                           stylesheets may reference these
                                           root-absolute)
-     Everything else 404s. The main daemon port — with its file writes, LLM
-     runs and project management — is never exposed. This is the security
+     Everything else 404s. The main daemon port - with its file writes, LLM
+     runs and project management - is never exposed. This is the security
      boundary the whole feature rests on; widen it deliberately or not at all.
 
-  COMMENTS     — per-project store at <project_root>/share/comments.json
+  COMMENTS     - per-project store at <project_root>/share/comments.json
      (all prototypes of a project in one file, records carry `prototype`).
      Written by visitors through the gate AND by the editor through the main
-     daemon's /__share_comments endpoint — both funnel through the same
+     daemon's /__share_comments endpoint - both funnel through the same
      functions here, under the same lock.
 
 serve.py wiring (see "share mode" section there):
@@ -94,7 +94,7 @@ def _now_iso():
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 1. Registry — shares.json
+# 1. Registry - shares.json
 # ═════════════════════════════════════════════════════════════════════════
 
 def _shares_json_path():
@@ -144,7 +144,7 @@ def share_get_by_token(token):
 
 
 def share_create(project, prototype, label=None, email_gate=False):
-    """Create a share record. One share per (project, prototype) — creating
+    """Create a share record. One share per (project, prototype) - creating
     again returns the existing record (idempotent, so the node's Share
     button can't mint duplicate tunnels for the same prototype)."""
     with _REGISTRY_LOCK:
@@ -206,7 +206,7 @@ def share_delete(share_id):
     return False
 
 
-# ── Thumbnails — one PNG per shared prototype ────────────────────────────
+# ── Thumbnails - one PNG per shared prototype ────────────────────────────
 # Captured by the daemon (headless Chrome) at share-create / start / source
 # change, stored beside the comment store at <project_root>/share/thumb-
 # <safe-slug>.png. The daemon owns capture (it has the Chrome helpers); this
@@ -223,7 +223,7 @@ def share_thumbnail_abspath(project_root, prototype):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 2. Tunnels — cloudflared quick-tunnel subprocess per share
+# 2. Tunnels - cloudflared quick-tunnel subprocess per share
 # ═════════════════════════════════════════════════════════════════════════
 
 def find_cloudflared():
@@ -319,7 +319,7 @@ def tunnel_start(share_id):
         raise ValueError(f"unknown share: {share_id}")
     binary = find_cloudflared()
     if not binary:
-        raise RuntimeError("cloudflared not found — install it (macOS: brew install cloudflared)")
+        raise RuntimeError("cloudflared not found - install it (macOS: brew install cloudflared)")
     with _TUNNELS_LOCK:
         t = TUNNELS.get(share_id)
         if t and t.proc.poll() is None:
@@ -375,13 +375,13 @@ def stop_all_tunnels():
 
 def restore_active_tunnels():
     """Boot-time: restart tunnels for every share whose `active` intent
-    survived the last daemon. Quick-tunnel URLs WILL differ — the reader
+    survived the last daemon. Quick-tunnel URLs WILL differ - the reader
     thread records prevUrl/lastUrlChangedAt so the UI can flag it."""
     if not find_cloudflared():
         actives = [s for s in shares_load().get("shares", []) if s.get("active")]
         if actives:
             print(f"[share] {len(actives)} share(s) marked active but cloudflared "
-                  "is not installed — tunnels NOT restored", flush=True)
+                  "is not installed - tunnels NOT restored", flush=True)
         return
     for s in shares_load().get("shares", []):
         if s.get("active"):
@@ -411,7 +411,7 @@ def tunnel_status(rec):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 3. Comments — per-project store, shared by gate + editor endpoints
+# 3. Comments - per-project store, shared by gate + editor endpoints
 # ═════════════════════════════════════════════════════════════════════════
 
 def _comments_path(project_root):
@@ -476,7 +476,7 @@ def comment_counts(project_root, prototype):
 
 def comment_add(project_root, prototype, *, page, anchor, pin, text, author):
     """Append one comment. `anchor` is the element handle the viewer
-    computed: { selector, tag?, text? } — selector is the primary locator,
+    computed: { selector, tag?, text? } - selector is the primary locator,
     the rest are fuzzy fallbacks for when the prototype's DOM drifts after
     agent edits. `pin` is {x,y} in 0..1 fractions of the element box."""
     text = _clip(text, 5000).strip()
@@ -578,10 +578,10 @@ def comment_delete(project_root, comment_id):
 
 
 def comments_mark_processed(project_root, comment_ids):
-    """Stamp processedAt on the given comments — called when the editor
+    """Stamp processedAt on the given comments - called when the editor
     dispatches them to an agent run. Status is left alone; 'processed' is
     an orthogonal chip in the UI (the agent's edit may or may not satisfy
-    the reviewer — they decide when to mark done)."""
+    the reviewer - they decide when to mark done)."""
     stamped = []
     when = _now_iso()
     with _COMMENTS_LOCK:
@@ -605,12 +605,12 @@ def _notify_comments_changed(project_id, prototype):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 4. Gate — the ONLY surface a tunnel exposes
+# 4. Gate - the ONLY surface a tunnel exposes
 # ═════════════════════════════════════════════════════════════════════════
 
 _GATE_SERVER = None
 
-# Live Session — late-bound so live.py can import shares without a cycle.
+# Live Session - late-bound so live.py can import shares without a cycle.
 # serve.py calls register_live(live.GATE) at boot; the gate delegates any
 # /s/<token>/live* route to it. None → live session disabled (gate still
 # serves view+comment routes).
@@ -634,7 +634,7 @@ _GATE_SERVE_EXTS = {
 
 def _gate_project_paths_ok(rec, rel):
     """Whitelist check for /s/<token>/p/<rel>. Only the shared prototype's
-    own tree and the design-system library it links are reachable — NOT
+    own tree and the design-system library it links are reachable - NOT
     the project's other prototypes, workflow/, editor/, or docs."""
     slug = rec.get("prototype") or ""
     allowed_prefixes = (f"source/{slug}/", "design-systems/")
@@ -643,7 +643,7 @@ def _gate_project_paths_ok(rec, rel):
 
 class GateHandler(http.server.BaseHTTPRequestHandler):
     """Minimal, share-scoped request handler. Deliberately NOT a subclass
-    of the daemon's H — sharing zero routing code is the point."""
+    of the daemon's H - sharing zero routing code is the point."""
     server_version = "WovenShareGate/1.0"
     protocol_version = "HTTP/1.1"
 
@@ -712,7 +712,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         if rec is None:
             self._send_json(404, {"error": "unknown or revoked share"})
             return None, None
-        # NOTE: "" (no trailing slash) and "/" are distinct — do_GET 301s
+        # NOTE: "" (no trailing slash) and "/" are distinct - do_GET 301s
         # the former so the viewer's relative paths resolve.
         return rec, (m.group(2) if m.group(2) is not None else "")
 
@@ -735,7 +735,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
     # ── GET ───────────────────────────────────────────────────────────
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        # Root-absolute font passthrough — DS stylesheets may reference
+        # Root-absolute font passthrough - DS stylesheets may reference
         # /__global_fonts/<file> (read-only static font bytes, safe).
         if parsed.path.startswith("/__global_fonts/"):
             name = os.path.basename(parsed.path)
@@ -747,7 +747,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if os.path.isfile(abs_path):
                 return self._send_file(abs_path, cache=True)
             return self._send_json(404, {"error": "not found"})
-        # Live Session — the REAL editor (served at /s/<tok>/live/) makes
+        # Live Session - the REAL editor (served at /s/<tok>/live/) makes
         # root-absolute requests (/app.js, /__workflow, /__ds_bootstrap…).
         # When the th_live cookie is present and this is NOT a /s/<tok>/ route,
         # delegate to live.py's read-only, project-scoped proxy.
@@ -766,7 +766,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        # Live Session routes (/s/<token>/live*) — delegated to live.py.
+        # Live Session routes (/s/<token>/live*) - delegated to live.py.
         if _LIVE is not None and (sub == "/live" or sub.startswith("/live/")):
             if _LIVE.handle_get(self, rec, sub):
                 return
@@ -790,7 +790,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             return self._send_json(200, {"comments": comments_list(root, rec.get("prototype"))})
         # Whitelisted project files. /p/ is the share viewer's prefix; the live
         # editor's prototype iframes load /source/… and /design-systems/…
-        # directly (resolved relative to /s/<tok>/live/) — serve both through
+        # directly (resolved relative to /s/<tok>/live/) - serve both through
         # the same realpath-contained, extension-whitelisted logic.
         if sub.startswith("/p/") or sub.startswith("/source/") or sub.startswith("/design-systems/"):
             root = self._project_root(rec)
@@ -820,7 +820,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         return self._send_json(404, {"error": "not found"})
 
     def _live_cookie(self):
-        """th_live=<token> cookie set when the editor index was served — scopes
+        """th_live=<token> cookie set when the editor index was served - scopes
         the real editor's root-absolute requests to one share."""
         raw = self.headers.get("Cookie") or ""
         for part in raw.split(";"):
@@ -840,7 +840,7 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         rec, sub = self._route()
         if rec is None:
             return
-        # Live Session routes (/s/<token>/live*) — delegated to live.py.
+        # Live Session routes (/s/<token>/live*) - delegated to live.py.
         if _LIVE is not None and sub.startswith("/live/"):
             if _LIVE.handle_post(self, rec, sub):
                 return
@@ -902,7 +902,7 @@ class _GateServer(socketserver.ThreadingTCPServer):
 
 def start_gate_server(main_port):
     """Bind the gate on the first free port after the daemon's. Returns the
-    port. Idempotent — repeated calls return the existing port."""
+    port. Idempotent - repeated calls return the existing port."""
     global _GATE_SERVER, GATE_PORT
     if _GATE_SERVER is not None:
         return GATE_PORT
@@ -925,7 +925,7 @@ def start_gate_server(main_port):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 5. Status summary — what GET /__shares returns per record
+# 5. Status summary - what GET /__shares returns per record
 # ═════════════════════════════════════════════════════════════════════════
 
 def share_summary(rec):

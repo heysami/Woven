@@ -18,7 +18,7 @@ clay character with armature bones showing through pose.
 ## Visual signatures
 
 - clay character with armature bones showing through pose
-- imperfect surface — thumbprints, tool marks
+- imperfect surface - thumbprints, tool marks
 - hand-painted backdrop
 - palette: school-set primaries
 

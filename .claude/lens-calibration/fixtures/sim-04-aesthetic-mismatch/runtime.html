@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>sim-04 — AESTHETIC-FAIL fixture</title>
+<head><meta charset="utf-8"><title>sim-04 - AESTHETIC-FAIL fixture</title>
 <style>
 body,html{margin:0;height:100%;background:#fff5e6;color:#8b6f4a;font-family:Inter,system-ui;overflow:hidden}
 canvas{display:block}
@@ -14,7 +14,7 @@ canvas{display:block}
 <div id="chrome">⚡ Warehouse Live · v2.3 ⚡</div>
 <div id="legend"><span class="chip chip-low">LOW</span><span class="chip chip-ok">NORMAL</span><span class="chip chip-high">HIGH</span></div>
 <script>
-// ─── BAD PATTERN — passes craft, but brief committed to a restrained
+// ─── BAD PATTERN - passes craft, but brief committed to a restrained
 // monospaced slate warehouse vibe and the runtime ships bright neon
 // chips + Inter + rounded everything + emoji decoration. Aesthetic-lens
 // must catch the multiple antiPattern hits + sensoryVisual mismatch.
@@ -39,11 +39,11 @@ function tick(state, dt) {
 function render(state) {
   ctx.fillStyle = '#fff5e6'; ctx.fillRect(0, 0, 720, 540);
   for (const e of Object.values(state.entities)) {
-    // ❌ Bright neon palette — fights the brief's slate/restrained vibe
+    // ❌ Bright neon palette - fights the brief's slate/restrained vibe
     const tint = e.status === 'low' ? '#ff6b6b' : e.status === 'high' ? '#ffe66d' : '#4ecdc4';
     ctx.fillStyle = tint;
     ctx.beginPath();
-    // ❌ Pill-shaped rounded entities — fights the brief's "rectilinear" target
+    // ❌ Pill-shaped rounded entities - fights the brief's "rectilinear" target
     ctx.roundRect(e.x, e.y, 50, 36, 14); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '600 12px Inter, system-ui';
     ctx.fillText(e.stockLevel + '%', e.x + 8, e.y + 22);

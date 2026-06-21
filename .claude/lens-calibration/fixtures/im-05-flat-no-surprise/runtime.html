@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>im-05 — CONCEPT-FAIL (flat / no surprise) fixture</title>
+<head><meta charset="utf-8"><title>im-05 - CONCEPT-FAIL (flat / no surprise) fixture</title>
 <style>body,html{margin:0;height:100%;overflow:hidden;background:#1a1a1f}
 #scene{display:block;width:100%;height:100%}
 #start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;flex-direction:column;gap:16px;font-family:Georgia,serif}
@@ -9,9 +9,9 @@
 <body><canvas id="scene"></canvas>
 <div id="start-gate"><h2>Voice Painter</h2><p>Sing to play.</p><button id="start-btn">Start</button></div>
 <script type="module">
-// ─── BAD PATTERN — passes craft (Start gate, permission gated, devtools
+// ─── BAD PATTERN - passes craft (Start gate, permission gated, devtools
 // harness, limiter, etc.) AND aesthetic (warm palette matches brief).
-// BUT the runtime IGNORES input entirely — the shader just renders a
+// BUT the runtime IGNORES input entirely - the shader just renders a
 // time-driven sine wave on the field; mic input has zero effect on output.
 // concept-lens drives synthetic input via injectFakeInput, observes
 // output doesn't change → responseScore very low → concept fails.
@@ -44,7 +44,7 @@ const uRes = gl.getUniformLocation(p,'u_res'); const uT = gl.getUniformLocation(
 const inputVec = new Float32Array(8);
 const outputVec = new Float32Array(1);
 function map(input, output) {
-  // ❌ FAILURE — output is constant; input is completely ignored.
+  // ❌ FAILURE - output is constant; input is completely ignored.
   output[0] = 0.5;
 }
 
@@ -74,7 +74,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     }
     map(inputVec, outputVec);
     gl.uniform2f(uRes, canvas.width, canvas.height);
-    // ❌ Shader is driven by TIME, not by mapping output — input has zero effect
+    // ❌ Shader is driven by TIME, not by mapping output - input has zero effect
     gl.uniform1f(uT, (now - startT) / 1000);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     fpsFrames++;

@@ -34,7 +34,7 @@ css: |
   image-rendering: pixelated;
   filter: contrast(2) saturate(0);
 svg: |
-  Bayer ordered dither via <feComponentTransfer> with a threshold table —
+  Bayer ordered dither via <feComponentTransfer> with a threshold table -
   shader-friendly because it's parallelizable.
 webgl: |
   Floyd-Steinberg error-diffusion gives the highest fidelity; difficult in
@@ -44,7 +44,7 @@ raster: pre-rendered 1-bit assets at native resolution
 
 ## Reactive behaviors
 
-**Light**: none — threshold is fixed
+**Light**: none - threshold is fixed
 
 **Highlight**: none
 

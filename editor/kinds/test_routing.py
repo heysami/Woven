@@ -2,7 +2,7 @@
 
 Validates that every URL we promise in docs/features/asset-versioning.md §7.2
 matches one of the regex patterns in serve.py's do_POST / do_DELETE. Doesn't
-spin up an HTTP server — just exercises the regex set.
+spin up an HTTP server - just exercises the regex set.
 
 Run: python kinds/test_routing.py
 """

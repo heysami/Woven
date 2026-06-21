@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>im-03 — CRAFT-FAIL (permission leak) fixture</title>
+<head><meta charset="utf-8"><title>im-03 - CRAFT-FAIL (permission leak) fixture</title>
 <style>body,html{margin:0;height:100%;overflow:hidden;background:#222}#scene{display:block;width:100%;height:100%}</style></head>
 <body><canvas id="scene"></canvas>
 <script type="module">
-// ─── BAD PATTERN — runtime calls getUserMedia() at MODULE LOAD without
+// ─── BAD PATTERN - runtime calls getUserMedia() at MODULE LOAD without
 // any user-gesture gate. No Start screen. Browser permission prompt
 // fires immediately on iframe load. craft-lens §3.1 (interactive rubric
 // "Permission requested behind a user gesture") must catch this.
@@ -27,11 +27,11 @@ const inputVec = new Float32Array(8);
 const outputVec = new Float32Array(1);
 let analyser = null, timeBuf = null, fpsAvg = 0, fpsFrames = 0, fpsT0 = 0;
 
-// ❌ FAILURE — getUserMedia at MODULE LOAD. No user gesture. No Start gate.
+// ❌ FAILURE - getUserMedia at MODULE LOAD. No user gesture. No Start gate.
 // Permission prompt fires immediately on iframe load.
 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 const audioCtx = new AudioContext();
-// ❌ AudioContext also created without user gesture — autoplay policy will refuse
+// ❌ AudioContext also created without user gesture - autoplay policy will refuse
 const source = audioCtx.createMediaStreamSource(stream);
 analyser = audioCtx.createAnalyser(); analyser.fftSize = 256; source.connect(analyser);
 timeBuf = new Float32Array(analyser.fftSize);

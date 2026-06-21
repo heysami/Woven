@@ -38,7 +38,7 @@ svg: |
     <feTurbulence baseFrequency="0.04" numOctaves="2"/>
     <feDisplacementMap scale="3"/>
   </filter>
-  <!-- Edge irregularity at SMALL scale — sumi brush keeps a recognizable form -->
+  <!-- Edge irregularity at SMALL scale - sumi brush keeps a recognizable form -->
 raster: scanned sumi-e brushwork is the most direct path
 ```
 

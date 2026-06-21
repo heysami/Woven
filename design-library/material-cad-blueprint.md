@@ -50,11 +50,11 @@ raster: scanned grid paper PNG as substrate; vectors atop
 
 ## Reactive behaviors
 
-**Light**: none — it's a print
+**Light**: none - it's a print
 
 **Highlight**: pointer-hover reveals dimension annotations
 
-**Depth**: minor — pseudo-3D iso projection often present
+**Depth**: minor - pseudo-3D iso projection often present
 
 **Parallax**: scroll between detail views
 

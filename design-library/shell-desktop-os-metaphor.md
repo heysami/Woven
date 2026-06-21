@@ -13,14 +13,14 @@ images:
 
 ## Structure
 
-The page IS a desktop: a wallpapered surface strewn with draggable windows, file icons, sticky notes, and media players — content lives inside the windows.
+The page IS a desktop: a wallpapered surface strewn with draggable windows, file icons, sticky notes, and media players - content lives inside the windows.
 
 - Full-viewport "desktop" ground: wallpaper, subtle texture, or live scene
-- 4-12 window objects: project windows, an "about.txt", a music player, folder icons, image viewers — each with title bar + close/min affordances
+- 4-12 window objects: project windows, an "about.txt", a music player, folder icons, image viewers - each with title bar + close/min affordances
 - Windows are draggable; z-order rises on focus; some start minimized to taskbar/dock
 - A menu bar or dock anchors navigation (the one fixed element)
 - Optional: right-click context menu easter eggs, trash can, clock
-- Deliberate initial scatter — composed chaos, art-directed positions per breakpoint
+- Deliberate initial scatter - composed chaos, art-directed positions per breakpoint
 
 ## Macro proportions
 
@@ -28,11 +28,11 @@ Windows 280-560px wide; never let one window exceed ~50vw (it stops reading as a
 
 ## Density
 
-Medium-high visual, low informational — each window holds ONE small thing. Long content gets a scrollbar INSIDE its window, never page scroll.
+Medium-high visual, low informational - each window holds ONE small thing. Long content gets a scrollbar INSIDE its window, never page scroll.
 
 ## Mandatory interactions
 
-Drag with momentum-free 1:1 follow; focus brings to front; close/minimize actually work (minimize to dock with animation). Double-click icons to open windows. Keyboard: Tab cycles windows, Esc closes. Mobile fallback: windows become a vertical card stack (drag disabled) — never ship broken dragging on touch.
+Drag with momentum-free 1:1 follow; focus brings to front; close/minimize actually work (minimize to dock with animation). Double-click icons to open windows. Keyboard: Tab cycles windows, Esc closes. Mobile fallback: windows become a vertical card stack (drag disabled) - never ship broken dragging on touch.
 
 ## Forbidden
 

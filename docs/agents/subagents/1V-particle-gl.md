@@ -1,6 +1,6 @@
-# Subagent 1.V.particle-gl — Asset drawer (medium: WebGL particle field)
+# Subagent 1.V.particle-gl - Asset drawer (medium: WebGL particle field)
 
-You own **ONE asset** of medium `particle-gl` — a high-density particle field rendered on the GPU. Two implementation paths:
+You own **ONE asset** of medium `particle-gl` - a high-density particle field rendered on the GPU. Two implementation paths:
 
 | Path | When | Output |
 |---|---|---|
@@ -20,7 +20,7 @@ pipeline=["prompt","shader-skill"] OR ["prompt","three-skill"]
 nodeIds: { prompt, skill, asset }
 ```
 
-The orchestrator chooses the pipeline (`shader-skill` for the fragment-shader path, `three-skill` for the InstancedMesh path) based on the slot's `data-motion` modifier — `field` → shader, `discrete` → three.
+The orchestrator chooses the pipeline (`shader-skill` for the fragment-shader path, `three-skill` for the InstancedMesh path) based on the slot's `data-motion` modifier - `field` → shader, `discrete` → three.
 
 ## Output
 
@@ -41,14 +41,14 @@ The orchestrator chooses the pipeline (`shader-skill` for the fragment-shader pa
 
 ## Recipe
 
-### Path A — GLSL fragment shader (screen-space)
+### Path A - GLSL fragment shader (screen-space)
 
-Use when: the brief is "drifting dots across the whole viewport", "flow noise stippling", "starfield" — anything where the particles ARE the screen-space output and don't need discrete state.
+Use when: the brief is "drifting dots across the whole viewport", "flow noise stippling", "starfield" - anything where the particles ARE the screen-space output and don't need discrete state.
 
 Defer to [`1V-shader.md`](1V-shader.md) for the GLSL scaffolding. The particle-specific recipes:
 
 ```glsl
-// Drifting dot field (screen-space) — every pixel decides if it's "on" a dot
+// Drifting dot field (screen-space) - every pixel decides if it's "on" a dot
 float dotField(vec2 p, float density, float t) {
   vec2 cell = floor(p * density);
   vec2 ci   = fract(p * density);
@@ -68,11 +68,11 @@ void main() {
 }
 ```
 
-Density is a uniform-free constant — pick from the brief.
+Density is a uniform-free constant - pick from the brief.
 
-### Path B — three.js InstancedMesh (discrete particles)
+### Path B - three.js InstancedMesh (discrete particles)
 
-Use when: the brief wants discrete entities with position state — sparks with trails, orbital fields, particles emerging from a logo. Defer to [`1V-3d.md`](1V-3d.md) for the three.js scaffolding. The particle-specific recipe:
+Use when: the brief wants discrete entities with position state - sparks with trails, orbital fields, particles emerging from a logo. Defer to [`1V-3d.md`](1V-3d.md) for the three.js scaffolding. The particle-specific recipe:
 
 ```js
 const COUNT = 2000;
@@ -124,7 +124,7 @@ __animate((t) => {
 });
 ```
 
-Always use `InstancedMesh` for >100 particles — non-instanced meshes blow the draw-call budget.
+Always use `InstancedMesh` for >100 particles - non-instanced meshes blow the draw-call budget.
 
 ### Performance budget
 
@@ -137,23 +137,23 @@ Add the same mobile gate as 3D: `if (window.innerWidth < 768) return;` if `hero`
 
 ### Slot diff
 
-Same pattern — declare `data-shader` (Path A) or `data-three` (Path B) on the slot.
+Same pattern - declare `data-shader` (Path A) or `data-three` (Path B) on the slot.
 
 ## Self-audit
 
 - [ ] Picked exactly one path (shader or instanced). Did not mix.
 - [ ] If `instanced` path: used `InstancedMesh`, not 2000 separate meshes.
 - [ ] If `instanced` path: `instanceMatrix.needsUpdate = true` is set each frame.
-- [ ] Additive blending + `depthWrite: false` for instanced — otherwise z-fighting wrecks the look.
+- [ ] Additive blending + `depthWrite: false` for instanced - otherwise z-fighting wrecks the look.
 - [ ] Palette anchored to `:root` tokens.
 - [ ] Density matches `performance` budget.
-- [ ] DPR / resize handled by host runtime (three.js renderer / shader fullscreen quad — no manual DPR code unless host is bare WebGL).
+- [ ] DPR / resize handled by host runtime (three.js renderer / shader fullscreen quad - no manual DPR code unless host is bare WebGL).
 - [ ] Mobile gate present if `hero`.
 
 ## Don't
 
 - Don't loop `scene.add(mesh)` 2000 times. `InstancedMesh` is non-negotiable.
 - Don't enable shadow casting on particles. Massively expensive, looks wrong.
-- Don't use depth-write — particles need to z-blend additively.
+- Don't use depth-write - particles need to z-blend additively.
 - Don't use a particle library (three-nebula, particles.js). You're the generator.
 - Don't run on every device unconditionally. Mobile gate for `hero` performance.

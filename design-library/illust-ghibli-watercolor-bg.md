@@ -30,7 +30,7 @@ hand-painted watercolor matte background.
 
 **Line**: gentle character line over painted bg
 
-**Color**: soft natural palette — sky blue sage cream
+**Color**: soft natural palette - sky blue sage cream
 
 **Style**: pastoral landscape, layered cumulus sky
 

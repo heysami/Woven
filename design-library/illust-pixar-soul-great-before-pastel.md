@@ -13,19 +13,19 @@ images:
 
 # Pixar Soul Great-Before pastel-abstract
 
-Pixar's *Soul* (2020, Pete Docter + Kemp Powers) — the canonical reference for **abstract-spiritual character design**. The Great Before is the un-Earth-like soul-realm where new souls are prepared before birth, designed as **"deceptively simple, big bold beautiful shapes, abstract buildings unlike any on Earth."** The signature element: **the Counselors (the "Jerrys")** — flexible, "living" white **single-stroke lines** that contort like Picasso line drawings, can be literally anything because they're the universe dumbing itself down for humans to comprehend it. Pastel translucent souls float through soft pastel architecture. Earth scenes (NYC) are photoreal, contrasting the spiritual register sharply.
+Pixar's *Soul* (2020, Pete Docter + Kemp Powers) - the canonical reference for **abstract-spiritual character design**. The Great Before is the un-Earth-like soul-realm where new souls are prepared before birth, designed as **"deceptively simple, big bold beautiful shapes, abstract buildings unlike any on Earth."** The signature element: **the Counselors (the "Jerrys")** - flexible, "living" white **single-stroke lines** that contort like Picasso line drawings, can be literally anything because they're the universe dumbing itself down for humans to comprehend it. Pastel translucent souls float through soft pastel architecture. Earth scenes (NYC) are photoreal, contrasting the spiritual register sharply.
 
 ## Visual signatures
 
-- **Counselor "Jerrys"** — white **living single-stroke lines** that flex, contort, and bend into Picasso-style face/body suggestions, can become any abstract shape
-- **souls** — **translucent pastel-blue / soft-violet figures**, gently glowing, weightless, light bodies with soft contours
-- **Great Before architecture** — abstract buildings unlike anything on Earth: big bold simple shapes (giant tubes, soft domes, ribbon walkways, floating platforms), all in **soft pastel desaturated colors**
-- **soft pastel palette throughout** — lavender, sky-blue, peach, mint, butter-yellow, all desaturated
-- **"very translucent and opaque" simultaneously** — surfaces breathe between solid and ghostly
-- **softness in everything** — no sharp edges, no harsh shadow, ambient soft glow ambient
+- **Counselor "Jerrys"** - white **living single-stroke lines** that flex, contort, and bend into Picasso-style face/body suggestions, can become any abstract shape
+- **souls** - **translucent pastel-blue / soft-violet figures**, gently glowing, weightless, light bodies with soft contours
+- **Great Before architecture** - abstract buildings unlike anything on Earth: big bold simple shapes (giant tubes, soft domes, ribbon walkways, floating platforms), all in **soft pastel desaturated colors**
+- **soft pastel palette throughout** - lavender, sky-blue, peach, mint, butter-yellow, all desaturated
+- **"very translucent and opaque" simultaneously** - surfaces breathe between solid and ghostly
+- **softness in everything** - no sharp edges, no harsh shadow, ambient soft glow ambient
 - Pixar-grade subsurface scatter and ambient occlusion (the soul-glow IS subsurface-driven)
-- Earth/NYC scenes deliberately PHOTOREAL to contrast against the spiritual abstraction — that contrast is half the aesthetic
-- **22's Earth zone** — paper-collage childlike abstraction (different from main Great Before vocabulary)
+- Earth/NYC scenes deliberately PHOTOREAL to contrast against the spiritual abstraction - that contrast is half the aesthetic
+- **22's Earth zone** - paper-collage childlike abstraction (different from main Great Before vocabulary)
 
 ## Prompt keywords
 
@@ -33,9 +33,9 @@ Pixar's *Soul* (2020, Pete Docter + Kemp Powers) — the canonical reference for
 
 **Material**: white single-stroke "living line" body for Counselors (Picasso-style line drawings come to life), **translucent pastel-blue / soft-violet body** for souls, soft surfaces that breathe between solid and ghostly, Pixar-grade subsurface scatter
 
-**Line**: the **Counselor line IS the character** — single-stroke, white, flexible, Picasso-influenced
+**Line**: the **Counselor line IS the character** - single-stroke, white, flexible, Picasso-influenced
 
-**Color**: soft desaturated pastels — lavender, sky-blue, peach, mint, butter-yellow — gentle glow throughout, never saturated
+**Color**: soft desaturated pastels - lavender, sky-blue, peach, mint, butter-yellow - gentle glow throughout, never saturated
 
 **Style**: big bold abstract architectural shapes, weightless floating composition, soft ambient glow, deliberately simple geometry, Earth-contrast photoreal NYC optional
 
@@ -57,11 +57,11 @@ Pixar's *Soul* (2020, Pete Docter + Kemp Powers) — the canonical reference for
 > aesthetic**. If subject is a **Counselor (Jerry)**: a flexible **white
 > single-stroke "living line"** body contorting into a Picasso-style face
 > and figure suggestion (the universe dumbing itself down for human
-> comprehension) — line bends gracefully through the frame with no
+> comprehension) - line bends gracefully through the frame with no
 > volumetric body, just lines. If subject is a **soul**: a **translucent
 > pastel-blue / soft-violet figure** that gently glows, weightless, light
 > body with soft contours, surfaces breathing between solid and ghostly.
-> Background: **abstract Great Before architecture** — big bold simple
+> Background: **abstract Great Before architecture** - big bold simple
 > shapes (giant tube, soft dome, ribbon walkway) in **soft desaturated
 > pastels** (lavender + sky-blue + peach + mint), weightless floating
 > composition with soft ambient glow throughout. No sharp edges, no harsh

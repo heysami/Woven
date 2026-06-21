@@ -13,11 +13,11 @@ images:
 
 **Canonical references:** Apple Pay Cash · visionOS materials · Apple TV+ 2025 rebrand · Robb Owen CSS shaders · Boiler Room 2024 identity
 
-> **Raster required:** oil-on-water iridescent material captures or hand-shot iridescent objects. Conic-gradient rainbow alone is the AI tell — real iridescence requires a sampled surface. Follow the [Raster requirements](../prototype.md#raster-requirements--when-svg-will-not-deliver-the-genre) decision tree before drawing.
+> **Raster required:** oil-on-water iridescent material captures or hand-shot iridescent objects. Conic-gradient rainbow alone is the AI tell - real iridescence requires a sampled surface. Follow the [Raster requirements](../prototype.md#raster-requirements--when-svg-will-not-deliver-the-genre) decision tree before drawing.
 
 ## Surface treatment
 
-**Substrate.** Iridescence MUST sit on dark — white backgrounds kill the specular. Deep cool base `oklch(0.16 0.02 250)` (≈ `#1a1d24`) with a 1200px radial vignette `radial-gradient(ellipse at 50% 30%, oklch(0.22 0.03 250) 0%, oklch(0.12 0.02 250) 70%)`.
+**Substrate.** Iridescence MUST sit on dark - white backgrounds kill the specular. Deep cool base `oklch(0.16 0.02 250)` (≈ `#1a1d24`) with a 1200px radial vignette `radial-gradient(ellipse at 50% 30%, oklch(0.22 0.03 250) 0%, oklch(0.12 0.02 250) 70%)`.
 
 **Pearl palette (OKLCH for perceptual smoothness).**
 - mint `oklch(0.88 0.09 155)`
@@ -26,9 +26,9 @@ images:
 - sky `oklch(0.84 0.09 230)`
 - butter `oklch(0.90 0.08 90)`
 
-**Chrome greys.** `#e8ebf0 / #9098a8 / #5a6172 / #2a2e38`. One neutral accent for actionable text `#f5f7fa`. The rainbow is NEVER the accent — it is the material; type stays cool monochrome.
+**Chrome greys.** `#e8ebf0 / #9098a8 / #5a6172 / #2a2e38`. One neutral accent for actionable text `#f5f7fa`. The rainbow is NEVER the accent - it is the material; type stays cool monochrome.
 
-**Type stack.** SF Pro Display / Inter Variable at weights 510 + 600 for shell (instrument-panel restraint). Söhne Mono or Berkeley Mono for value-readouts and timestamps. NO display serifs, NO script fonts — the surface is the spectacle.
+**Type stack.** SF Pro Display / Inter Variable at weights 510 + 600 for shell (instrument-panel restraint). Söhne Mono or Berkeley Mono for value-readouts and timestamps. NO display serifs, NO script fonts - the surface is the spectacle.
 
 **Sizes.** Hero numeral 72/80 (card balance, wordmark). Display 32/40. Body 15/22. Micro-label 11/16 uppercase tracking 0.08em.
 
@@ -38,7 +38,7 @@ images:
 
 **Borders.** 1px hairline `rgba(255,255,255,0.08)` on glass surfaces. 1px inner-highlight `inset 0 1px 0 rgba(255,255,255,0.12)` on the iridescent card to fake a beveled edge. No outline borders on the holo surface itself.
 
-**Shadow.** Holo card on `0 30px 60px -20px rgba(0,0,0,0.55), 0 8px 24px -8px oklch(0.40 0.15 280 / 0.35)` — the second shadow is a tinted spill pulled from one hue in the gradient, never neutral grey. Chrome elements get a flat `0 1px 0 rgba(255,255,255,0.04)` and nothing else.
+**Shadow.** Holo card on `0 30px 60px -20px rgba(0,0,0,0.55), 0 8px 24px -8px oklch(0.40 0.15 280 / 0.35)` - the second shadow is a tinted spill pulled from one hue in the gradient, never neutral grey. Chrome elements get a flat `0 1px 0 rgba(255,255,255,0.04)` and nothing else.
 
 ## Decoration grammar
 

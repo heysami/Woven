@@ -1,6 +1,6 @@
 ---
 materialId: film-grain-tri-x
-name: Film Grain — Tri-X 400 (B&W, coarse grain)
+name: Film Grain - Tri-X 400 (B&W, coarse grain)
 family: analog
 category: film
 surfaceFinish: matte
@@ -11,9 +11,9 @@ images:
     reason: Material fidelity sample.
 ---
 
-# Film Grain — Tri-X 400 (B&W, coarse grain)
+# Film Grain - Tri-X 400 (B&W, coarse grain)
 
-A matte surface that reacts to light: yes — grain heavier in shadows.
+A matte surface that reacts to light: yes - grain heavier in shadows.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — grain heavier in shadows.
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — grain heavier in shadows
+**Reacts to light**: yes - grain heavier in shadows
 
 **Deforms**: no
 

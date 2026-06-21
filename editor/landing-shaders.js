@@ -1,5 +1,5 @@
 // ============================================================================
-// Landing-screen shader runtime — lifted verbatim from the `landing-diamonds`
+// Landing-screen shader runtime - lifted verbatim from the `landing-diamonds`
 // reference prototype (Documents/Woven IN USE/projects/projects/changing/source/
 // landing-diamonds/shaders.js). Drives a single full-page WebGL canvas behind
 // the Projects landing that draws, from ONE diamond grid:
@@ -95,7 +95,7 @@
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
-    // Disposer — call when the landing unmounts (e.g. user enters a project)
+    // Disposer - call when the landing unmounts (e.g. user enters a project)
     // so the RAF loop stops and the GL context can be reclaimed instead of
     // running invisibly behind every other screen.
     return function dispose() {
@@ -105,7 +105,7 @@
   };
 
   // ==========================================================================
-  // Per-card shader runtime — same architecture as mountShader() but exposes
+  // Per-card shader runtime - same architecture as mountShader() but exposes
   // a `uTint` vec3 uniform the caller seeds from a per-project-ID palette
   // entry, and ignores the dark-band boundary (cards are pure light field).
   // Used by the projects landing to fill the 16:9 strip at the top of every
@@ -114,7 +114,7 @@
   // each card lights up independently as the user moves between them.
   //
   // Signature: window.mountCardShader(canvas, fragBody, { tint: [r,g,b] })
-  // Returns a dispose() function — call when the card unmounts.
+  // Returns a dispose() function - call when the card unmounts.
   // ==========================================================================
   window.mountCardShader = function (canvas, fragBody, opts) {
     opts = opts || {};
@@ -151,7 +151,7 @@
     // Park the cursor far away by default so the lighting doesn't render
     // a hotspot in the middle when the user hasn't moved into this card yet.
     const mouse = { x: -1e4, y: -1e4 };
-    let hover = 0;       // 0..1 — eases up while the cursor is inside the card
+    let hover = 0;       // 0..1 - eases up while the cursor is inside the card
 
     function resize() {
       const r = canvas.getBoundingClientRect();
@@ -205,11 +205,11 @@
   };
 
   // Curated on-brand palette for the no-thumbnail landing-card field. Every
-  // tint is an identity-bearing pastel — saturated enough to read as a
+  // tint is an identity-bearing pastel - saturated enough to read as a
   // distinct colour through a 10%-opacity glass overlay, muted enough to
   // sit alongside the editor accent green without clashing. Picked by
   // hashing the project ID so each card has a stable colour across reloads.
-  // Lightness ~70–82% gives the diamond shader behind the glass a real
+  // Lightness ~70-82% gives the diamond shader behind the glass a real
   // tint cast instead of disappearing into the cream base.
   window.LANDING_CARD_PALETTE = [
     [0.96, 0.84, 0.66], // peach
@@ -230,7 +230,7 @@
     [0.74, 0.90, 0.82], // seafoam
   ];
 
-  // FNV-1a 32-bit string hash — small, deterministic, no dependency.
+  // FNV-1a 32-bit string hash - small, deterministic, no dependency.
   window.landingCardTint = function (seed) {
     const pal = window.LANDING_CARD_PALETTE;
     if (!seed) return pal[0];
@@ -243,7 +243,7 @@
   };
 
   // ==========================================================================
-  // Per-card shader body — verbatim diamond grid + cursor lighting from the
+  // Per-card shader body - verbatim diamond grid + cursor lighting from the
   // landing background, but tinted by `uTint` (the project's seeded colour)
   // and with no dark-band boundary (cards are pure light field). The cursor
   // lighting fades with `uHover` so cards at rest just show the static
@@ -268,20 +268,20 @@
     float dist = length(mouseT - fragT);
     vec3 fcol = base;
 
-    // Gentle ambient drift — diamonds at the extreme corners pick up a
+    // Gentle ambient drift - diamonds at the extreme corners pick up a
     // microscopic shade variation that breathes with iTime so the field
     // doesn't feel painted-on dead. ~1% modulation, period ~12s.
     float drift = 0.5 + 0.5 * sin(iTime * 0.5 + (id.x + id.y) * 0.6);
     fcol *= mix(0.985, 1.000, drift);
 
-    // Pattern band that softens the diamond lines under the cursor — same
+    // Pattern band that softens the diamond lines under the cursor - same
     // idea as the bg shader, scaled to the card.
     float pat = smoothstep(180.0 * uScale, 0.0, dist) * uHover;
     pat = pat * pat * (3.0 - 2.0 * pat);
     vec3 lineCol = base * 0.92;
     fcol = mix(fcol, mix(fcol, lineCol, line * 0.5), pat);
 
-    // Diamond surface lighting — alternating-sign quilt with a 3D normal,
+    // Diamond surface lighting - alternating-sign quilt with a 3D normal,
     // lit by a point above the cursor. Hover-gated so it only blooms when
     // the cursor is over this card.
     float sgn = mod(id.x + id.y, 2.0) < 0.5 ? 1.0 : -1.0;
@@ -308,8 +308,8 @@
   }`;
 
   // ==========================================================================
-  // Unified background shader — verbatim from landing-diamonds/shaders.js.
-  // See landing-diamonds/README.md §1–§2 for the maths.
+  // Unified background shader - verbatim from landing-diamonds/shaders.js.
+  // See landing-diamonds/README.md §1-§2 for the maths.
   // ==========================================================================
   window.SHADER_BG = `
   const float PI = 3.14159265;
@@ -378,7 +378,7 @@
   }`;
 
   // ==========================================================================
-  // Dark-band overlay shader — same body as SHADER_BG but outputs alpha = dm
+  // Dark-band overlay shader - same body as SHADER_BG but outputs alpha = dm
   // so the canvas is opaque in the dark band + teeth zigzag (cards behind it
   // are hidden) and transparent in the light field (cards remain visible).
   // The teeth boundary follows the actual zigzag geometry per-pixel rather

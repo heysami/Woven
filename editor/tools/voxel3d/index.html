@@ -12,7 +12,7 @@
 <script src="/editor/tools/_shared/tooltip.js" defer></script>
 <style>
   :root {
-    /* Woven DS remap — local vars now point at the shared --wv-* tokens so the
+    /* Woven DS remap - local vars now point at the shared --wv-* tokens so the
        chrome (toolbar, inspector, palette rows, inputs) reads as light Woven with
        hairline borders + the green accent. --bg is the page chrome bg; the WebGL
        viewport (#coreCanvas) keeps its OWN dark content background, set below. */
@@ -29,7 +29,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; font-family: var(--wv-font-sans); }
-  /* The 3D viewport stays dark — it's content, not chrome. (id is #coreCanvas so
+  /* The 3D viewport stays dark - it's content, not chrome. (id is #coreCanvas so
      the shared detached-panels.css can pin it to the node core rect on select.) */
   #coreCanvas { position: fixed; inset: 0; background: var(--wv-viewport); }
   canvas { display: block; outline: none; }
@@ -50,7 +50,7 @@
   .tool svg { width: 19px; height: 19px; }
   .sep { height: 1px; background: var(--line); margin: 3px 2px; }
   /* Detached (node selected): the shared detached-panels.css pins the LEFT float
-     panel full-height (top:0/bottom:0) — which turns this COMPACT vertical icon
+     panel full-height (top:0/bottom:0) - which turns this COMPACT vertical icon
      strip into a tall slab. Override it, scoped to detached mode, so the toolbar
      floats content-sized + vertically centred while KEEPING its own Woven card
      (surface bg + hairline border + shadow). `body.detached-panels .toolbar`
@@ -121,7 +121,7 @@
   .palette-name { font-size: 10.5px; color: var(--muted); margin: 10px 0 6px; display: flex; align-items: center; gap: 6px; }
   .palette-name::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
-  /* Collapsible inspector sections — the shared .wv-acc accordion (native
+  /* Collapsible inspector sections - the shared .wv-acc accordion (native
      <details>) replaces the old static .group blocks so a long panel can be
      tidied. Each section's title + tag live in the <summary>; controls live in
      .wv-acc-body. Additive tweaks: keep the green accent on the inline tag, and
@@ -155,26 +155,26 @@
   <!-- HUD overlays inside #coreCanvas so they pin to the node viewport, not the
        grown iframe, when the panels are detached. The renderer canvas is
        appendChild'd here at runtime (after these), and the HUD sits above it. -->
-  <div class="badge">Voxel editor · <b id="fps">–</b></div>
+  <div class="badge">Voxel editor · <b id="fps">-</b></div>
   <div class="hint">
     <span><b>Click</b> place</span><span><b>A/X/P/B</b> add·rem·paint·box</span><span><b>Drag</b> orbit</span><span><b>1-9</b> slot</span>
   </div>
 </div>
 <canvas id="fx-overlay"></canvas>
 
-<!-- Left FLOATING vertical toolbar — tagged as the left float panel. It's already
+<!-- Left FLOATING vertical toolbar - tagged as the left float panel. It's already
      position:absolute over the stage; in detached mode the shared CSS repositions
      it OUTSIDE the core rect (that's the intent). -->
 <div class="toolbar" id="toolbar" data-float-panel="left">
   <button class="tool active" data-tool="add" title="Add voxel (A)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M12 6v5M9.5 8.5h5" stroke-width="1.2"/></svg></button>
   <button class="tool" data-tool="remove" title="Remove voxel (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11l8-4.5M12 11v9M12 11L4 6.5"/><path d="M9.5 8.5l5 0" stroke-width="1.4"/></svg></button>
   <button class="tool" data-tool="paint" title="Paint voxel (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l8-8 5 5-8 8z"/><path d="M5 11l-1 6 6-1"/><path d="M3 21h7"/></svg></button>
-  <button class="tool" data-tool="box" title="Box fill (B) — click two corners"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h7v7H4z"/><path d="M13 13h7v7h-7z"/><path d="M11 11l2 2" stroke-dasharray="2 2"/></svg></button>
+  <button class="tool" data-tool="box" title="Box fill (B) - click two corners"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h7v7H4z"/><path d="M13 13h7v7h-7z"/><path d="M11 11l2 2" stroke-dasharray="2 2"/></svg></button>
   <div class="sep"></div>
   <button class="tool" data-tool="orbit" title="Orbit only (no edit) (O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3.2"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(28 12 12)"/></svg></button>
 </div>
 
-<!-- Right inspector — tagged as the right float panel (floats outside the core
+<!-- Right inspector - tagged as the right float panel (floats outside the core
      rect in detached mode). -->
 <div class="panel" data-float-panel="right">
   <header><span class="dot"></span><h1>Voxel Inspector</h1><small id="save-state" style="margin-left:auto;color:var(--accent-2);opacity:.35;transition:opacity .3s">autosave on</small><small id="count" style="margin-left:8px">0 voxels</small></header>
@@ -297,7 +297,7 @@ const $ = s => document.querySelector(s);
 // ── Renderer / scene / cameras (reused from spline3d) ──────────────────────
 const stage = $('#coreCanvas');   // central WebGL viewport (id used by detached-panels.css)
 // In detached-panels mode the iframe is GROWN beyond the node and #coreCanvas is
-// pinned (by detached-panels.css) to the node's core rect — so the renderer must
+// pinned (by detached-panels.css) to the node's core rect - so the renderer must
 // size to #coreCanvas, NOT to the window. coreSize() returns the core viewport
 // dimensions, falling back to the window when #coreCanvas is missing/zero (the
 // default non-detached layout, where #coreCanvas fills the iframe → ≈ window).
@@ -415,7 +415,7 @@ function matForEntry(e) {
   return m;
 }
 
-// ── Meshing — one merged mesh per palette slot (so each can carry its own ─────
+// ── Meshing - one merged mesh per palette slot (so each can carry its own ─────
 // material/material-mode). Greedy-ish: we just merge per-cell BoxGeometries into
 // one buffer per slot, rebuilt on every edit. Cheap for these grid sizes and
 // gives proper per-material shading (glass/metal read correctly).
@@ -460,21 +460,21 @@ function remesh() {
   if (typeof reconcileArrangement === 'function') { _arrangeSig = ''; reconcileArrangement(); }
 }
 // Lightweight material refresh when only a palette entry's look changes (no
-// topology change) — avoids a full remesh.
+// topology change) - avoids a full remesh.
 function refreshSlotMaterial(idx) {
   const mesh = meshes.get(idx); if (!mesh) return;
   const e = palette[idx]; if (!e) return;
   mesh.material.dispose(); mesh.material = matForEntry(e);
-  if (fur) applyFurToMesh(mesh);   // material swap drops the fur child — rebuild it
+  if (fur) applyFurToMesh(mesh);   // material swap drops the fur child - rebuild it
 }
 
 // ── Fur (shell fur, ported from spline3d) ─────────────────────────────────────
 // One coat per merged palette mesh. 32 concentric shells offset along the normal
 // in the vertex shader; a shared per-coat uForce uniform droops them under
 // gravity + lags behind motion. A distinct customProgramCacheKey per shell is
-// CRITICAL — without it three reuses one program and every shell collapses to
+// CRITICAL - without it three reuses one program and every shell collapses to
 // the surface. `fur` (schema field) is {len,gravity} | null.
-let fur = null;   // {len, gravity} or null — global coat applied to every voxel mesh
+let fur = null;   // {len, gravity} or null - global coat applied to every voxel mesh
 function furAlpha() {
   const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d');
   x.fillStyle = '#000'; x.fillRect(0, 0, N, N);
@@ -615,7 +615,7 @@ let boxAnchor = null;   // first corner for box fill
 // ground-plane hit mapped to a grid cell at y=0.
 function pick(e) {
   // NDC relative to the GL canvas rect (== #coreCanvas in detached mode), not the
-  // window — otherwise raycasts are offset/scaled when the iframe is grown.
+  // window - otherwise raycasts are offset/scaled when the iframe is grown.
   const cr = renderer.domElement.getBoundingClientRect();
   ptr.x = ((e.clientX - cr.left) / cr.width) * 2 - 1; ptr.y = -((e.clientY - cr.top) / cr.height) * 2 + 1;
   ray.setFromCamera(ptr, camera);
@@ -760,7 +760,7 @@ $('#pal-del').addEventListener('click', () => {
   renderPalette(); syncSlotInspector(); remesh(); scheduleEmit();
 });
 
-// Curated palettes (reused list from spline3d) — click a swatch sets active slot color.
+// Curated palettes (reused list from spline3d) - click a swatch sets active slot color.
 const PALETTES = { Aurora:['#6c7bff','#38e0c8','#a78bfa','#22d3ee','#f472b6','#818cf8'], Sunset:['#ff7e5f','#feb47b','#ff5d6c','#ffd166','#ef476f','#ffb4a2'], Mint:['#2dd4bf','#34d399','#a7f3d0','#10b981','#5eead4','#bbf7d0'], Candy:['#f472b6','#c084fc','#60a5fa','#fb7185','#facc15','#4ade80'], Mono:['#f8fafc','#cbd5e1','#94a3b8','#64748b','#334155','#0f172a'] };
 const palWrap = $('#palettes');
 Object.entries(PALETTES).forEach(([name, cols]) => {
@@ -799,7 +799,7 @@ $('#fur-grav').addEventListener('input', e => {
   if (fur) { fur.gravity = v; scheduleEmit(); }
 });
 
-// Metaball controls — add sources around the field center, jittered so they fuse.
+// Metaball controls - add sources around the field center, jittered so they fuse.
 $('#blob-add').addEventListener('click', () => {
   const r = parseFloat($('#blob-str').value) * G;
   const j = G * 0.12;
@@ -964,7 +964,7 @@ function seedDemo() {
 // We run it over the rendered WebGL image each frame via the shared fx.js module
 // and blit the result onto a 2D overlay canvas stacked above the GL canvas.
 // intensity 0 / empty chain = passthrough (overlay hidden, GL shows through).
-// These are EXTERNAL inputs — never echoed back as voxel:state.
+// These are EXTERNAL inputs - never echoed back as voxel:state.
 let wiredEffects = [];          // [{type, intensity, params, glsl?}]
 let _fxChain = null;            // lazily-created fx.js chain (or null on failure)
 let _fxFailed = false;          // true once import/WebGL2 failed (stop retrying)
@@ -1026,7 +1026,7 @@ let _arrangeGroup = null;       // THREE.Group holding the replicated clones, or
 let _arrangeSig = '';           // signature to skip redundant rebuilds
 let _arrangeDyn = null;         // { spec, count, dims } when a time-varying source drives the arrangement
 // Per-instance parametric drive (number-generator / timeline / overrides) on a
-// replicated clone — rotation/scale/position from vector bindings + overrides.
+// replicated clone - rotation/scale/position from vector bindings + overrides.
 function applyArrangeDyn(inst, spec, i, count, time, dims) {
   const r = Sources.resolve3D(spec, i, count, time, dims);
   if (!r.has) return;
@@ -1127,7 +1127,7 @@ function reconcileArrangement() {
     }
   } else { return; }   // unknown mode → skip gracefully
 
-  // Per-instance vector bindings + overrides — applied now (static frame), and
+  // Per-instance vector bindings + overrides - applied now (static frame), and
   // re-applied per frame if any source is time-varying.
   for (const inst of grp.children) applyArrangeDyn(inst, spec, inst.userData._wiredIdx, _idx, t0, dims);
   _arrangeDyn = Sources.isDynamic(spec) ? { spec, count: _idx, dims } : null;
@@ -1165,7 +1165,7 @@ function post(type, extra) {
 // toggle body.detached-panels (the shared CSS floats the left toolbar + right
 // inspector OUT of the central #coreCanvas only while that class is present),
 // then report the panel extents so the host can grow the iframe to land
-// #coreCanvas exactly on the node's core rect. Additive — no effect when not
+// #coreCanvas exactly on the node's core rect. Additive - no effect when not
 // selected (the default in-frame layout is fully restored).
 function reportPanels() {
   const floating = document.body.classList.contains('detached-panels');
@@ -1192,8 +1192,8 @@ function reportPanels() {
   post('voxel:panels', { panelL, panelR, panelT, panelB });
 }
 // Export the live voxel meshes to a binary glTF (.glb) data URL. This is the
-// node's downstream DELIVERABLE — a real 3D object usable by model-viewer /
-// the 3D editor's import / a prototype — while the JSON sidecar stays the
+// node's downstream DELIVERABLE - a real 3D object usable by model-viewer /
+// the 3D editor's import / a prototype - while the JSON sidecar stays the
 // agent-editable canonical. Clones the per-palette meshes into a detached
 // group (a mesh can't live in two parents); clones share geometry/material,
 // which the exporter reads fine. Resolves null on an empty scene / failure.
@@ -1293,7 +1293,7 @@ function fitToCore() {
 }
 addEventListener('resize', fitToCore);
 // Re-fit whenever #coreCanvas changes size (node resize while detached, or the
-// float/unfloat reflow) — event-driven, never per-frame polling.
+// float/unfloat reflow) - event-driven, never per-frame polling.
 if (stage && 'ResizeObserver' in window) {
   const _coreRO = new ResizeObserver(() => fitToCore());
   _coreRO.observe(stage);

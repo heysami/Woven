@@ -13,7 +13,7 @@ images:
 
 # Gold Leaf (rich warm metal)
 
-A metallic surface that reacts to light: yes — warm specular, slight wrinkle.
+A metallic surface that reacts to light: yes - warm specular, slight wrinkle.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A metallic surface that reacts to light: yes — warm specular, slight wrinkle.
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — warm specular, slight wrinkle
+**Reacts to light**: yes - warm specular, slight wrinkle
 
 **Deforms**: no
 
@@ -59,7 +59,7 @@ raster: scanned gold-leaf texture at 1024px tile, multiplied
 
 ## Common implementation mistakes (avoid these)
 
-- cool-white gold (gold is warm — pull hue toward 80–90 in OKLCH)
+- cool-white gold (gold is warm - pull hue toward 80-90 in OKLCH)
 - smooth perfect surface (real gold leaf wrinkles)
 
 ## Examples in the wild

@@ -3,28 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reeded glass prism hero — reference implementation</title>
+<title>Reeded glass prism hero - reference implementation</title>
 <!--
-  REFERENCE IMPLEMENTATION — "true prism" / reeded liquid glass hero
+  REFERENCE IMPLEMENTATION - "true prism" / reeded liquid glass hero
   (design-library/material-reeded-fluted-glass.md, study R2)
 
   What makes this the "proper" version, vs the usual approximations:
-  1. REAL GEOMETRY — the panel is an actual fluted surface (half-cylinder
+  1. REAL GEOMETRY - the panel is an actual fluted surface (half-cylinder
      ribs as displaced vertices + computed normals), not a normal-map fake.
      Transmission refracts through the true surface curvature, so each rib
      slices the sphere behind it exactly the way physical reeded glass does.
-  2. PHYSICAL TRANSMISSION + DISPERSION — MeshPhysicalMaterial with
+  2. PHYSICAL TRANSMISSION + DISPERSION - MeshPhysicalMaterial with
      transmission:1, ior, thickness, and `dispersion` (three r163+), so the
      spectral fringing lives at rib boundaries, where prisms actually put it.
-  3. STUDIO LIGHT DISCIPLINE — one env (RoomEnvironment), one key light,
+  3. STUDIO LIGHT DISCIPLINE - one env (RoomEnvironment), one key light,
      ACES tone mapping. The monochrome scene rule from the study: field,
      object, and light share one hue family.
-  4. DAMPED EVERYTHING — pointer drives a parallax camera with critically-
+  4. DAMPED EVERYTHING - pointer drives a parallax camera with critically-
      damped pursuit (cur += (t-cur)*k). Nothing snaps. The smoothness IS the
      quality signal.
-  5. UI IN THE QUIET ZONE — headline + CTA are real DOM laid into the flat
+  5. UI IN THE QUIET ZONE - headline + CTA are real DOM laid into the flat
      left field; the canvas is full-bleed behind. Type never refracts.
-  6. BUDGET HYGIENE — DPR cap 2, paused off-tab, prefers-reduced-motion
+  6. BUDGET HYGIENE - DPR cap 2, paused off-tab, prefers-reduced-motion
      freezes the drift but keeps the composition.
 -->
 <style>
@@ -45,7 +45,7 @@
   #stage { position: fixed; inset: 0; }
   #stage canvas { display: block; }
 
-  /* ── UI layer — the quiet zone ─────────────────────────────── */
+  /* ── UI layer - the quiet zone ─────────────────────────────── */
   .ui {
     position: fixed; inset: 0;
     display: grid;
@@ -92,7 +92,7 @@
     display: grid; place-items: center; font-size: .8rem;
   }
 
-  /* film grain — breaks gradient banding, ties render to page */
+  /* film grain - breaks gradient banding, ties render to page */
   .grain {
     position: fixed; inset: -50%;
     pointer-events: none; z-index: 5;
@@ -120,7 +120,7 @@
 <div class="ui">
   <div class="copy">
     <h1>Immerse yourself in the refracted elegance.</h1>
-    <p class="sub">Elevate your vision with 3D magic. Unlock a world of brilliance —
+    <p class="sub">Elevate your vision with 3D magic. Unlock a world of brilliance -
     the sphere lives behind the glass, and the glass decides what you see.</p>
     <button class="cta">Explore technology <span class="arrow">→</span></button>
   </div>
@@ -156,21 +156,21 @@ scene.background = new THREE.Color('#b6f09c');                // the mint field
 const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.1, 50);
 camera.position.set(0, 0, 9);
 
-/* studio environment — chrome/glass need SOMETHING to refract/reflect */
+/* studio environment - chrome/glass need SOMETHING to refract/reflect */
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-/* one key light, top-left — §1.2 light-direction discipline */
+/* one key light, top-left - §1.2 light-direction discipline */
 const key = new THREE.DirectionalLight('#ffffff', 1.6);
 key.position.set(-4, 6, 6);
 scene.add(key);
 scene.add(new THREE.AmbientLight('#cdf5bb', 0.5));
 
-/* ── the world behind the glass — monochrome scene discipline ──── */
+/* ── the world behind the glass - monochrome scene discipline ──── */
 const world = new THREE.Group();                              // everything that gets sliced
 scene.add(world);
 
-/* hero sphere — glossy green, clearcoated like the reference */
+/* hero sphere - glossy green, clearcoated like the reference */
 const sphere = new THREE.Mesh(
   new THREE.SphereGeometry(1.5, 96, 96),
   new THREE.MeshPhysicalMaterial({
@@ -181,7 +181,7 @@ const sphere = new THREE.Mesh(
 sphere.position.set(2.55, 0.1, -1.8);                         // centered behind the panel
 world.add(sphere);
 
-/* satellite chips — small floating accents, same hue family */
+/* satellite chips - small floating accents, same hue family */
 const chipMat = new THREE.MeshPhysicalMaterial({
   color: '#36e04e', roughness: 0.25, clearcoat: 0.8, clearcoatRoughness: 0.2,
 });
@@ -193,7 +193,7 @@ for (const [x, y, z, r] of [[0.6, 1.9, -2.6, .18], [4.4, -1.5, -2.2, .26], [1.2,
   chips.push(c); world.add(c);
 }
 
-/* ── the reeded glass panel — REAL fluted geometry ─────────────── */
+/* ── the reeded glass panel - REAL fluted geometry ─────────────── */
 function reededPanelGeometry(w, h, ribs, depth, segsPerRib = 24) {
   // front surface: columns of half-cylinders (the flutes), z = profile(x)
   const segX = ribs * segsPerRib;
@@ -213,13 +213,13 @@ function reededPanelGeometry(w, h, ribs, depth, segsPerRib = 24) {
 
 const RIBS = 14;
 const glass = new THREE.Mesh(
-  reededPanelGeometry(2.9, 5.8, RIBS, 0.2),   // height bleeds past the viewport — architectural
+  reededPanelGeometry(2.9, 5.8, RIBS, 0.2),   // height bleeds past the viewport - architectural
   new THREE.MeshPhysicalMaterial({
     transmission: 1,              // physical refraction of the scene behind
-    thickness: 1.1,               // refraction depth — the slicing strength
+    thickness: 1.1,               // refraction depth - the slicing strength
     ior: 1.52,                    // crown glass
     dispersion: 4.5,              // spectral fringing at rib boundaries (r163+)
-    roughness: 0.06,              // optically pure — frost kills the slicing
+    roughness: 0.06,              // optically pure - frost kills the slicing
     metalness: 0,
     clearcoat: 1, clearcoatRoughness: 0.06,
     color: '#eaffe2',             // barely-there tint, same hue family
@@ -228,10 +228,10 @@ const glass = new THREE.Mesh(
 );
 glass.position.set(2.55, 0, 0.4);                  // right third, in front of sphere
 scene.add(glass);
-// NOTE: no opaque backing/frame behind the panel — transmission samples the
+// NOTE: no opaque backing/frame behind the panel - transmission samples the
 // scene behind it; anything opaque back there blacks the glass out.
 
-/* ── damped pointer choreography — nothing snaps ───────────────── */
+/* ── damped pointer choreography - nothing snaps ───────────────── */
 const target = { x: 0, y: 0 };
 const cur    = { x: 0, y: 0 };
 addEventListener('pointermove', (e) => {
@@ -248,7 +248,7 @@ function frame_() {
   if (!playing) return;
   const t = clock.getElapsedTime();
 
-  // damped pursuit — ~0.06 ≈ 250ms settle at 60fps
+  // damped pursuit - ~0.06 ≈ 250ms settle at 60fps
   cur.x += (target.x - cur.x) * 0.06;
   cur.y += (target.y - cur.y) * 0.06;
 

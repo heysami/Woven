@@ -1,5 +1,5 @@
 /* ==========================================================================
-   TECH-MINIMALISM — style overlay. Apply via <html data-theme="techminimalism">.
+   TECH-MINIMALISM - style overlay. Apply via <html data-theme="techminimalism">.
    Industrial Frutiger / DORFic × Teenage Engineering × Nothing Phone.
 
    Concrete cool off-white ground, graphite inverse, neutral greys, and ONE
@@ -7,14 +7,14 @@
    UPPERCASE tracked MONO labels; flattened shadows; near-zero radii.
 
    COLOUR FOLLOWS THE SELECTED SCHEME. The single hot signal (was hardcoded
-   safety orange) now rides the PRIMARY role written by the customizer — this
+   safety orange) now rides the PRIMARY role written by the customizer - this
    file NEVER re-defines the --primary-/--secondary-/--tertiary- ramps; it
    DERIVES the brand roles from those ramps. Pick an orange scheme → orange
    signal; pick a blue scheme → blue signal; etc. The GRAPHITE/CONCRETE
    neutrals stay the style's fixed identity (they are not the scheme).
 
    DARK MODE is handled by a parallel block scoped to :root.ds-scheme-dark
-   (the class the editor toggles for dark previews) — the concrete ground
+   (the class the editor toggles for dark previews) - the concrete ground
    inverts to graphite-dark while the hairline-technical look is preserved.
 
    Loads AFTER styles.css (+ component/shell CSS). Every override is scoped to
@@ -28,15 +28,15 @@
 
   /* ---- Concrete / graphite ground ---- */
   --surface:#FFFFFF;            /* panels float a touch above the concrete  */
-  --surface-default:#F2F3F4;    /* concrete cool off-white — the ground     */
+  --surface-default:#F2F3F4;    /* concrete cool off-white - the ground     */
   --surface-medium:#E7E9EA;
   --surface-strong:#DDE0E1;
   --surface-inverse:#0E1014;    /* cool-cast graphite                       */
 
-  /* ---- Text — graphite scale, cool neutral greys ---- */
+  /* ---- Text - graphite scale, cool neutral greys ---- */
   --fg-default:#0E1014; --fg-muted:#52565C; --fg-subtle:#878C92; --fg-on-surface:#FFFFFF;
 
-  /* ---- Hairline borders (the load-bearing decoration — no shadows) ---- */
+  /* ---- Hairline borders (the load-bearing decoration - no shadows) ---- */
   --border-default:#0E1014; --border-subtle:#C9CDD0;
   --interactive-hover:#E7E9EA; --interactive-active:#DDE0E1;
 
@@ -78,14 +78,14 @@
 }
 
 /* ==========================================================================
-   DARK tech-minimalism — the editor toggles html.ds-scheme-dark for a dark
+   DARK tech-minimalism - the editor toggles html.ds-scheme-dark for a dark
    preview while data-theme stays "techminimalism". Invert the concrete ground
    to graphite-dark, keep the hairline-technical feel, and re-point the brand
    roles to lighter ramp steps. The accent still follows the scheme.
    ========================================================================== */
 :root.ds-scheme-dark[data-theme="techminimalism"]{
   --surface:#16181B;            /* panels float above the dark ground       */
-  --surface-default:#0E1014;    /* graphite-dark — the ground               */
+  --surface-default:#0E1014;    /* graphite-dark - the ground               */
   --surface-medium:#1C1F23;
   --surface-strong:#26292D;
   --surface-inverse:#F2F3F4;    /* a light slab to invert against           */
@@ -118,7 +118,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   TYPE — body stays sans (Plus Jakarta). System/label/chrome type goes MONO,
+   TYPE - body stays sans (Plus Jakarta). System/label/chrome type goes MONO,
    SMALL, UPPERCASE, tracked: the technical micro-label register.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .title-mini,
@@ -145,9 +145,9 @@
 }
 
 /* --------------------------------------------------------------------------
-   SIDEBAR — flip the brand-gradient rail to a graphite concrete slab with a
+   SIDEBAR - flip the brand-gradient rail to a graphite concrete slab with a
    faint dot-matrix texture + a hairline edge. Mono section labels. The slab
-   stays graphite (#0E1014) in BOTH modes — fine on a #16181B dark page.
+   stays graphite (#0E1014) in BOTH modes - fine on a #16181B dark page.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .sidebar{
   background:#0E1014;
@@ -178,7 +178,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   TOPBAR / APPBAR — flat concrete surface, hairline rule, no shadow.
+   TOPBAR / APPBAR - flat concrete surface, hairline rule, no shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .topbar{
   background:var(--surface);border-bottom:1px solid var(--border-default);
@@ -189,7 +189,7 @@
 [data-theme="techminimalism"] .appbar__icon-btn{border-radius:2px;}
 
 /* --------------------------------------------------------------------------
-   CARDS / SECTIONS — flat, hairline-framed rectangles, zero shadow.
+   CARDS / SECTIONS - flat, hairline-framed rectangles, zero shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .card{
   background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
@@ -205,7 +205,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   TABLES — hairline grids, mono uppercase headers. .table--flat thead is the
+   TABLES - hairline grids, mono uppercase headers. .table--flat thead is the
    quiet technical register; the standard table gets a graphite header rule.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .table th{
@@ -223,7 +223,7 @@
 [data-theme="techminimalism"] .table--flat td{border-bottom:1px solid var(--border-subtle);}
 
 /* --------------------------------------------------------------------------
-   INPUTS — square, hairline, scheme focus signal. Bare inputs stay invisible.
+   INPUTS - square, hairline, scheme focus signal. Bare inputs stay invisible.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .input,
 [data-theme="techminimalism"] .select,
@@ -241,13 +241,13 @@
 }
 [data-theme="techminimalism"] .input-affix{border:1px solid var(--border-subtle);border-radius:2px;}
 [data-theme="techminimalism"] .input-affix:focus-within{border-color:var(--primary-500);}
-/* input--bare: no frame, no fill — keep it bare under the theme too */
+/* input--bare: no frame, no fill - keep it bare under the theme too */
 [data-theme="techminimalism"] .input--bare{background:transparent;border:0;box-shadow:none;}
 [data-theme="techminimalism"] .input--bare:focus,
 [data-theme="techminimalism"] .input--bare.is-focus{box-shadow:none;border:0;}
 
 /* --------------------------------------------------------------------------
-   BUTTONS — primary = solid scheme signal w/ white text + hairline edge;
+   BUTTONS - primary = solid scheme signal w/ white text + hairline edge;
    outline = graphite hairline on concrete. Square corners.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .btn{border-radius:2px;box-shadow:none;}
@@ -265,7 +265,7 @@
 [data-theme="techminimalism"] .btn--outline svg{color:var(--fg-default);}
 
 /* --------------------------------------------------------------------------
-   TAGS / BADGES — mono uppercase technical micro-labels. Tags rectangular;
+   TAGS / BADGES - mono uppercase technical micro-labels. Tags rectangular;
    the default fill becomes a quiet graphite-outline catalogue stencil, with
    the scheme reserved as the single signal variant (.tag--outline / primary).
    -------------------------------------------------------------------------- */
@@ -290,7 +290,7 @@
 [data-theme="techminimalism"] .badge--dot{border-radius:100px;border:0;}  /* dots stay round */
 
 /* --------------------------------------------------------------------------
-   KPI STRIP — hairline-divided cells, mono uppercase labels (handled above).
+   KPI STRIP - hairline-divided cells, mono uppercase labels (handled above).
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .kpi-strip{
   border-top:1px solid var(--border-default);border-bottom:1px solid var(--border-default);
@@ -299,7 +299,7 @@
 [data-theme="techminimalism"] .kpi__value{font-variant-numeric:tabular-nums;}
 
 /* --------------------------------------------------------------------------
-   STAT-HERO / CHART-CARD — flat hairline panels, mono technical labels.
+   STAT-HERO / CHART-CARD - flat hairline panels, mono technical labels.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .stat-hero{
   background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
@@ -311,28 +311,28 @@
 }
 
 /* --------------------------------------------------------------------------
-   MODAL — square graphite-framed sheet, no drop shadow.
+   MODAL - square graphite-framed sheet, no drop shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .modal{
   background:var(--surface);border:1px solid var(--border-default);border-radius:3px;box-shadow:none;
 }
 
 /* --------------------------------------------------------------------------
-   PHONE shell — square device, hairline frame instead of soft shadow.
+   PHONE shell - square device, hairline frame instead of soft shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .phone{
   border:1px solid var(--border-default);border-radius:6px;box-shadow:none;
 }
 
 /* --------------------------------------------------------------------------
-   TABBAR active — scheme signal instead of brand-blue pill; square marker.
+   TABBAR active - scheme signal instead of brand-blue pill; square marker.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .tabbar__item.is-active{color:var(--primary-fg);}
 [data-theme="techminimalism"] .tabbar__item.is-active .tabbar__icon{
   background:var(--primary-surface-subtle);color:var(--primary-fg);border-radius:2px;
 }
 
-/* ---- Split-dropdown caret — square + hairline, matches the primary button ---- */
+/* ---- Split-dropdown caret - square + hairline, matches the primary button ---- */
 [data-theme="techminimalism"] .btn-split .btn{border-top-right-radius:0;border-bottom-right-radius:0;}
 [data-theme="techminimalism"] .btn-split__caret{
   background:var(--primary-surface);

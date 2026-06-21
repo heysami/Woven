@@ -11,9 +11,9 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `mobile-app` — read `shell-mobile-app.md`
-- **Style:** `material-m3` — read `style-material-m3.md`
-- **Aesthetic:** *(none — adult-pro brief)*
+- **Shell:** `mobile-app` - read `shell-mobile-app.md`
+- **Style:** `material-m3` - read `style-material-m3.md`
+- **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** imperative verbs, no marketing fluff
 
 ## Best for

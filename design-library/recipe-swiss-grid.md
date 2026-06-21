@@ -11,9 +11,9 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `editorial-broken-grid` — read `shell-editorial-broken-grid.md`
-- **Style:** `oversized-neo-grotesque` — read `style-oversized-neo-grotesque.md`
-- **Aesthetic:** `aesthetic-swiss-modernist` — read `aesthetic-swiss-modernist.md`
+- **Shell:** `editorial-broken-grid` - read `shell-editorial-broken-grid.md`
+- **Style:** `oversized-neo-grotesque` - read `style-oversized-neo-grotesque.md`
+- **Aesthetic:** `aesthetic-swiss-modernist` - read `aesthetic-swiss-modernist.md`
 - **Voice:** declarative, label-like, all-caps for categories
 
 ## Best for

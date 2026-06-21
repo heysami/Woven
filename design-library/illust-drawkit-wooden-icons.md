@@ -53,7 +53,7 @@ hand-carved beech / pine grain visible on every surface.
 
 ## When to use
 
-Cottagecore, solarpunk, warm-restraint, dark-academia — anything that
+Cottagecore, solarpunk, warm-restraint, dark-academia - anything that
 
 ## When NOT to use
 

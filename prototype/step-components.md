@@ -1,4 +1,4 @@
-# Step seven — flat components, no premature abstractions
+# Step seven - flat components, no premature abstractions
 
 - **Copy-paste JSX is fine.** Don't extract `<Card>` / `<Button>` / `<Badge>` until the same pattern appears 5+ times.
 - **Inline SVG icons** in a `const Icon = { … }` map. No icon library. ~12 icons covers most prototypes.

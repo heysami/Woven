@@ -33,7 +33,7 @@ Mesh-gradient field appears exactly once per screen behind hero text, never tile
   - Linear: `#5e6ad2` indigo wash + `#e4f222` acid-lime CTA (reserved for exactly one button)
   - Vercel prism: `#eec32d` · `#ec4b4b` · `#709ab9` · `#4dffbf`
   - Cron: `#b6a8ff` lilac · `#ffb39a` peach · `#a7d3f2` sky
-- Each stop fades center-to-transparent — never solid-to-solid
+- Each stop fades center-to-transparent - never solid-to-solid
 
 ### Type stack
 
@@ -64,11 +64,11 @@ Mesh-gradient field appears exactly once per screen behind hero text, never tile
 
 ### Borders
 
-1px hairlines `#ebebeb` light / `rgba(255,255,255,0.08)` dark — never on top of the mesh, only on cards below it.
+1px hairlines `#ebebeb` light / `rgba(255,255,255,0.08)` dark - never on top of the mesh, only on cards below it.
 
 ### Shadow
 
-One soft lift `rgba(23,23,23,0.06) 0 3px 6px` on cards. The gradient itself replaces shadow as the depth cue — never combine heavy drop-shadows with aurora.
+One soft lift `rgba(23,23,23,0.06) 0 3px 6px` on cards. The gradient itself replaces shadow as the depth cue - never combine heavy drop-shadows with aurora.
 
 ### Decoration grammar
 
@@ -88,11 +88,11 @@ Forbidden:
 
 ### Motion
 
-Gradient drifts via `12s linear infinite` + `8s linear infinite` counter-rotation (`transform: rotate(1turn) translate(60-100px) rotate(-1turn)`) at most, or a single WebGL minigl noise loop. Everything else still — no parallax, no scroll-jacking, no bouncy springs. Text uses `200ms ease-out` fade-in only.
+Gradient drifts via `12s linear infinite` + `8s linear infinite` counter-rotation (`transform: rotate(1turn) translate(60-100px) rotate(-1turn)`) at most, or a single WebGL minigl noise loop. Everything else still - no parallax, no scroll-jacking, no bouncy springs. Text uses `200ms ease-out` fade-in only.
 
 ## Failure mode
 
-Full-saturation rainbow blobs with no transparent falloff, no blur, no grain, repeated behind every section, with Poppins-700 headings and a second gradient on the button — the unmistakable AI mesh-gradient template look.
+Full-saturation rainbow blobs with no transparent falloff, no blur, no grain, repeated behind every section, with Poppins-700 headings and a second gradient on the button - the unmistakable AI mesh-gradient template look.
 
 ## Best for
 

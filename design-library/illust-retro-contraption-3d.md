@@ -5,7 +5,7 @@ category: 3D
 subCategory: whimsical-machine
 role: subject
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-wacky-pomo, recipe-devtools-marketing, aesthetic-atompunk]
-notForUseWhen: Brief is sleek-premium or serious-enterprise — the machine is deliberately charming and clunky.
+notForUseWhen: Brief is sleek-premium or serious-enterprise - the machine is deliberately charming and clunky.
 images:
   - src: illust-retro-contraption-3d.png
     reason: Illustration style sample.
@@ -13,15 +13,15 @@ images:
 
 # Retro contraption 3D
 
-A whimsical invented machine — part typewriter, part computer, part appliance — rendered in friendly 3D with knobs, tubes, and personality.
+A whimsical invented machine - part typewriter, part computer, part appliance - rendered in friendly 3D with knobs, tubes, and personality.
 
 ## Visual signatures
 
 - An invented apparatus assembled from nostalgic parts: CRT bubbles, coiled cables, chunky keys, brass horns, ticket slots
-- Rounded everything — the machine looks huggable, hand-built, slightly absurd
+- Rounded everything - the machine looks huggable, hand-built, slightly absurd
 - Cream/beige body panels with one or two candy accents (cherry red switch, teal dial)
 - Visible FUNCTION: something goes in, lights blink, something comes out (a card, a receipt, a bubble)
-- Soft studio light, gentle contact shadow — product-render care for a nonsense object
+- Soft studio light, gentle contact shadow - product-render care for a nonsense object
 
 ## Prompt keywords
 
@@ -29,7 +29,7 @@ A whimsical invented machine — part typewriter, part computer, part appliance 
 
 **Material**: cream enamel panels, brushed-brass details, soft plastic keys, coiled rubber cable
 
-**Line**: no outlines — soft 3D shading
+**Line**: no outlines - soft 3D shading
 
 **Color**: warm cream `#efe6d2` body, candy accents (cherry, teal, mustard), warm gray shadows
 
@@ -45,7 +45,7 @@ A whimsical invented machine — part typewriter, part computer, part appliance 
 
 ## Example prompt template
 
-> A whimsical invented machine rendered in soft 3D: a cream-enamel body the size of a bread maker, with a small bubble CRT screen showing a smiley waveform, three chunky teal dials, a brass horn speaker, a cherry-red lever, and a ticket slot mid-print — one paper card emerging. A coiled rubber cable loops to a round plug beside it. Soft studio key light, gentle contact shadow, stop-motion charm in the proportions. Friendly, hand-built, slightly absurd — a machine with personality. Transparent background.
+> A whimsical invented machine rendered in soft 3D: a cream-enamel body the size of a bread maker, with a small bubble CRT screen showing a smiley waveform, three chunky teal dials, a brass horn speaker, a cherry-red lever, and a ticket slot mid-print - one paper card emerging. A coiled rubber cable loops to a round plug beside it. Soft studio key light, gentle contact shadow, stop-motion charm in the proportions. Friendly, hand-built, slightly absurd - a machine with personality. Transparent background.
 
 ## When to use
 

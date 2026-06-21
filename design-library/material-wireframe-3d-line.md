@@ -13,7 +13,7 @@ images:
 
 # Wireframe 3D (Tron-style line-only volumetric)
 
-A matte (or glowing) surface (transparent) that reacts to light: yes — lines can glow with bloom.
+A matte (or glowing) surface (transparent) that reacts to light: yes - lines can glow with bloom.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte (or glowing) surface (transparent) that reacts to light: yes — lines c
 
 **Transparency**: transparent
 
-**Reacts to light**: yes — lines can glow with bloom
+**Reacts to light**: yes - lines can glow with bloom
 
 **Deforms**: no
 
@@ -31,7 +31,7 @@ A matte (or glowing) surface (transparent) that reacts to light: yes — lines c
 
 ```yaml
 css: |
-  /* css can't render true 3D — use CSS transforms for simple wireframes */
+  /* css can't render true 3D - use CSS transforms for simple wireframes */
   transform: perspective(800px) rotateY(20deg) rotateX(15deg);
   border: 1px solid #00ff88;
 svg: |
@@ -39,7 +39,7 @@ svg: |
   stroke-width: 1px. For rotation, swap among pre-rendered SVG keyframes.
 webgl: |
   three.js LineSegments material with edges geometry helper. Real wireframe
-  means rendering the EdgesGeometry — never just MeshBasicMaterial with
+  means rendering the EdgesGeometry - never just MeshBasicMaterial with
   wireframe:true (that gives triangulated wireframe, not edges-only).
   Add bloom for the Tron register.
 raster: not appropriate

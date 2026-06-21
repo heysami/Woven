@@ -11,9 +11,9 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `editorial-broken-grid` — read `shell-editorial-broken-grid.md`
-- **Style:** `bold-display` — read `style-bold-display.md`
-- **Aesthetic:** `aesthetic-y2k-memphis-loud` — read `aesthetic-y2k-memphis-loud.md`
+- **Shell:** `editorial-broken-grid` - read `shell-editorial-broken-grid.md`
+- **Style:** `bold-display` - read `style-bold-display.md`
+- **Aesthetic:** `aesthetic-y2k-memphis-loud` - read `aesthetic-y2k-memphis-loud.md`
 - **Voice:** opinionated, exclamatory, slangy
 
 ## Best for

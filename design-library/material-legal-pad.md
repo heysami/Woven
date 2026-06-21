@@ -13,7 +13,7 @@ images:
 
 # Legal Pad (ruled yellow paper)
 
-A matte surface and deforms: yes — pages tear from spiral.
+A matte surface and deforms: yes - pages tear from spiral.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — pages tear from spiral.
 
 **Reacts to light**: no
 
-**Deforms**: yes — pages tear from spiral
+**Deforms**: yes - pages tear from spiral
 
 **Age / wear**: shows wear
 

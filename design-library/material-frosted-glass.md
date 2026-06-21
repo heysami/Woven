@@ -13,7 +13,7 @@ images:
 
 # Frosted Glass (canonical glassmorphism)
 
-A glossy surface (translucent) that reacts to light: yes — top-edge specular highlight, tinted by substrate beneath.
+A glossy surface (translucent) that reacts to light: yes - top-edge specular highlight, tinted by substrate beneath.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface (translucent) that reacts to light: yes — top-edge specular h
 
 **Transparency**: translucent
 
-**Reacts to light**: yes — top-edge specular highlight, tinted by substrate beneath
+**Reacts to light**: yes - top-edge specular highlight, tinted by substrate beneath
 
 **Deforms**: no
 
@@ -41,9 +41,9 @@ css: |
     0 8px 32px rgba(0,0,0,0.18),
     0 2px 8px rgba(0,0,0,0.08);
   border-radius: 22px;
-svg: optional fffuel-style noise overlay at 3–5% opacity to mask blur banding
+svg: optional fffuel-style noise overlay at 3-5% opacity to mask blur banding
 webgl: not needed for this tier
-raster: SUBSTRATE is mandatory — saturated photo or mesh-gradient beneath
+raster: SUBSTRATE is mandatory - saturated photo or mesh-gradient beneath
 video: looping iridescent-substrate underlay is one variant
 ```
 
@@ -62,9 +62,9 @@ video: looping iridescent-substrate underlay is one variant
 - blur on flat #fff page (refracts nothing → fogged plastic)
 - missing 1px inset white top-edge highlight (reads as sticker, not lens)
 - body text directly on glass with no vibrancy chip backing
-- 4–6px SaaS radius instead of 16–22px continuous corner
+- 4-6px SaaS radius instead of 16-22px continuous corner
 - stacking glass-on-glass-on-glass (compounds to mush)
-- no `saturate()` boost — blur drains chroma without it, reads grey gauze
+- no `saturate()` boost - blur drains chroma without it, reads grey gauze
 
 ## Examples in the wild
 

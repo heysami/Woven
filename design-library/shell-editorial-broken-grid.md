@@ -11,7 +11,7 @@ images:
 
 ## Structure
 
-Art-directed magazine spreads. Each spread/section has custom layout — text floating around images, deliberate misalignment, oversized display.
+Art-directed magazine spreads. Each spread/section has custom layout - text floating around images, deliberate misalignment, oversized display.
 
 ```css
 .spread {

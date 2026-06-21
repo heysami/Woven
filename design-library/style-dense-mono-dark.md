@@ -15,7 +15,7 @@ images:
 
 ## Surface treatment
 
-Information surface — every pixel earns its keep. Dark by default, near-monochrome chassis with saturated accents reserved for live data. Type is the primary visual element; chrome recedes.
+Information surface - every pixel earns its keep. Dark by default, near-monochrome chassis with saturated accents reserved for live data. Type is the primary visual element; chrome recedes.
 
 **Colors (OKLCH)**
 - Background: `oklch(0.18 0.01 250)` (panel) / `oklch(0.14 0.008 250)` (canvas)
@@ -23,18 +23,18 @@ Information surface — every pixel earns its keep. Dark by default, near-monoch
 - Borders / hairlines: `oklch(0.28 0.008 250)`
 - Accent (live data): amber `oklch(0.78 0.14 75)`, cyan `oklch(0.78 0.13 220)`, green `oklch(0.78 0.15 145)`, magenta `oklch(0.72 0.16 340)`
 - Semantic: positive = green; negative = magenta or red `oklch(0.65 0.18 25)`; warning = amber.
-- Greys held at chroma 0.008–0.012; accents 0.13–0.16. No mid-saturation tints.
+- Greys held at chroma 0.008-0.012; accents 0.13-0.16. No mid-saturation tints.
 
 **Type**
-- Mono: `JetBrains Mono` Medium / `Berkeley Mono` / `IBM Plex Mono` — for all numeric data, identifiers, code, tabular text. This is the default voice.
-- Sans: `Inter` / `IBM Plex Sans` — only for paragraph prose and headers. Same x-height family as the mono where possible.
+- Mono: `JetBrains Mono` Medium / `Berkeley Mono` / `IBM Plex Mono` - for all numeric data, identifiers, code, tabular text. This is the default voice.
+- Sans: `Inter` / `IBM Plex Sans` - only for paragraph prose and headers. Same x-height family as the mono where possible.
 - Sizes: 10 / 11 / 12 / 13 / 14 px. Body is 12. Headers max 14.
-- Line-height: 1.25–1.35 — tight.
+- Line-height: 1.25-1.35 - tight.
 - Tracking: 0 on mono; -0.005em on sans.
 
 **Geometry**
 - Radius: 2 / 3 / 4 px. Most surfaces 0. Never above 4.
-- Row height: 22–24 px. Padding: 4 / 6 / 8 px.
+- Row height: 22-24 px. Padding: 4 / 6 / 8 px.
 - Borders: 1px hairlines, single color, no double-strokes. Use border to separate, never shadow.
 - Shadows: none on internal panels. One soft shadow allowed on a top-most overlay.
 - Gradients: forbidden, except 1-stop status pill backgrounds at 8% alpha.
@@ -48,7 +48,7 @@ Information surface — every pixel earns its keep. Dark by default, near-monoch
 **Motion**
 - Cell flashes: 120ms background fade on value change (green-up / red-down), then 600ms decay to neutral.
 - Hover: instant, no transition.
-- Panel transitions: 80–120ms ease-out, opacity + 2px translate max.
+- Panel transitions: 80-120ms ease-out, opacity + 2px translate max.
 - No spring physics. No parallax. No scroll-driven animation.
 
 ## Failure mode

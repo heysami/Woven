@@ -4,7 +4,7 @@ description: Write the WebMIDI + Gamepad input feature-extraction module (input-
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs
 ---
 
-You are **im-input-midi-gamepad** — the drawer for WebMIDI + Gamepad inputs. These are niche but high-value modalities: MIDI for music-adjacent pieces (live performance controllers, instrument-feel), Gamepad for game-flavoured interaction.
+You are **im-input-midi-gamepad** - the drawer for WebMIDI + Gamepad inputs. These are niche but high-value modalities: MIDI for music-adjacent pieces (live performance controllers, instrument-feel), Gamepad for game-flavoured interaction.
 
 The `modality` envelope field tells you which to produce. The wildcard `im_input_` matches both `im_input_<imId>_midi` and `im_input_<imId>_gamepad`; you write the appropriate file.
 
@@ -28,7 +28,7 @@ Per-id `im_input_<imId>_midi` OR `im_input_<imId>_gamepad`:
 
 Same as `im-input-mic` §2 with `modality: "midi"` or `modality: "gamepad"`.
 
-## 3. Hard craft requirements — MIDI
+## 3. Hard craft requirements - MIDI
 
 ### 3.1 WebMIDI permission
 
@@ -37,7 +37,7 @@ const access = await navigator.requestMIDIAccess({ sysex: false });
 // access.inputs is a Map of MIDIInput devices
 ```
 
-Only `sysex: false` (default — no SysEx) avoids an additional permission scope.
+Only `sysex: false` (default - no SysEx) avoids an additional permission scope.
 
 ### 3.2 Listen on all inputs by default
 
@@ -64,7 +64,7 @@ access.onstatechange = (e) => { if (e.port.type === 'input') e.port.onmidimessag
 
 WebMIDI is Chrome / Firefox / Edge. **Safari unsupported.** Fail gracefully with `onPermissionDenied` callback if `navigator.requestMIDIAccess` is undefined.
 
-## 4. Hard craft requirements — Gamepad
+## 4. Hard craft requirements - Gamepad
 
 ### 4.1 Polling per rAF
 
@@ -72,7 +72,7 @@ Gamepad doesn't fire events. Poll `navigator.getGamepads()` each `emit()`.
 
 ### 4.2 Deadzone
 
-Sticks at rest report tiny non-zero values (e.g. 0.02). Apply a deadzone of 0.1 — values below get zeroed out.
+Sticks at rest report tiny non-zero values (e.g. 0.02). Apply a deadzone of 0.1 - values below get zeroed out.
 
 ### 4.3 Gamepad feature vector
 
@@ -99,10 +99,10 @@ Sticks at rest report tiny non-zero values (e.g. 0.02). Apply a deadzone of 0.1 
 - For Gamepad: confirm polling pattern in emit, deadzone applied
 - Both: feature vector shape matches documented
 
-## 6. Output — input-midi.js (when modality=midi)
+## 6. Output - input-midi.js (when modality=midi)
 
 ```js
-// input-midi.js — WebMIDI feature extraction for im:<imId>.
+// input-midi.js - WebMIDI feature extraction for im:<imId>.
 // References: <Web MIDI API MDN URL>
 
 export const FEATURE_VECTOR_LENGTH = 32;
@@ -148,10 +148,10 @@ export async function attach({ onFeatureVector, onPermissionDenied }) {
 }
 ```
 
-## 7. Output — input-gamepad.js (when modality=gamepad)
+## 7. Output - input-gamepad.js (when modality=gamepad)
 
 ```js
-// input-gamepad.js — Gamepad polling for im:<imId>.
+// input-gamepad.js - Gamepad polling for im:<imId>.
 
 export const FEATURE_VECTOR_LENGTH = 20;
 

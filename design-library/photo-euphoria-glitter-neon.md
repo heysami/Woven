@@ -12,15 +12,15 @@ images:
 
 # Euphoria glitter-neon emotional-realism (Rév)
 
-HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) — the show that **invented the 2020s neon-glitter visual vocabulary**. The signature is **emotional realism** (Levinson's term) — the show looks like teenagers IMAGINE their lives to be, not based on documentary realism. Highly saturated pigment makeup (Doniella Davy) survives under Rév's dark colored lighting because the soft shades kept getting lost — **neons weren't a style choice; they were a problem-solving decision that became a global trend.**
+HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) - the show that **invented the 2020s neon-glitter visual vocabulary**. The signature is **emotional realism** (Levinson's term) - the show looks like teenagers IMAGINE their lives to be, not based on documentary realism. Highly saturated pigment makeup (Doniella Davy) survives under Rév's dark colored lighting because the soft shades kept getting lost - **neons weren't a style choice; they were a problem-solving decision that became a global trend.**
 
 ## Visual signatures
 
-- **highly saturated neon pigment makeup** — sparkle, gem stones, color-blocked eyes, glitter tears (essential to the aesthetic — without it, the visual collapses)
+- **highly saturated neon pigment makeup** - sparkle, gem stones, color-blocked eyes, glitter tears (essential to the aesthetic - without it, the visual collapses)
 - dark moody base lighting (low-key) with **colored gel sources** (pink, purple, cyan, lime) cutting through
 - haze / vape mist / shower-steam diffusion in atmosphere
 - shallow focus with reflective surfaces (mirrors, wet floors, car windshields) catching light
-- **highly cinematic fluid camera movement** — Steadicam, ring-mount, sometimes 360° rotational
+- **highly cinematic fluid camera movement** - Steadicam, ring-mount, sometimes 360° rotational
 - Season 1: raw electric / Season 2: switched to **Ektachrome film stock** for richer halation
 - Season 3: switching to **65mm film stock** (Western themed)
 - prismatic / rainbow light leaks, lens flares, anamorphic streaks
@@ -32,7 +32,7 @@ HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) — the sho
 
 **Lighting**: low-key dark base with colored gel sources (hot pink + electric purple + cyan + neon green), atmospheric haze / vape / shower-steam diffusion, prismatic lens flares
 
-**Camera / lens**: digital (Alexa) for S1 raw electric, Ektachrome film for S2 reflective, 65mm for S3 — anamorphic 2.39:1 throughout, fluid Steadicam motion
+**Camera / lens**: digital (Alexa) for S1 raw electric, Ektachrome film for S2 reflective, 65mm for S3 - anamorphic 2.39:1 throughout, fluid Steadicam motion
 
 **Film stock / post-processing**: Ektachrome rich halation if S2 era, or digital-saturated-neon if S1 era, slight halation around neons, deep crushed blacks in shadows
 
@@ -44,13 +44,13 @@ HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) — the sho
 
 **Photographers / cinematographers**: Marcell Rév (DP); Wong Kar-Wai / Christopher Doyle lineage (intoxicated-color predecessors); Petra Collins editorial photography as adjacent aesthetic
 
-**Makeup**: Doniella Davy — the makeup artist whose pigment discipline IS half the aesthetic
+**Makeup**: Doniella Davy - the makeup artist whose pigment discipline IS half the aesthetic
 
-**Magazines**: i-D, Dazed, AnOther — the Gen-Z editorial register
+**Magazines**: i-D, Dazed, AnOther - the Gen-Z editorial register
 
 **Movements**: post-2019 "Euphoria makeup" global trend (TikTok, Sephora launches, festival makeup); Gen-Z beauty editorial revolution
 
-**Brands**: Marc Jacobs Beauty, Rare Beauty (Selena Gomez), Hourglass Cosmetics, Pat McGrath Labs — beauty brands that absorbed the Euphoria pigment-vocabulary; Heaven by Marc Jacobs campaigns; KKW Beauty inspired
+**Brands**: Marc Jacobs Beauty, Rare Beauty (Selena Gomez), Hourglass Cosmetics, Pat McGrath Labs - beauty brands that absorbed the Euphoria pigment-vocabulary; Heaven by Marc Jacobs campaigns; KKW Beauty inspired
 
 ## Example prompt template
 

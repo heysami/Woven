@@ -12,13 +12,13 @@ images:
 **Tag:** Single-hue product poster (Nike Tier 0 retail graphics; Porsche heritage posters; Spotify Wrapped single-color years; motionsites "NEW ERA" wave)
 
 **Canonical references:**
-- Nike retail / SNKRS drop graphics — one hue floods everything, product floats, condensed caps shout.
-- Porsche × Singer campaign spreads — monochrome stage + machine as sculpture.
+- Nike retail / SNKRS drop graphics - one hue floods everything, product floats, condensed caps shout.
+- Porsche × Singer campaign spreads - monochrome stage + machine as sculpture.
 - motionsites.ai corpus: New Era Bold (cobalt + 3D toys), Slam Dunk (orange + basketball), Bold Portfolio "NEW DESIGN ERA" (orange + visor figure), New Era Automotive (orange + Porsche); Awwwards SOTD: Sowieso Wero (coral + paper planes).
 
 ## Cultural identity
 
-The sports-drop poster translated to web: ONE saturated hue floods the entire viewport (background, often duotone-tinting the imagery too), a single hero object or figure is staged dramatically in it, and giant condensed caps run the frame edge like stadium signage. Energy through chromatic commitment, not through color variety — the opposite strategy of `aesthetic-y2k-memphis-loud` (which is loud via plurality). Confidence is the product.
+The sports-drop poster translated to web: ONE saturated hue floods the entire viewport (background, often duotone-tinting the imagery too), a single hero object or figure is staged dramatically in it, and giant condensed caps run the frame edge like stadium signage. Energy through chromatic commitment, not through color variety - the opposite strategy of `aesthetic-y2k-memphis-loud` (which is loud via plurality). Confidence is the product.
 
 The defining gesture is **the flood**: when the page loads, the hue owns every pixel; the object and the type are the only other actors.
 
@@ -26,11 +26,11 @@ The defining gesture is **the flood**: when the page loads, the hue owns every p
 
 ## Motifs / imagery vocabulary
 
-- **One hero object**, dramatically lit: sneaker, car, ball, device, figure with a prop — cut out or duotone-fused into the flood.
+- **One hero object**, dramatically lit: sneaker, car, ball, device, figure with a prop - cut out or duotone-fused into the flood.
 - Giant condensed caps (90-200px), often RUNNING BEHIND the object (type-object-type sandwich), or cropped by the viewport edge.
 - Stadium-signage meta: stat chips, brand strips, index numbers in mono.
 - Outline-type echo lines (filled headline + outlined repeat) as texture.
-- Motion: object rotates/floats slowly; type marquees; everything else hard cuts — no soft fades.
+- Motion: object rotates/floats slowly; type marquees; everything else hard cuts - no soft fades.
 
 **Raster required:** the hero object (photo `dark-product-stage` or `motorsport-dramatic` duotone-tinted, or 3D toy renders). The flood is CSS; the object never is.
 

@@ -13,7 +13,7 @@ images:
 
 # Motion Blur Streak (directional motion artifact)
 
-A glossy surface (translucent) that reacts to light: yes and deforms: yes — directional smear along motion vector.
+A glossy surface (translucent) that reacts to light: yes and deforms: yes - directional smear along motion vector.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A glossy surface (translucent) that reacts to light: yes and deforms: yes — di
 
 **Reacts to light**: yes
 
-**Deforms**: yes — directional smear along motion vector
+**Deforms**: yes - directional smear along motion vector
 
 **Age / wear**: ageless
 

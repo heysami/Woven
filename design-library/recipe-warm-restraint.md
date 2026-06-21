@@ -11,9 +11,9 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `centered-column` — read `shell-centered-column.md`
-- **Style:** `cream-humanist` — read `style-cream-humanist.md`
-- **Aesthetic:** *(none — adult-pro brief)*
+- **Shell:** `centered-column` - read `shell-centered-column.md`
+- **Style:** `cream-humanist` - read `style-cream-humanist.md`
+- **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** gentle imperative, restrained sensory adjectives
 
 ## Best for

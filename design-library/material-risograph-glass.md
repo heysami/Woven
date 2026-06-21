@@ -40,7 +40,7 @@ raster: riso grain overlay + photographic substrate
 
 ## Reactive behaviors
 
-**Light**: no — riso kills the gloss
+**Light**: no - riso kills the gloss
 
 **Highlight**: no
 

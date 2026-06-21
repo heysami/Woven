@@ -5,7 +5,7 @@ category: Hand-drawn / sketch
 subCategory: ink-noir
 role: subject
 pairsPrototypes: [aesthetic-monochrome-tech-editorial, recipe-editorial-magazine, aesthetic-web-brutalism, recipe-newspaper-of-record, shell-horizontal-scroll-stage]
-notForUseWhen: Brief is cheerful, pastel, kid-friendly, or corporate-safe — noir ink carries grit.
+notForUseWhen: Brief is cheerful, pastel, kid-friendly, or corporate-safe - noir ink carries grit.
 images:
   - src: illust-noir-comic-ink.png
     reason: Illustration style sample.
@@ -13,15 +13,15 @@ images:
 
 # Noir comic ink
 
-High-contrast black-and-white ink illustration — brush splatter, dramatic spot blacks, hard-boiled narrative panels.
+High-contrast black-and-white ink illustration - brush splatter, dramatic spot blacks, hard-boiled narrative panels.
 
 ## Visual signatures
 
-- Pure b/w with bold spot blacks — shadows as solid shapes, not gradients
+- Pure b/w with bold spot blacks - shadows as solid shapes, not gradients
 - Expressive brush economy: dry-brush texture, ink splatter, confident gesture lines
 - Noir staging: dramatic up-light, venetian-blind shadows, cigarette-smoke curls
 - Comic-panel DNA: figures mid-narrative, croppings that imply a story frame
-- Paper white preserved — texture lives in the ink, not the ground
+- Paper white preserved - texture lives in the ink, not the ground
 
 ## Prompt keywords
 

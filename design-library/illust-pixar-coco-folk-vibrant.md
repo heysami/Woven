@@ -13,17 +13,17 @@ images:
 
 # Pixar Coco folk-vibrant Land of the Dead
 
-Pixar's *Coco* (2017, Lee Unkrich) — the canonical reference for **Mexican folk-art vocabulary applied to Pixar-grade 3D**. The signature is the **Land of the Dead** — *"a vibrant explosion of color"* (Unkrich's brief) — with the **marigold-petal bridge** literally connecting worlds, **calaveras** (sugar-skull face paint motifs) etched around eyes and chin, **alebrijes** (psychedelic spirit-animal folk sculptures) as spiritual guides, and **papel picado** (cut-paper banners) as decorative architecture. The whole afterlife is built like a glowing, tiered, ever-expanding folk-art cathedral.
+Pixar's *Coco* (2017, Lee Unkrich) - the canonical reference for **Mexican folk-art vocabulary applied to Pixar-grade 3D**. The signature is the **Land of the Dead** - *"a vibrant explosion of color"* (Unkrich's brief) - with the **marigold-petal bridge** literally connecting worlds, **calaveras** (sugar-skull face paint motifs) etched around eyes and chin, **alebrijes** (psychedelic spirit-animal folk sculptures) as spiritual guides, and **papel picado** (cut-paper banners) as decorative architecture. The whole afterlife is built like a glowing, tiered, ever-expanding folk-art cathedral.
 
 ## Visual signatures
 
-- **Land of the Dead architecture** — tiered, vertically expanding city of skyscrapers built like Mexican colonial-era buildings, but glowing
-- **marigold petals** — the canonical Coco motif: orange-yellow petals falling, drifting, forming bridges
-- **calaveras face markings** — colorful designs etched around eyes and chin (skull-makeup vocabulary)
-- **alebrijes** — psychedelic-saturated spirit-animal sculptures with impossible color combinations (turquoise jaguar, magenta winged lizard, neon-green-spotted dog)
-- **papel picado** — paper-cut banners with intricate floral / skull / animal patterns, hung in strings, semi-transparent against light
-- **bioluminescence everywhere** — buildings glow from within in warm marigold-orange, magenta-pink, lime-green
-- vibrant maximalist color palette — marigold-orange dominant + magenta + turquoise + lime-green + cobalt-blue
+- **Land of the Dead architecture** - tiered, vertically expanding city of skyscrapers built like Mexican colonial-era buildings, but glowing
+- **marigold petals** - the canonical Coco motif: orange-yellow petals falling, drifting, forming bridges
+- **calaveras face markings** - colorful designs etched around eyes and chin (skull-makeup vocabulary)
+- **alebrijes** - psychedelic-saturated spirit-animal sculptures with impossible color combinations (turquoise jaguar, magenta winged lizard, neon-green-spotted dog)
+- **papel picado** - paper-cut banners with intricate floral / skull / animal patterns, hung in strings, semi-transparent against light
+- **bioluminescence everywhere** - buildings glow from within in warm marigold-orange, magenta-pink, lime-green
+- vibrant maximalist color palette - marigold-orange dominant + magenta + turquoise + lime-green + cobalt-blue
 - skin tones of ancestors are **stylized calavera skull** (white-ish bone tone with elaborate color markings)
 - Pixar-grade rendering with strong subsurface scatter (especially through papel picado and bones)
 
@@ -35,7 +35,7 @@ Pixar's *Coco* (2017, Lee Unkrich) — the canonical reference for **Mexican fol
 
 **Line**: no line; the **calavera face markings + papel picado cut-patterns** act as graphic line
 
-**Color**: **marigold-orange dominant** + magenta + turquoise + lime-green + cobalt-blue — vibrant maximalist palette, NOT muted
+**Color**: **marigold-orange dominant** + magenta + turquoise + lime-green + cobalt-blue - vibrant maximalist palette, NOT muted
 
 **Style**: tiered glowing afterlife architecture, marigold petals drifting/falling, calavera face markings, alebrijes spirit animals, papel picado banner strings, Pixar-grade subsurface scatter
 
@@ -47,15 +47,15 @@ Pixar's *Coco* (2017, Lee Unkrich) — the canonical reference for **Mexican fol
 
 **Cultural sources**: Mexican Day of the Dead (Día de los Muertos) tradition; alebrijes folk-art tradition (Oaxaca region); papel picado paper-cut craft; calavera face-painting tradition
 
-**Adjacent**: Guillermo del Toro's *Book of Life* (2014 — adjacent Day of the Dead 3D vocabulary); Disney's *Encanto* (2021 — Latin folk vocabulary, different country)
+**Adjacent**: Guillermo del Toro's *Book of Life* (2014 - adjacent Day of the Dead 3D vocabulary); Disney's *Encanto* (2021 - Latin folk vocabulary, different country)
 
 **Movements**: post-2017 mainstream Western adoption of Day of the Dead visual vocabulary; growing market for Latinx folk-art-influenced brand identity
 
 ## Example prompt template
 
-> Pixar-grade 3D illustration of [SUBJECT — Día de los Muertos scene OR
+> Pixar-grade 3D illustration of [SUBJECT - Día de los Muertos scene OR
 > individual ancestor character OR alebrije spirit animal], in the **Coco
-> Land of the Dead vibrant-folk aesthetic** — **marigold-orange petals
+> Land of the Dead vibrant-folk aesthetic** - **marigold-orange petals
 > drifting through the air**, tiered-glowing Mexican-colonial afterlife
 > architecture in the background **bioluminescent in warm marigold + magenta
 > + lime-green**, papel-picado paper-cut banners hanging in semi-transparent
@@ -63,7 +63,7 @@ Pixar's *Coco* (2017, Lee Unkrich) — the canonical reference for **Mexican fol
 > (colorful designs etched around eyes and chin) on stylized skull-bone
 > skin. If subject is an alebrije: **psychedelic-saturated impossible-color
 > spirit-animal** (turquoise jaguar / magenta winged lizard). Vibrant
-> maximalist palette — NOT muted, NOT dark. Pixar-grade subsurface scatter
+> maximalist palette - NOT muted, NOT dark. Pixar-grade subsurface scatter
 > through bone and paper. Coco (Lee Unkrich / Harley Jessup) folk-vibrant
 > aesthetic.
 

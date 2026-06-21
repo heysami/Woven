@@ -4,11 +4,11 @@ Design plan for adding per-asset versioning, sibling-branch iteration, adaptive 
 
 ## 1. Goals
 
-- **Versioning** — every successful run of an `asset` node produces a new version on disk; prior versions remain restorable until evicted.
-- **Iteration** — user can revert to any kept version, pin versions for protection, and branch a sibling asset node below the source to keep two lines alive.
-- **Adaptive sizing** — asset cards size themselves from the asset's natural aspect (no more fixed 320×200 cards that crop or float).
-- **Lineage** — downstream asset nodes display which upstream versions they consumed and visually signal when an upstream has moved on.
-- **No cascading invalidation** — reverts do not silently mark downstream "stale". The lineage chip is the only signal; the user decides whether to re-run.
+- **Versioning** - every successful run of an `asset` node produces a new version on disk; prior versions remain restorable until evicted.
+- **Iteration** - user can revert to any kept version, pin versions for protection, and branch a sibling asset node below the source to keep two lines alive.
+- **Adaptive sizing** - asset cards size themselves from the asset's natural aspect (no more fixed 320×200 cards that crop or float).
+- **Lineage** - downstream asset nodes display which upstream versions they consumed and visually signal when an upstream has moved on.
+- **No cascading invalidation** - reverts do not silently mark downstream "stale". The lineage chip is the only signal; the user decides whether to re-run.
 
 ## 2. Out of scope
 
@@ -22,8 +22,8 @@ Design plan for adding per-asset versioning, sibling-branch iteration, adaptive 
 
 Asset nodes have **two independent navigable axes**:
 
-1. **Versions** — snapshots of *this asset's own files* (HTML/CSS/JS for a prototype, the image bytes for an image asset). Capped at 20 unpinned.
-2. **Compositions** — per-version tuples of `(sub-asset → sub-version)` describing which versions of *upstream sub-assets* this view is locked against. Compositions are virtually free (just a JSON entry + thumb) and do NOT count against the 20-version cap. Separate cap of **50 unpinned compositions per parent version**.
+1. **Versions** - snapshots of *this asset's own files* (HTML/CSS/JS for a prototype, the image bytes for an image asset). Capped at 20 unpinned.
+2. **Compositions** - per-version tuples of `(sub-asset → sub-version)` describing which versions of *upstream sub-assets* this view is locked against. Compositions are virtually free (just a JSON entry + thumb) and do NOT count against the 20-version cap. Separate cap of **50 unpinned compositions per parent version**.
 
 For an asset with no sub-asset upstream (e.g. a single image), the composition axis is degenerate and the picker hides it.
 
@@ -85,8 +85,8 @@ For an asset with no sub-asset upstream (e.g. a single image), the composition a
 
 Notes:
 - **Asset upstream goes through `compositions[].consumedSubVersions`**, not through the version-level `consumedVersions` (which is now reserved for non-asset upstream).
-- **Auto-locked composition on run** — every successful run snapshots the current sub-asset actives as `compositions[0]` of the new version (see §6.0).
-- **Compositions are local-view only** — switching a composition does NOT flip sub-asset actives globally (see §6.0 + §7.2).
+- **Auto-locked composition on run** - every successful run snapshots the current sub-asset actives as `compositions[0]` of the new version (see §6.0).
+- **Compositions are local-view only** - switching a composition does NOT flip sub-asset actives globally (see §6.0 + §7.2).
 
 ### 3.2 Sibling-branch shape
 
@@ -156,11 +156,11 @@ project-root/
 
 ### 4.2 Why dual-path (source/ live + workflow/runs/ archive)
 
-Earlier sketch proposed canonical files under `workflow/runs/<nodeId>/<activeVersionId>/`. On closer look, that breaks cross-asset references — e.g. `_pages/page_1/index.html` importing `../_shared/chrome.html` would need traversal across run folders, and would shatter every time either asset gets a new version.
+Earlier sketch proposed canonical files under `workflow/runs/<nodeId>/<activeVersionId>/`. On closer look, that breaks cross-asset references - e.g. `_pages/page_1/index.html` importing `../_shared/chrome.html` would need traversal across run folders, and would shatter every time either asset gets a new version.
 
 The dual-path model:
 
-- **Subagents keep writing to canonical paths** (`source/_pages/page_1/...`) — no subagent surgery required.
+- **Subagents keep writing to canonical paths** (`source/_pages/page_1/...`) - no subagent surgery required.
 - **Daemon snapshots after each successful run** by copying the just-written files into `workflow/runs/<nodeId>/<newVid>/`.
 - **Revert** copies a `workflow/runs/<nodeId>/<vid>/` tree back over `source/<canonical paths>`.
 - **Cross-asset references stay relative** under `source/` and never break.
@@ -224,23 +224,23 @@ Today's asset cards have fixed `w, h`. Prototype html-sets either crop (when sma
 
 ### 6.0 Composition behaviour
 
-- **Switching a composition is local** — sub-asset nodes' `activeVersionId`s do NOT change. The prototype iframe re-points at the matching `workflow/views/<nodeId>/<vid>/<compId>/` tree.
-- **Each sub-asset chip carries a small "↥ follow" affordance** — one click flips the sub-asset's global `activeVersionId` to the version this composition pins. Useful when the user decides the composition is the new truth.
-- **Compositions auto-create on prototype run** — every successful run snapshots the current sub-asset actives as `compositions[0]` of the new version. Sequence: snapshot files → record sub-asset pins → save composition → mark both as active.
+- **Switching a composition is local** - sub-asset nodes' `activeVersionId`s do NOT change. The prototype iframe re-points at the matching `workflow/views/<nodeId>/<vid>/<compId>/` tree.
+- **Each sub-asset chip carries a small "↥ follow" affordance** - one click flips the sub-asset's global `activeVersionId` to the version this composition pins. Useful when the user decides the composition is the new truth.
+- **Compositions auto-create on prototype run** - every successful run snapshots the current sub-asset actives as `compositions[0]` of the new version. Sequence: snapshot files → record sub-asset pins → save composition → mark both as active.
 - A "Save current combination" button in the picker lets the user persist a non-run composition (e.g. they reverted a sub-asset manually and want to bookmark this combination without re-running the prototype).
 
 ### 6.1 Asset card (active state)
 
 - Renders the active version's thumb in the body, scaled to card width.
 - Title bar shows: title · version label (e.g. `v7` or pinned label) · pin/unpin glyph.
-- Footer (always present, low-key): version chip strip — small dots, one per `versions[]` entry, active is bigger; click any dot opens the version picker.
+- Footer (always present, low-key): version chip strip - small dots, one per `versions[]` entry, active is bigger; click any dot opens the version picker.
 - For non-html assets, body shows the appropriate preview (img tag, markdown render, etc.).
 
 ### 6.2 Version picker (two-pane drawer beneath the card)
 
 Two-pane layout: versions on the left, compositions on the right.
 
-- **Left pane — versions** (newest first, scrollable):
+- **Left pane - versions** (newest first, scrollable):
   - low-fi thumb (consistent aspect)
   - timestamp (relative: "2m ago", "yesterday 14:32")
   - label if set
@@ -248,7 +248,7 @@ Two-pane layout: versions on the left, compositions on the right.
   - row actions: **Pin / Unpin** · **Rename** · **Revert** · **Branch below**
   - active version highlighted; pinned versions show a pin badge
   - footer: `"7 of 20"`
-- **Right pane — compositions of the selected version** (newest first):
+- **Right pane - compositions of the selected version** (newest first):
   - composition thumb
   - sub-version line (e.g. `img_hero v1 · nav_icon v2`)
   - label if set
@@ -290,7 +290,7 @@ Two-pane layout: versions on the left, compositions on the right.
   - Allocate `compId = ulid()`; create `compositions[0]` with the captured `consumedSubVersions`; set `activeCompositionId = compId`.
   - Materialise `workflow/views/<nodeId>/<vid>/<compId>/` (hardlink fallback to copy).
   - Set `node.activeVersionId = vid`.
-  - Run version eviction (§4.3 — cascades to per-version composition dirs).
+  - Run version eviction (§4.3 - cascades to per-version composition dirs).
   - Persist workflow.json, emit SSE.
 - Failed runs do **not** create a version or composition.
 
@@ -385,20 +385,20 @@ Manifest format:
 
 `subAssetInputs[].mountPath` tells the daemon where to materialise that sub-asset's files within the view dir. The producing subagent is the only place that knows where in the HTML it references those assets, so it owns this declaration.
 
-This is additive — existing subagents keep working until updated; the fallback handles them.
+This is additive - existing subagents keep working until updated; the fallback handles them.
 
 ## 10. Edge cases
 
-- **Concurrent runs of the same node** — already prevented by `runStatus: running` gate. Confirmed safe.
-- **Failed runs** — no version or composition created; failed canonical files remain in `source/` (user can see what failed). Next successful run creates the next version.
-- **Subagent writes outside declared scope** — fallback scan picks up declared `outputsRoot`; out-of-scope writes are not versioned (warning logged).
-- **Branch then immediately re-run source** — sibling is unaffected; lineage on sibling's `branchedFrom` still points at the (now non-active) source version.
-- **Delete the source node of a branch** — sibling's `branchedFrom` becomes a dangling reference. Show muted "(source deleted)" in the picker; functionality unaffected.
-- **Revert active version / switch active composition** — no-op; UI grays out the action.
-- **Pin all 20 versions** — eviction throws; new run still succeeds but emits a warning chip on the node "history full, unpin some versions". Same for 50-composition cap.
-- **Pinned version's file deleted out-of-band** — daemon detects on revert; surfaces error toast.
-- **Sub-asset upstream node deleted** — its compositions can no longer materialise. Daemon marks affected compositions with `degraded: true`; picker shows a muted "(missing sub-asset)" badge; switching to a degraded composition falls back to the current global active for that slot.
-- **Sub-asset version evicted but a composition references it** — promote the composition's referenced version to pinned automatically, OR fail eviction and pick the next-oldest candidate. Pick the latter (simpler, no surprise auto-pins).
+- **Concurrent runs of the same node** - already prevented by `runStatus: running` gate. Confirmed safe.
+- **Failed runs** - no version or composition created; failed canonical files remain in `source/` (user can see what failed). Next successful run creates the next version.
+- **Subagent writes outside declared scope** - fallback scan picks up declared `outputsRoot`; out-of-scope writes are not versioned (warning logged).
+- **Branch then immediately re-run source** - sibling is unaffected; lineage on sibling's `branchedFrom` still points at the (now non-active) source version.
+- **Delete the source node of a branch** - sibling's `branchedFrom` becomes a dangling reference. Show muted "(source deleted)" in the picker; functionality unaffected.
+- **Revert active version / switch active composition** - no-op; UI grays out the action.
+- **Pin all 20 versions** - eviction throws; new run still succeeds but emits a warning chip on the node "history full, unpin some versions". Same for 50-composition cap.
+- **Pinned version's file deleted out-of-band** - daemon detects on revert; surfaces error toast.
+- **Sub-asset upstream node deleted** - its compositions can no longer materialise. Daemon marks affected compositions with `degraded: true`; picker shows a muted "(missing sub-asset)" badge; switching to a degraded composition falls back to the current global active for that slot.
+- **Sub-asset version evicted but a composition references it** - promote the composition's referenced version to pinned automatically, OR fail eviction and pick the next-oldest candidate. Pick the latter (simpler, no surprise auto-pins).
 
 ## 11. Migration (existing projects)
 
@@ -407,10 +407,10 @@ This is additive — existing subagents keep working until updated; the fallback
 
 ## 12. Testing strategy
 
-- **Unit (Python)** — version + composition eviction (independent caps), manifest parsing, sub-asset declaration resolution, lineage hash compute, view-dir hardlink/copy fallback.
-- **Integration (daemon)** — POST run → snapshot + auto-composition + view materialised. POST composition switch → view dir refresh, no sub-asset active change. POST sub-asset follow → sub-asset active flips, prototype iframe stays the same. POST branch → sibling with copied files + chosen composition.
-- **Frontend manual** — two-pane picker, sub-asset chip + follow glyph, pin/revert/branch flows on both axes, adaptive sizing across `html-set` + `image` + `markdown`, lineage chip changes when sub-asset re-runs.
-- **Regression check** — run an existing project through workflow 1 end-to-end; confirm no crash on legacy nodes; confirm assets without sub-asset inputs collapse the right pane.
+- **Unit (Python)** - version + composition eviction (independent caps), manifest parsing, sub-asset declaration resolution, lineage hash compute, view-dir hardlink/copy fallback.
+- **Integration (daemon)** - POST run → snapshot + auto-composition + view materialised. POST composition switch → view dir refresh, no sub-asset active change. POST sub-asset follow → sub-asset active flips, prototype iframe stays the same. POST branch → sibling with copied files + chosen composition.
+- **Frontend manual** - two-pane picker, sub-asset chip + follow glyph, pin/revert/branch flows on both axes, adaptive sizing across `html-set` + `image` + `markdown`, lineage chip changes when sub-asset re-runs.
+- **Regression check** - run an existing project through workflow 1 end-to-end; confirm no crash on legacy nodes; confirm assets without sub-asset inputs collapse the right pane.
 
 ## 13. Phases
 
@@ -427,6 +427,6 @@ This is additive — existing subagents keep working until updated; the fallback
 ## 14. Open questions for future thought
 
 - Should branched sibling auto-receive a label like `"branch of v7"` for quick identification?
-- Lineage chip on a multi-page asset that consumes a *set* of upstream assets — show one chip per page, or aggregate?
+- Lineage chip on a multi-page asset that consumes a *set* of upstream assets - show one chip per page, or aggregate?
 - When a subagent writes a `MANIFEST.json` but lists a file it didn't actually write, how loud do we fail?
 - Should the version picker show diff hints between adjacent versions (file-count delta, "+12 lines in app.js")? Out of scope for v1, worth considering later.

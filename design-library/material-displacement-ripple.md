@@ -13,7 +13,7 @@ images:
 
 # Displacement Ripple (interactive pointer-driven warp)
 
-A glossy surface (translucent) that reacts to light: yes (the ripple bends light) and deforms: yes — local UV displacement.
+A glossy surface (translucent) that reacts to light: yes (the ripple bends light) and deforms: yes - local UV displacement.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A glossy surface (translucent) that reacts to light: yes (the ripple bends light
 
 **Reacts to light**: yes (the ripple bends light)
 
-**Deforms**: yes — local UV displacement
+**Deforms**: yes - local UV displacement
 
 **Age / wear**: ageless
 
@@ -31,7 +31,7 @@ A glossy surface (translucent) that reacts to light: yes (the ripple bends light
 
 ```yaml
 css: |
-  /* limited — pure CSS can't do per-pixel displacement */
+  /* limited - pure CSS can't do per-pixel displacement */
   transition: transform 0.3s ease-out;
   &:hover { transform: scale(1.02); }
 svg: |

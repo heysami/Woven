@@ -1,6 +1,6 @@
 {
   "styleCue":              "spare warehouse-management UI, monospaced labels, slate palette",
-  "interactionPhilosophy": "operator-grade — reads at a glance",
+  "interactionPhilosophy": "operator-grade - reads at a glance",
   "sensoryTargets": {
     "visual": "rectilinear, restrained, structured bin grid",
     "motion": "discrete tick-by-tick",

@@ -12,21 +12,21 @@ images:
 **Tag:** `aesthetic-avantropop`
 
 **Canonical references:**
-- Justice — † (Cross) 2007, Ed Banger sleeve canon
-- Late of the Pier — Fantasy Black Channel 2008
+- Justice - † (Cross) 2007, Ed Banger sleeve canon
+- Late of the Pier - Fantasy Black Channel 2008
 - CN Noods / "CHECK it" Cartoon Network bumpers 2008-10
 - Ladyhawke s/t 2008 + Modular Recordings sleeve system
 - CARI (Consumer Aesthetics Research Institute) Avantropop spec
 
 ## Cultural identity
 
-Avantropop is the late-2000s European electropop sleeve language — the moment when blog-house, Ed Banger, Kitsuné, Modular and Boysnoize crossed wires with youth-network branding (Cartoon Network bumpers, MTV2 idents) and the last gasp of considered offset-print album art before streaming flattened sleeves into 800px thumbnails. It is post-punk graphic design (Neville Brody, The Designers Republic) processed through MySpace and So Me. Peaked roughly 2007-2010.
+Avantropop is the late-2000s European electropop sleeve language - the moment when blog-house, Ed Banger, Kitsuné, Modular and Boysnoize crossed wires with youth-network branding (Cartoon Network bumpers, MTV2 idents) and the last gasp of considered offset-print album art before streaming flattened sleeves into 800px thumbnails. It is post-punk graphic design (Neville Brody, The Designers Republic) processed through MySpace and So Me. Peaked roughly 2007-2010.
 
-The mood is cool, French, a little arch, slightly cracked — like a 12" sleeve printed offset on uncoated stock by an art-school intern who knows their CMYK and their Avant Garde ligatures.
+The mood is cool, French, a little arch, slightly cracked - like a 12" sleeve printed offset on uncoated stock by an art-school intern who knows their CMYK and their Avant Garde ligatures.
 
 ## Palette anchor
 
-Process CMYK as primaries, used as overprinted/multiply layers so overlaps generate the secondaries — never four flat blocks.
+Process CMYK as primaries, used as overprinted/multiply layers so overlaps generate the secondaries - never four flat blocks.
 
 - Process cyan `#00AEEF`
 - Process magenta `#EC008C`
@@ -39,7 +39,7 @@ Warm cream-shifted greys, never cool slate. Electropop accents (hot pink `#FF2A8
 ## Decoration motifs
 
 Mandatory vocabulary:
-- One tilted polygon glyph as anchor — triangle or rhombus, rotated 12-22°, never axis-aligned
+- One tilted polygon glyph as anchor - triangle or rhombus, rotated 12-22°, never axis-aligned
 - Diagonal CMYK bands at 30-45°
 - Faint 8-12% halftone dot field across the substrate
 - Registration-cross trim marks in corners

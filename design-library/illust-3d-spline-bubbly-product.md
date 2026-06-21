@@ -13,7 +13,7 @@ images:
 
 # Spline-era browser-3D bubbly product
 
-The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic — soft volumetric blobs, glossy plastic spheres, iridescent holographic gradients, interactive 3D shapes that float, morph, and respond to scroll/pointer. The 2022-2026 dev-tools / AI-product / fintech landing-page register.
+The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic - soft volumetric blobs, glossy plastic spheres, iridescent holographic gradients, interactive 3D shapes that float, morph, and respond to scroll/pointer. The 2022-2026 dev-tools / AI-product / fintech landing-page register.
 
 ## Visual signatures
 
@@ -21,9 +21,9 @@ The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic — soft vol
 - subdivision-surface organic forms (subdivide-and-smooth on a base mesh)
 - Lambert + soft shadow shading with subtle subsurface scatter
 - iridescent holographic gradients sweeping the surface (often OKLCH conic)
-- saturated-pastel palette — lavender, mint, peach, sky, coral, jade
+- saturated-pastel palette - lavender, mint, peach, sky, coral, jade
 - floating composition, no ground plane, soft drop-shadow only
-- often interactive — rotates, morphs, follows cursor (Spline canvas signature)
+- often interactive - rotates, morphs, follows cursor (Spline canvas signature)
 - crisp web-render quality (anti-aliased, accurate AO at corners)
 
 ## Prompt keywords
@@ -34,7 +34,7 @@ The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic — soft vol
 
 **Line**: no line, edge-shaded only
 
-**Color**: saturated-pastel — lavender + mint + peach + sky + coral (often two-tone iridescent)
+**Color**: saturated-pastel - lavender + mint + peach + sky + coral (often two-tone iridescent)
 
 **Style**: floating composition, soft drop-shadow, no ground plane, web-render quality
 
@@ -50,7 +50,7 @@ The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic — soft vol
 
 ## Example prompt template
 
-> Floating 3D hero composition of [SUBJECT — e.g. a soft sphere wrapped in
+> Floating 3D hero composition of [SUBJECT - e.g. a soft sphere wrapped in
 > an iridescent ribbon, or a cluster of glossy plastic primitives], soft
 > volumetric blob forms with Lambert + soft subsurface shading, iridescent
 > holographic gradient sweeping across the surface (lavender → mint → peach,

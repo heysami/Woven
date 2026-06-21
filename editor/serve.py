@@ -8,7 +8,7 @@ AND exposes a small JSON API for the editor:
   POST /__layout                       Persist canvas layout state.
   POST /__workflow                     Persist workflow.json.
 
-v3.1 — project-level branches deprecated. /__branch, /__promote,
+v3.1 - project-level branches deprecated. /__branch, /__promote,
 /__promote_frame removed. Asset-versioning's sibling-node branching
 (workflow/runs/<nodeId>/) is the replacement for "explore alternatives".
 See docs/features/deprecate-project-branches.md.
@@ -48,11 +48,11 @@ _EDITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 if _EDITOR_DIR not in sys.path:
     sys.path.insert(0, _EDITOR_DIR)
 
-from prompts import node_agent_preambles as _node_preambles  # v2.1 — per-node agent preambles
+from prompts import node_agent_preambles as _node_preambles  # v2.1 - per-node agent preambles
 import exports as _exports  # per-asset export bundles (README + serve.* + files)
-import shares as _shares    # share mode — cloudflare quick tunnels + review comments
-import live as _live        # live session — host-authoritative multiplayer over the gate
-import git_ops as _gitops    # git/GitHub backbone — deliberate commit/publish + fork/PR
+import shares as _shares    # share mode - cloudflare quick tunnels + review comments
+import live as _live        # live session - host-authoritative multiplayer over the gate
+import git_ops as _gitops    # git/GitHub backbone - deliberate commit/publish + fork/PR
 
 
 def _pick_port() -> int:
@@ -70,14 +70,14 @@ def _pick_port() -> int:
 PORT = _pick_port()
 
 # ── Three-tier roots (Phase 6 workspace mode) ────────────────────────────────
-# INSTALL_ROOT  — where this file's parent lives. Holds the editor binary
+# INSTALL_ROOT  - where this file's parent lives. Holds the editor binary
 #                 (editor/app.js, styles.css, serve.py, index.html) and, in
 #                 the install layout, the shared agent protocol (AGENTS.md,
 #                 PROTOTYPE.md, docs/agents/**). Always derived from __file__.
-# WORKSPACE_DIR — opt-in. When set via TH_WORKSPACE_DIR env, the daemon
+# WORKSPACE_DIR - opt-in. When set via TH_WORKSPACE_DIR env, the daemon
 #                 becomes multi-project: every request resolves to a per-
 #                 project root via ?project=<id> in the query or body.
-# project_root  — per-request. <WORKSPACE_DIR>/<id>/ in workspace mode,
+# project_root  - per-request. <WORKSPACE_DIR>/<id>/ in workspace mode,
 #                 INSTALL_ROOT in single-project mode (= today's behavior).
 #                 Holds source/, editor/branches/, editor/data.js, plus
 #                 per-project docs (DESIGN.md, NOTES.md, prototype.json,
@@ -92,20 +92,20 @@ EDITOR_DIR   = os.path.join(INSTALL_ROOT, "editor")
 # .woven/version on commit; push/pull refuse when the daemon's value differs
 # from the repo's, so an old daemon can't merge a repo written by a newer
 # (incompatible) Woven and corrupt it. BUMP ONLY when a synced on-disk format
-# changes (workflow.json / source layout) — NOT for ordinary releases.
+# changes (workflow.json / source layout) - NOT for ordinary releases.
 WOVEN_SYNC_VERSION = 1
 
-# Per-project paths that must NEVER be committed/synced — the daemon keeps them
+# Per-project paths that must NEVER be committed/synced - the daemon keeps them
 # in each repo's .gitignore. `workflow/viewport.json` is per-machine canvas
 # state; `workflow/runs/` and `workflow/views/` are GENERATED run artifacts
 # (asset/thumbnail/snapshot output keyed by run id) that routinely reach
-# multiple GB — committing them makes commits crawl and pushes fail GitHub's
+# multiple GB - committing them makes commits crawl and pushes fail GitHub's
 # 100MB-per-file limit.
 _GITIGNORE_LOCAL = [
     "workflow/viewport.json",   # per-machine canvas viewport (see _workflow_save)
-    "workflow/runs/",           # generated run artifacts (assets/thumbnails) — GBs
-    "workflow/views/",          # generated per-version prototype snapshots — GBs
-    ".history/",                # undo stack — transient (matches duplicate's skip set)
+    "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
+    "workflow/views/",          # generated per-version prototype snapshots - GBs
+    ".history/",                # undo stack - transient (matches duplicate's skip set)
     ".trash/",                  # transient scratch
     ".DS_Store",                # macOS junk
     "__pycache__/",
@@ -129,13 +129,13 @@ _workspace_env = os.environ.get("TH_WORKSPACE_DIR")
 _single_env = (os.environ.get("TH_SINGLE_PROJECT") or "").strip().lower()
 _single_optout = _single_env in {"1", "true", "yes", "on"}
 if _single_optout:
-    # Explicit opt-out — keep the pre-Phase-6 single-repo behavior.
+    # Explicit opt-out - keep the pre-Phase-6 single-repo behavior.
     WORKSPACE_DIR = None
 elif _workspace_env:
     WORKSPACE_DIR = os.path.abspath(os.path.expanduser(_workspace_env))
     if not os.path.isdir(WORKSPACE_DIR):
         print(
-            f"warning: TH_WORKSPACE_DIR={WORKSPACE_DIR!r} is not a directory — "
+            f"warning: TH_WORKSPACE_DIR={WORKSPACE_DIR!r} is not a directory - "
             "falling back to single-project mode",
             flush=True,
         )
@@ -158,10 +158,10 @@ else:
     # TH_SINGLE_PROJECT=1 disables both (legacy single-repo behavior).
     _install_is_project = os.path.isdir(os.path.join(INSTALL_ROOT, "source"))
     if not _install_is_project:
-        # Layout A — INSTALL_ROOT is the workspace itself.
+        # Layout A - INSTALL_ROOT is the workspace itself.
         WORKSPACE_DIR = INSTALL_ROOT
     else:
-        # Layout B — install dir is a project, workspace is one level up.
+        # Layout B - install dir is a project, workspace is one level up.
         _candidate = os.path.dirname(INSTALL_ROOT)
         if _candidate and _candidate != INSTALL_ROOT and os.path.isdir(_candidate):
             WORKSPACE_DIR = _candidate
@@ -170,12 +170,12 @@ else:
 
 # In single-project mode this is the only project root the daemon ever resolves.
 # In Layout A (INSTALL_ROOT == WORKSPACE_DIR), this points at the workspace dir
-# itself — which has no source/ so it can't satisfy /source/* requests on its
+# itself - which has no source/ so it can't satisfy /source/* requests on its
 # own, but it's only consulted as a translate_path fallback after Referer
 # resolution has already had its chance.
 DEFAULT_PROJECT_ROOT = INSTALL_ROOT
 
-# Phase-6.2 cleanup — projects live under a dedicated `projects/` subfolder of
+# Phase-6.2 cleanup - projects live under a dedicated `projects/` subfolder of
 # the workspace (instead of being root-level siblings of editor/, AGENTS.md,
 # etc.). Keeps the workspace root readable at a glance. The folder is created
 # lazily by /__projects/new; if it doesn't exist yet, _list_projects() falls
@@ -186,7 +186,7 @@ NAME_OK = re.compile(r"^[A-Za-z0-9._-]+$")
 SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 PROJECT_ID_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 ALLOWED_NAMES = {
-    # v3.1 — branches deprecated. MERGES.md / FORK_REQUEST.md no longer allowed.
+    # v3.1 - branches deprecated. MERGES.md / FORK_REQUEST.md no longer allowed.
     "edits.json", "DESIGN.md", "NOTES.md", "UPDATE_SOURCE.txt",
     # Per-view "please-populate" requests. Each is written by clicking the
     # "Generate" button on the matching empty-state card. The agent reads it
@@ -194,9 +194,9 @@ ALLOWED_NAMES = {
     # and deletes the file when done.
     "STATEMACHINE_REQUEST.md", "TIMELINE_REQUEST.md", "GRID_REQUEST.md",
 }
-MAX_BYTES = 20 * 1024 * 1024  # 20 MB — annotated screenshots can be chunky
+MAX_BYTES = 20 * 1024 * 1024  # 20 MB - annotated screenshots can be chunky
 
-# Phase 4a — BYOK media config. Sits outside the workspace so multiple projects
+# Phase 4a - BYOK media config. Sits outside the workspace so multiple projects
 # share the same keys; mode 0600 so it isn't world-readable.
 MEDIA_CONFIG_DIR  = os.path.expanduser("~/.test-harness")
 MEDIA_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "media-config.json")
@@ -238,7 +238,7 @@ def _media_config_save(cfg):
     except Exception: pass
 
 
-# Phase 4b — Per-provider key resolution. Env var first (TH_<PROVIDER>_API_KEY),
+# Phase 4b - Per-provider key resolution. Env var first (TH_<PROVIDER>_API_KEY),
 # then media-config.json. New providers slot in by adding an entry.
 _PROVIDER_ENV_KEYS = {
     "openai":      "TH_OPENAI_API_KEY",
@@ -255,20 +255,20 @@ _PROVIDER_ENV_KEYS = {
     "imagerouter": "TH_IMAGEROUTER_API_KEY",
     "quiver":      "TH_QUIVER_API_KEY",
     # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
-    # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) —
+    # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) -
     # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be
     # unauthenticated); the endpoint URL lives in media-config 'sam3d'.endpoint
     # or env TH_SAM3D_ENDPOINT. See services/sam3d-splat/.
     "sam3d":       "TH_SAM3D_API_KEY",
 }
 
-# Live Session — per-request guest API key. A guest editing through the gate
+# Live Session - per-request guest API key. A guest editing through the gate
 # sends their OWN key as X-Th-Llm-Key; do_POST stamps it on this thread-local so
 # every credential path (CLI-spawn env via _build_child_env, direct API via
 # _resolve_provider_key) spends the GUEST's key for that request, never the
 # host's. Overwritten at the top of each POST, so it never leaks between requests.
 _REQ_LLM_KEY = threading.local()
-# Live Session — per-request MAP of the guest's own credentials, keyed by
+# Live Session - per-request MAP of the guest's own credentials, keyed by
 # provider id (anthropic/openai/nanobanana/fal/…) PLUS the special "claudeCli"
 # entry: a Claude Code subscription token from `claude setup-token` (sk-ant-oat…)
 # that runs the agent on the GUEST's subscription via CLAUDE_CODE_OAUTH_TOKEN.
@@ -329,7 +329,7 @@ def _guest_cli_env(agent_id):
         # Isolate CLAUDE_CONFIG_DIR to a throwaway dir so the CLI CANNOT reach
         # the host's keychain / ~/.claude credentials and silently auth as the
         # host. With the host creds unreachable, the CLI must use the guest's
-        # token/key from the env below — an invalid one fails (correct) instead
+        # token/key from the env below - an invalid one fails (correct) instead
         # of falling back to the host's session.
         try:
             import tempfile
@@ -364,7 +364,7 @@ def _resolve_provider_key(provider):
     if provider == "anthropic":
         sk = _current_guest_llm_key()
         if sk: return sk
-    # SECURITY — a guest request that lacks its OWN key for this provider must
+    # SECURITY - a guest request that lacks its OWN key for this provider must
     # NOT fall through to the host's env/config credential (that would silently
     # spend the host's account). Returning None makes the run surface a
     # missing-key error instead. The host's own requests (no guest context)
@@ -384,13 +384,13 @@ def _resolve_provider_key(provider):
 
 
 def _media_resolve_openai_key():
-    # Back-compat shim — older code paths still call this name.
+    # Back-compat shim - older code paths still call this name.
     return _resolve_provider_key("openai")
 
 
 # ── Per-capability default providers (synced from browser localStorage) ─────
 # The editor stores the user's per-capability provider/model picks in
-# localStorage["th.editor.default-providers.v1"] — pure browser state, never
+# localStorage["th.editor.default-providers.v1"] - pure browser state, never
 # written to disk (the picks aren't secret but live alongside the API keys
 # that ARE browser-encrypted, so the storage tier is shared by convention).
 #
@@ -398,7 +398,7 @@ def _media_resolve_openai_key():
 # surface them to every agent ("for image-gen, prefer openai gpt-image-2
 # unless the user names something else"). The editor POSTs the current
 # localStorage value here on page load AND on every Settings change so the
-# cache stays current. No persistence — restart loses it and the next editor
+# cache stays current. No persistence - restart loses it and the next editor
 # load re-syncs.
 _DEFAULT_PROVIDERS: dict = {}
 
@@ -445,7 +445,7 @@ def _download_bytes(url, timeout=60):
 
 # ── Provider renderers ────────────────────────────────────────────────────
 # Each renderer returns raw bytes for the generated/transformed asset. They
-# do NOT touch the filesystem — the dispatcher in _asset_generate is the
+# do NOT touch the filesystem - the dispatcher in _asset_generate is the
 # only thing that writes to disk. This keeps renderer code thin and testable.
 
 # Per-model size mappings. gpt-image-* / dall-e-* / dall-e-2 differ.
@@ -463,7 +463,7 @@ _OPENAI_DALLE2_SIZES = {
 }
 
 def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, options):
-    """OpenAI /v1/images/edits — image-to-image via multipart/form-data.
+    """OpenAI /v1/images/edits - image-to-image via multipart/form-data.
 
     Used when a generate-image call also carries `input_path` / `input_data_uri`
     AND the model is in the gpt-image-1 family. Same response shape as
@@ -472,7 +472,7 @@ def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, 
 
     Hand-rolled multipart so we don't pull in `requests`/`httpx`."""
     import uuid
-    model = model or "gpt-image-2"  # v3.4.7 — gpt-image-1 deprecates Oct 23, 2026
+    model = model or "gpt-image-2"  # v3.4.7 - gpt-image-1 deprecates Oct 23, 2026
     boundary = "thMP" + uuid.uuid4().hex
     parts = []
     def add_field(name, value):
@@ -523,7 +523,7 @@ def _openai_generate_image(api_key, prompt, model, aspect, options):
     """OpenAI Images. Handles the gpt-image-2 / gpt-image-1.5 / gpt-image-1
     family. The gpt-image-* models return b64_json natively (setting
     response_format actually 400s). DALL·E 2 + DALL·E 3 were shut down
-    May 12, 2026 — their branches are kept below as dead code so legacy
+    May 12, 2026 - their branches are kept below as dead code so legacy
     workflow.json files with old model IDs return a clean error rather
     than crashing."""
     model = model or "gpt-image-2"
@@ -568,7 +568,7 @@ _FAL_IMAGE_SIZES = {
 
 def _fal_request(api_key, model_path, body, timeout=300):
     """Sync POST to fal.run/<model_path>. fal accepts `Authorization: Key <…>`
-    and returns JSON whose shape varies per model — callers parse out the
+    and returns JSON whose shape varies per model - callers parse out the
     output URL themselves."""
     url = f"https://fal.run/{model_path}"
     req = urllib.request.Request(
@@ -667,7 +667,7 @@ def _fal_generate_3d(api_key, prompt, model, aspect, options):
     """fal.ai text-to-3D / image-to-3D. Pattern matches _fal_generate_image
     but extracts a .glb (or .gltf / .usdz) URL from the response. Works with
     fal-ai/triposr, fal-ai/hyper3d-rodin, fal-ai/hunyuan3d-v2 family etc.
-    Aspect is mostly meaningless for 3D — passed through if the model
+    Aspect is mostly meaningless for 3D - passed through if the model
     accepts it, otherwise ignored. Most 3D models accept an input image
     via `image_url` in options. Bytes returned are the raw .glb file."""
     body = {"prompt": prompt}
@@ -730,7 +730,7 @@ def _fal_image_to_3d(api_key, model, input_abs_path, options, want_ply):
         url = _fal_extract_url_by_ext(payload, (".ply",))
         if not url:
             raise RuntimeError(
-                "fal: model " + str(model) + " returned no .ply (Gaussian splat) — use a "
+                "fal: model " + str(model) + " returned no .ply (Gaussian splat) - use a "
                 "splat model like tripo3d/triposplat or fal-ai/trellis-2 (with ply export). "
                 "keys: " + str(list(payload.keys()) if isinstance(payload, dict) else "?"))
     else:
@@ -744,7 +744,7 @@ def _fal_image_to_3d(api_key, model, input_abs_path, options, want_ply):
 
 def _fal_generate_lottie(api_key, prompt, model, aspect, options):
     """fal.ai text-to-Lottie. Returns the raw .json bytes of the Lottie
-    animation. Note: fal's Lottie model coverage is sparse — most Lottie
+    animation. Note: fal's Lottie model coverage is sparse - most Lottie
     work today goes through hand-coded Lottie via the lottie subagent.
     This renderer is a thin pass-through for the day fal expands the
     family; the dispatch entry exists so callers get a meaningful 502
@@ -763,7 +763,7 @@ def _fal_generate_lottie(api_key, prompt, model, aspect, options):
 # Unlike fal's sync fal.run endpoints, Meshy is ASYNC: POST creates a task and
 # returns {"result": "<task_id>"}, then you poll GET /<endpoint>/<task_id>
 # until status == SUCCEEDED and read model_urls.glb. Text-to-3D is a two-stage
-# flow — a `preview` task (geometry) followed by a `refine` task (textures),
+# flow - a `preview` task (geometry) followed by a `refine` task (textures),
 # the refine referencing the preview's id. Image-to-3D is single-stage.
 # Docs: https://docs.meshy.ai/  Auth: `Authorization: Bearer <key>`.
 def _meshy_request(api_key, path, body, method="POST", timeout=60):
@@ -834,14 +834,14 @@ def _meshy_animate(api_key, mesh_task_id, opts):
     Two-stage: POST /openapi/v1/rigging (input_task_id = the mesh task) → poll;
     the rig result already carries basic walking/running glbs. A NAMED library
     action goes through POST /openapi/v1/animations (rig_task_id + action_id).
-    Character/humanoid meshes only — Meshy auto-rig needs a riggable shape, and
+    Character/humanoid meshes only - Meshy auto-rig needs a riggable shape, and
     rigging/animation require a plan tier that exposes those endpoints."""
     rig_body = {"input_task_id": mesh_task_id, "height_meters": opts.get("height_meters", 1.7)}
     if opts.get("texture_image_url"): rig_body["texture_image_url"] = opts["texture_image_url"]
     created = _meshy_request(api_key, "/openapi/v1/rigging", rig_body)
     rig_id = created.get("result") if isinstance(created, dict) else None
     if not rig_id:
-        raise RuntimeError(f"meshy: no rig task id — {created}")
+        raise RuntimeError(f"meshy: no rig task id - {created}")
     rig = _meshy_poll(api_key, "/openapi/v1/rigging", rig_id, timeout_total=900)
 
     action = opts.get("action") or opts.get("action_id")
@@ -875,7 +875,7 @@ def _meshy_generate_3d(api_key, prompt, model, aspect, options):
     family: 'image-to-3d' (or an options.image_url) → image-to-3d, else
     text-to-3d. TEXTURE is on by default (text: preview→refine bakes PBR;
     image: should_texture). ANIMATION runs when `model` contains 'anim', or
-    options.animate / options.action(_id) is set — the mesh is rigged and
+    options.animate / options.action(_id) is set - the mesh is rigged and
     animated, falling back to the static textured mesh if rigging isn't
     available (plan/non-character). Knobs ride in via the skill node options."""
     opts = options if isinstance(options, dict) else {}
@@ -900,11 +900,11 @@ def _meshy_generate_3d(api_key, prompt, model, aspect, options):
         created = _meshy_request(api_key, "/openapi/v2/image-to-3d", body)
         mesh_task_id = created.get("result") if isinstance(created, dict) else None
         if not mesh_task_id:
-            raise RuntimeError(f"meshy: no task id (image-to-3d) — {created}")
+            raise RuntimeError(f"meshy: no task id (image-to-3d) - {created}")
         done = _meshy_poll(api_key, "/openapi/v2/image-to-3d", mesh_task_id)
         static_url = _meshy_extract_glb(done)
     else:
-        # Text-to-3D — stage 1: preview (geometry only).
+        # Text-to-3D - stage 1: preview (geometry only).
         pbody = {
             "mode":           "preview",
             "prompt":         (prompt or "")[:600],
@@ -917,7 +917,7 @@ def _meshy_generate_3d(api_key, prompt, model, aspect, options):
         created = _meshy_request(api_key, "/openapi/v2/text-to-3d", pbody)
         preview_id = created.get("result") if isinstance(created, dict) else None
         if not preview_id:
-            raise RuntimeError(f"meshy: no task id (text-to-3d preview) — {created}")
+            raise RuntimeError(f"meshy: no task id (text-to-3d preview) - {created}")
         preview = _meshy_poll(api_key, "/openapi/v2/text-to-3d", preview_id)
         mesh_task_id = preview_id
         static_url = _meshy_extract_glb(preview)
@@ -972,17 +972,17 @@ def _fal_generate_video(api_key, prompt, model, aspect, options):
     fal-ai/luma-dream-machine/ray-2/text-to-video, fal-ai/kling-video/v2.5-turbo,
     fal-ai/minimax/hailuo-2.3-fast, fal-ai/seedance-2.0, etc. Returns mp4
     bytes downloaded from the response's video URL. Aspect ratios per
-    fal's vocabulary (16:9 / 9:16 / 1:1) — most models accept any of them.
+    fal's vocabulary (16:9 / 9:16 / 1:1) - most models accept any of them.
     NOTE: the bare `fal-ai/luma-dream-machine` endpoint was deprecated in
     June 2026; use the ray-2 sub-paths instead."""
     body = {"prompt": prompt}
     # fal's video models use different param names per family; pass a
     # superset of common knobs and rely on the model to ignore the ones
     # it doesn't understand. Per-model overrides land via skill node options.
-    # v3.4.12 — 1:1 collapses to 16:9 because almost every video endpoint
+    # v3.4.12 - 1:1 collapses to 16:9 because almost every video endpoint
     # rejects square (Luma Ray, Veo 3.1, Kling 2.5, Hailuo all return
     # `{"detail":[{"msg":"Input should be '16:9' or '9:16'"}]}` for 1:1).
-    # Square is meaningful for still images, not for video — so the safe
+    # Square is meaningful for still images, not for video - so the safe
     # default is landscape until the user explicitly picks a portrait.
     ASPECT_MAP_VIDEO = {
         "1:1":  "16:9",
@@ -1019,11 +1019,11 @@ def _fal_transform_image(api_key, model, input_abs_path, options, input_data_uri
     return _download_bytes(image_url)
 
 
-# Quiver AI — vector-native generator that returns an SVG document directly.
+# Quiver AI - vector-native generator that returns an SVG document directly.
 # Endpoint: POST https://api.quiver.ai/v1/svgs/generations
 # Returns:  { data: [ { svg: "<svg…/>", mime_type: "image/svg+xml" } ], credits, … }
 # Falls back to Pathway B (Claude hand-authoring) when no key is set, so the
-# skill node behaves the same to the user — just faster & higher fidelity
+# skill node behaves the same to the user - just faster & higher fidelity
 # whenever a Quiver key is present.
 def _quiver_generate_svg(api_key, prompt, model, options):
     model = (model or "").strip() or "arrow-1.1"
@@ -1054,17 +1054,17 @@ def _quiver_generate_svg(api_key, prompt, model, options):
     return svg_text.encode("utf-8")
 
 
-# Phase 4c — find an inline SVG in the project's source files and replace it
-# with new markup. Used when a skill writes to an inline-SVG asset target —
+# Phase 4c - find an inline SVG in the project's source files and replace it
+# with new markup. Used when a skill writes to an inline-SVG asset target -
 # the resulting bytes replace the original SVG in place, so the prototype
 # renders the regenerated visual.
 #
 # Matching strategy:
 #   1. Exact substring match (works for plain HTML sources).
-#   2. JSX-style match — convert the rendered SVG's HTML-style attributes
+#   2. JSX-style match - convert the rendered SVG's HTML-style attributes
 #      back to React JSX conventions (class → className, kebab → camelCase,
 #      xlink:href → xlinkHref) before searching. Handles common JSX cases.
-#   3. Fallback path-data match — extract the SVG's most distinctive content
+#   3. Fallback path-data match - extract the SVG's most distinctive content
 #      (the first <path d="…"/>) and locate any SVG element in source whose
 #      path data matches. The whole containing SVG element is then replaced.
 # Scans common source extensions: .html, .htm, .jsx, .tsx, .js, .ts.
@@ -1108,7 +1108,7 @@ _HTML_TO_JSX_SVG_ATTRS = [
 def _to_jsx_svg(html):
     """Rewrite an HTML-style SVG markup string to JSX conventions so we can
     search for it inside a React JSX source file. Only handles attribute
-    naming — element structure is unchanged."""
+    naming - element structure is unchanged."""
     out = html
     for html_attr, jsx_attr in _HTML_TO_JSX_SVG_ATTRS:
         # \b doesn't match the colon in xlink:href, so use a lookbehind for
@@ -1129,7 +1129,7 @@ def _extract_first_path_d(svg_html):
 
 
 def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_content):
-    # v3.1 — branches deprecated. `branch` arg ignored; source/ is flat.
+    # v3.1 - branches deprecated. `branch` arg ignored; source/ is flat.
     src_root = os.path.join(project_root, "source")
     if not os.path.isdir(src_root):
         raise RuntimeError("source/ not found")
@@ -1161,7 +1161,7 @@ def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_conte
         elif jsx_candidate != original_svg and jsx_candidate in text:
             new_text = text.replace(jsx_candidate, new_content, 1)
 
-        # Strategy 3: fingerprint match — locate any <svg>...</svg> block
+        # Strategy 3: fingerprint match - locate any <svg>...</svg> block
         # in source that contains the same first-path "d" attribute, then
         # replace that whole block.
         elif fingerprint_d:
@@ -1186,7 +1186,7 @@ def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_conte
             return [os.path.relpath(fpath, project_root)]
 
     raise RuntimeError(
-        "could not locate the inline SVG in source/ — tried exact match, "
+        "could not locate the inline SVG in source/ - tried exact match, "
         "JSX-normalized attribute names (class/className, kebab/camel), and "
         "path-data fingerprint. The PNG was still written to disk; you can "
         "manually replace the <svg> in your prototype with an <img> tag."
@@ -1210,15 +1210,15 @@ _GENERATE_DISPATCH = {
     # fal.run, parses the response with _fal_extract_video_url, and
     # downloads the mp4 bytes to the spawned `.mp4` path.
     ("video-gen",      "fal"):    "fal_video",
-    # v3.5 — 3D model generation via fal (triposr, hyper3d-rodin,
+    # v3.5 - 3D model generation via fal (triposr, hyper3d-rodin,
     # hunyuan3d-v2 family etc.). Bytes are a .glb / .gltf file. Without
     # this entry the orchestrator's 3D drawer got `no renderer for
     # skill='3d-gen'` 400s with no provider hint.
     ("3d-gen",         "fal"):    "fal_3d",
-    # Meshy 3D — async create+poll (preview→refine for text, single-stage for
+    # Meshy 3D - async create+poll (preview→refine for text, single-stage for
     # image). Bytes are a textured .glb. Requires TH_MESHY_API_KEY.
     ("3d-gen",         "meshy"):  "meshy_3d",
-    # v3.5 — Lottie generation via fal. Sparse model coverage today, but
+    # v3.5 - Lottie generation via fal. Sparse model coverage today, but
     # the dispatch entry makes the skill discoverable and routes to a
     # real renderer instead of returning the generic "no renderer" 400.
     ("lottie-gen",     "fal"):    "fal_lottie",
@@ -1230,7 +1230,7 @@ _TRANSFORM_DISPATCH = {
     # Image → 3D. Both are transforms (image in → 3D file out), so they slot
     # beside rembg. image-to-ply emits a Gaussian splat .ply (Splat Lab);
     # image-to-glb emits a textured mesh .glb (Spline 3D / Voxel / model-viewer).
-    #   fal   = hosted, no local GPU (default — triposplat / trellis).
+    #   fal   = hosted, no local GPU (default - triposplat / trellis).
     #   sam3d = self-hosted SAM 3D Objects GPU service (services/sam3d-splat/).
     ("image-to-ply", "fal"):   "fal_image_to_3d",
     ("image-to-glb", "fal"):   "fal_image_to_3d",
@@ -1239,7 +1239,7 @@ _TRANSFORM_DISPATCH = {
 }
 
 
-# Phase 4c — Local transform via the rembg python package (Daniel Gatis,
+# Phase 4c - Local transform via the rembg python package (Daniel Gatis,
 # github.com/danielgatis/rembg). No API key required.
 #
 # Why subprocess instead of `import rembg` in-process:
@@ -1287,7 +1287,7 @@ def _local_rembg(input_abs_path, model_name, options):
 # ── SAM 3D Objects: image → Gaussian-splat (.ply) via an external GPU service ─
 # facebookresearch/sam-3d-objects outputs a 3D Gaussian splat .ply from a single
 # image (+ object mask). Its deps (kaolin, gsplat) REQUIRE a CUDA GPU, so it
-# cannot run in this daemon — it runs as a separate HTTP service the user
+# cannot run in this daemon - it runs as a separate HTTP service the user
 # deploys (Modal / RunPod / Replicate / own box; see services/sam3d-splat/).
 # This daemon is only an HTTP client: POST the (ideally background-removed)
 # image, get back .ply bytes that Splat Lab loads directly.
@@ -1310,7 +1310,7 @@ def _sam3d_convert(api_key, input_abs_path, options):
     The configured endpoint is the FULL POST URL of the service's /convert
     route. It receives {image: <data-uri>, seed, mask?: <data-uri>} and replies
     with either raw .ply bytes (Content-Type model/ply or application/octet-
-    stream) or JSON {ply_b64} / {ply_url}. Long timeout — splat reconstruction
+    stream) or JSON {ply_b64} / {ply_url}. Long timeout - splat reconstruction
     can take minutes on cold GPUs.
     """
     if not os.path.isfile(input_abs_path):
@@ -1320,7 +1320,7 @@ def _sam3d_convert(api_key, input_abs_path, options):
         raise RuntimeError(
             "SAM 3D endpoint not configured. Set env TH_SAM3D_ENDPOINT=<full convert URL>, "
             "or add {\"sam3d\": {\"endpoint\": \"https://…/convert\", \"api_key\": \"…\"}} to "
-            "~/.test-harness/media-config.json. The service runs on a CUDA GPU — deploy "
+            "~/.test-harness/media-config.json. The service runs on a CUDA GPU - deploy "
             "services/sam3d-splat/ to Modal / RunPod / Replicate.")
     opts = options or {}
     fmt = str(opts.get("format") or "splat").lower()
@@ -1356,15 +1356,15 @@ def _sam3d_convert(api_key, input_abs_path, options):
                 if isinstance(j.get(urlkey), str):
                     return _download_bytes(j[urlkey], timeout=300)
             raise RuntimeError("sam3d: JSON response had no ply/glb b64 or url: " + str(j)[:300])
-    # Otherwise assume raw bytes — PLY ('ply' header) or binary glTF ('glTF' magic).
+    # Otherwise assume raw bytes - PLY ('ply' header) or binary glTF ('glTF' magic).
     if raw[:3] == b"ply" or raw[:4] == b"glTF":
         return raw
     raise RuntimeError(
         "sam3d: unexpected response (Content-Type " + (ctype or "?") + ", "
-        + str(len(raw)) + " bytes) — expected a .ply / .glb or JSON {ply_b64|glb_b64|*_url}.")
+        + str(len(raw)) + " bytes) - expected a .ply / .glb or JSON {ply_b64|glb_b64|*_url}.")
 
 
-# Phase 4c — text-output skills (LLM call, describe image). These don't
+# Phase 4c - text-output skills (LLM call, describe image). These don't
 # write to disk; they return the generated text inline so the UI can route
 # it into downstream prompt nodes.
 def _openai_chat(api_key, messages, model="gpt-4o-mini", options=None):
@@ -1386,7 +1386,7 @@ def _openai_chat(api_key, messages, model="gpt-4o-mini", options=None):
         raise RuntimeError(f"unexpected OpenAI chat response shape: {list(data.keys())}")
 
 
-# Phase 4d — agent tool loop. Returns (final_text, tool_log). dispatch is a
+# Phase 4d - agent tool loop. Returns (final_text, tool_log). dispatch is a
 # function(name, args_dict) → str. Caps the tool loop at MAX_ITERS so a
 # runaway model can't infinite-loop us.
 def _openai_chat_tools(api_key, messages, model, tools, dispatch, options=None, max_iters=12):
@@ -1432,7 +1432,7 @@ def _openai_chat_tools(api_key, messages, model, tools, dispatch, options=None, 
     return "(agent stopped: exceeded max tool iterations)", tool_log
 
 
-# Phase 4d — sandboxed file dispatch. read_root_abs and write_root_abs must
+# Phase 4d - sandboxed file dispatch. read_root_abs and write_root_abs must
 # be absolute, normalized paths under the project root. All tool args resolve
 # through this and reject anything that escapes.
 def _make_agent_dispatch(read_root_abs, write_root_abs, max_file_bytes=200_000):
@@ -1505,7 +1505,7 @@ _LLM_DISPATCH = {
 
 
 def _claude_cli_complete(messages, model=None, timeout=600):
-    """Phase 8 — one-shot completion via the Claude CLI's --print mode.
+    """Phase 8 - one-shot completion via the Claude CLI's --print mode.
     Used as a fallback in /__llm_run when no Anthropic API key is configured
     in media-config but the user has the `claude` binary authenticated. The
     CLI handles auth via its own session, so no API key is needed here.
@@ -1516,7 +1516,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
 
     Returns the assistant's text (rstrip newlines).
 
-    Default timeout 600s (10 min) — the CLI is slow on long inputs (1-3 min
+    Default timeout 600s (10 min) - the CLI is slow on long inputs (1-3 min
     typical for ~3KB prompts with max_tokens=8000 output). Below 600s and
     Blend / Refiner runs hit subprocess.TimeoutExpired."""
     bin_path = detect_agent_bin("claude")
@@ -1536,7 +1536,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     flat = "\n\n".join(convo_parts).strip() or "Hello"
     # NOTE: don't pass --bare. It disables OAuth + keychain reads, which is
     # exactly the auth path most users have. With --bare, the CLI requires
-    # ANTHROPIC_API_KEY in the env — but if the user had a key, they'd be on
+    # ANTHROPIC_API_KEY in the env - but if the user had a key, they'd be on
     # the API-key path, not the CLI fallback. So this code path needs OAuth.
     args = [
         bin_path, "--print",
@@ -1546,7 +1546,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     ]
     if system_parts:
         args.extend(["--append-system-prompt", "\n\n".join(system_parts)])
-    # Map full model IDs onto CLI aliases when possible — they accept either,
+    # Map full model IDs onto CLI aliases when possible - they accept either,
     # but the alias is more forgiving across CLI versions.
     if model:
         m = model.lower()
@@ -1554,7 +1554,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
         elif "opus" in m:    args.extend(["--model", "opus"])
         elif "haiku" in m:   args.extend(["--model", "haiku"])
     args.append(flat)
-    # Live Session — a guest's /__llm_run must spend the GUEST's credentials,
+    # Live Session - a guest's /__llm_run must spend the GUEST's credentials,
     # never the host's logged-in CLI. If this is a guest request, run the CLI
     # with the guest's Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN) or
     # their Anthropic API key; if they have neither, REFUSE (don't silently use
@@ -1581,7 +1581,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
 def _codex_cli_complete(messages, model=None, timeout=600):
     """One-shot completion via the Codex CLI's `exec` subcommand. Mirror of
     _claude_cli_complete for users who installed Codex (OpenAI's CLI) and
-    signed in via `codex login` — no OPENAI_API_KEY needed.
+    signed in via `codex login` - no OPENAI_API_KEY needed.
 
     Codex's non-interactive surface is `codex exec [--model <m>] "<prompt>"`,
     which prints the assistant text to stdout. Older versions of codex accept
@@ -1611,7 +1611,7 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     if convo_parts:
         prompt_parts.append("\n\n".join(convo_parts))
     flat = "\n\n".join(prompt_parts).strip() or "Hello"
-    # v3.5 — --sandbox danger-full-access: codex's API calls need outbound
+    # v3.5 - --sandbox danger-full-access: codex's API calls need outbound
     # network (OAuth → OpenAI chat completions) which workspace-write
     # blocks. Text completion is read-only on the filesystem but still
     # needs network; danger-full-access covers both. Same flag the chat
@@ -1621,7 +1621,7 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     if model:
         args.extend(["--model", model])
     args.append(flat)
-    # Live Session — a guest must spend their OWN OpenAI credential, never the
+    # Live Session - a guest must spend their OWN OpenAI credential, never the
     # host's `codex login`. Guest request → env with the guest's OpenAI key (or
     # refuse); host request → inherited env (host's Codex auth).
     _cli_env = _guest_cli_env("codex")
@@ -1644,7 +1644,7 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
 
     Codex's agent loop ships with a `generate_image` tool that calls
     OpenAI's image API internally, authenticating via the user's
-    `codex login` OAuth token — so no OPENAI_API_KEY is required. This
+    `codex login` OAuth token - so no OPENAI_API_KEY is required. This
     helper instructs Codex to invoke that tool and write the PNG into a
     tempdir we control, then reads the bytes back.
 
@@ -1655,14 +1655,14 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
 
     Args:
         prompt: user-supplied image brief
-        model:  gpt-image-2 / gpt-image-1 / etc. — passed verbatim. The
+        model:  gpt-image-2 / gpt-image-1 / etc. - passed verbatim. The
                 "codex-default" sentinel means "let Codex pick its own
                 default" and we omit the model line from the prompt.
-        aspect: "1:1" / "3:2" / etc. — passed into the prompt as a hint
+        aspect: "1:1" / "3:2" / etc. - passed into the prompt as a hint
         project_root: absolute path of the active project; tempdir lives
                 here so Codex's sandbox can write into it
         timeout: subprocess timeout in seconds (image gen via the agent
-                 loop is slow — 5+ minutes is realistic)
+                 loop is slow - 5+ minutes is realistic)
 
     Returns the PNG bytes. Raises:
       • FileNotFoundError("codex") if codex isn't on PATH
@@ -1699,13 +1699,13 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
             "generate an image for any reason (tool unavailable, sandbox, "
             "policy), print 'UNABLE: <one-line reason>' and exit."
         )
-        # v3.5 — Pass --sandbox danger-full-access. Without it, codex
+        # v3.5 - Pass --sandbox danger-full-access. Without it, codex
         # defaults to read-only sandbox and the built-in image_gen tool
         # can't write the PNG to disk (or call the OpenAI image API).
         # That was the actual permission issue making "codex image-gen
-        # silently no-ops" — not anything about LLM capability awareness.
+        # silently no-ops" - not anything about LLM capability awareness.
         # workspace-write would allow disk writes but blocks outbound
-        # network — image_gen needs both, so full-access it is.
+        # network - image_gen needs both, so full-access it is.
         args = [bin_path, "exec", "--sandbox", "danger-full-access", codex_prompt]
         result = subprocess.run(
             args,
@@ -1721,7 +1721,7 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
             with open(out_path, "rb") as f:
                 data = f.read()
             return data
-        # No file at the expected path — look for any PNG the agent might
+        # No file at the expected path - look for any PNG the agent might
         # have written elsewhere in the staging dir (sometimes it picks
         # a different filename despite the instructions).
         candidates = _glob.glob(os.path.join(tmpdir, "*.png"))
@@ -1752,7 +1752,7 @@ def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
 
 def _anthropic_chat(api_key, messages, model="claude-sonnet-4-6", options=None, vision=False):
     """Anthropic Messages API. Accepts the same OpenAI-style `messages` array
-    we use everywhere — system messages are folded into a top-level `system`
+    we use everywhere - system messages are folded into a top-level `system`
     field (Anthropic's API doesn't accept system in the messages list), and
     user/assistant content blocks pass through. For vision, the OpenAI-style
     {type: "image_url", image_url: {url: <data-uri>}} block is rewritten to
@@ -1861,7 +1861,7 @@ def resolve_project_root(qs_or_body=None, *, require_explicit=True):
 
     Workspace mode: reads `project` from qs/body. By default (v3.7) every
     request MUST carry an explicit `?project=<id>` when more than one
-    project exists — the route raises `ValueError` and its handler returns
+    project exists - the route raises `ValueError` and its handler returns
     400. This makes cross-project leaks impossible: the daemon never has
     to guess which project an agent meant.
 
@@ -1901,7 +1901,7 @@ def resolve_project_root(qs_or_body=None, *, require_explicit=True):
 
 
 # ── Local font library ───────────────────────────────────────────────────
-# Uploaded fonts are collected under design-systems/<dsId>/fonts/ — one file
+# Uploaded fonts are collected under design-systems/<dsId>/fonts/ - one file
 # per face plus an auto-generated _fontface.css sibling and a fonts.json
 # manifest preserving the exact family casing the user typed at upload time
 # (the filename slug is lossy: "PP Neue Montreal" → "pp-neue-montreal").
@@ -1979,7 +1979,7 @@ def _scan_fonts_dir(fonts_dir, ds_label, font_path_prefix, css_url):
 
 
 def _global_fonts_dir():
-    """The WORKSPACE-LEVEL font collection — the 'Custom fonts' section of
+    """The WORKSPACE-LEVEL font collection - the 'Custom fonts' section of
     the landing page's System tab. Shared across every project (the landing
     has no project context). Single-project mode falls back to a fonts/
     folder beside the project."""
@@ -1999,7 +1999,7 @@ def _list_local_fonts(project_root):
     design-systems/*/fonts/ PLUS the workspace-level 'global' collection.
 
     Returns [{family, slug, ds, file, fontPath, cssUrl, format}]. Project
-    faces first, then global — a project face shadows a same-named global
+    faces first, then global - a project face shadows a same-named global
     one for /__resolve_font (first match wins).
     """
     out = []
@@ -2016,7 +2016,7 @@ def _list_local_fonts(project_root):
 
 def _resolve_style_contract(ds_dir, meta):
     """Resolve a DS's baked `defaultStyle` into a complete, machine-readable
-    build recipe — so any agent inheriting the DS is AWARE the active style is
+    build recipe - so any agent inheriting the DS is AWARE the active style is
     e.g. glass and knows exactly HOW to wire it on a feature page (link target,
     <html> attribute, runtime script, fallback note). Returns None when no
     default style is baked (the DS is its neutral base look).
@@ -2024,7 +2024,7 @@ def _resolve_style_contract(ds_dir, meta):
     Two bake shapes (see the 2c block in /__projects bake):
       • CSS-only style → folded UNSCOPED into styles.css at bake time. Linking
         styles.css is enough; no attribute or script needed.
-      • JS-backed style (themes/<id>.js exists — e.g. glassmorphism's WebGL
+      • JS-backed style (themes/<id>.js exists - e.g. glassmorphism's WebGL
         dispersion-prism) → CANNOT fold into static CSS, so it stays a scoped
         [data-theme="<id>"] overlay. A consuming page MUST link all.css, stamp
         data-theme="<id>" on <html>, and include the runtime script. The CSS
@@ -2064,7 +2064,7 @@ def _resolve_style_contract(ds_dir, meta):
             "attribute, and include the runtime script (CSS fallback renders "
             "without it). See templates/ for the canonical wiring."
             if has_js else
-            "CSS-only style: folded unscoped into styles.css at bake time — "
+            "CSS-only style: folded unscoped into styles.css at bake time - "
             "linking styles.css renders this look by default, no attribute needed."
         ),
     }
@@ -2074,9 +2074,9 @@ def _resolve_style_contract(ds_dir, meta):
     return contract
 
 
-# A DS may declare a build policy — what kinds of imagery a build on it may
+# A DS may declare a build policy - what kinds of imagery a build on it may
 # use, whether interactive polish is wanted (and how loud), and which
-# orchestrators are allowed — so the build agent stops auto-deciding these per
+# orchestrators are allowed - so the build agent stops auto-deciding these per
 # turn. Stored in meta.json.buildPolicy, surfaced on /__design_systems, and
 # honored at PROTOTYPE.md's Phase A.5 orchestrator-plan gate. "auto" (or an
 # absent block) = the current autonomous behavior.
@@ -2095,7 +2095,7 @@ _BUILD_ORCHESTRATORS = {
 def _normalize_build_policy(raw):
     """Validate a raw buildPolicy dict (from the customizer payload or a stored
     meta) into a clean {imagery, polish, orchestrators}. Unknown values are
-    dropped. Returns None when the policy is entirely "auto" — absent == auto,
+    dropped. Returns None when the policy is entirely "auto" - absent == auto,
     so we never persist a no-op block."""
     if not isinstance(raw, dict):
         return None
@@ -2119,7 +2119,7 @@ def _normalize_build_policy(raw):
 
 
 def _project_paths(project_root: str) -> dict:
-    """Per-project derived paths. v3.1 — branches deprecated; `merges`
+    """Per-project derived paths. v3.1 - branches deprecated; `merges`
     retained for legacy callers but no longer used."""
     return {
         "source_dir": os.path.join(project_root, "source"),
@@ -2211,7 +2211,7 @@ def _thumbnail_for_project(project_root: str) -> "dict | None":
     is set. Module-level helper paralleling _starred_for_project.
 
     Storage shape v2: { "path": "source/<...>/file.html" }
-    Storage shape v1: { "id": "<prototype-slug>" } — promoted on the fly to
+    Storage shape v1: { "id": "<prototype-slug>" } - promoted on the fly to
     source/<slug>/index.html so older saves keep working."""
     path = os.path.join(project_root, ".thumbnail-prototype.json")
     if not os.path.isfile(path):
@@ -2245,7 +2245,7 @@ def _thumbnail_for_project(project_root: str) -> "dict | None":
 def _thumbnail_screenshot_fields(project_root: str) -> dict:
     """Static-capture sidecar for the landing thumbnail. When the daemon has
     screenshotted the chosen page to <project>/.thumbnail.png, the landing
-    renders that PNG instead of a live iframe — one cheap <img> per card
+    renders that PNG instead of a live iframe - one cheap <img> per card
     instead of a whole page runtime. screenshotV is the capture's mtime; the
     frontend appends it as ?v= so a re-capture busts the browser cache."""
     try:
@@ -2255,7 +2255,7 @@ def _thumbnail_screenshot_fields(project_root: str) -> dict:
         return {"screenshot": False, "screenshotV": 0}
 
 
-# Headless-browser binary for thumbnail captures. Any Chromium flavor works —
+# Headless-browser binary for thumbnail captures. Any Chromium flavor works -
 # we only need `--headless --screenshot`. Missing binary is fine: the landing
 # keeps its live-iframe fallback and we log once per attempt.
 _CHROME_CANDIDATES = (
@@ -2311,7 +2311,7 @@ def _chrome_screenshot(url: str, out_png: str) -> bool:
         ]
         # Don't trust Chrome to exit: pages that keep a connection or rAF
         # loop alive (SSE, shaders, sims) hold --virtual-time-budget open
-        # indefinitely — but the screenshot file is written long before
+        # indefinitely - but the screenshot file is written long before
         # that. Poll for the PNG and kill Chrome once it lands.
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         deadline = time.time() + 60
@@ -2332,7 +2332,7 @@ def _chrome_screenshot(url: str, out_png: str) -> bool:
         with contextlib.suppress(Exception):
             err = proc.stderr.read() if proc.stderr else b""
         lines = err.decode("utf-8", "replace").strip().splitlines()
-        print(f"[thumbnail] capture produced no PNG for {url}" + (f" — {lines[-1]}" if lines else ""), flush=True)
+        print(f"[thumbnail] capture produced no PNG for {url}" + (f" - {lines[-1]}" if lines else ""), flush=True)
         return False
     except Exception as e:
         print(f"[thumbnail] capture failed for {url}: {e}", flush=True)
@@ -2345,7 +2345,7 @@ def _chrome_screenshot(url: str, out_png: str) -> bool:
 
 def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
     """Screenshot the chosen thumbnail page (served by this daemon) to
-    <project>/.thumbnail.png — headless Chrome at the same 1280×720 viewport
+    <project>/.thumbnail.png - headless Chrome at the same 1280×720 viewport
     the live-iframe fallback renders at. Runs on a worker thread spawned by
     /__thumbnail_prototype/set; failures only log and leave the landing on
     its live-iframe fallback, never block or fail the set call."""
@@ -2399,7 +2399,7 @@ def _spawn_share_thumbnail(project_root: str, project_id: str, prototype: str,
 def _backfill_share_thumbnails() -> None:
     """Boot-time: capture a thumbnail for every share that lacks one. Runs
     sequentially (one Chrome at a time) a few seconds after the server binds
-    so existing shares — including those created before this feature — get a
+    so existing shares - including those created before this feature - get a
     preview on the next daemon start without any manual step."""
     time.sleep(4)  # give the listener time to bind + start serving source/
     try:
@@ -2566,7 +2566,7 @@ def _export_folder_set(pid: str, folder: "str | None") -> str:
     """Persist `folder` (absolute path) on the named project entry. Pass
     None or "" to clear. Returns the normalised stored value (or empty
     string when cleared). Creates the project entry if it doesn't exist
-    yet — workspace.json's projects[] is the authoritative list."""
+    yet - workspace.json's projects[] is the authoritative list."""
     data = _workspace_json_load()
     projects = data.get("projects", [])
     found = None
@@ -2683,7 +2683,7 @@ def _v31_migrate_data_js(project_root: str) -> bool:
 
 
 def _write_registry(reg: dict, project_root: str = None) -> None:
-    """v3.1 — branches deprecated. The "registry" file is now just a stub
+    """v3.1 - branches deprecated. The "registry" file is now just a stub
     bootstrap shim that document.write's the single editor/data.js carrying
     the project's EDITOR_DATA. Kept for backward compat so old data.js
     upgrade paths don't crash; `reg` is ignored (it described branch
@@ -2693,7 +2693,7 @@ def _write_registry(reg: dict, project_root: str = None) -> None:
     editor/branches/main.js), written by Workflow 1 / orchestrator / user."""
     if project_root is None:
         project_root = DEFAULT_PROJECT_ROOT
-    # No-op in v3.1 — the editor/data.js file IS the project data file now,
+    # No-op in v3.1 - the editor/data.js file IS the project data file now,
     # not a bootstrap shim. Leave it untouched if it already exists; create
     # an empty placeholder if it doesn't (so `_load_registry` can re-read).
     registry = _project_paths(project_root)["registry"]
@@ -2701,7 +2701,7 @@ def _write_registry(reg: dict, project_root: str = None) -> None:
         return
     os.makedirs(os.path.dirname(registry), exist_ok=True)
     with open(registry, "w", encoding="utf-8") as f:
-        f.write("// editor/data.js — project data (v3.1; branches deprecated).\n"
+        f.write("// editor/data.js - project data (v3.1; branches deprecated).\n"
                 "// This file carries window.EDITOR_DATA directly. Workflow 1\n"
                 "// writes it after parsing source/.\n"
                 "window.EDITOR_DATA = { meta: {}, frames: [], primitives: [], entities: [] };\n")
@@ -2716,7 +2716,7 @@ def _safe_join(base: str, *parts: str) -> str:
 
 
 def _branch_source_dir(slug: str = "main", project_root: str = None) -> str:
-    """v3.1 — branches deprecated. Always returns source/. The slug arg is
+    """v3.1 - branches deprecated. Always returns source/. The slug arg is
     kept for ABI compat; ignored."""
     if project_root is None:
         project_root = DEFAULT_PROJECT_ROOT
@@ -2724,7 +2724,7 @@ def _branch_source_dir(slug: str = "main", project_root: str = None) -> str:
 
 
 def _branch_data_file(slug: str = "main", project_root: str = None) -> str:
-    """v3.1 — branches deprecated. Always returns editor/data.js."""
+    """v3.1 - branches deprecated. Always returns editor/data.js."""
     if project_root is None:
         project_root = DEFAULT_PROJECT_ROOT
     return os.path.join(_project_paths(project_root)["editor_dir"], "data.js") \
@@ -2748,7 +2748,7 @@ def _ob_col_x(stage_idx: int) -> int:
     return stage_idx * (ONBOARDING_COL_W + ONBOARDING_COL_GAP)
 
 # Per-kind default sizes (world units).
-# Heights here MUST fit the node's whole body — header + fields + the
+# Heights here MUST fit the node's whole body - header + fields + the
 # bottom action row (Run / Setup loop / Build). If a kind has its own
 # renderer that uses a `Math.max(MIN_H, …)` floor, set the scaffold
 # default >= that floor so newly-seeded nodes don't snap up on first
@@ -2765,7 +2765,7 @@ _OB_SIZE = {
     "iterator-blend":    {"w": 380, "h": 440},
 }
 
-# v2.19 — exported scaffolder defaults that the daemon's /run gate compares
+# v2.19 - exported scaffolder defaults that the daemon's /run gate compares
 # against to detect "orchestrator hasn't customized this yet" state. Kept at
 # module scope so both the scaffolder (writes them in) and _workflow_node_run
 # (refuses dispatch when still equal) reference the SAME literal strings.
@@ -2777,28 +2777,28 @@ def _bs_html_default_text(i):
             f"output). Apply BRAINSTORM_VISUAL_RULES and "
             f"CONTENT_DISCIPLINE (≤180 LOC for exploration HTMLs, "
             f"every block earns its place, no filler copy). "
-            # v2.50 — Coherence Pass: canonical fixture + shared chrome.
+            # v2.50 - Coherence Pass: canonical fixture + shared chrome.
             f"DATA: every numeric or proper-noun fact (case ids, "
             f"counts, percentages, confidence scores, operator names) "
             f"MUST be referenced from window.DEMO (which derives from "
             f"_coherence/model.json written by cp_fixture upstream). "
             f"Never author a figure inline. If a fact isn't in the "
-            f"model, request it via /commit error — don't invent it. "
+            f"model, request it via /commit error - don't invent it. "
             f"CHROME: include the canonical chrome partial "
             f"(_coherence/chrome.html written by cp_chrome upstream) "
-            f"verbatim — you may set the active nav item (aria-current) "
+            f"verbatim - you may set the active nav item (aria-current) "
             f"but MUST NOT redefine the brand, nav structure, seal slot, "
             f"or nav location. The downstream Coherence Pass enforces "
             f"both rules; violations block the prototype release.")
 
 REMIX_VARIANT_DEFAULTS = [
-    "Denser + tighter spacing — more information visible at once, "
+    "Denser + tighter spacing - more information visible at once, "
     "smaller type scale, hairline dividers, less whitespace between sections. "
     "Push toward an inspector-style read.",
-    "Calmer + more generous whitespace — fewer competing focal points, "
+    "Calmer + more generous whitespace - fewer competing focal points, "
     "larger type scale, sections breathe with 40-80px gaps, single accent. "
     "Push toward an editorial-narrative read.",
-    "Asymmetric editorial — magazine-like grid with one oversized hero "
+    "Asymmetric editorial - magazine-like grid with one oversized hero "
     "element, contrasting type scales for display vs body, pull-quote or "
     "decorative rule break, off-center alignment for at least one section. "
     "Push toward a print-feature read.",
@@ -2930,7 +2930,7 @@ def _history_capture_paths(project_root: str, rel_paths, dest_dir: str) -> list:
         if not rel or rel in seen:
             continue
         seen.add(rel)
-        # Guard the join so a malicious path can't escape — _history_capture_file
+        # Guard the join so a malicious path can't escape - _history_capture_file
         # calls _safe_join internally, so we let the ValueError propagate.
         rows.append(_history_capture_file(project_root, rel, dest_dir))
     return rows
@@ -2973,7 +2973,7 @@ def _history_record(project_root: str, *, kind: str, label: str, source: str,
         os.makedirs(adir, exist_ok=True)
         before_rows = _history_capture_paths(project_root, before_paths, bdir)
         after_rows  = _history_capture_paths(project_root, after_paths, adir)
-        # If neither side captured anything, drop the entry — empty events
+        # If neither side captured anything, drop the entry - empty events
         # would clutter the stack.
         any_touched = any(r["existed"] for r in before_rows + after_rows)
         if not any_touched:
@@ -3009,7 +3009,7 @@ def _history_restore(project_root: str, entry: dict, direction: str) -> list:
     (direction='after') snapshot onto disk. Returns the list of rel paths
     that changed (created, overwritten, or deleted).
 
-    Files captured as `existed=False` are deleted on restore — that's the
+    Files captured as `existed=False` are deleted on restore - that's the
     inverse of "the change created this file."
     """
     if direction not in ("before", "after"):
@@ -3021,7 +3021,7 @@ def _history_restore(project_root: str, entry: dict, direction: str) -> list:
         rel = row["path"]
         abs_dst = _safe_join(project_root, rel)
         if row.get("skipped"):
-            # Couldn't capture this file's bytes — leave it alone but report
+            # Couldn't capture this file's bytes - leave it alone but report
             # it so the UI can surface the warning.
             continue
         if row.get("existed"):
@@ -3134,7 +3134,7 @@ def _history_scope_bracket(project_root: str, dirs, root_files=(), *,
 
     Use this for endpoints like /__replace_exposed_svg or /__rewrite_img_src
     that scan many HTML files. Single-file writes use _history_bracket
-    instead — it's lighter (no directory walk).
+    instead - it's lighter (no directory walk).
     """
     class _ScopeBracket:
         def __enter__(self_inner):
@@ -3178,7 +3178,7 @@ def _history_scope_bracket(project_root: str, dirs, root_files=(), *,
 # ── Agent-run snapshots ──────────────────────────────────────────────────────
 # At /__run spawn we take a before-snapshot of the bounded scope. At run finish
 # we take an after-snapshot, diff it, and commit one entry covering ALL files
-# the run touched. The scope is hardcoded — anything written outside it is
+# the run touched. The scope is hardcoded - anything written outside it is
 # invisible to undo. Documented in docs/features/history-plan.md §"Agent-run
 # scope" so users know the contract.
 HISTORY_AGENT_SCOPE_DIRS = [
@@ -3190,12 +3190,12 @@ HISTORY_AGENT_SCOPE_DIRS = [
     # views/ subdirs are generated, content-addressed agent output (a heavy
     # project has 100k+ files / 4+ GB there). Copying them into a before/
     # snapshot ran synchronously at every spawn (~150s warm, worse cold) and
-    # blocked the prompt from reaching the agent — the "slow first message".
+    # blocked the prompt from reaching the agent - the "slow first message".
     # The only undoable thing in workflow/ is the graph itself, captured as a
     # root file below; generated run/view assets are regenerable, not undoable.
 ]
 HISTORY_AGENT_SCOPE_ROOT_FILES = {
-    # v3.1 — MERGES.md / FORK_REQUEST.md dropped with project-level branches.
+    # v3.1 - MERGES.md / FORK_REQUEST.md dropped with project-level branches.
     "NOTES.md", "DESIGN.md",
     "DS_PROPOSAL.md", "DS_DEFERRED.md", "DS_ACCEPTED.json",
     "edits.json", "UPDATE_SOURCE.txt",
@@ -3240,8 +3240,8 @@ def _history_agent_scope_paths(project_root: str) -> list:
 
 # Orphan sweep. A before/ snapshot is written to .history/<id>/ at run SPAWN,
 # but the entry is only registered in index.json at run FINISH (after the
-# after-diff is committed). If a run never finishes — daemon restart, killed
-# run, crash, or a still-pending run that's abandoned — its <id>/ dir is left
+# after-diff is committed). If a run never finishes - daemon restart, killed
+# run, crash, or a still-pending run that's abandoned - its <id>/ dir is left
 # on disk yet is invisible to the HISTORY_MAX_ENTRIES pruner, which only ever
 # deletes ids it finds IN the index. These leak forever, and with a heavy scope
 # (generated workflow assets) a single orphan can be gigabytes. This sweep GCs
@@ -3291,7 +3291,7 @@ def _history_sweep_orphans(project_root: str) -> int:
         d = os.path.join(hdir, name)
         if not os.path.isdir(d):
             continue
-        # Age guard: skip freshly-created dirs — an in-flight before/ snapshot
+        # Age guard: skip freshly-created dirs - an in-flight before/ snapshot
         # may not have registered its pending id yet when a concurrent run sweeps.
         try:
             if now - os.path.getmtime(d) < HISTORY_ORPHAN_MIN_AGE_S:
@@ -3357,7 +3357,7 @@ def _history_run_snapshot_finish(project_root: str, eid: str, before_paths: list
     bdir = os.path.join(edir, "before")
     adir = os.path.join(edir, "after")
     os.makedirs(adir, exist_ok=True)
-    # The agent may have CREATED files we didn't enumerate at start — union
+    # The agent may have CREATED files we didn't enumerate at start - union
     # the current scope with our pre-existing path set so creations show up.
     after_paths = sorted(set(scope_walker(project_root)) | set(before_paths))
     after_rows  = _history_capture_paths(project_root, after_paths, adir)
@@ -3372,12 +3372,12 @@ def _history_run_snapshot_finish(project_root: str, eid: str, before_paths: list
             changed.add(p); continue
         if not a.get("existed"):
             continue
-        # Both sides exist — content compare via the snapshot copies. Cheaper
+        # Both sides exist - content compare via the snapshot copies. Cheaper
         # than rehashing the original files (we just wrote those copies, so
         # they're in OS page cache).
         bp = os.path.join(bdir, p); ap = os.path.join(adir, p)
         if not os.path.isfile(bp) or not os.path.isfile(ap):
-            # Either snapshot is missing — assume the file changed (safe default).
+            # Either snapshot is missing - assume the file changed (safe default).
             changed.add(p); continue
         try:
             with open(bp, "rb") as f1, open(ap, "rb") as f2:
@@ -3387,7 +3387,7 @@ def _history_run_snapshot_finish(project_root: str, eid: str, before_paths: list
             changed.add(p)
 
     if not changed:
-        # No file changes — drop the entry directory entirely.
+        # No file changes - drop the entry directory entirely.
         shutil.rmtree(edir, ignore_errors=True)
         return None
 
@@ -3488,9 +3488,9 @@ POKE_HELPER = r"""
   //   • Legacy ReactDOM.render: container._reactRootContainer is a ReactRoot
   //     wrapper whose ._internalRoot.current is the HostRoot fiber.
   //   • React 17 / 18 createRoot: container[__reactContainer$<id>] holds the
-  //     FiberRootNode directly — .current is the HostRoot fiber.
+  //     FiberRootNode directly - .current is the HostRoot fiber.
   //   • Some builds / older snapshots: the container slot IS already a fiber
-  //     (HostRoot). We must NOT return it directly — React double-buffers
+  //     (HostRoot). We must NOT return it directly - React double-buffers
   //     fibers, FiberRootNode.current flips on each commit, and the slot is
   //     pinned at mount time. If the page re-rendered (mount-time useEffect,
   //     drawer setup, etc.), the cached slot is now the STALE alternate whose
@@ -3512,17 +3512,17 @@ POKE_HELPER = r"""
       if (k.indexOf('__reactContainer$') !== 0 && k !== '_reactRootContainer') continue;
       var v = el[k];
       if (!v) continue;
-      // Most common shape — FiberRootNode with .current → live HostRoot fiber.
+      // Most common shape - FiberRootNode with .current → live HostRoot fiber.
       if (v.current && typeof v.current === 'object' && v.current.tag != null) return v.current;
       // Legacy ReactRoot wrapper.
       if (v._internalRoot && v._internalRoot.current) return v._internalRoot.current;
-      // Slot is itself a HostRoot fiber — hop through stateNode (the
+      // Slot is itself a HostRoot fiber - hop through stateNode (the
       // FiberRootNode) to read the live committed fiber rather than the
       // stale alternate this slot was pinned to at mount time.
       if (v.tag != null && v.stateNode && v.stateNode.current && v.stateNode.current.tag != null) {
         return v.stateNode.current;
       }
-      // Defensive fallback — slot is a fiber but no FiberRootNode to deref.
+      // Defensive fallback - slot is a fiber but no FiberRootNode to deref.
       // Last resort; likely stale, but better than returning null.
       if (v.tag != null && v.stateNode !== undefined) return v;
     }
@@ -3568,7 +3568,7 @@ POKE_HELPER = r"""
     while ((m = re.exec(src))) { if (m[1] === stateName) return i; i++; }
     return -1;
   }
-  // Retry budget — was 60 (≈1s at 60fps). Bumped to 180 (≈3s) so prototypes
+  // Retry budget - was 60 (≈1s at 60fps). Bumped to 180 (≈3s) so prototypes
   // that mount slowly (large CDN modules, throttled background iframes, slow
   // first paint) still resolve before we give up. The retry is rAF-driven so
   // it costs effectively nothing while React is still mounting.
@@ -3616,7 +3616,7 @@ POKE_HELPER = r"""
 AGENT_BIN_ENV = {"claude": "CLAUDE_BIN", "codex": "CODEX_BIN"}
 
 # Permission mode for spawned agents. In non-interactive (-p / stream-json) mode
-# Claude Code can't show its tool-permission prompt — without a mode set, every
+# Claude Code can't show its tool-permission prompt - without a mode set, every
 # tool call silently auto-denies. The harness runs on 127.0.0.1 and only spawns
 # on user click, so bypassPermissions matches the migration plan's "execution
 # starts immediately" semantics. Users who want a tighter policy can override
@@ -3628,7 +3628,7 @@ AGENT_PERMISSION_MODE_DEFAULT = os.environ.get("TH_PERMISSION_MODE") or "bypassP
 # Optional MCP servers the spawned `claude` subprocess can reach. The file
 # declares servers in Claude Code's `--mcp-config` format; the agent picks
 # them up only when both the file exists AND the listed `command` (e.g. npx)
-# is resolvable. Built-in WebFetch / WebSearch stay primary — these servers
+# is resolvable. Built-in WebFetch / WebSearch stay primary - these servers
 # are escalation paths (Chrome MCP for pages behind a login the user is
 # already authed to in their real browser; Figma MCP for design files).
 AGENT_MCP_CONFIG = os.environ.get("TH_MCP_CONFIG") or os.path.join(
@@ -3656,13 +3656,13 @@ AGENT_DEFS = {
         # AskUserQuestion is disallowed because in `-p --input-format
         # stream-json` mode there's no TTY for it to bind to. Claude Code
         # auto-completes the call as "dismissed" within a beat, which races
-        # the user's click on our React answer card — the agent moves on and
+        # the user's click on our React answer card - the agent moves on and
         # narrates "Looks like the question prompt was dismissed…" before the
         # tool_result POST can land. With the tool disallowed the agent has to
         # phrase questions as plain text, which the composer handles naturally.
         #
         # `--mcp-config` is appended at spawn-time (see _build_claude_args)
-        # because the file may not exist on every install — we only pass the
+        # because the file may not exist on every install - we only pass the
         # flag when it does, so dev installs without MCP servers wired don't
         # fail the spawn with a missing-file error.
         "args": [
@@ -3679,7 +3679,7 @@ AGENT_DEFS = {
     },
     "codex": {
         "bin": "codex",
-        # v3.5 — Empirical flag surface for Codex CLI v0.138+:
+        # v3.5 - Empirical flag surface for Codex CLI v0.138+:
         #   • exec: non-interactive run
         #   • --sandbox danger-full-access: required for two reasons.
         #       (1) Writes to project cwd. (`workspace-write` also enables
@@ -3687,7 +3687,7 @@ AGENT_DEFS = {
         #       (2) Outbound network to localhost so the agent can dispatch
         #           planners via curl POST to /__dispatch_planner.
         #           `workspace-write` BLOCKS outbound network, which broke
-        #           the planner dispatch architecture from codex chats —
+        #           the planner dispatch architecture from codex chats -
         #           the curl just got refused at the sandbox layer, never
         #           reached the daemon.
         #     If codex grows a finer-grained option (e.g. a sandbox config
@@ -3698,7 +3698,7 @@ AGENT_DEFS = {
         # Codex eats the prompt as the trailing positional argv, NOT as a
         # stream-json frame on stdin (prompt_via_stdin=False below).
         # Codex's output goes to STDERR with a structured but plain-text
-        # protocol (banner / user / codex / exec / succeeded markers) —
+        # protocol (banner / user / codex / exec / succeeded markers) -
         # _drain_stderr_codex parses it into proper agent events.
         "args": ["exec", "--sandbox", "danger-full-access"],
         "permission_flag": None,
@@ -3718,20 +3718,20 @@ RUNS_LOCK = threading.Lock()
 
 # Runs the user has explicitly DELETED. A live run can keep draining stdout for
 # a beat after we terminate it (the final __finish line in particular), which
-# would otherwise re-append history we just purged — resurrecting the run as a
+# would otherwise re-append history we just purged - resurrecting the run as a
 # historical ghost on the next /__runs scan. _chat_jsonl_append consults this
 # set and drops any write for a deleted run id. Membership is permanent for the
 # daemon's lifetime; ids are tiny hex strings, so the set never meaningfully
 # grows.
 _DELETED_RUN_IDS: set = set()
 
-# v2.30 — workflow-event SSE channel. Per-project waiter set the daemon
+# v2.30 - workflow-event SSE channel. Per-project waiter set the daemon
 # signals whenever workflow.json mutates (POST /__workflow, POST /__workflow/
 # node/<id>/status, completion hook). Replaces v2.22's 5s client-side polling
 # with event-driven push. Subscribers receive a `workflow-changed` event +
-# fetch + merge — no periodic ticking.
+# fetch + merge - no periodic ticking.
 #
-# v2.50 — waiters now carry a per-event queue so the daemon can multiplex
+# v2.50 - waiters now carry a per-event queue so the daemon can multiplex
 # multiple SSE event types (workflow-changed, asset-changed) on the same
 # subscription. Each event carries optional JSON data. See Deliverable 1
 # of WORKFLOW_TRUTHFULNESS_PLAN.md.
@@ -3777,14 +3777,14 @@ def _broadcast_workflow_change(project_id: str) -> None:
     for w in waiters:
         try: w.push("workflow-changed", {})
         except Exception: pass
-    # Live session bridge — guests on this project see the host's (and each
+    # Live session bridge - guests on this project see the host's (and each
     # other's) committed canvas edits.
     try: _live.notify_project_changed(project_id, "workflow-changed", {})
     except Exception: pass
 
 # ── Whiteboard (`wb`) item sanitizer ─────────────────────────────────────
 # The workflow canvas's whiteboard layer stores its items in a top-level
-# `wb: []` array in workflow.json (siblings of nodes/edges — deliberately
+# `wb: []` array in workflow.json (siblings of nodes/edges - deliberately
 # NOT node kinds, so they skip the kind registry / runStatus / reconciler
 # machinery entirely). Shared by the editor's POST /__workflow save and
 # the agent-facing POST /__workflow/wb ops endpoint.
@@ -3831,7 +3831,7 @@ def _sanitize_wb_items(items):
 
 
 def _broadcast_asset_change(project_id: str, paths) -> None:
-    """v2.50 — notify SSE subscribers that source/<branch>/** or
+    """v2.50 - notify SSE subscribers that source/<branch>/** or
     design-systems/** files changed on disk. Frontend dispatches
     th:asset-refresh with the paths; affected asset/iframe cards refresh
     themselves. Catches writes that bypass /commit (chat agents, manual
@@ -3847,10 +3847,10 @@ def _broadcast_asset_change(project_id: str, paths) -> None:
     for w in waiters:
         try: w.push("asset-changed", {"paths": paths})
         except Exception: pass
-    # Live session bridge — guests' prototype iframes refresh when source changes.
+    # Live session bridge - guests' prototype iframes refresh when source changes.
     try: _live.notify_project_changed(project_id, "asset-changed", {"paths": paths})
     except Exception: pass
-    # Share mode — keep a shared prototype's preview thumbnail current when
+    # Share mode - keep a shared prototype's preview thumbnail current when
     # its source changes (agent edits, manual writes). Debounced inside the
     # spawn; only fires for prototypes that actually have a share.
     try:
@@ -3889,13 +3889,13 @@ def _refresh_share_thumbnails_for_changes(project_id: str, paths) -> None:
 
 
 def _broadcast_share_comments_changed(project_id: str, prototype: str) -> None:
-    """Share mode — notify SSE subscribers that share/comments.json mutated
+    """Share mode - notify SSE subscribers that share/comments.json mutated
     (a visitor commented through the gate, or the editor ran a comment op).
     The prototype node's comments panel refetches on this event; the share
     viewer itself polls the gate instead (visitors have no SSE channel)."""
     if not project_id: return
     # WORKFLOW_WAITERS is keyed by basename(project_root) (see
-    # _workflow_events) — normalize so single-project mode ("default")
+    # _workflow_events) - normalize so single-project mode ("default")
     # and workspace ids both land on the right bucket.
     try:
         root = resolve_project_root({"project": project_id})
@@ -3932,7 +3932,7 @@ def _live_apply_node_op(project_id, op, author):
     action = op.get("op")
     _lk = _workflow_lock(canon)
     if not _lk.acquire(timeout=2.0):
-        raise RuntimeError("workflow busy — retry")
+        raise RuntimeError("workflow busy - retry")
     try:
         with open(wf_path, "r", encoding="utf-8") as f:
             wf = json.load(f)
@@ -3966,19 +3966,19 @@ def _live_apply_node_op(project_id, op, author):
     _broadcast_workflow_change(canon)
     return {"target": op.get("target"), "op": action}
 
-# Host GitHub device-flow state — the in-flight device_code between
+# Host GitHub device-flow state - the in-flight device_code between
 # /__github/device/start and /__github/device/poll. Single host, so a module
 # global is enough (no per-request keying).
 _GH_DEVICE = {"code": None}
 
 
 def _git_resolve_prompt(files):
-    """Prompt for agent-assisted merge-conflict resolution — the §7 signature
+    """Prompt for agent-assisted merge-conflict resolution - the §7 signature
     move: don't mechanically keep both sides, reconcile the two intents."""
     lst = "\n".join(f"- {f}" for f in files[:50])
     return ("Resolve the git merge conflicts in these files. They are Woven "
             "prototype files (HTML/CSS/JS often regenerated wholesale by an "
-            "agent), so do NOT mechanically keep both sides — read BOTH intents "
+            "agent), so do NOT mechanically keep both sides - read BOTH intents "
             "and produce ONE coherent version, then remove every conflict marker "
             "(<<<<<<<, =======, >>>>>>>). When done, the files must contain no "
             "markers and render correctly. Conflicted files:\n" + lst)
@@ -3986,7 +3986,7 @@ def _git_resolve_prompt(files):
 
 def _live_dispatch_run(project_id, node_id, author):
     """Trigger the HOST agent on a node for a guest. Loops back to the daemon's
-    own /__workflow/node/<id>/run — identical to the host clicking Run, so the
+    own /__workflow/node/<id>/run - identical to the host clicking Run, so the
     run uses the host's machine + API key and rides every existing code path
     (upstream/downstream context, completion hook, asset-versioning). The
     daemon is threaded (ReusableThreadingTCP), so this self-request is safe.
@@ -4011,12 +4011,12 @@ def _live_dispatch_run(project_id, node_id, author):
         return {"ok": True}
 
 
-# v2.50 — File-system watcher (polling, no external `watchdog` dependency).
+# v2.50 - File-system watcher (polling, no external `watchdog` dependency).
 # Scans `source/<branch>/**` and `design-systems/**` for every known project
 # at FILE_WATCHER_INTERVAL_SEC. When files change (mtime moved, new file,
 # deletion), broadcasts an `asset-changed` SSE event with the project-relative
-# paths. Catches writes that bypass /commit — chat agents, manual file edits,
-# orchestrator drops — so the canvas auto-refreshes without manual reload.
+# paths. Catches writes that bypass /commit - chat agents, manual file edits,
+# orchestrator drops - so the canvas auto-refreshes without manual reload.
 # See WORKFLOW_TRUTHFULNESS_PLAN.md Deliverable 1 / Principle 10.
 FILE_WATCHER_INTERVAL_SEC = 1.0
 FILE_WATCHER_DEBOUNCE_SEC = 0.25
@@ -4026,7 +4026,7 @@ FILE_WATCHER_STATE: dict = {}      # {project_id: {rel_path: mtime}}
 FILE_WATCHER_PENDING: dict = {}    # {project_id: {rel_path: detected_at}}
 FILE_WATCHER_LOCK = threading.Lock()
 # Skip these directory names entirely (case-sensitive). Hidden dirs and
-# *_staging dirs (in-flight writes — see /commit atomic rename) never
+# *_staging dirs (in-flight writes - see /commit atomic rename) never
 # trigger asset-refresh: the canvas only cares about settled state.
 _FILE_WATCHER_SKIP_DIRNAMES = {
     "__pycache__", "node_modules", ".history", ".git",
@@ -4052,10 +4052,10 @@ def _file_watcher_scan_one(project_root: str) -> dict:
     Return {rel_path: mtime} for every regular file we care about. Errors
     are swallowed (file may have been deleted between scan and stat).
 
-    v2.50 — also tracks DECISION_*.json files at project root and the
+    v2.50 - also tracks DECISION_*.json files at project root and the
     .onboarding-pending marker, plus workflow/workflow.json. Any write
-    to these — whether by the daemon, an external agent's Bash tool, a
-    manual edit, or a future scaffolder — triggers a broadcast so the
+    to these - whether by the daemon, an external agent's Bash tool, a
+    manual edit, or a future scaffolder - triggers a broadcast so the
     canvas auto-refreshes without manual reload. This is the fix for
     'I created new nodes but had to manually refresh to see them.'"""
     out = {}
@@ -4087,10 +4087,10 @@ def _file_watcher_scan_one(project_root: str) -> dict:
                     continue
     except Exception:
         pass
-    # editor/*.data.js — the canvas data file(s). The editor/ dir is NOT in
+    # editor/*.data.js - the canvas data file(s). The editor/ dir is NOT in
     # the recursive walk above (it holds large/churny files like chat.jsonl
     # and a design-systems mirror), but editor/data.js (and per-prototype
-    # editor/<slug>.data.js) is exactly what a frames/arrows regen writes —
+    # editor/<slug>.data.js) is exactly what a frames/arrows regen writes -
     # and the Canvas-frames node needs an asset-changed broadcast to auto-
     # reload once it lands. Stat just those files (top-level only) so the
     # broadcast fires without pulling the whole editor/ tree into the watch.
@@ -4129,7 +4129,7 @@ def _file_watcher_known_projects():
                     seen_ids.add(entry.name)
         except Exception:
             pass
-    # Single-project fallback — DEFAULT_PROJECT_ROOT may be a legacy install.
+    # Single-project fallback - DEFAULT_PROJECT_ROOT may be a legacy install.
     if DEFAULT_PROJECT_ROOT and os.path.isdir(DEFAULT_PROJECT_ROOT):
         pid = os.path.basename(DEFAULT_PROJECT_ROOT.rstrip("/")) or "default"
         if pid not in seen_ids:
@@ -4156,7 +4156,7 @@ def _file_watcher_loop():
                     FILE_WATCHER_STATE[project_id] = current
                     is_baseline = prev is None
                     if is_baseline:
-                        # First scan for this project — seed silently.
+                        # First scan for this project - seed silently.
                         FILE_WATCHER_PENDING.setdefault(project_id, {})
                         continue
                     pending = FILE_WATCHER_PENDING.setdefault(project_id, {})
@@ -4171,7 +4171,7 @@ def _file_watcher_loop():
                 # Flush any pending entries that have settled past the
                 # debounce window. Burst writes (e.g. 17 files in 50ms)
                 # collapse into one event.
-                # v2.50 — split flushed paths by category:
+                # v2.50 - split flushed paths by category:
                 #   • workflow.json / DECISION_*.json / .onboarding-pending →
                 #     these are CANVAS STATE; fire workflow-changed so the
                 #     frontend re-fetches /__workflow and merges new nodes.
@@ -4192,21 +4192,21 @@ def _file_watcher_loop():
                             else:
                                 to_emit_assets.append(rel)
                             del pending[rel]
-                # v2.50 — before broadcasting asset-changed, run auto-heal.
+                # v2.50 - before broadcasting asset-changed, run auto-heal.
                 # NO path-pattern filtering: file-pattern lists can't be
-                # exhaustive — an agent can drop any file shape into the
+                # exhaustive - an agent can drop any file shape into the
                 # folder convention's outputsRoot. The reconciler is
                 # idempotent (every detector bails on already-healed state)
                 # and fast (<100ms typical), so we run it on every emit.
                 # Whoever knows what counts as a healable orphan is the
-                # reconciler, driven by the registry's openEnded contracts —
+                # reconciler, driven by the registry's openEnded contracts -
                 # not the watcher trying to guess from file names.
                 if to_emit_assets:
                     project_root = next((pr for (pid, pr) in projects if pid == project_id), None)
                     if project_root:
                         try:
                             with _workflow_lock_timeout(project_id, timeout_sec=2.0):
-                                # v3.0 — asset-versioning hook. This is the
+                                # v3.0 - asset-versioning hook. This is the
                                 # FOUNDATION: every file write that lands in
                                 # source/ triggers a snapshot for any asset
                                 # node referencing that path. Endpoint-level
@@ -4226,7 +4226,7 @@ def _file_watcher_loop():
                                         )
                                         snaps = snapshot_changed_assets(
                                             project_root, wf_for_vsn, to_emit_assets)
-                                        # v3.2 — Also try any deferred scope
+                                        # v3.2 - Also try any deferred scope
                                         # snapshots (multi-file prototype /
                                         # design-system writes that were
                                         # waiting for quiescence).
@@ -4250,7 +4250,7 @@ def _file_watcher_loop():
                             pass        # next tick will retry
                         except Exception as e:
                             print(f"[auto-heal] error: {e}", flush=True)
-                # v3.2 — Unconditional deferred-scope flush. The previous
+                # v3.2 - Unconditional deferred-scope flush. The previous
                 # block above only runs when `to_emit_assets` is non-empty
                 # (i.e. when new files changed this tick). But the scope
                 # quiescence rule means a multi-file prototype burst that
@@ -4293,7 +4293,7 @@ def _file_watcher_loop():
         time.sleep(FILE_WATCHER_INTERVAL_SEC)
 
 def _file_watcher_ensure_started() -> None:
-    """Idempotent — first SSE subscriber for any project triggers the
+    """Idempotent - first SSE subscriber for any project triggers the
     watcher. Cheaper than starting in main() because daemons launched
     just to serve a single GET don't need it."""
     global FILE_WATCHER_THREAD
@@ -4309,12 +4309,12 @@ def _file_watcher_ensure_started() -> None:
         FILE_WATCHER_THREAD = t
 
 
-# v2.31 — per-project workflow.json mutex. Every read-modify-write on
+# v2.31 - per-project workflow.json mutex. Every read-modify-write on
 # workflow.json (editor /__workflow POST, /__workflow/node/<id>/status,
 # subprocess completion hook) MUST hold this lock so concurrent writers
 # don't clobber each other's snapshots. Without this, the editor's save
 # (with the user's typed edit) and the orchestrator's /status update
-# (read BEFORE the user's save landed) race — whichever writes second
+# (read BEFORE the user's save landed) race - whichever writes second
 # wins, and the user sees their edit reverted seconds later.
 WORKFLOW_MUTEX: dict = {}          # {project_id: threading.Lock}
 WORKFLOW_MUTEX_GUARD = threading.Lock()
@@ -4329,7 +4329,7 @@ def _workflow_lock(project_id: str) -> threading.Lock:
         return lk
 
 
-# v2.50 — Deliverable 2 concurrency guardrails (G3 lock timeout, G5 semaphore,
+# v2.50 - Deliverable 2 concurrency guardrails (G3 lock timeout, G5 semaphore,
 # G6 request-ID correlation). See WORKFLOW_TRUTHFULNESS_PLAN.md §9 / §11 D2.
 class LockTimeoutError(Exception):
     """Raised when the per-project workflow lock can't be acquired within
@@ -4341,7 +4341,7 @@ class LockTimeoutError(Exception):
 def _workflow_lock_timeout(project_id: str, timeout_sec: float = 2.0):
     """Acquire the per-project workflow lock with a bounded wait. On
     timeout, raise LockTimeoutError so the caller can return HTTP 503
-    with a retry hint — distinguishing "daemon busy" from "daemon down"
+    with a retry hint - distinguishing "daemon busy" from "daemon down"
     so the frontend's daemon-status badge doesn't false-positive."""
     lk = _workflow_lock(project_id)
     acquired = lk.acquire(timeout=timeout_sec)
@@ -4412,7 +4412,7 @@ def _new_request_id() -> str:
 # the Python daemon exits, the children get reparented to launchd/init, and
 # they keep running for minutes (sometimes hours) talking to the API and
 # billing tokens that nobody can read. The orphan + the run record's
-# in-memory state diverge — restart leaves you with active CLIs you can't
+# in-memory state diverge - restart leaves you with active CLIs you can't
 # stop from the UI.
 #
 # This hook walks RUNS, sends SIGTERM to every state.proc that's still
@@ -4421,7 +4421,7 @@ def _new_request_id() -> str:
 # (Ctrl-C), and atexit (any clean Python exit, including KeyboardInterrupt
 # unwind in the main loop).
 #
-# The handler is idempotent — once-only via _cleanup_ran so a SIGTERM that
+# The handler is idempotent - once-only via _cleanup_ran so a SIGTERM that
 # unwinds through KeyboardInterrupt + atexit doesn't run kills twice.
 _cleanup_ran = False
 _cleanup_lock = threading.Lock()
@@ -4431,7 +4431,7 @@ def _cleanup_subprocesses(reason: str = "shutdown") -> None:
     with _cleanup_lock:
         if _cleanup_ran: return
         _cleanup_ran = True
-    # Share mode — kill cloudflared tunnel subprocesses alongside CLI runs.
+    # Share mode - kill cloudflared tunnel subprocesses alongside CLI runs.
     # keep_intent semantics: shares stay `active` in shares.json so the next
     # daemon boot restores their tunnels (with fresh quick-tunnel URLs).
     try: _shares.stop_all_tunnels()
@@ -4515,12 +4515,12 @@ def _install_shutdown_hooks():
     except Exception: pass
     atexit.register(_cleanup_subprocesses, reason="atexit")
 
-# ── Phase 5b — Step 4f render-check screenshot queue ────────────────────────
+# ── Phase 5b - Step 4f render-check screenshot queue ────────────────────────
 # The orchestrator agent needs to capture a screenshot of every editor view after
 # Workflow 1 finishes, as the integration-test step that proves the data file
 # actually renders. Headless Chrome would mean a heavy dependency; instead the
 # editor's already-loaded `html2canvas-pro` runs inside the user's open editor
-# tab — daemon brokers the request via a small job queue.
+# tab - daemon brokers the request via a small job queue.
 #
 # Lifecycle:
 #   1. Agent calls POST /__screenshot { branch, view? | file?, waitMs? }.
@@ -4608,10 +4608,10 @@ def _ss_gc_locked() -> None:
         SCREENSHOT_JOBS.pop(jid, None)
 
 
-# Phase 5a — per-branch chat history persistence. Each spawned agent run
+# Phase 5a - per-branch chat history persistence. Each spawned agent run
 # writes its full event stream to `<project_root>/editor/branches/<slug>.chat.jsonl`
 # (one JSON object per line). The file is append-only across runs, so a single
-# branch's JSONL contains every chat turn ever — re-opening a branch in a fresh
+# branch's JSONL contains every chat turn ever - re-opening a branch in a fresh
 # daemon shows yesterday's conversation. Writes are best-effort; failures must
 # never break the in-memory event log that the live SSE stream consumes.
 
@@ -4621,15 +4621,15 @@ _CHAT_JSONL_LOCKS_GUARD = threading.Lock()
 
 
 def _chat_jsonl_path(project_root: str, branch: str = "main") -> str:
-    """v3.1 — branches deprecated. All chat history collapses to one
+    """v3.1 - branches deprecated. All chat history collapses to one
     file at editor/chat.jsonl. `branch` arg kept for ABI compat; ignored."""
     return os.path.join(project_root, "editor", "chat.jsonl")
 
 
-# v3.12 — workspace-level SYSTEM agent threads (landing → System tab →
+# v3.12 - workspace-level SYSTEM agent threads (landing → System tab →
 # Orchestrators / Design library). Their transcripts must NOT land in
 # <root>/editor/chat.jsonl: in Layout A the install root IS the workspace
-# root, and editor/ is the mirrored install binary — polluting it with chat
+# root, and editor/ is the mirrored install binary - polluting it with chat
 # history would leak conversations into the rsync mirror. One JSONL per
 # System-tab section under <workspace>/.system-chats/.
 
@@ -4645,7 +4645,7 @@ def _system_chat_path(section: str) -> str:
 
 
 def _system_chat_candidate_files(section: str = None) -> list:
-    """[(abs_path, section)] for every system-section JSONL on disk —
+    """[(abs_path, section)] for every system-section JSONL on disk -
     filtered to one section when given. Mirrors the shape of
     _chat_jsonl_candidate_files so the shared scan/rehydrate helpers work
     on both."""
@@ -4677,10 +4677,10 @@ def _chat_jsonl_lock(path: str) -> threading.Lock:
 
 def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
     """Append one event line to the active branch's chat JSONL. Each line is
-    self-describing — the rehydrator on the UI side parses lines independently
+    self-describing - the rehydrator on the UI side parses lines independently
     and groups by `runId`. `seq` < 0 marks a synthetic lifecycle event (see
     RunState.finish) that doesn't correspond to an SSE frame."""
-    # Drop writes for a run the user deleted — see _DELETED_RUN_IDS. A
+    # Drop writes for a run the user deleted - see _DELETED_RUN_IDS. A
     # terminated subprocess can still emit its __finish line a beat later;
     # persisting it would resurrect the run as a historical ghost.
     if getattr(state, "run_id", None) in _DELETED_RUN_IDS:
@@ -4688,8 +4688,8 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
     project_root = getattr(state, "project_root", None) or DEFAULT_PROJECT_ROOT
     branch = getattr(state, "branch", None) or "main"
     if not SLUG_OK.match(branch):
-        return  # defensive — branch slug should always be validated upstream
-    # v3.12 — system threads persist per-section under .system-chats/, never
+        return  # defensive - branch slug should always be validated upstream
+    # v3.12 - system threads persist per-section under .system-chats/, never
     # into <root>/editor/chat.jsonl (see _system_chats_dir rationale).
     is_system = getattr(state, "scope", None) == "system"
     if is_system:
@@ -4726,7 +4726,7 @@ def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
     """Rewrite `path` dropping every line whose runId == run_id, moving the
     removed lines into a sibling .chat-trash.jsonl so the delete is
     recoverable (mirrors the source/.trash/ convention for prototype deletes).
-    Returns the count of purged lines. Best-effort; never raises — chat history
+    Returns the count of purged lines. Best-effort; never raises - chat history
     persistence must never break the caller.
 
     Serializes against _chat_jsonl_append via the same per-path lock so a
@@ -4803,14 +4803,14 @@ def _chat_jsonl_candidate_files(project_root: str) -> list:
 
 
 def _chat_jsonl_scan_historical(project_root: str) -> dict:
-    """v3.1 — branches deprecated. Reads the single editor/chat.jsonl
+    """v3.1 - branches deprecated. Reads the single editor/chat.jsonl
     (falling back to legacy editor/branches/*.chat.jsonl files if found,
     so existing in-flight installs aren't lost on upgrade)."""
     return _scan_chat_jsonl_records(_chat_jsonl_candidate_files(project_root))
 
 
 def _system_chat_scan(section: str = None) -> dict:
-    """v3.12 — historical system threads, runId → meta. Same row shape as
+    """v3.12 - historical system threads, runId → meta. Same row shape as
     _chat_jsonl_scan_historical plus scope/section so /__system_runs can
     group by System-tab home."""
     out = _scan_chat_jsonl_records(_system_chat_candidate_files(section))
@@ -4821,7 +4821,7 @@ def _system_chat_scan(section: str = None) -> dict:
 
 def _scan_chat_jsonl_records(candidates: list) -> dict:
     """Shared scan body for project chat history AND system-thread history.
-    candidates: [(abs_path, slug)] — slug is a branch for project files and
+    candidates: [(abs_path, slug)] - slug is a branch for project files and
     a section name for system files (recorded on the meta as `section` when
     the line carries one)."""
     out: dict = {}
@@ -4855,7 +4855,7 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                             "lastSeq":        -1,
                             "modifying":      False,
                             "historical":     True,
-                            # v3.12 — present on system-thread lines only.
+                            # v3.12 - present on system-thread lines only.
                             "section":        rec.get("section"),
                         }
                         out[rid] = meta
@@ -4865,7 +4865,7 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                         ec = (rec.get("data") or {}).get("exitCode")
                         if ec is not None:
                             meta["exitCode"] = ec
-                    # Track "turn done" — claude-code emits status:done at end
+                    # Track "turn done" - claude-code emits status:done at end
                     # of each agent turn. Useful so the UI dot picks "waiting"
                     # over "live" when reopening.
                     if (rec.get("type") == "agent"
@@ -4884,7 +4884,7 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
 
 
 def _rehydrate_system_run(run_id: str):
-    """v3.12 — rehydrate a workspace system thread after daemon restart.
+    """v3.12 - rehydrate a workspace system thread after daemon restart.
     Scans .system-chats/*.jsonl instead of a project's chat.jsonl."""
     return _rehydrate_run_from_jsonl(
         run_id, WORKSPACE_DIR or INSTALL_ROOT,
@@ -4893,8 +4893,8 @@ def _rehydrate_system_run(run_id: str):
 
 def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                               _candidates: list = None, _scope: str = None):
-    """v2.29b — when an /__run/<id>/* endpoint is hit after a daemon restart
-    (RUNS is in-memory only — every restart wipes it), the runId 404s even
+    """v2.29b - when an /__run/<id>/* endpoint is hit after a daemon restart
+    (RUNS is in-memory only - every restart wipes it), the runId 404s even
     though the conversation is persisted on disk. This helper scans the chat
     JSONL(s) for the run, extracts session_id + metadata, and constructs a
     minimal RunState so the existing resume / stop / chat endpoints can do
@@ -4902,10 +4902,10 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
     RunState on success, None if the run isn't found or session_id is
     missing (can't resume without it).
 
-    Layout knowledge lives in _chat_jsonl_candidate_files — do not duplicate
+    Layout knowledge lives in _chat_jsonl_candidate_files - do not duplicate
     the flat-vs-branches scan logic here.
 
-    v3.12 — `_candidates` / `_scope` let _rehydrate_system_run reuse this
+    v3.12 - `_candidates` / `_scope` let _rehydrate_system_run reuse this
     body for system-thread JSONLs (candidate slug = section name there)."""
     candidates = (_candidates if _candidates is not None
                   else _chat_jsonl_candidate_files(project_root))
@@ -4941,7 +4941,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         done = False
         events = []
         seq = 0
-        # v3.8.3 — also rehydrate permission_mode from the persisted
+        # v3.8.3 - also rehydrate permission_mode from the persisted
         # `spawned` event. Earlier this was dropped, so after a daemon
         # restart every /resume spawn fell through both branches of
         # _run_resume's flag-selector (state.permission_mode == None)
@@ -4969,7 +4969,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                 evt = {"type": rec["type"], "data": data, "seq": rec.get("seq", seq)}
                 events.append(evt)
                 seq = max(seq, rec.get("seq", seq)) + 1
-        # Construct the ghost RunState. No proc — endpoints that need a live
+        # Construct the ghost RunState. No proc - endpoints that need a live
         # subprocess (tool-result) will still error, but /resume re-spawns
         # the CLI with --resume <session_id> so it doesn't need state.proc.
         if _scope == "system":
@@ -5002,7 +5002,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
 
 
 def _read_jsonl_rows(path: str) -> list:
-    """Tolerant JSONL reader — skips blank/corrupt lines, returns [] on any
+    """Tolerant JSONL reader - skips blank/corrupt lines, returns [] on any
     file error. Shared by project chat history and system-thread history."""
     if not os.path.isfile(path):
         return []
@@ -5045,7 +5045,7 @@ class RunState:
     __slots__ = ("run_id", "proc", "agent_id", "branch", "kind", "title",
                  "session_id", "permission_mode", "bin_path", "modifying",
                  "project_id", "project_root",
-                 # v3.12 — workspace-level system agent threads (landing →
+                 # v3.12 - workspace-level system agent threads (landing →
                  # System tab). scope="system" routes chat persistence to
                  # <workspace>/.system-chats/<section>.jsonl and tells
                  # /resume to rebuild the elevated spawn config instead of
@@ -5055,20 +5055,20 @@ class RunState:
                  "scope", "section",
                  "started_at", "events", "lock", "waiters",
                  "done", "exit_code", "turn_done", "turns_completed",
-                 # Phase 3 — undo/redo history snapshot bookkeeping. The
+                 # Phase 3 - undo/redo history snapshot bookkeeping. The
                  # before-snapshot is taken at spawn (id + path inventory),
                  # the after-snapshot + diff is committed at state.finish().
                  "history_pending_id", "history_before_paths", "history_before_rows",
-                 # v2.1 — when this run was spawned by /__workflow/node/<id>/run
+                 # v2.1 - when this run was spawned by /__workflow/node/<id>/run
                  # for an agent-kind node, this tags the originating node so the
                  # completion hook in _drain_stdout can flip the canvas node to
                  # done/error. None for plain freeform / other run kinds.
                  "workflow_node_id",
-                 # v2.28 — intentional-termination flag ("completed-orchestrator",
+                 # v2.28 - intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
                  "stop_reason",
-                 # v2.24 — set on the first status:done frame for a node-agent
+                 # v2.24 - set on the first status:done frame for a node-agent
                  # run so the finally-block fallback doesn't double-fire.
                  "_node_completion_fired",
                  # Project-relative paths this run has written (Write/Edit/
@@ -5082,7 +5082,7 @@ class RunState:
         self.branch = branch
         self.kind = kind
         self.title = title
-        # Phase 6 — remember which project this run was spawned in so /resume
+        # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
         self.project_id = project_id
         self.project_root = project_root or DEFAULT_PROJECT_ROOT
@@ -5094,13 +5094,13 @@ class RunState:
         self.exit_code = None
         self.turn_done = False
         self.turns_completed = 0
-        # v2.28 — intentional-termination flag. None = natural exit (exit_code
+        # v2.28 - intentional-termination flag. None = natural exit (exit_code
         # is the truth: 0 = done, !=0 = failed). Otherwise: a string naming
         # WHY we terminated the subprocess on purpose, so the run record can
         # distinguish "done" / "stopped" / "failed" instead of conflating
         # SIGTERM (exit 143) with real failures.
-        #   "completed-orchestrator" — v2.24's SIGTERM after status:done
-        #   "user-stop" — user clicked Stop (or some other intentional API)
+        #   "completed-orchestrator" - v2.24's SIGTERM after status:done
+        #   "user-stop" - user clicked Stop (or some other intentional API)
         self.stop_reason = None
         # Claude Code emits a session_id in its system/init frame. We capture
         # it so that, after the user clicks Stop and types a follow-up, we can
@@ -5111,7 +5111,7 @@ class RunState:
         # Stored so /resume can replicate the original spawn config.
         self.permission_mode = None
         self.bin_path = None
-        # v3.12 — system-thread scope (see __slots__ comment).
+        # v3.12 - system-thread scope (see __slots__ comment).
         self.scope = None
         self.section = None
         # Phase 3 history bookkeeping. Populated by _run_create immediately
@@ -5120,7 +5120,7 @@ class RunState:
         self.history_pending_id   = None
         self.history_before_paths = []
         self.history_before_rows  = []
-        # v2.1 — set by _spawn_node_agent when this run was dispatched for an
+        # v2.1 - set by _spawn_node_agent when this run was dispatched for an
         # agent-kind workflow node. Consumed by _drain_stdout's auto-completion
         # hook to flip the canvas node to done/error on subprocess exit.
         self.workflow_node_id = None
@@ -5128,7 +5128,7 @@ class RunState:
         # (edits-apply, regenerate, fork, merge, *-request) set this true at
         # spawn time; freeform runs flip it on the first Write/Edit/MultiEdit/
         # NotebookEdit tool_use. The UI uses this to scope the "interactions
-        # paused" lock to runs that actually need it — a plain chat asking for
+        # paused" lock to runs that actually need it - a plain chat asking for
         # a visualization doesn't freeze the canvas.
         self.modifying = False
         # Project-relative paths this run has written, in first-touch order.
@@ -5136,25 +5136,25 @@ class RunState:
         # chat run never flips any node's runStatus, so the badge layer matches
         # these paths against each node's path/canonicalPaths to tether the
         # animated worker onto whatever node the agent is actually editing
-        # (asset / view / prototype — any kind). Same capture point + tool
+        # (asset / view / prototype - any kind). Same capture point + tool
         # whitelist as `modifying`.
         self.touched_paths: list = []
 
     @property
     def is_live(self) -> bool:
-        """True iff a driveable subprocess is attached — i.e. we can write a
+        """True iff a driveable subprocess is attached - i.e. we can write a
         frame to its stdin or signal it right now.
 
         The load-bearing case is `self.proc is None`: runs rehydrated from
         history after a daemon restart are "ghost" RunStates (see _rehydrate,
-        proc=None) — their original subprocess died with the old daemon. Any
+        proc=None) - their original subprocess died with the old daemon. Any
         handler that touches `self.proc.<x>` MUST gate on this first, or it
         crashes with "'NoneType' has no attribute 'stdin'/'terminate'/…". The
         recovery path for a non-live run is /resume, which re-spawns the CLI
         with --resume <session_id> and rebinds self.proc.
 
         Note this is the SAME check the stdin handlers need (proc present AND
-        its stdin pipe open), so they share one source of truth — but it is
+        its stdin pipe open), so they share one source of truth - but it is
         also correct for terminate()/signal handlers, which only require the
         proc to exist. A closed stdin on a still-running proc is rare (we keep
         it open for follow-ups) but counts as not-live for our purposes: there
@@ -5167,7 +5167,7 @@ class RunState:
             seq = len(self.events)
             self.events.append({"seq": seq, "type": ev_type, "data": data})
             waiters = list(self.waiters)
-        # Phase 5a — also persist the event to the per-branch chat JSONL so the
+        # Phase 5a - also persist the event to the per-branch chat JSONL so the
         # conversation survives daemon restarts. Fire-and-forget; a write
         # failure here must never break the live SSE stream above.
         try:
@@ -5185,7 +5185,7 @@ class RunState:
             reason = self.stop_reason  # snapshot under lock
         # Mirror the lifecycle terminator so a re-hydrated JSONL knows the run
         # is closed (otherwise the UI would treat every historical run as
-        # mid-flight). v2.28 — include stopReason so the UI can render
+        # mid-flight). v2.28 - include stopReason so the UI can render
         # "done"/"stopped" instead of conflating with "failed".
         try:
             _chat_jsonl_append(self, -1, "__finish",
@@ -5238,7 +5238,7 @@ def _agent_logged_in(agent_id: str):
                        `codex login`) OR OPENAI_API_KEY in env (the CLI
                        accepts that as an authed state too).
 
-    We never read the credential contents — only check existence.
+    We never read the credential contents - only check existence.
     """
     home = os.path.expanduser("~")
     if agent_id == "claude":
@@ -5286,7 +5286,7 @@ def _list_available_agents() -> list:
             "bin": bin_path,
             "version": _agent_version(bin_path) if bin_path else None,
             "available": bool(bin_path),
-            # v3.6 — Surface "binary present but not logged in" as its own
+            # v3.6 - Surface "binary present but not logged in" as its own
             # state so the landing CLI pill can warn before the user fires
             # a run that would fail with a 401. None = unknown (treated as
             # "don't show a warning" by the UI).
@@ -5305,7 +5305,7 @@ def _list_available_agents() -> list:
 #   { "type": "result",    "subtype": "success" | "error_during_execution",
 #                          "duration_ms", "total_cost_usd", "usage": { ... } }
 # Codex matches closely; the only divergences I expect are top-level field
-# casing — handle both. Normalise into the StreamEvent shape from
+# casing - handle both. Normalise into the StreamEvent shape from
 # open-design's json-event-stream.ts so the UI doesn't branch per CLI.
 
 def _normalize_frame(agent_id: str, frame: dict) -> list:
@@ -5325,7 +5325,7 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
                 "sessionId": frame.get("session_id"),
             })
         elif sub == "thinking_tokens":
-            # v3.1 — thinking_tokens streams every ~50 tokens while the model
+            # v3.1 - thinking_tokens streams every ~50 tokens while the model
             # is reasoning. Surface it as a structured event the frontend
             # consolidates into ONE rolling progress chip (see buildBlocks /
             # thinking_progress in app.js).
@@ -5336,7 +5336,7 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
                 "estimated_tokens_delta": frame.get("estimated_tokens_delta"),
             })
         elif sub == "task_progress":
-            # v3.2 — task_progress streams while a subagent is mid-tool-use
+            # v3.2 - task_progress streams while a subagent is mid-tool-use
             # ("Reading workflow/workflow.json", "Editing source/foo.html",
             # etc.). Surface as a structured event the frontend consolidates
             # into a single rolling chip per parent tool block.
@@ -5348,8 +5348,8 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
                 "taskId":         frame.get("task_id"),
                 "toolUseId":      frame.get("tool_use_id"),
             })
-        # v3.2 — any OTHER system subtype is SDK chatter (perms, mcp_status,
-        # post_tool_use diagnostics, etc.). Drop entirely — these events
+        # v3.2 - any OTHER system subtype is SDK chatter (perms, mcp_status,
+        # post_tool_use diagnostics, etc.). Drop entirely - these events
         # have no user-actionable content. Previously we wrapped them in a
         # `raw` envelope, which dumped raw JSON into the chat (user reported:
         # "still seeing all of these {type:system blah blah}").
@@ -5379,11 +5379,11 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
 
     if ftype == "user":
         # Tool results come back addressed to the assistant on `user` frames.
-        # v3.1 — preserve image parts. When Claude reads a PNG/JPG, or when a
+        # v3.1 - preserve image parts. When Claude reads a PNG/JPG, or when a
         # Bash command (e.g. screenshot) returns an image-typed content part,
         # the SDK emits `content: [{type:"image", source:{type:"base64",
         # media_type:"image/png", data:"…"}}, …]`. Previously we walked the
-        # list and concatenated only `.text` — image blocks were silently
+        # list and concatenated only `.text` - image blocks were silently
         # dropped because they have no `.text` field. Now we split the list:
         # text parts go to `content` (unchanged), image parts go to a sibling
         # `images: [{mediaType, data}]` array the frontend renders inline.
@@ -5410,7 +5410,7 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
                             elif src.get("type") == "url" and src.get("url"):
                                 images.append({"url": src.get("url")})
                         else:
-                            # Unknown content part — keep its raw JSON visible
+                            # Unknown content part - keep its raw JSON visible
                             # so a future SDK addition doesn't disappear silently.
                             try:
                                 text_chunks.append(json.dumps(p, ensure_ascii=False))
@@ -5454,7 +5454,7 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
         # { rate_limit_info: { status: "allowed"|"warning"|"rejected",
         #                      resetsAt, rateLimitType: "five_hour"|"weekly"|…,
         #                      overageStatus, overageDisabledReason, … } }.
-        # "allowed" is healthy telemetry — drop. Anything else is actionable
+        # "allowed" is healthy telemetry - drop. Anything else is actionable
         # (the user needs to know they're throttled or close to it), so surface
         # as a thin status row with a single readable line.
         info = frame.get("rate_limit_info") or {}
@@ -5473,24 +5473,24 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
         out.append({"type": "status", "label": " · ".join(bits)})
         return out
 
-    # Unknown — pass through so we can see it in the UI's "raw" tab.
+    # Unknown - pass through so we can see it in the UI's "raw" tab.
     out.append({"type": "raw", "frame": frame})
     return out
 
 
 def _fire_node_completion_hook(state, *, exit_code):
-    """v2.24 — flip a workflow node's runStatus + record runId, atomically.
+    """v2.24 - flip a workflow node's runStatus + record runId, atomically.
 
     Extracted from `_drain_stdout`'s finally block so the same logic can fire
     both from process-exit (legacy path) AND from turn-done (new path for
     node-agent dispatches that stay alive after one turn because they're in
-    stream-json mode but have no follow-up). Best-effort — never raises.
+    stream-json mode but have no follow-up). Best-effort - never raises.
     """
     wf_node_id = getattr(state, "workflow_node_id", None)
     if not wf_node_id or not state.project_root: return
     wf_path = os.path.join(state.project_root, "workflow", "workflow.json")
     if not os.path.isfile(wf_path): return
-    # v2.31 — same lock as editor /__workflow + /status. Without it, the
+    # v2.31 - same lock as editor /__workflow + /status. Without it, the
     # subprocess completion hook would race the editor's debounced save,
     # writing stale snapshot back over a user edit.
     project_id = state.project_id or os.path.basename(state.project_root.rstrip("/"))
@@ -5505,12 +5505,12 @@ def _fire_node_completion_hook(state, *, exit_code):
         target.pop("runError", None)
      else:
         target["runError"] = f"subprocess exit {exit_code}"
-     # v2.20 — keep runId + runRunId both populated so the chat tab can find
+     # v2.20 - keep runId + runRunId both populated so the chat tab can find
      # the transcript via /__chat?runId= regardless of which field the
      # frontend reads.
      target["runId"]    = state.run_id
      target["runRunId"] = state.run_id
-     # v3.0 — asset-versioning snapshot hook for async agent runs. Only fires
+     # v3.0 - asset-versioning snapshot hook for async agent runs. Only fires
      # on success; failure leaves the run in error state with no snapshot.
      if exit_code == 0:
          try:
@@ -5525,22 +5525,22 @@ def _fire_node_completion_hook(state, *, exit_code):
                            extra={"nodeId": wf_node_id, "runId": state.run_id, "exitCode": exit_code}):
          with open(wf_path, "w", encoding="utf-8") as f:
              json.dump(wf, f, indent=2)
-    # v2.30 — notify SSE subscribers that workflow.json changed (outside the lock)
+    # v2.30 - notify SSE subscribers that workflow.json changed (outside the lock)
     _broadcast_workflow_change(state.project_id)
-    # Live session — drop the agent lease on this node so guests can edit again.
+    # Live session - drop the agent lease on this node so guests can edit again.
     try: _live.release_agent_lease(state.project_id or project_id, wf_node_id)
     except Exception: pass
 
 
 def _verify_touched_shaders(state: "RunState") -> None:
-    """v4.0 — post-run shader VERIFICATION via real tools (optional, gated on
-    availability — Settings → local tools). For each touched shader-HTML file:
+    """v4.0 - post-run shader VERIFICATION via real tools (optional, gated on
+    availability - Settings → local tools). For each touched shader-HTML file:
       1) glslang compile-check of <script type=x-shader> blocks (real compile
          errors for any shader), and
       2) headless Playwright render-verify (compile + link + blank detection).
     Emits shader-compile-error / shader-render-error run events so a broken
     shader surfaces the REAL error instead of silently rendering flat. Both
-    best-effort — never affects the run; no-op when neither tool is installed.
+    best-effort - never affects the run; no-op when neither tool is installed.
 
     Replaces the earlier static pattern-lint + auto-repair: a real compiler /
     render check generalizes to ANY shader, so the regex band-aid (which only
@@ -5563,7 +5563,7 @@ def _verify_touched_shaders(state: "RunState") -> None:
         if not (_re.search(r"getContext\(\s*['\"]webgl", text)
                 and _re.search(r"\b(?:gl_FragColor|fragColor|void\s+main)\b", text)):
             continue
-        # 1) glslang — real compile errors for <script type=x-shader> blocks.
+        # 1) glslang - real compile errors for <script type=x-shader> blocks.
         try:
             from kinds import shader_compile
             cerrs = shader_compile.compile_check(text)   # [] when glslang absent
@@ -5572,7 +5572,7 @@ def _verify_touched_shaders(state: "RunState") -> None:
                                          "detail": rel + ": " + "; ".join(cerrs[:6])})
         except Exception:
             pass
-        # 2) headless render-verify — runs the real page; catches JS-assembled
+        # 2) headless render-verify - runs the real page; catches JS-assembled
         #    compile errors + compiles-but-blank. Only when Playwright is set up.
         try:
             tools_dir = os.path.join(EDITOR_DIR, "tools")
@@ -5601,7 +5601,7 @@ def _drain_stdout(state: "RunState") -> None:
     """Read newline-delimited JSON from the child, normalise, append events.
 
     Claude Code in `--input-format stream-json` mode keeps the agent process
-    alive across turns — each `result` frame ends one turn, but the process
+    alive across turns - each `result` frame ends one turn, but the process
     stays open on stdin waiting for follow-up `user` frames. We mirror that
     multi-turn model: surface `turn_done` (per-turn) on each result so the UI
     can show "done, you can reply" without killing the process. The hard
@@ -5609,7 +5609,7 @@ def _drain_stdout(state: "RunState") -> None:
     clicks Stop, or daemon shuts down).
 
     NOTE: every `state.proc.<x>` in this function is safe WITHOUT an is_live
-    guard — this thread is started only after a successful Popen in the spawn
+    guard - this thread is started only after a successful Popen in the spawn
     path, so `state.proc` is guaranteed non-None for its whole lifetime. The
     is_live gate is for REQUEST handlers, which can run against a ghost run
     (proc=None) rehydrated from history after a restart. Don't copy this
@@ -5629,7 +5629,7 @@ def _drain_stdout(state: "RunState") -> None:
                 continue
             for ev in _normalize_frame(state.agent_id, frame):
                 state.append("agent", ev)
-                # Capture the session id off the first init frame — needed
+                # Capture the session id off the first init frame - needed
                 # by /__run/:id/resume so post-Stop replies can rejoin the
                 # same Claude conversation instead of starting fresh.
                 if ev.get("type") == "status" and ev.get("sessionId") and not state.session_id:
@@ -5652,12 +5652,12 @@ def _drain_stdout(state: "RunState") -> None:
                             _rel = None
                         if _rel and not _rel.startswith("..") and _rel not in state.touched_paths:
                             state.touched_paths.append(_rel)
-                # Turn lifecycle tracking — distinct from process lifecycle.
+                # Turn lifecycle tracking - distinct from process lifecycle.
                 if ev.get("type") == "status":
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
-                        # v4.0 — verify shaders at TURN-done, not just process-exit.
+                        # v4.0 - verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
                         # so the process-exit hook in `finally` wouldn't fire until
                         # the chat closes; the file is written by THIS turn, so
@@ -5666,12 +5666,12 @@ def _drain_stdout(state: "RunState") -> None:
                             _verify_touched_shaders(state)
                         except Exception:
                             pass
-                        # v2.24 + v2.26 — for node-agent dispatches: fire the
+                        # v2.24 + v2.26 - for node-agent dispatches: fire the
                         # canvas completion hook ONLY on `status: done`
                         # (genuine success). Status: error covers a wide range
                         # of cases including TRANSIENT mid-run errors the
                         # agent can recover from (tool retries, WebSearch
-                        # returning nothing, single WebFetch failing) — those
+                        # returning nothing, single WebFetch failing) - those
                         # shouldn't terminate the subprocess or mark the node
                         # as failed. If the agent eventually emits `done`,
                         # we fire success then. If it just hangs or dies, the
@@ -5689,7 +5689,7 @@ def _drain_stdout(state: "RunState") -> None:
                             state._node_completion_fired = True
                             # Terminate the subprocess so the reader loop
                             # exits cleanly and we stop burning the open
-                            # SSE/CLI session. v2.28 — tag the termination
+                            # SSE/CLI session. v2.28 - tag the termination
                             # reason so finish() knows this was intentional;
                             # the SIGTERM exit code (143) shouldn't be
                             # reported as a failure to the chat UI.
@@ -5699,7 +5699,7 @@ def _drain_stdout(state: "RunState") -> None:
                     elif ev.get("label") == "starting":
                         state.turn_done = False
     finally:
-        # Reader saw EOF on stdout — usually because the CLI emitted its
+        # Reader saw EOF on stdout - usually because the CLI emitted its
         # terminal stream-json frame and closed the pipe. But the
         # subprocess may still be alive doing post-turn cleanup (telemetry
         # flush, retry loops, etc). Escalate: wait briefly, then SIGTERM,
@@ -5724,7 +5724,7 @@ def _drain_stdout(state: "RunState") -> None:
                 exit_code = state.proc.returncode
         except Exception:
             exit_code = state.proc.returncode
-        # v2.28 — intentional terminations override the raw exit code so the
+        # v2.28 - intentional terminations override the raw exit code so the
         # UI doesn't render "failed" for graceful SIGTERMs (v2.24 success
         # path, user-stop, etc.). The actual exitCode is still stored on the
         # event payload for diagnostics; finish() also stores stopReason so
@@ -5735,25 +5735,25 @@ def _drain_stdout(state: "RunState") -> None:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
-        # v4.0 — verify any shader HTML the run wrote (process-exit fallback for
+        # v4.0 - verify any shader HTML the run wrote (process-exit fallback for
         # single-shot runs that never emitted a turn-done status).
         try:
             _verify_touched_shaders(state)
         except Exception:
             pass
-        # ── v2.1 — workflow-node auto-completion hook ────────────────────
-        # v2.24 — guarded by _node_completion_fired so we don't double-flip
+        # ── v2.1 - workflow-node auto-completion hook ────────────────────
+        # v2.24 - guarded by _node_completion_fired so we don't double-flip
         # when the turn_done branch above already called the hook. (The
         # turn_done path is the primary trigger now; this finally-block
         # version is a fallback for subprocesses that exit WITHOUT emitting
-        # a "done" status frame — e.g. crashed mid-turn or got SIGKILLed.)
+        # a "done" status frame - e.g. crashed mid-turn or got SIGKILLed.)
         wf_node_id = getattr(state, "workflow_node_id", None)
         if wf_node_id and state.project_root and not getattr(state, "_node_completion_fired", False):
             try:
                 _fire_node_completion_hook(state, exit_code=exit_code or 0)
             except Exception as e:
                 state.append("status", {"label": "node-status-update-failed", "detail": str(e)})
-        # ── History snapshot — AFTER state ───────────────────────────────
+        # ── History snapshot - AFTER state ───────────────────────────────
         # The subprocess is gone. Diff what changed against the snapshot we
         # took at spawn and commit one atomic entry for the whole run. If
         # nothing changed (typical for pure-chat freeform turns), the entry
@@ -5783,7 +5783,7 @@ def _drain_stdout(state: "RunState") -> None:
 
 
 def _drain_stderr(state: "RunState") -> None:
-    # v3.5 — Codex emits its entire chat content on STDERR with a structured
+    # v3.5 - Codex emits its entire chat content on STDERR with a structured
     # plain-text protocol (banner / role markers / tool exec / tool result).
     # Route codex through a parser that converts those into agent events so
     # the chat UI renders text + tool calls properly instead of dumping
@@ -5801,7 +5801,7 @@ def _drain_stderr(state: "RunState") -> None:
                     state.append("agent", {"type": "text_delta", "delta": line_text + "\n"})
         except Exception:
             pass
-        # End-of-stream flush — if the last tool didn't get a clean role
+        # End-of-stream flush - if the last tool didn't get a clean role
         # marker before stderr closed, surface its accumulated output now.
         try:
             tail = parser.finish()
@@ -5842,7 +5842,7 @@ class _CodexStderrParser:
 
     We feed line-by-line; each feed() returns (events, raw_passthrough)
     where events are normalised agent dicts and raw_passthrough is a list
-    of lines that didn't match any known marker (genuine errors etc.) —
+    of lines that didn't match any known marker (genuine errors etc.) -
     callers emit these as plain text_delta events.
     """
     _NOISE_PATTERNS = (
@@ -5865,7 +5865,7 @@ class _CodexStderrParser:
                 return True
         return False
 
-    # A bare lowercase token (with optional underscores) on its own line —
+    # A bare lowercase token (with optional underscores) on its own line -
     # codex's marker pattern: "user", "codex", "exec", "apply_patch",
     # "read_file", "thinking", etc.
     _MARKER_RX = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -5873,7 +5873,7 @@ class _CodexStderrParser:
     # Reserved bare-tokens that AREN'T tool names (handled separately).
     _RESERVED_NON_TOOL = {"user", "codex", "thinking"}
     # Status line: "succeeded in 0ms" / "failed in 200ms" / "exited 1 in 0ms"
-    # — with optional trailing ":" when more output follows.
+    # - with optional trailing ":" when more output follows.
     _STATUS_RX = re.compile(r"^\s*(succeeded|failed|exited(?:\s+\d+)?)\s+in\s+\d+ms(:?)\s*$")
 
     def __init__(self):
@@ -5921,7 +5921,7 @@ class _CodexStderrParser:
         raw: list = []
         if self._is_noise(line):
             return events, raw
-        # Banner traversal — strip every line between the two `--------`
+        # Banner traversal - strip every line between the two `--------`
         # separators (inclusive of header + dashes), then switch to content.
         if self.state == "pre_banner":
             if not line.strip():
@@ -5941,7 +5941,7 @@ class _CodexStderrParser:
                     self.state = "post_banner"
             return events, raw
         stripped = line.strip()
-        # Status line for the open tool call — capture the marker, don't
+        # Status line for the open tool call - capture the marker, don't
         # close the tool yet (more output may follow when it ends with ":").
         if self.current_tool_id is not None:
             m_st = self._STATUS_RX.match(line)
@@ -5951,7 +5951,7 @@ class _CodexStderrParser:
                 # lines are tool output (continued). If not, the tool is
                 # done; we wait for the next role marker to flush.
                 return events, raw
-        # Role / tool markers — bare lowercase tokens on their own line.
+        # Role / tool markers - bare lowercase tokens on their own line.
         # A marker flushes any open tool first (so its output ends up in
         # the right tool_result and doesn't bleed into the next event).
         if stripped and self._MARKER_RX.match(stripped):
@@ -5967,7 +5967,7 @@ class _CodexStderrParser:
                     self.state = "thinking"
                 return events, raw
             if stripped not in self._RESERVED_NON_TOOL:
-                # New tool starting — flush previous, open new.
+                # New tool starting - flush previous, open new.
                 ev = self._flush_tool()
                 if ev:
                     events.append(ev)
@@ -6004,11 +6004,11 @@ class _CodexStderrParser:
             self.state = "tool_body"
             return events, raw
         if self.state == "tool_body":
-            # Tool's stdout/stderr — accumulate, do NOT emit as text.
+            # Tool's stdout/stderr - accumulate, do NOT emit as text.
             # Flushed into tool_result when the next marker arrives.
             self._tool_output_lines.append(line)
             return events, raw
-        # Fallback for post_banner with no active context — likely an
+        # Fallback for post_banner with no active context - likely an
         # assistant continuation Codex didn't mark explicitly. Treat as text.
         if line.strip():
             events.append({"type": "text_delta", "delta": line + "\n"})
@@ -6016,7 +6016,7 @@ class _CodexStderrParser:
         return events, raw
 
     def finish(self):
-        """Called when the run ends — flush any still-open tool call."""
+        """Called when the run ends - flush any still-open tool call."""
         return self._flush_tool()
 
 
@@ -6047,7 +6047,7 @@ def _claude_tool_result_frame(tool_use_id: str, content: str, is_error: bool = F
     }) + "\n").encode("utf-8")
 
 
-# Trigger-file → prompt template. Lifted from §9.2.C "Impact C — Phase 1's
+# Trigger-file → prompt template. Lifted from §9.2.C "Impact C - Phase 1's
 # submit() generalises to a triggerRun() over all serve.py allowlisted files".
 # Workflow names are stable repo paths; the agent reads them with Read.
 TRIGGER_PROMPTS = {
@@ -6063,8 +6063,8 @@ TRIGGER_PROMPTS = {
         "Read docs/agents/conventions.md before dispatching any subagent. "
         "Whenever you write into editor/data.js, follow "
         "docs/agents/data-schema.md.\n\n"
-        "Render-check (Step 4f): no screenshot tool is wired in this version — "
-        "surface 'render check skipped — no screenshot tool available' in your report."
+        "Render-check (Step 4f): no screenshot tool is wired in this version - "
+        "surface 'render check skipped - no screenshot tool available' in your report."
     ),
     "statemachine-request": (
         "Run Workflow 1 with `overrides.stateMachine: true`. "
@@ -6089,7 +6089,7 @@ def _compose_initial_prompt(kind: str, user_prompt: str = "") -> str:
 
 # ── question-form protocol ──────────────────────────────────────────────────
 # Claude Code's built-in AskUserQuestion is disabled in this environment (see
-# AGENT_DEFS["claude"]["args"] — `--disallowedTools AskUserQuestion`) because
+# AGENT_DEFS["claude"]["args"] - `--disallowedTools AskUserQuestion`) because
 # in `-p --input-format stream-json` mode it has no TTY to bind to. The CLI's
 # runtime auto-completes the call as "dismissed" before our /__run/:id/tool-
 # result POST can land, so any answer the user clicks loses the race.
@@ -6098,7 +6098,7 @@ def _compose_initial_prompt(kind: str, user_prompt: str = "") -> str:
 # <question-form>...</question-form> block at the END of its turn when it
 # genuinely needs a clarifying answer, then stop. The agent's turn ends
 # naturally (no race), the UI renders the form as clickable buttons, and
-# the user's pick is POSTed to /__run/:id/user-message — same channel as
+# the user's pick is POSTed to /__run/:id/user-message - same channel as
 # the composer, so the agent resumes via the existing stdin path.
 QUESTION_FORM_SYSTEM_PROMPT = """\
 ## Chat rendering capabilities
@@ -6108,22 +6108,22 @@ inline. When the user asks for a quick visualization, demo, chart, mockup, \
 illustration, or sample (i.e. "show me…", "draw…", "preview…", "what does X \
 look like", "give me an example of…"), respond DIRECTLY in chat using the \
 renderers below. **Do NOT scaffold a prototype in `source/<branch>/`** for \
-ad-hoc visuals — that path is reserved for actual multi-page navigable apps \
+ad-hoc visuals - that path is reserved for actual multi-page navigable apps \
 the user explicitly asks you to build via the prototype/regenerate workflow.
 
 Available renderers (use the appropriate one for the task):
 
-1. **Markdown tables** — `| Col | Col |` with a `|---|---|` separator.
-2. **Fenced ```html blocks** — full HTML + inline `<style>` + `<script>`. \
-Rendered inside a sandboxed iframe (`allow-scripts` only — null origin, no \
+1. **Markdown tables** - `| Col | Col |` with a `|---|---|` separator.
+2. **Fenced ```html blocks** - full HTML + inline `<style>` + `<script>`. \
+Rendered inside a sandboxed iframe (`allow-scripts` only - null origin, no \
 access to the parent page). Use this for any interactive mockup, styled \
 card, layout sketch, **CSS animations** (`@keyframes`), or any markup with \
 DOM event handlers (`onclick`, `onmousemove`, `onscroll`, hover via `:hover`).
-3. **Fenced ```svg blocks** — vector graphics, icons, diagrams, charts, \
+3. **Fenced ```svg blocks** - vector graphics, icons, diagrams, charts, \
 illustrations. Rendered in the same sandboxed iframe. SVG events work too.
-4. **Fenced ```mermaid blocks** — `graph LR`, `sequenceDiagram`, `flowchart`, \
+4. **Fenced ```mermaid blocks** - `graph LR`, `sequenceDiagram`, `flowchart`, \
 `erDiagram`, etc. Rendered as SVG via mermaid.js.
-5. **Fenced ```glsl / ```shader blocks** — fragment-shader playground in the \
+5. **Fenced ```glsl / ```shader blocks** - fragment-shader playground in the \
 shadertoy style. Write a `void mainImage(out vec4 fragColor, in vec2 fragCoord)` \
 function with these uniforms available:
    - `uniform vec3 iResolution;` (viewport in pixels)
@@ -6132,26 +6132,26 @@ function with these uniforms available:
 The host wires up WebGL, a full-screen quad, the animation loop, and mouse \
 tracking. The user can move/click on the canvas and the shader receives \
 `iMouse` updates immediately.
-6. **Fenced ```three / ```webgl blocks** — three.js sandbox. Globals \
+6. **Fenced ```three / ```webgl blocks** - three.js sandbox. Globals \
 exposed: `THREE`, `scene`, `camera`, `renderer`. Call `__animate(t => …)` \
 to register a per-frame callback (receives elapsed seconds). The renderer \
 canvas is already mounted; raycasting, hover, click, scroll-zoom all work \
 via the standard three.js patterns.
-7. **Fenced ```p5 blocks** — p5.js sketch. Define `setup()` and `draw()` \
+7. **Fenced ```p5 blocks** - p5.js sketch. Define `setup()` and `draw()` \
 at top level, or instance mode `function sketch(p) {{ … }}`. `mousePressed`, \
 `mouseMoved`, `keyPressed`, `mouseWheel` etc. all bind as usual.
-8. **Inline color values** — `#hex`, `rgb()`, `rgba()`, `hsl()`, `oklch()`, \
+8. **Inline color values** - `#hex`, `rgb()`, `rgba()`, `hsl()`, `oklch()`, \
 `oklab()`, `linear-gradient(...)`, `radial-gradient(...)`. The chat auto-decorates \
-each with a swatch. Just write the value as prose — no fencing needed.
-9. **Inline image URLs** — any `https://…/foo.png|jpg|webp|gif|svg|avif` URL \
+each with a swatch. Just write the value as prose - no fencing needed.
+9. **Inline image URLs** - any `https://…/foo.png|jpg|webp|gif|svg|avif` URL \
 auto-renders as a thumbnail.
-10. **Inline font URLs** — any `https://…/foo.woff2|woff|ttf|otf` URL \
+10. **Inline font URLs** - any `https://…/foo.woff2|woff|ttf|otf` URL \
 auto-renders as a `Aa Bb 123` sample in that font.
-11. **Bare `<svg>...</svg>`** inside prose — picked up and rendered the same \
+11. **Bare `<svg>...</svg>`** inside prose - picked up and rendered the same \
 way as a fenced svg block.
 
 All sandboxed previews (html/svg/shader/three/p5) are **fully interactive**: \
-click, mouse position, scroll, hover, keyboard — they all work because the \
+click, mouse position, scroll, hover, keyboard - they all work because the \
 iframe has `allow-scripts`. The sandbox guarantees null-origin isolation so \
 your code can't reach the host page; it just can't.
 
@@ -6164,36 +6164,36 @@ canvas animation.
 When in doubt: render in chat. Only write to `source/` when the user said the \
 word "prototype" or "branch" or asked for something multi-page.
 
-**Exception — visual ASSETS go through visual-orchestrator.** The chat-rendering \
+**Exception - visual ASSETS go through visual-orchestrator.** The chat-rendering \
 rules above are for visualizations the user wants to *see in conversation* \
 ("show me a chart of X", "draw what a Bauhaus poster looks like", \
 "preview an oklch palette"). When the user asks you to *create / produce / \
 generate / add* an image, illustration, mascot, character, icon, mark, \
 shader, particle field, 3D scene, lottie animation, or video that should \
-land on the workflow canvas as an asset — even if it's "just one" — you do \
+land on the workflow canvas as an asset - even if it's "just one" - you do \
 NOT render it inline as a fenced block. You dispatch \
 `Task(subagent_type: "visual-orchestrator", …)` as your first action. See the \
 "Image creation: dispatch visual-orchestrator FIRST" rule in the capabilities \
 section below for the exact decision table.
 
-## Prototype folder convention (v3.2 — multi-prototype)
+## Prototype folder convention (v3.2 - multi-prototype)
 
 `source/` is a CONTAINER for many independent prototypes, not a single workspace. \
 Every prototype lives in its own subfolder: `source/<slug>/`. The bare `source/` \
 root is reserved for project-level artefacts (PRD, research notes, coherence \
-contracts) — **never** write `source/index.html` or any page directly under it.
+contracts) - **never** write `source/index.html` or any page directly under it.
 
-**Standalone assets — not tied to any prototype.** Some assets are generated on \
+**Standalone assets - not tied to any prototype.** Some assets are generated on \
 their own, not as part of any prototype's page: a one-off 3D model, an \
 illustration, a video, a texture the user just wants to *have*. Write these under \
 `source/uploads/` (the long-lived, prototype-independent project-asset folder), \
-NOT under a `source/<slug>/`. They stay UNBOUND — no prototype owns them, so the \
+NOT under a `source/<slug>/`. They stay UNBOUND - no prototype owns them, so the \
 worker badge tethers to the asset's own node instead of lighting up an unrelated \
 prototype, and the user can drag the asset into a prototype later if they want. \
 Only file an asset under `source/<slug>/` when it genuinely belongs to that \
 prototype's page (e.g. a hero image you are placing into \
-`source/<slug>/index.html`). When in doubt — the request is "make me a 3D \
-asset / an image / a video" with no prototype named and none in obvious scope — \
+`source/<slug>/index.html`). When in doubt - the request is "make me a 3D \
+asset / an image / a video" with no prototype named and none in obvious scope - \
 treat it as standalone and use `source/uploads/`.
 
 When the user asks you to build something:
@@ -6206,20 +6206,20 @@ before you start writing.
 2. **Pick the right slug.**
    - If the user said "extend / iterate on / fix the X one" and `source/X/` \
      exists, write into that folder.
-   - If the user said "another one / a new one / a variant" — or if no \
-     existing prototype matches the brief — derive a NEW kebab-case slug from \
-     the brief (1–3 words, e.g. `wizard-onboarding`, `notes-app`, \
+   - If the user said "another one / a new one / a variant" - or if no \
+     existing prototype matches the brief - derive a NEW kebab-case slug from \
+     the brief (1-3 words, e.g. `wizard-onboarding`, `notes-app`, \
      `landing-v2`). Confirm the slug with the user in one sentence: \
-     "I'll scaffold this as `source/<slug>/` — say so if you want a different \
+     "I'll scaffold this as `source/<slug>/` - say so if you want a different \
      name." Then proceed without waiting (unless they push back).
    - If the user named a slug explicitly ("call it `studio`"), use it verbatim.
 
 3. **Never overwrite an existing prototype without explicit confirmation.** If \
 `source/<slug>/index.html` exists and the brief sounds like a fresh start, ask \
-via a `<question-form>` whether to overwrite OR pick a new slug — do not \
+via a `<question-form>` whether to overwrite OR pick a new slug - do not \
 silently clobber the previous prototype's work.
 
-4. **Every file the prototype needs goes under its `<slug>/` root** — \
+4. **Every file the prototype needs goes under its `<slug>/` root** - \
 `source/<slug>/index.html`, `source/<slug>/styles.css`, \
 `source/<slug>/images/hero.png`, sub-pages at `source/<slug>/about/index.html`, \
 etc. The workflow canvas's prototype node iframe loads \
@@ -6240,12 +6240,12 @@ that into a single global prototype and destroys whatever was there before.
 When you need a focused answer from the user before continuing (a fork in the \
 plan, a missing requirement, a choice between options), emit ONE \
 <question-form>...</question-form> block at the END of your turn, then STOP. \
-Do not call the AskUserQuestion tool — it is disabled in this environment. \
+Do not call the AskUserQuestion tool - it is disabled in this environment. \
 Do not keep working after the form. The chat composer is the only way for the \
 user to reply; your form will be rendered as clickable buttons and the \
 answers come back as a regular user message.
 
-Syntax (the JSON inside must parse — do not wrap it in code fences):
+Syntax (the JSON inside must parse - do not wrap it in code fences):
 
 <question-form id="<short-stable-id>">
 {
@@ -6265,7 +6265,7 @@ Syntax (the JSON inside must parse — do not wrap it in code fences):
 Rules:
 - Use only when the answer materially affects what you do next. If a \
 reasonable default exists, just proceed without asking.
-- 1–4 questions per form, never more. 2–5 concrete options per question; no \
+- 1-4 questions per form, never more. 2-5 concrete options per question; no \
 free-text questions in this protocol.
 - The form MUST be the FINAL block of your turn. Do not call any tool after \
 emitting it. Do not write any text after the closing </question-form> tag.
@@ -6286,18 +6286,18 @@ WORKSPACE_LAYOUT_PROMPT = """
 Your cwd is the active project's root. Project-scoped artifacts live here \
 and you read/write them via relative paths:
 
-- `source/` — prototype source (HTML, CSS, JS, prototype.json, …)
-- `editor/data.js` — editor data file for this project (window.EDITOR_DATA)
-- `DESIGN.md`, `NOTES.md`, `edits.json` — per-project docs and ephemeral \
+- `source/` - prototype source (HTML, CSS, JS, prototype.json, …)
+- `editor/data.js` - editor data file for this project (window.EDITOR_DATA)
+- `DESIGN.md`, `NOTES.md`, `edits.json` - per-project docs and ephemeral \
 handoff files
 
-The **agent protocol** — the shared playbook every project follows — lives \
+The **agent protocol** - the shared playbook every project follows - lives \
 at a separate read-only mount, exposed to you via `--add-dir $TH_PROTOCOL_ROOT`. \
 Read it from there; do NOT copy these files into the project:
 
-- `AGENTS.md` — entry point + workflow index
-- `PROTOTYPE.md` — design skill
-- `docs/agents/**` — workflows, subagents, orchestrator, conventions, data-schema
+- `AGENTS.md` - entry point + workflow index
+- `PROTOTYPE.md` - design skill
+- `docs/agents/**` - workflows, subagents, orchestrator, conventions, data-schema
 
 Useful env vars set on every spawn: `TH_PROJECT_ROOT` (your cwd as an \
 absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
@@ -6310,13 +6310,13 @@ absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 # MCP servers are escalation paths. Without this guidance the agent reaches
 # for `chrome` on every web task and burns time spinning up the browser.
 def _mcp_routing_prompt() -> str:
-    """v3.12 — Generated from .claude/mcp-catalog.json + the runtime
+    """v3.12 - Generated from .claude/mcp-catalog.json + the runtime
     mcp-config.json instead of the old hardcoded chrome/figma-only constant,
     so manually-added servers (System tab → MCP → Add server, or hand-edits
     to the config) are described to every spawned agent automatically.
 
     Only WIRED servers are listed (an unwired catalog entry has no live
-    tools this run — describing it would invite "tool not found" loops).
+    tools this run - describing it would invite "tool not found" loops).
     Wired servers without a catalog entry get a generic bullet built from
     the config: the tools are self-describing once listed, the agent just
     needs to know the prefix exists."""
@@ -6330,7 +6330,7 @@ def _mcp_routing_prompt() -> str:
     bullets = []
     for r in rows:
         prefix = r.get("toolPrefix") or f"mcp__{r['id']}__"
-        bits = [f"- `{prefix}*` — {r.get('label') or r['id']}."]
+        bits = [f"- `{prefix}*` - {r.get('label') or r['id']}."]
         if r.get("purpose"):
             bits.append(str(r["purpose"]).strip())
         if r.get("whenToUse"):
@@ -6343,44 +6343,44 @@ def _mcp_routing_prompt() -> str:
         "You have built-in `WebFetch` and `WebSearch`, plus these MCP servers "
         "exposed via `--mcp-config`:\n\n"
         + "\n".join(bullets)
-        + "\n\nDefault to `WebFetch` for any URL — it's faster, anonymous, no "
+        + "\n\nDefault to `WebFetch` for any URL - it's faster, anonymous, no "
         "setup. Only escalate to a browser-driving MCP after `WebFetch` "
         "actually fails on this URL, not preemptively. Surface any MCP "
         "first-call / auth error to the user verbatim.\n"
     )
 
 
-# v3.12 — System agent threads (landing → System tab → Orchestrators /
+# v3.12 - System agent threads (landing → System tab → Orchestrators /
 # Design library). These spawns deliberately INVERT the project-agent
 # policy: cwd is the WORKSPACE/INSTALL ROOT, permissions default to full
 # bypass, and none of the project confinement (capabilities preamble,
 # orchestrator hard-rule gates, harness PreToolUse hooks, slash-command
-# lockout) is applied — because this agent's job is to EDIT those layers,
+# lockout) is applied - because this agent's job is to EDIT those layers,
 # not to operate inside them.
 SYSTEM_AGENT_PROMPT = """
 
 ## You are the WORKSPACE SYSTEM AGENT
 
-Your cwd is the workspace root — the canonical Woven harness repo itself, not a
+Your cwd is the workspace root - the canonical Woven harness repo itself, not a
 user project. You were opened from the editor's landing page (System tab) to
 add or update the harness's own building blocks: orchestrators, the design
 library, subagents, skills, MCP wiring. You run with full permissions and
 WITHOUT the project-agent confinement (no orchestrator dispatch gates, no
 visual-orchestrator hook, no app-skill restrictions). With that footing comes
-the duty to keep the system layers in sync — a half-registered orchestrator is
+the duty to keep the system layers in sync - a half-registered orchestrator is
 worse than none.
 
 **Scope warning to honour:** these embedded threads are best for FOCUSED
 additions and updates (one orchestrator, a handful of library entries, an MCP
-entry). If the user asks for a sweeping refactor — restructuring many
-orchestrators, rewriting editor internals, mass-migrating the library — tell
+entry). If the user asks for a sweeping refactor - restructuring many
+orchestrators, rewriting editor internals, mass-migrating the library - tell
 them a dedicated harness (Claude Code in a terminal at the workspace root) is
 the better tool: bigger context, reviewable diffs, no daemon mid-flight. Offer
 to scope the work down instead.
 
 ### The system map (what lives where)
 
-- **Orchestrators** — a pair of files under `.claude/agents/`:
+- **Orchestrators** - a pair of files under `.claude/agents/`:
   `<id>.md` (the playbook: YAML frontmatter `name:` / `description:` /
   `tools:`, then the full operating instructions) and `<id>.manifest.json`
   (the registry entry the daemon + landing page read). Manifest fields: `id`,
@@ -6389,22 +6389,22 @@ to scope the work down instead.
   ruleSource}), `dispatches` ({drawers[], lenses[]}), `skills[]`,
   `nodeKinds` ({container[], agent_overrides[], trios_scaffolded[]}),
   `documents` ({designDoc, calibration}). Manifests are auto-discovered per
-  request — no daemon restart needed.
+  request - no daemon restart needed.
 - **Hard-rule coupling (read carefully).** Every spawned project agent gets a
   capabilities preamble from `editor/kinds/capabilities.py`. For the SHIPPED
   orchestrator families, the "## … dispatch <X>-orchestrator FIRST" prose is
   static text inside that file, and `_strip_disabled_orchestrator_blocks`
   holds a parallel SECTIONS header list. For an EXISTING shipped orchestrator,
   rule edits happen in BOTH places there. For a NEW orchestrator, do NOT edit
-  capabilities.py — add a `"hardRule": {"header": "...", "body": "..."}` field
+  capabilities.py - add a `"hardRule": {"header": "...", "body": "..."}` field
   to its manifest; the preamble injects it dynamically and the System-tab
   enable/disable toggle works automatically. NOTE: capabilities.py edits only
   take effect after a daemon restart (the module is imported once); manifest /
   catalog / JSON changes are re-read per request.
-- **Subagents (drawers/lenses)** — single `.md` files under `.claude/agents/`
+- **Subagents (drawers/lenses)** - single `.md` files under `.claude/agents/`
   with `name:` / `description:` / `tools:` frontmatter. Auto-discovered into
   the capabilities catalog per request.
-- **Design library** — `design-library/<prefix>-<slug>.md` at the workspace
+- **Design library** - `design-library/<prefix>-<slug>.md` at the workspace
   root, grouped by filename prefix (`shell-`, `style-`, `aesthetic-`,
   `recipe-`, `photo-`, `illust-`, `material-`, `motion-`), each with YAML
   frontmatter + prose + sample images referenced alongside. Surfaced via
@@ -6415,15 +6415,15 @@ to scope the work down instead.
   UI because entries couple to orchestrators: when you add, rename, or remove
   an entry, grep `.claude/agents/` and `prototype/` for references to the
   affected slugs and update them in the same change.
-- **MCP servers** — TWO files under `.claude/`, intentionally separate:
+- **MCP servers** - TWO files under `.claude/`, intentionally separate:
   `mcp-config.json` (strict Claude-Code `--mcp-config` payload: `mcpServers`
   → {command, args}) and `mcp-catalog.json` (display metadata: label,
   purpose, whenToUse, toolPrefix, requires, firstCallNote, source). Keep them
-  in sync — a server wired in config but missing from the catalog still works
+  in sync - a server wired in config but missing from the catalog still works
   but shows as an anonymous entry; a catalog entry without config is dead UI.
   The daemon also exposes `POST /__mcp_catalog/add` / `/__mcp_catalog/remove`
-  which write both files atomically — prefer them over hand-editing.
-- **Custom skills** — `<workspace>/.harness-skills/<slug>/SKILL.md` with
+  which write both files atomically - prefer them over hand-editing.
+- **Custom skills** - `<workspace>/.harness-skills/<slug>/SKILL.md` with
   `name:` / `description:` frontmatter. Listed in every spawn's capabilities
   preamble (agents are told to Read the SKILL.md when the trigger matches).
 
@@ -6431,10 +6431,10 @@ to scope the work down instead.
 
 1. `python3 -m py_compile editor/serve.py editor/kinds/capabilities.py` if you
    touched python; `python3 -m pytest editor/kinds -q` for kinds behaviour.
-2. `curl -s $TH_DAEMON_URL/__orchestrators | python3 -m json.tool` — your
+2. `curl -s $TH_DAEMON_URL/__orchestrators | python3 -m json.tool` - your
    manifest parses and registers (parse failures are SILENTLY skipped, so
    absence here means broken JSON).
-3. `curl -s $TH_DAEMON_URL/__capabilities` — subagents / skills / MCP entries
+3. `curl -s $TH_DAEMON_URL/__capabilities` - subagents / skills / MCP entries
    appear; for a new orchestrator with a manifest hardRule, confirm the rule
    text shows up in a fresh spawn's preamble (the daemon re-reads manifests
    per spawn).
@@ -6442,10 +6442,10 @@ to scope the work down instead.
 
 ### Boundaries
 
-- `projects/` belongs to user projects — leave it alone unless the user
+- `projects/` belongs to user projects - leave it alone unless the user
   explicitly drags a project into the conversation.
 - Editing `editor/` internals (serve.py, app.js, kinds/) is ALLOWED but is
-  exactly the "use a dedicated harness" territory — warn first, keep diffs
+  exactly the "use a dedicated harness" territory - warn first, keep diffs
   surgical, and remember daemon-side python changes need a restart to bite.
 - Don't git-commit unless the user asks; they merge work per-feature.
 """
@@ -6453,12 +6453,12 @@ to scope the work down instead.
 
 # Env vars Claude Code Desktop / IDE plugins leak into child processes that
 # break standalone `claude` invocations. Symptoms:
-#   • ANTHROPIC_API_KEY="" — CLI sees "API key is set", sends `Authorization:
+#   • ANTHROPIC_API_KEY="" - CLI sees "API key is set", sends `Authorization:
 #     Bearer ` with empty bearer ⇒ 401 invalid credentials.
-#   • CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1 — CLI defers auth to the host
+#   • CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1 - CLI defers auth to the host
 #     process (the desktop app). Once we fork outside that host, nothing
 #     answers the auth probe ⇒ retry loop.
-#   • CLAUDE_CODE_SESSION_ID / CLAUDE_CODE_ENTRYPOINT / CLAUDE_CODE_EXECPATH —
+#   • CLAUDE_CODE_SESSION_ID / CLAUDE_CODE_ENTRYPOINT / CLAUDE_CODE_EXECPATH -
 #     identify the parent process; carrying them into a sibling spawn
 #     confuses telemetry and pins to the bundled in-app binary.
 # Strip them so the spawned child falls through to its own OAuth credentials
@@ -6480,19 +6480,19 @@ _HOST_LEAK_ENV_VARS = (
 
 
 # ── harness settings auto-install ──────────────────────────────────────────
-# v3.1.2 — Called from every spawn site (and from __main__ at boot). Ensures
+# v3.1.2 - Called from every spawn site (and from __main__ at boot). Ensures
 # `.claude/settings-harness.json` exists with the correct PreToolUse hook
 # registration BEFORE we hand --settings to the spawned `claude`. Idempotent:
 # generates the file if missing, leaves it alone if present and well-formed.
-# This is what makes the visual-orchestrator enforcement self-installing — no
+# This is what makes the visual-orchestrator enforcement self-installing - no
 # user step required beyond running the daemon.
 def _ensure_harness_settings() -> "str | None":
     """Generate INSTALL_ROOT/.claude/settings-harness.json on demand and
     return its absolute path. Returns None if the hook script itself is
-    missing (in which case spawn sites silently skip --settings — the
+    missing (in which case spawn sites silently skip --settings - the
     enforcement is unavailable but the daemon keeps working).
 
-    The hook is the per-family orchestrator gate (require-orchestrator.sh) — it
+    The hook is the per-family orchestrator gate (require-orchestrator.sh) - it
     routes by file path: simulations/ → simulation-orchestrator, interactives/
     → interactive-media-orchestrator, narratives/ → narrative-experience-orchestrator,
     and the visual binary slots elsewhere → visual-orchestrator. Renamed from
@@ -6503,7 +6503,7 @@ def _ensure_harness_settings() -> "str | None":
     settings_path = os.path.join(INSTALL_ROOT, ".claude",
                                   "settings-harness.json")
     if not os.path.isfile(hook_path):
-        # Hook script absent — nothing to register. Spawn sites get None
+        # Hook script absent - nothing to register. Spawn sites get None
         # and skip --settings; visual-orchestrator gating is unavailable but
         # the daemon stays functional.
         return None
@@ -6519,20 +6519,20 @@ def _ensure_harness_settings() -> "str | None":
             ]
         }
     }
-    # Short-circuit if the file already matches — avoid disk churn at every
+    # Short-circuit if the file already matches - avoid disk churn at every
     # spawn (a typical session triggers many spawns).
     try:
         with open(settings_path, "r", encoding="utf-8") as f:
             if json.load(f) == settings:
                 return settings_path
     except (OSError, ValueError):
-        pass  # missing or unparseable — regenerate below
+        pass  # missing or unparseable - regenerate below
     try:
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
     except OSError as e:
-        # Surface but don't crash — visual-orchestrator gating becomes
+        # Surface but don't crash - visual-orchestrator gating becomes
         # advisory-only, which is the same fail-mode as a missing hook.
         print(f"  [harness] failed to write {settings_path}: {e}", flush=True)
         return None
@@ -6546,7 +6546,7 @@ def _ensure_sanitised_codex_home():
     Why: codex CLI has no `--disable-skills` equivalent of Claude's
     `--disable-slash-commands`. User skills live in ~/.codex/skills/ and
     are auto-loaded whenever codex's matcher fires. Inside the Woven
-    harness we want only the harness-supplied skill context — letting
+    harness we want only the harness-supplied skill context - letting
     user skills like prototype-drawing leak in mixes vocabularies and
     breaks the source-agnostic pipeline guarantee.
 
@@ -6554,7 +6554,7 @@ def _ensure_sanitised_codex_home():
     every entry from the user's real ~/.codex/ into it EXCEPT `skills/`.
     Codex reads auth.json / config.toml / sessions/ etc. through the
     symlinks (login persists, sessions accumulate). It looks for skills
-    inside CODEX_HOME/skills/ — which doesn't exist in our dir — and
+    inside CODEX_HOME/skills/ - which doesn't exist in our dir - and
     finds none.
 
     Re-runs are idempotent: existing symlinks are validated; if the user
@@ -6580,7 +6580,7 @@ def _ensure_sanitised_codex_home():
     try:
         for name in os.listdir(real_home):
             if name == "skills":
-                # The whole point — never link skills/.
+                # The whole point - never link skills/.
                 continue
             src = os.path.join(real_home, name)
             dst = os.path.join(sanitised, name)
@@ -6594,7 +6594,7 @@ def _ensure_sanitised_codex_home():
                 try: os.unlink(dst)
                 except OSError: pass
             elif os.path.exists(dst):
-                # Non-symlink (file or dir) already there — leave it
+                # Non-symlink (file or dir) already there - leave it
                 # untouched; the user may have customised this slot.
                 continue
             try:
@@ -6617,7 +6617,7 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
         for k in _HOST_LEAK_ENV_VARS:
             # Only strip empty / 0 / 1 values that are clearly host-leaks.
             # If the user set ANTHROPIC_API_KEY to a real key in their shell,
-            # leave it alone — they explicitly want API-key auth.
+            # leave it alone - they explicitly want API-key auth.
             v = env.get(k)
             if v is None:
                 continue
@@ -6630,20 +6630,20 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
                 if not v.strip():
                     env.pop(k, None)
                 continue
-            # Host-management hints — always strip; the desktop host isn't
+            # Host-management hints - always strip; the desktop host isn't
             # answering on the other end of this spawn.
             env.pop(k, None)
     env.update({
         "TH_DAEMON_URL": f"http://127.0.0.1:{PORT}",
         "TH_RUN_ID": run_id,
         "TH_AGENT": agent_id,
-        # Phase 6 — let skill blocks resolve project paths without inferring
+        # Phase 6 - let skill blocks resolve project paths without inferring
         # from cwd. TH_PROTOCOL_ROOT is the shared-protocol mount (AGENTS.md,
         # docs/agents/**) added to the agent's context via --add-dir.
         "TH_PROJECT_ROOT": project_root or DEFAULT_PROJECT_ROOT,
         "TH_PROTOCOL_ROOT": INSTALL_ROOT,
     })
-    # v3.1 — Skill isolation. The earlier approach of overriding
+    # v3.1 - Skill isolation. The earlier approach of overriding
     # CLAUDE_CONFIG_DIR broke macOS Keychain auth (different userID
     # generated → Keychain tokens unreachable). The correct mechanism is
     # the `--disable-slash-commands` CLI flag (added to spawn_args at
@@ -6651,7 +6651,7 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # That flag hides the user's ~/.claude/commands/ slash commands
     # WITHOUT touching CLAUDE_CONFIG_DIR, so Keychain auth keeps working.
     # No env override needed here.
-    # v3.5 — Codex equivalent. Codex CLI has no `--disable-skills` flag,
+    # v3.5 - Codex equivalent. Codex CLI has no `--disable-skills` flag,
     # so we sanitise CODEX_HOME instead: point it at a Woven-managed dir
     # that symlinks everything from the user's real ~/.codex/ EXCEPT the
     # `skills/` subtree. Codex still finds its auth, config, and sessions
@@ -6669,15 +6669,15 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # (media-config.json) and didn't already inject one via shell env,
     # forward it to the Claude CLI so it bills against API credits instead
     # of the Pro/Max 7-day session quota. Without this the CLI authenticates
-    # via OAuth — which is what gets throttled by the "seven_day allowed_warning"
+    # via OAuth - which is what gets throttled by the "seven_day allowed_warning"
     # we see at high build volumes. With it, the CLI sets
     # `Authorization: Bearer <key>` on every API call and uses pay-as-you-go.
     # Only injected for the claude agent; other agents have their own auth.
-    # Live Session — a guest's own key (X-Th-Llm-Key, on the request thread-local)
+    # Live Session - a guest's own key (X-Th-Llm-Key, on the request thread-local)
     # is used for THIS run so the host's credentials are never spent. Overrides
     # the host key + config fallback; drops any OAuth token so the CLI auths with
     # the guest key alone.
-    # Guest "local CLI" — a Claude Code subscription token (`claude setup-token`
+    # Guest "local CLI" - a Claude Code subscription token (`claude setup-token`
     # → sk-ant-oat…) the guest pasted in the live bar. Run the CLI on the
     # GUEST's subscription via CLAUDE_CODE_OAUTH_TOKEN (not an API key, not the
     # host's login). Takes precedence over a pasted API key; we drop the other
@@ -6694,7 +6694,7 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
         env.pop("ANTHROPIC_AUTH_TOKEN", None)
         env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         return env
-    # Host config fallback — ONLY for the host's own runs. A guest request that
+    # Host config fallback - ONLY for the host's own runs. A guest request that
     # reached here lacked a usable Claude credential (no oauth token, no
     # Anthropic key); it must NOT borrow the host's configured key, so leave the
     # env without one and let the run surface a missing-credential error.
@@ -6730,7 +6730,7 @@ def _default_run_title(kind: str, body: dict) -> str:
 
 class H(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
-        # `directory=INSTALL_ROOT` is mostly a fallback — translate_path()
+        # `directory=INSTALL_ROOT` is mostly a fallback - translate_path()
         # below routes every request manually based on path + ?project= so
         # the per-tier (install / project) split works in workspace mode.
         super().__init__(*a, directory=INSTALL_ROOT, **kw)
@@ -6748,7 +6748,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #            and anything else not matched above
     #
     # Single-project mode (no TH_WORKSPACE_DIR): project_root == INSTALL_ROOT
-    # so every tier resolves to the same place — exact pre-Phase-6 behavior.
+    # so every tier resolves to the same place - exact pre-Phase-6 behavior.
     def translate_path(self, path):
         parsed = urllib.parse.urlparse(path)
         raw = urllib.parse.unquote(parsed.path)
@@ -6761,12 +6761,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             return INSTALL_ROOT
         parts = [seg for seg in norm.split("/") if seg and seg != "."]
         if any(seg == ".." for seg in parts):
-            # Path traversal — return a definitely-missing path so the parent
+            # Path traversal - return a definitely-missing path so the parent
             # 404s the request cleanly instead of leaking outside any root.
             return os.path.join(INSTALL_ROOT, "____invalid____")
         qs = urllib.parse.parse_qs(parsed.query)
         # In workspace mode, when the request URL has no `?project=` (typical
-        # for relative loads inside an iframe — browsers strip query strings
+        # for relative loads inside an iframe - browsers strip query strings
         # when resolving relative URLs), fall back to the Referer header so
         # `<img src="./logo.png">` inside `/source/main/?project=test-harness`
         # still loads from the test-harness project, not whichever project
@@ -6789,7 +6789,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if parts[:2] == ["editor", "branches"]:
             return os.path.join(project_root, *parts)
         if parts == ["editor", "data.js"]:
-            # v3.1 — lazy migration: if editor/data.js is the old bootstrap
+            # v3.1 - lazy migration: if editor/data.js is the old bootstrap
             # shim (defines EDITOR_BRANCHES + document.write's branches/main.js)
             # and editor/branches/main.js exists, replace data.js with that
             # file's content so the browser gets EDITOR_DATA directly. Idempotent:
@@ -6808,7 +6808,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # so single-prototype projects (and pre-migration projects whose
             # per-prototype files don't exist yet) keep working unchanged.
             proto_slug = _qs_prototype(qs, default="").strip()
-            # Reject malformed slugs and traversal attempts. Flat slugs only —
+            # Reject malformed slugs and traversal attempts. Flat slugs only -
             # nested prototypes (`<name>/<sub>`) still resolve to editor/data.js
             # for now; per-prototype data.js doesn't support the nested form.
             if proto_slug and re.match(r"^[A-Za-z0-9_.-]{1,80}$", proto_slug):
@@ -6816,7 +6816,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if os.path.isfile(per_proto):
                     return per_proto
             return os.path.join(project_root, *parts)
-        # Per-project layout sidecar — editor/<slug>.layout.js. Written by
+        # Per-project layout sidecar - editor/<slug>.layout.js. Written by
         # /__layout, loaded by index.html before app.js so positions + grid
         # meta survive reload.
         if len(parts) == 2 and parts[0] == "editor" and parts[1].endswith(".layout.js"):
@@ -6833,12 +6833,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # landing System tab's catalog. The folder is committed at
         # INSTALL_ROOT/design-library/ next to PROTOTYPE.md; routing it here
         # means `<img src="/design-library/foo.png">` from the landing works
-        # the same in workspace and single-project modes — without it the
+        # the same in workspace and single-project modes - without it the
         # path would resolve under whichever project happens to load first.
         # Skill-detail files (step-*, scene-addendum-details, gallery-html,
         # demo-dock, raster-requirements, preflight-checklist,
         # woven-repo-conventions, slot-annotations) live in INSTALL_ROOT/
-        # prototype/ — routed by the next clause.
+        # prototype/ - routed by the next clause.
         if parts[:1] == ["design-library"] or parts[:1] == ["prototype"]:
             return os.path.join(INSTALL_ROOT, *parts)
         # Per-project sources + per-project docs (DESIGN.md, NOTES.md,
@@ -6851,8 +6851,8 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _cacheable_static_asset(self):
         # The blanket no-store below exists so HTML/JS/data edits show up on a
-        # plain reload. But it also re-downloads the curated image catalog —
-        # ~450 MB of design-library sample PNGs (some 1–4 MB each) — on EVERY
+        # plain reload. But it also re-downloads the curated image catalog -
+        # ~450 MB of design-library sample PNGs (some 1-4 MB each) - on EVERY
         # page open, which is what makes the Capabilities → Design library page
         # feel heavy and lets thumbnails trickle in / fail under load. These
         # assets are immutable for the lifetime of a session, so let the browser
@@ -6888,12 +6888,12 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
-        # v2.50 — stamp every POST with a short correlation id so logs on
+        # v2.50 - stamp every POST with a short correlation id so logs on
         # both sides can be matched. _reply() picks this up and writes both
         # an X-Request-Id header and a requestId field in the JSON body.
         self.request_id = _new_request_id()
         self._post_started_at = time.time()
-        # Live Session — stamp this request's guest API key (if any) onto the
+        # Live Session - stamp this request's guest API key (if any) onto the
         # thread-local so LLM credential paths spend the guest's key, not the
         # host's. Overwritten per POST so it never leaks between requests.
         _REQ_LLM_KEY.value = self.headers.get("X-Th-Llm-Key")
@@ -6901,7 +6901,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         try:
             if parsed.path == "/__save":
                 return self._save(qs)
-            # v3.1 — /__branch, /__promote, /__promote_frame removed.
+            # v3.1 - /__branch, /__promote, /__promote_frame removed.
             # Stubs at _branch_create / _branch_promote / _frame_promote still
             # return 410 for any stale client that hits them directly, but the
             # routes here are deleted so the do_POST table reads cleanly.
@@ -7089,13 +7089,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_wnstatus = re.match(r"^/__workflow/node/([A-Za-z0-9_.-]{1,80})/status$", parsed.path)
             if m_wnstatus:
                 return self._workflow_node_status(qs, m_wnstatus.group(1))
-            # v2.50 — D4: atomic producer endpoint. Validates against the
+            # v2.50 - D4: atomic producer endpoint. Validates against the
             # kind contract, stages files, renames atomically, updates
             # workflow.json, fires SSE asset-changed.
             m_wncommit = re.match(r"^/__workflow/node/([A-Za-z0-9_.-]{1,80})/commit$", parsed.path)
             if m_wncommit:
                 return self._workflow_node_commit(qs, m_wncommit.group(1))
-            # ── v3.0 — Asset-versioning POST routes ─────────────────────
+            # ── v3.0 - Asset-versioning POST routes ─────────────────────
             # Tight regexes per route so node-ids and version ulids land in
             # named groups. ULIDs are 26-char [0-9A-Z]; we relax to a wider
             # alphanumeric pattern to tolerate hand-written ids in tests.
@@ -7158,7 +7158,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
         self._reply(404, {"error": "unknown endpoint", "path": parsed.path})
 
-    # ── DELETE — v3.0 asset versioning manual prune ──────────────────────
+    # ── DELETE - v3.0 asset versioning manual prune ──────────────────────
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
@@ -7178,7 +7178,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
         self._reply(404, {"error": "unknown endpoint", "path": parsed.path})
 
-    # ── GET — intercept source/*.html to inject the poke helpers ─────────
+    # ── GET - intercept source/*.html to inject the poke helpers ─────────
     # Every other path falls through to SimpleHTTPRequestHandler.
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -7195,12 +7195,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
-        # Daemon JSON endpoints first — they take precedence over static files.
+        # Daemon JSON endpoints first - they take precedence over static files.
         if url_path == "/__agents":
             return self._agents_list()
         if url_path == "/__healthz":
             return self._healthz()
-        # v3.9 — web-browser node endpoints (probe / proxy / text-extract).
+        # v3.9 - web-browser node endpoints (probe / proxy / text-extract).
         if url_path == "/__web_probe":
             return self._web_probe(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__web_proxy":
@@ -7209,14 +7209,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._web_text(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__file_stat":
             return self._file_stat(urllib.parse.parse_qs(parsed.query))
-        # v2.50 — D3/D5 endpoints: registry as JSON + on-demand drift scan.
+        # v2.50 - D3/D5 endpoints: registry as JSON + on-demand drift scan.
         if url_path == "/__kinds/registry":
             return self._kinds_registry()
         if url_path == "/__kinds/reconcile":
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
             return self._capabilities()
-        # Live Session — host-side presence (the host's own editor sees guest
+        # Live Session - host-side presence (the host's own editor sees guest
         # cursors). SSE stream + the injected cursor script.
         if url_path == "/__live_events":
             return _live.host_events_stream(self, _qs_get(urllib.parse.parse_qs(parsed.query), "project") or "")
@@ -7255,7 +7255,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._design_system_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ds_bootstrap":
             return self._ds_bootstrap(urllib.parse.parse_qs(parsed.query))
-        # Static serve for the bundled starter DS — powers the new-project DS
+        # Static serve for the bundled starter DS - powers the new-project DS
         # customizer's live-preview iframe. `/__default_ds/gallery.html` and the
         # relative styles.css / shells/ / templates/ it links resolve here.
         if url_path == "/__default_ds" or url_path.startswith("/__default_ds/"):
@@ -7331,7 +7331,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._workflow_node_preview(urllib.parse.parse_qs(parsed.query), m_wnprev.group(1))
         if url_path == "/__stream":
             return self._run_stream(urllib.parse.parse_qs(parsed.query))
-        if url_path == "/__workflow/events":   # v2.30 — SSE for workflow.json mutations
+        if url_path == "/__workflow/events":   # v2.30 - SSE for workflow.json mutations
             return self._workflow_events(urllib.parse.parse_qs(parsed.query))
         m = re.match(r"^/__run/([0-9a-f]{6,64})$", url_path)
         if m:
@@ -7339,7 +7339,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Match `/source/...html`, `source/...html`, `../source/...html` (the
         # editor often loads iframes with `../source/main/index.html`-style
         # paths), AND `design-systems/<id>/...html` (the DS gallery, samples,
-        # shells and templates — iframed by the Library pane / canvas nodes).
+        # shells and templates - iframed by the Library pane / canvas nodes).
         # Both need `?project=` stamped onto their relative href/src so nested
         # loads resolve to the right project. WITHOUT this, the gallery's
         # `<link href="all.css">` loads unstamped and every `@import` inside
@@ -7354,7 +7354,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             file_path = self.translate_path(self.path)
             if file_path and os.path.isfile(file_path):
                 # Resolve the project so the HTML rewrite can stamp every
-                # relative src/href with the right ?project= — needed because
+                # relative src/href with the right ?project= - needed because
                 # browsers strip the parent's query when resolving relative
                 # URLs from inside the iframe.
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -7368,14 +7368,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         project_id = ""
                 return self._serve_source_html(file_path, project_id)
-        # Live Session — inject the host-side live-cursors overlay into the
+        # Live Session - inject the host-side live-cursors overlay into the
         # editor shell when a live session is active for this project, so the
         # host sees guests' cursors (guests get it via the gate). Plain editor
         # otherwise; no overhead when not live.
         if url_path in ("/editor/", "/editor/index.html"):
             pid = _qs_get(urllib.parse.parse_qs(parsed.query), "project") or ""
             try:
-                # Inject unconditionally when a project is set — the script polls
+                # Inject unconditionally when a project is set - the script polls
                 # /__live_status and only connects once a session is live, so
                 # cursors appear even if you go live AFTER opening the editor
                 # (no refresh needed). Idle cost when never live: one tiny poll.
@@ -7397,7 +7397,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
         return super().do_GET()
 
-    # Match `src="..."`, `href="..."`, `data-src="..."`, etc. — single-URL
+    # Match `src="..."`, `href="..."`, `data-src="..."`, etc. - single-URL
     # attrs we should stamp with ?project=. Captures the URL value in group 3.
     _HTML_URL_ATTR_RE = re.compile(
         rb"""\b(src|href|data-src|data-href|poster)\s*=\s*(['"])([^'"]+)\2""",
@@ -7419,7 +7419,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         Skips: data: / about: / javascript: / blob: / mailto: / tel: / #anchor
         URLs, http(s):// absolute URLs, and protocol-relative `//host/...`.
         Server-absolute paths starting with `/__` (daemon endpoints) are also
-        skipped — they already use apiUrl() in the editor.
+        skipped - they already use apiUrl() in the editor.
         """
         if not project_id:
             return data
@@ -7443,7 +7443,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             attr, q, val = match.group(1), match.group(2), match.group(3)
             if _is_external(val):
                 return match.group(0)
-            # Skip daemon endpoints — they manage their own ?project=.
+            # Skip daemon endpoints - they manage their own ?project=.
             if val.startswith(b"/__") or val.startswith(b"__"):
                 return match.group(0)
             # Append `?project=…` (or `&project=…` if a query already exists).
@@ -7481,7 +7481,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             cut = head + len(b"<head>")
             data = data[:cut] + inject + data[cut:]
         else:
-            # No <head> — try the start of <body>; failing that, prepend.
+            # No <head> - try the start of <body>; failing that, prepend.
             body = lower.find(b"<body")
             if body >= 0:
                 close = lower.find(b">", body)
@@ -7531,7 +7531,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         positions = body.get("positions") or {}
         if not isinstance(positions, dict):
             return self._reply(400, {"error": "positions must be an object"})
-        # Sanitize positions — only id → { col:int, row:int } allowed.
+        # Sanitize positions - only id → { col:int, row:int } allowed.
         sanitized_positions = {}
         for fid, pos in positions.items():
             if not isinstance(fid, str) or not fid:
@@ -7542,7 +7542,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not isinstance(col, int) or not isinstance(row, int):
                 continue
             sanitized_positions[fid] = {"col": col, "row": row}
-        # Sanitize meta — defaultFrame.{w,h} ints, canvasGap int.
+        # Sanitize meta - defaultFrame.{w,h} ints, canvasGap int.
         sanitized_meta = {}
         meta_in = body.get("meta") if isinstance(body.get("meta"), dict) else {}
         df = meta_in.get("defaultFrame") if isinstance(meta_in.get("defaultFrame"), dict) else None
@@ -7562,8 +7562,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             payload["meta"] = sanitized_meta
         js = (
             "// Auto-generated by /__layout. Carries editor preferences:\n"
-            "//   positions — frame.id → { col, row } for the Canvas grid.\n"
-            "//   meta      — defaultFrame { w, h }, canvasGap (px).\n"
+            "//   positions - frame.id → { col, row } for the Canvas grid.\n"
+            "//   meta      - defaultFrame { w, h }, canvasGap (px).\n"
             "// Hand-edits OK but the editor overwrites on next rearrange\n"
             "// or frame-size change. Delete to reset everything.\n"
             "window.EDITOR_LAYOUT = " + json.dumps(payload, indent=2, sort_keys=True) + ";\n"
@@ -7585,7 +7585,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # <project_root>/workflow/workflow.json. Kept deliberately schema-light
     # so 3.5c/3.5d/Phase-4 can extend nodes[] without daemon updates.
     def _workflow_get(self, qs):
-        # v3.7 — require_explicit=True. In workspace mode with more than one
+        # v3.7 - require_explicit=True. In workspace mode with more than one
         # project, hitting /__workflow without ?project=<id> used to silently
         # fall back to the first-discovered project, which surfaced as the
         # musem bug: a chat agent in project=musem ran
@@ -7593,7 +7593,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # and got back the install's brand-landing workflow (27 nodes about
         # Vermeer's studio). Claude then thought 27 nodes had appeared in
         # musem and asked the user whether to clear them. The editor UI
-        # always passes ?project= via apiUrl() — only ad-hoc curls need the
+        # always passes ?project= via apiUrl() - only ad-hoc curls need the
         # explicit failure. require_explicit=True returns 400 with a list of
         # known project ids when >1 exists; single-project workspaces still
         # auto-resolve.
@@ -7601,7 +7601,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
             return self._reply(400, {"error": str(e), "hint": "append ?project=$TH_PROJECT_ID to the URL"})
-        # v3.0 — every workflow GET ensures the file watcher is running so
+        # v3.0 - every workflow GET ensures the file watcher is running so
         # the asset-versioning snapshot hook fires on subsequent writes.
         # Previously only SSE subscribers started the watcher; loads that
         # only hit GET /__workflow (e.g. integration tests, curl probes,
@@ -7612,7 +7612,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         path = os.path.join(project_root, "workflow", "workflow.json")
         if not os.path.isfile(path):
             return self._reply(200, {"pan": {"x": 0, "y": 0}, "zoom": 1, "nodes": [], "edges": []})
-        # v3.0 — asset-versioning migration. Idempotent; writes back only when
+        # v3.0 - asset-versioning migration. Idempotent; writes back only when
         # an asset node was synthesized to carry versions[0] + activeVersionId.
         # See docs/features/asset-versioning.md §11.
         try:
@@ -7625,7 +7625,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 data = json.load(f)
         except Exception as e:
             return self._reply(500, {"error": f"workflow.json unreadable: {e}"})
-        # Tolerate missing top-level keys — frontend treats them as empty defaults.
+        # Tolerate missing top-level keys - frontend treats them as empty defaults.
         if not isinstance(data, dict):
             data = {}
         data.setdefault("pan", {"x": 0, "y": 0})
@@ -7636,7 +7636,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Hydrate the per-machine canvas viewport from the local sidecar written
         # by _workflow_save. Falls back to any pan/zoom still in workflow.json
         # (legacy / pre-split files, which migrate out on the next save) or the
-        # defaults above — so the client always receives pan/zoom as before.
+        # defaults above - so the client always receives pan/zoom as before.
         try:
             vp_path = os.path.join(os.path.dirname(path), "viewport.json")
             if os.path.isfile(vp_path):
@@ -7648,8 +7648,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if vp.get("zoom") is not None:
                         data["zoom"] = vp["zoom"]
         except Exception:
-            pass  # sidecar unreadable — fall back to workflow.json / defaults
-        # v2.20 — backward-compat projection for `runId`. Older daemons (pre-
+            pass  # sidecar unreadable - fall back to workflow.json / defaults
+        # v2.20 - backward-compat projection for `runId`. Older daemons (pre-
         # v2.20) wrote only `runRunId` when dispatching agent-kind nodes;
         # WorkflowAgentNode reads `node.runId`. Project the value on the wire
         # so existing projects with only `runRunId` on disk still surface a
@@ -7662,16 +7662,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if rr: n["runId"] = rr
         except Exception:
             pass
-        # v2.17c — display hydration for auto:true intermediary prompt nodes.
+        # v2.17c - display hydration for auto:true intermediary prompt nodes.
         # These nodes sit between a skill dispatch and its downstream consumers
         # (e.g. an intermediate text node between the producer and consumer).
         # The daemon's upstream walk for downstream /run calls reads the
-        # upstream skill's .output directly, bypassing the intermediary — so
+        # upstream skill's .output directly, bypassing the intermediary - so
         # the intermediary's .text stays empty on disk forever even when real
         # data flowed through. To stop the canvas from lying, hydrate `.text`
         # on the wire from upstream skill `.output` when the intermediary's
         # own `.text` is still empty. This is read-only (GET-time) projection
-        # — never written to disk — so it doesn't conflict with the v2.17a
+        # - never written to disk - so it doesn't conflict with the v2.17a
         # save guard or orchestrator's explicit POSTs.
         try:
             nodes = data.get("nodes") or []
@@ -7710,14 +7710,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                     n["text"] = up_text
                     n["textProjectedFrom"] = upstream_id
         except Exception:
-            pass  # projection failure must not break the GET — fall through.
-        # v2.40 — hydrate ds-brainstorm node spec from its downstream HTML
+            pass  # projection failure must not break the GET - fall through.
+        # v2.40 - hydrate ds-brainstorm node spec from its downstream HTML
         # asset's <script id="variant-spec"> JSON. The orchestrator writes
         # the HTML directly (Pattern C) without POSTing the spec back to
         # the parent node, so its form fields look empty even though the
         # actual variant content (genre / targetAudience / emotion / etc.)
         # is on disk. Project the JSON onto the node so the canvas card
-        # reflects reality. Read-only — never written to disk.
+        # reflects reality. Read-only - never written to disk.
         try:
             import re as _re
             # Helper: read a project-relative file. Returns string or None.
@@ -7744,7 +7744,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         if c and (predicate is None or predicate(c)): return c
                 return None
 
-            # ───────── v2.40 — ds-brainstorm.spec from <script id="variant-spec"> ─────────
+            # ───────── v2.40 - ds-brainstorm.spec from <script id="variant-spec"> ─────────
             for n in nodes:
                 if n.get("kind") != "ds-brainstorm": continue
                 if isinstance(n.get("spec"), dict) and n["spec"].get("genre"):
@@ -7764,7 +7764,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # ───────── v2.42a — bp_ds_gen.spec from DECISION + picked variant ─────────
+            # ───────── v2.42a - bp_ds_gen.spec from DECISION + picked variant ─────────
             # When the user picked a brainstorm variant, the orchestrator was
             # supposed to POST that variant's spec onto bp_ds_gen so the
             # ▶ Build button has a non-empty genre. Project it instead so
@@ -7807,7 +7807,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # ───────── v2.42b — bs_html_*.text from bp_chunks.output ─────────
+            # ───────── v2.42b - bs_html_*.text from bp_chunks.output ─────────
             # bp_chunks emits an array of 3 page specs. Each bs_html_<N>
             # should have its prompt populated with chunks[N-1]. Otherwise
             # the LLM dispatch gets a generic "page #N" placeholder.
@@ -7828,7 +7828,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         for i in range(min(3, len(chunks_arr))):
                             target = by_id.get(f"bs_html_{i+1}")
                             if not target: continue
-                            # Don't override user/orchestrator-customized text — only
+                            # Don't override user/orchestrator-customized text - only
                             # project when the field is still the scaffolder default.
                             cur = target.get("text") or ""
                             if "chunk-PRD page #" not in cur and cur.strip():
@@ -7844,7 +7844,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                             )
                             target["textProjectedFrom"] = "bp_chunks.output"
 
-            # ───────── v2.42c — cp_ds_pick / cp_remix_pick decision state ─────────
+            # ───────── v2.42c - cp_ds_pick / cp_remix_pick decision state ─────────
             # When DECISION_*.json exists, surface the picked values on the
             # checkpoint card so the user sees what they picked without
             # having to dig into the json file.
@@ -7878,7 +7878,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
         if not isinstance(body, dict):
             return self._reply(400, {"error": "workflow body must be an object"})
-        # Sanitize — keep only structural fields we expect, pass arbitrary
+        # Sanitize - keep only structural fields we expect, pass arbitrary
         # extras through on nodes so future kinds (asset/skill/prompt/llm)
         # can ship their own fields without a daemon round-trip.
         pan = body.get("pan") or {"x": 0, "y": 0}
@@ -7911,7 +7911,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 continue
             seen_ids.add(nid)
-            # Copy the whole node through — daemon doesn't gate the
+            # Copy the whole node through - daemon doesn't gate the
             # per-kind fields. Just normalize id/kind/x/y to canonical types.
             entry = dict(n)
             entry["id"] = nid
@@ -7925,18 +7925,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             f = e.get("from"); t = e.get("to")
             if not isinstance(f, str) or not isinstance(t, str): continue
             clean_edges.append({"from": f, "to": t})
-        # Merge protection — preserve nodes added by background writers
+        # Merge protection - preserve nodes added by background writers
         # (the visual-orchestrator subagent + its per-medium drawers scaffold
         # node trios using a `p_`/`s_`/`r_`/`a_` id namespace) that the
         # editor hasn't seen yet. Without this, the editor's debounced
         # save races the subagent's write and silently clobbers any
         # node trio that landed between the editor's last refetch and
-        # this POST. We only protect THIS namespace — user-created and
+        # this POST. We only protect THIS namespace - user-created and
         # editor-spawned nodes use `n<hash>` ids and follow normal save
         # semantics (including deletes).
         #
-        # The editor ships `deletedIds` — ids the user just removed via
-        # the canvas — so the merge knows NOT to restore a subagent-
+        # The editor ships `deletedIds` - ids the user just removed via
+        # the canvas - so the merge knows NOT to restore a subagent-
         # namespace node the user is deliberately deleting. Without this
         # the user wouldn't be able to delete agent-generated trios at
         # all (the merge would keep re-adding them).
@@ -7945,7 +7945,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if isinstance(raw_deleted, list):
             for x in raw_deleted:
                 if isinstance(x, str): deleted_ids.add(x)
-        # Whiteboard layer — `wb: []` is a first-class sibling of nodes/edges.
+        # Whiteboard layer - `wb: []` is a first-class sibling of nodes/edges.
         # Same merge model: posted items win wholesale (no daemon-owned
         # fields on wb items), disk items the editor hasn't seen yet are
         # preserved unless tombstoned via `deletedWbIds` (agents add wb
@@ -7956,10 +7956,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         if isinstance(raw_deleted_wb, list):
             for x in raw_deleted_wb:
                 if isinstance(x, str): deleted_wb_ids.add(x)
-        # v2.31 — serialize the WHOLE read-modify-write under the per-project lock
+        # v2.31 - serialize the WHOLE read-modify-write under the per-project lock
         # so concurrent /status POSTs can't write their stale snapshot AFTER our
         # write and revert the user's edit.
-        # v2.50 — bounded by a per-project semaphore (cap 3) AND a 2s lock
+        # v2.50 - bounded by a per-project semaphore (cap 3) AND a 2s lock
         # acquire timeout. On timeout/queue-full, return 503 with retry hint so
         # the frontend distinguishes "busy" from "down". See WORKFLOW_TRUTHFULNESS_PLAN.md §11 D2.
         project_id = os.path.basename(project_root.rstrip("/"))
@@ -7990,7 +7990,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         disk = json.load(f) or {}
                     disk_nodes = disk.get("nodes") or []
                     disk_edges = disk.get("edges") or []
-                    # Whiteboard merge — keep disk wb items absent from the
+                    # Whiteboard merge - keep disk wb items absent from the
                     # POST and not tombstoned (no namespace restriction: any
                     # writer's additions survive the editor's debounce window;
                     # the tombstone makes editor deletes authoritative).
@@ -8010,10 +8010,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                         nid = n.get("id")
                         if not isinstance(nid, str): continue
                         if nid in posted_ids: continue
-                        if nid in deleted_ids: continue  # user tombstone — don't restore
+                        if nid in deleted_ids: continue  # user tombstone - don't restore
                         # Visual-orchestrator / drawer namespace AND onboarding-orchestrator
-                        # namespace (bp_/bs_/br_/cp_ — see onboarding plan §Phase 2).
-                        # v3.3 — simulation / interactive-media / narrative-experience
+                        # namespace (bp_/bs_/br_/cp_ - see onboarding plan §Phase 2).
+                        # v3.3 - simulation / interactive-media / narrative-experience
                         # families (sim_/im_/nx_) are also background-writer namespaces:
                         # the *-orchestrator subagents + their component drawers scaffold node
                         # trios the editor hasn't refetched yet. Without this guard a
@@ -8043,7 +8043,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 or fid[:3] in ("bp_", "bs_", "br_", "cp_") or tid[:3] in ("bp_", "bs_", "br_", "cp_")):
                                 preserved_edges.append({"from": f_str, "to": t_str})
             except Exception:
-                # Disk read failed — fall through to plain write. Worst case
+                # Disk read failed - fall through to plain write. Worst case
                 # we lose subagent additions; we don't want to break the
                 # editor's save flow over a malformed prior file.
                 preserved_nodes = []
@@ -8052,22 +8052,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             if preserved_nodes: clean_nodes = clean_nodes + preserved_nodes
             if preserved_edges: clean_edges = clean_edges + preserved_edges
             if preserved_wb: clean_wb = clean_wb + preserved_wb
-            # v2.17a — daemon-authoritative field guard. When the editor POSTs an
+            # v2.17a - daemon-authoritative field guard. When the editor POSTs an
             # existing node, certain fields are owned by the DAEMON (not the
             # editor) and must NEVER be overwritten by what the editor sent:
-            #   - `text` of `auto:true` intermediary nodes — these are populated
+            #   - `text` of `auto:true` intermediary nodes - these are populated
             #     by the orchestrator via POST /status.
             #     The editor renders them empty and would otherwise erase the
             #     orchestrator's writes on its next debounced save. Same root
             #     cause as v2.12a but for prompt-intermediary `text` rather than
             #     skill `output`.
-            #   - `output` of any node — set by daemon `/run` dispatch.
-            #   - `runStatus`, `runError`, `runRunId` — set by daemon completion
+            #   - `output` of any node - set by daemon `/run` dispatch.
+            #   - `runStatus`, `runError`, `runRunId` - set by daemon completion
             #     hooks + POST /status calls.
             # We re-read disk for these fields and override whatever the editor
             # sent, so a stale editor cache can never silently erase live state.
             # The editor's reload-merge (app.js v2.12a) will sync these back in
-            # on its next refetch — they just won't be lost in the meantime.
+            # on its next refetch - they just won't be lost in the meantime.
             try:
                 if os.path.isfile(path):
                     # disk_nodes was loaded above in the merge-protection block;
@@ -8078,7 +8078,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         n.get("id"): n for n in (_existing.get("nodes") or [])
                         if isinstance(n, dict) and isinstance(n.get("id"), str)
                     }
-                    # Live Session HARD LOCK — when a live session is active,
+                    # Live Session HARD LOCK - when a live session is active,
                     # reject changes to any node currently leased by someone
                     # OTHER than this writer (keep the canonical node verbatim).
                     # This is what turns the "locked by <name>" badge into a real
@@ -8100,13 +8100,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                         if _lease_writer is not None:
                             _holder = _lock_holders.get("node:" + str(n.get("id")))
                             if _holder and _holder != _lease_writer:
-                                # held by someone else — drop this writer's edits
+                                # held by someone else - drop this writer's edits
                                 n.clear(); n.update(disk_n)
                                 continue
                         # Always preserve daemon-owned status fields if disk has them.
-                        # v2.20 — `runId` added alongside `runRunId` so the chat
+                        # v2.20 - `runId` added alongside `runRunId` so the chat
                         # transcript pointer survives the editor's debounced save.
-                        # v3.0 — asset-versioning adds `versions`, `activeVersionId`
+                        # v3.0 - asset-versioning adds `versions`, `activeVersionId`
                         # to the daemon-owned set. Both are mutated ONLY by the
                         # daemon (snapshot_asset / revert / branch endpoints);
                         # the frontend reads them but never re-posts authoritative
@@ -8125,14 +8125,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 # let the editor clear (e.g. via "reset run") work.
                                 if disk_val is not None:
                                     n[daemon_field] = disk_val
-                        # v3.4.11 — runStatus + runError narrowed preservation.
+                        # v3.4.11 - runStatus + runError narrowed preservation.
                         # The old broad preservation ("if disk has non-None,
                         # override editor's POST") clobbered legitimate editor
                         # clears. Concrete bug: runRemix spawns a variant card
                         # with runStatus="pending", the first 350ms-debounced
                         # save writes "pending" to disk, the variant LLM call
                         # finishes ~2s later and the editor sets runStatus=null
-                        # in memory, the next save POSTs null — but the
+                        # in memory, the next save POSTs null - but the
                         # preservation here saw disk still had "pending" and
                         # rewrote it back. The card was permanently stuck on
                         # the "Generating…" skeleton even though the file
@@ -8141,7 +8141,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         #
                         # The orchestrator race the broad preservation was
                         # protecting against ONLY applies when disk has
-                        # "running" — that state is ONLY set by the per-node
+                        # "running" - that state is ONLY set by the per-node
                         # /__workflow/node/<id>/status endpoint (atomic
                         # daemon-side flip during an active agent run). Every
                         # other runStatus value (pending / paused / error /
@@ -8162,20 +8162,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                             disk_error = disk_n.get("runError")
                             if disk_error is not None:
                                 n["runError"] = disk_error
-                        # else: trust editor's posted runStatus + runError —
+                        # else: trust editor's posted runStatus + runError -
                         # editor is authoritative for pending → null clears
                         # (variant succeeded), pending → error flips (variant
                         # failed), and final-state cleanups (done/error → null
                         # from the polling self-heal).
-                        # v2.18d — kind-specific orchestrator-set fields.
-                        # v2.25 — only preserve disk when the editor sends back
+                        # v2.18d - kind-specific orchestrator-set fields.
+                        # v2.25 - only preserve disk when the editor sends back
                         # EMPTY (the stomp pattern: stale React state lost the
                         # orchestrator's POST and is echoing back null/empty/
                         # default). If the editor sends a non-empty value that
                         # differs from disk, that's the user MANUALLY EDITING
-                        # the field — let it through. Without this nuance, the
+                        # the field - let it through. Without this nuance, the
                         # iterator-refiner / iterator-remix / design-system
-                        # fields became read-only on the canvas — every typed
+                        # fields became read-only on the canvas - every typed
                         # character got reverted on the next 350ms debounced
                         # save. (Reported by user: "why i can't edit the node
                         # manually?")
@@ -8197,7 +8197,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # Auto-intermediary text guard: if disk has its own text
                         # (from an orchestrator POST), keep it. If the editor is
                         # echoing back a v2.17c-projected text (recognisable by
-                        # `textProjectedFrom`), strip both — the projection is a
+                        # `textProjectedFrom`), strip both - the projection is a
                         # wire-only display field; persisting it to disk would
                         # defeat the read-only intent and stomp future updates.
                         if disk_n.get("auto") is True:
@@ -8212,9 +8212,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 if disk_text and not posted_text:
                                     n["text"] = disk_text
             except Exception:
-                pass  # disk read failed — fall through; we still write what was posted.
+                pass  # disk read failed - fall through; we still write what was posted.
             # User-dismissed prototype slugs (canvas delete intent). A plain
-            # user-driven list — no background writer touches it — so persist
+            # user-driven list - no background writer touches it - so persist
             # the posted value as-is (allowing both dismiss and un-dismiss).
             # reconcile._orphan_prototype_folders skips these slugs so a deleted
             # prototype doesn't re-mount from its still-present source/<slug>/.
@@ -8232,7 +8232,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 os.makedirs(wf_dir, exist_ok=True)
             except Exception as e:
                 return self._reply(500, {"error": f"could not create workflow dir: {e}"})
-            # Canvas viewport (pan/zoom) is PER-MACHINE state — persist it to a
+            # Canvas viewport (pan/zoom) is PER-MACHINE state - persist it to a
             # local, gitignored sidecar (workflow/viewport.json) so it never lands
             # in the synced workflow.json, where it caused cross-machine merge
             # conflicts (and, after a bad merge, corrupted the file). The GET
@@ -8258,7 +8258,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         json.dump(out, f, indent=2)
             except Exception as e:
                 return self._reply(500, {"error": f"could not write workflow.json: {e}"})
-            # v2.30 — notify SSE subscribers
+            # v2.30 - notify SSE subscribers
             _broadcast_workflow_change(os.path.basename(project_root.rstrip("/")))
             return self._reply(200, {"ok": True, "path": rel_path,
                                       "nodes": len(clean_nodes), "edges": len(clean_edges),
@@ -8269,12 +8269,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         finally:
           _sem.release()
 
-    # ── POST /__workflow/nodes/add — race-safe append (v3.9) ─────────────
+    # ── POST /__workflow/nodes/add - race-safe append (v3.9) ─────────────
     # Append nodes + edges to workflow.json WITHOUT a read-modify-write of
     # the whole graph from the caller. Unlike POST /__workflow (which
     # replaces the canvas wholesale and is the editor's debounced save
     # path), this is for an AGENT that wants to drop a few nodes onto the
-    # canvas mid-build — e.g. the Step -1 direction lock materialising a
+    # canvas mid-build - e.g. the Step -1 direction lock materialising a
     # "Design materials" section (a `section` node + the picked palette /
     # typography / image nodes inside it), or a quick imagegen mockup
     # landing as an asset card in that section. The whole append runs under
@@ -8376,7 +8376,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # ── GET /__design_system / POST /__design_system ─────────────────────
     # Reads / writes a Design System library node at
     # <project_root>/design-systems/<id>/. The DS is a first-class library
-    # asset that the prototype regen workflow gates on — Workflow 1 will not
+    # asset that the prototype regen workflow gates on - Workflow 1 will not
     # run against a branch whose meta.dsRef points at a missing DS.
     #
     # GET /__design_system                  → list every DS folder under
@@ -8399,11 +8399,11 @@ class H(http.server.SimpleHTTPRequestHandler):
     #                                          version is auto-computed as a
     #                                          content hash of the trio.
 
-    # ── v2.7 — shared LLM dispatch helper for skill=llm + prompt-refiner ─
+    # ── v2.7 - shared LLM dispatch helper for skill=llm + prompt-refiner ─
     # Both kinds resolve provider/model from the node fields and route
     # through _anthropic_chat / _openai_chat / _claude_cli_complete in the
     # same shape. Extracting this lets the two branches diverge ONLY in how
-    # they compose the prompt — refiner prepends its meta-prompt, skill=llm
+    # they compose the prompt - refiner prepends its meta-prompt, skill=llm
     # just stacks upstream + node text.
     def _llm_dispatch(self, node, full_prompt):
         provider = (node.get("provider") or "anthropic").strip()
@@ -8423,16 +8423,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             raise ValueError(f"unsupported provider: {provider}")
         return (resp.get("text") if isinstance(resp, dict) else "") or ""
 
-    # ── v2.1 — node-agent subprocess spawn helper ───────────────────────
+    # ── v2.1 - node-agent subprocess spawn helper ───────────────────────
     # Focused per-node `claude` spawn used by /__workflow/node/<id>/run when
     # the node's kind is "agent". Unlike _run_create, no discovery /
-    # orchestrator preamble is added — the per-node preamble from
+    # orchestrator preamble is added - the per-node preamble from
     # node_agent_preambles.py is the entire system prompt. The spawned run
     # is tagged with `workflow_node_id` so _drain_stdout's completion hook
     # can mark the node done (or error) on the canvas automatically.
     #
     # Returns (run_id, None) on success, (None, (status, error_dict)) on
-    # failure — caller passes error_dict to self._reply.
+    # failure - caller passes error_dict to self._reply.
     def _spawn_node_agent(self, *, project_root, project_id, branch,
                           node_id, system_prompt, prompt_text, title):
         agent_id = "claude"
@@ -8444,11 +8444,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return None, (500, {"error": "claude binary not on PATH"})
         permission_mode = "bypassPermissions"
         spawn_args = list(defs["args"])
-        # v2.45 — Claude Code 2.1.150 split bypass into two flags. The mode
+        # v2.45 - Claude Code 2.1.150 split bypass into two flags. The mode
         # string "bypassPermissions" no longer skips prompts for high-risk
         # tools like Bash and Write; only --dangerously-skip-permissions
-        # does. Map the UI's "Auto — bypass" to the actual full-bypass flag.
-        # v3.8 — Claude Code 2.1.163 (and likely later) split it further:
+        # does. Map the UI's "Auto - bypass" to the actual full-bypass flag.
+        # v3.8 - Claude Code 2.1.163 (and likely later) split it further:
         # --dangerously-skip-permissions BY ITSELF no longer skips prompts.
         # You also need --allow-dangerously-skip-permissions to ENABLE the
         # behaviour. From `claude --help`:
@@ -8466,14 +8466,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             ]
         elif defs.get("permission_flag"):
             spawn_args += [defs["permission_flag"], permission_mode]
-        # v3.1 — Hide user-level slash commands (~/.claude/commands/). The
+        # v3.1 - Hide user-level slash commands (~/.claude/commands/). The
         # daemon's capabilities preamble + Woven subagents (visual-orchestrator,
         # raster-foreground, etc.) are the only image-pipeline path; the
         # user's personal /prototype skill used to override visual-orchestrator
         # by telling the agent to use placeholder rectangles instead.
         spawn_args += ["--disable-slash-commands"]
         spawn_args += _mcp_config_spawn_args()
-        # v3.1 — Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
+        # v3.1 - Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
         # *.html write until the agent has called Task with
         # subagent_type='visual-orchestrator'. Soft preamble rules ("you MUST
         # dispatch visual-orchestrator") were ignored; this is hard enforcement
@@ -8490,7 +8490,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt += WORKSPACE_LAYOUT_PROMPT
         if _mcp_config_spawn_args():
             sys_prompt += _mcp_routing_prompt()
-        # v2.50 — bake the capabilities catalog into the preamble so the
+        # v2.50 - bake the capabilities catalog into the preamble so the
         # spawned subagent knows what the app supports (image providers,
         # subagent drawers, endpoints, node kinds). Without this, agents
         # answer "I don't have <X>" for features that ARE integrated.
@@ -8504,7 +8504,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # The agent's workspace is the PROJECT, not the editor installation.
         # Previously this also added --add-dir INSTALL_ROOT so the agent could
         # Read protocol docs (AGENTS.md, PROTOTYPE.md, docs/agents/**), but
-        # --add-dir grants WRITE access too — and one or more agent runs used
+        # --add-dir grants WRITE access too - and one or more agent runs used
         # that to modify editor/app.js, editor/styles.css, and drop generated
         # files into editor/assets/ without user permission. The protocol-root
         # write access is the bug; protocol-root READ access is what was
@@ -8537,10 +8537,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.bin_path = bin_path
         state.permission_mode = permission_mode
         state.modifying = True
-        # Tag for the auto-completion hook in _drain_stdout — when this
+        # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
         state.workflow_node_id = node_id
-        # History bracket — same shape as _run_create's pre/post-snapshot.
+        # History bracket - same shape as _run_create's pre/post-snapshot.
         state.history_pending_id = None
         state.history_before_paths = []
         state.history_before_rows  = []
@@ -8581,7 +8581,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # and returns the result synchronously. Wraps the workflow.json write
     # in a history bracket so the whole node-run is undoable as one entry.
     #
-    # v2.1 — agent-kind nodes now spawn a focused subprocess via
+    # v2.1 - agent-kind nodes now spawn a focused subprocess via
     # `_spawn_node_agent` (no longer return `manual: true`). The endpoint
     # returns the runId immediately; the canvas node's runStatus is updated
     # automatically when the subprocess exits (hook in `_drain_stdout`).
@@ -8590,7 +8590,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        # Body is optional — most calls just need the node id from the URL.
+        # Body is optional - most calls just need the node id from the URL.
         # When present, body can override the node's stored prompt etc.
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -8613,12 +8613,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not node:
             return self._reply(404, {"error": f"node not found: {node_id!r}", "known": sorted(nodes_by_id.keys())[:20]})
 
-        # v4.0 — contract-driven edge I/O. The two hand-written per-kind
+        # v4.0 - contract-driven edge I/O. The two hand-written per-kind
         # if/elif chains that used to live here (one building the upstream
         # <context> block, one building the <output-destinations> block) are
         # replaced by a single walk keyed on each connected node's `io`
         # contract (KIND_IO in kinds/registry.py). The agent now ADAPTS to
-        # whatever it is wired to — including baked composer/vector/spline
+        # whatever it is wired to - including baked composer/vector/spline
         # nodes (previously invisible to the running agent) and "edit this
         # complex node" wiring. Adding a new node kind needs only a KIND_IO
         # entry; this code does not change. See kinds/NODE_IO_FRAMEWORK.md.
@@ -8639,11 +8639,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         out  = None
         err  = None
 
-        # v2.19a/b — populate-before-dispatch gate. Refuse /run when the node
+        # v2.19a/b - populate-before-dispatch gate. Refuse /run when the node
         # carries the scaffolder's generic template (which is project-agnostic
         # placeholder content meant for the orchestrator to override). Without
         # this gate, the orchestrator can silently dispatch with template text
-        # that produces generic output — the "lying canvas" pattern the user
+        # that produces generic output - the "lying canvas" pattern the user
         # called out for v2.18. Gates run BEFORE the runStatus="running" flip
         # so a refused dispatch leaves the node untouched.
         if kind == "skill" and isinstance(node_id, str) and node_id.startswith("bs_html_"):
@@ -8652,7 +8652,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if 0 <= idx <= 2:
                     if (node.get("text") or "").strip() == _bs_html_default_text(idx).strip():
                         return self._reply(400, {
-                            "error": "bs_html_* dispatch refused — text is still the scaffolder generic template",
+                            "error": "bs_html_* dispatch refused - text is still the scaffolder generic template",
                             "nodeId": node_id,
                             "hint": (
                                 "Per skill §5.9, the orchestrator MUST overwrite "
@@ -8667,12 +8667,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             variants = node.get("variants")
             if isinstance(variants, list) and variants == REMIX_VARIANT_DEFAULTS:
                 return self._reply(400, {
-                    "error": "iterator-remix dispatch refused — variants are still the scaffolder defaults",
+                    "error": "iterator-remix dispatch refused - variants are still the scaffolder defaults",
                     "nodeId": node_id,
                     "hint": (
                         "Per skill §5.9, the orchestrator MUST POST picked-DS-aware "
                         f"variants to {node_id} via /status before calling /run. The "
-                        "defaults (denser/calmer/editorial) are project-agnostic — "
+                        "defaults (denser/calmer/editorial) are project-agnostic - "
                         "they need to reference the picked DS's tokens, the page's "
                         "actual purpose, and the audience emotion."
                     ),
@@ -8681,7 +8681,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Flip status to "running" on disk so the editor / orchestrator can
         # see it spinning. Saved at the very end with the final status.
         node["runStatus"] = "running"
-        # v2.1 — agent kind dispatches an async subprocess; we keep
+        # v2.1 - agent kind dispatches an async subprocess; we keep
         # runStatus="running" on disk and let the completion hook in
         # _drain_stdout flip it to done/error when the child exits. Sync
         # dispatches (folder, prompt, skill=llm) still mark "done" inline.
@@ -8704,7 +8704,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     out = {"text": "", "path": rel, "missing": True}
 
             elif kind == "prompt":
-                # Static prompt — its "output" is just its stored text.
+                # Static prompt - its "output" is just its stored text.
                 out = {"text": (node.get("text") or "").strip()}
 
             elif kind == "skill" and node.get("skill") == "llm":
@@ -8712,18 +8712,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # instruction. Body can override `prompt` per-call.
                 base = (body.get("prompt") or node.get("text") or "").strip()
                 if not base and not upstream_text:
-                    raise ValueError("no prompt and no upstream content — nothing to send to the LLM")
+                    raise ValueError("no prompt and no upstream content - nothing to send to the LLM")
                 full_prompt = base
                 if upstream_text:
                     full_prompt = f"<context>\n{upstream_text}\n</context>\n\n{base}".strip()
-                # v2.50 — include downstream output destinations so the LLM
+                # v2.50 - include downstream output destinations so the LLM
                 # knows where its result is expected to land.
                 if downstream_text:
                     full_prompt = full_prompt + "\n\n<output-destinations>\n" + downstream_text + "\n</output-destinations>"
                 text = self._llm_dispatch(node, full_prompt)
                 out = {"text": text, "provider": node.get("provider") or "anthropic",
                        "model": node.get("model") or "claude-opus-4-7"}
-                # v2.12a — store the LLM response in node['output'], NOT
+                # v2.12a - store the LLM response in node['output'], NOT
                 # node['text']. node['text'] stays the user-editable prompt;
                 # the response lives in 'output' so the frontend's debounced
                 # workflow.json save can't stomp it back to the prompt.
@@ -8731,21 +8731,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # skill kind, so the data flow is unchanged.
                 node["output"] = text
 
-            # v2.10 — `prompt-refiner` (my v2.7 kind) was removed. The
+            # v2.10 - `prompt-refiner` (my v2.7 kind) was removed. The
             # existing `iterator-refiner` library node owns brief refinement;
             # it's driven client-side via setupRefiner (not /run-dispatchable
             # from the daemon yet). Orchestrator handles it as a user-action
             # checkpoint and reads the spawned output node after completion.
 
             elif kind == "agent":
-                # v2.1 — focused per-node subprocess dispatch. The per-node
+                # v2.1 - focused per-node subprocess dispatch. The per-node
                 # preamble (from node_agent_preambles) is the entire system
                 # prompt; the upstream walk gives the dispatched subagent
                 # context about wired inputs. Returns the runId immediately;
                 # the canvas node flips to "done" / "error" automatically
                 # when the subprocess exits via _drain_stdout's hook.
                 branch = _qs_prototype(qs) if hasattr(qs, "get") else "main"
-                # Resolve the prototype slug — prefer the project's active one, else "main".
+                # Resolve the prototype slug - prefer the project's active one, else "main".
                 try:
                     ws_json = os.path.join(project_root, "..", "..", "workspace.json")
                     if os.path.isfile(ws_json):
@@ -8761,7 +8761,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # prompt carries the task framing.
                 kick = f"Begin the task for node `{node_id}`. The wired upstream context follows:"
                 prompt_text = (kick + "\n\n<context>\n" + (upstream_text or "(no upstream context)") + "\n</context>") if upstream_text else kick
-                # v2.50 — tell the agent where its output goes (downstream wiring).
+                # v2.50 - tell the agent where its output goes (downstream wiring).
                 if downstream_text:
                     prompt_text += "\n\n<output-destinations>\n" + downstream_text + "\n</output-destinations>"
                 project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
@@ -8776,10 +8776,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 )
                 if err_reply:
                     raise RuntimeError(err_reply[1].get("error") or "spawn failed")
-                # Leave runStatus="running" — the subprocess completion hook
+                # Leave runStatus="running" - the subprocess completion hook
                 # will set it to "done" or "error" when it exits.
                 node["runStatus"] = "running"
-                # v2.20 — write BOTH field names. `runRunId` is the original
+                # v2.20 - write BOTH field names. `runRunId` is the original
                 # daemon-side field (kept for daemon-merge backward compat in
                 # app.js:11297); `runId` is what WorkflowAgentNode (app.js
                 # :26435 and ~12 other sites) actually reads to fetch the
@@ -8798,13 +8798,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 }
 
             elif kind in ("ds-brainstorm", "iterator-remix"):
-                # Still manual in v2.1 — the orchestrator handles these by
+                # Still manual in v2.1 - the orchestrator handles these by
                 # writing the artifact files directly + POSTing
                 # /__workflow/node/<id>/status to flip the canvas. Future v2.4
                 # may add a daemon dispatch for these too.
                 out = {
                     "manual": True,
-                    "hint":   f"kind={kind!r} is handled by the orchestrator skill — write artifacts then POST /__workflow/node/<id>/status to advance the canvas.",
+                    "hint":   f"kind={kind!r} is handled by the orchestrator skill - write artifacts then POST /__workflow/node/<id>/status to advance the canvas.",
                     "nodeFields": {k: node.get(k) for k in ("title", "name", "skill", "provider", "model", "variant", "n", "text") if k in node},
                 }
 
@@ -8817,7 +8817,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not async_dispatched:
                 node["runStatus"] = "done"
                 node.pop("runError", None)
-                # v3.0 — asset-versioning snapshot hook. Walk outgoing edges to
+                # v3.0 - asset-versioning snapshot hook. Walk outgoing edges to
                 # asset nodes and snapshot their canonical files into
                 # workflow/runs/. Best-effort; failures don't fail the run.
                 try:
@@ -8843,7 +8843,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     json.dump(wf, f, indent=2)
         except Exception as e:
             return self._reply(500, {"error": f"failed to persist workflow.json: {e}"})
-        # v2.30 — notify SSE subscribers
+        # v2.30 - notify SSE subscribers
         _broadcast_workflow_change(os.path.basename(project_root.rstrip("/")))
 
         if err:
@@ -8853,7 +8853,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── POST /__decision/<id>  (body: { value, label }) ─────────────────
     # Phase 4 of onboarding orchestration. Durability for the chat
-    # `<decision-request>` protocol — when the user clicks an option, the
+    # `<decision-request>` protocol - when the user clicks an option, the
     # frontend BOTH sends a tagged user-message to the run AND POSTs here
     # so the choice survives a page reload. The orchestrator skill reads
     # DECISION_<id>.json on every turn (its first instruction) so it can
@@ -8872,7 +8872,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception:
             body = {}
         if not isinstance(body, dict): body = {}
-        # v2.2 — `values` (array) is canonical. Legacy `value` (string) is
+        # v2.2 - `values` (array) is canonical. Legacy `value` (string) is
         # still accepted and normalised to a single-element array. Same
         # treatment for `labels` vs `label`. Empty submission → 400.
         raw_values = body.get("values")
@@ -8897,7 +8897,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "id":         decision_id,
             "values":     values,
             "labels":     labels,
-            # Legacy single-pick consumers read .value / .label — populate
+            # Legacy single-pick consumers read .value / .label - populate
             # with the first pick so they still work.
             "value":      values[0],
             "label":      labels[0],
@@ -8937,10 +8937,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception:
             body = {}
         if not isinstance(body, dict): body = {}
-        # v2.31 — serialize this read-modify-write block under the per-project
+        # v2.31 - serialize this read-modify-write block under the per-project
         # lock so concurrent /__workflow saves and other /status POSTs don't
         # write stale snapshots that revert the user's edit.
-        # v2.50 — bounded by per-project semaphore (G5) + 2s acquire timeout
+        # v2.50 - bounded by per-project semaphore (G5) + 2s acquire timeout
         # (G3). 503 + retry hint on contention so "busy" doesn't false-positive
         # as "daemon down". See WORKFLOW_TRUTHFULNESS_PLAN.md §11 D2.
         project_id = os.path.basename(project_root.rstrip("/"))
@@ -8979,13 +8979,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if "runStatus" in body:
                 v = body["runStatus"]
                 if v in (None, "queued", "running", "done", "error", "skipped"):
-                    # v2.17b — truthfulness guard for prompt-kind nodes. Marking a
+                    # v2.17b - truthfulness guard for prompt-kind nodes. Marking a
                     # prompt node "done" while its text is empty (and the same POST
                     # isn't supplying text) creates a lying-canvas state: the node
                     # claims completion but has no content. Reject loudly so the
                     # caller fixes their flow (POST text + runStatus in one call,
                     # or POST text first then status). "skipped" stays unrestricted
-                    # — that's the explicit "I'm choosing not to populate" signal.
+                    # - that's the explicit "I'm choosing not to populate" signal.
                     if v == "done" and node.get("kind") == "prompt":
                         will_have_text = (
                             (isinstance(body.get("text"), str) and body["text"].strip())
@@ -9016,20 +9016,20 @@ class H(http.server.SimpleHTTPRequestHandler):
             if "output" in body:
                 node["output"] = body["output"]
                 changed["output"] = True
-            # v2.13b — allow the orchestrator to populate the DS-generator's spec
+            # v2.13b - allow the orchestrator to populate the DS-generator's spec
             # (kind="design-system" node) from the picked variant's variant-spec
             # JSON. The React component validates spec.genre before letting the
             # user click ▶ Build, so the orchestrator MUST fill this in. Whitelist
-            # is a shallow merge — top-level spec keys replace; the orchestrator
+            # is a shallow merge - top-level spec keys replace; the orchestrator
             # passes the full object.
             if "spec" in body and isinstance(body["spec"], dict):
                 current = node.get("spec") if isinstance(node.get("spec"), dict) else {}
                 merged = {**current, **body["spec"]}
                 node["spec"] = merged
                 changed["spec"] = list(body["spec"].keys())
-            # v2.14c — allow the orchestrator to populate iterator-remix variants
+            # v2.14c - allow the orchestrator to populate iterator-remix variants
             # (per-variant guidance strings). Array of 1..8 strings; replaces the
-            # whole variants array (not a per-index merge — orchestrator passes
+            # whole variants array (not a per-index merge - orchestrator passes
             # the full set). The React runRemix reads node.variants[i] as the
             # i-th variant's guidance, so populating these before the user clicks
             # Run gives meaningful direction differentiation.
@@ -9038,7 +9038,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if cleaned:
                     node["variants"] = cleaned
                     changed["variants"] = len(cleaned)
-            # v2.18a — iterator-refiner field whitelist. Lets the orchestrator
+            # v2.18a - iterator-refiner field whitelist. Lets the orchestrator
             # customize the interviewer prompt to the specific project (mentioning
             # the actual app domain / audience / emotion) instead of leaving the
             # scaffolder's generic templates that say "thin intake of App /
@@ -9086,7 +9086,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         json.dump(wf, f, indent=2)
             except Exception as e:
                 return self._reply(500, {"error": f"failed to persist workflow.json: {e}"})
-            # v2.30 — notify SSE subscribers
+            # v2.30 - notify SSE subscribers
             _broadcast_workflow_change(os.path.basename(project_root.rstrip("/")))
             return self._reply(200, {"ok": True, "nodeId": node_id, "changed": changed})
           finally:
@@ -9094,7 +9094,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         finally:
           _sem.release()
 
-    # ── POST /__workflow/node/<id>/commit — D4 atomic producer ───────────
+    # ── POST /__workflow/node/<id>/commit - D4 atomic producer ───────────
     # Implements WORKFLOW_TRUTHFULNESS_PLAN.md §6 and Rule 6 of AGENT_HARNESS.md.
     # Body shape:
     #   { outputs: {...}, files: [{relPath, content | contentBase64}, ...],
@@ -9113,7 +9113,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        # Concurrency guardrails (D2) — same shape as /save and /status.
+        # Concurrency guardrails (D2) - same shape as /save and /status.
         project_id = os.path.basename(project_root.rstrip("/"))
         _sem = _request_semaphore(project_id)
         if not _sem.acquire(timeout=5.0):
@@ -9184,7 +9184,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             files_written = []
             if outputs_root_tmpl and posted_files:
               # Resolve outputsRoot path. If template ends with .md/.html (no
-              # trailing slash) the target is a single file at that path —
+              # trailing slash) the target is a single file at that path -
               # we still write atomically (temp file + rename).
               resolved = outputs_root_tmpl
               _proto = node.get("prototype") or node.get("branch") or "main"
@@ -9242,7 +9242,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                   elif isinstance(content, (bytes, bytearray)): cb = bytes(content)
                   else: continue
                   if len(cb) == 0:
-                    # Skip empty files at staging — completion will catch.
+                    # Skip empty files at staging - completion will catch.
                     continue
                   with open(full, "wb") as f:
                     f.write(cb)
@@ -9255,7 +9255,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 os.replace(staging_dir, committed_dir)
                 staging_dir = None  # cleaned up
 
-                # v3.1 — MANIFEST.json auto-synthesis. If the subagent didn't
+                # v3.1 - MANIFEST.json auto-synthesis. If the subagent didn't
                 # ship one, synthesize from the committed file list so the
                 # versioning snapshotter can read subAssetInputs / files later.
                 # The contract is: every multi-file producer emits MANIFEST.
@@ -9470,7 +9470,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         node = nodes_by_id.get(node_id)
         if not node:
             raise _VersioningHTTPError(404, {"error": f"node not found: {node_id!r}"})
-        # v3.1 — versioning covers asset + prototype + design-system kinds.
+        # v3.1 - versioning covers asset + prototype + design-system kinds.
         if node.get("kind") not in ("asset", "prototype", "design-system"):
             raise _VersioningHTTPError(400, {"error": f"node {node_id!r} is not versionable (kind={node.get('kind')!r}; expected asset / prototype / design-system)"})
         if vid is None: return node, None, None
@@ -9650,7 +9650,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
             # ── BUG FIX: sibling must own its OWN canonical path. ─────────
             # If both nodes point at the same source/foo.png, the canvas
-            # asset card renders from the live tree — which always shows
+            # asset card renders from the live tree - which always shows
             # whatever the ORIGINAL's active version contains. Branching
             # then "appears" to just clone the active version. Reuse the
             # original's basename with a suffix derived from the new node id
@@ -9732,7 +9732,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-            # Sibling's v0 entry — deep copy of the source version's files +
+            # Sibling's v0 entry - deep copy of the source version's files +
             # canonical paths (REMAPPED) + non-asset consumedVersions.
             renamed_files = [{"path": fe["in_new"], "canonical": fe["canonical_new"]}
                              for fe in src_files]
@@ -9752,7 +9752,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "compositions":        [],
                 "activeCompositionId": new_cid,
             }
-            # Sibling's c0 — deep copy of the chosen composition (or a fresh
+            # Sibling's c0 - deep copy of the chosen composition (or a fresh
             # empty one if no comp was supplied).
             new_composition = {
                 "id":                    new_cid,
@@ -9785,7 +9785,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             while _collides(new_x, new_y, src_w, src_h) and steps < 13:
                 new_x += 32; steps += 1
 
-            # Construct the sibling node — points at its OWN renamed paths.
+            # Construct the sibling node - points at its OWN renamed paths.
             new_node = {
                 "id":              new_id,
                 "kind":             "asset",
@@ -10026,7 +10026,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _read_png_body(self):
         """Read raw bytes from the POST body. Accepts either:
-          • Content-Type: image/png — raw bytes
+          • Content-Type: image/png - raw bytes
           • Content-Type: application/json {"dataUrl": "data:image/png;base64,..."}
         Returns bytes (possibly empty)."""
         try:
@@ -10082,7 +10082,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": f"node not found: {node_id!r}"})
         # Walk incoming edges (same as _workflow_node_run) and compose the
         # upstream-context block. Keeping this in lockstep with the dispatch
-        # logic is important — the preview must match what /run would send.
+        # logic is important - the preview must match what /run would send.
         upstream_chunks = []
         for e in (wf.get("edges") or []):
             to_ref = (e.get("to") or "")
@@ -10105,7 +10105,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except OSError:
                         pass
             elif kind in ("prompt", "skill"):
-                # v2.12a — skill nodes store the LLM response in `output`; the
+                # v2.12a - skill nodes store the LLM response in `output`; the
                 # `text` field is the user-editable prompt. Prefer output when
                 # set so downstream consumers walk the response, not the
                 # instruction. For prompt kind, only text exists.
@@ -10131,14 +10131,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "upstream": upstream_text,
                 "nodeText": base,
                 "composed": composed,
-                # v2.12a — expose the last LLM response so the UI / orchestrator
+                # v2.12a - expose the last LLM response so the UI / orchestrator
                 # can see the actual output without dispatching again. None when
                 # the node hasn't been run yet.
                 "output":   node.get("output"),
                 "provider": node.get("provider") or "anthropic",
                 "model":    node.get("model")    or "claude-opus-4-7",
             })
-        # v2.10 — `prompt-refiner` removed; iterator-refiner has no /preview
+        # v2.10 - `prompt-refiner` removed; iterator-refiner has no /preview
         # path (it's client-driven and its output is a separately spawned
         # prompt node, not a daemon-composable string).
         return self._reply(200, {
@@ -10150,7 +10150,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # ── GET /__workflow/node/<id> ───────────────────────────────────────
-    # Read-only inspector for one node — used by the orchestrator skill to
+    # Read-only inspector for one node - used by the orchestrator skill to
     # poll a node's current `runStatus` / cached output without re-running.
     def _workflow_node_get(self, qs, node_id):
         try:
@@ -10168,7 +10168,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         node = next((n for n in (wf.get("nodes") or []) if isinstance(n, dict) and n.get("id") == node_id), None)
         if not node:
             return self._reply(404, {"error": f"node not found: {node_id!r}"})
-        # v2.20 — backward-compat projection (see _workflow_get for the wider
+        # v2.20 - backward-compat projection (see _workflow_get for the wider
         # version): project runRunId → runId on the wire so older nodes (pre-
         # v2.20) work with WorkflowAgentNode's chat tab without disk rewrites.
         if not node.get("runId") and node.get("runRunId"):
@@ -10252,7 +10252,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "galleryHtml": gallery_html,
                 "designMd":    design_md,
             },
-            # Local font library scoped to this DS — uploaded faces under
+            # Local font library scoped to this DS - uploaded faces under
             # design-systems/<id>/fonts/. Full cross-DS list: GET /__fonts.
             "fonts": [f for f in _list_local_fonts(project_root) if f["ds"] == ds_id],
             "exists": True,
@@ -10283,7 +10283,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         design_md    = trio.get("designMd") or ""
         spec         = body.get("spec") or {}
         label        = (body.get("label") or "").strip() or "v1"
-        # Atomic writes — write to .staging/ first, then rename into place.
+        # Atomic writes - write to .staging/ first, then rename into place.
         ds_dir       = os.path.join(project_root, "design-systems", ds_id)
         staging_dir  = os.path.join(ds_dir, ".staging")
         try:
@@ -10328,7 +10328,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Promote staging → live, one file at a time. os.replace is atomic
         # within the same filesystem. Wrap the promote + mirror write block
         # with a history bracket so undo restores the whole DS trio + mirror
-        # atomically — DS edits should never be reverted half-way.
+        # atomically - DS edits should never be reverted half-way.
         mirror_dir  = os.path.join(project_root, "editor", "design-systems")
         try:
             os.makedirs(mirror_dir, exist_ok=True)
@@ -10357,12 +10357,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             try:
                 os.rmdir(staging_dir)
             except Exception:
-                pass  # leave .staging/ around if rmdir fails — harmless.
-            # Runtime mirror — write editor/design-systems/<id>.js so the editor
+                pass  # leave .staging/ around if rmdir fails - harmless.
+            # Runtime mirror - write editor/design-systems/<id>.js so the editor
             # can load the DS via a synchronous <script> tag at boot. Schema
             # mirrors window.EDITOR_DS_<id> in docs/agents/data-schema.md.
             mirror_body = (
-                "// EDITOR_DS_" + ds_id + " — runtime mirror of design-systems/" + ds_id + "/.\n"
+                "// EDITOR_DS_" + ds_id + " - runtime mirror of design-systems/" + ds_id + "/.\n"
                 "// Written by daemon on " + _dt.datetime.now().isoformat(timespec="seconds") + " (POST /__design_system).\n"
                 "// The trio inlines the canonical files; tokens / primitives are derived offline.\n"
                 "window.EDITOR_DS_" + ds_id + " = " + json.dumps({
@@ -10398,13 +10398,13 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── GET /__ds_bootstrap ──────────────────────────────────────────────
     # Emits one window.EDITOR_DS_<id> per CANONICAL design-systems/<id>/ folder
-    # (read straight off disk — the source of truth), then concatenates every
+    # (read straight off disk - the source of truth), then concatenates every
     # editor/design-systems/*.js runtime mirror AFTER, so an editor-mode mirror
     # overrides the canonical payload where one exists. Closes with a
     # window.EDITOR_DS_REGISTRY index of all available ids. The editor's
     # index.html includes this as a <script> tag right after data.js so the
     # globals are available before app.js mounts. A canonical DS therefore
-    # shows up in the picker the moment its folder exists — no separate
+    # shows up in the picker the moment its folder exists - no separate
     # "build the mirror" step (POST /__design_system) required.
     def _ds_bootstrap(self, qs):
         try:
@@ -10414,14 +10414,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         # The canonical design-systems/<id>/ folders are the source of truth.
         # We emit a window.EDITOR_DS_<id> for every canonical DS by reading its
         # trio + meta straight off disk, so a DS shows up in the picker the
-        # moment it exists — no separate "build the mirror" step required.
+        # moment it exists - no separate "build the mirror" step required.
         # editor/design-systems/<id>.js mirrors (which may deviate slightly for
         # editor mode) are then concatenated AFTER, re-assigning the same global
         # so the mirror wins where one is present.
         ds_root    = os.path.join(project_root, "design-systems")
         mirror_dir = os.path.join(project_root, "editor", "design-systems")
         ids = []
-        body_parts = ["// /__ds_bootstrap — canonical DS trios + editor-mirror overrides\n"]
+        body_parts = ["// /__ds_bootstrap - canonical DS trios + editor-mirror overrides\n"]
         if os.path.isdir(ds_root):
             for entry in sorted(os.listdir(ds_root)):
                 sub = os.path.join(ds_root, entry)
@@ -10446,7 +10446,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     + json.dumps(payload, ensure_ascii=False) + ";\n"
                 )
                 ids.append(entry)
-        # Editor-mode mirrors — override the canonical payload where present.
+        # Editor-mode mirrors - override the canonical payload where present.
         if os.path.isdir(mirror_dir):
             for entry in sorted(os.listdir(mirror_dir)):
                 if not entry.endswith(".js"):
@@ -10463,7 +10463,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         ids.append(ds_id)
                 except Exception:
                     # Skip unreadable files; surfacing wouldn't help here
-                    # — the per-DS GET will produce a useful error.
+                    # - the per-DS GET will produce a useful error.
                     continue
         body_parts.append("window.EDITOR_DS_REGISTRY = " + json.dumps(ids) + ";\n")
         body = "".join(body_parts).encode("utf-8")
@@ -10483,7 +10483,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # proposal sections, AND parses each entry into structured form so the
     # editor's review modal can render verdict toggles without re-parsing
     # the markdown client-side. The file itself remains the source of truth
-    # — POST /__ds_proposals writes verdicts back.
+    # - POST /__ds_proposals writes verdicts back.
     def _ds_proposals_get(self, qs):
         try:
             project_root = resolve_project_root(qs)
@@ -10513,12 +10513,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # Parses DS_PROPOSAL.md into structured entries. Tolerant of missing
-    # fields — agents may not always fill every line. The shape mirrors
+    # fields - agents may not always fill every line. The shape mirrors
     # what Subagent 6 (DS-audit) emits per
     # docs/agents/subagents/6-design-system.md.
     def _ds_proposals_parse(self, text):
         # Split on the H2 headers. A header line looks like:
-        #   ## Proposal 1: Button — primary-icon-small variant
+        #   ## Proposal 1: Button - primary-icon-small variant
         # We use a regex that captures everything from one header to the
         # next-header-or-EOF, then parse fields out of each chunk.
         headers = list(re.finditer(
@@ -10532,17 +10532,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             body_start = m.end()
             body_end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
             body = text[body_start:body_end]
-            # Title pattern: "Button — primary-icon-small variant" or
-            # "Button - primary-icon-small variant" — split on em-dash or hyphen.
+            # Title pattern: "Button - primary-icon-small variant" or
+            # "Button - primary-icon-small variant" - split on em-dash or hyphen.
             primitive = ""
             variant = ""
-            tm = re.match(r"([A-Za-z][A-Za-z0-9_-]*)\s*[—–-]\s*(.+?)(?:\s+variant)?\s*$", title)
+            tm = re.match(r"([A-Za-z][A-Za-z0-9_-]*)\s*[---]\s*(.+?)(?:\s+variant)?\s*$", title)
             if tm:
                 primitive = tm.group(1)
                 variant = tm.group(2).strip()
             else:
                 primitive = (title.split()[0] if title else "")
-            # Field extractors — bold-marker pattern with optional inline-code value.
+            # Field extractors - bold-marker pattern with optional inline-code value.
             def grab(label):
                 pat = r"\*\*" + re.escape(label) + r":\*\*\s*([^\n]+)"
                 mm = re.search(pat, body)
@@ -10551,7 +10551,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # Strip surrounding backticks if present
             class_signature = class_signature.strip("`").strip()
             closest_existing = grab("Closest existing in DS")
-            # The "Closest existing" line often has trailing parens with delta info — keep it as-is.
+            # The "Closest existing" line often has trailing parens with delta info - keep it as-is.
             rationale = grab("Rationale")
             used_in_raw = grab("Used in")
             used_in = []
@@ -10569,7 +10569,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         file_part = parts[0]
                         line = int(parts[1])
                 used_in.append({"file": file_part, "line": line})
-            # Verdict — find the first checked box in the entry body.
+            # Verdict - find the first checked box in the entry body.
             verdict = None
             for label in ("Accept", "Reject", "Defer"):
                 if re.search(r"-\s+\[x\]\s+" + re.escape(label), body, re.IGNORECASE):
@@ -10591,7 +10591,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Writes verdicts back into DS_PROPOSAL.md by flipping the checkbox per
     # entry. Body: { "verdicts": [{ "index": 1, "verdict": "accept" }, …] }.
     # `verdict` is one of: "accept" | "reject" | "defer" | null (clears all).
-    # The file's structure is otherwise preserved — only the three checkbox
+    # The file's structure is otherwise preserved - only the three checkbox
     # lines per entry are rewritten. Workflow 6 reads the resulting file to
     # partition entries by verdict.
     def _ds_proposals_save(self, qs):
@@ -10695,14 +10695,14 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         A CSS-only style is folded unscoped into styles.css at bake time, so
         linking styles.css is enough. A JS-backed style (a themes/<id>.js
-        exists — e.g. glassmorphism's WebGL dispersion-prism) CANNOT bake into
+        exists - e.g. glassmorphism's WebGL dispersion-prism) CANNOT bake into
         static CSS; it stays a scoped overlay, so a consuming page MUST link
         all.css, stamp `data-theme="<id>"` on <html>, and include the runtime
         script (the CSS fallback still renders if WebGL is unavailable)."""
         return _resolve_style_contract(ds_dir, meta)
 
     # ── GET /__resolve_font?name=<family> ────────────────────────────────
-    # Checks the LOCAL font library first (design-systems/*/fonts/ — fonts
+    # Checks the LOCAL font library first (design-systems/*/fonts/ - fonts
     # the user uploaded), then tries multiple font hosts in order and
     # returns the first one that responds with a valid CSS stylesheet. Used
     # by the typography node so arbitrary font names (not just Google Fonts)
@@ -10714,7 +10714,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # On no-match:
     #   { "ok": false, "family": "Inter", "providers_tried": ["local", "google", "bunny", "fontsource"] }
     #
-    # The font name is used verbatim (after url-encoding) — case + spelling
+    # The font name is used verbatim (after url-encoding) - case + spelling
     # matter. We do NOT search for fuzzy matches; that's the user's job.
     def _resolve_font_get(self, qs):
         name = (qs.get("name") or [""])[0].strip()
@@ -10722,7 +10722,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": "name required", "hint": "?name=Inter"})
         if len(name) > 128:
             return self._reply(400, {"error": "name too long (max 128)"})
-        # Sanitize against header/URL injection — keep letters/digits/spaces/+/-
+        # Sanitize against header/URL injection - keep letters/digits/spaces/+/-
         if not re.match(r"^[A-Za-z0-9 +\-_]+$", name):
             return self._reply(400, {"error": "invalid characters in name", "name": name})
 
@@ -10731,7 +10731,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         slug = _font_slug(name)
 
         # LOCAL LIBRARY FIRST. Uploaded faces are exactly the ones the CDNs
-        # won't have (custom / licensed fonts) — and when a local face
+        # won't have (custom / licensed fonts) - and when a local face
         # shadows a Google Fonts name, the user's own file wins (they
         # uploaded it on purpose).
         try:
@@ -10759,7 +10759,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         for source, url in candidates:
             tried.append(source)
             try:
-                # GET (not HEAD — Google 405s HEAD) with short timeout + tiny
+                # GET (not HEAD - Google 405s HEAD) with short timeout + tiny
                 # body read so we can verify the response is real CSS.
                 req = urllib.request.Request(url, headers={
                     # Google Fonts gates the CSS by User-Agent: an Inter-only browser
@@ -10784,10 +10784,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "preview": head_text[:300],
                 })
             except urllib.error.HTTPError:
-                # Non-2xx — try next candidate.
+                # Non-2xx - try next candidate.
                 continue
             except (urllib.error.URLError, TimeoutError, OSError):
-                # Network unreachable — try next candidate. The dev server is
+                # Network unreachable - try next candidate. The dev server is
                 # offline-tolerant: if all three fail because of no internet,
                 # the user gets a clear "not found" response (with all three
                 # listed as tried) and the manual-upload fallback in the UI.
@@ -10829,7 +10829,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not re.match(r"^[A-Za-z0-9 +\-_]+$", name):
             return self._reply(400, {"error": "invalid characters in font name"})
         length = int(self.headers.get("Content-Length", "0"))
-        # 20MB — single-weight woff2 is usually <100KB, but variable fonts
+        # 20MB - single-weight woff2 is usually <100KB, but variable fonts
         # and CJK-coverage TTFs routinely cross 5MB.
         if length <= 0 or length > 20 * 1024 * 1024:
             return self._reply(413, {"error": "font file required; max 20MB", "bytes": length})
@@ -10864,7 +10864,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 f.write(body)
         except Exception as e:
             return self._reply(500, {"error": f"could not write font file: {e}"})
-        # Manifest — fonts.json maps slug → exact family casing the user
+        # Manifest - fonts.json maps slug → exact family casing the user
         # typed ("PP Neue Montreal", not the lossy de-slug "Pp Neue
         # Montreal"). _list_local_fonts + the @font-face CSS both read it.
         manifest = _read_fonts_manifest(fonts_dir)
@@ -10874,7 +10874,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 json.dump(manifest, f, indent=2, sort_keys=True)
         except Exception as e:
             return self._reply(500, {"error": f"could not write fonts.json: {e}"})
-        # Sibling CSS — rebuilt from scratch each call so deleted fonts vanish.
+        # Sibling CSS - rebuilt from scratch each call so deleted fonts vanish.
         try:
             _rebuild_fontface_css(fonts_dir, manifest)
         except Exception as e:
@@ -10939,7 +10939,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Enumerate the LOCAL FONT LIBRARY: every uploaded font file under the
     # project's design-systems/*/fonts/ PLUS the workspace-level 'global'
     # collection (ds="global"). This is the discovery endpoint agents hit
-    # before proposing typography — local (user-uploaded) faces take
+    # before proposing typography - local (user-uploaded) faces take
     # priority over CDN families because they're the ones the user
     # deliberately collected. scope=global → only the workspace collection
     # (no project context needed; used by the landing page's System tab).
@@ -10964,7 +10964,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # ── GET /__global_fonts/<file> ───────────────────────────────────────
-    # Serves the workspace-level font collection (<workspace>/fonts/) —
+    # Serves the workspace-level font collection (<workspace>/fonts/) -
     # it lives OUTSIDE every project root, so translate_path's per-project
     # static mapping can't reach it. Serves the font binaries and the
     # auto-generated _fontface.css (whose url('./x.woff2') sources resolve
@@ -11040,7 +11040,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    # ── Phase 4a — BYOK media config + asset generation ──────────────────
+    # ── Phase 4a - BYOK media config + asset generation ──────────────────
     # GET  /__media_config            → masked config status (has_key/last_test_*)
     # POST /__media_config            → set/clear keys per provider
     # POST /__media_config/test?provider=openai
@@ -11049,7 +11049,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _media_config_get(self):
         cfg = _media_config_load()
         masked = {}
-        # v3.4.7 — Also mark providers whose key is in the env (TH_*) — the
+        # v3.4.7 - Also mark providers whose key is in the env (TH_*) - the
         # resolver checks env first, so a provider with an env key but
         # nothing in media-config.json is still "available".
         for provider in _PROVIDER_ENV_KEYS:
@@ -11062,10 +11062,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "last_test_ok": bool(settings.get("last_test_ok")),
                 "last_test_at": settings.get("last_test_at"),
             }
-        # v3.4.7 — Surface CLI availability so the editor's "Auto" resolver
+        # v3.4.7 - Surface CLI availability so the editor's "Auto" resolver
         # can decide between API and CLI fallback without making the user
         # guess. detect_agent_bin returns None when not on PATH.
-        # v3.5 — Codex CLI is the OpenAI counterpart: when present, openai
+        # v3.5 - Codex CLI is the OpenAI counterpart: when present, openai
         # provider falls back to Codex (not Claude) so the picked provider
         # actually answers.
         claude_avail = detect_agent_bin("claude") is not None
@@ -11106,7 +11106,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 svg?: {...}, "3d"?: {...}, lottie?: {...} }
         Mirrors the editor's localStorage["th.editor.default-providers.v1"]
         into a daemon-side cache that the capabilities preamble reads when
-        spawning chat agents. No persistence — localStorage stays source of
+        spawning chat agents. No persistence - localStorage stays source of
         truth; the editor re-POSTs on every load and Settings change."""
         global _DEFAULT_PROVIDERS
         length = int(self.headers.get("Content-Length", "0"))
@@ -11139,7 +11139,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         Body: { "<orchestrator-id>": {provider, model}, ... }
         Mirrors localStorage["th.editor.orchestrator-models.v1"] into a daemon
         cache the capabilities preamble reads to steer per-orchestrator model
-        dispatch. No persistence — the editor re-POSTs on load + on change."""
+        dispatch. No persistence - the editor re-POSTs on load + on change."""
         global _ORCHESTRATOR_MODELS
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
@@ -11205,7 +11205,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 ok = isinstance(data, dict) and data.get("type") == "message"
             elif provider == "fal":
                 # fal.ai has no free auth-check endpoint. Hit a tiny model
-                # info GET with the key — succeeds (200/404 model-not-found)
+                # info GET with the key - succeeds (200/404 model-not-found)
                 # if the key parses, 401s if not. We treat anything other
                 # than 401 as "key shape OK".
                 try:
@@ -11220,7 +11220,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     ok = e.code != 401
                     if not ok: detail = {"status": e.code, "hint": "fal rejected the key"}
             else:
-                # No specific test for other providers yet — saving the key counts.
+                # No specific test for other providers yet - saving the key counts.
                 ok = True
         except urllib.error.HTTPError as e:
             try: detail = json.loads(e.read().decode("utf-8", "replace"))
@@ -11270,12 +11270,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         output   = (body.get("output") or "").strip()
         aspect   = (body.get("aspect") or "1:1").strip()
         options  = body.get("options") or {}
-        # v3.1 — soft gate: every image-gen call SHOULD carry a `medium`
+        # v3.1 - soft gate: every image-gen call SHOULD carry a `medium`
         # classified by the visual-orchestrator subagent (raster-foreground,
         # raster-photo, vector-icon, vector-mark, shader, particle-2d,
         # particle-gl, lottie, 3d, video). Without one, we log a warning
         # so we can audit which call sites bypassed the orchestrator. Don't
-        # reject — that would break inline agent-driven scaffolds. Tracked
+        # reject - that would break inline agent-driven scaffolds. Tracked
         # downstream by routing to the project's .asset-gen-audit.jsonl.
         medium = (body.get("medium") or "").strip() or "unspecified"
         _ALLOWED_MEDIA = {
@@ -11290,7 +11290,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                   f"Caller should dispatch visual-orchestrator () first.",
                   flush=True)
         # Append an audit entry so we can grep call sites later.
-        # v3.1 — bounded rotation: when the file exceeds 1 MB, rename it to
+        # v3.1 - bounded rotation: when the file exceeds 1 MB, rename it to
         # .asset-gen-audit.jsonl.prev and start a fresh one. Two-file
         # ring buffer caps disk usage at ~2 MB regardless of how long the
         # project runs.
@@ -11315,7 +11315,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not output.startswith("source/"):
             return self._reply(400, {"error": "output path must be under source/"})
 
-        # Pick the renderer family — generation vs transform.
+        # Pick the renderer family - generation vs transform.
         gen_key = (skill, provider)
         is_generate  = gen_key in _GENERATE_DISPATCH
         is_transform = gen_key in _TRANSFORM_DISPATCH
@@ -11327,11 +11327,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
 
         # provider="local" runs in-process via a Python library (e.g., rembg).
-        # No credentials required — skip the key lookup entirely.
+        # No credentials required - skip the key lookup entirely.
         api_key = None
-        # v3.5 — Codex CLI fallback for openai image generation. Codex's
+        # v3.5 - Codex CLI fallback for openai image generation. Codex's
         # agent loop has a built-in image-gen tool that calls OpenAI's
-        # image endpoints using the user's `codex login` OAuth — no API
+        # image endpoints using the user's `codex login` OAuth - no API
         # key required. Only applies to image generation (not video / svg /
         # transforms), because that's the only path where Codex has a
         # native tool we can call.
@@ -11344,13 +11344,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     and detect_agent_bin("codex") is not None):
                     use_codex_image_fallback = True
                 elif provider == "sam3d":
-                    # Key is optional — a self-hosted SAM 3D endpoint may be
+                    # Key is optional - a self-hosted SAM 3D endpoint may be
                     # unauthenticated. The renderer enforces endpoint config and
                     # only sends an Authorization header when a key IS present.
                     pass
                 else:
                     return self._reply(502, {
-                        "error": f"no {provider} API key configured — open Settings (⚙ in the workflow toolbar) and paste your key",
+                        "error": f"no {provider} API key configured - open Settings (⚙ in the workflow toolbar) and paste your key",
                     })
 
         # Validate inputs per family.
@@ -11360,10 +11360,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             prompt = (body.get("prompt") or "").strip()
             if not prompt:
                 return self._reply(400, {"error": "prompt required for generate skills"})
-            # Phase 8 — generate-image with an input image. Currently only
+            # Phase 8 - generate-image with an input image. Currently only
             # OpenAI's gpt-image-1 family supports image-to-image; everyone
             # else gets a 400 telling them to pick a different model. This
-            # used to SILENTLY DROP the input image — Blend / Remix would
+            # used to SILENTLY DROP the input image - Blend / Remix would
             # call generate-image with input_path set and the daemon ignored
             # it, producing a text-only result.
             raw_uri = body.get("input_data_uri")
@@ -11418,7 +11418,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         return self._reply(400, {
                             "error":
                                 "Image-to-image (input image attached) requires the OpenAI HTTP /v1/images/edits endpoint. "
-                                "Codex CLI doesn't expose an image-edit tool — please paste an OpenAI API key in Settings, "
+                                "Codex CLI doesn't expose an image-edit tool - please paste an OpenAI API key in Settings, "
                                 "or use a text-to-image variant (drop the input image)."
                         })
                     if input_abs:
@@ -11435,8 +11435,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     bytes_ = _openai_edit_image(api_key, prompt, model, img_bytes, img_mime, aspect, options)
                 elif provider == "openai":
                     if use_codex_image_fallback:
-                        # v3.5 — no API key + codex on PATH: run the agent.
-                        # Timeout is generous (5 min) — codex's agent loop
+                        # v3.5 - no API key + codex on PATH: run the agent.
+                        # Timeout is generous (5 min) - codex's agent loop
                         # can take a while for image gen.
                         bytes_ = _codex_cli_generate_image(
                             prompt, model, aspect, project_root, timeout=300,
@@ -11444,21 +11444,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                     else:
                         bytes_ = _openai_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "fal" and skill == "video-gen":
-                    # v3.4.1 — Real video. Dispatches to fal's text-to-video
+                    # v3.4.1 - Real video. Dispatches to fal's text-to-video
                     # endpoint and downloads the mp4 bytes. Unlike image
-                    # generation, this can take 30s–5min depending on
+                    # generation, this can take 30s-5min depending on
                     # the model, so we extend timeout to 300s.
                     bytes_ = _fal_generate_video(api_key, prompt, model, aspect, options)
                 elif provider == "fal" and skill == "3d-gen":
-                    # v3.5 — 3D model generation. Bytes are .glb / .gltf.
+                    # v3.5 - 3D model generation. Bytes are .glb / .gltf.
                     # Long timeout (up to 10min for some models).
                     bytes_ = _fal_generate_3d(api_key, prompt, model, aspect, options)
                 elif provider == "meshy" and skill == "3d-gen":
-                    # Meshy 3D — async create+poll (the helper does the long
+                    # Meshy 3D - async create+poll (the helper does the long
                     # waiting internally), returns textured .glb bytes.
                     bytes_ = _meshy_generate_3d(api_key, prompt, model, aspect, options)
                 elif provider == "fal" and skill == "lottie-gen":
-                    # v3.5 — Lottie generation. Bytes are raw .json.
+                    # v3.5 - Lottie generation. Bytes are raw .json.
                     bytes_ = _fal_generate_lottie(api_key, prompt, model, aspect, options)
                 elif provider == "fal":
                     bytes_ = _fal_generate_image(api_key, prompt, model, aspect, options)
@@ -11478,7 +11478,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 elif provider == "local" and skill == "rembg":
                     if input_data_uri:
                         return self._reply(400, {"error":
-                            "local rembg can't read SVG / data URIs — needs raster bytes. "
+                            "local rembg can't read SVG / data URIs - needs raster bytes. "
                             "Use a file-backed asset or a fal-based rembg in a later phase."})
                     bytes_ = _local_rembg(input_abs, model, options)
                 elif provider == "sam3d" and skill in ("image-to-ply", "image-to-glb"):
@@ -11528,7 +11528,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
             # Optional: replace an inline SVG in source with an <img> reference
             # to the freshly-written file. Used when a skill outputs to an
-            # inline-svg asset card — the prototype's source HTML/JSX is
+            # inline-svg asset card - the prototype's source HTML/JSX is
             # edited so the regenerated visual actually renders in the iframe.
             ir = body.get("inline_replace")
             if isinstance(ir, dict) and isinstance(ir.get("original_svg"), str) and isinstance(ir.get("branch"), str):
@@ -11549,7 +11549,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     replace_error = str(e)
 
-        # v3.0 — asset-versioning snapshot. After a successful image / SVG
+        # v3.0 - asset-versioning snapshot. After a successful image / SVG
         # generation, find the matching workflow asset node by output path
         # and snapshot it so the user can revert. Best-effort: a snapshot
         # failure must not fail the generation.
@@ -11562,7 +11562,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     with open(wf_path, "r", encoding="utf-8") as f:
                         wf = json.load(f)
                     from kinds.versioning import snapshot_asset_by_output_path
-                    # Live Session — attribute this version to whoever generated
+                    # Live Session - attribute this version to whoever generated
                     # it (a guest's name via the gate, else "Host"). None when
                     # not live, so the picker hides the "who" column.
                     _v_author = None
@@ -11614,15 +11614,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         runtime can dispatch nested subagents that the daemon routes to
         another runtime, without any caller-side branching.
 
-        Runtime selection: Claude (preferred — native Task tool for
+        Runtime selection: Claude (preferred - native Task tool for
         nested dispatch) → Codex (via translation note that substitutes
         Task with curl POST back to this endpoint) → 502 if neither.
 
         SSE event types emitted:
-          • planner-dispatched — first event; { runId, type, runtime }
-          • agent — normalised agent event (text_delta, tool_use, …)
-          • status / stderr / user_message — passed through verbatim
-          • planner-done — final; { output, exitCode, error? } before close
+          • planner-dispatched - first event; { runId, type, runtime }
+          • agent - normalised agent event (text_delta, tool_use, …)
+          • status / stderr / user_message - passed through verbatim
+          • planner-done - final; { output, exitCode, error? } before close
         """
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
@@ -11651,7 +11651,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Pick runtime + build spawn shape.
         claude_bin = detect_agent_bin("claude")
         codex_bin  = detect_agent_bin("codex")
-        # v3.5 — Build the capabilities preamble once and inject it into BOTH
+        # v3.5 - Build the capabilities preamble once and inject it into BOTH
         # runtimes' planner spawn. Originally the planner subprocess got ONLY
         # the planner.md body as its system prompt, which meant the planner
         # was blind to live availability (which providers have keys, which
@@ -11659,7 +11659,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # scrapbook-orchestrator bail with "no raster provider available"
         # even when openai had a Codex CLI fallback AND rembg was installed.
         # When Claude's native Task tool spawns a subagent, the subagent
-        # inherits the parent's context including this preamble — we need to
+        # inherits the parent's context including this preamble - we need to
         # do the same explicitly for `/__dispatch_planner`'s subprocess
         # spawn since it has no parent context to inherit.
         try:
@@ -11670,7 +11670,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if claude_bin:
             agent_id, bin_path = "claude", claude_bin
             # Build the full system prompt: planner body PLUS capabilities
-            # preamble PLUS question-form protocol. Order matters — the
+            # preamble PLUS question-form protocol. Order matters - the
             # planner spec is the primary instruction; capabilities is
             # supporting context the planner reads when deciding how to act.
             sys_prompt_parts = [planner_body]
@@ -11733,7 +11733,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 + "\n===== YOUR BRIEF =====\n"
                 + brief
             )
-            # danger-full-access matches AGENT_DEFS["codex"]["args"] —
+            # danger-full-access matches AGENT_DEFS["codex"]["args"] -
             # required so the planner can curl back to /__dispatch_planner
             # for nested subagent dispatch (workspace-write blocks network).
             spawn_args = ["exec", "--sandbox", "danger-full-access"]
@@ -11742,7 +11742,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             prompt_argv = full_prompt
         else:
             return self._reply(502, {
-                "error": "no LLM runtime available — install Claude Code or Codex CLI",
+                "error": "no LLM runtime available - install Claude Code or Codex CLI",
                 "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex",
             })
         # Spawn the planner subprocess.
@@ -11781,7 +11781,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 proc.stdin.flush()
             except Exception as e:
                 state.append("error", {"message": f"failed to write prompt to stdin: {e}"})
-        # Start the drains — same machinery the chat path uses, so codex's
+        # Start the drains - same machinery the chat path uses, so codex's
         # stderr protocol gets parsed by _CodexStderrParser and Claude's
         # stream-json frames get normalised by _normalize_frame.
         threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
@@ -11828,7 +11828,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 fired = waker.wait(timeout=25)
                 waker.clear()
                 if not fired:
-                    # Heartbeat — keeps the connection alive across long
+                    # Heartbeat - keeps the connection alive across long
                     # planner runs without producing visible output.
                     try:
                         self.wfile.write(b": heartbeat\n\n")
@@ -11862,7 +11862,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 state.waiters.discard(waker)
 
     def _llm_run(self, qs):
-        """Phase 4c — text-output skills. Body:
+        """Phase 4c - text-output skills. Body:
            {
              skill:    "llm" | "describe",
              provider: "openai",
@@ -11896,24 +11896,24 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
 
         api_key = _resolve_provider_key(provider)
-        # v3.4.6 — CLI fallback policy:
+        # v3.4.6 - CLI fallback policy:
         #   • CLI is ALWAYS preferred when authenticated, regardless of which
         #     provider the user picked. The user's mental model is "I have
-        #     Claude Code installed; it should just work" — making them
+        #     Claude Code installed; it should just work" - making them
         #     paste an API key for a model they're not even using is
         #     friction. The CLI uses their existing subscription (no per-
         #     token cost), so it's also the cheaper default.
-        #   • For provider=anthropic: trivial — Claude CLI IS the anthropic
+        #   • For provider=anthropic: trivial - Claude CLI IS the anthropic
         #     model, just routed through Claude Code's auth instead of the
         #     API directly.
-        # v3.5 — For provider=openai with no API key:
-        #   • Prefer Codex (OpenAI's CLI) when installed — same provider,
+        # v3.5 - For provider=openai with no API key:
+        #   • Prefer Codex (OpenAI's CLI) when installed - same provider,
         #     just routed through `codex login`. The picked model passes
         #     through to `codex exec --model`.
         #   • Fall through to Claude CLI as a last-resort substitute when
         #     Codex is not on PATH. The response annotates provider=
         #     "claude-cli" so the UI can surface the substitution.
-        # This block restricts to skill="llm" — "describe" always carries
+        # This block restricts to skill="llm" - "describe" always carries
         # an image payload that the one-shot CLI helpers don't accept yet.
         claude_avail = detect_agent_bin("claude") is not None
         codex_avail  = detect_agent_bin("codex")  is not None
@@ -11954,7 +11954,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     response_provider = "codex-cli"
                     fallback_reason = (
                         None if provider == "openai" else
-                        "anthropic CLI not installed — answered by Codex CLI as fallback"
+                        "anthropic CLI not installed - answered by Codex CLI as fallback"
                     )
                 else:
                     m_lower = (model or "").lower().strip()
@@ -11968,7 +11968,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     text = _claude_cli_complete(cli_msgs, model=effective_model, timeout=600)
                     response_provider = "claude-cli" if provider == "openai" else "anthropic-cli"
                     fallback_reason = (
-                        "openai API key not configured AND codex CLI not installed — answered by Claude CLI as fallback"
+                        "openai API key not configured AND codex CLI not installed - answered by Claude CLI as fallback"
                         if provider == "openai" else None
                     )
                 return self._reply(200, {
@@ -11984,7 +11984,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "error":
                         "Claude CLI fallback timed out after 10 minutes. "
                         "This usually means the prompt is too large or the response is too long for one-shot CLI mode. "
-                        "Workarounds: (1) paste an Anthropic API key into Settings (⚙ in the workflow toolbar) — direct HTTP is 4-5× faster than the CLI; "
+                        "Workarounds: (1) paste an Anthropic API key into Settings (⚙ in the workflow toolbar) - direct HTTP is 4-5× faster than the CLI; "
                         "(2) shorten the prompt; (3) lower the requested max_tokens (currently 8000) by editing the iterator's call site.",
                 })
             except Exception as e:
@@ -11993,10 +11993,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(502, {"error": f"CLI fallback failed: {msg[:300]}{'…' if len(msg) > 300 else ''}"})
         if not api_key:
             return self._reply(502, {
-                "error": f"no {provider} API key configured — open Settings (⚙ in the workflow toolbar) and paste your key",
+                "error": f"no {provider} API key configured - open Settings (⚙ in the workflow toolbar) and paste your key",
             })
 
-        # v3.5 — Sentinel models pick the provider's API default when there's
+        # v3.5 - Sentinel models pick the provider's API default when there's
         # an API key. Without this, picking "Codex CLI default" + having an
         # OpenAI key would forward "codex-default" to the API and fail.
         _CLI_DEFAULT_MODELS = {
@@ -12011,7 +12011,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if _remap:
             model = _remap
 
-        # Phase 4d — agent mode is enabled when any of these are set. When on,
+        # Phase 4d - agent mode is enabled when any of these are set. When on,
         # the LLM gets tool-use access to read_root and writes are applied.
         read_root  = (body.get("read_root")  or "").strip().lstrip("/")
         write_root = (body.get("write_root") or "").strip().lstrip("/")
@@ -12094,8 +12094,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 guide_bits = []
                 if read_root_abs:
                     guide_bits.append("You are an agent with read access to a project folder via two tools:")
-                    guide_bits.append("  • list_dir(path) — list files/dirs at a relative path under the read root.")
-                    guide_bits.append("  • read_file(path) — read a text file's content (UTF-8, max 200KB).")
+                    guide_bits.append("  • list_dir(path) - list files/dirs at a relative path under the read root.")
+                    guide_bits.append("  • read_file(path) - read a text file's content (UTF-8, max 200KB).")
                     guide_bits.append(f"Read root: {read_root}")
                     guide_bits.append("Always inspect the relevant files first with read_file before writing changes.")
                 if write_root_abs:
@@ -12125,7 +12125,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     dispatch = _make_agent_dispatch(read_root_abs, write_root_abs)
                     text, tool_log = _openai_chat_tools(api_key, messages, model=model, tools=tools, dispatch=dispatch, options=options)
                 else:
-                    # write_root / file_out only — no tools, but the model gets
+                    # write_root / file_out only - no tools, but the model gets
                     # the fenced-block instruction so writes still flow.
                     if provider == "anthropic":
                         text = _anthropic_chat(api_key, messages, model=model, options=options)
@@ -12172,7 +12172,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "agent": {"mode": agent_mode, "tool_log": tool_log, "wrote": wrote, "write_error": write_error} if agent_mode else None,
         })
 
-    # ── Phase 4d — branch attachments (reference materials for agents) ──
+    # ── Phase 4d - branch attachments (reference materials for agents) ──
     # POST /__attachment?project=<id>&branch=<slug>
     # Body: JSON { name: "foo.png", data_uri: "data:image/png;base64,…" }
     # Writes under source/<branch>/_attachments/<ts>-<slug>.<ext>.
@@ -12260,7 +12260,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         mime = (m.group(1) or "").lower().strip()
         ext = self._ATTACHMENT_MIME.get(mime)
         if not ext:
-            # MIME-based lookup failed — try extension-based fallback. Useful
+            # MIME-based lookup failed - try extension-based fallback. Useful
             # when browsers report an empty / generic MIME for known types.
             name_ext = (os.path.splitext(name_in)[1].lstrip(".") or "").lower()
             inferred_mime = self._ATTACHMENT_EXT_FALLBACK.get(name_ext)
@@ -12298,7 +12298,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Durable record of harness Task lists when a chat window is closed. The
     # editor POSTs the COMPLETED tasks it is about to clear from the live
     # strip; we append one JSON line per batch to workflow/tasks-archive.jsonl
-    # so the user can collate finished work later. Append-only, newest last —
+    # so the user can collate finished work later. Append-only, newest last -
     # never rewrites prior lines, so it's safe to tail/grep externally.
     # Body: { runId, chatTitle, tasks: [{id, subject, activeForm, status}] }
     def _tasks_archive(self, qs):
@@ -12346,10 +12346,10 @@ class H(http.server.SimpleHTTPRequestHandler):
     # ── POST /__workflow/wb?project=<id> ────────────────────────────────
     # The AGENT-facing write path for the whiteboard layer (`wb: []` in
     # workflow.json). Agents READ wb by reading workflow.json; they WRITE
-    # ONLY through this endpoint — direct file edits would bypass the
+    # ONLY through this endpoint - direct file edits would bypass the
     # per-project workflow lock and race the editor's debounced save.
     # Body: { "add": [items], "update": [{id, ...patch}], "remove": [ids] }
-    # — any subset. Added items get auto ids ("w…") + top z when missing.
+    # - any subset. Added items get auto ids ("w…") + top z when missing.
     # Every write runs through _sanitize_wb_items, lands inside a history
     # bracket (undo-able), and broadcasts workflow-changed so the editor's
     # SSE merge picks it up live.
@@ -12405,7 +12405,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     z = it.get("z")
                     if isinstance(z, (int, float)) and z > max_z:
                         max_z = z
-            # add — sanitize through the same gate as editor saves;
+            # add - sanitize through the same gate as editor saves;
             # auto-assign id + top z when the agent omits them.
             added = []
             for it in add:
@@ -12426,7 +12426,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 wb.append(entry)
                 existing_ids.add(entry["id"])
                 added.append(entry["id"])
-            # update — shallow-merge the patch onto the matching item, then
+            # update - shallow-merge the patch onto the matching item, then
             # re-sanitize the merged result (a bad patch can't corrupt).
             updated = []
             by_id = {it.get("id"): i for i, it in enumerate(wb) if isinstance(it, dict)}
@@ -12511,7 +12511,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__write_binary?project=<id>
     # Body: JSON { path: "source/<branch>/<sub>/<file>", dataUrl: "data:<mime>;base64,..." }
-    # The binary sibling of /__write_text — lets a driven-view iframe tool bake
+    # The binary sibling of /__write_text - lets a driven-view iframe tool bake
     # a real binary deliverable (font .otf, raster .png, audio .wav) into the
     # project from a base64 data URL it produced client-side (opentype.js /
     # canvas.toDataURL / OfflineAudioContext render). Same source/-only +
@@ -12557,7 +12557,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__html_save?project=<id>
     # Body: JSON { path: "source/<branch>/index.html", html: "<!doctype html>..." }
     # Writes a full HTML document atomically (.staging → os.replace). Used by
-    # the Zoom overlay's Select / Text / Move / Resize tools — the overlay
+    # the Zoom overlay's Select / Text / Move / Resize tools - the overlay
     # mutates the iframe DOM in-place, serialises, and posts the entire doc
     # back. Robust against ops that html.parser can't apply granularly
     # (style/text/structure all flow through the same endpoint).
@@ -12618,7 +12618,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         rel = (body.get("path") or "").strip()
-        # v3.4.1 — accept either `html` (legacy alias) or `content` for any
+        # v3.4.1 - accept either `html` (legacy alias) or `content` for any
         # text-payload export. The endpoint is now used by llm/describe text
         # outputs, lottie-gen json, svg-gen svg, etc., not just HTML.
         html = body.get("html")
@@ -12740,7 +12740,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         width  = body.get("width")
         height = body.get("height")
         alt    = (body.get("alt") or "").strip()
-        # The `<img>` tag is built per-file inside the walk loop below — the
+        # The `<img>` tag is built per-file inside the walk loop below - the
         # src needs to be relative to the HTML file's directory so the
         # browser resolves it correctly when the prototype iframe loads
         # (the iframe's URL is /source/<branch>/<file>.html, so an absolute
@@ -12771,7 +12771,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         def _normalize(s):
             # Convert self-closing tags to explicit open/close: <foo a="b"/> →
             # <foo a="b"></foo>. Skip <br/> / <img/> / <meta/> / <link/>
-            # since the surface format may or may not close those — they
+            # since the surface format may or may not close those - they
             # don't appear inside the SVG anyway.
             def _expand_self_closing(text):
                 out = []
@@ -12803,7 +12803,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # The prototype HTML is JSX inside <script type="text/babel">,
             # so attribute names are camelCase (`strokeWidth`, `fillRule`).
             # The runtime-serialized surface from the iframe DOM is the
-            # rendered output — React lowers those to kebab-case
+            # rendered output - React lowers those to kebab-case
             # (`stroke-width`). Convert any camelCase attribute name to
             # kebab-case so both sides line up. We only touch the name
             # before `=`, never the value, so quoted strings (which may
@@ -12878,14 +12878,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "no HTML file under source/" + branch + "/ contains that SVG surface (after whitespace / self-closing normalisation)"})
         return self._reply(200, {"ok": True, "files": updated_files})
 
-    # ── Phase 4c — local skills (rembg etc.) install + status ────────────
+    # ── Phase 4c - local skills (rembg etc.) install + status ────────────
     # Whitelist of installable packages and the extras to bundle. Limiting
     # to a known set prevents the install button from being a pip-arbitrary-
     # package exploit if the daemon is ever exposed beyond localhost.
     # Two kinds:
-    #   pip    — python packages installed `pip install --user`, probed via
+    #   pip    - python packages installed `pip install --user`, probed via
     #            a subprocess `import <name>` (rembg).
-    #   binary — standalone executables installed via Homebrew, probed via
+    #   binary - standalone executables installed via Homebrew, probed via
     #            PATH + the usual brew prefixes (cloudflared for share mode).
     # kind defaults to "pip" for back-compat with older entries.
     _LOCAL_PACKAGES = {
@@ -12901,7 +12901,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # Class-level memo of POSITIVE probe results, keyed by package id. Probing
     # rembg means spawning `python -c "import rembg"`, which loads onnxruntime's
-    # native dylibs every time — 1-3 s, and the landing page re-probes on every
+    # native dylibs every time - 1-3 s, and the landing page re-probes on every
     # mount. Once we've confirmed a package is installed it does not vanish
     # mid-session, so we cache the success and return it instantly thereafter.
     # Only positive results are cached: a `not installed` answer keeps re-probing
@@ -12912,7 +12912,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     @staticmethod
     def _find_local_binary(name):
         """PATH first, then the usual Homebrew prefixes (Apple Silicon /
-        Intel) and /usr/bin — the daemon may have been launched from a GUI
+        Intel) and /usr/bin - the daemon may have been launched from a GUI
         context whose PATH lacks the brew prefix."""
         p = shutil.which(name)
         if p:
@@ -13053,7 +13053,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Invokes the OS-native folder picker (macOS via osascript) and returns
     # the chosen absolute path. If a project query is included AND the
     # chosen path is INSIDE that project's root, we ALSO return a
-    # project-relative path the caller can prefer — so the picked folder
+    # project-relative path the caller can prefer - so the picked folder
     # gets stored as `source/<branch>/foo` instead of `/Users/…/source/<branch>/foo`,
     # which is what the daemon's file-serving and safe-join paths expect.
     def _native_folder_picker(self):
@@ -13124,7 +13124,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "status":       _export_folder_status(folder) if folder else None,
             })
         # Also include any discoverable on-disk projects that aren't in
-        # workspace.json yet — so the Settings UI lists every project the
+        # workspace.json yet - so the Settings UI lists every project the
         # user can actually open, not just the ones with a saved entry.
         seen = {p["id"] for p in out}
         for p in _list_projects():
@@ -13274,14 +13274,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # ════════════════════════════════════════════════════════════════════
-    # Share mode — cloudflare quick tunnels + review comments.
+    # Share mode - cloudflare quick tunnels + review comments.
     # Registry/tunnels/comments/gate live in editor/shares.py; these
     # handlers are the EDITOR-facing surface on the main daemon port. The
     # visitor-facing surface is the gate listener (share-scoped routes
     # only) that the tunnels point at. See docs/features/share-mode.md.
     # ════════════════════════════════════════════════════════════════════
 
-    # GET /__shares — every share across the workspace with live tunnel
+    # GET /__shares - every share across the workspace with live tunnel
     # status + comment counts. The landing "Shares" tab polls this.
     def _shares_list(self):
         cf = _shares.find_cloudflared()
@@ -13298,10 +13298,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # POST /__live/<id>/(start|stop|kick|role)
-    #   start — open a live session (also (re)starts the tunnel so /live is reachable)
-    #   stop  — end the session (revokes guest tokens; tunnel left as-is)
-    #   kick  — body {guestId}: revoke one guest
-    #   role  — body {guestId, role}: editor|viewer
+    #   start - open a live session (also (re)starts the tunnel so /live is reachable)
+    #   stop  - end the session (revokes guest tokens; tunnel left as-is)
+    #   kick  - body {guestId}: revoke one guest
+    #   role  - body {guestId, role}: editor|viewer
     def _live_op(self, share_id, op, qs):
         rec = _shares.share_get(share_id)
         if rec is None:
@@ -13334,7 +13334,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "live": _live.session_summary(share_id),
         })
 
-    # GET /__live_cursors.js — host-side live-cursors overlay (injected into the
+    # GET /__live_cursors.js - host-side live-cursors overlay (injected into the
     # editor shell when a session is active). Served from editor/live/.
     def _serve_live_cursors_js(self):
         # locks.js first (defines window.__thLocks) + cursors-host.js (wires it).
@@ -13354,7 +13354,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         with contextlib.suppress(Exception):
             self.wfile.write(data)
 
-    # ── Git / GitHub backbone (host side) — see editor/git_ops.py ──────────
+    # ── Git / GitHub backbone (host side) - see editor/git_ops.py ──────────
     # GET /__git/status?project=<id>
     def _git_status(self, qs):
         try:
@@ -13371,9 +13371,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             st["branches"] = _gitops.branches(root)["branches"] if st.get("repo") else []
             # Local sync version (cheap). The remote comparison is NOT done here
             # (status is polled often, and a remote read is a network round-trip)
-            # — a mismatch surfaces as a 409 when the user actually pulls/pushes.
+            # - a mismatch surfaces as a 409 when the user actually pulls/pushes.
             st["syncVersion"] = WOVEN_SYNC_VERSION
-            # In-flight git op (commit/publish/pull) for this project, if any —
+            # In-flight git op (commit/publish/pull) for this project, if any -
             # lets the panel restore "Committing…/Pulling…/Pushing…" after a tab
             # reload instead of looking idle and inviting a colliding re-click.
             with _GIT_INFLIGHT_LOCK:
@@ -13383,7 +13383,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
-    # ── GitHub account (host side) — sign in ONCE, reused across projects ──
+    # ── GitHub account (host side) - sign in ONCE, reused across projects ──
     # GET /__github/status  → {configured, signedIn, login, avatar}. Never the token.
     def _github_status(self, qs):
         tok = _gitops.load_token()
@@ -13504,7 +13504,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 st = _gitops.status(root)
                 owner, repo = _gitops.parse_owner_repo(st.get("remote") or "")
                 if not owner or not repo:
-                    return self._reply(400, {"error": "no GitHub origin to fork — connect a repo first"})
+                    return self._reply(400, {"error": "no GitHub origin to fork - connect a repo first"})
                 fk = _gitops.fork(tok, owner, repo)
                 return self._reply(200, {"ok": True, "fork": fk})
             if op == "pr":
@@ -13520,11 +13520,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 st = _gitops.status(root)
                 owner, repo = _gitops.parse_owner_repo(st.get("remote") or "")
                 if not owner or not repo:
-                    return self._reply(400, {"error": "no GitHub origin — connect a repo first"})
+                    return self._reply(400, {"error": "no GitHub origin - connect a repo first"})
                 branch = _gitops.current_branch(root)
                 base = (body.get("base") or "main").strip() or "main"
                 if branch == base:
-                    return self._reply(400, {"error": f"you're on '{base}' — switch to a feature branch before opening a PR"})
+                    return self._reply(400, {"error": f"you're on '{base}' - switch to a feature branch before opening a PR"})
                 # Push the branch first so GitHub can see the head ref.
                 try:
                     _gitops.publish(root, token=tok)
@@ -13572,7 +13572,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # GET /__git/diff?project=<id>&kind=working|commit|conflict|range[&path=&sha=&a=&b=]
     # Read-only compare view: uncommitted changes, a single commit, a conflicted
     # file's three sides, or a branch-vs-branch range. Agent resolution is
-    # unchanged — this just lets the user SEE what changed / what's incoming.
+    # unchanged - this just lets the user SEE what changed / what's incoming.
     def _git_diff(self, qs):
         try:
             root = resolve_project_root(qs, require_explicit=True)
@@ -13617,7 +13617,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 cur = _GIT_INFLIGHT.get(root)
                 if cur and (now - cur["startedAt"]) < _GIT_INFLIGHT_TTL:
                     return self._reply(409, {
-                        "error": f"a git {cur['op']} is already running for this project — wait for it to finish.",
+                        "error": f"a git {cur['op']} is already running for this project - wait for it to finish.",
                         "opInProgress": cur["op"]})
                 _GIT_INFLIGHT[root] = {"op": op, "startedAt": now}
             # Clear a stale index.lock left by an interrupted op (tab close /
@@ -13663,7 +13663,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 remote_v = _gitops.remote_sync_version(root, token=tok)
                 if remote_v is not None and remote_v != WOVEN_SYNC_VERSION:
                     return self._reply(409, {
-                        "error": (f"version mismatch — this Woven syncs v{WOVEN_SYNC_VERSION}, "
+                        "error": (f"version mismatch - this Woven syncs v{WOVEN_SYNC_VERSION}, "
                                   f"the repo is v{remote_v}. Update the older Woven before pushing."),
                         "versionMismatch": True, "syncVersion": WOVEN_SYNC_VERSION,
                         "remoteSyncVersion": remote_v})
@@ -13671,17 +13671,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(200, {"ok": True, **res})
             if op == "pull":
                 # Guard (host-authoritative): refuse to merge remote history on
-                # top of uncommitted work or an active live session — either
+                # top of uncommitted work or an active live session - either
                 # would clobber in-flight host/guest edits. The host commits /
                 # ends the session first, then pulls.
                 pid = (_qs_get(qs, "project") or "").strip()
                 st = _gitops.status(root)
                 if not st.get("repo"):
-                    return self._reply(400, {"error": "project is not a git repo — connect it first"})
+                    return self._reply(400, {"error": "project is not a git repo - connect it first"})
                 if st.get("dirty"):
-                    return self._reply(409, {"error": "working tree has uncommitted changes — commit them before pulling"})
+                    return self._reply(409, {"error": "working tree has uncommitted changes - commit them before pulling"})
                 if pid and _live.project_has_live_session(pid):
-                    return self._reply(409, {"error": "a live session is active — end it before pulling remote changes"})
+                    return self._reply(409, {"error": "a live session is active - end it before pulling remote changes"})
                 tok = body.get("token") or _gitops.host_token()
                 # Version gate: refuse to merge a repo written by a DIFFERENT Woven
                 # sync-version (an old daemon merging a newer format is exactly how
@@ -13690,7 +13690,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 remote_v = _gitops.remote_sync_version(root, token=tok)
                 if remote_v is not None and remote_v != WOVEN_SYNC_VERSION:
                     return self._reply(409, {
-                        "error": (f"version mismatch — this Woven syncs v{WOVEN_SYNC_VERSION}, "
+                        "error": (f"version mismatch - this Woven syncs v{WOVEN_SYNC_VERSION}, "
                                   f"the repo is v{remote_v}. Update the older Woven before pulling."),
                         "versionMismatch": True, "syncVersion": WOVEN_SYNC_VERSION,
                         "remoteSyncVersion": remote_v})
@@ -13702,15 +13702,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except Exception: pass
                 return self._reply(200, {"ok": True, **res})
             if op in ("discard-local", "discard-remote"):
-                # Destructive rollback — the UI confirms first. Guard against an
+                # Destructive rollback - the UI confirms first. Guard against an
                 # active live session (would clobber a guest's in-flight edits);
                 # the host ends it first, then discards.
                 pid = (_qs_get(qs, "project") or "").strip()
                 st = _gitops.status(root)
                 if not st.get("repo"):
-                    return self._reply(400, {"error": "project is not a git repo — connect it first"})
+                    return self._reply(400, {"error": "project is not a git repo - connect it first"})
                 if pid and _live.project_has_live_session(pid):
-                    return self._reply(409, {"error": "a live session is active — end it before discarding changes"})
+                    return self._reply(409, {"error": "a live session is active - end it before discarding changes"})
                 if op == "discard-local":
                     res = _gitops.discard_local(root)
                 else:
@@ -13731,17 +13731,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except Exception: pass
                 return self._reply(200, {"ok": True, **res})
             if op in ("branch-switch", "branch-merge"):
-                # Switching/merging rewrites the working tree — guard exactly like
+                # Switching/merging rewrites the working tree - guard exactly like
                 # pull(): refuse on a dirty tree or an active live session so we
                 # never clobber in-flight host/guest edits (host-authoritative).
                 pid = (_qs_get(qs, "project") or "").strip()
                 st = _gitops.status(root)
                 if not st.get("repo"):
-                    return self._reply(400, {"error": "project is not a git repo — connect it first"})
+                    return self._reply(400, {"error": "project is not a git repo - connect it first"})
                 if st.get("dirty"):
-                    return self._reply(409, {"error": "working tree has uncommitted changes — commit or discard them first"})
+                    return self._reply(409, {"error": "working tree has uncommitted changes - commit or discard them first"})
                 if pid and _live.project_has_live_session(pid):
-                    return self._reply(409, {"error": "a live session is active — end it before switching or merging branches"})
+                    return self._reply(409, {"error": "a live session is active - end it before switching or merging branches"})
                 if op == "branch-switch":
                     res = _gitops.switch_branch(root, body.get("name") or "")
                 else:
@@ -13800,7 +13800,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "image/png")
         self.send_header("Content-Length", str(len(data)))
-        # Immutable per ?v= — the client always passes the mtime, so a long
+        # Immutable per ?v= - the client always passes the mtime, so a long
         # cache is safe and avoids re-downloading the PNG on every poll.
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         self.end_headers()
@@ -13808,7 +13808,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(data)
 
     # POST /__share/create?project=<id>  body {prototype, emailGate?, label?, start?}
-    # Idempotent per (project, prototype) — re-creating returns the existing
+    # Idempotent per (project, prototype) - re-creating returns the existing
     # share. start defaults true: create-and-tunnel is the one-click path.
     def _share_create(self, qs):
         try:
@@ -13848,11 +13848,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, out)
 
     # POST /__share/<id>/(start|stop|delete|update|ack_url)
-    #   start   — (re)spawn the cloudflared tunnel; sets active intent
-    #   stop    — kill the tunnel; clears active intent
-    #   delete  — stop + remove the registry record (revokes the token)
-    #   update  — body {emailGate?, label?}
-    #   ack_url — clear the "URL changed" flag after the user copied the new one
+    #   start   - (re)spawn the cloudflared tunnel; sets active intent
+    #   stop    - kill the tunnel; clears active intent
+    #   delete  - stop + remove the registry record (revokes the token)
+    #   update  - body {emailGate?, label?}
+    #   ack_url - clear the "URL changed" flag after the user copied the new one
     def _share_op(self, share_id, op, qs):
         rec = _shares.share_get(share_id)
         if rec is None:
@@ -13862,7 +13862,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _shares.tunnel_start(share_id)
             except Exception as e:
                 return self._reply(500, {"error": str(e)})
-            # Refresh the preview when (re)publishing — the prototype may have
+            # Refresh the preview when (re)publishing - the prototype may have
             # changed since the share was created.
             try:
                 proot = resolve_project_root({"project": rec.get("project")})
@@ -13903,7 +13903,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # GET /__share_comments?project=<id>&prototype=<slug>
     # Editor-side read of the same store the gate writes. Prototype filter
-    # optional — without it, every comment in the project comes back.
+    # optional - without it, every comment in the project comes back.
     def _share_comments_get(self, qs):
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
@@ -13918,7 +13918,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   {op:"status",    prototype, commentId, status}
     #   {op:"delete",    prototype, commentId}
     #   {op:"processed", prototype, commentIds:[…]}   ← stamped when sent to agent
-    # The editor's default author is "Owner" — the daemon is local-trust, so
+    # The editor's default author is "Owner" - the daemon is local-trust, so
     # no identity enforcement here (the gate enforces the visitor policy).
     def _share_comments_post(self, qs):
         try:
@@ -13974,7 +13974,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Walks `source/` to find every folder containing an `index.html`. Returns
     # them as a flat list so the workflow library can surface agent-generated
     # prototypes (e.g. `source/new/`, `source/main/sketches/`) alongside the
-    # registered workspace branches. Two levels deep — `source/<branch>/...`
+    # registered workspace branches. Two levels deep - `source/<branch>/...`
     # is the canonical structure, so we scan one extra level beyond branches.
     def _source_prototypes(self, qs):
         try:
@@ -14017,12 +14017,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"scan failed: {e}"})
         # Brand-new projects: auto-star + auto-thumbnail the first prototype so
         # the landing card isn't blank. One-shot, gated, never backfills an
-        # already-populated project. Best-effort — wrapped, never breaks the list.
+        # already-populated project. Best-effort - wrapped, never breaks the list.
         self._maybe_autofeature_first_prototype(project_root, found, qs)
         return self._reply(200, {"prototypes": found})
 
     # ─────────────────────────────────────────────────────────────────────
-    # Auto-feature the FIRST prototype of a brand-new project — star it and
+    # Auto-feature the FIRST prototype of a brand-new project - star it and
     # set it as the landing thumbnail so a fresh project's card has something
     # to show the moment its first prototype lands. "Brand-new only": we never
     # backfill a project that already had prototypes when we first saw it.
@@ -14031,7 +14031,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # {"state": "armed"|"done"}) drives a tiny state machine, evaluated each
     # time the prototype list is built:
     #   • sentinel absent + 0 prototypes  → write "armed"  (fresh, empty project)
-    #   • sentinel absent + ≥1 prototype  → write "done"   (pre-existing — never
+    #   • sentinel absent + ≥1 prototype  → write "done"   (pre-existing - never
     #                                        feature; this is the no-backfill rule)
     #   • "armed"          + ≥1 prototype → feature the first, write "done"
     #   • "done"                          → no-op forever
@@ -14059,7 +14059,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     state = "done"  # unreadable sentinel → never act
             if state == "done":
                 return
-            # Only depth-1 prototypes (source/<slug>/index.html) are eligible —
+            # Only depth-1 prototypes (source/<slug>/index.html) are eligible -
             # they're the project's own prototypes, not sub-prototypes.
             depth1 = [p for p in found if p.get("depth") == 1 and p.get("id")]
             have = bool(depth1)
@@ -14080,10 +14080,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not pick:
                 pick = depth1[0]
             slug = pick.get("id")
-            # Star it — but never stomp a star the user somehow already set.
+            # Star it - but never stomp a star the user somehow already set.
             if not self._read_starred_ids(project_root):
                 self._write_starred_ids(project_root, [slug])
-            # Thumbnail it (+ capture the PNG) — likewise only if none chosen.
+            # Thumbnail it (+ capture the PNG) - likewise only if none chosen.
             if not self._read_thumbnail_path(project_root):
                 tp = f"source/{slug}/index.html"
                 if self._write_thumbnail_path(project_root, tp):
@@ -14100,8 +14100,8 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   • editor/<slug>.data.js → editor/<newslug>.data.js (canvas/frames data),
     #     with sourceRoot, the source/<slug>/ path prefix, and the
     #     branch|prototype + *Label identifier fields repointed at <newslug>.
-    # The on-disk slug IS the prototype's name — both the ?prototype=<slug> URL
-    # param and the source/ subtree key off it — so the slug rewrite is what
+    # The on-disk slug IS the prototype's name - both the ?prototype=<slug> URL
+    # param and the source/ subtree key off it - so the slug rewrite is what
     # actually re-points the clone. New prototypes are auto-discovered by the
     # source/ scan (/__source_prototypes), so there's no registry to update.
     # Depth-1 prototypes only (source/<slug>/index.html); nested <name>/<sub>
@@ -14143,7 +14143,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 n += 1
         new_label = (body.get("label") or new_slug).strip() or new_slug
 
-        # 1) Copy the source subtree — the actual prototype HTML/CSS/JS/assets.
+        # 1) Copy the source subtree - the actual prototype HTML/CSS/JS/assets.
         dest_dir = os.path.join(src_root, new_slug)
         _SKIP = {".history", ".trash", ".git", "__pycache__", ".DS_Store"}
         try:
@@ -14167,10 +14167,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             except (OSError, UnicodeDecodeError):
                 text = None
             if text is not None:
-                # a) path prefix source/<slug>/ → source/<newslug>/ — covers the
+                # a) path prefix source/<slug>/ → source/<newslug>/ - covers the
                 #    sourceRoot value AND any comment / nested path reference.
                 text = text.replace(f"source/{slug}/", f"source/{new_slug}/")
-                # b) sourceRoot value — belt-and-braces for a custom root that
+                # b) sourceRoot value - belt-and-braces for a custom root that
                 #    didn't contain the slug literally.
                 text = re.sub(r'(["\']?sourceRoot["\']?\s*:\s*)"[^"]*"',
                               lambda m: m.group(1) + json.dumps(f"../source/{new_slug}/"), text)
@@ -14194,7 +14194,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "editorData": data_written,
         })
 
-    # Default prototype slug for a project — the one editor/data.js (the
+    # Default prototype slug for a project - the one editor/data.js (the
     # fallback served when no ?prototype=<slug> is present) points at, parsed
     # from its meta.sourceRoot ("../source/<slug>/"). Returns None if unknown.
     def _default_prototype_slug(self, project_root):
@@ -14210,18 +14210,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         return m.group(1) if m else None
 
     # POST /__prototypes/rename?project=<id>  body: { id, newId, label? }
-    # Renames a prototype's slug — NOT a simple folder move. The slug is baked
+    # Renames a prototype's slug - NOT a simple folder move. The slug is baked
     # into pathways across the project, so this repoints ALL of them atomically:
     #   • source/<slug>/        → source/<newslug>/
     #   • editor/<slug>.data.js → editor/<newslug>.data.js (or rewrites the
     #     fallback editor/data.js in place when <slug> is the default proto),
     #     with sourceRoot + branch|prototype + *Label fields repointed
     #   • editor/<slug>.layout.js → editor/<newslug>.layout.js (position sidecar)
-    #   • workflow/workflow.json   — every node's branch|prototype == <slug> field
+    #   • workflow/workflow.json   - every node's branch|prototype == <slug> field
     #     + any source/<slug>/ path reference
-    #   • .starred-prototypes.json — bookmark id <slug> (and <slug>/<sub>)
-    #   • .thumbnail-prototype.json — path / id pointing at <slug>
-    #   • source/<newslug>/**      — any absolute source/<slug>/ asset reference
+    #   • .starred-prototypes.json - bookmark id <slug> (and <slug>/<sub>)
+    #   • .thumbnail-prototype.json - path / id pointing at <slug>
+    #   • source/<newslug>/**      - any absolute source/<slug>/ asset reference
     # Depth-1 prototypes only.
     def _prototype_rename(self, qs):
         try:
@@ -14298,7 +14298,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except OSError:
                 pass
 
-        # 4) Source files — repoint any ABSOLUTE source/<old>/ asset reference.
+        # 4) Source files - repoint any ABSOLUTE source/<old>/ asset reference.
         #    (Relative refs already survived the folder move; this only catches
         #    HTML/CSS/JS that hard-coded the project-rooted source path.)
         for root_dir, dirs, files in os.walk(new_dir):
@@ -14320,7 +14320,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except OSError:
                         pass
 
-        # 5) workflow.json — node branch|prototype fields == <old> + path refs.
+        # 5) workflow.json - node branch|prototype fields == <old> + path refs.
         wf = os.path.join(project_root, "workflow", "workflow.json")
         if os.path.isfile(wf):
             try:
@@ -14336,7 +14336,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except (OSError, UnicodeDecodeError):
                 pass
 
-        # 6) Starred bookmarks — remap <old> and <old>/<sub> ids.
+        # 6) Starred bookmarks - remap <old> and <old>/<sub> ids.
         try:
             ids = self._read_starred_ids(project_root)
             remapped, changed = [], False
@@ -14353,7 +14353,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception:
             pass
 
-        # 7) Thumbnail pointer — path under source/<old>/ or id == <old>.
+        # 7) Thumbnail pointer - path under source/<old>/ or id == <old>.
         thumb = os.path.join(project_root, ".thumbnail-prototype.json")
         if os.path.isfile(thumb):
             try:
@@ -14378,7 +14378,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__prototypes/delete?project=<id>  body: { id }
     # Moves source/<slug>/ (+ its editor/<slug>.data.js / .layout.js) to
-    # source/.trash/<slug>-<timestamp>/ — recoverable, no hard-rm — and clears
+    # source/.trash/<slug>-<timestamp>/ - recoverable, no hard-rm - and clears
     # the prototype from .starred-prototypes.json + .thumbnail-prototype.json so
     # no broken bookmark lingers. Refuses to delete the LAST prototype only.
     # There is NO privileged, undeletable "default" prototype: deleting the one
@@ -14413,7 +14413,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # no-?prototype= URL and for any prototype lacking its own
         # editor/<slug>.data.js sidecar. If THIS prototype is the one that
         # fallback currently represents, deleting its source would 404 the
-        # fallback — so PROMOTE a surviving prototype's sidecar into
+        # fallback - so PROMOTE a surviving prototype's sidecar into
         # editor/data.js in its place (done after the trash move, below).
         # Every other prototype in a multi-prototype project carries its own
         # sidecar, so a promotion target effectively always exists; the narrow
@@ -14494,7 +14494,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # ─────────────────────────────────────────────────────────────────────
-    # Starred prototypes — per-project bookmarks of specific prototype slugs
+    # Starred prototypes - per-project bookmarks of specific prototype slugs
     # that the user has chosen to surface on the projects landing + in the
     # workflow library. Storage: <project>/.starred-prototypes.json with
     # shape { "starred": ["<id1>", "<id2>", ...] } where each id matches
@@ -14597,7 +14597,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         sid = (body.get("id") or "").strip()
         if not sid:
             return self._reply(400, {"error": "missing id"})
-        # Sanity-bound the id — must look like the slugs we scan for.
+        # Sanity-bound the id - must look like the slugs we scan for.
         if not re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", sid):
             return self._reply(400, {"error": "invalid id shape", "id": sid})
         ids = self._read_starred_ids(project_root)
@@ -14618,7 +14618,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     # ─────────────────────────────────────────────────────────────────────
-    # Thumbnail prototype — per-project pick of a SINGLE prototype slug
+    # Thumbnail prototype - per-project pick of a SINGLE prototype slug
     # to render as the landing-card preview. Distinct from starred prototypes
     # (multi-item list, surfaced as a starred list under the card). Storage:
     # <project>/.thumbnail-prototype.json with shape { "id": "<slug>" } or
@@ -14631,7 +14631,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _read_thumbnail_path(self, project_root):
         """Return the project-relative source path of the chosen thumbnail
         ("" if none). Backwards-compatible read: the v1 shape stored a
-        prototype slug under "id" — if we encounter that we promote it to
+        prototype slug under "id" - if we encounter that we promote it to
         the v2 path (source/<slug>/index.html) on the fly so old saves keep
         working without a migration script."""
         path = self._thumbnail_prototype_path(project_root)
@@ -14665,7 +14665,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         """Resolve a project-relative `tp` (e.g. "source/main/index.html",
         "source/main/page-bento.html", "source/main/_ds/v1/page.html") to
         a {path, label, exists} entry. Returns None on empty tp. Anything
-        outside source/ is rejected — keeps the thumbnail strictly to
+        outside source/ is rejected - keeps the thumbnail strictly to
         user-generated HTML."""
         if not tp:
             return None
@@ -14738,7 +14738,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Walks source/ for every .html / .htm file EXCEPT the index.html files
     # picked up by /__source_prototypes (which already surface as Prototypes
     # in the workflow library). Used by the Library "HTML pages" section to
-    # surface agent-generated pages — DS brainstorm outputs (page-*.html,
+    # surface agent-generated pages - DS brainstorm outputs (page-*.html,
     # ds-samples.html), iterator-produced variants, ad-hoc Write outputs.
     # Walks up to MAX_DEPTH levels deep so deeply nested generators land too.
     # Returns relative paths + branch + mtime; sorted newest first.
@@ -14784,7 +14784,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     dirs[:] = []
                     continue
                 # Split rel_root into segments. The first segment (if any) is
-                # the branch slug — we use it as the entry's branch field.
+                # the branch slug - we use it as the entry's branch field.
                 segs = [] if rel_root == "." else rel_root.split(os.sep)
                 branch = segs[0] if segs else ""
                 for fname in files:
@@ -14793,13 +14793,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     fpath = os.path.join(root, fname)
                     if fpath in prototype_indexes: continue
                     if not os.path.isfile(fpath): continue
-                    # v3.4.16 — Skip HTML files living inside the asset
+                    # v3.4.16 - Skip HTML files living inside the asset
                     # subdirs (images/, svg/, shaders/, viz/, models/,
                     # video/, audio/). Those are skill outputs from
                     # shader / threejs / canvas-gen / viz / motion-gen /
                     # lottie-gen, already enumerated by /__assets with
                     # the correct extension-based kind. Listing them
-                    # again here produced duplicate library entries —
+                    # again here produced duplicate library entries -
                     # the user sees the same scene twice, once as an
                     # HTML page (renders fine) and once as an "image"
                     # asset (broken when dragged).
@@ -14813,14 +14813,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                         label = fname
                     else:
                         label = "/".join(segs[1:]) + "/" + fname
-                    # v3.7 — Classify DS-related pages so the editor can surface
+                    # v3.7 - Classify DS-related pages so the editor can surface
                     # them in their own Library section ("Design system pages")
                     # between Prototypes and plain HTML pages. Two signals:
                     #   • Anywhere under a `_ds_brainstorm/` folder (the
                     #     Workflow 0 brainstorm fan-out lands here).
                     #   • Files exactly named `gallery.html` or `ds-samples.html`
                     #     at any depth (legacy DS scaffolds + one-offs). We DO
-                    #     NOT match `ds-*` or `page-*` generically — those
+                    #     NOT match `ds-*` or `page-*` generically - those
                     #     prefixes overlap with regular feature pages
                     #     (e.g. `page-about.html` is a normal HTML page).
                     fname_lower = fname.lower()
@@ -14880,7 +14880,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # }
     # Walks every .html / .htm / .jsx / .tsx / .js / .ts file under
     # source/<branch>/ and, for each `<img>` tag whose `src` resolves to the
-    # SAME file as `old_src` (matched by file basename — relative paths to a
+    # SAME file as `old_src` (matched by file basename - relative paths to a
     # different folder still hit), rewrites the `src` attribute to point at
     # `new_src`. Used by the asset card's "replace output" button when the
     # user swaps a PNG/JPG/etc. on a prototype for an SVG (or any other
@@ -14927,7 +14927,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         files_changed = []
         # Regex: `<img …src="<dir>/<old_basename>"…>` where <dir> ends in `/`
         # OR is empty (when src is exactly the basename). The mandatory `/`
-        # boundary prevents partial-basename matches — e.g., asking to swap
+        # boundary prevents partial-basename matches - e.g., asking to swap
         # `foo.png` must NOT rewrite `<img src="other-foo.png">`. Handles
         # both single and double quotes; case-insensitive for the tag name
         # and the basename.
@@ -14944,7 +14944,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # Group 2 captures the directory ending in `/` (or is empty
                 # when src is just the basename). The mandatory `/` boundary
                 # is enforced by the pattern itself, so any match here is a
-                # true basename hit — safe to rewrite.
+                # true basename hit - safe to rewrite.
                 return m.group(1) + m.group(2) + new_base + m.group(4)
             new_text, n = img_src_re.subn(repl, text)
             return new_text, n
@@ -14978,9 +14978,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except OSError as e:
                         return self._reply(500, {"error": f"write failed for {fname}: {e}"})
 
-        # v3.4.22 — Broadcast the rewritten file paths so the prototype
+        # v3.4.22 - Broadcast the rewritten file paths so the prototype
         # iframe handler refreshes immediately (instead of waiting for the
-        # file-watcher's 1–2s polling cycle).
+        # file-watcher's 1-2s polling cycle).
         try:
             project_id = os.path.basename(project_root.rstrip("/"))
             changed_paths = [f["path"] for f in files_changed]
@@ -15010,7 +15010,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #                                  allow-same-origin" frameborder="0"
     #                                  style="width:100%;height:100%;
     #                                  border:0"></iframe>
-    #     (covers shader / 3d / threejs / viz / canvas-gen / motion-gen —
+    #     (covers shader / 3d / threejs / viz / canvas-gen / motion-gen -
     #      every Pathway-B HTML scene)
     #   new_kind = "lottie"         → <lottie-player src="…" autoplay loop
     #                                  background="transparent"
@@ -15018,7 +15018,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #                                </lottie-player>
     #     (when no <script src="…lottie-player…"> exists in the file, the
     #      endpoint also injects one before </head> so the web component
-    #      actually registers — silently noop if a player is already loaded)
+    #      actually registers - silently noop if a player is already loaded)
     #
     # Width / height / class / id / style attributes on the original <img>
     # are preserved on the new element so layout doesn't shift.
@@ -15167,11 +15167,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except OSError as e:
                         return self._reply(500, {"error": f"write failed for {fname}: {e}"})
 
-        # v3.4.22 — Broadcast both an asset-change (for the rewritten HTML
+        # v3.4.22 - Broadcast both an asset-change (for the rewritten HTML
         # files) and a workflow-change so subscribers can re-fetch and
         # re-render. Without this the rewrite SUCCEEDS server-side but the
         # frontend iframe sometimes shows stale content because the file-
-        # watcher's 1–2s polling hadn't yet picked up the writes when the
+        # watcher's 1-2s polling hadn't yet picked up the writes when the
         # iframe was already trying to reload via the frontend's immediate
         # th:asset-refresh dispatch.
         try:
@@ -15197,7 +15197,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__mkdir?project=<id>     body: { path: "source/<branch>/..." }
     # Each path segment must match SLUG_OK so the resulting folder can also
-    # serve as a Claude Code /__run cwd slug — the agent's run path derives
+    # serve as a Claude Code /__run cwd slug - the agent's run path derives
     # its spawn cwd from the folder name, and a non-slug name would break
     # the spawn ("invalid branch slug").
     def _mkdir(self, qs):
@@ -15243,12 +15243,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not rel or not rel.startswith("source/"):
             return self._reply(400, {"error": "path must be project-relative and start with source/"})
         # Refuse to delete `source` itself or the canonical `source/main`
-        # branch — both are load-bearing. Other top-level folders (e.g.
+        # branch - both are load-bearing. Other top-level folders (e.g.
         # ones the user spawned via the picker for an agent run) are
         # fair game.
         norm = rel.rstrip("/")
         if norm == "source" or norm == "source/main":
-            return self._reply(400, {"error": "won't remove " + norm + " — that's load-bearing"})
+            return self._reply(400, {"error": "won't remove " + norm + " - that's load-bearing"})
         try:
             abs_path = _safe_join(project_root, rel)
         except Exception as e:
@@ -15296,9 +15296,9 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Folder-node mini file-explorer (/__fs_*) ─────────────────────────
     # General, root-scoped filesystem ops for the workflow folder node. Unlike
-    # /__mkdir,/__rmdir,/__rename_dir (locked to source/ + slug names — they
+    # /__mkdir,/__rmdir,/__rename_dir (locked to source/ + slug names - they
     # back the agent-output picker and the slug constraint is load-bearing for
-    # /__run), this family operates on WHATEVER folder the node points at —
+    # /__run), this family operates on WHATEVER folder the node points at -
     # including absolute paths anywhere on disk. The only guard is that every
     # entry resolves UNDER the chosen root via _safe_join (which refuses any
     # path resolving outside its base), so an explorer rooted at /Users/you/foo
@@ -15324,7 +15324,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return _safe_join(project_root, raw), project_root
 
     def _fs_list(self, qs):
-        """GET /__fs_list?root=<rel-or-abs> — immediate children (files + dirs).
+        """GET /__fs_list?root=<rel-or-abs> - immediate children (files + dirs).
         Modeled on _ls_dirs but returns both kinds with size/mtime/ext so the
         folder node can render a mini file explorer."""
         try:
@@ -15408,15 +15408,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "path": abs_path})
 
     def _fs_open(self, qs):
-        """POST /__fs_open  body { path } — open in OS default app / Finder."""
+        """POST /__fs_open  body { path } - open in OS default app / Finder."""
         return self._fs_open_path(qs, reveal=False)
 
     def _fs_reveal(self, qs):
-        """POST /__fs_reveal  body { path } — reveal/select in Finder."""
+        """POST /__fs_reveal  body { path } - reveal/select in Finder."""
         return self._fs_open_path(qs, reveal=True)
 
     def _fs_rename(self, qs):
-        """POST /__fs_rename  body { root, name, to } — rename one entry inside
+        """POST /__fs_rename  body { root, name, to } - rename one entry inside
         root. `to` must be a single path segment (no separators)."""
         try:
             body = self._read_json_body(max_bytes=8 * 1024)
@@ -15450,7 +15450,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "name": name, "to": to})
 
     def _fs_delete(self, qs):
-        """POST /__fs_delete  body { root, name } — delete one entry inside
+        """POST /__fs_delete  body { root, name } - delete one entry inside
         root (file → unlink, dir → recursive). Refuses to delete the root."""
         try:
             body = self._read_json_body(max_bytes=8 * 1024)
@@ -15482,7 +15482,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "name": name})
 
     def _fs_upload(self, qs):
-        """POST /__fs_upload?root=<rel-or-abs> — multipart upload into root.
+        """POST /__fs_upload?root=<rel-or-abs> - multipart upload into root.
         Reuses the _upload_files multipart machinery; only the target dir
         differs (the resolved root instead of source/<branch>/uploads)."""
         root = (_qs_get(qs, "root") or "").strip()
@@ -15547,7 +15547,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": bool(written), "files": written, "skipped": skipped})
 
     def _fs_mkdir(self, qs):
-        """POST /__fs_mkdir  body { root, name } — create a subfolder inside
+        """POST /__fs_mkdir  body { root, name } - create a subfolder inside
         root. `name` must be a single path segment."""
         try:
             body = self._read_json_body(max_bytes=8 * 1024)
@@ -15578,7 +15578,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         live sys.path that pip install --user would have updated.
 
         Timeout note: first-time `import rembg` on macOS can stall well past
-        15 s — Python compiles .pyc files for the just-downloaded package,
+        15 s - Python compiles .pyc files for the just-downloaded package,
         onnxruntime loads native dylibs, and Gatekeeper may verify the freshly
         downloaded binary the first time it's used. We give it 60 s and degrade
         TimeoutExpired into a clean `installed: false` instead of an unhandled
@@ -15586,7 +15586,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         pkg = (_qs_get(qs, "package") or "").strip()
         if pkg not in self._LOCAL_PACKAGES:
             return self._reply(400, {"error": f"unknown local package: {pkg}", "known": list(self._LOCAL_PACKAGES.keys())})
-        # Cache hit — a package we've already confirmed installed. Skip the
+        # Cache hit - a package we've already confirmed installed. Skip the
         # subprocess entirely so the landing page's re-probe is instant and the
         # New-project button never flashes disabled on revisit. `force=1`
         # bypasses the cache (the Re-check button passes it).
@@ -15667,7 +15667,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not brew:
                 return self._reply(502, {
                     "ok": False, "package": pkg,
-                    "error": (f"Homebrew not found — install {spec['bin']} manually "
+                    "error": (f"Homebrew not found - install {spec['bin']} manually "
                               f"(e.g. download from the project's releases page) or install "
                               f"Homebrew first (https://brew.sh), then retry."),
                 })
@@ -15703,7 +15703,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             node = self._find_local_binary("node")
             if not npm or not node:
                 return self._reply(502, {"ok": False, "package": pkg,
-                    "error": "node + npm not found on PATH — install Node.js (https://nodejs.org) then retry."})
+                    "error": "node + npm not found on PATH - install Node.js (https://nodejs.org) then retry."})
             try:
                 os.makedirs(tools_dir, exist_ok=True)
                 # 1) the npm packages, 2) the Playwright browser binary.
@@ -15734,7 +15734,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # without touching the system Python. `--quiet` keeps the output
         # small enough to ship back in the JSON reply.
         #
-        # --break-system-packages — required for Homebrew-installed Python
+        # --break-system-packages - required for Homebrew-installed Python
         # ≥3.12 which ships with a PEP-668 EXTERNALLY-MANAGED marker that
         # otherwise blocks pip entirely. Combined with --user the flag is
         # safe: installs only land in the per-user site dir, never touching
@@ -15752,7 +15752,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         stderr = (r.stderr or b"").decode("utf-8", "replace")
         # Verify post-install. Also fetch the version in the same subprocess
         # so the client doesn't have to follow up with a separate /__local_status
-        # probe (that follow-up probe was racy on fresh installs — first-time
+        # probe (that follow-up probe was racy on fresh installs - first-time
         # `import rembg` could exceed the probe's timeout and the UI would
         # revert to "Install" even though pip + verify both succeeded).
         # Timeout is 60 s for the same reason _local_status uses 60 s.
@@ -15791,17 +15791,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             "verify_timeout": verify_timeout,
         })
 
-    # ── Phase 4c — library: project asset listing + delete ─────────────
+    # ── Phase 4c - library: project asset listing + delete ─────────────
     # Surfaces every generated file under source/<branch>/{images,svg,video,
     # models,shaders,viz,audio}/ as a draggable library item. Delete removes
-    # the file from disk (destructive — the user is in control of their own
+    # the file from disk (destructive - the user is in control of their own
     # source tree). Newest first.
     _LIB_ASSET_SUBDIRS = ("images", "svg", "video", "models", "shaders", "viz", "audio", "fonts")
     _LIB_KIND_FOR_DIR  = {
         "images": "image", "svg": "svg", "video": "video", "models": "3d",
         "shaders": "shader", "viz": "viz", "audio": "audio", "fonts": "font",
     }
-    # v3.4.16 — Extension → asset kind. Wins over the folder-derived default
+    # v3.4.16 - Extension → asset kind. Wins over the folder-derived default
     # in `_LIB_KIND_FOR_DIR`. Background: skill outputs (shader / threejs /
     # viz / lottie / svg-gen / video-gen / motion-gen) all land in
     # source/<branch>/images/ regardless of file type. The folder default
@@ -15850,7 +15850,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         except Exception: continue
                         rel = os.path.relpath(fpath, project_root).replace("\\", "/")
                         # Prefer the file extension when it maps to a known
-                        # kind — that's the truth. Fall back to the folder
+                        # kind - that's the truth. Fall back to the folder
                         # default only when the extension is unrecognised.
                         ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
                         kind = self._LIB_EXT_KIND.get(ext) or self._LIB_KIND_FOR_DIR.get(sub, "image")
@@ -15884,7 +15884,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e: return self._reply(500, {"error": f"could not delete: {e}"})
         return self._reply(200, {"ok": True, "path": rel})
 
-    # ── Phase 4c — library: saved prompts (markdown "skills") ──────────
+    # ── Phase 4c - library: saved prompts (markdown "skills") ──────────
     # Stored at <project>/workflow/prompts/<slug>.md. Filename is the slug;
     # first markdown H1 line is the human title. Used by the prompt-node
     # "Save" button and surfaced as draggable items in the Library →
@@ -15988,8 +15988,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "slug": slug})
 
     # ── Node groups (Local Library) ──────────────────────────────────────
-    # A saved group is a snapshot of a multi-node selection — its nodes plus
-    # the edges internal to the selection — persisted as JSON under
+    # A saved group is a snapshot of a multi-node selection - its nodes plus
+    # the edges internal to the selection - persisted as JSON under
     # workflow/groups/<slug>.json so it can be dropped back onto any canvas.
     # Mirrors the saved-prompts storage (same slug rules, same per-project
     # dir convention); the canvas re-instantiates with fresh ids + an offset.
@@ -16132,7 +16132,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Liveness ─────────────────────────────────────────────────────────
 
-    # ── v3.9 — Web-browser node endpoints ────────────────────────────────
+    # ── v3.9 - Web-browser node endpoints ────────────────────────────────
     # The `browser` canvas node embeds a public website. Three endpoints:
     #   /__web_probe?url=  → can the site be iframed directly? (XFO / CSP)
     #   /__web_proxy?url=  → re-serve the page from OUR origin with the
@@ -16220,7 +16220,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             body = ("<!doctype html><meta charset='utf-8'><body style='font:13px system-ui;"
                     "padding:24px;color:#444'><b>Couldn't load page</b><br>"
-                    + _dt.datetime.now().strftime("%H:%M:%S") + " — " + str(e))
+                    + _dt.datetime.now().strftime("%H:%M:%S") + " - " + str(e))
             data = body.encode("utf-8")
             self.send_response(502)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -16240,7 +16240,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # The proxied page is sandboxed. When the editor can hand it a real
         # SIBLING origin (localhost <-> 127.0.0.1, same daemon) the iframe keeps
         # allow-same-origin, so cookies/localStorage/history work natively and
-        # the SPA renders/routes like the real site — while staying cross-origin
+        # the SPA renders/routes like the real site - while staying cross-origin
         # to the editor (can't reach it). With no sibling origin (e.g. a tunnel)
         # the iframe is opaque and those APIs THROW, so we install harmless
         # in-memory stand-ins, but ONLY when native access actually throws (so we
@@ -16288,7 +16288,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                  "finalUrl": page["finalUrl"]})
 
     def _healthz(self):
-        """v2.50 — Dedicated daemon-liveness probe. Touches NO locks
+        """v2.50 - Dedicated daemon-liveness probe. Touches NO locks
         (workflow / runs / history) and reads NO files. Returns in <5ms
         regardless of load. The frontend uses this as its canonical
         "daemon up" signal so application-traffic slowness no longer
@@ -16300,10 +16300,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             "pid":  os.getpid(),
         })
 
-    # ── /__kinds/registry — D3 source of truth ────────────────────────────
+    # ── /__kinds/registry - D3 source of truth ────────────────────────────
 
     def _kinds_registry(self):
-        """v2.50 — D3: serve the per-kind registry as JSON. Frontend
+        """v2.50 - D3: serve the per-kind registry as JSON. Frontend
         renderers, validators, and orchestrator skills all read this.
         Single source of truth (Principle 1)."""
         try:
@@ -16312,10 +16312,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"registry load failed: {e}"})
 
-    # ── /__kinds/reconcile — D5 drift scan ────────────────────────────────
+    # ── /__kinds/reconcile - D5 drift scan ────────────────────────────────
 
     def _kinds_reconcile(self, qs):
-        """v2.50 — D5: walk the project and return drift list + lineage.
+        """v2.50 - D5: walk the project and return drift list + lineage.
         See kinds/reconcile.py. Auto-heal class items get applied when the
         client posts to /__kinds/reconcile/heal (TODO: that endpoint is
         a future enhancement; today the user can Heal one at a time)."""
@@ -16330,14 +16330,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"reconcile failed: {e}"})
 
     def _capabilities(self):
-        """v2.50 — canonical 'what does this app support' catalog. Aggregates
+        """v2.50 - canonical 'what does this app support' catalog. Aggregates
         image-gen providers (from media-models.js), subagent drawers (from
         .claude/agents/*.md), HTTP endpoints, and node kinds (from
         kinds/registry.py). Returned as JSON; also baked into every spawn's
         system preamble so agents never have to guess what's integrated.
 
         Fixes the 'user asks about Quiver AI, agent says we don't have it'
-        class of bug — the catalog is authoritative."""
+        class of bug - the catalog is authoritative."""
         try:
             from kinds.capabilities import get_capabilities
             return self._reply(200, get_capabilities())
@@ -16346,10 +16346,10 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Orchestrator registry routes (v3.3) ──────────────────────────────────
     #
-    # GET  /__orchestrators?project=<id>             — list every orchestrator manifest
+    # GET  /__orchestrators?project=<id>             - list every orchestrator manifest
     #                                              + per-orchestrator enabled state
     #                                              for this project.
-    # POST /__orchestrators/disable?project=<id>     — body {orchestratorId, enabled}
+    # POST /__orchestrators/disable?project=<id>     - body {orchestratorId, enabled}
     #                                              flips one orchestrator's toggle.
     #
     # Orchestrators are auto-discovered from `.claude/agents/<name>.manifest.json`.
@@ -16377,7 +16377,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return os.getcwd()
 
     def _orchestrators_registry(self, qs):
-        """GET /__orchestrators?project=<id> — return aggregated manifests + state.
+        """GET /__orchestrators?project=<id> - return aggregated manifests + state.
 
         When called without a ?project= param, falls back to the workspace
         disable state (landing-page case). Toggles made there affect every
@@ -16431,7 +16431,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Prototype detail catalog ─────────────────────────────────────────
     #
-    # GET /__prototype_catalog — list every library .md file under
+    # GET /__prototype_catalog - list every library .md file under
     # INSTALL_ROOT/design-library/, grouped by category prefix
     # (shell- / style- / aesthetic- / recipe- / photo- / illust- / material-).
     # Each entry carries:
@@ -16440,7 +16440,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # The landing System tab renders this so the user can browse the design
     # library (shells, styles, aesthetics, recipes, scenes, steps) without
     # opening PROTOTYPE.md. Sample images attached to a genre serve as visual
-    # references once a project commits a direction — multiple images per
+    # references once a project commits a direction - multiple images per
     # genre supported because picks are not deterministic and a finished
     # design often blends references.
     #
@@ -16454,7 +16454,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   ---
     #   images:
     #     - src: shell-bento-grid-1.png
-    #       reason: Apple privacy page hero — canonical asymmetric 12-col
+    #       reason: Apple privacy page hero - canonical asymmetric 12-col
     #     - src: shell-bento-grid-2.png
     #       reason: cell radii + low-density discipline
     #   ---
@@ -16463,7 +16463,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #
     # `src` may be a bare filename (resolved under /design-library/) or a path
     # relative to /design-library/. Images that don't exist on disk are
-    # still surfaced — the UI shows a placeholder until the user drops in
+    # still surfaced - the UI shows a placeholder until the user drops in
     # the real file. This is intentional: the user adds sample images
     # incrementally and the catalog has to keep working in the meantime.
 
@@ -16474,27 +16474,27 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Skill-detail files (step-*, scene-addendum-details, gallery-html,
     # demo-dock, raster-requirements, preflight-checklist, woven-repo-
     # conventions, slot-annotations) live in INSTALL_ROOT/prototype/, NOT
-    # in design-library/ — they describe HOW to draw, not what. They're
+    # in design-library/ - they describe HOW to draw, not what. They're
     # still readable as PROTOTYPE.md detail files but are not surfaced in
     # the Design library catalog. The legacy _PROTOTYPE_HIDDEN_PREFIXES
     # belt-and-braces filter below catches any that accidentally land in
     # design-library/.
     _PROTOTYPE_CATEGORIES = (
-        ("shell",     "Shells",       "Page-level layout chassis — where things sit before any styling is applied."),
-        ("style",     "Styles",       "Surface treatment — color, type, hairlines, shadows, radii."),
-        ("aesthetic", "Aesthetics",   "Cultural/visual movement applied on top of a style — vaporwave, cottagecore, bauhaus, etc."),
+        ("shell",     "Shells",       "Page-level layout chassis - where things sit before any styling is applied."),
+        ("style",     "Styles",       "Surface treatment - color, type, hairlines, shadows, radii."),
+        ("aesthetic", "Aesthetics",   "Cultural/visual movement applied on top of a style - vaporwave, cottagecore, bauhaus, etc."),
         ("recipe",    "Recipes",      "Known-good (shell + style + aesthetic + voice) bundles for common briefs."),
-        ("photo",     "Photography",  "Curated photography styles for raster-photo slots — editorial-fashion, street, documentary, product, food, lifestyle, fine-art, conceptual, era-specific (y2k-halftone, frutiger-aero, vaporwave) — read by photography-orchestrator. Full library: docs/research/photography-library.md."),
-        ("illust",    "Illustration", "Curated illustration styles for raster-foreground slots — 3D (clay / fluffy / Pixar / origami / voxel), flat-vector (corporate-memphis / thick-border / jean-jullien), hand-drawn (scribble / watercolor / gouache / pencil), anime (Ghibli / Shinkai / shoujo / kawaii), illustrative-typography, abstract-decoration, mid-century, surreal-esoteric — read by illustration-orchestrator. Full library: docs/research/illustration-library.md."),
-        ("material",  "Materials",    "Material taxonomy for the material-orchestrator's fidelity pass — digital UI surfaces (glass / clay / chrome / holographic / aurora / Frutiger), digital media textures (pixel / CRT / dither / ANSI / datamosh / RGB-split / JPEG-corruption / chromatic-aberration / displacement / plotter / wireframe / schematic / hand-architect), analog materials (paper / fabric / leather / film grain / VHS / risograph / halftone / letterpress / ink-wash / pencil), hybrid cross-overs. Full library: docs/research/material-library.md."),
-        ("motion",    "Motion scenes", "Full-bleed video + motion-raster presentation techniques for the motion-studio-orchestrator — scroll-driven (entrance / scrub-rotation / pinned-transform / sequence-frames), pointer-driven (mouse-scrub look + orbit / parallax layers / spotlight), ambient (atmosphere loops / cinemagraphs / living gradients), scene choreography (stepper / crossfade / match-cut / zoom-through), composition (quiet-zone headline / subject-offset counterweight / video text mask / frame-hold beats). Full library: docs/research/motion-scene-library.md."),
+        ("photo",     "Photography",  "Curated photography styles for raster-photo slots - editorial-fashion, street, documentary, product, food, lifestyle, fine-art, conceptual, era-specific (y2k-halftone, frutiger-aero, vaporwave) - read by photography-orchestrator. Full library: docs/research/photography-library.md."),
+        ("illust",    "Illustration", "Curated illustration styles for raster-foreground slots - 3D (clay / fluffy / Pixar / origami / voxel), flat-vector (corporate-memphis / thick-border / jean-jullien), hand-drawn (scribble / watercolor / gouache / pencil), anime (Ghibli / Shinkai / shoujo / kawaii), illustrative-typography, abstract-decoration, mid-century, surreal-esoteric - read by illustration-orchestrator. Full library: docs/research/illustration-library.md."),
+        ("material",  "Materials",    "Material taxonomy for the material-orchestrator's fidelity pass - digital UI surfaces (glass / clay / chrome / holographic / aurora / Frutiger), digital media textures (pixel / CRT / dither / ANSI / datamosh / RGB-split / JPEG-corruption / chromatic-aberration / displacement / plotter / wireframe / schematic / hand-architect), analog materials (paper / fabric / leather / film grain / VHS / risograph / halftone / letterpress / ink-wash / pencil), hybrid cross-overs. Full library: docs/research/material-library.md."),
+        ("motion",    "Motion scenes", "Full-bleed video + motion-raster presentation techniques for the motion-studio-orchestrator - scroll-driven (entrance / scrub-rotation / pinned-transform / sequence-frames), pointer-driven (mouse-scrub look + orbit / parallax layers / spotlight), ambient (atmosphere loops / cinemagraphs / living gradients), scene choreography (stepper / crossfade / match-cut / zoom-through), composition (quiet-zone headline / subject-offset counterweight / video text mask / frame-hold beats). Full library: docs/research/motion-scene-library.md."),
     )
     _PROTOTYPE_HIDDEN_PREFIXES = ("step-", "scene-")
 
     def _parse_prototype_md(self, path):
         """Read one prototype detail file. Returns
             {title, summary, images: [{src, reason}]}
-        Tolerant of every file shape the repo currently uses — missing
+        Tolerant of every file shape the repo currently uses - missing
         frontmatter, missing summary, weird first-line markup."""
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -16587,7 +16587,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if para:
                     break
                 continue
-            # Skip the **Tag:** / **Canonical references:** convention lines —
+            # Skip the **Tag:** / **Canonical references:** convention lines -
             # those are catalog metadata, not the genre's prose summary.
             if stripped.startswith("**Tag:**") or stripped.startswith("**Canonical references:**"):
                 continue
@@ -16601,7 +16601,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return {"title": title, "summary": summary, "images": images}
 
     def _prototype_catalog(self):
-        """GET /__prototype_catalog — emit the design library shipped with
+        """GET /__prototype_catalog - emit the design library shipped with
         this repo (INSTALL_ROOT/design-library/). Returned shape:
             {
               groups: [
@@ -16619,9 +16619,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         for key, label, desc in self._PROTOTYPE_CATEGORIES:
             groups_by_key[key] = {"key": key, "label": label, "description": desc, "items": []}
         unknown = {"key": "other", "label": "Other", "description": "Detail files that don't match a known category prefix.", "items": []}
-        # v3.13 — a NEW library group (a new filename prefix) created by a
+        # v3.13 - a NEW library group (a new filename prefix) created by a
         # system-agent thread must surface as its OWN labeled group, not get
-        # dumped into "Other" — otherwise the files exist on disk and agents
+        # dumped into "Other" - otherwise the files exist on disk and agents
         # read them, but the System-tab page never shows the group ("function
         # but not page"). We derive a group per unknown prefix on the fly
         # (titleized label) so a new group is first-class with no serve.py
@@ -16637,7 +16637,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if not os.path.isfile(full):
                     continue
                 slug = name[:-3]
-                # Skip workflow-phase and scene-addendum docs — they aren't
+                # Skip workflow-phase and scene-addendum docs - they aren't
                 # visual picks and don't belong in the catalog.
                 if any(slug.startswith(p) for p in self._PROTOTYPE_HIDDEN_PREFIXES):
                     continue
@@ -16704,27 +16704,27 @@ class H(http.server.SimpleHTTPRequestHandler):
             "groups":     groups,
             "total":      total,
             "categories": categories,
-            "note":       ("Picks are not deterministic — a finished prototype can blend two recipes or "
+            "note":       ("Picks are not deterministic - a finished prototype can blend two recipes or "
                            "borrow one aesthetic's palette while wearing another shell. Treat sample "
                            "images as references, not destinations."),
         })
 
     # ── Harness-local skills routes ──────────────────────────────────────
     #
-    # GET  /__cc_skills           — list every SKILL.md installed in the
+    # GET  /__cc_skills           - list every SKILL.md installed in the
     #                                harness-local skills dir. THIS HARNESS
     #                                DELIBERATELY DOES NOT READ THE USER'S
-    #                                GLOBAL ~/.claude/ INSTALL — agents
+    #                                GLOBAL ~/.claude/ INSTALL - agents
     #                                spawned by the harness do not get
     #                                access to the user's Claude Code
     #                                skill library, so they have to be
     #                                added to the harness explicitly here.
-    # POST /__cc_skills/upload    — multipart upload. Each part is either a
+    # POST /__cc_skills/upload    - multipart upload. Each part is either a
     #                                SKILL.md file (installed verbatim) or a
     #                                .zip whose first top-level dir becomes
     #                                the skill slug. Lands under the
     #                                harness skills dir.
-    # POST /__cc_skills/delete    — body {"slug": "<name>"} removes
+    # POST /__cc_skills/delete    - body {"slug": "<name>"} removes
     #                                <skills_dir>/<slug>/.
     #
     # Storage location resolution (first match wins):
@@ -16772,7 +16772,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         """Walk the harness skills dir and emit a flat list. Each entry:
             {slug, name, description, source: "user", path, invocation}
 
-        Only the harness-local dir is scanned — the user's global
+        Only the harness-local dir is scanned - the user's global
         ~/.claude/ install is deliberately NOT read. Agents spawned by the
         harness don't get access to the user's global Claude Code skill
         library, so a skill the agent should be able to invoke has to be
@@ -16789,7 +16789,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     continue
                 meta = self._parse_skill_md_frontmatter(md) or {}
                 name = meta.get("name") or slug
-                # Path shown to the user — relative to workspace if applicable,
+                # Path shown to the user - relative to workspace if applicable,
                 # else absolute (still useful for "where did this land?").
                 show_path = md
                 if WORKSPACE_DIR and md.startswith(WORKSPACE_DIR):
@@ -16806,7 +16806,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"count": len(out), "skills": out, "root": user_root})
 
     def _mcp_catalog(self):
-        """GET /__mcp_catalog — emit the MCP servers shipped with this repo.
+        """GET /__mcp_catalog - emit the MCP servers shipped with this repo.
 
         Reads .claude/mcp-catalog.json (display metadata) and cross-checks
         whether each server is currently wired into .claude/mcp-config.json
@@ -16836,7 +16836,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 catalog = {"servers": [], "_note": None}
 
         # Cross-reference with mcp-config.json to compute the `wired` flag
-        # per server. We don't fail if the file is absent — the catalog is
+        # per server. We don't fail if the file is absent - the catalog is
         # still useful as a "here's what we ship" reference.
         wired_ids = set()
         configured_count = 0
@@ -16859,15 +16859,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             entry["wired"] = entry.get("id") in wired_ids
             seen_ids.add(entry.get("id"))
             out_servers.append(entry)
-        # v3.12 — servers wired into the runtime config WITHOUT a catalog
-        # entry (hand-edits) still surface, as minimal synthesized rows —
+        # v3.12 - servers wired into the runtime config WITHOUT a catalog
+        # entry (hand-edits) still surface, as minimal synthesized rows -
         # consistent with kinds.capabilities._mcp_server_inventory.
         for sid in sorted(wired_ids - seen_ids):
             out_servers.append({
                 "id": sid,
                 "label": sid,
                 "icon": "◇",
-                "purpose": "(manually wired in mcp-config.json — no catalog entry)",
+                "purpose": "(manually wired in mcp-config.json - no catalog entry)",
                 "toolPrefix": f"mcp__{sid}__",
                 "wired": True,
                 "source": "config-only",
@@ -16882,8 +16882,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "note":            catalog.get("_note"),
         })
 
-    # ── v3.12 — manually-added MCP servers ───────────────────────────────
-    # POST /__mcp_catalog/add    — body {id, command, label?, purpose?,
+    # ── v3.12 - manually-added MCP servers ───────────────────────────────
+    # POST /__mcp_catalog/add    - body {id, command, label?, purpose?,
     #   whenToUse?, toolPrefix?, transport?, requires?[], firstCallNote?, icon?}
     #   Writes BOTH files: the runtime entry into mcp-config.json (so the
     #   next spawn's --mcp-config picks it up) and a display entry into
@@ -16891,7 +16891,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   capabilities preamble can describe it). If the id already exists in
     #   the catalog (a shipped server the user is re-wiring), only the
     #   runtime entry is written.
-    # POST /__mcp_catalog/remove — body {id}. Unwires from mcp-config.json;
+    # POST /__mcp_catalog/remove - body {id}. Unwires from mcp-config.json;
     #   deletes the catalog entry only when it was user-added.
     _MCP_ID_OK = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -16919,7 +16919,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         body = self._read_json_body()
         sid = (body.get("id") or "").strip().lower()
         if not self._MCP_ID_OK.match(sid):
-            return self._reply(400, {"error": "invalid server id — use [a-z0-9_-], starting with a letter or digit"})
+            return self._reply(400, {"error": "invalid server id - use [a-z0-9_-], starting with a letter or digit"})
         command_line = (body.get("command") or "").strip()
         if not command_line:
             return self._reply(400, {"error": "command is required (full command line, e.g. `npx -y some-mcp@latest`)"})
@@ -16945,7 +16945,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except OSError as e:
             return self._reply(500, {"error": f"mcp-config write failed: {e}"})
 
-        # Display entry — only created when the catalog doesn't already
+        # Display entry - only created when the catalog doesn't already
         # describe this id (shipped entries keep their curated metadata).
         catalog_path = self._mcp_catalog_path()
         catalog = self._mcp_read_json(catalog_path, {"servers": []})
@@ -17019,7 +17019,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                   "catalogEntryRemoved": removed_catalog})
 
     def _cc_skills_upload(self):
-        """POST /__cc_skills/upload — multipart body. Each part is either a
+        """POST /__cc_skills/upload - multipart body. Each part is either a
         SKILL.md (installed as <harness_skills>/<slug>/SKILL.md) or a .zip
         whose first directory becomes the skill slug.
 
@@ -17027,7 +17027,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         `name:` if present, else the upload filename's stem.
 
         Refuses uploads outside the harness skills root (path-traversal
-        guard) — the harness deliberately never writes into the user's
+        guard) - the harness deliberately never writes into the user's
         global ~/.claude/ install."""
         ctype = self.headers.get("Content-Type", "")
         if not ctype.lower().startswith("multipart/form-data"):
@@ -17064,7 +17064,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             cd = headers.get("content-disposition", "")
             raw_name = self._upload_extract_filename(cd)
             if not raw_name:
-                # form-data field without filename — ignore
+                # form-data field without filename - ignore
                 continue
             lower = raw_name.lower()
             if lower.endswith(".md"):
@@ -17162,7 +17162,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     def _cc_skills_delete(self):
-        """POST /__cc_skills/delete — body {"slug": "<name>"}.
+        """POST /__cc_skills/delete - body {"slug": "<name>"}.
         Removes <harness_skills>/<slug>/ recursively. Refuses to touch
         any path outside that root."""
         try:
@@ -17218,7 +17218,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__projects/new  body: { id, label? }
     # Scaffolds <WORKSPACE_DIR>/projects/<id>/{source/main/, editor/data.js}.
-    # Only valid in workspace mode. Post-v3.5 onboarding cut — no scope,
+    # Only valid in workspace mode. Post-v3.5 onboarding cut - no scope,
     # no intent, no reference, no PRD upload, no DS ref, no .onboarding-pending
     # marker, no workflow.json scaffold. The user drops into an empty editor
     # with a blank canvas; they build by typing in chat or dropping nodes.
@@ -17246,7 +17246,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             os.makedirs(os.path.join(dest, "editor"), exist_ok=True)
             # Optional: seed design-systems/default/ from the bundled starter DS
             # with the customizer's colour / radius / type / spacing tweaks
-            # baked in. Best-effort — a failure here leaves a usable (DS-less)
+            # baked in. Best-effort - a failure here leaves a usable (DS-less)
             # project rather than aborting creation.
             if body.get("useDefaultDs"):
                 try:
@@ -17259,7 +17259,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if ds_ref:
                 meta_inner += ", dsRef: " + json.dumps(ds_ref)
             main_data = (
-                "// Auto-generated by /__projects/new — minimal project seed.\n"
+                "// Auto-generated by /__projects/new - minimal project seed.\n"
                 "window.EDITOR_DATA = {\n"
                 f"  meta: {{ {meta_inner} }},\n"
                 "  frames: [], lanes: [], arrows: [], entities: [], primitives: [], links: [],\n"
@@ -17294,7 +17294,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__projects/clone  body: { clone_url, id?, label? }
     # Clone a GitHub repo into a NEW project folder (projects/<id>/). Because the
-    # project IS the clone, origin is set and the tree is clean — Pull/Push work
+    # project IS the clone, origin is set and the tree is clean - Pull/Push work
     # immediately, which is the whole point (it avoids the "fresh project is
     # dirty, can't pull" trap a generated project hits). Workspace-mode +
     # GitHub-signed-in only; private repos authenticate via the host token (a
@@ -17311,7 +17311,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": "missing repo clone_url"})
         tok = _gitops.host_token()
         if not tok:
-            return self._reply(401, {"error": "not signed in to GitHub — connect your account first"})
+            return self._reply(401, {"error": "not signed in to GitHub - connect your account first"})
 
         # Collision check across both the projects/ layout and the legacy root.
         def _taken(pid):
@@ -17383,7 +17383,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # design-systems/<dsId>/ (default ds = "default"), with the same customizer
     # payload the new-project flow sends (dsOverrideCss / dsDarkCss / dsFont /
     # dsLogo / dsLogoDot / dsSchemes / dsLabel). Drives the "Use template design
-    # system" button on the workflow DS-generator node — replaces whatever the
+    # system" button on the workflow DS-generator node - replaces whatever the
     # node had on disk with the customized template, so its badge flips to Built.
     def _seed_existing_ds(self, qs):
         try:
@@ -17402,12 +17402,12 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # Seed <project>/design-systems/default/ from the bundled starter DS,
     # baking in the new-project customizer's tweaks. `body` carries:
-    #   dsOverrideCss  — a ":root{…}" block (colours/radius/type/spacing) the
+    #   dsOverrideCss  - a ":root{…}" block (colours/radius/type/spacing) the
     #                    frontend already computed; appended verbatim so later
     #                    cascade wins over the template tokens.
-    #   dsFont         — optional { familyCss, googleFontsUrl } to swap the
+    #   dsFont         - optional { familyCss, googleFontsUrl } to swap the
     #                    Plus Jakarta Sans webfont + --font family.
-    #   dsLabel        — optional human label for meta.json / dsRef.
+    #   dsLabel        - optional human label for meta.json / dsRef.
     # Also writes the editor/design-systems/default.js runtime mirror so the
     # editor's DS view + listDesignSystems() light up at first boot. Returns
     # the dsRef dict { id, version, pinned:false } for data.js meta.
@@ -17421,7 +17421,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Copy the whole template tree (trio + shells + templates + assets).
         # When seeding over an existing DS folder (the "Use template design
         # system" button on an already-built node) the user is deliberately
-        # replacing it — clear the old tree first so copytree can land.
+        # replacing it - clear the old tree first so copytree can land.
         if os.path.isdir(ds_dir):
             shutil.rmtree(ds_dir)
         shutil.copytree(DEFAULT_DS_DIR, ds_dir)
@@ -17429,7 +17429,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         override_css = (body.get("dsOverrideCss") or "").strip()
         font = body.get("dsFont") if isinstance(body.get("dsFont"), dict) else None
 
-        # 1) Font swap — replace the Plus Jakarta Sans Google Fonts URL across
+        # 1) Font swap - replace the Plus Jakarta Sans Google Fonts URL across
         #    every html/css in the copied DS, and the --font family in
         #    styles.css. Keep the template untouched when no font was chosen.
         if font and (font.get("googleFontsUrl") or font.get("familyCss")):
@@ -17460,7 +17460,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         with open(fp, "w", encoding="utf-8") as f:
                             f.write(new_txt)
 
-        # 1b) Logo swap — the user can upload a sidebar/topnav logo. Decode the
+        # 1b) Logo swap - the user can upload a sidebar/topnav logo. Decode the
         #     data URL, write assets/logo.<ext>, and (for non-svg) repoint every
         #     `logo.svg` reference across the copied html/css. The original ref
         #     in shells/templates/gallery is `assets/logo.svg` / `../assets/
@@ -17521,7 +17521,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-        # 1c) Colour schemes — the DS declares which schemes it ships. The
+        # 1c) Colour schemes - the DS declares which schemes it ships. The
         #     template carries a :root[data-theme="dark"] block; honour the
         #     user's choice: light-only strips the dark block, dark-only also
         #     stamps data-theme="dark" on every page so it renders dark by
@@ -17560,10 +17560,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                             with open(fp, "w", encoding="utf-8") as f:
                                 f.write(nt)
 
-        # 2) Token overrides — resolve the frontend-computed values IN PLACE
+        # 2) Token overrides - resolve the frontend-computed values IN PLACE
         #    into the starter DS's first :root{} block. The customization is
         #    baked and no longer tunable, so the shipped styles.css should
-        #    carry a SINGLE clean token set — not the defaults plus a trailing
+        #    carry a SINGLE clean token set - not the defaults plus a trailing
         #    override block. Each customized token's value is rewritten where it
         #    is already declared (the dark :root[data-theme="dark"] block, which
         #    references the ramp via var(), is intentionally left untouched so
@@ -17595,7 +17595,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(styles_path, "w", encoding="utf-8") as f:
                 f.write(styles_css)
 
-        # 2b) Dark-mode roles — merge the frontend-computed dark scheme into the
+        # 2b) Dark-mode roles - merge the frontend-computed dark scheme into the
         #     :root[data-theme="dark"]{} block in place (only present when dark
         #     ships). These are contrast-tuned per palette (button fill vs
         #     gradient anchor use different steps so white text holds on both).
@@ -17621,11 +17621,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 with open(styles_path, "w", encoding="utf-8") as f:
                     f.write(styles_css)
 
-        # 2c) Style overlay — if the user picked a named style (pastel, glass-
+        # 2c) Style overlay - if the user picked a named style (pastel, glass-
         #     morphism, neumorphism, …), fold that theme's overlay into
         #     styles.css as the DEFAULT look. The overlay ships scoped under
         #     [data-theme="<id>"]; strip that scoping so every rule applies
-        #     unconditionally — the baked DS simply IS that style (no attribute
+        #     unconditionally - the baked DS simply IS that style (no attribute
         #     needed, so the editor's single-file styles.css preview renders it).
         #     Mirrors the dark-scheme bake, but as a string axis recorded in
         #     meta.defaultStyle. Palette/scheme tuning above already landed in
@@ -17690,7 +17690,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
-        # 3) meta.json — stamp a content version + label; never carry a
+        # 3) meta.json - stamp a content version + label; never carry a
         #    project name. Version = sha256(styles + gallery)[:12], matching
         #    the POST /__design_system convention.
         gallery_path = os.path.join(ds_dir, "gallery.html")
@@ -17721,10 +17721,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         meta["defaultStyle"] = default_style
         # Persist the full build recipe for the baked style so any agent
         # inheriting this DS is aware of the active style (e.g. glass) and
-        # knows exactly how to wire it — link target, <html> attribute, and
+        # knows exactly how to wire it - link target, <html> attribute, and
         # runtime script for JS-backed styles. None when neutral base.
         meta["defaultStyleContract"] = _resolve_style_contract(ds_dir, meta)
-        # Build policy — what imagery / polish / orchestrators a build on this
+        # Build policy - what imagery / polish / orchestrators a build on this
         # DS may use. None (all-auto) → drop any prior block so absent == auto.
         _bp = _normalize_build_policy(body.get("dsBuildPolicy"))
         if _bp is not None:
@@ -17737,7 +17737,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception:
             pass
 
-        # 4) Runtime mirror — editor/design-systems/default.js, same schema the
+        # 4) Runtime mirror - editor/design-systems/default.js, same schema the
         #    DS view + listDesignSystems() read (window.EDITOR_DS_default).
         design_md = ""
         try:
@@ -17748,7 +17748,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         mirror_dir = _safe_join(dest, "editor", "design-systems")
         os.makedirs(mirror_dir, exist_ok=True)
         mirror_body = (
-            "// EDITOR_DS_" + ds_id + " — runtime mirror of design-systems/" + ds_id + "/.\n"
+            "// EDITOR_DS_" + ds_id + " - runtime mirror of design-systems/" + ds_id + "/.\n"
             "// Written by /__projects/new (default DS customizer).\n"
             "window.EDITOR_DS_" + ds_id + " = " + json.dumps({
                 "id":      ds_id,
@@ -17769,7 +17769,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__projects/rename  body: { id, label }
     # Updates the project's display label by writing workspace.json. The on-disk
-    # folder name (the `id`) is immutable — renaming that would break running
+    # folder name (the `id`) is immutable - renaming that would break running
     # agents, branch URLs, and run history. Workspace-mode only.
     def _project_rename(self, qs):
         if not WORKSPACE_DIR:
@@ -17810,7 +17810,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__projects/delete  body: { id }
     # Moves <WORKSPACE_DIR>/projects/<id>/ to projects/.trash/<id>-<timestamp>/
-    # — recoverable, no hard-rm. Falls back to <WORKSPACE_DIR>/<id>/ for any
+    # - recoverable, no hard-rm. Falls back to <WORKSPACE_DIR>/<id>/ for any
     # legacy project that hasn't been migrated into projects/ yet. Also
     # removes the entry from workspace.json if present. Workspace-mode only.
     def _project_delete(self, qs):
@@ -17844,7 +17844,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "runIds": [s.run_id for s in active],
                 })
         except NameError:
-            pass  # RUNS isn't defined yet at module import — only at request time
+            pass  # RUNS isn't defined yet at module import - only at request time
         # Trash sits next to the active projects (projects/.trash/) so deleting
         # doesn't clutter the workspace root. Legacy installs may still have
         # a .trash at the root; we prefer the new location for new deletions.
@@ -17877,8 +17877,8 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   • meta.project in editor/data.js + editor/branches/*.js  → new label
     #   • whole-token occurrences of the old id slug              → new id
     #     (in editor/*.js, workflow/*.json, and *.md content files)
-    # The on-disk slug `id` IS the project's true name here — resolve_project_root
-    # keys off it — so the id rewrite is what actually re-points internal
+    # The on-disk slug `id` IS the project's true name here - resolve_project_root
+    # keys off it - so the id rewrite is what actually re-points internal
     # references; the label rewrite keeps the editor's display honest.
     # Transient/heavy dirs (.history undo stack, .trash, .git) are NOT copied.
     # Workspace-mode only.
@@ -17911,7 +17911,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 src_label = (e.get("label") or src_id).strip() or src_id
                 break
 
-        # Target id — caller-supplied or auto-derived "<id>-copy[-N]" that doesn't
+        # Target id - caller-supplied or auto-derived "<id>-copy[-N]" that doesn't
         # collide with an existing project (under projects/ or legacy root).
         def _taken(pid):
             if os.path.exists(_safe_join(PROJECTS_DIR, pid)):
@@ -17936,7 +17936,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         os.makedirs(PROJECTS_DIR, exist_ok=True)
         dest = _safe_join(PROJECTS_DIR, new_id)
-        # Skip transient/heavy state — the clone earns a fresh undo history, and
+        # Skip transient/heavy state - the clone earns a fresh undo history, and
         # copying .git/.trash would be wrong or wasteful.
         _SKIP_DIRS = {".history", ".trash", ".git", "__pycache__"}
         ignore = shutil.ignore_patterns(*_SKIP_DIRS)
@@ -17963,7 +17963,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     in_workflow = rel.split(os.sep)[0] == "workflow"
                     # editor/*.js + workflow/*.json carry structural references;
                     # *.md files carry brand-spec / research prose that names the
-                    # project. Leave prototype source (html/css/js) alone — its
+                    # project. Leave prototype source (html/css/js) alone - its
                     # references use the human app name, not the slug, and a stray
                     # rewrite there could break code.
                     eligible = (
@@ -17990,7 +17990,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         except OSError:
                             pass
 
-        # meta.project label rewrite — always, so the editor's display matches
+        # meta.project label rewrite - always, so the editor's display matches
         # the clone even when id == src_id (caller renamed only the label) or the
         # label held something other than the id. Targets the `project: "..."`
         # field in data.js + every branch file.
@@ -18061,7 +18061,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 names = sorted(n for n in os.listdir(abs_path)
                                if os.path.isfile(os.path.join(abs_path, n)))
                 latest = 0.0
-                entries = {}          # {name: per-file sha1} — lets the client
+                entries = {}          # {name: per-file sha1} - lets the client
                 combo = hashlib.sha1()  # name WHICH files changed since ack
                 for n in names:
                     fp = os.path.join(abs_path, n)
@@ -18106,7 +18106,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _runs_list(self, qs):
         """Lightweight registry of every run we know about. Lets the UI show a
-        list of past runs and reopen any of them. Phase 5a — also folds in
+        list of past runs and reopen any of them. Phase 5a - also folds in
         historical runs read from each branch's chat.jsonl so the menu still
         reflects yesterday's conversation after a daemon restart."""
         try:
@@ -18141,7 +18141,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "historical": False,
             })
         # Merge in historical runs that aren't in RUNS. Only runs from the
-        # active project — the chat JSONLs live under the project root so this
+        # active project - the chat JSONLs live under the project root so this
         # is naturally project-scoped.
         historical = _chat_jsonl_scan_historical(project_root)
         for rid, meta in historical.items():
@@ -18163,7 +18163,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   `runId` is provided, the result is filtered to that one run; otherwise
     #   every event for every run on the branch is returned in file order.
     def _chat_history(self, qs):
-        # v3.12 — system threads first: their transcripts live under
+        # v3.12 - system threads first: their transcripts live under
         # .system-chats/, not in any project, and the landing page calls
         # this endpoint with no ?project= param. Match by runId against the
         # live registry, then the on-disk section files.
@@ -18204,12 +18204,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"branch": branch, "events": rows})
 
     # GET /__doc?branch=<slug>&name=<NOTES.md|brand-spec.md>[&project=<id>]
-    #   Phase 5a — bounded doc fetch for the toolbar Notes / Brand-spec
+    #   Phase 5a - bounded doc fetch for the toolbar Notes / Brand-spec
     #   buttons. Returns { exists, name, branch, text, bytes }. We don't reuse
     #   the static-file mapping because the UI wants a structured response
     #   (so a 404 can be presented as "no notes yet" rather than a console
     #   error).
-    # v3.1 — branches deprecated. MERGES.md / FORK_REQUEST.md dropped.
+    # v3.1 - branches deprecated. MERGES.md / FORK_REQUEST.md dropped.
     _BRANCH_DOC_NAMES = {"NOTES.md", "brand-spec.md", "DESIGN.md"}
 
     def _branch_doc(self, qs):
@@ -18254,7 +18254,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "path": os.path.relpath(chosen, project_root),
         })
 
-    # ── Phase 5b — render-check screenshot endpoints ──────────────────────
+    # ── Phase 5b - render-check screenshot endpoints ──────────────────────
     # POST /__screenshot  body: { branch, view?|file?, frameId?, waitMs?, selector?, scale? }
     #   Synchronously waits up to SCREENSHOT_CALLER_TIMEOUT_S for a connected
     #   editor tab to capture and return the PNG. Replies application/json
@@ -18399,7 +18399,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(404, {"error": "unknown jobId", "jobId": job_id})
             if job.state in ("done", "error"):
                 # The caller already timed out and we marked the job error.
-                # Don't overwrite the terminal state — just acknowledge.
+                # Don't overwrite the terminal state - just acknowledge.
                 return self._reply(200, {"ok": True, "alreadyTerminal": True, "state": job.state})
 
         if body.get("ok") is False:
@@ -18429,7 +18429,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             job.result_event.set()
             return self._reply(413, {"error": job.error})
 
-        # Defensive size hints — editor sends them; we don't recompute.
+        # Defensive size hints - editor sends them; we don't recompute.
         try: w = int(body.get("width") or 0) or None
         except Exception: w = None
         try: h = int(body.get("height") or 0) or None
@@ -18442,7 +18442,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         job.result_event.set()
         return self._reply(200, {"ok": True, "bytes": len(png_bytes)})
 
-    # ── Phase 5c — multipart upload of project assets ─────────────────────
+    # ── Phase 5c - multipart upload of project assets ─────────────────────
     # Distinct from `/__attachment` (Phase 4d): that route is single-image,
     # base64, vision-bound (lives in `source/<branch>/_attachments/`). This
     # route is multi-file, multipart/form-data, lives in
@@ -18681,7 +18681,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _upload_delete(self, qs):
         """POST /__upload/delete?branch=<slug>&name=<filename>[&project=<id>]
         Removes one file from `source/<branch>/uploads/`. The UI's per-file
-        × button targets this — agents that need to clean up should use the
+        × button targets this - agents that need to clean up should use the
         regular `Bash rm` tool instead. 404 if the file is already gone."""
         try:
             project_root = resolve_project_root(qs)
@@ -18719,7 +18719,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         with RUNS_LOCK:
             state = RUNS.get(run_id)
         if not state:
-            # v2.29b — rehydrate from JSONL after daemon restart, same as
+            # v2.29b - rehydrate from JSONL after daemon restart, same as
             # /__run/<id>/resume. Without this the canvas polling loop +
             # WorkflowAgentNode chat-fetch keep 404ing for every prior run.
             try:
@@ -18760,7 +18760,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # POST /__run  body: { branch, agentId?, kind?, prompt?, title?, meta? }
     def _run_create_system(self, body):
-        """v3.12 — POST /__run with body {scope:"system", section, prompt,
+        """v3.12 - POST /__run with body {scope:"system", section, prompt,
         title?, permissionMode?}. Spawns the WORKSPACE SYSTEM AGENT: a
         claude run whose cwd is the install/workspace root, with elevated
         permissions and NONE of the project confinement. See
@@ -18780,7 +18780,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not user_prompt:
             return self._reply(400, {"error": "system thread requires a prompt"})
         title = (body.get("title") or f"System · {section}").strip()
-        # Full bypass by default — this agent edits the harness itself; the
+        # Full bypass by default - this agent edits the harness itself; the
         # accept-edits middle ground just generates permission-wall stalls
         # in -p stream-json mode. The UI can still pass a stricter mode.
         permission_mode = (body.get("permissionMode") or "bypassPermissions").strip()
@@ -18795,10 +18795,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         elif defs.get("permission_flag") and permission_mode:
             spawn_args += [defs["permission_flag"], permission_mode]
         # Deliberately NOT applied (vs the project spawn path):
-        #   --disable-slash-commands  — user-level skills are fair game here
-        #   --settings settings-harness.json — no PreToolUse visual-orchestrator
+        #   --disable-slash-commands  - user-level skills are fair game here
+        #   --settings settings-harness.json - no PreToolUse visual-orchestrator
         #     gate; this agent writes playbooks/manifests, not project HTML
-        #   capabilities_preamble() — the agent edits that layer; feeding it
+        #   capabilities_preamble() - the agent edits that layer; feeding it
         #     the project confinement prose would re-confine it
         spawn_args += _mcp_config_spawn_args()
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
@@ -18832,7 +18832,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.section = section
         state.bin_path = bin_path
         state.permission_mode = permission_mode or None
-        # No undo/redo history snapshot — it would inventory the whole
+        # No undo/redo history snapshot - it would inventory the whole
         # workspace repo, and System changes are git-reviewable anyway.
         state.append("status", {
             "label": "spawned",
@@ -18867,7 +18867,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "title": title,
         })
 
-    # GET /__system_runs[?section=<id>] — system-thread registry for the
+    # GET /__system_runs[?section=<id>] - system-thread registry for the
     # landing System tab: live runs (scope=system) + historical threads
     # from .system-chats/*.jsonl. Same row shape as /__runs.
     def _system_runs_list(self, qs):
@@ -18911,11 +18911,11 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _run_create(self, qs):
         body = self._read_json_body()
-        # v3.12 — workspace system threads bypass project resolution entirely
+        # v3.12 - workspace system threads bypass project resolution entirely
         # (there is no project; cwd is the workspace root).
         if (body.get("scope") or "").strip().lower() == "system":
             return self._run_create_system(body)
-        # v3.8 — resolve project from EITHER qs (editor UI puts it there via
+        # v3.8 - resolve project from EITHER qs (editor UI puts it there via
         # apiUrl()) OR body (legacy ad-hoc curl callers). Earlier this only
         # read from body, which worked when resolve_project_root had a silent
         # first-project fallback; the v3.7 strict-require flip exposed it as
@@ -18941,14 +18941,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "hint": f"install it, or set ${env_key} to an absolute binary path",
             })
 
-        # v3.4.31 — Per-prototype editor scope.
+        # v3.4.31 - Per-prototype editor scope.
         # In v3.1 branches collapsed into source/<slug>/ and this used to be
         # hardcoded to "main" because there was no per-call slug carrier.
         # The editor now passes ?branch=<slug> in the URL when the user
         # picks a starred prototype, the chat dispatcher forwards that as
         # `branch` in the body, so honor it here. We validate against the
         # same alphabet _starred_prototypes_toggle accepts (one or two
-        # path segments, each [A-Za-z0-9_.-]) — malformed slugs silently
+        # path segments, each [A-Za-z0-9_.-]) - malformed slugs silently
         # fall back to "main" so the agent always gets a usable scope.
         _raw_branch = (body.get("branch") or "main").strip()
         if re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", _raw_branch):
@@ -18968,19 +18968,19 @@ class H(http.server.SimpleHTTPRequestHandler):
         # For Claude Code in -p mode this MUST be set or every tool auto-denies.
         permission_mode = (body.get("permissionMode") or defs.get("permission_default") or "").strip()
         spawn_args = list(defs["args"])
-        # v2.45 / v3.8.1 — Claude Code 2.1.163 split the bypass into TWO
+        # v2.45 / v3.8.1 - Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
         # prompts; --allow-dangerously-skip-permissions must ENABLE the
         # bypass first. See `claude --help`:
         #   --allow-dangerously-skip-permissions   Enable bypassing all permission checks
         #   --dangerously-skip-permissions         Bypass all permission checks.
         # The /__run path at this site was missed when the other spawn
-        # site (_spawn_node_agent) was patched — every chat spawn from
+        # site (_spawn_node_agent) was patched - every chat spawn from
         # the editor UI flows through here, so the missing flag is what
-        # made "i try to run and nothing happens" — the spawn would
+        # made "i try to run and nothing happens" - the spawn would
         # succeed structurally but the subprocess hit a permission wall
         # on its first tool call and emitted empty text.
-        # v3.5 — Claude-only flag block. Codex's CLI surface differs:
+        # v3.5 - Claude-only flag block. Codex's CLI surface differs:
         #   • permission bypass: codex uses --full-auto, not the Claude pair
         #   • --disable-slash-commands / --settings / --append-system-prompt
         #     are Claude Code-specific and would crash codex with "unknown flag"
@@ -18993,17 +18993,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                 ]
             elif defs.get("permission_flag") and permission_mode:
                 spawn_args += [defs["permission_flag"], permission_mode]
-            # v3.1 — Hide user-level slash commands so /prototype etc. don't
+            # v3.1 - Hide user-level slash commands so /prototype etc. don't
             # auto-load and override the visual-orchestrator pipeline. Subagents
             # dispatched via the Task tool are unaffected.
             spawn_args += ["--disable-slash-commands"]
             spawn_args += _mcp_config_spawn_args()
-            # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
+            # v3.1 - Hook gate: block *.html writes until visual-orchestrator dispatched.
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
         elif agent_id == "codex":
-            # v3.5 — Codex's permission flags are version-specific
+            # v3.5 - Codex's permission flags are version-specific
             # (--full-auto / --approval-mode full-auto / a config key).
             # We don't know which the user's install accepts so we pass
             # nothing here. `codex exec` is non-interactive by definition,
@@ -19012,11 +19012,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             # empirical message.
             pass
         # Append the question-form protocol so disabling AskUserQuestion
-        # doesn't lose the "ask the user" capability — see
+        # doesn't lose the "ask the user" capability - see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
         # also append the layout paragraph so the agent knows where the
         # shared protocol mount lives (cwd ≠ protocol root).
-        # v3.5 — onboarding cut: no discovery flow, no orchestration mount.
+        # v3.5 - onboarding cut: no discovery flow, no orchestration mount.
         # Every spawn drops into the workflow canvas with the capabilities
         # preamble; the user steers from chat (Path A / Path B orchestrator
         # dispatch, `/prototype` skill, or library nodes).
@@ -19027,7 +19027,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
             if WORKSPACE_DIR and project_root != INSTALL_ROOT:
                 sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
-            # v3.4.31 — When the spawn carries a non-default branch slug
+            # v3.4.31 - When the spawn carries a non-default branch slug
             # (the user is editing a specific starred prototype), tell the
             # agent which `source/<slug>/` subtree is "active" so file
             # reads/writes default to that subtree. Only emitted for non-
@@ -19043,13 +19043,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "prototype. When a relative file path is ambiguous (e.g. "
                     "`index.html`), resolve it under "
                     f"`source/{branch}/`. Other `source/<slug>/` subtrees in "
-                    "this project belong to sibling prototypes — leave them "
+                    "this project belong to sibling prototypes - leave them "
                     "alone unless the user asks for a cross-prototype change."
                 )
-            # v3.5 — onboarding cut. Discovery + orchestrator hooks removed.
+            # v3.5 - onboarding cut. Discovery + orchestrator hooks removed.
             # The capabilities preamble (appended below) is the only thing
             # the agent reads beyond QUESTION_FORM_SYSTEM_PROMPT.
-            # v2.50 — capabilities catalog. Every spawn (orchestrator,
+            # v2.50 - capabilities catalog. Every spawn (orchestrator,
             # freeform, discovery) gets a compact list of integrated
             # providers + subagents + endpoints + node kinds, so the agent
             # doesn't answer "I don't have X" for features that ARE
@@ -19063,10 +19063,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
         elif agent_id == "codex":
-            # v3.5 — Codex chats get the SAME capabilities preamble as Claude
+            # v3.5 - Codex chats get the SAME capabilities preamble as Claude
             # (so they know visual-orchestrator etc. exist), plus a translation
             # note that maps Claude's `Task(subagent_type: ...)` dispatch
-            # pattern to a POST against /__dispatch_planner — codex doesn't
+            # pattern to a POST against /__dispatch_planner - codex doesn't
             # have a native Task tool but has shell + curl. The endpoint is
             # reentrant and picks whichever runtime is available, so the
             # nested planner can run on Claude or another codex; codex doesn't
@@ -19101,24 +19101,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "```\n\n"
                 "The daemon streams the planner's progress as Server-Sent "
                 "Events. The connection stays open (with heartbeats) for the "
-                "full duration of the planner run — minutes to tens of "
+                "full duration of the planner run - minutes to tens of "
                 "minutes is normal. Events you'll see:\n"
-                "  • `event: planner-dispatched` — first; carries `runId`\n"
-                "  • `event: agent` — agent text / tool calls / tool results\n"
-                "  • `event: planner-done` — last; carries the synthesized "
+                "  • `event: planner-dispatched` - first; carries `runId`\n"
+                "  • `event: agent` - agent text / tool calls / tool results\n"
+                "  • `event: planner-done` - last; carries the synthesized "
                 "    `output` you treat as the Task return value\n\n"
                 "Wait for the `planner-done` event to arrive, then parse its "
                 "`data:` JSON and use the `output` field. The endpoint is "
-                "reentrant — a planner that needs nested subagent dispatch "
+                "reentrant - a planner that needs nested subagent dispatch "
                 "will use the same curl pattern, and the daemon picks the "
                 "best runtime for each level."
             )
-            # v3.5 — Suppress patch echo. Codex tends to narrate the FULL
+            # v3.5 - Suppress patch echo. Codex tends to narrate the FULL
             # contents of every apply_patch call into chat as plain text
             # before/around the tool call itself. When the patch body is
             # HTML, the chat renderer used to detect <html> inside the diff
             # and pop up a live HtmlPreview iframe between hunk markers
-            # (since fixed at the renderer layer in 86e3bad — that fix
+            # (since fixed at the renderer layer in 86e3bad - that fix
             # prevents the broken render even if the echo still happens).
             # This preamble note stops the echo at the source: the tool
             # call is the work; the chat narration should be one short
@@ -19133,13 +19133,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "changed (e.g. \"Added the maximalist hero shell + sticker "
                 "collage to source/hyperpop-artist/index.html\"), then call "
                 "the tool. After the tool returns, summarise the result in a "
-                "sentence or two — not a recap of the file contents.\n\n"
+                "sentence or two - not a recap of the file contents.\n\n"
                 "Apply the same discipline to Read / Bash output: don't paste "
                 "the entire file or command output back into chat unless the "
                 "user explicitly asks. Summarise."
             )
             # Codex's preamble is prepended to the user prompt rather than
-            # passed via a flag — codex `exec` has no --append-system-prompt
+            # passed via a flag - codex `exec` has no --append-system-prompt
             # equivalent. The shape mirrors `_dispatch_planner_via_codex`.
             codex_preamble = "\n\n".join(p.strip() for p in codex_sys_bits if p and p.strip())
             prompt_text = (
@@ -19150,24 +19150,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                 + prompt_text
             )
         # The agent's workspace is the PROJECT only. We do NOT add
-        # INSTALL_ROOT to --add-dir — that would extend the writable
+        # INSTALL_ROOT to --add-dir - that would extend the writable
         # sandbox to the editor binary itself, which several past runs
         # abused (editing editor/app.js, dropping files into editor/assets/).
         # See _build_child_env's TH_PROTOCOL_ROOT env var + AGENTS.md
-        # "Editor source is OFF LIMITS" — protocol-root reads happen via
+        # "Editor source is OFF LIMITS" - protocol-root reads happen via
         # absolute paths through Read/Bash, which don't require --add-dir.
         #
-        # v2.44 — Claude Code 2.1.150+ no longer auto-allows writes to cwd
+        # v2.44 - Claude Code 2.1.150+ no longer auto-allows writes to cwd
         # even with --permission-mode bypassPermissions. Explicitly add the
         # project root so Write/Edit calls inside it don't trigger
         # "Claude requested permissions" prompts. cwd is project_root for
         # this spawn (see subprocess.Popen below), so this is purely
         # confirming "yes, you can write inside your own working directory."
-        # v3.5 — Claude-only; Codex uses cwd directly without an --add-dir flag.
+        # v3.5 - Claude-only; Codex uses cwd directly without an --add-dir flag.
         if agent_id == "claude":
             spawn_args += ["--add-dir", project_root]
 
-        # v3.5 — When the agent doesn't accept a stream-json prompt on stdin
+        # v3.5 - When the agent doesn't accept a stream-json prompt on stdin
         # (codex), pass the prompt as the trailing positional argv. Codex
         # exec's signature is `codex exec [OPTIONS] [PROMPT]`.
         if not defs["prompt_via_stdin"]:
@@ -19196,7 +19196,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = permission_mode or None
-        # ── History snapshot — BEFORE state ──────────────────────────────
+        # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
         # writes between Popen and this point, so the snapshot we take here
@@ -19214,7 +19214,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             # Never block a run on history failure. Log + continue.
             state.append("status", {"label": "history-snapshot-failed", "detail": str(e)})
-        # Kinds whose entire purpose is to modify files — lock the UI from
+        # Kinds whose entire purpose is to modify files - lock the UI from
         # the moment of spawn. Freeform runs only flip `modifying=True` if a
         # Write/Edit/MultiEdit/NotebookEdit tool_use is actually observed.
         if kind in ("edits-apply", "fork", "merge", "regenerate",
@@ -19231,7 +19231,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "permissionMode": permission_mode or None,
             "promptPreview": prompt_text[:240],
         })
-        # For freeform chats, the prompt IS the user's first message — echo it
+        # For freeform chats, the prompt IS the user's first message - echo it
         # so the UI shows "you: <prompt>" before the agent replies. Other kinds
         # (edits-apply, regenerate) wrap the user's intent in a system-style
         # instruction; we keep those out of the chat log so it stays clean.
@@ -19275,7 +19275,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         with RUNS_LOCK:
             state = RUNS.get(run_id)
         if not state:
-            # v3.x — rehydrate from JSONL after a daemon restart (RUNS is
+            # v3.x - rehydrate from JSONL after a daemon restart (RUNS is
             # in-memory only), exactly like the events-poll + resume endpoints.
             # Without this, reopening a historical run (its conversation lives
             # on disk but the daemon was restarted) 404'd "unknown runId" the
@@ -19288,7 +19288,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 state = None
             # System threads (landing-page orchestrator chats) carry no
-            # ?project= — fall back to the .system-chats JSONLs.
+            # ?project= - fall back to the .system-chats JSONLs.
             if not state:
                 try:
                     state = _rehydrate_system_run(run_id)
@@ -19335,7 +19335,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     is_done = state.done
                 if is_done and not have_more:
                     break
-                # 25 s heartbeat — beneath proxy idle thresholds.
+                # 25 s heartbeat - beneath proxy idle thresholds.
                 waker.wait(timeout=25)
                 waker.clear()
                 with state.lock:
@@ -19355,8 +19355,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 state.waiters.discard(waker)
 
     # GET /__workflow/events?project=<id>  →  Server-Sent Events
-    # v2.30 — push notification of workflow.json mutations. Each event is
-    # `event: workflow-changed` with an empty `data: {}` body — clients
+    # v2.30 - push notification of workflow.json mutations. Each event is
+    # `event: workflow-changed` with an empty `data: {}` body - clients
     # then fetch /__workflow to merge. Heartbeat every 25s so proxies don't
     # drop the connection. Per-project waiter set; unregister on disconnect.
     def _workflow_events(self, qs):
@@ -19428,13 +19428,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
         if state.done:
             return self._reply(200, {"ok": True, "alreadyDone": True})
-        # v2.28 — tag intent BEFORE terminate(), so the drain-loop's finally
+        # v2.28 - tag intent BEFORE terminate(), so the drain-loop's finally
         # block sees the reason when it computes the finish record. Without
         # this the UI would render user-initiated stops as "failed" (because
         # SIGTERM = exit 143 ≠ 0).
         state.stop_reason = "user-stop"
         # A non-live run (history-rehydrated ghost, proc=None) has no subprocess
-        # to signal — its process died with the previous daemon. Don't call
+        # to signal - its process died with the previous daemon. Don't call
         # .terminate() on None (that 500'd with a misleading "terminate failed"
         # AttributeError); just settle the record so the UI stops showing it as
         # mid-flight. See RunState.is_live.
@@ -19480,7 +19480,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except ValueError:
                 project_root = DEFAULT_PROJECT_ROOT
             paths.append(_chat_jsonl_path(project_root, "main"))
-            # A history-only ghost (gone from RUNS) might be a system thread —
+            # A history-only ghost (gone from RUNS) might be a system thread -
             # the project chat won't carry it. Sweep the section files too.
             if state is None:
                 for p, _sec in _system_chat_candidate_files():
@@ -19497,7 +19497,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__run/<id>/tool-result  body: { toolUseId, content, isError? }
     # Pipes the user's answer to an agent-side tool prompt (AskUserQuestion,
     # custom permission tools, …) back into the child's stdin as a Claude
-    # stream-json tool_result content part. Phase 1 finish-touch — required
+    # stream-json tool_result content part. Phase 1 finish-touch - required
     # for the AskUserQuestion clickable card.
     def _run_tool_result(self, run_id):
         body = self._read_json_body(max_bytes=4 * 1024 * 1024)
@@ -19517,7 +19517,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if state.done:
             return self._reply(409, {"error": "run already finished"})
         # Non-live runs (history-rehydrated ghosts with proc=None) can't take a
-        # stdin frame — recovery is /resume. is_live is the single source of
+        # stdin frame - recovery is /resume. is_live is the single source of
         # truth for "proc present AND stdin writable" (see RunState.is_live).
         if not state.is_live:
             return self._reply(409, {"error": "agent stdin not available", "needsResume": True})
@@ -19547,14 +19547,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         if state.done:
             return self._reply(409, {"error": "run already finished"})
         # Non-live runs (history-rehydrated ghost, proc=None) have no stdin to
-        # write — the continuation path is /resume (re-spawn with --resume). The
+        # write - the continuation path is /resume (re-spawn with --resume). The
         # message text is chosen so the composer's dispatch() fallback treats it
         # as "process gone" and auto-retries via /resume (it matches on "not
         # running"); needsResume is the explicit signal for any future caller.
         # See RunState.is_live and app.js dispatch().
         if not state.is_live:
             return self._reply(409, {
-                "error": "agent process is not running — resume to continue",
+                "error": "agent process is not running - resume to continue",
                 "needsResume": True,
             })
         try:
@@ -19575,7 +19575,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # process exited (user clicked Stop, or it crashed) but the user wants
     # to continue the same conversation with full context. The new process
     # replaces state.proc in-place so the chat drawer keeps streaming on
-    # the same runId — the user perceives one continuous conversation, as
+    # the same runId - the user perceives one continuous conversation, as
     # they would with any normal chat UI.
     def _run_resume_codex(self, state, run_id, text):
         """Fake resume for codex: reconstruct prior conversation as a
@@ -19632,7 +19632,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if len(body_txt) > 4000:
                         body_txt = body_txt[:4000] + "\n…(truncated)"
                     lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
-                # status / thinking_delta / usage — skip; transcript noise.
+                # status / thinking_delta / usage - skip; transcript noise.
         transcript = "\n\n".join(lines).strip()
         # Compose the resume prompt. Frame it explicitly so codex knows the
         # prior conversation is context, not instructions to repeat.
@@ -19686,7 +19686,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         with RUNS_LOCK:
             state = RUNS.get(run_id)
         if not state:
-            # v2.29b — rehydrate from JSONL after daemon restart. Without
+            # v2.29b - rehydrate from JSONL after daemon restart. Without
             # this, every prior chat became unresumable across daemon
             # restarts (RUNS is in-memory only). project param must be
             # present so we know where to scan.
@@ -19696,7 +19696,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 state = _rehydrate_run_from_jsonl(run_id, project_root)
             except Exception:
                 state = None
-            # v3.12 — system threads carry no ?project= (the landing page
+            # v3.12 - system threads carry no ?project= (the landing page
             # has none); scan the .system-chats section files instead.
             if not state:
                 try:
@@ -19706,24 +19706,24 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not state:
                 return self._reply(404, {"error": "unknown runId", "runId": run_id,
                                           "hint": "tried to rehydrate from JSONL but the run wasn't found in any branch under the project"})
-        # Reject resume only when a LIVE process is attached — then the caller
+        # Reject resume only when a LIVE process is attached - then the caller
         # must write to its stdin via /user-message. A non-live run (cleanly
         # finished, OR a history-rehydrated ghost with proc=None and possibly
         # done=False) is exactly what resume exists for: re-spawn with --resume
         # <session_id>. Gating on `done` alone stranded ghost mid-flight runs
-        # (done=False + proc=None), which /user-message ALSO refuses — a
+        # (done=False + proc=None), which /user-message ALSO refuses - a
         # two-endpoint deadlock the user saw as "agent stdin not available".
         # See RunState.is_live.
         if state.is_live:
             return self._reply(409, {
                 "error": "run is still active; use /user-message instead",
             })
-        # v3.5 — Codex resume. Codex doesn't have Claude's stream-json
+        # v3.5 - Codex resume. Codex doesn't have Claude's stream-json
         # --resume <session-id> protocol; each `codex exec` is a fresh
         # session. We fake resume by reconstructing the prior conversation
         # as a transcript and prepending it to the new prompt, then spawning
         # a fresh codex with that combined prompt. Same run_id, same event
-        # log — new process underneath.
+        # log - new process underneath.
         if state.agent_id == "codex":
             return self._run_resume_codex(state, run_id, text)
         if state.agent_id != "claude":
@@ -19740,14 +19740,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"agent '{state.agent_id}' binary not found"})
 
         spawn_args = list(defs["args"])
-        # v2.45 / v3.8.2 — third spawn site (continuing an existing chat
+        # v2.45 / v3.8.2 - third spawn site (continuing an existing chat
         # via /__run/<id>/resume) also needs BOTH bypass flags. Claude
         # Code 2.1.163 split the bypass into --allow-… (enables the
         # option) + --dangerously-… (activates it); passing only the
         # second one makes every subsequent Edit/Write prompt the user,
         # which in -p stream-json mode silently denies. The two other
         # spawn sites (_run_create, _spawn_node_agent) were patched in
-        # 19aab27 / 26d13f3 but this one was missed — and it's the path
+        # 19aab27 / 26d13f3 but this one was missed - and it's the path
         # the editor hits every time the user types in an existing
         # chat, so the symptom looked like "permissions are still
         # broken even after the fix landed."
@@ -19758,9 +19758,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             ]
         elif defs.get("permission_flag") and state.permission_mode:
             spawn_args += [defs["permission_flag"], state.permission_mode]
-        # v3.12 — system threads resume with the SAME elevated config they
+        # v3.12 - system threads resume with the SAME elevated config they
         # were spawned with: no slash-command lockout, no harness hook
-        # settings, no capabilities confinement — the system prompt is
+        # settings, no capabilities confinement - the system prompt is
         # SYSTEM_AGENT_PROMPT (see _run_create_system for the rationale).
         if getattr(state, "scope", None) == "system":
             sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
@@ -19769,16 +19769,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
         else:
-            # v3.1 — match the freeform / node-agent paths: hide user slash commands.
+            # v3.1 - match the freeform / node-agent paths: hide user slash commands.
             spawn_args += ["--disable-slash-commands"]
-            # v3.1 — Hook gate: block *.html writes until visual-orchestrator dispatched.
+            # v3.1 - Hook gate: block *.html writes until visual-orchestrator dispatched.
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
             sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
             if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
                 sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
-            # v2.50 — resumed agents also get the capabilities catalog.
+            # v2.50 - resumed agents also get the capabilities catalog.
             try:
                 from kinds.capabilities import capabilities_preamble
                 sys_prompt = sys_prompt + "\n\n" + capabilities_preamble()
@@ -19786,17 +19786,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
             spawn_args += ["--append-system-prompt", sys_prompt]
         spawn_args += ["--resume", state.session_id]
-        # The agent's workspace is the PROJECT only — INSTALL_ROOT is NOT
+        # The agent's workspace is the PROJECT only - INSTALL_ROOT is NOT
         # added to --add-dir on resume either, mirroring the policy applied
         # on the initial spawn (see _run_create's _spawn_node_agent path).
         # Protocol-root reads still work via absolute paths through Read/Bash.
-        # v2.44 — explicitly allow writes inside the project root.
+        # v2.44 - explicitly allow writes inside the project root.
         spawn_args += ["--add-dir", state.project_root]
 
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
 
-        # v3.8.3 — log just the permission-related flags so a future
+        # v3.8.3 - log just the permission-related flags so a future
         # regression in this code path is immediately visible in the
         # daemon log without leaking the system prompt or settings path.
         try:
@@ -19821,7 +19821,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"resume spawn failed: {type(e).__name__}: {e}"})
 
         # Reset RunState lifecycle flags for the new process. Same runId,
-        # same event log — new process underneath.
+        # same event log - new process underneath.
         state.proc = proc
         state.done = False
         state.exit_code = None
@@ -19877,13 +19877,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             project_root = resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        # Refuse stepping only while a run is ACTIVELY producing output — i.e.
+        # Refuse stepping only while a run is ACTIVELY producing output - i.e.
         # mid-turn (process alive AND its current turn hasn't finished). Such a
         # run is about to land an atomic history entry, so undo/redo would race
-        # it. v2.50 — previously this blocked on `not s.done`, which also caught
+        # it. v2.50 - previously this blocked on `not s.done`, which also caught
         # runs that finished their turn and are idle WAITING FOR THE USER'S
         # REPLY (turnDone=true, done=false). That's the normal resting state of
-        # any chat you've talked to — so a single idle chat permanently blocked
+        # any chat you've talked to - so a single idle chat permanently blocked
         # undo. Only block on genuinely mid-turn runs. Scope to the active
         # project so another project's run doesn't block this one.
         try:
@@ -19920,10 +19920,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             else:
                 return self._reply(400, {"error": f"bad direction: {direction!r}"})
             _history_save_index(project_root, idx)
-        # v2.50 — notify SSE subscribers so the canvas reloads the restored
+        # v2.50 - notify SSE subscribers so the canvas reloads the restored
         # state immediately. Without this, the editor kept showing the
         # pre-undo state until the file-watcher tick (up to ~1s later) OR
-        # until a manual refresh — and a debounced autosave firing in that
+        # until a manual refresh - and a debounced autosave firing in that
         # window could overwrite the restore. Broadcasting now closes the gap.
         try:
             _broadcast_workflow_change(os.path.basename(project_root.rstrip("/")))
@@ -19938,7 +19938,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
 
     def _reply(self, code, payload):
-        # v2.50 — attach X-Request-Id header (and inline into JSON payload as
+        # v2.50 - attach X-Request-Id header (and inline into JSON payload as
         # `requestId` when missing) so the browser console + daemon logs can
         # correlate the same request across both sides. Request IDs are
         # assigned at do_POST entry (see do_POST) and stored on self.
@@ -19961,20 +19961,20 @@ class ReusableThreadingTCP(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    # v2.35 — suppress the giant traceback Python's HTTPServer prints when
+    # v2.35 - suppress the giant traceback Python's HTTPServer prints when
     # the CLIENT closes a connection before/during a request. This happens
     # constantly in normal operation: page reload, EventSource reconnect,
     # AbortController, navigation, browser idle-killing the SSE channel.
     # The default behavior fills the terminal with `ConnectionResetError`
     # + `BrokenPipeError` tracebacks that look catastrophic but actually
-    # mean nothing was lost on the server — the client just gave up first.
+    # mean nothing was lost on the server - the client just gave up first.
     # We replace handle_error with a one-liner log for these cases and
     # keep the full traceback only for genuinely unexpected exceptions.
     def handle_error(self, request, client_address):
         import sys, traceback
         exc = sys.exc_info()[1]
         if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
-            # Normal — client disconnected. Skip the noise.
+            # Normal - client disconnected. Skip the noise.
             return
         # Anything else, keep the original behavior so real bugs surface.
         print(f"Exception during processing for {client_address}:", flush=True)
@@ -19985,7 +19985,7 @@ if __name__ == "__main__":
     # ── Highlighted startup URL banner ──
     # ANSI escapes when stdout is a TTY and NO_COLOR isn't set; plain ASCII
     # box otherwise (CI logs, piped output). Pads to a fixed inner width so
-    # the right border lines up. The URL is the load-bearing piece — users
+    # the right border lines up. The URL is the load-bearing piece - users
     # were missing it in the noise of endpoint listings.
     _use_color = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
     def _ansi(code: str) -> str:
@@ -20030,18 +20030,18 @@ if __name__ == "__main__":
             _ws_origin = "auto (install root = workspace)"
         else:
             _ws_origin = "auto (install parent)"
-        print(f"  workspace mode — {WORKSPACE_DIR}  [{_ws_origin}]", flush=True)
+        print(f"  workspace mode - {WORKSPACE_DIR}  [{_ws_origin}]", flush=True)
         if projects:
             print(f"  {len(projects)} project(s):", flush=True)
             for p in projects:
                 print(f"    · {p['id']:<24}  {p['label']}", flush=True)
-                # v3.1 — _load_registry call removed. The data.js bootstrap
+                # v3.1 - _load_registry call removed. The data.js bootstrap
                 # shim used to be auto-upgraded on startup; the lazy
                 # migration shim _v31_migrate_data_js (in translate_path) now
                 # handles it on the first GET instead, so we don't need
                 # eager upgrade per project at boot.
         else:
-            print("  no projects found — scaffold one with POST /__projects/new "
+            print("  no projects found - scaffold one with POST /__projects/new "
                   "or create a subdir with source/ inside", flush=True)
         _print_url_banner(
             f"http://localhost:{PORT}/",
@@ -20057,18 +20057,18 @@ if __name__ == "__main__":
         "             /__workspace  /__projects  /__projects/new  /__projects/rename  /__projects/delete  /__projects/duplicate",
         flush=True,
     )
-    # v3.1 — Skill isolation. Spawned `claude` gets `--disable-slash-commands`
+    # v3.1 - Skill isolation. Spawned `claude` gets `--disable-slash-commands`
     # so user-level commands (~/.claude/commands/) can't auto-load and
     # override the visual-orchestrator pipeline. Auth via macOS Keychain stays
     # intact (no CLAUDE_CONFIG_DIR override).
     print("  agent isolation: spawned `claude` runs with --disable-slash-commands "
           "(user-level slash commands at ~/.claude/commands/ hidden)", flush=True)
 
-    # v3.1.2 — Hook-gate auto-install. The real generation lives in
+    # v3.1.2 - Hook-gate auto-install. The real generation lives in
     # `_ensure_harness_settings()` which is ALSO called at every claude
     # spawn site (so a missing/deleted file self-heals without restarting
     # the daemon). Calling it here at boot is just for the console banner
-    # — by the time the first spawn fires, the file would be regenerated
+    # - by the time the first spawn fires, the file would be regenerated
     # anyway.
     _settings_path = _ensure_harness_settings()
     if _settings_path:
@@ -20098,7 +20098,7 @@ if __name__ == "__main__":
     if leaked:
         preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
         action = "PRESERVED (TH_PRESERVE_CLAUDE_ENV=1)" if preserve and preserve != "0" else "stripped before spawn"
-        print(f"  note: detected Claude Code host envelope leakage — {action}:", flush=True)
+        print(f"  note: detected Claude Code host envelope leakage - {action}:", flush=True)
         for k in leaked:
             v = os.environ.get(k, "")
             shown = "<empty>" if not v else (v if len(v) < 24 else v[:20] + "…")
@@ -20113,7 +20113,7 @@ if __name__ == "__main__":
     # ── Share mode boot (see editor/shares.py) ──────────────────────────
     # The gate is a SECOND listener on the first free port after PORT; it
     # serves only /s/<token>/* routes. Cloudflare quick tunnels point at it
-    # — never at the main daemon port. Boot failure disables share mode but
+    # - never at the main daemon port. Boot failure disables share mode but
     # never blocks the editor.
     try:
         _shares.init(
@@ -20122,7 +20122,7 @@ if __name__ == "__main__":
             on_comments_changed=_broadcast_share_comments_changed,
         )
         _shares.start_gate_server(PORT)
-        # Live Session — same gate, delegated /s/<token>/live* routes.
+        # Live Session - same gate, delegated /s/<token>/live* routes.
         _live.init(
             INSTALL_ROOT,
             lambda pid: resolve_project_root({"project": pid}),
@@ -20138,12 +20138,12 @@ if __name__ == "__main__":
                          name="share-thumb-backfill").start()
     except Exception as e:
         print(f"[share] boot failed (share mode disabled): {e}", flush=True)
-    # v2.23 — auto-replace any stale serve.py holding our port. Without this,
+    # v2.23 - auto-replace any stale serve.py holding our port. Without this,
     # the user gets EADDRINUSE every time the previous daemon wasn't cleaned
     # up (common during development: editor reloads, separate launchers, my
     # own restart races). Detect the squatter via lsof, confirm it's another
     # `serve.py`, kill it, wait briefly, then bind. Anything else holding
-    # the port (random process) prints a clear error and exits — we never
+    # the port (random process) prints a clear error and exits - we never
     # blindly kill unrelated processes.
     def _try_take_port():
         try:
@@ -20173,7 +20173,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass
             if squatter_pid and "serve.py" in squatter_cmd and squatter_pid != os.getpid():
-                print(f"  port {PORT} held by stale serve.py (pid {squatter_pid}) — killing it", flush=True)
+                print(f"  port {PORT} held by stale serve.py (pid {squatter_pid}) - killing it", flush=True)
                 try:
                     os.kill(squatter_pid, 15)  # SIGTERM
                     # Wait up to 3s for it to exit + release the port
@@ -20189,10 +20189,10 @@ if __name__ == "__main__":
                     pass  # already gone
             elif squatter_pid:
                 print(f"  port {PORT} held by another process (pid {squatter_pid}): {squatter_cmd[:120]}", flush=True)
-                print(f"  refusing to kill non-serve.py process — free port {PORT} manually then retry", flush=True)
+                print(f"  refusing to kill non-serve.py process - free port {PORT} manually then retry", flush=True)
                 raise SystemExit(1)
             else:
-                print(f"  port {PORT} in use but couldn't identify holder via lsof — retrying anyway", flush=True)
+                print(f"  port {PORT} in use but couldn't identify holder via lsof - retrying anyway", flush=True)
         except Exception as e:
             print(f"  could not auto-clear port {PORT}: {e}", flush=True)
     with ReusableThreadingTCP(("", PORT), H) as httpd:
@@ -20201,7 +20201,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             print("stopping", flush=True)
         finally:
-            # Belt-and-suspenders — the signal handlers + atexit already
+            # Belt-and-suspenders - the signal handlers + atexit already
             # cover SIGTERM/SIGINT, but call directly so an exception path
             # that skips atexit still cleans up.
             _cleanup_subprocesses(reason="main-exit")

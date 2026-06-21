@@ -18,15 +18,15 @@ images:
 **Color**
 - Background: `#FFFFFF` pure paper white OR `#000000` pure ink black
 - Text: opposite of background, no off-tones
-- One accent only, at full saturation: `#FF0000`, `#0000FF`, `#FFFF00`, or `#00FF00` — pick ONE per page
+- One accent only, at full saturation: `#FF0000`, `#0000FF`, `#FFFF00`, or `#00FF00` - pick ONE per page
 - Forbidden: greys between `#111` and `#EEE`, off-whites, off-blacks, tinted neutrals
 
 **Type stack**
-- Headlines: `Times New Roman, serif` OR `Helvetica, Arial, sans-serif` — pick ONE for the whole document
+- Headlines: `Times New Roman, serif` OR `Helvetica, Arial, sans-serif` - pick ONE for the whole document
 - Body: same family as headlines (no mixing serif + sans)
 - Mono (only if needed for code/tabular): `Courier, monospace`
-- Sizes: extreme contrast — `14px / 24px / 96px / 200px` — no in-between scale
-- Line-height: `1.0` on display, `1.2` on body — tight
+- Sizes: extreme contrast - `14px / 24px / 96px / 200px` - no in-between scale
+- Line-height: `1.0` on display, `1.2` on body - tight
 - Letter-spacing: `0` always, never tracked
 
 **Borders and corners**
@@ -38,17 +38,17 @@ images:
 
 **Links and interactive states**
 - Every link underlined by default (`text-decoration: underline`)
-- No color change on hover — underline stays, color stays
+- No color change on hover - underline stays, color stays
 - Buttons are `<a>` or `<button>` with `border: 2px solid` and no fill, or full-bleed inverted block
 - Focus: `outline: 2px solid` accent color, never `outline: none`
 
 **Decoration grammar**
-- Mandatory: intentional ugliness — xerox texture, halftone dots, blocky type used as graphic element, oversized type that breaks the viewport
+- Mandatory: intentional ugliness - xerox texture, halftone dots, blocky type used as graphic element, oversized type that breaks the viewport
 - Allowed: raw `<hr>` rules, ASCII separators (`---`, `***`), system-default form controls
 - Forbidden: rounded buttons, drop shadows, soft pastels, illustrations, icons (use Unicode glyphs `→ ← ↓ ↑ × ✓`), stock photography unless deliberately degraded
 
 **Voice (visible on surface)**
-- Blunt, declarative, all-lowercase OR ALL UPPERCASE — pick one and hold it
+- Blunt, declarative, all-lowercase OR ALL UPPERCASE - pick one and hold it
 - No marketing softeners ("just", "simply", "easily")
 
 ## Motion budget
@@ -60,7 +60,7 @@ images:
 
 ## Failure mode
 
-The trashy AI tell is **soft brutalism** — `border-radius: 4px` "for accessibility", a `box-shadow: 0 1px 2px rgba(0,0,0,.05)` "for depth", grey `#F5F5F5` backgrounds "for hierarchy", and `transition: all 0.2s ease` on hovers. The result is a normal SaaS page with Helvetica. Real brutalism refuses every comfort: square corners, full-contrast color, no transitions, no shadows, underlined links. If a designer would call it "harsh", it's correct.
+The trashy AI tell is **soft brutalism** - `border-radius: 4px` "for accessibility", a `box-shadow: 0 1px 2px rgba(0,0,0,.05)` "for depth", grey `#F5F5F5` backgrounds "for hierarchy", and `transition: all 0.2s ease` on hovers. The result is a normal SaaS page with Helvetica. Real brutalism refuses every comfort: square corners, full-contrast color, no transitions, no shadows, underlined links. If a designer would call it "harsh", it's correct.
 
 ## Best for
 

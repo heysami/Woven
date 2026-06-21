@@ -21,7 +21,7 @@ A glossy surface (translucent).
 
 **Transparency**: translucent
 
-**Reacts to light**: no — it is the light
+**Reacts to light**: no - it is the light
 
 **Deforms**: no
 
@@ -45,7 +45,7 @@ css: |
     filter: blur(80px);
     opacity: 0.75;
   }
-svg: noise overlay at 4–8% opacity to kill banding
+svg: noise overlay at 4-8% opacity to kill banding
 webgl: minigl noise loop for single-WebGL alternative
 raster: optional grain texture multiply
 ```
@@ -54,7 +54,7 @@ raster: optional grain texture multiply
 
 **Light**: blobs drift on a 12s + 8s counter-rotation
 
-**Highlight**: none — the mesh IS the highlight
+**Highlight**: none - the mesh IS the highlight
 
 **Depth**: none
 

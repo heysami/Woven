@@ -1,4 +1,4 @@
-# AGENT_HARNESS.md — rules for agents producing work on the workflow canvas
+# AGENT_HARNESS.md - rules for agents producing work on the workflow canvas
 
 **Read this every turn.** This document is the rulebook every Claude Code agent that produces work on a workflow canvas must follow. The registry in [registry.py](registry.py) is the contract; this file is how to obey it.
 
@@ -6,7 +6,7 @@ Cross-references: [README.md](README.md) explains the kinds; [WORKFLOW_TRUTHFULN
 
 ---
 
-## Rule 1 — Read the registry first
+## Rule 1 - Read the registry first
 
 Before doing anything else on a turn, fetch the registry:
 
@@ -14,21 +14,21 @@ Before doing anything else on a turn, fetch the registry:
 curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 ```
 
-The response is `{ "KINDS": {...}, "STAGES": [...] }`. Look up the kind of the node you're working on; every field, every output, every completion requirement is declared there. Do not assume from memory — your context may be stale, and the registry is what the validator enforces.
+The response is `{ "KINDS": {...}, "STAGES": [...] }`. Look up the kind of the node you're working on; every field, every output, every completion requirement is declared there. Do not assume from memory - your context may be stale, and the registry is what the validator enforces.
 
 ---
 
-## Rule 2 — Complexity threshold (Principle 4)
+## Rule 2 - Complexity threshold (Principle 4)
 
 If your work produces a non-trivial artifact (a full HTML page, a complete CSS module, a multi-file build, anything with embedded JS/CSS/data of meaningful size), the kind MUST dispatch as a **`single-subprocess`** (agent) or **`task-subagents`** (parent fan-out).
 
-**Forbidden:** dispatching such work as `inline-server-call` (skill·llm). That path is reserved for small pure-text transforms (summarize, chunk, classify, normalize, extract — output ≤ ~one structured payload with no embedded code).
+**Forbidden:** dispatching such work as `inline-server-call` (skill·llm). That path is reserved for small pure-text transforms (summarize, chunk, classify, normalize, extract - output ≤ ~one structured payload with no embedded code).
 
 If you find yourself producing a full HTML file inside a skill·llm node, **stop**. Migrate that node to `agent` kind. The user sees an invisible blocking call as "the daemon hung"; an agent-kind dispatch gives them a transcript, a kill button, and a chat panel.
 
 ---
 
-## Rule 3 — Multiplicity threshold (Principle 5)
+## Rule 3 - Multiplicity threshold (Principle 5)
 
 If your work produces N parallel outputs (variants, siblings, page alts), the contract MUST declare:
 
@@ -54,7 +54,7 @@ The validator records the caller's Claude session_id on every `/commit` call. If
 
 ---
 
-## Rule 4 — Cold isolation between siblings (Principle 5)
+## Rule 4 - Cold isolation between siblings (Principle 5)
 
 When `fanOut.isolation: "cold"`, each sibling subagent receives ONLY:
 
@@ -67,11 +67,11 @@ It does NOT see:
 - Other siblings' chat transcripts
 - Your context (the parent's session)
 
-This is the whole point. If siblings see each other, they homogenize — the model is trained to produce coherent continuations. We want divergence, not coherence. Cold isolation is structural divergence.
+This is the whole point. If siblings see each other, they homogenize - the model is trained to produce coherent continuations. We want divergence, not coherence. Cold isolation is structural divergence.
 
 ---
 
-## Rule 5 — Folder, not list (Principles 2, 6)
+## Rule 5 - Folder, not list (Principles 2, 6)
 
 Every producer kind declares an `outputsRoot` path. Drop **everything you produce** into that folder. The consumer enumerates the folder and routes files per its `consumeFrom` rules.
 
@@ -81,7 +81,7 @@ Every producer kind declares an `outputsRoot` path. Drop **everything you produc
 
 ---
 
-## Rule 6 — Atomic commit (Principle 10)
+## Rule 6 - Atomic commit (Principle 10)
 
 All output landing MUST go through:
 
@@ -116,37 +116,37 @@ The server:
 
 ---
 
-## Rule 7 — Status never lies (Principle 8)
+## Rule 7 - Status never lies (Principle 8)
 
 A node may be marked `runStatus: "done"` only when the kind's `completion.requires` list is satisfied. The validator enforces this on every `/commit` and `/status` call.
 
-If a write fails, set `runStatus: "error"` with a non-empty `runError`. Don't silently leave it in `running` and exit. Don't mark `done` because you "tried." The reconciler detects lying status and surfaces drift — but the cleaner path is to never lie in the first place.
+If a write fails, set `runStatus: "error"` with a non-empty `runError`. Don't silently leave it in `running` and exit. Don't mark `done` because you "tried." The reconciler detects lying status and surfaces drift - but the cleaner path is to never lie in the first place.
 
 ---
 
-## Rule 8 — Pause where the contract says (Principle 12)
+## Rule 8 - Pause where the contract says (Principle 12)
 
 Before advancing past a stage with `pauseAfter: True` in the STAGES dict, you MUST emit a status comment naming the artifact produced and wait for an explicit user signal (a chat message, a `<decision-request>` resolution, or a project event recording confirmation).
 
 Today's `pauseAfter` stages: **D (Generate DS)** and **G (Refine PRD with picked alts)**. Stages C and F have inherent pause points (decision checkpoints `cp_ds_pick` and `cp_remix_pick`). All other stages run through.
 
-Don't roll through stage D into stage E (chunking + page dispatch) without checking with the user — they often want to refine the DS in chat between D and E, and your auto-progression discards that opportunity. This is what bit super.
+Don't roll through stage D into stage E (chunking + page dispatch) without checking with the user - they often want to refine the DS in chat between D and E, and your auto-progression discards that opportunity. This is what bit super.
 
 ---
 
-## Rule 9 — Detours are first-class (Principles 6, 9)
+## Rule 9 - Detours are first-class (Principles 6, 9)
 
 When a chat run on an existing node produces files or modules beyond the scaffold:
 
-1. **Place new files in an existing producer's outputsRoot** when possible — the consumer routes them automatically per its `consumeFrom` rules.
-2. **Use `/commit` with `addNodes`** (only for `extendsGraph: true` kinds — visual-orchestrator, prototype, ds-brainstorm with image-pipeline scaffolding) to add a new node representing the extension.
-3. **The user can make N variants** — `_ds_brainstorm/d/`, `/e/`, `/f/` — without the scaffold needing to be edited. The reconciler auto-promotes any new variant folder to a card silently.
+1. **Place new files in an existing producer's outputsRoot** when possible - the consumer routes them automatically per its `consumeFrom` rules.
+2. **Use `/commit` with `addNodes`** (only for `extendsGraph: true` kinds - visual-orchestrator, prototype, ds-brainstorm with image-pipeline scaffolding) to add a new node representing the extension.
+3. **The user can make N variants** - `_ds_brainstorm/d/`, `/e/`, `/f/` - without the scaffold needing to be edited. The reconciler auto-promotes any new variant folder to a card silently.
 
 Files created outside both paths are surfaced by the reconciler as orphan artifacts. The producing node's runStatus does not flip to done until the orphan is resolved (either incorporated into a node or moved/deleted).
 
 ---
 
-## Rule 10 — Visual-orchestrator runs per variant (Principle 9 + super case)
+## Rule 10 - Visual-orchestrator runs per variant (Principle 9 + super case)
 
 When a `ds-brainstorm` subagent finishes writing its variant folder, it dispatches the visual-orchestrator via the Task tool, **SCOPED TO THIS VARIANT'S `outputsRoot` ONLY**. The orchestrator returns image-pipeline trios (prompt + skill + rembg + asset nodes); commit them via `/commit` with `parentVariant: <this-id>` so the canvas renders them visually grouped under this variant's card.
 
@@ -154,17 +154,17 @@ When a `ds-brainstorm` subagent finishes writing its variant folder, it dispatch
 
 ---
 
-## Rule 11 — Adapt to what you're wired to; edit canonicals, don't write siblings
+## Rule 11 - Adapt to what you're wired to; edit canonicals, don't write siblings
 
 Your `<context>` and `<output-destinations>` blocks are built from each connected
 node's `io` contract (see [NODE_IO_FRAMEWORK.md](NODE_IO_FRAMEWORK.md)). Honour them:
 
 - When `<output-destinations>` says **"EDIT the `<kind>` node … write its canonical
-  source file `<path>`"** (an `editTarget` — composer / vector-editor / spline-3d),
+  source file `<path>`"** (an `editTarget` - composer / vector-editor / spline-3d),
   that path is a **JSON document**. Read it, modify the JSON, write it back to the
   **same path**. Do NOT write a sibling file and do NOT hand-edit the baked
-  `.html`/`.svg` — the editor re-imports the JSON, not the presentation file.
-  - **spline-3d scenes are RIGGABLE + ANIMATABLE — never tell the user the
+  `.html`/`.svg` - the editor re-imports the JSON, not the presentation file.
+  - **spline-3d scenes are RIGGABLE + ANIMATABLE - never tell the user the
     format is static/posed-only, and never reach for a fixed motion preset.**
     YOU derive the rig + motion from the specific model you build, because you
     are the only thing that knows it's a giraffe (legs, neck) vs an orca
@@ -181,9 +181,9 @@ node's `io` contract (see [NODE_IO_FRAMEWORK.md](NODE_IO_FRAMEWORK.md)). Honour 
 - When it says **"Write your `<assetKind>` output to `<path>`"**, produce exactly
   that format (the `assetKind` tells you svg vs html vs png vs …).
 - Upstream context already carries baked composer/vector/spline content and
-  flattened palette/typography — use it; don't re-derive what's handed to you.
+  flattened palette/typography - use it; don't re-derive what's handed to you.
 
-## Quick reference — common dispatch shapes
+## Quick reference - common dispatch shapes
 
 ```
 Single complex artifact      →  agent (single-subprocess), visible session
@@ -193,4 +193,4 @@ Small text op                →  skill·llm (inline-server-call), one-shot
 N inputs → 1 output          →  iterator-blend (single-subprocess)
 ```
 
-If you find yourself reaching for `inline-server-call` to produce something complex, you've made a mistake — fix the contract, don't ship a workaround.
+If you find yourself reaching for `inline-server-call` to produce something complex, you've made a mistake - fix the contract, don't ship a workaround.

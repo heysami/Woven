@@ -11,9 +11,9 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `three-column-app` — read `shell-three-column-app.md`
-- **Style:** `restrained-hairline` — read `style-restrained-hairline.md`
-- **Aesthetic:** *(none — adult-pro brief)*
+- **Shell:** `three-column-app` - read `shell-three-column-app.md`
+- **Style:** `restrained-hairline` - read `style-restrained-hairline.md`
+- **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** terse, technical, abbreviated, present tense, lots of fragments
 
 ## Best for

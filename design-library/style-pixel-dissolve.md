@@ -15,7 +15,7 @@ images:
 
 ## Surface treatment
 
-Surfaces, gradients, and images DISSOLVE into square pixel blocks at their edges — a controlled digital crumble where one material hands off to another. The dissolve is the signature; everything else stays clean and modern.
+Surfaces, gradients, and images DISSOLVE into square pixel blocks at their edges - a controlled digital crumble where one material hands off to another. The dissolve is the signature; everything else stays clean and modern.
 
 ### The grammar
 
@@ -28,7 +28,7 @@ Surfaces, gradients, and images DISSOLVE into square pixel blocks at their edges
 
 - Works on light pastel grounds (`#f3f0fa`, `#eef5f1`) and dark (`#0c0d12`)
 - The dissolving surface is usually the page's one gradient or one image
-- Ink and UI chrome stay sharp — ONLY the designated surface dissolves
+- Ink and UI chrome stay sharp - ONLY the designated surface dissolves
 
 ### Type stack
 
@@ -36,7 +36,7 @@ Surfaces, gradients, and images DISSOLVE into square pixel blocks at their edges
 
 ### Motion
 
-Blocks may shimmer in/out near the dissolve frontier (200-400ms, staggered) or stay fully static — the style reads at rest. Scroll-linked variant: dissolve progresses 10-20% with section entry. Respect `prefers-reduced-motion`.
+Blocks may shimmer in/out near the dissolve frontier (200-400ms, staggered) or stay fully static - the style reads at rest. Scroll-linked variant: dissolve progresses 10-20% with section entry. Respect `prefers-reduced-motion`.
 
 ## Failure mode
 

@@ -13,7 +13,7 @@ images:
 
 # Thin Glass Chip (iOS-style toggle, Control Center pill)
 
-A glossy surface (translucent) that reacts to light: yes — but lighter than full glass; substrate shows through more.
+A glossy surface (translucent) that reacts to light: yes - but lighter than full glass; substrate shows through more.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface (translucent) that reacts to light: yes — but lighter than fu
 
 **Transparency**: translucent
 
-**Reacts to light**: yes — but lighter than full glass; substrate shows through more
+**Reacts to light**: yes - but lighter than full glass; substrate shows through more
 
 **Deforms**: no
 

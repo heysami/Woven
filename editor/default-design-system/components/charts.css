@@ -1,8 +1,8 @@
 /* ==========================================================================
-   Charts + hero graphics — STATIC, theme-able dashboard partials.
+   Charts + hero graphics - STATIC, theme-able dashboard partials.
    Hand-authored to match the Template Design System house style:
    BEM-ish class names, single source of truth, tokens only (NO raw hex/rgb).
-   These are MOCK charts — shapes are drawn with inline SVG (<rect>/<path>/
+   These are MOCK charts - shapes are drawn with inline SVG (<rect>/<path>/
    <polyline>/<circle>) + CSS, no JS and no runtime deps. They re-skin per
    theme because every series fill/stroke pulls from a --series-* token.
 
@@ -10,7 +10,7 @@
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   Series colour vocabulary — light defaults. Themes override these in their
+   Series colour vocabulary - light defaults. Themes override these in their
    own :root{} to re-skin every chart on the page at once. Page authors point
    inline-SVG fills/strokes at these (fill="var(--series-1)" etc.), never at a
    raw ramp token, so a theme swap reflows the whole dashboard's palette.
@@ -26,7 +26,7 @@
 }
 
 /* ==========================================================================
-   Hero stat card — flagship KPI: big value + delta + label + mini chart.
+   Hero stat card - flagship KPI: big value + delta + label + mini chart.
    ========================================================================== */
 .stat-hero{display:flex;flex-direction:column;gap:var(--space-s);
   background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-l);
@@ -46,7 +46,7 @@
 .stat-hero__spark svg{display:block;width:100%;height:100%;overflow:visible;}
 
 /* ==========================================================================
-   Chart card — titled wrapper around any inline-SVG chart, + optional legend.
+   Chart card - titled wrapper around any inline-SVG chart, + optional legend.
    ========================================================================== */
 .chart-card{display:flex;flex-direction:column;gap:var(--space-base);
   background:var(--surface);border:1px solid var(--border-default);border-radius:var(--radius-m);
@@ -57,7 +57,7 @@
   margin-top:var(--space-2xs);}
 
 /* ==========================================================================
-   Chart base — inline-SVG charts. The SVG carries the class; <rect>/<path>/
+   Chart base - inline-SVG charts. The SVG carries the class; <rect>/<path>/
    <polyline>/<circle> inside it reference --series-* + --chart-grid/--axis.
    Axis + grid lines are styled here; series colours are set per-element so a
    single chart can carry several series.
@@ -74,7 +74,7 @@
 .chart--bar .bar:hover{opacity:.85;}
 .chart--bar .bar--2{fill:var(--series-2);} .chart--bar .bar--3{fill:var(--series-3);}
 .chart--bar .bar--4{fill:var(--series-4);} .chart--bar .bar--5{fill:var(--series-5);}
-/* COPY-PASTE — a small 4-bar column chart with a baseline axis:
+/* COPY-PASTE - a small 4-bar column chart with a baseline axis:
 <svg class="chart chart--bar" viewBox="0 0 200 120" role="img" aria-label="Bar chart">
   <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
   <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
@@ -93,7 +93,7 @@
 .chart--line .series--2{stroke:var(--series-2);} .chart--line .series--3{stroke:var(--series-3);}
 .chart--line .series--4{stroke:var(--series-4);} .chart--line .series--5{stroke:var(--series-5);}
 .chart--line .dot{fill:var(--surface);stroke:var(--series-1);stroke-width:2;}
-/* COPY-PASTE — a two-series line chart over a faint grid:
+/* COPY-PASTE - a two-series line chart over a faint grid:
 <svg class="chart chart--line" viewBox="0 0 200 120" role="img" aria-label="Line chart">
   <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
   <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
@@ -111,7 +111,7 @@
 .chart--area .stroke,.chart--area .line{fill:none;stroke:var(--series-1);stroke-width:2;
   stroke-linejoin:round;stroke-linecap:round;}
 .chart--area .stroke--2{stroke:var(--series-2);} .chart--area .stroke--3{stroke:var(--series-3);}
-/* COPY-PASTE — an area chart (filled path closed to the baseline + a top stroke):
+/* COPY-PASTE - an area chart (filled path closed to the baseline + a top stroke):
 <svg class="chart chart--area" viewBox="0 0 200 120" role="img" aria-label="Area chart">
   <line class="grid" x1="0" y1="30" x2="200" y2="30"/>
   <line class="grid" x1="0" y1="60" x2="200" y2="60"/>
@@ -130,7 +130,7 @@
 .chart--donut .track{fill:none;stroke:var(--chart-grid);stroke-width:18;}
 .chart--donut .center{fill:var(--fg-default);font-size:var(--text-h5);font-weight:var(--w-semibold);
   font-variant-numeric:tabular-nums;text-anchor:middle;dominant-baseline:central;}
-/* COPY-PASTE — a donut built from stroked arcs (r=42, C≈264; dasharray = "slice gap"):
+/* COPY-PASTE - a donut built from stroked arcs (r=42, C≈264; dasharray = "slice gap"):
 <svg class="chart chart--donut" viewBox="0 0 120 120" role="img" aria-label="Donut chart">
   <circle class="track" cx="60" cy="60" r="42"/>
   <circle class="arc arc--1" cx="60" cy="60" r="42" stroke="var(--series-1)"
@@ -144,7 +144,7 @@
 */
 
 /* ==========================================================================
-   Sparkline — tiny inline trend line, no axis. Sits in text or a tile.
+   Sparkline - tiny inline trend line, no axis. Sits in text or a tile.
    ========================================================================== */
 .sparkline{display:inline-block;width:80px;height:24px;vertical-align:middle;overflow:visible;}
 .sparkline .line{fill:none;stroke:var(--series-1);stroke-width:1.5;
@@ -153,7 +153,7 @@
 .sparkline .dot{fill:var(--series-1);}
 .sparkline.is-up .line,.sparkline.is-up .dot{stroke:var(--success-600);fill:var(--success-600);}
 .sparkline.is-down .line,.sparkline.is-down .dot{stroke:var(--error-500);fill:var(--error-500);}
-/* COPY-PASTE — a sparkline trend with an end dot:
+/* COPY-PASTE - a sparkline trend with an end dot:
 <svg class="sparkline is-up" viewBox="0 0 80 24" preserveAspectRatio="none" role="img" aria-label="Trend">
   <polyline class="line" points="0,20 16,14 32,16 48,8 64,11 80,3"/>
   <circle class="dot" cx="80" cy="3" r="2"/>
@@ -161,7 +161,7 @@
 */
 
 /* ==========================================================================
-   Legend — series swatch + label. Swatch background is a series var (set
+   Legend - series swatch + label. Swatch background is a series var (set
    inline per item) so it tracks the chart it documents.
    ========================================================================== */
 .legend{display:flex;flex-wrap:wrap;gap:var(--space-s) var(--space-base);margin:0;padding:0;list-style:none;}
@@ -169,13 +169,13 @@
   font-size:var(--text-s);color:var(--fg-muted);}
 .legend__swatch{width:12px;height:12px;border-radius:var(--radius-xs);flex:none;
   background:var(--series-1);}
-/* per-series swatch tints — or set background inline: style="background:var(--series-3)" */
+/* per-series swatch tints - or set background inline: style="background:var(--series-3)" */
 .legend__swatch--1{background:var(--series-1);} .legend__swatch--2{background:var(--series-2);}
 .legend__swatch--3{background:var(--series-3);} .legend__swatch--4{background:var(--series-4);}
 .legend__swatch--5{background:var(--series-5);}
 
 /* ==========================================================================
-   Metric tile / bignum — compact KPI for dashboard grids: value + label +
+   Metric tile / bignum - compact KPI for dashboard grids: value + label +
    trend. Smaller, flatter sibling of .stat-hero.
    ========================================================================== */
 .metric-tile{display:flex;flex-direction:column;gap:var(--space-3xs);

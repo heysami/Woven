@@ -19,7 +19,7 @@ geometric forms with spiritual symbolic meaning.
 
 - geometric forms with spiritual symbolic meaning
 - spirals, helixes, vesica piscis, U/W glyphs
-- pastel palette — sea green, lilac, rose pink, soft yellow
+- pastel palette - sea green, lilac, rose pink, soft yellow
 - botanical motifs overlaid with sacred geometry
 
 ## Prompt keywords

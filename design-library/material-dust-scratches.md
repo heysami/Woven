@@ -52,7 +52,7 @@ raster: dust + scratches overlay at 2048×2048
 
 **Depth**: no
 
-**Parallax**: yes — dust at FIXED layer (not parallaxed) gives "screen dust
+**Parallax**: yes - dust at FIXED layer (not parallaxed) gives "screen dust
 
 ## Common implementation mistakes (avoid these)
 

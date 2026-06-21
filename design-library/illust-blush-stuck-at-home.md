@@ -29,7 +29,7 @@ domestic daily-life scenes during lockdown.
 
 **Line**: no line
 
-**Color**: cozy muted — peach lavender sage
+**Color**: cozy muted - peach lavender sage
 
 **Style**: interior vignette
 

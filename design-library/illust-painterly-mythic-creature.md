@@ -5,7 +5,7 @@ category: Hand-drawn / sketch
 subCategory: loose-painterly
 role: hero
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, recipe-warm-restraint, aesthetic-fairycore]
-notForUseWhen: Brief is technical, minimal, or photoreal — the creature is expressive brushwork, not asset-render.
+notForUseWhen: Brief is technical, minimal, or photoreal - the creature is expressive brushwork, not asset-render.
 images:
   - src: illust-painterly-mythic-creature.png
     reason: Illustration style sample.
@@ -13,12 +13,12 @@ images:
 
 # Painterly mythic creature
 
-A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork — gesture over anatomy, drama in the strokes.
+A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork - gesture over anatomy, drama in the strokes.
 
 ## Visual signatures
 
 - ONE mythic creature mid-motion: phoenix rising, stag turning, koi-dragon curling
-- Loose painterly strokes — visible brush energy, edges dissolving into gesture and splatter
+- Loose painterly strokes - visible brush energy, edges dissolving into gesture and splatter
 - Limited palette with one incandescent zone (the phoenix's core, the stag's antler glow)
 - Negative space doing half the work; the creature emerges from wash, not from outline
 - Editorial scale: composed to share the frame with display typography
@@ -29,7 +29,7 @@ A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork 
 
 **Material**: gouache/ink hybrid washes, dry-brush flicks, splatter accents
 
-**Line**: gestural stroke economy — no clean outlines
+**Line**: gestural stroke economy - no clean outlines
 
 **Color**: 2-3 wash tones + one incandescent accent (ember orange, gold, electric violet)
 
@@ -45,7 +45,7 @@ A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork 
 
 ## Example prompt template
 
-> A phoenix rising, painted in loose expressive brushwork: the body suggested by three confident strokes of deep crimson wash, wings sweeping upward into dry-brush flicks and ember splatter, the chest core glowing incandescent gold where the paper shows through thinnest. Edges dissolve into gesture — no outlines, no rendered feathers. Two-tone wash (crimson, smoke gray) plus the gold accent on warm white. Generous negative space above the wings for display type. Editorial-fantasy energy: movement, heat, becoming.
+> A phoenix rising, painted in loose expressive brushwork: the body suggested by three confident strokes of deep crimson wash, wings sweeping upward into dry-brush flicks and ember splatter, the chest core glowing incandescent gold where the paper shows through thinnest. Edges dissolve into gesture - no outlines, no rendered feathers. Two-tone wash (crimson, smoke gray) plus the gold accent on warm white. Generous negative space above the wings for display type. Editorial-fantasy energy: movement, heat, becoming.
 
 ## When to use
 

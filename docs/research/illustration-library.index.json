@@ -879,7 +879,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Daniel Arsham's signature **eroded-relic** style — classical sculpture forms (Greco-Roman busts, classical drapery, modern objects) decayed as if unearthed centuries from now, with **crystals, calcite, selenite, or volcanic ash** emerging from the broken interiors. Monochrome base (chalk-white, ash-grey, blue calcite, or bronze) with metallic or crystalline accent revealing through the erosion. Speaks to \"future relic\" / time-decay / archaeology-of-the-now. Used for high-end fashion (Dior x Arsham), luxury crypto, gallery work, gravitas tech-marketing.",
+      "oneLine": "Daniel Arsham's signature **eroded-relic** style - classical sculpture forms (Greco-Roman busts, classical drapery, modern objects) decayed as if unearthed centuries from now, with **crystals, calcite, selenite, or volcanic ash** emerging from the broken interiors. Monochrome base (chalk-white, ash-grey, blue calcite, or bronze) with metallic or crystalline accent revealing through the erosion. Speaks to \"future relic\" / time-decay / archaeology-of-the-now. Used for high-end fashion (Dior x Arsham), luxury crypto, gallery work, gravitas tech-marketing.",
       "notForUseWhen": "positivity-kawaii, friendly-tech, kids' brands",
       "pairsPrototypes": [
         "aesthetic-dark-academia",
@@ -898,7 +898,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Bitcoin, Ethereum, generic crypto coin or token symbols rendered as **polished gold or chrome 3D objects** — often floating mid-frame with a soft drop-shadow, sometimes with a circular halo / neon ring / rim-light. Saturated luxury palette. Used for DeFi product launches, NFT marketing, crypto-exchange hero shots, token-presale pages, web3 brand decks. The \"money is shiny and the future is shiny too\" register.",
+      "oneLine": "Bitcoin, Ethereum, generic crypto coin or token symbols rendered as **polished gold or chrome 3D objects** - often floating mid-frame with a soft drop-shadow, sometimes with a circular halo / neon ring / rim-light. Saturated luxury palette. Used for DeFi product launches, NFT marketing, crypto-exchange hero shots, token-presale pages, web3 brand decks. The \"money is shiny and the future is shiny too\" register.",
       "notForUseWhen": "cottagecore, restrained editorial, B2B-clean, warm-lifestyle",
       "pairsPrototypes": [
         "aesthetic-defi-cosmic",
@@ -917,8 +917,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "Idealized rolling landscape rendered soft — velvet hills, cotton clouds, glassy water — a Windows-Bliss world rebuilt in gentle 3D.",
-      "notForUseWhen": "Brief needs gritty realism or hard-tech credibility — the terrain is idealized and soft.",
+      "oneLine": "Idealized rolling landscape rendered soft - velvet hills, cotton clouds, glassy water - a Windows-Bliss world rebuilt in gentle 3D.",
+      "notForUseWhen": "Brief needs gritty realism or hard-tech credibility - the terrain is idealized and soft.",
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "aesthetic-surreal-dream-stage",
@@ -935,7 +935,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Pixar-Monsters-Inc-grade simulated fur — characters and objects rendered with **millions of individually-simulated hairs**, soft cuddly volume, big-fluffy-touchable form. The \"warm hug\" / \"I want to pet it\" register. Sully from Monsters Inc has 2.3M hairs (5.5M in Monsters University) — that's the benchmark. Used for friendly-tech mascots, kids' brands, soft-luxury skincare, anywhere you want a character that feels touchable through the screen.",
+      "oneLine": "Pixar-Monsters-Inc-grade simulated fur - characters and objects rendered with **millions of individually-simulated hairs**, soft cuddly volume, big-fluffy-touchable form. The \"warm hug\" / \"I want to pet it\" register. Sully from Monsters Inc has 2.3M hairs (5.5M in Monsters University) - that's the benchmark. Used for friendly-tech mascots, kids' brands, soft-luxury skincare, anywhere you want a character that feels touchable through the screen.",
       "notForUseWhen": "brutalism, cyberpunk, B2B-serious, restrained editorial",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
@@ -954,7 +954,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Characters, objects and even typography rendered as if **inflated like beach balls or pool toys** — high-gloss specular highlights, visible seam-marks where the panels meet, hovering soft shadows underneath, plump round volumes squashed slightly by their own weight. The Wannathis-Inflatable / Apple-Vision-marketing / Dribbble-2024-2026 register.",
+      "oneLine": "Characters, objects and even typography rendered as if **inflated like beach balls or pool toys** - high-gloss specular highlights, visible seam-marks where the panels meet, hovering soft shadows underneath, plump round volumes squashed slightly by their own weight. The Wannathis-Inflatable / Apple-Vision-marketing / Dribbble-2024-2026 register.",
       "notForUseWhen": "brutalism, restrained editorial, dark themes, B2B-serious",
       "pairsPrototypes": [
         "aesthetic-frutiger-aero",
@@ -973,7 +973,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Characters and objects modeled to look like they're **knitted from wool, crocheted from yarn, or felted from raw fiber** — visible stitch pattern repeating across the surface, soft fiber-fuzz at the silhouette edges, slight stitch-row imperfections that read as \"made by hand.\" Cozy / craft / slow-living register. Distinct from `illust-claymation-stop-motion` (clay surface), `illust-3d-fur-rendered-mascot` (simulated fur), and `illust-3d-plush-toy-soft` (fabric-stuffed with seams) — knit-yarn is FIBRE-STITCH with visible loops.",
+      "oneLine": "Characters and objects modeled to look like they're **knitted from wool, crocheted from yarn, or felted from raw fiber** - visible stitch pattern repeating across the surface, soft fiber-fuzz at the silhouette edges, slight stitch-row imperfections that read as \"made by hand.\" Cozy / craft / slow-living register. Distinct from `illust-claymation-stop-motion` (clay surface), `illust-3d-fur-rendered-mascot` (simulated fur), and `illust-3d-plush-toy-soft` (fabric-stuffed with seams) - knit-yarn is FIBRE-STITCH with visible loops.",
       "notForUseWhen": "cyberpunk, brutalism, B2B-tech, edgy fashion",
       "pairsPrototypes": [
         "aesthetic-cottagecore",
@@ -992,8 +992,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A tiny self-contained world — floating island, zen garden, micro-village — rendered in soft 3D with toy-scale charm.",
-      "notForUseWhen": "Brief needs gravitas, luxury, or enterprise seriousness — miniatures read charming.",
+      "oneLine": "A tiny self-contained world - floating island, zen garden, micro-village - rendered in soft 3D with toy-scale charm.",
+      "notForUseWhen": "Brief needs gravitas, luxury, or enterprise seriousness - miniatures read charming.",
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "aesthetic-positivity-kawaii",
@@ -1011,7 +1011,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Apple-product-marketing-grade premium device hero render — the **Apple Vision Pro / Apple Watch Ultra / Ledger Stax / Framework laptop** treatment. Sleek minimal device on a plain backdrop (gradient or pure white/black) with dramatic single key-light, accurate hi-fidelity material rendering (brushed aluminum + curved glass + leather strap + e-ink screen + chamfered edges), studio product-photography vibe. Distinct from `illust-3d-tron-emissive-glow` (which adds glow accents) — this entry is WITHOUT glow; **premium materials + dramatic lighting** do the work. The \"luxury device speaks for itself\" register.",
+      "oneLine": "Apple-product-marketing-grade premium device hero render - the **Apple Vision Pro / Apple Watch Ultra / Ledger Stax / Framework laptop** treatment. Sleek minimal device on a plain backdrop (gradient or pure white/black) with dramatic single key-light, accurate hi-fidelity material rendering (brushed aluminum + curved glass + leather strap + e-ink screen + chamfered edges), studio product-photography vibe. Distinct from `illust-3d-tron-emissive-glow` (which adds glow accents) - this entry is WITHOUT glow; **premium materials + dramatic lighting** do the work. The \"luxury device speaks for itself\" register.",
       "notForUseWhen": "cottagecore, brutalism, kids brands, hand-made craft",
       "pairsPrototypes": [
         "recipe-restrained-ai-marketing",
@@ -1031,7 +1031,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Characters, objects, and environments rendered in the **PlayStation-1-era low-poly aesthetic** — angular silhouettes, low-resolution texture maps (256×256 for hero, 128×128 for everything else), vertex-jitter / wobble (because the PS1 had no subpixel precision), flat-shaded planes, no antialiasing, affine texture mapping (textures warp on tilted faces). Used for retro-game revival, nostalgic gaming brands, demoscene-adjacent work, vaporwave hybrids, indie-game marketing.",
+      "oneLine": "Characters, objects, and environments rendered in the **PlayStation-1-era low-poly aesthetic** - angular silhouettes, low-resolution texture maps (256×256 for hero, 128×128 for everything else), vertex-jitter / wobble (because the PS1 had no subpixel precision), flat-shaded planes, no antialiasing, affine texture mapping (textures warp on tilted faces). Used for retro-game revival, nostalgic gaming brands, demoscene-adjacent work, vaporwave hybrids, indie-game marketing.",
       "notForUseWhen": "premium-luxury, restrained editorial, photoreal product",
       "pairsPrototypes": [
         "aesthetic-pixel-ps1-tactics-ogre",
@@ -1050,7 +1050,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic — soft volumetric blobs, glossy plastic spheres, iridescent holographic gradients, interactive 3D shapes that float, morph, and respond to scroll/pointer. The 2022-2026 dev-tools / AI-product / fintech landing-page register.",
+      "oneLine": "The Spline / Vercel / Stripe / Linear-era browser-3D hero aesthetic - soft volumetric blobs, glossy plastic spheres, iridescent holographic gradients, interactive 3D shapes that float, morph, and respond to scroll/pointer. The 2022-2026 dev-tools / AI-product / fintech landing-page register.",
       "notForUseWhen": "brutalism, cottagecore, restrained editorial",
       "pairsPrototypes": [
         "recipe-devtools-marketing",
@@ -1071,7 +1071,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "The internals of a device rendered as a **3D exploded-view technical illustration** — components floating apart in their assembly relationships (PCB, battery, antenna, sensor array, mechanical chassis, screws), often with **hairline label-lines** connecting components to small annotations or product-spec text. Clean grey/white backdrop, sharp directional studio shadow, no environment clutter. Engineering / precision / \"look how it's built\" register. Distinct from generic 3D product render in that the WHOLE is taken APART to make the assembly legible.",
+      "oneLine": "The internals of a device rendered as a **3D exploded-view technical illustration** - components floating apart in their assembly relationships (PCB, battery, antenna, sensor array, mechanical chassis, screws), often with **hairline label-lines** connecting components to small annotations or product-spec text. Clean grey/white backdrop, sharp directional studio shadow, no environment clutter. Engineering / precision / \"look how it's built\" register. Distinct from generic 3D product render in that the WHOLE is taken APART to make the assembly legible.",
       "notForUseWhen": "cottagecore, kids brands, warm-lifestyle, positivity-kawaii",
       "pairsPrototypes": [
         "recipe-devtools-marketing",
@@ -1091,7 +1091,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Clean dark 3D objects — hardware devices, abstract geometric forms, sci-fi props — with **glowing emissive lines or panel-edges** as deliberate accents. The Tron-Lines aesthetic. The object is otherwise dark monochrome (matte black, gunmetal, anodised carbon) and geometrically precise; the glow is the SINGLE highlight that does the talking. Always on dark backdrop so the emissive really pops. Distinct from gritty cyberpunk (which is weathered, decay-y) — this is GEOMETRIC-CLEAN cyberpunk, the Apple-Vision-Pro-promo / NVIDIA-RTX / Tron-Legacy register.",
+      "oneLine": "Clean dark 3D objects - hardware devices, abstract geometric forms, sci-fi props - with **glowing emissive lines or panel-edges** as deliberate accents. The Tron-Lines aesthetic. The object is otherwise dark monochrome (matte black, gunmetal, anodised carbon) and geometrically precise; the glow is the SINGLE highlight that does the talking. Always on dark backdrop so the emissive really pops. Distinct from gritty cyberpunk (which is weathered, decay-y) - this is GEOMETRIC-CLEAN cyberpunk, the Apple-Vision-Pro-promo / NVIDIA-RTX / Tron-Legacy register.",
       "notForUseWhen": "cottagecore, warm-lifestyle, restrained-clean editorial, kids brands",
       "pairsPrototypes": [
         "recipe-ai-foundry-dark",
@@ -1111,7 +1111,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Netflix's *Arcane* (Riot Games + **Fortiche Productions**, 2021 / 2024) — the canonical reference for **hand-painted texture over 3D geometry**, the so-called **\"2.5D hybrid\"**. The signature is **manually painted textures (Photoshop) wrapped onto Autodesk Maya 3D models**, with painterly highlights, shadows, brushstrokes and imperfections baked into texture maps — every frame reflects emotional and artistic intent rather than procedural uniformity. The result reads as both 3D (volume, motion, depth) AND 2D (visible brushwork, painterly shading, hand-drawn line accents).",
+      "oneLine": "Netflix's *Arcane* (Riot Games + **Fortiche Productions**, 2021 / 2024) - the canonical reference for **hand-painted texture over 3D geometry**, the so-called **\"2.5D hybrid\"**. The signature is **manually painted textures (Photoshop) wrapped onto Autodesk Maya 3D models**, with painterly highlights, shadows, brushstrokes and imperfections baked into texture maps - every frame reflects emotional and artistic intent rather than procedural uniformity. The result reads as both 3D (volume, motion, depth) AND 2D (visible brushwork, painterly shading, hand-drawn line accents).",
       "notForUseWhen": "cottagecore, kids brands, restrained-tech, B2B-clean",
       "pairsPrototypes": [
         "aesthetic-honkai-star-rail-polished-sf",
@@ -1150,7 +1150,7 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "primary geometric shapes — circle, square, triangle.",
+      "oneLine": "primary geometric shapes - circle, square, triangle.",
       "notForUseWhen": "warm, cottagecore, playful",
       "pairsPrototypes": [
         "aesthetic-bauhaus",
@@ -1186,8 +1186,8 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "A translucent deep-sea or fantastical organism — jellyfish, medusa, glowing totem-being — self-lit against true black, tendrils trailing.",
-      "notForUseWhen": "Brief is warm-domestic, budget, or daylight — the creature lives in expensive darkness.",
+      "oneLine": "A translucent deep-sea or fantastical organism - jellyfish, medusa, glowing totem-being - self-lit against true black, tendrils trailing.",
+      "notForUseWhen": "Brief is warm-domestic, budget, or daylight - the creature lives in expensive darkness.",
       "pairsPrototypes": [
         "aesthetic-bioluminescent-deep",
         "aesthetic-defi-cosmic",
@@ -1238,7 +1238,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Bright-palette mid-action flat-vector characters — bouncy, dope, doing hobbies, group celebration. Merges Blush's Happy-Bunch / Hobbies / Shiny-Happy families. Distinct from the Scenes variant (muted, single-prop, everyday-quiet) by saturation and motion energy.",
+      "oneLine": "Bright-palette mid-action flat-vector characters - bouncy, dope, doing hobbies, group celebration. Merges Blush's Happy-Bunch / Hobbies / Shiny-Happy families. Distinct from the Scenes variant (muted, single-prop, everyday-quiet) by saturation and motion energy.",
       "notForUseWhen": "enterprise serious, brutalism, dark themes",
       "pairsPrototypes": [
         "aesthetic-corporate-memphis",
@@ -1255,7 +1255,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Flat-vector everyday-life scenes — characters going about daily activity (office, park, walking, shopping, family moments) on a simple single-prop background. Merges Blush's Allura / Big-Shoes / Dayflow / Family-Values / Shopaholics families.",
+      "oneLine": "Flat-vector everyday-life scenes - characters going about daily activity (office, park, walking, shopping, family moments) on a simple single-prop background. Merges Blush's Allura / Big-Shoes / Dayflow / Family-Values / Shopaholics families.",
       "notForUseWhen": "brutalism, youth-music, dark themes",
       "pairsPrototypes": [
         "aesthetic-corporate-memphis",
@@ -1542,14 +1542,14 @@
       "sourceFile": "design-library/illust-blush-stuck-at-home.md"
     },
     "blush-transhumans": {
-      "name": "Transhumans (Pablo Stanley — punk-zine cyborg ink)",
+      "name": "Transhumans (Pablo Stanley - punk-zine cyborg ink)",
       "category": "Hand-drawn / sketch",
       "subCategory": "ink-line-brush",
       "role": "subject",
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Pablo Stanley's open-source **Transhumans** collection (transhumans.xyz, also on Blush.design) — characters transcending biological limits with cyborg parts, reflective visors, robot heads, mechanical accessories. The actual aesthetic is **punk-zine ink**: bold brush strokes drawn quickly and imperfectly, **stark black and white** base with optional color overlays (the Blush coloring system layers tints on top). Inspired by 80s sci-fi cinema, kawaii minimalism, Japanese illustration, and the literal transhumanism movement. CC0 open-source.",
+      "oneLine": "Pablo Stanley's open-source **Transhumans** collection (transhumans.xyz, also on Blush.design) - characters transcending biological limits with cyborg parts, reflective visors, robot heads, mechanical accessories. The actual aesthetic is **punk-zine ink**: bold brush strokes drawn quickly and imperfectly, **stark black and white** base with optional color overlays (the Blush coloring system layers tints on top). Inspired by 80s sci-fi cinema, kawaii minimalism, Japanese illustration, and the literal transhumanism movement. CC0 open-source.",
       "notForUseWhen": "cottagecore, restrained editorial, warm-lifestyle, B2B-clean",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -1585,7 +1585,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "everything is a wavy curving line — limbs, hair, shadows.",
+      "oneLine": "everything is a wavy curving line - limbs, hair, shadows.",
       "notForUseWhen": "B2B serious, brutalism, financial dashboards",
       "pairsPrototypes": [
         "style-doodle",
@@ -1669,8 +1669,8 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Renaissance/Baroque-style painted figures interacting with modern products and gestures — the Gucci campaign move.",
-      "notForUseWhen": "Brief is tech-minimal, futurist, or engineering-led — oil paint reads heritage and wit.",
+      "oneLine": "Renaissance/Baroque-style painted figures interacting with modern products and gestures - the Gucci campaign move.",
+      "notForUseWhen": "Brief is tech-minimal, futurist, or engineering-led - oil paint reads heritage and wit.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "aesthetic-dark-academia",
@@ -1724,7 +1724,7 @@
         "subject"
       ],
       "oneLine": "flat geometric humans, disproportionate.",
-      "notForUseWhen": "indie / editorial / brutalism — anywhere personality matters",
+      "notForUseWhen": "indie / editorial / brutalism - anywhere personality matters",
       "pairsPrototypes": [
         "aesthetic-corporate-memphis",
         "recipe-bento-marketing",
@@ -1898,8 +1898,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "Twilight woodland lit from within — lanterns, fireflies, glowing flora — deep teal darkness held back by pools of warm magical light.",
-      "notForUseWhen": "Brief is rational, corporate, or daylight-honest — the register is twilight wonder.",
+      "oneLine": "Twilight woodland lit from within - lanterns, fireflies, glowing flora - deep teal darkness held back by pools of warm magical light.",
+      "notForUseWhen": "Brief is rational, corporate, or daylight-honest - the register is twilight wonder.",
       "pairsPrototypes": [
         "aesthetic-fairycore",
         "aesthetic-bioluminescent-deep",
@@ -2033,14 +2033,14 @@
       "sourceFile": "design-library/illust-hand-drawn-pencil-sketch.md"
     },
     "handyarrows-illustration": {
-      "name": "HandyArrows — Single-hand illustration pack (Eren Can Arica)",
+      "name": "HandyArrows - Single-hand illustration pack (Eren Can Arica)",
       "category": "Hand-drawn / sketch",
       "subCategory": "ink-line-brush",
       "role": "decoration",
       "roleAffinity": [
         "decoration"
       ],
-      "oneLine": "The entire HandyArrows library — arrows, doodles, full illustrations, infographic accents, underlines — drawn by one hand (Eren Can Arica / Eronred). Single artist, single marker, consistent wobble, one entry to rule them all. Promptable per sub-asset role (arrow / doodle / illustration / infographic / underline).",
+      "oneLine": "The entire HandyArrows library - arrows, doodles, full illustrations, infographic accents, underlines - drawn by one hand (Eren Can Arica / Eronred). Single artist, single marker, consistent wobble, one entry to rule them all. Promptable per sub-asset role (arrow / doodle / illustration / infographic / underline).",
       "notForUseWhen": "dense data UI, brutalism, corporate Fortune-500",
       "pairsPrototypes": [
         "style-doodle",
@@ -2098,8 +2098,8 @@
       "roleAffinity": [
         "decoration"
       ],
-      "oneLine": "Monochrome sumi-e cloud and sky fields — billowing ink masses, graded washes, paper breathing through — as hero atmosphere rather than subject.",
-      "notForUseWhen": "Brief is playful-bright or vector-crisp — the wash is contemplative and tonal.",
+      "oneLine": "Monochrome sumi-e cloud and sky fields - billowing ink masses, graded washes, paper breathing through - as hero atmosphere rather than subject.",
+      "notForUseWhen": "Brief is playful-bright or vector-crisp - the wash is contemplative and tonal.",
       "pairsPrototypes": [
         "aesthetic-dark-academia",
         "recipe-warm-restraint",
@@ -2202,8 +2202,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A solitary figure at rest in a vast quiet scene — dusk meadow, rooftop, window desk — rendered in the lo-fi-beats illustration tradition.",
-      "notForUseWhen": "Brief is energetic, corporate, or urgency-driven — the whole register is exhale.",
+      "oneLine": "A solitary figure at rest in a vast quiet scene - dusk meadow, rooftop, window desk - rendered in the lo-fi-beats illustration tradition.",
+      "notForUseWhen": "Brief is energetic, corporate, or urgency-driven - the whole register is exhale.",
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "aesthetic-dreamcore",
@@ -2271,8 +2271,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A single-hue 3D prop stage — pink room with pink objects, blue world of blue toys — physical-set-design energy in render form.",
-      "notForUseWhen": "Brief needs realism or documentary trust — the staged set reads art-directed and brand-forward.",
+      "oneLine": "A single-hue 3D prop stage - pink room with pink objects, blue world of blue toys - physical-set-design energy in render form.",
+      "notForUseWhen": "Brief needs realism or documentary trust - the staged set reads art-directed and brand-forward.",
       "pairsPrototypes": [
         "aesthetic-monochrome-pop-poster",
         "recipe-bento-marketing",
@@ -2289,8 +2289,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "Interface elements physically hosting plant life — topiary growing out of stat cards, vines threading through a dashboard, moss on a button.",
-      "notForUseWhen": "Brief needs literal product screenshots untouched — this style ALTERS the interface with growth.",
+      "oneLine": "Interface elements physically hosting plant life - topiary growing out of stat cards, vines threading through a dashboard, moss on a button.",
+      "notForUseWhen": "Brief needs literal product screenshots untouched - this style ALTERS the interface with growth.",
       "pairsPrototypes": [
         "aesthetic-organic-overgrowth",
         "aesthetic-pastoral-serene",
@@ -2307,8 +2307,8 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "High-contrast black-and-white ink illustration — brush splatter, dramatic spot blacks, hard-boiled narrative panels.",
-      "notForUseWhen": "Brief is cheerful, pastel, kid-friendly, or corporate-safe — noir ink carries grit.",
+      "oneLine": "High-contrast black-and-white ink illustration - brush splatter, dramatic spot blacks, hard-boiled narrative panels.",
+      "notForUseWhen": "Brief is cheerful, pastel, kid-friendly, or corporate-safe - noir ink carries grit.",
       "pairsPrototypes": [
         "aesthetic-monochrome-tech-editorial",
         "recipe-editorial-magazine",
@@ -2362,7 +2362,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Blizzard's *Overwatch* (2016 + 2023 Overwatch 2) — the canonical reference for **Pixar-grade stylized 3D applied to a real-time game engine**. The signature is **stylized PBR (Physically Based Rendering)** — PBR materials with disciplined art-direction constraints on saturation, value, and geometry. Plus **exaggerated character silhouettes** so readable they can be identified at any distance by pose alone (Reinhardt's hammer, Lúcio's headphones, D.Va's mech profile, Tracer's leggings — all silhouette anchors that read at any pose, any distance).",
+      "oneLine": "Blizzard's *Overwatch* (2016 + 2023 Overwatch 2) - the canonical reference for **Pixar-grade stylized 3D applied to a real-time game engine**. The signature is **stylized PBR (Physically Based Rendering)** - PBR materials with disciplined art-direction constraints on saturation, value, and geometry. Plus **exaggerated character silhouettes** so readable they can be identified at any distance by pose alone (Reinhardt's hammer, Lúcio's headphones, D.Va's mech profile, Tracer's leggings - all silhouette anchors that read at any pose, any distance).",
       "notForUseWhen": "restrained-editorial, brutalism, cottagecore, premium-luxury-restraint",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
@@ -2381,8 +2381,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork — gesture over anatomy, drama in the strokes.",
-      "notForUseWhen": "Brief is technical, minimal, or photoreal — the creature is expressive brushwork, not asset-render.",
+      "oneLine": "A phoenix, stag, serpent, or spirit-bird rendered in loose expressive brushwork - gesture over anatomy, drama in the strokes.",
+      "notForUseWhen": "Brief is technical, minimal, or photoreal - the creature is expressive brushwork, not asset-render.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "aesthetic-dark-academia",
@@ -2399,8 +2399,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A whole navigable scene built from visible cut paper — layered card hills, folded houses, tab-and-slot trees — craft-table charm at world scale.",
-      "notForUseWhen": "Brief is premium-sleek or serious-enterprise — paper reads handmade and playful.",
+      "oneLine": "A whole navigable scene built from visible cut paper - layered card hills, folded houses, tab-and-slot trees - craft-table charm at world scale.",
+      "notForUseWhen": "Brief is premium-sleek or serious-enterprise - paper reads handmade and playful.",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
         "aesthetic-cottagecore",
@@ -2417,8 +2417,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A creature, object, or figure materializing from thousands of glowing particles — half-dissolved between dust and form.",
-      "notForUseWhen": "Brief is warm, organic, handcrafted, or budget — particles read high-tech and cold.",
+      "oneLine": "A creature, object, or figure materializing from thousands of glowing particles - half-dissolved between dust and form.",
+      "notForUseWhen": "Brief is warm, organic, handcrafted, or budget - particles read high-tech and cold.",
       "pairsPrototypes": [
         "aesthetic-cosmic-horizon",
         "aesthetic-bioluminescent-deep",
@@ -2436,7 +2436,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Pixar's *Coco* (2017, Lee Unkrich) — the canonical reference for **Mexican folk-art vocabulary applied to Pixar-grade 3D**. The signature is the **Land of the Dead** — *\"a vibrant explosion of color\"* (Unkrich's brief) — with the **marigold-petal bridge** literally connecting worlds, **calaveras** (sugar-skull face paint motifs) etched around eyes and chin, **alebrijes** (psychedelic spirit-animal folk sculptures) as spiritual guides, and **papel picado** (cut-paper banners) as decorative architecture. The whole afterlife is built like a glowing, tiered, ever-expanding folk-art cathedral.",
+      "oneLine": "Pixar's *Coco* (2017, Lee Unkrich) - the canonical reference for **Mexican folk-art vocabulary applied to Pixar-grade 3D**. The signature is the **Land of the Dead** - *\"a vibrant explosion of color\"* (Unkrich's brief) - with the **marigold-petal bridge** literally connecting worlds, **calaveras** (sugar-skull face paint motifs) etched around eyes and chin, **alebrijes** (psychedelic spirit-animal folk sculptures) as spiritual guides, and **papel picado** (cut-paper banners) as decorative architecture. The whole afterlife is built like a glowing, tiered, ever-expanding folk-art cathedral.",
       "notForUseWhen": "restrained-editorial, brutalism, B2B-clean, cyberpunk",
       "pairsPrototypes": [
         "aesthetic-cluttercore",
@@ -2455,7 +2455,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Pixar's *Elemental* (2023, Peter Sohn) — the canonical reference for **characters MADE of their element**, with full material-physics simulation. Ember (fire) is **self-illuminating** — she **lights the scene as a light source**. Wade (water) is **refractive and reflective**. Pixar built \"Pixar's most fully simulated character\" for Ember — physics + cartoony appeal — with **151,000 computers** required to render the film; every frame has at least one (often both) fire and water simulations.",
+      "oneLine": "Pixar's *Elemental* (2023, Peter Sohn) - the canonical reference for **characters MADE of their element**, with full material-physics simulation. Ember (fire) is **self-illuminating** - she **lights the scene as a light source**. Wade (water) is **refractive and reflective**. Pixar built \"Pixar's most fully simulated character\" for Ember - physics + cartoony appeal - with **151,000 computers** required to render the film; every frame has at least one (often both) fire and water simulations.",
       "notForUseWhen": "brutalism, restrained-editorial, B2B-clean, gritty-documentary",
       "pairsPrototypes": [
         "style-liquid-glass",
@@ -2474,7 +2474,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Pixar's *Inside Out* (2015, Pete Docter) — the canonical reference for **abstract emotions personified as volumetric particle-bodies**. The signature is the emotion characters: Joy, Sadness, Fear, Disgust, Anger — each rendered with a **body surface beneath a volumetric particle aura** that radiates outward from skin. Joy's particles emanate most (her wrist is **transparent** — Docter wanted to show \"the characters are made of energy\"), Anger is the most solid, Sadness/Fear sit between. The **emotion-color → memory-orb** vocabulary became universal shorthand.",
+      "oneLine": "Pixar's *Inside Out* (2015, Pete Docter) - the canonical reference for **abstract emotions personified as volumetric particle-bodies**. The signature is the emotion characters: Joy, Sadness, Fear, Disgust, Anger - each rendered with a **body surface beneath a volumetric particle aura** that radiates outward from skin. Joy's particles emanate most (her wrist is **transparent** - Docter wanted to show \"the characters are made of energy\"), Anger is the most solid, Sadness/Fear sit between. The **emotion-color → memory-orb** vocabulary became universal shorthand.",
       "notForUseWhen": "brutalism, cyberpunk, restrained-editorial, B2B-clean",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
@@ -2493,7 +2493,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "Pixar's *Soul* (2020, Pete Docter + Kemp Powers) — the canonical reference for **abstract-spiritual character design**. The Great Before is the un-Earth-like soul-realm where new souls are prepared before birth, designed as **\"deceptively simple, big bold beautiful shapes, abstract buildings unlike any on Earth.\"** The signature element: **the Counselors (the \"Jerrys\")** — flexible, \"living\" white **single-stroke lines** that contort like Picasso line drawings, can be literally anything because they're the universe dumbing itself down for humans to comprehend it. Pastel translucent souls float through soft pastel architecture. Earth scenes (NYC) are photoreal, contrasting the spiritual register sharply.",
+      "oneLine": "Pixar's *Soul* (2020, Pete Docter + Kemp Powers) - the canonical reference for **abstract-spiritual character design**. The Great Before is the un-Earth-like soul-realm where new souls are prepared before birth, designed as **\"deceptively simple, big bold beautiful shapes, abstract buildings unlike any on Earth.\"** The signature element: **the Counselors (the \"Jerrys\")** - flexible, \"living\" white **single-stroke lines** that contort like Picasso line drawings, can be literally anything because they're the universe dumbing itself down for humans to comprehend it. Pastel translucent souls float through soft pastel architecture. Earth scenes (NYC) are photoreal, contrasting the spiritual register sharply.",
       "notForUseWhen": "brutalism, cyberpunk, gritty-documentary, kinetic-tech, dark themes",
       "pairsPrototypes": [
         "recipe-warm-restraint",
@@ -2568,8 +2568,8 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "A whimsical invented machine — part typewriter, part computer, part appliance — rendered in friendly 3D with knobs, tubes, and personality.",
-      "notForUseWhen": "Brief is sleek-premium or serious-enterprise — the machine is deliberately charming and clunky.",
+      "oneLine": "A whimsical invented machine - part typewriter, part computer, part appliance - rendered in friendly 3D with knobs, tubes, and personality.",
+      "notForUseWhen": "Brief is sleek-premium or serious-enterprise - the machine is deliberately charming and clunky.",
       "pairsPrototypes": [
         "aesthetic-cassette-futurism",
         "aesthetic-wacky-pomo",
@@ -2622,7 +2622,7 @@
       "roleAffinity": [
         "decoration"
       ],
-      "oneLine": "single-line abstract scribbles — squiggles, loops, tangles.",
+      "oneLine": "single-line abstract scribbles - squiggles, loops, tangles.",
       "notForUseWhen": "editorial, brutalism, photoreal",
       "pairsPrototypes": [
         "style-doodle",
@@ -2640,8 +2640,8 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "One abstract gallery-grade form — a twisted ribbon, stacked discs, eroded stone, a perfect knot — single material, studio-lit, plinth-ready.",
-      "notForUseWhen": "Brief needs depicted subjects or narrative — the form is abstract and mute by design.",
+      "oneLine": "One abstract gallery-grade form - a twisted ribbon, stacked discs, eroded stone, a perfect knot - single material, studio-lit, plinth-ready.",
+      "notForUseWhen": "Brief needs depicted subjects or narrative - the form is abstract and mute by design.",
       "pairsPrototypes": [
         "aesthetic-sculptural-minimal",
         "recipe-neo-grotesque-portfolio",
@@ -2651,7 +2651,7 @@
       "sourceFile": "design-library/illust-sculptural-3d-object.md"
     },
     "shapes-gallery-michalczyk": {
-      "name": "Shapes.gallery — Monika Michalczyk shapes",
+      "name": "Shapes.gallery - Monika Michalczyk shapes",
       "category": "Abstract / decoration",
       "subCategory": "geometric-primitive",
       "role": "decoration",
@@ -2710,7 +2710,7 @@
       "roleAffinity": [
         "spot-illustration"
       ],
-      "oneLine": "photoreal materials — leather stitch, brushed metal, wood grain.",
+      "oneLine": "photoreal materials - leather stitch, brushed metal, wood grain.",
       "notForUseWhen": "flat-vector marketing, brutalism",
       "pairsPrototypes": [
         "style-skeuomorphism",
@@ -2719,7 +2719,7 @@
       "sourceFile": "design-library/illust-skeuomorphic-detailed.md"
     },
     "spectrums-complex-flower": {
-      "name": "Spectrums — Complex / Flower",
+      "name": "Spectrums - Complex / Flower",
       "category": "Abstract / decoration",
       "subCategory": "geometric-primitive",
       "role": "decoration",
@@ -2737,7 +2737,7 @@
       "sourceFile": "design-library/illust-spectrums-complex-flower.md"
     },
     "spectrums-organic-blob": {
-      "name": "Spectrums — Organic blob",
+      "name": "Spectrums - Organic blob",
       "category": "Abstract / decoration",
       "subCategory": "gradient-blob",
       "role": "decoration",
@@ -2755,7 +2755,7 @@
       "sourceFile": "design-library/illust-spectrums-organic-blob.md"
     },
     "spectrums-vector-shape-circle": {
-      "name": "Spectrums — Circle family",
+      "name": "Spectrums - Circle family",
       "category": "Abstract / decoration",
       "subCategory": "geometric-primitive",
       "role": "decoration",
@@ -2780,7 +2780,7 @@
       "roleAffinity": [
         "subject"
       ],
-      "oneLine": "*Spider-Man: Into the Spider-Verse* (Sony Pictures Animation, 2018) — the canonical reference for **comic-book printing aesthetic baked into CG**. The signature is **Ben-Day dots, line hatching, halftone screens applied via custom crosshatch shaders** to entire 3D objects/characters/scenes (Sony built the **Hatcher** and **Thresher** tools in Nuke for this). Plus the famous **animating on twos** (12fps poses held over 24fps timeline) that gives it the staccato 2D-animation rhythm audiences subconsciously read as \"comic book.\"",
+      "oneLine": "*Spider-Man: Into the Spider-Verse* (Sony Pictures Animation, 2018) - the canonical reference for **comic-book printing aesthetic baked into CG**. The signature is **Ben-Day dots, line hatching, halftone screens applied via custom crosshatch shaders** to entire 3D objects/characters/scenes (Sony built the **Hatcher** and **Thresher** tools in Nuke for this). Plus the famous **animating on twos** (12fps poses held over 24fps timeline) that gives it the staccato 2D-animation rhythm audiences subconsciously read as \"comic book.\"",
       "notForUseWhen": "restrained-editorial, cottagecore, B2B-clean, premium-luxury-restraint",
       "pairsPrototypes": [
         "aesthetic-y2k-memphis-loud",
@@ -2816,8 +2816,8 @@
       "roleAffinity": [
         "mascot"
       ],
-      "oneLine": "A Pixar-grade stylized 3D character portrait of a REAL person — the designer/founder as their own hero asset.",
-      "notForUseWhen": "Brief is corporate-formal, luxury, or anonymous-brand — a personal avatar centers an individual.",
+      "oneLine": "A Pixar-grade stylized 3D character portrait of a REAL person - the designer/founder as their own hero asset.",
+      "notForUseWhen": "Brief is corporate-formal, luxury, or anonymous-brand - a personal avatar centers an individual.",
       "pairsPrototypes": [
         "recipe-readcv",
         "recipe-neo-grotesque-portfolio",
@@ -2904,7 +2904,7 @@
       "roleAffinity": [
         "typography"
       ],
-      "oneLine": "The Chrome Hearts brand identity — **Cloister Black** blackletter (Morris Fuller Benton, 1904 — Old English style) rendered in chrome / silver-jewelry finish, with crosses, daggers, fleur-de-lis, and occasional gemstone accents filling the counters. Streetwear-luxury register. The intersection of `illust-typo-blackletter-neo-gothic` (the raw blackletter form) and `illust-typo-y2k-chrome-3d` (the chrome-extruded treatment) — distinct from both because it commits to BOTH together as a coherent brand-bling identity.",
+      "oneLine": "The Chrome Hearts brand identity - **Cloister Black** blackletter (Morris Fuller Benton, 1904 - Old English style) rendered in chrome / silver-jewelry finish, with crosses, daggers, fleur-de-lis, and occasional gemstone accents filling the counters. Streetwear-luxury register. The intersection of `illust-typo-blackletter-neo-gothic` (the raw blackletter form) and `illust-typo-y2k-chrome-3d` (the chrome-extruded treatment) - distinct from both because it commits to BOTH together as a coherent brand-bling identity.",
       "notForUseWhen": "B2B, restrained editorial, Bauhaus, cottagecore",
       "pairsPrototypes": [
         "aesthetic-urbling",
@@ -2993,7 +2993,7 @@
       "roleAffinity": [
         "typography"
       ],
-      "oneLine": "The mid-late-1990s Vectorheart aesthetic — vector typography rooted in Swiss modernism, utilitarian industrial design, brutalism, and Peter Saville's Factory Records covers. Pioneered by **Bionic Systems** and **The Designers Republic**. The Wipeout PSX game UI (designed by Designers Republic) is the canonical example — also known as \"Wipeout Design.\" NOTHING to do with romantic heart-shapes; the \"heart\" is etymologically unrelated.",
+      "oneLine": "The mid-late-1990s Vectorheart aesthetic - vector typography rooted in Swiss modernism, utilitarian industrial design, brutalism, and Peter Saville's Factory Records covers. Pioneered by **Bionic Systems** and **The Designers Republic**. The Wipeout PSX game UI (designed by Designers Republic) is the canonical example - also known as \"Wipeout Design.\" NOTHING to do with romantic heart-shapes; the \"heart\" is etymologically unrelated.",
       "notForUseWhen": "cottagecore, romantic-craft, warm-paper editorial",
       "pairsPrototypes": [
         "aesthetic-vector-neovectorheart",
@@ -3067,7 +3067,7 @@
       "roleAffinity": [
         "spot-illustration"
       ],
-      "oneLine": "3D pixel art — cubes assembled into figures.",
+      "oneLine": "3D pixel art - cubes assembled into figures.",
       "notForUseWhen": "editorial, brutalism, warm-restraint",
       "pairsPrototypes": [
         "aesthetic-pixel-modern-cozy",

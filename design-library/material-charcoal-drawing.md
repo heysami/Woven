@@ -36,7 +36,7 @@ css: |
 svg: |
   <feTurbulence baseFrequency="0.05" numOctaves="3"/>
   <feDisplacementMap scale="2"/>
-  <!-- coarser than pencil — charcoal pieces are bigger -->
+  <!-- coarser than pencil - charcoal pieces are bigger -->
 raster: scanned charcoal artwork
 ```
 

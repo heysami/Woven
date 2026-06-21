@@ -13,7 +13,7 @@ images:
 
 # VHS-Frutiger (Frutiger Aero with VHS distortion)
 
-A glossy surface (translucent) that reacts to light: yes and deforms: yes — VHS tracking bars.
+A glossy surface (translucent) that reacts to light: yes and deforms: yes - VHS tracking bars.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A glossy surface (translucent) that reacts to light: yes and deforms: yes — VH
 
 **Reacts to light**: yes
 
-**Deforms**: yes — VHS tracking bars
+**Deforms**: yes - VHS tracking bars
 
 **Age / wear**: shows wear (drop-outs)
 

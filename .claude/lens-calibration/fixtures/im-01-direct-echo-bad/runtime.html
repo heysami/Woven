@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>im-01 — DIRECT-ECHO BAD fixture</title>
+<head><meta charset="utf-8"><title>im-01 - DIRECT-ECHO BAD fixture</title>
 <style>body,html{margin:0;height:100%;overflow:hidden;background:#000}
 #scene{display:block;width:100%;height:100%}
 #start-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;flex-direction:column;gap:16px;font-family:system-ui}
@@ -10,8 +10,8 @@
 <canvas id="scene"></canvas>
 <div id="start-gate"><h2>Voice Painter</h2><p>Sing to paint the field.</p><button id="start-btn">Start</button></div>
 <script type="module">
-// ─── BAD PATTERN — brief committed to mapping idiom 'accumulative'
-// ("the painting holds — strokes accumulate, the room remembers") but
+// ─── BAD PATTERN - brief committed to mapping idiom 'accumulative'
+// ("the painting holds - strokes accumulate, the room remembers") but
 // runtime ships a DIRECT 1:1 echo: output.hue = input.rms. Aesthetic-lens
 // must flag antiPattern '1:1 direct echo mapping'; concept-lens must
 // fail surpriseScore (drive mic; output decays to 0 instantly on silence).
@@ -39,11 +39,11 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATI
 const a = gl.getAttribLocation(p, 'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
 const uRes = gl.getUniformLocation(p, 'u_res'); const uHue = gl.getUniformLocation(p, 'u_hue');
 
-// Mapping state — INTENTIONALLY trivial direct echo (the bad pattern)
+// Mapping state - INTENTIONALLY trivial direct echo (the bad pattern)
 const inputVec = new Float32Array(8);  // [0]=RMS proxy
 const outputVec = new Float32Array(1); // [0]=hue
 function map(input, output) {
-  // ❌ Direct 1:1 — brief said "accumulative" but we just echo
+  // ❌ Direct 1:1 - brief said "accumulative" but we just echo
   output[0] = input[0];
 }
 

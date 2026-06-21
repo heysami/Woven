@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Splat Lab — Gaussian Splat 3D editor</title>
+<title>Splat Lab - Gaussian Splat 3D editor</title>
 <!-- Woven shared design system + floating-panels-on-select contract -->
 <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
 <link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
@@ -11,7 +11,7 @@
 <style>
   :root{
     /* Local vars remapped onto canonical Woven tokens so the chrome reads as
-       ONE design system with the editor — light paper surfaces, hairline
+       ONE design system with the editor - light paper surfaces, hairline
        borders, single green accent, Space Grotesk / Space Mono type. The
        WebGL #center stage keeps a dark *content* background (see below). */
     --bg:var(--wv-bg); --panel:var(--wv-surface); --panel2:var(--wv-surface-2); --line:var(--wv-border);
@@ -46,7 +46,7 @@
   /* #coreCanvas is the flex child holding the central stage in the default
      layout; the shared detached-panels.css repositions it absolutely on select. */
   #coreCanvas{flex:1;display:flex;min-width:0;min-height:0}
-  /* #center is the WebGL stage — it keeps a DARK content background (the 3D
+  /* #center is the WebGL stage - it keeps a DARK content background (the 3D
      scene), not the light Woven chrome. */
   #center{flex:1;position:relative;min-width:0;background:
       radial-gradient(120% 90% at 50% 0%, var(--wv-viewport-2) 0%, var(--wv-viewport) 70%);overflow:hidden}
@@ -93,7 +93,7 @@
   .qbtn:hover{border-color:var(--accent)}
   .qbtn.on{border-color:var(--accent);color:var(--wv-accent-text);background:var(--wv-accent-soft)}
 
-  /* gizmo mode toolbar / overlay / toast — these FLOAT over the dark WebGL
+  /* gizmo mode toolbar / overlay / toast - these FLOAT over the dark WebGL
      stage, so they stay dark-glass (legible on 3D content) with hairline
      light-on-dark borders and the green accent for the active state. */
   #gizbar{position:absolute;top:12px;left:12px;display:flex;gap:5px;background:rgba(20,22,29,.82);
@@ -151,7 +151,7 @@
             <input type="text" id="srcUrl" placeholder="https://…/model.splat" />
           </div>
           <button class="tbtn" id="addConfirm" style="width:100%">Add splat</button>
-          <div class="hint">Splats are point-cloud captures — drag-orbit to inspect, then select one to move / rotate / scale it.</div>
+          <div class="hint">Splats are point-cloud captures - drag-orbit to inspect, then select one to move / rotate / scale it.</div>
         </div>
       </div>
       <div id="splatList"></div>
@@ -165,7 +165,7 @@
       <div id="stage"></div>
       <div class="loadbar" id="loadbar"></div>
       <div id="gizbar">
-        <!-- inline SVG icons (currentColor) — no emoji UI glyphs -->
+        <!-- inline SVG icons (currentColor) - no emoji UI glyphs -->
         <button data-mode="translate" class="on" title="Move (W)" aria-label="Move"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
         <button data-mode="rotate" title="Rotate (E)" aria-label="Rotate"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
         <button data-mode="scale" title="Scale (R)" aria-label="Scale"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3h-6M21 3v6M21 3l-7 7M3 21h6M3 21v-6M3 21l7-7"/></svg></button>
@@ -190,7 +190,7 @@ import * as GS from '@mkkellogg/gaussian-splats-3d';
 const $ = s => document.querySelector(s);
 const DEG = Math.PI / 180;
 
-// Inline SVG UI icons (currentColor) — no emoji glyphs in the chrome.
+// Inline SVG UI icons (currentColor) - no emoji glyphs in the chrome.
 const ICON = {
   eyeOn:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.5 9.5 0 0 0 3.1-.5"/><path d="M3 3l18 18"/></svg>',
@@ -284,7 +284,7 @@ gizmo.addEventListener('objectChange', () => {
   scheduleCommit();
 });
 
-// ── Splat viewer (shared mode — we own renderer/camera/scene) ────────────
+// ── Splat viewer (shared mode - we own renderer/camera/scene) ────────────
 const viewer = new GS.Viewer({
   selfDrivenMode: false,
   renderer, camera, threeScene: scene,
@@ -344,7 +344,7 @@ async function rebuildScenes(){
     status();
   } catch (e){
     console.warn('[splat] rebuild failed', e);
-    toast('Could not load a splat — check the URL / CORS');
+    toast('Could not load a splat - check the URL / CORS');
   } finally {
     setLoad(1); building = false;
     refreshOverlay();
@@ -410,7 +410,7 @@ function renderList(){
   for (const sp of model.splats){
     const row = document.createElement('div');
     row.className = 'splat-row' + (sp.id === selId ? ' sel' : '');
-    // Connector hit-target attributes — each row IS a layer "in" port the host
+    // Connector hit-target attributes - each row IS a layer "in" port the host
     // can wire to. sp.id (a stable "s<rand>" from uid()) is the layer id.
     row.dataset.portNode = NODE_ID;
     row.dataset.portLayer = sp.id;
@@ -469,7 +469,7 @@ function renderInspector(){
 
   if (sp){
     html += `
-    <div class="sect"><div class="sect-h">Splat — ${esc(sp.name)}</div><div class="sect-b">
+    <div class="sect"><div class="sect-h">Splat - ${esc(sp.name)}</div><div class="sect-b">
       <div class="field"><label>Name</label><input type="text" id="spname" value="${escAttr(sp.name)}"/></div>
       <div class="field"><label>Source</label><input type="text" id="spsrc" value="${escAttr(sp.src)}"/></div>
       <div class="field"><label>Position (x / y / z)</label><div class="row3">
@@ -483,7 +483,7 @@ function renderInspector(){
       <div class="field"><label>Quick fixes</label><div class="qbtns">
         <button class="qbtn" id="flipx">Flip up (X 180°)</button>
         <button class="qbtn" id="reset">Reset transform</button>
-      </div><div class="hint">Splat captures often load upside-down — use <b>Flip up</b> if it does.</div></div>
+      </div><div class="hint">Splat captures often load upside-down - use <b>Flip up</b> if it does.</div></div>
     </div></div>`;
   } else {
     html += `<div class="empty" style="text-align:left">Select a splat in the list to edit its position, rotation and scale.</div>`;
@@ -587,7 +587,7 @@ $('#addConfirm').onclick = () => {
 function fillSourceSelect(){
   const sel = $('#srcSelect'); sel.innerHTML = '';
   const opts = [...availSources, ...SAMPLES];
-  if (!opts.length){ sel.innerHTML = '<option value="">(no wired sources — paste a URL)</option>'; return; }
+  if (!opts.length){ sel.innerHTML = '<option value="">(no wired sources - paste a URL)</option>'; return; }
   for (const o of opts){ const op=document.createElement('option'); op.value=o.url; op.textContent=o.label; sel.appendChild(op); }
 }
 
@@ -668,7 +668,7 @@ if (C.scenes.length){
 }
 
 // ── floating panels on select + layer connector geometry ─────────────────
-// (shared detached-panels.css contract; additive — no effect unless selected)
+// (shared detached-panels.css contract; additive - no effect unless selected)
 function post(msg){ if (!EMBEDDED) return; try { parent.postMessage(Object.assign({ nodeId:NODE_ID }, msg), '*'); } catch(_e){} }
 
 // Report the floating side-panel extents so the host can grow the iframe and
@@ -681,7 +681,7 @@ function reportPanels(){
   const topEl   = $('#top');
   const panelL = floating ? (leftEl  ? leftEl.offsetWidth  + 8 : 0) : 0;
   const panelR = floating ? (rightEl ? rightEl.offsetWidth + 8 : 0) : 0;
-  // The full-width header (#top) now floats too — reserve its height + 8px gap
+  // The full-width header (#top) now floats too - reserve its height + 8px gap
   // so #coreCanvas drops below it and the bar isn't covered by the canvas.
   const panelT = floating ? (topEl ? topEl.offsetHeight + 8 + 30 : 0) : 0; /* +30 = node title-bar height, so the floated header sits ABOVE it, not over it */
   const panelB = 0;   // …no bottom panel
@@ -716,7 +716,7 @@ function reportLayerGeom(){
   post({ type:'gsplat:layers-geometry', panel, rows });
 }
 
-// Recompute connector geometry on panel scroll + resize — NEVER per-frame.
+// Recompute connector geometry on panel scroll + resize - NEVER per-frame.
 (function wireGeomTriggers(){
   const sl = $('#splatList');
   if (sl) sl.addEventListener('scroll', reportLayerGeom, { passive:true });

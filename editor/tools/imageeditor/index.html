@@ -28,7 +28,7 @@
     --accent2:var(--wv-accent-strong, var(--wv-accent)); /* accent hover */
     --danger:var(--wv-danger, #d23b3b);
     --good:var(--wv-success, #2faf6a);
-    /* Image content backgrounds — neutral viewport tokens, NOT chrome tokens. */
+    /* Image content backgrounds - neutral viewport tokens, NOT chrome tokens. */
     --chk1:var(--wv-viewport-2, #dcdfe4); --chk2:var(--wv-viewport, #eef0f3);
     --radius:7px;
   }
@@ -88,7 +88,7 @@
   /* #coreCanvas wraps #stage; it takes the central flex space so #stage can
      keep filling it (it used to be a direct flex child of #main). */
   #coreCanvas{flex:1; display:flex; min-width:0; min-height:0; position:relative;}
-  /* #stage is the image VIEWPORT — neutral content backdrop (not chrome). */
+  /* #stage is the image VIEWPORT - neutral content backdrop (not chrome). */
   #stage{
     flex:1; position:relative; overflow:hidden; min-width:0;
     background:
@@ -326,10 +326,10 @@
 <script>
 "use strict";
 /* ============================================================================
-   Woven Image Editor — single-file raster editor, driven-view of a parent node.
+   Woven Image Editor - single-file raster editor, driven-view of a parent node.
    ========================================================================== */
 
-// ── Icon set (inline SVG, currentColor — no emoji icons) ───────────────────
+// ── Icon set (inline SVG, currentColor - no emoji icons) ───────────────────
 const ICON = {
   brush:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 3 21M14 4l6 6M16.5 6.5 6.8 16.2c-.6.6-.9 1.4-.9 2.2 0 .3-.2.6-.5.6-1.4 0-2.7-.5-3.7-1.5"/><path d="M14.5 4.5 19.5 9.5l1-1c1-1 1-2.6 0-3.5l-1.5-1.5c-1-1-2.6-1-3.5 0z"/></svg>',
   eraser:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12.5 6.5 17 11 9 19H6l-2-2c-.8-.8-.8-2 0-2.8z"/><path d="m9.5 9.5 5 5"/></svg>',
@@ -384,9 +384,9 @@ const uid = (p)=> p + (Date.now().toString(36).slice(-4)) + (uidc++).toString(36
 
 // ── Wired spec state (forwarded from the host node graph) ───────────────────
 // The host now forwards wired spec children to this iframe alongside the doc:
-//   effects   — [{type,intensity,params,glsl?}]  shader-lab post-process chain
-//   positions — [{mode,params}]                  arrangement hints (e.g. grid)
-//   layers    — [{id,spec:{name,z,opacity,blend,visible},children:[{type:'asset',url}]}]
+//   effects   - [{type,intensity,params,glsl?}]  shader-lab post-process chain
+//   positions - [{mode,params}]                  arrangement hints (e.g. grid)
+//   layers    - [{id,spec:{name,z,opacity,blend,visible},children:[{type:'asset',url}]}]
 // These are EXTERNAL inputs: storing/applying them must NOT echo image:state.
 // Wired raster layers are a managed group tagged source:'wired' so user-painted
 // layers are never clobbered on reconcile.
@@ -479,7 +479,7 @@ function applySelClip(ctx){
 }
 
 // ============================================================================
-// COMPOSITING — flatten visible layers (masks + gradient maps + blend) → view
+// COMPOSITING - flatten visible layers (masks + gradient maps + blend) → view
 // ============================================================================
 // Returns a flattened canvas of the whole doc. Used both for screen + bake.
 const _tmp = newCanvas(1,1);
@@ -515,7 +515,7 @@ function compose(targetCanvas){
     const as = adj[l.id];
     if(as && as.length){ for(const a of as) applyAdjustment(_tmp, a); }
 
-    // 2) Masks — multiply alpha. Dedicated paintable alpha-masks AND any layer
+    // 2) Masks - multiply alpha. Dedicated paintable alpha-masks AND any layer
     //    assigned as this layer's mask (maskBy → luminance of another layer).
     const ms = masks[l.id];
     if(ms && ms.length){ for(const m of ms) applyMask(_tmp, m.canvas, m.srcChannel, m.dstChannel); }
@@ -568,9 +568,9 @@ function applyAdjustment(canvas, a){
 
 // Multiply a channel of `canvas` by a channel read from `maskCanvas`.
 // Used both by dedicated alpha-masks and by any layer assigned as another's mask.
-//   srcChannel — what to READ off the mask: 'lum' (default, luminance × own
+//   srcChannel - what to READ off the mask: 'lum' (default, luminance × own
 //     alpha), 'alpha', 'r', 'g', 'b'.
-//   dstChannel — what to DRIVE on the target: 'alpha' (default, cutout),
+//   dstChannel - what to DRIVE on the target: 'alpha' (default, cutout),
 //     'rgb' (darken all colour channels), 'r', 'g', 'b'.
 // Defaults ('lum' → 'alpha') reproduce the original luminance-to-alpha mask.
 function applyMask(canvas, maskCanvas, srcChannel, dstChannel){
@@ -589,7 +589,7 @@ function applyMask(canvas, maskCanvas, srcChannel, dstChannel){
       case 'r': mv = mdd[i]/255; break;
       case 'g': mv = mdd[i+1]/255; break;
       case 'b': mv = mdd[i+2]/255; break;
-      default: { // 'lum' — luminance weighted by the mask pixel's own alpha
+      default: { // 'lum' - luminance weighted by the mask pixel's own alpha
         const ma = mdd[i+3]/255;
         mv = ((0.2126*mdd[i] + 0.7152*mdd[i+1] + 0.0722*mdd[i+2])/255) * ma;
       }
@@ -671,7 +671,7 @@ function hslToRgb(h,s,l){
 }
 // Six Photoshop-style colour bands. Each range is [outerLow, innerLow, innerHigh,
 // outerHigh] in degrees, kept MONOTONIC INCREASING (reds wrap past 360 so the band
-// stays contiguous — bandWeight tests both h and h+360). innerLow..innerHigh gets
+// stays contiguous - bandWeight tests both h and h+360). innerLow..innerHigh gets
 // full effect; the outer ramps fall to zero. Matches Photoshop's default spreads
 // (centres 0/60/120/180/240/300, ±15° full, ±45° falloff).
 const HUESAT_BAND_KEYS=['reds','yellows','greens','cyans','blues','magentas'];
@@ -929,7 +929,7 @@ function stopAntsIfIdle(){
 }
 
 // ============================================================================
-// PAINTING — operates on the active layer's offscreen canvas, clipped to sel.
+// PAINTING - operates on the active layer's offscreen canvas, clipped to sel.
 // ============================================================================
 let painting=false, lastP=null, shapeStart=null;
 
@@ -1047,7 +1047,7 @@ function boxBlurRegion(src, w, h, radius){
   return out2;
 }
 
-// Blur brush — blend a blurred copy of the footprint into the layer by coverage.
+// Blur brush - blend a blurred copy of the footprint into the layer by coverage.
 function blurDab(l,cx,cy){
   const fp=brushFootprint(cx,cy,opt.size/2); if(!fp) return;
   const ctx=l.canvas.getContext('2d');
@@ -1091,7 +1091,7 @@ function dodgeBurnDab(l,cx,cy,mode){
   ctx.putImageData(img,fp.x0,fp.y0);
 }
 
-// Smudge — carry a sampled buffer along the drag, smearing it forward.
+// Smudge - carry a sampled buffer along the drag, smearing it forward.
 let smudgeBuf=null; // {data,w,h}
 function smudgeSample(l,cx,cy){
   const fp=brushFootprint(cx,cy,opt.size/2); if(!fp){ smudgeBuf=null; return; }
@@ -1131,7 +1131,7 @@ function smudgeDab(l,cx,cy){
   smudgeBuf={ img:new ImageData(nb,fp.w,fp.h), w:fp.w, h:fp.h, x0:fp.x0, y0:fp.y0 };
 }
 
-// ── Patch tool — lasso a region (uses active selection), then drag to a source
+// ── Patch tool - lasso a region (uses active selection), then drag to a source
 //    area; the sampled source is feathered-blended into the original region. ──
 let patchState=null; // {points,bbox,srcCanvas}
 function patchBegin(){
@@ -1382,7 +1382,7 @@ function addMaskLayer(){
   const ti=DOC.layers.indexOf(t); DOC.layers.splice(ti+1,0,l);
   activeId=l.id;
   buildLayers(); render(); emitUserEdit();
-  toast('Mask added — paint black to hide, white to reveal');
+  toast('Mask added - paint black to hide, white to reveal');
 }
 function addGradLayer(){
   const t=activeLayer();
@@ -1618,7 +1618,7 @@ function num(v,d){ const n=Number(v); return Number.isFinite(n)?n:d; }
 // ============================================================================
 function serializeState(){
   // Wired layers are external inputs (rematerialized from WIRED.layers on each
-  // message), so they're excluded from user state — only user edits persist.
+  // message), so they're excluded from user state - only user edits persist.
   const layers=DOC.layers.filter(l=>l.source!=='wired').map(l=>{
     if(l.type==='raster'){
       const o={ id:l.id, name:l.name, type:'raster',
@@ -1749,7 +1749,7 @@ function finalizeLoad(){
 }
 
 // ============================================================================
-// PARENT BRIDGE — driven view protocol
+// PARENT BRIDGE - driven view protocol
 // ============================================================================
 let emitTimer=0;
 function emitUserEdit(){
@@ -1853,9 +1853,9 @@ function reportPanels(){
 }
 
 // reportLayerGeom: report the floating right panel rect + each layer row's rect
-//   to the host (iframe-local px — getBoundingClientRect is already iframe-local,
+//   to the host (iframe-local px - getBoundingClientRect is already iframe-local,
 //   which is exactly what the host's edge-drop hit-testing wants). Only meaningful
-//   when detached; the host ignores it otherwise. EVENT-DRIVEN ONLY — never call
+//   when detached; the host ignores it otherwise. EVENT-DRIVEN ONLY - never call
 //   this in a rAF/per-frame loop (layout thrash is a hard project rule).
 function reportLayerGeom(){
   if(!EMBEDDED) return;
@@ -2078,7 +2078,7 @@ function buildLayerProps(){
       '<div class="row"><label>Apply to</label>'+chanSel('lpMaskDst',DST_OPTS,l.maskDstChannel)+'</div>'+
       '<div class="hint" style="font-size:10px">Multiplies this layer\'s <b>Apply to</b> channel by the mask layer\'s <b>Read</b> channel.</div>'
       :
-      '<div class="hint" style="font-size:10px">"Masked by" multiplies this layer by another layer\'s channel — pick the channels once a mask is set.</div>');
+      '<div class="hint" style="font-size:10px">"Masked by" multiplies this layer by another layer\'s channel - pick the channels once a mask is set.</div>');
   document.getElementById('lpOpac').oninput=e=>{ l.opacity=(+e.target.value)/100; document.getElementById('lpOpacV').textContent=e.target.value+'%'; render(); scheduleMetaEmit(); };
   document.getElementById('lpBlend').onchange=e=>{ pushHistory(); l.blend=e.target.value; render(); buildLayers(); emitUserEdit(); };
   document.getElementById('lpMaskBy').onchange=e=>{ pushHistory(); l.maskBy=e.target.value||null;
@@ -2166,7 +2166,7 @@ function buildLevelsEditor(ed,l){
     '<button class="btn" data-ch="'+c+'" style="padding:3px 8px;'+(levelsChan===c?'background:var(--accent);color:#0a0e18;border-color:var(--accent)':'')+'">'+c.toUpperCase()+'</button>').join('');
   const sl=(id,label,min,max,v)=>'<div class="row"><label>'+label+'</label><input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+(id==='lvGamma'?'0.01':'1')+'" value="'+v+'"><span class="val" id="'+id+'V">'+v+'</span></div>';
   ed.innerHTML=
-    '<div class="pane-h" style="padding:0 0 2px; background:none;">Levels — '+(layerById(l.target)||{name:''}).name+'</div>'+
+    '<div class="pane-h" style="padding:0 0 2px; background:none;">Levels - '+(layerById(l.target)||{name:''}).name+'</div>'+
     '<div class="row" style="gap:5px">'+chanBtns+'</div>'+
     sl('lvInLo','In low',0,255,p.inLo)+
     sl('lvInHi','In high',0,255,p.inHi)+
@@ -2190,7 +2190,7 @@ function buildHueSatEditor(ed,l){
     '<button class="btn" data-ch="'+k+'" style="padding:3px 7px;'+(hsChan===k?'background:var(--accent);color:#0a0e18;border-color:var(--accent)':'')+'">'+lab+'</button>').join('');
   const sl=(id,label,min,max,v,suf)=>'<div class="row"><label>'+label+'</label><input type="range" id="'+id+'" min="'+min+'" max="'+max+'" value="'+v+'"><span class="val" id="'+id+'V">'+v+(suf||'')+'</span></div>';
   ed.innerHTML=
-    '<div class="pane-h" style="padding:0 0 2px; background:none;">Hue / Saturation — '+(layerById(l.target)||{name:''}).name+'</div>'+
+    '<div class="pane-h" style="padding:0 0 2px; background:none;">Hue / Saturation - '+(layerById(l.target)||{name:''}).name+'</div>'+
     '<div class="row" style="gap:4px;flex-wrap:wrap">'+chanBtns+'</div>'+
     sl('hsHue','Hue',-180,180,tgt.hue||0,'°')+
     sl('hsSat','Saturation',-100,100,tgt.sat||0)+
@@ -2257,7 +2257,7 @@ function buildColorLookupEditor(ed,l){
   ed.className='show';
   const amt=Math.round((l.amount==null?1:l.amount)*100);
   ed.innerHTML=
-    '<div class="pane-h" style="padding:0 0 2px; background:none;">Color Lookup — '+(layerById(l.target)||{name:''}).name+'</div>'+
+    '<div class="pane-h" style="padding:0 0 2px; background:none;">Color Lookup - '+(layerById(l.target)||{name:''}).name+'</div>'+
     '<div class="hint" style="font-size:10px">'+(l.dim===1?'1D':'3D')+' LUT · '+l.size+'³ grid · '+((l.lutName||'imported').replace(/</g,'&lt;'))+'</div>'+
     '<div class="row"><label>Intensity</label><input type="range" id="clAmt" min="0" max="100" value="'+amt+'"><span class="val" id="clAmtV">'+amt+'%</span></div>'+
     '<div class="grad-ctrls"><button class="btn" id="clReplace" style="padding:3px 8px">Replace .cube…</button></div>';
@@ -2273,7 +2273,7 @@ function buildCurvesEditor(ed,l){
   const chanBtns=['master','r','g','b'].map(c=>
     '<button class="btn" data-ch="'+c+'" style="padding:3px 8px;'+(curvesChan===c?'background:var(--accent);color:#0a0e18;border-color:var(--accent)':'')+'">'+c.toUpperCase()+'</button>').join('');
   ed.innerHTML=
-    '<div class="pane-h" style="padding:0 0 2px; background:none;">Curves — '+(layerById(l.target)||{name:''}).name+'</div>'+
+    '<div class="pane-h" style="padding:0 0 2px; background:none;">Curves - '+(layerById(l.target)||{name:''}).name+'</div>'+
     '<div class="row" style="gap:5px">'+chanBtns+'</div>'+
     '<canvas id="curveCv" width="220" height="160" style="width:100%;background:#14161b;border:1px solid var(--line2);border-radius:5px;cursor:crosshair;display:block"></canvas>'+
     '<div class="grad-ctrls"><span class="hint">Click to add a point · drag to move · double-click to remove</span>'+

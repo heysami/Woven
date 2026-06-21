@@ -18,7 +18,7 @@ bespoke brush lettering with confident smooth curves.
 ## Visual signatures
 
 - bespoke brush lettering with confident smooth curves
-- subtle ornament — swashes, hairline accent
+- subtle ornament - swashes, hairline accent
 - high-end editorial polish
 
 ## Prompt keywords

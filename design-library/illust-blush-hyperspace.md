@@ -20,7 +20,7 @@ retro-futurist space doodles: rockets, planets, astronauts.
 - retro-futurist space doodles: rockets, planets, astronauts
 - flat 60s sci-fi palette: orange, teal, mustard
 - thick rounded forms with subtle line texture
-- composition often diagonal — things flying
+- composition often diagonal - things flying
 
 ## Prompt keywords
 

@@ -1,4 +1,4 @@
-/* Woven share viewer — visitor-facing review surface for ONE shared
+/* Woven share viewer - visitor-facing review surface for ONE shared
    prototype. Served by the share gate at /s/<token>/ (see editor/shares.py).
 
    Architecture notes:
@@ -6,21 +6,21 @@
      and the prototype files), so we can reach contentDocument directly:
      element picking, pin anchoring, scroll/highlight all work without any
      script injected into the prototype's own bundle.
-   • Comments anchor to elements as { selector, tag, text } — selector is
+   • Comments anchor to elements as { selector, tag, text } - selector is
      the primary locator; tag+text are a fuzzy fallback for when the
      prototype's DOM drifts after agent edits. Pins are {x,y} fractions of
      the element's box so they survive responsive reflow.
-   • No SSE for visitors — plain polling (8s) keeps the gate surface tiny.
+   • No SSE for visitors - plain polling (8s) keeps the gate surface tiny.
    • Identity is localStorage-only ("woven-share-identity"); the gate
      enforces name-required (and email-required when the share's emailGate
-     is on) at POST time — the modal here is UX, the gate is policy. */
+     is on) at POST time - the modal here is UX, the gate is policy. */
 
 /* global React, ReactDOM, htm */
 (() => {
   const html = htm.bind(React.createElement);
   const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-  // Woven line-icon — mirrors editor's Icon.Comment (16-box, 1.5pt round
+  // Woven line-icon - mirrors editor's Icon.Comment (16-box, 1.5pt round
   // stroke). `size` defaults to the editor's 14px glyph footprint.
   const CommentIcon = ({ size = 14 }) => html`
     <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
@@ -60,7 +60,7 @@
     const parts = [];
     let cur = el;
     while (cur && cur.nodeType === 1 && cur.tagName !== "HTML" && cur.tagName !== "BODY") {
-      // id short-circuit — unique enough, stop climbing.
+      // id short-circuit - unique enough, stop climbing.
       if (cur.id && /^[A-Za-z][\w-]*$/.test(cur.id)) {
         parts.unshift("#" + cur.id);
         return parts.join(" > ");
@@ -330,7 +330,7 @@
       return c;
     }, [comments]);
 
-    // ── Pin layout loop — repositions pins as the iframe scrolls/reflows.
+    // ── Pin layout loop - repositions pins as the iframe scrolls/reflows.
     useEffect(() => {
       let alive = true;
       const tick = () => {
@@ -373,7 +373,7 @@
       return () => { alive = false; clearTimeout(raf); };
     }, [comments, page, numbered]);
 
-    // ── Comment-mode arming — installs hover/click hooks in the iframe doc.
+    // ── Comment-mode arming - installs hover/click hooks in the iframe doc.
     const disarm = useCallback(() => {
       if (cleanupArmRef.current) { cleanupArmRef.current(); cleanupArmRef.current = null; }
     }, []);
@@ -431,7 +431,7 @@
 
     // Esc anywhere in the viewer chrome exits comment mode / the composer.
     // (Esc pressed while the IFRAME has focus lands in the prototype's doc
-    // instead — acceptable; the hint pill stays visible as the off switch.)
+    // instead - acceptable; the hint pill stays visible as the off switch.)
     useEffect(() => {
       const onKey = (e) => {
         if (e.key === "Escape") { setCommentMode(false); setDraft(null); }
@@ -440,7 +440,7 @@
       return () => window.removeEventListener("keydown", onKey);
     }, []);
 
-    // ── Iframe lifecycle — track page, rearm comment mode after navigation.
+    // ── Iframe lifecycle - track page, rearm comment mode after navigation.
     const onFrameLoad = useCallback(() => {
       const frame = iframeRef.current;
       const win = frame && frame.contentWindow;
@@ -567,7 +567,7 @@
           <span className="sv-page-chip" title=${page}>${page}</span>
           <button
             className=${"sv-btn" + (commentMode ? " is-active" : "")}
-            title=${commentMode ? "Exit comment mode (Esc)" : "Comment on an element — click anything in the prototype"}
+            title=${commentMode ? "Exit comment mode (Esc)" : "Comment on an element - click anything in the prototype"}
             onClick=${() => {
               if (!commentMode && !requireIdentity("Add a name before commenting.")) return;
               setDraft(null); setCommentMode(!commentMode);
@@ -587,7 +587,7 @@
               title="Shared prototype"
               onLoad=${onFrameLoad}
             ></iframe>`}
-            ${commentMode && html`<div className="sv-hint">Click any element to pin a comment — Esc to cancel</div>`}
+            ${commentMode && html`<div className="sv-hint">Click any element to pin a comment - Esc to cancel</div>`}
             ${pins.map((p) => html`
               <button
                 key=${p.id}

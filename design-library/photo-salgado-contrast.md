@@ -18,7 +18,7 @@ High-contrast monochrome, deep black point, retained shadow detail.
 
 - High-contrast monochrome, deep black point, retained shadow detail
 - Workers, refugees, environment-scale subjects
-- Compositional grandeur — biblical, almost painterly
+- Compositional grandeur - biblical, almost painterly
 - Pentax 645 medium format prints, large-scale
 - Texture of skin, dust, sweat preserved
 
@@ -44,7 +44,7 @@ High-contrast monochrome, deep black point, retained shadow detail.
 
 **Movements**: social documentary monumental
 
-**Brands**: editorial, museum, NGO — Patagonia campaign reference
+**Brands**: editorial, museum, NGO - Patagonia campaign reference
 
 ## Example prompt template
 

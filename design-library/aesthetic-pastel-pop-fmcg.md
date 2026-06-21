@@ -12,21 +12,21 @@ images:
 **Tag:** Flat soda-shelf pop (Drink Cann scroll-fade pages; Bite toothpaste bits; Recess; Graza; the DTC "fun pantry" wave)
 
 **Canonical references:**
-- Drink Cann — flat pastel grounds per flavor, oversized display type ("LEMON LAVENDER"), scroll color-fade between sections.
-- Bite — flat aqua ocean ground, minimal shop, illustrated journey.
-- Recess, Graza, Omsom — the DTC pantry-brand school: one pastel per SKU, product-forward, witty.
+- Drink Cann - flat pastel grounds per flavor, oversized display type ("LEMON LAVENDER"), scroll color-fade between sections.
+- Bite - flat aqua ocean ground, minimal shop, illustrated journey.
+- Recess, Graza, Omsom - the DTC pantry-brand school: one pastel per SKU, product-forward, witty.
 
 ## Cultural identity
 
-The modern corner-store shelf as a website: each product/flavor owns a FLAT pastel ground, display type runs oversized and friendly, the product photo floats center-stage with a soft contact shadow, and scrolling fades the whole page to the next flavor's color. Flat by conviction (no gradients, no shadows beyond the product's) but never corporate — the energy comes from color confidence and copywriting wit. Distinct from `aesthetic-curly-girly` (decorative, sticker-dense) and from `aesthetic-monochrome-pop-poster` (one saturated hue, drop-culture aggression) — this is SOFT pop: pastel, edible, shelf-ready.
+The modern corner-store shelf as a website: each product/flavor owns a FLAT pastel ground, display type runs oversized and friendly, the product photo floats center-stage with a soft contact shadow, and scrolling fades the whole page to the next flavor's color. Flat by conviction (no gradients, no shadows beyond the product's) but never corporate - the energy comes from color confidence and copywriting wit. Distinct from `aesthetic-curly-girly` (decorative, sticker-dense) and from `aesthetic-monochrome-pop-poster` (one saturated hue, drop-culture aggression) - this is SOFT pop: pastel, edible, shelf-ready.
 
 The defining gesture is **the flavor fade**: full-viewport background color eases to the next product's pastel as you scroll, the type and product swapping in rhythm.
 
-**Palette anchor:** per-SKU pastels — butter `#f5e9a8`, pistachio `#cfe3c0`, lavender `#d8cdee`, strawberry-milk `#f4cdd3`, sky `#bfe0ef` — with ONE deep ink for type (navy `#1f2a56`, espresso `#3a2a22`, or forest `#234435`); white reserved for product highlights.
+**Palette anchor:** per-SKU pastels - butter `#f5e9a8`, pistachio `#cfe3c0`, lavender `#d8cdee`, strawberry-milk `#f4cdd3`, sky `#bfe0ef` - with ONE deep ink for type (navy `#1f2a56`, espresso `#3a2a22`, or forest `#234435`); white reserved for product highlights.
 
 ## Motifs / imagery vocabulary
 
-- Product can/tube/jar photographed clean, floating with a single soft contact shadow — the only "depth" on the page.
+- Product can/tube/jar photographed clean, floating with a single soft contact shadow - the only "depth" on the page.
 - Display type at 12-20vw, often wrapping AROUND the product; flavor names as headlines.
 - Small flat illustrated motifs (botanicals, bubbles, fruit slices) scattered SPARSELY, matched to the ink color.
 - Ticker strips of benefit copy ("DENTIST APPROVED · PLASTIC FREE ·") as section seams.

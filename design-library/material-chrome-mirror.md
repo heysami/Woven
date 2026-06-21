@@ -13,7 +13,7 @@ images:
 
 # Chrome Mirror (Y2K chromecore / cyber-sigil)
 
-A metallic surface that reacts to light: yes — environment reflection, hue shift with angle.
+A metallic surface that reacts to light: yes - environment reflection, hue shift with angle.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A metallic surface that reacts to light: yes — environment reflection, hue shi
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — environment reflection, hue shift with angle
+**Reacts to light**: yes - environment reflection, hue shift with angle
 
 **Deforms**: no
 
@@ -39,7 +39,7 @@ css: |
       #c5c8d2 80%,
       #f7f7fa 100%
     );
-  /* Chrome read demands a HORIZON-BANDED gradient — not a smooth one */
+  /* Chrome read demands a HORIZON-BANDED gradient - not a smooth one */
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.9),
     inset 0 -1px 0 rgba(0,0,0,0.5),
@@ -58,7 +58,7 @@ raster: captured indoor environment photo (4096×2048 equirectangular)
 
 ## Common implementation mistakes (avoid these)
 
-- smooth grey gradient (chrome is BANDED — sky-on-top, ground-on-bottom)
+- smooth grey gradient (chrome is BANDED - sky-on-top, ground-on-bottom)
 - no inset highlight at the seam between bands
 - chrome on a colourful chaotic page (the reflection has to be coherent)
 

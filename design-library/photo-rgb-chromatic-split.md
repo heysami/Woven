@@ -12,30 +12,30 @@ images:
 
 # RGB chromatic-split / channel-shift
 
-Photo's **red, green, and blue channels separated and offset** — horizontal slide (classic CRT-fail), diagonal slide (more chaotic), or random offset (full glitch). The result: ghosted color fringes around every high-contrast edge. The classic VHS-tracking-fail / cheap-lens chromatic-aberration / 90s-music-video glitch look. Distinct from `circuit-bent-glitch` in that it's CHANNEL-SHIFT-ONLY — no datamosh, no pixel-sort, no compression noise. One technique, used with discipline.
+Photo's **red, green, and blue channels separated and offset** - horizontal slide (classic CRT-fail), diagonal slide (more chaotic), or random offset (full glitch). The result: ghosted color fringes around every high-contrast edge. The classic VHS-tracking-fail / cheap-lens chromatic-aberration / 90s-music-video glitch look. Distinct from `circuit-bent-glitch` in that it's CHANNEL-SHIFT-ONLY - no datamosh, no pixel-sort, no compression noise. One technique, used with discipline.
 
 ## Visual signatures
 
 - the photo's **red, green, blue channels are visibly separated** with an offset of 4-20 pixels
-- ghosted color fringe around every high-contrast edge — magenta-and-cyan typically (R offset one way, B opposite, G centered)
+- ghosted color fringe around every high-contrast edge - magenta-and-cyan typically (R offset one way, B opposite, G centered)
 - horizontal slide produces the classic VHS-tracking-failure look
 - diagonal slide reads as more aggressive / cyberpunk
-- the underlying photo is otherwise CLEAN — no other glitch layered on
+- the underlying photo is otherwise CLEAN - no other glitch layered on
 - often used on portraits (the face is the high-contrast subject), neon-lit scenes, or signage
 
 ## Prompt keywords
 
 **Primary**: RGB split, chromatic aberration, channel shift, VHS tracking fail, cheap-lens color fringe
 
-**Lighting**: original lighting any — typically works best on neon-lit / high-contrast / portrait subjects where the channel-split is visible
+**Lighting**: original lighting any - typically works best on neon-lit / high-contrast / portrait subjects where the channel-split is visible
 
-**Camera / lens**: any source — the split is post-processed; emulates cheap-lens chromatic aberration or analog-video tracking failure
+**Camera / lens**: any source - the split is post-processed; emulates cheap-lens chromatic aberration or analog-video tracking failure
 
-**Film stock / post-processing**: clean R/G/B channel split with 4-20px horizontal (or diagonal) offset, ghosted magenta-and-cyan fringes around edges, otherwise clean photo — NO datamosh / pixel-sort / compression noise layered on
+**Film stock / post-processing**: clean R/G/B channel split with 4-20px horizontal (or diagonal) offset, ghosted magenta-and-cyan fringes around edges, otherwise clean photo - NO datamosh / pixel-sort / compression noise layered on
 
 **Mood**: glitched, kinetic, cyberpunk, broken-screen, near-future
 
-**Avoid (negative prompt)**: datamosh, pixel-sort, compression artifact — RGB split is a SINGLE clean technique; don't layer other glitches
+**Avoid (negative prompt)**: datamosh, pixel-sort, compression artifact - RGB split is a SINGLE clean technique; don't layer other glitches
 
 ## Named references
 
@@ -49,10 +49,10 @@ Photo's **red, green, and blue channels separated and offset** — horizontal sl
 
 > Editorial portrait of a young person against a neon-lit backdrop, the
 > photo's **R / G / B channels visibly separated with a 12-pixel horizontal
-> offset** — red channel shifted right, blue channel shifted left, green
-> centered — producing ghosted magenta-and-cyan color fringes around every
+> offset** - red channel shifted right, blue channel shifted left, green
+> centered - producing ghosted magenta-and-cyan color fringes around every
 > high-contrast edge (especially the face silhouette and the neon signage
-> behind). The underlying photo is otherwise CLEAN — no datamosh, no
+> behind). The underlying photo is otherwise CLEAN - no datamosh, no
 > pixel-sort. Glitched, kinetic, cyberpunk mood. VHS-tracking-failure /
 > cheap-lens chromatic-aberration editorial treatment.
 

@@ -13,7 +13,7 @@ images:
 
 # Glossy Plastic (Frutiger Aero / Apple Aqua / Windows Vista wet button)
 
-A glossy surface that reacts to light: yes — single top-half specular gloss and deforms: minor on press (inner shadow grows).
+A glossy surface that reacts to light: yes - single top-half specular gloss and deforms: minor on press (inner shadow grows).
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — single top-half specular gloss an
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — single top-half specular gloss
+**Reacts to light**: yes - single top-half specular gloss
 
 **Deforms**: minor on press (inner shadow grows)
 
@@ -68,7 +68,7 @@ raster: optional photographic plate beneath the button group (sky / water)
 
 ## Examples in the wild
 
-- iOS 1–6 lozenge icons
+- iOS 1-6 lozenge icons
 - Windows Vista Start button
 - Apple Aqua buttons
 

@@ -5,7 +5,7 @@ category: 3D
 subCategory: character-avatar
 role: mascot
 pairsPrototypes: [recipe-readcv, recipe-neo-grotesque-portfolio, aesthetic-positivity-kawaii, recipe-devtools-marketing]
-notForUseWhen: Brief is corporate-formal, luxury, or anonymous-brand — a personal avatar centers an individual.
+notForUseWhen: Brief is corporate-formal, luxury, or anonymous-brand - a personal avatar centers an individual.
 images:
   - src: illust-stylized-3d-avatar.png
     reason: Illustration style sample.
@@ -13,7 +13,7 @@ images:
 
 # Stylized 3D self-avatar
 
-A Pixar-grade stylized 3D character portrait of a REAL person — the designer/founder as their own hero asset.
+A Pixar-grade stylized 3D character portrait of a REAL person - the designer/founder as their own hero asset.
 
 ## Visual signatures
 
@@ -29,7 +29,7 @@ A Pixar-grade stylized 3D character portrait of a REAL person — the designer/f
 
 **Material**: subsurface skin, groomed stylized hair, knit/cotton fabric detail
 
-**Line**: no line — full 3D shading
+**Line**: no line - full 3D shading
 
 **Color**: natural skin/hair + ONE accent (hoodie or rim light) matching the page accent token
 

@@ -17,7 +17,7 @@ images:
 
 ## Surface treatment
 
-**One committed metaphor per surface.** Named in the `GENRE` comment: `notes-as-legal-pad`, `library-as-wood-shelf`, `recorder-as-tape-deck`, `mixer-as-rack-unit`. Never stack metaphors — leather header + felt body + wood shelf = trashy by definition.
+**One committed metaphor per surface.** Named in the `GENRE` comment: `notes-as-legal-pad`, `library-as-wood-shelf`, `recorder-as-tape-deck`, `mixer-as-rack-unit`. Never stack metaphors - leather header + felt body + wood shelf = trashy by definition.
 
 **Substrates** (raster, full-bleed where the metaphor lives):
 - Legal-pad cream `#F8E9A4` with horizontal rule-lines `1px solid #D9C46B` at `22px` rhythm + single red margin-line `1.5px solid #C44` at `48px`
@@ -26,8 +26,8 @@ images:
 - Apple linen `#C8C0B0` (OS chrome only, never inside a card)
 
 **Type stack:**
-- Body / title / subtitle — Helvetica Neue Light 17 / Bold 17 / Regular 13 (iOS-6 system)
-- Marker Felt / Noteworthy / Bradley Hand 17px — ONLY when the metaphor demands handwriting on a legal pad
+- Body / title / subtitle - Helvetica Neue Light 17 / Bold 17 / Regular 13 (iOS-6 system)
+- Marker Felt / Noteworthy / Bradley Hand 17px - ONLY when the metaphor demands handwriting on a legal pad
 - Forbidden: Lobster, Comic Sans, Pacifico
 
 **Type sizes:** 11 / 13 / 15 / 17 / 20 / 24 (iOS-6 points)
@@ -45,7 +45,7 @@ outline: 1px solid rgba(0,0,0,0.2);
 outline-offset: 2px;
 ```
 
-**Shadow recipes** — every raised element gets the iOS-6 pill:
+**Shadow recipes** - every raised element gets the iOS-6 pill:
 ```
 /* Button */
 box-shadow:
@@ -53,12 +53,12 @@ box-shadow:
   inset 0 -1px 0 rgba(0,0,0,0.1),
   0 1px 2px rgba(0,0,0,0.25);
 
-/* Card — one ambient drop only */
+/* Card - one ambient drop only */
 box-shadow: 0 2px 4px rgba(0,0,0,0.18);
 ```
 Never stack shadows. Never apply shadow to text.
 
-**Gradients:** button-fill is a 4–8% lightness step (`linear-gradient(180deg, #F4F4F4, #DCDCDC)`), not a 40% step. Big steps = plastic toy. No radial gradients. No "shine" sweeps.
+**Gradients:** button-fill is a 4-8% lightness step (`linear-gradient(180deg, #F4F4F4, #DCDCDC)`), not a 40% step. Big steps = plastic toy. No radial gradients. No "shine" sweeps.
 
 ## Decoration grammar
 
@@ -67,9 +67,9 @@ The metaphor IS the decoration. Mandatory if the metaphor implies them, forbidde
 ## Motion budget
 
 Motion is the metaphor moving, never decorative:
-- Page-curl on paper-bound surfaces (Calendar / iBooks) — genre-mandatory if metaphor is paper
-- Tape-reel rotation on tape-bound media — genre-mandatory if metaphor is tape
-- Spring-pop on tile drag (Letterpress) — `cubic-bezier(0.5, 1.6, 0.4, 1)` 220ms
+- Page-curl on paper-bound surfaces (Calendar / iBooks) - genre-mandatory if metaphor is paper
+- Tape-reel rotation on tape-bound media - genre-mandatory if metaphor is tape
+- Spring-pop on tile drag (Letterpress) - `cubic-bezier(0.5, 1.6, 0.4, 1)` 220ms
 
 No motion on chrome that doesn't move in real life. No idle shimmer.
 
@@ -85,5 +85,5 @@ Never for: dashboards, CRMs, anything where the metaphor isn't doing functional 
 
 ## Pairs well with
 
-- **Shells:** shell-mobile-app (the home genre — top-bar 44pt + content + tab-bar 49pt), shell-centered-column, shell-hero-stack
+- **Shells:** shell-mobile-app (the home genre - top-bar 44pt + content + tab-bar 49pt), shell-centered-column, shell-hero-stack
 - **Aesthetics:** aesthetic-frutiger-aero, aesthetic-y2k-futurism, aesthetic-frutiger-chromecore, aesthetic-cottagecore (paper-bound metaphors), aesthetic-dark-academia (leather / book metaphors)

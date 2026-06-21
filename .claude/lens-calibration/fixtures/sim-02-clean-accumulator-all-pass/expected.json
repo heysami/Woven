@@ -1,5 +1,5 @@
 {
-  "_intent": "ALL-PASS fixture — clean accumulator, on-vibe restrained grid, 2d-spatial-map paradigm with 5-second readability. All 3 lenses should pass; any FAIL is a false-fail regression.",
+  "_intent": "ALL-PASS fixture - clean accumulator, on-vibe restrained grid, 2d-spatial-map paradigm with 5-second readability. All 3 lenses should pass; any FAIL is a false-fail regression.",
   "craft": {
     "verdict": "pass",
     "must_not_cite": ["performance.now() inside tick"],
@@ -11,6 +11,6 @@
   },
   "concept": {
     "verdict": "pass",
-    "ground_truth_reason": "paradigmFit matches PRD (2d-spatial-map). Stranger looking at screenshot would identify a warehouse-bin map within 5s. successFeel about 'warehouse rhythm — busy/calm, jammed/fluid' is conveyed by status tints visible at a glance."
+    "ground_truth_reason": "paradigmFit matches PRD (2d-spatial-map). Stranger looking at screenshot would identify a warehouse-bin map within 5s. successFeel about 'warehouse rhythm - busy/calm, jammed/fluid' is conveyed by status tints visible at a glance."
   }
 }

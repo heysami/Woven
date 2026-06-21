@@ -13,7 +13,7 @@ images:
 
 # Polaroid / Instant Photo (square frame, faded chemistry)
 
-A glossy surface that reacts to light: yes — reflective sheen and deforms: minimal.
+A glossy surface that reacts to light: yes - reflective sheen and deforms: minimal.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — reflective sheen and deforms: min
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — reflective sheen
+**Reacts to light**: yes - reflective sheen
 
 **Deforms**: minimal
 

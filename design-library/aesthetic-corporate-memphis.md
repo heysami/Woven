@@ -12,15 +12,15 @@ images:
 **Tag:** `aesthetic`
 
 **Canonical references:**
-- Facebook Alegria 2017 — the originator; bendy-limb figures across product
-- Slack 2017 Pentagram rebrand — saturated anchor color + faceless figures
-- Lyft Buck illustration system — codified rules for active poses
-- Headspace — wellness-meets-noodle-limb
-- Spotify Wrapped 2017-19 — annual peak of the style in mass marketing
+- Facebook Alegria 2017 - the originator; bendy-limb figures across product
+- Slack 2017 Pentagram rebrand - saturated anchor color + faceless figures
+- Lyft Buck illustration system - codified rules for active poses
+- Headspace - wellness-meets-noodle-limb
+- Spotify Wrapped 2017-19 - annual peak of the style in mass marketing
 
 ## Cultural identity
 
-The defining illustration language of platform-era SaaS (2017-2022). Born from Facebook's Alegria system and spread by Pentagram, Buck, and in-house teams at every Series B startup with a marketing budget. It exists to make scale feel friendly: faceless figures stand in for "any user," impossible-bendy limbs signal "playful and human," and one saturated anchor color carries the whole brand. The aesthetic peaked around the Spotify Wrapped era and has since become shorthand for "tech company that wants to seem approachable" — both its strength (instantly legible) and its curse (instantly dated).
+The defining illustration language of platform-era SaaS (2017-2022). Born from Facebook's Alegria system and spread by Pentagram, Buck, and in-house teams at every Series B startup with a marketing budget. It exists to make scale feel friendly: faceless figures stand in for "any user," impossible-bendy limbs signal "playful and human," and one saturated anchor color carries the whole brand. The aesthetic peaked around the Spotify Wrapped era and has since become shorthand for "tech company that wants to seem approachable" - both its strength (instantly legible) and its curse (instantly dated).
 
 ## Palette anchor
 
@@ -30,20 +30,20 @@ Pick **one saturated anchor** and let it carry the brand:
 - Lyft magenta `#FF00BF`
 - Headspace marigold `#FFAA13`
 
-Support with 2-3 muted seconds from `#FFD166` mustard, `#06D6A0` mint, `#118AB2` teal, `#EF476F` coral, `#073B4C` navy. Ground on off-white `#FAFAF7` or warm cream `#FBF6EE` — never washed lavender gradient. Skin tones are non-representational on purpose (lavender, mint, peach) — that's the whole point of "faceless universal."
+Support with 2-3 muted seconds from `#FFD166` mustard, `#06D6A0` mint, `#118AB2` teal, `#EF476F` coral, `#073B4C` navy. Ground on off-white `#FAFAF7` or warm cream `#FBF6EE` - never washed lavender gradient. Skin tones are non-representational on purpose (lavender, mint, peach) - that's the whole point of "faceless universal."
 
 ## Decoration motifs
 
-- **Bendy-limb figures**: small heads on long torsos, oversized hands and feet, limbs that bend at impossible angles, ACTIVE not standing — cartwheeling, reaching, leaning out of frame, hand-holding the headline
+- **Bendy-limb figures**: small heads on long torsos, oversized hands and feet, limbs that bend at impossible angles, ACTIVE not standing - cartwheeling, reaching, leaning out of frame, hand-holding the headline
 - **Facelessness**: no features, or dot-eyes-only with no mouth
-- **Flat tonal offset shadow**: a darker-shade shape offset 4-8px behind the figure — NOT a CSS box-shadow blur. This is the single biggest tell of canonical vs cheap execution.
+- **Flat tonal offset shadow**: a darker-shade shape offset 4-8px behind the figure - NOT a CSS box-shadow blur. This is the single biggest tell of canonical vs cheap execution.
 - **Supporting marks**: one squiggle, dot-grid, or starburst echoing the figure's color
 - **Color blocks**: saturated anchor butted hard against cream, no gradient transition
 - **Illustration over type**: composition is illustration-LED, with headline tucked beside the figure (not above it)
 
 ## Voice register
 
-Warm-encouraging, second person, short sentences. One mild exclamation is OK ("Let's get started", "Nice work!"). Never wry, never corporate-formal, never edgy. The figures are doing the emotional work — the copy just confirms the vibe.
+Warm-encouraging, second person, short sentences. One mild exclamation is OK ("Let's get started", "Nice work!"). Never wry, never corporate-formal, never edgy. The figures are doing the emotional work - the copy just confirms the vibe.
 
 ## Failure mode
 

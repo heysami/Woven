@@ -1,5 +1,5 @@
 #!/bin/bash
-# Woven v3.8 — PreToolUse hook that gates Write/Edit/MultiEdit per family.
+# Woven v3.8 - PreToolUse hook that gates Write/Edit/MultiEdit per family.
 #
 # Each orchestrator owns a territory. The top-level agent (the chat) is allowed
 # to write the app shell freely (source/<branch>/*.html, styles.css, app.js,
@@ -56,25 +56,25 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
 fi
 
 # ── Edits to existing files always pass ─────────────────────────────────
-# Orchestrator gating is for SCAFFOLDING — creating the initial sim/im/nx file
+# Orchestrator gating is for SCAFFOLDING - creating the initial sim/im/nx file
 # tree, where the orchestrator enforces structure, schema, and lens trios. Once
 # those files exist, the editor chat is allowed to apply small targeted
 # fixes (a keyboard-focus bug, a CSS tweak, a typo) without re-dispatching
-# the orchestrator. That's how the visual-orchestrator works too — once an asset is
+# the orchestrator. That's how the visual-orchestrator works too - once an asset is
 # committed, the user can hand-tweak the file.
 #
 # This check fires AFTER the subagent exemption (so an orchestrator subagent
 # creating its initial files still passes) and BEFORE the territory
 # resolution (so we don't bother classifying writes that pass for this
 # reason). If the file exists on disk, this is an Edit/MultiEdit on
-# existing content, not a creation — let it through.
+# existing content, not a creation - let it through.
 if [ -f "$FILE_PATH" ]; then exit 0; fi
 
 # ── Decide which orchestrator this write belongs to (if any) ─────────────────
 REQUIRED=""
 KIND=""
 
-# Family-folder writes are gated by the matching orchestrator — these checks come
+# Family-folder writes are gated by the matching orchestrator - these checks come
 # FIRST so a visual binary inside a sim folder is correctly gated by
 # simulation-orchestrator (not visual-orchestrator).
 case "$FILE_PATH" in
@@ -104,7 +104,7 @@ if [ -z "$REQUIRED" ]; then
 fi
 
 # Nothing matched → not a gated write (shell HTML / CSS / JS / Markdown
-# at the source root, config files, docs, etc.) — let it through.
+# at the source root, config files, docs, etc.) - let it through.
 if [ -z "$REQUIRED" ]; then exit 0; fi
 
 # ── Check whether the required orchestrator was dispatched this session ──────
@@ -122,7 +122,7 @@ BASENAME="${FILE_PATH##*/}"
 cat >&2 <<MSG
 [Woven v3.8 enforcement] Cannot write this ${KIND} ($BASENAME) until ${REQUIRED} has been dispatched this session.
 
-The file path is in ${REQUIRED}'s territory. The agent in chat doesn't write content inside that territory directly — it scaffolds the app shell HTML with a slot reference (an <iframe src='…'> for sim/im/nx, an <img src='…'> for visual), then dispatches the matching orchestrator to fill the slot's canonical output path.
+The file path is in ${REQUIRED}'s territory. The agent in chat doesn't write content inside that territory directly - it scaffolds the app shell HTML with a slot reference (an <iframe src='…'> for sim/im/nx, an <img src='…'> for visual), then dispatches the matching orchestrator to fill the slot's canonical output path.
 
 Do this now:
 

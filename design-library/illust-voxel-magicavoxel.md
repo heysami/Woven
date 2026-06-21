@@ -13,11 +13,11 @@ images:
 
 # Voxel Art (MagicaVoxel)
 
-3D pixel art — cubes assembled into figures.
+3D pixel art - cubes assembled into figures.
 
 ## Visual signatures
 
-- 3D pixel art — cubes assembled into figures
+- 3D pixel art - cubes assembled into figures
 - per-cube color, no smoothing
 - soft global illumination from MagicaVoxel render
 - reads as "modern Minecraft diorama

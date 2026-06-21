@@ -1,6 +1,6 @@
 ---
 name: h3d-scene-author
-description: DEPRECATED — superseded by s3d-subsystem-author. The monolithic scene.js (one author building all geometry + lights + camera + composition) is replaced by a per-SUBSYSTEM fan-out where each chunk renders + is verified STANDALONE, plus the runtime composer owning the shared lights/camera/env. If dispatched for an in-flight hero3d/ build, author the lead subsystem per s3d-subsystem-author.md. Kept only for back-compat.
+description: DEPRECATED - superseded by s3d-subsystem-author. The monolithic scene.js (one author building all geometry + lights + camera + composition) is replaced by a per-SUBSYSTEM fan-out where each chunk renders + is verified STANDALONE, plus the runtime composer owning the shared lights/camera/env. If dispatched for an in-flight hero3d/ build, author the lead subsystem per s3d-subsystem-author.md. Kept only for back-compat.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_snapshot, mcp__Claude_Preview__preview_screenshot
 ---
 

@@ -1,4 +1,4 @@
-"""editor/orchestrators.py — orchestrator-registry aggregator + enable/disable state.
+"""editor/orchestrators.py - orchestrator-registry aggregator + enable/disable state.
 
 Single source of truth for "what orchestrators does this app ship, what does each
 do, and which are turned on for this project."
@@ -14,7 +14,7 @@ State model:
     the user has switched off. Empty / missing = all defaults respected.
 
 The capabilities preamble (capabilities.capabilities_preamble) consults the
-project's disable list when composing the per-spawn system prompt — disabled
+project's disable list when composing the per-spawn system prompt - disabled
 orchestrators' hard-rule blocks are omitted, so agents spawned in that project
 do NOT see "dispatch this orchestrator FIRST" cues for off orchestrators.
 """
@@ -38,7 +38,7 @@ _DISABLED_FILE = ".orchestrators-disabled.json"   # per project, at project root
 def _scan_manifests() -> list[dict]:
     """Walk .claude/agents/*.manifest.json and return parsed manifests.
 
-    Manifests are pure data — parse failures are silently skipped so a single
+    Manifests are pure data - parse failures are silently skipped so a single
     broken file can't take down the whole registry. The caller can detect
     "missing orchestrator" by absence in the returned list.
     """
@@ -138,13 +138,13 @@ def get_registry(project_root: Optional[str] = None) -> dict:
     verbatim.
 
     Each orchestrator in `orchestrators[]` carries an `enabled` field merging the
-    manifest's `defaultEnabled` with the project's disable list — `enabled`
+    manifest's `defaultEnabled` with the project's disable list - `enabled`
     is False iff the orchestrator is in the disable list (or absent and the
     manifest set defaultEnabled to False)."""
     manifests = _scan_manifests()
     disabled  = set(load_disabled(project_root))
 
-    # v3.13 — per-orchestrator art. A square SVG illustration at
+    # v3.13 - per-orchestrator art. A square SVG illustration at
     # editor/orchestrator-art/<id>.svg, served (shared) at
     # /editor/orchestrator-art/<id>.svg. `art` is null when no file exists
     # (e.g. a freshly-added orchestrator) so the landing card shows a

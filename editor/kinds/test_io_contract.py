@@ -2,7 +2,7 @@
 
 The repo rule this enforces: **every `editTarget` node kind must declare a
 non-empty `authoring` schema string.** `editTarget` tells an agent to rewrite a
-node's canonical JSON, but the canonical path alone leaks no schema — without
+node's canonical JSON, but the canonical path alone leaks no schema - without
 `authoring` the agent guesses the file shape and ships something the node can't
 render (the composer "blank hero" + spline "2D-instead-of-3D" failure class).
 `authoring` is the slot io_resolve.resolve_downstream emits verbatim so the
@@ -24,7 +24,7 @@ from .registry import (KIND_IO, KINDS, ASSET_KIND_AUTHORING,
 
 
 def test_every_edit_target_has_authoring():
-    """The core rule — no editTarget accept may lack a non-empty authoring."""
+    """The core rule - no editTarget accept may lack a non-empty authoring."""
     problems = io_contract_violations()
     assert not problems, "editTarget kinds missing authoring schema:\n  - " + \
         "\n  - ".join(problems)
@@ -56,7 +56,7 @@ def test_known_edit_target_kinds_covered():
 
 def test_section_write_has_authoring():
     """sectionWrite carries the container/grid placement protocol (not a medium
-    schema — children delegate to their own assetKind authoring)."""
+    schema - children delegate to their own assetKind authoring)."""
     sec = next((a for a in KIND_IO["section"]["accepts"]
                 if a.get("ingest") == "sectionWrite"), None)
     assert sec is not None, "section has no sectionWrite accept"
@@ -65,11 +65,11 @@ def test_section_write_has_authoring():
 
 
 def test_every_asset_kind_has_authoring():
-    """The assetWrite analogue — every assetKind enum value an agent can be told
+    """The assetWrite analogue - every assetKind enum value an agent can be told
     to produce must carry a per-medium authoring string, else the dispatch is
     medium-blind (the shader→backdrop-filter failure)."""
     values = KINDS.get("asset", {}).get("inputs", {}).get("assetKind", {}).get("values", [])
-    assert values, "asset.assetKind enum not found — registry shape changed?"
+    assert values, "asset.assetKind enum not found - registry shape changed?"
     missing = [ak for ak in values
                if not (isinstance(ASSET_KIND_AUTHORING.get(ak), str)
                        and ASSET_KIND_AUTHORING[ak].strip())]
@@ -79,7 +79,7 @@ def test_every_asset_kind_has_authoring():
 def test_specific_pathway_b_media_models_have_authoring():
     """Pathway-B media models that all store as html (or another generic kind)
     but expect a SPECIFIC result must each carry a media-model authoring, so an
-    agent wired to one gets the right contract — not the generic-HTML one. This
+    agent wired to one gets the right contract - not the generic-HTML one. This
     list mirrors prompts/media-models.js (not daemon-readable), so keep in sync."""
     expected = {"shader", "viz", "threejs", "motion-gen", "canvas-gen",
                 "html-page", "svg-gen", "lottie-gen"}

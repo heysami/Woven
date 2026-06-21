@@ -1,4 +1,4 @@
-"""editor/kinds/reconcile.py — drift detection + auto-heal.
+"""editor/kinds/reconcile.py - drift detection + auto-heal.
 
 See WORKFLOW_TRUTHFULNESS_PLAN.md §7. Walks the project on demand
 (invoked from /__kinds/reconcile and on every /__workflow GET) and
@@ -6,14 +6,14 @@ returns a list of drifts plus a per-node lineage manifest.
 
 Two classes of drift:
 
-  AUTO_HEALABLE — silently resolved on next refresh:
-    ORPHAN_VARIANT      — folder under producer's outputsRoot has no node
-    LYING_STATUS        — node claims queued but completion satisfied (or vice versa)
-    PHANTOM_DECISION    — DECISION points at a node that doesn't exist (self-resolves after orphan promote)
+  AUTO_HEALABLE - silently resolved on next refresh:
+    ORPHAN_VARIANT      - folder under producer's outputsRoot has no node
+    LYING_STATUS        - node claims queued but completion satisfied (or vice versa)
+    PHANTOM_DECISION    - DECISION points at a node that doesn't exist (self-resolves after orphan promote)
 
-  MANUAL_HEAL — surfaces a Heal button, no silent action:
-    UNHANDLED_OUTPUT    — consumer has unrouted upstream files
-    ABANDONED_STAGING   — *_staging/ folder exists with no completing commit
+  MANUAL_HEAL - surfaces a Heal button, no silent action:
+    UNHANDLED_OUTPUT    - consumer has unrouted upstream files
+    ABANDONED_STAGING   - *_staging/ folder exists with no completing commit
 
 Auto-heal applies its proposed mutations through the same /commit
 contract so the validator + folder convention all apply uniformly.
@@ -35,10 +35,10 @@ ABANDONED_STAGING  = "ABANDONED_STAGING"
 COHERENCE_NOT_RUN  = "COHERENCE_NOT_RUN"
 DATA_DRIFT         = "DATA_DRIFT"      # any block-severity entry in COHERENCE_REPORT.json
 KIND_MIGRATION     = "KIND_MIGRATION"  # node's kind disagrees with registry's declared kind for that id
-ORPHAN_ASSET_NO_PROTOTYPE_EDGE = "ORPHAN_ASSET_NO_PROTOTYPE_EDGE"  # v3.1 — asset has no edge to prototype
-ORPHAN_PROTOTYPE_FOLDER        = "ORPHAN_PROTOTYPE_FOLDER"        # v3.2 — source/<slug>/index.html on disk, no Prototype node
-PROTOTYPE_FOLDER_SETTLE        = "PROTOTYPE_FOLDER_SETTLE"        # v3.9 — eager pending Prototype node; index.html now landed → flip to done
-PROTOTYPE_FOLDER_ABANDON       = "PROTOTYPE_FOLDER_ABANDON"       # v3.9 — eager pending Prototype node whose folder lost all artifacts → remove
+ORPHAN_ASSET_NO_PROTOTYPE_EDGE = "ORPHAN_ASSET_NO_PROTOTYPE_EDGE"  # v3.1 - asset has no edge to prototype
+ORPHAN_PROTOTYPE_FOLDER        = "ORPHAN_PROTOTYPE_FOLDER"        # v3.2 - source/<slug>/index.html on disk, no Prototype node
+PROTOTYPE_FOLDER_SETTLE        = "PROTOTYPE_FOLDER_SETTLE"        # v3.9 - eager pending Prototype node; index.html now landed → flip to done
+PROTOTYPE_FOLDER_ABANDON       = "PROTOTYPE_FOLDER_ABANDON"       # v3.9 - eager pending Prototype node whose folder lost all artifacts → remove
 
 
 def _load_workflow(project_root):
@@ -58,7 +58,7 @@ def _scan_producer_folders(project_root, kind_name, contract):
     candidate. Used by orphan detection.
 
     Supports both the new folder convention (`_ds_brainstorm/{variant}/index.html`)
-    AND the legacy flat layout (`_ds_brainstorm/{variant}.html`) — so projects
+    AND the legacy flat layout (`_ds_brainstorm/{variant}.html`) - so projects
     that haven't yet migrated still get orphan detection. The migration
     script normalizes to folder layout later."""
     tmpl = contract.get("outputsRoot")
@@ -74,13 +74,13 @@ def _scan_producer_folders(project_root, kind_name, contract):
         name = entry.name
         if name.startswith("."): continue
         if entry.is_dir():
-            # New folder layout — accept any non-suffixed subfolder.
+            # New folder layout - accept any non-suffixed subfolder.
             # Skip *_assets / *_staging which are companion dirs, not variants.
             if name.endswith("_assets") or name.endswith("_staging"):
                 continue
             out.append((name, entry.path))
         elif entry.is_file() and name.endswith(".html"):
-            # Legacy flat layout — a.html, b.html, d.html each = one variant.
+            # Legacy flat layout - a.html, b.html, d.html each = one variant.
             variant_id = name[:-len(".html")]
             out.append((variant_id, entry.path))
     return out
@@ -149,14 +149,14 @@ def _detect_lying_status(workflow, project_root, drifts):
         if not isinstance(n, dict): continue
         kind = n.get("kind")
         if not kind: continue
-        # v2.50 — DO NOT touch agent-kind nodes. They own their own lifecycle:
+        # v2.50 - DO NOT touch agent-kind nodes. They own their own lifecycle:
         # the subprocess completion hook flips runStatus on exit, and the
         # editor's client-side polling state machine (WorkflowAgentNode) drives
         # the downstream target upgrade (clear the asset's "Generating…"
         # pending state + promote asset/html → prototype on done+file-exists).
         # If the reconciler flips an agent to "done" out-of-band, the client
         # reloads, sees "done", and EARLY-RETURNS before running settleTargets
-        # — stranding the asset at "Generating…" even though the file is on
+        # - stranding the asset at "Generating…" even though the file is on
         # disk. That's the stuck-prototype bug. Agent status is the client's
         # job, not the reconciler's. (The client also self-heals an orphaned
         # agent whose runId is gone after a daemon restart.)
@@ -210,7 +210,7 @@ def _detect_lying_status(workflow, project_root, drifts):
                 "claimed":  claimed,
                 "actual":   "done",
                 "class":    "auto",
-                "suggest":  f"flip {n.get('id')} runStatus to done — files exist on disk",
+                "suggest":  f"flip {n.get('id')} runStatus to done - files exist on disk",
             })
         elif (not actual_satisfied) and claimed == "done":
             drifts.append({
@@ -220,7 +220,7 @@ def _detect_lying_status(workflow, project_root, drifts):
                 "claimed":  claimed,
                 "actual":   "queued",
                 "class":    "auto",
-                "suggest":  f"flip {n.get('id')} runStatus to queued — required files absent",
+                "suggest":  f"flip {n.get('id')} runStatus to queued - required files absent",
             })
 
 
@@ -276,7 +276,7 @@ def _detect_unhandled_outputs(workflow, project_root, drifts):
         cf = contract.get("consumeFrom")
         if not cf: continue
         # Determine upstream folder. For design-system, source = picked variant
-        # — resolve via DECISION_cp_ds_pick.json if it points at one.
+        # - resolve via DECISION_cp_ds_pick.json if it points at one.
         upstream = None
         src_tmpl = cf.get("source") or ""
         if "{picked.outputsRoot}" in src_tmpl:
@@ -296,7 +296,7 @@ def _detect_unhandled_outputs(workflow, project_root, drifts):
                 except Exception:
                     pass
         if not upstream:
-            # Skip — we can't resolve the upstream without more context.
+            # Skip - we can't resolve the upstream without more context.
             continue
         viols = _v.validate_consume(n, upstream, project_root)
         for v in viols:
@@ -332,7 +332,7 @@ def _detect_abandoned_staging(workflow, project_root, drifts):
 
 def _detect_kind_migration(workflow, project_root, drifts):
     """Detect nodes whose `kind` disagrees with the registry's declared kind
-    for that id. v2.50 — when bs_html_* / bp_prd_* / etc. migrate from
+    for that id. v2.50 - when bs_html_* / bp_prd_* / etc. migrate from
     skill·llm to agent kind in the scaffolder, existing projects' workflow.json
     keeps the old kind. This drift surfaces those so they can auto-heal.
 
@@ -370,22 +370,22 @@ def _detect_kind_migration(workflow, project_root, drifts):
 
 
 def _detect_coherence(workflow, project_root, drifts):
-    """Coherence-pass drift checks (Subagent 11 — see coherence-auditor.md):
+    """Coherence-pass drift checks (Subagent 11 - see coherence-auditor.md):
 
-      • COHERENCE_NOT_RUN — all generation stages are done but
-        COHERENCE_REPORT.json doesn't exist yet. Manual-class — the user
+      • COHERENCE_NOT_RUN - all generation stages are done but
+        COHERENCE_REPORT.json doesn't exist yet. Manual-class - the user
         decides whether to dispatch the audit now or skip it.
 
-      • DATA_DRIFT — COHERENCE_REPORT.json exists and contains
-        block-severity findings. Manual-class — block findings always
+      • DATA_DRIFT - COHERENCE_REPORT.json exists and contains
+        block-severity findings. Manual-class - block findings always
         need a human choice (Retry / Patch / Accept-override).
     """
     nodes = workflow.get("nodes") or []
     # The Coherence Pass applies once "prototype-shaped output exists on
     # disk." Two triggers, OR-ed:
-    #   (a) all canonical generation nodes (bs_html_*, br_remix_*) report done — the
+    #   (a) all canonical generation nodes (bs_html_*, br_remix_*) report done - the
     #       clean-pipeline path; OR
-    #   (b) the project has a data.js + ≥2 HTML pages under source/<branch>/ — the
+    #   (b) the project has a data.js + ≥2 HTML pages under source/<branch>/ - the
     #       legacy-or-out-of-band path (covers super where bs_html_* still show
     #       queued because their outputs landed at pre-folder-convention paths).
     # The reconciler can't tell from workflow.json alone whether generation
@@ -414,7 +414,7 @@ def _detect_coherence(workflow, project_root, drifts):
                 break
     has_output = all_done or legacy_prototype
     if not has_output:
-        return   # No prototype-shaped output yet — Coherence doesn't apply.
+        return   # No prototype-shaped output yet - Coherence doesn't apply.
     # Repurpose all_done downstream for the report check
     all_done = has_output
     report_path = os.path.join(project_root, "source", "main", "COHERENCE_REPORT.json")
@@ -465,7 +465,7 @@ def _detect_coherence(workflow, project_root, drifts):
                 })
 
 
-# v3.5 — `_detect_premature_stage` deleted. It mapped onboarding stage
+# v3.5 - `_detect_premature_stage` deleted. It mapped onboarding stage
 # letters (A/B/C/.../J) to bp_*_build / bp_prd_* / bs_html_* / etc. node id
 # prefixes for the guided-onboarding flow. Both the flow and the bp_*
 # preambles are gone; nothing writes `.onboarding-pending` anymore, so this
@@ -486,13 +486,13 @@ def _asset_target_port(assetKind: str) -> str:
 
 
 def _detect_orphan_asset_no_prototype_edge(workflow, project_root, drifts):
-    """v4.0 — auto-wire an asset to a prototype ONLY when there is an EXPLICIT
+    """v4.0 - auto-wire an asset to a prototype ONLY when there is an EXPLICIT
     relationship between them. An asset belongs to a prototype when it was
     exposed FROM that prototype (`asset.boundTo.node` points at the prototype)
     or it is listed in that prototype's `exposedAssets[]` (by id or path).
 
     The pre-v4.0 rule wired ANY unwired asset to the prototype whenever exactly
-    one prototype existed — so a standalone asset the user created (never
+    one prototype existed - so a standalone asset the user created (never
     associated with the prototype) got force-wired, and the edge re-appeared
     every time the user deleted it. It also did nothing with 2+ prototypes.
     Keying off the explicit binding fixes both: unrelated assets are left
@@ -601,7 +601,7 @@ def _autoheal_orphan_variant(workflow, drift, project_root):
 
     The new node id is built from the kind contract's `idTemplate`
     (substituting {variant}). Kinds without an idTemplate are not
-    auto-healed — we don't guess the canonical id pattern from the
+    auto-healed - we don't guess the canonical id pattern from the
     kind name (that's the "list of names" anti-pattern). Adding a new
     openEnded kind to the registry with a clear idTemplate is the ONLY
     code change needed to extend auto-heal coverage."""
@@ -611,12 +611,12 @@ def _autoheal_orphan_variant(workflow, drift, project_root):
     contract = KINDS.get(kind_name) or {}
     id_template = contract.get("idTemplate")
     if not id_template:
-        # No declared id pattern — refuse to guess. Reconciler still
+        # No declared id pattern - refuse to guess. Reconciler still
         # reports the drift; user can heal manually by adding the node.
         return False
     new_node_id = id_template.replace("{variant}", variant_id)
     nodes = workflow.get("nodes") or []
-    # Idempotency — already healed?
+    # Idempotency - already healed?
     if any(isinstance(n, dict) and n.get("id") == new_node_id for n in nodes):
         return False
     # Compute placement: stack below existing siblings of the same kind.
@@ -639,7 +639,7 @@ def _autoheal_orphan_variant(workflow, drift, project_root):
         "y":          y,
         "w":          320,
         "h":          220,
-        "runStatus":  "done",          # The artifact already exists — truthful.
+        "runStatus":  "done",          # The artifact already exists - truthful.
         "title":      f"DS variant {variant_id.upper()}" if kind_name == "ds-brainstorm" else f"Variant {variant_id}",
         "variant":    variant_id,
         "spec":       spec,
@@ -713,7 +713,7 @@ def _autoheal_lying_status(workflow, drift):
     if not node_id or not actual: return False
     for n in (workflow.get("nodes") or []):
         if isinstance(n, dict) and n.get("id") == node_id:
-            # v2.50 — never flip agent-kind status (it owns its lifecycle via
+            # v2.50 - never flip agent-kind status (it owns its lifecycle via
             # the subprocess completion hook + client polling). Belt-and-
             # suspenders: _detect_lying_status already skips agents so this
             # branch shouldn't be reached for them, but guard anyway.
@@ -726,7 +726,7 @@ def _autoheal_lying_status(workflow, drift):
     return False
 
 
-# v3.5 — `_autoheal_premature_stage` deleted along with its detector.
+# v3.5 - `_autoheal_premature_stage` deleted along with its detector.
 
 
 def _now_iso():
@@ -734,14 +734,14 @@ def _now_iso():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-# v3.2 — Prototype-folder auto-detection.
+# v3.2 - Prototype-folder auto-detection.
 # When the agent (or a freeform Write) drops `source/<slug>/index.html` on
 # disk, the user expects a live Prototype node to appear on the canvas
 # WITHOUT dragging one in from the library. This detector + autoheal pair
 # closes the loop: file watcher → reconcile → auto-mount.
 
 # Subdirs that look like prototype folders but are project-level scratch
-# space — never get a prototype node. Leading-underscore is the standing
+# space - never get a prototype node. Leading-underscore is the standing
 # convention for scratch under source/.
 _PROTOTYPE_FOLDER_SKIP_PREFIXES = ("_",)
 _PROTOTYPE_FOLDER_SKIP_NAMES = {
@@ -749,13 +749,13 @@ _PROTOTYPE_FOLDER_SKIP_NAMES = {
     "_staging", "_tmp", ".staging", ".trash",
 }
 
-# v3.9 — "is this folder a prototype build in progress?" A prototype's entry
+# v3.9 - "is this folder a prototype build in progress?" A prototype's entry
 # is index.html, but an agent typically writes it LAST (tokens → styles.css →
 # data.js → component JS → finally index.html), or writes other pages first
 # in a multi-HTML build. So a freshly-created slug folder can hold real build
 # output for many seconds before index.html exists. We treat the presence of
 # ANY html page, or the styles.css/data.js prototype skeleton, as the signal
-# that a build is underway — enough to mount an eager "building" node so the
+# that a build is underway - enough to mount an eager "building" node so the
 # canvas reflects what's happening instead of staying empty until the last
 # write. Cheap, shallow-ish scan (root + one nested level).
 def _folder_has_prototype_artifacts(folder_path):
@@ -769,7 +769,7 @@ def _folder_has_prototype_artifacts(folder_path):
                 if low in ("styles.css", "data.js"):
                     return True
             elif entry.is_dir(follow_symlinks=False) and not nm.startswith((".", "_")):
-                # one level deep — multi-HTML builds drop pages/ first
+                # one level deep - multi-HTML builds drop pages/ first
                 try:
                     for sub in os.scandir(entry.path):
                         if (sub.is_file(follow_symlinks=False)
@@ -802,19 +802,19 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
 
     This makes the per-prototype subfolder convention feel automatic: the
     agent writes `source/<slug>/...`, the user sees a Prototype node appear
-    within ~1.5 s — now from the FIRST write, not the last."""
+    within ~1.5 s - now from the FIRST write, not the last."""
     source_dir = os.path.join(project_root, "source")
     if not os.path.isdir(source_dir):
         return
     nodes = workflow.get("nodes") or []
     # v3.7 made `prototype` the canonical slug field (`branch` kept as fallback
-    # for legacy nodes — see app.js prototypeSlugForNode / line 110). A node
+    # for legacy nodes - see app.js prototypeSlugForNode / line 110). A node
     # carrying only `prototype` covers the slug just as fully as one carrying
     # only `branch`; reading only `branch` here causes the autoheal to spawn
     # duplicate prototype_<slug> siblings every reconcile tick, and worse, to
     # respawn one immediately after the user deletes it (the canonical-field
     # node still exists, so the slug stays "orphaned" in this detector's eyes).
-    # v3.9 — also remember the covering node so we can settle / abandon eager
+    # v3.9 - also remember the covering node so we can settle / abandon eager
     # pending nodes (keyed by canonical slug → node).
     slug_to_node = {}
     for n in nodes:
@@ -826,7 +826,7 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     existing_branches = set(slug_to_node.keys())
 
     # User-dismissed prototypes. Deleting a Prototype node from the canvas must
-    # STICK — but this detector would re-mount it from the still-present
+    # STICK - but this detector would re-mount it from the still-present
     # source/<slug>/ folder on the very next tick, making prototype deletion
     # (uniquely among node kinds) impossible. The frontend records the slug in
     # this project-level list on delete (app.js removeNode); honour it here by
@@ -858,7 +858,7 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
         if any(slug.startswith(p) for p in _PROTOTYPE_FOLDER_SKIP_PREFIXES):
             continue
         if slug in dismissed:
-            # User deleted this prototype from the canvas — don't resurrect it.
+            # User deleted this prototype from the canvas - don't resurrect it.
             continue
         index_path = _index_for(entry.path)
         covering = slug_to_node.get(slug)
@@ -897,7 +897,7 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
                             f"mounting an eager 'building' Prototype node.",
             })
 
-    # Abandon pass — an eager pending node whose folder disappeared or was
+    # Abandon pass - an eager pending node whose folder disappeared or was
     # emptied of artifacts before producing index.html. Without this, a
     # cancelled / failed build would leave a node stuck "building" forever.
     for slug, covering in slug_to_node.items():
@@ -924,12 +924,12 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
     stacks new prototypes in a column on the right side of the canvas so
     they don't overlap with the agent / asset clusters typically growing
     on the left. Returns True if mutation applied; False if a sibling
-    prototype with the same branch already exists (idempotent — TOCTOU
+    prototype with the same branch already exists (idempotent - TOCTOU
     guard against the same drift being applied twice in one tick)."""
     slug = (drift.get("slug") or "").strip()
     if not slug: return False
     nodes = workflow.get("nodes") or []
-    # Idempotency. Same canonical-field rule as the detector — a node carrying
+    # Idempotency. Same canonical-field rule as the detector - a node carrying
     # `prototype: <slug>` covers the slug just as fully as one carrying
     # `branch: <slug>`.
     for n in nodes:
@@ -949,7 +949,7 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
     else:
         x, y = 1600, 80
     new_id = f"prototype_{slug}"
-    # Collision-safe id — if something already uses prototype_<slug>, append
+    # Collision-safe id - if something already uses prototype_<slug>, append
     # a short suffix. Rare, but possible if the user manually added a node
     # with the same id without setting branch.
     base = new_id
@@ -958,13 +958,13 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
     while new_id in existing_ids:
         new_id = f"{base}_{i}"
         i += 1
-    # v3.2 — Default node size matches the prototype's natural viewport
+    # v3.2 - Default node size matches the prototype's natural viewport
     # aspect ratio (1440×900 → 16:10). The iframe scale-to-fit transform in
     # the frontend renders the prototype at its natural viewport size and
-    # CSS-scales to fit the node body — but choosing a node size with the
+    # CSS-scales to fit the node body - but choosing a node size with the
     # same aspect means no letterbox. 720×482 = 16:10 (with +32 title bar
     # → 720×450 body region, which has the same 16:10 ratio as 1440×900).
-    # v3.9 — eager "building" mount. The folder has artifacts but no
+    # v3.9 - eager "building" mount. The folder has artifacts but no
     # index.html yet, so render a pending node (the frontend shows a
     # "Building…" placeholder + the working badge) instead of a 404 iframe.
     # PROTOTYPE_FOLDER_SETTLE flips it to done once index.html lands.
@@ -999,7 +999,7 @@ def _autoheal_prototype_folder_settle(workflow, drift):
     """Flip an eager 'building' Prototype node to done now that its
     `index.html` has landed: clear the pending state + the _building marker
     so the frontend swaps the placeholder for the live iframe and the
-    working badge stops. Idempotent — bails if the node is gone or already
+    working badge stops. Idempotent - bails if the node is gone or already
     settled."""
     node_id = drift.get("nodeId")
     slug = (drift.get("slug") or "").strip()
@@ -1023,7 +1023,7 @@ def _autoheal_prototype_folder_settle(workflow, drift):
 def _autoheal_prototype_folder_abandon(workflow, drift):
     """Remove an eager 'building' Prototype node whose folder produced no
     lasting artifacts (cancelled / failed build). Only ever removes nodes
-    this reconciler mounted as eager-building — never user- or
+    this reconciler mounted as eager-building - never user- or
     agent-authored prototype nodes. Idempotent."""
     node_id = drift.get("nodeId")
     slug = (drift.get("slug") or "").strip()
@@ -1054,7 +1054,7 @@ def _autoheal_prototype_folder_abandon(workflow, drift):
 def apply_auto_heals(project_root):
     """Run reconcile(), apply every class:"auto" drift, write the
     workflow.json back atomically. Returns a list of summaries of
-    what got applied. Idempotent — calling twice in a row applies
+    what got applied. Idempotent - calling twice in a row applies
     nothing the second time.
 
     This is what makes the canvas tell the truth WITHOUT a Heal click:
@@ -1071,7 +1071,7 @@ def apply_auto_heals(project_root):
     if not auto_drifts:
         return out
 
-    # Load workflow.json (under no lock — caller serialises).
+    # Load workflow.json (under no lock - caller serialises).
     wf_path = os.path.join(project_root, "workflow", "workflow.json")
     if not os.path.isfile(wf_path):
         return out
@@ -1101,7 +1101,7 @@ def apply_auto_heals(project_root):
             elif t == PROTOTYPE_FOLDER_ABANDON:
                 applied = _autoheal_prototype_folder_abandon(workflow, drift)
             # PHANTOM_DECISION auto-resolves once ORPHAN_VARIANT runs (same loop).
-            # COHERENCE_NOT_RUN is manual-class — never auto-heals.
+            # COHERENCE_NOT_RUN is manual-class - never auto-heals.
         except Exception as e:
             out.append({"drift": t, "applied": False, "error": str(e)})
             continue
@@ -1143,7 +1143,7 @@ def apply_versioning_migration(project_root):
     actions = []
     for n in nodes:
         if not isinstance(n, dict): continue
-        # v3.0 — versioning covers asset, prototype, design-system kinds.
+        # v3.0 - versioning covers asset, prototype, design-system kinds.
         if not _vsn.is_versionable(n): continue
         try:
             if _vsn.migrate_legacy_asset(project_root, n):
@@ -1202,7 +1202,7 @@ def reconcile(project_root):
     try: _detect_orphan_asset_no_prototype_edge(wf, project_root, drifts)
     except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"orphan_asset_prototype"})
 
-    # v3.2 — Detect source/<slug>/index.html with no Prototype node referencing
+    # v3.2 - Detect source/<slug>/index.html with no Prototype node referencing
     # it. Must run BEFORE the asset-no-prototype-edge detector noticed nothing
     # to wire to (because there WAS no prototype yet); the autoheal in the
     # same loop creates the prototype, and the asset-edge detector will fire

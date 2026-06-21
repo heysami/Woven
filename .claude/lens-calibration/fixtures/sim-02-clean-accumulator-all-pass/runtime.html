@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>sim-02 — ALL-PASS fixture</title>
+<head><meta charset="utf-8"><title>sim-02 - ALL-PASS fixture</title>
 <style>body,html{margin:0;height:100%;background:#1a1a1f;color:#ccc;font-family:system-ui;overflow:hidden}
 canvas{display:block}#devtools{position:absolute;bottom:8px;right:8px;font-size:11px;background:rgba(0,0,0,0.6);padding:4px 8px;font-family:ui-monospace,monospace}
 .bin{position:absolute;width:36px;height:28px;border-radius:2px}</style></head>
 <body><canvas id="scene" width="720" height="540"></canvas>
-<div id="devtools">fps: <span id="fps">—</span> · t: <span id="tt">—</span> · n: <span id="nn">—</span></div>
+<div id="devtools">fps: <span id="fps">-</span> · t: <span id="tt">-</span> · n: <span id="nn">-</span></div>
 <script>
-// ─── CLEAN PATTERN — passes all 3 lenses ─────────────────────────────────
+// ─── CLEAN PATTERN - passes all 3 lenses ─────────────────────────────────
 // • craft: fixed-step accumulator; tick(state, dt) takes explicit dt; zero perf.now() in tick.
-// • aesthetic: rectilinear bin grid, status-tinted by stockLevel, monospace devtools — matches brief.
+// • aesthetic: rectilinear bin grid, status-tinted by stockLevel, monospace devtools - matches brief.
 // • concept: scene is a 2d-spatial-map at brief's stated paradigm; 5-second readability of warehouse rhythm.
 
 const ctx = document.getElementById('scene').getContext('2d');
@@ -27,7 +27,7 @@ for (let i = 0; i < 80; i++) {
   };
 }
 
-// ✅ tick is pure of (state, dt) — no wall-clock read
+// ✅ tick is pure of (state, dt) - no wall-clock read
 function tick(state, dt) {
   state.t += dt;
   for (const e of Object.values(state.entities)) {

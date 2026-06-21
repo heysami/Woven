@@ -1,13 +1,13 @@
-# Step three — the stack (build-less, single page)
+# Step three - the stack (build-less, single page)
 
 Default to one HTML file that runs by double-clicking. **No build step, no Babel, ever.**
 
-Use **htm** — JSX-like markup expressed as tagged template literals, bound to `React.createElement`. No transpile pass, no `<script type="text/babel">`, no XHR for source files. The prototype opens by double-clicking `index.html` *and* runs identically when served over HTTP.
+Use **htm** - JSX-like markup expressed as tagged template literals, bound to `React.createElement`. No transpile pass, no `<script type="text/babel">`, no XHR for source files. The prototype opens by double-clicking `index.html` *and* runs identically when served over HTTP.
 
 
 ```
 index.html              CDN scripts (React UMD + htm), loads app.js as a plain <script>
-data.js                 window.DEMO blob — all mock data lives here
+data.js                 window.DEMO blob - all mock data lives here
 styles.css              Token block at top + every class for the screen
 *.js                    Components grouped by visual region (or one app.js for small)
 ```
@@ -41,7 +41,7 @@ styles.css              Token block at top + every class for the screen
 ```
 
 
-`app.js` header — bind htm once, then write JSX-like trees inside `html` tagged templates:
+`app.js` header - bind htm once, then write JSX-like trees inside `html` tagged templates:
 
 
 ```js
@@ -58,7 +58,7 @@ createRoot(document.getElementById("root")).render(html`<${App}/>`);
 ```
 
 
-**htm vs JSX — the only syntax differences:**
+**htm vs JSX - the only syntax differences:**
 
 | JSX | htm |
 |---|---|
@@ -70,6 +70,6 @@ createRoot(document.getElementById("root")).render(html`<${App}/>`);
 | `dangerouslySetInnerHTML={{__html:s}}` | `dangerouslySetInnerHTML=${{__html:s}}` |
 | `<>...</>` (fragment) | `<${React.Fragment}>...<//>` |
 
-Everything else — `className`, event handlers, refs, `key`, conditional `&&`, `.map`, SVG, iframes, hooks — is identical.
+Everything else - `className`, event handlers, refs, `key`, conditional `&&`, `.map`, SVG, iframes, hooks - is identical.
 
 For pure HTML/CSS prototypes (static editorial, marketing, brutalist), skip React/htm entirely.

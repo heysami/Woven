@@ -1,12 +1,12 @@
-/* themes/grainism.css — apply via <html data-theme="grainism">
+/* themes/grainism.css - apply via <html data-theme="grainism">
    ==========================================================================
    A STYLE OVERLAY for the Woven template design system.
 
    Pitch: "pastel + a whisper of film". The base reads like a soft pastel
-   theme — warm paper surfaces, a pastel nav surface, flat (no-gradient)
+   theme - warm paper surfaces, a pastel nav surface, flat (no-gradient)
    brand fills, gentle diffuse shadows. THE SIGNATURE is a fixed full-viewport
    grain / halftone texture laid over everything at a low opacity, the way
-   Portra 400 grain sits over a print (mix-blend-mode:overlay, opacity ~.06) —
+   Portra 400 grain sits over a print (mix-blend-mode:overlay, opacity ~.06) -
    felt, not seen. An optional `.grain--halftone` variant swaps the
    fractalNoise grain for a CMYK-style dot screen, and a reusable `.grain`
    class carries the same overlay on any element/section (not just <body>).
@@ -17,7 +17,7 @@
    the chosen scheme. Pick a blue scheme → soft periwinkle; pick a green
    scheme → soft sage; etc. DARK MODE is handled by a parallel block scoped to
    :root.ds-scheme-dark[data-theme="grainism"] (the class the editor toggles
-   for dark previews) — warm dark paper + brand roles re-pointed to lighter
+   for dark previews) - warm dark paper + brand roles re-pointed to lighter
    ramp steps. The grain machinery is identical in both modes.
 
    References: material-film-grain-portra-400 (overlay blend, fine warm
@@ -52,7 +52,7 @@
   --secondary-surface:var(--secondary-500); --tertiary-surface:var(--tertiary-500);
   --chip-primary-fg:var(--primary-700); --chip-secondary-fg:var(--secondary-700); --chip-tertiary-fg:var(--tertiary-700);
 
-  /* ---- gradient OFF: pastel theme is flat — collapse both anchors to the
+  /* ---- gradient OFF: pastel theme is flat - collapse both anchors to the
      flat primary surface so anything painting the brand gradient reads as a
      single soft fill. ---- */
   --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-500);
@@ -72,7 +72,7 @@
   --series-1:var(--primary-500); --series-2:#7FC79A; --series-3:#E8B06A; --series-4:#7FC0D2; --series-5:var(--secondary-500);
 
   /* ---- Grain tokens (page authors can tune these) ----
-     --grain-opacity : whisper-low so the overlay is felt, not seen (.05–.08).
+     --grain-opacity : whisper-low so the overlay is felt, not seen (.05-.08).
      --halftone-size : the dot-screen tile for the .grain--halftone variant.
      --halftone-color: ink the halftone dots render in. */
   --grain-opacity:.06;
@@ -81,7 +81,7 @@
 }
 
 /* ==========================================================================
-   DARK grainism — the editor toggles html.ds-scheme-dark for a dark preview
+   DARK grainism - the editor toggles html.ds-scheme-dark for a dark preview
    while data-theme stays "grainism". Warm dark "paper" surfaces, neutral dark
    steps, and brand roles re-pointed to LIGHTER ramp steps so accents still
    follow the scheme and read well on dark. Grain machinery is unchanged.
@@ -121,12 +121,12 @@
 }
 
 /* ==========================================================================
-   THE SIGNATURE — grain overlay.
+   THE SIGNATURE - grain overlay.
    A fixed, full-viewport, non-interactive layer sitting above everything
    (z-index:9999) at a very low opacity, blended `overlay` so it modulates
    tone like film grain rather than veiling the page. The grain itself is an
    inline SVG feTurbulence (type=fractalNoise, baseFrequency~.8 = fine grain)
-   data-URI — no asset file, no request. Because pointer-events:none and the
+   data-URI - no asset file, no request. Because pointer-events:none and the
    opacity is a whisper, text contrast is essentially untouched.
    ========================================================================== */
 [data-theme="grainism"] body::after,
@@ -142,13 +142,13 @@
   background-size:160px 160px;
 }
 
-/* Reusable `.grain` carrier — let any element/section host the overlay.
+/* Reusable `.grain` carrier - let any element/section host the overlay.
    It pins the overlay to that element's box (instead of the viewport) so a
    single card/section can wear the grain on its own. */
 [data-theme="grainism"] .grain{position:relative;}
 [data-theme="grainism"] .grain::after{position:absolute;z-index:1;}
 
-/* ---- OPTIONAL halftone variant — a CMYK-style dot screen instead of grain.
+/* ---- OPTIONAL halftone variant - a CMYK-style dot screen instead of grain.
    Opt in with class="grain grain--halftone". radial-gradient dots at the
    --halftone-size tile (~4px), very low opacity, same overlay blend. The 45°
    rotation echoes the classic black-channel screen angle. ---- */
@@ -166,7 +166,7 @@
 [data-theme="grainism"] .grain--off::after{display:none;}
 
 /* ==========================================================================
-   Signature component overrides — pastel + flat. Everything else reads
+   Signature component overrides - pastel + flat. Everything else reads
    pastel from the remapped tokens above (so it flips automatically in dark);
    these are the few spots that hard-code the old brand gradient / sharp
    elevation and need re-pointing.
@@ -262,7 +262,7 @@
 }
 [data-theme="grainism"] .stat-hero{border-radius:var(--radius-l);}
 
-/* ---- Split-dropdown caret — matches the flat pastel primary button ---- */
+/* ---- Split-dropdown caret - matches the flat pastel primary button ---- */
 [data-theme="grainism"] .btn-split__caret{
   background:var(--primary-surface);
   color:var(--on-primary);

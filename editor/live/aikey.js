@@ -1,20 +1,20 @@
-/* Live Session — guest top bar + "Connect your AI" (multi-provider + CLI).
+/* Live Session - guest top bar + "Connect your AI" (multi-provider + CLI).
 
-   Guests run on the HOST's daemon (no daemon setup, no Projects nav — that's why
+   Guests run on the HOST's daemon (no daemon setup, no Projects nav - that's why
    the host's .workflow-bar stays hidden). But AI actions must spend the GUEST's
    own credentials, never the host's. This script:
 
      1. Wraps fetch so every same-origin /__ request carries the guest's live
         token (X-Live-Token) AND, when set, their credentials:
-          • X-Th-Llm-Key  — legacy single Anthropic key (back-compat).
-          • X-Th-Llm-Keys — base64(JSON) map of per-provider API keys PLUS a
+          • X-Th-Llm-Key  - legacy single Anthropic key (back-compat).
+          • X-Th-Llm-Keys - base64(JSON) map of per-provider API keys PLUS a
             "claudeCli" entry: a Claude Code subscription token (from
             `claude setup-token`, sk-ant-oat…) that runs the agent on the
             GUEST's own subscription via the CLI. The gate forwards these; the
             daemon spends them for that run only.
      2. Renders a slim guest top bar with an AI status pill + a Connect panel
         mirroring the host's API-key settings (keys live ONLY in this browser's
-        localStorage — never on the host).
+        localStorage - never on the host).
      3. Blocks AI endpoints until SOME credential is connected, prompting the
         panel instead of letting the run fail.
 
@@ -27,7 +27,7 @@
   // Providers mirror the host's Settings · API keys (editor/prompts/media-models.js).
   // `id` must match the daemon's provider id (serve.py _PROVIDER_ENV_KEYS) so the
   // guest's key is used for that provider's runs. The special "claudeCli" row is
-  // a Claude Code subscription token, not an API key — the daemon routes it to
+  // a Claude Code subscription token, not an API key - the daemon routes it to
   // CLAUDE_CODE_OAUTH_TOKEN so the agent runs on the guest's subscription.
   const CLI_ID = "claudeCli";
   const PROVIDERS = [
@@ -75,7 +75,7 @@
     try { return btoa(JSON.stringify(m)); } catch (e) { return ""; }
   }
 
-  // ── Default model per capability — mirrors the host's Settings → "Default
+  // ── Default model per capability - mirrors the host's Settings → "Default
   // models per capability". Stored in the SAME localStorage key the editor
   // reads (th.editor.default-providers.v1), so the editor's own default-aware
   // paths (agent preamble, remix) pick it up; we ALSO rewrite generation
@@ -121,17 +121,17 @@
     return null;
   }
 
-  // AI / agent endpoints — kept in sync with live.py _LLM_WRITE_PREFIXES.
+  // AI / agent endpoints - kept in sync with live.py _LLM_WRITE_PREFIXES.
   const LLM_RE = /\/__(llm_run|asset_generate|run|runs|system_runs|orchestrators|orchestrator_models|stream)\b/;
 
-  // ── fetch wrapper — attach identity + credentials to same-origin /__ requests ──
+  // ── fetch wrapper - attach identity + credentials to same-origin /__ requests ──
   const _origFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
     let url = "";
     try { url = (typeof input === "string") ? input : (input && input.url) || ""; } catch (e) {}
     if (url.indexOf("/__") !== 0) return _origFetch(input, init);
-    // Block AI runs with no credential at all — flash the pill to draw the eye.
-    // NB: do NOT auto-open the panel here — the editor fires background AI
+    // Block AI runs with no credential at all - flash the pill to draw the eye.
+    // NB: do NOT auto-open the panel here - the editor fires background AI
     // calls (model lists, run polls) that also hit this block, and opening on
     // each one made the panel reopen the instant you closed it. The flash is
     // enough of a nudge; the user opens the panel by clicking the pill.
@@ -239,7 +239,7 @@
     right.className = "th-ai-right";
     const refreshBtn = document.createElement("button");
     refreshBtn.className = "th-ai-refresh";
-    refreshBtn.title = "Refresh assets + canvas from the host (manual — assets don't auto-update)";
+    refreshBtn.title = "Refresh assets + canvas from the host (manual - assets don't auto-update)";
     refreshBtn.innerHTML =
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
       'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -256,7 +256,7 @@
     renderPill();
   }
 
-  // Manual refresh — assets intentionally do NOT auto-reflect in a live session
+  // Manual refresh - assets intentionally do NOT auto-reflect in a live session
   // (no daemon push), so this pulls the latest on demand: re-merge the workflow
   // (node paths / sizes / versions) AND reload every asset preview by handing
   // the existing th:asset-refresh path the concrete asset paths from disk (the
@@ -368,11 +368,11 @@
 
     const sub = document.createElement("div");
     sub.className = "th-ai-sub";
-    sub.innerHTML = "Runs in this live session use <b>your</b> credentials — the host never sees them. " +
+    sub.innerHTML = "Runs in this live session use <b>your</b> credentials - the host never sees them. " +
                     "Everything below is stored only in this browser.";
     panel.appendChild(sub);
 
-    // Claude subscription (local CLI) section — highlighted.
+    // Claude subscription (local CLI) section - highlighted.
     const cli = document.createElement("div");
     cli.className = "th-ai-sec th-ai-cli";
     cli.innerHTML = "<h4>Use your Claude subscription (local CLI)</h4>";
@@ -380,7 +380,7 @@
     cliNote.className = "th-ai-sub";
     cliNote.style.padding = "0 0 8px";
     cliNote.innerHTML = "Run <code>claude setup-token</code> in your terminal and paste the <code>sk-ant-oat…</code> " +
-                        "token. Agents then run on your own Claude Pro/Max subscription via the CLI — no API key, no host billing.";
+                        "token. Agents then run on your own Claude Pro/Max subscription via the CLI - no API key, no host billing.";
     cli.appendChild(cliNote);
     cli.appendChild(row(CLI_ID, "Claude token", "sk-ant-oat01-…"));
     panel.appendChild(cli);
@@ -403,7 +403,7 @@
     const defSec = document.createElement("div");
     defSec.className = "th-ai-sec";
     defSec.innerHTML = "<h4>Default models per capability</h4>" +
-      "<div class=\"th-ai-sub\" style=\"padding:0 0 6px\">Pick which provider each kind of generation uses — " +
+      "<div class=\"th-ai-sub\" style=\"padding:0 0 6px\">Pick which provider each kind of generation uses - " +
       "one you have a key for. <b>Auto</b> runs it on your connected agent (your Claude subscription / CLI) " +
       "where possible, so it never falls back to the host's providers.</div>";
     for (const [cap, label] of CAPS) defSec.appendChild(defRow(cap, label));

@@ -13,7 +13,7 @@ images:
 
 # Wood Grain (walnut, dark, vertical grain)
 
-A semi-gloss (varnished) or matte (raw) surface that reacts to light: yes — anisotropic along grain.
+A semi-gloss (varnished) or matte (raw) surface that reacts to light: yes - anisotropic along grain.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A semi-gloss (varnished) or matte (raw) surface that reacts to light: yes — an
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — anisotropic along grain
+**Reacts to light**: yes - anisotropic along grain
 
 **Deforms**: no
 
@@ -47,7 +47,7 @@ raster: scanned walnut at 2048px, mask with noise to hide tile seam
 
 **Light**: glint travels along grain on tilt
 
-**Highlight**: yes — narrow strip along grain
+**Highlight**: yes - narrow strip along grain
 
 **Depth**: minor for varnished
 

@@ -1,6 +1,6 @@
 ---
 name: video
-description: Produce or fetch a video asset for a slot — short loops, hero videos, product demos. Outputs the file written to source/video/ wired into source HTML via a <video> tag with appropriate poster + autoplay/loop attributes.
+description: Produce or fetch a video asset for a slot - short loops, hero videos, product demos. Outputs the file written to source/video/ wired into source HTML via a <video> tag with appropriate poster + autoplay/loop attributes.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -18,4 +18,4 @@ You are Subagent 1.V.video.
 - The `<video>` tag wired into source HTML with proper attrs (autoplay, loop, muted, playsinline)
 - A node entry in `workflow/workflow.json` if tracked
 
-Source priority: if a generator is available via `/__asset_generate` (e.g. fal video models), use it — **always POST to `${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}`**; the daemon 400s without the `?project=` param in workspace mode and you'd otherwise misroute the bytes into the wrong project's source tree. Otherwise generate a slideshow-style placeholder from raster frames + ffmpeg fallback. Stay realistic about run time — video generation is slow.
+Source priority: if a generator is available via `/__asset_generate` (e.g. fal video models), use it - **always POST to `${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}`**; the daemon 400s without the `?project=` param in workspace mode and you'd otherwise misroute the bytes into the wrong project's source tree. Otherwise generate a slideshow-style placeholder from raster frames + ffmpeg fallback. Stay realistic about run time - video generation is slow.

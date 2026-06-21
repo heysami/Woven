@@ -12,19 +12,19 @@ images:
 **Tag:** `aesthetic`
 
 **Canonical references:**
-- Liminal Spaces archive / r/LiminalSpace — the empty-pool / fluorescent-hallway canon
-- The Backrooms (original 2019 4chan post + early wiki) — wrong-place dread codified
-- *Everywhere at the End of Time* — The Caretaker (2016–2019) — degraded-memory sound as visual mood
-- Webcore / Angelicism / "kid-drew-this" Tumblr archives (2014–2019)
+- Liminal Spaces archive / r/LiminalSpace - the empty-pool / fluorescent-hallway canon
+- The Backrooms (original 2019 4chan post + early wiki) - wrong-place dread codified
+- *Everywhere at the End of Time* - The Caretaker (2016-2019) - degraded-memory sound as visual mood
+- Webcore / Angelicism / "kid-drew-this" Tumblr archives (2014-2019)
 - Late-90s mall-interior photographs + VHS family-tape stills (the raw substrate, not the imitation)
 
 ## Cultural identity
 
-Dreamcore is internet-native unease — the aesthetic of a memory you can't verify, surfaced from a 4chan-and-Tumblr lineage (~2017–2021) that crystallized around liminal spaces, half-remembered childhood imagery, and VHS-degraded family photos. It is **not** cute, not nostalgic in the Instagram sense, and not retro-for-fun. It is the feeling of being five years old in a fluorescent-lit hallway at 2am, alone, and not knowing how you got there.
+Dreamcore is internet-native unease - the aesthetic of a memory you can't verify, surfaced from a 4chan-and-Tumblr lineage (~2017-2021) that crystallized around liminal spaces, half-remembered childhood imagery, and VHS-degraded family photos. It is **not** cute, not nostalgic in the Instagram sense, and not retro-for-fun. It is the feeling of being five years old in a fluorescent-lit hallway at 2am, alone, and not knowing how you got there.
 
 The cultural ancestors are vaporwave's plundered-mall sincerity, Weirdcore's "something is wrong with this image," and the Backrooms mythos. The mood is **wrong-place dread** wearing the costume of a child's coloring book.
 
-Colors must feel **once-vivid, now-bleached** — as if every image was photocopied six times, left in a sunny window for a decade, then scanned on a 1998 flatbed. Off-register printing, slight color-channel drift, JPEG artifacts on PNG-clean shapes — these are not decoration, they are the aesthetic's truth condition.
+Colors must feel **once-vivid, now-bleached** - as if every image was photocopied six times, left in a sunny window for a decade, then scanned on a 1998 flatbed. Off-register printing, slight color-channel drift, JPEG artifacts on PNG-clean shapes - these are not decoration, they are the aesthetic's truth condition.
 
 ## Palette anchor
 
@@ -59,7 +59,7 @@ No saturated colors. No pure black. No pure white. Everything is one bleach-cycl
 
 ## Failure mode
 
-The cheap version makes Dreamcore look **cute** — pastel UI with a smile face and a "spooky" filter. This is the failure. Real Dreamcore is **uncomfortable**: the smile is slightly wrong, the hallway has no end, the color is off by 3% in a way you can't name. If a stock-photo "liminal space" is rendered crisp, sharp, and well-lit, it has failed. If the palette reads as "soft pastel mobile app", it has failed. The aesthetic dies the moment it becomes legible as a style choice rather than as a found artifact.
+The cheap version makes Dreamcore look **cute** - pastel UI with a smile face and a "spooky" filter. This is the failure. Real Dreamcore is **uncomfortable**: the smile is slightly wrong, the hallway has no end, the color is off by 3% in a way you can't name. If a stock-photo "liminal space" is rendered crisp, sharp, and well-lit, it has failed. If the palette reads as "soft pastel mobile app", it has failed. The aesthetic dies the moment it becomes legible as a style choice rather than as a found artifact.
 
 The second failure: leaning on the Backrooms meme. Yellow walls + fluorescent ceiling does not make Dreamcore. The mood is wider and quieter than the meme.
 
@@ -68,10 +68,10 @@ The second failure: leaning on the Backrooms meme. Yellow walls + fluorescent ce
 - Personal essays about memory, loss, growing up online
 - Net-art projects, zines, music-release sites for ambient/hauntology artists
 - Horror-adjacent fiction, ARGs, indie-game landing pages
-- Anything where the subject is **the past as it didn't happen** — false memory, déjà vu, the uncanny
+- Anything where the subject is **the past as it didn't happen** - false memory, déjà vu, the uncanny
 - NOT for: SaaS, productivity, finance, anything that needs to be trusted at a glance
 
 ## Pairs well with
 
-- Shells: `shell-scrapbook-substrate` (native fit — cutout collage substrate), `shell-editorial-broken-grid` (broken alignment amplifies wrongness), `shell-centered-column` (lonely-document feel), `shell-infinite-canvas` (the hallway that doesn't end)
-- Styles: `style-raster-cutout` (the cutout/collage execution), `style-cream-humanist` (for child-handwriting voice in long-form), `style-serif-warm-paper` (paired with degraded scans), `style-doodle` (kid-drew-this overlays). Avoid clean system styles (`style-sf-pro-ios`, `style-flat-design`, `style-material-m3`) — they kill the aesthetic.
+- Shells: `shell-scrapbook-substrate` (native fit - cutout collage substrate), `shell-editorial-broken-grid` (broken alignment amplifies wrongness), `shell-centered-column` (lonely-document feel), `shell-infinite-canvas` (the hallway that doesn't end)
+- Styles: `style-raster-cutout` (the cutout/collage execution), `style-cream-humanist` (for child-handwriting voice in long-form), `style-serif-warm-paper` (paired with degraded scans), `style-doodle` (kid-drew-this overlays). Avoid clean system styles (`style-sf-pro-ios`, `style-flat-design`, `style-material-m3`) - they kill the aesthetic.

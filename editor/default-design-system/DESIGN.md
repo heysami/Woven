@@ -2,7 +2,7 @@
 name: Template Design System
 id: default
 genre: restrained institutional product UI (neutral product, Plus Jakarta Sans, pill controls)
-method: clean hand-authored CSS — sane class names, semantic markup, inline-SVG icons; self-contained single source of truth in this folder
+method: clean hand-authored CSS - sane class names, semantic markup, inline-SVG icons; self-contained single source of truth in this folder
 font: Plus Jakarta Sans 300/400/500/600/700 (Google Fonts CDN)
 ---
 
@@ -15,7 +15,7 @@ with readable BEM-ish class names and inline-SVG icons (no icon font, no framewo
 
 **If you are a chat session reusing this DS: link a page to `design-systems/default/styles.css`
 (and `shells/app-shell.css` for the app shell), then compose with the class vocabulary below.
-Do not invent new component classes — every pattern this DS needs already has a class here.**
+Do not invent new component classes - every pattern this DS needs already has a class here.**
 
 **Need the newer components (data-dense / document / charts / mobile) or want the page to be
 style-switchable? Link `all.css` instead of `styles.css` (plus a shell css if used). One
@@ -24,25 +24,25 @@ all 8 style overlays in cascade order. Then flip the look with `<html data-theme
 
 ## Files
 
-- `styles.css` — `:root` tokens + the 47 base component classes. Single source of truth (~50KB, no framework).
-- `all.css` — aggregator. One link that `@import`s, in cascade order: `styles.css` → the three component
+- `styles.css` - `:root` tokens + the 47 base component classes. Single source of truth (~50KB, no framework).
+- `all.css` - aggregator. One link that `@import`s, in cascade order: `styles.css` → the three component
   partials (`components/data-dense.css`, `components/doc.css`, `components/charts.css`) → the 8 style
-  overlays (`themes/*.css`). **Order is the contract** — partials come after base so their modifiers win
+  overlays (`themes/*.css`). **Order is the contract** - partials come after base so their modifiers win
   equal-specificity ties; themes come last so `[data-theme="x"]` overrides win over both. Link this
   (not `styles.css`) when a page needs the new components or wants to be style-switchable.
-- `components/*.css` — three component partials added on top of base (data-dense, doc, charts). Token-only,
+- `components/*.css` - three component partials added on top of base (data-dense, doc, charts). Token-only,
   so the 8 styles re-skin them for free. See **Component partials** below.
-- `gallery.html` — kitchen sink: every component, variant and state, organised atomically with a
+- `gallery.html` - kitchen sink: every component, variant and state, organised atomically with a
   scrollspy left-nav. Colour/type render as tables (lightest→darkest); Button / Tag / Badge / Status /
   Text-fields render as **variant × state matrices** (one type at a time).
-- `DESIGN.md` — this file: the reuse catalog.
-- `meta.json` — machine inventory (id, version, `styles[]`, full `components[]` catalog, `templates[]`, `shells[]`).
-- `shells/app-shell.{css,html}` — the Default side-menu app shell (navy gradient + wave + logo + rail).
-- `shells/mobile-shell.{css,html}` — the phone shell (status bar → scrollable screen → bottom tab bar).
-- `themes/*.css` — 8 style overlays (the dark style lives inside `styles.css`). See **Styles** below.
-- `templates/*.html` — 14 full page samples (see **Templates** below). These are part of the DS, NOT
-  prototype/asset pages — they demonstrate composition and are linked from the gallery's Page Samples.
-- `assets/` — `sidebar-grid.svg`, `logo.svg`.
+- `DESIGN.md` - this file: the reuse catalog.
+- `meta.json` - machine inventory (id, version, `styles[]`, full `components[]` catalog, `templates[]`, `shells[]`).
+- `shells/app-shell.{css,html}` - the Default side-menu app shell (navy gradient + wave + logo + rail).
+- `shells/mobile-shell.{css,html}` - the phone shell (status bar → scrollable screen → bottom tab bar).
+- `themes/*.css` - 8 style overlays (the dark style lives inside `styles.css`). See **Styles** below.
+- `templates/*.html` - 14 full page samples (see **Templates** below). These are part of the DS, NOT
+  prototype/asset pages - they demonstrate composition and are linked from the gallery's Page Samples.
+- `assets/` - `sidebar-grid.svg`, `logo.svg`.
 
 ## Tokens (`:root` in styles.css)
 
@@ -62,7 +62,7 @@ Spacing      --space-3xs .. --space-3xl ; base unit 16px
 
 ## Styles (`<html data-theme="NAME">`)
 
-10 looks share the one class vocabulary — each is a token remap + a few scoped `[data-theme="x"]`
+10 looks share the one class vocabulary - each is a token remap + a few scoped `[data-theme="x"]`
 component overrides (mirrors how `dark` lives in `styles.css`). Activate by setting the attribute on the
 root element; `default` is the plain light style (no attribute). The dark style is built into `styles.css`;
 the other 8 live in `themes/*.css` and load via `all.css`. Components inherit the new look for free because
@@ -71,25 +71,25 @@ every value references a token.
 **Colour scheme + dark mode.** Every style FOLLOWS the selected colour scheme: none of them re-define the
 `--primary-/--secondary-/--tertiary-` ramps (the customizer writes those on `:root`); instead each derives
 its accent/brand roles from the ramp via `var(--primary-NNN)` / `color-mix()` (the glassmorphism pattern).
-Each style also ships a dark variant scoped to `:root.ds-scheme-dark[data-theme="x"]` — the class the editor
+Each style also ships a dark variant scoped to `:root.ds-scheme-dark[data-theme="x"]` - the class the editor
 toggles for a dark preview while `data-theme` stays the style name. (`default`/`dark`/`glassmorphism` were
-already correct; the rest were brought in line.) All themes are pure CSS — only `glassmorphism` carries a
+already correct; the rest were brought in line.) All themes are pure CSS - only `glassmorphism` carries a
 WebGL runtime (`themes/glassmorphism.js`); `claymorphism` is CSS-only.
 
 | Style | Attribute | Signature technique · helper tokens |
 | --- | --- | --- |
-| Default | _(none)_ | Base light style — restrained institutional product UI. |
-| Dark | `data-theme="dark"` | Dark scheme — remapped surfaces/text/brand roles (in `styles.css`). |
+| Default | _(none)_ | Base light style - restrained institutional product UI. |
+| Dark | `data-theme="dark"` | Dark scheme - remapped surfaces/text/brand roles (in `styles.css`). |
 | Minimal | `data-theme="minimal"` | Maximal restraint: one accent hue, everything else neutral grey; gradient gone, hairline borders + near-flat shadows in place of elevation. |
 | Pastel | `data-theme="pastel"` | Soft desaturated wash (a faint tint of the scheme hue), pastel nav surface, tinted fills with deeper-hue text; no gradients, no bold fills. |
 | Glassmorphism | `data-theme="glassmorphism"` | iOS liquid-glass: translucent `backdrop-filter` panes over a gradient-mesh body + dispersion-prism edge. `--glass-bg/-faint/-strong`, `--glass-blur/-strong`, `--glass-border`, `--glass-specular`, `--glass-shadow`. |
 | Claymorphism | `data-theme="claymorphism"` | Soft-UI foam: chunky remapped radii + warm-cream surfaces + dual-light clay shadow (outer drop + inner highlight); the CTA follows the scheme; buttons puff and depress on `:active`. Pure CSS (no shader). `--clay-shadow/-sm`, `--clay-inset`, `--clay-press`. |
 | Neumorphism | `data-theme="neumorphism"` | Soft UI: ONE shared base colour for page + every control; depth comes only from a fixed top-left dual shadow (raised vs inset), monochrome. `--neu-base/-light/-dark`, `--neu-raise/-sm/-lg`, `--neu-inset/-sm`, `--neu-accent`. |
 | Tech-minimalism | `data-theme="techminimalism"` | Frutiger-DORFic / Teenage Engineering: concrete off-white + graphite, ONE hot signal on the primary role (follows the scheme), small uppercase tracked mono labels, near-zero radii, flattened shadows. `--font-mono`. |
-| Neobrutalism | `data-theme="neobrutalism"` | Editorial brutalism: uncoated-cream paper + warm dark ink, ZERO radius, 2–3px ink borders, hard zero-blur offset shadow, `:active` translate(2px,2px) press, ~6% paper grain; the primary accent fills follow the scheme (scheme block + ink border + ink shadow). `--nb-paper/-bright/-shade/-deep`, `--nb-ink/-soft`, `--nb-greige`. |
+| Neobrutalism | `data-theme="neobrutalism"` | Editorial brutalism: uncoated-cream paper + warm dark ink, ZERO radius, 2-3px ink borders, hard zero-blur offset shadow, `:active` translate(2px,2px) press, ~6% paper grain; the primary accent fills follow the scheme (scheme block + ink border + ink shadow). `--nb-paper/-bright/-shade/-deep`, `--nb-ink/-soft`, `--nb-greige`. |
 | Grainism | `data-theme="grainism"` | "Pastel + a whisper of film": pastel base + a fixed full-viewport SVG grain overlay (`mix-blend-mode:overlay`, low opacity), felt not seen. Reusable `.grain` class; `.grain--halftone` swaps grain for a CMYK dot screen. `--grain-opacity`. |
 
-## Component catalog — by atomic layer
+## Component catalog - by atomic layer
 
 State hooks are shared: `.is-active .is-focus .is-selected .is-disabled .is-readonly .is-error .is-valid .is-sortable .is-asc/.is-desc`.
 
@@ -128,7 +128,7 @@ Tabs         .tabs + --underline | --cards | --buttons ; .tab.is-active ; .tab__
 Breadcrumbs  .breadcrumbs a .sep .current ; .crumb-more (truncate) ; .breadcrumb-back
 Alert        .alert + --success|--attention|--error|--info ; .alert__icon .alert__title  (title neutral, filled icon at main -500)
 Toast        .toast + --success|--error|--info|--attention ; .toast__icon (filled -500) .toast__body .toast__title .toast__close
-             — soft -50 tint + -700 text ; simple (icon + line) OR long (bold title + description, no icon)
+             - soft -50 tint + -700 text ; simple (icon + line) OR long (bold title + description, no icon)
 Menu         .menu .menu__item
 Pagination   .pagination .pagination__item[.is-active|--icon|--more] ; .pagination__info ("1 to N of M records")
 ```
@@ -158,7 +158,7 @@ Modal        .scrim › .modal + --sm|--md|--lg ; --centered (feedback modals) ;
              .modal__close .modal__status[ filled-disc: --question|--info (teal) · --success (green) · --stop (red)
                   | shape: --warn|--noaccess|--loading (orange) · --discard (teal) · --delete (red) ] (SVG .spinner) ;
              .modal__title .modal__sub ; .modal__head .modal__body .modal__foot[--form] .modal__actions ; .modal-row
-             — 9 centered feedback variants: confirmation · action · discard · delete · stop · no-access · info · success · loading
+             - 9 centered feedback variants: confirmation · action · discard · delete · stop · no-access · info · success · loading
 Slideout     .scrim(justify flex-end) › .slideout + --sm|--md|--lg ; --complex (.slideout__main + .slideout__summary) ;
              .slideout__top .title-overlay .slideout__content .slideout__bottom
 ```
@@ -167,12 +167,12 @@ Slideout     .scrim(justify flex-end) › .slideout + --sm|--md|--lg ; --complex
 ```
 Top menu     .topnav (.topnav__logo + img, .topnav__sep, .topnav__title, .topnav__items, .topnav__divider,
              .topnav__item[.is-active] + .caret, .topnav__spacer, .topnav__wave img, .topnav__logout)
-             ; mobile: .topnav__burger + logo  — navy gradient horizontal bar, 64px, white items + dropdown carets
+             ; mobile: .topnav__burger + logo  - navy gradient horizontal bar, 64px, white items + dropdown carets
 Sidebar      .sidebar (.sidebar__wave img, .sidebar__logo, .sidebar__section, .sidebar__nav, .sidebar__user)
              .nav-link.is-active  .nav-link--sub  .icon .nav-label
 Sub nav      .subnav .subnav__item.is-active .subnav__count
 Top bar      .topbar (holds .breadcrumbs or .title-paragraph)
-App shell    .app › .sidebar + .main(.topbar + .content)  — requires shells/app-shell.css
+App shell    .app › .sidebar + .main(.topbar + .content)  - requires shells/app-shell.css
 ```
 
 ### Titles & text utilities
@@ -184,14 +184,14 @@ App shell    .app › .sidebar + .main(.topbar + .content)  — requires shells/
 
 ## Component partials (loaded via `all.css`)
 
-Token-only add-ons layered on the base. Theme-agnostic — the 8 styles re-skin them automatically.
+Token-only add-ons layered on the base. Theme-agnostic - the 8 styles re-skin them automatically.
 Link `all.css` (or the individual partial after `styles.css`) to use them.
 
 ### Data-dense / flat (`components/data-dense.css`)
-Ultra-high-density flat tables in the Linear / Bloomberg / finance register — hairline rows, tabular
+Ultra-high-density flat tables in the Linear / Bloomberg / finance register - hairline rows, tabular
 numerals, no card chrome. The density is the point.
 ```
-Flat table   .table--flat (modifier on .table — strips card chrome, 32px rows, sticky flat header,
+Flat table   .table--flat (modifier on .table - strips card chrome, 32px rows, sticky flat header,
                   hairline row separators only) ; .table--dense (28px rows + --text-xs)
 Numeric      .cell--num (right-aligned tabular nums) ; .tnum (lock tabular nums anywhere)
 Delta        .cell--delta + .is-up (success) | .is-down (error)
@@ -203,7 +203,7 @@ Row state    .row--selected ; .row--active (flat brand-soft wash + inset active 
 ```
 
 ### Document / boxless (`components/doc.css`)
-"Boxless" editing register (Notion / Google Docs / Word): plain text until you interact — affordance on
+"Boxless" editing register (Notion / Google Docs / Word): plain text until you interact - affordance on
 hover, low-key underline on focus. An alternative input style over the base `.input`/`.field`/`.textarea`.
 ```
 Boxless input   .input--bare ; .textarea--bare (border + bg drop away, focus = single underline)
@@ -211,14 +211,14 @@ Boxless field   .field--bare > .field__label (muted floating label)
 Doc canvas      .doc (centred editable column) ; .doc__title (large, empty → "Untitled")
                   .doc-h1 / .doc-h2 / .doc-h3 (inline-editable boxless headings)
 Content block   .doc-block (gutter affordances on hover) > .doc-block__handle (drag grip)
-                  .doc-block__add (+ button) — both drawn in CSS, no icon font
+                  .doc-block__add (+ button) - both drawn in CSS, no icon font
 Placeholders    .doc-placeholder (data-placeholder empty-state) ; .slash-hint
                   ("Type '/' for commands", shown only on empty focused block)
 Rail / toolbar  .doc-rail (comments/outline, hairline left border) ; .doc-toolbar (floating format bar)
 ```
 
 ### Charts + hero graphics (`components/charts.css`)
-STATIC, theme-able mock charts — shapes drawn with inline SVG + CSS, no JS, no runtime deps. Series
+STATIC, theme-able mock charts - shapes drawn with inline SVG + CSS, no JS, no runtime deps. Series
 colours pull from `--series-*` so a style swap reflows the whole dashboard's palette.
 ```
 Stat hero    .stat-hero (flagship KPI) > .stat-hero__label .stat-hero__value
@@ -232,7 +232,7 @@ Chart card   .chart-card > __title __body __legend (titled SVG-chart wrapper)
 Metric tile  .metric-tile > __label __value __trend[.is-up|.is-down] ; .bignum / .bignum__label
                   (large tabular-nums figure, usable standalone)
 Tokens       --series-1..5 (lead→accent) ; --chart-grid (gridlines/ticks) ; --chart-axis (axis lines/labels)
-                  — themes override these in their own :root to re-skin every chart at once
+                  - themes override these in their own :root to re-skin every chart at once
 ```
 
 ### Mobile shell (`shells/mobile-shell.{css,html}`)
@@ -247,35 +247,35 @@ Mobile list  .list-mobile > .list-mobile__row > __body (__title __sub) + .list-m
 Touch helper .cell-lg (56px touch target) ; .segmented--mobile (full-width segmented control)
 ```
 
-## Templates (page samples — `templates/`)
+## Templates (page samples - `templates/`)
 
 Full composed pages, part of the DS (linked from gallery → Page Samples). Reuse as layout blueprints.
 
-1. `login.html` — full-bleed auth + NovaID SSO + brand masthead + marketing footer (no shell).
-2. `user-profile.html` — app shell · two-pane profile card + details (uses shell).
-3. `technical-logs.html` — app shell · `.dg-filters` bar + sortable `.table` + `.pagination`.
-4. `dashboard.html` — app shell · secondary `.subnav` side-nav + `.feed` + `.pagination`; now also
+1. `login.html` - full-bleed auth + NovaID SSO + brand masthead + marketing footer (no shell).
+2. `user-profile.html` - app shell · two-pane profile card + details (uses shell).
+3. `technical-logs.html` - app shell · `.dg-filters` bar + sortable `.table` + `.pagination`.
+4. `dashboard.html` - app shell · secondary `.subnav` side-nav + `.feed` + `.pagination`; now also
    carries a `.stat-hero` card + `.chart` mini charts (charts partial).
-5. `basic-form.html` — app shell · `.lifecycle` status bar + `.section-card` + form grid.
-6. `exception.html` — 404 / 403 / 400 / session-timeout / expired / maintenance `.exception` cards (no shell).
-7. `landing.html` — marketing site · nav + hero + features + metrics + CTA band + footer (no shell).
-8. `ecommerce.html` — interactive storefront · product grid → cart `.slideout` → checkout → payment → confirmation (no shell).
-9. `density.html` — app shell · ultra-dense markets (Linear/Bloomberg register) — `.kpi-strip` +
+5. `basic-form.html` - app shell · `.lifecycle` status bar + `.section-card` + form grid.
+6. `exception.html` - 404 / 403 / 400 / session-timeout / expired / maintenance `.exception` cards (no shell).
+7. `landing.html` - marketing site · nav + hero + features + metrics + CTA band + footer (no shell).
+8. `ecommerce.html` - interactive storefront · product grid → cart `.slideout` → checkout → payment → confirmation (no shell).
+9. `density.html` - app shell · ultra-dense markets (Linear/Bloomberg register) - `.kpi-strip` +
    `.table--flat`/`--dense` + `.spark` sparklines + mini `.chart`s (data-dense + charts partials).
-10. `document.html` — app shell · boxless editor (Notion/Docs register) — click-to-edit `.doc__title` /
+10. `document.html` - app shell · boxless editor (Notion/Docs register) - click-to-edit `.doc__title` /
     `.doc-block` / `.field--bare` + `.doc-rail` comments (doc partial).
-11. `tables.html` — app shell · five table variations: standard, flat-dense, selectable + bulk,
+11. `tables.html` - app shell · five table variations: standard, flat-dense, selectable + bulk,
     rich-cell datagrid, grouped.
-12. `mobile-home.html` — mobile shell · home/feed — hero stat card + quick actions + activity list + `.tabbar`.
-13. `mobile-profile.html` — mobile shell · profile header + stats + settings `.list-mobile` + `.switch` + sign-out.
-14. `mobile-list.html` — mobile shell · searchable grouped `.list-mobile` rows with avatars + trailing meta + `.tabbar`.
+12. `mobile-home.html` - mobile shell · home/feed - hero stat card + quick actions + activity list + `.tabbar`.
+13. `mobile-profile.html` - mobile shell · profile header + stats + settings `.list-mobile` + `.switch` + sign-out.
+14. `mobile-list.html` - mobile shell · searchable grouped `.list-mobile` rows with avatars + trailing meta + `.tabbar`.
 
 ## Design language
 
 Vivid brand blue (`#074ECF`) for identity surfaces (the side nav, blue gradient + wave) and actions;
 brand red (`#E20E10`) as the secondary CTA accent; gold (`#F5B301`) as a warm highlight; cool slate
 tertiary for quiet differentiation. **Pill-shaped controls** (buttons, tags, tabs, switches use `--radius-pill`) on
-**soft squared surfaces** (inputs/cards/modals 8–16px, `--radius-base`). Plus Jakarta Sans — light 300
+**soft squared surfaces** (inputs/cards/modals 8-16px, `--radius-base`). Plus Jakarta Sans - light 300
 display headers tightening to semibold 600 at small sizes; headings line-height 120%, body 160%.
 Soft 10%-black elevation, used sparingly. Comfortable density: 40px inputs, 48px table headers,
 16px base spacing unit. On coloured/saturated surfaces, prefer tinted backgrounds + dark text (or
@@ -287,11 +287,11 @@ darkened -600/-700 fills for white text) to hold WCAG contrast.
   loads via a Google Fonts `@import` inside `styles.css`; pages also include the matching `<link>` for portability.
 - Need the data-dense / document / charts components, the mobile shell, or a switchable style? Link
   `all.css` instead of `styles.css` (it `@import`s base + partials + all 8 overlays in cascade order), then
-  set `<html data-theme="NAME">` to pick a style. Don't author new partial classes — the catalog covers it.
+  set `<html data-theme="NAME">` to pick a style. Don't author new partial classes - the catalog covers it.
 - Compose from the vocabulary above; **do not author new component classes**. Need a status pill →
   `.status`; a filter bar → `.dg-filters`; an overlay → `.modal`/`.slideout`. It already exists.
 - Match the matrix conventions in the gallery when documenting: one type at a time, variant × state.
-- Inline-SVG icons only (Fluent System Icons — filled for semantic status, outline for nav/utility).
+- Inline-SVG icons only (Fluent System Icons - filled for semantic status, outline for nav/utility).
   No emoji, no icon font.
 - Wide tables/matrices go inside `.table-scroll`/`.scroll-x`; flex children that can overflow get
   `min-width:0`. This is what keeps the layout from getting messy at narrow widths.

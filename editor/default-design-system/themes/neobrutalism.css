@@ -1,21 +1,21 @@
 /* ==========================================================================
-   THEME OVERLAY — Neubrutalism (editorial / structural-monochrome substrate)
+   THEME OVERLAY - Neubrutalism (editorial / structural-monochrome substrate)
    Apply via <html data-theme="neobrutalism">. Load AFTER styles.css (and the
    component CSS) so these overrides win the cascade.
 
    The register: uncoated-paper cream substrate + warm dark ink (never pure
    black) + mid greige support tone. The signature is the WHOLE discipline:
      - ZERO border-radius everywhere (the softening is in COLOUR, not corners)
-     - 2–3px warm-ink borders on every major container
+     - 2-3px warm-ink borders on every major container
      - hard-offset shadow with ZERO blur:  box-shadow: 4px 4px 0 0 <ink>
-     - :active press effect — translate(2px,2px) + shadow shrinks to 2px
+     - :active press effect - translate(2px,2px) + shadow shrinks to 2px
      - extreme editorial display:body type ratio
      - subtle uncoated-paper grain overlay (~6%)
 
-   COLOUR — the PRIMARY ACCENT NOW FOLLOWS THE SELECTED SCHEME. Primary buttons,
+   COLOUR - the PRIMARY ACCENT NOW FOLLOWS THE SELECTED SCHEME. Primary buttons,
    the --primary-surface role, the active nav block, and primary-filled chips
    take the scheme colour the customizer writes into --primary-* (a colored
-   block with a black border + hard ink shadow — the classic neobrutalist look).
+   block with a black border + hard ink shadow - the classic neobrutalist look).
    Everything STRUCTURAL stays mono: ink borders, hard offset shadows, card /
    table / modal frames, the sidebar rail, default tag/badge ink fills. The ink
    + paper anchors below are the NEUTRAL substrate identity, not the scheme, and
@@ -28,7 +28,7 @@
    the scheme via --primary-*. Component rules reference the anchor vars
    (--nb-ink / --nb-paper*) so both light and dark resolve automatically.
 
-   Palette anchor (light — raw hex, per the aesthetic spec):
+   Palette anchor (light - raw hex, per the aesthetic spec):
      #F4EFE2  uncoated paper cream  (primary substrate)
      #FAF6EC  cream highlight       (paper-bright surface)
      #EDE6D3  cream shade           (recessed wells / strong surface)
@@ -39,19 +39,19 @@
    ========================================================================== */
 
 :root[data-theme="neobrutalism"]{
-  /* ---- ink + paper raw anchors (local helpers — the NEUTRAL substrate) ---- */
+  /* ---- ink + paper raw anchors (local helpers - the NEUTRAL substrate) ---- */
   --nb-ink:#181412; --nb-ink-soft:#2E2823; --nb-paper:#F4EFE2;
   --nb-paper-bright:#FAF6EC; --nb-paper-shade:#EDE6D3; --nb-paper-deep:#E3DAC6;
   --nb-greige:#A89E8E; --nb-greige-dark:#7C7264; --nb-greige-light:#C9C0AE;
 
-  /* ---- surfaces — warm uncoated paper, never pure white ---- */
+  /* ---- surfaces - warm uncoated paper, never pure white ---- */
   --surface:#FAF6EC; --surface-default:#F4EFE2; --surface-medium:#EDE6D3; --surface-strong:#E3DAC6;
   --surface-inverse:#181412;
 
-  /* ---- text — warm ink, never pure black ---- */
+  /* ---- text - warm ink, never pure black ---- */
   --fg-default:#181412; --fg-muted:#2E2823; --fg-subtle:#7C7264; --fg-on-surface:#181412;
 
-  /* ---- lines + interaction — ink borders, paper-shade hovers ---- */
+  /* ---- lines + interaction - ink borders, paper-shade hovers ---- */
   --border-default:#181412; --border-subtle:#A89E8E;
   --interactive-hover:#EDE6D3; --interactive-active:#E3DAC6;
 
@@ -77,7 +77,7 @@
   --on-primary:#FFFFFF; --on-secondary:#FAF6EC; --on-tertiary:#FAF6EC;
   --chip-primary-fg:var(--primary-700); --chip-secondary-fg:#2E2823; --chip-tertiary-fg:#5E564B;
 
-  /* ---- ZERO radius — the no-radius discipline is non-negotiable ---- */
+  /* ---- ZERO radius - the no-radius discipline is non-negotiable ---- */
   --radius-xs:0; --radius-s:0; --radius-base:0; --radius-m:0; --radius-l:0;
   --radius-xl:0; --radius-2xl:0; --radius-pill:0;
 
@@ -92,7 +92,7 @@
   --shadow-xl:8px 8px 0 0 var(--nb-ink);
   --shadow-hard:4px 4px 0 0 var(--nb-ink);
 
-  /* ---- big editorial type scale — bump display/h1 hard, body stays readable.
+  /* ---- big editorial type scale - bump display/h1 hard, body stays readable.
      Extreme display:body ratio is the rhythm of the register. ---- */
   --text-display:4.30rem; --text-h1:3.40rem; --text-h2:2.60rem; --text-h3:1.95rem;
   --text-h4:1.50rem; --text-h5:1.14rem; --text-h6:0.80rem;
@@ -106,7 +106,7 @@
 }
 
 /* ==========================================================================
-   DARK neobrutalism — the editor toggles html.ds-scheme-dark for a dark preview
+   DARK neobrutalism - the editor toggles html.ds-scheme-dark for a dark preview
    while data-theme stays "neobrutalism". Clean ink/paper INVERSION: dark warm
    paper + LIGHT "ink" so borders, hard offset shadows and text stay visible.
    The anchors flip, so every scoped component rule (which references the anchor
@@ -119,11 +119,11 @@
   --nb-paper-bright:#221D18; --nb-paper-shade:#2A241E; --nb-paper-deep:#332C24;
   --nb-greige:#8A8071; --nb-greige-dark:#9A9080; --nb-greige-light:#4A4339;
 
-  /* ---- surfaces — dark warm paper ---- */
+  /* ---- surfaces - dark warm paper ---- */
   --surface:#221D18; --surface-default:#1C1814; --surface-medium:#2A241E; --surface-strong:#332C24;
   --surface-inverse:#F4EFE2;
 
-  /* ---- text — light ink ---- */
+  /* ---- text - light ink ---- */
   --fg-default:#F4EFE2; --fg-muted:#D8CFBE; --fg-subtle:#9A9080; --fg-on-surface:#F4EFE2;
 
   /* ---- lines + interaction ---- */
@@ -186,9 +186,9 @@
 }
 
 /* ==========================================================================
-   SHELL — sidebar + topbar. The brand rail goes solid ink (paper text),
+   SHELL - sidebar + topbar. The brand rail goes solid ink (paper text),
    with a hard ink edge instead of a gradient. In dark this inverts to a light
-   "ink" rail with dark text — the correct neobrutalist inversion.
+   "ink" rail with dark text - the correct neobrutalist inversion.
    ========================================================================== */
 [data-theme="neobrutalism"] .sidebar,
 [data-theme="neobrutalism"] aside.sidebar,
@@ -207,7 +207,7 @@
   border-radius:0;
 }
 
-/* ---- nav links — flat on ink rail; active = SCHEME block, zero radius ---- */
+/* ---- nav links - flat on ink rail; active = SCHEME block, zero radius ---- */
 [data-theme="neobrutalism"] .nav-link{
   color:var(--nb-greige-light); border-radius:0; backdrop-filter:none; box-shadow:none;
   border-left:3px solid transparent; font-weight:var(--w-medium);
@@ -222,7 +222,7 @@
 }
 
 /* ==========================================================================
-   CARDS + SECTION SURFACES — 3px ink border + hard 4px offset shadow.
+   CARDS + SECTION SURFACES - 3px ink border + hard 4px offset shadow.
    ========================================================================== */
 [data-theme="neobrutalism"] .card{
   background:var(--nb-paper-bright); border:3px solid var(--nb-ink); border-radius:0;
@@ -238,7 +238,7 @@
 }
 
 /* ==========================================================================
-   TABLES — ink-framed, hairline-greige rows; flat variant keeps its airiness
+   TABLES - ink-framed, hairline-greige rows; flat variant keeps its airiness
    but inherits the ink frame.
    ========================================================================== */
 [data-theme="neobrutalism"] .table{
@@ -261,7 +261,7 @@
 [data-theme="neobrutalism"] .table--flat tbody tr:hover td{ background:var(--nb-paper-shade); }
 
 /* ==========================================================================
-   FORM CONTROLS — ink border + offset shadow; inset press on focus.
+   FORM CONTROLS - ink border + offset shadow; inset press on focus.
    ========================================================================== */
 [data-theme="neobrutalism"] .input,
 [data-theme="neobrutalism"] .select,
@@ -297,7 +297,7 @@
 [data-theme="neobrutalism"] .select{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
-/* bare input (doc / inline-edit) — no frame, just an ink underline */
+/* bare input (doc / inline-edit) - no frame, just an ink underline */
 [data-theme="neobrutalism"] .input--bare{
   background:transparent; border:0; border-bottom:2px solid var(--nb-ink); border-radius:0; box-shadow:none;
 }
@@ -306,8 +306,8 @@
 [data-theme="neobrutalism"] .input--bare.is-focus{ border-bottom-color:var(--nb-ink); box-shadow:none; outline:none; }
 
 /* ==========================================================================
-   BUTTONS — ink border + offset shadow + bold uppercase label.
-   :active press effect — translate(2px,2px) and shadow shrinks to 2px.
+   BUTTONS - ink border + offset shadow + bold uppercase label.
+   :active press effect - translate(2px,2px) and shadow shrinks to 2px.
    The PRIMARY button is the one accent that follows the scheme: a coloured
    block with the signature ink border + hard ink offset shadow.
    ========================================================================== */
@@ -335,7 +335,7 @@
 [data-theme="neobrutalism"] .btn.is-hover.btn--outline{ background:var(--nb-paper-shade); }
 [data-theme="neobrutalism"] .btn--outline:active,
 [data-theme="neobrutalism"] .btn.is-pressed.btn--outline{ background:var(--nb-paper-deep); }
-/* text button stays chromeless — no frame, no offset shadow, no uppercase weight noise */
+/* text button stays chromeless - no frame, no offset shadow, no uppercase weight noise */
 [data-theme="neobrutalism"] .btn--text{
   border:0; box-shadow:none; background:transparent; color:var(--nb-ink); text-transform:none;
 }
@@ -345,14 +345,14 @@
 [data-theme="neobrutalism"] .btn.is-disabled{
   background:var(--nb-paper-deep); color:var(--nb-greige-dark); border-color:var(--nb-greige); box-shadow:none; transform:none;
 }
-/* button-group — ink frame, ink dividers, active block fills ink */
+/* button-group - ink frame, ink dividers, active block fills ink */
 [data-theme="neobrutalism"] .btn-group{ border:2px solid var(--nb-ink); border-radius:0; box-shadow:3px 3px 0 0 var(--nb-ink); }
 [data-theme="neobrutalism"] .btn-group .btn{ box-shadow:none; border:0; border-right:2px solid var(--nb-ink); transform:none; }
 [data-theme="neobrutalism"] .btn-group .btn:active{ transform:none; box-shadow:none; }
 [data-theme="neobrutalism"] .btn-group .btn.is-active{ background:var(--nb-ink); color:var(--nb-paper-bright); }
 
 /* ==========================================================================
-   BADGES + TAGS — small ink-bordered blocks, zero radius, no offset (too busy
+   BADGES + TAGS - small ink-bordered blocks, zero radius, no offset (too busy
    at chip scale) but a crisp 1.5px ink frame. The PRIMARY chip rides the scheme;
    default / secondary / tertiary stay on the mono fills.
    ========================================================================== */
@@ -377,7 +377,7 @@
 [data-theme="neobrutalism"] .tag--mono{ background:var(--nb-ink); color:var(--nb-paper-bright); }
 
 /* ==========================================================================
-   MODAL — heavy ink frame + bold offset shadow (the dialog reads as a
+   MODAL - heavy ink frame + bold offset shadow (the dialog reads as a
    physical card lifted off the paper).
    ========================================================================== */
 [data-theme="neobrutalism"] .modal{
@@ -388,7 +388,7 @@
 [data-theme="neobrutalism"] .modal-row:last-child{ border-bottom:0; }
 
 /* ==========================================================================
-   KPI + STAT-HERO + CHART-CARD — dashboard surfaces inherit the ink frame +
+   KPI + STAT-HERO + CHART-CARD - dashboard surfaces inherit the ink frame +
    offset shadow; KPI cells get ink dividers.
    ========================================================================== */
 [data-theme="neobrutalism"] .kpi-strip{
@@ -405,7 +405,7 @@
 }
 
 /* ==========================================================================
-   PHONE (mobile-frame mock) + tabbar — keep the ink frame; active tab reads
+   PHONE (mobile-frame mock) + tabbar - keep the ink frame; active tab reads
    as an ink block with paper label, zero radius.
    ========================================================================== */
 [data-theme="neobrutalism"] .phone{
@@ -419,7 +419,7 @@
   color:var(--nb-ink); background:var(--nb-paper-shade); border-top:3px solid var(--nb-ink); font-weight:var(--w-semibold);
 }
 
-/* ---- Split-dropdown caret — scheme block + ink frame + hard offset shadow ---- */
+/* ---- Split-dropdown caret - scheme block + ink frame + hard offset shadow ---- */
 [data-theme="neobrutalism"] .btn-split__caret{
   background:var(--primary-surface);
   color:var(--on-primary);

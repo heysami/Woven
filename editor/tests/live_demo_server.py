@@ -1,4 +1,4 @@
-"""Standalone Live Session demo — stands up the real gate + a demo project +
+"""Standalone Live Session demo - stands up the real gate + a demo project +
 an active session, prints the local /live URL, and serves forever so a browser
 can exercise the collab client. For manual + automated browser verification.
 

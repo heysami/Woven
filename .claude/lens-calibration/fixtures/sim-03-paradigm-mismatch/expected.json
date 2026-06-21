@@ -1,5 +1,5 @@
 {
-  "_intent": "CONCEPT-FAIL (paradigm mismatch) fixture — PRD declared paradigm '2d-spatial-map' but runtime renders 3D environment. concept-lens §4 'paradigmFit' check must catch this. Aesthetic also expected to fail because the brief listed '3D scenes' as antiPattern. Craft is clean.",
+  "_intent": "CONCEPT-FAIL (paradigm mismatch) fixture - PRD declared paradigm '2d-spatial-map' but runtime renders 3D environment. concept-lens §4 'paradigmFit' check must catch this. Aesthetic also expected to fail because the brief listed '3D scenes' as antiPattern. Craft is clean.",
   "craft": {
     "verdict": "pass",
     "ground_truth_reason": "deterministic accumulator; no perf.now in tick; InstancedMesh for entity count; no broken paths"
@@ -8,12 +8,12 @@
     "verdict": "fail",
     "must_cite": ["3D scenes", "antiPattern"],
     "expected_failure_check": "No antiPatterns[] element appears in the artefact",
-    "ground_truth_reason": "brief.antiPatterns lists '3D scenes' and 'orbiting cameras' — both present in this runtime"
+    "ground_truth_reason": "brief.antiPatterns lists '3D scenes' and 'orbiting cameras' - both present in this runtime"
   },
   "concept": {
     "verdict": "fail",
     "must_cite": ["paradigm", "2d-spatial-map"],
     "expected_failure_check": "Paradigm fit",
-    "ground_truth_reason": "PRD paradigm=2d-spatial-map; runtime renders 3D environment with rotating camera — direct paradigm contradiction"
+    "ground_truth_reason": "PRD paradigm=2d-spatial-map; runtime renders 3D environment with rotating camera - direct paradigm contradiction"
   }
 }

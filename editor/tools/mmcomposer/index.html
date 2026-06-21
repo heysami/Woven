@@ -12,7 +12,7 @@
   :root{
     /* Local tool vars remapped onto Woven tokens (woven-theme.css). The CHROME
        (layer list / inspector / toolbar / buttons / inputs) now reads as light
-       Woven — warm paper surfaces, hairline borders, single green accent. The
+       Woven - warm paper surfaces, hairline borders, single green accent. The
        preview #stageHost canvases keep their own dark content background. */
     --bg:var(--wv-surface-2);            /* input fields / inset wells */
     --panel:var(--wv-surface);           /* panel backgrounds */
@@ -79,7 +79,7 @@
   #stageHost{position:relative;background:#000}
   .pill{font-family:var(--mono);font-size:10px;color:var(--ink2)}
   /* Status overlay = a light Woven pill (like other tools' "120 fps" chip), so
-     it stays legible over ANY preview content — the canvas isn't always dark. */
+     it stays legible over ANY preview content - the canvas isn't always dark. */
   .badge{position:absolute;top:8px;left:8px;font-family:var(--wv-font-mono);font-size:10px;color:var(--wv-text-muted);background:var(--wv-surface);border:1px solid var(--wv-border);box-shadow:var(--wv-shadow-sm);padding:3px 7px;border-radius:5px;z-index:6;pointer-events:none}
   .perm{position:absolute;bottom:8px;left:8px;display:flex;gap:6px;z-index:7}
   .small{font-size:10px;color:var(--ink2)}
@@ -161,7 +161,7 @@
 
 <script type="module">
 /* ===========================================================================
-   INTERACTIVE MULTIMEDIA COMPOSER  —  Woven editor tool
+   INTERACTIVE MULTIMEDIA COMPOSER  -  Woven editor tool
    Single-file. Modular runtime: POSITIONING · TRIGGERS · IMPACTS · EFFECTS.
    ===========================================================================*/
 
@@ -181,7 +181,7 @@ function loadMod(key){
 /* ---------- Shared shader-lab catalog (../_shared/fx.js) -------------------
    fx.js is the SINGLE source of truth for the effect catalog: the per-layer
    GLFx (below) and the WIRED top-level chain both render the SAME faithful
-   shader-lab effects with the SAME param contract — no collapsing, no aliases.
+   shader-lab effects with the SAME param contract - no collapsing, no aliases.
    EFFECT_SPECS is plain JSON ({type:{label,frag,uniforms[]}}) so it also bakes
    into the standalone player verbatim. */
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue } from '../_shared/fx.js';
@@ -240,7 +240,7 @@ function storeWired(d){
    wires content+position+trigger+effect via its `children`. Returns layers in
    the same shape Engine.render / Positioning / Triggers already consume, so
    they render alongside the inline STATE.layers. */
-// Cached accessor (rebuilds only when WIRED changes) — used on the hot render path.
+// Cached accessor (rebuilds only when WIRED changes) - used on the hot render path.
 function wiredRuntimeLayers(){
   if(_wiredCache && _wiredCacheVer===_wiredVer) return _wiredCache;
   _wiredCache = buildWiredRuntimeLayers();
@@ -323,7 +323,7 @@ function buildWiredRuntimeLayers(){
     const effK   = kids.filter(k=>k&&k.type==='effect');
     // content from the asset child. NOTE the resolved asset child carries
     // `kind:"asset"` (the NODE kind) + `assetKind` as a RENDER type
-    // ("img"/"video"/"iframe") + a ready `url` — so key off the url and the
+    // ("img"/"video"/"iframe") + a ready `url` - so key off the url and the
     // render type, defaulting any wired asset with a url to an image.
     let content;
     if(assetK && assetK.url){
@@ -349,14 +349,14 @@ function buildWiredRuntimeLayers(){
     const trigger = trigK
       ? Object.assign({source:trigSpec.source||'none', impacts:triggerResolvedImpacts(trigSpec, trigParams)}, trigParams)
       : {source:'none',impacts:[]};
-    // shader-lab effect children pass through verbatim — same catalog + same
+    // shader-lab effect children pass through verbatim - same catalog + same
     // param contract the GLFx (and the WIRED top-level chain) already render.
     const stack = effK.map(e=>{
       const fx = wiredChildSpec(e);
       const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fx.type==='custom' || fx.type==='shader';
       // Scalar number bindings → effect intensity / params. The STATIC value is
       // baked here; TIME-VARYING sources (Timeline / algorithmic-with-`t`) are
-      // re-resolved every frame in render() via the `_fxSpec` kept below — the
+      // re-resolved every frame in render() via the `_fxSpec` kept below - the
       // wired-layer build is cached by `_wiredVer`, so without that a wired
       // Timeline on an effect param would freeze at this build-time clock value.
       let intensity = fx.intensity??1, params = fx.params||{};
@@ -378,7 +378,7 @@ function buildWiredRuntimeLayers(){
     });
     L._wired=true;
     // Keep the raw trigger spec (with _bindings + impact rangeKeys) so the hot
-    // render path can re-resolve TIME-VARYING bindings each frame — the cached
+    // render path can re-resolve TIME-VARYING bindings each frame - the cached
     // build above would otherwise freeze a wired Timeline / algorithmic source.
     L._trigSpec = trigK ? trigSpec : null;
     L._opacity = spec.opacity!=null?spec.opacity:1;
@@ -425,9 +425,9 @@ function fillLayer(L){
   L.trigger = Object.assign({source:'none',impacts:[]}, L.trigger||{});
   fillTrigger(L.trigger);
   // mask: use another layer's rendered pixels to multiply a channel of this one.
-  //   by  — id of the layer to read as a mask ('' = no mask)
-  //   src — channel READ off the mask layer: lum|alpha|r|g|b
-  //   dst — channel DRIVEN on this layer: alpha|rgb|r|g|b
+  //   by  - id of the layer to read as a mask ('' = no mask)
+  //   src - channel READ off the mask layer: lum|alpha|r|g|b
+  //   dst - channel DRIVEN on this layer: alpha|rgb|r|g|b
   L.mask = Object.assign({by:'',src:'lum',dst:'alpha'}, L.mask||{});
   L.effects = L.effects||{stack:[]}; L.effects.stack = L.effects.stack||[];
   L.effects.stack.forEach(e=>{ e.params=e.params||{}; e.intensity=e.intensity??1; });
@@ -460,7 +460,7 @@ function fillTrigger(t){
 }
 /* Resolve a wired trigger spec's numeric param bindings (number-generator /
    timeline) into concrete values. A trigger is a single GLOBAL value (not
-   per-instance), so every binding — scalar OR vector — collapses to its
+   per-instance), so every binding - scalar OR vector - collapses to its
    index-0 sample at the current clock. Returns a fresh params object. */
 function triggerBoundParams(spec){
   const params=Object.assign({}, (spec&&spec.params)||{});
@@ -493,7 +493,7 @@ function normalizeState(s){
   s.inputs=Object.assign({camera:false,mic:false},s.inputs||{});
   s.wiredMasks=(s.wiredMasks && typeof s.wiredMasks==='object') ? s.wiredMasks : {};
   s.layers=(s.layers||[]).map(fillLayer);
-  // An empty doc normally falls back to the demo so a fresh node isn't blank —
+  // An empty doc normally falls back to the demo so a fresh node isn't blank -
   // but NOT when wired layers supply the content (e.g. a packaged custom-app or
   // any composition driven entirely by wired Layer nodes). Only show the demo
   // when there's genuinely nothing to render.
@@ -529,7 +529,7 @@ const Assets = {
 };
 
 /* ===========================================================================
-   INPUT HUB  (pointer / clock / camera / mic) — shared across layers
+   INPUT HUB  (pointer / clock / camera / mic) - shared across layers
    ===========================================================================*/
 const Input = {
   px:0.5, py:0.5, down:false, clicks:0, clickPulse:0, hoverAny:false,
@@ -634,7 +634,7 @@ const AudioReact = {
 };
 
 /* ===========================================================================
-   DETECTORS  (MediaPipe Tasks Vision + Tesseract OCR) — lazy & optional
+   DETECTORS  (MediaPipe Tasks Vision + Tesseract OCR) - lazy & optional
    ===========================================================================*/
 const Detectors = {
   hand:null, face:null, object:null, ready:false, building:false, _ocrBusy:false, _ocrAt:0,
@@ -708,7 +708,7 @@ const Detectors = {
 };
 
 /* ===========================================================================
-   POSITIONING  —  resolve a layer to an array of instance transforms
+   POSITIONING  -  resolve a layer to an array of instance transforms
    Each instance: {x,y,scale,rot}  in 0..1 normalized canvas space
    ===========================================================================*/
 const Positioning = {
@@ -929,12 +929,12 @@ function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt
 function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
-/* SOURCES — parametric value-source evaluator now lives in ../_shared/sources.js
+/* SOURCES - parametric value-source evaluator now lives in ../_shared/sources.js
    (imported above), shared with the 3D tools. applyScalar/applyVector take the
    playhead time explicitly; this tool passes Input.clock. */
 
 /* ===========================================================================
-   TRIGGERS  —  evaluate a layer's trigger → scalar 0..1 (+ vec for position)
+   TRIGGERS  -  evaluate a layer's trigger → scalar 0..1 (+ vec for position)
    ===========================================================================*/
 const Triggers = {
   eval(L){
@@ -972,7 +972,7 @@ const Triggers = {
 };
 
 /* ===========================================================================
-   IMPACTS  —  route trigger values onto OTHER layers' params (cross-wiring)
+   IMPACTS  -  route trigger values onto OTHER layers' params (cross-wiring)
    Computed each frame into a per-layer override map, applied at render time.
    ===========================================================================*/
 function applyMap(v, map, range){
@@ -1041,7 +1041,7 @@ function wiredGlobalTrigger(){
 }
 
 /* ===========================================================================
-   EFFECTS  —  WebGL2 fullscreen fragment passes (ping-pong framebuffers)
+   EFFECTS  -  WebGL2 fullscreen fragment passes (ping-pong framebuffers)
    The catalog + shaders + uniform contract all come from ../_shared/fx.js
    (EFFECT_SPECS), so a layer effect renders identically to the same effect on
    the WIRED top-level chain. The vertex shader + every fragment use fx.js's
@@ -1067,7 +1067,7 @@ class GLFx {
     this.cv=canvas;
     this.gl=canvas.getContext('webgl2',{premultipliedAlpha:true,alpha:true});
     this.progs={}; this.fbos=[]; this.tex=[];
-    if(!this.gl){ showErr('WebGL2 unavailable — effects disabled'); return; }
+    if(!this.gl){ showErr('WebGL2 unavailable - effects disabled'); return; }
     const gl=this.gl;
     this.quad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
@@ -1165,7 +1165,7 @@ class GLFx {
 }
 
 /* ===========================================================================
-   CONTENT RENDERING  (2D) — draw an instance's content into the 2D layer buf
+   CONTENT RENDERING  (2D) - draw an instance's content into the 2D layer buf
    ===========================================================================*/
 function drawMediaInBox(ctx, media, ar, boxW, boxH, fit, alignX, alignY, tile){
   fit = ['cover','contain','fill','none'].includes(fit) ? fit : 'contain';
@@ -1222,8 +1222,8 @@ function getSans(){ return getComputedStyle(document.body).fontFamily; }
 function getMono(){ return 'ui-monospace,Menlo,monospace'; }
 
 // Multiply a channel of `dctx` (w×h) by a channel read from `maskCv`.
-//   src — channel READ off the mask: lum (default, luminance × own alpha)|alpha|r|g|b
-//   dst — channel DRIVEN on the target: alpha (default)|rgb|r|g|b
+//   src - channel READ off the mask: lum (default, luminance × own alpha)|alpha|r|g|b
+//   dst - channel DRIVEN on the target: alpha (default)|rgb|r|g|b
 function maskByChannel(dctx, w, h, maskCv, src, dst){
   src=src||'lum'; dst=dst||'alpha';
   const base=dctx.getImageData(0,0,w,h);
@@ -1250,7 +1250,7 @@ function maskByChannel(dctx, w, h, maskCv, src, dst){
 }
 
 /* ===========================================================================
-   ENGINE  — the requestAnimationFrame runtime tying it all together
+   ENGINE  - the requestAnimationFrame runtime tying it all together
    ===========================================================================*/
 const Engine = {
   c2d:document.getElementById('c2d'), cgl:document.getElementById('cgl'),
@@ -1268,7 +1268,7 @@ const Engine = {
     this.W=STATE.canvasW; this.H=STATE.canvasH;
     for(const cv of [this.c2d,this.cgl]){ cv.width=this.W; cv.height=this.H; }
     this.layerBuf.width=this.W; this.layerBuf.height=this.H;
-    // CSS aspect fit — measure from the .col.center (grandparent), not .stagewrap,
+    // CSS aspect fit - measure from the .col.center (grandparent), not .stagewrap,
     // because .stagewrap has no intrinsic height (its children are all absolute).
     const host=stageHost;
     const col=host.parentElement.parentElement;
@@ -1328,7 +1328,7 @@ const Engine = {
     // 3) clear base canvases
     ctx.clearRect(0,0,W,H); ctx.fillStyle=STATE.background; ctx.fillRect(0,0,W,H);
     if(this.fx&&this.fx.gl){ this.fx.gl.clearColor(0,0,0,0); this.fx.gl.clear(this.fx.gl.COLOR_BUFFER_BIT); }
-    // layers any other layer reads as a mask — these must be rendered in pass A
+    // layers any other layer reads as a mask - these must be rendered in pass A
     // even when hidden, so a mask source can drive without being composited.
     const maskRefs=new Set(); for(const L of layers){ if(L.mask&&L.mask.by) maskRefs.add(L.mask.by); }
     // per-layer offscreen buffer pool (id → {cv,cx}); lets one layer mask another.
@@ -1339,7 +1339,7 @@ const Engine = {
       if(b.cv.width!==W||b.cv.height!==H){ b.cv.width=W; b.cv.height=H; }
       return b;
     };
-    // 4a) PASS A — draw each layer's content into its own buffer. Physics/instances
+    // 4a) PASS A - draw each layer's content into its own buffer. Physics/instances
     //     resolve exactly once here (a mask-source layer is NOT stepped twice).
     const rendered={};
     for(const L of layers){
@@ -1360,13 +1360,13 @@ const Engine = {
     // prune buffers for layers that no longer exist
     const live=new Set(layers.map(L=>L.id));
     for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
-    // 4b) PASS B — composite visible layers in z-order, applying channel masks.
+    // 4b) PASS B - composite visible layers in z-order, applying channel masks.
     const ordered=[...layers].filter(L=>L.visible).sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ordered){
       const buf=rendered[L.id]; if(!buf) continue;
       const ov=overrides[L.id]||{};
       // Copy into the scratch buffer so masking/effects never mutate this layer's
-      // stored pixels — another layer may still read it as a mask source.
+      // stored pixels - another layer may still read it as a mask source.
       this.lctx.clearRect(0,0,W,H); this.lctx.drawImage(buf.cv,0,0);
       // mask: multiply a channel of this layer by a channel of another layer
       if(L.mask && L.mask.by){
@@ -1435,7 +1435,7 @@ const Engine = {
   }
 };
 
-/* play/pause/clock — inline SVG icons (currentColor), no emoji. */
+/* play/pause/clock - inline SVG icons (currentColor), no emoji. */
 const ICO_PAUSE='<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 const ICO_PLAY='<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>';
 function setPlayBtn(playing){
@@ -1513,7 +1513,7 @@ function renderLayerList(){
     el.querySelector('[data-act=del]').onclick=()=>{ delLayer(L); };
     root.appendChild(el);
   });
-  // Wired LAYER nodes appear here too — read-only rows (driven by the wired
+  // Wired LAYER nodes appear here too - read-only rows (driven by the wired
   // node graph), labelled with the Layer NODE's name + a "wired" badge.
   const wired=wiredRuntimeLayers();
   if(wired.length){
@@ -1524,7 +1524,7 @@ function renderLayerList(){
       el.style.borderStyle='dashed'; el.style.opacity='.92';
       el.innerHTML=`<div class="top">
           <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
-          <input class="nm" value="${esc(L.name)}" readonly title="Driven by a wired Layer node — edit it on the canvas">
+          <input class="nm" value="${esc(L.name)}" readonly title="Driven by a wired Layer node - edit it on the canvas">
           <span class="tag" style="border-color:var(--acc2);color:var(--acc2)">wired</span>
         </div>
         <div class="meta">
@@ -1630,7 +1630,7 @@ function maskAccordion(L){
 /* asset dropdown options from wired content */
 function assetOpts(kindFilter){
   const list=CONTENT.filter(c=>!kindFilter||kindFilter.includes(c.kind));
-  return [['','— none —'],...list.map(c=>[c.id,(c.label||c.id)+' ('+c.kind+')'])];
+  return [['','- none -'],...list.map(c=>[c.id,(c.label||c.id)+' ('+c.kind+')'])];
 }
 
 /* ---------- INSPECTOR ----------------------------------------------------- */
@@ -1639,12 +1639,12 @@ function renderInspector(){
   const L=selectedLayer();
   document.getElementById('inspTitle').textContent=L?L.name:'No layer';
   if(!L){ body.innerHTML='<p class="hint" style="padding:12px">Add a layer to begin.</p>'; return; }
-  // Wired layers are driven by the node graph — show a read-only spec summary,
+  // Wired layers are driven by the node graph - show a read-only spec summary,
   // but the Mask is editable here (the override is stored composer-side).
   if(L._wired){
     const spec=WIRED.layers.find(wl=>wl.id===L.id)?.spec||{};
     body.appendChild(html(`<div style="padding:12px;display:flex;flex-direction:column;gap:8px">
-      <p class="hint" style="margin:0">Driven by a wired Layer node. Edit properties on the canvas node — except Mask, which is set here.</p>
+      <p class="hint" style="margin:0">Driven by a wired Layer node. Edit properties on the canvas node - except Mask, which is set here.</p>
       <div class="fld"><label>Opacity</label><input type="range" min="0" max="1" step="0.01" value="${spec.opacity??1}" disabled></div>
       <div class="fld"><label>Blend</label><select disabled><option>${spec.blend||'normal'}</option></select></div>
       <div class="fld"><label>Z</label><input type="number" value="${spec.z??0}" disabled style="width:60px"></div>
@@ -1789,7 +1789,7 @@ function renderInspector(){
     (t.impacts||[]).forEach((im,idx)=>{
       const card=document.createElement('div'); card.className='impact';
       card.appendChild(fSelect('Target layer',im.target||'',
-        [['','— pick —'],...STATE.layers.filter(x=>x.id!==L.id).map(x=>[x.id,x.name])],v=>im.target=v));
+        [['','- pick -'],...STATE.layers.filter(x=>x.id!==L.id).map(x=>[x.id,x.name])],v=>im.target=v));
       card.appendChild(fSelect('Param',im.param,[['opacity','Opacity'],['scale','Scale'],['position','Position'],['effect.intensity','Effect intensity']],v=>im.param=v));
       card.appendChild(fSelect('Map',im.map,[['linear','Linear'],['threshold','Threshold']],v=>im.map=v));
       const rg=document.createElement('div'); rg.className='grid2';
@@ -1806,7 +1806,7 @@ function renderInspector(){
     b.appendChild(add);
   },'trig'));
 
-  /* MASK accordion — use another layer's pixels to mask this one */
+  /* MASK accordion - use another layer's pixels to mask this one */
   body.appendChild(maskAccordion(L));
 
   /* EFFECTS accordion */
@@ -1830,7 +1830,7 @@ function renderInspector(){
       eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
       card.appendChild(eh);
       card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
-      // per-effect params (the fx.js declarative contract — these drive the shader)
+      // per-effect params (the fx.js declarative contract - these drive the shader)
       for(const u of uniformsFor(eff)){
         const cur=(eff.params&&eff.params[u.from]!=null)?eff.params[u.from]:u.def;
         if(u.bool){
@@ -1875,7 +1875,7 @@ document.getElementById('bgcol') && (document.getElementById('bgcol').oninput=e=
 function renderAll(){ renderLayerList(); renderInspector(); renderCanvasControls(); }
 
 /* ===========================================================================
-   STATE I/O  —  init / rebuild / debounced emit + bake
+   STATE I/O  -  init / rebuild / debounced emit + bake
    ===========================================================================*/
 function rebuild(){
   STATE=normalizeState(STATE);
@@ -1925,7 +1925,7 @@ function reportPanels(){
   try{ parent.postMessage({type:'mm:panels',nodeId:NODE,panelL,panelR,panelT,panelB},'*'); }catch(e){}
 }
 /* Report per-layer-row geometry in IFRAME-LOCAL px (getBoundingClientRect() is
-   already iframe-relative). Only meaningful when detached — the host uses it to
+   already iframe-relative). Only meaningful when detached - the host uses it to
    anchor layer ports; deselected, the ports retract to the node's main edge. */
 function reportLayerGeom(){
   if(!EMBEDDED || !_detached) return;
@@ -1940,7 +1940,7 @@ function reportLayerGeom(){
   });
   try{ parent.postMessage({type:'mm:layers-geometry',nodeId:NODE,panel,rows},'*'); }catch(e){}
 }
-/* Recompute geometry when the panel scrolls (rows move) — passive, NOT rAF. */
+/* Recompute geometry when the panel scrolls (rows move) - passive, NOT rAF. */
 (function wireLayerScroll(){
   const sc=document.getElementById('layerList');   // .layers is its own scroll container
   if(sc) sc.addEventListener('scroll',()=>{ if(_detached) reportLayerGeom(); },{passive:true});
@@ -1992,7 +1992,7 @@ if(EMBEDDED){
 }
 
 /* ===========================================================================
-   BAKE  —  produce a standalone self-contained interactive .html
+   BAKE  -  produce a standalone self-contained interactive .html
    It embeds a slim runtime (positioning + triggers + impacts + effects) and
    the config. Camera/mic still gated behind a user gesture button.
    ===========================================================================*/
@@ -2014,7 +2014,7 @@ function bake(){
   // inline wired asset urls (incl. wired-layer asset children) so the file is self-contained-ish
   const assets=CONTENT.map(c=>({id:c.id,url:c.url,kind:c.kind,label:c.label}));
   // WIRED top-level effects → final post-process stack (same shader-lab catalog,
-  // same param contract — no collapsing).
+  // same param contract - no collapsing).
   const topFx=(WIRED.effects||[]).map(e=>bakeEffect({type:(e.glsl&&String(e.glsl).trim())?'custom':e.type, params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl}));
   return BAKED_TEMPLATE
     .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
@@ -2155,7 +2155,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
     else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.ellipse(0,0,bw/2,bh/2,0,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-bh/2);lctx.lineTo(bw/2,bh/2);lctx.lineTo(-bw/2,bh/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-bw/2,-bh/2,bw,bh);}
     lctx.restore();}
-  /* WebGL effects (same shaders as editor) — EFF/FH/VS injected as args */
+  /* WebGL effects (same shaders as editor) - EFF/FH/VS injected as args */
   const gl=cgl.getContext('webgl2',{premultipliedAlpha:true,alpha:true}); let GLOK=!!gl,progs={},fbos=[],texs=[],quad,srcTex,_w,_h;
   if(GLOK){quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);srcTex=gl.createTexture();}
   function comp(src){const v=gl.createShader(gl.VERTEX_SHADER);gl.shaderSource(v,VS);gl.compileShader(v);const f=gl.createShader(gl.FRAGMENT_SHADER);gl.shaderSource(f,src);gl.compileShader(f);if(!gl.getShaderParameter(f,gl.COMPILE_STATUS))return null;const p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);return gl.getProgramParameter(p,gl.LINK_STATUS)?p:null;}
@@ -2182,14 +2182,14 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
     // layers read as a mask must render even when hidden
     const maskRefs=new Set();for(const L of CFG.layers){if(L.mask&&L.mask.by)maskRefs.add(L.mask.by);}
     const getBuf=(id)=>{let b=BUFS[id];if(!b){const cv=document.createElement('canvas');cv.width=W;cv.height=H;b=BUFS[id]={cv,cx:cv.getContext('2d')};}if(b.cv.width!==W||b.cv.height!==H){b.cv.width=W;b.cv.height=H;}return b;};
-    // PASS A — draw each needed layer into lb, copy to its own buffer (positions resolve once)
+    // PASS A - draw each needed layer into lb, copy to its own buffer (positions resolve once)
     const rendered={};
     for(const L of CFG.layers){if(L.visible===false&&!maskRefs.has(L.id))continue;
       const o=ov[L.id]||{};const ins=positions(L,dt);const sm=o.scale!=null?o.scale:1,pf=o.position;
       lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
       const b=getBuf(L.id);b.cx.clearRect(0,0,W,H);b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
     const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}
-    // PASS B — composite visible layers in z-order, applying channel masks
+    // PASS B - composite visible layers in z-order, applying channel masks
     const ord=[...CFG.layers].filter(L=>L.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ord){const b=rendered[L.id];if(!b)continue;const o=ov[L.id]||{};
       lctx.clearRect(0,0,W,H);lctx.drawImage(b.cv,0,0);

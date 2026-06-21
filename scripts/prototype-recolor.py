@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-prototype-recolor.py — recolor a prototype-library reference image into ONE
+prototype-recolor.py - recolor a prototype-library reference image into ONE
 direction-option's committed palette, so the Step -1 stop-and-ask UI can show
 each option's library preview already wearing that option's colours.
 
@@ -13,7 +13,7 @@ Usage
       <source-image> <output-image> \
       --tokens "#fafafa,#ffffff,#1a1a1a,#888888,#e5e5e5,#5566ee"
 
-The --tokens list is the option's committed palette in any order — the script
+The --tokens list is the option's committed palette in any order - the script
 identifies the accent (highest chroma) and the neutrals (the rest) on its own.
 
 Mapping heuristic
@@ -28,7 +28,7 @@ Mapping heuristic
    ascending; match 1:1 (`target_rgb` edits).
 
 The recolor is smooth (RBF weights from recolor_palette.recolor) so the output
-preserves the source image's tonal structure — light areas stay light, dark
+preserves the source image's tonal structure - light areas stay light, dark
 areas stay dark, only hue/chroma snap to the new palette.
 
 Requires: numpy, pillow.
@@ -81,7 +81,7 @@ def build_edits(target_tokens: list[str], source_info: list[dict]) -> dict[int, 
     neutral_target_indices = [i for i in range(len(targets)) if i != accent_target_idx]
     neutral_src_indices = [i for i in range(len(source_info)) if i != accent_src_idx]
 
-    # Sort by perceived L ascending — dark to light.
+    # Sort by perceived L ascending - dark to light.
     neutral_target_indices.sort(key=lambda i: targets[i][2][0])
     neutral_src_indices.sort(key=lambda i: source_info[i]["oklch"]["L"])
 

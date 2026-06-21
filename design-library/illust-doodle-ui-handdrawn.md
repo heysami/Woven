@@ -18,7 +18,7 @@ wobbly hand-drawn line as if on whiteboard.
 ## Visual signatures
 
 - wobbly hand-drawn line as if on whiteboard
-- irregular shape — never perfectly circular
+- irregular shape - never perfectly circular
 - subtle marker texture
 - black or single-color, white fill
 

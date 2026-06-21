@@ -1,4 +1,4 @@
-# sam3d-splat — image → Gaussian-splat (.ply) service
+# sam3d-splat - image → Gaussian-splat (.ply) service
 
 Wraps [facebookresearch/sam-3d-objects](https://github.com/facebookresearch/sam-3d-objects)
 behind one HTTP route so Woven's **Image → Splat** node / `image-to-ply` skill can
@@ -6,7 +6,7 @@ turn a (background-removed) PNG into a 3D Gaussian-splat `.ply` that **Splat Lab
 loads directly.
 
 > ⚠️ Needs a **CUDA GPU** (`kaolin` + `gsplat`). It does **not** run in the Woven
-> daemon. Model weights are under the **SAM License** (Meta) — accept + download
+> daemon. Model weights are under the **SAM License** (Meta) - accept + download
 > them yourself. This dir is a deploy starting point, not a turn-key build.
 
 ## Contract (what Woven calls)
@@ -19,7 +19,7 @@ POST <endpoint>/convert
 ```
 
 The daemon also accepts a JSON reply `{"ply_b64": "..."}` or `{"ply_url": "..."}`
-if you prefer (see `editor/serve.py` `_sam3d_convert`). `mask` is optional — if the
+if you prefer (see `editor/serve.py` `_sam3d_convert`). `mask` is optional - if the
 incoming PNG has alpha (it will, after rembg) the object mask is taken from it.
 
 ## Pipeline
@@ -46,7 +46,7 @@ Env: `SAM3D_REPO`, `SAM3D_CONFIG` (default `checkpoints/hf/pipeline.yaml`),
 
 ## Wire into Woven
 
-Point the daemon at your deployed URL — either:
+Point the daemon at your deployed URL - either:
 
 - env: `export TH_SAM3D_ENDPOINT="https://…/convert"` (+ optional `TH_SAM3D_API_KEY`), or
 - `~/.test-harness/media-config.json`:
@@ -55,7 +55,7 @@ Point the daemon at your deployed URL — either:
   ```
 
 Then drop a **Splat (from image)** node, wire a background-removed image into it,
-and ▶ Run — or wire an Agent into its edit port to drive the whole chain.
+and ▶ Run - or wire an Agent into its edit port to drive the whole chain.
 
 ## Adapt if needed
 

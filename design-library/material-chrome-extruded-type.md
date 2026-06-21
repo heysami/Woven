@@ -15,7 +15,7 @@ images:
 
 Display typography built as a 3D object: extruded letterforms with mirror-chrome
 faces that reflect an environment, specular sweeps crawling across the glyphs
-as the view or light moves. The type is no longer set ON the page — it is
+as the view or light moves. The type is no longer set ON the page - it is
 STAGED in it, like a sign in a showroom. Sibling of `material-chrome-mirror`
 (chrome as UI surface) and `material-liquid-chrome-silk` (chrome as cloth);
 this one is chrome as LETTERFORM, and the env-map rule is absolute: a silver
@@ -28,11 +28,11 @@ faces carry a recognizable (if abstract) environment reflection
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — the defining behavior; a specular band SWEEPS across
+**Reacts to light**: yes - the defining behavior; a specular band SWEEPS across
 the glyph faces as light/view angle changes; static chrome type is dead chrome
 type
 
-**Deforms**: no — rigid; motion is light/camera, not letterform
+**Deforms**: no - rigid; motion is light/camera, not letterform
 
 **Age / wear**: ageless (a scratched variant shifts it toward grunge registers)
 
@@ -40,7 +40,7 @@ type
 
 ```yaml
 css: |
-  /* 2.5D approximation for headlines — env gradient + animated sweep: */
+  /* 2.5D approximation for headlines - env gradient + animated sweep: */
   background: linear-gradient(105deg,
     #2a2e38 0%, #e8ebf0 18%, #6a7180 32%, #f5f7fa 47%,
     #474d5c 62%, #d8dce4 80%, #30343e 100%);
@@ -52,17 +52,17 @@ css: |
                0 10px 24px rgba(0,0,0,0.5);
 svg: |
   <text> duplicated: back copy offset for extrusion depth, front copy filled
-  with a <linearGradient> whose stops animate via <animate> — sharable,
+  with a <linearGradient> whose stops animate via <animate> - sharable,
   crisp at any size.
 webgl: |
   The real thing: three.js TextGeometry (or pre-modeled glyphs) +
-  MeshPhysicalMaterial { metalness: 1, roughness: 0.08–0.18,
+  MeshPhysicalMaterial { metalness: 1, roughness: 0.08-0.18,
   envMap: studio HDRI }. Slow yaw ±6° on pointer (damped 0.06 lerp);
   the env reflection sliding across the faces is the spectacle.
-  Bevel ON (bevelSize ~2% of cap height) — unbeveled chrome has no
+  Bevel ON (bevelSize ~2% of cap height) - unbeveled chrome has no
   edge speculars and reads as flat grey.
 raster: baked render for static heroes (bake the sweep mid-travel)
-video: 8–12s light-orbit loop over fixed type
+video: 8-12s light-orbit loop over fixed type
 ```
 
 ## Reactive behaviors
@@ -70,21 +70,21 @@ video: 8–12s light-orbit loop over fixed type
 **Proximity**: specular band position leans toward cursor, falloff 1/d² over
 500px (viewport-level --mx)
 
-**Hover**: sweep speed eases up; reflection contrast rises 10% — the sign
+**Hover**: sweep speed eases up; reflection contrast rises 10% - the sign
 catches the light for you
 
 **Click**: brief specular flare at the click point (the §1.7 metal canon)
 
-**Tilt (mobile)**: gamma drives the sweep position — the hold-it-in-your-hand
+**Tilt (mobile)**: gamma drives the sweep position - the hold-it-in-your-hand
 foil-card read
 
 ## Common implementation mistakes (avoid these)
 
 - Gradient-only "chrome" with no environment structure (needs recognizable
-  light/dark BANDS — a smooth silver ramp is plastic)
+  light/dark BANDS - a smooth silver ramp is plastic)
 - Chrome on body text or UI labels (display sizes only, one headline per
   view; chrome paragraphs are unreadable and melt the luxury read)
-- Static sweep (the angle-dependence IS the material — commit pointer, tilt,
+- Static sweep (the angle-dependence IS the material - commit pointer, tilt,
   or a slow loop, never none)
 - Rainbow hue in the reflection (that drifts into holographic-foil; chrome
   is achromatic with at most a cool/warm tint commitment)

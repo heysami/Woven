@@ -5,7 +5,7 @@ category: 3D
 subCategory: organic-tech-composite
 role: hero
 pairsPrototypes: [aesthetic-organic-overgrowth, aesthetic-pastoral-serene, aesthetic-solarpunk, recipe-restrained-ai-marketing]
-notForUseWhen: Brief needs literal product screenshots untouched — this style ALTERS the interface with growth.
+notForUseWhen: Brief needs literal product screenshots untouched - this style ALTERS the interface with growth.
 images:
   - src: illust-nature-meets-ui.png
     reason: Illustration style sample.
@@ -13,7 +13,7 @@ images:
 
 # Nature-meets-UI interpenetration
 
-Interface elements physically hosting plant life — topiary growing out of stat cards, vines threading through a dashboard, moss on a button.
+Interface elements physically hosting plant life - topiary growing out of stat cards, vines threading through a dashboard, moss on a button.
 
 ## Visual signatures
 
@@ -29,7 +29,7 @@ Interface elements physically hosting plant life — topiary growing out of stat
 
 **Material**: matte UI slabs with subtle thickness, photoreal foliage, soft soil/moss accents
 
-**Line**: none — render realism on both UI and plants
+**Line**: none - render realism on both UI and plants
 
 **Color**: neutral UI surfaces (`#f6f6f4` or dark `#16181c`) + true foliage greens, one bloom accent
 
@@ -45,7 +45,7 @@ Interface elements physically hosting plant life — topiary growing out of stat
 
 ## Example prompt template
 
-> A 3D composite hero: three floating interface cards — a line chart, a stat chip reading "+34%", a progress ring — rendered as matte off-white slabs with real thickness, suspended over soft shadow. From the line chart's rising curve, a sculpted topiary stem grows upward and bursts into a round leafy crown that overlaps the card above, casting a soft leaf shadow across its surface; fine roots wrap the chart's lower edge into a cushion of moss. Shared studio light, photoreal foliage, crisp untouched UI elsewhere. Growth as the literal metric. Light neutral background.
+> A 3D composite hero: three floating interface cards - a line chart, a stat chip reading "+34%", a progress ring - rendered as matte off-white slabs with real thickness, suspended over soft shadow. From the line chart's rising curve, a sculpted topiary stem grows upward and bursts into a round leafy crown that overlaps the card above, casting a soft leaf shadow across its surface; fine roots wrap the chart's lower edge into a cushion of moss. Shared studio light, photoreal foliage, crisp untouched UI elsewhere. Growth as the literal metric. Light neutral background.
 
 ## When to use
 

@@ -4,7 +4,7 @@ This module replaces the two hand-written ``if/elif`` chains that used to live
 inline in ``serve.py``'s ``/run`` handler (one building the upstream
 ``<context>`` block, one building the ``<output-destinations>`` block). Both
 walks are now keyed on each peer node's ``io`` contract (``KIND_IO`` in
-``kinds/registry.py``), so a new node kind needs only a ``KIND_IO`` entry — the
+``kinds/registry.py``), so a new node kind needs only a ``KIND_IO`` entry - the
 running agent adapts to it automatically.
 
 The daemon owns the filesystem / web-fetch primitives, so the caller passes
@@ -104,22 +104,22 @@ def _r_webfetch(up, prov, ctx):
     try:
         page = ctx["web_fetch"](web_url)
         title, text = ctx["web_extract_text"](page["body"], cap=cap)
-        head = f"### {_label(up)} (web page: {web_url}" + (f" — {title}" if title else "") + ")"
+        head = f"### {_label(up)} (web page: {web_url}" + (f" - {title}" if title else "") + ")"
         return head + "\n" + (text or "(no readable text)")
-    except Exception as e:  # noqa: BLE001 — degrade to a note, never block the run
+    except Exception as e:  # noqa: BLE001 - degrade to a note, never block the run
         return f"### {_label(up)} (web page: {web_url})\n(unreachable: {e})"
 
 
 def _r_baked(up, prov, ctx):
     """A baked container (composer / vector / spline / formatted-text) wired
-    directly into an agent. Contributes its baked artifact as context — this
+    directly into an agent. Contributes its baked artifact as context - this
     closes the gap where wiring one of these straight into an agent gave the
     running agent nothing."""
     kind = up.get("kind")
     bp = (up.get("bakedPath") or "").lstrip("/")
     if not bp:
         return (f"### {_label(up)} ({kind})\n"
-                "(not baked yet — click Bake on this node so its content is "
+                "(not baked yet - click Bake on this node so its content is "
                 "written to disk and available here. No content until then.)")
     try:
         fp = ctx["safe_join"](ctx["project_root"], bp)
@@ -180,7 +180,7 @@ def _r_dsref(up, prov, ctx):
 
 def _section_line(cn, ctx):
     """One bullet for a node contained inside a section frame. Faithful port of
-    the legacy inline section walk — formatting kept byte-for-byte."""
+    the legacy inline section walk - formatting kept byte-for-byte."""
     ck = cn.get("kind")
     clabel = cn.get("title") or cn.get("name") or cn.get("id")
     if ck in ("prompt", "skill"):
@@ -228,14 +228,14 @@ def _r_section(up, prov, ctx):
             parts.append(line)
     if not parts:
         return None
-    return (f"### {_label(up)} (section — combined contents of every node inside)\n"
+    return (f"### {_label(up)} (section - combined contents of every node inside)\n"
             + "\n".join(parts))
 
 
 def _r_custom_app(up, prov, ctx):
     """A custom-app node wired upstream: resolve to whatever its captured OUTPUT
     node produces, by delegating to that inner node's own provider resolver run
-    over the embedded subgraph (snapshot semantics — the inner node's bakedPath
+    over the embedded subgraph (snapshot semantics - the inner node's bakedPath
     points at a real on-disk file authored when the section was built)."""
     sg = up.get("subgraph") or {}
     io = up.get("io") or {}
@@ -309,7 +309,7 @@ def _section_grid_instr(node_id, dn):
     sx = float(dn.get("x") or 0); sy = float(dn.get("y") or 0)
     sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
     dlabel = _label(dn)
-    rect = f"“{dlabel}” — canvas rect x={sx:.0f} y={sy:.0f} w={sw:.0f} h={sh:.0f}"
+    rect = f"“{dlabel}” - canvas rect x={sx:.0f} y={sy:.0f} w={sw:.0f} h={sh:.0f}"
     accepts = _io(dn).get("accepts") or []
     sw_accept = next((a for a in accepts if a.get("ingest") == "sectionWrite"), None)
     authoring = (sw_accept or {}).get("authoring") or ""
@@ -353,12 +353,12 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
                 # The contract carries the target's schema + production modes, so the
                 # agent produces VALID content for this node instead of a generic asset.
                 targets.append(
-                    f"- WIRED TARGET — the {dkind} node “{dlabel}” (canonical file `{resolved}`).\n  "
+                    f"- WIRED TARGET - the {dkind} node “{dlabel}” (canonical file `{resolved}`).\n  "
                     + _resolve_tpl(authoring, dn, proto_slug))
             else:
                 targets.append(
                     f"- EDIT the {dkind} node “{dlabel}”: write its canonical source file "
-                    f"`{resolved}` (a JSON document describing the node's contents — read the "
+                    f"`{resolved}` (a JSON document describing the node's contents - read the "
                     f"existing file first, then write the modified JSON back). The editor "
                     f"re-imports this file automatically, so your changes appear live on the "
                     f"canvas. Edit this exact path; do NOT write a sibling file.")
@@ -370,7 +370,7 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
         if aw and dpath:
             ak = dn.get("assetKind") or "file"
             # Prefer the node's MEDIUM (generating media-model id, e.g. "shader",
-            # "viz", "threejs") over the storage assetKind ("html") — many
+            # "viz", "threejs") over the storage assetKind ("html") - many
             # Pathway-B media models all store as html but expect a specific kind
             # of result. mediaModel contract wins; else fall back to assetKind.
             mm = dn.get("mediaModel")
@@ -403,5 +403,5 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
 
     if not targets:
         return ""
-    return ("This node is wired to the following OUTPUT destinations — "
+    return ("This node is wired to the following OUTPUT destinations - "
             "write your results there so the canvas reflects them:\n" + "\n".join(targets))

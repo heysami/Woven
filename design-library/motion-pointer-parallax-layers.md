@@ -17,21 +17,21 @@ images:
 
 # Pointer parallax layers (faux-3D depth from stacked rasters)
 
-Three to six generated raster layers — background, midground, foreground, atmosphere — translate at different rates as the pointer moves, so the flat hero acquires believable depth that tilts toward the visitor (the moooi a-life-extraordinary pattern).
+Three to six generated raster layers - background, midground, foreground, atmosphere - translate at different rates as the pointer moves, so the flat hero acquires believable depth that tilts toward the visitor (the moooi a-life-extraordinary pattern).
 
 ## Motion signature
 
-- Each layer gets a depth coefficient: bg ±6px, mid ±14px, fg ±28px, atmosphere ±36px of total travel at full pointer deflection — near layers move MORE and opposite-feeling, exactly like looking past a window frame.
-- Pointer position normalized to −1…1 from viewport center; layers translate via `transform: translate3d()` only — never top/left.
+- Each layer gets a depth coefficient: bg ±6px, mid ±14px, fg ±28px, atmosphere ±36px of total travel at full pointer deflection - near layers move MORE and opposite-feeling, exactly like looking past a window frame.
+- Pointer position normalized to −1…1 from viewport center; layers translate via `transform: translate3d()` only - never top/left.
 - Eased pursuit per layer: `current += (target - current) * 0.06` per rAF; deeper layers may use 0.04 so the stack settles back-to-front, adding ~150ms of organic lag gradient.
-- Optional ±1.5° rotateX/rotateY on the whole stack (perspective: 1200px) for the tilt-card read — beyond 2° the layer edges show.
+- Optional ±1.5° rotateX/rotateY on the whole stack (perspective: 1200px) for the tilt-card read - beyond 2° the layer edges show.
 - No idle animation needed: the resting composition is the generated scene itself.
 
 ## Asset generation spec
 
 - **Resolution**: every layer 1920×1080 minimum, generated ~8% oversize (2080×1170) so max translation never exposes a raw edge.
 - **Layer strategy**: write ONE master scene prompt first, then split it into per-layer prompts that each repeat the master's light direction, palette hexes, and camera ("same scene, same golden side light from upper left"): bg = full-frame environment; mid = the subject band; fg + atmosphere = transparent PNGs (cutout foliage, particles, mist) on alpha.
-- **Composition**: master prompt anchors the subject on one third and reserves the opposite third quiet across ALL layers — a foreground branch drifting over the headline at full deflection is the classic failure.
+- **Composition**: master prompt anchors the subject on one third and reserves the opposite third quiet across ALL layers - a foreground branch drifting over the headline at full deflection is the classic failure.
 - **Consistency check**: composite the stack at rest before shipping; mismatched light direction between layers reads instantly as collage.
 - **Negative prompt**: no text, no watermark, no letterboxing, no vignette, no depth-of-field blur baked into fg layers (blur belongs to CSS, per-layer, tunable).
 
@@ -55,13 +55,13 @@ addEventListener('pointermove', e => {
 ```
 
 - Mobile fallback: `deviceorientation` beta/gamma onto the same −1…1 axes (gyro gate), else hand the stack to the depth-drift-layers autonomous behaviour.
-- This IS the no-video technique — rasters + CSS transforms, no provider dependency.
+- This IS the no-video technique - rasters + CSS transforms, no provider dependency.
 
 ## UI composition rules
 
-- UI sits between layers, not on top: slot the headline above bg/mid but below fg/atmosphere (`z-index` interleave) so a mist layer drifts OVER the type by a few pixels — that occlusion sells the depth more than any translation.
+- UI sits between layers, not on top: slot the headline above bg/mid but below fg/atmosphere (`z-index` interleave) so a mist layer drifts OVER the type by a few pixels - that occlusion sells the depth more than any translation.
 - Verify type clearance at all four pointer extremes, not just rest.
-- UI itself may carry depth 2–4px maximum; more and the text smears while reading.
+- UI itself may carry depth 2-4px maximum; more and the text smears while reading.
 
 ## Example asset prompt template
 
@@ -69,21 +69,21 @@ addEventListener('pointermove', e => {
 
 ## When to use
 
-- Scenic, environmental, or illustrated heroes — landscapes, interiors, dioramas, dream spaces.
+- Scenic, environmental, or illustrated heroes - landscapes, interiors, dioramas, dream spaces.
 - Briefs that ask for "depth" or "a world you could step into" without WebGL.
 - The default substitute wherever mouse-scrub-look was rejected for having no face.
 
 ## When NOT to use
 
-- Single-object-on-void heroes — one layer parallaxing alone is just a wobbly image; use mouse-scrub-orbit.
-- Photographic humans crossing layer boundaries — hair and shoulders seam visibly.
-- Budget for only one generated asset — this technique needs 3–6 coherent generations or it isn't this technique.
+- Single-object-on-void heroes - one layer parallaxing alone is just a wobbly image; use mouse-scrub-orbit.
+- Photographic humans crossing layer boundaries - hair and shoulders seam visibly.
+- Budget for only one generated asset - this technique needs 3-6 coherent generations or it isn't this technique.
 
 ## Performance notes
 
 - Total stack weight ≤3MB (WebP/AVIF per layer, fg alphas are cheap); `will-change: transform` on layers, removed when off-screen.
 - One shared rAF loop for all layers; pause via `IntersectionObserver`.
-- `prefers-reduced-motion`: render the resting composite, no pointer binding — the scene is a finished still by design.
+- `prefers-reduced-motion`: render the resting composite, no pointer binding - the scene is a finished still by design.
 
 ## Pairs with (prototype slugs)
 
@@ -94,4 +94,4 @@ addEventListener('pointermove', e => {
 - `aesthetic-solarpunk`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference — layered scene tilted at pointer extreme with headline interleaved between mid and fg layers -->
+<!-- reason: representative reference - layered scene tilted at pointer extreme with headline interleaved between mid and fg layers -->

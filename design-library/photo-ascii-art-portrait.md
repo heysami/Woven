@@ -12,16 +12,16 @@ images:
 
 # ASCII-art portrait (text-as-image)
 
-Photo rendered entirely from **ASCII characters** (or extended ANSI character set) — text-as-image. Dark areas use dense characters (`@`, `#`, `M`), midtones use medium-density (`+`, `=`, `*`), highlights use sparse (`.`, ` `). Monospace, high-contrast. Used for tech / dev-tools marketing, terminal-on-web hero images, hacker-culture editorial, retro-BBS revival.
+Photo rendered entirely from **ASCII characters** (or extended ANSI character set) - text-as-image. Dark areas use dense characters (`@`, `#`, `M`), midtones use medium-density (`+`, `=`, `*`), highlights use sparse (`.`, ` `). Monospace, high-contrast. Used for tech / dev-tools marketing, terminal-on-web hero images, hacker-culture editorial, retro-BBS revival.
 
 ## Visual signatures
 
-- entire image composed of **monospace text characters** — no actual pixels
+- entire image composed of **monospace text characters** - no actual pixels
 - character density mapped to luminance: dark = `@`, `#`, `M`, `&`; midtone = `+`, `=`, `*`, `?`; bright = `.`, `'`, ` `
 - monochrome (typically green-on-black or amber-on-black, like a CRT terminal) OR true black-on-white
-- character grid is the resolution — 80×40 typical, 120×60 for detail
+- character grid is the resolution - 80×40 typical, 120×60 for detail
 - color variant: each character carries 4-bit ANSI color (16 colors), letting it render in ANSI-colored ASCII (the BBS-era look)
-- subject readable but reduced to text-mosaic — works best on portraits / faces / high-contrast scenes
+- subject readable but reduced to text-mosaic - works best on portraits / faces / high-contrast scenes
 - monospace font REQUIRED (Courier, Source Code Pro, IBM Plex Mono)
 
 ## Prompt keywords
@@ -30,7 +30,7 @@ Photo rendered entirely from **ASCII characters** (or extended ANSI character se
 
 **Lighting**: original needs HIGH CONTRAST to map well to text density
 
-**Camera / lens**: any source — works best on portrait close-ups or high-contrast subjects
+**Camera / lens**: any source - works best on portrait close-ups or high-contrast subjects
 
 **Film stock / post-processing**: ASCII-character mapping (10-20 density steps), 80×40 to 120×60 character grid, monospace font (Courier / IBM Plex Mono), green-on-black OR amber-on-black OR pure black-on-white, optional 16-color ANSI variant
 
@@ -48,10 +48,10 @@ Photo rendered entirely from **ASCII characters** (or extended ANSI character se
 
 ## Example prompt template
 
-> Portrait of [SUBJECT] rendered entirely as **ASCII-character mosaic** —
+> Portrait of [SUBJECT] rendered entirely as **ASCII-character mosaic** -
 > monospace text characters, character density mapped to luminance (dark
-> areas filled with `@`, `#`, `M`, `&` — midtones with `+`, `=`, `*`, `?`
-> — bright areas with `.`, `'`, and spaces). 100×50 character grid in
+> areas filled with `@`, `#`, `M`, `&` - midtones with `+`, `=`, `*`, `?`
+> - bright areas with `.`, `'`, and spaces). 100×50 character grid in
 > Courier monospace font. Subject readable but reduced to text-mosaic.
 > Green-on-black CRT-terminal color treatment. Hacker / BBS-era / dev-tools
 > mood. Text-as-image aesthetic.

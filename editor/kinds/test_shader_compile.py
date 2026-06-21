@@ -1,4 +1,4 @@
-"""Tests for shader_compile — extraction + glslang compile check.
+"""Tests for shader_compile - extraction + glslang compile check.
 
 Extraction tests run always; compile tests run only when glslangValidator is
 installed (so the suite passes on a machine without it).
@@ -57,7 +57,7 @@ def _glslang_only():
 
 def test_compile_check_flags_real_error_when_glslang_present():
     if not _glslang_only():
-        print("   (skipped — glslangValidator not installed)")
+        print("   (skipped - glslangValidator not installed)")
         return
     errs = compile_check(_BAD_FRAG_BLOCK)
     assert any("undeclared_var" in e or "undeclared identifier" in e.lower() for e in errs), errs
@@ -65,7 +65,7 @@ def test_compile_check_flags_real_error_when_glslang_present():
 
 def test_compile_check_clean_shader_passes_when_glslang_present():
     if not _glslang_only():
-        print("   (skipped — glslangValidator not installed)")
+        print("   (skipped - glslangValidator not installed)")
         return
     assert compile_check(_FRAG_BLOCK) == []
 
@@ -84,7 +84,7 @@ def main():
             print(f"ERROR {t.__name__}: {type(e).__name__}: {e}", file=sys.stderr); return 1
         print(f"OK   {t.__name__}")
     print(f"\n{len(tests)}/{len(tests)} shader-compile tests passed"
-          + ("" if _glslang_only() else " (compile tests skipped — no glslang)"))
+          + ("" if _glslang_only() else " (compile tests skipped - no glslang)"))
     return 0
 
 

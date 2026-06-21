@@ -11,16 +11,16 @@ images:
 
 **Tag:** `style-editorial-italic-accent`
 
-**Canonical references:** the single most repeated typographic move in the 2025-26 showcase corpus (motionsites.ai ×7+, Awwwards SOTD: The Power of *Storytelling*, Cartier) — "Book your perfect stay *instantly* and hassle-free", "The Future of *Smarter* Automation", "Your Insights. One Clear *Overview*."
+**Canonical references:** the single most repeated typographic move in the 2025-26 showcase corpus (motionsites.ai ×7+, Awwwards SOTD: The Power of *Storytelling*, Cartier) - "Book your perfect stay *instantly* and hassle-free", "The Future of *Smarter* Automation", "Your Insights. One Clear *Overview*."
 
 ## Surface treatment
 
-A grotesque sans headline in which EXACTLY ONE word (or short phrase) is swapped to an italic serif — the accent word is the emotional payload of the sentence; everything around it stays engineering-plain. This is a typography micro-style that layers onto a host style rather than replacing it.
+A grotesque sans headline in which EXACTLY ONE word (or short phrase) is swapped to an italic serif - the accent word is the emotional payload of the sentence; everything around it stays engineering-plain. This is a typography micro-style that layers onto a host style rather than replacing it.
 
 ### The rule
 
 - One italic-serif accent per headline, at most two headline instances per page
-- The accent word is chosen editorially: it carries the feeling (*instantly*, *smarter*, *eternal*, *storytelling*, *home*) — never a function word, never the product name
+- The accent word is chosen editorially: it carries the feeling (*instantly*, *smarter*, *eternal*, *storytelling*, *home*) - never a function word, never the product name
 - Same optical size as the host headline; serif sits on the same baseline, slightly tightened spacing on entry/exit
 
 ### Type stack
@@ -34,7 +34,7 @@ A grotesque sans headline in which EXACTLY ONE word (or short phrase) is swapped
 
 ### Color
 
-- Default: accent inherits headline ink — the contrast is structural, not chromatic
+- Default: accent inherits headline ink - the contrast is structural, not chromatic
 - Permitted variant: accent in the page's single accent color, ONLY if buttons stay neutral
 - Forbidden: gradient fills on the accent word
 
@@ -45,14 +45,14 @@ A grotesque sans headline in which EXACTLY ONE word (or short phrase) is swapped
 
 ## Failure mode
 
-Every headline on the page gets an italic word; the accent lands on function words ("the", "your"); a third typeface joins; the serif is bolder than the sans so it shouts instead of whispers. The move works because it's scarce — one violin note in a monospace orchestra.
+Every headline on the page gets an italic word; the accent lands on function words ("the", "your"); a third typeface joins; the serif is bolder than the sans so it shouts instead of whispers. The move works because it's scarce - one violin note in a monospace orchestra.
 
 ## Best for
 
-SaaS heroes that need warmth without losing engineering credibility, luxury/lifestyle landings, calm-tech and wellness products, storytelling agencies — any brief that says "premium but human".
+SaaS heroes that need warmth without losing engineering credibility, luxury/lifestyle landings, calm-tech and wellness products, storytelling agencies - any brief that says "premium but human".
 
 ## Pairs well with
 
 - Styles (as host): `style-silk-chrome-flow` (the signature 2026 pairing), `style-aurorism`, `style-restrained-hairline`, `style-bold-display`
 - Aesthetics: `aesthetic-pastoral-serene`, `aesthetic-luxury-cinematic-dark`, `aesthetic-cosmic-horizon`, `aesthetic-surreal-dream-stage`
-- Shells: any — this is a typography layer, not a layout
+- Shells: any - this is a typography layer, not a layout

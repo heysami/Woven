@@ -15,9 +15,9 @@ images:
 
 ## Surface treatment
 
-Flat color on lifted paper. White or grey-50 cards float on a tinted canvas, each one a discrete 2dp rectangle with a two-layer key+ambient shadow. One saturated brand hue carries the surface; one accent hue carries action. The 2px corner radius is the M1/M2 tell — not the 12-28px softness of M3.
+Flat color on lifted paper. White or grey-50 cards float on a tinted canvas, each one a discrete 2dp rectangle with a two-layer key+ambient shadow. One saturated brand hue carries the surface; one accent hue carries action. The 2px corner radius is the M1/M2 tell - not the 12-28px softness of M3.
 
-**Color**: page canvas `#FAFAFA` (Grey 50) so white cards read as lifted paper. Pick ONE primary family + ONE accent from the M1 palette — primary 500 for the brand hue (e.g. Indigo 500 `#3F51B5`, Red 500 `#F44336`, Teal 500 `#009688`), primary 700 (`#303F9F` for Indigo) for status-bar-style accents, accent A200 (`#FF4081` Pink, `#536DFE` Indigo A200) for FAB/selection/links only. Text uses black at three opacities — primary `rgba(0,0,0,.87)`, secondary `rgba(0,0,0,.60)`, disabled/hint `rgba(0,0,0,.38)`, dividers `rgba(0,0,0,.12)`. Never pick grey hexes by eye.
+**Color**: page canvas `#FAFAFA` (Grey 50) so white cards read as lifted paper. Pick ONE primary family + ONE accent from the M1 palette - primary 500 for the brand hue (e.g. Indigo 500 `#3F51B5`, Red 500 `#F44336`, Teal 500 `#009688`), primary 700 (`#303F9F` for Indigo) for status-bar-style accents, accent A200 (`#FF4081` Pink, `#536DFE` Indigo A200) for FAB/selection/links only. Text uses black at three opacities - primary `rgba(0,0,0,.87)`, secondary `rgba(0,0,0,.60)`, disabled/hint `rgba(0,0,0,.38)`, dividers `rgba(0,0,0,.12)`. Never pick grey hexes by eye.
 
 **Type stack**: `Roboto` (Light 300 / Regular 400 / Medium 500) as the universal sans for everything; `Roboto Mono` for code; `Roboto Slab` only for editorial display in Keep-style notes.
 
@@ -52,12 +52,12 @@ Flat color on lifted paper. White or grey-50 cards float on a tinted canvas, eac
 **Motion budget**: standard easing `cubic-bezier(0.4, 0.0, 0.2, 1)`, decelerate (incoming) `cubic-bezier(0.0, 0.0, 0.2, 1)`, accelerate (outgoing) `cubic-bezier(0.4, 0.0, 1, 1)`. Durations 150ms small (icon toggle), 250ms medium (card expand), 375ms large (full-screen transition). Mandatory ink-ripple on every tap target: a circle scales from touch point to bounds in 300ms with `rgba(0,0,0,.12)` (or white on dark). FAB morphs into a sheet, never just fades. Forbidden: parallax, blur, spring overshoot bouncier than 1.05.
 
 **Decoration grammar**:
-- Mandatory — one bold saturated brand hue used assertively; Material Icons in 24dp grid (filled style, never mix with outlined); UPPERCASE in buttons (`SEND`, `LEARN MORE`) and overlines — the all-caps button is the era signature; sentence case in body.
-- Forbidden — gradients (M1/M2 is flat color on lifted paper); glassmorphism; neumorphism; drop-shadow on text; mixed filled+outlined icons; multi-hue rainbow palettes (one primary + one accent, that's it); rounded corners > 4px on any rectangle.
+- Mandatory - one bold saturated brand hue used assertively; Material Icons in 24dp grid (filled style, never mix with outlined); UPPERCASE in buttons (`SEND`, `LEARN MORE`) and overlines - the all-caps button is the era signature; sentence case in body.
+- Forbidden - gradients (M1/M2 is flat color on lifted paper); glassmorphism; neumorphism; drop-shadow on text; mixed filled+outlined icons; multi-hue rainbow palettes (one primary + one accent, that's it); rounded corners > 4px on any rectangle.
 
 ## Failure mode
 
-Same flat single-layer shadow on every element so nothing reads as elevated. Grey backgrounds picked by eye instead of `#FAFAFA` + black-with-opacity text. Roboto missing so display renders in system-ui Regular and loses the Light/Medium contrast. FAB drawn as a square chip or omitted. Sentence-case buttons kill the all-caps signature. Saturated 500 used as page background instead of confined to a chrome element. 8-12px radius everywhere — that's M3, not M2.
+Same flat single-layer shadow on every element so nothing reads as elevated. Grey backgrounds picked by eye instead of `#FAFAFA` + black-with-opacity text. Roboto missing so display renders in system-ui Regular and loses the Light/Medium contrast. FAB drawn as a square chip or omitted. Sentence-case buttons kill the all-caps signature. Saturated 500 used as page background instead of confined to a chrome element. 8-12px radius everywhere - that's M3, not M2.
 
 ## Best for
 

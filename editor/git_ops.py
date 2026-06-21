@@ -2,12 +2,12 @@
 
 Two layers:
 
-  LOCAL (git)   — connect a project to git, deliberate commit (host-pressed,
+  LOCAL (git)   - connect a project to git, deliberate commit (host-pressed,
                   never automatic), publish (push). Commits credit in-session
                   guests as Co-authored-by trailers (the Claude Code
                   convention). Fully offline; this is the merge/history engine.
 
-  REMOTE (GitHub) — fork, pull-request, and the GitHub OAuth token exchange the
+  REMOTE (GitHub) - fork, pull-request, and the GitHub OAuth token exchange the
                   collab client needs so guests authenticate in-place. Reads the
                   OAuth app credentials from a config file the user fills (see
                   docs/features/live-session-setup.md); without it the remote
@@ -15,10 +15,10 @@ Two layers:
                   layer still works.
 
 Design choices that match the doc:
-  • Commit is DELIBERATE — there is no auto-commit anywhere here; serve.py only
+  • Commit is DELIBERATE - there is no auto-commit anywhere here; serve.py only
     calls commit() when the host presses the button.
   • Canvas layout (workflow.json node positions) is cosmetic; we still commit it
-    (it's one file) but never special-case merges for it — git's line merge on
+    (it's one file) but never special-case merges for it - git's line merge on
     the indent=2 JSON is good enough and the doc accepts last-writer-wins there.
   • Agent-assisted conflict resolution: conflicted_files() surfaces the paths;
     serve.py hands them to the host agent. We never hand-merge LLM-regenerated
@@ -51,7 +51,7 @@ def _git(root, *args, timeout=30, input_text=None):
         )
         return p.returncode, p.stdout, p.stderr
     except FileNotFoundError:
-        return 127, "", "git not found — install git"
+        return 127, "", "git not found - install git"
     except subprocess.TimeoutExpired:
         return 124, "", "git timed out"
 
@@ -62,11 +62,11 @@ def git_available():
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# LOCAL — connect / status / commit / publish
+# LOCAL - connect / status / commit / publish
 # ═════════════════════════════════════════════════════════════════════════
 
 def is_repo(root):
-    """True ONLY when `root` is the TOPLEVEL of its own git repo — not when it
+    """True ONLY when `root` is the TOPLEVEL of its own git repo - not when it
     merely sits INSIDE an enclosing repo. This matters because a Woven project
     folder (projects/<id>/) is nested inside the Woven APP's repo: a plain
     --is-inside-work-tree check would walk up, find the app's .git, and make the
@@ -144,20 +144,20 @@ def draft_message(root):
     _c, porcelain, _e = _git(root, "status", "--porcelain", "-uall")
     changed = [ln[3:] for ln in porcelain.splitlines() if ln.strip()]
     if not changed:
-        return "Woven live session — no changes"
+        return "Woven live session - no changes"
     protos = sorted({p.split("/")[1] for p in changed if p.startswith("source/") and "/" in p[7:]})
     n = len(changed)
     if protos:
         head = "Update " + ", ".join(protos[:3]) + (f" +{len(protos)-3} more" if len(protos) > 3 else "")
     else:
-        head = f"Woven live session — {n} file{'s' if n != 1 else ''} changed"
+        head = f"Woven live session - {n} file{'s' if n != 1 else ''} changed"
     return head
 
 
 def clear_stale_index_lock(root, max_age=8):
     """Remove a leftover .git/index.lock when it's older than `max_age` seconds.
     The daemon serialises its own git ops, so a lingering lock means a prior op
-    was interrupted (tab close / daemon restart / crash) — not a live op. The age
+    was interrupted (tab close / daemon restart / crash) - not a live op. The age
     floor avoids racing a just-started external `git` in a terminal. Best-effort."""
     lock = os.path.join(root, ".git", "index.lock")
     try:
@@ -173,12 +173,12 @@ def clear_stale_index_lock(root, max_age=8):
 def conflict_marker_files(root):
     """TRACKED, changed files that still contain git conflict markers
     (`<<<<<<< ` / `>>>>>>> ` at line start). Committing these is exactly how a
-    synced project ends up with a corrupt, un-openable workflow.json — so commit()
+    synced project ends up with a corrupt, un-openable workflow.json - so commit()
     refuses when this returns anything. Binary / very large / unreadable files are
     skipped (they can't carry the text markers we care about).
 
     Uses `-uno` (NO untracked files): conflict markers only ever appear in TRACKED
-    files coming out of a merge — a brand-new untracked file can't have them.
+    files coming out of a merge - a brand-new untracked file can't have them.
     Scanning untracked too means reading the entire untracked tree (100k+ files on
     a big project), which turned every commit into a multi-second stall for nothing."""
     code, out, _e = _git(root, "status", "--porcelain", "-uno")
@@ -189,7 +189,7 @@ def conflict_marker_files(root):
         if not ln.strip():
             continue
         rel = ln[3:].strip()
-        if " -> " in rel:                 # rename — take the destination path
+        if " -> " in rel:                 # rename - take the destination path
             rel = rel.split(" -> ", 1)[1]
         rel = rel.strip().strip('"')
         if not rel or rel.endswith("/"):
@@ -204,23 +204,23 @@ def conflict_marker_files(root):
                         hits.append(rel)
                         break
         except (OSError, UnicodeDecodeError):
-            continue                      # binary / unreadable — no text markers
+            continue                      # binary / unreadable - no text markers
     return hits
 
 
 def commit(root, message, coauthors=None, name=None, email=None):
     """Stage everything and commit. `coauthors` is a list of 'Name <email>'
-    strings appended as Co-authored-by trailers. Deliberate — only called when
+    strings appended as Co-authored-by trailers. Deliberate - only called when
     the host presses Commit. Returns {sha, message}."""
     if not is_repo(root):
-        raise RuntimeError("project is not a git repo — connect it first")
-    # Refuse to bake unresolved conflict markers into a commit — that's what
+        raise RuntimeError("project is not a git repo - connect it first")
+    # Refuse to bake unresolved conflict markers into a commit - that's what
     # corrupts a project's workflow.json and makes it un-openable downstream.
     marked = conflict_marker_files(root)
     if marked:
         shown = ", ".join(marked[:5]) + (f" (+{len(marked) - 5} more)" if len(marked) > 5 else "")
         raise RuntimeError(
-            "unresolved merge conflicts — these files still contain conflict "
+            "unresolved merge conflicts - these files still contain conflict "
             f"markers: {shown}. Remove the <<<<<<< / ======= / >>>>>>> lines "
             "(keep the content you want), then commit.")
     msg = (message or "").strip() or draft_message(root)
@@ -256,7 +256,7 @@ def publish(root, token=None):
         raise RuntimeError("project is not a git repo")
     code, remote, _e = _git(root, "remote", "get-url", "origin")
     if code != 0 or not remote.strip():
-        raise RuntimeError("no 'origin' remote — connect the project to GitHub first")
+        raise RuntimeError("no 'origin' remote - connect the project to GitHub first")
     _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     branch = branch.strip() or "main"
     push_args = ["push", "-u", "origin", branch]
@@ -283,7 +283,7 @@ def pull(root, token=None):
         raise RuntimeError("project is not a git repo")
     code, remote, _e = _git(root, "remote", "get-url", "origin")
     if code != 0 or not remote.strip():
-        raise RuntimeError("no 'origin' remote — connect the project to GitHub first")
+        raise RuntimeError("no 'origin' remote - connect the project to GitHub first")
     _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     branch = branch.strip() or "main"
     # --no-rebase pins the MERGE strategy. Without it, modern git (2.27+) refuses
@@ -304,17 +304,17 @@ def pull(root, token=None):
 
 
 def discard_local(root):
-    """Throw away UNCOMMITTED changes — reset the working tree back to the last
+    """Throw away UNCOMMITTED changes - reset the working tree back to the last
     local commit (HEAD) and remove untracked files. No remote involved. This is
     the escape hatch for "I just want my unsaved edits gone": `git reset --hard
     HEAD` + `git clean -fd`. `clean` is intentionally WITHOUT -x, so .gitignore'd
-    runtime artifacts survive — only untracked *tracked-worthy* files are removed.
+    runtime artifacts survive - only untracked *tracked-worthy* files are removed.
     Returns {ok, head, removed}. Destructive; the caller confirms first."""
     if not is_repo(root):
         raise RuntimeError("project is not a git repo")
     _c, head_before, _e = _git(root, "rev-parse", "HEAD")
     if _c != 0:
-        raise RuntimeError("no commits yet — nothing to reset to")
+        raise RuntimeError("no commits yet - nothing to reset to")
     code, out, err = _git(root, "reset", "--hard", "HEAD", timeout=120)
     if code != 0:
         raise RuntimeError(f"git reset failed: {(err or out).strip()[:400]}")
@@ -326,7 +326,7 @@ def discard_local(root):
 
 
 def discard_to_remote(root, token=None):
-    """Roll the branch ALL the way back to match origin — `git fetch` then
+    """Roll the branch ALL the way back to match origin - `git fetch` then
     `git reset --hard origin/<branch>` + `git clean -fd`. Unlike pull() (which
     only merges remote commits FORWARD and can never remove a local commit), this
     DISCARDS local commits AND uncommitted changes so the tree exactly matches
@@ -338,7 +338,7 @@ def discard_to_remote(root, token=None):
         raise RuntimeError("project is not a git repo")
     code, remote, _e = _git(root, "remote", "get-url", "origin")
     if code != 0 or not remote.strip():
-        raise RuntimeError("no 'origin' remote — connect the project to GitHub first")
+        raise RuntimeError("no 'origin' remote - connect the project to GitHub first")
     _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     branch = branch.strip() or "main"
     fetch_args = ["fetch", "origin", branch]
@@ -376,7 +376,7 @@ def clone(dest, clone_url, token=None):
     fetch_url = url
     if token and url.startswith("https://"):
         # one-shot authenticated URL; not persisted (git clone records the bare
-        # `url` as origin because we pass it via the source arg, not config —
+        # `url` as origin because we pass it via the source arg, not config -
         # but to be safe we reset origin to the token-free URL after cloning).
         fetch_url = url.replace("https://", f"https://x-access-token:{token}@", 1)
     parent = os.path.dirname(os.path.abspath(dest))
@@ -385,7 +385,7 @@ def clone(dest, clone_url, token=None):
     if code != 0:
         raise RuntimeError(f"git clone failed: {(err or out).strip()[:400]}")
     # Make sure origin carries the clean (token-free) URL even if git recorded
-    # the authenticated one — we never persist credentials in config.
+    # the authenticated one - we never persist credentials in config.
     if fetch_url != url:
         _git(dest, "remote", "set-url", "origin", url)
     return {"ok": True, "dest": os.path.abspath(dest)}
@@ -395,7 +395,7 @@ def clone(dest, clone_url, token=None):
 # A project repo records the Woven SYNC version (an int the daemon bumps only
 # when a synced on-disk format changes) in `.woven/version`. push/pull are gated
 # on it so an OLD daemon can't merge a repo written by a newer (incompatible)
-# Woven — which is how a project gets corrupted across machines. serve.py owns
+# Woven - which is how a project gets corrupted across machines. serve.py owns
 # the WOVEN_SYNC_VERSION constant and calls these.
 
 def read_sync_version(root):
@@ -417,7 +417,7 @@ def write_sync_version(root, version):
 
 
 def remote_sync_version(root, branch=None, token=None):
-    """Sync version recorded on origin/<branch> WITHOUT merging — fetch the ref
+    """Sync version recorded on origin/<branch> WITHOUT merging - fetch the ref
     (one-shot token URL for private repos), then read it out of FETCH_HEAD.
     Returns int, or None when there's no origin / no version file / offline.
     The caller treats None as 'legacy, compatible'."""
@@ -460,8 +460,8 @@ def ensure_gitignore(root, lines):
     block = ""
     if existing and not existing.endswith("\n"):
         block += "\n"
-    if "# Woven — per-machine local state" not in existing:
-        block += "# Woven — per-machine local state (never sync)\n"
+    if "# Woven - per-machine local state" not in existing:
+        block += "# Woven - per-machine local state (never sync)\n"
     block += "\n".join(add) + "\n"
     try:
         with open(path, "a", encoding="utf-8") as f:
@@ -501,7 +501,7 @@ def conflicted_files(root):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# LOCAL — branches (fork / switch / merge), the offline divergent-work engine
+# LOCAL - branches (fork / switch / merge), the offline divergent-work engine
 # ═════════════════════════════════════════════════════════════════════════
 # Distinct from Woven "prototypes" (source/<slug>/ subdirs in ONE repo): these
 # are real git branches. Forking = make a branch off HEAD and keep editing it;
@@ -571,10 +571,10 @@ def branches(root):
 
 def create_branch(root, name, checkout=True):
     """Make a new branch off the current HEAD (the 'fork'). With checkout=True
-    (default) switch to it, CARRYING any uncommitted edits onto the new branch —
+    (default) switch to it, CARRYING any uncommitted edits onto the new branch -
     so 'fork this' keeps your in-flight work. Returns {ok, branch}."""
     if not is_repo(root):
-        raise RuntimeError("project is not a git repo — connect it first")
+        raise RuntimeError("project is not a git repo - connect it first")
     n = _norm_branch_name(root, name)
     code, _o, err = _git(root, "show-ref", "--verify", "--quiet", f"refs/heads/{n}")
     if code == 0:
@@ -604,7 +604,7 @@ def switch_branch(root, name):
 def merge_branch(root, name):
     """Merge `name` INTO the current branch (`git merge --no-ff --no-edit`). On
     conflict, leave the tree mid-merge and report the conflicted paths so the
-    existing resolve() flow picks them up — identical to pull()'s contract.
+    existing resolve() flow picks them up - identical to pull()'s contract.
     Returns {ok, branch, merged, conflicts, detail}."""
     if not is_repo(root):
         raise RuntimeError("project is not a git repo")
@@ -635,21 +635,21 @@ def delete_branch(root, name, force=False):
     if not n:
         raise RuntimeError("branch name required")
     if n == current_branch(root):
-        raise RuntimeError("can't delete the branch you're on — switch away first")
+        raise RuntimeError("can't delete the branch you're on - switch away first")
     flag = "-D" if force else "-d"
     code, out, err = _git(root, "branch", flag, n)
     if code != 0:
         msg = (err or out).strip()[:400]
         if not force and "not fully merged" in msg:
             raise RuntimeError(
-                f"branch {n!r} has commits not merged into another branch — "
+                f"branch {n!r} has commits not merged into another branch - "
                 "delete with force to discard them.")
         raise RuntimeError(f"delete branch failed: {msg}")
     return {"ok": True, "branch": n}
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# LOCAL — diff / compare (read-only; powers the panel's compare view)
+# LOCAL - diff / compare (read-only; powers the panel's compare view)
 # ═════════════════════════════════════════════════════════════════════════
 
 _DIFF_MAX = 400 * 1024  # cap any single diff payload so a huge file can't OOM the panel
@@ -722,7 +722,7 @@ def diff_conflict(root, path):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# REMOTE — GitHub OAuth + fork + PR
+# REMOTE - GitHub OAuth + fork + PR
 # ═════════════════════════════════════════════════════════════════════════
 
 def oauth_config():
@@ -789,7 +789,7 @@ def oauth_exchange(code, redirect_uri=None):
     return out
 
 
-# ── Device Flow — the OAuth variant for changing tunnel hostnames ────────────
+# ── Device Flow - the OAuth variant for changing tunnel hostnames ────────────
 # Web OAuth needs a fixed registered callback URL; quick-tunnel hostnames churn
 # every restart, so we use the Device Flow instead: the guest enters a short
 # code at github.com/login/device, no redirect URI involved. Requires the OAuth
@@ -840,7 +840,7 @@ def gh_user(token):
 # for repo listing + push/pull across ALL of the host's projects. The ACCOUNT is
 # per-host, the REPO is per-project (set as that project's origin remote). The
 # token lives OUTSIDE any repo at ~/.woven/github-token.json, mode 0600, and is
-# never sent to the browser — only the login + avatar are surfaced.
+# never sent to the browser - only the login + avatar are surfaced.
 _TOKEN_PATH = os.path.expanduser("~/.woven/github-token.json")
 
 
@@ -872,7 +872,7 @@ def clear_token():
 
 
 def host_token():
-    """The stored access token, or None — what push/pull/list reach for."""
+    """The stored access token, or None - what push/pull/list reach for."""
     return (load_token() or {}).get("access_token") or None
 
 

@@ -1,4 +1,4 @@
-/* Woven Live Session — guest collab client (vanilla, gate-served).
+/* Woven Live Session - guest collab client (vanilla, gate-served).
    Served at /s/<token>/live/ ; all paths here are relative to that base, so
    `api/*` → /s/<token>/live/api/*, `../p/*` → /s/<token>/p/* (prototype files). */
 (() => {
@@ -57,7 +57,7 @@
     let meta;
     try { meta = await api("api/meta"); }
     catch (e) {
-      // session likely not live yet — OR a routing/tunnel problem; show which
+      // session likely not live yet - OR a routing/tunnel problem; show which
       $("join-sub").textContent = "This session isn't live right now (or the link is stale). Ask the host to start it, then open a fresh link.";
       $("join-btn").disabled = true;
       setDiag("meta failed: " + (e.message || e));

@@ -1,5 +1,5 @@
 {
-  "_intent": "AESTHETIC-FAIL fixture — runtime passes craft (clean accumulator) and may pass concept (paradigm correct, readable at a glance) but ships multiple antiPattern hits: neon palette + rounded pills + emoji chrome + Inter-as-display + marketing-style chips. Aesthetic-lens must catch.",
+  "_intent": "AESTHETIC-FAIL fixture - runtime passes craft (clean accumulator) and may pass concept (paradigm correct, readable at a glance) but ships multiple antiPattern hits: neon palette + rounded pills + emoji chrome + Inter-as-display + marketing-style chips. Aesthetic-lens must catch.",
   "craft": {
     "verdict": "pass",
     "ground_truth_reason": "deterministic accumulator; no perf.now in tick"
@@ -8,7 +8,7 @@
     "verdict": "fail",
     "must_cite": ["neon palettes", "rounded pills"],
     "expected_failure_check": "No antiPatterns[] element appears in the artefact",
-    "ground_truth_reason": "brief.antiPatterns lists 'neon palettes', 'rounded pills', 'emoji decoration', 'Inter-as-display-face' — all present in this runtime (#ff6b6b/#ffe66d/#4ecdc4 chips, roundRect bins, ⚡ emoji chrome, Inter font weight 600)"
+    "ground_truth_reason": "brief.antiPatterns lists 'neon palettes', 'rounded pills', 'emoji decoration', 'Inter-as-display-face' - all present in this runtime (#ff6b6b/#ffe66d/#4ecdc4 chips, roundRect bins, ⚡ emoji chrome, Inter font weight 600)"
   },
   "concept": {
     "verdict": "pass",

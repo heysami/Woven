@@ -1,6 +1,6 @@
 ---
 styleId: spectrums-complex-flower
-name: Spectrums — Complex / Flower
+name: Spectrums - Complex / Flower
 category: Abstract / decoration
 subCategory: geometric-primitive
 role: decoration
@@ -11,7 +11,7 @@ images:
     reason: Illustration style sample.
 ---
 
-# Spectrums — Complex / Flower
+# Spectrums - Complex / Flower
 
 flower-like radial shapes, complex stars, mandala-adjacent forms.
 

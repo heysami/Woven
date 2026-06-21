@@ -1,24 +1,24 @@
 /* ==========================================================================
-   Neumorphism / Soft UI — STYLE OVERLAY for the Template Design System.
+   Neumorphism / Soft UI - STYLE OVERLAY for the Template Design System.
    Activate via <html data-theme="neumorphism">. Load AFTER styles.css (and any
    component/shell CSS), so these scoped overrides win on specificity + order.
 
    THE LOOK (canonical Soft UI, per design-library/material-soft-ui-foam.md):
    - ONE shared base colour. The page background AND every component background
      are the SAME mid-tone (#E0E5EC light / #2C313C dark). Components have NO
-     independent fill — depth comes ONLY from shadow. A control that is the same
+     independent fill - depth comes ONLY from shadow. A control that is the same
      colour as its page but appears extruded/recessed is the entire illusion.
    - Light source is FIXED top-left, never per-component. RAISED elements carry a
      light highlight top-left + a dark shadow bottom-right. PRESSED / inset
      elements carry the same pair, inset.
    - Never pure #000/#FFF as the only shadow (kills one side of the light).
-   - Radius >= 16px (soft-plastic read). Borders mostly removed — depth is shadow.
-   - Text + icons are NOT extruded — only containers. Low contrast, monochrome.
+   - Radius >= 16px (soft-plastic read). Borders mostly removed - depth is shadow.
+   - Text + icons are NOT extruded - only containers. Low contrast, monochrome.
 
    COLOUR: the monochrome base/highlight/shadow tones are the style's NEUTRAL
    IDENTITY (the soft-UI substrate) and stay fixed per mode. The single subtle
    ACCENT (links / active / checkbox tick / chart series) FOLLOWS THE SELECTED
-   SCHEME — it points at the --primary-* ramp the customizer writes, so a blue
+   SCHEME - it points at the --primary-* ramp the customizer writes, so a blue
    scheme gives a soft-blue accent, a green scheme a soft-green one, etc. This
    file never re-defines the --primary-/--secondary-/--tertiary- ramps.
 
@@ -37,7 +37,7 @@
   /* ---- the ONE shared base colour ----
      Page and components share this exact value. Everything that used to be a
      distinct surface/neutral fill is remapped onto the base so nothing reads as
-     a separate sheet of paper — only the shadow tells you what's raised/sunk.
+     a separate sheet of paper - only the shadow tells you what's raised/sunk.
      The base/highlight/shadow trio is the style's NEUTRAL substrate (not the
      scheme); it stays fixed in light mode. */
   --neu-base:#E0E5EC;          /* shared page + component tone */
@@ -65,11 +65,11 @@
   --neutral-50:var(--neu-base); --neutral-70:var(--neu-base); --neutral-80:var(--neu-base);
   --neutral-100:var(--neu-base); --neutral-150:#D6DCE5; --neutral-200:#CBD2DD;
 
-  /* ---- text / ink — low contrast, never pure black ---- */
+  /* ---- text / ink - low contrast, never pure black ---- */
   --fg-default:var(--neu-text); --fg-muted:var(--neu-text-muted); --fg-subtle:var(--neu-text-subtle);
   --fg-on-surface:var(--neu-text);
 
-  /* ---- borders dissolved — depth is shadow, not lines ---- */
+  /* ---- borders dissolved - depth is shadow, not lines ---- */
   --border-default:transparent; --border-subtle:transparent;
   --interactive-hover:var(--neu-base); --interactive-active:var(--neu-base);
 
@@ -84,7 +84,7 @@
   /* sidebar gradient flattens to the base (no brand rail in soft UI) */
   --primary-grad-from:var(--neu-base); --primary-grad-to:var(--neu-base);
 
-  /* ---- radii bumped — soft plastic never reads below ~16px ---- */
+  /* ---- radii bumped - soft plastic never reads below ~16px ---- */
   --radius-xs:10px; --radius-s:12px; --radius-base:16px; --radius-m:18px;
   --radius-l:22px; --radius-xl:28px; --radius-2xl:34px;
 
@@ -101,7 +101,7 @@
 }
 
 /* ==========================================================================
-   DARK soft-UI — the editor toggles html.ds-scheme-dark for a dark preview
+   DARK soft-UI - the editor toggles html.ds-scheme-dark for a dark preview
    while data-theme stays "neumorphism". Swap the monochrome substrate to a
    dark base + dark dual-shadow pair (darker cast bottom-right, LIGHTER
    highlight top-left). The accent still follows the scheme via --primary-*.
@@ -113,8 +113,8 @@
    ========================================================================== */
 :root.ds-scheme-dark[data-theme="neumorphism"]{
   --neu-base:#2C313C;          /* shared dark page + component tone */
-  --neu-dark:#1E222A;          /* bottom-right cast — darker than base */
-  --neu-light:#3A4150;         /* top-left highlight — LIGHTER than base */
+  --neu-dark:#1E222A;          /* bottom-right cast - darker than base */
+  --neu-light:#3A4150;         /* top-left highlight - LIGHTER than base */
   --neu-accent:var(--primary-400);        /* accent still follows the scheme */
   --neu-accent-strong:var(--primary-300); /* lighter ramp step reads on dark   */
   --neu-text:#C9CEDA;          /* low-contrast light ink */
@@ -151,7 +151,7 @@
 }
 
 /* ==========================================================================
-   Page substrate — body shares the component base colour exactly.
+   Page substrate - body shares the component base colour exactly.
    ========================================================================== */
 [data-theme="neumorphism"] body{
   background:var(--neu-base);
@@ -164,7 +164,7 @@
 }
 
 /* ==========================================================================
-   RAISED containers — cards extrude from the same-colour page.
+   RAISED containers - cards extrude from the same-colour page.
    ========================================================================== */
 [data-theme="neumorphism"] .card,
 [data-theme="neumorphism"] .card--plain,
@@ -191,7 +191,7 @@
 }
 
 /* ==========================================================================
-   INSET wells — inputs, selects, textareas are pressed-in.
+   INSET wells - inputs, selects, textareas are pressed-in.
    ========================================================================== */
 [data-theme="neumorphism"] .input,
 [data-theme="neumorphism"] .select,
@@ -225,7 +225,7 @@
 }
 
 /* ==========================================================================
-   Buttons — RAISE at rest, PRESS-IN (inset) on :active.
+   Buttons - RAISE at rest, PRESS-IN (inset) on :active.
    ========================================================================== */
 [data-theme="neumorphism"] .btn{
   background:var(--neu-base);
@@ -249,7 +249,7 @@
 [data-theme="neumorphism"] .btn--primary:active,
 [data-theme="neumorphism"] .btn.is-pressed.btn--primary{box-shadow:var(--neu-inset-sm);}
 
-/* outline: no border — same raised pill, accent ink */
+/* outline: no border - same raised pill, accent ink */
 [data-theme="neumorphism"] .btn--outline{
   background:var(--neu-base);border:0;color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
 }
@@ -265,7 +265,7 @@
 }
 
 /* ==========================================================================
-   Badges + tags — small raised pills, monochrome (no brand fill).
+   Badges + tags - small raised pills, monochrome (no brand fill).
    ========================================================================== */
 [data-theme="neumorphism"] .badge,
 [data-theme="neumorphism"] .tag{
@@ -283,7 +283,7 @@
 }
 
 /* ==========================================================================
-   Modal — a raised soft slab; head/foot dividers dissolve.
+   Modal - a raised soft slab; head/foot dividers dissolve.
    ========================================================================== */
 [data-theme="neumorphism"] .modal{
   background:var(--neu-base);
@@ -301,7 +301,7 @@
 [data-theme="neumorphism"] .modal__close:hover{box-shadow:var(--neu-inset-sm);}
 
 /* ==========================================================================
-   KPI strip — recessed cells separated by shadow, not borders.
+   KPI strip - recessed cells separated by shadow, not borders.
    ========================================================================== */
 [data-theme="neumorphism"] .kpi-strip{
   background:var(--neu-base);border:0;border-radius:var(--radius-xl);box-shadow:var(--neu-raise);
@@ -312,7 +312,7 @@
 [data-theme="neumorphism"] .kpi__value{color:var(--neu-text);}
 
 /* ==========================================================================
-   Sidebar + topbar — flat onto the base, soft inset rail / raised bar.
+   Sidebar + topbar - flat onto the base, soft inset rail / raised bar.
    ========================================================================== */
 [data-theme="neumorphism"] .sidebar{
   background:var(--neu-base);
@@ -331,7 +331,7 @@
 [data-theme="neumorphism"] .nav-link:hover{
   background:var(--neu-base);backdrop-filter:none;box-shadow:var(--neu-raise-sm);color:var(--neu-text);
 }
-/* active nav item is a PRESSED well — the canonical soft-UI selected state */
+/* active nav item is a PRESSED well - the canonical soft-UI selected state */
 [data-theme="neumorphism"] .nav-link.is-active{
   background:var(--neu-base);color:var(--neu-accent-strong);
   backdrop-filter:none;box-shadow:var(--neu-inset-sm);
@@ -342,7 +342,7 @@
 }
 
 /* ==========================================================================
-   Tables — flat on the base, hover is a faint recess (no zebra borders).
+   Tables - flat on the base, hover is a faint recess (no zebra borders).
    ========================================================================== */
 [data-theme="neumorphism"] .table--flat,
 [data-theme="neumorphism"] .table--dense{
@@ -360,7 +360,7 @@
 [data-theme="neumorphism"] .table--flat tbody tr.row--active td{background:color-mix(in srgb, var(--neu-accent) 14%, transparent);}
 
 /* ==========================================================================
-   Switch (segmented) — a recessed track with a raised active thumb.
+   Switch (segmented) - a recessed track with a raised active thumb.
    ========================================================================== */
 [data-theme="neumorphism"] .switch{
   background:var(--neu-base);border:0;border-radius:var(--radius-pill);
@@ -375,7 +375,7 @@
 }
 
 /* ==========================================================================
-   Checkbox — soft inset well; checked = raised soft chip with a tick.
+   Checkbox - soft inset well; checked = raised soft chip with a tick.
    The inline-SVG tick stroke can't read a CSS var, so it carries a fixed
    mid-blue that sits well on both the light and dark soft-UI base; the rest
    of the accent system follows the scheme.
@@ -396,7 +396,7 @@
 [data-theme="neumorphism"] .radio:disabled{box-shadow:var(--neu-inset-sm);opacity:.6;}
 
 /* ==========================================================================
-   Phone shell — the frame is one big extruded slab; tabbar pressed active.
+   Phone shell - the frame is one big extruded slab; tabbar pressed active.
    ========================================================================== */
 [data-theme="neumorphism"] .phone{
   background:var(--neu-base);border:0;border-radius:var(--radius-2xl);
@@ -420,7 +420,7 @@
   background:var(--neu-base);color:var(--neu-accent-strong);box-shadow:var(--neu-raise-sm);
 }
 
-/* ---- Split-dropdown caret — ONE raised soft container, flat segments inside,
+/* ---- Split-dropdown caret - ONE raised soft container, flat segments inside,
    accent chevron (was a hard solid-colour block glued onto the soft button). */
 [data-theme="neumorphism"] .btn-split{border-radius:var(--radius-base);box-shadow:var(--neu-raise-sm);}
 [data-theme="neumorphism"] .btn-split .btn{

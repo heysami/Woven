@@ -30,7 +30,7 @@ bold abstract patterns on clothing (checkerboard, stripes, dots).
 
 **Line**: no line, color blocks
 
-**Color**: saturated bold contrast — fuchsia + teal + yellow
+**Color**: saturated bold contrast - fuchsia + teal + yellow
 
 **Style**: dynamic tilted pose, abstract patterned clothing
 
@@ -47,13 +47,13 @@ bold abstract patterns on clothing (checkerboard, stripes, dots).
 ## Example prompt template
 
 > Flat vector character with chunky simplified body in dynamic tilted pose,
-> clothing covered in bold abstract patterns — checkerboard stripes and dots —
+> clothing covered in bold abstract patterns - checkerboard stripes and dots -
 > vibrant saturated palette of fuchsia teal and yellow, high contrast, no
 > outline, Irene Falgueras Cool Kids aesthetic.
 
 ## When to use
 
-Music, culture, youth-targeted product — when you want personality
+Music, culture, youth-targeted product - when you want personality
 
 ## When NOT to use
 

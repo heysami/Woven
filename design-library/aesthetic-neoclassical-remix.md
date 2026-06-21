@@ -12,14 +12,14 @@ images:
 **Tag:** Antiquity-meets-now (Squarespace "Browser History" renaissance campaign; Gucci Ignasi Monreal SS18; Daniel Arsham eroded classics; museum-merch culture)
 
 **Canonical references:**
-- Squarespace *Browser History* — real person photographed among renaissance statues, modern device in hand.
-- Gucci SS18 (Ignasi Monreal) — old-master paintings hosting modern product.
-- Daniel Arsham — eroded classical busts as contemporary sculpture.
+- Squarespace *Browser History* - real person photographed among renaissance statues, modern device in hand.
+- Gucci SS18 (Ignasi Monreal) - old-master paintings hosting modern product.
+- Daniel Arsham - eroded classical busts as contemporary sculpture.
 - Versace/medusa lineage; museum-gift-shop poster culture.
 
 ## Cultural identity
 
-Classical antiquity (statues, oil paintings, columns, engravings) staged WITH contemporary elements — a phone in a painted hand, a tracksuit beside a marble torso, UI chrome over an engraved sky. The collision claims timelessness for the new thing: "this product belongs in the canon." Distinct from `aesthetic-vaporwave` (which uses the bust ironically, as a dead-mall artifact) — Neoclassical Remix is sincere and art-directed, museum-grade reproduction quality with ONE precise anachronism.
+Classical antiquity (statues, oil paintings, columns, engravings) staged WITH contemporary elements - a phone in a painted hand, a tracksuit beside a marble torso, UI chrome over an engraved sky. The collision claims timelessness for the new thing: "this product belongs in the canon." Distinct from `aesthetic-vaporwave` (which uses the bust ironically, as a dead-mall artifact) - Neoclassical Remix is sincere and art-directed, museum-grade reproduction quality with ONE precise anachronism.
 
 The defining gesture is **the canonical artifact + the modern intrusion**, both rendered at full fidelity, composed like a museum plate.
 
@@ -27,9 +27,9 @@ The defining gesture is **the canonical artifact + the modern intrusion**, both 
 
 ## Motifs / imagery vocabulary
 
-- ONE classical anchor per screen: statue, painted figure, column fragment, engraved diagram — photographed/painted straight, not duotone-memed.
-- ONE modern intrusion: device, garment, product, UI window — placed with curatorial precision.
-- Museum apparatus: plaque-style captions ("Marble, ca. 130 AD — and iPhone"), catalog numbers, serif small-caps.
+- ONE classical anchor per screen: statue, painted figure, column fragment, engraved diagram - photographed/painted straight, not duotone-memed.
+- ONE modern intrusion: device, garment, product, UI window - placed with curatorial precision.
+- Museum apparatus: plaque-style captions ("Marble, ca. 130 AD - and iPhone"), catalog numbers, serif small-caps.
 - Engraving/etching line-work as decorative rules and section dividers.
 - Generous gallery whitespace; content hung like works on a wall.
 

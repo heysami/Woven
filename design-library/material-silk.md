@@ -13,7 +13,7 @@ images:
 
 # Silk (lustrous fabric)
 
-A semi-gloss surface that reacts to light: yes — anisotropic lustre and deforms: yes — flowing drape.
+A semi-gloss surface that reacts to light: yes - anisotropic lustre and deforms: yes - flowing drape.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A semi-gloss surface that reacts to light: yes — anisotropic lustre and deform
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — anisotropic lustre
+**Reacts to light**: yes - anisotropic lustre
 
-**Deforms**: yes — flowing drape
+**Deforms**: yes - flowing drape
 
 **Age / wear**: shows wear (fray, water spots)
 
@@ -46,11 +46,11 @@ raster: silk photograph
 
 **Light**: lustre band shifts with pointer angle
 
-**Highlight**: yes — narrow band perpendicular to fibre direction
+**Highlight**: yes - narrow band perpendicular to fibre direction
 
 **Depth**: drape via scroll-driven skewY
 
-**Parallax**: yes — gentle
+**Parallax**: yes - gentle
 
 ## Common implementation mistakes (avoid these)
 

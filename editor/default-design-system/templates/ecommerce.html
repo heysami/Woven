@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Default — Storefront</title>
+<title>Default - Storefront</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
 <link rel="stylesheet" href="../styles.css">
 <style>
   /* ============================================================
-     Interactive storefront — catalogue → cart → checkout → payment →
+     Interactive storefront - catalogue → cart → checkout → payment →
      confirmation. Every product is a token-driven flat illustration, so
      the whole shop recolours with the DS. 60-30-10 with the greys as canvas.
      ============================================================ */
@@ -222,7 +222,7 @@
     <div class="sh-promo__body">
       <span class="eyebrow">◆ Everyday carry</span>
       <h2>The kit that goes everywhere.</h2>
-      <p>Hand-picked essentials that earn their place in your bag — and look good doing it.</p>
+      <p>Hand-picked essentials that earn their place in your bag - and look good doing it.</p>
       <div><button class="btn btn--primary">Shop the edit</button></div>
     </div>
   </section>
@@ -355,7 +355,7 @@
       body.innerHTML = ids.map(function(id){var p=find(id);return ''
         + '<div class="sh-line"><div class="sh-line__art">'+ILLUS(id)+'</div>'
         + '<div class="sh-line__meta"><div class="sh-line__name">'+p.name+'</div>'
-        + '<div class="sh-line__qty"><button class="sh-qbtn" data-dec="'+id+'">–</button><span>'+cart[id]+'</span><button class="sh-qbtn" data-inc="'+id+'">+</button></div></div>'
+        + '<div class="sh-line__qty"><button class="sh-qbtn" data-dec="'+id+'">-</button><span>'+cart[id]+'</span><button class="sh-qbtn" data-inc="'+id+'">+</button></div></div>'
         + '<div class="sh-price" style="font-size:var(--text-base)">'+fmt(p.price*cart[id])+'</div></div>';
       }).join('');
       foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="toCheckout">Checkout · '+fmt(total())+'</button>';
@@ -366,7 +366,7 @@
       foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="toPayment">Continue to payment</button>';
     } else if(view==='payment'){
       title.textContent='Payment';
-      body.innerHTML = '<div class="alert alert--info" style="margin-bottom:var(--space-base)"><div class="alert__body"><strong>Test mode</strong> — no real card is charged.</div></div>'
+      body.innerHTML = '<div class="alert alert--info" style="margin-bottom:var(--space-base)"><div class="alert__body"><strong>Test mode</strong> - no real card is charged.</div></div>'
         + field('Card number','4242 4242 4242 4242')+'<div class="sh-field--row">'+field('Expiry','12 / 28')+field('CVC','123')+'</div>'+field('Name on card','Alex Doe');
       foot.innerHTML = summaryHtml() + '<button class="btn btn--primary btn--l" id="payNow">Pay '+fmt(total())+'</button>';
     } else if(view==='done'){

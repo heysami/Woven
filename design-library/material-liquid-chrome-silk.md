@@ -13,7 +13,7 @@ images:
 
 # Liquid chrome silk
 
-A metallic-anisotropic surface that reacts to light: yes — specular streaks travel along fabric folds; hue drifts across an iridescent 2-3 stop family; and deforms: yes — slow continuous undulation like silk underwater.
+A metallic-anisotropic surface that reacts to light: yes - specular streaks travel along fabric folds; hue drifts across an iridescent 2-3 stop family; and deforms: yes - slow continuous undulation like silk underwater.
 
 ## Physical behavior
 
@@ -21,17 +21,17 @@ A metallic-anisotropic surface that reacts to light: yes — specular streaks tr
 
 **Transparency**: opaque (edges may fade via depth-of-field, not via alpha)
 
-**Reacts to light**: yes — highlight bands MIGRATE along folds as light/pointer moves; iridescent hue shift (blue→violet→magenta family) follows view angle
+**Reacts to light**: yes - highlight bands MIGRATE along folds as light/pointer moves; iridescent hue shift (blue→violet→magenta family) follows view angle
 
-**Deforms**: yes — continuous slow ripple (20-40s loop); folds form and release; never static
+**Deforms**: yes - continuous slow ripple (20-40s loop); folds form and release; never static
 
-**Age / wear**: ageless — this is an idealized rendered material, no scratches or patina
+**Age / wear**: ageless - this is an idealized rendered material, no scratches or patina
 
 ## Implementation strategies
 
 ```yaml
 css: |
-  /* Static fallback only — CSS cannot do true anisotropy. Use a pre-rendered
+  /* Static fallback only - CSS cannot do true anisotropy. Use a pre-rendered
      frame as background-image + a traveling sheen overlay: */
   background: url(ribbon-frame.webp) center/cover no-repeat #07070c;
   &::after {
@@ -49,7 +49,7 @@ webgl: |
   anisotropic GGX highlight stretched along tangent, iridescence via
   thin-film approximation (hue = f(NdotV)), 2-3 stop gradient ramp texture.
   Pointer tilt rotates the light vector ±15°. ~2ms/frame at 1080p.
-raster: pre-rendered loop frame(s) from the 3d/motion drawer — the standard path
+raster: pre-rendered loop frame(s) from the 3d/motion drawer - the standard path
 video: 20-40s seamless loop, H.265, dark-crushed so blacks merge with the page
 ```
 
@@ -61,10 +61,10 @@ video: 20-40s seamless loop, H.265, dark-crushed so blacks merge with the page
 
 ## Common implementation mistakes (avoid these)
 
-- Blurred mesh gradient labeled "silk" — no visible folds = aurorism, a different material
+- Blurred mesh gradient labeled "silk" - no visible folds = aurorism, a different material
 - Rainbow full-spectrum hue sweep (pick one 2-3 stop family; full rainbow = holographic-foil's job)
 - Headline sitting on the brightest fold (reserve a dark quiet zone)
-- Ribbon repeated per section — ONE per page, hero only
+- Ribbon repeated per section - ONE per page, hero only
 - 60fps full-page shader on mobile without a static-frame fallback
 
 ## Examples in the wild

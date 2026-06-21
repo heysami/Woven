@@ -11,10 +11,10 @@ If a subagent and this doc disagree, **this doc wins.** Surface the conflict to 
 ```js
 window.EDITOR_DATA = {
   meta: {
-    project:      "Margin",                    // string — display title
-    notes:        "Free-text genre/voice note",// string — fed to DESIGN.md description
-    defaultFrame: { w: 1440, h: 900 },          // object — Canvas grid cell size
-    canvasGap:    120,                          // number — Canvas grid gap
+    project:      "Margin",                    // string - display title
+    notes:        "Free-text genre/voice note",// string - fed to DESIGN.md description
+    defaultFrame: { w: 1440, h: 900 },          // object - Canvas grid cell size
+    canvasGap:    120,                          // number - Canvas grid gap
     lanes: [                                    // ← LANES GO HERE, NOT TOP-LEVEL
       { id: "tc",  label: "Training Coordinator", kind: "user"    },
       { id: "pxp", label: "Programme Experience Partner", kind: "user" }
@@ -60,19 +60,19 @@ window.EDITOR_DATA = {
 
   frames: [
     {
-      id:          "library",          // string — primary key
-      label:       "Library",          // string — display title
+      id:          "library",          // string - primary key
+      label:       "Library",          // string - display title
       kind:        "page",             // page | state | overlay | form | substep | start | decision | input | trigger | notification | external
-      lane:        "user",             // string — references meta.lanes[*].id
-      parent:      null,               // string | null — intra-lane only
-      hash:        "",                 // string — "#"-prefixed or empty
-      entry:       null,               // string | null — bare filename or editor-relative
-      setupScript: null,               // string | null — JS evaluated in iframe after load (use window.__pokeBy)
-      col:         0,                  // number — Canvas grid column
-      row:         0,                  // number — Canvas grid row
-      w:           1440,               // number — REQUIRED, owned by Subagent 3 (PrototypeView reads active.w directly; missing = collapse)
-      h:           900,                // number — REQUIRED, owned by Subagent 3 (same)
-      entities:    ["Reference"]       // string[] — references entities[*].id
+      lane:        "user",             // string - references meta.lanes[*].id
+      parent:      null,               // string | null - intra-lane only
+      hash:        "",                 // string - "#"-prefixed or empty
+      entry:       null,               // string | null - bare filename or editor-relative
+      setupScript: null,               // string | null - JS evaluated in iframe after load (use window.__pokeBy)
+      col:         0,                  // number - Canvas grid column
+      row:         0,                  // number - Canvas grid row
+      w:           1440,               // number - REQUIRED, owned by Subagent 3 (PrototypeView reads active.w directly; missing = collapse)
+      h:           900,                // number - REQUIRED, owned by Subagent 3 (same)
+      entities:    ["Reference"]       // string[] - references entities[*].id
     }
   ],
 
@@ -84,17 +84,17 @@ window.EDITOR_DATA = {
     {
       id:    "Reference",
       tag:   "base",                   // base | merged | variant | assoc
-      x:     60,                       // number — REQUIRED, owned by Subagent 7 (EntitiesView reads entity.x directly; missing = all cards stack at 0,0)
-      y:     60,                       // number — REQUIRED, owned by Subagent 7
-      w:     280,                      // number — REQUIRED, owned by Subagent 7 (card width)
+      x:     60,                       // number - REQUIRED, owned by Subagent 7 (EntitiesView reads entity.x directly; missing = all cards stack at 0,0)
+      y:     60,                       // number - REQUIRED, owned by Subagent 7
+      w:     280,                      // number - REQUIRED, owned by Subagent 7 (card width)
       fields: [
         { name: "id",      type: "string", pk: true },
         { name: "title",   type: "string" },
         { name: "authors", type: "string[]" },
         { name: "year",    type: "number" }
       ],
-      mergedFrom: undefined,           // string[] — present when tag: "merged"
-      extends:    undefined            // string — present when tag: "variant"
+      mergedFrom: undefined,           // string[] - present when tag: "merged"
+      extends:    undefined            // string - present when tag: "variant"
     }
   ],
 
@@ -128,7 +128,7 @@ window.EDITOR_DATA = {
     }
   ],
 
-  // grids[] documents 2D variance — typically MULTIPLE per prototype. See
+  // grids[] documents 2D variance - typically MULTIPLE per prototype. See
   // docs/agents/subagents/10-grids.md for the full lens. The three canonical
   // shapes: form-field × use-case, entity-operation × use-case, classic
   // decision matrix. Use-case axes can be status, gating field-value,
@@ -174,11 +174,11 @@ window.EDITOR_DATA = {
 };
 ```
 
-**Critical placements (these have actually drifted in prior runs — pin them):**
+**Critical placements (these have actually drifted in prior runs - pin them):**
 
 | Field | Lives at | Common wrong placement / failure |
 |---|---|---|
-| **lanes** | `meta.lanes` | top-level `lanes` (silently ignored — editor reads `D.meta.lanes`) |
+| **lanes** | `meta.lanes` | top-level `lanes` (silently ignored - editor reads `D.meta.lanes`) |
 | **defaultFrame** | `meta.defaultFrame` | top-level `defaultFrame` |
 | **canvasGap** | `meta.canvasGap` | top-level `canvasGap` |
 | **frames[i].w/h** | per frame, REQUIRED | omitted → PrototypeView iframe collapses to 0×0 (no default fallback) |
@@ -213,17 +213,17 @@ The editor consumes the DS via a runtime mirror at `editor/design-systems/<id>.j
 window.EDITOR_DS_<id> = {
   id:       "main",
   version:  "a3f9b2…",
-  label:    "v3 — denser rows",
+  label:    "v3 - denser rows",
   trio: {
     tokensCss:   "/* :root { … } */",     // verbatim from design-systems/<id>/styles.css
     galleryHtml: "<!doctype html>…",      // verbatim from design-systems/<id>/gallery.html
     designMd:    "---\nname: …"           // verbatim from design-systems/<id>/DESIGN.md
   },
-  tokens:     { /* same shape as EDITOR_DATA.tokens — enumerated from styles.css :root */ },
-  primitives: [ /* same shape as EDITOR_DATA.primitives — enumerated from gallery.html sections */ ],
-  library:    [ /* same shape as EDITOR_DATA.library — one entry per primitive variant */ ],
+  tokens:     { /* same shape as EDITOR_DATA.tokens - enumerated from styles.css :root */ },
+  primitives: [ /* same shape as EDITOR_DATA.primitives - enumerated from gallery.html sections */ ],
+  library:    [ /* same shape as EDITOR_DATA.library - one entry per primitive variant */ ],
   meta: {
-    genre:     "Linear-style observability — OKLCH greys, hairline borders…",
+    genre:     "Linear-style observability - OKLCH greys, hairline borders…",
     builtFrom: [ /* workflow-mode spec nodes that generated this DS */ ]
   }
 };
@@ -231,7 +231,7 @@ window.EDITOR_DS_<id> = {
 
 ### Why DS lives outside source/
 
-Today's `source/styles.css` and `source/design-system.html` co-locate the DS with feature pages, making them sibling files Subagent 1 has to keep in sync by hand. That's the drift mechanism. Moving the DS to `design-systems/<id>/` makes it a peer of `source/`, not a child — so the DS workflow has its own ownership boundary and feature-page generation reads from it instead of writing it.
+Today's `source/styles.css` and `source/design-system.html` co-locate the DS with feature pages, making them sibling files Subagent 1 has to keep in sync by hand. That's the drift mechanism. Moving the DS to `design-systems/<id>/` makes it a peer of `source/`, not a child - so the DS workflow has its own ownership boundary and feature-page generation reads from it instead of writing it.
 
 ### How feature pages reference the DS
 
@@ -266,7 +266,7 @@ The DS library node is written exclusively by Workflows 0 and 6b. No view subage
 
 ## `source/prototype.json`
 
-Same shape as above, minus `tokens` / `primitives` / `library` (those live in source CSS/JSX, not the manifest). `meta` is flattened — its fields become top-level in the manifest:
+Same shape as above, minus `tokens` / `primitives` / `library` (those live in source CSS/JSX, not the manifest). `meta` is flattened - its fields become top-level in the manifest:
 
 ```jsonc
 {
@@ -277,7 +277,7 @@ Same shape as above, minus `tokens` / `primitives` / `library` (those live in so
   "lanes":       [ /* same as meta.lanes above */ ],
   "frames":      [ /* same as EDITOR_DATA.frames */ ],
   "arrows":      [ /* same */ ],
-  "links":       [ /* entity↔entity links — see AGENTS.md */ ],
+  "links":       [ /* entity↔entity links - see AGENTS.md */ ],
   "stateMachines": [ /* same */ ],
   "timelines":   [ /* same */ ],
   "grids":       [ /* same */ ]
@@ -298,18 +298,18 @@ Use this table to know which subagent's output writes which field. The orchestra
 | 3 Prototype | `frames[i].entry`, `frames[i].hash`, `frames[i].setupScript`, **`frames[i].w`**, **`frames[i].h`** |
 | 4 User flow | `frames[i].kind`, `frames[i].lane`, `arrows[]` |
 | 5 IA | `frames[i].entities` (echoes `frames[i].parent` from its own enumeration) |
-| 6 DS-audit | `DS_PROPOSAL.md` at project root. Does NOT write `tokens` / `primitives` / `library` — those mirror the DS library node, populated by the orchestrator. |
+| 6 DS-audit | `DS_PROPOSAL.md` at project root. Does NOT write `tokens` / `primitives` / `library` - those mirror the DS library node, populated by the orchestrator. |
 | 7 Entities | `entities[]` (incl. `entities[i].x`, `entities[i].y`, `entities[i].w`), `demoPatches` |
 | 8 State machine | `stateMachines[]` |
 | 9 Timeline | `timelines[]` |
 | 10 Grids | `grids[]` |
 | **Orchestrator (Step 4 merge)** | `frames[i].id`, `frames[i].label` (merged from subagents); `meta.lanes` (from Subagent 4); resolves convention-mismatched IDs |
 | **Orchestrator (Step 5 meta)** | `meta.project`, `meta.notes`, `meta.defaultFrame`, `meta.canvasGap`, `meta.dsRef` |
-| **Orchestrator (Step 5 DS mirror)** | `tokens`, `primitives`, `library` — copied verbatim from the DS library node identified by `meta.dsRef`. Read, don't enumerate. |
+| **Orchestrator (Step 5 DS mirror)** | `tokens`, `primitives`, `library` - copied verbatim from the DS library node identified by `meta.dsRef`. Read, don't enumerate. |
 | **Orchestrator (Step 4c reconciliation)** | additional cross-actor handoff arrows → `arrows[]` |
 
 ---
 
 ## Cross-references in playbooks
 
-Every subagent playbook's Output section should match this schema. If you find a mismatch, this doc is canonical — update the playbook to match, not the other way around.
+Every subagent playbook's Output section should match this schema. If you find a mismatch, this doc is canonical - update the playbook to match, not the other way around.

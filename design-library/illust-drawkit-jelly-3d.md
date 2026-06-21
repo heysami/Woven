@@ -19,7 +19,7 @@ translucent gummy-bear surface with subsurface light.
 
 - translucent gummy-bear surface with subsurface light
 - rounded jellybean limbs, no separate hands/feet
-- bright candy palette — neon yellow, magenta, cyan
+- bright candy palette - neon yellow, magenta, cyan
 - subtle inner glow + glossy specular cap on top of head
 
 ## Prompt keywords

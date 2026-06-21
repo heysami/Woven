@@ -1,12 +1,12 @@
 /* ==========================================================================
-   Component partial — Data-dense / flat (Linear · Bloomberg · Vercel · finance)
+   Component partial - Data-dense / flat (Linear · Bloomberg · Vercel · finance)
    Ultra-high-density, flat hairline tables, tabular numerals, no card chrome.
    The density IS the point. Theme-agnostic: every colour/space/radius/type
    value references a token from styles.css `:root`, so the 8 themes re-skin
    these automatically. Link AFTER styles.css.
    ========================================================================== */
 
-/* No new tokens are introduced — the existing :root vocabulary covers
+/* No new tokens are introduced - the existing :root vocabulary covers
    everything this partial needs (--text-s/-xs/-h4, --space-2xs/-xs/-s,
    --border-subtle, --surface/-default, --primary-surface-subtle,
    --success-600, --error-600, --fg-subtle). */
@@ -44,10 +44,10 @@
   border-bottom:1px solid var(--border-subtle);   /* row separators only */
   vertical-align:middle;
 }
-/* flat = no zebra, no card hover wash — quiet hairline rows */
+/* flat = no zebra, no card hover wash - quiet hairline rows */
 .table--flat tbody tr:hover td{background:var(--surface-default);}
 
-/* ---- Denser table — even tighter rows + smaller type ---- */
+/* ---- Denser table - even tighter rows + smaller type ---- */
 .table--dense{font-size:var(--text-xs);}
 .table--dense th,
 .table--dense td{
@@ -57,7 +57,7 @@
 
 /* ---- Numeric cells + tabular figures -------------------------------------
    .cell--num    right-aligned tabular numerals for tables.
-   .tnum         standalone utility — lock tabular numerals anywhere. */
+   .tnum         standalone utility - lock tabular numerals anywhere. */
 .cell--num{
   font-variant-numeric:tabular-nums;
   text-align:right;
@@ -76,7 +76,7 @@
 
 /* ---- KPI strip -----------------------------------------------------------
    Horizontal flex row of compact KPIs separated by hairline vertical
-   dividers. Flat — no card, no shadow. */
+   dividers. Flat - no card, no shadow. */
 .kpi-strip{
   display:flex;
   flex-wrap:wrap;
@@ -121,7 +121,7 @@
 
 /* ---- Sparkline -----------------------------------------------------------
    Inline container (~72×22px) holding an inline <svg>. The SVG inherits the
-   line colour via currentColor — set `color` on .spark (or a .is-up/.is-down
+   line colour via currentColor - set `color` on .spark (or a .is-up/.is-down
    modifier) to tint it.
 
    Sample markup an author can copy verbatim:
@@ -173,7 +173,7 @@
 .toolbar--dense .segmented button{height:24px;}
 
 /* ---- Flat row selection / active states ----------------------------------
-   Quiet flat highlight using the brand soft surface — no shadow, hairline
+   Quiet flat highlight using the brand soft surface - no shadow, hairline
    only. Works on .table--flat rows and on generic flex/list rows. */
 .row--selected,
 .table--flat tbody tr.row--selected td{background:var(--primary-surface-subtle);}

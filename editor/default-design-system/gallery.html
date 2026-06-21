@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Template Design System — Gallery</title>
+<title>Template Design System - Gallery</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
 <link rel="stylesheet" href="all.css">
@@ -30,14 +30,14 @@
     .main{padding:24px 18px 40vh;}
   }
 
-  /* ===== category (layer) heading — single accent, accent bar, lots of air ===== */
+  /* ===== category (layer) heading - single accent, accent bar, lots of air ===== */
   .layer__head{margin:96px 0 0;--layer-accent:var(--primary-surface);}
   .layer__head:first-of-type{margin-top:40px;}
   .layer__head h2{margin:0;font-size:28px;font-weight:700;letter-spacing:-.015em;line-height:1.1;color:var(--fg-default);}
   .layer__head h2::before{content:"";display:block;width:26px;height:4px;border-radius:3px;background:var(--layer-accent);margin-bottom:12px;}
   .layer__intro{color:var(--fg-muted);font-size:15px;line-height:1.55;margin:14px 0 0;max-width:720px;}
 
-  /* ===== component (item) row — subordinate, soft separation by space + faint hairline ===== */
+  /* ===== component (item) row - subordinate, soft separation by space + faint hairline ===== */
   .comp{padding:44px 0 8px;border-top:1px solid var(--neutral-80);scroll-margin-top:16px;}
   .layer__head{scroll-margin-top:16px;}
   .main{padding-bottom:40vh;}    /* trailing room so the last section can scroll to the top */
@@ -115,7 +115,7 @@
 </style>
 </head>
 <body>
-<!-- Floating style-switcher removed — the editor's own Style control drives the
+<!-- Floating style-switcher removed - the editor's own Style control drives the
      preview, so the duplicate in-page switcher is hidden everywhere. -->
 <div class="shell">
 <aside class="sidebar">
@@ -190,19 +190,19 @@
 <div class="layer__head"><h2>Foundations</h2></div>
 <p class="layer__intro">The token primitives every component is built from.</p>
 
-<section class="comp" id="f-color"><div class="comp__bar"><h3>Color</h3><code>--{family}-{step}</code><p>The 50–950 tonal ramps and semantic roles. Production code references roles, never raw steps.</p></div>
-  <div class="vgroup"><h5>Tonal ramps — 50 (lightest) → 950 (darkest)</h5><div class="ramp-cols" id="ramps"></div></div>
+<section class="comp" id="f-color"><div class="comp__bar"><h3>Color</h3><code>--{family}-{step}</code><p>The 50-950 tonal ramps and semantic roles. Production code references roles, never raw steps.</p></div>
+  <div class="vgroup"><h5>Tonal ramps - 50 (lightest) → 950 (darkest)</h5><div class="ramp-cols" id="ramps"></div></div>
 </section>
 
-<section class="comp" id="f-type"><div class="comp__bar"><h3>Typography</h3><code>.display .h1–.h6 .text-*</code><p>Plus Jakarta Sans throughout. Headings carry hierarchy (120% line-height); body is three sizes × three weights (160%); section titles apply the same scale to block headers.</p></div>
-  <div class="vgroup"><h5>Headings — line-height 120%</h5><table class="type-table" id="ttHeadings"></table></div>
-  <div class="vgroup"><h5>Body — line-height 160%</h5><table class="type-table" id="ttBody"></table></div>
+<section class="comp" id="f-type"><div class="comp__bar"><h3>Typography</h3><code>.display .h1-.h6 .text-*</code><p>Plus Jakarta Sans throughout. Headings carry hierarchy (120% line-height); body is three sizes × three weights (160%); section titles apply the same scale to block headers.</p></div>
+  <div class="vgroup"><h5>Headings - line-height 120%</h5><table class="type-table" id="ttHeadings"></table></div>
+  <div class="vgroup"><h5>Body - line-height 160%</h5><table class="type-table" id="ttBody"></table></div>
   <div class="vgroup"><h5>Section titles</h5><table class="type-table" id="ttTitles"></table></div>
 </section>
 
 <section class="comp" id="f-space"><div class="comp__bar"><h3>Spacing</h3><code>--space-*</code><p>16px-base rhythm for padding, gaps, margins.</p></div><div class="scale" id="spacing"></div></section>
 
-<section class="comp" id="f-radius"><div class="comp__bar"><h3>Radius</h3><code>--radius-*</code><p>Controls ride the pill end (24px+); surfaces stay softly squared (8–16px).</p></div>
+<section class="comp" id="f-radius"><div class="comp__bar"><h3>Radius</h3><code>--radius-*</code><p>Controls ride the pill end (24px+); surfaces stay softly squared (8-16px).</p></div>
   <div class="row">
     <div class="radius-demo" style="border-radius:var(--radius-xs)">2</div><div class="radius-demo" style="border-radius:var(--radius-s)">4</div><div class="radius-demo" style="border-radius:var(--radius-base)">8</div><div class="radius-demo" style="border-radius:var(--radius-m)">12</div><div class="radius-demo" style="border-radius:var(--radius-l)">16</div><div class="radius-demo" style="border-radius:var(--radius-xl)">24</div><div class="radius-demo" style="border-radius:var(--radius-2xl)">32</div><div class="radius-demo" style="border-radius:var(--radius-pill)">pill</div></div></section>
 
@@ -210,7 +210,7 @@
   <div class="row">
     <div class="shadow-demo" style="box-shadow:var(--shadow-xs)">xs</div><div class="shadow-demo" style="box-shadow:var(--shadow-s)">s</div><div class="shadow-demo" style="box-shadow:var(--shadow-base)">base</div><div class="shadow-demo" style="box-shadow:var(--shadow-m)">m</div><div class="shadow-demo" style="box-shadow:var(--shadow-l)">l</div><div class="shadow-demo" style="box-shadow:var(--shadow-xl)">xl</div><div class="shadow-demo" style="box-shadow:var(--shadow-hard)">hard</div></div></section>
 
-<section class="comp" id="f-icon"><div class="comp__bar"><h3>Iconography</h3><code>inline SVG</code><p>20–24px, 1.8–2px stroke, currentColor. No icon font.</p></div><div class="iconset" id="icons"></div></section>
+<section class="comp" id="f-icon"><div class="comp__bar"><h3>Iconography</h3><code>inline SVG</code><p>20-24px, 1.8-2px stroke, currentColor. No icon font.</p></div><div class="iconset" id="icons"></div></section>
 
 <!-- ===================== ATOMS ===================== -->
 <div class="layer__head"><h2>Atoms</h2></div>
@@ -287,7 +287,7 @@
     <div class="vcell"><span class="badge badge--xs">3</span><span class="lbl">xs</span></div>
   </div></div></section>
 
-<section class="comp" id="c-status"><div class="comp__bar"><h3>Status</h3><code>.status .status--*</code><p>Semantic process state (Approved / Pending / Rejected / Draft / Terminated). Distinct from brand Tag — colour conveys meaning. Box / colour-box / icon-text / icon-only forms.</p></div>
+<section class="comp" id="c-status"><div class="comp__bar"><h3>Status</h3><code>.status .status--*</code><p>Semantic process state (Approved / Pending / Rejected / Draft / Terminated). Distinct from brand Tag - colour conveys meaning. Box / colour-box / icon-text / icon-only forms.</p></div>
   <div class="vgroup"><h5>Semantic × form</h5>
     <table class="matrix"><thead><tr><th>Semantic</th><th>Light box</th><th>Colour box</th><th>Icon-text</th><th>Icon-only</th></tr></thead><tbody>
       <tr><th>Success</th>
@@ -323,7 +323,7 @@
     <div class="vcell"><span class="status status--success status--xs">XS</span><span class="lbl">xs</span></div>
   </div></div></section>
 
-<section class="comp" id="c-avatar"><div class="comp__bar"><h3>Avatar</h3><code>.avatar .avatar-stack</code><p>User representation — initials or image, single or stacked.</p></div>
+<section class="comp" id="c-avatar"><div class="comp__bar"><h3>Avatar</h3><code>.avatar .avatar-stack</code><p>User representation - initials or image, single or stacked.</p></div>
   <div class="vgroup"><h5>Sizes</h5><div class="vcells">
     <div class="vcell"><span class="avatar avatar--lg">AL</span><span class="lbl">lg · 40</span></div>
     <div class="vcell"><span class="avatar">AL</span><span class="lbl">base · 32</span></div>
@@ -394,7 +394,7 @@
     <div class="vcell" style="width:100%"><div class="progress progress--success" style="width:100%"><div class="progress__fill" style="width:100%"></div></div><span class="lbl">success</span></div>
   </div></div></section>
 
-<section class="comp" id="c-chip"><div class="comp__bar"><h3>Chip</h3><code>.chip</code><p>Removable token — input / attachment / thumbnail.</p></div>
+<section class="comp" id="c-chip"><div class="comp__bar"><h3>Chip</h3><code>.chip</code><p>Removable token - input / attachment / thumbnail.</p></div>
   <div class="vgroup"><h5>Content types</h5><div class="vcells">
     <div class="vcell"><span class="chip"><span class="chip__thumb"></span>Thumbnail</span><span class="lbl">thumbnail</span></div>
     <div class="vcell"><span class="chip">Input <span class="chip__close">✕</span></span><span class="lbl">input</span></div>
@@ -477,7 +477,7 @@
       <td><div class="toast toast--attention"><div class="toast__body"><div class="toast__title">Your Session Is Expiring Soon</div><div>You'll be logged out in 5 minutes due to inactivity. Save your work to avoid losing progress.</div></div><button class="toast__close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div></td></tr>
   </tbody></table></section>
 
-<section class="comp" id="c-menu"><div class="comp__bar"><h3>Menu</h3><code>.menu</code><p>Floating action list — dropdown / overflow.</p></div>
+<section class="comp" id="c-menu"><div class="comp__bar"><h3>Menu</h3><code>.menu</code><p>Floating action list - dropdown / overflow.</p></div>
   <div class="vgroup"><h5>Default</h5><div class="vcells"><div class="vcell"><div class="menu" style="width:180px"><div class="menu__item">Link 1</div><div class="menu__item">Link 2</div><div class="menu__item">Link 3</div></div><span class="lbl">popover</span></div></div></div></section>
 
 <section class="comp" id="c-pagination"><div class="comp__bar"><h3>Pagination</h3><code>.pagination</code><p>Page through a dataset. Numbered pager + record count.</p></div>
@@ -489,7 +489,7 @@
 <div class="layer__head"><h2>Organisms</h2></div>
 <p class="layer__intro">Larger sections built from molecules + atoms.</p>
 
-<section class="comp" id="c-table"><div class="comp__bar"><h3>Data grid</h3><code>.table .dg-*</code><p>Full data table chrome — filters bar, bulk-action bar, legend, sortable headers, mixed cell types, row states (hover/selected/disabled, 51px rows), pagination, horizontal-overflow.</p></div>
+<section class="comp" id="c-table"><div class="comp__bar"><h3>Data grid</h3><code>.table .dg-*</code><p>Full data table chrome - filters bar, bulk-action bar, legend, sortable headers, mixed cell types, row states (hover/selected/disabled, 51px rows), pagination, horizontal-overflow.</p></div>
 
   <div class="vgroup"><h5>Filters bar</h5>
     <div class="dg-filters">
@@ -535,7 +535,7 @@
     <tbody>
       <tr><td class="col-select"><input type="checkbox" class="checkbox"></td><td class="cell-title">System<div class="cell-sub">Manage User, Asset…</div></td><td><span class="avatar avatar--sm">AL</span></td><td><span class="status status--success status--sm">Active</span></td><td><div class="progress" style="width:80px"><div class="progress__fill" style="width:70%"></div></div></td><td><span class="cell-actions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></span></td></tr>
       <tr class="is-selected"><td class="col-select"><input type="checkbox" class="checkbox" checked></td><td class="cell-title">Marlow Portfolio</td><td><span class="avatar-stack"><span class="avatar avatar--sm">BK</span><span class="avatar avatar--sm" style="background:var(--tertiary-200);color:var(--tertiary-700)">CM</span></span></td><td><span class="status status--attention status--sm">Pending</span></td><td><div class="progress progress--pending" style="width:80px"><div class="progress__fill" style="width:40%"></div></div></td><td><span class="cell-navto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></td></tr>
-      <tr class="is-disabled"><td class="col-select"><input type="checkbox" class="checkbox" disabled></td><td class="cell-title">Field Service</td><td>—</td><td><span class="status status--disabled status--sm">Terminated</span></td><td><div class="progress progress--error" style="width:80px"><div class="progress__fill" style="width:20%"></div></div></td><td><span class="cell-reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></td></tr>
+      <tr class="is-disabled"><td class="col-select"><input type="checkbox" class="checkbox" disabled></td><td class="cell-title">Field Service</td><td>-</td><td><span class="status status--disabled status--sm">Terminated</span></td><td><div class="progress progress--error" style="width:80px"><div class="progress__fill" style="width:20%"></div></div></td><td><span class="cell-reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></td></tr>
     </tbody></table>
   <div class="row" style="justify-content:space-between;margin-top:12px"><span class="pagination__info">1 to 3 of 65 records</span><div class="pagination"><button class="pagination__item pagination__item--icon" disabled>‹</button><button class="pagination__item is-active">1</button><button class="pagination__item">2</button><button class="pagination__item">3</button><button class="pagination__item pagination__item--more">…</button><button class="pagination__item">10</button><button class="pagination__item pagination__item--icon">›</button></div></div>
   </div>
@@ -589,14 +589,14 @@
     <div class="step step--current"><span class="step__badge">2</span><span class="step__label">Current</span></div><span class="steps__line"></span>
     <div class="step"><span class="step__badge">3</span><span class="step__label">Next</span></div></div></div></section>
 
-<section class="comp" id="c-blank"><div class="comp__bar"><h3>Empty state</h3><code>.blank-slate--*</code><p>Placeholder states — no data / no results / no access. Each has its own icon + tint.</p></div>
+<section class="comp" id="c-blank"><div class="comp__bar"><h3>Empty state</h3><code>.blank-slate--*</code><p>Placeholder states - no data / no results / no access. Each has its own icon + tint.</p></div>
   <div class="vgroup"><h5>Variants</h5><div class="blank-grid">
     <figure class="blank-cell"><div class="blank-slate blank-slate--nodata"><svg class="blank-slate__icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2 3.4 6.4 12 10.6l8.6-4.2z"/><path d="M2.6 7.8v8.5a1 1 0 0 0 .56.9L11 21.4v-9.55z"/><path d="M13 11.85v9.55l7.84-3.9a1 1 0 0 0 .56-.9V7.8z" opacity=".82"/></svg><div class="blank-slate__title">No records yet.</div></div><figcaption class="lbl">no data</figcaption></figure>
     <figure class="blank-cell"><div class="blank-slate blank-slate--noresults"><svg class="blank-slate__icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.74 4.75a1.1 1.1 0 0 0 1.56-1.56l-4.75-4.74A7.5 7.5 0 0 0 10.5 3m0 2.6a4.9 4.9 0 1 1 0 9.8 4.9 4.9 0 0 1 0-9.8z"/></svg><div class="blank-slate__title">There is no result for your criteria above. Please use a different criteria.</div></div><figcaption class="lbl">no results</figcaption></figure>
     <figure class="blank-cell"><div class="blank-slate blank-slate--noaccess"><svg class="blank-slate__icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2 4.6 5.05a1 1 0 0 0-.64.93v5.1c0 4.4 3.06 8.02 7.46 9.5a1.8 1.8 0 0 0 1.16 0c4.4-1.48 7.46-5.1 7.46-9.5v-5.1a1 1 0 0 0-.64-.93z"/><path d="M14.1 10.5V9.3a2.1 2.1 0 0 0-4.2 0v1.2a1 1 0 0 0-.9 1v3a1 1 0 0 0 1 1h3.9a1 1 0 0 0 1-1v-3a1 1 0 0 0-.9-1zm-1.5 0h-1.2V9.3a.6.6 0 0 1 1.2 0z" fill="#fff"/></svg><div class="blank-slate__title">You have no access to this content.</div></div><figcaption class="lbl">no access</figcaption></figure>
   </div></div></section>
 
-<section class="comp" id="c-popup"><div class="comp__bar"><h3>Popup / Modal</h3><code>.scrim .modal</code><p>Scrim + centered card. Sizes 320/480/640. Centered-icon feedback set — confirmation, action (yes/no), discard, delete, stop, no-access, info, success, loading — plus left-header (form / list). Footer button patterns.</p></div>
+<section class="comp" id="c-popup"><div class="comp__bar"><h3>Popup / Modal</h3><code>.scrim .modal</code><p>Scrim + centered card. Sizes 320/480/640. Centered-icon feedback set - confirmation, action (yes/no), discard, delete, stop, no-access, info, success, loading - plus left-header (form / list). Footer button patterns.</p></div>
   <div class="vgroup"><h5>Centered-icon archetype</h5><div class="vcells vcells--wide">
     <div class="vcell" style="width:100%"><div class="overlay-stage" style="height:300px"><div class="scrim"><div class="modal modal--md modal--centered"><button class="modal__close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button><span class="modal__status modal__status--question"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01"/></svg></span><h4 class="modal__title">Confirm &lt;&gt;?</h4><p class="modal__sub">Lorem ipsum dolor sit amet.</p><div class="modal__actions"><button class="btn btn--primary">Confirm</button></div></div></div></div><span class="lbl">confirmation</span></div>
     <div class="vcell" style="width:100%"><div class="overlay-stage" style="height:300px"><div class="scrim"><div class="modal modal--md modal--centered"><button class="modal__close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button><span class="modal__status modal__status--warn"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10.9 3.1a1.3 1.3 0 0 1 2.2 0l8.5 14.7a1.3 1.3 0 0 1-1.1 1.95H3.5a1.3 1.3 0 0 1-1.1-1.95z"/><path d="M12 9v4.6M12 16.7h.01" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></span><h4 class="modal__title">Are you sure you want to ‘action’?</h4><p class="modal__sub">Lorem ipsum dolor sit amet.</p><div class="modal__actions"><button class="btn btn--primary">Yes</button><button class="btn btn--outline">No</button></div></div></div></div><span class="lbl">action (yes / no)</span></div>
@@ -616,7 +616,7 @@
 <section class="comp" id="c-slideout"><div class="comp__bar"><h3>Slideout</h3><code>.slideout .slideout--*</code><p>Right-docked panel over a scrim. Sizes S 30% / M 60% / L 90%. Simple (one-column form) or complex (main + summary rail). Top / content / bottom regions.</p></div>
   <div class="vgroup"><h5>Simple form (M · 60%)</h5>
     <div class="overlay-stage" style="height:380px"><div class="scrim" style="justify-content:flex-end;padding:0"><div class="slideout" style="width:62%"><div class="slideout__top"><span class="title-overlay">Overlay Title</span><button class="modal__close" style="position:static"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div><div class="slideout__content"><div class="field"><label class="field__label">Reason <span class="req">*</span></label><select class="select"><option>Select…</option></select></div><div class="field"><label class="field__label">Remarks</label><textarea class="textarea" placeholder="Max. 2000 characters"></textarea></div><div class="field"><label class="field__label">Supporting document</label><div class="upload"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:22px;height:22px"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><div class="text-s">Drag &amp; drop or click to upload</div></div></div></div><div class="slideout__bottom"><button class="btn btn--outline">Cancel</button><button class="btn btn--primary">Confirm</button></div></div></div></div></div>
-  <div class="vgroup"><h5>Complex — main + summary rail (L · 90%)</h5>
+  <div class="vgroup"><h5>Complex - main + summary rail (L · 90%)</h5>
     <div class="overlay-stage" style="height:380px"><div class="scrim" style="justify-content:flex-end;padding:0"><div class="slideout slideout--complex" style="width:92%"><div class="slideout__main"><div class="slideout__top"><span class="title-overlay">Two-column slideout</span></div><div class="slideout__content"><div style="background:var(--surface-default);border-radius:var(--radius-m);padding:40px;text-align:center;color:var(--fg-subtle)">Main content area</div></div></div><div class="slideout__summary"><div class="slideout__top" style="background:var(--surface-default)"><span class="title-overlay">Summary</span></div><div class="slideout__content"><div class="modal-row"><span class="text-s text-subtle">Label</span><span class="text-strong">Value</span></div><div class="modal-row"><span class="text-s text-subtle">Label</span><span class="text-strong">Value</span></div></div><div class="slideout__bottom"><button class="btn btn--outline">Cancel</button><button class="btn btn--primary">Confirm</button></div></div></div></div></div></div>
 </section>
 
@@ -658,16 +658,16 @@
 <!-- ===================== TEMPLATES ===================== -->
 <div class="layer__head"><h2>Templates</h2></div>
 <p class="layer__intro">Organisms assembled into the full page shell.</p>
-<section class="comp" id="c-shell"><div class="comp__bar"><h3>App shell — side-menu layout</h3><code>.app › .sidebar + .main</code><p>216px navy sidebar + scrolling content. Live preview:</p></div>
+<section class="comp" id="c-shell"><div class="comp__bar"><h3>App shell - side-menu layout</h3><code>.app › .sidebar + .main</code><p>216px navy sidebar + scrolling content. Live preview:</p></div>
   <div class="frame"><iframe id="shellFrame" title="Default app shell"></iframe></div></section>
 
-<section class="comp" id="c-pages"><div class="comp__bar"><h3>Page samples</h3><code>templates/*.html</code><p>Full reference pages assembled from the components — each is a standalone HTML page in the design system. Click any to open full-screen.</p></div>
+<section class="comp" id="c-pages"><div class="comp__bar"><h3>Page samples</h3><code>templates/*.html</code><p>Full reference pages assembled from the components - each is a standalone HTML page in the design system. Click any to open full-screen.</p></div>
   <div class="vgroup"><h5>Pages</h5><div class="page-grid" id="pageGrid"></div></div>
 </section>
 
 <!-- ===================== DATA-DENSE ===================== -->
 <div class="layer__head"><h2>Data-dense</h2></div>
-<p class="layer__intro">Flat hairline tables, tabular numerals, compact toolbars — the Linear / Bloomberg register. <code>components/data-dense.css</code></p>
+<p class="layer__intro">Flat hairline tables, tabular numerals, compact toolbars - the Linear / Bloomberg register. <code>components/data-dense.css</code></p>
 
 <section class="comp" id="c-dense-table"><div class="comp__bar"><h3>Flat / dense table</h3><code>.table--flat .table--dense</code><p>Strips card chrome to 1px hairline rows. Right-aligned <code>.cell--num .tnum</code> figures, coloured <code>.cell--delta</code>, and an inline <code>.spark</code> cell.</p></div>
   <div class="vgroup"><h5>Numeric grid</h5>
@@ -709,7 +709,7 @@
 
 <!-- ===================== DOCUMENT / BOXLESS ===================== -->
 <div class="layer__head"><h2>Document / boxless</h2></div>
-<p class="layer__intro">The Notion / Docs editing register — no boxes, click the text to edit. <code>components/doc.css</code></p>
+<p class="layer__intro">The Notion / Docs editing register - no boxes, click the text to edit. <code>components/doc.css</code></p>
 
 <section class="comp" id="c-doc"><div class="comp__bar"><h3>Boxless editor</h3><code>.doc .doc-block .field--bare .input--bare</code><p>Editable <code>.doc__title</code> + a <code>.doc-block</code> paragraph, a couple of bare-field rows, and the <code>.slash-hint</code> command affordance.</p></div>
   <div class="vgroup"><h5>Document excerpt</h5>
@@ -735,9 +735,9 @@
 
 <!-- ===================== CHARTS & GRAPHICS ===================== -->
 <div class="layer__head"><h2>Charts &amp; graphics</h2></div>
-<p class="layer__intro">Static, theme-able dashboard parts drawn with inline SVG — bars, lines, donut, stat hero, metric tiles, legend. <code>components/charts.css</code></p>
+<p class="layer__intro">Static, theme-able dashboard parts drawn with inline SVG - bars, lines, donut, stat hero, metric tiles, legend. <code>components/charts.css</code></p>
 
-<section class="comp" id="c-stat-hero"><div class="comp__bar"><h3>Stat hero</h3><code>.stat-hero</code><p>Flagship KPI card — big tabular value + delta pill + label + mini spark.</p></div>
+<section class="comp" id="c-stat-hero"><div class="comp__bar"><h3>Stat hero</h3><code>.stat-hero</code><p>Flagship KPI card - big tabular value + delta pill + label + mini spark.</p></div>
   <div class="vgroup"><h5>Card</h5>
     <div class="stat-hero" style="max-width:300px">
       <p class="stat-hero__label">Total revenue</p>
@@ -748,7 +748,7 @@
   </div>
 </section>
 
-<section class="comp" id="c-charts"><div class="comp__bar"><h3>Charts</h3><code>.chart-card .chart--*</code><p>Titled wrappers around inline-SVG charts — bar, line, donut — built from the copy-paste snippets. Series colours track <code>--series-*</code> so a style swap re-skins them.</p></div>
+<section class="comp" id="c-charts"><div class="comp__bar"><h3>Charts</h3><code>.chart-card .chart--*</code><p>Titled wrappers around inline-SVG charts - bar, line, donut - built from the copy-paste snippets. Series colours track <code>--series-*</code> so a style swap re-skins them.</p></div>
   <div class="vgroup"><h5>Bar · line · donut</h5><div class="vcells vcells--wide">
     <div class="chart-card"><h4 class="chart-card__title">Revenue by quarter</h4><div class="chart-card__body">
       <svg class="chart chart--bar" viewBox="0 0 200 120" role="img" aria-label="Bar chart">
@@ -781,7 +781,7 @@
   </div></div>
 </section>
 
-<section class="comp" id="c-metric-tile"><div class="comp__bar"><h3>Metric tiles</h3><code>.metric-tile</code><p>Compact KPI tiles for dashboard grids — value + label + trend.</p></div>
+<section class="comp" id="c-metric-tile"><div class="comp__bar"><h3>Metric tiles</h3><code>.metric-tile</code><p>Compact KPI tiles for dashboard grids - value + label + trend.</p></div>
   <div class="vgroup"><h5>Tiles</h5><div class="vcells vcells--wide">
     <div class="metric-tile"><p class="metric-tile__label">MRR</p><p class="metric-tile__value">$412K</p><span class="metric-tile__trend is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+8.2%</span></div>
     <div class="metric-tile"><p class="metric-tile__label">Signups</p><p class="metric-tile__value">1,284</p><span class="metric-tile__trend is-up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+4.0%</span></div>
@@ -802,7 +802,7 @@
 
 <!-- ===================== MOBILE SHELL ===================== -->
 <div class="layer__head"><h2>Mobile shell</h2></div>
-<p class="layer__intro">Phone frame for mobile screen samples — status bar, app bar, large-touch list, bottom tab bar. <code>shells/mobile-shell.css</code></p>
+<p class="layer__intro">Phone frame for mobile screen samples - status bar, app bar, large-touch list, bottom tab bar. <code>shells/mobile-shell.css</code></p>
 
 <section class="comp" id="c-mobile"><div class="comp__bar"><h3>Phone preview</h3><code>.phone .appbar .list-mobile .phone__tabbar</code><p>Status row + <code>.appbar</code> + a short <code>.list-mobile</code> + a 4-item <code>.phone__tabbar</code>. Scaled down to fit the gallery column.</p></div>
   <div class="vgroup"><h5>Phone</h5>
@@ -901,9 +901,9 @@
   document.getElementById('icons').innerHTML=Object.entries(I).map(([n,p])=>`<div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>${n}</div>`).join('');
   // propagate ?project (and any query) into the shell iframe so assets resolve in the daemon preview
   (function(){var f=document.getElementById('shellFrame');if(f)f.src='shells/app-shell.html'+location.search;})();
-  // scrollspy — highlight the nav link of the section currently in view
+  // scrollspy - highlight the nav link of the section currently in view
   (function(){
-    // robust scroll for EVERY in-page nav link (scrollIntoView finds the real scroll container — works embedded in the editor too)
+    // robust scroll for EVERY in-page nav link (scrollIntoView finds the real scroll container - works embedded in the editor too)
     [].slice.call(document.querySelectorAll('.sidebar a[href^="#"]')).forEach(function(l){
       var s=document.getElementById(l.getAttribute('href').slice(1));
       if(!s) return;
@@ -913,7 +913,7 @@
         if(history.replaceState) history.replaceState(null,'','#'+s.id);
       });
     });
-    // scrollspy highlighting — exclude the brand link
+    // scrollspy highlighting - exclude the brand link
     var links=[].slice.call(document.querySelectorAll('.sidebar__nav a[href^="#"]'));
     var entries=links.map(function(l){var s=document.getElementById(l.getAttribute('href').slice(1));return s?{l:l,s:s}:null;}).filter(Boolean);
     if(!entries.length) return;
@@ -932,7 +932,7 @@
     window.addEventListener('resize',onScroll,{passive:true});
     spy();
   })();
-  // page samples — scaled thumbnail previews + open-full links
+  // page samples - scaled thumbnail previews + open-full links
   (function(){
     var pages=[
       ['login','Login Entry','Full-bleed auth + NovaID + brand footer'],
@@ -949,7 +949,7 @@
         '<div class="page-card__meta"><b>'+p[1]+'</b><span>'+p[2]+'</span></div></a>';
     }).join('');
   })();
-  // style switcher — set document.documentElement.dataset.theme from the dropdown
+  // style switcher - set document.documentElement.dataset.theme from the dropdown
   (function(){
     var sel=document.getElementById('styleSelect');
     if(!sel) return;

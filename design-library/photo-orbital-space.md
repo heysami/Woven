@@ -4,7 +4,7 @@ name: Orbital space photoreal
 category: cinematic
 era: current
 pairsPrototypes: [aesthetic-cosmic-horizon, aesthetic-monochrome-tech-editorial, recipe-ai-foundry-dark, recipe-scientific-infra-marketing, style-silk-chrome-flow]
-notForUseWhen: Brief is warm, domestic, human-scale, or playful — orbit reads cold and vast.
+notForUseWhen: Brief is warm, domestic, human-scale, or playful - orbit reads cold and vast.
 images:
   - src: photo-orbital-space.png
     reason: Photography style sample.
@@ -17,7 +17,7 @@ Planet limb with thin atmosphere rim-glow against true-black space, photographed
 ## Visual signatures
 
 - Planet limb (horizon arc) cropped at frame edge, never a full centered globe
-- Thin atmosphere rim-glow — electric blue scattering band tracing the curve
+- Thin atmosphere rim-glow - electric blue scattering band tracing the curve
 - Satellite / spacecraft hardware lit by planetshine: foil, panels, antennae in crisp detail
 - Night-side city lights, cloud systems, aurora curtains as surface texture
 - Sparse real-exposure stars; sun as a hard point source with honest lens bloom

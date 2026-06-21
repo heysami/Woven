@@ -1,17 +1,17 @@
 {
-  "_intent": "CRAFT-FAIL fixture — the runtime's tick callback reads performance.now() directly, breaking deterministic stepping. craft-lens §3.1 must catch this. aesthetic + concept lenses should skip (per their playbooks' skip rules — when the runtime itself is broken at craft level, downstream lenses don't add information).",
+  "_intent": "CRAFT-FAIL fixture - the runtime's tick callback reads performance.now() directly, breaking deterministic stepping. craft-lens §3.1 must catch this. aesthetic + concept lenses should skip (per their playbooks' skip rules - when the runtime itself is broken at craft level, downstream lenses don't add information).",
 
   "craft": {
     "verdict": "fail",
     "must_cite": ["performance.now()", "tick"],
     "expected_failure_check": "Deterministic time stepping",
     "expected_severity":      "block",
-    "ground_truth_reason":    "tick callback at line ~22 reads performance.now() — breaks deterministic stepping per craft-lens §3.1"
+    "ground_truth_reason":    "tick callback at line ~22 reads performance.now() - breaks deterministic stepping per craft-lens §3.1"
   },
 
   "aesthetic": {
     "verdict":            "n/a",
-    "skip_reason_hint":   "fixture is broken at craft level; aesthetic-lens may proceed and pass (chrome is restrained per brief) or skip per its rules — either outcome is acceptable"
+    "skip_reason_hint":   "fixture is broken at craft level; aesthetic-lens may proceed and pass (chrome is restrained per brief) or skip per its rules - either outcome is acceptable"
   },
 
   "concept": {

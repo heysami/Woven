@@ -1,4 +1,4 @@
-# Step nine — graphic elements
+# Step nine - graphic elements
 
 Same rule as everything else: inherited from genre, applied top-down, leaning on primitives. But because graphics are where the AI tell shows up most visibly, the rules are stricter.
 
@@ -6,14 +6,14 @@ Same rule as everything else: inherited from genre, applied top-down, leaning on
 
 | Category | Function | Decided when |
 |---|---|---|
-| **Iconography** | Functional — labels and affordances | With components, never separately |
-| **Brand mark / logo** | Identity — fixed constant | At step zero, before anything else |
-| **Data viz** (charts, maps, trees, heatmaps) | Functional — the data IS the graphic | Drives the panel layout |
-| **Empty-state illustrations** | Mixed — signals "nothing here" + carries genre tone | With the empty-state component |
+| **Iconography** | Functional - labels and affordances | With components, never separately |
+| **Brand mark / logo** | Identity - fixed constant | At step zero, before anything else |
+| **Data viz** (charts, maps, trees, heatmaps) | Functional - the data IS the graphic | Drives the panel layout |
+| **Empty-state illustrations** | Mixed - signals "nothing here" + carries genre tone | With the empty-state component |
 | **Hero illustrations / product shots** | Decorative + narrative | With the hero section |
-| **Background patterns / gradients / blobs** | Decorative only — mood | Last, only if genre demands |
+| **Background patterns / gradients / blobs** | Decorative only - mood | Last, only if genre demands |
 | **Editorial ornaments** (drop caps, dingbats, rules) | Genre-mandatory decoration | With the body component |
-| **Photography** | Mixed — content + texture | At the point the slot exists |
+| **Photography** | Mixed - content + texture | At the point the slot exists |
 
 ### Three rules govern decoration
 
@@ -23,16 +23,16 @@ Same rule as everything else: inherited from genre, applied top-down, leaning on
 
 The corollary that matters: **the rarer the decoration, the more weight each instance carries.** One ornament in a sparse design is loud and intentional. Five identical ornaments dilute each other. Restraint is the master move.
 
-### Position rules — also genre-inherited
+### Position rules - also genre-inherited
 
 - **Brand mark**: top-left, fixed size, never moves (almost universal).
-- **Empty-state illustration**: centered in panel, illustration ~120–200px above caption above CTA.
-- **Hero illustration**: full-bleed behind text *or* right-side split *or* top-of-stack — pick by genre.
+- **Empty-state illustration**: centered in panel, illustration ~120-200px above caption above CTA.
+- **Hero illustration**: full-bleed behind text *or* right-side split *or* top-of-stack - pick by genre.
 - **Charts / data viz**: takes the panel area; padding and title minimal frame.
 - **Background pattern**: low-contrast, section-clipped, fixed-position, behind content.
 - **Editorial marginalia**: hangs in the margin column, smaller than body, typographically distinct.
 
-### Sequencing — when graphics are decided
+### Sequencing - when graphics are decided
 
 There's no separate "graphics phase." Three timings:
 
@@ -48,7 +48,7 @@ The AI tell on graphics shows up as: generic dribbble illustrations, soft purple
 
 To prevent it:
 
-1. **Build functional graphics from primitives.** Inline SVG with real geometry, CSS bars and tracks. Draw the bare elements yourself — never import a chart library. This forces shape-language tokens to apply.
+1. **Build functional graphics from primitives.** Inline SVG with real geometry, CSS bars and tracks. Draw the bare elements yourself - never import a chart library. This forces shape-language tokens to apply.
 2. **Replace illustrations with typography or geometric shapes when possible.** Big numbers, oversized type, single solid blocks of color, hairline diagrams. These inherit the design system automatically and never look generic.
 3. **Use placeholder rectangles for imagery you don't have.** `<div class="img-placeholder" data-aspect="4:3">PHOTO · café interior</div>`. More honest than a stock blob and often reads better.
 4. **If you must have an illustration, name it specifically.** "Hand-drawn pencil sketch of a café floor plan" not "hero illustration." Specific cues unlock specific corners of the inheritance bank.

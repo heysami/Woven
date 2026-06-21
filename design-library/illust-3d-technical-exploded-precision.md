@@ -13,16 +13,16 @@ images:
 
 # Technical exploded-view precision 3D
 
-The internals of a device rendered as a **3D exploded-view technical illustration** — components floating apart in their assembly relationships (PCB, battery, antenna, sensor array, mechanical chassis, screws), often with **hairline label-lines** connecting components to small annotations or product-spec text. Clean grey/white backdrop, sharp directional studio shadow, no environment clutter. Engineering / precision / "look how it's built" register. Distinct from generic 3D product render in that the WHOLE is taken APART to make the assembly legible.
+The internals of a device rendered as a **3D exploded-view technical illustration** - components floating apart in their assembly relationships (PCB, battery, antenna, sensor array, mechanical chassis, screws), often with **hairline label-lines** connecting components to small annotations or product-spec text. Clean grey/white backdrop, sharp directional studio shadow, no environment clutter. Engineering / precision / "look how it's built" register. Distinct from generic 3D product render in that the WHOLE is taken APART to make the assembly legible.
 
 ## Visual signatures
 
-- a single device shown with its components **spatially exploded** along the assembly axis (typically Z-axis upward) — every internal layer visible
+- a single device shown with its components **spatially exploded** along the assembly axis (typically Z-axis upward) - every internal layer visible
 - common component vocabulary: PCB green/black board, battery pack, antenna module, sensor array, plastic chassis, metal frame, glass screen, screws
 - **hairline label-lines** (1px) connect components to small annotations / part numbers / spec text (optional but signature)
-- clean grey or pure-white backdrop — NO scene, NO lifestyle context
-- sharp directional studio shadow — one key light from upper-left, sharp soft shadow
-- precision-engineering register — accurate materials (brushed aluminum, anodised, FR4 PCB green, plastic injection-molded matte)
+- clean grey or pure-white backdrop - NO scene, NO lifestyle context
+- sharp directional studio shadow - one key light from upper-left, sharp soft shadow
+- precision-engineering register - accurate materials (brushed aluminum, anodised, FR4 PCB green, plastic injection-molded matte)
 - often shot at 3/4 perspective so all layers are visible AND depth-readable
 - numbering / annotations may use technical mono font (Helvetica Neue Light, IBM Plex Mono)
 
@@ -30,11 +30,11 @@ The internals of a device rendered as a **3D exploded-view technical illustratio
 
 **Primary**: 3D exploded view, technical illustration, precision engineering, component layers floating apart, assembly diagram
 
-**Material**: accurate-engineering materials — anodised aluminum, FR4 PCB green, brushed steel, injection-molded matte plastic, glass screen
+**Material**: accurate-engineering materials - anodised aluminum, FR4 PCB green, brushed steel, injection-molded matte plastic, glass screen
 
 **Line**: hairline 1px label-lines connecting components to annotations (optional)
 
-**Color**: muted technical — grey, white, anodised silver/black, PCB green, accent color matched to product (one only)
+**Color**: muted technical - grey, white, anodised silver/black, PCB green, accent color matched to product (one only)
 
 **Style**: components exploded along Z-axis, 3/4 perspective so depth reads, clean white/grey backdrop, sharp single-key shadow
 
@@ -50,10 +50,10 @@ The internals of a device rendered as a **3D exploded-view technical illustratio
 
 ## Example prompt template
 
-> 3D exploded-view technical illustration of a [DEVICE — wearable / phone /
+> 3D exploded-view technical illustration of a [DEVICE - wearable / phone /
 > hardware wallet / sensor / industrial component], components shown
 > spatially exploded along the vertical Z-axis, every internal layer
-> visible — top to bottom: glass screen, anodised aluminum chassis, PCB
+> visible - top to bottom: glass screen, anodised aluminum chassis, PCB
 > board (green FR4 with visible chips), battery pack, antenna module, back
 > cover plate. **Hairline 1px label-lines** connect each component to a
 > small mono-font annotation in the margin. 3/4 perspective so layers are

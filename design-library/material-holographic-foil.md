@@ -13,7 +13,7 @@ images:
 
 # Holographic Foil (Pokemon card / Apple Pay Cash)
 
-A glossy surface that reacts to light: yes — full spectrum hue shift on angle.
+A glossy surface that reacts to light: yes - full spectrum hue shift on angle.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — full spectrum hue shift on angle.
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — full spectrum hue shift on angle
+**Reacts to light**: yes - full spectrum hue shift on angle
 
 **Deforms**: no
 
@@ -63,11 +63,11 @@ raster: oil-on-water iridescent photographs for the highest fidelity
 
 ## Common implementation mistakes (avoid these)
 
-- conic-gradient(#f0f, #0ff, #ff0, #f0f) in sRGB — muddy brown bands at cyan→magenta
+- conic-gradient(#f0f, #0ff, #ff0, #f0f) in sRGB - muddy brown bands at cyan→magenta
 - autoplay 2s infinite hue-rotate spin (epileptic + tells "AI generated")
 - iridescence on body type or form inputs
-- light substrate (kills the specular — iridescence needs dark backing)
-- full 360° hue traversal (real iridescence travels 40–50° arc)
+- light substrate (kills the specular - iridescence needs dark backing)
+- full 360° hue traversal (real iridescence travels 40-50° arc)
 
 ## Examples in the wild
 

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Game experience orchestrator — a gamepad character with a joystick antenna">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Game experience orchestrator - a gamepad character with a joystick antenna">
   <!-- joystick antenna -->
   <path d="M80 50v-12"/>
   <circle cx="80" cy="34" r="4" fill="oklch(94% 0.05 140)"/>

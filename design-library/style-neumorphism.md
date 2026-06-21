@@ -17,21 +17,21 @@ images:
 
 The whole page is one tinted-grey canvas. Each zone (card, dial, toggle group) is ONE extruded container; content inside stays flat. Never extrude text, icons, or rows. The softness comes from the surface, not the letterforms.
 
-**Background:** warm putty grey `#E0E5EC` (canonical Plyuto). Acceptable cousins `#ECF0F3`, `#EFEEEE`. Dark mode `#2D3138` with shadows `#1F2226` / `#3B3F47`. NEVER pure `#FFF` or `#000` — both shadows must stay visible.
+**Background:** warm putty grey `#E0E5EC` (canonical Plyuto). Acceptable cousins `#ECF0F3`, `#EFEEEE`. Dark mode `#2D3138` with shadows `#1F2226` / `#3B3F47`. NEVER pure `#FFF` or `#000` - both shadows must stay visible.
 
-**Greys / accent:** container fill equals page background exactly (this is the rule). Text `#2D3142` headings / `#5B6172` body / `#8A8FA3` meta. Single muted accent only — slate-blue `#6B7AFF` or dusty coral `#FF6B8A` at ~70% saturation, used as flat fill on the one primary action per screen, never as a gradient.
+**Greys / accent:** container fill equals page background exactly (this is the rule). Text `#2D3142` headings / `#5B6172` body / `#8A8FA3` meta. Single muted accent only - slate-blue `#6B7AFF` or dusty coral `#FF6B8A` at ~70% saturation, used as flat fill on the one primary action per screen, never as a gradient.
 
 **Type stack:** Nunito Sans or Inter for UI; SF Pro Rounded acceptable. Tabular figures for the hero numeral. NO serifs, NO display fonts.
 
-**Sizes:** 12 / 14 / 16 / 20 / 28 / 40 (40 reserved for the single big balance number). Icons 20–24px, line-weight 1.5px.
+**Sizes:** 12 / 14 / 16 / 20 / 28 / 40 (40 reserved for the single big balance number). Icons 20-24px, line-weight 1.5px.
 
 **Line-height:** 1.5 body / 1.15 display / 1.0 for the hero numeral.
 
-**Radius:** 16px small chip, 22px button, 28–32px card, 50% pill / avatar. Anything under 12px breaks the soft-plastic read.
+**Radius:** 16px small chip, 22px button, 28-32px card, 50% pill / avatar. Anything under 12px breaks the soft-plastic read.
 
-**Borders:** NONE on extruded surfaces — shadows do the work. 1px `rgba(0,0,0,0.04)` hairline only on inset / pressed states, to anchor the recess.
+**Borders:** NONE on extruded surfaces - shadows do the work. 1px `rgba(0,0,0,0.04)` hairline only on inset / pressed states, to anchor the recess.
 
-**Shadow — the mandatory dual recipe:**
+**Shadow - the mandatory dual recipe:**
 - Raised: `box-shadow: 9px 9px 16px #A3B1C6, -9px -9px 16px #FFFFFF` (offsets equal, blur ≈ 2× offset, dark shadow always bottom-right implying top-left light)
 - Pressed / active: `inset 6px 6px 12px #A3B1C6, inset -6px -6px 12px #FFFFFF`
 - SAME light-source angle everywhere on the page. No per-component shadow tuning.
@@ -54,7 +54,7 @@ Every element extruded into pressed-foam chaos. Pure white / black background ki
 
 ## Best for
 
-Concept fintech dashboards (balance + send/receive cards), smart-home thermostat & lighting controls, meditation / sleep / wellness timers, audio player concepts with circular dials, calculator and budgeting toys — anything monochrome, tactile, low-stakes, where a single hero number sits inside a single soft container.
+Concept fintech dashboards (balance + send/receive cards), smart-home thermostat & lighting controls, meditation / sleep / wellness timers, audio player concepts with circular dials, calculator and budgeting toys - anything monochrome, tactile, low-stakes, where a single hero number sits inside a single soft container.
 
 ## Pairs well with
 

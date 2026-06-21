@@ -13,15 +13,15 @@ images:
 
 # Pixar Elemental translucent-material
 
-Pixar's *Elemental* (2023, Peter Sohn) — the canonical reference for **characters MADE of their element**, with full material-physics simulation. Ember (fire) is **self-illuminating** — she **lights the scene as a light source**. Wade (water) is **refractive and reflective**. Pixar built "Pixar's most fully simulated character" for Ember — physics + cartoony appeal — with **151,000 computers** required to render the film; every frame has at least one (often both) fire and water simulations.
+Pixar's *Elemental* (2023, Peter Sohn) - the canonical reference for **characters MADE of their element**, with full material-physics simulation. Ember (fire) is **self-illuminating** - she **lights the scene as a light source**. Wade (water) is **refractive and reflective**. Pixar built "Pixar's most fully simulated character" for Ember - physics + cartoony appeal - with **151,000 computers** required to render the film; every frame has at least one (often both) fire and water simulations.
 
 ## Visual signatures
 
-- characters MADE OF their element, not wearing it — **fire character is literally fire**, water character is literally water, etc.
-- **Ember (fire)**: self-illuminating — emits light onto nearby surfaces, semi-translucent flame body, shifting plume around the head, residue effects (sparks, glow trails)
-- **Wade (water)**: refractive and reflective — light bends through and bounces off, **ripples visible across the face**, body slightly slosh-y with cartoony surface tension
+- characters MADE OF their element, not wearing it - **fire character is literally fire**, water character is literally water, etc.
+- **Ember (fire)**: self-illuminating - emits light onto nearby surfaces, semi-translucent flame body, shifting plume around the head, residue effects (sparks, glow trails)
+- **Wade (water)**: refractive and reflective - light bends through and bounces off, **ripples visible across the face**, body slightly slosh-y with cartoony surface tension
 - characters have **face features rendered ON / WITHIN their element-substance** (Wade's face ripples; Ember's face flickers with internal flame patterns)
-- **studied physics + cartoony appeal** — accurate-enough fluid sim, but stylized for character expressiveness
+- **studied physics + cartoony appeal** - accurate-enough fluid sim, but stylized for character expressiveness
 - environments support the materials: Water District is **"slick, reflective, translucent, transparent,"** Fire District is warm-toned glowing
 - soft Pixar-grade lighting that respects the self-illumination (fire) and refraction (water) physics
 - subsurface scatter through translucent bodies
@@ -30,11 +30,11 @@ Pixar's *Elemental* (2023, Peter Sohn) — the canonical reference for **charact
 
 **Primary**: Elemental Pixar character, self-illuminating fire OR refractive water OR translucent element, body literally made of substance
 
-**Material**: character body literally constructed of the element — **fire (self-illuminating, casts light, semi-translucent flame body, shifting plume)** OR **water (refractive, reflective, ripples across surface, slosh-y, cartoony surface tension)** OR **earth/leaf/cloud variants**
+**Material**: character body literally constructed of the element - **fire (self-illuminating, casts light, semi-translucent flame body, shifting plume)** OR **water (refractive, reflective, ripples across surface, slosh-y, cartoony surface tension)** OR **earth/leaf/cloud variants**
 
 **Line**: no line; the element's substance is the silhouette
 
-**Color**: element-coded — fire warm-orange / red / yellow with **internal flame flicker**, water cyan / blue with **refractive distortion**, earth green-brown, cloud soft-white
+**Color**: element-coded - fire warm-orange / red / yellow with **internal flame flicker**, water cyan / blue with **refractive distortion**, earth green-brown, cloud soft-white
 
 **Style**: face features rendered ON/WITHIN element substance, environmental lighting reflects the element's physics, Pixar-grade stylized-physics
 
@@ -46,7 +46,7 @@ Pixar's *Elemental* (2023, Peter Sohn) — the canonical reference for **charact
 
 **Tools / pipeline**: Pixar RenderMan, Houdini fluid simulation, proprietary Pixar rigging tools, 151,000-computer render farm
 
-**Adjacent**: Inside Out (volumetric-particle-aura — sibling abstract-material discipline), Soul (Great Before counselors with "living line" abstract bodies)
+**Adjacent**: Inside Out (volumetric-particle-aura - sibling abstract-material discipline), Soul (Great Before counselors with "living line" abstract bodies)
 
 **Movements**: post-2023 "translucent character" rendering trend; element-personified branding direction
 

@@ -7,7 +7,7 @@ project tree under a tmpdir. Designed to run standalone:
   or
   cd editor/kinds && python test_versioning.py
 
-No pytest dependency — every check is a plain assert with a descriptive
+No pytest dependency - every check is a plain assert with a descriptive
 message. Exits 0 on success, non-zero on first failure.
 """
 from __future__ import annotations
@@ -107,7 +107,7 @@ def test_eviction_keeps_active_and_pinned():
         _touch(proj, "source/x.html", "v")
         node = {"id": "a1", "kind": "asset", "assetKind": "html",
                 "path": "source/x.html"}
-        # Snapshot 25 times — small cap so we can observe eviction.
+        # Snapshot 25 times - small cap so we can observe eviction.
         ids = []
         for i in range(25):
             _write(os.path.join(proj, "source/x.html"), f"v{i}")
@@ -172,7 +172,7 @@ def test_migration_synthesizes_v0():
         _touch(proj, "source/page/index.html", "<h1>legacy</h1>")
         node = {"id": "legacy_asset", "kind": "asset",
                 "assetKind": "html", "path": "source/page/index.html"}
-        # No versions yet — migration synthesizes v0.
+        # No versions yet - migration synthesizes v0.
         assert V.migrate_legacy_asset(proj, node) is True
         assert node.get("activeVersionId")
         assert len(node["versions"]) == 1
@@ -216,18 +216,18 @@ def test_snapshot_changed_assets_dedup_and_mtime():
             ],
             "edges": [],
         }
-        # First batch — both assets are newly written.
+        # First batch - both assets are newly written.
         snaps = V.snapshot_changed_assets(proj, workflow, ["source/img/a.png", "source/img/b.png"])
         assert len(snaps) == 2, f"expected 2 snapshots, got {len(snaps)}"
         ids = {s["nodeId"] for s in snaps}
         assert ids == {"asset_a", "asset_b"}
 
-        # Second batch with same paths but no file change — should dedup
+        # Second batch with same paths but no file change - should dedup
         # because the file mtime hasn't advanced past the version's createdAt.
         snaps2 = V.snapshot_changed_assets(proj, workflow, ["source/img/a.png"])
         assert len(snaps2) == 0, f"expected 0 (file unchanged), got {len(snaps2)}"
 
-        # Third batch — change one file's mtime forward then re-snap.
+        # Third batch - change one file's mtime forward then re-snap.
         import time as _t
         future = _t.time() + 5
         os.utime(os.path.join(proj, "source/img/a.png"), (future, future))
@@ -235,7 +235,7 @@ def test_snapshot_changed_assets_dedup_and_mtime():
         assert len(snaps3) == 1, f"expected 1 after mtime bump, got {len(snaps3)}"
         assert snaps3[0]["nodeId"] == "asset_a"
 
-        # Same-batch dedup: include the same path twice — one snap only.
+        # Same-batch dedup: include the same path twice - one snap only.
         future += 5
         os.utime(os.path.join(proj, "source/img/b.png"), (future, future))
         snaps4 = V.snapshot_changed_assets(proj, workflow,

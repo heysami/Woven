@@ -12,15 +12,15 @@ images:
 
 # Face-ID dot-projector / structured-light depth scan
 
-Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-projector pattern — **30,000+ infrared dots** projected onto the surface in a structured grid, the dots distorting along the contours of the face to reveal its 3D shape. Sci-fi / biometric / surveillance / AI-identity register. The dots themselves luminous against deep-shadow skin. Distinct from glitch art — this is BIOMETRIC SCAN, not corruption; the technology is real and the aesthetic emerges from that physical apparatus.
+Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-projector pattern - **30,000+ infrared dots** projected onto the surface in a structured grid, the dots distorting along the contours of the face to reveal its 3D shape. Sci-fi / biometric / surveillance / AI-identity register. The dots themselves luminous against deep-shadow skin. Distinct from glitch art - this is BIOMETRIC SCAN, not corruption; the technology is real and the aesthetic emerges from that physical apparatus.
 
 ## Visual signatures
 
 - Subject's face (or object) covered in **thousands of small luminous dots** in a structured pattern
-- The dots distort along the contours — denser where the surface bends, stretched where it slopes
+- The dots distort along the contours - denser where the surface bends, stretched where it slopes
 - The dots are usually **infrared-red / cyan / pure-white** (matching real Face-ID sensors) on deep-shadow skin/surface
 - Background is usually deep black (matching dark-room scan condition)
-- Subject otherwise dimly lit — the dots are the primary light source
+- Subject otherwise dimly lit - the dots are the primary light source
 - May include a faint scan-line sweep or "scanning" UI overlay (laser-grid, biometric crosshairs, ID-number readout)
 - Reads as "the moment of being identified"
 
@@ -28,9 +28,9 @@ Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-project
 
 **Primary**: 30,000 infrared dots, structured light, Face ID dot projector, biometric depth scan, TrueDepth pattern
 
-**Lighting**: only the dot-projector light source — deep-black ambient, dots are luminous (red / cyan / white), faint subject lighting from the dots themselves
+**Lighting**: only the dot-projector light source - deep-black ambient, dots are luminous (red / cyan / white), faint subject lighting from the dots themselves
 
-**Camera / lens**: anything — the dots are post-projected; works with 50mm or 85mm portrait lens for face context
+**Camera / lens**: anything - the dots are post-projected; works with 50mm or 85mm portrait lens for face context
 
 **Film stock / post-processing**: deep black background, luminous dot overlay matching projector physics (dots denser at contour bends, stretched at slopes)
 
@@ -50,8 +50,8 @@ Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-project
 
 > Editorial portrait of a young person against deep-black backdrop, face
 > mapped with **30,000 luminous infrared-red dots** in a structured-light
-> grid pattern, the dots distorting along the contours of the face — denser
-> where the cheekbone curves, stretched along the slope of the nose — exactly
+> grid pattern, the dots distorting along the contours of the face - denser
+> where the cheekbone curves, stretched along the slope of the nose - exactly
 > like an Apple-TrueDepth / Face-ID scan. The dots are the only visible
 > light source; the rest of the face is in deep shadow. Optional faint
 > biometric-UI crosshair overlay in the corner. Clinical, surveillance,

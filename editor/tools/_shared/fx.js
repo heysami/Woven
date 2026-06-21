@@ -472,9 +472,9 @@ const LEGACY_FX_ALIASES = `#define tex uTex
 
 // Build the full fragment source for a custom effect. Accepts three authoring
 // shapes so one custom contract covers every entry point:
-//   (a) a fully self-authored shader (its own `#version`) — used verbatim;
-//   (b) a full `void main(){…}` using legacy names — wrapped with header+aliases;
-//   (c) a bare body that `return`s a vec4 — wrapped as `vec4 fxMain()`.
+//   (a) a fully self-authored shader (its own `#version`) - used verbatim;
+//   (b) a full `void main(){…}` using legacy names - wrapped with header+aliases;
+//   (c) a bare body that `return`s a vec4 - wrapped as `vec4 fxMain()`.
 function buildCustomFrag(glsl) {
   const s = String(glsl || '');
   if (/#version/.test(s)) return s;
@@ -489,7 +489,7 @@ function buildCustomFrag(glsl) {
 }
 
 // ---------------------------------------------------------------------------
-// Serializable program specs — the single source of truth shared with other
+// Serializable program specs - the single source of truth shared with other
 // runtimes (the mmcomposer editor GLFx + its baked standalone player). Each
 // entry is plain JSON (fragment source + declarative uniform list, no
 // functions), so it survives JSON.stringify into a baked, self-contained file.

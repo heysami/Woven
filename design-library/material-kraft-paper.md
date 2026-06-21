@@ -13,7 +13,7 @@ images:
 
 # Kraft Paper (brown unbleached cardstock)
 
-A matte surface and deforms: yes — wrinkles, tears.
+A matte surface and deforms: yes - wrinkles, tears.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — wrinkles, tears.
 
 **Reacts to light**: no specular
 
-**Deforms**: yes — wrinkles, tears
+**Deforms**: yes - wrinkles, tears
 
 **Age / wear**: shows wear (creases at fold)
 
@@ -44,7 +44,7 @@ raster: scan of real brown kraft; visible long fibers
 
 **Highlight**: minimal
 
-**Depth**: yes — paper can curl
+**Depth**: yes - paper can curl
 
 **Parallax**: minimal
 

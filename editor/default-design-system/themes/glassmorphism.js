@@ -1,34 +1,34 @@
-/* Glassmorphism theme runtime — OUR POC liquid glass, verbatim.
+/* Glassmorphism theme runtime - OUR POC liquid glass, verbatim.
    Activates on <html data-theme="glassmorphism">. Mounts ONE full-viewport WebGL
-   canvas behind the page, RASTERISES the page once (html2canvas) — the rule that
-   lets a WebGL shader refract real DOM — and renders the POC glass shader into the
+   canvas behind the page, RASTERISES the page once (html2canvas) - the rule that
+   lets a WebGL shader refract real DOM - and renders the POC glass shader into the
    rect of every STATIC chrome element (topbar / sidebar / modal / fab / float
    panel), refracting the captured page PANNED by scroll. Re-rasterises only when
    the DOM settles (debounced). Falls back to plain CSS glass if WebGL2 or
-   html2canvas is unavailable. Hand-written — uses the EXACT pill-POC shader. */
+   html2canvas is unavailable. Hand-written - uses the EXACT pill-POC shader. */
 (function(){
 "use strict";
 var DPR=Math.min(2, window.devicePixelRatio||1);
 
 /* static surfaces the glass renders on (they don't move on scroll, so the fixed
    canvas glued to them has zero lag; scrolling content keeps the CSS fallback). */
-/* SEMANTIC chrome list — which surfaces are glass. NOT gated on scroll: a child
+/* SEMANTIC chrome list - which surfaces are glass. NOT gated on scroll: a child
    canvas tracks its host every frame (renderUnit reads getBoundingClientRect; the
    shader's uScroll cancels for elements that scroll with the page), so sticky AND
    scrolling chrome both render correctly. breadcrumb/page-head are deliberately
-   excluded — they are content, not chrome. */
-/* NB: .phone__status (the mobile status bar) is deliberately NOT glass — it reads
+   excluded - they are content, not chrome. */
+/* NB: .phone__status (the mobile status bar) is deliberately NOT glass - it reads
    as device chrome, not a glass surface, so it stays a plain bar (see glassmorphism.css). */
 var SURF=".topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.drawer,.fab,.fab-stack .fab,[data-float-panel],.toolbar,.rail,.style-switcher,.sh-top,.lp-nav";
 
-/* OUR pill-POC presets, VERBATIM — light + dark (px values scaled by DPR where
+/* OUR pill-POC presets, VERBATIM - light + dark (px values scaled by DPR where
    the shader expects px). The theme picks light/dark per the page's theme. */
 var PRESETS={
   light:{bend:8, disp:4, frost:5.5,  bez:16, rad:24, tint:0.58, Lfloor:0.74, rim:0.22, caus:0.30, curve:1, veil:0.20, rimAngle:45},
   dark :{bend:8, disp:4, frost:3.25, bez:16, rad:24, tint:0.45, Lfloor:0.19, rim:0.66, caus:0.00, curve:1, veil:0.22, rimAngle:45}
 };
 /* The POC (tools/materiallab/_shader_pill_nav_poc.html) persists the user's tuned
-   dials to localStorage['woven-lg-presets'] — and runs on the SAME origin as these
+   dials to localStorage['woven-lg-presets'] - and runs on the SAME origin as these
    templates, so the key is shared. Adopt whatever the user tuned there; the values
    above are only the fallback. This is why the DS glass == the user's POC default. */
 try{ var _lg=JSON.parse(localStorage.getItem("woven-lg-presets")||"null");
@@ -75,7 +75,7 @@ var FS="#version 300 es\n"+
 "  col.r=frostSample(docPx+dir*(bend+disp),lod).r;\n"+
 "  col.g=frostSample(docPx+dir*(bend),      lod).g;\n"+
 "  col.b=frostSample(docPx+dir*(bend-disp),lod).b;\n"+
-"  vec3 veilCol = (uDark>0.5) ? vec3(0.04,0.05,0.07) : vec3(0.99,1.0,1.0);\n"+   // glass stays WHITE/neutral — not scheme-tinted (accents carry the colour)
+"  vec3 veilCol = (uDark>0.5) ? vec3(0.04,0.05,0.07) : vec3(0.99,1.0,1.0);\n"+   // glass stays WHITE/neutral - not scheme-tinted (accents carry the colour)
 "  col=mix(col, veilCol, uVeil);\n"+
 "  float V=max(max(col.r,col.g),col.b);\n"+
 "  float Vn = (uDark>0.5) ? min(V, uLfloor) : mix(uLfloor, 1.0, V);\n"+
@@ -141,7 +141,7 @@ function uploadToUnit(u,cv){
   u.texReady=true;
 }
 /* The rasterise rule needs html2canvas. The editor already loads html2canvas-pro
-   (index.html); standalone template pages don't — so lazy-load the SAME CDN build
+   (index.html); standalone template pages don't - so lazy-load the SAME CDN build
    on demand. No-op when it's already present. */
 var h2cLoading=false;
 function ensureH2C(cb){
@@ -156,7 +156,7 @@ function ensureH2C(cb){
 }
 /* RASTERISE RULE: capture the page ONCE (and on settle). We IGNORE the glass hosts
    themselves so the texture is the clean content the chrome sits over (the POC
-   captures content WITHOUT its pill) — the glass refracts that, panned by scroll. */
+   captures content WITHOUT its pill) - the glass refracts that, panned by scroll. */
 function capturePage(){
   if(capturing||!document.body) return;
   if(!window.html2canvas){ ensureH2C(capturePage); return; }
@@ -174,7 +174,7 @@ function capturePage(){
   var sc=Math.min(DPR, maxTex/docW, maxTex/docH);
   capturing=true;
   try{
-    /* Hide the glass chrome in the CLONE via visibility:hidden — NOT ignoreElements.
+    /* Hide the glass chrome in the CLONE via visibility:hidden - NOT ignoreElements.
        ignoreElements DELETES the element from the clone, so the rest of the layout
        reflows and the texture no longer lines up with on-screen positions. */
     window.html2canvas(document.body,{backgroundColor:bg,scale:sc,logging:false,useCORS:true,allowTaint:false,
@@ -186,7 +186,7 @@ function capturePage(){
 function scheduleCap(){ clearTimeout(capTimer); capTimer=setTimeout(capturePage, 400); }
 
 /* Glass only on chrome that is VISIBLE (templates ship hidden modals that still lay
-   out) and does NOT scroll away (fixed/sticky, or inside one) — the rasterise-once-
+   out) and does NOT scroll away (fixed/sticky, or inside one) - the rasterise-once-
    pan-by-scroll trick only holds for non-scrolling surfaces. */
 function visible(e,b){
   var cs=getComputedStyle(e);
@@ -204,7 +204,7 @@ function nonScrolling(e){
 function targets(){
   var out=[], els=document.querySelectorAll(SURF);
   for(var i=0;i<els.length && out.length<MAX_UNITS;i++){ var e=els[i], b=e.getBoundingClientRect();
-    if(b.width>1 && b.height>1 && visible(e,b)) out.push(e); }   // no scroll gate — SURF is the filter
+    if(b.width>1 && b.height>1 && visible(e,b)) out.push(e); }   // no scroll gate - SURF is the filter
   return out;
 }
 
@@ -235,7 +235,7 @@ function makeUnit(el){
   ["uPage","uPagePx","uCanvas","uCardTL","uScroll","uBend","uDisp","uFrost","uBez","uRad","uTint","uLfloor","uRim","uCaus","uCurve","uVeil","uDark","uRimMouse","uRimAngle","uMouse","uTintColor"]
     .forEach(function(k){ U[k]=gl.getUniformLocation(prog,k); });
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  /* the absolute canvas needs a positioned host — but only force it when the host is
+  /* the absolute canvas needs a positioned host - but only force it when the host is
      STATIC. If it is sticky/fixed/relative/absolute, leave it (clobbering sticky =
      the bar scrolls away). */
   var cs0=getComputedStyle(el);
@@ -261,11 +261,11 @@ function destroyUnit(u){
 }
 function syncUnits(){
   if(!isOn()) return;
-  /* STABLE lifecycle — the #1 cause of the glass "blinking" against the CSS panel:
+  /* STABLE lifecycle - the #1 cause of the glass "blinking" against the CSS panel:
      adding .lg-host changes the host's layout, which can make targets() momentarily
      re-judge the element invalid; destroying on that transient flip removes .lg-host,
      the element becomes valid again, recreate, destroy… an infinite blink. So a unit
-     is ONLY torn down when its element actually leaves the DOM — never on a transient
+     is ONLY torn down when its element actually leaves the DOM - never on a transient
      visibility/rect change. targets() gates CREATION only. */
   for(var j=units.length-1;j>=0;j--){ if(!units[j].el.isConnected){ destroyUnit(units[j]); units.splice(j,1); } }
   var want=targets();
@@ -325,7 +325,7 @@ function mount(){
   window.addEventListener("pointermove",onMove,{passive:true});
   window.addEventListener("scroll",onScroll,{passive:true});
   /* observe ONLY to discover new/removed chrome (debounced syncUnits). We do NOT
-     re-capture on mutation — html2canvas adds + removes its own clone nodes while
+     re-capture on mutation - html2canvas adds + removes its own clone nodes while
      capturing, which would re-trigger capture forever and hang the page. */
   try{ mo=new MutationObserver(scheduleSync); mo.observe(document.body,{childList:true,subtree:true}); }catch(e){}
   syncUnits();

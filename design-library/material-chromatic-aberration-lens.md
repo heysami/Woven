@@ -13,7 +13,7 @@ images:
 
 # Lens Chromatic Aberration (radial RGB split toward corners)
 
-A glossy surface that reacts to light: yes — CA peaks at high-contrast luminance transitions.
+A glossy surface that reacts to light: yes - CA peaks at high-contrast luminance transitions.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — CA peaks at high-contrast luminan
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — CA peaks at high-contrast luminance transitions
+**Reacts to light**: yes - CA peaks at high-contrast luminance transitions
 
 **Deforms**: no (channels shift radially)
 
@@ -31,7 +31,7 @@ A glossy surface that reacts to light: yes — CA peaks at high-contrast luminan
 
 ```yaml
 css: |
-  /* limited — CSS can fake at edges with two filter layers */
+  /* limited - CSS can fake at edges with two filter layers */
   filter: drop-shadow(-1px 0 0 #ff0044) drop-shadow(1px 0 0 #00ddff);
 svg: |
   <feOffset> per channel via <feColorMatrix>, scaled by radial distance
@@ -44,7 +44,7 @@ webgl: |
     sample(uv).g,
     sample(uv - dir * r * 0.012).b
   );
-  Real lenses bias the red toward the edge — tune signs accordingly.
+  Real lenses bias the red toward the edge - tune signs accordingly.
 raster: not appropriate
 ```
 
@@ -61,7 +61,7 @@ raster: not appropriate
 ## Common implementation mistakes (avoid these)
 
 - uniform CA across the frame (real lens CA is radial)
-- very large displacement (becomes glitch, not optics — see rgb-channel-split for that)
+- very large displacement (becomes glitch, not optics - see rgb-channel-split for that)
 - applied to text without limit (illegibility)
 
 ## Examples in the wild

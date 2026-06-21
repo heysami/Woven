@@ -1,11 +1,11 @@
-# Orchestrator system — registry, discovery, disable
+# Orchestrator system - registry, discovery, disable
 
 The orchestrator registry surfaces every top-level orchestrator agent the app
 ships and lets the user disable any of them per project (or workspace-wide
 from the landing page).
 
 Adding a new orchestrator is a **single-file** operation: drop a manifest next
-to the playbook and everything else picks it up automatically — the landing
+to the playbook and everything else picks it up automatically - the landing
 page Orchestrators tab, the daemon's `/__orchestrators` endpoint, the spawn preamble's
 "dispatch this orchestrator FIRST" hard-rule, and the per-project disable toggle.
 
@@ -24,26 +24,26 @@ Fourteen ship today: `visual-orchestrator`, `simulation-orchestrator`,
 `interactive-polish-orchestrator`, `motion-studio-orchestrator`,
 `photography-orchestrator`, `illustration-orchestrator`,
 `material-orchestrator`, `creative-visual-orchestrator`,
-`scene-3d-orchestrator` (the SHARED WebGL render layer — symmetric to
+`scene-3d-orchestrator` (the SHARED WebGL render layer - symmetric to
 visual-orchestrator but for 3D; fans render work out per subsystem,
 each subsystem rendering standalone, and emits a DRIVABLE scene; used
 directly for the hero slot and linked by simulation / narrative / game /
-interactive-media / motion-studio for their heavy 3D — see
+interactive-media / motion-studio for their heavy 3D - see
 `docs/research/spline-grade-3d-study.md`), and `hero-3d-orchestrator`
 (now a thin hero-slot alias over `scene-3d-orchestrator`, kept as the
 target of visual-orchestrator's `3d-hero` classification).
 
 A subagent that just produces one file (a drawer, a researcher, a lens) is
-NOT a orchestrator — it's a component. Don't manifest it here.
+NOT a orchestrator - it's a component. Don't manifest it here.
 
-## The contract — three files
+## The contract - three files
 
-### 1. The playbook — `.claude/agents/<id>.md`
+### 1. The playbook - `.claude/agents/<id>.md`
 
 Standard Claude Code subagent definition. YAML frontmatter (name, description,
 tools) + body. Same shape as the existing orchestrator playbooks.
 
-### 2. The manifest — `.claude/agents/<id>.manifest.json`
+### 2. The manifest - `.claude/agents/<id>.manifest.json`
 
 Pure declarative metadata. Schema:
 
@@ -57,15 +57,15 @@ Pure declarative metadata. Schema:
   "subagentName":   "my-new-orchestrator",          // exact subagent_type for Task dispatch
   "playbookPath":   ".claude/agents/my-new-orchestrator.md",
 
-  "description":    "Longer prose — explains the pipeline shape, the loop-until-bar pattern, multi-draft cruxes if any, what makes this orchestrator the right choice for its trigger.",
+  "description":    "Longer prose - explains the pipeline shape, the loop-until-bar pattern, multi-draft cruxes if any, what makes this orchestrator the right choice for its trigger.",
 
   "triggers": [
-    { "mode": "chat", "title": "Path A — \"build an app\" with this slot",
+    { "mode": "chat", "title": "Path A - \"build an app\" with this slot",
       "rule":       "Top-level Claude scaffolds the app shell first (with the orchestrator's placeholder), then dispatches the orchestrator per slot.",
-      "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>' Path A" },
-    { "mode": "chat", "title": "Path B — ",
+      "ruleSource": "editor/kinds/capabilities.py - '<your hard-rule section title>' Path A" },
+    { "mode": "chat", "title": "Path B - ",
       "rule":       "User wants the artefact itself; Claude dispatches the orchestrator directly in ",
-      "ruleSource": "editor/kinds/capabilities.py — '<your hard-rule section title>' Path B" }
+      "ruleSource": "editor/kinds/capabilities.py - '<your hard-rule section title>' Path B" }
   ],
 
   "dispatches": {
@@ -148,7 +148,7 @@ When a orchestrator is in the disable list:
 - The Orchestrators tab card is visually dimmed + the toggle shows OFF
 - Spawned Claude sessions in that scope don't see "dispatch this orchestrator
   FIRST" cues
-- The orchestrator agent ITSELF still exists — user can manually invoke via
+- The orchestrator agent ITSELF still exists - user can manually invoke via
   `Task(subagent_type: "<id>", prompt: "...")` if they know the name
 
 This is intentional: disabling cuts AUTO-DISPATCH, not capability.
@@ -159,11 +159,11 @@ This is intentional: disabling cuts AUTO-DISPATCH, not capability.
   per-target enabled state.
 - **HTTP**: `POST /__orchestrators/disable[?project=<id>]` with
   `{orchestratorId, enabled}` flips one orchestrator's state.
-- **Landing UI**: `editor/app.js:OrchestratorsLanding` — tab next to Projects.
+- **Landing UI**: `editor/app.js:OrchestratorsLanding` - tab next to Projects.
 - **Spawn preamble**: `editor/kinds/capabilities.py:capabilities_preamble`
   takes `project_root` and strips disabled-orchestrator blocks before return.
 
-## Adding a new orchestrator — checklist
+## Adding a new orchestrator - checklist
 
 1. Write the playbook at `.claude/agents/<id>.md`.
 2. Drop the manifest at `.claude/agents/<id>.manifest.json` (this file's §"Contract" §2 schema).
@@ -183,7 +183,7 @@ next reload. No other UI code change needed.
 
 ## Library-backed orchestrators (read if your orchestrator references a curated catalogue)
 
-Some orchestrators carry a curated reference — a body of structured knowledge that drives every dispatch decision. Examples shipped today:
+Some orchestrators carry a curated reference - a body of structured knowledge that drives every dispatch decision. Examples shipped today:
 
 | Orchestrator | Library (full prose) | Index (structured lookup) | Per-entry detail |
 |---|---|---|---|
@@ -192,21 +192,21 @@ Some orchestrators carry a curated reference — a body of structured knowledge 
 | material-orchestrator | `docs/research/material-library.md` (16K words, 78 materials) | `docs/research/material-library.index.json` (60 KB) | `design-library/material-<materialId>.md` (×78) |
 | motion-studio-orchestrator | `docs/research/motion-scene-library.md` (primer, 30 techniques) | `docs/research/motion-scene-library.index.json` (38 KB) | `design-library/motion-<techniqueId>.md` (×30) |
 
-The three-tier layout solves a real problem: a library at 15K+ words is too expensive to read once per slot, and orchestrators routinely dispatch against pages with 10–30 slots. Reading the full library every dispatch would burn 300K+ context tokens before any work begins. The index-first / sed-slice pattern drops per-slot cost by ~95%.
+The three-tier layout solves a real problem: a library at 15K+ words is too expensive to read once per slot, and orchestrators routinely dispatch against pages with 10-30 slots. Reading the full library every dispatch would burn 300K+ context tokens before any work begins. The index-first / sed-slice pattern drops per-slot cost by ~95%.
 
 ### The three artefacts and what each is for
 
-**1. Primer — `docs/research/<name>-library.md`**
+**1. Primer - `docs/research/<name>-library.md`**
 
 A short prose primer (~2-3K words). Carries fundamentals + universal rules; does NOT carry per-entry data. Required sections:
-- §1 Prompting / Implementation fundamentals (the principles primer — film stocks worth naming, lighting setups, material light-interaction, depth cueing, anti-pattern catalogue)
+- §1 Prompting / Implementation fundamentals (the principles primer - film stocks worth naming, lighting setups, material light-interaction, depth cueing, anti-pattern catalogue)
 - Decision-tree prose section (the structured decision tree lives in `.index.json`; this section is prose-context for it)
 - Universal negative-keyword list
 - Implementation / orchestrator-integration notes
 
 The primer is read-once-per-session reference. Not in the dispatch hot-path.
 
-**2. Per-entry source files — `design-library/<prefix>-<entryId>.md`**
+**2. Per-entry source files - `design-library/<prefix>-<entryId>.md`**
 
 **THIS IS THE SOURCE OF TRUTH for each entry.** Hand-edited, one file per entry, ~1-5KB each. YAML frontmatter for structured fields + markdown body for prose. Same model as `design-library/style-glassmorphism.md` and `design-library/aesthetic-vaporwave.md`.
 
@@ -262,9 +262,9 @@ To **add a new entry**: create a new `design-library/<prefix>-<entryId>.md` (cop
 
 These files are ALSO the runtime read for the drawer (~1-5KB per dispatch) AND the Design library tab's browseable card (image-sample slot supported via `<!-- image: ... -->` markers).
 
-**3. Index — `docs/research/<name>-library.index.json`**
+**3. Index - `docs/research/<name>-library.index.json`**
 
-Auto-generated by `scripts/build-library-indexes.py` (scans `design-library/<prefix>-*.md` files and builds the index from their frontmatter). The orchestrator's discovery layer — read-once-per-session, ~30–80 KB structured JSON, no prose-scanning.
+Auto-generated by `scripts/build-library-indexes.py` (scans `design-library/<prefix>-*.md` files and builds the index from their frontmatter). The orchestrator's discovery layer - read-once-per-session, ~30-80 KB structured JSON, no prose-scanning.
 
 Schema (declared as `version: "2.0"`):
 
@@ -298,12 +298,12 @@ Schema (declared as `version: "2.0"`):
 }
 ```
 
-The `sourceFile` field tells the drawer where to read the entry's full detail. The decision tree is BUILT from each entry's `pairsPrototypes` field — first entry to claim a slug is the default; subsequent ones become alternatives.
+The `sourceFile` field tells the drawer where to read the entry's full detail. The decision tree is BUILT from each entry's `pairsPrototypes` field - first entry to claim a slug is the default; subsequent ones become alternatives.
 
 ### The orchestrator's access pattern (per dispatch)
 
 ```
-1. Orchestrator §0 — read library.index.json (~30-80 KB structured, ONCE per session).
+1. Orchestrator §0 - read library.index.json (~30-80 KB structured, ONCE per session).
 2. index.decisionTree[committedAesthetic] → {default, alternatives[]}.
 3. JSON-only filter on index.entries[styleId].roleAffinity + .notForUseWhen.
    No source file or primer touched yet.
@@ -318,9 +318,9 @@ per-entry data). The user re-runs scripts/build-library-indexes.py after adding 
 new design-library/<prefix>-<entryId>.md.
 ```
 
-Per-slot cost: ~3 KB of index (one-time per session) + ~1-5 KB of per-entry file per slot. A 20-slot page is ~30-100 KB total. The primer file (`docs/research/<name>-library.md`) is never read at dispatch time — only when a human reads it for context.
+Per-slot cost: ~3 KB of index (one-time per session) + ~1-5 KB of per-entry file per slot. A 20-slot page is ~30-100 KB total. The primer file (`docs/research/<name>-library.md`) is never read at dispatch time - only when a human reads it for context.
 
-### Adding a new library-backed orchestrator — checklist
+### Adding a new library-backed orchestrator - checklist
 
 1. **Write the primer** at `docs/research/<name>-library.md`:
    - Fundamentals / principles primer (the "how to think about this medium" prose)
@@ -332,17 +332,17 @@ Per-slot cost: ~3 KB of index (one-time per session) + ~1-5 KB of per-entry file
    - H1 + one-line summary
    - Markdown sections (Visual signatures, Prompt keywords, Example prompt template, When to use, When NOT to use, Pairs with)
    - `<!-- image: ... -->` placeholder for the Design library card
-3. **Register the library in `scripts/build-library-indexes.py`** — add a LIBS entry with `{prefix, name, id_key, out}`.
+3. **Register the library in `scripts/build-library-indexes.py`** - add a LIBS entry with `{prefix, name, id_key, out}`.
 4. **Run the script**: `python3 scripts/build-library-indexes.py`. Verify it scanned the design-library/ files and built `≥1 decisionTree slug`.
 5. **Add the prefix to `serve.py:_PROTOTYPE_CATEGORIES`** so the System tab surfaces the new bucket. The 228 photo/illust/material files already do this; mirror the pattern.
 6. **Write the orchestrator playbook** following `photography-orchestrator.md` / `material-orchestrator.md` as a template. §0 reads the **index**, NOT the primer. §2 picks candidates from `decisionTree` + filters on JSON fields.
-7. **Write the per-slot / per-element drawer playbook** following `photography-style-enricher.md` / `material-fidelity-author.md` as templates. The drawer reads `design-library/<prefix>-<entryId>.md` directly (it's the source of truth — no library slicing).
+7. **Write the per-slot / per-element drawer playbook** following `photography-style-enricher.md` / `material-fidelity-author.md` as templates. The drawer reads `design-library/<prefix>-<entryId>.md` directly (it's the source of truth - no library slicing).
 8. **Drop the manifest** at `.claude/agents/<id>-orchestrator.manifest.json`. Set `documents.designDoc` to the primer path and `documents.policy` (or another `documents.*` field) to the index path so the System tab card shows both as references.
 
 To edit an existing entry: open `design-library/<prefix>-<entryId>.md` directly. Re-run `python3 scripts/build-library-indexes.py` after committing. The primer file is only edited when the FUNDAMENTALS change (e.g. you learned a new film stock worth naming, or a new universal anti-pattern).
 
 ### When NOT to use a library-backed pattern
 
-- If the orchestrator's decision is purely structural (no curated knowledge needed), use a flat playbook (e.g. `interactive-polish-orchestrator` has no library — its decisions come from genre + register, not a catalogue).
+- If the orchestrator's decision is purely structural (no curated knowledge needed), use a flat playbook (e.g. `interactive-polish-orchestrator` has no library - its decisions come from genre + register, not a catalogue).
 - If the orchestrator's catalogue would have < 20 entries, inline them in the playbook directly. The index pattern is for catalogues of 30+ entries where the playbook would balloon if everything lived inline.
-- If the catalogue changes per-project (not workspace-wide), it doesn't belong in `docs/research/` — surface it via the project's own metadata (e.g. `workflow/<plan>.json`).
+- If the catalogue changes per-project (not workspace-wide), it doesn't belong in `docs/research/` - surface it via the project's own metadata (e.g. `workflow/<plan>.json`).

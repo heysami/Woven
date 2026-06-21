@@ -1,8 +1,8 @@
-# Scene-based addendum — drawing-time details
+# Scene-based addendum - drawing-time details
 
 Drawing-time vocabulary for scene-based genres. Read after committing a scene-based genre from the main playbook.
 
-### Permitted runtime — CDN-only, no build step
+### Permitted runtime - CDN-only, no build step
 
 The "no build, opens by double-clicking" commitment is preserved. Scene libraries enter via ESM importmap in the same `index.html`:
 
@@ -23,10 +23,10 @@ The "no build, opens by double-clicking" commitment is preserved. Scene librarie
 | Need | Library (CDN ESM) | Notes |
 |---|---|---|
 | 3D scene (default) | `three` | Corpus default; inherits the most. Raw WebGL only when the shader IS the entire subject. |
-| 3D inside React/htm | `@react-three/fiber` + `@react-three/drei` via esm.sh | Optional — vanilla Three.js with one `useEffect` is usually less ceremony. |
+| 3D inside React/htm | `@react-three/fiber` + `@react-three/drei` via esm.sh | Optional - vanilla Three.js with one `useEffect` is usually less ceremony. |
 | Gaussian splat viewer | `@mkkellogg/gaussian-splats-3d` via esm.sh | Sample splats from public archives, not generated on the fly. |
 | Photogrammetry mesh | Three.js `GLTFLoader` | For Smithsonian / Open Heritage 3D / Sketchfab CC0 captures. |
-| Real-world map (vector) | **`maplibre-gl`** (default, free, no token) | Use `mapbox-gl` only if a real Mapbox token is in the brief — prototypes prefer MapLibre. |
+| Real-world map (vector) | **`maplibre-gl`** (default, free, no token) | Use `mapbox-gl` only if a real Mapbox token is in the brief - prototypes prefer MapLibre. |
 | Real-world map (raster) | `leaflet` + OSM tiles | When you don't need vector terrain or 3D camera. |
 | Geospatial overlays / large data | `deck.gl` layered on MapLibre | Point clouds, arcs, hexagons, trip animations. |
 | Globe | `globe.gl` (Three.js wrapper, declarative) | CesiumJS only when geodetic accuracy and terrain matter. |
@@ -43,16 +43,16 @@ The "no build, opens by double-clicking" commitment is preserved. Scene librarie
 | Music synthesis / sequencing | `tone.js` via CDN | Only when the brief calls for synthesis or step-sequencing. |
 | Product 3D hero (one part) | `@google/model-viewer` web component via CDN | Hero rotation / configurator at landing scale. For full CAD viewer, use Three.js. |
 | Parametric CAD geometry | `replicad` or `opencascade.js` via esm.sh | When a slider changes a dimension and the geometry rebuilds. |
-| VR session (declarative) | `aframe` via CDN | Corpus default for prototype WebXR — `<a-scene>` / `<a-entity>` HTML. |
+| VR session (declarative) | `aframe` via CDN | Corpus default for prototype WebXR - `<a-scene>` / `<a-entity>` HTML. |
 | VR session (custom render) | Three.js with `WebXR` API + `XRControllerModelFactory` | When custom shaders / per-frame logic are in the brief. |
 | AR face / image tracking | `mind-ar` via CDN | For face filters, image-anchored overlays, try-on. |
 | AR surface / hit-test | WebXR `immersive-ar` session via vanilla API | When the brief calls for surface plane detection and the device supports it. |
 | 2D particle / sprite simulation | `pixi.js` via CDN | Default for 2D particle fields up to millions of sprites. |
 | Low-level WebGL bindings | `regl` via CDN | When you want declarative data-bound WebGL without Three.js. |
 
-**Forbidden even in scene mode:** physics engines (Cannon, Rapier — unless the simulation IS the brief), full game frameworks (Phaser, Babylon, PlayCanvas — Three is the corpus default), networking SDKs, analytics, telemetry, anything that talks to a private API or requires keys not in the brief. Read-only public endpoints (IIIF, OSM, MapTiler free tier, NASA GIBS, USGS, Polyhaven, Natural Earth, Wikimedia) are fine.
+**Forbidden even in scene mode:** physics engines (Cannon, Rapier - unless the simulation IS the brief), full game frameworks (Phaser, Babylon, PlayCanvas - Three is the corpus default), networking SDKs, analytics, telemetry, anything that talks to a private API or requires keys not in the brief. Read-only public endpoints (IIIF, OSM, MapTiler free tier, NASA GIBS, USGS, Polyhaven, Natural Earth, Wikimedia) are fine.
 
-### Asset vocabulary — real sources, not placeholders
+### Asset vocabulary - real sources, not placeholders
 
 The `<div class="img-placeholder">` rule from step nine is **suspended** for scene-based genres. Placeholder rectangles in a Three.js scene look worse than nothing. Real assets from public, citable sources are mandatory:
 
@@ -71,16 +71,16 @@ The `<div class="img-placeholder">` rule from step nine is **suspended** for sce
 | Geocoded sample data | Natural Earth (countries, cities, terrain), OurAirports, GTFS open transit feeds | CC0 / CC-BY |
 | Climate / weather | NOAA, ECMWF open data | open |
 
-**Name the asset specifically in code.** Not `loader.load("model.glb")` but `loader.load("https://dl.polyhaven.org/file/.../delft_window_4k.hdr")` with a one-line comment naming what it is and its licence. Specificity prevents the AI-generic failure mode in 3D too — a generic untextured grey box is the 3D equivalent of a soft purple gradient blob.
+**Name the asset specifically in code.** Not `loader.load("model.glb")` but `loader.load("https://dl.polyhaven.org/file/.../delft_window_4k.hdr")` with a one-line comment naming what it is and its licence. Specificity prevents the AI-generic failure mode in 3D too - a generic untextured grey box is the 3D equivalent of a soft purple gradient blob.
 
-### Motion budget — held breath, not entrance fireworks
+### Motion budget - held breath, not entrance fireworks
 
 Scene-based genres unlock motion forbidden in drawing genres, but only the quiet kinds:
 
-- **Held breath of the scene** — slow camera drift, light shifting through a window, dust in a sunbeam, water rippling, painter's hand barely moving. Loops at 0.05–0.3 Hz, amplitude small. The scene feels alive, not performed.
-- **Continuous simulation** — particle flow, fluid, shader-driven generative motion at frame rate. Justified when the simulation IS the content.
-- **Camera moves on visitor input** — orbit, pan, zoom, dolly. Damped. Inertia. No snap-to.
-- **Element transitions inside the scene** — layer fades (surface → underdrawing), depth changes, voice ducking, marker pulses. Mirror the drawing-genre budget: 0.3–0.6s with calm easing.
+- **Held breath of the scene** - slow camera drift, light shifting through a window, dust in a sunbeam, water rippling, painter's hand barely moving. Loops at 0.05-0.3 Hz, amplitude small. The scene feels alive, not performed.
+- **Continuous simulation** - particle flow, fluid, shader-driven generative motion at frame rate. Justified when the simulation IS the content.
+- **Camera moves on visitor input** - orbit, pan, zoom, dolly. Damped. Inertia. No snap-to.
+- **Element transitions inside the scene** - layer fades (surface → underdrawing), depth changes, voice ducking, marker pulses. Mirror the drawing-genre budget: 0.3-0.6s with calm easing.
 
 **Still forbidden:** scroll-jacked camera flythroughs, scroll-tells-a-story gimmicks, entrance-animation fireworks, parallax on everything, particle explosions for state changes, the warehouse Immersive-Van-Gogh kitsch. Motion serves the work; the work never serves the motion.
 
@@ -91,9 +91,9 @@ A scene-based prototype must still open and run on the demo machine.
 - **One scene per page.** Don't mount five Three.js canvases on one page; the GPU will choke. Mount on tab activation, dispose on leave.
 - **Cap by device pixel ratio.** `renderer.setPixelRatio(Math.min(devicePixelRatio, 2))`. Cap mesh complexity at what a five-year-old MacBook can render.
 - **Stills path.** If the scene is the front door, always provide a high-fidelity still + spatial-audio alternative for low-bandwidth contexts. Render the still from the same scene or include a baked image.
-- **Lazy-load large assets** (splats, HDRIs > 10 MB) behind a visible "Load scene" affordance — never auto-load on page open.
+- **Lazy-load large assets** (splats, HDRIs > 10 MB) behind a visible "Load scene" affordance - never auto-load on page open.
 
-### Accessibility — scenes must still be readable
+### Accessibility - scenes must still be readable
 
 Drawing genres inherit accessibility from semantic HTML. Scenes don't. Three additions are mandatory:
 
@@ -107,24 +107,24 @@ In addition to the base token block, scene-based prototypes need a small extensi
 
 ```css
 :root {
-  /* Scene chrome — overlays floating on the canvas */
+  /* Scene chrome - overlays floating on the canvas */
   --scene-overlay-bg: oklch(98% 0.002 80 / 0.78);   /* paper, translucent */
   --scene-overlay-border: oklch(50% 0.005 80 / 0.18);
   --scene-overlay-blur: 16px;                        /* glass panel */
   --scene-control: oklch(20% 0.01 80);               /* canvas-readable text */
 
-  /* Scene ambient — sampled from the keystone asset */
+  /* Scene ambient - sampled from the keystone asset */
   --scene-ink: ...;            /* a deep, scene-derived ink */
   --scene-light: ...;          /* warm tint of the light source */
   --scene-accent: ...;         /* the single curatorial accent for in-canvas affordances */
 }
 ```
 
-Glass panel overlays use `backdrop-filter: blur(var(--scene-overlay-blur))` with the translucent background. **One overlay style across the whole scene** — never per-panel variation.
+Glass panel overlays use `backdrop-filter: blur(var(--scene-overlay-blur))` with the translucent background. **One overlay style across the whole scene** - never per-panel variation.
 
 ---
 
-# Hybrid composition — drawing chrome with scene moments
+# Hybrid composition - drawing chrome with scene moments
 
 Originally lived in PROTOTYPE.md §Scene-based addendum. Moved here so it loads only when a scene gate has actually opened.
 
@@ -134,10 +134,10 @@ A museum site is editorial chrome + a studio scene front door + deep-zoom IIIF w
 The compositional rule:
 
 - **One drawing genre commits the chrome.** Page shell, nav, type stack, paper colour, accent, voice register, motion budget for non-scene UI. This is the publication's identity and the visitor's continuous frame.
-- **Each scene moment commits its own scene-based genre.** A studio at the front door and deep-zoom work pages are two scene genres — Immersive 3D and Deep-zoom IIIF — not one blended thing. Never mix scene genres inside a single moment.
+- **Each scene moment commits its own scene-based genre.** A studio at the front door and deep-zoom work pages are two scene genres - Immersive 3D and Deep-zoom IIIF - not one blended thing. Never mix scene genres inside a single moment.
 - **Scene moments inherit token vocabulary from the chrome.** The scene overlay tokens (`--scene-overlay-bg`, `--scene-control`, `--scene-accent`) derive via `color-mix` from the drawing genre's paper / ink / accent. Glass panels over a Three.js scene use the same paper-translucent that essay cards use on editorial pages. Otherwise the scene reads as a different site bolted on.
 - **Voice register holds across both modes.** If the essay voice is measured-curatorial, the scene's overlay labels and audio captions are measured-curatorial too. No marketing-flat captions inside the scene; no chatty microcopy in the chrome.
-- **Scenes earn their place individually.** Two scene moments justified by the brief is right. Five scene moments because "more = better" dilutes each one — every additional scene halves the attention each carries, and the GPU bill rises.
+- **Scenes earn their place individually.** Two scene moments justified by the brief is right. Five scene moments because "more = better" dilutes each one - every additional scene halves the attention each carries, and the GPU bill rises.
 - **One scene instance live at a time.** Mount on route entry, dispose on route exit. The drawing chrome stays mounted. Never hold a Three.js canvas, an OpenSeadragon viewer, and a MapLibre map in memory simultaneously.
 
 ## Three hybrid layout patterns
@@ -145,8 +145,8 @@ The compositional rule:
 | Pattern | When | Behaviour |
 |---|---|---|
 | **Full-page scene with floating chrome** | Front door; immersive moments where the scene IS the page | Canvas fills the viewport. Drawing-genre nav, captions, controls float as glass panels styled with the scene-overlay tokens. Chrome is muted; scene dominates. |
-| **Drawing page with embedded scene** | Editorial body with one in-context scene (a small map inside an article, a 3D rotation of a sculpture mid-essay) | Standard editorial layout. Scene occupies a defined content slot — width matches the body column or breaks out by exactly one step. Mount when scrolled into view; pause when out of view. |
-| **Split layout — scene one side, prose the other** | Work pages where the visitor reads about a painting while seeing it deep-zoomed; data-led storytelling | Two-column shell. Scene pane is sticky/locked while the prose scrolls. Pane proportions follow recalled values (1:2, 3:2, 4:5) — not invented. |
+| **Drawing page with embedded scene** | Editorial body with one in-context scene (a small map inside an article, a 3D rotation of a sculpture mid-essay) | Standard editorial layout. Scene occupies a defined content slot - width matches the body column or breaks out by exactly one step. Mount when scrolled into view; pause when out of view. |
+| **Split layout - scene one side, prose the other** | Work pages where the visitor reads about a painting while seeing it deep-zoomed; data-led storytelling | Two-column shell. Scene pane is sticky/locked while the prose scrolls. Pane proportions follow recalled values (1:2, 3:2, 4:5) - not invented. |
 
 ## Tokens flow downward, never invented inside the scene
 
@@ -154,7 +154,7 @@ Commit the drawing genre's `:root` block first. Derive scene chrome from it:
 
 ```css
 :root {
-  /* Drawing genre commits — paper, ink, accent */
+  /* Drawing genre commits - paper, ink, accent */
   --paper: oklch(96% 0.008 80);
   --ink: oklch(20% 0.02 80);
   --accent: oklch(45% 0.12 60);          /* curatorial ochre */
@@ -167,13 +167,13 @@ Commit the drawing genre's `:root` block first. Derive scene chrome from it:
 }
 ```
 
-If the scene's overlay needs to read as "ours," it comes from the publication's palette — never neon picked out of thin air.
+If the scene's overlay needs to read as "ours," it comes from the publication's palette - never neon picked out of thin air.
 
-## Scene-based genre entries — index
+## Scene-based genre entries - index
 
 Runtime experiences: 3D, real-world maps, deep-zoom imagery, shaders, simulations, spatial audio, AR/VR, node graphs, timelines. Commit one scene per page; mount on route entry, dispose on exit.
 
 **Workflow:** (1) commit one scene-based genre per scene moment, (2) `Read` [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) for the full runtime vocabulary (library choice, lighting, camera controls, motion, failure mode).
 
-The scene genres themselves (Immersive 3D / Deep-zoom document / Real-world map / Globe / Shader canvas / Gaussian-splat / Spatial audio / Node graph / Timeline / CAD / VR / Real-time data sim / Audio-visual / AR camera-passthrough) are documented inline in [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) — read that file once any scene gate opens; do not invent CDN library choices.
+The scene genres themselves (Immersive 3D / Deep-zoom document / Real-world map / Globe / Shader canvas / Gaussian-splat / Spatial audio / Node graph / Timeline / CAD / VR / Real-time data sim / Audio-visual / AR camera-passthrough) are documented inline in [`scene-addendum-details.md`](./prototype/scene-addendum-details.md) - read that file once any scene gate opens; do not invent CDN library choices.
 

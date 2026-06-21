@@ -13,7 +13,7 @@ images:
 
 # Hand Architect Sketch (Le Corbusier / Frank Lloyd Wright register)
 
-A matte surface that reacts to light: subtle — paper grain breathes under raking light.
+A matte surface that reacts to light: subtle - paper grain breathes under raking light.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: subtle — paper grain breathes under raki
 
 **Transparency**: opaque
 
-**Reacts to light**: subtle — paper grain breathes under raking light
+**Reacts to light**: subtle - paper grain breathes under raking light
 
 **Deforms**: no
 
@@ -40,7 +40,7 @@ svg: |
     <feDisplacementMap scale="1.5" />
   </filter>
   Apply to all paths. Use varying stroke widths (0.5-1.4) for "pressure" effect.
-  Don't close every shape — leave a 5-10% gap (real hand sketches "breathe").
+  Don't close every shape - leave a 5-10% gap (real hand sketches "breathe").
 webgl: not typically needed
 raster: scanned hand-drawn sketches OK as substrate (combine with vector overlay)
 ```

@@ -12,18 +12,18 @@ images:
 
 # Her warm-pastel near-future (van Hoytema)
 
-Spike Jonze's *Her* (2013), shot by **Hoyte van Hoytema** on ARRI Alexa (his first feature on digital — proving warm dreamy looks don't need film). The signature is the **deliberate refusal of blue** — van Hoytema and Jonze decided against blue specifically *"to make sure it didn't seem too dystopian or foreboding."* Instead the entire film is warm-cast: pale purples, caramel browns, sage, putty, ecru, O'Keeffe reds, Rothko raspberry, creamy whites. **"A little bit of red in every frame"** was the rule.
+Spike Jonze's *Her* (2013), shot by **Hoyte van Hoytema** on ARRI Alexa (his first feature on digital - proving warm dreamy looks don't need film). The signature is the **deliberate refusal of blue** - van Hoytema and Jonze decided against blue specifically *"to make sure it didn't seem too dystopian or foreboding."* Instead the entire film is warm-cast: pale purples, caramel browns, sage, putty, ecru, O'Keeffe reds, Rothko raspberry, creamy whites. **"A little bit of red in every frame"** was the rule.
 
 ## Visual signatures
 
-- **NO blue anywhere** — the absent color is the signature
-- warm color cast throughout — yellow-temperature boost, slight magenta shift in shadows
+- **NO blue anywhere** - the absent color is the signature
+- warm color cast throughout - yellow-temperature boost, slight magenta shift in shadows
 - pastel palette: pale purple, caramel, sage, putty, ecru, raspberry, cream
 - low contrast (saturation toned down, but color preserved)
 - soft natural light, often window-driven, with diffusion
 - shallow focus with creamy bokeh
-- production design (K.K. Barrett) matches palette — costumes, walls, props all in the same restricted pastel vocabulary
-- "A little bit of red in every frame" — even tiny reds present
+- production design (K.K. Barrett) matches palette - costumes, walls, props all in the same restricted pastel vocabulary
+- "A little bit of red in every frame" - even tiny reds present
 - the near-future LA reads as nostalgic-future, not techno-future
 
 ## Prompt keywords
@@ -50,7 +50,7 @@ Spike Jonze's *Her* (2013), shot by **Hoyte van Hoytema** on ARRI Alexa (his fir
 
 **Movements**: post-2013 "warm near-future" cinematography style; refusal-of-blue as design discipline
 
-**Brands**: Aesop ritual-at-home shots, Lemaire home editorials, Glossier at-home, Universal Standard interior lookbooks — all spiritually-Her-adjacent
+**Brands**: Aesop ritual-at-home shots, Lemaire home editorials, Glossier at-home, Universal Standard interior lookbooks - all spiritually-Her-adjacent
 
 ## Example prompt template
 

@@ -1,8 +1,8 @@
-# Subagent 1.V.particle-2d — Asset drawer (medium: canvas 2D particle loop)
+# Subagent 1.V.particle-2d - Asset drawer (medium: canvas 2D particle loop)
 
-You own **ONE asset** of medium `particle-2d` — an ambient particle loop rendered with Canvas 2D (no WebGL). Drift, snow, sparks, dust, gentle field motion. **Pathway B**: you write the canvas JS directly.
+You own **ONE asset** of medium `particle-2d` - an ambient particle loop rendered with Canvas 2D (no WebGL). Drift, snow, sparks, dust, gentle field motion. **Pathway B**: you write the canvas JS directly.
 
-Why Canvas 2D and not WebGL? Lower setup cost, broader compatibility, easier to debug, sufficient for ≤200 particles. If the brief demands thousands of particles or instanced rendering, the medium should be `particle-gl`, not `particle-2d` — return `error: "density requires particle-gl medium"`.
+Why Canvas 2D and not WebGL? Lower setup cost, broader compatibility, easier to debug, sufficient for ≤200 particles. If the brief demands thousands of particles or instanced rendering, the medium should be `particle-gl`, not `particle-2d` - return `error: "density requires particle-gl medium"`.
 
 **Read [`../conventions.md`](../conventions.md) before starting.**
 
@@ -22,7 +22,7 @@ Slot is typically `<canvas id="bg-…" data-effect="…">` or `<canvas data-part
 ```json
 {
   "assetId": "<id>",
-  "promptText": "<1-sentence design intent — what the field represents>",
+  "promptText": "<1-sentence design intent - what the field represents>",
   "skillCode": "<full canvas-2d code as a single string>",
   "params": {
     "outputPath": "<slot.outputPath e.g. assets/canvas/bg-drift.js>",
@@ -44,7 +44,7 @@ The motion modifier on the slot is the brief. Read it:
 ```
 
 - `data-effect` is the family (`drift`, `snow`, `sparks`, `dust`, `field`)
-- `data-motion` is the design intent — particle count hint, speed adjective, palette anchor
+- `data-motion` is the design intent - particle count hint, speed adjective, palette anchor
 
 Genre filter applies: only Marketing / Bento / Editorial-divider / Marketing-consumer can carry this medium.
 
@@ -115,9 +115,9 @@ Adapt per archetype:
 | `background` (default) | ≤80 | One `fillStyle` set + one `arc` + position math. No `shadowBlur`. |
 | `hero` | ≤200 | May use `globalCompositeOperation = "lighter"` for glow, may use one `shadowBlur` |
 
-If `background` and the brief asks for glow, fake it with multiple offset draws of the same particle at decreasing alpha — cheaper than `shadowBlur`.
+If `background` and the brief asks for glow, fake it with multiple offset draws of the same particle at decreasing alpha - cheaper than `shadowBlur`.
 
-### 5. Palette — anchor to tokens
+### 5. Palette - anchor to tokens
 
 Hardcode the rgba string by reading `:root`:
 
@@ -126,11 +126,11 @@ Hardcode the rgba string by reading `:root`:
 const COL = "rgba(255, 252, 245,";
 ```
 
-Or read `getComputedStyle(canvas).getPropertyValue("--surface")` at mount time — that's the cleaner version. Use the computed approach if the prototype has a brand toggle (`data-mode="lxp"` vs `"pxp"`).
+Or read `getComputedStyle(canvas).getPropertyValue("--surface")` at mount time - that's the cleaner version. Use the computed approach if the prototype has a brand toggle (`data-mode="lxp"` vs `"pxp"`).
 
-### 6. DPR + resize handling — mandatory
+### 6. DPR + resize handling - mandatory
 
-Without DPR scaling, particles look blurry on retina screens. Without a resize handler, particles cluster after window resize. Both are non-negotiable — see code template.
+Without DPR scaling, particles look blurry on retina screens. Without a resize handler, particles cluster after window resize. Both are non-negotiable - see code template.
 
 ### 7. Slot diff
 
@@ -154,12 +154,12 @@ If the slot isn't declared yet:
 - [ ] No `shadowBlur` unless `performance: hero`.
 - [ ] No `requestAnimationFrame` inside scene code (use `__animate(fn)`).
 - [ ] Respawn logic prevents off-canvas particles from accumulating.
-- [ ] Code is self-contained — no external imports, no library references.
+- [ ] Code is self-contained - no external imports, no library references.
 
 ## Don't
 
-- Don't ship more than 80 particles in `background` performance — even modern phones throttle this.
+- Don't ship more than 80 particles in `background` performance - even modern phones throttle this.
 - Don't use `setInterval` for the frame loop. `__animate(fn)` is the contract.
-- Don't draw with `shadowBlur` per particle in `background` — pixel-fill cost is 10× a flat `arc`.
+- Don't draw with `shadowBlur` per particle in `background` - pixel-fill cost is 10× a flat `arc`.
 - Don't reference any color string that isn't anchored to the token system. Random colors break theme switching.
 - Don't combine multiple archetypes in one canvas. If the brief wants "snow with sparks", that's two separate slots.

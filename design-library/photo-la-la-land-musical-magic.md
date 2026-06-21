@@ -12,16 +12,16 @@ images:
 
 # La La Land musical-magic (Sandgren)
 
-Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm CinemaScope (2.55:1)** — the original CinemaScope ratio used by old Hollywood musicals. The visual signature is the romantic deployment of **primary colors (red, blue, yellow) as emotional storytelling tools**, set against magic-hour LA twilight skies that lean **mercury-vapor cool** rather than the actual sodium-vapor warm of real streetlights.
+Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm CinemaScope (2.55:1)** - the original CinemaScope ratio used by old Hollywood musicals. The visual signature is the romantic deployment of **primary colors (red, blue, yellow) as emotional storytelling tools**, set against magic-hour LA twilight skies that lean **mercury-vapor cool** rather than the actual sodium-vapor warm of real streetlights.
 
 ## Visual signatures
 
 - 35mm anamorphic film stock, **CinemaScope 2.55:1 ultrawide** aspect ratio
-- magic-hour evening skies — gradient from twilight pink through indigo to magenta
-- **primary colors as emotional anchors** — red for passion/turmoil, blue for melancholy/dreams, yellow for hope (Mia bathed in red during "Someone in the Crowd"; blue dominates her solo arc)
-- mercury-vapor cool streetlight rendering (NOT sodium-vapor orange — Sandgren refused that)
-- saturated film color preserved in-camera (NOT added in post — Sandgren refused that too)
-- camera movement that DANCES — the dolly itself choreographed with the actors
+- magic-hour evening skies - gradient from twilight pink through indigo to magenta
+- **primary colors as emotional anchors** - red for passion/turmoil, blue for melancholy/dreams, yellow for hope (Mia bathed in red during "Someone in the Crowd"; blue dominates her solo arc)
+- mercury-vapor cool streetlight rendering (NOT sodium-vapor orange - Sandgren refused that)
+- saturated film color preserved in-camera (NOT added in post - Sandgren refused that too)
+- camera movement that DANCES - the dolly itself choreographed with the actors
 - naturalistic light heightened with one colored gel-source per scene
 - skin tones glow warm against the cool background
 
@@ -41,7 +41,7 @@ Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm Cine
 
 ## Named references
 
-**Photographers / cinematographers**: Linus Sandgren (DP — Oscar for this film); Wally Pfister, Conrad Hall, Vittorio Storaro as antecedents
+**Photographers / cinematographers**: Linus Sandgren (DP - Oscar for this film); Wally Pfister, Conrad Hall, Vittorio Storaro as antecedents
 
 **Magazines**: Vogue, Harper's Bazaar romantic-editorial spreads; American Cinematographer issue on La La Land
 
@@ -51,7 +51,7 @@ Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm Cine
 
 ## Example prompt template
 
-> Editorial photograph of [SUBJECT — a woman in a flowing primary-color dress
+> Editorial photograph of [SUBJECT - a woman in a flowing primary-color dress
 > standing on a Los Angeles overlook at magic hour], shot on 35mm anamorphic
 > in **2.55:1 CinemaScope ratio**, magic-hour twilight sky transitioning from
 > pink through indigo to deep magenta, **mercury-vapor cool blue streetlights**

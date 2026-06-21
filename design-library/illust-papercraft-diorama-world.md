@@ -5,7 +5,7 @@ category: 3D
 subCategory: paper-craft-scene
 role: hero
 pairsPrototypes: [aesthetic-positivity-kawaii, aesthetic-cottagecore, shell-infinite-canvas, aesthetic-curly-girly]
-notForUseWhen: Brief is premium-sleek or serious-enterprise — paper reads handmade and playful.
+notForUseWhen: Brief is premium-sleek or serious-enterprise - paper reads handmade and playful.
 images:
   - src: illust-papercraft-diorama-world.png
     reason: Illustration style sample.
@@ -13,13 +13,13 @@ images:
 
 # Papercraft diorama world
 
-A whole navigable scene built from visible cut paper — layered card hills, folded houses, tab-and-slot trees — craft-table charm at world scale.
+A whole navigable scene built from visible cut paper - layered card hills, folded houses, tab-and-slot trees - craft-table charm at world scale.
 
 ## Visual signatures
 
-- An entire SCENE in paper: villages, valleys, oceans with scalloped card waves — not a single origami subject (that's `origami-paper-3d`)
+- An entire SCENE in paper: villages, valleys, oceans with scalloped card waves - not a single origami subject (that's `origami-paper-3d`)
 - Honest construction: visible cut edges, fold scores, tabs, layered cardstock strata
-- Paper-true colors — construction-paper saturation, slightly fibrous texture
+- Paper-true colors - construction-paper saturation, slightly fibrous texture
 - Real miniature lighting: soft key + occlusion shadows BETWEEN paper layers
 - Hand-presence details: a slightly crooked tree, a curling corner, glue-dot logic
 
@@ -29,7 +29,7 @@ A whole navigable scene built from visible cut paper — layered card hills, fol
 
 **Material**: colored cardstock, visible cut edges and fold scores, fibrous paper texture
 
-**Line**: none — cut edges ARE the line work
+**Line**: none - cut edges ARE the line work
 
 **Color**: construction-paper brights or pastel cardstock set, 5-8 paper colors per scene
 
@@ -39,7 +39,7 @@ A whole navigable scene built from visible cut paper — layered card hills, fol
 
 ## Named references
 
-**Illustrators**: Aimee's Papercraft World (the corpus case — infinite-scroll paper world), Studio Periscope paper sets, LAIKA-adjacent craft sensibility, Canon Creative Park papercraft culture
+**Illustrators**: Aimee's Papercraft World (the corpus case - infinite-scroll paper world), Studio Periscope paper sets, LAIKA-adjacent craft sensibility, Canon Creative Park papercraft culture
 
 **Movements**: papercraft web revival, handcraft-as-UI worlds
 
@@ -49,7 +49,7 @@ A whole navigable scene built from visible cut paper — layered card hills, fol
 
 ## When to use
 
-Playful brand worlds (the Aimee pattern — infinite-canvas paper land), kids and family products, craft/maker platforms, seasonal campaign microsites, scroll-journeys through a handmade scene.
+Playful brand worlds (the Aimee pattern - infinite-canvas paper land), kids and family products, craft/maker platforms, seasonal campaign microsites, scroll-journeys through a handmade scene.
 
 ## When NOT to use
 

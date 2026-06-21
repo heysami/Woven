@@ -13,18 +13,18 @@ images:
 
 # Vectorheart industrial-futurist (Designers Republic / Wipeout)
 
-The mid-late-1990s Vectorheart aesthetic — vector typography rooted in Swiss modernism, utilitarian industrial design, brutalism, and Peter Saville's Factory Records covers. Pioneered by **Bionic Systems** and **The Designers Republic**. The Wipeout PSX game UI (designed by Designers Republic) is the canonical example — also known as "Wipeout Design." NOTHING to do with romantic heart-shapes; the "heart" is etymologically unrelated.
+The mid-late-1990s Vectorheart aesthetic - vector typography rooted in Swiss modernism, utilitarian industrial design, brutalism, and Peter Saville's Factory Records covers. Pioneered by **Bionic Systems** and **The Designers Republic**. The Wipeout PSX game UI (designed by Designers Republic) is the canonical example - also known as "Wipeout Design." NOTHING to do with romantic heart-shapes; the "heart" is etymologically unrelated.
 
-The late-2010s revival is **Neo-Vectorheart** — same DNA + Neubrutalist vernacular + cyberpunk + gamer-grunge maximalism.
+The late-2010s revival is **Neo-Vectorheart** - same DNA + Neubrutalist vernacular + cyberpunk + gamer-grunge maximalism.
 
 ## Visual signatures
 
 - sharp 45° and/or 60° diagonal lines
-- vector geometric forms — ticks, marks, hairline boxes, micro-numerals
+- vector geometric forms - ticks, marks, hairline boxes, micro-numerals
 - futurist sans + display typefaces (techno, neo-grotesque, mono)
 - flat, high-contrast color (often black + neon-green / orange / cyan / hazard-yellow)
 - micro-iconography (registration marks, target reticles, micro-warnings, version strings)
-- Swiss-grid bones with brutalist twist — feels engineered, not decorated
+- Swiss-grid bones with brutalist twist - feels engineered, not decorated
 - maximalist neo-version layers cyberpunk + gamer-grunge over the geometric base
 
 ## Prompt keywords
@@ -43,7 +43,7 @@ The late-2010s revival is **Neo-Vectorheart** — same DNA + Neubrutalist vernac
 
 ## Named references
 
-**Illustrators / firms**: The Designers Republic, Bionic Systems, Peter Saville (precursor — Factory Records sleeves)
+**Illustrators / firms**: The Designers Republic, Bionic Systems, Peter Saville (precursor - Factory Records sleeves)
 
 **Movements**: Vectorheart (mid-late 1990s), Neo-Vectorheart (late-2010s revival), Wipeout Design, Neubrutalist typography
 
@@ -52,7 +52,7 @@ The late-2010s revival is **Neo-Vectorheart** — same DNA + Neubrutalist vernac
 ## Example prompt template
 
 > Industrial-futurist vector wordmark of [WORD] in Designers-Republic /
-> Wipeout-UI aesthetic — futurist neo-grotesque sans, sharp 45° diagonal
+> Wipeout-UI aesthetic - futurist neo-grotesque sans, sharp 45° diagonal
 > hairlines and registration marks framing the letterforms, flat
 > high-contrast black + neon-green + hazard-yellow palette, micro-numerals
 > and version-string accents, Swiss-grid bones with brutalist twist, vector

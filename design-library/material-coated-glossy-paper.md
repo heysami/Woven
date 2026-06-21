@@ -13,7 +13,7 @@ images:
 
 # Coated Glossy Paper (magazine cover stock)
 
-A glossy surface that reacts to light: yes — specular sheen and deforms: minimal.
+A glossy surface that reacts to light: yes - specular sheen and deforms: minimal.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — specular sheen and deforms: minim
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — specular sheen
+**Reacts to light**: yes - specular sheen
 
 **Deforms**: minimal
 

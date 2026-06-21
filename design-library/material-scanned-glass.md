@@ -37,7 +37,7 @@ css: |
     rgba(255,255,255,0.18);
   backdrop-filter: blur(20px) saturate(180%);
 svg: paper grain + glass refraction filters stacked
-raster: REQUIRED — paper substrate is the load-bearing element
+raster: REQUIRED - paper substrate is the load-bearing element
 ```
 
 ## Reactive behaviors

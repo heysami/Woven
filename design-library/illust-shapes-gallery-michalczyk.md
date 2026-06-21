@@ -1,6 +1,6 @@
 ---
 styleId: shapes-gallery-michalczyk
-name: Shapes.gallery — Monika Michalczyk shapes
+name: Shapes.gallery - Monika Michalczyk shapes
 category: Abstract / decoration
 subCategory: geometric-primitive
 role: decoration
@@ -11,7 +11,7 @@ images:
     reason: Illustration style sample.
 ---
 
-# Shapes.gallery — Monika Michalczyk shapes
+# Shapes.gallery - Monika Michalczyk shapes
 
 80+ SVG shapes spanning organic + geometric.
 

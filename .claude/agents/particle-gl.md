@@ -1,6 +1,6 @@
 ---
 name: particle-gl
-description: Produce a high-density GPU particle system via WebGL — thousands+ of particles with custom vertex/fragment shaders, instanced rendering, GPU state updates. For fluid/smoke sims, dense fields, GPU-driven visualisations. NOT for small ambient effects — use particle-2d for those.
+description: Produce a high-density GPU particle system via WebGL - thousands+ of particles with custom vertex/fragment shaders, instanced rendering, GPU state updates. For fluid/smoke sims, dense fields, GPU-driven visualisations. NOT for small ambient effects - use particle-2d for those.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 

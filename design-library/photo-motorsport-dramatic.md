@@ -4,7 +4,7 @@ name: Motorsport dramatic rig
 category: cinematic
 era: current
 pairsPrototypes: [aesthetic-monochrome-pop-poster, aesthetic-luxury-cinematic-dark, aesthetic-monochrome-tech-editorial, recipe-bento-marketing]
-notForUseWhen: Brief is calm, eco, or wellness — speed-drama fights serenity registers.
+notForUseWhen: Brief is calm, eco, or wellness - speed-drama fights serenity registers.
 images:
   - src: photo-motorsport-dramatic.png
     reason: Photography style sample.
@@ -12,14 +12,14 @@ images:
 
 # Motorsport dramatic rig
 
-Vehicle as sculpture under dramatic studio or track light — rig-shot motion, wet asphalt reflections, dust kicks.
+Vehicle as sculpture under dramatic studio or track light - rig-shot motion, wet asphalt reflections, dust kicks.
 
 ## Visual signatures
 
 - One vehicle (F1 car, GT sports car, truck, motorcycle) as the absolute hero, low 3/4 or head-on stance
 - Dramatic single-source light carving the bodywork; wet-look ground reflections
 - Motion language: rig-shot wheel blur, dust/spray kick, light streaks behind a static-sharp body
-- Environment minimal: dark studio, night track, desert at dusk — never a busy paddock
+- Environment minimal: dark studio, night track, desert at dusk - never a busy paddock
 - Optional livery typography interacting with frame edges
 
 ## Prompt keywords

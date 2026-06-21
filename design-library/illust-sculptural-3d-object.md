@@ -5,7 +5,7 @@ category: 3D
 subCategory: abstract-form
 role: subject
 pairsPrototypes: [aesthetic-sculptural-minimal, recipe-neo-grotesque-portfolio, recipe-bento-marketing, aesthetic-anti-design]
-notForUseWhen: Brief needs depicted subjects or narrative — the form is abstract and mute by design.
+notForUseWhen: Brief needs depicted subjects or narrative - the form is abstract and mute by design.
 images:
   - src: illust-sculptural-3d-object.png
     reason: Illustration style sample.
@@ -13,23 +13,23 @@ images:
 
 # Sculptural 3D object
 
-One abstract gallery-grade form — a twisted ribbon, stacked discs, eroded stone, a perfect knot — single material, studio-lit, plinth-ready.
+One abstract gallery-grade form - a twisted ribbon, stacked discs, eroded stone, a perfect knot - single material, studio-lit, plinth-ready.
 
 ## Visual signatures
 
-- ONE form with sculptural logic: torsion, stacking, balance, erosion, repetition — it obeys imagined gravity
+- ONE form with sculptural logic: torsion, stacking, balance, erosion, repetition - it obeys imagined gravity
 - Single committed material: matte black, raw clay, brushed steel, white marble, walnut
 - Museum studio light: one soft key, gentle gradient falloff, honest contact shadow
-- No decoration, no texture noise — silhouette and surface carry everything
+- No decoration, no texture noise - silhouette and surface carry everything
 - Scaled and composed to share the frame with letterspaced typography
 
 ## Prompt keywords
 
 **Primary**: abstract 3D sculpture render, twisted ribbon form, stacked geometric object, gallery sculpture studio shot
 
-**Material**: ONE — matte black resin / raw clay / brushed aluminum / honed marble
+**Material**: ONE - matte black resin / raw clay / brushed aluminum / honed marble
 
-**Line**: none — pure form and shading
+**Line**: none - pure form and shading
 
 **Color**: monochrome object on gallery white `#fafaf8` or bone ground
 

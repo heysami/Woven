@@ -21,12 +21,12 @@ images:
 - Border hairline: `oklch(0.90 0.005 250)` / `oklch(0.28 0.01 250)`
 - Text primary: `oklch(0.22 0.01 250)` / `oklch(0.95 0.005 250)`
 - Text secondary: `oklch(0.50 0.01 250)` / `oklch(0.68 0.008 250)`
-- Single accent: `oklch(48% 0.13 252)` — used sparingly, one per view max
+- Single accent: `oklch(48% 0.13 252)` - used sparingly, one per view max
 - Semantic only when machine-stated: success `oklch(60% 0.13 145)`, warn `oklch(70% 0.14 75)`, error `oklch(58% 0.18 27)`
 
 **Type stack:**
-- UI / body: Inter or IBM Plex Sans, weight 400/500 only — 600 forbidden except in `<th>`
-- Mono: JetBrains Mono — reserved for machine state (IDs, timestamps, keybinds, code, status)
+- UI / body: Inter or IBM Plex Sans, weight 400/500 only - 600 forbidden except in `<th>`
+- Mono: JetBrains Mono - reserved for machine state (IDs, timestamps, keybinds, code, status)
 - No display face. No serif.
 
 **Sizes (px):** 10 / 10.5 / 11.5 / 12 / 12.5 / 14 / 16. Body sits at 13. Line-height 1.45 body, 1.2 headings.
@@ -36,8 +36,8 @@ images:
 **Borders:** hairline 1px only. No 2px+ strokes. Border-color carries hierarchy; no double borders.
 
 **Shadows:**
-- `shadow-sm`: `0 1px 0 oklch(0% 0 0 / 0.04)` — seam, not depth
-- `shadow-md`: `0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 12px oklch(0% 0 0 / 0.04)` — popovers only
+- `shadow-sm`: `0 1px 0 oklch(0% 0 0 / 0.04)` - seam, not depth
+- `shadow-md`: `0 1px 2px oklch(0% 0 0 / 0.06), 0 4px 12px oklch(0% 0 0 / 0.04)` - popovers only
 - No glow, no colored shadow, no inset.
 
 **Gradients:** forbidden on surfaces. Permitted only on a single hairline accent (e.g. a 1px progress bar).
@@ -62,7 +62,7 @@ Terse, technical, lowercase labels acceptable. Numbers and IDs preferred over wo
 
 ## Failure mode
 
-Treating "minimal" as "empty + one purple button." The look isn't absence — it's density of typographic information at 13px with hairline seams. AI tells: oversized hero with one CTA, rounded-2xl cards, gradient buttons, drop shadows on text, emoji in nav, sentence-case marketing copy in tooltips.
+Treating "minimal" as "empty + one purple button." The look isn't absence - it's density of typographic information at 13px with hairline seams. AI tells: oversized hero with one CTA, rounded-2xl cards, gradient buttons, drop shadows on text, emoji in nav, sentence-case marketing copy in tooltips.
 
 ## Best for
 

@@ -12,15 +12,15 @@ images:
 
 # Bayer-matrix ordered dither (retro 1-bit)
 
-Photo reduced to **1-bit** (or limited palette) using a **Bayer-matrix ordered-dithering algorithm** — produces a regular ordered-grid dotted pattern that looks like classic Game Boy / Macintosh / PC-98 era graphics. Distinct from halftone (which is luminance-modulated DOT SIZE) — Bayer is REGULAR-GRID threshold, dots are uniform in size, the PATTERN density is what changes per luminance zone. Also distinct from Atkinson dither (which is error-diffusion, irregular).
+Photo reduced to **1-bit** (or limited palette) using a **Bayer-matrix ordered-dithering algorithm** - produces a regular ordered-grid dotted pattern that looks like classic Game Boy / Macintosh / PC-98 era graphics. Distinct from halftone (which is luminance-modulated DOT SIZE) - Bayer is REGULAR-GRID threshold, dots are uniform in size, the PATTERN density is what changes per luminance zone. Also distinct from Atkinson dither (which is error-diffusion, irregular).
 
 ## Visual signatures
 
-- regular **grid-aligned dot pattern** — uniform dot size, varying density
+- regular **grid-aligned dot pattern** - uniform dot size, varying density
 - 1-bit black-and-white (or limited 2-4 color palette)
-- ordered structure visible — the Bayer matrix produces a CRYSTALLINE repeating texture
+- ordered structure visible - the Bayer matrix produces a CRYSTALLINE repeating texture
 - midtones become a checkerboard-like 50% density; brights are sparse dots; darks are dense dots
-- works well at LOW resolution (256-512px wide) — print larger and the matrix becomes legible as pattern
+- works well at LOW resolution (256-512px wide) - print larger and the matrix becomes legible as pattern
 - recognisable era signature: Game Boy screen, classic Mac MacPaint, PC-98 visual novels, early web 1-bit GIFs
 - subject still recognisable but reduced to threshold-pattern abstract
 
@@ -49,7 +49,7 @@ Photo reduced to **1-bit** (or limited palette) using a **Bayer-matrix ordered-d
 ## Example prompt template
 
 > Photograph of [SUBJECT] reduced to **1-bit black-and-white using a Bayer
-> 8×8 ordered-dithering matrix** — regular grid-aligned dot pattern with
+> 8×8 ordered-dithering matrix** - regular grid-aligned dot pattern with
 > uniform dot size, varying density per luminance zone (sparse dots in
 > bright areas, dense dots in dark areas, checkerboard-like at midtones).
 > The Bayer matrix produces a visible crystalline repeating texture. Subject

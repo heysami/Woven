@@ -13,7 +13,7 @@ images:
 
 # VHS Distortion (chromatic aberration + scanlines + bleed)
 
-A glossy surface and deforms: yes — tape head distortion bands.
+A glossy surface and deforms: yes - tape head distortion bands.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A glossy surface and deforms: yes — tape head distortion bands.
 
 **Reacts to light**: no
 
-**Deforms**: yes — tape head distortion bands
+**Deforms**: yes - tape head distortion bands
 
 **Age / wear**: shows wear (drop-outs)
 

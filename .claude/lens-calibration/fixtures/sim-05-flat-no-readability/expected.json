@@ -1,17 +1,17 @@
 {
-  "_intent": "CONCEPT-FAIL (no readability) fixture — craft is clean, palette/typography hit brief; but rendering is 3px dots at random positions with no spatial structure. A stranger cannot read this as a warehouse. concept-lens §4 'intuitionScore' (5-second test) must fail.",
+  "_intent": "CONCEPT-FAIL (no readability) fixture - craft is clean, palette/typography hit brief; but rendering is 3px dots at random positions with no spatial structure. A stranger cannot read this as a warehouse. concept-lens §4 'intuitionScore' (5-second test) must fail.",
   "craft": {
     "verdict": "pass",
     "ground_truth_reason": "deterministic accumulator; no perf.now in tick"
   },
   "aesthetic": {
     "verdict": "pass",
-    "ground_truth_reason": "monospace + slate matches brief; restrained palette. Borderline — no antiPattern named precisely; lens may pass."
+    "ground_truth_reason": "monospace + slate matches brief; restrained palette. Borderline - no antiPattern named precisely; lens may pass."
   },
   "concept": {
     "verdict": "fail",
     "must_cite": ["intuitionScore", "5-second"],
     "expected_failure_check": "5-second intuition test",
-    "ground_truth_reason": "dots at random positions, no grid, no entity grouping — intuitionScore very low; stranger cannot identify warehouse-bin structure within 5s; brief's successFeel explicitly tests this scenario"
+    "ground_truth_reason": "dots at random positions, no grid, no entity grouping - intuitionScore very low; stranger cannot identify warehouse-bin structure within 5s; brief's successFeel explicitly tests this scenario"
   }
 }

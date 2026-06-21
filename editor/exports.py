@@ -1,10 +1,10 @@
-"""editor/exports.py — per-asset export bundles.
+"""editor/exports.py - per-asset export bundles.
 
 Given one workflow node + the active project root, copy the asset's files
 into a per-project export folder along with:
 
-  • README.md — structure + run-server instructions tuned to the asset kind
-  • serve.command / serve.sh / serve.bat — tiny port-fallback helpers
+  • README.md - structure + run-server instructions tuned to the asset kind
+  • serve.command / serve.sh / serve.bat - tiny port-fallback helpers
     that probe 8000 → 8009 then a random port, then open the browser.
 
 The output layout is uniform per kind:
@@ -21,7 +21,7 @@ The output layout is uniform per kind:
       <bucket>/
           source/<branch>/...              (full prototype tree if the html
                                              lives under source/<branch>/)
-          —or—
+          -or-
           <basename(path)>                  (single file fallback)
           README.md  serve.command  serve.sh  serve.bat
 
@@ -99,7 +99,7 @@ def timestamp() -> str:
 # ── serve helpers ────────────────────────────────────────────────────────
 # Three port-probing servers that try 8000 → 8009, then a random high port,
 # write the chosen port to ./.serve-port, and open the system browser. The
-# helper is intentionally stdlib-only — no pip install, no npm install. The
+# helper is intentionally stdlib-only - no pip install, no npm install. The
 # only assumption is `python3` on PATH (macOS / Linux) or `python` (Windows).
 # Identical behavior on every kind that ships these helpers.
 
@@ -110,14 +110,14 @@ Tries 8000 → 8009. If all are taken, asks the OS for a free port. Writes
 the chosen port to ./.serve-port and prints the URL. Ctrl-C to stop.
 
 The browser is opened at ENTRY (set by the export pass to the bundle's
-entry page — e.g. source/<branch>/index.html or design-systems/<dsId>/
+entry page - e.g. source/<branch>/index.html or design-systems/<dsId>/
 gallery.html). Falls back to the bucket root if ENTRY is empty.
 """
 import http.server, os, socket, socketserver, sys, webbrowser
 
 # Entry path the browser opens, relative to the bucket root. Empty string
 # means "open the bucket root" (which shows a directory listing if there
-# is no index.html at the root — useful for resources/ bundles).
+# is no index.html at the root - useful for resources/ bundles).
 ENTRY = __ENTRY_LITERAL__
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -137,7 +137,7 @@ def _pick():
     for p in range(8000, 8010):
         if _free(p):
             return p
-    # All 8000-8009 occupied — let the OS pick.
+    # All 8000-8009 occupied - let the OS pick.
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
     p = s.getsockname()[1]
@@ -173,7 +173,7 @@ with socketserver.TCPServer(("127.0.0.1", PORT), _Q) as httpd:
 '''
 
 _SERVE_COMMAND = '''#!/usr/bin/env bash
-# Double-clickable on macOS — Finder runs .command files in Terminal.
+# Double-clickable on macOS - Finder runs .command files in Terminal.
 cd "$(dirname "$0")"
 exec python3 ./_serve.py
 '''
@@ -197,10 +197,10 @@ if %errorlevel%==0 (
 def write_serve_helpers(bucket_dir: str, entry: "str | None" = None) -> None:
     """Drop the four serve.* files into bucket_dir and chmod the unix
     ones so Finder + a fresh terminal can launch them without extra
-    steps. Idempotent — overwrites any previous helper.
+    steps. Idempotent - overwrites any previous helper.
 
     `entry` is the path (relative to bucket_dir) the browser should open
-    when the server starts — e.g. `source/main/index.html` or
+    when the server starts - e.g. `source/main/index.html` or
     `design-systems/main/gallery.html`. If omitted, opens the bucket
     root (which falls back to a directory listing when there's no
     index.html at the root)."""
@@ -235,7 +235,7 @@ def write_serve_helpers(bucket_dir: str, entry: "str | None" = None) -> None:
 
 _RUN_FOOTER = """## How to run
 
-This bundle is a plain static site — no build step, no Node, no npm.
+This bundle is a plain static site - no build step, no Node, no npm.
 
 ### macOS · double-click
 
@@ -272,7 +272,7 @@ also written to `./.serve-port` so a wrapper script can read it back.
 cd "<this-folder>"
 python3 -m http.server 8000           # then open http://localhost:8000/
 # If 8000 is taken:
-python3 -m http.server 8080           # or any free port — try 8001, 5173, 5500, …
+python3 -m http.server 8080           # or any free port - try 8001, 5173, 5500, …
 ```
 
 ### Stopping the server
@@ -306,12 +306,12 @@ def readme_prototype(facts: dict) -> str:
     entry_path = facts.get("entry") or f"source/{branch}/index.html"
     meta = (
         f"{_kind_line(kind)}\n"
-        f"- **Branch slug:** `{branch}` — the prototype source tree lives at `source/{branch}/`.\n"
+        f"- **Branch slug:** `{branch}` - the prototype source tree lives at `source/{branch}/`.\n"
         f"- **Entry:** open `{entry_path}` to read the page directly, or run the server (see below).\n"
     )
     if dsRef:
         meta += (
-            f"- **Design system:** `{dsRef}` — bundled at `design-systems/{dsRef}/`. "
+            f"- **Design system:** `{dsRef}` - bundled at `design-systems/{dsRef}/`. "
             "The prototype's HTML/CSS references it via the same relative path it had inside the workspace, "
             "so the export runs standalone (no further linking step).\n"
         )
@@ -323,20 +323,20 @@ def readme_prototype(facts: dict) -> str:
 ```
 ./
   source/<branch>/
-    index.html               — the prototype's entry
-    styles.css               — page-level styles
-    *.html  *.css  *.js      — additional pages + assets
-  design-systems/<dsId>/      — only present when the prototype references a DS
-    DESIGN.md                — the token + component spec
-    styles.css               — tokens as CSS variables + base styles
-    gallery.html             — every component rendered in one frame
-  README.md                  — this file
-  serve.command  serve.sh    — port-fallback static server
-  serve.bat                  — Windows variant
-  _serve.py                  — the actual Python server the helpers call
+    index.html               - the prototype's entry
+    styles.css               - page-level styles
+    *.html  *.css  *.js      - additional pages + assets
+  design-systems/<dsId>/      - only present when the prototype references a DS
+    DESIGN.md                - the token + component spec
+    styles.css               - tokens as CSS variables + base styles
+    gallery.html             - every component rendered in one frame
+  README.md                  - this file
+  serve.command  serve.sh    - port-fallback static server
+  serve.bat                  - Windows variant
+  _serve.py                  - the actual Python server the helpers call
 ```
 
-The HTML/CSS/JS uses **relative paths only** — no absolute URLs, no
+The HTML/CSS/JS uses **relative paths only** - no absolute URLs, no
 external CDN dependencies beyond what's already in the page. Anything
 fetched from a CDN was loaded at build time and stays loaded at runtime.
 
@@ -351,7 +351,7 @@ For agents and reviewers picking up this bundle:
   of truth for tokens and components. Page-level overrides are allowed
   but should be surfaced as candidate-DS-updates when they generalise.
 - The page may include inline `<script>` setup helpers Woven added at
-  generation time (data hydration, picker overlays, etc.) — these are
+  generation time (data hydration, picker overlays, etc.) - these are
   safe to leave in place. They're inert unless the editor is driving.
 """
     file_list = ""
@@ -387,7 +387,7 @@ relative `fetch()` / iframe / module URLs resolve correctly.
 
 
 def readme_html_set(facts: dict) -> str:
-    """README for assetKind=html-set — multiple HTML files exported as a set."""
+    """README for assetKind=html-set - multiple HTML files exported as a set."""
     label = facts.get("label") or facts.get("nodeId") or "html-set"
     paths = facts.get("files") or []
     head = f"# {label}\n\nExported from Woven on {facts.get('exportedAt') or timestamp()}.\n\n"
@@ -425,14 +425,14 @@ def readme_design_system(facts: dict) -> str:
 ```
 ./
   design-systems/{ds_id}/
-    DESIGN.md       — token + component spec
-    styles.css      — tokens (CSS custom props) + base styles
-    gallery.html    — every component rendered together
+    DESIGN.md       - token + component spec
+    styles.css      - tokens (CSS custom props) + base styles
+    gallery.html    - every component rendered together
   README.md
   serve.command  serve.sh  serve.bat  _serve.py
 ```
 
-`gallery.html` is the human-readable entry — open it in a browser to see
+`gallery.html` is the human-readable entry - open it in a browser to see
 every component side-by-side. `styles.css` is the file any consuming
 prototype links via `<link rel="stylesheet" href="…/styles.css">`.
 """
@@ -445,7 +445,7 @@ _INTEGRATION_SNIPPETS = {
         "```html\n<img src=\"./resources/image/<filename>\" alt=\"…\">\n```"
     ),
     "svg": (
-        "Two ways to use an exported SVG — link or inline:\n\n"
+        "Two ways to use an exported SVG - link or inline:\n\n"
         "```html\n<!-- as a linked image -->\n"
         "<img src=\"./resources/svg/<filename>\" alt=\"…\">\n\n"
         "<!-- inlined so CSS can theme it -->\n"
@@ -478,7 +478,7 @@ _INTEGRATION_SNIPPETS = {
         "`./resources/markdown/<filename>`."
     ),
     "text": (
-        "Plain text — open it in any editor, or `fetch('./resources/text/<filename>')` from a host HTML page."
+        "Plain text - open it in any editor, or `fetch('./resources/text/<filename>')` from a host HTML page."
     ),
     "particle-2d": (
         "Single-file canvas-2D / SVG particle module. Reference it from a host HTML page:\n\n"
@@ -486,7 +486,7 @@ _INTEGRATION_SNIPPETS = {
         "<script type=\"module\" src=\"./resources/particle-2d/<filename>\"></script>\n```"
     ),
     "particle-gl": (
-        "WebGL particle system — the module owns its own canvas + GL context. Reference it from a host HTML page:\n\n"
+        "WebGL particle system - the module owns its own canvas + GL context. Reference it from a host HTML page:\n\n"
         "```html\n<script type=\"module\" src=\"./resources/particle-gl/<filename>\"></script>\n```"
     ),
     "lottie": (
@@ -504,7 +504,7 @@ _INTEGRATION_SNIPPETS = {
         "<!-- linked mode (no CSS theming) -->\n<img src=\"./resources/vector-mark/<filename>\" alt=\"Brand\">\n```"
     ),
     "motion": (
-        "Hyperframes-flavoured GSAP HTML — a self-contained `.html` that plays standalone. Open it directly, "
+        "Hyperframes-flavoured GSAP HTML - a self-contained `.html` that plays standalone. Open it directly, "
         "or embed via an iframe:\n\n"
         "```html\n<iframe src=\"./resources/motion/<filename>\" style=\"border:0;width:100%;aspect-ratio:16/9\"></iframe>\n```"
     ),
@@ -541,7 +541,7 @@ def readme_single_resource(facts: dict) -> str:
 ```
 
 The file sits under `resources/<kind>/` so it slots into a typical web
-project structure with no path edits — drop the `resources/` folder
+project structure with no path edits - drop the `resources/` folder
 next to your existing `index.html` and reference the file with a
 relative path.
 """
@@ -561,7 +561,7 @@ def readme_no_artifact(facts: dict) -> str:
     head  = f"# {label}\n\nExported from Woven on {facts.get('exportedAt') or timestamp()}.\n\n"
     meta  = f"{_kind_line(kind)}\n"
     expl  = facts.get("explanation") or (
-        f"This node has no file artifact on disk — it carries inline state "
+        f"This node has no file artifact on disk - it carries inline state "
         f"that the editor uses (prompt text, agent conversation, palette swatches, "
         f"typography ramps, mermaid source, etc.). To capture it, copy the node "
         f"itself from `workflow/workflow.json` in the source project rather than "
@@ -629,7 +629,7 @@ _RESOURCE_BUCKET = {
 # interactive-polish each park their per-asset tree at
 # `source/<branch>/{subfolder}/<assetId>/`, with `runtime.html` as the
 # user-facing entry (see editor/app.js WorkflowSimOrInteractiveNode).
-# The plain `prototype` kind has no subfolder — its entry sits at
+# The plain `prototype` kind has no subfolder - its entry sits at
 # `source/<branch>/index.html`.
 _CONTAINER_SUBFOLDER = {
     "simulation":            ("simulations",   "simId"),
@@ -645,7 +645,7 @@ def _node_field(node: dict, *keys: str) -> "str | list | None":
     """Read a node field that may live at the top level OR under inputs/spec.
 
     The editor (editor/app.js) stores most node-shape fields as TOP-LEVEL
-    keys on the node — `node.assetKind`, `node.path`, `node.paths`,
+    keys on the node - `node.assetKind`, `node.path`, `node.paths`,
     `node.prototype`, `node.dsId`, etc. A few older / scaffolder code-
     paths store the same fields under `node.inputs.*` or `node.spec.*`.
     This helper checks top-level first, then `inputs`, then `spec`, and
@@ -699,7 +699,7 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
     element.
 
     The editor (see app.js, the prototype-iframe scanner) emits asset
-    nodes for icons stamped into prototype HTML at a CSS slot — e.g.
+    nodes for icons stamped into prototype HTML at a CSS slot - e.g.
     `[data-slot="icon-ticket"]`. These nodes carry no `src` because the
     SVG markup lives in the prototype, not on the node. `boundTo.node`
     points at the prototype node id; `boundTo.surface` is the CSS
@@ -707,7 +707,7 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
 
     Returns the SVG markup string, or None if anything can't be resolved
     (no boundTo, prototype not found, slot not in HTML, no <svg> inside).
-    All failures are non-fatal — the caller falls through to a clear
+    All failures are non-fatal - the caller falls through to a clear
     no-artifact README pointing the user at the prototype.
     """
     bound = node.get("boundTo") if isinstance(node.get("boundTo"), dict) else None
@@ -719,7 +719,7 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
         return None
 
     # Find the prototype node in workflow.json so we know which source/<slug>/
-    # tree to scan. Tolerate a missing workflow.json — caller already verified
+    # tree to scan. Tolerate a missing workflow.json - caller already verified
     # project_root exists.
     wf_path = os.path.join(project_root, "workflow", "workflow.json")
     if not os.path.isfile(wf_path):
@@ -741,7 +741,7 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
         return None
     slug = slug.strip()
 
-    # Pull the slot id out of the selector — supports [data-slot="x"],
+    # Pull the slot id out of the selector - supports [data-slot="x"],
     # [data-slot='x'], [data-slot=x], and the id-shortcut #x.
     slot_match = re.search(r'data-slot=["\']?([^"\'\]]+)["\']?', surface)
     if slot_match:
@@ -773,7 +773,7 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
         for name in filenames:
             if name.endswith(".html"):
                 candidates.append(os.path.join(dirpath, name))
-    # Prefer index.html first, then alphabetical — gives the most likely hit
+    # Prefer index.html first, then alphabetical - gives the most likely hit
     # before we read the rest.
     candidates.sort(key=lambda p: (0 if os.path.basename(p) == "index.html" else 1, p))
     for html_path in candidates:
@@ -792,7 +792,7 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
 
 
 def _read_dsref_from_data_js(project_root: str, branch: str) -> "str | None":
-    """Parse editor/data.js for meta.dsRef. Cheap regex — the file is a
+    """Parse editor/data.js for meta.dsRef. Cheap regex - the file is a
     JS literal but the meta block is shallow and stable. Returns None if
     the file is missing or the field absent."""
     p = os.path.join(project_root, "editor", "data.js")
@@ -814,7 +814,7 @@ def _safe_copy_tree(src_dir: str, dst_dir: str, files_out: list,
                      bucket_root: "str | None" = None) -> None:
     """Walk src_dir, copy every file into dst_dir preserving structure.
     Appends every written path to `files_out` for the README's `Files
-    included` block — relative to `bucket_root` if provided (so the
+    included` block - relative to `bucket_root` if provided (so the
     listing shows the full per-bucket layout, e.g. `source/main/x.css`
     + `design-systems/luna/styles.css`), else relative to dst_dir.
     Skips dotfiles, __pycache__, node_modules."""
@@ -878,7 +878,7 @@ def _resolve_branch_from_node(node: dict, project_root: str) -> "str | None":
 
 def _resolve_file_from_node(node: dict) -> "str | None":
     """Single-file kinds keep their file at top-level `node.path` (the
-    editor's canonical shape — see app.js asset-node construction), with
+    editor's canonical shape - see app.js asset-node construction), with
     `file` / `src` / `url` accepted as aliases and the same keys under
     `node.inputs.*` accepted for older scaffolder payloads. Returns the
     project-relative path or None."""
@@ -902,7 +902,7 @@ def export_node(
     surface as HTTP 400; raises OSError on filesystem problems (caller
     turns into 500). Raises BucketExistsError (a ValueError subclass)
     when a caller-provided `bucket_name` already exists and overwrite
-    is false — the daemon surfaces this as HTTP 409 so the UI can ask
+    is false - the daemon surfaces this as HTTP 409 so the UI can ask
     the user to confirm replacement.
 
     If `bucket_name` is None or empty, the bucket falls back to
@@ -914,7 +914,7 @@ def export_node(
     if not isinstance(project_root, str) or not os.path.isdir(project_root):
         raise ValueError("project_root must be an existing directory")
     if not isinstance(export_root, str) or not export_root.strip():
-        raise ValueError("export folder is empty — set it via the ⤓ Exports button in the workflow toolbar")
+        raise ValueError("export folder is empty - set it via the ⤓ Exports button in the workflow toolbar")
     export_root = os.path.expanduser(export_root)
     if not os.path.isabs(export_root):
         raise ValueError(f"export folder must be an absolute path; got {export_root!r}")
@@ -939,7 +939,7 @@ def export_node(
         if os.path.exists(bucket_dir):
             if not overwrite:
                 raise BucketExistsError(bucket_name, bucket_dir)
-            # Overwrite — rmtree the existing bucket so the fresh export
+            # Overwrite - rmtree the existing bucket so the fresh export
             # doesn't accidentally merge with stale files. Refuse to delete
             # anything that isn't a directory inside export_root (defense
             # against export_root being a symlink target or the user picking
@@ -997,7 +997,7 @@ def export_node(
         if not os.path.isdir(src_dir):
             facts["explanation"] = (
                 f"This `{kind}` node points at `source/{branch}/`, but that folder "
-                "doesn't exist on disk yet — the prototype hasn't been built. Run the "
+                "doesn't exist on disk yet - the prototype hasn't been built. Run the "
                 "upstream pipeline to populate `source/`, then re-export."
             )
             readme = readme_no_artifact(facts)
@@ -1020,7 +1020,7 @@ def export_node(
                 facts["dsRef"] = ds_ref
         facts["files"] = files_written
         # Prototypes open at the branch-root index.html unless the
-        # dispatcher set a more specific entry (immersive containers do —
+        # dispatcher set a more specific entry (immersive containers do -
         # see _CONTAINER_SUBFOLDER + assetId resolution above).
         write_serve_helpers(bucket_dir,
                             facts.get("entry") or f"source/{branch}/index.html")
@@ -1031,7 +1031,7 @@ def export_node(
         # design-system nodes (per editor/app.js) carry the DS id as
         # top-level `node.dsId`. `inputs.id` / `inputs.dsId` /
         # `inputs.path` cover legacy scaffolder payloads. NOTE: we do
-        # NOT consult top-level `node.id` here — that's the node
+        # NOT consult top-level `node.id` here - that's the node
         # identifier (e.g. `n1k2…`), not the design-system id.
         ds_id = ""
         candidates = [
@@ -1069,16 +1069,16 @@ def export_node(
                                 f"design-systems/{ds_id}/gallery.html")
             readme = readme_design_system(facts)
         else:
-            # Empty / unwired DS node — surface a no-artifact README that
+            # Empty / unwired DS node - surface a no-artifact README that
             # explains the gap rather than 400ing on every export click.
             facts["explanation"] = (
                 "This design-system node is not wired to an on-disk `design-systems/<id>/` "
-                "folder yet — either no DS has been built for this project, or the node's "
+                "folder yet - either no DS has been built for this project, or the node's "
                 "`inputs.id` is empty. Build a DS via Workflow 0, then re-export."
             )
             readme = readme_no_artifact(facts)
 
-    # ── asset node — dispatch on assetKind ──────────────────────────────
+    # ── asset node - dispatch on assetKind ──────────────────────────────
     elif kind == "asset":
         # Asset nodes (per editor/app.js) store `assetKind`, `path`, and
         # `paths` as TOP-LEVEL keys on the node. Older scaffolder code-
@@ -1095,9 +1095,9 @@ def export_node(
         # need to be resolved by reading a bound prototype's HTML. Two
         # path schemes the editor produces (see app.js scanner + slot
         # binder):
-        #   • `inline:svg/<hash>`  — src = "<svg>…</svg>" markup.
-        #   • `inline:canvas/...`  — src = "data:image/png;base64,…".
-        #   • `inline-svg:<selector>` — NO src; the SVG lives inside a
+        #   • `inline:svg/<hash>`  - src = "<svg>…</svg>" markup.
+        #   • `inline:canvas/...`  - src = "data:image/png;base64,…".
+        #   • `inline-svg:<selector>` - NO src; the SVG lives inside a
         #     bound prototype's HTML at the CSS selector. Resolved by
         #     scanning source/<slug>/*.html for the slot element.
         inline_src = node.get("src") if isinstance(node.get("src"), str) else None
@@ -1116,8 +1116,8 @@ def export_node(
                 is_inline_with_src = True
         is_inline = is_inline_with_src
 
-        # Placeholder / unwired asset node — no path AND no paths AND no
-        # inline content — fall through to a no-artifact README instead of
+        # Placeholder / unwired asset node - no path AND no paths AND no
+        # inline content - fall through to a no-artifact README instead of
         # 400ing. Common for nodes the user just dragged in but hasn't run yet.
         # Accepts both `source/<branch>/…` and `design-systems/<dsId>/…`
         # paths (the editor exposes DS gallery / spec files as assets).
@@ -1140,7 +1140,7 @@ def export_node(
             else:
                 facts["explanation"] = (
                     "This asset node has no `path` (or `paths`) pointing at a `source/` "
-                    "file yet — it's an empty placeholder waiting for an upstream producer "
+                    "file yet - it's an empty placeholder waiting for an upstream producer "
                     "to write its file. Run the upstream skill/agent first, then re-export "
                     "and you'll get the bundled file with an integration README."
                 )
@@ -1172,7 +1172,7 @@ def export_node(
             if sub_hint == "svg" or asset_sub in ("svg", "vector"):
                 ext, bucket, payload, binary = "svg", "svg", inline_src, False
             elif data_uri:
-                # Data URI — extract MIME + decoded payload.
+                # Data URI - extract MIME + decoded payload.
                 mime = (data_uri.group(1) or "application/octet-stream").lower()
                 ext_by_mime = {
                     "image/png": ("png", "image"),
@@ -1195,7 +1195,7 @@ def export_node(
                     import urllib.parse as _u
                     payload, binary = _u.unquote(data_uri.group(3)), False
             else:
-                # Generic inline text — map by assetKind.
+                # Generic inline text - map by assetKind.
                 ext_by_kind = {
                     "html": ("html", "html"), "text": ("txt", "text"),
                     "markdown": ("md", "markdown"),
@@ -1260,7 +1260,7 @@ def export_node(
                 raise ValueError(f"html asset node has no source/ or design-systems/ path (node {nodeId!r})")
             abs_src = os.path.join(project_root, path)
             if not os.path.isfile(abs_src):
-                # File referenced but not on disk — fall through to a
+                # File referenced but not on disk - fall through to a
                 # no-artifact README rather than 400ing. Common when an
                 # upstream producer hasn't run yet, or the file was
                 # deleted out-of-band.
@@ -1312,7 +1312,7 @@ def export_node(
                     write_serve_helpers(bucket_dir, fname)
                     readme = readme_html(facts)
             elif len(parts) >= 3:
-                # source/<branch>/<rest>.html — bundle the whole branch.
+                # source/<branch>/<rest>.html - bundle the whole branch.
                 branch = parts[1]
                 branch_root = os.path.join(project_root, "source", branch)
                 if os.path.isdir(branch_root):
@@ -1340,7 +1340,7 @@ def export_node(
                     write_serve_helpers(bucket_dir, fname)
                     readme = readme_html(facts)
             else:
-                # Single file at source/<file>.html — copy alone.
+                # Single file at source/<file>.html - copy alone.
                 fname = os.path.basename(path)
                 shutil.copy2(abs_src, os.path.join(bucket_dir, fname))
                 files_written.append(fname)
@@ -1350,7 +1350,7 @@ def export_node(
                 readme = readme_html(facts)
 
         else:
-            # Single-file resource — image / svg / video / audio / 3d /
+            # Single-file resource - image / svg / video / audio / 3d /
             # shader / markdown / text. Goes under resources/<kind>/.
             # Accepts both `source/...` and `design-systems/...` paths.
             if not _is_exportable_source_path(path):
@@ -1379,7 +1379,7 @@ def export_node(
                 facts["resourceKind"] = res_kind
                 facts["filename"]     = fname
                 facts["files"]        = files_written
-                # No serve.* for single-file resources — the README's
+                # No serve.* for single-file resources - the README's
                 # integration snippet covers usage.
                 readme = readme_single_resource(facts)
 
@@ -1387,12 +1387,12 @@ def export_node(
     elif kind in _SINGLE_FILE_MEDIA_KINDS:
         path = _resolve_file_from_node(node)
         if not _is_exportable_source_path(path):
-            # Placeholder media node — fall back to a no-artifact README
+            # Placeholder media node - fall back to a no-artifact README
             # rather than 400ing.
             facts["subKind"] = kind
             facts["explanation"] = (
                 f"This `{kind}` node has no file on disk yet. Its upstream producer "
-                "hasn't written a file to `source/` (or `design-systems/`) — run the "
+                "hasn't written a file to `source/` (or `design-systems/`) - run the "
                 "producer first, then re-export."
             )
             readme = readme_no_artifact(facts)

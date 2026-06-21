@@ -13,7 +13,7 @@ images:
 
 # Soft UI / Neumorphic Foam
 
-A matte surface that reacts to light: yes — dual highlight + shadow and deforms: yes (raised ↔ pressed).
+A matte surface that reacts to light: yes - dual highlight + shadow and deforms: yes (raised ↔ pressed).
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — dual highlight + shadow and deform
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — dual highlight + shadow
+**Reacts to light**: yes - dual highlight + shadow
 
 **Deforms**: yes (raised ↔ pressed)
 

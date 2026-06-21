@@ -18,7 +18,7 @@ all forms drawn with 4-6px wobbly black brush line.
 ## Visual signatures
 
 - all forms drawn with 4-6px wobbly black brush line
-- white or off-white fill only — never colored
+- white or off-white fill only - never colored
 - characters mix and match modular hair, body, expression
 - warm imperfect line wobble suggests human hand
 

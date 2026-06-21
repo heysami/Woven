@@ -34,7 +34,7 @@ images:
 - Label L 14/20 (wght 500), Label M 12/16 (wght 500), Label S 11/16 (wght 500)
 - Letter-spacing: tighter on display (-0.25 to 0), looser on label (+0.1 to +0.5).
 
-**Radius (elevation-graded).** Extra-small 4, Small 8, Medium 12, Large 16, Extra-large 28, Full 9999. FAB = 16, chip = full, card = 12, dialog = 28, button = full. Mixing radii within one component is forbidden — pick one tier.
+**Radius (elevation-graded).** Extra-small 4, Small 8, Medium 12, Large 16, Extra-large 28, Full 9999. FAB = 16, chip = full, card = 12, dialog = 28, button = full. Mixing radii within one component is forbidden - pick one tier.
 
 **Elevation (5 levels, tint + shadow).** Elevation is tint first, shadow second.
 - Level 0: `--surface`, no shadow
@@ -46,7 +46,7 @@ images:
 
 **Decoration grammar.**
 - State layers are mandatory: hover = 8% on-color overlay, focus/pressed = 12%, dragged = 16%. Apply via `::before` with `mix-blend-mode: plus-lighter` or a translucent overlay.
-- Filled, Tonal, Outlined, Elevated, Text — five button variants, never invent a sixth.
+- Filled, Tonal, Outlined, Elevated, Text - five button variants, never invent a sixth.
 - Ripple from touch point on press (radial gradient expanding to bounds, ~0.4s).
 - Icons: Material Symbols only. Rounded grade by default. Filled state for selected nav items.
 - No skeuomorphic shadows, no glassmorphism, no gradients other than ripples and the implicit surface tint.
@@ -56,12 +56,12 @@ images:
 - Emphasized easing: `cubic-bezier(0.2, 0, 0, 1)` (decelerate), `cubic-bezier(0.3, 0, 0.8, 0.15)` (accelerate), `cubic-bezier(0.2, 0, 0, 1)` (standard).
 - Durations: short 50-200ms (state changes), medium 250-400ms (transitions), long 450-600ms (large surface changes).
 - Spring for FAB and shared-axis transitions: `transition: all 0.3s cubic-bezier(0.2, 0, 0, 1)`.
-- Containment morph: FAB expands into bottom sheet with shared bounds — radius animates from `--shape-full` to `--shape-large`.
+- Containment morph: FAB expands into bottom sheet with shared bounds - radius animates from `--shape-full` to `--shape-large`.
 - No bouncy overshoots, no parallax, no scroll-jacking.
 
 ## Failure mode
 
-The trashy tell: applying M3 tokens without the surface tint ladder — flat white cards on flat white scaffolds, no elevation differentiation. Or: using Material Symbols Outlined when the rest of the app uses Rounded (or mixing fill states arbitrarily). Or: a seed color picked but never propagated into containers and on-colors, so chips and FABs read as random brand accents instead of derived from the same seed.
+The trashy tell: applying M3 tokens without the surface tint ladder - flat white cards on flat white scaffolds, no elevation differentiation. Or: using Material Symbols Outlined when the rest of the app uses Rounded (or mixing fill states arbitrarily). Or: a seed color picked but never propagated into containers and on-colors, so chips and FABs read as random brand accents instead of derived from the same seed.
 
 ## Best for
 

@@ -1,40 +1,42 @@
 # Agent instructions
 
+> **Never use em dashes.** Do not use the em dash character (Unicode U+2014) anywhere you write or edit: source pages, design-system content, labels, headings, UI strings, docs, JSON, code comments, commit messages, chat. Use a comma, colon, parentheses, period, or a plain spaced hyphen ("-") instead. The en dash (U+2013) is banned in prose too; a plain hyphen "-" is the only dash. When editing content that already has an em dash, replace it.
+
 This repo is a **prototype workspace**: one project = one source tree. The editor (under `editor/`) renders it as a Figma-style canvas.
 
-The **design system is a separate library asset** that lives at project root under `design-systems/<id>/`. Each project references it via `meta.dsRef`. Prototype regeneration is **gated on a DS existing first** — Workflow 1 will not run against a project whose `meta.dsRef` is unset. Build the DS via Workflow 0 first.
+The **design system is a separate library asset** that lives at project root under `design-systems/<id>/`. Each project references it via `meta.dsRef`. Prototype regeneration is **gated on a DS existing first** - Workflow 1 will not run against a project whose `meta.dsRef` is unset. Build the DS via Workflow 0 first.
 
-Your job: keep the project's artifacts consistent — `source/` (feature pages, constrained by DS) ↔ `editor/data.js` (with `meta.dsRef`) ↔ the DS library node it references. Drift between feature pages and DS is reconciled through the proposal flow (Workflows 6 / 6b).
+Your job: keep the project's artifacts consistent - `source/` (feature pages, constrained by DS) ↔ `editor/data.js` (with `meta.dsRef`) ↔ the DS library node it references. Drift between feature pages and DS is reconciled through the proposal flow (Workflows 6 / 6b).
 
-> **v3.1 / v3.7 — project-level branches removed; multi-prototype-per-project replaces them.** The old multi-branch model (fork/merge across `source/<slug>/`) has been replaced by **per-asset sibling-node branching** on the workflow canvas. A project may still host multiple PROTOTYPES under `source/<slug>/` (each surfaced as a starred prototype), but they are siblings, not branches — there is no fork/merge between them. Each prototype owns its own `editor/<slug>.data.js`. See [`docs/features/deprecate-project-branches.md`](docs/features/deprecate-project-branches.md).
+> **v3.1 / v3.7 - project-level branches removed; multi-prototype-per-project replaces them.** The old multi-branch model (fork/merge across `source/<slug>/`) has been replaced by **per-asset sibling-node branching** on the workflow canvas. A project may still host multiple PROTOTYPES under `source/<slug>/` (each surfaced as a starred prototype), but they are siblings, not branches - there is no fork/merge between them. Each prototype owns its own `editor/<slug>.data.js`. See [`docs/features/deprecate-project-branches.md`](docs/features/deprecate-project-branches.md).
 
-## Workspace mode (Phase 6 — multi-project)
+## Workspace mode (Phase 6 - multi-project)
 
 When the editor's daemon is launched with `TH_WORKSPACE_DIR=<path>`, the install is **multi-project**: one editor binary serves N independent projects under the workspace dir, each with its own `source/`, `editor/data.js`, and per-project docs. In that mode:
 
-- **Your cwd is the active project's root**, not the install root. Read/write project-scoped files (`source/`, `design-systems/<id>/`, `editor/data.js`, `editor/design-systems/<id>.js`, `NOTES.md`, `prototype.json`, `edits.json`, `DS_PROPOSAL.md`, `DS_ACCEPTED.json`, `DS_DEFERRED.md`) via relative paths — they live in cwd. **`DESIGN.md` lives inside each DS folder at `design-systems/<id>/DESIGN.md`, not at project root.**
+- **Your cwd is the active project's root**, not the install root. Read/write project-scoped files (`source/`, `design-systems/<id>/`, `editor/data.js`, `editor/design-systems/<id>.js`, `NOTES.md`, `prototype.json`, `edits.json`, `DS_PROPOSAL.md`, `DS_ACCEPTED.json`, `DS_DEFERRED.md`) via relative paths - they live in cwd. **`DESIGN.md` lives inside each DS folder at `design-systems/<id>/DESIGN.md`, not at project root.**
 - **The agent protocol lives at a separate read-only mount**, exposed via `--add-dir $TH_PROTOCOL_ROOT`: this `AGENTS.md`, `PROTOTYPE.md`, and every workflow/subagent under `docs/agents/**`. Read them from that mount; **never copy them into a project**.
 - **Useful env vars** set on every spawn: `TH_PROJECT_ROOT` (absolute path to cwd), `TH_PROTOCOL_ROOT` (the shared protocol mount), `TH_PROJECT_ID` (workspace id), `TH_DAEMON_URL` (http://127.0.0.1:PORT), `TH_RUN_ID`.
-- **Every daemon POST that writes into `source/` MUST include `?project=$TH_PROJECT_ID`** in the URL. `/__asset_generate`, `/__llm_run`, `/__write_text`, `/__copy_file`, `/__replace_exposed_svg`, `/__mkdir`, `/__rmdir`, `/__rename_dir` now 400 without it when more than one project exists. There used to be a silent fallback to the alphabetically-first project — that's gone because it caused subagent-generated assets to land in the wrong project's tree.
+- **Every daemon POST that writes into `source/` MUST include `?project=$TH_PROJECT_ID`** in the URL. `/__asset_generate`, `/__llm_run`, `/__write_text`, `/__copy_file`, `/__replace_exposed_svg`, `/__mkdir`, `/__rmdir`, `/__rename_dir` now 400 without it when more than one project exists. There used to be a silent fallback to the alphabetically-first project - that's gone because it caused subagent-generated assets to land in the wrong project's tree.
 - **Cross-project work is forbidden.** Stay within cwd. Don't read or write under sibling project dirs even if the workspace path is visible.
 
-In single-project mode (no `TH_WORKSPACE_DIR`) the install root and the project root coincide and these distinctions collapse to today's behavior — every path is repo-relative as before.
+In single-project mode (no `TH_WORKSPACE_DIR`) the install root and the project root coincide and these distinctions collapse to today's behavior - every path is repo-relative as before.
 
-## 🚫 Editor source is OFF LIMITS — never write under `$TH_PROTOCOL_ROOT`
+## 🚫 Editor source is OFF LIMITS - never write under `$TH_PROTOCOL_ROOT`
 
 **Hard rule. Zero exceptions. This is the single most important constraint in this file.**
 
-The shared protocol mount (the path `$TH_PROTOCOL_ROOT` points at — typically `/Users/sami/Documents/Woven` or wherever the editor binary is installed) is the **editor itself**, not a project. You are spawned to work on a **project** under `$TH_PROJECT_ROOT`. The two are different trees with different lifecycles. The protocol mount is added to your context via `--add-dir` so you can READ documentation (`AGENTS.md`, `PROTOTYPE.md`, `docs/agents/**`, `.claude/agents/**`). It is **read-only by policy** — the filesystem may allow writes, but the policy does not.
+The shared protocol mount (the path `$TH_PROTOCOL_ROOT` points at - typically `/Users/sami/Documents/Woven` or wherever the editor binary is installed) is the **editor itself**, not a project. You are spawned to work on a **project** under `$TH_PROJECT_ROOT`. The two are different trees with different lifecycles. The protocol mount is added to your context via `--add-dir` so you can READ documentation (`AGENTS.md`, `PROTOTYPE.md`, `docs/agents/**`, `.claude/agents/**`). It is **read-only by policy** - the filesystem may allow writes, but the policy does not.
 
 **You MUST NOT write, edit, or create any file under `$TH_PROTOCOL_ROOT`.** This includes (non-exhaustive):
 
-- `$TH_PROTOCOL_ROOT/editor/**` — the React app, daemon, styles, assets, prompts, registry.
-- `$TH_PROTOCOL_ROOT/.claude/**` — agent skill files, settings, hooks, launch configs.
-- `$TH_PROTOCOL_ROOT/docs/**` — protocol documentation.
+- `$TH_PROTOCOL_ROOT/editor/**` - the React app, daemon, styles, assets, prompts, registry.
+- `$TH_PROTOCOL_ROOT/.claude/**` - agent skill files, settings, hooks, launch configs.
+- `$TH_PROTOCOL_ROOT/docs/**` - protocol documentation.
 - `$TH_PROTOCOL_ROOT/AGENTS.md`, `$TH_PROTOCOL_ROOT/PROTOTYPE.md`, `$TH_PROTOCOL_ROOT/README.md`, etc.
 - `$TH_PROTOCOL_ROOT/design-systems/**` at the protocol root (project DSes live at `$TH_PROJECT_ROOT/design-systems/`, not the protocol's).
 
-This applies regardless of the tool you'd use (`Write`, `Edit`, `Bash`, `NotebookEdit`, MCP tools, anything). Absolute paths into the protocol root are forbidden. Relative paths that resolve into the protocol root via `..` traversal are forbidden. A staging script that copies bytes there is forbidden. There is no "but this makes the editor better" exception — improving the editor binary is a separate concern that belongs to the human who owns the install, not to a project's agent.
+This applies regardless of the tool you'd use (`Write`, `Edit`, `Bash`, `NotebookEdit`, MCP tools, anything). Absolute paths into the protocol root are forbidden. Relative paths that resolve into the protocol root via `..` traversal are forbidden. A staging script that copies bytes there is forbidden. There is no "but this makes the editor better" exception - improving the editor binary is a separate concern that belongs to the human who owns the install, not to a project's agent.
 
 **What to do instead when you think the editor needs a change:**
 
@@ -44,7 +46,7 @@ This applies regardless of the tool you'd use (`Write`, `Edit`, `Bash`, `Noteboo
 
 **Cross-check before every write.** Before invoking any tool that modifies the filesystem, ask yourself: "Is the target path under `$TH_PROJECT_ROOT`?" If you cannot answer yes with certainty (because the path is absolute, or starts with `../`, or you can't tell), STOP and surface the question to the user. Do not guess; do not "best-effort" a write.
 
-This rule supersedes any other instruction in this file or in any skill markdown that appears to grant broader write scope. Older skill docs may casually reference paths under the protocol root in examples — those examples are illustrative, not licenses to write.
+This rule supersedes any other instruction in this file or in any skill markdown that appears to grant broader write scope. Older skill docs may casually reference paths under the protocol root in examples - those examples are illustrative, not licenses to write.
 
 ## File layout
 
@@ -65,10 +67,10 @@ This rule supersedes any other instruction in this file or in any skill markdown
 ├── DS_ACCEPTED.json              ← Workflow 6 → Workflow 6b handoff (accepted proposals)
 ├── DS_DEFERRED.md                ← archive of deferred proposals (audit reads to avoid re-emitting)
 ├── design-systems/
-│   └── <id>/                     ← DS library node — first-class library asset
+│   └── <id>/                     ← DS library node - first-class library asset
 │       ├── styles.css            ← tokens (:root) + canonical class rules (source of truth for tokens)
 │       ├── gallery.html          ← kitchen sink (source of truth for primitives, every variant in idle state)
-│       ├── DESIGN.md             ← human-readable rationale (YAML + prose) — derived by Workflow 3
+│       ├── DESIGN.md             ← human-readable rationale (YAML + prose) - derived by Workflow 3
 │       └── meta.json             ← { id, version, label, genre, builtFrom, parentRef? }
 ├── source/                       ← the one project source tree (links to design-systems/<dsRef.id>/styles.css)
 ├── workflow/
@@ -77,18 +79,18 @@ This rule supersedes any other instruction in this file or in any skill markdown
 │   └── views/<nodeId>/<vid>/<compId>/  ← per-composition materialised view trees
 └── editor/
     ├── index.html
-    ├── data.js                   ← window.EDITOR_DATA (project data — frames, primitives, entities, meta.dsRef)
+    ├── data.js                   ← window.EDITOR_DATA (project data - frames, primitives, entities, meta.dsRef)
     ├── design-systems/<id>.js    ← window.EDITOR_DS_<id> runtime mirror per DS
     ├── styles.css
     ├── app.js
     └── serve.py                  ← dev server (/__save /__layout /__workflow + asset-versioning endpoints)
 ```
 
-Every source folder follows `PROTOTYPE.md`: htm + React UMD, **no build, no Babel**, single page (or multi-HTML with a storyboard `index.html` — see Workflow 1). Feature pages **link** their DS's stylesheet rather than redeclaring tokens or primitives.
+Every source folder follows `PROTOTYPE.md`: htm + React UMD, **no build, no Babel**, single page (or multi-HTML with a storyboard `index.html` - see Workflow 1). Feature pages **link** their DS's stylesheet rather than redeclaring tokens or primitives.
 
 ## Visualization in chat
 
-When the user asks for a quick visualization, demo, chart, mockup, illustration, color/font sample, shader effect, 3D scene, or animated sketch — render it **inline in the chat drawer**, not by editing `source/`. The chat surface understands the following fenced code blocks and inline patterns, all rendered live as you stream them.
+When the user asks for a quick visualization, demo, chart, mockup, illustration, color/font sample, shader effect, 3D scene, or animated sketch - render it **inline in the chat drawer**, not by editing `source/`. The chat surface understands the following fenced code blocks and inline patterns, all rendered live as you stream them.
 
 | Renderer | Trigger | Use for |
 |---|---|---|
@@ -99,11 +101,11 @@ When the user asks for a quick visualization, demo, chart, mockup, illustration,
 | GLSL shader | <code>\`\`\`glsl</code> or <code>\`\`\`shader</code> fenced block | Fragment-shader playground in shadertoy style. Write `void mainImage(out vec4 fragColor, in vec2 fragCoord)`. Uniforms available: `iResolution` (vec3, px), `iTime` (float, sec), `iMouse` (vec4, xy=pos, zw=last click). The host wires WebGL + animation loop + mouse tracking. |
 | three.js | <code>\`\`\`three</code> or <code>\`\`\`webgl</code> fenced block | 3D scenes. Globals: `THREE`, `scene`, `camera`, `renderer`. Register a per-frame callback with `__animate(t => …)`. Click/hover/raycast/scroll-zoom all work via the standard three.js patterns. |
 | p5.js | <code>\`\`\`p5</code> fenced block | Creative-coding sketches. Define `setup()` + `draw()` top-level (global mode) or `function sketch(p) { … }` (instance mode). `mousePressed`, `mouseMoved`, `mouseWheel`, `keyPressed` etc. all work. |
-| Color swatch | Inline `#hex`, `rgb()`, `rgba()`, `hsl()`, `oklch()`, `oklab()`, `linear-gradient(…)`, `radial-gradient(…)` | Auto-decorated with a colour swatch — no fencing needed. |
+| Color swatch | Inline `#hex`, `rgb()`, `rgba()`, `hsl()`, `oklch()`, `oklab()`, `linear-gradient(…)`, `radial-gradient(…)` | Auto-decorated with a colour swatch - no fencing needed. |
 | Image thumb | Inline `https://…/foo.png\|jpg\|webp\|gif\|svg\|avif` | Auto-renders as a 32×32 thumbnail next to the URL. |
 | Font preview | Inline `https://…/foo.woff\|woff2\|ttf\|otf` | Auto-renders "Aa Bb 123" in that font via injected `@font-face`. |
 
-All sandboxed previews (`html`/`svg`/`shader`/`three`/`p5`) run inside `<iframe sandbox="allow-scripts">` — null-origin isolation, full interactivity (click, mouse, scroll, hover, keyboard), zero access to the host page.
+All sandboxed previews (`html`/`svg`/`shader`/`three`/`p5`) run inside `<iframe sandbox="allow-scripts">` - null-origin isolation, full interactivity (click, mouse, scroll, hover, keyboard), zero access to the host page.
 
 **Rule of thumb:** render in chat unless the user explicitly says "prototype", "branch", "scaffold", or asks for something multi-page navigable. Reserve `source/` writes for actual prototype work that lives in the canvas.
 
@@ -116,22 +118,22 @@ Match the trigger; read only the matching playbook.
 | Trigger | Playbook |
 |---|---|
 | "build design system" / "update DS" / DS spec nodes change / no DS exists | [`docs/agents/workflows/0-design-system.md`](docs/agents/workflows/0-design-system.md) → [`docs/agents/subagents/0-ds-builder.md`](docs/agents/subagents/0-ds-builder.md) |
-| "process the prototype" / "regenerate frames" / new source dropped in | [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) → [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) — **requires `meta.dsRef`; runs Workflow 0 first if absent** |
+| "process the prototype" / "regenerate frames" / new source dropped in | [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) → [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) - **requires `meta.dsRef`; runs Workflow 0 first if absent** |
 | `edits.json` at repo root | [`docs/agents/workflows/2-edits.md`](docs/agents/workflows/2-edits.md) |
 | DS trio changed; "Export DESIGN.md" against a DS library node | [`docs/agents/workflows/3-design-md.md`](docs/agents/workflows/3-design-md.md) |
-| `DS_PROPOSAL.md` at repo root | [`docs/agents/workflows/6-ds-propose.md`](docs/agents/workflows/6-ds-propose.md) — partitions by verdict; dispatches to 6b on accept |
-| `DS_ACCEPTED.json` at repo root | [`docs/agents/workflows/6b-ds-update.md`](docs/agents/workflows/6b-ds-update.md) — atomic DS trio update + version bump |
+| `DS_PROPOSAL.md` at repo root | [`docs/agents/workflows/6-ds-propose.md`](docs/agents/workflows/6-ds-propose.md) - partitions by verdict; dispatches to 6b on accept |
+| `DS_ACCEPTED.json` at repo root | [`docs/agents/workflows/6b-ds-update.md`](docs/agents/workflows/6b-ds-update.md) - atomic DS trio update + version bump |
 | `STATEMACHINE_REQUEST.md` / `TIMELINE_REQUEST.md` / `GRID_REQUEST.md` | [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) → spawn subagent 8 / 9 / 10 (gate override) |
 
 ### Workflow 1 is a orchestrator + subagents
 
 Regeneration is split into 10 isolated subagent jobs to keep each one's context focused. The orchestrator (top-level Claude) coordinates; each subagent owns a strict slice of the data file. See [`docs/agents/workflows/1-regenerate.md`](docs/agents/workflows/1-regenerate.md) for the dispatch table and [`docs/agents/orchestrator.md`](docs/agents/orchestrator.md) for the orchestration recipe.
 
-Subagent playbooks live under [`docs/agents/subagents/`](docs/agents/subagents/). The orchestrator reads only the playbook of the subagent it's spawning, and feeds that playbook into the `Agent` tool's prompt so the subagent has it as context. **No subagent reads any other subagent's playbook** — context isolation is the whole point.
+Subagent playbooks live under [`docs/agents/subagents/`](docs/agents/subagents/). The orchestrator reads only the playbook of the subagent it's spawning, and feeds that playbook into the `Agent` tool's prompt so the subagent has it as context. **No subagent reads any other subagent's playbook** - context isolation is the whole point.
 
 #### Subagent 1 has its own nested pipeline (visual generation)
 
-Subagent 1 (source build) doesn't decide visual *medium* itself — it writes annotated slots (`img-placeholder` / `motion-placeholder` per [`PROTOTYPE.md`](PROTOTYPE.md) §9) and then spawns [`Subagent 1.V`](docs/agents/subagents/1V-visual-orchestrator.md) after render-verify. 1.V enumerates every slot, classifies the medium against a genre filter (raster-photo, raster-foreground, vector-mark, vector-icon, shader, 3d, particle-2d, particle-gl, lottie, video), scaffolds the matching node graph into `workflow/workflow.json` (uses the Open Design canvas surface — prompt + skill + asset nodes connected by edges), then dispatches one **per-asset drawer** (`1V-<medium>.md`) per slot in parallel. Each drawer owns one asset, writes either a prompt (Pathway A — vendor API) or code (Pathway B — LLM-writes-SVG/GLSL/three/canvas/Lottie). Generation itself fires when the user clicks Run on the canvas; this layer is **scaffolding + briefing**, not execution.
+Subagent 1 (source build) doesn't decide visual *medium* itself - it writes annotated slots (`img-placeholder` / `motion-placeholder` per [`PROTOTYPE.md`](PROTOTYPE.md) §9) and then spawns [`Subagent 1.V`](docs/agents/subagents/1V-visual-orchestrator.md) after render-verify. 1.V enumerates every slot, classifies the medium against a genre filter (raster-photo, raster-foreground, vector-mark, vector-icon, shader, 3d, particle-2d, particle-gl, lottie, video), scaffolds the matching node graph into `workflow/workflow.json` (uses the Open Design canvas surface - prompt + skill + asset nodes connected by edges), then dispatches one **per-asset drawer** (`1V-<medium>.md`) per slot in parallel. Each drawer owns one asset, writes either a prompt (Pathway A - vendor API) or code (Pathway B - LLM-writes-SVG/GLSL/three/canvas/Lottie). Generation itself fires when the user clicks Run on the canvas; this layer is **scaffolding + briefing**, not execution.
 
 The same context-isolation rule applies one level deeper: 1.V reads its own playbook + the classifier table; each 1.V.* drawer reads only its own `1V-<medium>.md`. **No drawer reads another drawer's playbook.**
 
@@ -141,8 +143,8 @@ The same context-isolation rule applies one level deeper: 1.V reads its own play
 
 The canonical recipe lives in [`.claude/agents/ORCHESTRATORS.md`](.claude/agents/ORCHESTRATORS.md). Two surface areas to read before authoring:
 
-- **§ Adding a new orchestrator — checklist** — the 5-step recipe (playbook + manifest + capabilities-preamble hard-rule + node-kind registry + optional calibration fixtures).
-- **§ Library-backed orchestrators (read if your orchestrator references a curated catalogue)** — covers the three-tier layout (full library `.md` → structured `.index.json` → per-entry `prototype/<prefix>-<id>.md` files) used by `photography-orchestrator`, `illustration-orchestrator`, `material-orchestrator`. The library lives at `docs/research/<name>-library.md`; the index is auto-generated by `scripts/build-library-indexes.py` and is what the orchestrator reads on dispatch (not the prose library — that's a 95% token saving per slot). When adding a library-referencing orchestrator, follow the 8-step checklist in that section verbatim.
+- **§ Adding a new orchestrator - checklist** - the 5-step recipe (playbook + manifest + capabilities-preamble hard-rule + node-kind registry + optional calibration fixtures).
+- **§ Library-backed orchestrators (read if your orchestrator references a curated catalogue)** - covers the three-tier layout (full library `.md` → structured `.index.json` → per-entry `prototype/<prefix>-<id>.md` files) used by `photography-orchestrator`, `illustration-orchestrator`, `material-orchestrator`. The library lives at `docs/research/<name>-library.md`; the index is auto-generated by `scripts/build-library-indexes.py` and is what the orchestrator reads on dispatch (not the prose library - that's a 95% token saving per slot). When adding a library-referencing orchestrator, follow the 8-step checklist in that section verbatim.
 
 ## Design system
 
@@ -159,7 +161,7 @@ The design system is **a first-class library asset**. It lives at `design-system
 
 The project's `source/` folder MAY include declarative sidecars that Workflow 1 reads directly instead of inferring from JSX. Authors keep them in sync; the editor consumes them via Workflow 1.
 
-**`source/prototype.json`** — single source of truth for frames, arrows, lanes, entity-to-frame assignments, entity↔entity links, and the three optional views (state machines / timelines / grids). Optional but recommended — anything stateful or graph-shaped is fragile to infer.
+**`source/prototype.json`** - single source of truth for frames, arrows, lanes, entity-to-frame assignments, entity↔entity links, and the three optional views (state machines / timelines / grids). Optional but recommended - anything stateful or graph-shaped is fragile to infer.
 
 ```jsonc
 {
@@ -177,18 +179,18 @@ The project's `source/` folder MAY include declarative sidecars that Workflow 1 
     { "id": "library", "label": "Library",
       "kind": "page",              // page | state | overlay | form | substep | start | decision | input | trigger | notification | external
       "lane": "user",
-      "hash": "",                  // optional — hash routing
-      "entry": null,               // optional — per-frame .html override (multi-HTML sources)
-      "setupScript": null,         // optional — JS eval'd inside the iframe (use window.__pokeBy)
+      "hash": "",                  // optional - hash routing
+      "entry": null,               // optional - per-frame .html override (multi-HTML sources)
+      "setupScript": null,         // optional - JS eval'd inside the iframe (use window.__pokeBy)
       "parent": null,              // required for state/overlay/substep, optional for drill-down page
       "entities": ["Reference"],   // IA assignments
-      "x": 120, "y": 120, "w": 1440, "h": 900    // optional — auto-laid-out if missing
+      "x": 120, "y": 120, "w": 1440, "h": 900    // optional - auto-laid-out if missing
     }
   ],
 
   "arrows": [
     { "id": "a1", "from": "library", "to": "cmdk", "action": "Press ⌘K" },
-    // Cross-lane handoff — see "Arrows and kinds" below.
+    // Cross-lane handoff - see "Arrows and kinds" below.
     { "id": "a2", "from": "tc-submit", "to": "pxp-review-queue",
       "action": "TC submits → lands in PXP review queue (Workflow 1.2)" }
   ],
@@ -198,22 +200,22 @@ The project's `source/` folder MAY include declarative sidecars that Workflow 1 
       "cardinality": "1:N", "strength": "strong", "label": "contains" }
   ],
 
-  // Optional — gated. See Workflow 1 Step 5d for when to populate.
+  // Optional - gated. See Workflow 1 Step 5d for when to populate.
   "stateMachines": [ /* per-entity FSMs */ ],
   "timelines":     [ /* time-driven event sequences */ ],
-  "grids":         [ /* 2D variance maps — form-field × use-case, entity-op × use-case, decision matrix. Typically multiple per prototype. */ ]
+  "grids":         [ /* 2D variance maps - form-field × use-case, entity-op × use-case, decision matrix. Typically multiple per prototype. */ ]
 }
 ```
 
 Full schemas for `stateMachines` / `timelines` / `grids` live in the editor's empty-state cards (tabs 7 / 8 / 9) and in Workflow 1 Step 5d.
 
-**`source/entities.json`** — declarative entity model when more developed than `window.DEMO`. Same per-entity shape as `editor/data.js → entities[]`:
+**`source/entities.json`** - declarative entity model when more developed than `window.DEMO`. Same per-entity shape as `editor/data.js → entities[]`:
 
 ```jsonc
 { "entities": [ { "id": "Reference", "tag": "base", "fields": [...] }, ... ] }
 ```
 
-**Not in any manifest** — tokens stay in `styles.css :root` (Workflow 1's token-diff check enforces parity); primitives + `from: { selector, hash?, entry? }` stay in `editor/data.js → primitives[]` (runtime DOM extraction needs them there).
+**Not in any manifest** - tokens stay in `styles.css :root` (Workflow 1's token-diff check enforces parity); primitives + `from: { selector, hash?, entry? }` stay in `editor/data.js → primitives[]` (runtime DOM extraction needs them there).
 
 **Round-trip rule.** When you apply *model edits* (Workflow 2, `target ≠ "dom"`), write the change to **both** `editor/data.js` AND `source/prototype.json`. If the manifest doesn't exist yet, create it from the current data file on the first model edit.
 
@@ -227,7 +229,7 @@ The Flow editor lays each frame at column = longest path from a root; IA tree po
 | Examples | Step 1 → Step 2; List → Detail | "Done" → home; "View in Inbox" → Inbox tab |
 | In `arrows[]`? | **Yes** | **No, or only reversed** |
 
-### Test for re-entry — for any arrow `A → B`
+### Test for re-entry - for any arrow `A → B`
 
 1. Is `B` reachable from the global nav (tab bar, sidebar, app shell)?
 2. Would the user naturally arrive at `B` by tapping a nav item rather than by completing `A`?
@@ -236,31 +238,31 @@ The Flow editor lays each frame at column = longest path from a root; IA tree po
 Any yes → do **one** of:
 
 - **Reverse the arrow** so the long path terminates at `A`. Best when the inverse is also meaningful.
-- **Drop the arrow** and document the affordance in `NOTES.md`. With the arrow gone, `B` falls to in-degree 0 and the rank algorithm's fallback treats it as a forest root automatically — **don't reach for `kind: "start"` here**.
-- **Promote `B` to `kind: "start"`** — *only* when there's a back-edge into `B` you genuinely cannot drop (e.g. wizard `step1 ↔ step2 ↔ step3` with Prev). `start` is a **cycle-breaker**, not a layout hint.
+- **Drop the arrow** and document the affordance in `NOTES.md`. With the arrow gone, `B` falls to in-degree 0 and the rank algorithm's fallback treats it as a forest root automatically - **don't reach for `kind: "start"` here**.
+- **Promote `B` to `kind: "start"`** - *only* when there's a back-edge into `B` you genuinely cannot drop (e.g. wizard `step1 ↔ step2 ↔ step3` with Prev). `start` is a **cycle-breaker**, not a layout hint.
 
-### Test for cross-actor handoff — for two frames on different lanes with no `<a href>` between them
+### Test for cross-actor handoff - for two frames on different lanes with no `<a href>` between them
 
 1. Does a storyboard workflow tag both lanes' personas?
 2. Does the same entity record render on both `A` and `B`?
 3. Does the storyboard's `built:` / `pages:` list pair them under one workflow number?
 
-Any yes → **add a forward arrow `A → B`**, action quoting the workflow (`"TC submits → lands in PXP review queue (Workflow 1.2)"`). These edges are invisible to `<a href>` scanning — one actor writes a record, another reads it on their own page.
+Any yes → **add a forward arrow `A → B`**, action quoting the workflow (`"TC submits → lands in PXP review queue (Workflow 1.2)"`). These edges are invisible to `<a href>` scanning - one actor writes a record, another reads it on their own page.
 
-**Cross-check with Step 5b** — terminal/success branches with cross-lane CTAs (`"View application status →"`) are the handoff origin. Source the cross-lane arrow from the **state frame** (success branch), not the page frame. Quote the literal CTA as the `action`. Cross-lane targets are **not** IA children of their handoff source — they keep their own `parent` within their lane.
+**Cross-check with Step 5b** - terminal/success branches with cross-lane CTAs (`"View application status →"`) are the handoff origin. Source the cross-lane arrow from the **state frame** (success branch), not the page frame. Quote the literal CTA as the `action`. Cross-lane targets are **not** IA children of their handoff source - they keep their own `parent` within their lane.
 
-### Transactional flows — point of no return
+### Transactional flows - point of no return
 
 Once a frame represents a committed state (`submitted`, `cancelled`, `voided`, `sent`, `paid`, `approved`), **don't** draw an arrow from it back to the pre-commit form, even if source navigates there (`location.href = "...apply.html"`, "Back to dashboard" CTA, "Apply again"). Same URL, different transaction: the user is starting a *new* record, not editing the committed one.
 
 Two acceptable shapes:
 
 - **No arrow.** Document the affordance in `NOTES.md`. Flow graph terminates at the committed state.
-- **Arrow to a fresh frame instance** — if the prototype actually ships an edit path with its own page state, the arrow goes there, not back to the form. Label with the literal CTA.
+- **Arrow to a fresh frame instance** - if the prototype actually ships an edit path with its own page state, the arrow goes there, not back to the form. Label with the literal CTA.
 
 Edit-after-submit is policy, not source. Represent only when the prototype ships it as its own page state. If unsure, ask.
 
-### `kind` vs `parent` — two independent signals
+### `kind` vs `parent` - two independent signals
 
 | Signal | Read by | Purpose |
 |---|---|---|
@@ -293,15 +295,15 @@ In one line: **arrows describe how a task advances, not how the app is navigated
 - **No router, no state lib, no UI lib.** `useState`, prop-drill, copy-paste until 5+ uses.
 - **All UI tokens** in `styles.css :root`. No inline hex/spacing.
 - **All mock data** in `window.DEMO` (`data.js`). No `fetch`, no API.
-- **Voice set by genre, applied at every leaf** — see `PROTOTYPE.md`.
-- **NEVER use native `alert` / `confirm` / `prompt` (or `window.*` forms) anywhere — editor or prototype.** After a few in a row Chrome shows a "Prevent this page from creating additional dialogs" checkbox; once ticked, every later `confirm` silently returns `false` and `prompt` returns `null`, breaking destructive-action guards and rename flows. In the editor (`editor/app.js`) use the Promise-based `uiAlert` / `uiConfirm` / `uiPrompt` helpers (rendered by `<DialogHost/>`; `await` them, so the handler must be `async`). In the pixel-editor tool use its local `pxConfirm` / `pxPrompt`. In any other surface, build a small inline Promise-modal — do not fall back to native.
+- **Voice set by genre, applied at every leaf** - see `PROTOTYPE.md`.
+- **NEVER use native `alert` / `confirm` / `prompt` (or `window.*` forms) anywhere - editor or prototype.** After a few in a row Chrome shows a "Prevent this page from creating additional dialogs" checkbox; once ticked, every later `confirm` silently returns `false` and `prompt` returns `null`, breaking destructive-action guards and rename flows. In the editor (`editor/app.js`) use the Promise-based `uiAlert` / `uiConfirm` / `uiPrompt` helpers (rendered by `<DialogHost/>`; `await` them, so the handler must be `async`). In the pixel-editor tool use its local `pxConfirm` / `pxPrompt`. In any other surface, build a small inline Promise-modal - do not fall back to native.
 
 ## Asset versioning (v3.0)
 
 Asset nodes on the workflow canvas (`kind: asset`) carry per-node version history. **This is daemon-managed; you almost never touch it directly.** Quick rules:
 
 - **Every successful upstream producer run snapshots the downstream asset's files** into `workflow/runs/<nodeId>/<versionId>/` and appends a new entry to `node.versions[]`. Capped at 20 unpinned versions per node (pinned versions are exempt).
-- **Each version has compositions** — tuples of `(sub-asset → versionId)` recording which upstream sub-asset versions this view is pinned against. Auto-created on every run from the current sub-asset actives. Capped at 50 unpinned per parent version.
+- **Each version has compositions** - tuples of `(sub-asset → versionId)` recording which upstream sub-asset versions this view is pinned against. Auto-created on every run from the current sub-asset actives. Capped at 50 unpinned per parent version.
 - **Reverts and composition switches happen via daemon endpoints**, not by editing `source/` directly. The endpoints refresh `source/` from `workflow/views/<nodeId>/<vid>/<compId>/`. See [`docs/features/asset-versioning.md`](docs/features/asset-versioning.md) §7.2 for the full surface.
 - **Branches create new sibling asset nodes** positioned below the source, with a deep copy of the chosen version + composition. The sibling is disconnected; rewire edges as desired.
 - **If you produce asset content from a subagent**, optionally emit a `MANIFEST.json` in your write root with `files[]` + `subAssetInputs[]` so the daemon snapshots exactly what you produced and knows where sub-assets mount inside the view tree. Without a manifest the daemon falls back to scanning the asset's declared `path`/`paths`.
@@ -309,30 +311,30 @@ Asset nodes on the workflow canvas (`kind: asset`) carry per-node version histor
 
 ## Whiteboard layer (`wb`)
 
-The workflow canvas has a whiteboard MODE (Build / Whiteboard toggle in the bar): FigJam-style annotation primitives living in a top-level `wb: []` array in `workflow/workflow.json` — siblings of `nodes`/`edges`, **not** node kinds (no registry entry, no runStatus, no reconciler contact).
+The workflow canvas has a whiteboard MODE (Build / Whiteboard toggle in the bar): FigJam-style annotation primitives living in a top-level `wb: []` array in `workflow/workflow.json` - siblings of `nodes`/`edges`, **not** node kinds (no registry entry, no runStatus, no reconciler contact).
 
 | type | geometry | fields |
 |---|---|---|
 | `text` | `x,y,w,h` (h auto) | `text`, `fontSize: sm\|md\|lg\|xl\|<px number>`, `bold`, `italic`, `align`, `color` |
-| `textbox` | `x,y,w,h` | `text`, `color` (legacy fill+border fallback), `fill: token\|none`, `stroke: token\|none` (outline), `textColor: token`, `fillOpacity: 0–1`, `radius` (px, unbounded), `fontSize` (token or px), `align`, `bold`, `italic` |
+| `textbox` | `x,y,w,h` | `text`, `color` (legacy fill+border fallback), `fill: token\|none`, `stroke: token\|none` (outline), `textColor: token`, `fillOpacity: 0-1`, `radius` (px, unbounded), `fontSize` (token or px), `align`, `bold`, `italic` |
 | `sticky` | `x,y,w,h` | `text`, `color`, `fontSize` (token or px), `bold`, `italic`, `align` |
 | `ink` | `x,y,w,h` + `points` (flat array, relative to x/y) | `color`, `size` |
-| `shape` | `x,y,w,h` | `shape:"rect"`, `color` (legacy stroke fallback), `stroke: token\|none`, `fill: none\|auto\|token`, `fillOpacity: 0–1`, `radius` (px, unbounded), `size` |
+| `shape` | `x,y,w,h` | `shape:"rect"`, `color` (legacy stroke fallback), `stroke: token\|none`, `fill: none\|auto\|token`, `fillOpacity: 0-1`, `radius` (px, unbounded), `size` |
 | `arrow` | `x1,y1,x2,y2` | `color`, `size`, `arrowStart`, `arrowEnd`, `dash` |
 | `image` | `x,y,w,h` | `path` (project-relative, e.g. `source/main/_attachments/…`), `naturalW/H` |
 
 Shared fields: `id` (`w…` namespace), `z` (stacking int). Colors are tokens `ink|gray|blue|green|yellow|pink|purple|orange` (raw CSS colors tolerated).
 
-**Read** wb by reading `workflow/workflow.json`. **Write ONLY via `POST /__workflow/wb?project=<id>`** with `{"add":[items],"update":[{"id":…, …patch}],"remove":[ids]}` (any subset; omit `id`/`z` on adds — the daemon assigns them). Direct file edits bypass the per-project workflow lock and race the editor's debounced save. Writes broadcast `workflow-changed` so the canvas updates live.
+**Read** wb by reading `workflow/workflow.json`. **Write ONLY via `POST /__workflow/wb?project=<id>`** with `{"add":[items],"update":[{"id":…, …patch}],"remove":[ids]}` (any subset; omit `id`/`z` on adds - the daemon assigns them). Direct file edits bypass the per-project workflow lock and race the editor's debounced save. Writes broadcast `workflow-changed` so the canvas updates live.
 
-**Context rule:** whiteboard content is injected into workflow-chat context ONLY while the user is in whiteboard mode (as a `<whiteboard>` block). In build mode it is deliberately omitted — don't go fishing for it unless the user asks.
+**Context rule:** whiteboard content is injected into workflow-chat context ONLY while the user is in whiteboard mode (as a `<whiteboard>` block). In build mode it is deliberately omitted - don't go fishing for it unless the user asks.
 
 ## Don't
 
 - No build step / TypeScript / Vite / Webpack / Babel / Tailwind.
-- No aggressive restructuring on a single edit — minimum surface change.
+- No aggressive restructuring on a single edit - minimum surface change.
 - No auto-applying edits without reading the resulting diff into your reply.
-- No stub `DESIGN.md` if a DS's `styles.css` or `gallery.html` is empty — Workflow 3 reads the trio; if the trio is incomplete, surface to user.
+- No stub `DESIGN.md` if a DS's `styles.css` or `gallery.html` is empty - Workflow 3 reads the trio; if the trio is incomplete, surface to user.
 - Don't delete `edits.json` until every edit succeeded.
 - Don't author the design system from inside Subagent 1 (source build). DS lives at `design-systems/<id>/` and is owned by Workflow 0 / 6b. Feature pages consume; they don't co-author.
 - Don't run Workflow 1 against a project with no `meta.dsRef`. Run Workflow 0 first.

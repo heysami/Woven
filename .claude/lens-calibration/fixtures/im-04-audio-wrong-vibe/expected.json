@@ -1,5 +1,5 @@
 {
-  "_intent": "AESTHETIC-FAIL fixture — brief.sensoryTargets.audio = 'warm FM, low-passed, no synthetic transients' and brief.antiPatterns lists 'sawtooth lead', 'bright resonant filter'. Runtime ships sawtooth osc + resonant Q=12 filter — both antiPatterns are literal source-line hits.",
+  "_intent": "AESTHETIC-FAIL fixture - brief.sensoryTargets.audio = 'warm FM, low-passed, no synthetic transients' and brief.antiPatterns lists 'sawtooth lead', 'bright resonant filter'. Runtime ships sawtooth osc + resonant Q=12 filter - both antiPatterns are literal source-line hits.",
   "craft": {
     "verdict": "pass",
     "ground_truth_reason": "AudioContext created inside Start-click handler; master limiter (DynamicsCompressor) present; linearRampToValueAtTime used for param updates"
@@ -8,10 +8,10 @@
     "verdict": "fail",
     "must_cite": ["sawtooth", "warm FM", "antiPattern"],
     "expected_failure_check": "Sensory target audio matches",
-    "ground_truth_reason": "osc.type = 'sawtooth' literal hit; filter.Q = 12 = bright resonant — both explicitly listed as antiPatterns in brief"
+    "ground_truth_reason": "osc.type = 'sawtooth' literal hit; filter.Q = 12 = bright resonant - both explicitly listed as antiPatterns in brief"
   },
   "concept": {
     "verdict": "pass",
-    "ground_truth_reason": "responds to mouse with audible change (responseScore high); concept of 'shape tone with mouse' is technically delivered, though aesthetic mismatch undercuts felt-experience. Borderline — concept may pass or fail; clear pass is acceptable."
+    "ground_truth_reason": "responds to mouse with audible change (responseScore high); concept of 'shape tone with mouse' is technically delivered, though aesthetic mismatch undercuts felt-experience. Borderline - concept may pass or fail; clear pass is acceptable."
   }
 }

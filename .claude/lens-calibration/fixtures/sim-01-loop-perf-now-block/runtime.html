@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>sim-01-loop-perf-now-block — CRAFT-FAIL fixture</title>
+<title>sim-01-loop-perf-now-block - CRAFT-FAIL fixture</title>
 <style>
   body, html { margin: 0; padding: 0; height: 100%; background: #1a1a1f; color: #ccc;
                font-family: system-ui, sans-serif; overflow: hidden; }
@@ -13,11 +13,11 @@
 </head>
 <body>
 <canvas id="scene" width="720" height="540"></canvas>
-<div id="devtools">fps: <span id="fps">—</span></div>
+<div id="devtools">fps: <span id="fps">-</span></div>
 <script>
 // ─── BAD PATTERN: tick callback reads performance.now() directly ────────
 // craft-lens §3.1 should flag this as block-severity:
-// "Deterministic time stepping — NO performance.now()/Date.now() in tick".
+// "Deterministic time stepping - NO performance.now()/Date.now() in tick".
 
 const ctx = document.getElementById('scene').getContext('2d');
 
@@ -31,7 +31,7 @@ for (let i = 0; i < 50; i++) {
 }
 
 function tick(state) {
-  // ❌ FAILURE — reads wall-clock inside the tick callback.
+  // ❌ FAILURE - reads wall-clock inside the tick callback.
   const now = performance.now();
   for (const e of Object.values(state.entities)) {
     const dt = (now - e.lastUpdate) / 1000;
@@ -69,7 +69,7 @@ requestAnimationFrame(frame);
 window.__sim = {
   state, fps: { avg: 0, max: 0, _samples: [] },
   loop: { tickCount: 0, fps: { avg: 0, max: 0 } },
-  injectFakeInput() { /* no-op — sim has no input here */ },
+  injectFakeInput() { /* no-op - sim has no input here */ },
   devtools: { pause() {}, play() {}, step() {} }
 };
 setInterval(() => { window.__sim.fps.avg = fpsAccum; }, 500);

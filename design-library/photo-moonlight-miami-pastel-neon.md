@@ -12,18 +12,18 @@ images:
 
 # Moonlight Miami pastel-neon (Laxton)
 
-Barry Jenkins' *Moonlight* (2016), shot by **James Laxton** on ARRI Alexa in **CinemaScope** — Jenkins called Liberty City a *"beautiful nightmare"* and described their move as *"paint this nightmare in beautiful tones."* The signature is the **dreamlike-but-Miami-rooted palette**: pastels (peach, lavender, mint) layered with neon (pink, purple, cyan), all bathed in tropical greens, applied to intimate close-up portraiture. Laxton shot 98% of the film himself, hand-held by his own body, to maintain proximity-as-intimacy.
+Barry Jenkins' *Moonlight* (2016), shot by **James Laxton** on ARRI Alexa in **CinemaScope** - Jenkins called Liberty City a *"beautiful nightmare"* and described their move as *"paint this nightmare in beautiful tones."* The signature is the **dreamlike-but-Miami-rooted palette**: pastels (peach, lavender, mint) layered with neon (pink, purple, cyan), all bathed in tropical greens, applied to intimate close-up portraiture. Laxton shot 98% of the film himself, hand-held by his own body, to maintain proximity-as-intimacy.
 
 ## Visual signatures
 
-- **Pastels + neon in the same frame** — soft peach-lavender skin tones against vibrant pink-purple-cyan light sources
+- **Pastels + neon in the same frame** - soft peach-lavender skin tones against vibrant pink-purple-cyan light sources
 - tropical greens (palms, grass, weeds) as the persistent background carrier
-- **moonlight rendered as cyan-magenta** — never neutral white
+- **moonlight rendered as cyan-magenta** - never neutral white
 - dreamlike dust haze in the air
-- skin tones rendered LOVINGLY — Laxton chose Alexa specifically because it rendered Black skin tones better than alternatives. Dark skin glows under colored light without going muddy.
-- intimate close-up framing — face-on-third or face-takes-the-frame
+- skin tones rendered LOVINGLY - Laxton chose Alexa specifically because it rendered Black skin tones better than alternatives. Dark skin glows under colored light without going muddy.
+- intimate close-up framing - face-on-third or face-takes-the-frame
 - shallow focus that isolates subject from the painterly bokeh
-- handheld but never shaky — subjective camera ("watching with the protagonist," not "watching at the protagonist")
+- handheld but never shaky - subjective camera ("watching with the protagonist," not "watching at the protagonist")
 
 ## Prompt keywords
 
@@ -41,9 +41,9 @@ Barry Jenkins' *Moonlight* (2016), shot by **James Laxton** on ARRI Alexa in **C
 
 ## Named references
 
-**Photographers / cinematographers**: James Laxton (DP); Wong Kar-Wai / Christopher Doyle as direct stylistic ancestors; Bradford Young (DP — Selma, Arrival) as adjacent skin-tone-rendering lineage
+**Photographers / cinematographers**: James Laxton (DP); Wong Kar-Wai / Christopher Doyle as direct stylistic ancestors; Bradford Young (DP - Selma, Arrival) as adjacent skin-tone-rendering lineage
 
-**Photographic inspirations** (Jenkins' direct refs): Hiroshi Sugimoto, Roy DeCarava, Viviane Sassen — all skin-and-light specialists
+**Photographic inspirations** (Jenkins' direct refs): Hiroshi Sugimoto, Roy DeCarava, Viviane Sassen - all skin-and-light specialists
 
 **Magazines**: i-D, AnOther, Self Service editorials with intimate close-up Black-portrait register
 

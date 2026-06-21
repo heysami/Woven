@@ -13,7 +13,7 @@ images:
 
 # CRT Phosphor (raster scan with subpixel RGB)
 
-A glossy surface that reacts to light: yes — phosphor glow blooms with viewing angle.
+A glossy surface that reacts to light: yes - phosphor glow blooms with viewing angle.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A glossy surface that reacts to light: yes — phosphor glow blooms with viewing
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — phosphor glow blooms with viewing angle
+**Reacts to light**: yes - phosphor glow blooms with viewing angle
 
-**Deforms**: no — but the surface curves
+**Deforms**: no - but the surface curves
 
 **Age / wear**: shows wear (burn-in)
 

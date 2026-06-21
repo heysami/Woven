@@ -12,17 +12,17 @@ images:
 **Tag:** `aesthetic`
 
 **Canonical references:**
-- Razer Synapse 3 — the per-device tile rail and Chroma config as the canonical "control surface"
-- ASUS ROG Armoury Crate — angular chamfers, ROG Red, telemetry-as-decoration
-- NZXT CAM — calm dark shell with restrained accent, hardware-first hero
-- MSI Mystic Light — the rainbow as a payload (lighting), not a typeface treatment
-- Cyberpunk 2077 HUD — tracked-uppercase labels, mono numerals, the single status dot
+- Razer Synapse 3 - the per-device tile rail and Chroma config as the canonical "control surface"
+- ASUS ROG Armoury Crate - angular chamfers, ROG Red, telemetry-as-decoration
+- NZXT CAM - calm dark shell with restrained accent, hardware-first hero
+- MSI Mystic Light - the rainbow as a payload (lighting), not a typeface treatment
+- Cyberpunk 2077 HUD - tracked-uppercase labels, mono numerals, the single status dot
 
 ## Cultural identity
 
-Mid-2010s through mid-2020s PC enthusiast hardware — the moment "gamer" stopped meaning beige towers and started meaning addressable RGB on every keycap, fan blade, and DRAM stick. The aesthetic was crystallised by peripheral-maker control panels (Razer, Corsair, Logitech G, ASUS ROG, MSI) and the streamer/esports adjacent products that copied them. The shared message: this is an instrument, you are the operator, the rainbow is a tunable parameter — not the brand itself.
+Mid-2010s through mid-2020s PC enthusiast hardware - the moment "gamer" stopped meaning beige towers and started meaning addressable RGB on every keycap, fan blade, and DRAM stick. The aesthetic was crystallised by peripheral-maker control panels (Razer, Corsair, Logitech G, ASUS ROG, MSI) and the streamer/esports adjacent products that copied them. The shared message: this is an instrument, you are the operator, the rainbow is a tunable parameter - not the brand itself.
 
-Crucially, the *good* version of this aesthetic treats RGB as the **brand-accent payload on a calm dark shell**. The control panel is mostly black. The lighting demo strip is where the rainbow lives. Telemetry (DPI, polling Hz, fan RPM, temps) is presented like avionics — terse, monospaced, no exclamation marks. This is the "operator" reading, not the "rave" reading.
+Crucially, the *good* version of this aesthetic treats RGB as the **brand-accent payload on a calm dark shell**. The control panel is mostly black. The lighting demo strip is where the rainbow lives. Telemetry (DPI, polling Hz, fan RPM, temps) is presented like avionics - terse, monospaced, no exclamation marks. This is the "operator" reading, not the "rave" reading.
 
 ## Palette anchor
 
@@ -39,9 +39,9 @@ Crucially, the *good* version of this aesthetic treats RGB as the **brand-accent
 ## Decoration motifs
 
 - Per-device tile rail (icon-only, one active dot)
-- Inline LED status dot — single hue, slow 6s breathing on the active row only
+- Inline LED status dot - single hue, slow 6s breathing on the active row only
 - Chamfered hero card (one per view, never on every button)
-- Tracked uppercase section labels — `+120` letter-spacing, 12px
+- Tracked uppercase section labels - `+120` letter-spacing, 12px
 - Mono numerals for any reading: DPI, Hz, RPM, °C, hex codes
 - Optional 1px gradient border on the single hero card
 - Forbidden: circuit-board SVG backgrounds, Tron grids, lens flares, hue-rotate on the page, glitch-shake on titles, emoji flames

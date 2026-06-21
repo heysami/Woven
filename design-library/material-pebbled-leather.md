@@ -13,7 +13,7 @@ images:
 
 # Pebbled Leather (luxury goods finish)
 
-A semi-gloss surface that reacts to light: yes — per-pebble micro-highlight and deforms: yes — bends.
+A semi-gloss surface that reacts to light: yes - per-pebble micro-highlight and deforms: yes - bends.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A semi-gloss surface that reacts to light: yes — per-pebble micro-highlight an
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — per-pebble micro-highlight
+**Reacts to light**: yes - per-pebble micro-highlight
 
-**Deforms**: yes — bends
+**Deforms**: yes - bends
 
 **Age / wear**: acquired patina (shines at touch points)
 

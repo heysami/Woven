@@ -13,7 +13,7 @@ images:
 
 # Schematic / PCB Trace (circuit-board aesthetic)
 
-A matte surface that reacts to light: minor — gold pads catch raking light.
+A matte surface that reacts to light: minor - gold pads catch raking light.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: minor — gold pads catch raking light.
 
 **Transparency**: opaque
 
-**Reacts to light**: minor — gold pads catch raking light
+**Reacts to light**: minor - gold pads catch raking light
 
 **Deforms**: no
 
@@ -45,7 +45,7 @@ raster: PCB texture PNG as substrate
 
 ## Reactive behaviors
 
-**Light**: minor — pads glint subtly
+**Light**: minor - pads glint subtly
 
 **Highlight**: pointer can activate trace-flow animation (electron path)
 

@@ -9,5 +9,5 @@
   },
   "antiPatterns": ["1:1 direct echo mapping", "instant-snap to zero on silence", "snappy linear easing", "neon palette"],
   "references":   ["https://memo.tv/works/aspects-of-the-self/"],
-  "successFeel":  "the user paints with their voice and the painting holds — strokes accumulate, the room remembers"
+  "successFeel":  "the user paints with their voice and the painting holds - strokes accumulate, the room remembers"
 }

@@ -13,7 +13,7 @@ images:
 
 # Oil-on-Water Iridescence (organic dichroic)
 
-A glossy surface (translucent) that reacts to light: yes — chaotic hue swirls and deforms: yes — surface ripples.
+A glossy surface (translucent) that reacts to light: yes - chaotic hue swirls and deforms: yes - surface ripples.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A glossy surface (translucent) that reacts to light: yes — chaotic hue swirls 
 
 **Transparency**: translucent
 
-**Reacts to light**: yes — chaotic hue swirls
+**Reacts to light**: yes - chaotic hue swirls
 
-**Deforms**: yes — surface ripples
+**Deforms**: yes - surface ripples
 
 **Age / wear**: ageless
 

@@ -13,7 +13,7 @@ images:
 
 # Pencil Graphite (HB to 6B sketch)
 
-A matte surface (translucent) that reacts to light: yes — graphite glints at angle.
+A matte surface (translucent) that reacts to light: yes - graphite glints at angle.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface (translucent) that reacts to light: yes — graphite glints at a
 
 **Transparency**: translucent
 
-**Reacts to light**: yes — graphite glints at angle
+**Reacts to light**: yes - graphite glints at angle
 
 **Deforms**: no
 

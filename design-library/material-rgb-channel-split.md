@@ -13,7 +13,7 @@ images:
 
 # RGB Channel Split (intentional large-displacement chromatic split)
 
-A matte surface that reacts to light: yes — displacement amount can react to pointer / tilt.
+A matte surface that reacts to light: yes - displacement amount can react to pointer / tilt.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — displacement amount can react to p
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — displacement amount can react to pointer / tilt
+**Reacts to light**: yes - displacement amount can react to pointer / tilt
 
 **Deforms**: no (the channels shift, the structure stays)
 
@@ -50,7 +50,7 @@ svg: |
 webgl: |
   sample input three times at (uv - offset, uv, uv + offset), output
   (sampleA.r, sampleB.g, sampleC.b). Trivial fragment shader.
-raster: not appropriate — RGB split needs the live composition
+raster: not appropriate - RGB split needs the live composition
 ```
 
 ## Reactive behaviors

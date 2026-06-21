@@ -4,7 +4,7 @@ name: Eco-infrastructure heroic
 category: documentary
 era: current
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-organic-overgrowth, aesthetic-solarpunk, recipe-scientific-infra-marketing, aesthetic-frutiger-eco]
-notForUseWhen: Brief is indoor, intimate, or product-macro — this style is landscape-scale.
+notForUseWhen: Brief is indoor, intimate, or product-macro - this style is landscape-scale.
 images:
   - src: photo-eco-infrastructure.png
     reason: Photography style sample.
@@ -12,7 +12,7 @@ images:
 
 # Eco-infrastructure heroic
 
-Clean-energy hardware in living landscapes — wind turbines over meadows, solar fields at golden hour, terraced farms from the air.
+Clean-energy hardware in living landscapes - wind turbines over meadows, solar fields at golden hour, terraced farms from the air.
 
 ## Visual signatures
 
@@ -20,7 +20,7 @@ Clean-energy hardware in living landscapes — wind turbines over meadows, solar
 - Golden-hour or soft overcast light; atmosphere haze for depth
 - Aerial or elevated vantage showing pattern: turbine rows, panel grids, terrace contours
 - Foreground biology: wildflowers, crops, grasses sharp against distant hardware
-- Honest scale — human figures or vehicles as occasional measure
+- Honest scale - human figures or vehicles as occasional measure
 
 ## Prompt keywords
 
@@ -44,7 +44,7 @@ Clean-energy hardware in living landscapes — wind turbines over meadows, solar
 
 ## Example prompt template
 
-> Aerial view at golden hour: rows of white wind turbines striding across rolling meadow hills, wildflower bloom sharp in the foreground slope, layers of atmospheric haze separating each ridge into the distance. A single service truck on a dirt track gives scale. Drone photograph at 24mm, gentle warm grade with honest greens, soft long shadows. Hopeful, productive, calm abundance — clean-energy landscape photography.
+> Aerial view at golden hour: rows of white wind turbines striding across rolling meadow hills, wildflower bloom sharp in the foreground slope, layers of atmospheric haze separating each ridge into the distance. A single service truck on a dirt track gives scale. Drone photograph at 24mm, gentle warm grade with honest greens, soft long shadows. Hopeful, productive, calm abundance - clean-energy landscape photography.
 
 ## When to use
 

@@ -13,7 +13,7 @@ images:
 
 # Signal Interference (hum bars, sync errors, vertical hold drift)
 
-A glossy surface that reacts to light: yes — interference modulates with content luminance and deforms: yes (frame skew, scroll, sync loss).
+A glossy surface that reacts to light: yes - interference modulates with content luminance and deforms: yes (frame skew, scroll, sync loss).
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — interference modulates with conte
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — interference modulates with content luminance
+**Reacts to light**: yes - interference modulates with content luminance
 
 **Deforms**: yes (frame skew, scroll, sync loss)
 

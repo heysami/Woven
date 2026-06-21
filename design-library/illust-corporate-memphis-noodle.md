@@ -5,7 +5,7 @@ category: Flat vector
 subCategory: corporate-memphis
 role: subject
 pairsPrototypes: [aesthetic-corporate-memphis, recipe-bento-marketing, recipe-restrained-ai-marketing]
-notForUseWhen: indie / editorial / brutalism — anywhere personality matters
+notForUseWhen: indie / editorial / brutalism - anywhere personality matters
 images:
   - src: illust-corporate-memphis-noodle.png
     reason: Illustration style sample.
@@ -31,7 +31,7 @@ flat geometric humans, disproportionate.
 
 **Line**: no line
 
-**Color**: non-representational skin — blue purple green + accent
+**Color**: non-representational skin - blue purple green + accent
 
 **Style**: bendy noodle limbs, flat solid bg
 
@@ -58,7 +58,7 @@ Big-tech mainstream marketing where neutrality is the safe choice.
 
 ## When NOT to use
 
-indie / editorial / brutalism — anywhere personality matters
+indie / editorial / brutalism - anywhere personality matters
 
 ## Pairs with (prototype slugs)
 

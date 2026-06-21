@@ -12,14 +12,14 @@ images:
 **Tag:** Calm-tech pastoral (Headspace landscapes; Apple "Quiet" campaigns; Studio Ghibli establishing shots; 2025-26 "meadow under the dashboard" SaaS wave)
 
 **Canonical references:**
-- Windows XP *Bliss* — the ur-image: rolling green hill + sky as pure promise.
-- Headspace / Calm marketing — landscape as emotional state.
+- Windows XP *Bliss* - the ur-image: rolling green hill + sky as pure promise.
+- Headspace / Calm marketing - landscape as emotional state.
 - motionsites.ai corpus: Sync AI, Transform Data, Nexora, Stellar AI (zen garden), Space Voyage (flower fields), Acreage (×8 in one crop).
-- Ghibli establishing frames — meadows, valleys, cloud banks held for breath.
+- Ghibli establishing frames - meadows, valleys, cloud banks held for breath.
 
 ## Cultural identity
 
-The counter-register to dark-AI maximalism: software that promises CALM ground under your work. A photoreal or painterly landscape — meadow, valley, terraced field, zen garden, pastel sky — sits beneath or behind a clean light UI, and the landscape does the emotional labor: "this tool returns your attention to you." Distinct from `aesthetic-frutiger-eco` (glossy 2000s eco-gradients, aqua buttons) and from `aesthetic-cottagecore` (rural domestic craft) — Pastoral Serene is contemporary product design with nature as horizon, not as lifestyle.
+The counter-register to dark-AI maximalism: software that promises CALM ground under your work. A photoreal or painterly landscape - meadow, valley, terraced field, zen garden, pastel sky - sits beneath or behind a clean light UI, and the landscape does the emotional labor: "this tool returns your attention to you." Distinct from `aesthetic-frutiger-eco` (glossy 2000s eco-gradients, aqua buttons) and from `aesthetic-cottagecore` (rural domestic craft) - Pastoral Serene is contemporary product design with nature as horizon, not as lifestyle.
 
 The defining gesture is **UI floating above landscape**: a dashboard, form, or headline in generous whitespace, with the land entering at the lower third like a window sill.
 
@@ -27,9 +27,9 @@ The defining gesture is **UI floating above landscape**: a dashboard, form, or h
 
 ## Motifs / imagery vocabulary
 
-- **Landscape at the lower third** — meadow / valley / field / garden, horizon low, sky generous.
-- Light haze and depth layers (near grass sharp, far hills soft) — the parallax-ready structure.
-- Drifting elements: clouds, petals, pollen motes — slow, sparse, ambient.
+- **Landscape at the lower third** - meadow / valley / field / garden, horizon low, sky generous.
+- Light haze and depth layers (near grass sharp, far hills soft) - the parallax-ready structure.
+- Drifting elements: clouds, petals, pollen motes - slow, sparse, ambient.
 - The UI itself: airy cards, soft 12-16px radius, hairlines, lots of paper.
 - Serif accent words for the feeling-payload (pairs with `style-editorial-italic-accent`).
 - Time-of-day as theme variant: dawn / noon / dusk versions of the same land.

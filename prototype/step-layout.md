@@ -1,4 +1,4 @@
-# Step five — layout via primitives where geometry equals optics
+# Step five - layout via primitives where geometry equals optics
 
 You cannot tune optically. So lean entirely on primitives where the math IS the visual answer. ~95% of layout should come from these.
 
@@ -25,7 +25,7 @@ You cannot tune optically. So lean entirely on primitives where the math IS the 
 ### Gap and padding have separate jobs
 
 - **`gap`** = space *between* siblings. Establishes rhythm. Consistent within a scope.
-- **`padding`** = breathing room *inside* an element. Asymmetric is fine — even correct — when responding to content shape (a pill with a leading dot has tighter left padding because the dot needs less air on its outside).
+- **`padding`** = breathing room *inside* an element. Asymmetric is fine - even correct - when responding to content shape (a pill with a leading dot has tighter left padding because the dot needs less air on its outside).
 
 ### Tabular numbers auto-align
 

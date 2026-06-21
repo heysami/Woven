@@ -13,14 +13,14 @@ images:
 
 ## Structure
 
-ONE continuous scene — illustrated, photographic, or 3D — that the scroll position travels through. There are no sections; there are stations.
+ONE continuous scene - illustrated, photographic, or 3D - that the scroll position travels through. There are no sections; there are stations.
 
 - Fixed full-bleed scene layer (canvas / WebGL / layered images, `position: fixed`, z-0)
 - Tall scroll spacer (400-1200vh) whose progress drives the scene: camera dolly, dive depth, product rotation, time-of-day
 - Station overlays: copy blocks that fade/rise in at fixed progress marks (10-20% apart), one thought per station, max ~40 words
-- Persistent journey indicator: depth meter, route line, chapter dots, or progress thread — themed to the scene (a depth gauge for a dive, a road marker for a drive)
+- Persistent journey indicator: depth meter, route line, chapter dots, or progress thread - themed to the scene (a depth gauge for a dive, a road marker for a drive)
 - Entry hint ("scroll to begin ↓") that fades after first input
-- Exit: the journey ENDS somewhere — a final station with CTA / colophon, scene settles to rest
+- Exit: the journey ENDS somewhere - a final station with CTA / colophon, scene settles to rest
 
 ## Macro proportions
 
@@ -32,7 +32,7 @@ Lowest of all shells. The scene is the content; text is captioning. If the brief
 
 ## Mandatory interactions
 
-Scroll-scrub binding with easing (scene lags scroll by a lerp, never 1:1 jitter). Stations announce themselves (fade + rise ≥300ms). Scene must respond continuously — every scroll tick visibly moves the world, no dead zones. Touch + keyboard equivalents. `prefers-reduced-motion`: replace scrub with stepped scene stills per station. Preload/buffer the scene asset before unlocking scroll (loading veil with progress).
+Scroll-scrub binding with easing (scene lags scroll by a lerp, never 1:1 jitter). Stations announce themselves (fade + rise ≥300ms). Scene must respond continuously - every scroll tick visibly moves the world, no dead zones. Touch + keyboard equivalents. `prefers-reduced-motion`: replace scrub with stepped scene stills per station. Preload/buffer the scene asset before unlocking scroll (loading veil with progress).
 
 ## Forbidden
 

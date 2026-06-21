@@ -30,7 +30,7 @@ botanical vines framing portrait.
 
 **Line**: fine detailed
 
-**Color**: vibrant Mexican — vermillion turquoise jade gold
+**Color**: vibrant Mexican - vermillion turquoise jade gold
 
 **Style**: botanical framing, symbolic animal
 

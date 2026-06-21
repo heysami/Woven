@@ -1,16 +1,16 @@
-"""editor/kinds/shader_compile.py — real GLSL compile check via glslang.
+"""editor/kinds/shader_compile.py - real GLSL compile check via glslang.
 
 Runs the Khronos reference compiler (`glslangValidator`, installed via
-`brew install glslang`) so it catches ANY compile error for ANY shader —
-undeclared vars, type mismatches, removed builtins, reserved words, etc. — not
+`brew install glslang`) so it catches ANY compile error for ANY shader -
+undeclared vars, type mismatches, removed builtins, reserved words, etc. - not
 a fixed pattern list. (This + the headless render-verify replace the earlier
 static regex lint, which only matched the handful of bugs we'd seen.)
 
 Two limits (by design, covered by the headless render-verify):
-  • Extraction — we can pull GLSL out of <script type=x-shader> blocks and
+  • Extraction - we can pull GLSL out of <script type=x-shader> blocks and
     self-contained backtick literals, but NOT shaders assembled across several
     JS string pieces at runtime. Those are skipped here.
-  • It only checks COMPILE, not render — a shader that compiles but draws blank
+  • It only checks COMPILE, not render - a shader that compiles but draws blank
     passes this gate.
 
 Pure logic except the `glslangValidator` subprocess, so extraction + error
@@ -57,7 +57,7 @@ def extract_shaders(html: str) -> List[dict]:
     in the ES profile (not desktop GLSL, which would false-error on `precision`).
     """
     units = []
-    # Only `<script type="x-shader/...">` blocks — those are COMPLETE shaders.
+    # Only `<script type="x-shader/...">` blocks - those are COMPLETE shaders.
     # Shaders built in JS backtick literals (assembled across pieces) aren't
     # reliably extractable and produce false syntax errors; the headless
     # render-verify runs the real page and covers them instead.

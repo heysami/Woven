@@ -13,7 +13,7 @@ images:
 
 # Brushed Aluminum (anisotropic metal)
 
-A semi-gloss surface that reacts to light: yes — anisotropic highlight perpendicular to brush direction.
+A semi-gloss surface that reacts to light: yes - anisotropic highlight perpendicular to brush direction.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A semi-gloss surface that reacts to light: yes — anisotropic highlight perpend
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — anisotropic highlight perpendicular to brush direction
+**Reacts to light**: yes - anisotropic highlight perpendicular to brush direction
 
 **Deforms**: no
 

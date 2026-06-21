@@ -13,11 +13,11 @@ images:
 
 ## Cultural identity
 
-A DeFi-native dark-mode aesthetic where decentralized-finance product interfaces sit over cosmic / planetary / nebula photographic backdrops, evoking the "money lego" / "money is the new internet" mythology. Emerged from on-chain swap aggregators, perpetuals exchanges, and yield protocols in the 2023-onward cycle. Distinct from generic glassmorphism (which can refract over any photo) by its specific commitment to cosmic / astronomical imagery as the brand identity — Earth-from-orbit photography, gas-giant cloud bands, ringed-planet imagery, deep-space nebulae, asteroid fields. The implied narrative: this product is global, planet-scale, frictionless, otherworldly.
+A DeFi-native dark-mode aesthetic where decentralized-finance product interfaces sit over cosmic / planetary / nebula photographic backdrops, evoking the "money lego" / "money is the new internet" mythology. Emerged from on-chain swap aggregators, perpetuals exchanges, and yield protocols in the 2023-onward cycle. Distinct from generic glassmorphism (which can refract over any photo) by its specific commitment to cosmic / astronomical imagery as the brand identity - Earth-from-orbit photography, gas-giant cloud bands, ringed-planet imagery, deep-space nebulae, asteroid fields. The implied narrative: this product is global, planet-scale, frictionless, otherworldly.
 
 ## Palette anchor
 
-Deep cosmic backdrop — actual planetary photography or `radial-gradient(ellipse at center, #1a1a3a 0%, #050518 80%)` as fallback. Translucent product chrome in `rgba(255,255,255,0.06–0.12)` glass over the cosmic field. One vibrant accent for state — typically electric cyan `#00D9FF` (DeFi default), violet `#8B5CF6`, or hot pink `#FF2D5F`. Numeric data in pure white or soft sky-white. Negative space carries the cosmic backdrop — never crop it small.
+Deep cosmic backdrop - actual planetary photography or `radial-gradient(ellipse at center, #1a1a3a 0%, #050518 80%)` as fallback. Translucent product chrome in `rgba(255,255,255,0.06-0.12)` glass over the cosmic field. One vibrant accent for state - typically electric cyan `#00D9FF` (DeFi default), violet `#8B5CF6`, or hot pink `#FF2D5F`. Numeric data in pure white or soft sky-white. Negative space carries the cosmic backdrop - never crop it small.
 
 ## Decoration motifs
 
@@ -36,7 +36,7 @@ Technical, swap-rate-focused, half-engineering half-mythology. "Frictionless onc
 
 ## Failure mode
 
-Generic dark-mode UI with a random nebula stock photo behind it = AI-cosmic cosplay. The aesthetic dies if: (1) the cosmic imagery is decorative wallpaper instead of the substrate the chrome refracts through, (2) the swap card's glass isn't actually backed by visible cosmic photography, (3) the voice gets marketing-flat ("Trade now! Best rates!") instead of technical, (4) the cosmic photography is low-res or off-tone (saturated alien-cyan vs natural NASA-blue), (5) the brand tries to communicate seriousness with corporate fintech sans like Söhne — DeFi-cosmic wants either monospace or Inter / GT America / Geist.
+Generic dark-mode UI with a random nebula stock photo behind it = AI-cosmic cosplay. The aesthetic dies if: (1) the cosmic imagery is decorative wallpaper instead of the substrate the chrome refracts through, (2) the swap card's glass isn't actually backed by visible cosmic photography, (3) the voice gets marketing-flat ("Trade now! Best rates!") instead of technical, (4) the cosmic photography is low-res or off-tone (saturated alien-cyan vs natural NASA-blue), (5) the brand tries to communicate seriousness with corporate fintech sans like Söhne - DeFi-cosmic wants either monospace or Inter / GT America / Geist.
 
 ## Best for
 

@@ -13,11 +13,11 @@ images:
 
 # Skeuomorphic detailed object
 
-photoreal materials — leather stitch, brushed metal, wood grain.
+photoreal materials - leather stitch, brushed metal, wood grain.
 
 ## Visual signatures
 
-- photoreal materials — leather stitch, brushed metal, wood grain
+- photoreal materials - leather stitch, brushed metal, wood grain
 - extensive detail
 - iOS 6-era textures
 
@@ -42,7 +42,7 @@ photoreal materials — leather stitch, brushed metal, wood grain.
 ## Example prompt template
 
 > Skeuomorphic detailed 3D rendering of [SUBJECT] with photoreal material
-> detail — leather stitching, brushed aluminum, polished wood grain, iOS-6
+> detail - leather stitching, brushed aluminum, polished wood grain, iOS-6
 > era texture quality, octane render.
 
 ## When to use

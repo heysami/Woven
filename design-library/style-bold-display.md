@@ -15,7 +15,7 @@ images:
 
 ## Surface treatment
 
-Large declarative typography on generously padded surfaces. Each surface is its own self-contained slab — soft radius, distinct background, room to breathe. Display copy carries the page; supporting copy is minimal.
+Large declarative typography on generously padded surfaces. Each surface is its own self-contained slab - soft radius, distinct background, room to breathe. Display copy carries the page; supporting copy is minimal.
 
 ### Palette
 
@@ -34,22 +34,22 @@ Large declarative typography on generously padded surfaces. Each surface is its 
 --font-mono:    "SF Mono", "JetBrains Mono", ui-monospace, monospace;
 ```
 
-- Display: 48 / 64 / 80 / 96 / 120 px, weight 600–700, letter-spacing `-0.02em` to `-0.04em`, line-height `1.05`
+- Display: 48 / 64 / 80 / 96 / 120 px, weight 600-700, letter-spacing `-0.02em` to `-0.04em`, line-height `1.05`
 - Headline: 32 / 40 px, weight 600, letter-spacing `-0.02em`, line-height `1.1`
 - Body: 17 / 20 px, weight 400, letter-spacing `-0.01em`, line-height `1.47`
 - Caption: 14 px, weight 500, letter-spacing `0`, line-height `1.3`
-- Eyebrow / label: 12–14 px, weight 600, letter-spacing `0.04em`, uppercase optional
+- Eyebrow / label: 12-14 px, weight 600, letter-spacing `0.04em`, uppercase optional
 
 ### Geometry
 
 - Surface radius: `16px` standard, `24px` for larger cells, `32px` for hero slabs
-- Padding inside surfaces: `32–48px` typical, `56–80px` for hero
+- Padding inside surfaces: `32-48px` typical, `56-80px` for hero
 - Borders: avoid hairlines on cells; let the background contrast do the separation
 - If borders appear, `1px solid rgba(0,0,0,0.06)` on light or `rgba(255,255,255,0.08)` on dark only
 
 ### Shadows & depth
 
-- Default: no shadow — surfaces are flat color slabs
+- Default: no shadow - surfaces are flat color slabs
 - Optional lift on hover: `0 8px 24px rgba(0,0,0,0.08)`
 - Hero product imagery may float with `0 30px 60px -20px rgba(0,0,0,0.25)`
 - Never stack multiple shadows; never use neumorphic dual shadows
@@ -64,7 +64,7 @@ Large declarative typography on generously padded surfaces. Each surface is its 
 
 - Mandatory: declarative headline as the loudest element on every surface
 - Mandatory: one focal object per surface (product shot, chart, icon, screenshot, gradient)
-- Allowed: thin keylines around product imagery, monochrome icons at 24–32px
+- Allowed: thin keylines around product imagery, monochrome icons at 24-32px
 - Forbidden: drop shadows on text, emoji clutter, decorative dividers, "pills" with gradients, glow effects, sparkles
 
 ### Motion budget

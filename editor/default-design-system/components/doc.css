@@ -1,13 +1,13 @@
 /* ==========================================================================
-   Document inputs — "boxless" editing register (Notion / Google Docs / Word).
+   Document inputs - "boxless" editing register (Notion / Google Docs / Word).
    An ALTERNATIVE input style layered on the existing .input / .field / .textarea.
    The form has NO boxes: you click the text to edit it. Plain text until you
    interact; a subtle affordance appears on hover, a low-key underline on focus.
 
-   Reuses the base components in styles.css — load styles.css FIRST, then this.
+   Reuses the base components in styles.css - load styles.css FIRST, then this.
    Tokens only (no raw colour/spacing/radii) so all 8 themes re-skin for free.
 
-   USAGE — boxless field (label floats as muted text above a bare control):
+   USAGE - boxless field (label floats as muted text above a bare control):
      <label class="field field--bare">
        <span class="field__label">Project name</span>
        <input class="input input--bare" placeholder="Untitled project">
@@ -17,7 +17,7 @@
        <textarea class="textarea textarea--bare" placeholder="Write…"></textarea>
      </label>
 
-   USAGE — document canvas (centred editable column):
+   USAGE - document canvas (centred editable column):
      <article class="doc">
        <h1 class="doc__title" contenteditable></h1>            <!-- empty → "Untitled" -->
        <div class="doc-block">
@@ -36,7 +36,7 @@
        <aside class="doc-rail">…comments / outline…</aside>
      </article>
 
-   USAGE — inline formatting toolbar (reuses .btn--icon):
+   USAGE - inline formatting toolbar (reuses .btn--icon):
      <div class="doc-toolbar">
        <button class="btn btn--text btn--icon">…bold svg…</button>
        <button class="btn btn--text btn--icon">…italic svg…</button>
@@ -61,7 +61,7 @@
 .textarea--bare{min-height:auto;resize:none;}
 .input--bare:hover,
 .textarea--bare:hover{background:var(--surface-default);border-color:transparent;}
-/* focus: no box — a single low-key underline instead */
+/* focus: no box - a single low-key underline instead */
 .input--bare:focus,
 .input--bare.is-focus,
 .textarea--bare:focus,
@@ -95,7 +95,7 @@
   color:var(--fg-default);
 }
 
-/* Editable title — large, boxless, with an empty-state placeholder. */
+/* Editable title - large, boxless, with an empty-state placeholder. */
 .doc__title{
   margin:0 0 var(--space-base);padding:var(--space-2xs) 0;
   font-size:var(--text-h2);font-weight:var(--w-semibold);line-height:var(--lh-tight);
@@ -132,7 +132,7 @@
 .doc-block > .doc-h3,
 .doc-block > p{margin:0;}
 
-/* Gutter affordances — hidden until the block is hovered/focused. */
+/* Gutter affordances - hidden until the block is hovered/focused. */
 .doc-block__handle,
 .doc-block__add{
   position:absolute;top:50%;transform:translateY(-50%);
@@ -150,14 +150,14 @@
 .doc-block__handle:hover,
 .doc-block__add:hover{background:var(--surface-default);color:var(--fg-muted);}
 
-/* ⠿ grip — drawn with a dotted radial-gradient, NO emoji / icon font. */
+/* ⠿ grip - drawn with a dotted radial-gradient, NO emoji / icon font. */
 .doc-block__handle::before{
   content:'';width:8px;height:14px;
   background-image:radial-gradient(currentColor 38%,transparent 42%);
   background-size:4px 4px;background-position:0 0;
   opacity:.85;
 }
-/* + add — drawn with two CSS bars, NO emoji / icon font. */
+/* + add - drawn with two CSS bars, NO emoji / icon font. */
 .doc-block__add::before,
 .doc-block__add::after{content:'';position:absolute;background:currentColor;border-radius:1px;}
 .doc-block__add::before{width:11px;height:1.5px;}
@@ -171,7 +171,7 @@
   content:attr(data-placeholder);color:var(--fg-subtle);pointer-events:none;
 }
 
-/* "Type '/' for commands" affordance — shown only on an empty, focused block. */
+/* "Type '/' for commands" affordance - shown only on an empty, focused block. */
 .slash-hint{
   display:none;
   color:var(--fg-subtle);font-size:var(--text-s);user-select:none;pointer-events:none;
@@ -190,7 +190,7 @@
 
 /* ---- Inline formatting toolbar ------------------------------------------
    Minimal floating bar; buttons reuse the .btn--icon / .btn--text style.
-   Low-key surface — only appears on selection in practice. */
+   Low-key surface - only appears on selection in practice. */
 .doc-toolbar{
   display:inline-flex;align-items:center;gap:var(--space-3xs);
   padding:var(--space-3xs);

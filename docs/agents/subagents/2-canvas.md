@@ -1,8 +1,8 @@
-# Subagent 2 — Canvas (lens: visual workspace cards)
+# Subagent 2 - Canvas (lens: visual workspace cards)
 
 You own the **canvas-cards lens**. Read source, enumerate what *you* see as a canvas card (a frame that gets a position on the freeform workspace), and assign cell coordinates.
 
-**Read [`../conventions.md`](../conventions.md) before starting** — universal rules + naming convention.
+**Read [`../conventions.md`](../conventions.md) before starting** - universal rules + naming convention.
 
 ## Input (envelope only)
 
@@ -32,9 +32,9 @@ Include `label` so reconciliation has the same name across subagents.
 
 ### Files you may read
 
-- `source/*.html` — what UI surfaces exist
-- `source/*.js` — useState branches that produce distinct rendered states worth placing
-- Existing `source/prototype.json` — **preserve any prior `col`/`row` for frame IDs that match the convention**. Users drag frames manually; positions must be stable across regens.
+- `source/*.html` - what UI surfaces exist
+- `source/*.js` - useState branches that produce distinct rendered states worth placing
+- Existing `source/prototype.json` - **preserve any prior `col`/`row` for frame IDs that match the convention**. Users drag frames manually; positions must be stable across regens.
 
 ## Enumerate through your lens
 
@@ -44,7 +44,7 @@ A canvas card is anything with renderable UI that the user would want to see on 
 - **Exclude (Flow-only kinds)**: triggers, notifications, externals, decisions, starts, inputs. These have no UI to render in an iframe.
 - **Exclude**: the storyboard `index.html` (workflow documentation, not a screen the user works with).
 
-If you find yourself enumerating a frame whose source page is the storyboard, stop — see `conventions.md` storyboard-exclusion lens reasoning.
+If you find yourself enumerating a frame whose source page is the storyboard, stop - see `conventions.md` storyboard-exclusion lens reasoning.
 
 ## Recipe
 
@@ -59,11 +59,11 @@ If you find yourself enumerating a frame whose source page is the storyboard, st
 
 After producing your output (and after the orchestrator has written `editor/data.js`), load the editor's **Canvas** view and verify:
 
-1. Every frame you enumerated is visible as a card on the canvas — no card stacked under another.
-2. Cards aren't cut off / off-screen at default zoom — pan to confirm.
+1. Every frame you enumerated is visible as a card on the canvas - no card stacked under another.
+2. Cards aren't cut off / off-screen at default zoom - pan to confirm.
 3. Cards don't overlap. If two cards land at the same `(col, row)`, something went wrong in placement.
 4. Children sit next to (column-adjacent to) their parents, not far across the canvas.
-5. If users had dragged any frames in a prior run, those positions were preserved — visual check against any previously taken screenshot.
+5. If users had dragged any frames in a prior run, those positions were preserved - visual check against any previously taken screenshot.
 
 If a card is missing, stacked, off-screen, or shifted from its preserved position, **fix it before reporting done**. Screenshot required.
 
@@ -85,7 +85,7 @@ Each item requires **evidence**.
 
 - **Child placed far from parent.** A useState branch frame placed at `(col: 5, row: 8)` when its parent is at `(col: 0, row: 0)` is visually confusing. Keep children column-adjacent (parent col + 1) on the parent's row.
 - **Stacking from sloppy placement.** Two new frames computed to the same `(col, row)` because both walked the "next free slot" rule without checking the other's placement. Validate uniqueness before returning.
-- **Forgetting modals.** Modal/sheet/popover frames are real UI surfaces with a state branch — include them even though they aren't whole pages.
+- **Forgetting modals.** Modal/sheet/popover frames are real UI surfaces with a state branch - include them even though they aren't whole pages.
 - **Including triggers/notifications/decisions.** These are Flow-only kinds with no rendered UI. Excluding them is correct; including them gives the editor empty cards.
 
 ## Don't

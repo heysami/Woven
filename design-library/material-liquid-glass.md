@@ -13,7 +13,7 @@ images:
 
 # Liquid Glass (Apple WWDC25)
 
-A glossy surface (transparent) that reacts to light: yes — specular highlight tracks tilt/pointer; chromatic edge and deforms: minor on press.
+A glossy surface (transparent) that reacts to light: yes - specular highlight tracks tilt/pointer; chromatic edge and deforms: minor on press.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface (transparent) that reacts to light: yes — specular highlight 
 
 **Transparency**: transparent
 
-**Reacts to light**: yes — specular highlight tracks tilt/pointer; chromatic edge
+**Reacts to light**: yes - specular highlight tracks tilt/pointer; chromatic edge
 
 **Deforms**: minor on press
 
@@ -46,7 +46,7 @@ svg: |
     <feDisplacementMap in="SourceGraphic" scale="20"/>
     <feGaussianBlur stdDeviation="1"/>
   </filter>
-  /* Apply to chrome shapes ONLY — text becomes illegible above scale=20 */
+  /* Apply to chrome shapes ONLY - text becomes illegible above scale=20 */
 webgl: |
   Real-time variant: sample the page-behind-canvas as a render-target, do
   fragment-shader refraction (UV offset by gradient of pressed region) at

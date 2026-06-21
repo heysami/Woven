@@ -1,23 +1,23 @@
-/* Woven share viewer — visitor-facing review surface.
+/* Woven share viewer - visitor-facing review surface.
    Self-contained: the shared prototype renders inside the iframe with its
    own styles; everything here is viewer chrome (top bar, sidebar, pins,
    composer, identity gate).
 
-   Design follows Woven's editor tokens (editor/styles.css :root) — warm
+   Design follows Woven's editor tokens (editor/styles.css :root) - warm
    cream neutrals, the teenage.engineering GREEN as the signature accent
    (the brand / primary-action colour), Space Grotesk + Space Mono type.
    Values mirror the editor's oklch tokens so the viewer reads as the same
    product the prototype was built in. */
 
 :root {
-  --sv-bg:        oklch(98.6% 0.003 70);   /* warm cream — editor --bg */
+  --sv-bg:        oklch(98.6% 0.003 70);   /* warm cream - editor --bg */
   --sv-panel:     oklch(100% 0 0);
-  --sv-ink:       oklch(22% 0.008 60);     /* warm near-black — editor --text */
+  --sv-ink:       oklch(22% 0.008 60);     /* warm near-black - editor --text */
   --sv-muted:     oklch(47% 0.008 60);
   --sv-faint:     oklch(64% 0.007 60);
   --sv-line:      oklch(90% 0.005 70);     /* editor --border */
   --sv-line-strong: oklch(83% 0.006 70);
-  --sv-accent:    oklch(56% 0.14 159);     /* TE green — editor --accent */
+  --sv-accent:    oklch(56% 0.14 159);     /* TE green - editor --accent */
   --sv-accent-soft: oklch(95% 0.038 162);
   --sv-accent-text: oklch(45% 0.125 162);
   --sv-accent-strong: oklch(48% 0.145 160);
@@ -86,7 +86,7 @@ button { font: inherit; cursor: pointer; }
   background: #fff;
 }
 /* While comment mode is armed the overlay (not the iframe) owns the cursor. */
-.sv-stage.is-commenting iframe { /* pointer events stay on — we hook inside the doc */ }
+.sv-stage.is-commenting iframe { /* pointer events stay on - we hook inside the doc */ }
 
 /* ── Pins ────────────────────────────────────────────────────────────── */
 .sv-pin {
@@ -98,10 +98,10 @@ button { font: inherit; cursor: pointer; }
   box-shadow: 0 2px 8px rgba(0,0,0,.25);
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 700;
-  transform: rotate(-0.0001deg); /* own compositing layer — pins reposition every frame */
+  transform: rotate(-0.0001deg); /* own compositing layer - pins reposition every frame */
   padding: 0;
 }
-/* Done pins recede to a muted grey — the accent is green, so a green
+/* Done pins recede to a muted grey - the accent is green, so a green
    "done" state would be indistinguishable from an open pin. */
 .sv-pin.is-done { background: var(--sv-faint); }
 .sv-pin.is-active { outline: 3px solid var(--sv-accent-soft); z-index: 31; }
@@ -140,7 +140,7 @@ button { font: inherit; cursor: pointer; }
   background: var(--sv-panel); border-left: 1px solid var(--sv-line);
   min-height: 0;
 }
-/* Title on its own row, filters on a second full-width row beneath it —
+/* Title on its own row, filters on a second full-width row beneath it -
    keeps the count from wrapping inside the pill ("Open 0" stays one line). */
 .sv-sidebar-head {
   display: flex; flex-direction: column; gap: 8px;

@@ -6,7 +6,7 @@
    can <link> this file to inherit the canonical Woven tokens instead of shipping
    its own ad-hoc palette. The token values are copied verbatim from
    editor/styles.css :root so the tools read as ONE design system with the editor
-   chrome — warm paper-white surfaces, hairline borders, a single vivid green
+   chrome - warm paper-white surfaces, hairline borders, a single vivid green
    accent, Space Grotesk / Space Mono type.
 
    Usage in a tool:
@@ -16,13 +16,13 @@
    and/or use the .wv-* component classes below directly.
 
    NB: tools render a LIGHT chrome to match the editor. A 3D / pixel / canvas
-   viewport may keep a dark *content* background — that's content, not chrome.
+   viewport may keep a dark *content* background - that's content, not chrome.
    ─────────────────────────────────────────────────────────────────────────── */
 
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
 
 :root {
-  /* Surfaces — warm paper-white, faintly neutral (TE light hardware) */
+  /* Surfaces - warm paper-white, faintly neutral (TE light hardware) */
   --wv-bg:          oklch(98.6% 0.003 70);
   --wv-surface:     oklch(100% 0 0);
   --wv-surface-2:   oklch(97% 0.004 70);
@@ -30,22 +30,22 @@
   --wv-border:      oklch(90% 0.005 70);
   --wv-border-strong: oklch(83% 0.006 70);
 
-  /* Dark viewport surfaces — for canvas/3D content areas that stay dark */
+  /* Dark viewport surfaces - for canvas/3D content areas that stay dark */
   --wv-viewport:    oklch(22% 0.006 70);
   --wv-viewport-2:  oklch(27% 0.006 70);
 
-  /* Text — near-black ink, faintly warm */
+  /* Text - near-black ink, faintly warm */
   --wv-text:        oklch(22% 0.008 60);
   --wv-text-muted:  oklch(47% 0.008 60);
   --wv-text-faint:  oklch(64% 0.007 60);
   --wv-text-on-accent: oklch(100% 0 0);
 
-  /* Accent — GREEN is the signature/primary accent (pervasive chrome). */
+  /* Accent - GREEN is the signature/primary accent (pervasive chrome). */
   --wv-accent:        oklch(56% 0.14 159);
   --wv-accent-soft:   oklch(95% 0.038 162);
   --wv-accent-text:   oklch(45% 0.125 162);
   --wv-accent-strong: oklch(48% 0.145 160);
-  /* Hot — vivid TE orange. Reserved for the primary Run / record action only. */
+  /* Hot - vivid TE orange. Reserved for the primary Run / record action only. */
   --wv-hot:           oklch(64% 0.205 42);
   --wv-hot-soft:      oklch(95% 0.045 52);
   --wv-hot-text:      oklch(52% 0.195 40);

@@ -13,13 +13,13 @@ images:
 
 # Corporate-Memphis Everyday Scenes (Blush)
 
-Flat-vector everyday-life scenes — characters going about daily activity (office, park, walking, shopping, family moments) on a simple single-prop background. Merges Blush's Allura / Big-Shoes / Dayflow / Family-Values / Shopaholics families.
+Flat-vector everyday-life scenes - characters going about daily activity (office, park, walking, shopping, family moments) on a simple single-prop background. Merges Blush's Allura / Big-Shoes / Dayflow / Family-Values / Shopaholics families.
 
 ## Visual signatures
 
 - everyday-life scenes (office, park, walking, shopping, parenting)
-- clean rounded vector with rounded extremities — sometimes thin 2px optional outline
-- muted-to-mid-saturation palette — dusty pink, sage, cream, soft mid-saturation accents
+- clean rounded vector with rounded extremities - sometimes thin 2px optional outline
+- muted-to-mid-saturation palette - dusty pink, sage, cream, soft mid-saturation accents
 - exaggerated friendly proportions (sometimes big shoes, big hands, simple head shapes)
 - scene composition with one prop or simple background
 - distinct head-shape variety across characters

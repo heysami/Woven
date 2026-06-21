@@ -13,7 +13,7 @@ images:
 
 # Parchment / Vellum (animal hide, premium document)
 
-A matte surface and deforms: yes — curls dramatically at corners.
+A matte surface and deforms: yes - curls dramatically at corners.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — curls dramatically at corners.
 
 **Reacts to light**: no specular but visible thickness
 
-**Deforms**: yes — curls dramatically at corners
+**Deforms**: yes - curls dramatically at corners
 
 **Age / wear**: acquired patina (yellowing, blotches)
 

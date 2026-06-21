@@ -12,16 +12,16 @@ images:
 
 # Warm-minimal daylight (Kinfolk / quiet lookbook)
 
-The shared register behind 2010s Kinfolk-magazine slow-living interiors AND post-Margiela quiet-lookbook plaster-wall exteriors. Soft natural daylight, warm muted palette, considered slow mood, generous negative space. Two sub-variants in one entry — pick by context.
+The shared register behind 2010s Kinfolk-magazine slow-living interiors AND post-Margiela quiet-lookbook plaster-wall exteriors. Soft natural daylight, warm muted palette, considered slow mood, generous negative space. Two sub-variants in one entry - pick by context.
 
 ## Sub-variants
 
-- **Domestic-interior (Kinfolk-grade)** — interior scene with subject in everyday slow activity (folding linen, brewing tea, reading). Soft window light, slightly blown highlights, no hard shadow. Knit textures, ceramic mugs, dried flowers, linen.
-- **Lookbook-against-plaster** — full-body subject in garment against pale plaster or stucco backdrop (often outdoor courtyard wall). Side natural daylight from open door or large window, casual real-world pose. Post-Margiela quiet-lookbook canon.
+- **Domestic-interior (Kinfolk-grade)** - interior scene with subject in everyday slow activity (folding linen, brewing tea, reading). Soft window light, slightly blown highlights, no hard shadow. Knit textures, ceramic mugs, dried flowers, linen.
+- **Lookbook-against-plaster** - full-body subject in garment against pale plaster or stucco backdrop (often outdoor courtyard wall). Side natural daylight from open door or large window, casual real-world pose. Post-Margiela quiet-lookbook canon.
 
 ## Visual signatures
 
-- warm muted palette — beige, cream, soft brown, dust, oat
+- warm muted palette - beige, cream, soft brown, dust, oat
 - soft natural daylight (window OR open-door side light)
 - subjects in slow everyday activity OR casual lookbook stance
 - knit, linen, ceramic, dried-flower props (interior variant) or textured plaster wall (lookbook variant)

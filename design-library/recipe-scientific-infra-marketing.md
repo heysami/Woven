@@ -11,9 +11,9 @@ A `(shell + style + voice)` bundle for **protocol-paper / HPC / scientific-infra
 
 ## Picks
 
-- **Shell:** `hero-stack` — read `shell-hero-stack.md`
-- **Style:** `restrained-hairline` with `agate-broadsheet` accents — read `style-restrained-hairline.md` and `style-agate-broadsheet.md`
-- **Aesthetic:** *(none — the citation discipline is the identity)*
+- **Shell:** `hero-stack` - read `shell-hero-stack.md`
+- **Style:** `restrained-hairline` with `agate-broadsheet` accents - read `style-restrained-hairline.md` and `style-agate-broadsheet.md`
+- **Aesthetic:** *(none - the citation discipline is the identity)*
 - **Voice:** scientific, paper-citation tone. Headlines reference physics / network / engineering terms ("Sub-microsecond consensus", "Coherent global state propagation"). Authors / contributors / institutional logos visible. Math equations rendered inline.
 
 ## Pattern
@@ -34,6 +34,6 @@ Protocol whitepapers translating to marketing, distributed-systems infrastructur
 
 ## What distinguishes this from existing recipes
 
-- `newspaper-of-record` is editorial-broken-grid + agate-broadsheet — this is hero-stack with agate accents embedded in a marketing scroll.
+- `newspaper-of-record` is editorial-broken-grid + agate-broadsheet - this is hero-stack with agate accents embedded in a marketing scroll.
 - `restrained-ai-marketing` is the same shell + style without the math / citation discipline.
 - `linear-product-ui` is the app surface, not the paper-as-marketing scroll.

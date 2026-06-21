@@ -13,12 +13,12 @@ images:
 
 # Bauhaus pure geometric
 
-primary geometric shapes — circle, square, triangle.
+primary geometric shapes - circle, square, triangle.
 
 ## Visual signatures
 
-- primary geometric shapes — circle, square, triangle
-- primary colors only — red blue yellow on black/white
+- primary geometric shapes - circle, square, triangle
+- primary colors only - red blue yellow on black/white
 - rigid composition
 
 ## Prompt keywords

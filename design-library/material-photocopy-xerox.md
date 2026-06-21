@@ -37,7 +37,7 @@ svg: |
   <feComponentTransfer> with steep sigmoid for toner crush;
   <feGaussianBlur stdDeviation="0.4"/> + <feColorMatrix> threshold for toner spread
 webgl: |
-  sigmoid contrast → grayscale → noise overlay → soft blur → threshold —
+  sigmoid contrast → grayscale → noise overlay → soft blur → threshold -
   matches CopyCat / Vayce algorithms
 raster: photocopy texture overlays (Indieground packs) at multiply
 ```

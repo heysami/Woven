@@ -30,7 +30,7 @@ faded photo of empty mundane space (hallway, pool, mall).
 
 **Line**: no line
 
-**Color**: oversaturated nostalgic — yellow-green + carpet pink
+**Color**: oversaturated nostalgic - yellow-green + carpet pink
 
 **Style**: empty mundane space, no people, subtle architectural wrongness
 

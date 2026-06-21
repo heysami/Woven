@@ -1,11 +1,11 @@
-"""Local git-core test — connect, commit w/ co-authors, status. Offline."""
+"""Local git-core test - connect, commit w/ co-authors, status. Offline."""
 import os, sys, tempfile, subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import git_ops as G
 
 def main():
     if not G.git_available():
-        print("git not available — SKIP"); return
+        print("git not available - SKIP"); return
     root = tempfile.mkdtemp()
     os.makedirs(os.path.join(root, "source", "main"))
     open(os.path.join(root, "source", "main", "index.html"), "w").write("<h1>v1</h1>")
@@ -48,7 +48,7 @@ def main():
     main_name = binfo["current"]
     assert any(b["current"] for b in binfo["branches"]), binfo
 
-    # fork off HEAD (carries no edits — tree is clean here)
+    # fork off HEAD (carries no edits - tree is clean here)
     fk = G.create_branch(root, "feature/hero")
     assert fk["branch"] == "feature/hero"
     assert G.current_branch(root) == "feature/hero"
@@ -64,7 +64,7 @@ def main():
         except RuntimeError:
             pass
 
-    # switch back, merge the fork in (no conflict — fast diverge on main side)
+    # switch back, merge the fork in (no conflict - fast diverge on main side)
     G.switch_branch(root, main_name)
     assert G.current_branch(root) == main_name
     mg = G.merge_branch(root, "feature/hero")

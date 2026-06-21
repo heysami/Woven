@@ -13,19 +13,19 @@ images:
 
 **Canonical references:**
 - 2024-26 premium magazine + zine editorial sites using neubrutalism vocabulary on uncoated-paper substrate
-- Subframe editorial-template gallery — the canonical examples
+- Subframe editorial-template gallery - the canonical examples
 - The Browser Company / Arc 2024 brand identity (warm cream + ink restraint)
 - Cabin Magazine, Toast brand books, Apartamento magazine web identities
-- Direct ancestor: harsh `aesthetic-neubrutalism` (2021-23) — same DNA, refined for premium briefs
-- "Cream tones for calm foundations, paired with uncoated paper or light grain" — 2025 editorial discourse
+- Direct ancestor: harsh `aesthetic-neubrutalism` (2021-23) - same DNA, refined for premium briefs
+- "Cream tones for calm foundations, paired with uncoated paper or light grain" - 2025 editorial discourse
 - Independent-bookseller / boutique-publication design movement 2024-26
 - Risograph / letterpress hand-press lineage (informs the texture discipline)
 
 ## Cultural identity
 
-If `aesthetic-soft-neubrutalism` is the warm-pastel evolution of harsh neubrutalism, **Monochrome Editorial Neubrutalism is the premium-restrained evolution** — the move from indie-creator-defiant to boutique-publication-considered. Where the original 2021-23 register said *"we made software for people who give a damn"*, the monochrome editorial variant says *"we made this with care, and care costs nothing in saturation."*
+If `aesthetic-soft-neubrutalism` is the warm-pastel evolution of harsh neubrutalism, **Monochrome Editorial Neubrutalism is the premium-restrained evolution** - the move from indie-creator-defiant to boutique-publication-considered. Where the original 2021-23 register said *"we made software for people who give a damn"*, the monochrome editorial variant says *"we made this with care, and care costs nothing in saturation."*
 
-The cultural reading: 2024-26 saw premium publications, indie bookstores, boutique restaurants, and slow-fashion brands wanting the **clarity + structural confidence** of neubrutalism without the loud chromatic punch. The answer: keep the thick borders, keep the hard-offset shadows, keep the no-radius discipline — but commit to a **beige + cream + ink monochrome palette** + **uncoated-paper grain texture** + **a single bold photo as the only chromatic moment** on each page.
+The cultural reading: 2024-26 saw premium publications, indie bookstores, boutique restaurants, and slow-fashion brands wanting the **clarity + structural confidence** of neubrutalism without the loud chromatic punch. The answer: keep the thick borders, keep the hard-offset shadows, keep the no-radius discipline - but commit to a **beige + cream + ink monochrome palette** + **uncoated-paper grain texture** + **a single bold photo as the only chromatic moment** on each page.
 
 This is the lane for products where the typography and photography are the brand, not the color. It's neubrutalism that *whispers*.
 
@@ -33,12 +33,12 @@ This is the lane for products where the typography and photography are the brand
 
 ## Palette anchor
 
-- **Uncoated paper cream** `#F4EFE2` or `#EDE6D3` — primary substrate (warm-cast, never pure white)
-- **Warm dark ink** `#181412` (NOT pure `#000` — slightly warm dark)
-- **Mid-tone greige** `#A89E8E` — secondary support tone
-- **Cream highlight** `#FAF6EC` — paper-bright for surface contrast
-- **Single photo carrier** — ONE bold photograph on each page provides ALL chromatic information (skin tones, food colors, fashion garment color, landscape palette)
-- **NO synthetic accent color** — there is no yellow/pink/blue here. The photo carries the color.
+- **Uncoated paper cream** `#F4EFE2` or `#EDE6D3` - primary substrate (warm-cast, never pure white)
+- **Warm dark ink** `#181412` (NOT pure `#000` - slightly warm dark)
+- **Mid-tone greige** `#A89E8E` - secondary support tone
+- **Cream highlight** `#FAF6EC` - paper-bright for surface contrast
+- **Single photo carrier** - ONE bold photograph on each page provides ALL chromatic information (skin tones, food colors, fashion garment color, landscape palette)
+- **NO synthetic accent color** - there is no yellow/pink/blue here. The photo carries the color.
 
 The strict monochrome discipline is the signature. Adding ANY synthetic accent color (a yellow button, a pink tag) collapses the register to harsh-sibling cosplay. The photo brings the color; the chrome stays beige + ink.
 
@@ -46,20 +46,20 @@ The strict monochrome discipline is the signature. Adding ANY synthetic accent c
 
 **Mandatory signatures:**
 - **Border-2 to border-3 in warm dark ink** around major containers (slightly less aggressive than harsh's border-4)
-- **Hard-offset shadow** at `4px 4px 0 0` warm-dark with 0px blur (harsh signature retained — blur is forbidden)
-- **Border-radius 0** (this variant KEEPS the harsh sibling's no-radius discipline — the softening is in COLOR, not in CORNERS)
+- **Hard-offset shadow** at `4px 4px 0 0` warm-dark with 0px blur (harsh signature retained - blur is forbidden)
+- **Border-radius 0** (this variant KEEPS the harsh sibling's no-radius discipline - the softening is in COLOR, not in CORNERS)
 - **Uncoated-paper grain texture** as a subtle overlay (5-8% opacity, SVG noise filter)
-- **One bold photograph per spread** — full-width, full-bleed, the chromatic event of the page
-- **Typographic hierarchy as the rhythm** — extreme display:body ratio (96-160px display → 14-16px body, NO mid-sizes)
+- **One bold photograph per spread** - full-width, full-bleed, the chromatic event of the page
+- **Typographic hierarchy as the rhythm** - extreme display:body ratio (96-160px display → 14-16px body, NO mid-sizes)
 - **Hairline rules** in greige (1px) for column separators and footers
-- **Letterpress-emboss accent** — optional debossed-into-paper effect on logos or section dividers (subtle inset shadow simulating press impression)
+- **Letterpress-emboss accent** - optional debossed-into-paper effect on logos or section dividers (subtle inset shadow simulating press impression)
 
 **Typography vocabulary:**
 - **Display:** a serif with editorial gravitas (GT Sectra, Editorial New, Cabinet Grotesk's bolder weights, Migra)
 - **Body:** an organic humanist serif (Source Serif, Tiempos Text, GT Alpina) at 16-18px / 1.55 line-height
 - **Optional accent:** a single mono for system labels (JetBrains Mono Light)
 
-**Forbidden:** pure black `#000`, pure white `#FFF`, ANY synthetic accent color (yellow / pink / cyan / lime — those belong to the harsh sibling), rounded corners > 0px, soft drop shadows with blur, multiple photos competing on one screen, generic Inter / Helvetica as the only typeface (display serif is non-negotiable).
+**Forbidden:** pure black `#000`, pure white `#FFF`, ANY synthetic accent color (yellow / pink / cyan / lime - those belong to the harsh sibling), rounded corners > 0px, soft drop shadows with blur, multiple photos competing on one screen, generic Inter / Helvetica as the only typeface (display serif is non-negotiable).
 
 ## Voice register
 
@@ -67,13 +67,13 @@ Considered, declarative, slightly literary. Examples:
 - "Issue 04. Autumn."
 - "We open at six."
 - "Made by hand, in Brooklyn."
-- "Subscribe — twelve issues a year."
+- "Subscribe - twelve issues a year."
 
-Sentence case with terminal periods. Never lowercase-defiant ("ship it"), never marketing-flat ("Empower your subscription"), never gamer-bro. The voice matches the visual restraint — quiet confidence.
+Sentence case with terminal periods. Never lowercase-defiant ("ship it"), never marketing-flat ("Empower your subscription"), never gamer-bro. The voice matches the visual restraint - quiet confidence.
 
 ## Raster requirement
 
-This aesthetic ABSOLUTELY needs photography — the single bold photo per page IS the brand-carrying chromatic moment. Without strong commissioned (not stock) photography, the page is just beige with ink type, and the editorial register doesn't land. Photography should be either: editorial-portrait, considered-still-life, food-and-light, or atmospheric-landscape — never "stock business meeting" or "diverse team smiling." Follow the [Raster requirements](../prototype.md#raster-requirements--when-svg-will-not-deliver-the-genre) decision tree.
+This aesthetic ABSOLUTELY needs photography - the single bold photo per page IS the brand-carrying chromatic moment. Without strong commissioned (not stock) photography, the page is just beige with ink type, and the editorial register doesn't land. Photography should be either: editorial-portrait, considered-still-life, food-and-light, or atmospheric-landscape - never "stock business meeting" or "diverse team smiling." Follow the [Raster requirements](../prototype.md#raster-requirements--when-svg-will-not-deliver-the-genre) decision tree.
 
 ## Failure mode
 

@@ -13,7 +13,7 @@ images:
 
 # Matte Clay (claymorphism)
 
-A matte surface that reacts to light: yes — inset highlight + dark inset shadow and deforms: minor on press (squash).
+A matte surface that reacts to light: yes - inset highlight + dark inset shadow and deforms: minor on press (squash).
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — inset highlight + dark inset shado
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — inset highlight + dark inset shadow
+**Reacts to light**: yes - inset highlight + dark inset shadow
 
 **Deforms**: minor on press (squash)
 
@@ -50,12 +50,12 @@ raster: none
 
 **Depth**: press scales 0.97 + inverts the inner highlight
 
-**Parallax**: none — clay is grounded
+**Parallax**: none - clay is grounded
 
 ## Common implementation mistakes (avoid these)
 
 - every container puffed (clay must be ONE moment per screen)
-- saturated 0.20+ chroma instead of 0.04–0.08 pastels
+- saturated 0.20+ chroma instead of 0.04-0.08 pastels
 - dark bottom-right inset shadow missing (reads flat pill with glow)
 - black drop shadow instead of surface-hue-tinted
 - clay extended to dark mode (inset highlight stops reading)

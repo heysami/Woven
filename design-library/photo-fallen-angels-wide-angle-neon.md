@@ -12,19 +12,19 @@ images:
 
 # Fallen Angels wide-angle neon-distortion (Doyle)
 
-Wong Kar-Wai's *Fallen Angels* (1995, *堕落天使*), shot by **Christopher Doyle** — the most extreme expression of the Wong/Doyle wide-angle handheld neon-soaked Hong Kong nightscape vocabulary. Doyle famously **started with a 9.8mm lens** and Wong Kar-Wai said *"let's go further"* — they ended up at **6.8mm**, an ultra-ultrawide that distorts the entire frame. The result: subjects are **simultaneously intimate (the camera is millimeters from their face) and alienated (the wide-angle distortion bends the space around them).**
+Wong Kar-Wai's *Fallen Angels* (1995, *堕落天使*), shot by **Christopher Doyle** - the most extreme expression of the Wong/Doyle wide-angle handheld neon-soaked Hong Kong nightscape vocabulary. Doyle famously **started with a 9.8mm lens** and Wong Kar-Wai said *"let's go further"* - they ended up at **6.8mm**, an ultra-ultrawide that distorts the entire frame. The result: subjects are **simultaneously intimate (the camera is millimeters from their face) and alienated (the wide-angle distortion bends the space around them).**
 
 ## Visual signatures
 
-- **ultra-wide-angle lenses (6.8mm to 9.8mm)** — extreme barrel distortion, faces bend at edges
+- **ultra-wide-angle lenses (6.8mm to 9.8mm)** - extreme barrel distortion, faces bend at edges
 - handheld, often hip-mounted or shoulder-mounted (NOT Steadicam-smooth)
-- subject extremely close to lens — the camera is **literally inches from the face**
-- vacant negative space around the subject — the wide angle makes the city huge
-- neon-soaked Hong Kong night — red, green, yellow signage reflecting on wet streets, glass, eyes
-- **motion blur from slow-shutter at night** — the city becomes streaks while the subject is sharp(er)
+- subject extremely close to lens - the camera is **literally inches from the face**
+- vacant negative space around the subject - the wide angle makes the city huge
+- neon-soaked Hong Kong night - red, green, yellow signage reflecting on wet streets, glass, eyes
+- **motion blur from slow-shutter at night** - the city becomes streaks while the subject is sharp(er)
 - **step-printing** (slowed-down frame-skipping) creating that strobed-time-stretched quality unique to Wong Kar-Wai
-- frames-as-shadows — characters seen through windows, doorways, security grates, partial silhouettes
-- color temperature mixed and uncorrected — sodium-vapor orange + mercury-vapor cyan + neon red all in one frame
+- frames-as-shadows - characters seen through windows, doorways, security grates, partial silhouettes
+- color temperature mixed and uncorrected - sodium-vapor orange + mercury-vapor cyan + neon red all in one frame
 - the city of Hong Kong is a co-protagonist; the architecture/signage IS the lighting
 
 ## Prompt keywords
@@ -56,8 +56,8 @@ Wong Kar-Wai's *Fallen Angels* (1995, *堕落天使*), shot by **Christopher Doy
 > Ultra-close-up portrait of a person from inches away (camera **6.8mm
 > ultra-wide-angle lens**, extreme barrel distortion bending the subject's
 > face at the edges), handheld hip-mount framing, **Hong Kong neon night**
-> background — red signage on left, green-cyan on right, yellow Mong-Kok
-> neon overhead — sodium-vapor orange and mercury-vapor cyan light sources
+> background - red signage on left, green-cyan on right, yellow Mong-Kok
+> neon overhead - sodium-vapor orange and mercury-vapor cyan light sources
 > mixed and uncorrected on subject's skin. Subject sharp-ish, **background
 > light-streak motion-blur** from slow-shutter, **step-printing skip-frame
 > slow-motion quality**. Subject's face fills the frame; the rest is

@@ -13,7 +13,7 @@ images:
 
 # Barrel / Pincushion Lens Warp (wide-lens optical distortion)
 
-A glossy surface and deforms: yes — radial geometric distortion.
+A glossy surface and deforms: yes - radial geometric distortion.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A glossy surface and deforms: yes — radial geometric distortion.
 
 **Reacts to light**: no
 
-**Deforms**: yes — radial geometric distortion
+**Deforms**: yes - radial geometric distortion
 
 **Age / wear**: ageless
 

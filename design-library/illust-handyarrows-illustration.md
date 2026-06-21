@@ -1,6 +1,6 @@
 ---
 styleId: handyarrows-illustration
-name: HandyArrows — Single-hand illustration pack (Eren Can Arica)
+name: HandyArrows - Single-hand illustration pack (Eren Can Arica)
 category: Hand-drawn / sketch
 subCategory: ink-line-brush
 role: decoration
@@ -11,21 +11,21 @@ images:
     reason: Illustration style sample.
 ---
 
-# HandyArrows — Single-hand illustration pack (Eren Can Arica)
+# HandyArrows - Single-hand illustration pack (Eren Can Arica)
 
-The entire HandyArrows library — arrows, doodles, full illustrations, infographic accents, underlines — drawn by one hand (Eren Can Arica / Eronred). Single artist, single marker, consistent wobble, one entry to rule them all. Promptable per sub-asset role (arrow / doodle / illustration / infographic / underline).
+The entire HandyArrows library - arrows, doodles, full illustrations, infographic accents, underlines - drawn by one hand (Eren Can Arica / Eronred). Single artist, single marker, consistent wobble, one entry to rule them all. Promptable per sub-asset role (arrow / doodle / illustration / infographic / underline).
 
 ## Visual signatures
 
-- single artist's hand — Eren Can Arica's recognisable wobbly marker line
+- single artist's hand - Eren Can Arica's recognisable wobbly marker line
 - consistent 3-4px marker stroke, slight imperfect wobble
 - mono black single-line (occasional limited two-color)
 - sub-asset roles cover:
-  - **arrows** — 185+ varied (straight, curved, squiggly, looped, double-line, sketchy, chunky); termini: chevron, feathered, splayed
-  - **doodles** — playful accents: stars, hearts, sparkles, dots, swirls
-  - **full illustrations** — characters and scenes
-  - **infographic accents** — circles, brackets, labels, scribble-emphasis
-  - **underlines** — handlettered emphasis-strokes under headlines
+  - **arrows** - 185+ varied (straight, curved, squiggly, looped, double-line, sketchy, chunky); termini: chevron, feathered, splayed
+  - **doodles** - playful accents: stars, hearts, sparkles, dots, swirls
+  - **full illustrations** - characters and scenes
+  - **infographic accents** - circles, brackets, labels, scribble-emphasis
+  - **underlines** - handlettered emphasis-strokes under headlines
 
 ## Prompt keywords
 

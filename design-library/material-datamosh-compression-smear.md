@@ -13,7 +13,7 @@ images:
 
 # Datamosh (codec interpolation failure)
 
-A matte surface and deforms: yes — frame motion stretches old pixels along predicted vectors.
+A matte surface and deforms: yes - frame motion stretches old pixels along predicted vectors.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — frame motion stretches old pixels along pre
 
 **Reacts to light**: no
 
-**Deforms**: yes — frame motion stretches old pixels along predicted vectors
+**Deforms**: yes - frame motion stretches old pixels along predicted vectors
 
 **Age / wear**: ageless (or feels 2008-Tumblr era)
 
@@ -31,7 +31,7 @@ A matte surface and deforms: yes — frame motion stretches old pixels along pre
 
 ```yaml
 css: |
-  /* approximation only — true datamosh needs WebGL */
+  /* approximation only - true datamosh needs WebGL */
   filter: blur(0.5px) saturate(1.2);
   mix-blend-mode: screen;
 webgl: |
@@ -44,7 +44,7 @@ raster: pre-rendered datamosh video texture under content (looped mp4 or webm)
 
 ## Reactive behaviors
 
-**Light**: none — datamosh smears existing pixels
+**Light**: none - datamosh smears existing pixels
 
 **Highlight**: pointer can seed the motion-vector field for interactive smear
 

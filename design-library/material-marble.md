@@ -13,7 +13,7 @@ images:
 
 # Marble (veined stone)
 
-A glossy (polished) or matte (honed) surface that reacts to light: yes — soft sheen.
+A glossy (polished) or matte (honed) surface that reacts to light: yes - soft sheen.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy (polished) or matte (honed) surface that reacts to light: yes — soft 
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — soft sheen
+**Reacts to light**: yes - soft sheen
 
 **Deforms**: no
 

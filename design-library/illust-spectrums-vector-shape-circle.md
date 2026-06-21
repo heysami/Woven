@@ -1,6 +1,6 @@
 ---
 styleId: spectrums-vector-shape-circle
-name: Spectrums — Circle family
+name: Spectrums - Circle family
 category: Abstract / decoration
 subCategory: geometric-primitive
 role: decoration
@@ -11,7 +11,7 @@ images:
     reason: Illustration style sample.
 ---
 
-# Spectrums — Circle family
+# Spectrums - Circle family
 
 clean geometric circles with variations: dotted, double-stroked, segmented.
 
@@ -37,7 +37,7 @@ clean geometric circles with variations: dotted, double-stroked, segmented.
 
 ## Example prompt template
 
-> Geometric circle decoration — variant (dotted/double-stroked/segmented),
+> Geometric circle decoration - variant (dotted/double-stroked/segmented),
 > single accent color, vector flat, isolated, Spectrums library aesthetic.
 
 ## When to use

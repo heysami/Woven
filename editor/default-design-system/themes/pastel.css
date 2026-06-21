@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Pastel theme — a STYLE OVERLAY for the Template Design System.
+   Pastel theme - a STYLE OVERLAY for the Template Design System.
    Apply via <html data-theme="pastel">.
 
    Soft, desaturated wash: surfaces are faint tints (never pure white), brand
@@ -56,7 +56,7 @@
   --on-primary:var(--primary-800); --on-secondary:var(--secondary-800); --on-tertiary:var(--tertiary-800);
   --secondary-surface:color-mix(in srgb, var(--secondary-400) 28%, #ffffff);
   --tertiary-surface:color-mix(in srgb, var(--tertiary-400) 28%, #ffffff);
-  --primary-grad-from:var(--primary-surface); --primary-grad-to:var(--primary-surface);   /* flat — no gradient */
+  --primary-grad-from:var(--primary-surface); --primary-grad-to:var(--primary-surface);   /* flat - no gradient */
   --chip-primary-fg:var(--primary-800); --chip-secondary-fg:var(--secondary-800); --chip-tertiary-fg:var(--tertiary-800);
 
   /* style helpers (flip in dark) */
@@ -81,7 +81,7 @@
 }
 
 /* ==========================================================================
-   DARK pastel — the editor toggles html.ds-scheme-dark for a dark preview while
+   DARK pastel - the editor toggles html.ds-scheme-dark for a dark preview while
    data-theme stays "pastel". Remap surfaces dark + brand roles to lighter ramp
    steps; accents still follow the scheme via --primary-*.
    ========================================================================== */
@@ -129,7 +129,7 @@
 }
 
 /* ==========================================================================
-   Scoped component overrides — every rule guarded by [data-theme="pastel"].
+   Scoped component overrides - every rule guarded by [data-theme="pastel"].
    Colours reference tokens (above) so they flip automatically in dark.
    ========================================================================== */
 
@@ -260,7 +260,7 @@
 [data-theme="pastel"] .tabbar__item.is-active{color:var(--primary-fg);}
 [data-theme="pastel"] .tabbar__item.is-active .tabbar__icon{color:var(--primary-fg);}
 
-/* ---- Split-dropdown caret — matches the soft pastel primary button (token-
+/* ---- Split-dropdown caret - matches the soft pastel primary button (token-
    driven, so it flips with dark) instead of the default dark-fill/white-chevron. */
 [data-theme="pastel"] .btn-split__caret{
   background:var(--primary-surface);

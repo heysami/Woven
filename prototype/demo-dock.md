@@ -1,11 +1,11 @@
 ---
 name: demo-dock
-description: The Demo dock spec — boilerplate HTML + inline CSS + inline JS for the floating prototype-only switcher. Loaded only when the source has ≥2 view variants of the same screen reachable from one state hook (stage / persona / lifecycle / status switcher; time scrubber; feature flag). **Test:** would a real shipped product have this control? Yes → inline (Overview / Documents tabs); No → use the dock from this file.
+description: The Demo dock spec - boilerplate HTML + inline CSS + inline JS for the floating prototype-only switcher. Loaded only when the source has ≥2 view variants of the same screen reachable from one state hook (stage / persona / lifecycle / status switcher; time scrubber; feature flag). **Test:** would a real shipped product have this control? Yes → inline (Overview / Documents tabs); No → use the dock from this file.
 
-→ Decision lives in PROTOTYPE.md §11 "Demo dock — prototype-only controls".
+→ Decision lives in PROTOTYPE.md §11 "Demo dock - prototype-only controls".
 ---
 
-# §11 — Demo dock: prototype-only controls (Woven-specific)
+# §11 - Demo dock: prototype-only controls (Woven-specific)
 
 Anything that lets a viewer switch view / persona / stage / time is **demo scaffolding**, not product UI. Inline placement reads as a real control even with a "Demo:" caption. **The rule:** every prototype-only switcher goes in a single floating **demo dock** in a fixed corner. Never inline.
 
@@ -13,7 +13,7 @@ Anything that lets a viewer switch view / persona / stage / time is **demo scaff
 
 **Test for what stays inline:** would a real shipped product have this control? Yes → inline (Overview / Documents tabs). No, only for demo variance → dock.
 
-**Visual rules** — must not look like product UI:
+**Visual rules** - must not look like product UI:
 - Dashed 1px border (don't reuse `.btn-primary` / `.card`).
 - `🧪` badge + monospace label + "DEMO" chip in panel header.
 - Container is `<div class="demo-dock" data-demo-only="true">` so iframe context AND `?demo=off` hide it via one rule.
@@ -32,12 +32,12 @@ Anything that lets a viewer switch view / persona / stage / time is **demo scaff
   <div class="demo-dock-panel" hidden>
     <header>
       <span class="demo-dock-chip">DEMO</span>
-      <h4>Class lifecycle — 3 views</h4>
+      <h4>Class lifecycle - 3 views</h4>
       <button type="button" class="demo-dock-x" aria-label="Close">×</button>
     </header>
     <p class="demo-dock-preamble">
       This screen is the TC's view of one in-house class. Capabilities change
-      across the run lifecycle — pick a stage to see what the TC can / can't do.
+      across the run lifecycle - pick a stage to see what the TC can / can't do.
     </p>
     <ul class="demo-dock-views">
       <li data-view="application">
@@ -139,7 +139,7 @@ Anything that lets a viewer switch view / persona / stage / time is **demo scaff
     };
     btn.addEventListener("click", function () { toggle(); });
     if (closeBtn) closeBtn.addEventListener("click", function () { toggle(false); });
-    // Wire the rows — each one expects a data-view value that maps to the
+    // Wire the rows - each one expects a data-view value that maps to the
     // page's view-switching mechanism. The page is responsible for the
     // actual state change; the dock just dispatches a CustomEvent the page
     // can listen for. This keeps the dock decoupled from page state.

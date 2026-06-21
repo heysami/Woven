@@ -170,7 +170,7 @@
          pins to the node's core rect when body has class "detached-panels". -->
     <div id="coreCanvas">
       <div id="edit-head">
-        <div class="glyph-title" id="glyphTitle">—<small id="glyphCode"></small></div>
+        <div class="glyph-title" id="glyphTitle">-<small id="glyphCode"></small></div>
         <label class="fld"><span>Advance width</span><input id="advanceWidth" type="number" value="600"></label>
         <label class="fld"><span>Source</span>
           <select id="glyphFrom">
@@ -530,7 +530,7 @@ async function doEmit(){
   const baked = await compileAndBake();
   const msg = { type:"font:state", state };
   if(baked){ msg.baked = { dataUrl: baked.dataUrl }; setStatus("synced + baked","ok"); }
-  else { setStatus("synced (compile failed — JSON only)","err"); }
+  else { setStatus("synced (compile failed - JSON only)","err"); }
   post(msg);
   updateBakeInfo(baked);
   renderPreview(baked);
@@ -877,7 +877,7 @@ function wireToolbar(){
 
   document.getElementById("downloadBtn").addEventListener("click", async ()=>{
     const baked=await compileAndBake();
-    if(!baked){ setStatus("compile failed — cannot download","err"); return; }
+    if(!baked){ setStatus("compile failed - cannot download","err"); return; }
     const a=document.createElement("a");
     a.href=baked.dataUrl; a.download=(doc.familyName||"font").replace(/\s+/g,"")+".otf";
     a.click();
@@ -1059,7 +1059,7 @@ function reportPanels(){
   const panelL = floating ? (gridPane    ? gridPane.offsetWidth    + 8 : 0) : 0;
   const panelR = floating ? (previewPane ? previewPane.offsetWidth + 8 : 0) : 0;
   // Float the global toolbar (brand + font metadata + status) on TOP, above the
-  // node title bar (+30) — else #coreCanvas covers it and only the red status
+  // node title bar (+30) - else #coreCanvas covers it and only the red status
   // tail peeks out clipped. +8 = breathing gap.
   const panelT = floating ? (toolbar ? toolbar.offsetHeight + 8 + 30 : 0) : 0;
   const panelB = 0;   // …no bottom panel
@@ -1126,7 +1126,7 @@ function boot(){
   wireToolbar();
   setupCanvasInteraction();
   if(EMBEDDED){
-    setStatus("ready — waiting for init…","");
+    setStatus("ready - waiting for init…","");
     post({type:"font:ready"});
   } else {
     // standalone: spin up a default doc so the tool is usable on its own

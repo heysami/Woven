@@ -12,17 +12,17 @@ images:
 **Tag:** `aesthetic`
 
 **Canonical references:**
-- Nancy Meyers interiors (*Something's Gotta Give* 2003, *It's Complicated* 2009) — the original cinematic template
-- Ina Garten *Barefoot Contessa* East Hampton kitchen — the lived-in version
-- Ralph Lauren Nantucket / Hamptons advertising 1990s–2000s — the catalog idealization
+- Nancy Meyers interiors (*Something's Gotta Give* 2003, *It's Complicated* 2009) - the original cinematic template
+- Ina Garten *Barefoot Contessa* East Hampton kitchen - the lived-in version
+- Ralph Lauren Nantucket / Hamptons advertising 1990s-2000s - the catalog idealization
 - Diane Keaton character wardrobes (linen, oversized cardigans, straw hats)
-- TikTok "coastal grandmother" trend (Lex Nicoleta, 2022) — the Gen Z reclamation
+- TikTok "coastal grandmother" trend (Lex Nicoleta, 2022) - the Gen Z reclamation
 
 ## Cultural identity
 
-A 2020s reframing of an older WASP-adjacent Atlantic-seaboard ideal: the unhurried, well-off woman of a certain age who has retired (or always lived) by the sea, bakes blueberry pie, owns the linen, knows the tide chart. Not "grandmother" literally — it's an aspirational mode of being: rested, salt-aired, financially settled, surrounded by hydrangeas. Reads as Hamptons / Nantucket / Cape Cod / Martha's Vineyard, with Maine and Coastal Carolina permitted.
+A 2020s reframing of an older WASP-adjacent Atlantic-seaboard ideal: the unhurried, well-off woman of a certain age who has retired (or always lived) by the sea, bakes blueberry pie, owns the linen, knows the tide chart. Not "grandmother" literally - it's an aspirational mode of being: rested, salt-aired, financially settled, surrounded by hydrangeas. Reads as Hamptons / Nantucket / Cape Cod / Martha's Vineyard, with Maine and Coastal Carolina permitted.
 
-The aesthetic operates on **softness without sweetness**. It is not nautical kitsch (no anchors, no rope-typography, no "Live Laugh Lobster"). It is not preppy either — there is no logo, no embroidered whale. It is the *interior* of a 200-year-old shingled cottage where someone reads in linen pants with a glass of crisp white. Sun-bleached, never saturated. The cultural feeling is **earned ease** — the calm that comes from having nothing left to prove.
+The aesthetic operates on **softness without sweetness**. It is not nautical kitsch (no anchors, no rope-typography, no "Live Laugh Lobster"). It is not preppy either - there is no logo, no embroidered whale. It is the *interior* of a 200-year-old shingled cottage where someone reads in linen pants with a glass of crisp white. Sun-bleached, never saturated. The cultural feeling is **earned ease** - the calm that comes from having nothing left to prove.
 
 Distinct from cottagecore (which is inland, English, mossier, more performative) and from coastal grandmillennial (which is fussier, more pattern-mixed). Coastal Grandmother is wider, airier, and more restrained.
 
@@ -50,7 +50,7 @@ Quiet, unhurried, declarative. Speaks in short sentences. Avoids exclamation mar
 
 ## Failure mode
 
-The cheap AI tell is **nautical kitsch in coastal-grandmother clothing**: anchors, ship wheels, rope-letter typography, "Sandy toes, salty kisses" microcopy, navy-and-red bunting, lighthouse icons. The real aesthetic has *no nautical iconography* — the sea is implied by the light and the linen, not by a wheel logo. Second failure: oversaturated "beach house" teal and coral that look like a Florida vacation rental, not a Nantucket cottage. Third: making it twee — embroidered "Live Laugh Love" pillows, chalkboard-script signage, mason-jar lighting. Coastal Grandmother is *restrained*; if it feels like a HomeGoods aisle, it has failed.
+The cheap AI tell is **nautical kitsch in coastal-grandmother clothing**: anchors, ship wheels, rope-letter typography, "Sandy toes, salty kisses" microcopy, navy-and-red bunting, lighthouse icons. The real aesthetic has *no nautical iconography* - the sea is implied by the light and the linen, not by a wheel logo. Second failure: oversaturated "beach house" teal and coral that look like a Florida vacation rental, not a Nantucket cottage. Third: making it twee - embroidered "Live Laugh Love" pillows, chalkboard-script signage, mason-jar lighting. Coastal Grandmother is *restrained*; if it feels like a HomeGoods aisle, it has failed.
 
 ## Best for
 

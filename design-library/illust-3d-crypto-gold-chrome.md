@@ -13,17 +13,17 @@ images:
 
 # Crypto gold-chrome 3D (Bitcoin / token coin)
 
-Bitcoin, Ethereum, generic crypto coin or token symbols rendered as **polished gold or chrome 3D objects** — often floating mid-frame with a soft drop-shadow, sometimes with a circular halo / neon ring / rim-light. Saturated luxury palette. Used for DeFi product launches, NFT marketing, crypto-exchange hero shots, token-presale pages, web3 brand decks. The "money is shiny and the future is shiny too" register.
+Bitcoin, Ethereum, generic crypto coin or token symbols rendered as **polished gold or chrome 3D objects** - often floating mid-frame with a soft drop-shadow, sometimes with a circular halo / neon ring / rim-light. Saturated luxury palette. Used for DeFi product launches, NFT marketing, crypto-exchange hero shots, token-presale pages, web3 brand decks. The "money is shiny and the future is shiny too" register.
 
 ## Visual signatures
 
 - coin / token / crypto-symbol form (Bitcoin ₿, Ethereum diamond, generic medallion) modeled in clean low-poly-subdivided 3D
 - **polished gold** OR **chrome silver** OR **iridescent holographic** surface material with sharp specular highlights and crisp environment-map reflections
-- floating composition — coin hovers mid-frame, no contact with ground
+- floating composition - coin hovers mid-frame, no contact with ground
 - soft hovering drop-shadow underneath OR a soft cosmic-gradient backdrop (deep purple → magenta → cobalt)
 - optional: circular halo glow behind the coin, neon ring around it, or small particle sparkles
 - often paired with abstract "blockchain" cubes, hexagons, or geometric primitives floating around
-- saturated luxury palette — gold + magenta + cobalt + cyan
+- saturated luxury palette - gold + magenta + cobalt + cyan
 - crisp render quality (anti-aliased, accurate AO at chamfered edges)
 
 ## Prompt keywords

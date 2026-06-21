@@ -9,5 +9,5 @@
   },
   "antiPatterns": ["sawtooth lead", "bright resonant filter", "supersaw", "white-noise hiss", "synthetic transients"],
   "references":   ["https://generative.fm"],
-  "successFeel":  "the room feels warmer and slightly altered while the user plays — like atmosphere thickening"
+  "successFeel":  "the room feels warmer and slightly altered while the user plays - like atmosphere thickening"
 }

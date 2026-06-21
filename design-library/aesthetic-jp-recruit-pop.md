@@ -13,7 +13,7 @@ images:
 
 **Canonical references:**
 - The contemporary Japanese corporate/recruiting-site vernacular (採用サイト
-  canon) — agency-built recruit one-pagers for trade, manufacturing, and
+  canon) - agency-built recruit one-pagers for trade, manufacturing, and
   service companies (observed verbatim on daishin-s.co.jp and
   recruit.sanso-gifu.jp, both on the same agency token framework)
 - Mid-size JP corporate rebrand sites (polaris-toyota.jp's service-brand
@@ -22,7 +22,7 @@ images:
   application funnels)
 
 **NOT to be confused with:** `aesthetic-japanese-poster-layout` (the
-photo-dominant editorial composition canon — quiet, Mincho-led, gallery
+photo-dominant editorial composition canon - quiet, Mincho-led, gallery
 register). Recruit-pop is its commercial opposite: energetic, systematized,
 illustration-friendly, signal-colored. Also not `aesthetic-corporate-memphis`
 (Western SaaS noodle-people): recruit-pop is denser, token-disciplined, and
@@ -35,11 +35,11 @@ optimistic, loud-but-orderly, deeply SYSTEMATIZED. White ground, two signal
 accents (classically red + deep blue, or the company's brand pair), pill
 geometry everywhere, marquee slogan loops in a second script, stats rendered
 as a proud dashboard, employees photographed mid-laugh. The energy of a
-school-festival poster run through a corporate design system — every loud
+school-festival poster run through a corporate design system - every loud
 element sits in a token grid (radius tiers, mono ramps, sub-hue sets).
 
 Language-agnostic core: a **white-field pop system with a strict token
-skeleton** — the secondary script supplies the decorative register (slogans,
+skeleton** - the secondary script supplies the decorative register (slogans,
 eyebrows, marquees) while the primary script does the work. Any
 label-language/content-language pair reproduces it.
 
@@ -50,9 +50,9 @@ label-language/content-language pair reproduces it.
 - Two signal accents, used structurally: e.g. red `#EC0A1B` + royal blue
   `#0042BC` (the observed canon even uses blue as BODY text color), or the
   brand's primary pair
-- A disciplined mono ramp (`#F2F2F2` → `#333841`) and a 4–6 color sub-hue set
+- A disciplined mono ramp (`#F2F2F2` → `#333841`) and a 4-6 color sub-hue set
   reserved for category chips and illustration
-- Optional single high-voltage CTA accent (acid yellow `#E1FF00`) — one
+- Optional single high-voltage CTA accent (acid yellow `#E1FF00`) - one
   element only
 
 ## Composition principles
@@ -63,10 +63,10 @@ label-language/content-language pair reproduces it.
 2. **Two-register headings throughout** (see `style-two-register-heading`):
    condensed eyebrow label + large heading, identical component every section.
 3. **"Company in numbers" stat band:** icon + huge numeral + small unit cards
-   in a row — the genre's signature module. Numerals get the display face.
+   in a row - the genre's signature module. Numerals get the display face.
 4. **People carousel:** employee interview cards with real photography,
    name/role micro-labels, horizontally swipeable.
-5. **Marquee slogan loops** at section seams — outline or solid micro-text
+5. **Marquee slogan loops** at section seams - outline or solid micro-text
    ribbons (see `style-micro-text-frame` / `style-outline-marquee`), sometimes
    mirrored `scaleY(-1)` into double-bands.
 6. **Pill geometry:** radius tokens at 3 tiers (cards ~12px, chips ~8px,
@@ -79,7 +79,7 @@ label-language/content-language pair reproduces it.
 Declarative, aspirational, second-person-inviting. Slogan lines in caps
 display ("POWER YOUR VALUE."), section labels as stable vocabulary (ABOUT /
 WORKS / PEOPLE / RECRUIT), body copy warm but factual (founding year, head
-count, average age — the genre LOVES verifiable numbers). Never ironic, never
+count, average age - the genre LOVES verifiable numbers). Never ironic, never
 lowercase-defiant.
 
 ## Raster requirement
@@ -87,16 +87,16 @@ lowercase-defiant.
 Real-people photography carries trust: employee portraits and on-site work
 shots, bright and candid. Vector illustration (flat, friendly) substitutes for
 process diagrams and business-domain explainers. Without either, the genre
-collapses into empty banding — follow the raster decision tree before drawing.
+collapses into empty banding - follow the raster decision tree before drawing.
 
 ## Failure mode
 
-First tell: art-directing each section differently — the genre's power IS the
+First tell: art-directing each section differently - the genre's power IS the
 token repetition; per-section creativity reads as a portfolio, not a company.
 Second tell: three+ accents loose on the page (accents are structural: one
 per entry path, period). Third tell: stock-photo Westerners laughing at
-salads — the photography must read as THIS company's actual people/site.
-Fourth tell: dropping the stats band or rendering numerals in body type — the
+salads - the photography must read as THIS company's actual people/site.
+Fourth tell: dropping the stats band or rendering numerals in body type - the
 proud-dashboard module is load-bearing. Fifth tell: dark ground (this register
 is daylight; dark recruit sites are a different genre entirely).
 

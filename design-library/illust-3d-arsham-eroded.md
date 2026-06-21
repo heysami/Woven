@@ -13,16 +13,16 @@ images:
 
 # Arsham eroded-sculpture 3D
 
-Daniel Arsham's signature **eroded-relic** style — classical sculpture forms (Greco-Roman busts, classical drapery, modern objects) decayed as if unearthed centuries from now, with **crystals, calcite, selenite, or volcanic ash** emerging from the broken interiors. Monochrome base (chalk-white, ash-grey, blue calcite, or bronze) with metallic or crystalline accent revealing through the erosion. Speaks to "future relic" / time-decay / archaeology-of-the-now. Used for high-end fashion (Dior x Arsham), luxury crypto, gallery work, gravitas tech-marketing.
+Daniel Arsham's signature **eroded-relic** style - classical sculpture forms (Greco-Roman busts, classical drapery, modern objects) decayed as if unearthed centuries from now, with **crystals, calcite, selenite, or volcanic ash** emerging from the broken interiors. Monochrome base (chalk-white, ash-grey, blue calcite, or bronze) with metallic or crystalline accent revealing through the erosion. Speaks to "future relic" / time-decay / archaeology-of-the-now. Used for high-end fashion (Dior x Arsham), luxury crypto, gallery work, gravitas tech-marketing.
 
 ## Visual signatures
 
 - classical sculpture form (Greco-Roman bust, drapery, hand, full figure) OR modern object (camera, Pokemon, sneaker) rendered as if eroded over centuries
 - visible broken interiors where the form has fractured open
-- **crystals / calcite / selenite / bronze fragments emerging from the breaks** — this is the Arsham signature
-- monochrome base palette — chalk-white, ash-grey, blue calcite, volcanic black, bronze
+- **crystals / calcite / selenite / bronze fragments emerging from the breaks** - this is the Arsham signature
+- monochrome base palette - chalk-white, ash-grey, blue calcite, volcanic black, bronze
 - metallic or crystalline accent inside the erosion (often a different hue than the base)
-- museum-clean lighting — soft directional, sharp shadow, isolated against neutral backdrop
+- museum-clean lighting - soft directional, sharp shadow, isolated against neutral backdrop
 - often shown on a plinth or against gallery-white wall
 
 ## Prompt keywords
@@ -41,7 +41,7 @@ Daniel Arsham's signature **eroded-relic** style — classical sculpture forms (
 
 ## Named references
 
-**Artist**: Daniel Arsham — danielarsham.com, Galerie Perrotin shows ("Eroded Summer", "Paris 3020")
+**Artist**: Daniel Arsham - danielarsham.com, Galerie Perrotin shows ("Eroded Summer", "Paris 3020")
 
 **Collaborations**: Dior x Arsham, Tiffany & Co. eroded items, Pokemon x Arsham crystallized Pikachu, Porsche 911 eroded
 
@@ -49,7 +49,7 @@ Daniel Arsham's signature **eroded-relic** style — classical sculpture forms (
 
 ## Example prompt template
 
-> Eroded-relic 3D rendering of [SUBJECT — classical Greco-Roman bust /
+> Eroded-relic 3D rendering of [SUBJECT - classical Greco-Roman bust /
 > sneaker / camera / hand], surface decayed as if unearthed centuries from now,
 > visible broken interiors where the form has fractured open, **bronze and
 > blue-selenite crystals emerging from the breaks**, monochrome chalk-white

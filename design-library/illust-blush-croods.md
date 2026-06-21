@@ -47,7 +47,7 @@ vibrant bold-color characters with strong expressive faces.
 
 ## When to use
 
-When corporate-Memphis fatigue hits — needs an expressive face but
+When corporate-Memphis fatigue hits - needs an expressive face but
 
 ## When NOT to use
 

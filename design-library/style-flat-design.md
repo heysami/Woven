@@ -17,13 +17,13 @@ images:
 
 **Background:** pure `#ffffff` (iOS flavor) or pure `#000000` (Spotify flavor) or one saturated tile color (Metro: `#2d89ef` / `#b91d47` / `#99b433` / `#ff0097` / `#ffc40d` / `#00aba9`). Never a gradient. Never off-white.
 
-**Accent:** one vivid accent does all interactive work — iOS `#007aff`, Spotify `#1db954`, or one Metro tile pick. Flat solid fills only, zero gradients, zero tints.
+**Accent:** one vivid accent does all interactive work - iOS `#007aff`, Spotify `#1db954`, or one Metro tile pick. Flat solid fills only, zero gradients, zero tints.
 
 **Grays:** iOS exactly `#8e8e93` / `#c7c7cc` / `#efeff4`. Dark variant `#1d1d1d` / `#333` / `#666`.
 
 **Semantic:** red `#ff3b30`, green `#4cd964`, orange `#ff9500`.
 
-**Type stack:** Helvetica Neue (iOS 7) or Segoe UI (Metro) or Proxima Nova (Spotify). One family, no secondary — typography does the hierarchy work shadows used to do.
+**Type stack:** Helvetica Neue (iOS 7) or Segoe UI (Metro) or Proxima Nova (Spotify). One family, no secondary - typography does the hierarchy work shadows used to do.
 
 **Sizes:** Metro scale 42 / 20 / 15 / 11 / 9 pt. iOS 7 scale 34 / 28 / 22 / 17 / 15 / 13 / 11 px. Display weight 100-300 (UltraLight / Light). Body weight 400. Never bold body.
 
@@ -33,7 +33,7 @@ images:
 
 **Borders:** 1px hairline `#c7c7cc` (or 0.5px on retina via `transform: scaleY(0.5)`) for row separators only. Zero borders on buttons. Zero borders on cards because there are no cards.
 
-**Shadow:** none. Not subtle, not `0 1px 2px rgba(0,0,0,0.05)` — none. Depth comes from translucency (iOS 7 frosted nav at `backdrop-filter: blur(20px) saturate(180%)`) or from solid color blocks butting against each other.
+**Shadow:** none. Not subtle, not `0 1px 2px rgba(0,0,0,0.05)` - none. Depth comes from translucency (iOS 7 frosted nav at `backdrop-filter: blur(20px) saturate(180%)`) or from solid color blocks butting against each other.
 
 ## Decoration grammar
 

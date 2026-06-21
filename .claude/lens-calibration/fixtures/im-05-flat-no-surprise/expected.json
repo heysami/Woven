@@ -1,17 +1,17 @@
 {
-  "_intent": "CONCEPT-FAIL (flat / no surprise / no response) fixture — runtime passes craft (Start gate, permission gated, has injectFakeInput) AND passes aesthetic (warm palette + vignette matches brief). BUT shader is driven entirely by time (u_t); mapping ignores input. Concept-lens drives synthetic mic input, observes no observable change in output → responseScore + surpriseScore very low.",
+  "_intent": "CONCEPT-FAIL (flat / no surprise / no response) fixture - runtime passes craft (Start gate, permission gated, has injectFakeInput) AND passes aesthetic (warm palette + vignette matches brief). BUT shader is driven entirely by time (u_t); mapping ignores input. Concept-lens drives synthetic mic input, observes no observable change in output → responseScore + surpriseScore very low.",
   "craft": {
     "verdict": "pass",
     "ground_truth_reason": "Start gate + permission gated + injectFakeInput exposed + dPR capped"
   },
   "aesthetic": {
     "verdict": "pass",
-    "ground_truth_reason": "warm palette with vignette + soft serif type — matches brief.sensoryTargets.visual 'painterly, warm'; no antiPatterns explicitly hit (time-driven animation is borderline; aesthetic may flag it but pass is acceptable)"
+    "ground_truth_reason": "warm palette with vignette + soft serif type - matches brief.sensoryTargets.visual 'painterly, warm'; no antiPatterns explicitly hit (time-driven animation is borderline; aesthetic may flag it but pass is acceptable)"
   },
   "concept": {
     "verdict": "fail",
     "must_cite": ["responseScore", "input", "ignored"],
     "expected_failure_check": "Input-driven response check",
-    "ground_truth_reason": "concept-lens drives synthetic mic input via injectFakeInput then 0-vector, screenshots at multiple timestamps — output cycles through warm hues regardless of input; mapping function literally sets output[0] = 0.5 constant; shader uses u_t (wall-clock time) not output param; responseScore very low (~0.1); successFeel quote 'field moves with gesture' unmet"
+    "ground_truth_reason": "concept-lens drives synthetic mic input via injectFakeInput then 0-vector, screenshots at multiple timestamps - output cycles through warm hues regardless of input; mapping function literally sets output[0] = 0.5 constant; shader uses u_t (wall-clock time) not output param; responseScore very low (~0.1); successFeel quote 'field moves with gesture' unmet"
   }
 }

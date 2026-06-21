@@ -19,7 +19,7 @@ hand-painted plants in terracotta or ceramic pots.
 
 - hand-painted plants in terracotta or ceramic pots
 - gouache-like matte texture with visible brush
-- soft earth-tone palette — sage, terracotta, cream
+- soft earth-tone palette - sage, terracotta, cream
 - no characters, just botanical objects
 
 ## Prompt keywords

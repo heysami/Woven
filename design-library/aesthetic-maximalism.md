@@ -12,15 +12,15 @@ images:
 **Tag:** `aesthetic`
 
 **Canonical references:**
-- Wes Anderson title cards — centered symmetry, period palette, chapter-card type
-- The Gentlewoman — modular asymmetry, warm-neutral editorial restraint inside abundance
-- SSENSE Magazine / Eric Hu — bespoke modified-Arial, layered photographic z-order
-- Apartamento — period interiors, marginalia, long literary captions
-- A24 Civil War / MW® — constructed-world film microsite, single-era palette discipline
+- Wes Anderson title cards - centered symmetry, period palette, chapter-card type
+- The Gentlewoman - modular asymmetry, warm-neutral editorial restraint inside abundance
+- SSENSE Magazine / Eric Hu - bespoke modified-Arial, layered photographic z-order
+- Apartamento - period interiors, marginalia, long literary captions
+- A24 Civil War / MW® - constructed-world film microsite, single-era palette discipline
 
 ## Cultural identity
 
-Maximalism (the *considered* kind, not the chaotic kind) is high-editorial abundance held together by one-period discipline. It descends from the broadsheet, the literary quarterly, the fashion-house archive, and the auteur title card — places where many decorative moves are allowed *because* they all come from the same era, the same vocabulary, the same world. Wes Anderson is the patron saint: every prop, every typeface, every colour swatch from one constructed period. The Gentlewoman is the prose register: warm, literary, third-person, long captions. SSENSE / Eric Hu is the photographic z-order: multiple images overlapping with deliberate intent.
+Maximalism (the *considered* kind, not the chaotic kind) is high-editorial abundance held together by one-period discipline. It descends from the broadsheet, the literary quarterly, the fashion-house archive, and the auteur title card - places where many decorative moves are allowed *because* they all come from the same era, the same vocabulary, the same world. Wes Anderson is the patron saint: every prop, every typeface, every colour swatch from one constructed period. The Gentlewoman is the prose register: warm, literary, third-person, long captions. SSENSE / Eric Hu is the photographic z-order: multiple images overlapping with deliberate intent.
 
 The key tension is *abundance on a grid*. The 12-column architecture stays strict underneath; the abundance happens *inside* the modules. Pick one period (Edwardian, mid-century Anderson, 1990s Comme, Art Deco), commit to its palette, ornament, and typography, and let many decorative moves coexist because they all belong to the same world.
 
@@ -28,22 +28,22 @@ The key tension is *abundance on a grid*. The 12-column architecture stays stric
 
 Pick ONE era's set and stay there. Saturated but period, never neon.
 
-- **Anderson Grand Budapest** — `#F1BB7B` peach · `#FD6467` coral · `#5B1A18` oxblood · `#E6A0C4` rose · `#7294D4` blue
-- **Gentlewoman warm-neutral** — `#EFE9DD` warm white · `#C9A36B` ochre · `#6B4F2A` walnut · `#8B1A1A` claret · `#2B2B2B` ink
-- **A24 Civil War night** — `#0D0D0D` black · `#C9362A` flag-red · `#F1E4C6` cream · `#4A6B3A` field-green
-- **Edwardian** — Bodoni-friendly cream `#F4ECDB` · damask gold · oxblood · ink
+- **Anderson Grand Budapest** - `#F1BB7B` peach · `#FD6467` coral · `#5B1A18` oxblood · `#E6A0C4` rose · `#7294D4` blue
+- **Gentlewoman warm-neutral** - `#EFE9DD` warm white · `#C9A36B` ochre · `#6B4F2A` walnut · `#8B1A1A` claret · `#2B2B2B` ink
+- **A24 Civil War night** - `#0D0D0D` black · `#C9362A` flag-red · `#F1E4C6` cream · `#4A6B3A` field-green
+- **Edwardian** - Bodoni-friendly cream `#F4ECDB` · damask gold · oxblood · ink
 
-Chroma `0.08–0.16`. One palette per project. Never the Y2K cyan-magenta-lime collision.
+Chroma `0.08-0.16`. One palette per project. Never the Y2K cyan-magenta-lime collision.
 
 ## Decoration motifs
 
-- Period pattern wallpaper as low-contrast substrate (toile, Art Deco fans, Victorian damask, Edwardian diaper) — `opacity: 0.10–0.18`
-- Multiple photographs overlapping in deliberate z-order — not collaged chaos, composed depth
+- Period pattern wallpaper as low-contrast substrate (toile, Art Deco fans, Victorian damask, Edwardian diaper) - `opacity: 0.10-0.18`
+- Multiple photographs overlapping in deliberate z-order - not collaged chaos, composed depth
 - Period ornament: fleurons (`❦` `❧`), dingbats (`✦` `§`), drop caps, ornamental section numerals (`i. ii. iii.`)
-- Double-rule frames around hero modules — `2px solid` + `1px outline` with `4px offset`
+- Double-rule frames around hero modules - `2px solid` + `1px outline` with `4px offset`
 - Marginalia in the outer columns; footnotes with `*` `†` `‡` markers
 - Oversized chapter numerals in the display face (`120px+`)
-- All decoration sourced from the *one* committed period — Edwardian + Edwardian, never Edwardian + Memphis
+- All decoration sourced from the *one* committed period - Edwardian + Edwardian, never Edwardian + Memphis
 
 ## Voice register
 
@@ -61,9 +61,9 @@ The cheap version is *chaos pretending to be abundance*. Tells:
 
 - Rainbow palette + four display faces + terrazzo background + rotated stickers + marquee = Y2K cosplay pretending to be maximalist
 - A Wes-Anderson title-card composition dropped on a plain white SaaS landing with Inter 14 and a soft drop-shadow = Anderson cosplay with no commitment
-- Period ornament `❦` next to Lucide icons and a `border-radius: 999px` "Subscribe" pill — vocabularies from three different worlds
-- No visible grid underneath the abundance — chaos, not editorial
-- Reaching for lens flare, terrazzo, or Druk Wide hot-pink — that's the *loud* maximalism (Y2K/Memphis), a different aesthetic
+- Period ornament `❦` next to Lucide icons and a `border-radius: 999px` "Subscribe" pill - vocabularies from three different worlds
+- No visible grid underneath the abundance - chaos, not editorial
+- Reaching for lens flare, terrazzo, or Druk Wide hot-pink - that's the *loud* maximalism (Y2K/Memphis), a different aesthetic
 
 If you can't name the *one* period and the *one* grid underneath, you're not doing considered maximalism.
 

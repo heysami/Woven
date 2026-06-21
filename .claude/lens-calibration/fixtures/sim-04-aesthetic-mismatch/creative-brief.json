@@ -1,6 +1,6 @@
 {
   "styleCue":              "spare warehouse-management UI, monospaced labels, slate palette",
-  "interactionPhilosophy": "operator-grade — reads at a glance, mutates with intent",
+  "interactionPhilosophy": "operator-grade - reads at a glance, mutates with intent",
   "sensoryTargets": {
     "visual": "rectilinear, restrained, status-tinted bin grid; muted slate palette",
     "motion": "discrete tick-by-tick updates; no continuous tweens",
@@ -9,5 +9,5 @@
   },
   "antiPatterns": ["neon palettes", "rounded pills", "emoji decoration", "marketing chrome", "Inter-as-display-face"],
   "references":   ["https://example.com/manhattan-wms-screenshot.png"],
-  "successFeel":  "a one-look gut sense of warehouse rhythm — busy or calm, jammed or fluid, where the bottlenecks are"
+  "successFeel":  "a one-look gut sense of warehouse rhythm - busy or calm, jammed or fluid, where the bottlenecks are"
 }

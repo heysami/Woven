@@ -36,7 +36,7 @@ css: |
   letter-spacing: 0;
   white-space: pre;
 webgl: |
-  Codrops "Efecto" — quantize image luminance to an ASCII charset, render
+  Codrops "Efecto" - quantize image luminance to an ASCII charset, render
   to a font-grid canvas. Charset density carries luminance.
 raster: pre-rendered ASCII PNG for static content
 ```

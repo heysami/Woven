@@ -4,7 +4,7 @@
 #
 # NEEDS REGENERATION (2026-06-11). Prior -ui.png / -isolated.png were
 # pulled because they showed Y2K bubble-chrome glossy hearts + a "heartspace"
-# wellness journaling app — exactly the failure-mode vocabulary the §Forbidden
+# wellness journaling app - exactly the failure-mode vocabulary the §Forbidden
 # and §Failure mode sections below explicitly warn against. The image_gen
 # prompt evidently latched on to "heart" in the name and ignored the
 # canonical references (Cory Schmitz VALORANT 2020 / SERXPHIS / N2-Antireal).
@@ -26,24 +26,24 @@ images:
 **Tag:** aesthetic-vector-neovectorheart
 
 **Canonical references:**
-- Cory Schmitz, VALORANT 2020 brand identity — the codifier; spec-sheet menace + 45° axis
-- Fredric "SERXPHIS" Harbin — vector composition over fashion/sport photography
-- Fern "N2-Antireal" Hook — chamfered cuts, stenciled meta-lines, monochrome stacks
-- CARI Neo-Vectorheart spec — the formal aesthetic definition
-- Aesthetics Wiki Neo-Vectorheart — community canonical scope
+- Cory Schmitz, VALORANT 2020 brand identity - the codifier; spec-sheet menace + 45° axis
+- Fredric "SERXPHIS" Harbin - vector composition over fashion/sport photography
+- Fern "N2-Antireal" Hook - chamfered cuts, stenciled meta-lines, monochrome stacks
+- CARI Neo-Vectorheart spec - the formal aesthetic definition
+- Aesthetics Wiki Neo-Vectorheart - community canonical scope
 
 ## Cultural identity
 
-Neo-Vectorheart is the 2020-onward austere descendant of Vectorheart, codified by Cory Schmitz's VALORANT identity and propagated by SERXPHIS and N2-Antireal on Twitter/X and esports merch. Where the parent Vectorheart was permissive — full color, free-angle vectors, anime kanji as texture — Neo strips it down to a monochrome stack: one accent hue, ink black, paper off-white, locked to a 45/60-degree axis. The register is tactical / spec-sheet / catalog: agents, regions, calibers, issue numbers, ISO dates. It reads as competitive-game branding, racing telemetry, and military issue all collapsed into one editorial voice.
+Neo-Vectorheart is the 2020-onward austere descendant of Vectorheart, codified by Cory Schmitz's VALORANT identity and propagated by SERXPHIS and N2-Antireal on Twitter/X and esports merch. Where the parent Vectorheart was permissive - full color, free-angle vectors, anime kanji as texture - Neo strips it down to a monochrome stack: one accent hue, ink black, paper off-white, locked to a 45/60-degree axis. The register is tactical / spec-sheet / catalog: agents, regions, calibers, issue numbers, ISO dates. It reads as competitive-game branding, racing telemetry, and military issue all collapsed into one editorial voice.
 
-The emotional core is **controlled menace** — confident, terse, premium-without-luxury, the visual equivalent of a regulation sheet for something you actually want to use. Audiences read "REGION · CALIBER · ISSUE-014" as exciting, not corporate.
+The emotional core is **controlled menace** - confident, terse, premium-without-luxury, the visual equivalent of a regulation sheet for something you actually want to use. Audiences read "REGION · CALIBER · ISSUE-014" as exciting, not corporate.
 
 ## Palette anchor
 
 - **Paper / bone**: #F2EEE6, #ECE8DE
 - **Ink**: #0A0A0A, off-black #14110F, deep-shadow block #2A2724
 - **Stencil grey**: #BFB8A8 (meta type only)
-- **Accent — pick ONE, used flat at one weight**: VALORANT-red #FF4655, acid-lime #C6FF3D, cobalt #2A3DFF, cyber-orange #FF6A1F, or hot-magenta #E5006D
+- **Accent - pick ONE, used flat at one weight**: VALORANT-red #FF4655, acid-lime #C6FF3D, cobalt #2A3DFF, cyber-orange #FF6A1F, or hot-magenta #E5006D
 
 No tints, no mid-greys, no multi-hue gradients. The only allowed "gradient" is a single hard-stop 50/50 split.
 
@@ -55,7 +55,7 @@ Mandatory vocabulary:
 - Stenciled meta-lines with tick scales and registration marks
 - Counter-brackets `[ ]`, slash pairs `/ /`, repeated wordmarks
 - Catalog numbers, ISO dates (2026-06-08), three-letter region codes
-- Optional: vector composition layered over a raster photographic substrate (fashion / sport / cultural editorial) — the SERXPHIS pattern
+- Optional: vector composition layered over a raster photographic substrate (fashion / sport / cultural editorial) - the SERXPHIS pattern
 
 Forbidden vocabulary (the cosplay tells):
 - Neon-on-black synthwave palettes, wireframe suns, scanlines

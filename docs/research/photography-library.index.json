@@ -585,8 +585,8 @@
         "hero",
         "section"
       ],
-      "oneLine": "A figure in amber/tungsten low light wearing tech (AR glasses, headset, visor), face half-lit, near-black surround — the \"modern architect of the future\" portrait.",
-      "notForUseWhen": "Brief is daylight-honest, corporate-trust, or warm-domestic — the register is moody tech-noir.",
+      "oneLine": "A figure in amber/tungsten low light wearing tech (AR glasses, headset, visor), face half-lit, near-black surround - the \"modern architect of the future\" portrait.",
+      "notForUseWhen": "Brief is daylight-honest, corporate-trust, or warm-domestic - the register is moody tech-noir.",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
         "recipe-neo-grotesque-portfolio",
@@ -623,7 +623,7 @@
         "portrait"
       ],
       "oneLine": "Concrete and glass interiors/exteriors in soft natural light, greenery as the single organic counterpoint.",
-      "notForUseWhen": "Brief is playful, maximalist, or character-driven — concrete reads austere.",
+      "notForUseWhen": "Brief is playful, maximalist, or character-driven - concrete reads austere.",
       "pairsPrototypes": [
         "recipe-neo-grotesque-portfolio",
         "recipe-swiss-grid",
@@ -640,7 +640,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Photo rendered entirely from **ASCII characters** (or extended ANSI character set) — text-as-image. Dark areas use dense characters (`@`, `#`, `M`), midtones use medium-density (`+`, `=`, `*`), highlights use sparse (`.`, ` `). Monospace, high-contrast. Used for tech / dev-tools marketing, terminal-on-web hero images, hacker-culture editorial, retro-BBS revival.",
+      "oneLine": "Photo rendered entirely from **ASCII characters** (or extended ANSI character set) - text-as-image. Dark areas use dense characters (`@`, `#`, `M`), midtones use medium-density (`+`, `=`, `*`), highlights use sparse (`.`, ` `). Monospace, high-contrast. Used for tech / dev-tools marketing, terminal-on-web hero images, hacker-culture editorial, retro-BBS revival.",
       "notForUseWhen": "warm-lifestyle, premium-luxury, photoreal product",
       "pairsPrototypes": [
         "recipe-terminal-on-web",
@@ -660,7 +660,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** — created for the original Macintosh in 1984. Distinct from Bayer (regular grid) in that Atkinson is **error-diffusion** but only spreads ¾ of the quantization error (vs Floyd-Steinberg's full error), producing **stronger contrast, blown-out highlights, lots of white space**. The hallmark of early Macintosh screenshots, HyperCard stacks, MacPaint compositions. Bolder and cleaner than Bayer or Floyd-Steinberg.",
+      "oneLine": "Photo reduced to **1-bit using Bill Atkinson's dithering algorithm** - created for the original Macintosh in 1984. Distinct from Bayer (regular grid) in that Atkinson is **error-diffusion** but only spreads ¾ of the quantization error (vs Floyd-Steinberg's full error), producing **stronger contrast, blown-out highlights, lots of white space**. The hallmark of early Macintosh screenshots, HyperCard stacks, MacPaint compositions. Bolder and cleaner than Bayer or Floyd-Steinberg.",
       "notForUseWhen": "premium-luxury, warm-lifestyle, photoreal product",
       "pairsPrototypes": [
         "aesthetic-pixel-game-boy-mono",
@@ -679,7 +679,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Photo reduced to **1-bit** (or limited palette) using a **Bayer-matrix ordered-dithering algorithm** — produces a regular ordered-grid dotted pattern that looks like classic Game Boy / Macintosh / PC-98 era graphics. Distinct from halftone (which is luminance-modulated DOT SIZE) — Bayer is REGULAR-GRID threshold, dots are uniform in size, the PATTERN density is what changes per luminance zone. Also distinct from Atkinson dither (which is error-diffusion, irregular).",
+      "oneLine": "Photo reduced to **1-bit** (or limited palette) using a **Bayer-matrix ordered-dithering algorithm** - produces a regular ordered-grid dotted pattern that looks like classic Game Boy / Macintosh / PC-98 era graphics. Distinct from halftone (which is luminance-modulated DOT SIZE) - Bayer is REGULAR-GRID threshold, dots are uniform in size, the PATTERN density is what changes per luminance zone. Also distinct from Atkinson dither (which is error-diffusion, irregular).",
       "notForUseWhen": "premium-luxury, warm-lifestyle, photoreal product",
       "pairsPrototypes": [
         "aesthetic-pixel-game-boy-mono",
@@ -699,7 +699,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Denis Villeneuve's *Blade Runner 2049* (2017), shot by **Roger Deakins** (Oscar for this film). The signature is the **single-chromatic monochromatic sections** — entire sequences bathed in ONE color (Las Vegas in **deep amber-orange/Martian red**, Niander Wallace's lair in **yellow**, the LAPD orphanage in **blue-grey**, the seawall in **green-grey**). Deakins built **custom Tiffen amber filters** for the Vegas sequences. Soft halogen-like light replaces the original 1982 film's hard noir shadows — there is *\"no binary division of light and dark; everyone exists on a continuous spectrum between reality and artificiality.\"*",
+      "oneLine": "Denis Villeneuve's *Blade Runner 2049* (2017), shot by **Roger Deakins** (Oscar for this film). The signature is the **single-chromatic monochromatic sections** - entire sequences bathed in ONE color (Las Vegas in **deep amber-orange/Martian red**, Niander Wallace's lair in **yellow**, the LAPD orphanage in **blue-grey**, the seawall in **green-grey**). Deakins built **custom Tiffen amber filters** for the Vegas sequences. Soft halogen-like light replaces the original 1982 film's hard noir shadows - there is *\"no binary division of light and dark; everyone exists on a continuous spectrum between reality and artificiality.\"*",
       "notForUseWhen": "cottagecore, kids brands, warm-lifestyle, positivity-kawaii, restrained-warm-editorial",
       "pairsPrototypes": [
         "recipe-ai-foundry-dark",
@@ -827,8 +827,8 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "Single product spot-lit on dark organic staging — rocks, slate, velvet black — falloff into theater darkness.",
-      "notForUseWhen": "Brief is friendly, affordable, mass-market, or pastel — theater darkness reads exclusive.",
+      "oneLine": "Single product spot-lit on dark organic staging - rocks, slate, velvet black - falloff into theater darkness.",
+      "notForUseWhen": "Brief is friendly, affordable, mass-market, or pastel - theater darkness reads exclusive.",
       "pairsPrototypes": [
         "aesthetic-luxury-cinematic-dark",
         "aesthetic-monochrome-pop-poster",
@@ -846,7 +846,7 @@
         "hero",
         "bg"
       ],
-      "oneLine": "Photo file corrupted at the **bytestream / file-format level** — JPEG block artifacts smeared into impossible geometry, PNG line-corruption causing horizontal channel-shifts, half-loaded image frames with chunks of green/magenta error-color. Distinct from `circuit-bent-glitch` (which is POST-PROCESSED stylised glitch art) — databending is FILE-FORMAT corruption that yields CHAOTIC ACCIDENTAL geometry that no human would design. The randomness is the point.",
+      "oneLine": "Photo file corrupted at the **bytestream / file-format level** - JPEG block artifacts smeared into impossible geometry, PNG line-corruption causing horizontal channel-shifts, half-loaded image frames with chunks of green/magenta error-color. Distinct from `circuit-bent-glitch` (which is POST-PROCESSED stylised glitch art) - databending is FILE-FORMAT corruption that yields CHAOTIC ACCIDENTAL geometry that no human would design. The randomness is the point.",
       "notForUseWhen": "premium-luxury, restrained editorial, B2B-serious, warm-lifestyle",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -884,8 +884,8 @@
         "section",
         "portrait"
       ],
-      "oneLine": "Clean-energy hardware in living landscapes — wind turbines over meadows, solar fields at golden hour, terraced farms from the air.",
-      "notForUseWhen": "Brief is indoor, intimate, or product-macro — this style is landscape-scale.",
+      "oneLine": "Clean-energy hardware in living landscapes - wind turbines over meadows, solar fields at golden hour, terraced farms from the air.",
+      "notForUseWhen": "Brief is indoor, intimate, or product-macro - this style is landscape-scale.",
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "aesthetic-organic-overgrowth",
@@ -921,8 +921,8 @@
         "hero",
         "section"
       ],
-      "oneLine": "Open water as raw power — towering swell faces, storm texture, spray frozen mid-air — graded dark and reverent.",
-      "notForUseWhen": "Brief is cozy, indoor, or small-scale — open water reads vast, powerful, and slightly dangerous.",
+      "oneLine": "Open water as raw power - towering swell faces, storm texture, spray frozen mid-air - graded dark and reverent.",
+      "notForUseWhen": "Brief is cozy, indoor, or small-scale - open water reads vast, powerful, and slightly dangerous.",
       "pairsPrototypes": [
         "aesthetic-luxury-cinematic-dark",
         "recipe-warm-restraint",
@@ -938,7 +938,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) — the show that **invented the 2020s neon-glitter visual vocabulary**. The signature is **emotional realism** (Levinson's term) — the show looks like teenagers IMAGINE their lives to be, not based on documentary realism. Highly saturated pigment makeup (Doniella Davy) survives under Rév's dark colored lighting because the soft shades kept getting lost — **neons weren't a style choice; they were a problem-solving decision that became a global trend.**",
+      "oneLine": "HBO's *Euphoria* (created by Sam Levinson, shot by **Marcell Rév**) - the show that **invented the 2020s neon-glitter visual vocabulary**. The signature is **emotional realism** (Levinson's term) - the show looks like teenagers IMAGINE their lives to be, not based on documentary realism. Highly saturated pigment makeup (Doniella Davy) survives under Rév's dark colored lighting because the soft shades kept getting lost - **neons weren't a style choice; they were a problem-solving decision that became a global trend.**",
       "notForUseWhen": "B2B-clean, brutalism, restrained-editorial, cottagecore, premium-luxury-restraint",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -957,7 +957,7 @@
         "hero",
         "bg"
       ],
-      "oneLine": "Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-projector pattern — **30,000+ infrared dots** projected onto the surface in a structured grid, the dots distorting along the contours of the face to reveal its 3D shape. Sci-fi / biometric / surveillance / AI-identity register. The dots themselves luminous against deep-shadow skin. Distinct from glitch art — this is BIOMETRIC SCAN, not corruption; the technology is real and the aesthetic emerges from that physical apparatus.",
+      "oneLine": "Subject's face (or object) mapped with the Apple-TrueDepth / Face-ID dot-projector pattern - **30,000+ infrared dots** projected onto the surface in a structured grid, the dots distorting along the contours of the face to reveal its 3D shape. Sci-fi / biometric / surveillance / AI-identity register. The dots themselves luminous against deep-shadow skin. Distinct from glitch art - this is BIOMETRIC SCAN, not corruption; the technology is real and the aesthetic emerges from that physical apparatus.",
       "notForUseWhen": "warm-lifestyle, cottagecore, kids brands, restrained editorial",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -976,7 +976,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Wong Kar-Wai's *Fallen Angels* (1995, *堕落天使*), shot by **Christopher Doyle** — the most extreme expression of the Wong/Doyle wide-angle handheld neon-soaked Hong Kong nightscape vocabulary. Doyle famously **started with a 9.8mm lens** and Wong Kar-Wai said *\"let's go further\"* — they ended up at **6.8mm**, an ultra-ultrawide that distorts the entire frame. The result: subjects are **simultaneously intimate (the camera is millimeters from their face) and alienated (the wide-angle distortion bends the space around them).**",
+      "oneLine": "Wong Kar-Wai's *Fallen Angels* (1995, *堕落天使*), shot by **Christopher Doyle** - the most extreme expression of the Wong/Doyle wide-angle handheld neon-soaked Hong Kong nightscape vocabulary. Doyle famously **started with a 9.8mm lens** and Wong Kar-Wai said *\"let's go further\"* - they ended up at **6.8mm**, an ultra-ultrawide that distorts the entire frame. The result: subjects are **simultaneously intimate (the camera is millimeters from their face) and alienated (the wide-angle distortion bends the space around them).**",
       "notForUseWhen": "B2B-clean, premium-restraint, warm-lifestyle, cottagecore, brutalism",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -1013,7 +1013,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Sean Baker's *The Florida Project* (2017), shot by **Alexis Zabe** on **anamorphic 35mm film with Panavision Millennium XL2 + vintage E-series lenses**. The signature is the **already-candy-colored Florida** (purple motel, orange domes, mint pastels — found in the real-world location, not painted) photographed with the colors **\"popped by just a degree\"** to suggest a child's heightened sensory perception. Baker's rule: *\"when I think of childhood, colors seem more vibrant — just enhance everything by a hair, but not hyper-real.\"*",
+      "oneLine": "Sean Baker's *The Florida Project* (2017), shot by **Alexis Zabe** on **anamorphic 35mm film with Panavision Millennium XL2 + vintage E-series lenses**. The signature is the **already-candy-colored Florida** (purple motel, orange domes, mint pastels - found in the real-world location, not painted) photographed with the colors **\"popped by just a degree\"** to suggest a child's heightened sensory perception. Baker's rule: *\"when I think of childhood, colors seem more vibrant - just enhance everything by a hair, but not hyper-real.\"*",
       "notForUseWhen": "premium-luxury, brutalism, restrained-editorial, dark themes",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
@@ -1087,7 +1087,7 @@
         "section",
         "portrait"
       ],
-      "oneLine": "Late-afternoon (or early-morning) sun streaming **through a window into a domestic interior** — bedroom, kitchen, living room, gallery, studio. Strong directional warm-yellow rays cast visible streaks across the floor or wall. Subject lit from one side with a golden rim-light, deep warm-shadow on the opposite side. **Distinct from `photo-warm-minimal-daylight`** (which is overcast or open-door — no directional sun rays) — this one is the SPECIFIC magic moment of sunset hitting an interior space. Domestic / intimate / nostalgic / verging-on-melancholy register.",
+      "oneLine": "Late-afternoon (or early-morning) sun streaming **through a window into a domestic interior** - bedroom, kitchen, living room, gallery, studio. Strong directional warm-yellow rays cast visible streaks across the floor or wall. Subject lit from one side with a golden rim-light, deep warm-shadow on the opposite side. **Distinct from `photo-warm-minimal-daylight`** (which is overcast or open-door - no directional sun rays) - this one is the SPECIFIC magic moment of sunset hitting an interior space. Domestic / intimate / nostalgic / verging-on-melancholy register.",
       "notForUseWhen": "fast e-comm, edgy fashion volume, B2B, kinetic-tech, restrained-clean tech marketing",
       "pairsPrototypes": [
         "aesthetic-cottagecore",
@@ -1125,7 +1125,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Wes Anderson's *The Grand Budapest Hotel* (2014), shot by **Robert Yeoman** — Anderson's lifelong DP. The signature is **rigorous symmetrical composition** within a **pastel storybook palette** (pinks, purples, reds, blues, browns), with **three different aspect ratios deployed for three different eras**: 1.37:1 for 1930s, 2.35:1 for 1960s, 1.85:1 for 1980s. The whole film reads as a sequence of perfectly composed dollhouse vignettes.",
+      "oneLine": "Wes Anderson's *The Grand Budapest Hotel* (2014), shot by **Robert Yeoman** - Anderson's lifelong DP. The signature is **rigorous symmetrical composition** within a **pastel storybook palette** (pinks, purples, reds, blues, browns), with **three different aspect ratios deployed for three different eras**: 1.37:1 for 1930s, 2.35:1 for 1960s, 1.85:1 for 1980s. The whole film reads as a sequence of perfectly composed dollhouse vignettes.",
       "notForUseWhen": "cyberpunk, brutalism, gritty-documentary, kinetic-tech, urban-grit",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
@@ -1162,7 +1162,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Spike Jonze's *Her* (2013), shot by **Hoyte van Hoytema** on ARRI Alexa (his first feature on digital — proving warm dreamy looks don't need film). The signature is the **deliberate refusal of blue** — van Hoytema and Jonze decided against blue specifically *\"to make sure it didn't seem too dystopian or foreboding.\"* Instead the entire film is warm-cast: pale purples, caramel browns, sage, putty, ecru, O'Keeffe reds, Rothko raspberry, creamy whites. **\"A little bit of red in every frame\"** was the rule.",
+      "oneLine": "Spike Jonze's *Her* (2013), shot by **Hoyte van Hoytema** on ARRI Alexa (his first feature on digital - proving warm dreamy looks don't need film). The signature is the **deliberate refusal of blue** - van Hoytema and Jonze decided against blue specifically *\"to make sure it didn't seem too dystopian or foreboding.\"* Instead the entire film is warm-cast: pale purples, caramel browns, sage, putty, ecru, O'Keeffe reds, Rothko raspberry, creamy whites. **\"A little bit of red in every frame\"** was the rule.",
       "notForUseWhen": "cyberpunk, dystopian, dark-mode-only, brutalism",
       "pairsPrototypes": [
         "recipe-warm-restraint",
@@ -1199,7 +1199,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm CinemaScope (2.55:1)** — the original CinemaScope ratio used by old Hollywood musicals. The visual signature is the romantic deployment of **primary colors (red, blue, yellow) as emotional storytelling tools**, set against magic-hour LA twilight skies that lean **mercury-vapor cool** rather than the actual sodium-vapor warm of real streetlights.",
+      "oneLine": "Damien Chazelle's *La La Land* (2016), shot by **Linus Sandgren** on **35mm CinemaScope (2.55:1)** - the original CinemaScope ratio used by old Hollywood musicals. The visual signature is the romantic deployment of **primary colors (red, blue, yellow) as emotional storytelling tools**, set against magic-hour LA twilight skies that lean **mercury-vapor cool** rather than the actual sodium-vapor warm of real streetlights.",
       "notForUseWhen": "B2B-clean, brutalism, restrained-editorial, dark themes",
       "pairsPrototypes": [
         "recipe-aurora-marketing",
@@ -1237,8 +1237,8 @@
         "section",
         "portrait"
       ],
-      "oneLine": "A real-feeling group at ease outdoors — lakeside picnic, rooftop dinner, courtyard party — golden light, candid middle-distance framing.",
-      "notForUseWhen": "Brief is solitary-focus, enterprise, or premium-exclusive — the register is communal warmth.",
+      "oneLine": "A real-feeling group at ease outdoors - lakeside picnic, rooftop dinner, courtyard party - golden light, candid middle-distance framing.",
+      "notForUseWhen": "Brief is solitary-focus, enterprise, or premium-exclusive - the register is communal warmth.",
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "recipe-warm-restraint",
@@ -1292,7 +1292,7 @@
         "hero",
         "section"
       ],
-      "oneLine": "Barry Jenkins' *Moonlight* (2016), shot by **James Laxton** on ARRI Alexa in **CinemaScope** — Jenkins called Liberty City a *\"beautiful nightmare\"* and described their move as *\"paint this nightmare in beautiful tones.\"* The signature is the **dreamlike-but-Miami-rooted palette**: pastels (peach, lavender, mint) layered with neon (pink, purple, cyan), all bathed in tropical greens, applied to intimate close-up portraiture. Laxton shot 98% of the film himself, hand-held by his own body, to maintain proximity-as-intimacy.",
+      "oneLine": "Barry Jenkins' *Moonlight* (2016), shot by **James Laxton** on ARRI Alexa in **CinemaScope** - Jenkins called Liberty City a *\"beautiful nightmare\"* and described their move as *\"paint this nightmare in beautiful tones.\"* The signature is the **dreamlike-but-Miami-rooted palette**: pastels (peach, lavender, mint) layered with neon (pink, purple, cyan), all bathed in tropical greens, applied to intimate close-up portraiture. Laxton shot 98% of the film himself, hand-held by his own body, to maintain proximity-as-intimacy.",
       "notForUseWhen": "B2B-clean, brutalism, restrained-clean tech marketing, gritty-documentary",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -1310,8 +1310,8 @@
         "hero",
         "section"
       ],
-      "oneLine": "Vehicle as sculpture under dramatic studio or track light — rig-shot motion, wet asphalt reflections, dust kicks.",
-      "notForUseWhen": "Brief is calm, eco, or wellness — speed-drama fights serenity registers.",
+      "oneLine": "Vehicle as sculpture under dramatic studio or track light - rig-shot motion, wet asphalt reflections, dust kicks.",
+      "notForUseWhen": "Brief is calm, eco, or wellness - speed-drama fights serenity registers.",
       "pairsPrototypes": [
         "aesthetic-monochrome-pop-poster",
         "aesthetic-luxury-cinematic-dark",
@@ -1328,8 +1328,8 @@
         "hero",
         "section"
       ],
-      "oneLine": "Silver-gelatin space-program photography — rockets on pads, suited figures, mission control — with period grain and documentary framing.",
-      "notForUseWhen": "Brief needs current-day color credibility or consumer warmth — the archive reads historical and institutional.",
+      "oneLine": "Silver-gelatin space-program photography - rockets on pads, suited figures, mission control - with period grain and documentary framing.",
+      "notForUseWhen": "Brief needs current-day color credibility or consumer warmth - the archive reads historical and institutional.",
       "pairsPrototypes": [
         "aesthetic-monochrome-tech-editorial",
         "aesthetic-atompunk",
@@ -1365,7 +1365,7 @@
         "section"
       ],
       "oneLine": "Planet limb with thin atmosphere rim-glow against true-black space, photographed from orbit.",
-      "notForUseWhen": "Brief is warm, domestic, human-scale, or playful — orbit reads cold and vast.",
+      "notForUseWhen": "Brief is warm, domestic, human-scale, or playful - orbit reads cold and vast.",
       "pairsPrototypes": [
         "aesthetic-cosmic-horizon",
         "aesthetic-monochrome-tech-editorial",
@@ -1383,7 +1383,7 @@
         "hero",
         "bg"
       ],
-      "oneLine": "One row or column of pixels — typically selected from the subject's eye-line, lip-line, or strongest contour — **stretched horizontally or vertically across the entire frame**, creating a surreal smeared-motion streak. The classic Photoshop pixel-stretch technique. Used for album art (Coldplay, LCD Soundsystem-era covers), music videos, slow-burn editorial, abstract magazine spreads.",
+      "oneLine": "One row or column of pixels - typically selected from the subject's eye-line, lip-line, or strongest contour - **stretched horizontally or vertically across the entire frame**, creating a surreal smeared-motion streak. The classic Photoshop pixel-stretch technique. Used for album art (Coldplay, LCD Soundsystem-era covers), music videos, slow-burn editorial, abstract magazine spreads.",
       "notForUseWhen": "warm-lifestyle, premium-luxury, restrained editorial",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -1403,8 +1403,8 @@
         "section",
         "portrait"
       ],
-      "oneLine": "Instant-film prints scattered as physical objects — white frames, casual snapshots, overlapping at loose angles on a surface.",
-      "notForUseWhen": "Brief is corporate, clinical, or future-facing — instant film reads memory and intimacy.",
+      "oneLine": "Instant-film prints scattered as physical objects - white frames, casual snapshots, overlapping at loose angles on a surface.",
+      "notForUseWhen": "Brief is corporate, clinical, or future-facing - instant film reads memory and intimacy.",
       "pairsPrototypes": [
         "shell-scrapbook-substrate",
         "aesthetic-y2k-myspace",
@@ -1421,7 +1421,7 @@
         "hero",
         "bg"
       ],
-      "oneLine": "Photo's **red, green, and blue channels separated and offset** — horizontal slide (classic CRT-fail), diagonal slide (more chaotic), or random offset (full glitch). The result: ghosted color fringes around every high-contrast edge. The classic VHS-tracking-fail / cheap-lens chromatic-aberration / 90s-music-video glitch look. Distinct from `circuit-bent-glitch` in that it's CHANNEL-SHIFT-ONLY — no datamosh, no pixel-sort, no compression noise. One technique, used with discipline.",
+      "oneLine": "Photo's **red, green, and blue channels separated and offset** - horizontal slide (classic CRT-fail), diagonal slide (more chaotic), or random offset (full glitch). The result: ghosted color fringes around every high-contrast edge. The classic VHS-tracking-fail / cheap-lens chromatic-aberration / 90s-music-video glitch look. Distinct from `circuit-bent-glitch` in that it's CHANNEL-SHIFT-ONLY - no datamosh, no pixel-sort, no compression noise. One technique, used with discipline.",
       "notForUseWhen": "premium-luxury, restrained editorial, B2B-serious, warm-lifestyle",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -1532,8 +1532,8 @@
         "hero",
         "bg"
       ],
-      "oneLine": "One impossible thing photographed with documentary realism — cloud-furniture on a lake, a doorway of light in a desert, a figure seated in a flooded field of flowers.",
-      "notForUseWhen": "Brief needs documentary credibility or budget-friendly straightforwardness — staged surrealism reads art-directed and premium.",
+      "oneLine": "One impossible thing photographed with documentary realism - cloud-furniture on a lake, a doorway of light in a desert, a figure seated in a flooded field of flowers.",
+      "notForUseWhen": "Brief needs documentary credibility or budget-friendly straightforwardness - staged surrealism reads art-directed and premium.",
       "pairsPrototypes": [
         "aesthetic-surreal-dream-stage",
         "aesthetic-organic-overgrowth",
@@ -1606,7 +1606,7 @@
         "section",
         "portrait"
       ],
-      "oneLine": "The shared register behind 2010s Kinfolk-magazine slow-living interiors AND post-Margiela quiet-lookbook plaster-wall exteriors. Soft natural daylight, warm muted palette, considered slow mood, generous negative space. Two sub-variants in one entry — pick by context.",
+      "oneLine": "The shared register behind 2010s Kinfolk-magazine slow-living interiors AND post-Margiela quiet-lookbook plaster-wall exteriors. Soft natural daylight, warm muted palette, considered slow mood, generous negative space. Two sub-variants in one entry - pick by context.",
       "notForUseWhen": "Tech fast-paced, edgy fashion, fast e-comm, loud kinetic brand",
       "pairsPrototypes": [
         "recipe-warm-restraint",

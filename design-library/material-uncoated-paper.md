@@ -13,7 +13,7 @@ images:
 
 # Uncoated Paper (soft, porous, ink-absorbing)
 
-A matte surface and deforms: yes — wrinkles, tears, dog-ears.
+A matte surface and deforms: yes - wrinkles, tears, dog-ears.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — wrinkles, tears, dog-ears.
 
 **Reacts to light**: no specular
 
-**Deforms**: yes — wrinkles, tears, dog-ears
+**Deforms**: yes - wrinkles, tears, dog-ears
 
 **Age / wear**: shows wear (yellowing, foxing)
 
@@ -59,7 +59,7 @@ raster: 2048×2048 scanned uncoated paper (Crane Lettra, Mohawk Superfine)
 - perfectly flat #FFF background (uncoated is always warm-tinted)
 - high-contrast specular highlight (uncoated has none)
 - tile pattern visibly repeating (use masking to break the seam)
-- body text at 16px with line-height 1.4 (editorial paper wants 18–19px / 1.55)
+- body text at 16px with line-height 1.4 (editorial paper wants 18-19px / 1.55)
 
 ## Examples in the wild
 

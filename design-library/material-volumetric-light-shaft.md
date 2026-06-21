@@ -18,12 +18,12 @@ near-black scene from one high corner, raking across a single sculptural
 object, dissolving into darkness before they reach the floor. The museum-
 skylight read. Distinct from `material-volumetric-cloud` (matter shaped as
 volume) and `material-atmosphere-rim-glow` (emission at an edge): shafts are
-about light SCATTERING IN AIR — they exist only because the room is dark and
+about light SCATTERING IN AIR - they exist only because the room is dark and
 slightly dusty, and they belong to the scene, never to a UI element.
 
 ## Physical behavior
 
-**Surface finish**: none — the material is a luminance gradient in air with
+**Surface finish**: none - the material is a luminance gradient in air with
 soft, feathered boundaries
 
 **Transparency**: additive; whatever passes behind a shaft brightens, nothing
@@ -32,7 +32,7 @@ is occluded
 **Reacts to light**: it IS the light story; the object it rakes catches a
 matching specular on its upper surfaces (the agreement is mandatory)
 
-**Deforms**: drifts — shafts breathe in width and intensity over 10–30s;
+**Deforms**: drifts - shafts breathe in width and intensity over 10-30s;
 optional dust motes ride them
 
 **Age / wear**: n/a
@@ -41,7 +41,7 @@ optional dust motes ride them
 
 ```yaml
 css: |
-  /* 2–4 layered wedges, blurred, screen-blended, slow drift: */
+  /* 2-4 layered wedges, blurred, screen-blended, slow drift: */
   .shaft {
     position: absolute; inset: -10% -20%;
     background: linear-gradient(115deg,
@@ -54,24 +54,24 @@ css: |
   /* duplicate at different widths/opacities/delays; never more than 4 */
   @keyframes shaft-drift { to { transform: translateX(4%) ; opacity: 0.8; } }
 svg: |
-  <polygon> wedges from a common origin point + feGaussianBlur 12–24 +
-  screen blend — better than CSS when the shafts must originate at a
+  <polygon> wedges from a common origin point + feGaussianBlur 12-24 +
+  screen blend - better than CSS when the shafts must originate at a
   visible source (a logo, a slit, a doorway).
 webgl: |
   Hero grade: billboard planes with a soft gradient texture, additive
   blending, slight rotation jitter per plane; or a radial-blur post pass
-  (sample toward the light's screen position, 32–48 taps) for true
-  occlusion-aware rays around the hero object. Add 30–80 dust-mote
+  (sample toward the light's screen position, 32-48 taps) for true
+  occlusion-aware rays around the hero object. Add 30-80 dust-mote
   particles drifting INSIDE the shaft bounds only.
 raster: baked shafts in a hero render for static slots
-video: included in scene loops — shafts breathe, never sweep fast
+video: included in scene loops - shafts breathe, never sweep fast
 ```
 
 ## Reactive behaviors
 
 **Proximity/pointer**: shafts do NOT chase the cursor (they are architecture,
 not UI). Permitted: a ±1.5° parallax tilt of the whole shaft layer on
-pointer-x, damped 0.04 — the visitor shifting their head, not the light moving
+pointer-x, damped 0.04 - the visitor shifting their head, not the light moving
 
 **Hover**: none on the shafts; the OBJECT under them may brighten its specular
 
@@ -83,15 +83,15 @@ not decoration)
 
 ## Common implementation mistakes (avoid these)
 
-- Shafts from nowhere (commit an origin — upper-left or upper-right, ONE
+- Shafts from nowhere (commit an origin - upper-left or upper-right, ONE
   corner, and every other shadow/specular in the scene must agree with it)
 - Hard wedge edges (real scatter feathers; any visible straight boundary
-  kills the read — blur is not optional)
+  kills the read - blur is not optional)
 - Light-on-light (shafts need a near-black field; over grey they read as
   smudges)
 - Rainbow or saturated-hue shafts (the canon is achromatic with at most a
-  2–4% warm or cool tint; colored rays drift into club-poster territory)
-- Fast motion or pointer-chasing (museum light is still; the 10–30s breathe
+  2-4% warm or cool tint; colored rays drift into club-poster territory)
+- Fast motion or pointer-chasing (museum light is still; the 10-30s breathe
   is the maximum energy budget)
 - More than 4 shafts (one stage, one skylight; a comb of rays is a different,
   louder genre)

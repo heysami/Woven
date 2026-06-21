@@ -20,7 +20,7 @@ smooth multi-stop mesh gradient.
 - smooth multi-stop mesh gradient
 - aurora borealis colors flowing
 - background-fill role
-- no defined shape — fills the canvas
+- no defined shape - fills the canvas
 
 ## Prompt keywords
 
@@ -30,7 +30,7 @@ smooth multi-stop mesh gradient.
 
 **Line**: no line
 
-**Color**: aurora — teal violet pink sage flow
+**Color**: aurora - teal violet pink sage flow
 
 **Style**: full-bleed background fill
 

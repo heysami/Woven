@@ -11,9 +11,9 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `canvas-floating` — read `shell-canvas-floating.md`
-- **Style:** `dense-mono-dark` — read `style-dense-mono-dark.md`
-- **Aesthetic:** *(none — adult-pro brief)*
+- **Shell:** `canvas-floating` - read `shell-canvas-floating.md`
+- **Style:** `dense-mono-dark` - read `style-dense-mono-dark.md`
+- **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** nominal phrases, abbreviations, numbers without commentary
 
 ## Best for

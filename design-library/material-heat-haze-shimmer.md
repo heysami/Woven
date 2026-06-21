@@ -13,7 +13,7 @@ images:
 
 # Heat Haze Shimmer (mirage / hot tarmac warp)
 
-A glossy surface (transparent) that reacts to light: yes and deforms: yes — low-amplitude noise displacement.
+A glossy surface (transparent) that reacts to light: yes and deforms: yes - low-amplitude noise displacement.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A glossy surface (transparent) that reacts to light: yes and deforms: yes — lo
 
 **Reacts to light**: yes
 
-**Deforms**: yes — low-amplitude noise displacement
+**Deforms**: yes - low-amplitude noise displacement
 
 **Age / wear**: ageless
 
@@ -48,7 +48,7 @@ webgl: |
 
 **Highlight**: pointer creates a heat source (radial shimmer amp)
 
-**Depth**: minor — shimmer reads as atmospheric warmth
+**Depth**: minor - shimmer reads as atmospheric warmth
 
 **Parallax**: continuous, slow
 

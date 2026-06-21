@@ -51,11 +51,11 @@ raster: scanned real watercolor wash as substrate
 
 **Depth**: no (paper underneath has depth)
 
-**Parallax**: yes — washes layer at different scroll rates
+**Parallax**: yes - washes layer at different scroll rates
 
 ## Common implementation mistakes (avoid these)
 
-- hard edges (watercolor bleeds — edges must be soft)
+- hard edges (watercolor bleeds - edges must be soft)
 - perfectly even wash (real watercolor pools at edges)
 - no paper substrate visible through the wash
 

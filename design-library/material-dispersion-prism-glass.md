@@ -13,17 +13,17 @@ images:
 
 # Dispersion prism glass
 
-A glossy transparent surface that reacts to light: yes — refraction SPLITS into spectral rainbow at edges and thick sections (chromatic dispersion), casting small caustic rainbows onto surfaces behind.
+A glossy transparent surface that reacts to light: yes - refraction SPLITS into spectral rainbow at edges and thick sections (chromatic dispersion), casting small caustic rainbows onto surfaces behind.
 
 ## Physical behavior
 
-**Surface finish**: glossy, optically pure (no frost, no texture — the optics ARE the texture)
+**Surface finish**: glossy, optically pure (no frost, no texture - the optics ARE the texture)
 
 **Transparency**: transparent with high refraction (IOR ~1.5-2.4 diamond-end); content behind bends visibly
 
-**Reacts to light**: yes — spectral fringing intensifies at grazing angles and thick edges; a slow light orbit makes rainbow caustics crawl
+**Reacts to light**: yes - spectral fringing intensifies at grazing angles and thick edges; a slow light orbit makes rainbow caustics crawl
 
-**Deforms**: no — rigid solid (cube, prism, blob, shard); motion is rotation, not deformation
+**Deforms**: no - rigid solid (cube, prism, blob, shard); motion is rotation, not deformation
 
 **Age / wear**: ageless
 
@@ -40,12 +40,12 @@ css: |
   /* drive --ang from pointer position for the angle-shift read */
 svg: |
   Three offset copies of the edge path (R/G/B) with 1-2px displacement +
-  screen blend — cheap chromatic fringe for logos and hairline frames.
+  screen blend - cheap chromatic fringe for logos and hairline frames.
 webgl: |
   The real thing for hero objects: refraction with per-channel IOR offset
   (sample env/backbuffer 3× with slightly different ratios), plus a fake
   caustic sprite projected behind the mesh. three.js MeshPhysicalMaterial
-  (transmission:1, dispersion — r178+) covers it out of the box.
+  (transmission:1, dispersion - r178+) covers it out of the box.
 raster: pre-rendered prism-object PNG with baked dispersion for static slots
 video: turntable loop of the object; dispersion shifts read even at 12s loops
 ```
@@ -58,10 +58,10 @@ video: turntable loop of the object; dispersion shifts read even at 12s loops
 
 ## Common implementation mistakes (avoid these)
 
-- Rainbow gradient FILL (dispersion lives at edges and thick sections, not as a wash — a filled rainbow is holographic-foil)
+- Rainbow gradient FILL (dispersion lives at edges and thick sections, not as a wash - a filled rainbow is holographic-foil)
 - Fringe on body text (1px RGB split on type is the rgb-channel-split material, and an accessibility hazard at size)
 - Dispersion + frost together (frost scatters; dispersion needs optical purity)
-- Static fringe that ignores pointer/view angle — the angle-dependence IS the material
+- Static fringe that ignores pointer/view angle - the angle-dependence IS the material
 
 ## Examples in the wild
 

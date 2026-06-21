@@ -5,7 +5,7 @@ category: Abstract / decoration
 subCategory: particle-emergence
 role: hero
 pairsPrototypes: [aesthetic-cosmic-horizon, aesthetic-bioluminescent-deep, aesthetic-defi-cosmic, recipe-ai-foundry-dark, style-silk-chrome-flow]
-notForUseWhen: Brief is warm, organic, handcrafted, or budget — particles read high-tech and cold.
+notForUseWhen: Brief is warm, organic, handcrafted, or budget - particles read high-tech and cold.
 images:
   - src: illust-particle-figure.png
     reason: Illustration style sample.
@@ -13,14 +13,14 @@ images:
 
 # Particle-formed figure
 
-A creature, object, or figure materializing from thousands of glowing particles — half-dissolved between dust and form.
+A creature, object, or figure materializing from thousands of glowing particles - half-dissolved between dust and form.
 
 ## Visual signatures
 
 - Recognizable subject (dragonfly, bird, face, hand, ring) emerging from a particle cloud
 - Density gradient: tight luminous particles at the focal edge, dissolving to scattered drift
 - Single hue family glow (cyan, violet, gold) against near-black
-- Motion implied in the dissolve direction — particles streaming off a wingtip
+- Motion implied in the dissolve direction - particles streaming off a wingtip
 - Depth via particle size falloff and faint bokeh discs
 
 ## Prompt keywords
@@ -29,7 +29,7 @@ A creature, object, or figure materializing from thousands of glowing particles 
 
 **Material**: luminous points, fine bokeh, volumetric glow
 
-**Line**: no line — density IS the contour
+**Line**: no line - density IS the contour
 
 **Color**: single glow family (electric violet / cyan / champagne gold) on `#05060a` black
 

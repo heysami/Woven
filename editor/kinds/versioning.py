@@ -1,10 +1,10 @@
-"""editor/kinds/versioning.py — asset-node versioning + composition machinery.
+"""editor/kinds/versioning.py - asset-node versioning + composition machinery.
 
 See docs/features/asset-versioning.md for the full design.
 
 Two-tier model per asset node:
-  • VERSIONS — snapshots of this asset's own files. Capped at 20 unpinned.
-  • COMPOSITIONS — per-version tuples of (sub-asset → sub-version). Capped at
+  • VERSIONS - snapshots of this asset's own files. Capped at 20 unpinned.
+  • COMPOSITIONS - per-version tuples of (sub-asset → sub-version). Capped at
     50 unpinned per parent version. Materialised into workflow/views/.
 
 Storage layout per project:
@@ -28,8 +28,8 @@ Storage layout per project:
 
 This module is pure logic (no HTTP, no daemon dependencies). All filesystem
 mutations happen through helpers in this file. Imported by:
-  • serve.py — after producer runs, on revert/switch/branch/etc. endpoints
-  • reconcile.py — on workflow.json load, for legacy migration
+  • serve.py - after producer runs, on revert/switch/branch/etc. endpoints
+  • reconcile.py - on workflow.json load, for legacy migration
 """
 from __future__ import annotations
 
@@ -133,12 +133,12 @@ def is_asset(node: Dict[str, Any]) -> bool:
 #
 # Every kind in this set gets snapshot/picker/revert/branch coverage. The
 # `kind_scope_dirs(node, project_root)` helper returns the project-relative
-# directories this node "owns" — the file watcher's snapshot trigger fires
+# directories this node "owns" - the file watcher's snapshot trigger fires
 # when ANY file under any of those dirs changes.
 
 VERSIONABLE_KINDS = ("asset", "prototype", "design-system")
 
-# v3.2 — Deferral state for scope-level (prototype / design-system) snapshots.
+# v3.2 - Deferral state for scope-level (prototype / design-system) snapshots.
 # Maps `abs(project_root)` → { nodeId → file_mtime_observed }. Populated by
 # snapshot_changed_assets() when a multi-file scope is still in flight; the
 # watcher calls flush_pending_scope_snapshots() on every tick to revisit
@@ -151,7 +151,7 @@ def flush_pending_scope_snapshots(project_root: str,
                                    ) -> List[Dict[str, Any]]:
     """Re-attempt deferred prototype/design-system snapshots whose scope has
     now gone quiet (last write older than SCOPE_QUIESCENCE_SEC). Called by
-    the file watcher on every tick — cheap if there are no deferrals.
+    the file watcher on every tick - cheap if there are no deferrals.
 
     Returns the same shape as snapshot_changed_assets: list of
     {nodeId, versionId} for any new snapshots that landed.
@@ -169,7 +169,7 @@ def flush_pending_scope_snapshots(project_root: str,
     for nid in list(pending.keys()):
         node = nodes_by_id.get(nid)
         if not node or node.get("kind") not in ("prototype", "design-system"):
-            # Node is gone or no longer scope-kind — drop the deferral.
+            # Node is gone or no longer scope-kind - drop the deferral.
             pending.pop(nid, None)
             continue
         scope_rels = list(node_scope_files(project_root, node))
@@ -261,7 +261,7 @@ def read_manifest(project_root: str, search_dirs: Iterable[str]) -> Optional[Dic
     """Look for MANIFEST.json inside any of the given project-relative dirs.
 
     Returns the parsed dict on first hit, or None. Order is the iteration
-    order of search_dirs — caller should pass most-specific dir first."""
+    order of search_dirs - caller should pass most-specific dir first."""
     for rel in search_dirs:
         if not rel: continue
         p = os.path.join(project_root, rel.lstrip("/"), MANIFEST_FILENAME)
@@ -341,12 +341,12 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
     asset has no files on disk to snapshot.
 
     Arguments:
-      consumed_versions  — non-asset upstream lineage map (id → {outputHash}).
-      sub_asset_pins     — sub-asset id → versionId at run time.
-      sub_asset_mounts   — sub-asset id → project-relative mount path under
+      consumed_versions  - non-asset upstream lineage map (id → {outputHash}).
+      sub_asset_pins     - sub-asset id → versionId at run time.
+      sub_asset_mounts   - sub-asset id → project-relative mount path under
                            which its files should appear in the view dir.
-      run_id             — runId tag for the version entry.
-      manifest           — optional MANIFEST.json contents (for files[] /
+      run_id             - runId tag for the version entry.
+      manifest           - optional MANIFEST.json contents (for files[] /
                            subAssetInputs[]).
     """
     consumed_versions = dict(consumed_versions or {})
@@ -354,7 +354,7 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
     sub_asset_mounts = dict(sub_asset_mounts or {})
 
     # Resolve the file list to snapshot. Order of preference:
-    #   1. manifest.files[].path (most specific — subagent declared)
+    #   1. manifest.files[].path (most specific - subagent declared)
     #   2. asset_files(node) for kind=asset (declared path/paths)
     #   3. node_scope_files() for prototype/design-system (full scope walk)
     files: List[str] = []
@@ -402,7 +402,7 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
     os.makedirs(snap_dir, exist_ok=True)
     snap_files: List[Dict[str, str]] = []
     canonical_paths: List[str] = []
-    # Snapshots must be IMMUTABLE — use full copies, never hardlinks, so an
+    # Snapshots must be IMMUTABLE - use full copies, never hardlinks, so an
     # in-place write to the source file (e.g. `open(p, "w")` truncates and
     # rewrites the same inode) cannot mutate the snapshot. View dirs are
     # safe to hardlink because they derive from snapshots, which are copies.
@@ -420,7 +420,7 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
         "id":              vid,
         "createdAt":       now_iso,
         "runId":           run_id,
-        # Live Session — who created this version (a collaborator's display name,
+        # Live Session - who created this version (a collaborator's display name,
         # or "Host"). None outside a live session; the picker hides it then.
         "author":          author,
         "files":           snap_files,
@@ -500,7 +500,7 @@ def materialise_view(project_root: str, node: Dict[str, Any],
         shutil.rmtree(vdir, ignore_errors=True)
     os.makedirs(vdir, exist_ok=True)
 
-    # Parent asset files — copy at their canonical relative path so HTML
+    # Parent asset files - copy at their canonical relative path so HTML
     # imports under source/ continue to resolve when iframes load this dir.
     snap = runs_dir(project_root, node_id, version["id"])
     for fe in version.get("files") or []:
@@ -542,7 +542,7 @@ def refresh_source_from_view(project_root: str, node: Dict[str, Any]) -> int:
     """Copy the active view dir of an asset into source/ at canonical paths.
 
     Used after revert / composition switch. Returns the file count.
-    Only touches the asset's OWN canonicalPaths — sub-asset files are owned
+    Only touches the asset's OWN canonicalPaths - sub-asset files are owned
     by their respective asset nodes and refreshed by their own active state.
     """
     active_vid = node.get("activeVersionId")
@@ -599,7 +599,7 @@ def evict_versions(project_root: str, node: Dict[str, Any], *,
                 and v.get("id") not in protected]
     overflow = len(unpinned) - max_unpinned
     if overflow <= 0: return []
-    # Evict oldest first — versions are appended chronologically, so slice
+    # Evict oldest first - versions are appended chronologically, so slice
     # from the front of the unpinned-in-order list.
     to_evict = unpinned[:overflow]
     evicted_ids: List[str] = []
@@ -668,7 +668,7 @@ def _purge_composition_dirs(project_root: str, node_id: str,
 def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
     """Walk workflow/runs/<nodeId>/ on disk and append any version dirs that
     aren't already in node.versions[]. Returns the number of recovered
-    versions. Idempotent — orphans only get added once.
+    versions. Idempotent - orphans only get added once.
 
     The orphan scenario: snapshot_asset successfully wrote bytes + dir, but
     a concurrent /__workflow POST stomped the appended versions[] entry
@@ -677,7 +677,7 @@ def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
 
     Recovered versions are inserted in createdAt order (from meta.json
     inside each dir, falling back to dir mtime). The active version is
-    NOT reset — that stays at whatever node already says.
+    NOT reset - that stays at whatever node already says.
     """
     nid = node.get("id")
     if not isinstance(nid, str): return 0
@@ -773,11 +773,11 @@ def migrate_legacy_asset(project_root: str, node: Dict[str, Any],
     else:
         files = node_scope_files(project_root, node)
     if not files: return False
-    # Only snapshot files that actually exist on disk — synthesizing a
+    # Only snapshot files that actually exist on disk - synthesizing a
     # version pointing at missing files would create a broken history.
     existing = [r for r in files if os.path.isfile(os.path.join(project_root, r))]
     if not existing: return False
-    # Reuse snapshot — sets activeVersionId, etc.
+    # Reuse snapshot - sets activeVersionId, etc.
     out = snapshot_asset(project_root, node,
                          consumed_versions=None,
                          sub_asset_pins=current_sub_asset_pins,
@@ -793,12 +793,12 @@ def resolve_sub_assets(workflow: Dict[str, Any], node_id: str,
                        ) -> Tuple[Dict[str, str], Dict[str, str]]:
     """Return (sub_asset_pins, sub_asset_mounts) for an asset node.
 
-    sub_asset_pins  — sub-asset node id → that node's current activeVersionId
-    sub_asset_mounts — sub-asset node id → declared mount path in the parent
+    sub_asset_pins  - sub-asset node id → that node's current activeVersionId
+    sub_asset_mounts - sub-asset node id → declared mount path in the parent
                        asset's view tree (from manifest.subAssetInputs[])
 
     Source of declaration: manifest.subAssetInputs[] (preferred). Without a
-    manifest, returns empty maps — there's no safe way to infer mount paths.
+    manifest, returns empty maps - there's no safe way to infer mount paths.
     """
     pins: Dict[str, str] = {}
     mounts: Dict[str, str] = {}
@@ -833,7 +833,7 @@ def _auto_sub_assets_from_edges(workflow: Dict[str, Any], target_id: str,
     the upstream's canonical path.
 
     This is the fallback when no MANIFEST.json declares subAssetInputs[]
-    — without it, compositions[].consumedSubVersions is permanently empty.
+    - without it, compositions[].consumedSubVersions is permanently empty.
     """
     pins: Dict[str, str] = {}
     mounts: Dict[str, str] = {}
@@ -929,7 +929,7 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
 
     if not affected: return out
 
-    # Snapshot each affected node — but only if the file is genuinely newer
+    # Snapshot each affected node - but only if the file is genuinely newer
     # than the node's latest version.
     import time as _t
     def _file_mtime(node):
@@ -955,7 +955,7 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
         if not isinstance(last, dict): return 0.0
         iso = last.get("createdAt") or ""
         try:
-            # createdAt is "YYYY-MM-DDTHH:MM:SSZ" — UTC. Use calendar.timegm
+            # createdAt is "YYYY-MM-DDTHH:MM:SSZ" - UTC. Use calendar.timegm
             # which interprets the struct_time as UTC; time.mktime would
             # treat it as local and shift by the timezone offset (causing
             # the dedup to fail anywhere outside UTC).
@@ -964,16 +964,16 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
         except Exception:
             return 0.0
 
-    # v3.2 — Scope-level quiescence debounce. For multi-file scopes
+    # v3.2 - Scope-level quiescence debounce. For multi-file scopes
     # (prototype, design-system) the agent's edit burst typically writes
-    # 5–20 files spread across several seconds (HTML, then CSS, then a few
+    # 5-20 files spread across several seconds (HTML, then CSS, then a few
     # images, then a tweak). The watcher's 0.25s debounce was way too short
-    # — every file write past 250ms became its own snapshot, producing the
+    # - every file write past 250ms became its own snapshot, producing the
     # "21 versions in 5 minutes" pattern the user reported.
     #
     # New rule for prototype/design-system: don't snapshot until the LATEST
     # mtime in the scope is at least SCOPE_QUIESCENCE_SEC old (default 15s).
-    # If the latest mtime is more recent, the burst is still in flight —
+    # If the latest mtime is more recent, the burst is still in flight -
     # record the node in `_PENDING_SCOPE_SNAPSHOTS` so a subsequent watcher
     # tick can re-attempt the snapshot even if no NEW file writes arrived
     # in the interim. Without this, a burst that ends without further edits
@@ -993,7 +993,7 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
         kind = node.get("kind")
         if kind in ("prototype", "design-system"):
             if (now_wall - file_mtime) < SCOPE_QUIESCENCE_SEC:
-                # Scope is still being actively written — defer until quiet.
+                # Scope is still being actively written - defer until quiet.
                 # Record the deferral so the watcher's next tick checks it
                 # again. We store the file_mtime we observed so the watcher
                 # can detect when quiescence is satisfied without needing
@@ -1020,7 +1020,7 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
             text = up.get("output") if isinstance(up.get("output"), str) else (up.get("text") or "")
             consumed[from_id] = {"outputHash": hash_text(text)}
 
-        # v3.1 — auto-derive sub-asset pins from edges when no manifest exists.
+        # v3.1 - auto-derive sub-asset pins from edges when no manifest exists.
         sub_pins, sub_mounts = _auto_sub_assets_from_edges(workflow, nid, nodes_by_id)
         try:
             v = snapshot_asset(project_root, node,
@@ -1074,7 +1074,7 @@ def snapshot_asset_by_output_path(project_root: str, workflow: Dict[str, Any],
         if up.get("kind") == "asset": continue
         text = up.get("output") if isinstance(up.get("output"), str) else (up.get("text") or "")
         consumed[from_id] = {"outputHash": hash_text(text)}
-    # v3.1 — auto-derive sub-asset pins from edges.
+    # v3.1 - auto-derive sub-asset pins from edges.
     sub_pins, sub_mounts = _auto_sub_assets_from_edges(workflow, target.get("id"))
     v = snapshot_asset(project_root, target,
                        consumed_versions=consumed,
@@ -1100,7 +1100,7 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
     producer = nodes_by_id.get(producer_node_id)
     if not producer: return created
 
-    # Find downstream versionable nodes. v3.2 — was `is_asset(n)`, which
+    # Find downstream versionable nodes. v3.2 - was `is_asset(n)`, which
     # silently skipped prototype + design-system children even though both
     # are in VERSIONABLE_KINDS. Producer-completion (
     # ds-builder, etc.) snapshots now cover all three kinds, matching the
@@ -1118,7 +1118,7 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
 
     def _non_asset_upstream_of(target_id: str) -> Dict[str, Dict[str, str]]:
         """Walk incoming edges of `target_id`, returning a non-asset lineage
-        map. Asset upstream is excluded — it belongs in compositions."""
+        map. Asset upstream is excluded - it belongs in compositions."""
         out: Dict[str, Dict[str, str]] = {}
         for e in (workflow.get("edges") or []):
             to_ref = (e.get("to") or "")
@@ -1162,7 +1162,7 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
             search_dirs.append("source")
             manifest = read_manifest(project_root, search_dirs)
             sub_pins, sub_mounts = resolve_sub_assets(workflow, asset_id, manifest)
-            # v3.1 — fallback when no manifest: walk THIS asset's upstream
+            # v3.1 - fallback when no manifest: walk THIS asset's upstream
             # edges and treat any asset upstream as a sub-asset. Without
             # this, compositions[].consumedSubVersions is always empty
             # because no subagent emits MANIFEST.json today.

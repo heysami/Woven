@@ -1,4 +1,4 @@
-# Illustration Library — research dossier for illustration-orchestrator
+# Illustration Library - research dossier for illustration-orchestrator
 
 > Canonical reference baked into `/Users/sami/Documents/Woven/.claude/agents/illustration-orchestrator.md`.
 > Quality > breadth. Catalogued, not skimmed. Read top-to-bottom or jump via the category index.
@@ -22,32 +22,32 @@ The decision flow at runtime:
 
 Top-level taxonomy. Every entry in §2 must declare exactly one `category` and (when meaningful) one `subCategory`.
 
-- **3D** — anything with rendered volume, materials, lighting.
+- **3D** - anything with rendered volume, materials, lighting.
  - sub: `clay`, `plasticine`, `fluffy-plush`, `plastic-glossy`, `jelly-gummy`, `wireframe`, `origami`, `low-poly-paper`, `voxel`, `isometric-tech`, `render-cinematic`, `claymation-stop-motion`, `wood-craft`.
-- **Flat vector** — geometry over rendering.
+- **Flat vector** - geometry over rendering.
  - sub: `corporate-memphis`, `thick-border-cartoon`, `hairline`, `geometric-mid-century`, `geometric-with-grain`, `noodle-people`, `flat-iconographic`, `flat-with-pattern`.
-- **Hand-drawn / sketch** — visible mark, traces of tool.
+- **Hand-drawn / sketch** - visible mark, traces of tool.
  - sub: `scribble-marker`, `ink-line-brush`, `pencil-graphite`, `watercolor`, `gouache`, `charcoal`, `marginalia-quirky`, `naive-folk`, `crayon-wax`.
-- **Anime / manga** — Japanese illustration grammar.
+- **Anime / manga** - Japanese illustration grammar.
  - sub: `shoujo-soft-line`, `ghibli-watercolor-bg`, `shinkai-hyperreal`, `shonen-active-line`, `kawaii-mascot`, `chibi`, `pc98-visual-novel`.
-- **Illustrative typography** — type as the illustration.
+- **Illustrative typography** - type as the illustration.
  - sub: `y2k-chrome-3d`, `vectorheart-decorative`, `weingart-deconstructed`, `art-nouveau-ornament`, `hand-lettered-editorial`, `fella-anti-design`, `blackletter-neo-gothic`, `bubble-graffiti`, `illuminated-drop-cap`, `house-industries-revival`, `wood-type-letterpress`.
-- **Abstract / decoration** — non-representational, accent role.
+- **Abstract / decoration** - non-representational, accent role.
  - sub: `gradient-blob`, `geometric-primitive`, `doodle-arrow`, `sticker-cutout`, `halftone-shape`, `riso-grain-shape`, `squiggle-line`, `wavy-line`, `star-burst`, `aurorism-mesh`.
-- **Mid-century / vintage** — historically rooted illustrative idioms.
+- **Mid-century / vintage** - historically rooted illustrative idioms.
  - sub: `saul-bass-cutout`, `mary-blair-stylized`, `charley-harper-minimal-realism`, `eames-mid-century`, `1950s-pulp`, `1970s-airbrush`, `1960s-psychedelic`.
-- **Surreal / esoteric** — dreams, symbols, paradox.
+- **Surreal / esoteric** - dreams, symbols, paradox.
  - sub: `hilma-symbolist`, `mc-escher-paradox`, `cyriak-bodyhorror`, `dreamcore-liminal`, `frida-folk-surreal`.
-- **Editorial conceptual** — magazine/newspaper one-idea illustration.
+- **Editorial conceptual** - magazine/newspaper one-idea illustration.
  - sub: `niemann-puzzle`, `editorial-thick-brush`, `nyt-op-ed`, `new-yorker-cover`.
-- **Children's book / storybook** — soft, narrative, kindly.
+- **Children's book / storybook** - soft, narrative, kindly.
  - sub: `eric-carle-collage`, `beatrix-potter-watercolor`, `jean-jullien-thick-line`, `naive-storybook`, `pop-up-book-cutout`.
 
 ---
 
-## Entry catalogue — moved to per-file sources
+## Entry catalogue - moved to per-file sources
 
-**Each of the 111 entries in this library is its own source-of-truth file in `design-library/illust-<entryId>.md`** — hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
+**Each of the 111 entries in this library is its own source-of-truth file in `design-library/illust-<entryId>.md`** - hand-editable, with YAML frontmatter + markdown sections. Editing one entry doesn't require scanning the rest of the library.
 
 Where to find an entry:
 
@@ -61,12 +61,12 @@ To add a new entry, create a new `design-library/illust-<entryId>.md` with YAML 
 
 > **Normalised schema (read this before parsing the tables below).** Every entry conforms to:
 >
-> - **Column 1 — `Prototype slug`** — kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
-> - **Column 2 — `Default`** — the PRIMARY illustration `styleId` (kebab-case, matches an entry in §2 above). Orchestrator uses this by default unless overridden by `explicitStylePicks[slotId]` or by an antiPattern conflict.
-> - **Column 3 — `Alternatives`** — comma-separated additional `styleId`s for variety / antiPattern avoidance.
-> - **Column 4 — `Decoration / Notes`** — for illustration specifically, this column carries the recommended decoration-role styleId (abstract shape / arrow / blob) that pairs with the slug. May also carry advisory prose.
+> - **Column 1 - `Prototype slug`** - kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
+> - **Column 2 - `Default`** - the PRIMARY illustration `styleId` (kebab-case, matches an entry in §2 above). Orchestrator uses this by default unless overridden by `explicitStylePicks[slotId]` or by an antiPattern conflict.
+> - **Column 3 - `Alternatives`** - comma-separated additional `styleId`s for variety / antiPattern avoidance.
+> - **Column 4 - `Decoration / Notes`** - for illustration specifically, this column carries the recommended decoration-role styleId (abstract shape / arrow / blob) that pairs with the slug. May also carry advisory prose.
 >
-> The three subsections below split by slug-type (style / aesthetic / recipe) only for readability — orchestrator reads all three. The same schema is mirrored in `photography-library.md §3` and `material-library.md §7`.
+> The three subsections below split by slug-type (style / aesthetic / recipe) only for readability - orchestrator reads all three. The same schema is mirrored in `photography-library.md §3` and `material-library.md §7`.
 
 For each major prototype.md style/aesthetic slug, the recommended illustration entries. Use first-listed entry as default; later entries are alternatives for variety. Roles in parentheses where the choice is not the obvious one.
 
@@ -106,7 +106,7 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-corporate-memphis | blush-humaaans | corporate-memphis-noodle, blush-allura, blush-yuppies, blush-dayflow | scribbbles-funky-vector |
 | aesthetic-positivity-kawaii | kawaii-mascot | blush-shiny-happy, drawkit-jelly-3d, fluffy-plush-3d, blush-happy-bunch | handyarrows-doodles |
 | aesthetic-cottagecore | beatrix-potter-watercolor | blush-fancy-plants, drawkit-wooden-icons, ghibli-watercolor-bg, gouache-storybook | none |
-| aesthetic-cottagegoth | — | beatrix-potter-watercolor (darker palette), typo-blackletter-neo-gothic | halftone-shape |
+| aesthetic-cottagegoth | - | beatrix-potter-watercolor (darker palette), typo-blackletter-neo-gothic | halftone-shape |
 | aesthetic-solarpunk | drawkit-wooden-icons | blush-go-green, charley-harper-minimal-realism, ghibli-watercolor-bg | spectrums-organic-blob |
 | aesthetic-dreamcore | dreamcore-liminal | hilma-af-klint-symbolist, cyriak-bodyhorror | spectrums-organic-blob |
 | aesthetic-angelcore | hilma-af-klint-symbolist | typo-illuminated-drop-cap | aurorism-mesh-gradient |
@@ -152,7 +152,7 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-avantropop | typo-y2k-chrome-3d | vector-hands-up-eurodance, blush-transhumans | halftone-shape |
 | aesthetic-urbling | typo-bubble-graffiti | typo-y2k-chrome-3d | halftone-shape |
 | aesthetic-rgb-gamer | voxel-magicavoxel | wireframe-3d, pixel-bitmap-illustration | aurorism-mesh-gradient |
-| aesthetic-crypto-degen | — | blush-moneyverse, blush-currency-crush | aurorism-mesh-gradient |
+| aesthetic-crypto-degen | - | blush-moneyverse, blush-currency-crush | aurorism-mesh-gradient |
 | aesthetic-defi-cosmic | blush-moneyverse | blush-hyperspace | aurorism-mesh-gradient |
 | aesthetic-depin-hardware | wireframe-3d | isometric-tech-saas | none |
 | aesthetic-goblincore | humanities-marginalia | beatrix-potter-watercolor, hand-drawn-pencil-sketch | none |
@@ -282,17 +282,17 @@ Decoration entries don't depict a subject. They sit in the negative space betwee
 
 ### 5.2 Placement-role taxonomy
 
-- **`negative-space-fill`** — fills empty area between sections so layout doesn't look sparse. Use: aurorism-mesh-gradient, spectrums-organic-blob.
-- **`headline-halo`** — sits behind or beside a headline to focus attention. Use: spectrums-complex-flower, handyarrows-doodles, scribbbles-funky-vector.
-- **`section-divider`** — replaces a solid `<hr>` with something with character. Use: scribbbles-funky-vector, halftone-shape, handyarrows-underlines.
-- **`bullet-mark`** — replaces a default bullet point. Use: spectrums-vector-shape-circle, handyarrows-doodles, handyarrows-arrows.
-- **`emphasis-underline`** — handwritten underline under a word. Use: handyarrows-underlines, scribbbles-funky-vector.
-- **`flow-direction-arrow`** — explicit pointing arrow in marketing pages. Use: handyarrows-arrows.
-- **`infographic-callout`** — circles/brackets annotating screenshots. Use: handyarrows-infographic.
-- **`tileable-background-pattern`** — repeating texture filling backgrounds. Use: blush-patterns, halftone-shape.
-- **`drop-cap-ornament`** — decorative ornament beside an initial letter. Use: typo-illuminated-drop-cap (subject-as-typography hybrid).
+- **`negative-space-fill`** - fills empty area between sections so layout doesn't look sparse. Use: aurorism-mesh-gradient, spectrums-organic-blob.
+- **`headline-halo`** - sits behind or beside a headline to focus attention. Use: spectrums-complex-flower, handyarrows-doodles, scribbbles-funky-vector.
+- **`section-divider`** - replaces a solid `<hr>` with something with character. Use: scribbbles-funky-vector, halftone-shape, handyarrows-underlines.
+- **`bullet-mark`** - replaces a default bullet point. Use: spectrums-vector-shape-circle, handyarrows-doodles, handyarrows-arrows.
+- **`emphasis-underline`** - handwritten underline under a word. Use: handyarrows-underlines, scribbbles-funky-vector.
+- **`flow-direction-arrow`** - explicit pointing arrow in marketing pages. Use: handyarrows-arrows.
+- **`infographic-callout`** - circles/brackets annotating screenshots. Use: handyarrows-infographic.
+- **`tileable-background-pattern`** - repeating texture filling backgrounds. Use: blush-patterns, halftone-shape.
+- **`drop-cap-ornament`** - decorative ornament beside an initial letter. Use: typo-illuminated-drop-cap (subject-as-typography hybrid).
 
-### 5.3 Pairing logic — when shape vs aurora vs doodle
+### 5.3 Pairing logic - when shape vs aurora vs doodle
 
 - If the host style is **geometric / Swiss / Bauhaus / Constructivist** → use shape-primitive families (spectrums-vector-shape-circle, shapes-gallery-michalczyk).
 - If the host style is **AI marketing / ethereal / frutiger / glass** → use mesh-gradient (aurorism-mesh-gradient, spectrums-organic-blob).
@@ -307,12 +307,12 @@ Decoration entries don't depict a subject. They sit in the negative space betwee
 
 For the illustration-orchestrator at runtime, the recommended algorithm:
 
-1. **Detect host aesthetic** — read the HTML's data-attributes or class names linking to a prototype.md slug; if absent, infer from the first 100 tokens of the page text and the page's color tokens.
-2. **Enumerate slots** — find `<figure>`, `[data-illustration]`, empty hero divs above the fold, decoration zones flagged by `aria-hidden="true"`.
-3. **Classify slot role** — subject / mascot / decoration / typography / hero / spot. The orchestrator should default to `spot-illustration` if ambiguous; never default to `hero` (too risky).
+1. **Detect host aesthetic** - read the HTML's data-attributes or class names linking to a prototype.md slug; if absent, infer from the first 100 tokens of the page text and the page's color tokens.
+2. **Enumerate slots** - find `<figure>`, `[data-illustration]`, empty hero divs above the fold, decoration zones flagged by `aria-hidden="true"`.
+3. **Classify slot role** - subject / mascot / decoration / typography / hero / spot. The orchestrator should default to `spot-illustration` if ambiguous; never default to `hero` (too risky).
 4. **Pick entry from §3 decision tree** for the host aesthetic. Default to the first column. If a previous slot on the same page already used the default, pick the alternative.
-5. **Compose prompt** — `examplePromptTemplate` from chosen entry + slot-specific subject + universal negatives from §4 + category-conditional negatives from §4.5.
-6. **Pass to image generator** — recommend Imagen for cinematic + hand realism, Flux for vector-flat reliability, Nano Banana for cheap iteration, Midjourney for stylized art, DALL-E for typography.
+5. **Compose prompt** - `examplePromptTemplate` from chosen entry + slot-specific subject + universal negatives from §4 + category-conditional negatives from §4.5.
+6. **Pass to image generator** - recommend Imagen for cinematic + hand realism, Flux for vector-flat reliability, Nano Banana for cheap iteration, Midjourney for stylized art, DALL-E for typography.
 
 ### 6.1 Multi-slot consistency
 
@@ -330,14 +330,14 @@ When a page has multiple illustration slots, enforce **one entry per page** unle
 
 Every `examplePromptTemplate` uses `[BRACKETED_PLACEHOLDERS]`. The orchestrator fills them at runtime:
 
-- `[SUBJECT]` — the concrete noun from the page (e.g. "a coffee mug")
-- `[SCENE]` — when the slot wants a scene not an isolated subject
-- `[WORD]` — the actual text for typographic illustrations
-- `[LETTER]` — for drop caps
-- `[CONCEPT]` — for editorial-conceptual illustrations
-- `[ERA]` — for pixel-bitmap (NES / GameBoy / SNES / PS1 / arcade)
-- `[BIRD/ANIMAL]` — for Charley Harper minimal-realism nature
-- `[REAL OBJECT]` — for Niemann puzzle (must be a real photo prop)
+- `[SUBJECT]` - the concrete noun from the page (e.g. "a coffee mug")
+- `[SCENE]` - when the slot wants a scene not an isolated subject
+- `[WORD]` - the actual text for typographic illustrations
+- `[LETTER]` - for drop caps
+- `[CONCEPT]` - for editorial-conceptual illustrations
+- `[ERA]` - for pixel-bitmap (NES / GameBoy / SNES / PS1 / arcade)
+- `[BIRD/ANIMAL]` - for Charley Harper minimal-realism nature
+- `[REAL OBJECT]` - for Niemann puzzle (must be a real photo prop)
 
 ---
 
@@ -345,22 +345,22 @@ Every `examplePromptTemplate` uses `[BRACKETED_PLACEHOLDERS]`. The orchestrator 
 
 Self-audit against the quality bar.
 
-1. **60+ distinct styles?** — count of entries: 68. PASS.
-2. **Styles differentiated?** — 3D clay (matte fingerprint), 3D fluffy (long fiber fur), 3D origami (visible crease), 3D voxel (cube grid), 3D low-poly paper (faceted edges), 3D wireframe (no fill), 3D plasticine (oilier tool marks), 3D jelly (translucent subsurface), 3D bubbly (inflated pillow), 3D liquid-glass (refractive), 3D Pixar (cinematic subsurface), 3D claymation (armature visible). DISTINCT. PASS.
-3. **One keyword distinguishes any pair?** — sample: clay-3d-soft-sculpt vs fluffy-plush-3d differ by `fur shader`; voxel-magicavoxel vs low-poly-paper-3d differ by `cube grid` vs `polygon edge`; blush-humaaans vs corporate-memphis-noodle differ by `modular limb snap` vs `bendy noodle limb`. PASS.
-4. **Prototype mapping comprehensive?** — Section 3 covers all style-, aesthetic-, and recipe- slugs that exist in /Users/sami/Documents/Woven/prototype/. PASS.
-5. **HandyArrows multi-page?** — 5 buckets catalogued: Arrows, Doodles, Infographic, Illustrations, Underlines. PASS (research-based since handyarrows.com sub-paths returned 404).
-6. **Illustrative-typography research done?** — 11 entries: y2k-chrome-3d, weingart-deconstructed, art-nouveau-ornament, fella-anti-design, vectorheart-decorative, vector-musica, illuminated-drop-cap, blackletter-neo-gothic, bubble-graffiti, house-industries-revival, wood-type-letterpress, hand-lettered-editorial. PASS (12 actually).
+1. **60+ distinct styles?** - count of entries: 68. PASS.
+2. **Styles differentiated?** - 3D clay (matte fingerprint), 3D fluffy (long fiber fur), 3D origami (visible crease), 3D voxel (cube grid), 3D low-poly paper (faceted edges), 3D wireframe (no fill), 3D plasticine (oilier tool marks), 3D jelly (translucent subsurface), 3D bubbly (inflated pillow), 3D liquid-glass (refractive), 3D Pixar (cinematic subsurface), 3D claymation (armature visible). DISTINCT. PASS.
+3. **One keyword distinguishes any pair?** - sample: clay-3d-soft-sculpt vs fluffy-plush-3d differ by `fur shader`; voxel-magicavoxel vs low-poly-paper-3d differ by `cube grid` vs `polygon edge`; blush-humaaans vs corporate-memphis-noodle differ by `modular limb snap` vs `bendy noodle limb`. PASS.
+4. **Prototype mapping comprehensive?** - Section 3 covers all style-, aesthetic-, and recipe- slugs that exist in /Users/sami/Documents/Woven/prototype/. PASS.
+5. **HandyArrows multi-page?** - 5 buckets catalogued: Arrows, Doodles, Infographic, Illustrations, Underlines. PASS (research-based since handyarrows.com sub-paths returned 404).
+6. **Illustrative-typography research done?** - 11 entries: y2k-chrome-3d, weingart-deconstructed, art-nouveau-ornament, fella-anti-design, vectorheart-decorative, vector-musica, illuminated-drop-cap, blackletter-neo-gothic, bubble-graffiti, house-industries-revival, wood-type-letterpress, hand-lettered-editorial. PASS (12 actually).
 
 ## 8. Source map and known limitations
 
-- **drawkit.com/illustration-types/3d** — WebFetch succeeded; 17 sub-collections identified.
-- **blush.design/collections** — WebFetch returned 403; recovered full list via WebSearch (27+ collections individually researched).
-- **levinunnink.gumroad.com/l/humanities-illustrations** — WebFetch returned thin content; recovered via WebSearch (medieval-marginalia tradition, anti-AI artist statement, 35 PNG count).
-- **scribbbles.design** — WebFetch returned thin content; recovered visual register via WebSearch (vector scribbles, customizable color, "funky" aesthetic).
-- **spectrums.framer.website** — WebFetch returned thin content; recovered via WebSearch (categories: All, Circle, Square, Triangle, Star, Organic, Complex).
-- **shapes.gallery** — WebFetch returned thin content; recovered via WebSearch (80+ SVG shapes by Monika Michalczyk, organic + geometric, free copy-paste).
-- **handyarrows.com** — WebFetch root page succeeded; sub-paths returned 404 (the site uses anchor links not URL paths); recovered category list via direct page content + WebSearch.
+- **drawkit.com/illustration-types/3d** - WebFetch succeeded; 17 sub-collections identified.
+- **blush.design/collections** - WebFetch returned 403; recovered full list via WebSearch (27+ collections individually researched).
+- **levinunnink.gumroad.com/l/humanities-illustrations** - WebFetch returned thin content; recovered via WebSearch (medieval-marginalia tradition, anti-AI artist statement, 35 PNG count).
+- **scribbbles.design** - WebFetch returned thin content; recovered visual register via WebSearch (vector scribbles, customizable color, "funky" aesthetic).
+- **spectrums.framer.website** - WebFetch returned thin content; recovered via WebSearch (categories: All, Circle, Square, Triangle, Star, Organic, Complex).
+- **shapes.gallery** - WebFetch returned thin content; recovered via WebSearch (80+ SVG shapes by Monika Michalczyk, organic + geometric, free copy-paste).
+- **handyarrows.com** - WebFetch root page succeeded; sub-paths returned 404 (the site uses anchor links not URL paths); recovered category list via direct page content + WebSearch.
 
 Failed/thin fetches were rescued via WebSearch; no sources were skipped.
 

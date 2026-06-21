@@ -12,37 +12,37 @@ images:
 **Tag:** aesthetic
 
 **Canonical references:**
-- Mondrian *Composition with Red Blue and Yellow* 1930 — the canonical asymmetric primary-on-white composition
-- Rietveld Schroder House 1924 — the aesthetic translated into inhabitable architecture
-- Theo van Doesburg / De Stijl journal masthead (1917-32) — the typographic manifesto
-- YSL Mondrian collection 1965 — proof the aesthetic survives translation into another medium
-- Architype Van Doesburg / Aubette — the 5x5 raster alphabet that IS the type system
+- Mondrian *Composition with Red Blue and Yellow* 1930 - the canonical asymmetric primary-on-white composition
+- Rietveld Schroder House 1924 - the aesthetic translated into inhabitable architecture
+- Theo van Doesburg / De Stijl journal masthead (1917-32) - the typographic manifesto
+- YSL Mondrian collection 1965 - proof the aesthetic survives translation into another medium
+- Architype Van Doesburg / Aubette - the 5x5 raster alphabet that IS the type system
 
 ## Cultural identity
 
 A Dutch 1917-1931 art-and-architecture movement built on a single belief: reduce visual language to plane, primary colour, and right angle, and you reach a universal grammar. Mondrian, Van Doesburg, Rietveld, Huszar. It is the moment European modernism decided ornament was a failure of nerve.
 
-The aesthetic carries the weight of manifesto. It is not "minimalist" in the contemporary sense — it is doctrinal. Every choice is an exclusion. Curves are forbidden. Diagonals are forbidden (until Van Doesburg's late counter-composition heresy of 1924). Greys are forbidden. The white is not absence — it is the dominant element, ~60-70% of any composition, against which the three primaries are placed in unequal weight.
+The aesthetic carries the weight of manifesto. It is not "minimalist" in the contemporary sense - it is doctrinal. Every choice is an exclusion. Curves are forbidden. Diagonals are forbidden (until Van Doesburg's late counter-composition heresy of 1924). Greys are forbidden. The white is not absence - it is the dominant element, ~60-70% of any composition, against which the three primaries are placed in unequal weight.
 
 Invoking this aesthetic asserts cultural lineage with European high modernism: Bauhaus-adjacent, pre-war, intellectual, museum-grade. It is the opposite of warmth, intimacy, or play. It signals "we descend from manifestos."
 
 ## Palette anchor
 
 Four colours, never more, never substituted:
-- Titanium white `#F4F1EA` — oil-paint warm white, never `#FFFFFF`
-- Red `#D9302F` — muted vermilion, not sRGB `#FF0000`
-- Yellow `#F4D03F` — cadmium, not sRGB `#FFFF00`
-- Blue `#1F4FA8` — ultramarine, not sRGB `#0000FF`
-- Black `#0E0E0E` — never pure `#000`
+- Titanium white `#F4F1EA` - oil-paint warm white, never `#FFFFFF`
+- Red `#D9302F` - muted vermilion, not sRGB `#FF0000`
+- Yellow `#F4D03F` - cadmium, not sRGB `#FFFF00`
+- Blue `#1F4FA8` - ultramarine, not sRGB `#0000FF`
+- Black `#0E0E0E` - never pure `#000`
 
 The hexes matter because the sRGB primaries register as "Mondrian poster from a dorm room." The oil-paint values register as the actual canvases.
 
 ## Decoration motifs
 
-- Heavy black bars (8-16px) as structural grid lines — they ARE the design, not borders
+- Heavy black bars (8-16px) as structural grid lines - they ARE the design, not borders
 - Asymmetric blocks of unequal weight, anchored to corners, never centered
 - One dominant colour per composition (typically blue or red), the others subordinate, yellow smallest
-- Architype Van Doesburg / Aubette display lettering — the 5x5 raster alphabet
+- Architype Van Doesburg / Aubette display lettering - the 5x5 raster alphabet
 - Block-letter stencil numerals: `NR. 03 / 1924`, `COMPOSITIE`
 - Forbidden: icons, chevrons, underlines, rounded corners, shadows, gradients, diagonals (except Van Doesburg counter-composition), greys, serifs
 

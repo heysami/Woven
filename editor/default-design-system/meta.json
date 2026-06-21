@@ -15,8 +15,8 @@
     "designMd": "DESIGN.md"
   },
   "styles": [
-    { "id": "default", "label": "Default", "attr": "", "desc": "The base light style — restrained institutional product UI." },
-    { "id": "dark", "label": "Dark", "attr": "data-theme=\"dark\"", "desc": "Dark scheme — remapped surfaces/text/brand roles." },
+    { "id": "default", "label": "Default", "attr": "", "desc": "The base light style - restrained institutional product UI." },
+    { "id": "dark", "label": "Dark", "attr": "data-theme=\"dark\"", "desc": "Dark scheme - remapped surfaces/text/brand roles." },
     { "id": "minimal", "label": "Minimal", "attr": "data-theme=\"minimal\"", "file": "themes/minimal.css", "desc": "Light/white nav, primary-only palette, flat hairline elevation." },
     { "id": "pastel", "label": "Pastel", "attr": "data-theme=\"pastel\"", "file": "themes/pastel.css", "desc": "Soft pastel palette, pastel nav, no bold fills, no gradients." },
     { "id": "glassmorphism", "label": "Glassmorphism", "attr": "data-theme=\"glassmorphism\"", "file": "themes/glassmorphism.css", "desc": "iOS liquid-glass: translucent backdrop-blur surfaces + dispersion-prism edge accent." },
@@ -712,28 +712,28 @@
     {
       "id": "density",
       "label": "Ultra-dense · Markets",
-      "desc": "App shell · Linear/Bloomberg register — KPI strip + flat dense tables + sparklines + mini charts",
+      "desc": "App shell · Linear/Bloomberg register - KPI strip + flat dense tables + sparklines + mini charts",
       "file": "templates/density.html",
       "usesShell": true
     },
     {
       "id": "document",
       "label": "Document · Boxless editor",
-      "desc": "App shell · Notion/Docs register — click-to-edit boxless title/blocks/fields + comments rail",
+      "desc": "App shell · Notion/Docs register - click-to-edit boxless title/blocks/fields + comments rail",
       "file": "templates/document.html",
       "usesShell": true
     },
     {
       "id": "tables",
       "label": "Table samples",
-      "desc": "App shell · five table variations — standard, flat-dense, selectable+bulk, rich-cell datagrid, grouped",
+      "desc": "App shell · five table variations - standard, flat-dense, selectable+bulk, rich-cell datagrid, grouped",
       "file": "templates/tables.html",
       "usesShell": true
     },
     {
       "id": "mobile-home",
       "label": "Mobile · Home",
-      "desc": "Mobile phone shell · home/feed — hero stat card + quick actions + activity list + tab bar",
+      "desc": "Mobile phone shell · home/feed - hero stat card + quick actions + activity list + tab bar",
       "file": "templates/mobile-home.html",
       "usesShell": "mobile-shell"
     },

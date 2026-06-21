@@ -1,8 +1,8 @@
-# Workflow 2 — Apply `edits.json`
+# Workflow 2 - Apply `edits.json`
 
 **Trigger:** `edits.json` appears at repo root.
 
-Edits target the prototype whose source folder is named in `edits.json → sourceRoot` (per the per-prototype subfolder convention — `source/<slug>/`). **Never cross prototypes.**
+Edits target the prototype whose source folder is named in `edits.json → sourceRoot` (per the per-prototype subfolder convention - `source/<slug>/`). **Never cross prototypes.**
 
 ## Shape
 
@@ -25,20 +25,20 @@ Edits target the prototype whose source folder is named in `edits.json → sourc
 }
 ```
 
-**Order:** model edits (`target ≠ "dom"`) before DOM edits in the same file — renames must be in effect when selectors resolve.
+**Order:** model edits (`target ≠ "dom"`) before DOM edits in the same file - renames must be in effect when selectors resolve.
 
 ## DOM edit kinds (`target = "dom"` or implicit)
 
-- **`duplicate`** — clone element at `selector` as sibling on `side` (top/left → before; bottom/right → after).
-- **`primitive`** — insert a primitive matching surrounding voice/density. Defaults: Pill near text metadata · Button at row trailing · Row free-standing.
-- **`library`** — insert `libId` from `editor/data.js → library`. Honor its `compose` block (`role`, `spaceFromText`, `avoidIn`).
-- **`blank`** — empty placeholder. In a grid, inherits column rhythm; otherwise empty `<div>` sized to neighbours.
-- **`text`** — replace text content. Compare `oldText` with current source. Drifted → log in `NOTES.md`, don't overwrite. Only touch text nodes.
-- **`delete`** — remove element. If its data lived in `window.DEMO`, remove that entry too. Inside a hand-counted grid `repeat(N, …)`, decrement `N`.
-- **`replace`** (`edit.replace === true`) — replace with `libId` or blank. Data-type-aware: same entity → copy fields; different → stock values + `NOTES.md` note.
-- **`style`** — inline-style override. Payload `styles: {…}`. Mode keys (`widthMode` etc.) are editor state — don't write to source. Use `parent.layout.display` to decide materialisation: in flex, `width: 100%` may need `flex: 1 1 0`; centering = `margin-inline: auto`.
-- **`move`** — DOM-order shuffle within flex/grid, `direction: "prev" | "next"`. Multiple moves accumulate; after each, update other edits' selectors (`:nth-of-type` shifts).
-- **`comment`** — **don't modify source.** Answer + append resolution to `NOTES.md` under `## <selector> on <frameId>`.
+- **`duplicate`** - clone element at `selector` as sibling on `side` (top/left → before; bottom/right → after).
+- **`primitive`** - insert a primitive matching surrounding voice/density. Defaults: Pill near text metadata · Button at row trailing · Row free-standing.
+- **`library`** - insert `libId` from `editor/data.js → library`. Honor its `compose` block (`role`, `spaceFromText`, `avoidIn`).
+- **`blank`** - empty placeholder. In a grid, inherits column rhythm; otherwise empty `<div>` sized to neighbours.
+- **`text`** - replace text content. Compare `oldText` with current source. Drifted → log in `NOTES.md`, don't overwrite. Only touch text nodes.
+- **`delete`** - remove element. If its data lived in `window.DEMO`, remove that entry too. Inside a hand-counted grid `repeat(N, …)`, decrement `N`.
+- **`replace`** (`edit.replace === true`) - replace with `libId` or blank. Data-type-aware: same entity → copy fields; different → stock values + `NOTES.md` note.
+- **`style`** - inline-style override. Payload `styles: {…}`. Mode keys (`widthMode` etc.) are editor state - don't write to source. Use `parent.layout.display` to decide materialisation: in flex, `width: 100%` may need `flex: 1 1 0`; centering = `margin-inline: auto`.
+- **`move`** - DOM-order shuffle within flex/grid, `direction: "prev" | "next"`. Multiple moves accumulate; after each, update other edits' selectors (`:nth-of-type` shifts).
+- **`comment`** - **don't modify source.** Answer + append resolution to `NOTES.md` under `## <selector> on <frameId>`.
 
 **Grid semantics** when `parent.layout.display === "grid"`:
 - `add` / `duplicate` / `primitive` / `library` / `blank` → adds a column.
@@ -63,11 +63,11 @@ Mutate `editor/data.js`. Preserve `meta.branch`, `meta.branchLabel`, `meta.sourc
 
 ### `target: "entity"`
 
-- `add` — append `{ id, tag, x, y, w, fields }`; seed matching empty `window.DEMO` array.
-- `rename` (`entityId` → `newId`) — rewrite every `fk` / `type` that referenced the old id, plus the `window.DEMO` key.
-- `delete` — drop `fk` references (convert to `string`, note in `NOTES.md`), remove source-data array.
-- `property.add` / `rename` / `delete` — apply to `fields[]` and every `window.DEMO` row.
-- `*.comment` — log under `## entity · <id>` or `## field · <entityId>.<fieldName>`.
+- `add` - append `{ id, tag, x, y, w, fields }`; seed matching empty `window.DEMO` array.
+- `rename` (`entityId` → `newId`) - rewrite every `fk` / `type` that referenced the old id, plus the `window.DEMO` key.
+- `delete` - drop `fk` references (convert to `string`, note in `NOTES.md`), remove source-data array.
+- `property.add` / `rename` / `delete` - apply to `fields[]` and every `window.DEMO` row.
+- `*.comment` - log under `## entity · <id>` or `## field · <entityId>.<fieldName>`.
 
 ### `target: "link"`
 
@@ -75,16 +75,16 @@ Entity↔entity links in `links[]`. `add` / `update` / `delete` by `id`. Cardina
 
 ### `target: "frame"`
 
-- `add` — `{ id, label, kind, lane?, parent?, hash?, x, y, w, h }`. New frame with a `hash` needs a source route (component or `setupScript`).
-- `rename` — change `label`; don't auto-rename `id`.
-- `delete` — remove frame + all touching arrows.
-- `move` — update `lane` / `rank` / `parent` / `kind_` (frame kind renamed — `kind` is reserved on the edit).
-- `comment` — log under `## frame · <id>`.
+- `add` - `{ id, label, kind, lane?, parent?, hash?, x, y, w, h }`. New frame with a `hash` needs a source route (component or `setupScript`).
+- `rename` - change `label`; don't auto-rename `id`.
+- `delete` - remove frame + all touching arrows.
+- `move` - update `lane` / `rank` / `parent` / `kind_` (frame kind renamed - `kind` is reserved on the edit).
+- `comment` - log under `## frame · <id>`.
 
 ### `target: "arrow"`
 
 - `add` / `update` / `delete` by id.
-- `split` (`{ arrowId, newFrame, actionA, actionB }`) — insert `newFrame` between A and B; rewrite original's action to `actionA`; append `newFrame → B` with `actionB`.
+- `split` (`{ arrowId, newFrame, actionA, actionB }`) - insert `newFrame` between A and B; rewrite original's action to `actionA`; append `newFrame → B` with `actionB`.
 
 ### `target: "ia"`
 
@@ -92,7 +92,7 @@ Frame-level metadata, no source change. `entity.assign` / `entity.unassign` togg
 
 ### `target: "meta"`
 
-- `lane.add` — append `{ id, label, kind: "user|system|service" }` to `meta.lanes`.
+- `lane.add` - append `{ id, label, kind: "user|system|service" }` to `meta.lanes`.
 - `lane.rename` / `lane.delete` by `laneId`.
 
 If source visibly drifts from a model edit (renamed entity demands renamed `window.DEMO` key, new frame demands a route), apply the source change too. Non-trivial diffs → one bullet under `## <date> · model edits` in `NOTES.md`.
@@ -107,7 +107,7 @@ One entry per annotated frame:
   "comment": "...", "screenshot": "data:image/png;base64,…" }
 ```
 
-- `screenshot` is iframe-body + strokes rasterised in red. **No editor chrome.** May be `null` — fall back to the live page at `sourceUrl`.
+- `screenshot` is iframe-body + strokes rasterised in red. **No editor chrome.** May be `null` - fall back to the live page at `sourceUrl`.
 - `strokes[].points` in iframe-content pixels.
 - Visual feedback, not structural. Interpret strokes + comment together; respond as a `comment`-style action. **Don't silently mutate DOM.** Log interpretation under `## annotation · <frameLabel>` in `NOTES.md`.
 
@@ -115,18 +115,18 @@ One entry per annotated frame:
 
 Apply one edit at a time. Don't batch.
 
-1. **Grid integrity** — `repeat(N, …)` and insert past `N`? Bump `N` or switch to `repeat(auto-fit, minmax(…, 1fr))`. Never mix `1fr` with hardcoded widths unless source does.
-2. **Spacing** — parent has `gap` → fine. Otherwise `margin-block-start: var(--pad-sm)`. **Never literal px** — promote to a token.
-3. **Alignment** — centred flex/grid → set `align-self` (`start` on a pill among headings; `end` on a trailing button).
-4. **Voice match** — insert overshadows neighbours? Downgrade (e.g., `Filter.pressed` → `Filter.default`). User asked for the loud one? Leave it + note the trade-off.
+1. **Grid integrity** - `repeat(N, …)` and insert past `N`? Bump `N` or switch to `repeat(auto-fit, minmax(…, 1fr))`. Never mix `1fr` with hardcoded widths unless source does.
+2. **Spacing** - parent has `gap` → fine. Otherwise `margin-block-start: var(--pad-sm)`. **Never literal px** - promote to a token.
+3. **Alignment** - centred flex/grid → set `align-self` (`start` on a pill among headings; `end` on a trailing button).
+4. **Voice match** - insert overshadows neighbours? Downgrade (e.g., `Filter.pressed` → `Filter.default`). User asked for the loud one? Leave it + note the trade-off.
 
-**Verification:** `preview_screenshot` the affected frame. Cramped/misaligned → one correction round, re-screenshot. **Cap at two passes** — third means the edit is wrong at spec level; log in `NOTES.md`.
+**Verification:** `preview_screenshot` the affected frame. Cramped/misaligned → one correction round, re-screenshot. **Cap at two passes** - third means the edit is wrong at spec level; log in `NOTES.md`.
 
 ## Source-vs-preview parity
 
 `htmlByVariant` drift is the most common bug. Each primitive variant declares `from: { selector, hash? }` and `htmlByVariant[v]` is copied from rendered source.
 
-DS view badges: `live` (extracted now) · `stale` (selector didn't match — fix selector or set `hash`) · (none) (no `from` declared — only acceptable on the canonical stub).
+DS view badges: `live` (extracted now) · `stale` (selector didn't match - fix selector or set `hash`) · (none) (no `from` declared - only acceptable on the canonical stub).
 
 If you change a primitive's source behaviour, re-run Workflow 1. Don't patch `htmlByVariant` by hand.
 

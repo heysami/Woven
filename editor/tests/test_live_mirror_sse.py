@@ -1,11 +1,11 @@
 """Regression test for the live-mirror SSE long-poll proxy.
 
 Bug: _proxy_daemon_read broke out of the forward loop the instant it saw the
-`event: ...changed` LINE — before forwarding the event's `data:` line and the
+`event: ...changed` LINE - before forwarding the event's `data:` line and the
 terminating blank line. A real browser EventSource only fires an event once it
 receives the complete frame (ending in a blank line), so the guest never got
 `workflow-changed`, never refetched /__workflow, and the canvas never mirrored.
-curl showed the `event:` line so the earlier check looked green — this test
+curl showed the `event:` line so the earlier check looked green - this test
 asserts the WHOLE frame is forwarded, which is what EventSource actually needs.
 """
 import os, sys, io, json, time, threading, http.server, socketserver
@@ -78,14 +78,14 @@ def main():
 
         assert ok is True, "proxy did not return True"
         assert b"event: workflow-changed" in out, f"no change event forwarded:\n{out!r}"
-        # THE regression assertion: the change event must be COMPLETE — the
+        # THE regression assertion: the change event must be COMPLETE - the
         # data line AND the terminating blank line must follow the event line,
         # otherwise EventSource never fires it.
         idx = out.index(b"event: workflow-changed")
         tail = out[idx:]
         assert b"data: {}" in tail, f"data line dropped (incomplete frame):\n{out!r}"
         assert tail.split(b"data: {}", 1)[1].startswith(b"\n\n"), \
-            f"terminating blank line dropped — EventSource won't fire:\n{out!r}"
+            f"terminating blank line dropped - EventSource won't fire:\n{out!r}"
         print("test_live_mirror_sse: ALL PASS  (complete workflow-changed frame forwarded)")
     finally:
         srv.shutdown()

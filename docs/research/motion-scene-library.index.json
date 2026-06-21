@@ -379,8 +379,8 @@
       "roleAffinity": [
         "background"
       ],
-      "oneLine": "A seamless full-bleed atmospheric video — sky, water, smoke, fabric, dust — loops autonomously beneath the page's UI, generated with a deliberately quiet, light region where the type sits so the scene reads as a living backdrop, not a video with text on it (the aethera-hero pattern).",
-      "notForUseWhen": "The viewport is data-dense (dashboards, tables, forms — motion under inputs is hostile), the brand register is strictly flat/graphic with no photographic license, or the loop cannot be made seamless and a visible reset would interrupt long dwell times.",
+      "oneLine": "A seamless full-bleed atmospheric video - sky, water, smoke, fabric, dust - loops autonomously beneath the page's UI, generated with a deliberately quiet, light region where the type sits so the scene reads as a living backdrop, not a video with text on it (the aethera-hero pattern).",
+      "notForUseWhen": "The viewport is data-dense (dashboards, tables, forms - motion under inputs is hostile), the brand register is strictly flat/graphic with no photographic license, or the loop cannot be made seamless and a visible reset would interrupt long dwell times.",
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-warm-restraint",
@@ -398,8 +398,8 @@
       "roleAffinity": [
         "background"
       ],
-      "oneLine": "The UI chrome — headline rail, nav dots, CTA — is laid out ONCE and never moves; each wheel-step swaps only the full-bleed background video behind it, so continuity lives in the stable interface while change lives entirely in the world.",
-      "notForUseWhen": "Each scene needs a different layout (headline left on one, product grid on the next) — the technique's whole value is the unmoving chrome; if the UI must reflow per scene, use scene-stepper-wipe instead.",
+      "oneLine": "The UI chrome - headline rail, nav dots, CTA - is laid out ONCE and never moves; each wheel-step swaps only the full-bleed background video behind it, so continuity lives in the stable interface while change lives entirely in the world.",
+      "notForUseWhen": "Each scene needs a different layout (headline left on one, product grid on the next) - the technique's whole value is the unmoving chrome; if the UI must reflow per scene, use scene-stepper-wipe instead.",
       "pairsPrototypes": [
         "recipe-restrained-ai-marketing",
         "recipe-aurora-marketing",
@@ -417,7 +417,7 @@
       "roleAffinity": [
         "section"
       ],
-      "oneLine": "A photograph in which exactly ONE element moves — steam off a cup, hair in a draft, a flag, rain on glass — while every other pixel holds frozen; the uncanny stillness-with-life makes a section image feel enchanted rather than animated.",
+      "oneLine": "A photograph in which exactly ONE element moves - steam off a cup, hair in a draft, a flag, rain on glass - while every other pixel holds frozen; the uncanny stillness-with-life makes a section image feel enchanted rather than animated.",
       "notForUseWhen": "The scene wants whole-frame life (use ambient-loop-atmosphere), the moving element can't loop seamlessly (one-way motion like a falling object), or the section is so small the single moving element drops below ~80px rendered and the effect vanishes.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
@@ -436,7 +436,7 @@
         "chrome"
       ],
       "oneLine": "The pointer stops being an arrow and becomes a SUBJECT: it squashes and",
-      "notForUseWhen": "Touch-primary audiences (no cursor exists — the entire device evaporates on mobile), data-dense or form-heavy surfaces (precision pointing beats personality), or restrained registers where an expressive cursor is the loudest thing on the page.",
+      "notForUseWhen": "Touch-primary audiences (no cursor exists - the entire device evaporates on mobile), data-dense or form-heavy surfaces (precision pointing beats personality), or restrained registers where an expressive cursor is the loudest thing on the page.",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
         "aesthetic-y2k-memphis-loud",
@@ -454,8 +454,8 @@
       "roleAffinity": [
         "background"
       ],
-      "oneLine": "Three to four generated raster layers counter-drift autonomously at depth-proportional speeds — background barely creeping, foreground gliding — producing a slow ambient parallax with no input at all; the sibling of pointer-parallax-layers with the pointer removed and time as the driver.",
-      "notForUseWhen": "The scene has no plausible depth planes (flat graphic systems), the same viewport already runs pointer-parallax-layers (they are the same stack — pick one driver), or layer-consistent generation budget (3–4 coherent images) isn't available.",
+      "oneLine": "Three to four generated raster layers counter-drift autonomously at depth-proportional speeds - background barely creeping, foreground gliding - producing a slow ambient parallax with no input at all; the sibling of pointer-parallax-layers with the pointer removed and time as the driver.",
+      "notForUseWhen": "The scene has no plausible depth planes (flat graphic systems), the same viewport already runs pointer-parallax-layers (they are the same stack - pick one driver), or layer-consistent generation budget (3-4 coherent images) isn't available.",
       "pairsPrototypes": [
         "recipe-scientific-infra-marketing",
         "style-glassmorphism",
@@ -473,7 +473,7 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A loose cluster of 8–30 identical 3D primitives — glass cubes, spheres,",
+      "oneLine": "A loose cluster of 8-30 identical 3D primitives - glass cubes, spheres,",
       "notForUseWhen": "The hero must communicate a SPECIFIC product image (the toy abstracts it away), touch-scroll-critical mobile heroes (drag fights scroll), or pages with another physics/simulation surface already running.",
       "pairsPrototypes": [
         "recipe-restrained-ai-marketing",
@@ -511,8 +511,8 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "The \"do something without leaving the scene\" primitive: the scene's video plays to an AUTHORED hold frame and pauses; UI elements animate in synced to that exact frame (spec list, price, hotspots); the next wheel-step resumes playback to the following hold — or, past the last hold, hands the input off to the scene choreography to advance.",
-      "notForUseWhen": "The video has no natural stopping poses (continuous abstract flow, atmosphere) — holds need distinct, stable frames worth annotating; or the scene's UI is a single static headline with nothing to reveal per beat — then a plain ambient loop does the job without the machinery.",
+      "oneLine": "The \"do something without leaving the scene\" primitive: the scene's video plays to an AUTHORED hold frame and pauses; UI elements animate in synced to that exact frame (spec list, price, hotspots); the next wheel-step resumes playback to the following hold - or, past the last hold, hands the input off to the scene choreography to advance.",
+      "notForUseWhen": "The video has no natural stopping poses (continuous abstract flow, atmosphere) - holds need distinct, stable frames worth annotating; or the scene's UI is a single static headline with nothing to reveal per beat - then a plain ambient loop does the job without the machinery.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-devtools-marketing",
@@ -529,7 +529,7 @@
       "roleAffinity": [
         "gallery"
       ],
-      "oneLine": "Gallery tiles and case-study cards each hold a poster still that crossfades into its own living loop on hover or keyboard focus — the grid is calm at rest, and whichever item the visitor considers wakes up under their attention.",
+      "oneLine": "Gallery tiles and case-study cards each hold a poster still that crossfades into its own living loop on hover or keyboard focus - the grid is calm at rest, and whichever item the visitor considers wakes up under their attention.",
       "notForUseWhen": "The grid has more than ~12 video tiles in one viewport (decode budget collapses), the tiles are smaller than ~240px wide (motion at thumbnail scale reads as noise), or hover has no meaning for the audience (touch-first) and no tap-to-play substitute is storyboarded.",
       "pairsPrototypes": [
         "recipe-neo-grotesque-portfolio",
@@ -547,8 +547,8 @@
       "roleAffinity": [
         "portrait"
       ],
-      "oneLine": "A character, mascot, or portrait figure performs a seamless game-style idle loop — breathing, blinking, shifting weight — fully autonomous, asking nothing of the visitor; the brand has a being on the page who is simply, calmly there.",
-      "notForUseWhen": "The brand has no character/mascot/figure to be present (don't invent one for the technique), the character must respond to the visitor (use mouse-scrub-look or pointer-magnetic-subject), or identity consistency across the loop can't be guaranteed — a face that drifts mid-loop is worse than a static portrait.",
+      "oneLine": "A character, mascot, or portrait figure performs a seamless game-style idle loop - breathing, blinking, shifting weight - fully autonomous, asking nothing of the visitor; the brand has a being on the page who is simply, calmly there.",
+      "notForUseWhen": "The brand has no character/mascot/figure to be present (don't invent one for the technique), the character must respond to the visitor (use mouse-scrub-look or pointer-magnetic-subject), or identity consistency across the loop can't be guaranteed - a face that drifts mid-loop is worse than a static portrait.",
       "pairsPrototypes": [
         "recipe-y2k-memphis-loud",
         "recipe-neo-grotesque-portfolio",
@@ -566,8 +566,8 @@
       "roleAffinity": [
         "hero | editorial"
       ],
-      "oneLine": "A circular lens rides the pointer across a deliberately degraded field —",
-      "notForUseWhen": "Touch-dominant audiences (no hover = no lens without a fallback budget), content that must be readable at all times (legal, pricing, forms), or pages already running a cursor-spotlight effect — two pointer-portals compete.",
+      "oneLine": "A circular lens rides the pointer across a deliberately degraded field -",
+      "notForUseWhen": "Touch-dominant audiences (no hover = no lens without a fallback budget), content that must be readable at all times (legal, pricing, forms), or pages already running a cursor-spotlight effect - two pointer-portals compete.",
       "pairsPrototypes": [
         "style-oversized-neo-grotesque",
         "aesthetic-monochrome-tech-editorial",
@@ -585,8 +585,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "The video plays inside a 2.39:1 cinematic band centered in the viewport while the UI lives in the matte bars — kicker in the top bar, headline + CTA in the bottom bar — and the bars are page-background-coloured, so the stage reads as a deliberate proscenium rather than a cropped or letterboxed file.",
-      "notForUseWhen": "The design language is full-bleed everywhere else — one letterboxed scene in an edge-to-edge piece reads as a broken asset, not cinema; commit the whole piece or skip it. Also wrong on portrait/mobile-first viewports, where a 2.39:1 band shrinks to a sliver.",
+      "oneLine": "The video plays inside a 2.39:1 cinematic band centered in the viewport while the UI lives in the matte bars - kicker in the top bar, headline + CTA in the bottom bar - and the bars are page-background-coloured, so the stage reads as a deliberate proscenium rather than a cropped or letterboxed file.",
+      "notForUseWhen": "The design language is full-bleed everywhere else - one letterboxed scene in an edge-to-edge piece reads as a broken asset, not cinema; commit the whole piece or skip it. Also wrong on portrait/mobile-first viewports, where a 2.39:1 band shrinks to a sliver.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-warm-restraint",
@@ -604,8 +604,8 @@
       "roleAffinity": [
         "background"
       ],
-      "oneLine": "A generated abstract color-field — ink in water, aurora curtains, molten gradient, slow smoke in brand hues — loops full-bleed beneath the page content, turning the palette itself into a living material instead of a fill.",
-      "notForUseWhen": "The brand is flat/graphic with hard-edged color systems (a drifting gradient contradicts the language), the palette hexes aren't pinned down yet (the prompt needs exact colors), or CSS mesh gradients already deliver the brief — don't spend a video on what two animated radial-gradients can do.",
+      "oneLine": "A generated abstract color-field - ink in water, aurora curtains, molten gradient, slow smoke in brand hues - loops full-bleed beneath the page content, turning the palette itself into a living material instead of a fill.",
+      "notForUseWhen": "The brand is flat/graphic with hard-edged color systems (a drifting gradient contradicts the language), the palette hexes aren't pinned down yet (the prompt needs exact colors), or CSS mesh gradients already deliver the brief - don't spend a video on what two animated radial-gradients can do.",
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-ai-foundry-dark",
@@ -623,8 +623,8 @@
       "roleAffinity": [
         "transition"
       ],
-      "oneLine": "On advance, the outgoing scene's video plays to its FINAL frame whose silhouette, position, and scale match the incoming video's FIRST frame — the two assets are generated as a composition-locked pair, so a hard cut between them reads as one object transforming into another.",
-      "notForUseWhen": "Assets are generated independently per scene with no shared composition contract — the morph lives or dies on frame-matched pairs; without paired generation this is just a hard cut. Also wrong for decks longer than ~5 scenes; authoring N-1 matched seams does not scale.",
+      "oneLine": "On advance, the outgoing scene's video plays to its FINAL frame whose silhouette, position, and scale match the incoming video's FIRST frame - the two assets are generated as a composition-locked pair, so a hard cut between them reads as one object transforming into another.",
+      "notForUseWhen": "Assets are generated independently per scene with no shared composition contract - the morph lives or dies on frame-matched pairs; without paired generation this is just a hard cut. Also wrong for decks longer than ~5 scenes; authoring N-1 matched seams does not scale.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-ai-foundry-dark",
@@ -641,8 +641,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A full-bleed video of a subject turning its head (or rotating its front) left-to-right is paused and SCRUBBED by the pointer's horizontal position — the subject appears to watch the cursor, following the visitor around the frame.",
-      "notForUseWhen": "The slot is informational (dashboard, docs, data table), the subject has no face/front (abstract texture), or touch-only audiences dominate — pointer-x has no mobile equivalent without a gyro fallback.",
+      "oneLine": "A full-bleed video of a subject turning its head (or rotating its front) left-to-right is paused and SCRUBBED by the pointer's horizontal position - the subject appears to watch the cursor, following the visitor around the frame.",
+      "notForUseWhen": "The slot is informational (dashboard, docs, data table), the subject has no face/front (abstract texture), or touch-only audiences dominate - pointer-x has no mobile equivalent without a gyro fallback.",
       "pairsPrototypes": [
         "recipe-neo-grotesque-portfolio",
         "recipe-editorial-magazine",
@@ -660,7 +660,7 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "A full-bleed video of a product rotating ±30–45° on a turntable is paused and SCRUBBED by pointer-x — the object presents its angles to the visitor like a salesperson turning a watch under the light, the sibling of mouse-scrub-look for things instead of faces.",
+      "oneLine": "A full-bleed video of a product rotating ±30-45° on a turntable is paused and SCRUBBED by pointer-x - the object presents its angles to the visitor like a salesperson turning a watch under the light, the sibling of mouse-scrub-look for things instead of faces.",
       "notForUseWhen": "The subject has a face or front that should \"look\" at the visitor (use mouse-scrub-look), the object is flat or symmetric so rotation reads as nothing, or the section is touch-dominant with no gyro fallback budgeted.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
@@ -679,8 +679,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A short generated frame sequence of a subject swaying through a tiny arc is micro-scrubbed by pointer position — the subject leans and drifts a few degrees toward the cursor, ±8 frames around center, presence without the full head-turn theatre of mouse-scrub-look.",
-      "notForUseWhen": "The brief wants overt acknowledgement (use mouse-scrub-look — this technique is deliberately subliminal), the subject is rigid with no plausible sway (architecture, typography), or the frames cannot be generated with consistent identity across the sequence.",
+      "oneLine": "A short generated frame sequence of a subject swaying through a tiny arc is micro-scrubbed by pointer position - the subject leans and drifts a few degrees toward the cursor, ±8 frames around center, presence without the full head-turn theatre of mouse-scrub-look.",
+      "notForUseWhen": "The brief wants overt acknowledgement (use mouse-scrub-look - this technique is deliberately subliminal), the subject is rigid with no plausible sway (architecture, typography), or the frames cannot be generated with consistent identity across the sequence.",
       "pairsPrototypes": [
         "recipe-warm-restraint",
         "recipe-restrained-ai-marketing",
@@ -698,7 +698,7 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "Three to six generated raster layers — background, midground, foreground, atmosphere — translate at different rates as the pointer moves, so the flat hero acquires believable depth that tilts toward the visitor (the moooi a-life-extraordinary pattern).",
+      "oneLine": "Three to six generated raster layers - background, midground, foreground, atmosphere - translate at different rates as the pointer moves, so the flat hero acquires believable depth that tilts toward the visitor (the moooi a-life-extraordinary pattern).",
       "notForUseWhen": "The scene has no natural depth planes (flat graphic, single object on void), the hero must carry real photographic continuity (layer seams betray themselves on humans mid-frame), or the page already runs a heavier pointer binding in the same viewport.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
@@ -717,7 +717,7 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A full-bleed video plays underneath a dimmed, desaturated still of its own first frame; a soft radial mask follows the pointer and reveals the living video only inside that circle — the visitor's cursor develops the image like light on photographic paper.",
+      "oneLine": "A full-bleed video plays underneath a dimmed, desaturated still of its own first frame; a soft radial mask follows the pointer and reveals the living video only inside that circle - the visitor's cursor develops the image like light on photographic paper.",
       "notForUseWhen": "The hero must be fully legible at first paint (the technique deliberately hides most of the scene), touch-only audiences dominate (no pointer to carry the spotlight), or the video and still cannot be generated from the same frame so the reveal mismatches.",
       "pairsPrototypes": [
         "recipe-ai-foundry-dark",
@@ -735,8 +735,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "The foundational composition contract of every motion scene: the asset is GENERATED with a deliberate low-detail, controlled-luminance region — a light sky, a fog bank, a blank wall — sized and positioned for the headline before a single frame exists, so type never fights the world it sits on (the motionsites aethera-hero pattern).",
-      "notForUseWhen": "The asset is texture-only with no subject (uniform particle field, gradient wash) — there is no busy region to be quiet AGAINST, so just set type anywhere; or the headline is short enough (≤2 words) to survive on a scrim without composition help.",
+      "oneLine": "The foundational composition contract of every motion scene: the asset is GENERATED with a deliberate low-detail, controlled-luminance region - a light sky, a fog bank, a blank wall - sized and positioned for the headline before a single frame exists, so type never fights the world it sits on (the motionsites aethera-hero pattern).",
+      "notForUseWhen": "The asset is texture-only with no subject (uniform particle field, gradient wash) - there is no busy region to be quiet AGAINST, so just set type anywhere; or the headline is short enough (≤2 words) to survive on a scrim without composition help.",
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-warm-restraint",
@@ -754,8 +754,8 @@
       "roleAffinity": [
         "transition"
       ],
-      "oneLine": "Each full-screen scene is its own ambient video loop; advancing one wheel-step crossfades the outgoing world into the incoming one over 800–1200ms — held scenes keep breathing on their internal loop, and both videos play simultaneously ONLY during the cross.",
-      "notForUseWhen": "Scenes are hard-edged or graphic (UI screenshots, type-led boards) — a dissolve between crisp rectangles reads as a rendering bug; use scene-stepper-wipe. Also wrong when scenes must feel causally connected — crossfade says \"elsewhere\", not \"therefore\".",
+      "oneLine": "Each full-screen scene is its own ambient video loop; advancing one wheel-step crossfades the outgoing world into the incoming one over 800-1200ms - held scenes keep breathing on their internal loop, and both videos play simultaneously ONLY during the cross.",
+      "notForUseWhen": "Scenes are hard-edged or graphic (UI screenshots, type-led boards) - a dissolve between crisp rectangles reads as a rendering bug; use scene-stepper-wipe. Also wrong when scenes must feel causally connected - crossfade says \"elsewhere\", not \"therefore\".",
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-warm-restraint",
@@ -773,8 +773,8 @@
       "roleAffinity": [
         "transition"
       ],
-      "oneLine": "Full-screen scenes advance exactly one per wheel-notch / swipe / arrow-key with a directional wipe or slide (next scene pushes in from the bottom on advance, from the top on back-step) — the piece is a strictly linear deck the visitor steps through, never a scroll.",
-      "notForUseWhen": "The piece needs free scrolling or anchor links into the middle (the stepper owns the wheel completely), or there are fewer than 3 scenes — a wipe between two states reads as a glitchy tab switch, not choreography.",
+      "oneLine": "Full-screen scenes advance exactly one per wheel-notch / swipe / arrow-key with a directional wipe or slide (next scene pushes in from the bottom on advance, from the top on back-step) - the piece is a strictly linear deck the visitor steps through, never a scroll.",
+      "notForUseWhen": "The piece needs free scrolling or anchor links into the middle (the stepper owns the wheel completely), or there are fewer than 3 scenes - a wipe between two states reads as a glitchy tab switch, not choreography.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-neo-grotesque-portfolio",
@@ -792,8 +792,8 @@
       "roleAffinity": [
         "transition"
       ],
-      "oneLine": "Advancing a wheel-step zooms the camera INTO an authored detail region of scene N — a window, a chip, a leaf — and that detail becomes scene N+1 full-frame; back-stepping reverses the dive, pulling out of the detail into the wide shot, so the whole piece reads as one continuous change of scale.",
-      "notForUseWhen": "Scenes are thematically parallel rather than nested (three equal product pillars) — zoom implies containment and scale; zooming between siblings lies about the structure. Also wrong when assets cannot be generated as a wide/detail pair of the same world.",
+      "oneLine": "Advancing a wheel-step zooms the camera INTO an authored detail region of scene N - a window, a chip, a leaf - and that detail becomes scene N+1 full-frame; back-stepping reverses the dive, pulling out of the detail into the wide shot, so the whole piece reads as one continuous change of scale.",
+      "notForUseWhen": "Scenes are thematically parallel rather than nested (three equal product pillars) - zoom implies containment and scale; zooming between siblings lies about the structure. Also wrong when assets cannot be generated as a wide/detail pair of the same world.",
       "pairsPrototypes": [
         "recipe-scientific-infra-marketing",
         "recipe-devtools-marketing",
@@ -811,8 +811,8 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "A play-once video fires the moment the section scrolls into view: the product slides/rises/unfolds into place and SETTLES on a final hold frame — to the visitor it reads as a static asset that happened to arrive beautifully (the iPhone-17-Pro entrance pattern).",
-      "notForUseWhen": "The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival — this technique ends in a still hold frame.",
+      "oneLine": "A play-once video fires the moment the section scrolls into view: the product slides/rises/unfolds into place and SETTLES on a final hold frame - to the visitor it reads as a static asset that happened to arrive beautifully (the iPhone-17-Pro entrance pattern).",
+      "notForUseWhen": "The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival - this technique ends in a still hold frame.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-restrained-ai-marketing",
@@ -829,8 +829,8 @@
       "roleAffinity": [
         "transition"
       ],
-      "oneLine": "At the boundary between two full-bleed scenes, the outgoing scene's asset plays a short exit clip whose final motion — direction and velocity — is matched by the incoming scene's entrance clip, so the two scenes read as one continuous gesture instead of a cut on scroll.",
-      "notForUseWhen": "Adjacent scenes have no visual kinship to exploit (a chart section into a testimonial wall — nothing to match on), or either neighboring scene is itself scroll-scrubbed — a pinned scrub between two triggered clips breaks the velocity chain.",
+      "oneLine": "At the boundary between two full-bleed scenes, the outgoing scene's asset plays a short exit clip whose final motion - direction and velocity - is matched by the incoming scene's entrance clip, so the two scenes read as one continuous gesture instead of a cut on scroll.",
+      "notForUseWhen": "Adjacent scenes have no visual kinship to exploit (a chart section into a testimonial wall - nothing to match on), or either neighboring scene is itself scroll-scrubbed - a pinned scrub between two triggered clips breaks the velocity chain.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-neo-grotesque-portfolio",
@@ -848,8 +848,8 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "A section pins while its full-bleed asset scales, pans, and crops under CSS transforms driven by scroll progress, and successive copy blocks crossfade in the quiet zone — one asset, three or four framings, each paired with its own message (the classic Apple pinned sequence).",
-      "notForUseWhen": "There's only one copy block to show (a pin with one message is a pointless scroll tax), or the asset has no detail worth zooming into — the transform must reveal something at each step.",
+      "oneLine": "A section pins while its full-bleed asset scales, pans, and crops under CSS transforms driven by scroll progress, and successive copy blocks crossfade in the quiet zone - one asset, three or four framings, each paired with its own message (the classic Apple pinned sequence).",
+      "notForUseWhen": "There's only one copy block to show (a pin with one message is a pointless scroll tax), or the asset has no detail worth zooming into - the transform must reveal something at each step.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-editorial-magazine",
@@ -866,8 +866,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "Scroll progress expands a mask — a circle, the headline's own glyphs, or a widening aperture — over an already-playing full-bleed video, until the opening swallows the viewport and the video stands edge-to-edge as the section's hero.",
-      "notForUseWhen": "The video must be legible from the first pixel (the early mask hides 95% of it), or the page background and the brief reject a hard graphic gesture — the mask IS a loud editorial move, not a neutral one.",
+      "oneLine": "Scroll progress expands a mask - a circle, the headline's own glyphs, or a widening aperture - over an already-playing full-bleed video, until the opening swallows the viewport and the video stands edge-to-edge as the section's hero.",
+      "notForUseWhen": "The video must be legible from the first pixel (the early mask hides 95% of it), or the page background and the brief reject a hard graphic gesture - the mask IS a loud editorial move, not a neutral one.",
       "pairsPrototypes": [
         "recipe-neo-grotesque-portfolio",
         "recipe-editorial-magazine",
@@ -885,8 +885,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A full-bleed camera flythrough of an environment is paused and SCRUBBED by scroll progress: scrolling down dollies the camera forward through the space, scrolling up backs it out — the page becomes a place you travel through rather than a document you read.",
-      "notForUseWhen": "The page is short (a journey needs 300vh+ of runway to feel like travel), the content is informational (docs, dashboards), or the brief has no environment to travel through — a journey with no destination is just a long scrub.",
+      "oneLine": "A full-bleed camera flythrough of an environment is paused and SCRUBBED by scroll progress: scrolling down dollies the camera forward through the space, scrolling up backs it out - the page becomes a place you travel through rather than a document you read.",
+      "notForUseWhen": "The page is short (a journey needs 300vh+ of runway to feel like travel), the content is informational (docs, dashboards), or the brief has no environment to travel through - a journey with no destination is just a long scrub.",
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-scientific-infra-marketing",
@@ -904,8 +904,8 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "A full-bleed turntable video of the product rotating from its back to its front is paused and SCRUBBED by scroll progress through a pinned section — scrolling down turns the object toward you, scrolling up turns it away (the iPhone-Air reveal pattern).",
-      "notForUseWhen": "The subject looks the same from every angle (spheres, flat cards, gradients — rotation reveals nothing), or the page can't afford a pinned section (short utility pages, docs), or scroll must keep its native meaning throughout.",
+      "oneLine": "A full-bleed turntable video of the product rotating from its back to its front is paused and SCRUBBED by scroll progress through a pinned section - scrolling down turns the object toward you, scrolling up turns it away (the iPhone-Air reveal pattern).",
+      "notForUseWhen": "The subject looks the same from every angle (spheres, flat cards, gradients - rotation reveals nothing), or the page can't afford a pinned section (short utility pages, docs), or scroll must keep its native meaning throughout.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-restrained-ai-marketing",
@@ -923,8 +923,8 @@
       "roleAffinity": [
         "product"
       ],
-      "oneLine": "40–120 generated stills are preloaded and drawn to a full-bleed `<canvas>`, the frame index driven by scroll progress through a pinned section — the classic AirPods pattern, and the reliable substitute wherever video `currentTime` seeking is too janky to ship.",
-      "notForUseWhen": "The motion is continuous atmosphere (smoke, water, weather) — frame-to-frame generation can't hold fluid continuity; or the budget can't carry 40+ image generations for one section.",
+      "oneLine": "40-120 generated stills are preloaded and drawn to a full-bleed `<canvas>`, the frame index driven by scroll progress through a pinned section - the classic AirPods pattern, and the reliable substitute wherever video `currentTime` seeking is too janky to ship.",
+      "notForUseWhen": "The motion is continuous atmosphere (smoke, water, weather) - frame-to-frame generation can't hold fluid continuity; or the budget can't carry 40+ image generations for one section.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-devtools-marketing",
@@ -941,8 +941,8 @@
       "roleAffinity": [
         "background"
       ],
-      "oneLine": "A full-bleed ambient video loop plays continuously behind the section, and its `playbackRate` eases with scroll VELOCITY — calm at rest, rushing while the visitor scrolls fast, always relaxing back to 1.0 — the page's atmosphere responds to how hard you push it.",
-      "notForUseWhen": "The background sits behind dense reading content (a background that reacts to reading-scroll punishes the reader), or the loop's motion is rhythmic/periodic — speed-ramping a visible beat sounds like a record skipping.",
+      "oneLine": "A full-bleed ambient video loop plays continuously behind the section, and its `playbackRate` eases with scroll VELOCITY - calm at rest, rushing while the visitor scrolls fast, always relaxing back to 1.0 - the page's atmosphere responds to how hard you push it.",
+      "notForUseWhen": "The background sits behind dense reading content (a background that reacts to reading-scroll punishes the reader), or the loop's motion is rhythmic/periodic - speed-ramping a visible beat sounds like a record skipping.",
       "pairsPrototypes": [
         "recipe-ai-foundry-dark",
         "recipe-aurora-marketing",
@@ -960,8 +960,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A single oversized generated still scales and pans almost imperceptibly — a 1.0→1.08× push over 20–40 seconds — giving a static hero cinematic gravity with zero video dependency; the cheapest \"always something in motion\" in the catalogue.",
-      "notForUseWhen": "The brief demands genuinely living imagery (a zoom on a frozen crowd reads as a haunted photograph — use video techniques), the asset can only be generated at 1080p (the push will soften it), or the section cycles many images fast (push-zoom needs dwell time to register).",
+      "oneLine": "A single oversized generated still scales and pans almost imperceptibly - a 1.0→1.08× push over 20-40 seconds - giving a static hero cinematic gravity with zero video dependency; the cheapest \"always something in motion\" in the catalogue.",
+      "notForUseWhen": "The brief demands genuinely living imagery (a zoom on a frozen crowd reads as a haunted photograph - use video techniques), the asset can only be generated at 1080p (the push will soften it), or the section cycles many images fast (push-zoom needs dwell time to register).",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-neo-grotesque-portfolio",
@@ -999,8 +999,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "The subject is anchored HARD to one vertical third at generation time and the UI block occupies the opposite third as a visual counterweight — image mass and type mass balance across the frame like a scale, and the storyboard decides the side per scene, alternating for rhythm.",
-      "notForUseWhen": "The subject is inherently centered and symmetric (a mandala, a head-on product orthographic) — forcing it to a third fights the asset; use letterbox-stage or center it and push UI to the matte. Also wrong for scenes with no UI at all — a counterweight with nothing to counter is just an off-center picture.",
+      "oneLine": "The subject is anchored HARD to one vertical third at generation time and the UI block occupies the opposite third as a visual counterweight - image mass and type mass balance across the frame like a scale, and the storyboard decides the side per scene, alternating for rhythm.",
+      "notForUseWhen": "The subject is inherently centered and symmetric (a mandala, a head-on product orthographic) - forcing it to a third fights the asset; use letterbox-stage or center it and push UI to the matte. Also wrong for scenes with no UI at all - a counterweight with nothing to counter is just an off-center picture.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-neo-grotesque-portfolio",
@@ -1018,8 +1018,8 @@
       "roleAffinity": [
         "entrance | chrome"
       ],
-      "oneLine": "Every hand-made SVG on the page — lettered headlines, nav labels, full scene",
-      "notForUseWhen": "The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth — kinetic-line-accents is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).",
+      "oneLine": "Every hand-made SVG on the page - lettered headlines, nav labels, full scene",
+      "notForUseWhen": "The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth - kinetic-line-accents is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).",
       "pairsPrototypes": [
         "style-doodle",
         "style-outline-wireframe",
@@ -1039,7 +1039,7 @@
         "entrance"
       ],
       "oneLine": "The site withholds itself until the visitor makes a choice or watches an",
-      "notForUseWhen": "Conversion-critical or utility surfaces (anything a user visits to DO something — dashboards, docs, checkout, support), repeat-visit products (the ritual delights once and obstructs forever), or briefs where nothing behind the gate justifies the withholding.",
+      "notForUseWhen": "Conversion-critical or utility surfaces (anything a user visits to DO something - dashboards, docs, checkout, support), repeat-visit products (the ritual delights once and obstructs forever), or briefs where nothing behind the gate justifies the withholding.",
       "pairsPrototypes": [
         "aesthetic-luxury-cinematic-dark",
         "aesthetic-sculptural-minimal",
@@ -1057,8 +1057,8 @@
       "roleAffinity": [
         "hero"
       ],
-      "oneLine": "A full-bleed video is visible ONLY through giant headline glyphs — an SVG text mask (or `mix-blend-mode` trick) over a solid page-ground — so the type becomes a window and the motion becomes texture; the video is generated FOR the glyphs: high-contrast movement, rich texture, no subject that needs to be seen whole.",
-      "notForUseWhen": "The headline is long (>3 words), set in a light weight, or in a typeface with thin strokes — video through hairlines reads as noise; the technique needs ≥800-weight glyphs at ≥18vw. Also wrong when the video's CONTENT matters — viewers must recognise the subject, and the mask destroys recognisability.",
+      "oneLine": "A full-bleed video is visible ONLY through giant headline glyphs - an SVG text mask (or `mix-blend-mode` trick) over a solid page-ground - so the type becomes a window and the motion becomes texture; the video is generated FOR the glyphs: high-contrast movement, rich texture, no subject that needs to be seen whole.",
+      "notForUseWhen": "The headline is long (>3 words), set in a light weight, or in a typeface with thin strokes - video through hairlines reads as noise; the technique needs ≥800-weight glyphs at ≥18vw. Also wrong when the video's CONTENT matters - viewers must recognise the subject, and the mask destroys recognisability.",
       "pairsPrototypes": [
         "style-oversized-neo-grotesque",
         "style-bold-display",

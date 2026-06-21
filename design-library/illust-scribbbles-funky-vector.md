@@ -13,11 +13,11 @@ images:
 
 # Scribbbles funky vector scribble
 
-single-line abstract scribbles — squiggles, loops, tangles.
+single-line abstract scribbles - squiggles, loops, tangles.
 
 ## Visual signatures
 
-- single-line abstract scribbles — squiggles, loops, tangles
+- single-line abstract scribbles - squiggles, loops, tangles
 - 100% vector, color customizable
 - feels like a marker test on white
 - decoration role only, never depicts a subject
@@ -48,7 +48,7 @@ single-line abstract scribbles — squiggles, loops, tangles.
 
 > Loose abstract scribble made with single 4px marker line, vector shape,
 > monochrome, decoration-only no subject, isolated on white, Scribbbles.design
-> funky aesthetic — like a marker doodle test.
+> funky aesthetic - like a marker doodle test.
 
 ## When to use
 

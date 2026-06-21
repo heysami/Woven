@@ -46,7 +46,7 @@ raster: not appropriate
 
 ## Reactive behaviors
 
-**Light**: none — vector
+**Light**: none - vector
 
 **Highlight**: pointer-hover on a face fills it with a tint
 

@@ -12,17 +12,17 @@ images:
 
 # Grand Budapest symmetrical-pastel (Yeoman / Anderson)
 
-Wes Anderson's *The Grand Budapest Hotel* (2014), shot by **Robert Yeoman** — Anderson's lifelong DP. The signature is **rigorous symmetrical composition** within a **pastel storybook palette** (pinks, purples, reds, blues, browns), with **three different aspect ratios deployed for three different eras**: 1.37:1 for 1930s, 2.35:1 for 1960s, 1.85:1 for 1980s. The whole film reads as a sequence of perfectly composed dollhouse vignettes.
+Wes Anderson's *The Grand Budapest Hotel* (2014), shot by **Robert Yeoman** - Anderson's lifelong DP. The signature is **rigorous symmetrical composition** within a **pastel storybook palette** (pinks, purples, reds, blues, browns), with **three different aspect ratios deployed for three different eras**: 1.37:1 for 1930s, 2.35:1 for 1960s, 1.85:1 for 1980s. The whole film reads as a sequence of perfectly composed dollhouse vignettes.
 
 ## Visual signatures
 
-- **strict symmetrical composition** — subjects centered, architecture mirrored, parallel lines aligned
-- pastel palette dominated by **pinks, purples, reds, blues, browns** — storybook nostalgia
-- **three aspect ratios per period** — 1.37:1 Academy (1930s), 1.85:1 (1980s), 2.35:1 (1960s)
+- **strict symmetrical composition** - subjects centered, architecture mirrored, parallel lines aligned
+- pastel palette dominated by **pinks, purples, reds, blues, browns** - storybook nostalgia
+- **three aspect ratios per period** - 1.37:1 Academy (1930s), 1.85:1 (1980s), 2.35:1 (1960s)
 - the 1.37:1 ratio gives **generous headroom** above subjects (Yeoman's deliberate move)
 - deliberate camera movements: **tracking shots, whip pans, dolly-ins** as rhythmic beats
-- frontal flat staging — subjects often face camera directly
-- production design as the visual — every frame composed like a miniature
+- frontal flat staging - subjects often face camera directly
+- production design as the visual - every frame composed like a miniature
 - props styled to read as illustrated (vintage hotel keys, hand-lettered signs, bespoke menus)
 - soft even lighting (NOT moody / NOT chiaroscuro)
 
@@ -42,17 +42,17 @@ Wes Anderson's *The Grand Budapest Hotel* (2014), shot by **Robert Yeoman** — 
 
 ## Named references
 
-**Photographers / cinematographers**: Robert Yeoman (DP — Anderson's collaborator on every feature); cite-by-name lineage to Ozu's symmetrical-frontal framing; Béla Tarr / Stanley Kubrick frontal-staging tradition
+**Photographers / cinematographers**: Robert Yeoman (DP - Anderson's collaborator on every feature); cite-by-name lineage to Ozu's symmetrical-frontal framing; Béla Tarr / Stanley Kubrick frontal-staging tradition
 
 **Magazines**: World of Interiors, Cabana, Apartamento (the storybook-interior register); Anderson's own *The Wes Anderson Collection* book
 
 **Movements**: post-Anderson "symmetrical-pastel" Instagram phenomenon (#AccidentallyWesAnderson); storybook-cinema revival
 
-**Brands**: Bonpoint, Liberty London, Aesop (the pastel-luxury-craft retail aesthetic), Cire Trudon — all visually-Anderson-adjacent
+**Brands**: Bonpoint, Liberty London, Aesop (the pastel-luxury-craft retail aesthetic), Cire Trudon - all visually-Anderson-adjacent
 
 ## Example prompt template
 
-> Centered symmetrical composition of [SUBJECT — a hotel concierge or guest
+> Centered symmetrical composition of [SUBJECT - a hotel concierge or guest
 > standing dead-center in front of an ornate pastel-pink hotel facade],
 > Academy aspect ratio **1.37:1 with generous headroom above the subject**,
 > soft even frontal lighting (NO chiaroscuro), pastel palette dominated by

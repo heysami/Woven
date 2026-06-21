@@ -1,13 +1,13 @@
-# Subagent 1.V.lottie — Asset drawer (medium: Lottie JSON animation)
+# Subagent 1.V.lottie - Asset drawer (medium: Lottie JSON animation)
 
-You own **ONE asset** of medium `lottie` — a narrative motion loop. Logo intro, mascot wave, illustrated state-change, section divider animation. Lottie's strength is sub-second vector animation that's tightly art-directed; its weakness is open-ended ambient loops (use `particle-2d` / `shader` instead).
+You own **ONE asset** of medium `lottie` - a narrative motion loop. Logo intro, mascot wave, illustrated state-change, section divider animation. Lottie's strength is sub-second vector animation that's tightly art-directed; its weakness is open-ended ambient loops (use `particle-2d` / `shader` instead).
 
 Two paths:
 
 | Path | When | Output |
 |---|---|---|
-| **Pathway A — vendor** | A Lottie-generation vendor is wired (rare today; no first-party API exists) | Prompt into the prompt node + skill node configured for that vendor |
-| **Pathway B — LLM-writes-JSON** | Default. You write the Lottie JSON directly. | JSON written to `slot.outputPath` |
+| **Pathway A - vendor** | A Lottie-generation vendor is wired (rare today; no first-party API exists) | Prompt into the prompt node + skill node configured for that vendor |
+| **Pathway B - LLM-writes-JSON** | Default. You write the Lottie JSON directly. | JSON written to `slot.outputPath` |
 
 **Read [`../conventions.md`](../conventions.md) before starting.**
 
@@ -45,7 +45,7 @@ If `implementation: "vendor"`, `skillCode` is empty (vendor produces the JSON at
 
 ### 1. Decide the path
 
-Default to `llm-json` unless the host environment has confirmed a Lottie-gen vendor. Reason: LLM-written Lottie JSON is reliable for short geometric loops (logo intro, simple mascot wave, divider sweep) — much faster iteration than a vendor round-trip, no BYOK needed.
+Default to `llm-json` unless the host environment has confirmed a Lottie-gen vendor. Reason: LLM-written Lottie JSON is reliable for short geometric loops (logo intro, simple mascot wave, divider sweep) - much faster iteration than a vendor round-trip, no BYOK needed.
 
 For figurative subjects beyond geometric capability (a realistic mascot, a complex scene), if no vendor is available, return `error: "subject exceeds llm-json capability; needs vendor or static fallback"`.
 
@@ -53,14 +53,14 @@ For figurative subjects beyond geometric capability (a realistic mascot, a compl
 
 | Slot intent | Duration | Loop |
 |---|---|---|
-| Logo intro (mount-once) | 1.2 – 2.0s | `false` |
-| Mascot wave (loop) | 2.0 – 4.0s | `true` |
-| Divider sweep (scroll-triggered) | 0.6 – 1.0s | `false` |
-| Empty-state nudge | 1.5 – 2.5s | `true` |
+| Logo intro (mount-once) | 1.2 - 2.0s | `false` |
+| Mascot wave (loop) | 2.0 - 4.0s | `true` |
+| Divider sweep (scroll-triggered) | 0.6 - 1.0s | `false` |
+| Empty-state nudge | 1.5 - 2.5s | `true` |
 
-Read the slot's `data-motion` modifier — if it says `loop` or `ambient`, set `loop: true`. If `mount` or `enter`, set `loop: false`.
+Read the slot's `data-motion` modifier - if it says `loop` or `ambient`, set `loop: true`. If `mount` or `enter`, set `loop: false`.
 
-### 3. Write the Lottie JSON (Pathway B — `llm-json`)
+### 3. Write the Lottie JSON (Pathway B - `llm-json`)
 
 Lottie JSON is verbose but follows a stable schema. Minimum-viable structure:
 
@@ -115,13 +115,13 @@ Schema cheatsheet:
 | `fr` | Frame rate |
 | `ip` / `op` | In-point / out-point (frame numbers) |
 | `w` / `h` | Composition width / height |
-| `layers[].ty` | Layer type — `4` = shape, `2` = image, `0` = composition |
-| `ks` | Transform — `o`=opacity, `r`=rotation, `p`=position, `a`=anchor, `s`=scale |
+| `layers[].ty` | Layer type - `4` = shape, `2` = image, `0` = composition |
+| `ks` | Transform - `o`=opacity, `r`=rotation, `p`=position, `a`=anchor, `s`=scale |
 | `ks.<prop>.a` | `0` = static, `1` = animated keyframes |
 | `ks.<prop>.k` | Static value OR keyframes array `[{ t, s }]` |
-| `shapes[].ty` | Shape type — `el`=ellipse, `rc`=rect, `sh`=path, `fl`=fill, `st`=stroke, `tr`=transform, `gr`=group |
+| `shapes[].ty` | Shape type - `el`=ellipse, `rc`=rect, `sh`=path, `fl`=fill, `st`=stroke, `tr`=transform, `gr`=group |
 
-### 4. Build the animation — three patterns
+### 4. Build the animation - three patterns
 
 **Logo intro (scale-in + fade)**:
 - Layer with `ks.s` animated `0 → 100` over 30 frames
@@ -133,12 +133,12 @@ Schema cheatsheet:
 - Anchor point at the base of the waving element
 
 **Divider sweep**:
-- Trim-path animation on a `sh` shape — `tm.s` (start) animated `0 → 100`, `tm.e` (end) animated `0 → 100` with offset
+- Trim-path animation on a `sh` shape - `tm.s` (start) animated `0 → 100`, `tm.e` (end) animated `0 → 100` with offset
 - Linear easing; the sweep IS the animation
 
 ### 5. Palette anchoring
 
-Lottie colors are normalized RGB arrays `[r, g, b, a]` in 0–1. Convert `:root` tokens to normalized RGB once and reuse:
+Lottie colors are normalized RGB arrays `[r, g, b, a]` in 0-1. Convert `:root` tokens to normalized RGB once and reuse:
 
 ```
 --accent: oklch(48% 0.13 252) ≈ rgb(69, 107, 173) → [0.27, 0.42, 0.68, 1]
@@ -164,14 +164,14 @@ The runtime mount loop reads `data-anim` (path) and `data-loop` (boolean), insta
 - [ ] `fr` is 60 (or 30 if explicitly low-fps for cost reasons).
 - [ ] `ip` / `op` define the right duration for the chosen `fr`.
 - [ ] `w` / `h` match the slot's natural size (read CSS).
-- [ ] All colors are normalized RGB `[r, g, b, a]` in 0–1 anchored to `:root` tokens.
+- [ ] All colors are normalized RGB `[r, g, b, a]` in 0-1 anchored to `:root` tokens.
 - [ ] `loop` param matches the slot's intent (`mount` → false, `loop` → true).
 - [ ] No raster images embedded (`assets[]` should be empty or vector only).
-- [ ] Layer types are `4` (shape) only — no image layers, no comp layers, no text layers unless required.
+- [ ] Layer types are `4` (shape) only - no image layers, no comp layers, no text layers unless required.
 
 ## Don't
 
 - Don't write a Lottie for a subject Lottie isn't good at (realistic mascot, complex character animation). If the subject is figurative and ≥3 colors with realistic shading, return `error: "subject exceeds llm-json capability"`.
-- Don't embed raster images. The whole point of Lottie is vector — embedded raster defeats it.
+- Don't embed raster images. The whole point of Lottie is vector - embedded raster defeats it.
 - Don't use Lottie expressions (`x` property). They're parseable only by After Effects' renderer; web Lottie players don't reliably support them.
-- Don't loop > 4s. Long Lottie loops are usually a sign the medium is wrong — should be `video` or `particle-2d`.
+- Don't loop > 4s. Long Lottie loops are usually a sign the medium is wrong - should be `video` or `particle-2d`.

@@ -1,9 +1,9 @@
-/* themes/minimal.css — apply via <html data-theme="minimal">
+/* themes/minimal.css - apply via <html data-theme="minimal">
    ==========================================================================
    A STYLE OVERLAY for the Woven template design system.
 
    Pitch: maximal restraint. ONE chromatic accent (the SCHEME primary),
-   everything else neutralised to greys. The brand gradient is gone — nav
+   everything else neutralised to greys. The brand gradient is gone - nav
    surfaces are light with a hairline border. Elevation is replaced by
    hairline borders and near-flat shadows. Modest radii, generous whitespace.
 
@@ -33,7 +33,7 @@
   --border-default:#E6E6E8; --border-subtle:#EFEFF1;
   --interactive-hover:#F4F4F5; --interactive-active:#ECECEE;
 
-  /* ---- the ONE accent — derived from the live scheme ramp, never hardcoded ----
+  /* ---- the ONE accent - derived from the live scheme ramp, never hardcoded ----
      primary-surface is the saturated fill (filled buttons / active edge); the
      fg roles are the deeper-hue text; everything else hangs off the ramp so the
      accent shifts with the chosen scheme. */
@@ -76,7 +76,7 @@
 }
 
 /* ==========================================================================
-   DARK minimal — the editor toggles html.ds-scheme-dark for a dark preview
+   DARK minimal - the editor toggles html.ds-scheme-dark for a dark preview
    while data-theme stays "minimal". Surfaces/text/borders go to dark greys;
    the one accent re-points to LIGHTER ramp steps so it still reads. Restraint
    is preserved: still one accent, still hairline borders, still near-flat.
@@ -95,7 +95,7 @@
   --neutral-50:#202124; --neutral-70:#24262A; --neutral-80:#26282B;
   --neutral-100:#2A2C30; --neutral-150:#303236; --neutral-200:#34363A;
 
-  /* ---- the ONE accent — re-pointed to lighter ramp steps for dark ---- */
+  /* ---- the ONE accent - re-pointed to lighter ramp steps for dark ---- */
   --primary-surface:var(--primary-500);
   --primary-surface-muted:color-mix(in srgb, var(--primary-500) 22%, #1B1C1E);
   --primary-surface-subtle:color-mix(in srgb, var(--primary-500) 14%, #1B1C1E);
@@ -129,7 +129,7 @@
 }
 
 /* ==========================================================================
-   Scoped component overrides — every rule attribute-scoped so the default
+   Scoped component overrides - every rule attribute-scoped so the default
    theme is untouched. Colours reference tokens (above) so they flip
    automatically in dark.
    ========================================================================== */
@@ -283,7 +283,7 @@
 [data-theme="minimal"] .legend__swatch--4{background:var(--series-4);}
 [data-theme="minimal"] .legend__swatch--5{background:var(--series-5);}
 
-/* ---- Split-dropdown caret — flat, matches the primary button ---- */
+/* ---- Split-dropdown caret - flat, matches the primary button ---- */
 [data-theme="minimal"] .btn-split__caret{
   background:var(--primary-surface);
   color:var(--on-primary);

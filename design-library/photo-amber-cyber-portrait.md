@@ -4,7 +4,7 @@ name: Amber cyber portrait
 category: cinematic
 era: current
 pairsPrototypes: [aesthetic-cyberpunk, recipe-neo-grotesque-portfolio, recipe-ai-foundry-dark, aesthetic-rgb-gamer]
-notForUseWhen: Brief is daylight-honest, corporate-trust, or warm-domestic — the register is moody tech-noir.
+notForUseWhen: Brief is daylight-honest, corporate-trust, or warm-domestic - the register is moody tech-noir.
 images:
   - src: photo-amber-cyber-portrait.png
     reason: Photography style sample.
@@ -12,7 +12,7 @@ images:
 
 # Amber cyber portrait
 
-A figure in amber/tungsten low light wearing tech (AR glasses, headset, visor), face half-lit, near-black surround — the "modern architect of the future" portrait.
+A figure in amber/tungsten low light wearing tech (AR glasses, headset, visor), face half-lit, near-black surround - the "modern architect of the future" portrait.
 
 ## Visual signatures
 

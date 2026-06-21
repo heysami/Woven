@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""compare.py — lens calibration confusion-matrix reporter.
+"""compare.py - lens calibration confusion-matrix reporter.
 
 Reads each fixture's expected.json + the verdicts the 3 lenses wrote
 (<lens>-verdict.json), compares verdict-vs-expected, emits a per-lens
@@ -10,9 +10,9 @@ Usage:
     python3 .claude/lens-calibration/compare.py <dir>      # custom fixtures dir
 
 Exit codes:
-    0 — calibration clean (≥9/10 correct per lens)
-    1 — calibration regressed (one or more lenses scored <9/10)
-    2 — fixture or verdict file missing
+    0 - calibration clean (≥9/10 correct per lens)
+    1 - calibration regressed (one or more lenses scored <9/10)
+    2 - fixture or verdict file missing
 """
 from __future__ import annotations
 
@@ -62,13 +62,13 @@ def evaluate_verdict(expected: dict, actual: dict) -> tuple[str, str]:
     """Return (status, note) where status ∈ {match, false-pass, false-fail, skip-ok, skip-bad, missing}.
 
     "missing" is reserved for "the lens didn't produce a verdict file at all"
-    (regardless of what was expected — we can't tell pass-skip-or-no-run when
+    (regardless of what was expected - we can't tell pass-skip-or-no-run when
     the file is absent). "skip-bad" fires only when the file exists but says
     `fail`/`pass` when an n/a was expected.
     """
     exp_v = expected.get("verdict")        # "pass" | "fail" | "n/a"
 
-    # File missing entirely — we cannot infer whether the lens ran-and-skipped
+    # File missing entirely - we cannot infer whether the lens ran-and-skipped
     # or simply didn't run. Report as missing in either case.
     if actual is None:
         return ("missing", "no verdict file produced")
@@ -124,7 +124,7 @@ def compute_per_lens_summary(rows: list[tuple[str, dict, dict]]) -> dict:
     for fixture_id, expected, verdicts in rows:
         for lens in LENSES:
             exp_for_lens = (expected.get(lens) or {})
-            # IMPORTANT: pass the verdict dict OR None directly — don't
+            # IMPORTANT: pass the verdict dict OR None directly - don't
             # substitute `{}` for None, or evaluate_verdict's missing-file
             # branch won't fire and a missing verdict gets misreported as
             # skip-bad on n/a-expected fixtures.
@@ -195,22 +195,22 @@ def render_recommended_actions(report: dict) -> int:
         s = report["summary"][lens]
         if s["missing"]:
             actions.append(
-                f"  • {red(lens)}: {s['missing']} fixture(s) have no verdict file — "
+                f"  • {red(lens)}: {s['missing']} fixture(s) have no verdict file - "
                 f"the lens didn't run or wrote to the wrong path. Re-dispatch.")
             any_missing = True
         if s["false-pass"]:
             actions.append(
-                f"  • {red(lens)}: {s['false-pass']} false-pass(es) — the lens is too "
+                f"  • {red(lens)}: {s['false-pass']} false-pass(es) - the lens is too "
                 f"lenient. Sharpen the rubric for the failing check(s). Re-run.")
             any_regressed = True
         if s["false-fail"]:
             actions.append(
-                f"  • {yellow(lens)}: {s['false-fail']} false-fail(s) — the lens is "
+                f"  • {yellow(lens)}: {s['false-fail']} false-fail(s) - the lens is "
                 f"too strict. Loosen the borderline-case wording. Re-run.")
             any_regressed = True
         if s["skip-bad"]:
             actions.append(
-                f"  • {yellow(lens)}: {s['skip-bad']} skip(s) wrong — the lens should "
+                f"  • {yellow(lens)}: {s['skip-bad']} skip(s) wrong - the lens should "
                 f"have skipped per its rules but didn't. Check the skip-condition wording.")
             any_regressed = True
 

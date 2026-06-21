@@ -41,7 +41,7 @@ emits a confusion matrix.
 
 Two steps:
 
-### Step 1 — Dispatch all 30 lens runs (3 lenses × 10 fixtures)
+### Step 1 - Dispatch all 30 lens runs (3 lenses × 10 fixtures)
 
 The lens agents are already registered as Claude Code subagent types
 (see `.claude/agents/{craft,aesthetic,concept}-lens.md`). For each
@@ -68,7 +68,7 @@ prdConcept:    "<from prd-row.json's 'concept'>"           # im only
 
 reportPath:    ".claude/lens-calibration/fixtures/<fixture-id>/<lens>-verdict.json"
                 # CALIBRATION OVERRIDE: write your verdict to this path
-                # directly. Do NOT POST to /__workflow/node/<id>/commit —
+                # directly. Do NOT POST to /__workflow/node/<id>/commit -
                 # this is calibration, not production.
 === END ENVELOPE ===
 ```
@@ -89,12 +89,12 @@ Verdict shape (per the lens playbooks):
 }
 ```
 
-**Dispatch shortcut** — if you're running this from a Claude Code session,
+**Dispatch shortcut** - if you're running this from a Claude Code session,
 fire all 30 in parallel as a single message with 30 `Task(...)` calls.
 Total wall-clock ~5-10 minutes (lenses run in parallel; each uses
 preview tools against a small runtime).
 
-### Step 2 — Run compare.py
+### Step 2 - Run compare.py
 
 ```bash
 cd /Users/sami/Documents/Woven
@@ -112,8 +112,8 @@ Example output (showing a calibration run with one regression):
 
 PER-LENS SUMMARY
   craft-lens     : 10/10 correct  (precision=1.00, recall=1.00)
-  aesthetic-lens :  9/10 correct  (1 false-fail — fixture sim-04-aesthetic-mismatch)
-  concept-lens   :  7/10 correct  (3 false-pass — fixtures im-01, im-05, sim-05)
+  aesthetic-lens :  9/10 correct  (1 false-fail - fixture sim-04-aesthetic-mismatch)
+  concept-lens   :  7/10 correct  (3 false-pass - fixtures im-01, im-05, sim-05)
                                    → concept-lens §4 "Mapping non-triviality"
                                      check is too weak; sharpen the rubric.
 
@@ -125,10 +125,10 @@ PER-FIXTURE DETAIL
   ...
 
 ═══ Recommended actions ═══
-  • Sharpen concept-lens §4 "Mapping non-triviality" check — the rubric
+  • Sharpen concept-lens §4 "Mapping non-triviality" check - the rubric
     accepts direct-echo mappings when it should reject them. Quote the
     brief's verbatim antiPatterns string in the check.
-  • Investigate aesthetic-lens false-fail on sim-04 — the lens may be
+  • Investigate aesthetic-lens false-fail on sim-04 - the lens may be
     too strict on borderline DS palette match.
 ```
 
@@ -163,7 +163,7 @@ If `compare.py` reports a regression after editing a lens playbook:
 
 ## Why this isn't a real automated test runner
 
-Calibration runs the lens agents through Claude Code's Task tool — same
+Calibration runs the lens agents through Claude Code's Task tool - same
 mechanism production uses. Wrapping that in a CI runner would require:
 - Spawning Claude Code subprocesses programmatically (possible but heavy)
 - Caching past verdicts to avoid re-dispatching identical inputs

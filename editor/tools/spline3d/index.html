@@ -10,7 +10,7 @@
 <script src="/editor/tools/_shared/tooltip.js" defer></script>
 <style>
   :root {
-    /* Woven DS remap — local var names kept so the rest of the tool CSS is
+    /* Woven DS remap - local var names kept so the rest of the tool CSS is
        untouched, but each now points at a canonical Woven token. Chrome reads
        LIGHT (paper-white surfaces, hairline borders, green accent) to match the
        editor; the WebGL stage keeps its own dark *content* background below. */
@@ -21,7 +21,7 @@
     --text: var(--wv-text);             /* near-black ink */
     --muted: var(--wv-text-muted);      /* secondary text */
     --accent: var(--wv-accent);         /* signature green */
-    --accent-2: var(--wv-accent);       /* was teal — unify on the green accent */
+    --accent-2: var(--wv-accent);       /* was teal - unify on the green accent */
     --shadow: var(--wv-shadow-lg, 0 12px 32px rgba(0,0,0,.12));
     font-family: var(--wv-font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif);
   }
@@ -32,11 +32,11 @@
      full-bleed fixed wrapper. The stage + fx overlay fill it ABSOLUTELY (not
      fixed) so they follow #coreCanvas when detached-panels.css repositions it. */
   #coreCanvas { position: fixed; inset: 0; }
-  /* The WebGL stage is 3D CONTENT — it keeps a dark backdrop even though the
+  /* The WebGL stage is 3D CONTENT - it keeps a dark backdrop even though the
      surrounding chrome is light Woven. */
   #stage { position: absolute; inset: 0; background: var(--wv-viewport, #1a1c22); }
   canvas { display: block; outline: none; }
-  /* Wired-FX overlay — a 2D canvas blitted above the WebGL render. Pointer-
+  /* Wired-FX overlay - a 2D canvas blitted above the WebGL render. Pointer-
      transparent so orbit/select still hit the live canvas underneath. Hidden
      (display:none) whenever no wired effects are active, so it's a true no-op. */
   #fx-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; display: none; }
@@ -57,7 +57,7 @@
   .tool svg { width: 19px; height: 19px; }
   .sep { height: 1px; background: var(--line); margin: 3px 2px; }
   /* Detached (node selected): the shared detached-panels.css floats the LEFT
-     panel full-height as a solid card. This is a COMPACT icon strip — keep it
+     panel full-height as a solid card. This is a COMPACT icon strip - keep it
      vertically centred, content-sized, and TRANSPARENT so it floats cleanly
      over the scene instead of a tall white slab. Higher specificity +
      !important beats the shared [data-float-panel="left"] rule. */
@@ -124,7 +124,7 @@
   .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 8px; line-height: 1.6; }
   .hint {
     position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-    /* light Woven pill (was a dark glass pill) — reads on the paper chrome */
+    /* light Woven pill (was a dark glass pill) - reads on the paper chrome */
     background: var(--panel); backdrop-filter: blur(8px); border: 1px solid var(--line);
     box-shadow: var(--shadow);
     color: var(--muted); font-size: 11px; padding: 7px 14px; border-radius: 999px; z-index: 9; display: flex; gap: 13px;
@@ -138,13 +138,13 @@
 <body>
 <!-- #coreCanvas wraps the WebGL stage (+ fx overlay) so floating-panels mode can
      pin the live canvas onto the node's core rect. In the default layout it's a
-     transparent full-bleed passthrough — JS still references #stage/#fx-overlay. -->
+     transparent full-bleed passthrough - JS still references #stage/#fx-overlay. -->
 <div id="coreCanvas">
   <div id="stage"></div>
   <canvas id="fx-overlay"></canvas>
   <!-- HUD overlays live INSIDE #coreCanvas so they pin to the node viewport, not
        the grown iframe, when the panels are detached. -->
-  <div class="badge">Spline-style editor · <b id="fps">–</b></div>
+  <div class="badge">Spline-style editor · <b id="fps">-</b></div>
   <div class="hint">
     <span><b>Click</b> select</span><span><b>Shift</b> multi</span><span><b>W/E/R</b> move·rot·scale</span><span><b>Drag</b> orbit</span><span><b>Del</b> remove</span>
   </div>
@@ -244,7 +244,7 @@
         <div class="wv-acc-body">
         <div class="row"><button class="btn on full" id="b-liveblob"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><circle cx="12" cy="12" r="8"/></svg>Live blob from selected</button></div>
         <div class="row"><button class="btn ghost full" id="b-addball"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>Add metaball</button></div>
-        <div class="empty" style="padding:6px 4px;font-size:11px">Fuses into a smooth liquid that stays editable — drag the dots to reshape. (Re-polygonised live, like the water.)</div>
+        <div class="empty" style="padding:6px 4px;font-size:11px">Fuses into a smooth liquid that stays editable - drag the dots to reshape. (Re-polygonised live, like the water.)</div>
         </div>
       </details>
 
@@ -402,7 +402,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-// Soft light gradient background (Spline-style) — a vertical lavender wash.
+// Soft light gradient background (Spline-style) - a vertical lavender wash.
 function makeGradientBg(hex) {
   const c = document.createElement('canvas'); c.width = 16; c.height = 256; const x = c.getContext('2d');
   const base = new THREE.Color(hex);
@@ -503,7 +503,7 @@ function procTexture(kind, color) {
 
 // ── Materials ───────────────────────────────────────────────────────────
 function physicalMat(hex) {
-  // Glossy candy/jelly default — the Spline "liquid" look: full clearcoat,
+  // Glossy candy/jelly default - the Spline "liquid" look: full clearcoat,
   // low roughness, a touch of sheen so highlights read wet.
   return new THREE.MeshPhysicalMaterial({ color: new THREE.Color(hex), roughness: 0.16, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08, sheen: 0.4, sheenColor: new THREE.Color(0xffffff), envMapIntensity: 1.25 });
 }
@@ -515,7 +515,7 @@ const MODE = {
   plastic: m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.35, clearcoat: 0.8, transparent: false }),
   matte:   m => Object.assign(m, { transmission: 0, metalness: 0, roughness: 0.95, clearcoat: 0, transparent: false }),
 };
-// Fresnel rim — injected once into a physical material.
+// Fresnel rim - injected once into a physical material.
 function makeFresnel(m) {
   m.transmission = 0; m.metalness = 0; m.roughness = 0.4;
   m.onBeforeCompile = (sh) => {
@@ -573,7 +573,7 @@ function addShape(kind) {
 }
 
 // ── Import 3D asset (.glb / .gltf) ─────────────────────────────────────────
-// Loads a model — uploaded by the user OR fed from an upstream node (a 3d-gen /
+// Loads a model - uploaded by the user OR fed from an upstream node (a 3d-gen /
 // Meshy output linked into this node, surfaced as window.__SPLINE3D_IMPORT).
 // Each mesh is baked to world space, normalised to fit, and added as a normal
 // selectable object (its PBR material + textures preserved).
@@ -584,7 +584,7 @@ function addImportedScene(gltf, label, srcUrl) {
   let skinned = false; root0.traverse(o => { if (o.isSkinnedMesh) skinned = true; });
 
   // ── Animated / rigged glb: keep the scene graph INTACT (skinning needs the
-  // bones + SkinnedMeshes — baking geometry would break it) and drive it with
+  // bones + SkinnedMeshes - baking geometry would break it) and drive it with
   // an AnimationMixer. Added as ONE selectable group object. ──────────────────
   if (clips.length > 0 || skinned) {
     const root = root0;
@@ -706,16 +706,16 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (!down) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
   if (moved > 5 || gizmo.dragging) return;
   // NDC relative to the GL canvas rect (== #coreCanvas in detached mode), not the
-  // window — otherwise raycasts are offset/scaled when the iframe is grown.
+  // window - otherwise raycasts are offset/scaled when the iframe is grown.
   const cr = renderer.domElement.getBoundingClientRect();
   ptr.x = ((e.clientX - cr.left) / cr.width) * 2 - 1; ptr.y = -((e.clientY - cr.top) / cr.height) * 2 + 1;
   ray.setFromCamera(ptr, camera);
-  // IK handles take priority — click one to drag it (it poses the chain live).
+  // IK handles take priority - click one to drag it (it poses the chain live).
   if (rigState && rigState.handles.length) {
     const ih = ray.intersectObjects(rigState.handles, false)[0];
     if (ih) { select([]); gizmo.attach(ih.object); return; }
   }
-  // Recursive: animated/rigged imports are groups — hit a child mesh then walk
+  // Recursive: animated/rigged imports are groups - hit a child mesh then walk
   // up to the registered top-level object so the whole model is selected.
   const hit = ray.intersectObjects(objects, true)[0];
   if (!hit) { if (!e.shiftKey) select([]); return; }
@@ -725,7 +725,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   else select([obj]);
 });
 
-// ── Liquid smoothing (Taubin λ|μ) — rounds CSG seams into a liquid blend ────
+// ── Liquid smoothing (Taubin λ|μ) - rounds CSG seams into a liquid blend ────
 // Plain CSG leaves hard polygonal seams; Spline's boolean reads as a smooth
 // liquid merge. We weld the result (CSG splits verts), build vertex adjacency,
 // then run Taubin smoothing (alternating positive λ / negative μ passes so the
@@ -762,12 +762,12 @@ function liquefy(brush, iterations) {
 
 let boolSmooth = 6;   // liquid-merge strength applied to boolean results
 
-// ── Blob merge — true metaball/SDF fusion of NORMAL objects ────────────────
+// ── Blob merge - true metaball/SDF fusion of NORMAL objects ────────────────
 // CSG (even Taubin-smoothed) leaves a crease where two solids meet. To fuse
 // arbitrary objects as seamlessly as the water metaballs, we sample each one
 // into a signed-distance field (three-mesh-bvh closest-point + face-normal
 // sign), smooth-union the fields (polynomial smin), then re-polygonise the
-// combined field with MarchingCubes — the same engine the liquid uses.
+// combined field with MarchingCubes - the same engine the liquid uses.
 const _bvA=new THREE.Vector3(),_bvB=new THREE.Vector3(),_bvC=new THREE.Vector3(),_bcb=new THREE.Vector3(),_bab=new THREE.Vector3(),_bn=new THREE.Vector3(),_bd=new THREE.Vector3();
 function faceNormalLocal(geo, fi, out) {
   const idx = geo.index, pos = geo.attributes.position; let a, b, c;
@@ -808,7 +808,7 @@ async function blobMerge(sel, strength) {
   mc.isolation = 0;
   mc.update();                                         // polygonise the field
   const cnt = mc.count;
-  if (!cnt) { flash('Blob merge produced nothing — overlap the objects more'); return; }
+  if (!cnt) { flash('Blob merge produced nothing - overlap the objects more'); return; }
   const src = mc.geometry.attributes.position.array;
   const arr = new Float32Array(cnt * 3); arr.set(src.subarray(0, cnt * 3));
   let geo = new THREE.BufferGeometry();
@@ -863,12 +863,12 @@ function removeSelected() {
   select([]);
 }
 
-// ── Live Blob — smooth, EDITABLE metaball merge (the water mechanism) ───────
+// ── Live Blob - smooth, EDITABLE metaball merge (the water mechanism) ───────
 // Unlike the baked CSG/SDF blobMerge (frozen + faceted), this keeps a LIVE
 // MarchingCubes field re-polygonised every frame from movable handle "dots".
 // Drag a dot → the blob flows; it's always smooth (sphere metaballs, hi-res MC)
 // and always editable. This is exactly how the liquid/water reads.
-let liveBlob = null, blobDirty = true;   // dirty flag — only re-polygonise on change
+let liveBlob = null, blobDirty = true;   // dirty flag - only re-polygonise on change
 const BLOB_VOL = 9;   // world size of the live field cube (centred at origin-ish)
 const BLOB_CENTER = new THREE.Vector3(0, 0.8, 0);
 function ensureLiveBlob() {
@@ -902,14 +902,14 @@ function liveBlobFromSelected() {
     if (!firstColor && o.material.color) firstColor = '#' + o.material.color.getHexString();
     addBlobSource(o.getWorldPosition(new THREE.Vector3()), Math.max(0.5, r * 0.8), firstColor);
   });
-  // remove the originals — they're now metaball sources
+  // remove the originals - they're now metaball sources
   sel.forEach(o => { detachFur(o); scene.remove(o); const i = objects.indexOf(o); if (i >= 0) objects.splice(i, 1); });
-  flash('Live blob · ' + sel.length + ' source' + (sel.length === 1 ? '' : 's') + ' — drag the dots'); refresh();
+  flash('Live blob · ' + sel.length + ' source' + (sel.length === 1 ? '' : 's') + ' - drag the dots'); refresh();
 }
 function updateLiveBlob() {
   const lb = liveBlob; if (!lb) return;
   if (!lb.sources.length) { lb.mc.visible = false; return; }
-  // Only re-polygonise when a source moved / was added — idle frames are free.
+  // Only re-polygonise when a source moved / was added - idle frames are free.
   let moved = blobDirty;
   for (const s of lb.sources) {
     if (!s._last) { s._last = s.dot.position.clone(); moved = true; }
@@ -931,7 +931,7 @@ function updateLiveBlob() {
 
 // ── Parametric deformers (bend / twist / taper / inflate / noise) ──────────
 // Non-destructive: the ORIGINAL positions+normals are cached once, and every
-// slider change re-applies all deformers from that base — so any slider back to
+// slider change re-applies all deformers from that base - so any slider back to
 // 0 restores the original. Operate in object-local space, normalised by the
 // base bounding box (ny ∈ [-1,1] up the object).
 function ensureBase(o) {
@@ -980,7 +980,7 @@ function buildFur(brush, length) {
   const base = '#' + (brush.material.color ? brush.material.color.getHexString() : 'cccccc');
   brush.geometry.computeBoundingSphere();
   const r = (brush.geometry.boundingSphere ? brush.geometry.boundingSphere.radius : 1);
-  // Shared per-fur force uniform (local space) — gravity droop + motion lag.
+  // Shared per-fur force uniform (local space) - gravity droop + motion lag.
   // All shells reference the SAME {value} so one update/frame drives the coat.
   const forceU = { value: new THREE.Vector3() };
   group.userData.forceUniform = forceU;
@@ -1090,7 +1090,7 @@ function addCloth() {
       geo.attributes.position.needsUpdate = true; geo.computeVertexNormals();
     }
   };
-  sims.push(sim); refresh(); flash('Cloth added — drape animates live');
+  sims.push(sim); refresh(); flash('Cloth added - drape animates live');
 }
 
 // ── Liquid (marching-cubes metaballs) ─────────────────────────────────────
@@ -1116,7 +1116,7 @@ function addLiquid() {
       mc.update();
     }
   };
-  sims.push(sim); refresh(); flash('Liquid added — metaball blobs merge live');
+  sims.push(sim); refresh(); flash('Liquid added - metaball blobs merge live');
 }
 
 // ── UI wiring ─────────────────────────────────────────────────────────────
@@ -1160,7 +1160,7 @@ $('#anim-play').addEventListener('click', () => {
 // ── Agent-authored rig + animation (model-derived, NOT presets) ─────────────
 // The scene JSON may carry a `rig` (a joint hierarchy over the named parts) and
 // an `anim` (keyframe tracks on those joints, + optional IK chains). The model-
-// GENERATING agent authors both — it knows the parts it built (legs, neck,
+// GENERATING agent authors both - it knows the parts it built (legs, neck,
 // head), so it defines where the joints pivot, what parents what, and what the
 // motion is (a giraffe walks; an orca undulates). The editor only PLAYS what it
 // is given and bakes it into glTF. No motion is hardcoded here.
@@ -1242,7 +1242,7 @@ function buildRig(rig, anim) {
   }
   syncRigUI(); refresh(); saveSoon();
 }
-// Minimal CCD over an Object3D joint chain (rigid hierarchy — no skinning needed).
+// Minimal CCD over an Object3D joint chain (rigid hierarchy - no skinning needed).
 function solveCCD(chain, effector, targetWorld, iters) {
   for (let it = 0; it < (iters || 8); it++) {
     for (let i = chain.length - 1; i >= 0; i--) {
@@ -1287,7 +1287,7 @@ $('#rig-rest').addEventListener('click', () => {
   flash('Reset to rest pose');
 });
 
-// Deform sliders (non-destructive — re-applied from cached base each change)
+// Deform sliders (non-destructive - re-applied from cached base each change)
 [['#d-twist','twist'],['#d-bend','bend'],['#d-taper','taper'],['#d-inflate','inflate'],['#d-noise','noise']].forEach(([sel, key]) => {
   $(sel).addEventListener('input', e => {
     const v = parseFloat(e.target.value); $(sel + '-v').textContent = v.toFixed(2);
@@ -1376,7 +1376,7 @@ function switchCamera(mode) {
   orbit.object = camera; gizmo.camera = camera;
 }
 
-// Export — reparent the REAL objects (and, when present, the rig's joint tree
+// Export - reparent the REAL objects (and, when present, the rig's joint tree
 // with its bound parts) into a temporary origin group so the hierarchy exports
 // intact, attach the agent's animation clip, then reparent everything back.
 $('#export').addEventListener('click', () => {
@@ -1399,7 +1399,7 @@ $('#save-now').addEventListener('click', () => { persist(); flash('Scene saved')
 $('#save-clear').addEventListener('click', clearSave);
 $('#bake').addEventListener('click', bake);
 
-// Import wiring — button, file picker, canvas drag-drop.
+// Import wiring - button, file picker, canvas drag-drop.
 $('#import-btn').addEventListener('click', () => $('#import-file').click());
 $('#import-file').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
@@ -1446,7 +1446,7 @@ function refresh() {
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
     if (m) { set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5); }
     $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
-    // Imported-clip controls — for a Meshy/imported glb that carries baked
+    // Imported-clip controls - for a Meshy/imported glb that carries baked
     // animation clips on the selected object. (The model's own rig + motion is
     // the scene-level Animation panel, driven by the agent-authored rig/anim.)
     const anim = $('#anim-group');
@@ -1513,7 +1513,7 @@ function stepPhysics(dt) {
 let WIRED_EFFECTS = [];     // [{type,intensity,params,glsl?}]
 let WIRED_POSITIONS = [];   // [{mode,params}] (3D: grid-3d / scatter-3d)
 
-// Tolerant reader — pulls `effects` / `positions` off any handshake/content
+// Tolerant reader - pulls `effects` / `positions` off any handshake/content
 // message if present, ignores them otherwise. Returns true if either changed.
 function setWiredSpecs(d) {
   let changed = false;
@@ -1579,18 +1579,18 @@ function applyWiredFX(t) {
 
 // ── Wired positions: NON-DESTRUCTIVE replication of the scene into a 3D arrangement
 // (grid-3d / scatter-3d). The originals stay put; we add a sibling group of
-// clones — never touching `objects`, the rig, sims, or serialization. Rebuilt
+// clones - never touching `objects`, the rig, sims, or serialization. Rebuilt
 // whenever the spec changes; skipped modes are ignored gracefully.
 let wiredPosGroup = null;
 function clearWiredPositions() {
   if (!wiredPosGroup) return;
   // Clones SHARE the originals' geometry + material (clone(true) copies the
-  // graph but keeps those refs), so we must NOT dispose them here — just detach.
+  // graph but keeps those refs), so we must NOT dispose them here - just detach.
   try { scene.remove(wiredPosGroup); } catch (e) {}
   wiredPosGroup = null;
 }
 // Source meshes to replicate: the current editable objects (+ imported meshes),
-// minus blob handles. Read-only — we clone geometry/material refs.
+// minus blob handles. Read-only - we clone geometry/material refs.
 function wiredPosSources() {
   const out = [];
   for (const o of objects) { if (o && !o.userData.isBlobDot && (o.isMesh || o.isGroup)) out.push(o); }
@@ -1661,7 +1661,7 @@ function applyWiredPositions() {
     }
     total = count;
   }
-  // Per-instance vector bindings + overrides — applied now (static frame), and
+  // Per-instance vector bindings + overrides - applied now (static frame), and
   // re-applied per frame if any source is time-varying.
   for (const c of group.children) applyDyn3D(c, spec, c.userData._wiredIdx, total, t0, dims);
   if (group.children.length) {
@@ -1677,7 +1677,7 @@ function updateWiredPositionsDynamic() {
   for (const c of wiredPosGroup.children) applyDyn3D(c, spec, c.userData._wiredIdx, count, t, dims);
 }
 // Re-replicate only when a wired arrangement is actually active (cheap no-op
-// otherwise) — used by late-arriving async imports.
+// otherwise) - used by late-arriving async imports.
 function rebuildWiredPositionsIfActive() {
   if (Array.isArray(WIRED_POSITIONS) && WIRED_POSITIONS.some(p => p && (p.mode === 'grid-3d' || p.mode === 'scatter-3d'))) applyWiredPositions();
 }
@@ -1695,7 +1695,7 @@ function fitToCore() {
 }
 addEventListener('resize', fitToCore);
 // Re-fit whenever #coreCanvas changes size (node resize while detached, or the
-// float/unfloat reflow) — event-driven, never per-frame polling.
+// float/unfloat reflow) - event-driven, never per-frame polling.
 if (coreEl && 'ResizeObserver' in window) {
   const _coreRO = new ResizeObserver(() => fitToCore());
   _coreRO.observe(coreEl);
@@ -1720,9 +1720,9 @@ function tick(now) {
 
 // Linked image textures (window.__SPLINE3D_TEXTURES = ["../images/x.png", …]),
 // injected by the Tool pathway when image assets are wired into this node.
-// Shown as clickable swatches under the Texture section — click to apply the
+// Shown as clickable swatches under the Texture section - click to apply the
 // image as the selected object's surface map.
-// v4.0 — node-embed bridge. When embedded as a `spline-3d` node iframe, config
+// v4.0 - node-embed bridge. When embedded as a `spline-3d` node iframe, config
 // arrives via URL params (the static tool is SHARED across nodes, so we can't
 // inject per-node globals the way the old skill pathway did). Standalone (no
 // params) → globals or nothing, exactly as before.
@@ -1735,7 +1735,7 @@ const __SP_SAVE = window.__SPLINE3D_SAVE || (__SP_Q.get('writePath') ? {
 } : null);
 const __SP_NODE = __SP_Q.get('nodeId') || '';
 const __SP_FORCE_SIDECAR = __SP_Q.get('forceSidecar') === '1';
-// v4.0 — EMBEDDED (rendered inside a spline-3d node) → the host node is the
+// v4.0 - EMBEDDED (rendered inside a spline-3d node) → the host node is the
 // single source of truth. No localStorage, no self-sidecar-write, no
 // self-boot: the node drives scene + imports via postMessage and owns the
 // sidecar write. Standalone (opened directly, no nodeId) keeps localStorage +
@@ -1765,11 +1765,11 @@ const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D
 })();
 
 // ── Persistence (autosave to localStorage, keyed by this editor's file path) ─
-// The editor is otherwise in-memory — reopening it (node OR prototype tab) would
+// The editor is otherwise in-memory - reopening it (node OR prototype tab) would
 // start fresh. We serialise the RECONSTRUCTABLE scene (primitives, transforms,
 // materials, deform, fur, live-blob, extruded SVG) and restore it on load, so
 // the same node remembers your work in this browser. (Imported .glb and baked
-// boolean/blob meshes aren't serialised — re-link or re-bake those.)
+// boolean/blob meshes aren't serialised - re-link or re-bake those.)
 const SAVE_KEY = 'spline3d:' + (__SP_NODE || location.pathname || 'default');
 let lastSaved = '', saveTimer = null;
 function persist() {
@@ -1778,7 +1778,7 @@ function persist() {
   catch (e) { console.warn('save failed', e); }
 }
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 300); }
-function clearSave() { try { localStorage.removeItem(SAVE_KEY); lastSaved = ''; } catch (e) {} blip('Cleared — reload to reset'); }
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); lastSaved = ''; } catch (e) {} blip('Cleared - reload to reset'); }
 function blip(msg) { const el = document.getElementById('save-state'); if (el) { el.textContent = msg; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => el.style.opacity = 0.35, 1200); } }
 function serializeScene() {
   const objs = [];
@@ -1803,7 +1803,7 @@ function serializeScene() {
     v: 1,
     // Self-documenting schema hint for agents that author/edit this file. Ignored on import.
     _doc: "PARTS objects[]: {name:'legFL', kind:box|sphere|cylinder|cone|torus|torusknot|icosahedron|pyramid|helix, pos:[x,y,z], rot:[x,y,z]radians, scl:[x,y,z], color:'#hex', rough, metal, trans, ior}. " +
-          "RIG (model-derived — author it from the parts you built): rig:{ joints:[{name,parent|null,pos:[x,y,z]}], bind:{ '<partName>':'<jointName>' } }. A joint's pos is its world pivot; bind attaches a part to a joint so it follows that joint. " +
+          "RIG (model-derived - author it from the parts you built): rig:{ joints:[{name,parent|null,pos:[x,y,z]}], bind:{ '<partName>':'<jointName>' } }. A joint's pos is its world pivot; bind attaches a part to a joint so it follows that joint. " +
           "ANIMATION anim:{ duration, loop, tracks:[{joint:'<jointName>', type:'rotation'|'position'|'scale', times:[..s], values:[[x,y,z],..] }], ik:[{chain:['hip','knee'], effector:'foot', target:[x,y,z]}] }. rotation values are euler radians per key. " +
           "Derive motion from the MODEL: a quadruped → leg joints (hip/knee/ankle) + a gait of rotation keyframes; a fish → a spine chain + an undulation; do NOT use one generic wiggle for everything. Plays live AND bakes into glTF clips on Export.",
     objects: objs,
@@ -1837,7 +1837,7 @@ function restoreScene(data) {
   select([]); return true;
 }
 gizmo.addEventListener('objectChange', saveSoon);
-// Diff-based catch-all: persists whenever the serialised scene changes — covers
+// Diff-based catch-all: persists whenever the serialised scene changes - covers
 // EVERY edit path (sliders, palette, transforms, blob dots) with no per-handler
 // hooks. Cheap for the small scenes this tool makes.
 setInterval(persist, 1200);
@@ -1847,7 +1847,7 @@ setInterval(persist, 1200);
 // (init / agent edit). Reuses the dispose pattern proven in removeSelected/boolOp.
 function resetScene() {
   select([]);
-  clearWiredPositions();   // drop replicated clones — they reference objects we're about to dispose
+  clearWiredPositions();   // drop replicated clones - they reference objects we're about to dispose
   clearRig(); currentRig = null; currentAnim = null;
   for (const o of objects.slice()) {
     try {
@@ -1881,7 +1881,7 @@ function applyImports(urls) {
   refresh();
 }
 
-// The friendly starter scene — also the never-blank fallback. Reused by the
+// The friendly starter scene - also the never-blank fallback. Reused by the
 // standalone boot and the embedded handshake so the editor is never empty.
 function seedDemo() {
   addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
@@ -1891,7 +1891,7 @@ function seedDemo() {
 
 // ── Node bridge (EMBEDDED): the host node owns scene + imports; this iframe is
 // a driven VIEW. Emit edits up (debounced diff); apply init / imports / set-scene
-// down. No localStorage, no self-sidecar-write here — the NODE writes the sidecar.
+// down. No localStorage, no self-sidecar-write here - the NODE writes the sidecar.
 let lastEmitted = '', __gotInit = false;
 function emitSceneIfChanged(force) {
   if (!EMBEDDED) return;
@@ -1949,7 +1949,7 @@ if (EMBEDDED) {
       applyImports(d.urls || []);
       setWiredSpecs(d);
     } else if (d.type === 'spline:content') {
-      // Tolerant content channel — host may push effects/positions (and/or
+      // Tolerant content channel - host may push effects/positions (and/or
       // imports) here without a full scene re-drive. Ignore absent fields.
       __gotInit = true;
       if ('imports' in d || 'urls' in d) applyImports(d.imports || d.urls || []);
@@ -1995,13 +1995,13 @@ async function persistSidecar(force) {
 }
 if (!EMBEDDED && __SP_SAVE && __SP_SAVE.writePath) setInterval(() => persistSidecar(false), 1800);
 
-// ── Bake — embedded: push the scene to the host node (it writes the sidecar).
+// ── Bake - embedded: push the scene to the host node (it writes the sidecar).
 // Standalone with a sidecar target: write directly; otherwise download.
 async function bake() {
   if (EMBEDDED) { emitSceneIfChanged(true); flash('Saved into project ✓'); blip('Saved'); return; }
   const save = __SP_SAVE, data = JSON.stringify(serializeScene());
   if (save && save.writePath) {
-    if (await persistSidecar(true)) { flash('Baked into project ✓ — shareable, travels with the repo'); blip('Baked'); return; }
+    if (await persistSidecar(true)) { flash('Baked into project ✓ - shareable, travels with the repo'); blip('Baked'); return; }
     flash('Bake failed'); return;
   } else {
     const blob = new Blob([data], { type: 'application/json' });

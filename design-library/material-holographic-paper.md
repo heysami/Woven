@@ -13,7 +13,7 @@ images:
 
 # Holographic-Paper (iridescent foil on textured paper)
 
-A glossy surface that reacts to light: yes — strong on foil, none on paper and deforms: yes — paper underneath.
+A glossy surface that reacts to light: yes - strong on foil, none on paper and deforms: yes - paper underneath.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A glossy surface that reacts to light: yes — strong on foil, none on paper and
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — strong on foil, none on paper
+**Reacts to light**: yes - strong on foil, none on paper
 
-**Deforms**: yes — paper underneath
+**Deforms**: yes - paper underneath
 
 **Age / wear**: ageless
 
@@ -42,7 +42,7 @@ raster: paper texture as ground; holographic mask
 
 **Light**: foil reacts to pointer/gyro; paper doesn't
 
-**Highlight**: yes — masked to foil region only
+**Highlight**: yes - masked to foil region only
 
 **Depth**: paper deformation possible
 

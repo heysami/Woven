@@ -12,23 +12,23 @@ images:
 **Tag:** Letterpress showman register (Freakshow Wine; Son Daven; Hatch Show Print posters; penny-circus and medicine-show ephemera)
 
 **Canonical references:**
-- Freakshow Wine — vintage circus-crowd photography + carnival lettering ("JOIN THE FREAKSHOW").
-- Son Daven (Awwwards SOTD) — woodcut sheep-stack lettering, khaki letterpress food branding.
-- Hatch Show Print — the living wood-type poster shop; stacked-row showbills.
+- Freakshow Wine - vintage circus-crowd photography + carnival lettering ("JOIN THE FREAKSHOW").
+- Son Daven (Awwwards SOTD) - woodcut sheep-stack lettering, khaki letterpress food branding.
+- Hatch Show Print - the living wood-type poster shop; stacked-row showbills.
 - Victorian circus/medicine-show ephemera, sideshow banners, match-label graphics.
 
 ## Cultural identity
 
-The traveling-show poster translated to web: stacked rows of wood-type in mixed sizes, woodcut/engraved illustrations, ornamental rules and bursts, aged paper grounds, and a barker's voice. Honest ink-on-paper physicality — everything looks letterpress-printable in 2-3 inks. Distinct from `aesthetic-steampunk` (fantasy brass machinery) and from generic "vintage badge" design — this is SHOWMANSHIP: the layout sells tickets.
+The traveling-show poster translated to web: stacked rows of wood-type in mixed sizes, woodcut/engraved illustrations, ornamental rules and bursts, aged paper grounds, and a barker's voice. Honest ink-on-paper physicality - everything looks letterpress-printable in 2-3 inks. Distinct from `aesthetic-steampunk` (fantasy brass machinery) and from generic "vintage badge" design - this is SHOWMANSHIP: the layout sells tickets.
 
 The defining gesture is **the stacked showbill**: centered rows alternating typeface, size, and weight (BIG NAME / small qualifier / MEDIUM CLAIM / ornament / date line), every row earning its slot.
 
-**Palette anchor:** aged paper `#e8dcc3` – khaki `#cdbb95`, ink black `#23201a`, show red `#a33327`, faded teal `#39626a` or mustard `#bf8c2c` as the second ink; never more than 3 inks + paper.
+**Palette anchor:** aged paper `#e8dcc3` - khaki `#cdbb95`, ink black `#23201a`, show red `#a33327`, faded teal `#39626a` or mustard `#bf8c2c` as the second ink; never more than 3 inks + paper.
 
 ## Motifs / imagery vocabulary
 
-- Wood-type stacks: condensed slabs, Tuscan faces (spurred serifs), circus-shadowed caps — 3-5 faces per poster is CORRECT here (the one register where many faces is the discipline).
-- Woodcut/engraving illustrations: animals, hands, stars, banners — single-color, coarse line.
+- Wood-type stacks: condensed slabs, Tuscan faces (spurred serifs), circus-shadowed caps - 3-5 faces per poster is CORRECT here (the one register where many faces is the discipline).
+- Woodcut/engraving illustrations: animals, hands, stars, banners - single-color, coarse line.
 - Ornament kit: bursts, pointing fists, scroll banners, rule corners, ticket stubs.
 - Aged-print artifacts: slight misregistration of the second ink, paper grain, edge wear.
 - Vintage photography (crowds, performers) as halftone/duotone plates.
@@ -37,11 +37,11 @@ The defining gesture is **the stacked showbill**: centered rows alternating type
 
 ## Voice register
 
-The barker: imperatives, superlatives, capitalized claims — "STEP RIGHT UP", "THE ASTONISHING", "EST. 1893 · STILL ASTONISHING". Self-aware theatrical exaggeration, warm not cynical.
+The barker: imperatives, superlatives, capitalized claims - "STEP RIGHT UP", "THE ASTONISHING", "EST. 1893 · STILL ASTONISHING". Self-aware theatrical exaggeration, warm not cynical.
 
 ## Failure mode
 
-One distressed badge + Lobster font = brewery template. The register needs the STACK (mixed wood-type rows), real woodcut art, ≤3 inks, and misregistration. Also: pristine vector sharpness everywhere kills it — the press must be felt.
+One distressed badge + Lobster font = brewery template. The register needs the STACK (mixed wood-type rows), real woodcut art, ≤3 inks, and misregistration. Also: pristine vector sharpness everywhere kills it - the press must be felt.
 
 ## Best for
 

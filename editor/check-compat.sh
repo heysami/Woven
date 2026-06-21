@@ -21,14 +21,14 @@ fi
 VER="$("$PY" -c 'import sys;print("%d.%d"%sys.version_info[:2])')"
 echo "checking editor/ against Python $VER ($PY)"
 
-# 1) compile everything — catches 3.10+ SYNTAX (match statements, etc.)
+# 1) compile everything - catches 3.10+ SYNTAX (match statements, etc.)
 "$PY" -m compileall -q "$DIR" || { echo "FAIL: syntax not valid on $VER"; exit 1; }
 
-# 2) import every daemon module — catches RUNTIME 3.10 features (annotation
+# 2) import every daemon module - catches RUNTIME 3.10 features (annotation
 #    evaluation of PEP 604 unions is the recurring one). __main__ guard means
 #    importing serve does NOT start the server.
 ( cd "$DIR" && for m in prompts exports shares live git_ops serve; do
     "$PY" -c "import $m" || { echo "FAIL: 'import $m' breaks on $VER"; exit 1; }
   done )
 
-echo "OK: editor/ runs on Python $VER — safe to sync to the daemon"
+echo "OK: editor/ runs on Python $VER - safe to sync to the daemon"

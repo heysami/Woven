@@ -7,7 +7,7 @@ role: transition
 binding: wheel-step
 medium: video
 pairsPrototypes: [recipe-aurora-marketing, recipe-warm-restraint, recipe-restrained-ai-marketing, style-aurorism, aesthetic-dreamcore]
-notForUseWhen: Scenes are hard-edged or graphic (UI screenshots, type-led boards) — a dissolve between crisp rectangles reads as a rendering bug; use scene-stepper-wipe. Also wrong when scenes must feel causally connected — crossfade says "elsewhere", not "therefore".
+notForUseWhen: Scenes are hard-edged or graphic (UI screenshots, type-led boards) - a dissolve between crisp rectangles reads as a rendering bug; use scene-stepper-wipe. Also wrong when scenes must feel causally connected - crossfade says "elsewhere", not "therefore".
 images:
   - src: motion-scene-crossfade-hold-ui.png
     reason: Motion technique UI mockup.
@@ -17,21 +17,21 @@ images:
 
 # Scene crossfade hold (worlds dissolve, each one breathes)
 
-Each full-screen scene is its own ambient video loop; advancing one wheel-step crossfades the outgoing world into the incoming one over 800–1200ms — held scenes keep breathing on their internal loop, and both videos play simultaneously ONLY during the cross.
+Each full-screen scene is its own ambient video loop; advancing one wheel-step crossfades the outgoing world into the incoming one over 800-1200ms - held scenes keep breathing on their internal loop, and both videos play simultaneously ONLY during the cross.
 
 ## Motion signature
 
-- While held, a scene plays its own 6–10s seamless ambient loop (slow drift, atmosphere, no event) — the piece is never still.
-- On step: incoming video starts from t=0 at opacity 0, fades to 1 over 800–1200ms with `ease-in-out`; outgoing fades to 0 on the same clock, then `pause()` + unload.
+- While held, a scene plays its own 6-10s seamless ambient loop (slow drift, atmosphere, no event) - the piece is never still.
+- On step: incoming video starts from t=0 at opacity 0, fades to 1 over 800-1200ms with `ease-in-out`; outgoing fades to 0 on the same clock, then `pause()` + unload.
 - 1000ms is the default; go 800ms for bright/energetic worlds, 1200ms for dark/atmospheric ones. Under 600ms reads as a cut, over 1500ms as a loading state.
-- Input debounce equals the cross duration + 200ms — a step during a cross is swallowed, never queued; queued dissolves stack into mud.
+- Input debounce equals the cross duration + 200ms - a step during a cross is swallowed, never queued; queued dissolves stack into mud.
 
 ## Asset generation spec
 
 - **Resolution**: 1920×1080 minimum, full-bleed edge-to-edge; both clips are visible at partial opacity during the cross, so neither may carry a border, vignette, or letterbox.
 - **Composition**: each scene's quiet zone per its own storyboard side; adjacent scenes should share an overall luminance family (within ~±20% average luma) so the mid-cross blend never flashes.
-- **Loop**: generate explicitly seamless — last frame matches first frame, motion continuous across the wrap; prompt the loop, do not rely on editing.
-- **Duration**: 6–10s per loop; shorter loops show their seam under a long hold.
+- **Loop**: generate explicitly seamless - last frame matches first frame, motion continuous across the wrap; prompt the loop, do not rely on editing.
+- **Duration**: 6-10s per loop; shorter loops show their seam under a long hold.
 - **Negative prompt**: no text, no watermark, no letterboxing, no border, no scene cut, no flicker, no sudden movement.
 
 ## Interaction binding
@@ -57,8 +57,8 @@ addEventListener('wheel', e => { e.preventDefault(); if (Math.abs(e.deltaY) > 10
 
 ## UI composition rules
 
-- Scene UI fades on its own slightly tighter clock: out by 40% of the cross, in from 60% — type at half-opacity over two blended worlds is unreadable, so keep the mid-cross type-free.
-- Each scene's UI sits in its OWN quiet zone; the dissolve excuses nothing — verify contrast against the held loop across its full duration, not one frame.
+- Scene UI fades on its own slightly tighter clock: out by 40% of the cross, in from 60% - type at half-opacity over two blended worlds is unreadable, so keep the mid-cross type-free.
+- Each scene's UI sits in its OWN quiet zone; the dissolve excuses nothing - verify contrast against the held loop across its full duration, not one frame.
 - Persistent chrome (progress dots, wordmark) never fades; it is the fixed point the dissolve moves around.
 
 ## Example asset prompt template
@@ -68,14 +68,14 @@ addEventListener('wheel', e => { e.preventDefault(); if (Math.abs(e.deltaY) > 10
 ## When to use
 
 - Atmospheric brand pieces where each scene is a place or mood (travel, wellness, ambient AI, fragrance).
-- Decks of 3–7 worlds that should feel dreamed-between rather than navigated.
+- Decks of 3-7 worlds that should feel dreamed-between rather than navigated.
 - Briefs that say "soft", "cinematic", "it should never jolt".
 
 ## When NOT to use
 
-- Sharp product-spec storytelling — use frame-hold-ui-sync or scene-stepper-wipe.
-- Scenes with wildly mismatched luminance (noon beach → midnight city) — the blend flashes grey; reorder or bridge.
-- When no video provider is wired — degrade to per-scene raster stills with the identical 1000ms opacity crossfade plus a 20s Ken-Burns scale (1.0 → 1.04) while held.
+- Sharp product-spec storytelling - use frame-hold-ui-sync or scene-stepper-wipe.
+- Scenes with wildly mismatched luminance (noon beach → midnight city) - the blend flashes grey; reorder or bridge.
+- When no video provider is wired - degrade to per-scene raster stills with the identical 1000ms opacity crossfade plus a 20s Ken-Burns scale (1.0 → 1.04) while held.
 
 ## Performance notes
 
@@ -92,4 +92,4 @@ addEventListener('wheel', e => { e.preventDefault(); if (Math.abs(e.deltaY) > 10
 - `aesthetic-dreamcore`
 
 <!-- image: sample-1.png -->
-<!-- reason: representative reference — two ambient worlds mid-dissolve with persistent dot-rail chrome -->
+<!-- reason: representative reference - two ambient worlds mid-dissolve with persistent dot-rail chrome -->

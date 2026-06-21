@@ -1,7 +1,7 @@
 // Extracts Material Lab's verbatim sources and assembles the dispersion-prism
 // material as a standalone, self-contained HTML (the same thing the in-app
 // "Export" button / bakeHTML() produces) so it can be opened directly in a
-// browser (file://) to verify the REAL material — no server, no daemon.
+// browser (file://) to verify the REAL material - no server, no daemon.
 const fs = require('fs');
 const path = require('path');
 
@@ -37,11 +37,11 @@ function funcText(name) {
   throw new Error('unbalanced braces in ' + name);
 }
 
-// --- pull the dispersion-prism shade backtick string verbatim ---
+// --- pull OUR liquid-glass shade backtick string verbatim (frostUV + shade) ---
 function dispersionShade() {
-  const key = "'dispersion-prism':";
+  const key = "'liquid-glass':";
   const at = html.indexOf(key);
-  if (at < 0) throw new Error('dispersion-prism material not found');
+  if (at < 0) throw new Error('liquid-glass material not found');
   const sAt = html.indexOf('shade:`', at);
   const begin = sAt + 'shade:`'.length;
   const end = html.indexOf('`', begin);
@@ -66,11 +66,16 @@ const STATE = {
   bgImage: '',
   palette: ['#7cc7ff', '#b388ff', '#ff8ad1', '#7CF5C8', '#FFD75E'],
   material: {
-    type: 'dispersion-prism',
-    profile: 'convex', ior: 1.52, thickness: 46, bezel: 0.40, dispersion: 0.40,
-    frost: 0.02, specular: 0.5, shininess: 90, fresnel: 0.8,
-    tint: '#ffffff', tintAmt: 0.0, alpha: 0.92, holo: false,
+    type: 'liquid-glass',
+    // VERBATIM the Material Lab 'liquid-glass' material params (OUR tuned glass:
+    // fold edge, frost, lightness-floor, rim diagonal, caustic). Keep in sync with
+    // the 'liquid-glass' entry in index.html - re-pull if its params change.
+    profile: 'convex', ior: 1.50, thickness: 38, bezel: 0.20, dispersion: 0.25,
+    frost: 0.9, specular: 0.0, shininess: 90, fresnel: 0.0,
+    tint: '#ffffff', tintAmt: 0.10, alpha: 1.0, holo: false,
     colorA: '#c9d2de', colorB: '#1a1f27', scale: 22, rough: 0.5, anis: 0.6, glow: 1.0,
+    bend: 46, Lfloor: 0.74, rim: 0.22, caus: 0.30, curve: 1.0, veil: 0.20, rimAngle: 45,
+    dark: false, rimMouse: false,
   },
 };
 
@@ -97,7 +102,7 @@ const runtimeJS = [
 ].join('\n');
 
 const out = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dispersion Prism — Material Lab export</title>
+<title>Liquid Glass - Material Lab export</title>
 <style>
   *{box-sizing:border-box}
   html,body{margin:0;min-height:100%;background:${STATE.background};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -123,7 +128,7 @@ const out = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta na
 <div id="wrap"><div id="stage" data-surface="dark">
   <div id="backdrop"></div><canvas id="glcanvas"></canvas><div id="glwarn"></div>
   <div id="gallery">
-    <div class="mat ds-card"><div class="head">Dispersion Prism · Material Lab</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body — the quick brown fox jumps over the lazy dog. Move your pointer to see the spectral fringe ride the rim.</div></div>
+    <div class="mat ds-card"><div class="head">Liquid Glass · Material Lab</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body - the quick brown fox jumps over the lazy dog. Move your pointer to see the glass refract the scene behind it.</div></div>
     <div class="galrow"><div class="galcol">
       <div class="mat ds-card"><div class="head">Palette</div><div class="swatches">${swatches}</div></div>
       <div class="mat ds-card"><div class="head">Tabs</div><div class="tabs"><div class="tab active">Overview</div><div class="tab">Activity</div><div class="tab">Settings</div></div></div>
@@ -141,7 +146,7 @@ console.log('wrote', DEST);
 console.log('VS_SRC', VS_SRC.length, 'FRAG_SRC', FRAG_SRC.length, 'glassRuntime', glassRuntime.length, 'chars');
 
 /* =====================================================================
-   INTEGRATED demo — REAL design-system components (via all.css +
+   INTEGRATED demo - REAL design-system components (via all.css +
    data-theme="glassmorphism"), with the SAME verbatim dispersion-prism
    runtime rendering glass behind them. Fixed (non-scrolling) stage so
    glassRuntime's panel measurement (stage.querySelectorAll, ≤24) works
@@ -169,7 +174,7 @@ const integRuntimeJS = [
 ].join('\n');
 
 const integ = `<!doctype html><html lang="en" data-theme="glassmorphism"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Glassmorphism — real dispersion-prism on DS components</title>
+<title>Glassmorphism - real liquid glass on DS components</title>
 <link rel="stylesheet" href="../all.css">
 <style>
   html,body{margin:0;min-height:100%;background:${STATE.background}}
@@ -198,7 +203,7 @@ const integ = `<!doctype html><html lang="en" data-theme="glassmorphism"><head><
   <div id="backdrop"></div><canvas id="glcanvas"></canvas><div id="glwarn"></div>
   <div id="content">
     <h1>Glassmorphism</h1>
-    <p class="lead">Real Material Lab <strong>dispersion-prism</strong> rendered behind live design-system components. Move your pointer — the spectral fringe rides each bezel.</p>
+    <p class="lead">Real Material Lab <strong>liquid glass</strong> rendered behind live design-system components. Move your pointer - the glass refracts the scene.</p>
 
     <div class="stat-hero">
       <div class="stat-hero__label">Revenue · 30d</div>
@@ -239,16 +244,16 @@ fs.writeFileSync(DEST2, integ);
 console.log('wrote', DEST2);
 
 /* =====================================================================
-   themes/glassmorphism.js — the SHIPPING runtime module. Self-activating:
+   themes/glassmorphism.js - the SHIPPING runtime module. Self-activating:
    mounts a fixed full-viewport WebGL glass canvas behind the page ONLY when
    <html data-theme="glassmorphism">, points the verbatim dispersion-prism
    runtime at the design-system surfaces, tracks them on scroll/resize, and
    toggles the `glass-gl` class so the theme CSS drops its backdrop-filter
    fallback and goes transparent. Reacts live to data-theme changes (editor
    preview). Degrades to the CSS fallback if WebGL2 is unavailable.
-   GENERATED from Material Lab — do not hand-edit; re-run _bake-dispersion-prism.js.
+   GENERATED from Material Lab - do not hand-edit; re-run _bake-dispersion-prism.js.
    ===================================================================== */
-const moduleJS = `/* GENERATED from editor/tools/materiallab — verbatim dispersion-prism runtime. */
+const moduleJS = `/* GENERATED from editor/tools/materiallab - verbatim liquid-glass runtime. */
 (function(){
 "use strict";
 var VS_SRC=${JSON.stringify(VS_SRC)};
@@ -258,8 +263,33 @@ ${hexRGB}
 ${matToUniforms}
 ${drawBackdropInto}
 ${glassRuntime}
-/* ---- self-activating bootstrap ---- */
-var SURF=${JSON.stringify(PANEL_SEL + ',.modal,.slideout,.kpi,.metric-tile')};
+var DPR=Math.min(2, window.devicePixelRatio||1);
+/* Backdrop = a CAPTURE of the REAL page (html2canvas), panned by scroll, so the
+   glass refracts the actual content beneath the chrome - the POC characteristic
+   (fold / frost / rim only read over real content). Captured ONCE on mount and
+   re-captured (debounced) when the DOM settles after a change; the texture just
+   pans on scroll, so it is cheap per-frame. Falls back to the synthetic aurora
+   gradient when html2canvas isn't available (e.g. a standalone DS page). */
+var pageCap=null, capBg="#ffffff", capturing=false, capTimer=0, mo=null;
+function capturePage(){
+  var h2c=window.html2canvas; if(!h2c||capturing||!document.body) return;
+  capturing=true;
+  try{
+    h2c(document.body,{backgroundColor:null,scale:DPR,logging:false,
+      ignoreElements:function(el){return el.id==="__glass-canvas";}})
+      .then(function(cv){ pageCap=cv; try{capBg=getComputedStyle(document.body).backgroundColor||"#ffffff";}catch(e){} capturing=false; if(RT) RT.refreshBackdrop(); })
+      .catch(function(){ capturing=false; });
+  }catch(e){ capturing=false; }
+}
+function scheduleCap(){ clearTimeout(capTimer); capTimer=setTimeout(capturePage, 400); }
+function drawBackdrop(ctx,w,h){
+  if(pageCap){ ctx.fillStyle=capBg; ctx.fillRect(0,0,w,h); ctx.drawImage(pageCap, 0, -Math.round((window.scrollY||0)*DPR)); }
+  else { drawBackdropInto(ctx,w,h,STATE,null); }   // synthetic fallback (no rasterizer)
+}
+/* Shader runs on NON-SCROLLING chrome (topbar / sidebar / modals / fab). The
+   fixed canvas refracts the captured page panned to the current scroll, so each
+   chrome surface shows the real content scrolled beneath it, zero scroll lag. */
+var SURF=${JSON.stringify('.topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.fab,.fab-stack .fab,[data-float-panel]')};
 var RT=null, canvas=null, raf=0;
 function isOn(){ return document.documentElement.getAttribute("data-theme")==="glassmorphism"; }
 function stageProxy(){ return {
@@ -269,8 +299,9 @@ function stageProxy(){ return {
   querySelectorAll:function(s){ return document.querySelectorAll(s); }
 }; }
 function loop(){ if(!RT) return; RT.remeasure(); raf=requestAnimationFrame(loop); }
-function onResize(){ if(RT) RT.resize(); }
+function onResize(){ if(RT) RT.resize(); scheduleCap(); }
 function onMove(e){ if(RT) RT.setLight(e.clientX, e.clientY); }
+function onScroll(){ if(RT) RT.refreshBackdrop(); }
 function mount(){
   if(RT || !document.body) return;
   canvas=document.createElement("canvas");
@@ -279,19 +310,25 @@ function mount(){
   document.body.appendChild(canvas);
   RT=glassRuntime({canvas:canvas,stage:stageProxy(),vsSrc:VS_SRC,panelSelector:SURF,
     getFragSrc:function(){return FRAG_SRC;},getUniforms:function(){return matToUniforms(STATE.material);},
-    isFluid:function(){return false;},drawBackdrop:function(ctx,w,h){drawBackdropInto(ctx,w,h,STATE,null);},
+    isFluid:function(){return false;},drawBackdrop:drawBackdrop,
     onError:function(m){ if(window.console)console.warn("[glassmorphism] "+m); teardown(); }});
   if(!RT){ if(canvas&&canvas.parentNode)canvas.parentNode.removeChild(canvas); canvas=null; return; }
   document.documentElement.classList.add("glass-gl");
   window.addEventListener("resize",onResize,{passive:true});
   window.addEventListener("pointermove",onMove,{passive:true});
+  window.addEventListener("scroll",onScroll,{passive:true});
+  try{ mo=new MutationObserver(scheduleCap); mo.observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true}); }catch(e){}
   loop();
+  setTimeout(capturePage, 300);   // initial capture, un-debounced (a busy DOM must never starve it)
 }
 function teardown(){
   if(raf){ cancelAnimationFrame(raf); raf=0; }
-  window.removeEventListener("resize",onResize); window.removeEventListener("pointermove",onMove);
+  if(capTimer){ clearTimeout(capTimer); capTimer=0; }
+  if(mo){ try{mo.disconnect();}catch(e){} mo=null; }
+  window.removeEventListener("resize",onResize); window.removeEventListener("pointermove",onMove); window.removeEventListener("scroll",onScroll);
   if(RT && RT.dispose) RT.dispose(); RT=null;
   if(canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas); canvas=null;
+  pageCap=null;
   document.documentElement.classList.remove("glass-gl");
 }
 function sync(){ if(isOn()) mount(); else teardown(); }

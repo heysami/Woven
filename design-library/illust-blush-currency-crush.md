@@ -18,7 +18,7 @@ cute stylized cash, coins, cards as flat icons.
 ## Visual signatures
 
 - cute stylized cash, coins, cards as flat icons
-- candy-color palette — pink, mint, lavender
+- candy-color palette - pink, mint, lavender
 - chunky friendly forms, slight 3D pillow shading
 - sticker-style with white halo optional
 

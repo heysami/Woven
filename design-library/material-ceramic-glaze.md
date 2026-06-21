@@ -13,7 +13,7 @@ images:
 
 # Ceramic Glaze (high-gloss porcelain finish)
 
-A glossy surface that reacts to light: yes — sharp specular sweep.
+A glossy surface that reacts to light: yes - sharp specular sweep.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A glossy surface that reacts to light: yes — sharp specular sweep.
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — sharp specular sweep
+**Reacts to light**: yes - sharp specular sweep
 
 **Deforms**: no
 
@@ -45,13 +45,13 @@ raster: optional photo of real ceramic at 8% multiply
 
 **Highlight**: --hl-x/--hl-y custom props update specular position
 
-**Depth**: minimal — glaze is hard
+**Depth**: minimal - glaze is hard
 
 **Parallax**: none
 
 ## Common implementation mistakes (avoid these)
 
-- matte fill (ceramic without glaze isn't ceramic — it's terracotta)
+- matte fill (ceramic without glaze isn't ceramic - it's terracotta)
 - off-centre highlight stuck at fixed position
 
 ## Examples in the wild

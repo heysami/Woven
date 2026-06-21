@@ -11,7 +11,7 @@
 <style>
   /* Remap the tool's local dark vars onto the canonical Woven tokens so the
      chrome (top bar, tool strip, side panel, buttons, inputs) reads as the
-     light Woven DS — hairline borders, green accent. The #stage canvas keeps
+     light Woven DS - hairline borders, green accent. The #stage canvas keeps
      its own dark checkerboard *content* background below. */
   :root {
     --bg: var(--wv-bg);
@@ -97,7 +97,7 @@
   .tool svg { width: 18px; height: 18px; }
   .tool-sep { width: 28px; height: 1px; background: var(--line); margin: 3px 0; }
 
-  /* Canvas area — #coreCanvas is the flex child; .stage fills it. In default
+  /* Canvas area - #coreCanvas is the flex child; .stage fills it. In default
      (non-selected) layout this is transparent and behaves exactly like the old
      flex:1 .stage. In detached mode, detached-panels.css absolutely positions
      #coreCanvas onto the node's core rect. */
@@ -825,7 +825,7 @@
       if(done) return;
       try{ codeWorker.terminate(); }catch(e){}
       codeWorker = null;
-      status.textContent = "Timeout — code terminated"; status.className="code-status err";
+      status.textContent = "Timeout - code terminated"; status.className="code-status err";
     }, 2200);
     codeWorker.postMessage({code, w:M.w, h:M.h, plen:M.palette.length});
   }
@@ -1465,7 +1465,7 @@
     renderContentUI();
     syncModeUI();
     $("#embedNote").textContent = EMBEDDED
-      ? "Embedded — changes sync to the parent node (id: "+(NODE_ID||"?")+")."
+      ? "Embedded - changes sync to the parent node (id: "+(NODE_ID||"?")+")."
       : "Standalone mode.";
     if(M.mode==="code") runCode(true);
     fit(); refreshJson();

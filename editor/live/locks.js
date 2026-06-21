@@ -1,4 +1,4 @@
-/* Live node locks — a SOFT, visual "locked by <name>" overlay shared by the
+/* Live node locks - a SOFT, visual "locked by <name>" overlay shared by the
    host (cursors-host.js) and guest (cursors.js) editors. Non-blocking by design:
    it shows who is currently holding a node and acquires/releases a lease as you
    grab and let go, but it never PREVENTS anyone from editing. Server leases are
@@ -10,7 +10,7 @@
      - config({ myGid, acquire(t), release(t), heartbeat(ts), colorFor(gid) })
      - setLeases([{target, holder, holderName}])  ← called on every `lock` SSE frame
 
-   No emoji icons — inline lock SVG drawn with currentColor (see no-emoji rule). */
+   No emoji icons - inline lock SVG drawn with currentColor (see no-emoji rule). */
 (() => {
   "use strict";
   if (window.__thLocks) return;
@@ -38,7 +38,7 @@
       o.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:99997";
       document.body.appendChild(o);
     }
-    // Lock badges live on the CANVAS — clip to the canvas rect so a badge for a
+    // Lock badges live on the CANVAS - clip to the canvas rect so a badge for a
     // node panned under a side panel is hidden behind it (panels are separate
     // grid columns), instead of floating over the panel.
     const c = document.querySelector(".workflow-canvas-wrap");
@@ -64,7 +64,7 @@
 
   // Mark a node as actively interacted-with: acquire its lease on first touch,
   // and (re)stamp its idle timer. Release is driven by a SWEEP on idleness, not
-  // by catching a pointerup — a drag that ends with pointercancel / a missed
+  // by catching a pointerup - a drag that ends with pointercancel / a missed
   // pointerup would otherwise leave us holding the lease forever (heartbeated
   // every 10s), which blocks the other side's edits to that node until refresh.
   function touch(target) {
@@ -72,14 +72,14 @@
     held.set(target, Date.now());
   }
   // Release any hold whose interaction has been idle past the grace. The lock
-  // models "I am actively editing", not "my cursor rests here" — so a node
+  // models "I am actively editing", not "my cursor rests here" - so a node
   // stays locked only while you keep typing/dragging, and unlocks GRACE_MS
   // after you stop, EVEN IF the field is still focused. This is the contract:
   // lock during the edit, unlock when the edit is done, then whoever edits next
   // wins (last-writer). Keying release off focus (the old behaviour) pinned the
   // lease for as long as a cursor sat in the textarea, so the previous editor
   // hard-locked the next one out and the next one's write got silently dropped
-  // by the server lock — the "C reverts to B / never reaches the other side"
+  // by the server lock - the "C reverts to B / never reaches the other side"
   // bug. Resuming typing re-acquires via touch() in the input/keydown handlers.
   function sweep() {
     const now = Date.now();
@@ -93,7 +93,7 @@
 
   // Render badges over every node held by SOMEONE ELSE. Called on lock frames
   // and on a 150ms tick (so a badge follows the node while either side pans/
-  // zooms). 150ms is not per-frame — safe per the canvas-rect rule.
+  // zooms). 150ms is not per-frame - safe per the canvas-rect rule.
   function render() {
     if (!cfg) return;
     const o = overlay();
@@ -141,7 +141,7 @@
       // Capture phase so we see the interaction before the editor's handlers.
       // Acquire on grab/focus; keep the hold alive while the drag is MOVING
       // (buttons down) or the field is being typed in; the sweep releases it
-      // ~GRACE after interaction goes idle — no reliance on catching pointerup.
+      // ~GRACE after interaction goes idle - no reliance on catching pointerup.
       window.addEventListener("pointerdown", (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); }, true);
       window.addEventListener("pointermove", (e) => {
         if (e.buttons === 0) return;              // only an active drag keeps a hold alive
@@ -150,7 +150,7 @@
       window.addEventListener("focusin", (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); }, true);
       // Typing (re)acquires + keeps the hold alive. Using touch() rather than a
       // bare restamp means that after the idle sweep releases a still-focused
-      // node, the next keystroke re-locks it — so an active edit is always
+      // node, the next keystroke re-locks it - so an active edit is always
       // protected, while an idle-but-focused node is free for the next editor.
       const keep = (e) => { const n = nodeIdFromEl(e.target); if (n) touch("node:" + n); };
       window.addEventListener("input", keep, true);

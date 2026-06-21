@@ -13,9 +13,9 @@ images:
 
 Phone-shaped centered frame on desktop preview, full-bleed on mobile. Three vertical zones:
 
-- **Top bar** (44pt) — sticky top; back/hamburger + title + trailing action
-- **Scrollable content** (1fr) — single-column list or stacked sections
-- **Bottom tab bar** (49pt + safe-area-inset) — 3-5 tabs with icon + label
+- **Top bar** (44pt) - sticky top; back/hamburger + title + trailing action
+- **Scrollable content** (1fr) - single-column list or stacked sections
+- **Bottom tab bar** (49pt + safe-area-inset) - 3-5 tabs with icon + label
 
 ## Macro proportions
 

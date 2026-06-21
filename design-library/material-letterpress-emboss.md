@@ -13,7 +13,7 @@ images:
 
 # Letterpress / Emboss (raised-impression printing)
 
-A matte surface that reacts to light: yes — directional shadow into the pressed area and deforms: yes — paper is permanently deformed.
+A matte surface that reacts to light: yes - directional shadow into the pressed area and deforms: yes - paper is permanently deformed.
 
 ## Physical behavior
 
@@ -21,9 +21,9 @@ A matte surface that reacts to light: yes — directional shadow into the presse
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — directional shadow into the pressed area
+**Reacts to light**: yes - directional shadow into the pressed area
 
-**Deforms**: yes — paper is permanently deformed
+**Deforms**: yes - paper is permanently deformed
 
 **Age / wear**: ageless
 
@@ -34,7 +34,7 @@ css: |
   /* Pressed text (debossed) */
   color: transparent;
   text-shadow:
-    0 1px 0 rgba(255,255,255,0.8),  /* light from top — highlight at bottom of impression */
+    0 1px 0 rgba(255,255,255,0.8),  /* light from top - highlight at bottom of impression */
     0 -1px 0 rgba(0,0,0,0.4);       /* shadow at top */
   /* Raised text (embossed) */
   .emboss {

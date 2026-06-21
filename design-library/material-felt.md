@@ -13,7 +13,7 @@ images:
 
 # Felt (matted wool, fuzzy)
 
-A matte surface and deforms: yes — squashes on press.
+A matte surface and deforms: yes - squashes on press.
 
 ## Physical behavior
 
@@ -23,7 +23,7 @@ A matte surface and deforms: yes — squashes on press.
 
 **Reacts to light**: no specular
 
-**Deforms**: yes — squashes on press
+**Deforms**: yes - squashes on press
 
 **Age / wear**: ageless
 

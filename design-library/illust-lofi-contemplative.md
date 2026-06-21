@@ -5,7 +5,7 @@ category: Anime / manga
 subCategory: lofi-chill
 role: hero
 pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-dreamcore, recipe-readcv, aesthetic-dark-academia]
-notForUseWhen: Brief is energetic, corporate, or urgency-driven — the whole register is exhale.
+notForUseWhen: Brief is energetic, corporate, or urgency-driven - the whole register is exhale.
 images:
   - src: illust-lofi-contemplative.png
     reason: Illustration style sample.
@@ -13,7 +13,7 @@ images:
 
 # Lo-fi contemplative scene
 
-A solitary figure at rest in a vast quiet scene — dusk meadow, rooftop, window desk — rendered in the lo-fi-beats illustration tradition.
+A solitary figure at rest in a vast quiet scene - dusk meadow, rooftop, window desk - rendered in the lo-fi-beats illustration tradition.
 
 ## Visual signatures
 

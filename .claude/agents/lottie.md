@@ -17,4 +17,4 @@ You are Subagent 1.V.lottie.
 - A small inline player snippet (lottie-web) referencing the file at the slot's selector
 - A node entry in `workflow/workflow.json` if tracked
 
-Source priority: hand-author simple keyframe animations directly in Lottie JSON (path interpolation, transform layers). For complex character animation, escalate to the orchestrator — vector-mark + CSS transform animation may be a better fit.
+Source priority: hand-author simple keyframe animations directly in Lottie JSON (path interpolation, transform layers). For complex character animation, escalate to the orchestrator - vector-mark + CSS transform animation may be a better fit.

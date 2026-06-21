@@ -13,11 +13,11 @@ images:
 
 # Wavy Buddies
 
-everything is a wavy curving line — limbs, hair, shadows.
+everything is a wavy curving line - limbs, hair, shadows.
 
 ## Visual signatures
 
-- everything is a wavy curving line — limbs, hair, shadows
+- everything is a wavy curving line - limbs, hair, shadows
 - characters mid-action: shopping, scrolling, dancing
 - bright primary fills behind black wobble line
 - frequent ecommerce / lifestyle subject matter

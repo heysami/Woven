@@ -11,11 +11,11 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 
 ## Picks
 
-- **Shell:** `mobile-app` — read `shell-mobile-app.md`
-- **Style:** `sf-pro-ios` — read `style-sf-pro-ios.md`
-- **Aesthetic:** *(none — adult-pro brief)*
+- **Shell:** `mobile-app` - read `shell-mobile-app.md`
+- **Style:** `sf-pro-ios` - read `style-sf-pro-ios.md`
+- **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** warm, direct, contractions
 
 ## Best for
 
-iOS-native feeling apps — the prototype IS the app, not a marketing page.
+iOS-native feeling apps - the prototype IS the app, not a marketing page.

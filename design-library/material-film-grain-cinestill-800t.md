@@ -1,6 +1,6 @@
 ---
 materialId: film-grain-cinestill-800t
-name: Film Grain — CineStill 800T (tungsten, halation, neon glow)
+name: Film Grain - CineStill 800T (tungsten, halation, neon glow)
 family: analog
 category: film
 surfaceFinish: matte
@@ -11,9 +11,9 @@ images:
     reason: Material fidelity sample.
 ---
 
-# Film Grain — CineStill 800T (tungsten, halation, neon glow)
+# Film Grain - CineStill 800T (tungsten, halation, neon glow)
 
-A matte surface that reacts to light: yes — bright lights bloom with red halation.
+A matte surface that reacts to light: yes - bright lights bloom with red halation.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — bright lights bloom with red halat
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — bright lights bloom with red halation
+**Reacts to light**: yes - bright lights bloom with red halation
 
 **Deforms**: no
 
@@ -35,9 +35,9 @@ css: |
 svg: |
   <feGaussianBlur stdDeviation="2"/>
   <feColorMatrix values="1.2 0 0 0 0  0 0.9 0 0 0  0 0 0.85 0 0  0 0 0 1 0"/>
-  <!-- red boom at highlights — the CineStill signature -->
+  <!-- red boom at highlights - the CineStill signature -->
 webgl: |
-  threshold luminance, dilate red channel, additive composite — gives
+  threshold luminance, dilate red channel, additive composite - gives
   authentic halation around lamp posts and signs
 raster: CineStill scan loop
 ```

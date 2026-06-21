@@ -5,7 +5,7 @@ category: 3D
 subCategory: magical-environment
 role: hero
 pairsPrototypes: [aesthetic-fairycore, aesthetic-bioluminescent-deep, aesthetic-cottagegoth, shell-scroll-journey-scene]
-notForUseWhen: Brief is rational, corporate, or daylight-honest — the register is twilight wonder.
+notForUseWhen: Brief is rational, corporate, or daylight-honest - the register is twilight wonder.
 images:
   - src: illust-enchanted-forest-glow.png
     reason: Illustration style sample.
@@ -13,7 +13,7 @@ images:
 
 # Enchanted forest glow
 
-Twilight woodland lit from within — lanterns, fireflies, glowing flora — deep teal darkness held back by pools of warm magical light.
+Twilight woodland lit from within - lanterns, fireflies, glowing flora - deep teal darkness held back by pools of warm magical light.
 
 ## Visual signatures
 
@@ -21,7 +21,7 @@ Twilight woodland lit from within — lanterns, fireflies, glowing flora — dee
 - Warm light sources INSIDE the scene: hanging lanterns, fireflies, a lit cottage window, glowing mushrooms
 - Light pools with physical falloff; god-rays through canopy haze
 - A path or clearing leading the eye toward the brightest point
-- Storybook detail density — ferns, moss, roots — softened by atmosphere
+- Storybook detail density - ferns, moss, roots - softened by atmosphere
 
 ## Prompt keywords
 
@@ -29,7 +29,7 @@ Twilight woodland lit from within — lanterns, fireflies, glowing flora — dee
 
 **Material**: mossy organic surfaces, volumetric haze, warm emissive points
 
-**Line**: painterly or soft-render — no outlines
+**Line**: painterly or soft-render - no outlines
 
 **Color**: deep teal `#0e2a26` shadows, lantern amber `#ffb45e`, firefly gold, cool moonlight rim
 

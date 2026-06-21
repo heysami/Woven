@@ -11,17 +11,17 @@ images:
 
 **Tag:** `style-outline-marquee`
 
-**Canonical references:** NLF / Geex-Arts dark galleries (Fairs — Galleries — Information rows) · fashion-week microsites · kinetic-type posters translated to web
+**Canonical references:** NLF / Geex-Arts dark galleries (Fairs - Galleries - Information rows) · fashion-week microsites · kinetic-type posters translated to web
 
 ## Surface treatment
 
-Display-size OUTLINE type repeated in horizontally drifting marquee rows — the typography is the texture, the wallpaper, and the navigation at once. Filled type is reserved for the focused/hovered item; everything else is stroke-only.
+Display-size OUTLINE type repeated in horizontally drifting marquee rows - the typography is the texture, the wallpaper, and the navigation at once. Filled type is reserved for the focused/hovered item; everything else is stroke-only.
 
 ### The grammar
 
 - 2-6 stacked marquee rows of display text (nav labels, section names, brand words), each drifting at slightly different speeds/directions
 - Type is `-webkit-text-stroke: 1-2px` outline; the ACTIVE word fills solid on hover/focus
-- Rows sit behind or between content layers — a floating image card can ride above them
+- Rows sit behind or between content layers - a floating image card can ride above them
 - Drift is slow (30-80s per loop) and pauses on hover
 
 ### Background / color
@@ -34,7 +34,7 @@ Display-size OUTLINE type repeated in horizontally drifting marquee rows — the
 
 - Condensed or standard grotesque at 64-160px (Druk, Neue Haas Display, Archivo Expanded for wide variants)
 - Stroke weight scales with size: 1px below 80px, 2px above
-- Body copy elsewhere stays small and quiet — the marquees own all display energy
+- Body copy elsewhere stays small and quiet - the marquees own all display energy
 
 ### Motion
 
@@ -46,7 +46,7 @@ Fast scrolling-ticker speeds (it's ambient drift, not a stock ticker); outline t
 
 ## Best for
 
-Galleries and exhibition sites, fashion and editorial archives, agency portfolios, event/festival navigation screens — anywhere the section NAMES are glamorous enough to be the decor.
+Galleries and exhibition sites, fashion and editorial archives, agency portfolios, event/festival navigation screens - anywhere the section NAMES are glamorous enough to be the decor.
 
 ## Pairs well with
 

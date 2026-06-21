@@ -21,7 +21,7 @@ A matte surface (translucent).
 
 **Transparency**: translucent
 
-**Reacts to light**: no specular — light scatters
+**Reacts to light**: no specular - light scatters
 
 **Deforms**: no
 
@@ -34,7 +34,7 @@ css: |
   background: rgba(252,250,245,0.62);
   backdrop-filter: blur(8px) saturate(80%);  /* desaturate, not boost */
   box-shadow: 0 2px 8px rgba(60,40,20,0.08);
-  /* WARM tone, not cool — vellum is yellowish */
+  /* WARM tone, not cool - vellum is yellowish */
 svg: |
   <filter id="vellumGrain">
     <feTurbulence baseFrequency="0.9" numOctaves="2"/>

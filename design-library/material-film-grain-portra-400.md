@@ -1,6 +1,6 @@
 ---
 materialId: film-grain-portra-400
-name: Film Grain — Portra 400 (colour, fine grain, warm)
+name: Film Grain - Portra 400 (colour, fine grain, warm)
 family: analog
 category: film
 surfaceFinish: matte
@@ -11,9 +11,9 @@ images:
     reason: Material fidelity sample.
 ---
 
-# Film Grain — Portra 400 (colour, fine grain, warm)
+# Film Grain - Portra 400 (colour, fine grain, warm)
 
-A matte surface that reacts to light: yes — heavier in shadow.
+A matte surface that reacts to light: yes - heavier in shadow.
 
 ## Physical behavior
 
@@ -21,7 +21,7 @@ A matte surface that reacts to light: yes — heavier in shadow.
 
 **Transparency**: opaque
 
-**Reacts to light**: yes — heavier in shadow
+**Reacts to light**: yes - heavier in shadow
 
 **Deforms**: no
 
@@ -35,7 +35,7 @@ css: |
   opacity: 0.4;
   filter: saturate(0.92) hue-rotate(2deg);
 svg: |
-  finer noise — baseFrequency="1.4"
+  finer noise - baseFrequency="1.4"
 raster: scanned Portra grain looping
 ```
 

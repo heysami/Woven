@@ -1,14 +1,14 @@
 /* ==========================================================================
-   all.css — aggregator. Loads the base token vocabulary + every component
+   all.css - aggregator. Loads the base token vocabulary + every component
    partial + every style overlay in one link, so a page only needs
    <link rel="stylesheet" href="../all.css">.
 
    ORDER IS THE CONTRACT (cascade follows @import order, as if concatenated):
-     1. styles.css      — :root token vocabulary + the 47 base components.
-     2. components/*     — new component partials. Must come AFTER base so
+     1. styles.css      - :root token vocabulary + the 47 base components.
+     2. components/*     - new component partials. Must come AFTER base so
                            modifiers (e.g. .input--bare) win equal-specificity
                            ties against the base rule (.input).
-     3. themes/*         — style overlays. Must come LAST so the attribute-
+     3. themes/*         - style overlays. Must come LAST so the attribute-
                            scoped overrides ([data-theme="x"] .card) win over
                            both base and new components.
 
@@ -25,6 +25,7 @@
 @import url("components/data-dense.css");
 @import url("components/doc.css");
 @import url("components/charts.css");
+@import url("components/fab.css");
 
 /* 3. style overlays */
 @import url("themes/minimal.css");

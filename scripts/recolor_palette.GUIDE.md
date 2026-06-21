@@ -1,4 +1,4 @@
-# recolor_palette — Agent Guide
+# recolor_palette - Agent Guide
 
 Perceptual, palette-based image recoloring. Detect an image's color palette (a
 small set of color *groups*), then recolor by editing one or more of those
@@ -15,7 +15,7 @@ recipe** and **Edit specification** sections first.
 - Recolors by editing chosen palette colors; **unedited colors are left alone**.
 - Edits are perceptual: change **hue / chroma / lightness** independently, or map
   a color to a specific target RGB.
-- Smooth, localized result — no hard edges, no pixel "breakup," even on
+- Smooth, localized result - no hard edges, no pixel "breakup," even on
   textured/JPEG/WebP images.
 
 ## What it cannot do
@@ -23,7 +23,7 @@ recipe** and **Edit specification** sections first.
 - **It cannot separate two regions that are the same color.** If a dress and the
   skin share the same hue+lightness, editing one edits both. That requires
   spatial/semantic segmentation, which this tool does not do.
-- It is global per color group. There is no "only the top-left" — selection is by
+- It is global per color group. There is no "only the top-left" - selection is by
   color, not location.
 - A tiny amount of an edit can bleed into nearby colors (smooth weights have soft
   tails). Usually imperceptible.
@@ -46,17 +46,17 @@ No GPU, no scipy/sklearn. Pure CPU. Works on PNG/JPG/WebP.
    - `L` = perceived lightness, 0 (black) .. 1 (white)
    - `C` = chroma (colorfulness), ~0 (gray) .. ~0.4
    - `H` = hue angle in degrees, 0..360 (0/360≈red, ~120≈green, ~150-200≈teal,
-     ~250-290≈blue/violet, ~330≈magenta) — **OKLab hue, not HSV hue**.
+     ~250-290≈blue/violet, ~330≈magenta) - **OKLab hue, not HSV hue**.
 2. You edit some indices. Each edit moves that palette color; every pixel shifts
    in proportion to how much it belongs to that color.
-3. Because the work is in OKLab, **changing H or C does not change L** — a color
+3. Because the work is in OKLab, **changing H or C does not change L** - a color
    keeps its brightness unless you explicitly set `lightness_shift`.
 
 ---
 
 ## Two-step workflow (important)
 
-**Step 1 — inspect the palette**, then **Step 2 — apply edits**.
+**Step 1 - inspect the palette**, then **Step 2 - apply edits**.
 `k` and `seed` MUST be identical across the two steps, or the indices won't match.
 
 ### CLI
@@ -134,11 +134,11 @@ An empty edit `{}` does nothing.
 1. **Run `palette`** on the image with a chosen `k` (start at 6).
 2. **Identify the target group(s)** from the JSON by matching the user's words to
    each entry's `rgb` and `oklch.H`:
-   - "the sky / the blue" → highest-coverage entry with `H` ≈ 250–290.
-   - "the greenery / leaves" → `H` ≈ 120–160.
-   - "teal/cyan" → `H` ≈ 160–200. "red" → `H` ≈ 20–40. "magenta/pink" → `H` ≈ 0 or 330–360.
+   - "the sky / the blue" → highest-coverage entry with `H` ≈ 250-290.
+   - "the greenery / leaves" → `H` ≈ 120-160.
+   - "teal/cyan" → `H` ≈ 160-200. "red" → `H` ≈ 20-40. "magenta/pink" → `H` ≈ 0 or 330-360.
    - Use `coverage` to disambiguate (the background is usually the biggest group).
-   - A single perceived color may span 2–3 entries (e.g. light/dark shades). Edit
+   - A single perceived color may span 2-3 entries (e.g. light/dark shades). Edit
      all of them the same way to move the whole thing.
 3. **Translate the desired change** into edit keys:
    - "make it orange" → `{"hue_set": 40}`. "make it blue" → `{"hue_set": 260}`.
@@ -148,7 +148,7 @@ An empty edit `{}` does nothing.
    - "make it exactly this color" → `{"target_rgb": [r,g,b]}`.
 4. **Run `apply`** with the same `k`/`seed`. Inspect output; adjust and repeat.
 
-> If a hue-only edit looks washed out, the source color was low-chroma — add
+> If a hue-only edit looks washed out, the source color was low-chroma - add
 > `chroma_scale` (e.g. 1.4) so the new hue reads clearly.
 
 ---
@@ -187,10 +187,10 @@ subject's colors untouched.
 
 | Param | Where | Effect |
 |---|---|---|
-| `k` | `palette` & `apply` | Number of color groups. Raise it (e.g. 8–10) when a distinct feature is being lumped with another so it gets its own index. Lower it for broad strokes. |
+| `k` | `palette` & `apply` | Number of color groups. Raise it (e.g. 8-10) when a distinct feature is being lumped with another so it gets its own index. Lower it for broad strokes. |
 | `seed` | `palette` & `apply` | Random seed for k-means. Keep identical across both calls. Change only if a palette split looks unstable. |
 
-There is intentionally **no width/sigma knob** — the weight smoothness is derived
+There is intentionally **no width/sigma knob** - the weight smoothness is derived
 automatically from palette spacing.
 
 ---

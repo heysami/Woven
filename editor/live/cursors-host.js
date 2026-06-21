@@ -1,4 +1,4 @@
-/* Host-side live cursors — injected by the daemon into the editor shell when a
+/* Host-side live cursors - injected by the daemon into the editor shell when a
    live session is active for the project. The HOST sees guests' cursors and
    broadcasts their own. Talks to the daemon's /__live_events + /__live_presence
    (no guest token; host is trusted). Mirrors editor/live/cursors.js, but
@@ -40,7 +40,7 @@
     clipToCanvas(o);
     return o;
   }
-  // Cursors live on the CANVAS, not above the panels — clip to the canvas rect
+  // Cursors live on the CANVAS, not above the panels - clip to the canvas rect
   // so a cursor mapping into a panel column is hidden behind it.
   function clipToCanvas(o) {
     const c = document.querySelector(".workflow-canvas-wrap");
@@ -88,7 +88,7 @@
     });
     es.addEventListener("session-ended", () => { for (const g of [...parts.keys()]) drop(g); es.close(); connected = false; try { window.__thLiveActive = false; } catch (e) {} });
 
-    // Soft node locks — host side. Acquire/release via the daemon's /__live_lease.
+    // Soft node locks - host side. Acquire/release via the daemon's /__live_lease.
     if (window.__thLocks) {
       const lease = (action, extra) => fetch("/__live_lease?project=" + encodeURIComponent(PID), {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -129,7 +129,7 @@
       .catch(() => {});
   }
   // Wait for the canvas, then poll for a live session and connect when one
-  // starts — so cursors appear even if you go live AFTER opening the editor.
+  // starts - so cursors appear even if you go live AFTER opening the editor.
   const t = setInterval(() => {
     if (document.querySelector('[class*="workflow-node"]') || document.querySelector(".workflow-canvas-wrap")) {
       clearInterval(t);

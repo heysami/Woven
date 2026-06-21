@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>sim-05 — CONCEPT-FAIL (flat / no readability) fixture</title>
+<head><meta charset="utf-8"><title>sim-05 - CONCEPT-FAIL (flat / no readability) fixture</title>
 <style>body,html{margin:0;height:100%;background:#1a1a1f;color:#ccc;font-family:ui-monospace,monospace;overflow:hidden}
 canvas{display:block}</style></head>
 <body><canvas id="scene" width="720" height="540"></canvas>
 <script>
-// ─── BAD PATTERN — craft is clean and palette/typography hit the brief
+// ─── BAD PATTERN - craft is clean and palette/typography hit the brief
 // (slate, monospace, restrained). BUT the rendering is dots scattered at
-// random positions with no spatial structure — a stranger can't read this
+// random positions with no spatial structure - a stranger can't read this
 // as "warehouse stock" at all. concept-lens §4 'intuitionScore' check
 // (5-second test: can a domain stranger identify the system) must fail.
 
@@ -17,7 +17,7 @@ function mulberry32(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s
 const rng = mulberry32(7);
 const state = { t: 0, entities: {} };
 for (let i = 0; i < 80; i++) {
-  // ❌ Random positions, no grid, no spatial logic — no warehouse to read
+  // ❌ Random positions, no grid, no spatial logic - no warehouse to read
   state.entities['e-'+i] = { id: 'e-'+i, kind: 'entity',
     x: rng() * 720, y: rng() * 540, stockLevel: Math.floor(rng()*100) };
 }
@@ -26,7 +26,7 @@ function render(state) {
   ctx.fillStyle = '#1a1a1f'; ctx.fillRect(0, 0, 720, 540);
   for (const e of Object.values(state.entities)) {
     ctx.fillStyle = '#4a5a78';
-    // ❌ Tiny isolated dots — no shape information, no grouping, no spatial cue
+    // ❌ Tiny isolated dots - no shape information, no grouping, no spatial cue
     ctx.fillRect(e.x, e.y, 3, 3);
   }
 }

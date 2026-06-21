@@ -152,7 +152,7 @@ def main():
                 {"id": "asset1", "kind": "asset", "assetKind": "image",
                  "path": "source/images/foo.png",
                  "title": "foo.png", "x": 100, "y": 100},
-                # ↑ NOTICE: no versions, no activeVersionId — stomp attempt.
+                # ↑ NOTICE: no versions, no activeVersionId - stomp attempt.
             ],
             "edges": [],
         }
@@ -165,7 +165,7 @@ def main():
             fail(f"[step2] STOMP CHECK: expected 1 version after stale POST, got {n_versions}")
         if asset.get("activeVersionId") != v1_id:
             fail(f"[step2] STOMP CHECK: activeVersionId lost (was {v1_id[:8]}, now {asset.get('activeVersionId')})")
-        print(f"[step2] PASS — stale POST did not stomp versions or activeVersionId")
+        print(f"[step2] PASS - stale POST did not stomp versions or activeVersionId")
 
         # ── Step 3: overwrite the image (simulating regenerate). ────────
         # Sleep first so mtime moves past the v1 createdAt + 1s dedup slop.
@@ -186,7 +186,7 @@ def main():
         if n_versions < 2:
             fail(f"[step3] expected ≥2 versions after regenerate, got {n_versions}")
         v2_id = asset["versions"][-1]["id"]
-        print(f"[step3] PASS — got {n_versions} versions, newest v2={v2_id[:8]}")
+        print(f"[step3] PASS - got {n_versions} versions, newest v2={v2_id[:8]}")
 
         # ── Step 4: another stale POST after v2 exists. ─────────────────
         stale["nodes"][0].pop("versions", None)
@@ -197,7 +197,7 @@ def main():
         n_versions = len(asset.get("versions") or [])
         if n_versions != 2:
             fail(f"[step4] STOMP CHECK: expected 2 versions after stale POST, got {n_versions}")
-        print(f"[step4] PASS — second stale POST still preserved both versions")
+        print(f"[step4] PASS - second stale POST still preserved both versions")
 
         # ── Step 5: regenerate again. ───────────────────────────────────
         time.sleep(2)
@@ -212,7 +212,7 @@ def main():
             time.sleep(0.4)
         if n_versions < 3:
             fail(f"[step5] expected 3 versions after second regen, got {n_versions}")
-        print(f"[step5] PASS — third regen produced version #3")
+        print(f"[step5] PASS - third regen produced version #3")
 
         # ── Step 6: confirm workflow.json + runs/ agree. ────────────────
         runs_dir = os.path.join(pdir, "workflow", "runs", "asset1")
@@ -221,7 +221,7 @@ def main():
         version_ids = sorted([v["id"] for v in asset["versions"]])
         if set(dirs_on_disk) != set(version_ids):
             fail(f"[step6] versions[] {version_ids} mismatch with runs/ dirs {dirs_on_disk}")
-        print(f"[step6] PASS — versions[] and runs/ agree: {len(version_ids)} entries")
+        print(f"[step6] PASS - versions[] and runs/ agree: {len(version_ids)} entries")
 
         # ── Step 7: revert + verify file restored. ──────────────────────
         v1 = asset["versions"][0]
@@ -229,7 +229,7 @@ def main():
         with open(img, "rb") as f: now_bytes = f.read()
         if b"IMAGE_V1_BYTES" not in now_bytes:
             fail(f"[step7] revert didn't restore v1 content; file starts with {now_bytes[:40]!r}")
-        print(f"[step7] PASS — revert to v1 restored original bytes")
+        print(f"[step7] PASS - revert to v1 restored original bytes")
 
         # ── Step 8: pin a version. The disk MUST reflect pinned=true
         # immediately (this is bug "pin doesn't refresh"). ─────────────
@@ -241,7 +241,7 @@ def main():
         pinned_state = next(v for v in asset["versions"] if v["id"] == v2["id"]).get("pinned")
         if pinned_state is not True:
             fail(f"[step8] pin endpoint didn't persist pinned=true (got {pinned_state})")
-        print(f"[step8] PASS — pin persisted on disk")
+        print(f"[step8] PASS - pin persisted on disk")
 
         # ── Step 8.5: path edit + versions preserved. The user-editable
         # fields path/paths/size should win over disk; daemon-owned
@@ -267,7 +267,7 @@ def main():
         # Restore original path so subsequent steps don't drift.
         edit["nodes"][0]["path"] = "source/images/foo.png"
         daemon.post_json(f"/__workflow?project={pid}", edit)
-        print(f"[step8.5] PASS — path edit wins, versions preserved")
+        print(f"[step8.5] PASS - path edit wins, versions preserved")
 
         # ── Step 9: branch a NON-ACTIVE historical version. The sibling's
         # canonical path MUST differ from the original's path, and its
@@ -293,7 +293,7 @@ def main():
             fail(f"[step9] sibling node {sibling_id!r} not in workflow.json")
         if sibling["path"] == asset["path"]:
             fail(f"[step9] sibling SHARES the original's canonical path "
-                 f"({sibling['path']!r}) — branch should give it independent bytes")
+                 f"({sibling['path']!r}) - branch should give it independent bytes")
         # Verify the sibling's canonical file on disk has v3 bytes (not v1's).
         sibling_file = os.path.join(pdir, sibling["path"].lstrip("/"))
         if not os.path.isfile(sibling_file):
@@ -301,13 +301,13 @@ def main():
         with open(sibling_file, "rb") as f: sib_bytes = f.read()
         if b"IMAGE_V3_BYTES" not in sib_bytes:
             fail(f"[step9] sibling's canonical bytes don't match the picked v3 "
-                 f"(starts with {sib_bytes[:40]!r}) — branch is showing the wrong version")
+                 f"(starts with {sib_bytes[:40]!r}) - branch is showing the wrong version")
         # And the original's canonical path STILL has v1's bytes (the active one).
         with open(img, "rb") as f: orig_bytes = f.read()
         if b"IMAGE_V1_BYTES" not in orig_bytes:
             fail(f"[step9] original's canonical bytes were disturbed by branching "
                  f"(starts with {orig_bytes[:40]!r})")
-        print(f"[step9] PASS — branch produced an independent sibling with the "
+        print(f"[step9] PASS - branch produced an independent sibling with the "
               f"picked version's bytes (sibling path={sibling['path']!r}; original "
               f"path stays {asset['path']!r})")
 
@@ -336,7 +336,7 @@ def main():
         ddir = os.path.join(pdir, "workflow", "runs", "asset1", target["id"])
         if os.path.exists(ddir):
             fail(f"[step10] runs/ dir still on disk after DELETE: {ddir}")
-        print(f"[step10] PASS — DELETE removed both versions[] entry and runs/ dir")
+        print(f"[step10] PASS - DELETE removed both versions[] entry and runs/ dir")
 
         # ── Step 11: DELETE on active version should be rejected (409). ─
         try:
@@ -348,7 +348,7 @@ def main():
         except urllib.error.HTTPError as e:
             if e.code != 409:
                 fail(f"[step11] expected 409 on active version delete, got {e.code}")
-        print(f"[step11] PASS — DELETE on active version correctly rejected with 409")
+        print(f"[step11] PASS - DELETE on active version correctly rejected with 409")
 
         # ── Step 12: size endpoint persists explicit + auto. ────────────
         daemon.post_json(f"/__workflow/node/asset1/size?project={pid}",
@@ -368,7 +368,7 @@ def main():
             fail(f"[step12] /size auto didn't clear w/h: {asset.get('w')}, {asset.get('h')}")
         if (asset.get("size") or {}).get("scale") != "fit-canvas":
             fail(f"[step12] /size auto didn't reset scale: {asset.get('size')}")
-        print(f"[step12] PASS — /size endpoint handles explicit + auto correctly")
+        print(f"[step12] PASS - /size endpoint handles explicit + auto correctly")
 
         # ── Step 13: save composition + switch + delete. ────────────────
         # Add a sub-asset upstream so the composition has substance.
@@ -413,7 +413,7 @@ def main():
                     if v["id"] == active_vid_a1)
         if ver["activeCompositionId"] != first_cid:
             fail(f"[step13] composition switch didn't persist: {ver['activeCompositionId']}")
-        print(f"[step13] PASS — saveComposition + switch persist correctly")
+        print(f"[step13] PASS - saveComposition + switch persist correctly")
 
         # ── Step 14: delete the saved composition. ──────────────────────
         req = urllib.request.Request(
@@ -429,7 +429,7 @@ def main():
                     if v["id"] == active_vid_a1)
         if any(c["id"] == new_cid for c in (ver.get("compositions") or [])):
             fail(f"[step14] deleted composition still in compositions[]")
-        print(f"[step14] PASS — composition DELETE removes from compositions[]")
+        print(f"[step14] PASS - composition DELETE removes from compositions[]")
 
         # ── Step 15: prototype kind versioning. Write any file under
         # source/ → the prototype node accumulates a snapshot. ──────────
@@ -464,7 +464,7 @@ def main():
         if len(proto.get("versions") or []) <= proto_v_count_initial:
             fail(f"[step15] prototype watcher didn't snapshot after source/ write; "
                  f"got {len(proto.get('versions') or [])} versions, expected > {proto_v_count_initial}")
-        print(f"[step15] PASS — prototype version accumulates on source/ writes")
+        print(f"[step15] PASS - prototype version accumulates on source/ writes")
 
         # ── Step 16: design-system kind versioning. ─────────────────────
         ds_dir = os.path.join(pdir, "design-systems", "ds1")
@@ -500,7 +500,7 @@ def main():
         if len(ds.get("versions") or []) <= ds_v_initial:
             fail(f"[step16] design-system watcher didn't snapshot after DS file edit; "
                  f"got {len(ds.get('versions') or [])} versions")
-        print(f"[step16] PASS — design-system version accumulates on DS file writes")
+        print(f"[step16] PASS - design-system version accumulates on DS file writes")
 
         # ── Step 17: sub-asset lineage auto-populates from edges. ───────
         # Set up two asset nodes wired together: sub_b → consumer_c.
@@ -548,7 +548,7 @@ def main():
             fail(f"[step17] sub-asset lineage missing 'sub_b' in consumedSubVersions: {pins}")
         if pins["sub_b"] != sub_b["activeVersionId"]:
             fail(f"[step17] sub_b pin mismatch: composition pinned {pins['sub_b']}, sub_b active is {sub_b['activeVersionId']}")
-        print(f"[step17] PASS — sub-asset lineage auto-populated from edges (sub_b pinned at {pins['sub_b'][:8]})")
+        print(f"[step17] PASS - sub-asset lineage auto-populated from edges (sub_b pinned at {pins['sub_b'][:8]})")
 
         # ── Step 18: label endpoint (version + composition). ────────────
         wf = daemon.get_json(f"/__workflow?project={pid}")
@@ -571,7 +571,7 @@ def main():
                         if v["id"] == v_target["id"])
         if v_after.get("label") is not None:
             fail(f"[step18] label clear didn't work: {v_after.get('label')!r}")
-        print(f"[step18] PASS — version label set + clear works")
+        print(f"[step18] PASS - version label set + clear works")
 
         # ── Step 19: thumb endpoint accepts dataUrl. ────────────────────
         import base64
@@ -587,7 +587,7 @@ def main():
             fail(f"[step19] thumb file not written: {thumb_path}")
         if os.path.getsize(thumb_path) < 50:
             fail(f"[step19] thumb file too small ({os.path.getsize(thumb_path)} bytes)")
-        print(f"[step19] PASS — version thumb POST writes bytes correctly")
+        print(f"[step19] PASS - version thumb POST writes bytes correctly")
 
         # ── Step 20: DS revert restores the styles.css content. ─────────
         wf = daemon.get_json(f"/__workflow?project={pid}")
@@ -602,9 +602,9 @@ def main():
             css_now = f.read()
         if "white" not in css_now:
             fail(f"[step20] DS revert didn't restore white styles.css; got {css_now[:80]!r}")
-        print(f"[step20] PASS — DS revert restored styles.css content")
+        print(f"[step20] PASS - DS revert restored styles.css content")
 
-        print("\nALL 20 STEPS PASSED — full versioning surface verified end-to-end")
+        print("\nALL 20 STEPS PASSED - full versioning surface verified end-to-end")
         return 0
     finally:
         daemon.shutdown()
