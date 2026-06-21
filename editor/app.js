@@ -16880,6 +16880,9 @@ function dsBuildBakePayload(s, custom, label) {
   // Style overlay (pastel / glassmorphism / …) — baked as the project's
   // DEFAULT look: the server folds themes/<id>.css into styles.css unscoped.
   p.dsStyleId = s.styleId || null;
+  // Build policy (step 3) — imagery / polish / orchestrators a build on this
+  // DS may use. The server normalizes + drops it when everything is "auto".
+  p.dsBuildPolicy = s.buildPolicy || null;
   return p;
 }
 
@@ -16901,6 +16904,9 @@ function dsDefaultSettings() {
     logo: null,   // { dataUrl, ext, name } when the user uploads a sidebar logo
     schemeLight: true, schemeDark: false,   // which colour schemes the DS ships
     styleId: "",   // "" = default style; else a data-theme overlay baked as default
+    // Step 3 — build policy. "auto" everywhere = current behavior (the agent
+    // decides per build). Set arrays / a level to constrain builds on this DS.
+    buildPolicy: { imagery: "auto", polish: "auto", orchestrators: "auto" },
   };
 }
 
@@ -17113,12 +17119,98 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   `, document.body);
 }
 
+/* ────────── Step 3 — build policy options ──────────
+   What a build on this DS may use. Mirrors serve.py's _normalize_build_policy
+   vocab. "auto" = the agent decides per build (current behavior). */
+const DS_BUILD_IMAGERY = [
+  { id: "inline-svg",       label: "Inline SVG" },
+  { id: "vector-icon",      label: "Vector icons" },
+  { id: "vector-mark",      label: "Vector marks / logos" },
+  { id: "raster-foreground",label: "Raster subjects (transparent)" },
+  { id: "raster-photo",     label: "Photography (raster)" },
+  { id: "video",            label: "Video" },
+];
+const DS_BUILD_POLISH = [
+  { id: "auto",      label: "Auto — agent decides" },
+  { id: "none",      label: "None" },
+  { id: "subtle",    label: "Subtle" },
+  { id: "playful",   label: "Playful" },
+  { id: "theatrical",label: "Theatrical" },
+];
+const DS_BUILD_ORCHESTRATORS = [
+  { id: "visual-orchestrator",            label: "Visual — images / SVG / shader / particle / 3D" },
+  { id: "photography-orchestrator",       label: "Photography art-direction" },
+  { id: "illustration-orchestrator",      label: "Illustration art-direction" },
+  { id: "creative-visual-orchestrator",   label: "Creative-visual promotion (editorial-loud)" },
+  { id: "material-orchestrator",          label: "Material fidelity (glass / clay / chrome …)" },
+  { id: "interactive-polish-orchestrator",label: "Interactive polish" },
+];
+
+function DsBuildSettingsPanel({ value, onChange }) {
+  const v = value || {};
+  const imageryAuto = v.imagery === "auto" || v.imagery == null;
+  const orchAuto    = v.orchestrators === "auto" || v.orchestrators == null;
+  const polish      = v.polish || "auto";
+  const imageryList  = Array.isArray(v.imagery) ? v.imagery : [];
+  const orchList     = Array.isArray(v.orchestrators) ? v.orchestrators : [];
+  const toggleIn = (arr, id) => arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
+  return html`
+    <section className="dscz-group">
+      <div className="dscz-group-label">Imagery allowed</div>
+      <label className="dscz-check">
+        <input type="checkbox" checked=${imageryAuto}
+          onChange=${() => onChange({ ...v, imagery: imageryAuto ? [] : "auto" })}/>
+        <span>Auto — agent decides per build</span>
+      </label>
+      ${!imageryAuto && html`
+        <div className="dscz-checkgrid">
+          ${DS_BUILD_IMAGERY.map(o => html`
+            <label key=${o.id} className="dscz-check">
+              <input type="checkbox" checked=${imageryList.includes(o.id)}
+                onChange=${() => onChange({ ...v, imagery: toggleIn(imageryList, o.id) })}/>
+              <span>${o.label}</span>
+            </label>`)}
+        </div>`}
+      <div className="dscz-row-hint">Which media kinds a build on this DS may use. Uncheck Auto to restrict (e.g. inline-SVG only, no photography).</div>
+    </section>
+
+    <section className="dscz-group">
+      <div className="dscz-group-label">Interactive polish</div>
+      <select className="dscz-select" value=${polish} onChange=${(e) => onChange({ ...v, polish: e.target.value })}>
+        ${DS_BUILD_POLISH.map(o => html`<option key=${o.id} value=${o.id}>${o.label}</option>`)}
+      </select>
+      <div className="dscz-row-hint">Whether builds add microanimation / pointer / scroll / hover polish, and how loud. "None" forbids the polish pass.</div>
+    </section>
+
+    <section className="dscz-group">
+      <div className="dscz-group-label">Orchestrators allowed</div>
+      <label className="dscz-check">
+        <input type="checkbox" checked=${orchAuto}
+          onChange=${() => onChange({ ...v, orchestrators: orchAuto ? [] : "auto" })}/>
+        <span>Auto — agent decides per build</span>
+      </label>
+      ${!orchAuto && html`
+        <div className="dscz-checkgrid">
+          ${DS_BUILD_ORCHESTRATORS.map(o => html`
+            <label key=${o.id} className="dscz-check">
+              <input type="checkbox" checked=${orchList.includes(o.id)}
+                onChange=${() => onChange({ ...v, orchestrators: toggleIn(orchList, o.id) })}/>
+              <span>${o.label}</span>
+            </label>`)}
+        </div>`}
+      <div className="dscz-row-hint">Which asset / polish orchestrators may run for builds on this DS. Unchecked = that pipeline is skipped.</div>
+    </section>
+  `;
+}
+
 /* ────────── Step 2 — the wide DS customizer ──────────
    Left rail: colour / roundness / font / type / spacing controls. Right:
    a live preview of the bundled DS gallery (served at /__default_ds/) with
    the computed `:root{}` override + webfont injected into its iframe head,
-   updated on every settings change (no reload, no flash). */
+   updated on every settings change (no reload, no flash). The left rail is a
+   3-step flow: 1 Style · 2 Tuning · 3 Build settings. */
 function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, onClose, onCreate, confirmLabel, busyLabel, previewOnly }) {
+  const [czStep, setCzStep] = useState(1);   // 1 = Style · 2 = Tuning · 3 = Build settings
   const iframeRef = useRef(null);
   const [frameReady, setFrameReady] = useState(false);
   const [previewFile, setPreviewFile] = useState("templates/landing.html");
@@ -17252,6 +17344,27 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         <div className="dscz-body">
           <div className="dscz-controls">
 
+            <div className="dscz-steptabs" role="tablist">
+              ${[{ n: 1, label: "Style" }, { n: 2, label: "Tuning" }, { n: 3, label: "Build settings" }].map(s => html`
+                <button key=${s.n} type="button" role="tab"
+                  className=${"dscz-steptab" + (czStep === s.n ? " is-active" : "")}
+                  aria-selected=${czStep === s.n}
+                  onClick=${() => setCzStep(s.n)}>
+                  <span className="dscz-steptab-n">${s.n}</span> ${s.label}
+                </button>`)}
+            </div>
+
+            ${czStep === 1 && html`
+            <section className="dscz-group">
+              <div className="dscz-group-label">Style</div>
+              <select className="dscz-select" value=${settings.styleId || ""}
+                onChange=${(e) => set({ styleId: e.target.value })}>
+                ${DS_PREVIEW_STYLES.map(st => html`<option key=${st.v} value=${st.v}>${st.label}</option>`)}
+              </select>
+              <div className="dscz-row-hint">The visual style baked as this design system's default. Tuning (next step) layers palette, roundness, type &amp; logo on top. The preview updates live.</div>
+            </section>`}
+
+            ${czStep === 2 && html`<${React.Fragment}>
             <section className="dscz-group">
               <div className="dscz-group-label">
                 Logo
@@ -17270,15 +17383,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 disabled=${settings.schemeDark && !settings.schemeLight}
                 onToggle=${() => set({ schemeDark: !settings.schemeDark })}/>
               <div className="dscz-row-hint">Declares which schemes ship with the design system. Use the Light / Dark switch above the preview to see each.</div>
-            </section>
-
-            <section className="dscz-group">
-              <div className="dscz-group-label">Style</div>
-              <select className="dscz-select" value=${settings.styleId || ""}
-                onChange=${(e) => set({ styleId: e.target.value })}>
-                ${DS_PREVIEW_STYLES.map(st => html`<option key=${st.v} value=${st.v}>${st.label}</option>`)}
-              </select>
-              <div className="dscz-row-hint">The visual style baked as this design system's default. Palette, roundness, type &amp; logo above tune on top. The preview updates live.</div>
             </section>
 
             <section className="dscz-group">
@@ -17390,6 +17494,12 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 </select>
               </label>
             </section>
+            <//>`}
+
+            ${czStep === 3 && html`
+              <${DsBuildSettingsPanel}
+                value=${settings.buildPolicy}
+                onChange=${(bp) => set({ buildPolicy: bp })}/>`}
           </div>
 
           <div className="dscz-preview" style=${{ background: previewDark ? "#222428" : "#ffffff" }}>
@@ -17429,16 +17539,20 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         </div>
         ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
         <footer className="dscz-foot">
-          ${onBack
-            ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
-            : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
+          ${czStep > 1
+            ? html`<button type="button" className="newproj-cancel" onClick=${() => setCzStep(czStep - 1)} disabled=${busy}>← Back</button>`
+            : onBack
+              ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
+              : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
           <div className="dscz-foot-right">
             ${dirty
               ? html`<span className="dscz-foot-note">Customized</span>`
               : html`<span className="dscz-foot-note dscz-foot-note-muted">Defaults</span>`}
-            ${!previewOnly && html`<button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
-              ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
-            </button>`}
+            ${czStep < 3
+              ? html`<button type="button" className="newproj-create" onClick=${() => setCzStep(czStep + 1)} disabled=${busy}>Next →</button>`
+              : !previewOnly && html`<button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
+                  ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
+                </button>`}
           </div>
         </footer>
       </div>

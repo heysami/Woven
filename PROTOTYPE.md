@@ -60,6 +60,8 @@ If any of these shows a committed DS, **carve-out #1 fires automatically — inh
    - include `requires.script` before `</body>` when non-empty (the runtime, e.g. `themes/glassmorphism.js` — its CSS fallback still renders without WebGL).
 
    Copy a file from the DS's `templates/` as the canonical worked example of the wiring — they ship with the active style already applied correctly.
+
+   **Also read the DS's build policy.** `meta.json` → `buildPolicy` (also on `GET /__design_systems`) may declare which imagery kinds, which interactive-polish register, and which orchestrators a build on this DS may use. When present, it SEEDS and constrains the Phase A.5 orchestrator-plan gate (see `prototype/step-neg1-build.md`) — don't auto-decide "no polish" / "inline-SVG only" when the DS already states the policy. `"auto"`/absent on any axis = decide as normal.
 2. **In-place edit of an existing prototype.** The user is replying inside an active design with a tweak ("make the headline bigger", "swap slide 3 image", "add a feature row", "tighten the spacing"). → Apply the tweak, no direction question.
 3. **Explicit override in the current turn.** The user typed verbatim "just build", "skip questions", "no questions, go", "you pick", "your call", or an obvious equivalent. → Pick the closest-shipped-product genre yourself, commit it in a one-line comment, build. The user delegated; honor it.
 4. **Reply to your own direction question.** The user's current message answers the three-options ask you just emitted ("option 2", "the bento one", "yes do that", "1 but warmer"). → Apply the pick (and any small swap), build, no re-confirm.

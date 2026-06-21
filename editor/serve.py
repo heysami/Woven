@@ -2074,6 +2074,50 @@ def _resolve_style_contract(ds_dir, meta):
     return contract
 
 
+# A DS may declare a build policy — what kinds of imagery a build on it may
+# use, whether interactive polish is wanted (and how loud), and which
+# orchestrators are allowed — so the build agent stops auto-deciding these per
+# turn. Stored in meta.json.buildPolicy, surfaced on /__design_systems, and
+# honored at PROTOTYPE.md's Phase A.5 orchestrator-plan gate. "auto" (or an
+# absent block) = the current autonomous behavior.
+_BUILD_IMAGERY_KINDS = {
+    "inline-svg", "vector-icon", "vector-mark",
+    "raster-foreground", "raster-photo", "video",
+}
+_BUILD_POLISH_LEVELS = {"auto", "none", "subtle", "playful", "theatrical"}
+_BUILD_ORCHESTRATORS = {
+    "visual-orchestrator", "photography-orchestrator", "illustration-orchestrator",
+    "creative-visual-orchestrator", "material-orchestrator",
+    "interactive-polish-orchestrator",
+}
+
+
+def _normalize_build_policy(raw):
+    """Validate a raw buildPolicy dict (from the customizer payload or a stored
+    meta) into a clean {imagery, polish, orchestrators}. Unknown values are
+    dropped. Returns None when the policy is entirely "auto" — absent == auto,
+    so we never persist a no-op block."""
+    if not isinstance(raw, dict):
+        return None
+
+    def _norm_allow(val, allowed):
+        # "auto"/None → defer to the agent; a list → keep only known ids.
+        if val == "auto" or val is None:
+            return "auto"
+        if isinstance(val, list):
+            return [x for x in val if x in allowed]
+        return "auto"
+
+    imagery = _norm_allow(raw.get("imagery"), _BUILD_IMAGERY_KINDS)
+    orch    = _norm_allow(raw.get("orchestrators"), _BUILD_ORCHESTRATORS)
+    polish  = raw.get("polish")
+    if polish not in _BUILD_POLISH_LEVELS:
+        polish = "auto"
+    if imagery == "auto" and orch == "auto" and polish == "auto":
+        return None
+    return {"imagery": imagery, "polish": polish, "orchestrators": orch}
+
+
 def _project_paths(project_root: str) -> dict:
     """Per-project derived paths. v3.1 — branches deprecated; `merges`
     retained for legacy callers but no longer used."""
@@ -10162,6 +10206,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # active style is e.g. glass and knows how to wire it.
                         "defaultStyle": meta.get("defaultStyle") or "",
                         "styleContract": _resolve_style_contract(sub, meta),
+                        # DS-declared build policy (imagery / polish /
+                        # orchestrators allowed). None = auto (agent decides).
+                        "buildPolicy": _normalize_build_policy(meta.get("buildPolicy")),
                         "exists": True,
                         "hasGallery": os.path.isfile(os.path.join(sub, "gallery.html")),
                         "hasStyles":  os.path.isfile(os.path.join(sub, "styles.css")),
@@ -10194,6 +10241,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             # Active baked style ("" = neutral base) + its full build recipe.
             "defaultStyle":  meta.get("defaultStyle") or "",
             "styleContract": _resolve_style_contract(ds_dir, meta),
+            # DS-declared build policy (imagery / polish / orchestrators
+            # allowed). None = auto (agent decides per build).
+            "buildPolicy":   _normalize_build_policy(meta.get("buildPolicy")),
             "builtFrom": meta.get("builtFrom") or [],
             "parentRef": meta.get("parentRef"),
             "updates":   meta.get("updates") or [],
@@ -17674,6 +17724,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # knows exactly how to wire it — link target, <html> attribute, and
         # runtime script for JS-backed styles. None when neutral base.
         meta["defaultStyleContract"] = _resolve_style_contract(ds_dir, meta)
+        # Build policy — what imagery / polish / orchestrators a build on this
+        # DS may use. None (all-auto) → drop any prior block so absent == auto.
+        _bp = _normalize_build_policy(body.get("dsBuildPolicy"))
+        if _bp is not None:
+            meta["buildPolicy"] = _bp
+        else:
+            meta.pop("buildPolicy", None)
         try:
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
