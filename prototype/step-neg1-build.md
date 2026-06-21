@@ -63,7 +63,10 @@ Which orchestrator passes run on this build is a taste + budget decision, and - 
 
 **DS build policy seeds this gate.** If the inherited DS declares a `buildPolicy` (in `meta.json`, also returned by `GET /__design_systems` as `buildPolicy`), it is the starting point for this proposal - the DS owner already made these calls, so don't re-decide them from scratch:
 - `buildPolicy.orchestrators` is a list → propose **exactly** those orchestrators pre-ticked, and list the rest unticked (the user can still opt in, but the DS's choice is the default). `"auto"`/absent → propose as you normally would.
-- `buildPolicy.imagery` is a list → the allowed media kinds for this build. Do NOT propose orchestrators whose only output is an excluded kind (e.g. imagery is `["inline-svg","vector-icon"]` ⇒ no photography-orchestrator, no raster slots); visual-orchestrator must classify excluded slots as `none`/inline-SVG. `"auto"`/absent → no constraint.
+- `buildPolicy.imagery` is a list → the media kinds the build USES (a directive, not just a ceiling). Two directions, both binding:
+  - **Excluded kinds are off.** Do NOT propose orchestrators whose only output is an excluded kind; visual-orchestrator must classify excluded slots as `none`/inline-SVG.
+  - **Included raster kinds are ON when a provider exists.** If the list includes any raster kind (`raster-photo` / `raster-foreground` / `video`) and an image-generation provider is available this run, `visual-orchestrator` is pre-ticked and the source MUST carry real slots for the photographic/illustrative parts of the page (`photography-orchestrator` / `illustration-orchestrator` pre-ticked as the slots warrant). Do NOT draw those slots as inline-SVG to avoid generation; the policy committed to real imagery. Inline-SVG-only is right only when no provider is available or the list omits raster.
+  - `"auto"`/absent → no constraint either way.
 - `buildPolicy.polish` → `"none"` pre-unticks (and forbids) interactive-polish-orchestrator; `subtle`/`playful`/`theatrical` pre-ticks it and sets its register; `"auto"`/absent → decide normally.
 
 The user can always override the seeded proposal in their reply - buildPolicy sets the default, the gate still gives them the final say. State in the proposal preamble when it was seeded from the DS ("pre-ticked from this DS's build policy").

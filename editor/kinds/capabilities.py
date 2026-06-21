@@ -870,6 +870,14 @@ How to use one:
 
 Do NOT use the em dash character (Unicode U+2014) anywhere you write, ever. Not in prototype copy, design-system content, chart legends, labels, headings, UI strings, alt text, code comments, commit messages, or chat replies. This applies to everything you author or edit: source/ pages, design-systems/ content, docs, JSON, code. Use a comma, a colon, parentheses, a period, or a plain spaced hyphen ("-"), whichever reads best in context. The en dash (U+2013) is banned in prose for the same reason; a plain hyphen "-" is the only dash to use. When you edit existing content that already contains an em dash, replace it as part of the edit.
 
+## A DS build policy is a directive, not a permission (v3.13 hard rule)
+
+A project's design system may declare a `buildPolicy` (in `design-systems/<id>/meta.json`, also returned by `GET /__design_systems` as `buildPolicy`, with axes `imagery` / `polish` / `orchestrators`). When set, it BINDS the build, and it binds whether or not a direction-pick happened (a committed DS is exactly when a policy exists, so it applies on the DS-inherit path too). `"auto"` or an absent axis means decide as normal.
+
+- **`imagery` is what the build USES, not a ceiling it may stay under.** If the list includes a raster kind (`raster-photo` / `raster-foreground` / `video`) AND an image-generation provider is available this run, you MUST use real generated imagery for the slots whose correct medium is photographic or illustrative, and dispatch `visual-orchestrator` (plus `photography-orchestrator` / `illustration-orchestrator` as the slot warrants) to fill them. Substituting inline-SVG for those slots "to guarantee render / avoid broken image slots" is a policy VIOLATION: with a provider wired, generated images render, so the broken-slot risk does not exist. Inline-SVG-only is correct ONLY when no provider is available this run, or when the list omits every raster kind. The included vector kinds cover the genuinely-vector slots (icons, marks); they do not cancel the raster ones.
+- **`polish`** other than `auto` sets the interactive-polish register; `none` forbids the polish pass.
+- **`orchestrators`** as a list pre-selects exactly that roster; unlisted orchestrators are skipped.
+
 ## Style cues are non-negotiable (v3.1 hard rule)
 
 When the user's request contains an aesthetic reference - an artist name (Miyazaki, Mondrian, Ware), studio (Ghibli, Pixar, A24), design movement (Bauhaus, Memphis, Brutalist, Swiss), era (Y2K, 90s editorial), or vibe word (cozy, ethereal, neo-brutalist, hand-drawn, watercolor) - **commit that as the prototype's GENRE before any other decision**. Do not override the user's stated style with your own pattern match.
