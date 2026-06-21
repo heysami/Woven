@@ -7295,7 +7295,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if url_path == "/__capabilities":
             return self._capabilities()
         if url_path == "/__logic_guide":
-            return self._logic_guide()
+            return self._logic_guide(urllib.parse.parse_qs(parsed.query))
         # Visual-QA endpoints. Let an agent verify a node's interactive piece
         # by node-id (no hand-pasted URL): resolve the bakedPath to the same
         # runtime URL an iframe loads, then run editor/tools/qa/visual_qa.py.
@@ -13530,21 +13530,33 @@ class H(http.server.SimpleHTTPRequestHandler):
         with contextlib.suppress(Exception):
             self.wfile.write(data)
 
-    # GET /__logic_guide - the Logic graph authoring guide (catalog + dataflow
-    # model + end-to-end recipes). Kept OUT of the always-on capabilities
-    # preamble (which only carries a one-line pointer here) so the agent fetches
-    # the full text on demand, ONLY when building an interactive / logic app.
-    def _logic_guide(self):
+    # GET /__logic_guide - the Logic graph authoring guide. MODULAR: with no
+    # query it returns the SHORT index (the map + section list); with
+    # ?section=<name> it returns that focused module (dataflow / catalogue /
+    # runtime / patterns / recipes / verify). Kept OUT of the always-on
+    # capabilities preamble (which only carries a one-line pointer here) so the
+    # agent fetches text on demand, ONLY when building an interactive / logic
+    # app, and only the section it needs.
+    def _logic_guide(self, qs=None):
+        section = ""
+        try:
+            section = ((qs or {}).get("section", [""])[0] or "").strip()
+        except Exception:
+            section = ""
         guide = ""
         try:
             editor_dir = os.path.join(INSTALL_ROOT, "editor")
             if editor_dir not in sys.path:
                 sys.path.insert(0, editor_dir)
-            from prompts.logic_authoring import LOGIC_AUTHORING_GUIDE
-            guide = LOGIC_AUTHORING_GUIDE
+            if section:
+                from prompts.logic_authoring import get_section
+                guide = get_section(section)
+            else:
+                from prompts.logic_authoring import LOGIC_AUTHORING_GUIDE
+                guide = LOGIC_AUTHORING_GUIDE
         except Exception as e:
             return self._reply(404, {"error": "logic guide unavailable: " + str(e)})
-        data = guide.encode("utf-8")
+        data = (guide or "").encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
