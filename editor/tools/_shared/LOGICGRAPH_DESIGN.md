@@ -214,6 +214,15 @@ breakers (a graph cycle must pass through a state node).
   stroke:text(css color), strokeWidth:number, opacity:number,
   blend:select[normal,multiply,screen,overlay], z:number, smoothing:number }`.
   See §10 for the full contract.
+- **`type-motion`** `⒜` (label "Kinetic Type") - draws PER-GLYPH animated text
+  (kinetic typography) into a layer buffer. No inputs (v1). out: `out:layer`
+  (wire into a composer / mm-composer `in` port, where it joins the z-stack +
+  effect + feedback + blend pipeline exactly like a layer). controls:
+  `{ text, font(css family), weight:number(100-900), size:number, color:text,
+  tracking:number(letter-spacing em), align:select[center,left,right],
+  behavior:select[...16], speed:number, amplitude:number, stagger:number(per-glyph
+  delay), loop:boolean, opacity:number, blend:select[...], z:number,
+  feedback:number }`. See §12 for the full contract + behavior list.
 
 ### 2.7 Output sink (writing back)
 Logic outputs reach targets by an edge into an existing `param:<key>` port. To also
@@ -549,3 +558,69 @@ The buffer persists across frames because it lives in the existing per-layer
 buffer pool keyed by id (no reallocation when feedback > 0). `feedback === 0`
 keeps the full `clearRect` = current behavior. slimPlayer mirrors this on its
 persistent per-layer buffer.
+
+---
+
+## 12. The `type-motion` render node (Kinetic Type, per-glyph animated text)
+
+`type-motion` `⒜` (palette label "Kinetic Type") is a RENDERABLE composition
+primitive in the "Logic / Render" palette section, registered client-side in
+`LOGIC_NODE_DEFS` (app.js) like `shape` - NOT in the backend KIND_IO registry.
+It draws per-glyph animated text (slot-machine logos, weightless floating
+letters, elastic letter hops, etc.) into a layer buffer, so it joins the
+composer z-stack + per-layer effect + feedback + blend pipeline exactly like
+every other layer. `_isLogicKind("type-motion")` returns false (it is a sink,
+not a node the engine evaluates), mirroring `shape`.
+
+### 12.1 Ports + controls
+- in: none (v1). out: `out:layer` (dtype "layer", tags ["layer"]).
+- controls: `text`, `font` (css family stack), `weight` (100-900), `size` (px),
+  `color` (css), `tracking` (letter-spacing in em), `align` (center/left/right),
+  `behavior` (the library below), `speed`, `amplitude`, `stagger` (per-glyph
+  delay in seconds), `loop` (boolean), plus the layer-shared `opacity`, `blend`,
+  `z`, `feedback`.
+
+### 12.2 Wiring + ingest path (mirrors `shape`)
+- app.js `workflowKindIo("type-motion")` returns `_TYPEMOTION_KIND_IO`, whose
+  `out` resolves with flavor "layer" so `resolveUpstreamInputs` ingests it as a
+  layer (`i.type === "layer"`).
+- `_wiredLayerSpec` tags the spec `_typemotion:true`; all authored controls ride
+  on `spec.params` and pass through unchanged.
+- mmcomposer `buildWiredRuntimeLayers` sees `spec._typemotion` and emits a layer
+  whose `content.kind === "typemotion"` (carrying every param), with `z` /
+  `opacity` / `blend` / `feedback` from the controls.
+- `drawContent` branch `c.kind==='typemotion'` calls `drawTypeMotion(ctx, c,
+  Input.clock)`; the baked slimPlayer mirrors it via `drawTM(c, IN.clock)`. The
+  per-glyph math lives in `typeMotionXform` (editor) / `tmXform` (baked) - kept
+  identical so export matches the editor. No `getBoundingClientRect` in the draw
+  loop; layout uses `ctx.measureText` advances + the `tracking` control, baseline
+  middle, aligned per `align`.
+
+### 12.3 Behavior library (16, switched by the `behavior` control)
+Each animates per-glyph from `(i, n, t=clock, speed, amplitude, stagger)`:
+`none`, `wave` (sine y by i), `jitter` (deterministic pseudo-noise dx/dy/rot),
+`rotate-cycle`, `scale-pulse`, `slot-cycle` (vertical slot-machine roll per
+glyph), `fade-stagger`, `typewriter` (reveal glyph i over time), `fall-gravity`
+(drop + settle bounce), `elastic-hop` (elastic ease-out bounce),
+`weightless-float` (summed-sine drift in x+y+rot), `rainbow-cycle` (hue per i+t),
+`skew-sway`, `blur-in` (alpha + scale ramp; blur faked via scale for perf),
+`squash-stretch`, `orbit` (each glyph circles its slot). Behaviors whose dy/dx is
+em-relative set `_em` so the drawer multiplies by `size`. `rainbow-cycle`
+overrides per-glyph color via `hsl(...)`; all others honor the `color` control.
+
+### 12.4 Effect + feedback composition (free, because it IS a layer)
+Because the glyphs render into the same per-layer buffer that `text` / `polyshape`
+/ `asset` use, the existing per-layer EFFECT stack and the FEEDBACK / trail
+control compose on top automatically: a wired Effect node on the layer post-
+processes the rasterised glyphs, and a non-zero `feedback` leaves a decaying
+trail of the moving letters. z-order + opacity + blend behave like any layer.
+
+### 12.5 Phase-2 bridge (NOT YET built)
+`window.opentype` is available (used by the vector / font editors) but v1 does
+NOT use it - canvas `measureText` advances + per-glyph transforms are enough. A
+future phase will add a "glyph outline -> vector2 points" bridge: tessellate each
+glyph's outline into points the `type-motion` node EXPOSES as vector2 outputs,
+feeding `rope` / particle / `shape` nodes (letters that shatter into particles,
+flow along a rope, or morph into a polyshape). This requires opentype glyph-path
+sampling + new `out` point ports on the node and is explicitly OUT OF SCOPE for
+v1; the current node has no point outputs.

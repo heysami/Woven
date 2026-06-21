@@ -53753,6 +53753,11 @@ function workflowKindIo(kind) {
     // resolver ingests it as a LAYER (flavor "layer") - it then joins the
     // z-stack + effect pipeline like any wired layer (see _SHAPE_KIND_IO).
     if (kind === "shape") return _SHAPE_KIND_IO;
+    // `type-motion` is registered client-side (LOGIC_NODE_DEFS), not in the
+    // backend KIND_IO registry. Synthesize the io so its `out` port resolves as
+    // a LAYER (flavor "layer") - it then joins the z-stack + effect pipeline
+    // like any wired layer (mirrors _SHAPE_KIND_IO). See _TYPEMOTION_KIND_IO.
+    if (kind === "type-motion") return _TYPEMOTION_KIND_IO;
     // `input-camera` / `input-video` are logic kinds (not in the backend KIND_IO
     // registry). Synthesize an io whose `layer` port resolves as a LAYER so the
     // composer ingests the live feed as renderable, effect-able content. Their
@@ -53763,6 +53768,14 @@ function workflowKindIo(kind) {
 }
 // Client-side io contract for the `shape` render node (no backend KIND_IO).
 const _SHAPE_KIND_IO = {
+  provides: [{ port: "out", label: "Layer", tags: ["layer"],
+    resolve: "typed", resolveArgs: { flavor: "layer" } }],
+  accepts: [],
+};
+// Client-side io contract for the `type-motion` (Kinetic Type) render node (no
+// backend KIND_IO). Its `out` resolves as a LAYER so the composer ingests the
+// per-glyph animated text as renderable, effect-able content (mirrors shape).
+const _TYPEMOTION_KIND_IO = {
   provides: [{ port: "out", label: "Layer", tags: ["layer"],
     resolve: "typed", resolveArgs: { flavor: "layer" } }],
   accepts: [],
@@ -59617,10 +59630,11 @@ function _numberPixmapUrl(srcNode, allNodes, allEdges) {
 // LOGIC_NODE_DEFS by W1A). Defensive: LOGIC_NODE_DEFS is defined later in this
 // file but always exists by the time bindings resolve at render time.
 function _isLogicKind(kind) {
-  // `shape` lives in LOGIC_NODE_DEFS for its port geometry / palette / spec UI,
-  // but it is a RENDERABLE sink (wired into a composer as a layer), not a node
-  // the engine evaluates - so it is NOT a logic kind for projection/binding.
-  return typeof kind === "string" && kind !== "shape"
+  // `shape` and `type-motion` live in LOGIC_NODE_DEFS for their port geometry /
+  // palette / spec UI, but they are RENDERABLE sinks (wired into a composer as a
+  // layer), not nodes the engine evaluates - so they are NOT logic kinds for
+  // projection/binding.
+  return typeof kind === "string" && kind !== "shape" && kind !== "type-motion"
     && typeof LOGIC_NODE_DEFS !== "undefined" && !!LOGIC_NODE_DEFS[kind];
 }
 function _specParamBindings(specNodeId, allNodes, allEdges) {
@@ -59703,6 +59717,11 @@ function _wiredLayerSpec(i, allNodes, allEdges) {
   // i.layerId so the runtime can key the right <video> element.
   if (i.kind === "input-camera") return { ...spec, _camera: true, _cameraKind: "camera" };
   if (i.kind === "input-video")  return { ...spec, _camera: true, _cameraKind: "videostream" };
+  // Kinetic Type node wired as a layer: tag the spec so the composer emits a
+  // `typemotion` content layer (the runtime draws per-glyph animated text and
+  // runs the per-layer effect + feedback stack on it). All params ride on
+  // spec.params (authored controls), passed through unchanged.
+  if (i.kind === "type-motion") return { ...spec, _typemotion: true };
   return spec;
 }
 
@@ -61177,6 +61196,49 @@ const LOGIC_NODE_DEFS = {
       p6: { label: "p6", dtype: "vector2" },
       p7: { label: "p7", dtype: "vector2" },
     },
+  },
+  // The `type-motion` node draws PER-GLYPH animated text into a layer buffer.
+  // Like `shape`, it is a renderable LAYER sink (its `out` carries the "layer"
+  // flavor) so it joins the z-stack + per-layer effect / feedback / blend
+  // pipeline exactly like every other layer. Its glyph loop is driven by
+  // Input.clock + the per-glyph behavior library (see the composer drawContent
+  // 'typemotion' branch). It is a SINK, not a graph node the engine evaluates,
+  // so it is EXCLUDED from _isLogicKind (mirrors `shape`). v1 uses canvas
+  // measureText advances + per-glyph transforms (no opentype); a phase-2 bridge
+  // (glyph outline -> vector2 points feeding rope / particle / shape) is NOT
+  // YET built - see editor/tools/_shared/LOGICGRAPH_DESIGN.md.
+  "type-motion": {
+    glyph: "⒜", label: "Kinetic Type", section: "Render", w: 240, h: 560,
+    desc: "Per-glyph animated text (kinetic typography)",
+    controls: {
+      text:      { type: "text", value: "WOVEN" },
+      font:      { type: "text", value: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" },
+      weight:    { type: "number", value: 800, min: 100, max: 900, step: 100 },
+      size:      { type: "number", value: 120, min: 4, max: 1000, step: 1 },
+      color:     { type: "text", value: "#ffffff" },
+      tracking:  { type: "number", value: 0, min: -0.5, max: 2, step: 0.01 },
+      align:     { type: "select", value: "center", options: ["center", "left", "right"] },
+      behavior:  { type: "select", value: "wave", options: [
+        "none", "wave", "jitter", "rotate-cycle", "scale-pulse", "slot-cycle",
+        "fade-stagger", "typewriter", "fall-gravity", "elastic-hop",
+        "weightless-float", "rainbow-cycle", "skew-sway", "blur-in",
+        "squash-stretch", "orbit",
+      ] },
+      speed:     { type: "number", value: 1, min: 0, max: 20, step: 0.05 },
+      amplitude: { type: "number", value: 1, min: 0, max: 10, step: 0.01 },
+      stagger:   { type: "number", value: 0.08, min: 0, max: 2, step: 0.01 },
+      loop:      { type: "boolean", value: true },
+      opacity:   { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
+      blend:     { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
+      z:         { type: "number", value: 0, step: 1 },
+      feedback:  { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+    },
+    provides: {
+      // tags:["layer"] + dtype "layer" so the connect-snap + composer-ingest
+      // treats `out` as a layer source (mirrors `shape` / camera / video).
+      out: { label: "Layer", dtype: "layer", tags: ["layer"] },
+    },
+    accepts: {},
   },
 };
 

@@ -546,6 +546,44 @@ function buildWiredRuntimeLayers(){
       Ls._blend = blendModeOf(sp.blend);
       return Ls;
     }
+    if(spec._typemotion){
+      // Kinetic Type node wired as a LAYER: per-glyph animated text. A
+      // self-contained layer (no asset/position/trigger children); its z /
+      // opacity / blend / feedback come from its own controls and its glyphs are
+      // animated per-frame in drawContent (content.kind 'typemotion') by
+      // Input.clock + the behavior library. Joins the z-stack + effect pipeline
+      // exactly like every other wired layer.
+      const sp = spec.params || {};
+      const content = { kind:'typemotion',
+        text: sp.text!=null?String(sp.text):'',
+        font: (sp.font!=null&&String(sp.font).trim())?String(sp.font):'sans-serif',
+        weight: finiteNumber(sp.weight,800),
+        size: finiteNumber(sp.size,120),
+        color: (sp.color!=null?String(sp.color):'#ffffff').trim()||'#ffffff',
+        tracking: finiteNumber(sp.tracking,0),
+        align: (['center','left','right'].includes(sp.align)?sp.align:'center'),
+        behavior: (typeof sp.behavior==='string'?sp.behavior:'wave'),
+        speed: finiteNumber(sp.speed,1),
+        amplitude: finiteNumber(sp.amplitude,1),
+        stagger: finiteNumber(sp.stagger,0.08),
+        loop: sp.loop!==false,
+      };
+      const Lt = fillLayer({
+        id: wl.id || ('W'+wi),
+        name: spec.name || ('Type '+(wi+1)),
+        z: finiteNumber(sp.z,0),
+        visible: spec.visible!==false,
+        feedback: finiteNumber(sp.feedback, spec.feedback),
+        content,
+        positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
+        trigger:{source:'none',impacts:[]},
+        effects:{stack:[]},
+      });
+      Lt._wired=true;
+      Lt._opacity = finiteNumber(sp.opacity,1);
+      Lt._blend = blendModeOf(sp.blend);
+      return Lt;
+    }
     const kids=Array.isArray(wl.children)?wl.children:[];
     const assetK = kids.find(k=>k&&k.type==='asset');
     const posK   = kids.find(k=>k&&k.type==='position');
@@ -1471,6 +1509,128 @@ function drawMediaInBox(ctx, media, ar, boxW, boxH, fit, alignX, alignY, tile){
   const y=alignY==='top' ? -boxH/2 : alignY==='bottom' ? boxH/2-h : -h/2;
   ctx.drawImage(media,x,y,w,h);
 }
+// Kinetic Type (PART 1): per-glyph transform library. Pure function of the
+// behavior name + glyph index i + glyph count n + clock t + speed / amplitude /
+// stagger. Returns a transform the drawer applies (translate / rotate / scale /
+// skew / alpha + optional per-glyph hue + reveal). Kept identical to the baked
+// slimPlayer copy (tmXform) so editor + export stay in sync. NO allocation-heavy
+// work, NO getBoundingClientRect - just math.
+function typeMotionXform(behavior, i, n, t, speed, amp, stagger){
+  const sp=(speed==null?1:speed), A=(amp==null?1:amp), st=(stagger==null?0:stagger);
+  const ph=t*sp - i*st;                  // per-glyph staggered phase (seconds)
+  const o={dx:0,dy:0,rot:0,sx:1,sy:1,skew:0,alpha:1,hue:null,reveal:1};
+  switch(behavior){
+    case 'none': break;
+    case 'wave': o.dy = Math.sin(ph*2.2)*22*A; break;
+    case 'jitter': {
+      // deterministic pseudo-noise per glyph + frame bucket (no Math.random)
+      const s=(k)=>{const x=Math.sin((i+1)*12.9898 + Math.floor(t*sp*18)*78.233 + k*3.17)*43758.5453; return (x-Math.floor(x))*2-1;};
+      o.dx=s(1)*5*A; o.dy=s(2)*5*A; o.rot=s(3)*0.06*A; break;
+    }
+    case 'rotate-cycle': o.rot = Math.sin(ph*1.8)*0.5*A; break;
+    case 'scale-pulse': { const k=1+Math.sin(ph*2.4)*0.28*A; o.sx=k; o.sy=k; break; }
+    case 'slot-cycle': {
+      // vertical slot-machine roll: glyph rolls in from above, eases to rest,
+      // then re-rolls each loop cycle. dy is in em-fractions of the size handled
+      // by caller via o.dy already in px-of-size space (size passed as amp ref).
+      const period=1.1, tt=((ph%period)+period)%period, k=tt/period;
+      const e=k<0.7? (1-Math.pow(1-k/0.7,3)) : 1;   // ease-out then hold
+      o.dy = (1-e)*-1.0; o.alpha = 0.25+0.75*e; o._em=true; break;
+    }
+    case 'fade-stagger': { const k=0.5+0.5*Math.sin(ph*2.0); o.alpha=0.15+0.85*k; break; }
+    case 'typewriter': {
+      // reveal glyphs left-to-right over time; cursor advances by 1 per stagger.
+      const cursor = (t*sp)/(st>0?st:0.15);
+      o.reveal = i < cursor ? 1 : 0; break;
+    }
+    case 'fall-gravity': {
+      // drop from above and settle with a small bounce, staggered per glyph.
+      const period=1.6, tt=((ph%period)+period)%period;
+      const fall=Math.min(1,tt/0.6), e=1-Math.pow(1-fall,2);
+      let dy=(1-e)*-1.2; // em above
+      if(tt>0.6 && tt<0.85){ const b=(tt-0.6)/0.25; dy += Math.sin(b*Math.PI)*0.06*A; }
+      o.dy=dy; o.alpha=Math.min(1,fall*1.5); o._em=true; break;
+    }
+    case 'elastic-hop': {
+      // bouncy hop with elastic ease-out, staggered.
+      const period=1.2, tt=((ph%period)+period)%period, k=Math.min(1,tt/0.55);
+      const el = k>=1?0 : -Math.pow(2,-10*k)*Math.sin((k*10-0.75)*(2*Math.PI/3));
+      o.dy = el*0.5*A; o._em=true; break;
+    }
+    case 'weightless-float': {
+      // perlin-ish drift via summed sines in x+y+rot, phase-offset per glyph.
+      const a=ph, b=ph*0.6+i*1.3;
+      o.dx=(Math.sin(a*0.9)+Math.sin(a*1.7+1.1))*5*A;
+      o.dy=(Math.cos(b*1.1)+Math.sin(b*0.5+2.2))*6*A;
+      o.rot=Math.sin(a*0.7+i)*0.08*A; break;
+    }
+    case 'rainbow-cycle': { o.hue=((t*sp*60)+(i*40))%360; o.dy=Math.sin(ph*2.0)*6*A; break; }
+    case 'skew-sway': { o.skew=Math.sin(ph*1.6)*0.4*A; o.dx=Math.sin(ph*1.6)*6*A; break; }
+    case 'blur-in': {
+      // alpha + scale ramp in (blur faked via scale+alpha; canvas filter avoided
+      // for perf). Loops each cycle, staggered.
+      const period=1.8, tt=((ph%period)+period)%period, k=Math.min(1,tt/0.7), e=1-Math.pow(1-k,3);
+      o.alpha=0.05+0.95*e; const s=1.6-0.6*e; o.sx=s; o.sy=s; break;
+    }
+    case 'squash-stretch': {
+      const k=Math.sin(ph*2.6); o.sy=1+0.3*k*A; o.sx=1-0.22*k*A; o.dy=-Math.max(0,k)*0.12; o._em=true; break;
+    }
+    case 'orbit': {
+      const a=ph*1.6 + i*0.5; o.dx=Math.cos(a)*10*A; o.dy=Math.sin(a)*10*A; o.rot=a*0.15; break;
+    }
+    default: o.dy = Math.sin(ph*2.2)*22*A;
+  }
+  return o;
+}
+// Kinetic Type (PART 2): lay out + draw the per-glyph animated text into the
+// current ctx (already translated to the layer center, rotated by inst.rot).
+// `size` is the glyph pixel size; layout uses ctx.measureText advances + the
+// tracking control; baseline is middle. Each glyph gets its own save/transform/
+// alpha/color from typeMotionXform. Renders into the layer buffer so the
+// per-layer effect + feedback stack composes on top automatically.
+function drawTypeMotion(ctx, c, t){
+  const text = c.text!=null?String(c.text):'';
+  if(!text.length) return;
+  const size = Math.max(1, c.size||120);
+  const weight = c.weight||800;
+  const font = (c.font&&String(c.font).trim())?c.font:'sans-serif';
+  const tracking = (c.tracking||0)*size;       // tracking is in em -> px
+  const speed=c.speed!=null?c.speed:1, amp=c.amplitude!=null?c.amplitude:1, stag=c.stagger!=null?c.stagger:0.08;
+  // loop: periodic behaviors loop intrinsically. When loop is OFF, clamp the
+  // clock so one-shot reveals (typewriter / fall / slot) play once and hold.
+  const tt = (c.loop===false) ? Math.min(t, n*stag + 2.0) : t;
+  ctx.font = weight+' '+size+'px '+font;
+  ctx.textBaseline='middle';
+  ctx.textAlign='left';                         // we place each glyph manually
+  const glyphs=Array.from(text);
+  const n=glyphs.length;
+  // measure total advance (per-glyph width + tracking between glyphs)
+  let total=0; const adv=new Array(n);
+  for(let i=0;i<n;i++){ const w=ctx.measureText(glyphs[i]).width; adv[i]=w; total+=w; if(i<n-1) total+=tracking; }
+  // align anchors the block relative to the layer center (x=0): center keeps the
+  // block centered; left puts its left edge at x=0; right puts its right edge at x=0.
+  let startX = -total/2;
+  if(c.align==='left') startX = 0;
+  else if(c.align==='right') startX = -total;
+  let penX=startX;
+  for(let i=0;i<n;i++){
+    const x = penX + adv[i]/2;                   // glyph center
+    const o = typeMotionXform(c.behavior||'wave', i, n, tt, speed, amp, stag);
+    if(o.reveal<=0){ penX += adv[i]+tracking; continue; }
+    const dx = o._em ? o.dx*size : o.dx;
+    const dy = o._em ? o.dy*size : o.dy;
+    ctx.save();
+    ctx.translate(x+dx, dy);
+    if(o.rot) ctx.rotate(o.rot);
+    if(o.skew) ctx.transform(1,0,o.skew,1,0,0);
+    if(o.sx!==1||o.sy!==1) ctx.scale(o.sx,o.sy);
+    ctx.globalAlpha = (ctx.globalAlpha||1) * Math.max(0,Math.min(1,o.alpha));
+    ctx.fillStyle = (o.hue!=null) ? ('hsl('+o.hue+',90%,60%)') : (c.color||'#ffffff');
+    ctx.fillText(glyphs[i], -adv[i]/2, 0);       // glyph drawn centered on its slot
+    ctx.restore();
+    penX += adv[i]+tracking;
+  }
+}
 function drawContent(ctx, L, inst, W, H, baseScale){
   const c=L.content;
   const cx=inst.x*W, cy=inst.y*H;
@@ -1512,6 +1672,12 @@ function drawContent(ctx, L, inst, W, H, baseScale){
     ctx.fillStyle=c.color||'#fff';
     ctx.font=`700 ${sz*0.4}px ${getSans()}`; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(c.text||'TEXT',0,0);
+  } else if(c.kind==='typemotion'){
+    // Kinetic Type: per-glyph animated text drawn into the layer buffer (the
+    // per-layer effect + feedback + blend stack composes on top, same as any
+    // layer). ctx is already centered/rotated by inst; the helper lays out
+    // glyphs around (0,0) and animates each by Input.clock.
+    drawTypeMotion(ctx, c, Input.clock);
   } else if(c.kind==='generator'){
     // procedural: animated rings
     ctx.strokeStyle=c.color||'#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.03);
@@ -2654,6 +2820,58 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       for(let i=0;i<last;i++){const p0=at(i-1),p1=at(i),p2=at(i+1),p3=at(i+2);const c1x=p1[0]+((p2[0]-p0[0])/6)*sm,c1y=p1[1]+((p2[1]-p0[1])/6)*sm,c2x=p2[0]-((p3[0]-p1[0])/6)*sm,c2y=p2[1]-((p3[1]-p1[1])/6)*sm;lctx.bezierCurveTo(c1x,c1y,c2x,c2y,p2[0],p2[1]);}}
     else{lctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)lctx.lineTo(pts[i][0],pts[i][1]);}
     if(c.closed)lctx.closePath();if(c.fill){lctx.fillStyle=c.fill;lctx.fill();}if(c.stroke&&c.strokeWidth>0){lctx.strokeStyle=c.stroke;lctx.lineWidth=c.strokeWidth;lctx.lineJoin='round';lctx.lineCap='round';lctx.stroke();}}
+  /* Kinetic Type: identical per-glyph transform library to the editor's
+     typeMotionXform - kept in sync so baked export matches the editor exactly. */
+  function tmXform(behavior,i,n,t,speed,amp,stagger){
+    var sp=(speed==null?1:speed),A=(amp==null?1:amp),st=(stagger==null?0:stagger),ph=t*sp-i*st;
+    var o={dx:0,dy:0,rot:0,sx:1,sy:1,skew:0,alpha:1,hue:null,reveal:1,_em:false};
+    switch(behavior){
+      case 'none': break;
+      case 'wave': o.dy=Math.sin(ph*2.2)*22*A; break;
+      case 'jitter': { var s=function(k){var x=Math.sin((i+1)*12.9898+Math.floor(t*sp*18)*78.233+k*3.17)*43758.5453;return (x-Math.floor(x))*2-1;}; o.dx=s(1)*5*A;o.dy=s(2)*5*A;o.rot=s(3)*0.06*A; break; }
+      case 'rotate-cycle': o.rot=Math.sin(ph*1.8)*0.5*A; break;
+      case 'scale-pulse': { var k=1+Math.sin(ph*2.4)*0.28*A; o.sx=k;o.sy=k; break; }
+      case 'slot-cycle': { var period=1.1,tt=((ph%period)+period)%period,k=tt/period,e=k<0.7?(1-Math.pow(1-k/0.7,3)):1; o.dy=(1-e)*-1.0;o.alpha=0.25+0.75*e;o._em=true; break; }
+      case 'fade-stagger': { var k=0.5+0.5*Math.sin(ph*2.0); o.alpha=0.15+0.85*k; break; }
+      case 'typewriter': { var cursor=(t*sp)/(st>0?st:0.15); o.reveal=i<cursor?1:0; break; }
+      case 'fall-gravity': { var period=1.6,tt=((ph%period)+period)%period,fall=Math.min(1,tt/0.6),e=1-Math.pow(1-fall,2),dy=(1-e)*-1.2; if(tt>0.6&&tt<0.85){var b=(tt-0.6)/0.25;dy+=Math.sin(b*Math.PI)*0.06*A;} o.dy=dy;o.alpha=Math.min(1,fall*1.5);o._em=true; break; }
+      case 'elastic-hop': { var period=1.2,tt=((ph%period)+period)%period,k=Math.min(1,tt/0.55),el=k>=1?0:-Math.pow(2,-10*k)*Math.sin((k*10-0.75)*(2*Math.PI/3)); o.dy=el*0.5*A;o._em=true; break; }
+      case 'weightless-float': { var a=ph,b=ph*0.6+i*1.3; o.dx=(Math.sin(a*0.9)+Math.sin(a*1.7+1.1))*5*A;o.dy=(Math.cos(b*1.1)+Math.sin(b*0.5+2.2))*6*A;o.rot=Math.sin(a*0.7+i)*0.08*A; break; }
+      case 'rainbow-cycle': { o.hue=((t*sp*60)+(i*40))%360; o.dy=Math.sin(ph*2.0)*6*A; break; }
+      case 'skew-sway': { o.skew=Math.sin(ph*1.6)*0.4*A; o.dx=Math.sin(ph*1.6)*6*A; break; }
+      case 'blur-in': { var period=1.8,tt=((ph%period)+period)%period,k=Math.min(1,tt/0.7),e=1-Math.pow(1-k,3); o.alpha=0.05+0.95*e; var s2=1.6-0.6*e; o.sx=s2;o.sy=s2; break; }
+      case 'squash-stretch': { var k=Math.sin(ph*2.6); o.sy=1+0.3*k*A;o.sx=1-0.22*k*A;o.dy=-Math.max(0,k)*0.12;o._em=true; break; }
+      case 'orbit': { var a=ph*1.6+i*0.5; o.dx=Math.cos(a)*10*A;o.dy=Math.sin(a)*10*A;o.rot=a*0.15; break; }
+      default: o.dy=Math.sin(ph*2.2)*22*A;
+    }
+    return o;
+  }
+  function drawTM(c,t){
+    var text=c.text!=null?String(c.text):''; if(!text.length)return;
+    var size=Math.max(1,c.size||120),weight=c.weight||800,font=(c.font&&String(c.font).trim())?c.font:'sans-serif';
+    var tracking=(c.tracking||0)*size,speed=c.speed!=null?c.speed:1,amp=c.amplitude!=null?c.amplitude:1,stag=c.stagger!=null?c.stagger:0.08;
+    var glyphs=Array.from(text),n=glyphs.length;
+    var tt=(c.loop===false)?Math.min(t,n*stag+2.0):t;
+    lctx.font=weight+' '+size+'px '+font; lctx.textBaseline='middle'; lctx.textAlign='left';
+    var total=0,adv=new Array(n);
+    for(var i=0;i<n;i++){var w=lctx.measureText(glyphs[i]).width;adv[i]=w;total+=w;if(i<n-1)total+=tracking;}
+    var startX=-total/2; if(c.align==='left')startX=0; else if(c.align==='right')startX=-total;
+    var penX=startX;
+    for(var i=0;i<n;i++){
+      var x=penX+adv[i]/2,o=tmXform(c.behavior||'wave',i,n,tt,speed,amp,stag);
+      if(o.reveal<=0){penX+=adv[i]+tracking;continue;}
+      var dx=o._em?o.dx*size:o.dx,dy=o._em?o.dy*size:o.dy;
+      lctx.save(); lctx.translate(x+dx,dy);
+      if(o.rot)lctx.rotate(o.rot);
+      if(o.skew)lctx.transform(1,0,o.skew,1,0,0);
+      if(o.sx!==1||o.sy!==1)lctx.scale(o.sx,o.sy);
+      lctx.globalAlpha=(lctx.globalAlpha||1)*Math.max(0,Math.min(1,o.alpha));
+      lctx.fillStyle=(o.hue!=null)?('hsl('+o.hue+',90%,60%)'):(c.color||'#ffffff');
+      lctx.fillText(glyphs[i],-adv[i]/2,0);
+      lctx.restore();
+      penX+=adv[i]+tracking;
+    }
+  }
   function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul,bw=inst.w?inst.w*W:sz,bh=inst.h?inst.h*H:sz;
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
     if(c.kind==='polyshape'){drawPoly(c);lctx.restore();return;}
@@ -2661,6 +2879,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     else if(c.kind==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.save();lctx.scale(-1,1);drawM(v,ar,bw,bh,'cover','center','center',false);lctx.restore();}}
     else if(c.kind==='videostream'){const v=vstream(c.nodeId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,'cover','center','center',false);}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
+    else if(c.kind==='typemotion'){drawTM(c,IN.clock);}
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
     else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.ellipse(0,0,bw/2,bh/2,0,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-bh/2);lctx.lineTo(bw/2,bh/2);lctx.lineTo(-bw/2,bh/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-bw/2,-bh/2,bw,bh);}
     lctx.restore();}
