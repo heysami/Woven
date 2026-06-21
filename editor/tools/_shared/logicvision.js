@@ -271,12 +271,29 @@ function normalizeMpResult(detector, raw, videoEl) {
       const lm = raw.landmarks[i];
       const bb = bboxOfLandmarks(lm);
       const handed = (raw.handednesses && raw.handednesses[i] && raw.handednesses[i][0]) || {};
-      dets.push({ x: bb.cx, y: bb.cy, w: bb.w, h: bb.h, confidence: num(handed.score, 1), gesture: classifyHand(lm) });
+      // Per-landmark points (21 normalized {x,y}) + named fingertip convenience
+      // points so apps can draw between individual fingers (see logicgraph.js
+      // vision-detect: it reads first.landmarks / first.<namedPoint>).
+      const pts = normalizedLandmarks(lm);
+      dets.push({
+        x: bb.cx, y: bb.cy, w: bb.w, h: bb.h,
+        confidence: num(handed.score, 1), gesture: classifyHand(lm),
+        landmarks: pts,
+        wrist: pts[0] || null, thumbTip: pts[4] || null, indexTip: pts[8] || null,
+        middleTip: pts[12] || null, ringTip: pts[16] || null, pinkyTip: pts[20] || null,
+      });
     }
   } else if (detector === 'face' && raw && raw.faceLandmarks) {
     for (const lm of raw.faceLandmarks) {
       const bb = bboxOfLandmarks(lm);
-      dets.push({ x: bb.cx, y: bb.cy, w: bb.w, h: bb.h, confidence: 1, gesture: '' });
+      // FaceLandmarker emits 478 mesh points; expose a few named convenience
+      // points (canonical mesh indices) so apps can read nose / eyes directly.
+      const pts = normalizedLandmarks(lm);
+      dets.push({
+        x: bb.cx, y: bb.cy, w: bb.w, h: bb.h, confidence: 1, gesture: '',
+        landmarks: pts,
+        nose: pts[1] || null, leftEye: pts[33] || null, rightEye: pts[263] || null,
+      });
     }
   }
   const first = dets[0] || null;
@@ -289,6 +306,19 @@ function normalizeMpResult(detector, raw, videoEl) {
   r._dets = dets;
   return r;
 }
+
+// Copy a MediaPipe landmark list into a plain normalized [{x,y}] array (each
+// coord clamped to 0..1; z dropped). Fail-soft: returns [] for a bad input.
+function normalizedLandmarks(lm) {
+  if (!Array.isArray(lm)) return [];
+  const out = [];
+  for (const p of lm) {
+    if (!p) { out.push({ x: 0, y: 0 }); continue; }
+    out.push({ x: clamp01(num(p.x, 0)), y: clamp01(num(p.y, 0)) });
+  }
+  return out;
+}
+function clamp01(n) { return n < 0 ? 0 : (n > 1 ? 1 : n); }
 
 // Normalized bbox + centroid of a landmark list (each {x,y} already 0..1).
 function bboxOfLandmarks(lm) {

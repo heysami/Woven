@@ -331,12 +331,22 @@ export const LogicGraph = {
       const dets = (st && Array.isArray(st.detections)) ? st.detections : [];
       const first = dets[0] || null;
       const present = dets.length > 0;
+      // Named landmark vector2 ports read the PRIMARY detection's named point
+      // (hand: wrist/thumbTip/indexTip/middleTip/ringTip/pinkyTip; face:
+      // nose/leftEye/rightEye), produced by logicvision normalizeMpResult. A
+      // missing point degrades to {x:0,y:0} like every other vector2 port here.
+      const pt = (name) => (first && first[name]) ? vec2(first[name].x, first[name].y) : vec2(0, 0);
       return {
         present: present, count: dets.length,
         pos: first ? vec2(first.x, first.y) : vec2(0, 0),
         region: first ? { x: finiteNumber(first.x, 0), y: finiteNumber(first.y, 0), w: finiteNumber(first.w, 0), h: finiteNumber(first.h, 0) } : { x: 0, y: 0, w: 0, h: 0 },
         gesture: first && first.gesture != null ? String(first.gesture) : '',
         confidence: first ? finiteNumber(first.confidence, 0) : 0,
+        // hand landmark points (vector2, normalized 0..1)
+        wrist: pt('wrist'), thumbTip: pt('thumbTip'), indexTip: pt('indexTip'),
+        middleTip: pt('middleTip'), ringTip: pt('ringTip'), pinkyTip: pt('pinkyTip'),
+        // face landmark points (vector2, normalized 0..1)
+        nose: pt('nose'), leftEye: pt('leftEye'), rightEye: pt('rightEye'),
       };
     },
 

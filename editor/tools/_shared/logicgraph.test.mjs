@@ -388,6 +388,37 @@ function ports(out, nodeId) { return out._ports[nodeId] || {}; }
   ok('read() returns output value', val && approx(val.x, 9));
 })();
 
+// ── vision-detect named landmark vector2 ports ───────────────────────────────-
+(function () {
+  // Feed a synthetic stream whose primary detection carries hand + face named
+  // points; check the new vector2 ports read the PRIMARY detection's points and
+  // missing points degrade to {x:0,y:0}.
+  const g = {
+    nodes: [
+      { id: 'cam', kind: 'input-camera', params: {} },
+      { id: 'det', kind: 'vision-detect', params: { detector: 'hand', target: 'location' } },
+    ],
+    edges: [
+      { from: { node: 'cam', port: 'stream' }, to: { node: 'det', port: 'stream' } },
+    ],
+    outputs: [
+      { sourceNode: 'det', sourcePort: 'indexTip', targetNode: 'T', targetParam: 'tip' },
+      { sourceNode: 'det', sourcePort: 'wrist', targetNode: 'T', targetParam: 'wr' },
+      { sourceNode: 'det', sourcePort: 'pinkyTip', targetNode: 'T', targetParam: 'pk' },
+    ],
+  };
+  const plan = LogicGraph.compile(g);
+  // input-camera emits stream = its own node id ("cam"); key the stream there.
+  const inputs = { streams: { cam: { detections: [
+    { x: 0.5, y: 0.5, w: 0.2, h: 0.2, confidence: 1, gesture: 'open',
+      wrist: { x: 0.4, y: 0.9 }, indexTip: { x: 0.6, y: 0.2 } },
+  ] } } };
+  const out = LogicGraph.tick(plan, inputs, {});
+  ok('vision indexTip vector2 reads primary', out['T.tip'] && approx(out['T.tip'].x, 0.6) && approx(out['T.tip'].y, 0.2), JSON.stringify(out['T.tip']));
+  ok('vision wrist vector2 reads primary', out['T.wr'] && approx(out['T.wr'].x, 0.4) && approx(out['T.wr'].y, 0.9), JSON.stringify(out['T.wr']));
+  ok('vision missing point degrades to 0,0', out['T.pk'] && approx(out['T.pk'].x, 0) && approx(out['T.pk'].y, 0), JSON.stringify(out['T.pk']));
+})();
+
 // ── summary ─────────────────────────────────────────────────────────────────-
 console.log('\n========================================');
 console.log('SUMMARY: ' + passed + ' passed, ' + failed + ' failed, ' + (passed + failed) + ' total');

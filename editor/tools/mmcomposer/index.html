@@ -316,6 +316,17 @@ const LogicBridge = {
     if(v && typeof v==='object' && 'x' in v) return Number(v.x)||0;   // vector2 -> x
     const n=Number(v); return Number.isFinite(n)?n:undefined;
   },
+  // Resolve a `kind:"logic"` ref to its FULL vector2 {x,y} (normalized 0..1).
+  // Used by the shape render node to read wired point ports (e.g. a vision-detect
+  // fingertip). Returns null when the port is missing / not yet computed so the
+  // caller can skip that point. Same _ports path as value(); no parallel loop.
+  vec(ref){
+    if(!ref) return null;
+    const op=this._ports && this._ports[ref.node]; if(!op) return null;
+    const v=op[ref.port]; if(v==null) return null;
+    if(v && typeof v==='object' && 'x' in v) return { x:Number(v.x)||0, y:Number(v.y)||0 };
+    return null;
+  },
   // Overlay logic-binding values onto a params object BEFORE Sources.applyScalar.
   // Logic bindings are scalar here (per-instance vector logic uses ctx.index in
   // the engine, resolved via the engine's flow-repeat values - MVP overlays the
@@ -399,6 +410,9 @@ function finiteNumber(v,fallback){
   const n=Number(v);
   return Number.isFinite(n)?n:fallback;
 }
+// Map an authored blend name (normal/multiply/screen/overlay) to a canvas
+// globalCompositeOperation. "normal" -> "source-over"; others pass through.
+function blendModeOf(b){ const s=String(b||'normal'); return s==='normal'?'source-over':s; }
 function composerPositioningFromSpec(spec){
   const src=spec||{};
   const p=Object.assign({mode:src.mode||'single'}, src.params||{});
@@ -461,6 +475,36 @@ function normalizeRuntimePositioning(p,W,H){
 function buildWiredRuntimeLayers(){
   return (WIRED.layers||[]).map((wl,wi)=>{
     const spec=wl.spec||{};
+    // Shape render node (PART 2): a polygon / polyline drawn from up to 8 wired
+    // logic vector2 points. It is a self-contained layer (no asset/position/
+    // trigger children); its z / opacity / blend come from its own controls, and
+    // its points are resolved per-frame in drawContent via LogicBridge.vec. It
+    // joins the z-stack + effect pipeline exactly like every other wired layer.
+    if(spec._shape){
+      const sp = spec.params || {};
+      const content = { kind:'polyshape',
+        closed: sp.closed!==false,
+        fill: (sp.fill!=null?String(sp.fill):'').trim(),
+        stroke: (sp.stroke!=null?String(sp.stroke):'').trim(),
+        strokeWidth: finiteNumber(sp.strokeWidth,2),
+        smoothing: Math.max(0,Math.min(1,finiteNumber(sp.smoothing,0))),
+        points: spec._points || {},
+      };
+      const Ls = fillLayer({
+        id: wl.id || ('W'+wi),
+        name: spec.name || ('Shape '+(wi+1)),
+        z: finiteNumber(sp.z,0),
+        visible: spec.visible!==false,
+        content,
+        positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
+        trigger:{source:'none',impacts:[]},
+        effects:{stack:[]},
+      });
+      Ls._wired=true;
+      Ls._opacity = finiteNumber(sp.opacity,1);
+      Ls._blend = blendModeOf(sp.blend);
+      return Ls;
+    }
     const kids=Array.isArray(wl.children)?wl.children:[];
     const assetK = kids.find(k=>k&&k.type==='asset');
     const posK   = kids.find(k=>k&&k.type==='position');
@@ -1340,6 +1384,14 @@ function drawContent(ctx, L, inst, W, H, baseScale){
   const boxW=(inst.w?inst.w*W:sz), boxH=(inst.h?inst.h*H:sz);
   ctx.save();
   ctx.translate(cx,cy); ctx.rotate(inst.rot||0);
+  if(c.kind==='polyshape'){
+    // Points live in absolute normalized STAGE space (0..1), not in the layer's
+    // local box - draw in stage coords by dropping the per-instance transform.
+    ctx.setTransform(1,0,0,1,0,0);
+    drawPolyShape(ctx, c, W, H);
+    ctx.restore();
+    return;
+  }
   if(c.kind==='asset'){
     const m=Assets.meta(c.assetId);
     if(m && m.kind==='video'){ const v=Assets.video(c.assetId);
@@ -1368,6 +1420,44 @@ function drawContent(ctx, L, inst, W, H, baseScale){
     else { ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH); }
   }
   ctx.restore();
+}
+// Draw a polygon / polyline from the shape node's wired logic points. Each
+// p0..p7 binding is resolved per-frame from the SAME LogicBridge value path the
+// param bindings use (LogicBridge.vec -> the engine's per-frame _ports), then
+// mapped from normalized 0..1 to the W×H stage. Unresolved points are skipped so
+// a partially-wired shape still draws. No getBoundingClientRect here (W/H are
+// the cached composition dims passed down from render()).
+function drawPolyShape(ctx, c, W, H){
+  const pts=[];
+  const bind=c.points||{};
+  for(let i=0;i<8;i++){
+    const ref=bind['p'+i]; if(!ref||ref.kind!=='logic') continue;
+    const v=LogicBridge.vec(ref.ref); if(!v) continue;
+    pts.push([v.x*W, v.y*H]);
+  }
+  if(pts.length<2) return;
+  ctx.beginPath();
+  const sm=Math.max(0,Math.min(1,c.smoothing||0));
+  if(sm>0 && pts.length>2){
+    // Catmull-Rom -> cubic bezier, tension scaled by smoothing (0=off,1=full).
+    const close=!!c.closed;
+    const N=pts.length;
+    const at=(k)=> pts[((k%N)+N)%N];
+    ctx.moveTo(pts[0][0],pts[0][1]);
+    const last=close?N:N-1;
+    for(let i=0;i<last;i++){
+      const p0=at(i-1), p1=at(i), p2=at(i+1), p3=at(i+2);
+      const c1x=p1[0]+((p2[0]-p0[0])/6)*sm, c1y=p1[1]+((p2[1]-p0[1])/6)*sm;
+      const c2x=p2[0]-((p3[0]-p1[0])/6)*sm, c2y=p2[1]-((p3[1]-p1[1])/6)*sm;
+      ctx.bezierCurveTo(c1x,c1y,c2x,c2y,p2[0],p2[1]);
+    }
+  } else {
+    ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+  }
+  if(c.closed) ctx.closePath();
+  if(c.fill){ ctx.fillStyle=c.fill; ctx.fill(); }
+  if(c.stroke && c.strokeWidth>0){ ctx.strokeStyle=c.stroke; ctx.lineWidth=c.strokeWidth; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke(); }
 }
 function getSans(){ return getComputedStyle(document.body).fontFamily; }
 function getMono(){ return 'ui-monospace,Menlo,monospace'; }
@@ -2267,6 +2357,8 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     value(ref){ if(!ref)return undefined; const o=this.ports[ref.node]; if(!o)return undefined; const v=o[ref.port];
       if(v==null)return undefined; if(typeof v==='number')return v; if(typeof v==='boolean')return v?1:0;
       if(v&&typeof v==='object'&&'x'in v)return Number(v.x)||0; const n=Number(v); return Number.isFinite(n)?n:undefined; },
+    vec(ref){ if(!ref)return null; const o=this.ports[ref.node]; if(!o)return null; const v=o[ref.port]; if(v==null)return null;
+      if(v&&typeof v==='object'&&'x'in v)return {x:Number(v.x)||0,y:Number(v.y)||0}; return null; },
     applyScalar(p){ const b=p&&p._bindings; if(!b)return p; for(const k in b){ const s=b[k]; if(!s||s.kind!=='logic')continue;
       const val=this.value(s.ref); if(val===undefined)continue; p[k]=val;
       if(k==='rotation'||k==='rotateZ')p.rot=(num(p.rotation,0)+num(p.rotateZ,0))*Math.PI/180; } return p; },
@@ -2372,8 +2464,15 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   function impacts(tv){const ov={};for(const L of CFG.layers){const t=tv[L.id];if(!t)continue;for(const im of (L.trigger.impacts||[])){if(!im||!im.target)continue;const val=applyMap(t.v,im.map,im.range);const o=ov[im.target]||(ov[im.target]={});if(im.param==='opacity')o.opacity=val;else if(im.param==='scale')o.scale=val;else if(im.param==='position')o.position=[t.vec?t.vec[0]:val,t.vec?t.vec[1]:val];else if(im.param==='effect.intensity')o.eInt=val;}}return ov;}
   /* content draw */
   function drawM(media,ar,bw,bh,fit,ax,ay,tile){fit=['cover','contain','fill','none'].includes(fit)?fit:'contain';ax=ax||'center';ay=ay||'center';if(tile&&media){const pat=lctx.createPattern(media,'repeat');if(pat){lctx.fillStyle=pat;lctx.fillRect(-bw/2,-bh/2,bw,bh);return;}}let w=bw,h=bh;if(fit==='contain'){const s=Math.min(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='cover'){const s=Math.max(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='none'){h=bh;w=h*(ar||1);}const x=ax==='left'?-bw/2:ax==='right'?bw/2-w:-w/2,y=ay==='top'?-bh/2:ay==='bottom'?bh/2-h:-h/2;lctx.drawImage(media,x,y,w,h);}
+  function drawPoly(c){const pts=[];const bind=c.points||{};for(let i=0;i<8;i++){const ref=bind['p'+i];if(!ref||ref.kind!=='logic')continue;const v=LB.vec(ref.ref);if(!v)continue;pts.push([v.x*W,v.y*H]);}
+    if(pts.length<2)return;lctx.setTransform(1,0,0,1,0,0);lctx.beginPath();const sm=Math.max(0,Math.min(1,c.smoothing||0));
+    if(sm>0&&pts.length>2){const close=!!c.closed,N=pts.length,at=k=>pts[((k%N)+N)%N];lctx.moveTo(pts[0][0],pts[0][1]);const last=close?N:N-1;
+      for(let i=0;i<last;i++){const p0=at(i-1),p1=at(i),p2=at(i+1),p3=at(i+2);const c1x=p1[0]+((p2[0]-p0[0])/6)*sm,c1y=p1[1]+((p2[1]-p0[1])/6)*sm,c2x=p2[0]-((p3[0]-p1[0])/6)*sm,c2y=p2[1]-((p3[1]-p1[1])/6)*sm;lctx.bezierCurveTo(c1x,c1y,c2x,c2y,p2[0],p2[1]);}}
+    else{lctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)lctx.lineTo(pts[i][0],pts[i][1]);}
+    if(c.closed)lctx.closePath();if(c.fill){lctx.fillStyle=c.fill;lctx.fill();}if(c.stroke&&c.strokeWidth>0){lctx.strokeStyle=c.stroke;lctx.lineWidth=c.strokeWidth;lctx.lineJoin='round';lctx.lineCap='round';lctx.stroke();}}
   function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul,bw=inst.w?inst.w*W:sz,bh=inst.h?inst.h*H:sz;
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
+    if(c.kind==='polyshape'){drawPoly(c);lctx.restore();return;}
     if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}

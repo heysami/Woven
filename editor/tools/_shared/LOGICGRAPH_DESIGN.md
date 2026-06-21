@@ -140,6 +140,15 @@ no-emoji rule - pick non-emoji-rendering marks in W1A.
   controls: `{ detector:select[face,hand,object], target:select[present,count,
   location,gesture] }`. out: `present:boolean`, `count:number`, `pos:vector2`
   (primary centroid), `region:region`, `gesture:string`, `confidence:number`.
+  PLUS per-landmark `vector2` ports reading the PRIMARY detection's named points
+  (normalized 0..1; missing point degrades to `{x:0,y:0}`):
+  - detector=hand: `wrist`(0), `thumbTip`(4), `indexTip`(8), `middleTip`(12),
+    `ringTip`(16), `pinkyTip`(20) - the 21-point MediaPipe HandLandmarker indices.
+  - detector=face: `nose`(1), `leftEye`(33), `rightEye`(263) - FaceLandmarker
+    canonical mesh indices.
+  These let apps draw between individual fingertips (e.g. a polygon via the
+  `shape` node, §10). The full per-point list is also carried on each detection
+  as `detection.landmarks = [{x,y}]` for any consumer that needs all points.
 - **`vision-ocr`** `⊜` - tesseract.js. in: `stream:string`. controls:
   `{ query:text, interval:number(ms, throttle) }`. out: `text:string`,
   `matched:boolean` (query found), `region:region`, `count:number`.
@@ -195,6 +204,16 @@ breakers (a graph cycle must pass through a state node).
 - **`state-smooth`** `∿` - in `target:number`; out `value:number`. critically-damped
   pursuit. controls `{ stiffness:number, damping:number }`. (the smoothing every
   pointer-driven value should pass through.)
+
+### 2.8 Render (renderable composition primitive, NOT a pure logic node)
+- **`shape`** `⬡` - draws a polygon / polyline from wired logic vector2 points.
+  in: `p0:vector2` .. `p7:vector2` (eight point inputs; wire as many as needed,
+  unused are skipped). out: `out:layer` (wire into a composer / mm-composer `in`
+  port, where it joins the z-stack + effect + blend pipeline exactly like a
+  layer). controls: `{ closed:boolean, fill:text(css color, blank=none),
+  stroke:text(css color), strokeWidth:number, opacity:number,
+  blend:select[normal,multiply,screen,overlay], z:number, smoothing:number }`.
+  See §10 for the full contract.
 
 ### 2.7 Output sink (writing back)
 Logic outputs reach targets by an edge into an existing `param:<key>` port. To also
@@ -409,3 +428,55 @@ the resolved outputs into the layer/effect/position params (see §5).
 Dependencies: W1A+W1B parallel after W0; W2C needs W1A+W1B; W2D needs W1A (+W1B for
 wiring); W3E needs W1A; W3F last.
 ```
+
+---
+
+## 10. The `shape` render node (polygon / polyline primitive)
+
+`shape` `⬡` is a RENDERABLE composition primitive that draws a polygon or
+polyline from up to eight wired logic vector2 points. It is the counterpart to a
+layer: it lives in the "Logic / Render" palette section and is registered
+client-side like the other logic kinds (LOGIC_NODE_DEFS in app.js), but unlike a
+pure logic node it is NEVER evaluated by the engine - it is a SINK that emits a
+layer. `_isLogicKind("shape")` returns false for exactly this reason, so the
+projection (§3) does not try to tick it.
+
+### 10.1 Ports + controls
+- INPUTS (accepts, dtype `vector2`): `p0` .. `p7`. Wire any subset; unwired or
+  unresolved points are skipped (a partially-wired shape still draws). Points are
+  the polygon vertices IN ORDER (p0 -> p1 -> ... -> highest wired index).
+- OUTPUT (provides): `out` (dtype `layer`, tags `["layer"]`). Wire into a
+  composer / mm-composer `in` port - the same accept a `layer` node uses.
+- CONTROLS (authored with the shared controls/buildSpec convention):
+  `closed:boolean` (polygon vs polyline), `fill:text` (css color, blank = no
+  fill), `stroke:text` (css color), `strokeWidth:number`, `opacity:number`,
+  `blend:select[normal,multiply,screen,overlay]`, `z:number`,
+  `smoothing:number` (0 = straight segments; >0 blends a Catmull-Rom curve).
+
+### 10.2 How points resolve from the LogicBridge (no parallel eval loop)
+At projection time the editor (app.js `_shapePointBindings`) collects every edge
+`<logicNode>.<port> -> shape.pK` into `spec._points[pK] = { kind:"logic",
+ref:{ node, port } }` - the SAME binding shape used for `kind:"logic"` param
+bindings, except the point ports are not `param:` ports so they need this
+dedicated extractor. The shape spec also carries `_shape:true` so the runtime
+recognizes it. The source logic node (e.g. `vision-detect`) is force-included in
+the projection so its ports compute each frame even when it ONLY feeds a shape.
+
+At runtime the composer's per-frame render reads each point via
+`LogicBridge.vec(ref)` -> the engine's per-frame `_ports[node][port]` (the exact
+path `LogicBridge.value` uses for scalars, returning the full `{x,y}` instead of
+just `x`). Normalized 0..1 points are mapped to the cached W x H stage rect
+(`x*W, y*H`); there is no per-frame `getBoundingClientRect` (W/H are the cached
+composition dims passed down from `render()`).
+
+### 10.3 Z-order + effect compatibility
+The shape becomes a wired LAYER (`buildWiredRuntimeLayers` emits a layer whose
+`content.kind === "polyshape"`), so it participates in the existing layer stack:
+- z-order: the layer's `z` (from the shape's `z` control) places it in the
+  ascending z sort; PASS B composites it among the other layers.
+- opacity + blend: the shape's `opacity` / `blend` controls drive the layer's
+  `_opacity` / `_blend`, applied at composite exactly like every wired layer.
+- effects: to get "a glitchy image behind the polygon", put an image layer at a
+  LOWER `z` with a glitch/crt/pixelate effect, and the shape at a HIGHER `z`
+  (or vice-versa). The shape's own layer is also effect-capable through the same
+  per-layer effect path - z-order + effects work because the shape IS a layer.

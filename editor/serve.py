@@ -7219,6 +7219,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
             return self._capabilities()
+        if url_path == "/__logic_guide":
+            return self._logic_guide()
         # Live Session - host-side presence (the host's own editor sees guest
         # cursors). SSE stream + the injected cursor script.
         if url_path == "/__live_events":
@@ -13438,6 +13440,29 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(404, {"error": "not found"})
         self.send_response(200)
         self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
+
+    # GET /__logic_guide - the Logic graph authoring guide (catalog + dataflow
+    # model + end-to-end recipes). Kept OUT of the always-on capabilities
+    # preamble (which only carries a one-line pointer here) so the agent fetches
+    # the full text on demand, ONLY when building an interactive / logic app.
+    def _logic_guide(self):
+        guide = ""
+        try:
+            editor_dir = os.path.join(INSTALL_ROOT, "editor")
+            if editor_dir not in sys.path:
+                sys.path.insert(0, editor_dir)
+            from prompts.logic_authoring import LOGIC_AUTHORING_GUIDE
+            guide = LOGIC_AUTHORING_GUIDE
+        except Exception as e:
+            return self._reply(404, {"error": "logic guide unavailable: " + str(e)})
+        data = guide.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

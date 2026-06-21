@@ -53746,9 +53746,22 @@ function _composerTileStyle(layer, url) {
 function workflowKindIo(kind) {
   try {
     const r = (typeof window !== "undefined") && window.__thKindRegistry;
-    return (r && r.KINDS && r.KINDS[kind] && r.KINDS[kind].io) || null;
+    const fromReg = (r && r.KINDS && r.KINDS[kind] && r.KINDS[kind].io) || null;
+    if (fromReg) return fromReg;
+    // `shape` is registered client-side (LOGIC_NODE_DEFS), not in the backend
+    // KIND_IO registry. Synthesize the io contract so the composer's upstream
+    // resolver ingests it as a LAYER (flavor "layer") - it then joins the
+    // z-stack + effect pipeline like any wired layer (see _SHAPE_KIND_IO).
+    if (kind === "shape") return _SHAPE_KIND_IO;
+    return null;
   } catch (_e) { return null; }
 }
+// Client-side io contract for the `shape` render node (no backend KIND_IO).
+const _SHAPE_KIND_IO = {
+  provides: [{ port: "out", label: "Layer", tags: ["layer"],
+    resolve: "typed", resolveArgs: { flavor: "layer" } }],
+  accepts: [],
+};
 function _ioProvideForPort(io, port) {
   const list = (io && io.provides) || [];
   if (!list.length) return null;
@@ -59590,7 +59603,11 @@ function _numberPixmapUrl(srcNode, allNodes, allEdges) {
 // LOGIC_NODE_DEFS by W1A). Defensive: LOGIC_NODE_DEFS is defined later in this
 // file but always exists by the time bindings resolve at render time.
 function _isLogicKind(kind) {
-  return typeof kind === "string" && typeof LOGIC_NODE_DEFS !== "undefined" && !!LOGIC_NODE_DEFS[kind];
+  // `shape` lives in LOGIC_NODE_DEFS for its port geometry / palette / spec UI,
+  // but it is a RENDERABLE sink (wired into a composer as a layer), not a node
+  // the engine evaluates - so it is NOT a logic kind for projection/binding.
+  return typeof kind === "string" && kind !== "shape"
+    && typeof LOGIC_NODE_DEFS !== "undefined" && !!LOGIC_NODE_DEFS[kind];
 }
 function _specParamBindings(specNodeId, allNodes, allEdges) {
   const out = {};
@@ -59635,6 +59652,38 @@ function _specWithBindings(spec, specNodeId, allNodes, allEdges) {
   if (b) out._bindings = b;
   if (ov) out._overrides = ov;   // Phase-2 per-cell/instance overrides
   return out;
+}
+
+// Shape render node (PART 2): collect the per-point logic bindings for a shape
+// node's p0..p7 accepts. Each edge `<logicNode>.<port> -> shape.pK` becomes
+// spec._points[pK] = { kind:"logic", ref:{ node, port } } - the SAME binding
+// shape the composer's LogicBridge resolves for numeric params, except the
+// runtime reads the FULL vector2 (LogicBridge.vec) instead of the scalar. The
+// p0..p7 ports are NOT param: ports so _specParamBindings does not see them;
+// this is the dedicated extractor for them.
+function _shapePointBindings(shapeNodeId, allNodes, allEdges) {
+  const points = {};
+  for (const e of (allEdges || [])) {
+    const to = workflowParseEdgeRef(e.to || ""); if (!to || to.node !== shapeNodeId) continue;
+    if (!/^p[0-7]$/.test(to.port)) continue;
+    const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+    points[to.port] = { kind: "logic", ref: { node: from.node, port: from.port } };
+  }
+  return Object.keys(points).length ? points : null;
+}
+// Resolve the spec a wired LAYER input carries on its way to the composer. For
+// a `shape` layer, attach its p0..p7 logic point bindings (and tag the layer so
+// the runtime knows it is a polyshape); for everything else, pass the spec
+// through unchanged.
+function _wiredLayerSpec(i, allNodes, allEdges) {
+  const spec = i.spec || {};
+  if (i.kind === "shape") {
+    const pts = _shapePointBindings(i.fromId, allNodes, allEdges);
+    const out = { ...spec, _shape: true };
+    if (pts) out._points = pts;
+    return out;
+  }
+  return spec;
 }
 
 // Logic Graph (W2C): build the serialized PROJECTION of the logic-graph slice
@@ -59712,6 +59761,14 @@ function _logicProjection(allNodes, allEdges) {
         from: { node: fromId, port: fromPort, dtype: fromDt },
         to:   { node: to.node, port: to.port, dtype: workflowPortDtype(toNode, to.port, "accepts") || null },
       });
+      continue;
+    }
+    // wire from a logic OUTPUT into a `shape` node's p0..p7 point port. The
+    // shape itself is a renderable sink (not projected as a logic node), but the
+    // SOURCE logic node must be in the plan so its port has a fresh value each
+    // frame for the runtime to resolve spec._points[pK] via LogicBridge.vec.
+    if (_isLogicKind(fromNode.kind) && toNode.kind === "shape" && /^p[0-7]$/.test(to.port)) {
+      projNode(fromNode);
       continue;
     }
   }
@@ -59836,7 +59893,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
       positions: inputs.filter(i => i.type === "position").map(i => wb(i.spec || {}, i.fromId)),
       triggers:  inputs.filter(i => i.type === "trigger").map(i => wb(i.spec || {}, i.fromId)),
       layers:    inputs.filter(i => i.type === "layer").map(i => ({
-        id: i.layerId, spec: i.spec || {},
+        id: i.layerId, spec: _wiredLayerSpec(i, allNodes, allEdges),
         children: (i.children || []).map(c => (
           (c.type === "position" || c.type === "effect" || c.type === "trigger")
             ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
@@ -60202,7 +60259,7 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
       positions: previewInputs.filter(i => i.type === "position").map(i => wb(i.spec || {}, i.fromId)),
       triggers:  previewInputs.filter(i => i.type === "trigger").map(i => wb(i.spec || {}, i.fromId)),
       layers:    previewInputs.filter(i => i.type === "layer").map(i => ({
-        id: i.layerId, spec: i.spec || {},
+        id: i.layerId, spec: _wiredLayerSpec(i, scopedNodes, scopedEdges),
         children: (i.children || []).map(c => (
           (c.type === "position" || c.type === "effect" || c.type === "trigger")
             ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
@@ -60799,7 +60856,7 @@ const LOGIC_NODE_DEFS = {
   },
   // ── 2.2 Processors (stream in -> structured data out) ─────────────────
   "vision-detect": {
-    glyph: "◉", label: "Vision detect", section: "Processors", w: 240, h: 300,
+    glyph: "◉", label: "Vision detect", section: "Processors", w: 240, h: 480,
     desc: "MediaPipe Tasks Vision: face / hand / object detection",
     controls: {
       detector: { type: "select", value: "face", options: ["face", "hand", "object"] },
@@ -60812,6 +60869,18 @@ const LOGIC_NODE_DEFS = {
       region:     { label: "region", dtype: "region" },
       gesture:    { label: "gesture", dtype: "string" },
       confidence: { label: "confidence", dtype: "number" },
+      // Per-landmark points of the PRIMARY detection (normalized 0..1). Hand
+      // fingertips (detector=hand) + face features (detector=face); each missing
+      // point degrades to {x:0,y:0}. See logicvision.js / logicgraph.js.
+      wrist:     { label: "wrist", dtype: "vector2" },
+      thumbTip:  { label: "thumbTip", dtype: "vector2" },
+      indexTip:  { label: "indexTip", dtype: "vector2" },
+      middleTip: { label: "middleTip", dtype: "vector2" },
+      ringTip:   { label: "ringTip", dtype: "vector2" },
+      pinkyTip:  { label: "pinkyTip", dtype: "vector2" },
+      nose:      { label: "nose", dtype: "vector2" },
+      leftEye:   { label: "leftEye", dtype: "vector2" },
+      rightEye:  { label: "rightEye", dtype: "vector2" },
     },
     accepts: {
       stream: { label: "stream", dtype: "string" },
@@ -61041,10 +61110,49 @@ const LOGIC_NODE_DEFS = {
     provides: { value: { label: "value", dtype: "number" } },
     accepts: { target: { label: "target", dtype: "number" } },
   },
+  // ── 2.8 Render (a renderable composition primitive, NOT a pure logic node)
+  // The `shape` node draws a polygon / polyline from up to 8 logic vector2
+  // points. It is wired into a composer/mm-composer `in` port like a layer (its
+  // `out` carries the "layer" flavor) so it joins the z-stack and the effect +
+  // blend pipeline exactly like every other layer. Its p0..p7 accepts take logic
+  // vector2 outputs (e.g. vision-detect.indexTip); the runtime resolves each
+  // wired point per-frame from the SAME LogicBridge value path the bindings use.
+  // It is deliberately EXCLUDED from `_isLogicKind` (it is a sink, not a graph
+  // node the engine evaluates) - see _isLogicKind + _shapePointBindings.
+  "shape": {
+    glyph: "⬡", label: "Shape", section: "Render", w: 240, h: 420,
+    desc: "Polygon / polyline from wired vector2 points",
+    controls: {
+      closed:      { type: "boolean", value: true },
+      fill:        { type: "text", value: "" },
+      stroke:      { type: "text", value: "#6ee7ff" },
+      strokeWidth: { type: "number", value: 2, min: 0, max: 64, step: 0.5 },
+      opacity:     { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
+      blend:       { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
+      z:           { type: "number", value: 0, step: 1 },
+      smoothing:   { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+    },
+    provides: {
+      // tags:["layer"] so the connect-snap + composer-ingest tag intersection
+      // treats the shape `out` like a layer source (it carries dtype "layer"
+      // too, but only mates with untyped legacy accepts like composer.in).
+      out: { label: "Layer", dtype: "layer", tags: ["layer"] },
+    },
+    accepts: {
+      p0: { label: "p0", dtype: "vector2" },
+      p1: { label: "p1", dtype: "vector2" },
+      p2: { label: "p2", dtype: "vector2" },
+      p3: { label: "p3", dtype: "vector2" },
+      p4: { label: "p4", dtype: "vector2" },
+      p5: { label: "p5", dtype: "vector2" },
+      p6: { label: "p6", dtype: "vector2" },
+      p7: { label: "p7", dtype: "vector2" },
+    },
+  },
 };
 
 // Stable palette ordering for the Logic section.
-const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State"];
+const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Render"];
 const LOGIC_NODE_KINDS = Object.keys(LOGIC_NODE_DEFS);
 
 // Author a logic node's JS module string in the SAME controls / buildSpec

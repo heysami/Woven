@@ -796,13 +796,16 @@ def capabilities_preamble(project_root: Optional[str] = None) -> str:
     else:
         _authorable_lines = "  (none resolved - GET /__kinds/registry)"
     _other_kinds_line = ", ".join(k["kind"] for k in _other_kinds) or "(none)"
+
     node_kinds_block = f"""**Workflow nodes you can BUILD & AUTHOR for the user** ({len(_authorable)} authorable of {len(caps['kinds'])} kinds). You assemble a node graph on the user's canvas by committing nodes (`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` with `addNodes:[…]`) and wiring them with edges. For an *authorable* node you also write its **canonical file** under `source/<branch>/…` following that kind's `authoring` schema (`GET /__kinds/registry`) - the node re-imports it live, so this is how you "fill in" an editor or a building block by code:
 {_authorable_lines}
 
 These split into **app-node editors** (bake a deliverable asset - e.g. Splat Lab → a Gaussian-splat viewer, Voxel/Spline 3D → .glb, Material Lab / Interactive composer → .html, Image/Pixel/Font editors, Music/Synth → audio) and **building blocks** (typed spec providers - Effect / Position / Trigger / Layer / Number generator / Timeline - that you WIRE INTO an editor's port to drive it; e.g. a Timeline or Number generator animating a composer's effect params). Wire an Agent into any of their `edit` ports to delegate the authoring, or write the canonical file yourself.
 
 Other node kinds ({len(_other_kinds)}, structural / not directly agent-authored): {_other_kinds_line}.
-See `GET /__kinds/registry` for full per-kind contracts + each authoring schema."""
+See `GET /__kinds/registry` for full per-kind contracts + each authoring schema.
+
+**Building an interactive / reactive app (the Logic graph).** ONLY when the user wants to make an interactive app node - input that drives output in real time (pointer / touch / keyboard / scroll / gyro / mic / camera / video sources, operators, if-else / while / state, vision hand-face detection, OCR, and a shape primitive, all wired into effect / position / param bindings) - FETCH the authoring guide first: `GET $TH_DAEMON_URL/__logic_guide?project=$TH_PROJECT_ID`. It has the dataflow model, the typed-port rules, the node catalog, and copy-pasteable end-to-end recipes. Do not hand-wire logic nodes without it. For any other request, ignore this line."""
 
     _preamble = f"""## App capabilities - read this before saying "I don't have <X>"
 
