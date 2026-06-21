@@ -28,7 +28,10 @@ syntax), so it can live alongside the rest of `editor/` which runs on 3.9.
 ```
 python3 editor/tools/qa/visual_qa.py --url <url-or-file> \
     [--spec <spec.json>] [--out <dir>] [--viewport 1280x720] \
-    [--settle-ms 300] [--no-interact]
+    [--settle-ms 300] [--no-interact] \
+    [--judge "<expected effect>"] \
+    [--judge-daemon <base-url> --judge-project <id>] \
+    [--judge-provider anthropic|openai] [--judge-model <id>]
 ```
 
 - `--url`        URL (http/https) or a local path / file:// URL. A bare path is
@@ -41,6 +44,24 @@ python3 editor/tools/qa/visual_qa.py --url <url-or-file> \
                  (default 300).
 - `--no-interact` Skip the interaction battery (idle timeline only). With this
                  flag the verdict is derived from idle animation alone.
+- `--judge`      OPTIONAL LLM frame-judge. Pass a plain-English description of
+                 the intended effect (e.g. `"a shape moves"`,
+                 `"the chart bars grow when clicked"`). The harness montages a
+                 labeled frame strip and asks a vision LLM whether the captured
+                 behaviour matches. Fail-soft: if no LLM is reachable the run
+                 still completes on the pixel-diff verdict. See the frame-judge
+                 section below.
+- `--judge-daemon` Base URL of an ALREADY-RUNNING Woven daemon (e.g.
+                 `http://localhost:5747`) to route the judge through its
+                 `/__llm_run` describe endpoint. Requires `--judge-project`.
+                 This tool NEVER starts or restarts the daemon.
+- `--judge-project` Project id stamped onto the daemon `/__llm_run` call
+                 (required by `--judge-daemon`).
+- `--judge-provider` Provider for the daemon describe call (`anthropic` default
+                 or `openai`). Ignored by the direct-API fallback, which is
+                 always Anthropic.
+- `--judge-model` Vision model id (default `claude-sonnet-4-6` for the direct
+                 API; the daemon picks its own default if omitted).
 
 Output: the full JSON report is printed to stdout AND written to
 `<out>/report.json`. Every captured frame is a PNG in `<out>/` so a human or an
@@ -48,8 +69,9 @@ agent can also judge the piece visually. The frame strip is part of the
 deliverable.
 
 Exit code: `0` for `pass`, nonzero otherwise (`1` static / no-reaction, `2`
-error, `3` setup failure such as Playwright/Chrome missing). This makes it
-CI / agent friendly.
+error, `3` setup failure such as Playwright/Chrome missing, `4` effect-wrong
+from the `--judge` frame-judge). This makes it CI / agent friendly. The full
+exit-code table is under "Verdict semantics" below.
 
 ## What it does
 
@@ -74,6 +96,17 @@ CI / agent friendly.
 - `no-reaction` Idle may animate, but interaction caused effectively no change
                 when interaction was expected. The piece ignores input.
 - `pass`        It animates and/or reacts to input.
+- `effect-wrong` Pixels DID move, but the optional `--judge` frame-judge said
+                the intended effect was NOT achieved (the wrong thing renders).
+                Only reachable when `--judge` is supplied and the judge ran.
+
+### Exit codes
+
+- `0`  `pass`
+- `1`  `static` / `no-reaction`
+- `2`  `error`
+- `3`  setup failure (Playwright / Chrome missing, bad spec)
+- `4`  `effect-wrong` (pixels moved but the frame-judge rejected the effect)
 
 ### Thresholds (documented + tunable in the source)
 
@@ -127,9 +160,79 @@ Two ways:
 This v1 verifies a single URL you hand it. The NEXT phase is to resolve a
 Woven node id to its served runtime URL automatically, and to auto-trigger this
 harness during a build so a piece that "did not achieve its effect" is caught
-before it ships. An optional further step is an LLM frame-judge that looks at
-the saved frame strip to catch effects that move pixels but are still wrong
-(e.g. animates but renders the wrong thing).
+before it ships.
+
+## LLM frame-judge (`--judge`)
+
+The pixel-diff verdict answers "did anything move / react?" but not "did the
+RIGHT thing render?". A piece can animate vigorously while showing the wrong
+content. The optional `--judge` frame-judge closes that gap with a vision LLM.
+
+### What it does
+
+1. After frames are captured, it assembles a compact FRAME STRIP: it picks a
+   representative set (the first idle frame, the two idle frames with the most
+   motion, and the BEFORE/AFTER of the interaction step with the largest pixel
+   change), downscales each, labels each tile with its moment (`t=0.70s`,
+   `before click_center`, `after click_center`, etc.), and montages them into
+   ONE image saved as `<out>/judge_strip.png`. (If Pillow is unavailable it
+   falls back to sending the picked frames as an ordered list of images.)
+2. It sends the strip plus the expectation to a vision LLM with a prompt that
+   asks: given these frames over time and before/after interaction, and the
+   intended effect `<expected>`, did the piece achieve it? Reply strict JSON
+   `{ok, reasoning, observed}`.
+3. It merges a `judge` block into the report and adjusts the verdict per the
+   precedence below.
+
+### Transport order (first reachable wins)
+
+1. **Daemon LLM.** If you pass `--judge-daemon <base-url> --judge-project <id>`,
+   the strip is POSTed to that already-running daemon's `/__llm_run` endpoint
+   with `skill=describe` and `provider=<--judge-provider>` (the strip rides as
+   an `input_data_uri` data URL). The harness never starts the daemon; it only
+   talks to one you tell it is already up. The daemon supplies the API key /
+   CLI auth, so no local key is needed on this path.
+2. **Direct Anthropic API.** If the daemon path is not configured (or fails),
+   the harness reads an Anthropic key from `~/.test-harness/media-config.json`
+   (the `anthropic.api_key` field) and calls the Anthropic Messages API
+   directly over `urllib` (no SDK) with a vision model
+   (`claude-sonnet-4-6` by default, override with `--judge-model`).
+3. **Unavailable.** If neither is reachable (no daemon configured, no key, or an
+   LLM/network error), the judge is UNAVAILABLE: `judge.available=false` with a
+   clear message. The run still completes and the pixel-diff verdict is
+   unchanged. The strip is still saved either way.
+
+### Verdict precedence
+
+The judge only ESCALATES or CONFIRMS; it never relaxes a worse pixel verdict.
+
+- judge **unavailable**  -> verdict unchanged (pixel-diff stands).
+- judge **ok:false**     -> verdict becomes `effect-wrong` (exit code `4`), but
+                            ONLY when the pixel verdict was `pass`. An existing
+                            `error` / `static` / `no-reaction` is a stronger
+                            signal and is kept.
+- judge **ok:true**      -> CONFIRMS; verdict unchanged (a `pass` stays `pass`).
+- judge **inconclusive** (LLM reply not parseable as JSON) -> verdict unchanged,
+                            noted in `reasons` and `judge.message`.
+
+### The `judge` block
+
+```json
+{
+  "available": true,
+  "ok": false,
+  "reasoning": "why the model decided",
+  "observed": "what the frames actually show",
+  "expected": "a shape moves",
+  "stripPath": "<out>/judge_strip.png",
+  "model": "claude-sonnet-4-6",
+  "transport": "direct anthropic api",
+  "message": "judge ran via direct anthropic api"
+}
+```
+
+When unavailable, `available` is `false`, `ok`/`reasoning`/`observed` are
+`null`, and `message` explains why (and confirms the strip was still saved).
 
 ## Report shape
 
@@ -148,6 +251,10 @@ the saved frame strip to catch effects that move pixels but are still wrong
   "metrics": { "maxIdleDiff": 0.0, "maxInteractionDiff": 0.0,
                "pixelDeltaThreshold": 18, "diffEpsilon": 0.005 },
   "verdict": "pass",
-  "reasons": [ "..." ]
+  "reasons": [ "..." ],
+  "judge": { "available": false, "ok": null, "stripPath": "...", ... }
 }
 ```
+
+The `judge` block is present only when `--judge` was supplied. See the
+frame-judge section above for its shape.

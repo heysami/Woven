@@ -19,10 +19,14 @@ format.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
@@ -62,6 +66,19 @@ DIFF_EPSILON = 0.005
 # Downsample target width for diffing (keeps the comparison cheap + robust to
 # sub-pixel noise).
 DIFF_WIDTH = 160
+
+# ---------------------------------------------------------------------------
+# Frame-judge (optional --judge). Constants for the montage + LLM transport.
+# ---------------------------------------------------------------------------
+
+# Per-tile width in the montage strip (each frame is downscaled to this width,
+# height preserved). Kept small so the assembled strip stays well under any
+# vision-model size cap while remaining legible.
+JUDGE_TILE_WIDTH = 320
+# Default vision model for the direct Anthropic API fallback.
+JUDGE_DEFAULT_MODEL = "claude-sonnet-4-6"
+# Where to look for a direct Anthropic key when the daemon LLM is not used.
+MEDIA_CONFIG_PATH = os.path.expanduser("~/.test-harness/media-config.json")
 
 
 def log(msg: str) -> None:
@@ -270,6 +287,347 @@ def step_label(step: Dict[str, Any], idx: int) -> str:
     if step.get("label"):
         return str(step["label"])
     return "%s_%d" % (step.get("type", "step"), idx + 1)
+
+
+# ---------------------------------------------------------------------------
+# Frame-judge: assemble a labeled frame strip, then ask a vision LLM whether
+# the captured behaviour matches an expected effect description.
+#
+# This is OPTIONAL and FAIL-SOFT by design. If anything goes wrong (no Pillow,
+# no transport reachable, no key, network/LLM error) the judge reports
+# available=false and the pixel-diff verdict is left untouched.
+#
+# Transport precedence (first reachable wins):
+#   1. Daemon LLM  -> POST <base>/__llm_run?project=<id> with skill=describe,
+#                     provider=anthropic|openai. Used only when the caller
+#                     passes --judge-daemon (+ --judge-project). The harness
+#                     never starts the daemon; it only talks to one already up.
+#   2. Direct API  -> Anthropic Messages API via urllib, key read from
+#                     ~/.test-harness/media-config.json (anthropic.api_key).
+#   3. Unavailable -> judge.available=false, clear message, run unaffected.
+# ---------------------------------------------------------------------------
+
+
+def _pick_strip_frames(report: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Pick a representative, ordered set of (label, path) frames: a few idle
+    frames that show motion, then the before/after of the interaction step with
+    the largest pixel change (the "key" interaction)."""
+    picks: List[Tuple[str, str]] = []
+    idle = report.get("idleFrames") or []
+    # First idle frame for a baseline, then up to two more (prefer ones whose
+    # diffFromPrev shows the most motion so the strip captures change).
+    if idle:
+        picks.append(("t=%.2fs (idle start)" % float(idle[0].get("t", 0.0)),
+                      idle[0]["path"]))
+    rest = idle[1:]
+    rest_sorted = sorted(
+        rest,
+        key=lambda f: (f.get("diffFromPrev") or 0.0),
+        reverse=True,
+    )
+    for f in rest_sorted[:2]:
+        picks.append(("t=%.2fs (idle)" % float(f.get("t", 0.0)), f["path"]))
+
+    interactions = report.get("interactions") or []
+    if interactions:
+        key_ix = max(interactions, key=lambda ix: ix.get("diff") or 0.0)
+        step = key_ix.get("step", "interaction")
+        picks.append(("before %s" % step, key_ix["beforePath"]))
+        picks.append(("after %s" % step, key_ix["afterPath"]))
+    return picks
+
+
+def build_frame_strip(report: Dict[str, Any],
+                      out_dir: str) -> Optional[Dict[str, Any]]:
+    """Montage the representative frames into ONE labeled image. Requires
+    Pillow; returns None (with a logged note) if Pillow is unavailable so the
+    judge can degrade to a per-frame list. On success returns
+    {path, frames:[{label, path}], width, height}."""
+    frames = _pick_strip_frames(report)
+    if not frames:
+        return None
+    if not _PIL_OK:
+        log("NOTE: Pillow unavailable; cannot montage a single frame strip.")
+        return {"path": None, "frames": [{"label": l, "path": p}
+                                         for (l, p) in frames]}
+
+    from PIL import ImageDraw  # type: ignore
+
+    tw = JUDGE_TILE_WIDTH
+    label_h = 22
+    pad = 8
+    tiles = []
+    for (label, path) in frames:
+        try:
+            img = Image.open(path).convert("RGB")
+        except Exception as exc:
+            log("strip: could not open %s (%s); skipping" % (path, exc))
+            continue
+        ratio = img.height / float(img.width) if img.width else 0.5625
+        th = max(1, int(tw * ratio))
+        img = img.resize((tw, th))
+        tile = Image.new("RGB", (tw, th + label_h), (16, 16, 24))
+        tile.paste(img, (0, label_h))
+        draw = ImageDraw.Draw(tile)
+        # Default bitmap font; no external font dependency.
+        draw.text((4, 4), label, fill=(235, 235, 240))
+        tiles.append(tile)
+    if not tiles:
+        return None
+    strip_w = pad + sum(t.width + pad for t in tiles)
+    strip_h = pad * 2 + max(t.height for t in tiles)
+    strip = Image.new("RGB", (strip_w, strip_h), (10, 10, 14))
+    x = pad
+    for t in tiles:
+        strip.paste(t, (x, pad))
+        x += t.width + pad
+    strip_path = os.path.join(out_dir, "judge_strip.png")
+    strip.save(strip_path)
+    return {
+        "path": strip_path,
+        "frames": [{"label": l, "path": p} for (l, p) in frames],
+        "width": strip_w,
+        "height": strip_h,
+    }
+
+
+def _png_to_data_uri(path: str) -> str:
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    return "data:image/png;base64," + b64
+
+
+def _judge_prompt(expected: str) -> str:
+    return (
+        "Here are frames over time (and the before/after of a simulated "
+        "interaction) of an interactive piece, montaged left to right and "
+        "labeled with their moment. The intended effect is:\n\n"
+        "  " + expected + "\n\n"
+        "Did the piece achieve that intended effect? Judge ONLY from the "
+        "frames. Reply with STRICT JSON and nothing else, of the form:\n"
+        '{\"ok\": true|false, \"reasoning\": \"why you decided\", '
+        '\"observed\": \"what the frames actually show\"}'
+    )
+
+
+def _parse_judge_json(text: str) -> Optional[Dict[str, Any]]:
+    """Extract the first JSON object from the model's reply. Models sometimes
+    wrap JSON in prose or a code fence; we slice from the first '{' to the
+    matching last '}'."""
+    if not text:
+        return None
+    s = text.strip()
+    start = s.find("{")
+    end = s.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        obj = json.loads(s[start:end + 1])
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    return obj
+
+
+def _read_anthropic_key() -> Optional[str]:
+    try:
+        with open(MEDIA_CONFIG_PATH, "r") as f:
+            cfg = json.load(f)
+    except Exception:
+        return None
+    node = cfg.get("anthropic") if isinstance(cfg, dict) else None
+    if isinstance(node, dict):
+        key = node.get("api_key")
+        if isinstance(key, str) and key.strip():
+            return key.strip()
+    # Some configs store the key as a bare string.
+    if isinstance(node, str) and node.strip():
+        return node.strip()
+    return None
+
+
+def _judge_via_daemon(strip: Dict[str, Any], expected: str, base_url: str,
+                      project: str, provider: str, model: Optional[str]
+                      ) -> Dict[str, Any]:
+    """POST the strip to an already-running daemon's /__llm_run describe skill.
+    Raises on transport / HTTP failure (caller catches)."""
+    if not strip.get("path"):
+        raise RuntimeError("daemon transport needs a montaged strip (Pillow)")
+    data_uri = _png_to_data_uri(strip["path"])
+    payload = {
+        "skill": "describe",
+        "provider": provider,
+        "prompt": _judge_prompt(expected),
+        "input_data_uri": data_uri,
+    }
+    if model:
+        payload["model"] = model
+    sep = "&" if "?" in base_url else "?"
+    url = "%s/__llm_run%sproject=%s" % (
+        base_url.rstrip("/"), sep,
+        urllib.parse.quote(project, safe=""))
+    req = urllib.request.Request(
+        url, method="POST",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(payload).encode("utf-8"),
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        body = json.loads(resp.read().decode("utf-8", "replace"))
+    if not body.get("ok"):
+        raise RuntimeError("daemon /__llm_run returned not-ok: %s"
+                           % (body.get("error") or body))
+    return {"text": body.get("text") or "",
+            "model": body.get("model") or model or "(daemon default)",
+            "transport": "daemon (%s)" % (body.get("provider") or provider)}
+
+
+def _judge_via_anthropic_api(strip: Dict[str, Any], expected: str,
+                             api_key: str, model: str) -> Dict[str, Any]:
+    """Direct Anthropic Messages API call via urllib (no SDK). Raises on
+    failure (caller catches)."""
+    blocks: List[Dict[str, Any]] = [
+        {"type": "text", "text": _judge_prompt(expected)}]
+    if strip.get("path"):
+        with open(strip["path"], "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        blocks.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png",
+                       "data": b64},
+        })
+    else:
+        # No montage (no Pillow): send each picked frame as its own block.
+        for fr in strip.get("frames") or []:
+            p = fr.get("path")
+            if not p:
+                continue
+            with open(p, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+            blocks.append({"type": "text", "text": fr.get("label") or ""})
+            blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png",
+                           "data": b64},
+            })
+    body = {
+        "model": model,
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": blocks}],
+    }
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", method="POST",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        },
+        data=json.dumps(body).encode("utf-8"),
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode("utf-8", "replace"))
+    chunks = []
+    for blk in data.get("content") or []:
+        if isinstance(blk, dict) and blk.get("type") == "text":
+            chunks.append(blk.get("text") or "")
+    return {"text": "\n".join(chunks), "model": model,
+            "transport": "direct anthropic api"}
+
+
+def run_judge(report: Dict[str, Any], out_dir: str,
+              args: argparse.Namespace) -> Dict[str, Any]:
+    """Assemble the strip and run the frame-judge. ALWAYS returns a dict with
+    at least {available, message}. Never raises."""
+    expected = args.judge
+    judge: Dict[str, Any] = {
+        "available": False,
+        "ok": None,
+        "reasoning": None,
+        "observed": None,
+        "expected": expected,
+        "stripPath": None,
+        "model": None,
+        "transport": None,
+        "message": None,
+    }
+    try:
+        strip = build_frame_strip(report, out_dir)
+    except Exception as exc:
+        judge["message"] = "frame strip assembly failed: %s" % exc
+        return judge
+    if not strip:
+        judge["message"] = "no frames available to build a strip"
+        return judge
+    judge["stripPath"] = strip.get("path")
+    judge["stripFrames"] = strip.get("frames")
+
+    provider = args.judge_provider
+    model = args.judge_model
+
+    # ---- Transport 1: daemon LLM (only if a daemon base url was given) ----
+    if args.judge_daemon:
+        if not args.judge_project:
+            log("judge: --judge-daemon needs --judge-project; "
+                "falling through to direct API")
+        else:
+            try:
+                res = _judge_via_daemon(strip, expected, args.judge_daemon,
+                                        args.judge_project, provider, model)
+                return _finish_judge(judge, res)
+            except Exception as exc:
+                log("judge: daemon transport failed (%s); "
+                    "falling through to direct API" % exc)
+
+    # ---- Transport 2: direct Anthropic API ----
+    key = _read_anthropic_key()
+    if key:
+        eff_model = model or JUDGE_DEFAULT_MODEL
+        try:
+            res = _judge_via_anthropic_api(strip, expected, key, eff_model)
+            return _finish_judge(judge, res)
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", "replace")
+            except Exception:
+                detail = str(exc)
+            judge["message"] = ("direct anthropic api error: %s %s"
+                                % (exc.code, detail[:300]))
+            return judge
+        except Exception as exc:
+            judge["message"] = "direct anthropic api call failed: %s" % exc
+            return judge
+
+    # ---- Transport 3: unavailable ----
+    judge["message"] = (
+        "judge UNAVAILABLE: no daemon LLM endpoint configured (pass "
+        "--judge-daemon + --judge-project to use a running daemon) and no "
+        "anthropic.api_key in %s. Strip was still saved%s; pixel-diff verdict "
+        "stands." % (MEDIA_CONFIG_PATH,
+                     (" at %s" % strip.get("path")) if strip.get("path")
+                     else ""))
+    return judge
+
+
+def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse the LLM reply into the judge block. If the JSON is unparseable we
+    keep available=true but ok=None and record the raw text, so the run is not
+    failed on a malformed reply."""
+    judge["model"] = res.get("model")
+    judge["transport"] = res.get("transport")
+    text = res.get("text") or ""
+    parsed = _parse_judge_json(text)
+    if parsed is None:
+        judge["available"] = True
+        judge["message"] = ("LLM reply was not parseable JSON; "
+                            "treating verdict as inconclusive")
+        judge["raw"] = text[:1000]
+        return judge
+    judge["available"] = True
+    judge["ok"] = bool(parsed.get("ok"))
+    judge["reasoning"] = parsed.get("reasoning")
+    judge["observed"] = parsed.get("observed")
+    judge["message"] = "judge ran via %s" % res.get("transport")
+    return judge
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +846,36 @@ def run(args: argparse.Namespace) -> int:
             reasons.append("interaction disabled (--no-interact); "
                            "verdict from idle only")
 
+    # ----- OPTIONAL LLM FRAME-JUDGE -----
+    # Precedence: the judge only ESCALATES or CONFIRMS; it never relaxes an
+    # error/static/no-reaction pixel verdict.
+    #   - judge unavailable        -> verdict unchanged (pixel-diff stands).
+    #   - judge ok:false           -> verdict becomes "effect-wrong" (the wrong
+    #                                 thing renders even if pixels moved), but
+    #                                 only when the pixel verdict was "pass"
+    #                                 (an existing error/static/no-reaction is a
+    #                                 stronger signal and is kept).
+    #   - judge ok:true            -> CONFIRMS; verdict unchanged (still pass).
+    #   - judge inconclusive       -> verdict unchanged.
+    if args.judge:
+        judge = run_judge(report, out_dir, args)
+        report["judge"] = judge
+        if judge.get("available"):
+            if judge.get("ok") is False and verdict == "pass":
+                verdict = "effect-wrong"
+                reasons.append(
+                    "frame-judge: expected effect NOT achieved (%s)"
+                    % (judge.get("reasoning") or "no reasoning given"))
+            elif judge.get("ok") is True:
+                reasons.append("frame-judge confirmed the expected effect")
+            elif judge.get("ok") is None:
+                reasons.append("frame-judge inconclusive: %s"
+                               % (judge.get("message") or "no parseable verdict"))
+        else:
+            reasons.append("frame-judge unavailable: %s"
+                           % (judge.get("message") or "unknown reason"))
+        log(judge.get("message") or "frame-judge completed")
+
     report["verdict"] = verdict
     report["reasons"] = reasons
 
@@ -504,6 +892,8 @@ def run(args: argparse.Namespace) -> int:
         return 0
     if verdict == "error":
         return 2
+    if verdict == "effect-wrong":
+        return 4  # pixels moved but the wrong thing renders (frame-judge)
     return 1  # static or no-reaction
 
 
@@ -533,6 +923,30 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Settle delay after load before t=0 (default 300).")
     p.add_argument("--no-interact", action="store_true",
                    help="Skip the interaction battery (idle timeline only).")
+    p.add_argument("--judge", default=None, metavar="EXPECTED",
+                   help="Optional LLM frame-judge. Pass a plain-English "
+                        "description of the intended effect; the harness "
+                        "montages a labeled frame strip and asks a vision LLM "
+                        "whether the captured behaviour matches. Fail-soft: if "
+                        "no LLM is reachable, judge.available=false and the "
+                        "pixel-diff verdict is unchanged.")
+    p.add_argument("--judge-daemon", default=None, metavar="BASE_URL",
+                   help="Base URL of an ALREADY-RUNNING Woven daemon (e.g. "
+                        "http://localhost:5747) to route the judge through its "
+                        "/__llm_run describe endpoint. Requires --judge-project. "
+                        "This tool never starts the daemon.")
+    p.add_argument("--judge-project", default=None, metavar="PROJECT",
+                   help="Project id stamped onto the daemon /__llm_run call "
+                        "(required by --judge-daemon).")
+    p.add_argument("--judge-provider", default="anthropic",
+                   choices=["anthropic", "openai"],
+                   help="Provider for the daemon /__llm_run describe call "
+                        "(default anthropic). Ignored by the direct-API "
+                        "fallback, which is always Anthropic.")
+    p.add_argument("--judge-model", default=None, metavar="MODEL",
+                   help="Vision model id (default %s for the direct API; the "
+                        "daemon picks its own default if omitted)."
+                        % JUDGE_DEFAULT_MODEL)
     return p
 
 

@@ -30,6 +30,7 @@ import socketserver
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -1851,6 +1852,16 @@ def _qs_prototype(qs_or_body, default="main"):
     if v is None or v == "":
         return default
     return v
+
+
+class _QAResolveError(Exception):
+    """Raised by the visual-QA resolver when a node/project/workflow cannot
+    be resolved. Carries an HTTP code + JSON payload for _reply()."""
+
+    def __init__(self, code, payload):
+        super().__init__(str(payload))
+        self.code = code
+        self.payload = payload
 
 
 def resolve_project_root(qs_or_body=None, *, require_explicit=True):
@@ -7285,6 +7296,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._capabilities()
         if url_path == "/__logic_guide":
             return self._logic_guide()
+        # Visual-QA endpoints. Let an agent verify a node's interactive piece
+        # by node-id (no hand-pasted URL): resolve the bakedPath to the same
+        # runtime URL an iframe loads, then run editor/tools/qa/visual_qa.py.
+        if url_path == "/__qa/resolve":
+            return self._qa_resolve(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__qa/run":
+            return self._qa_run(urllib.parse.parse_qs(parsed.query))
         # Live Session - host-side presence (the host's own editor sees guest
         # cursors). SSE stream + the injected cursor script.
         if url_path == "/__live_events":
@@ -13534,6 +13552,169 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         with contextlib.suppress(Exception):
             self.wfile.write(data)
+
+    # ── Visual QA (host side) - see editor/tools/qa/visual_qa.py ───────────
+    # Resolve a node's bakedPath to the SAME runtime URL the editor iframe
+    # loads it from, so an agent can verify the interactive piece by node-id
+    # rather than a hand-pasted URL. The bake itself happens client-side in
+    # the editor (it stamps node.bakedPath = "source/<branch>/<file>"); this
+    # endpoint just maps that relative path to an absolute daemon URL.
+    #
+    # URL derivation traced against app.js + translate_path():
+    #   • app.js bakedAssetSrc() loads a baked node via apiUrl("/" + bakedPath)
+    #     => "/" + "source/<branch>/<file>" + "?project=<id>".
+    #   • translate_path() routes "/source/**" (with ?project=) to
+    #     "<project_root>/source/**" (the per-project sources tier).
+    # So the served URL is http://127.0.0.1:<PORT>/<bakedPath>?project=<id>.
+    # We use 127.0.0.1:PORT (not the Host header) because the QA subprocess
+    # runs locally on this daemon - a tunnel host would be unreachable from it.
+    # This mirrors the existing absolute-URL minting at lines ~2357/2379/4000.
+    def _qa_resolve_url(self, qs):
+        """Shared resolver for /__qa/resolve + /__qa/run.
+
+        Returns a dict: { node, kind, bakedPath, url, baked, message }.
+        On hard errors (unknown project / node / missing workflow.json) it
+        raises _QAResolveError(code, payload) so the caller can _reply().
+        """
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            raise _QAResolveError(400, {"error": str(e)})
+        node_id = (_qs_get(qs, "node") or "").strip()
+        if not node_id:
+            raise _QAResolveError(400, {"error": "missing ?node=<nodeId>"})
+        project_id = (_qs_get(qs, "project") or "").strip()
+        wf_path = os.path.join(project_root, "workflow", "workflow.json")
+        if not os.path.isfile(wf_path):
+            raise _QAResolveError(404, {"error": "workflow.json not found", "path": wf_path})
+        try:
+            with open(wf_path, "r", encoding="utf-8") as f:
+                wf = json.load(f)
+        except Exception as e:
+            raise _QAResolveError(500, {"error": "workflow.json unreadable: " + str(e)})
+        node = next((n for n in (wf.get("nodes") or [])
+                     if isinstance(n, dict) and n.get("id") == node_id), None)
+        if not node:
+            raise _QAResolveError(404, {"error": "node not found: " + repr(node_id)})
+        kind = node.get("kind")
+        baked_path = (node.get("bakedPath") or "").strip()
+        if not baked_path:
+            return {
+                "node":      node_id,
+                "kind":      kind,
+                "bakedPath": None,
+                "url":       None,
+                "baked":     False,
+                "message":   ("node has no bakedPath - bake it first in the "
+                              "editor (the bake runs client-side and stamps "
+                              "node.bakedPath)"),
+            }
+        rel = baked_path.lstrip("/")
+        url = "http://127.0.0.1:" + str(PORT) + "/" + urllib.parse.quote(rel)
+        if project_id:
+            url += "?project=" + urllib.parse.quote(project_id)
+        return {
+            "node":      node_id,
+            "kind":      kind,
+            "bakedPath": baked_path,
+            "url":       url,
+            "baked":     True,
+            "message":   "resolved",
+        }
+
+    # GET /__qa/resolve?project=<id>&node=<nodeId>
+    def _qa_resolve(self, qs):
+        try:
+            info = self._qa_resolve_url(qs)
+        except _QAResolveError as e:
+            return self._reply(e.code, e.payload)
+        return self._reply(200, info)
+
+    # GET /__qa/run?project=<id>&node=<nodeId>[&judge=<text>][&nointeract=1]
+    def _qa_run(self, qs):
+        try:
+            info = self._qa_resolve_url(qs)
+        except _QAResolveError as e:
+            return self._reply(e.code, e.payload)
+        if not info.get("baked"):
+            # Not a server error - the node simply has not been baked yet.
+            return self._reply(200, {
+                "verdict":   "unbaked",
+                "message":   info.get("message"),
+                "node":      info.get("node"),
+                "kind":      info.get("kind"),
+                "bakedPath": None,
+                "url":       None,
+            })
+        url = info["url"]
+        qa_tool = os.path.join(INSTALL_ROOT, "editor", "tools", "qa", "visual_qa.py")
+        if not os.path.isfile(qa_tool):
+            return self._reply(200, {
+                "verdict": "error",
+                "message": "visual_qa.py not found at " + qa_tool,
+                "node":    info.get("node"),
+                "url":     url,
+            })
+        judge = (_qs_get(qs, "judge") or "").strip()
+        nointeract = (_qs_get(qs, "nointeract") or "").strip()
+        out_dir = tempfile.mkdtemp(prefix="woven-qa-")
+        # Run on the same interpreter that runs the daemon (system python).
+        cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir]
+        if judge:
+            cmd += ["--judge", judge]
+        if nointeract and nointeract not in ("0", "false", "no"):
+            cmd += ["--no-interact"]
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            return self._reply(200, {
+                "verdict": "error",
+                "message": "visual_qa.py timed out after 120s",
+                "node":    info.get("node"),
+                "url":     url,
+                "outDir":  out_dir,
+            })
+        except Exception as e:
+            return self._reply(200, {
+                "verdict": "error",
+                "message": "failed to launch visual_qa.py: " + str(e),
+                "node":    info.get("node"),
+                "url":     url,
+            })
+        # Prefer the JSON the tool prints to stdout; fall back to report.json.
+        report = None
+        if proc.stdout:
+            try:
+                report = json.loads(proc.stdout)
+            except Exception:
+                report = None
+        if report is None:
+            report_path = os.path.join(out_dir, "report.json")
+            if os.path.isfile(report_path):
+                try:
+                    with open(report_path, "r", encoding="utf-8") as f:
+                        report = json.load(f)
+                except Exception:
+                    report = None
+        if not isinstance(report, dict):
+            return self._reply(200, {
+                "verdict":  "error",
+                "message":  "visual_qa.py produced no parseable report",
+                "exitCode": proc.returncode,
+                "stderr":   (proc.stderr or "")[-2000:],
+                "node":     info.get("node"),
+                "url":      url,
+                "outDir":   out_dir,
+            })
+        # Surface the verdict + provenance alongside the tool's own report.
+        report.setdefault("node", info.get("node"))
+        report.setdefault("kind", info.get("kind"))
+        report.setdefault("url", url)
+        report["exitCode"] = proc.returncode
+        report["outDir"] = out_dir
+        return self._reply(200, report)
 
     # ── Git / GitHub backbone (host side) - see editor/git_ops.py ──────────
     # GET /__git/status?project=<id>
