@@ -305,7 +305,18 @@ function frame(){
 var syncTimer=0;
 function scheduleSync(){ clearTimeout(syncTimer); syncTimer=setTimeout(syncUnits, 200); }
 function onResize(){ syncUnits(); scheduleCap(); }
-function onScroll(){ /* sticky hosts hold their rect; renderUnit reads rc + uScroll each frame */ }
+function onScroll(e){
+  /* PAGE scroll is handled by the shader's uScroll pan (renderUnit reads the host
+     rect + window.scrollY each frame). But an INNER scroll container (e.g. the
+     mobile .phone__screen) moves content the window-scroll pan can't see —
+     window.scrollY stays 0 — so the captured texture freezes and the glass keeps
+     refracting stale content behind the bars (the "blob"). Inner scroll events do
+     NOT bubble, so this listener runs in the CAPTURE phase to catch them; on settle
+     we re-rasterise, and since html2canvas captures the container at its CURRENT
+     scroll position the glass then refracts the live content. */
+  var t = e && e.target;
+  if(t && t.nodeType===1 && t!==document.documentElement && t!==document.body){ scheduleCap(); }
+}
 function onMove(e){ mouse=[e.clientX*DPR, e.clientY*DPR]; }
 
 function mount(){
@@ -315,7 +326,7 @@ function mount(){
   document.documentElement.classList.add("glass-gl");
   window.addEventListener("resize",onResize,{passive:true});
   window.addEventListener("pointermove",onMove,{passive:true});
-  window.addEventListener("scroll",onScroll,{passive:true});
+  window.addEventListener("scroll",onScroll,{passive:true,capture:true});
   /* observe ONLY to discover new/removed chrome (debounced syncUnits). We do NOT
      re-capture on mutation — html2canvas adds + removes its own clone nodes while
      capturing, which would re-trigger capture forever and hang the page. */
@@ -330,7 +341,7 @@ function teardown(){
   if(raf){ cancelAnimationFrame(raf); raf=0; }
   if(capTimer){ clearTimeout(capTimer); capTimer=0; }
   if(mo){ try{mo.disconnect();}catch(e){} mo=null; }
-  window.removeEventListener("resize",onResize); window.removeEventListener("pointermove",onMove); window.removeEventListener("scroll",onScroll);
+  window.removeEventListener("resize",onResize); window.removeEventListener("pointermove",onMove); window.removeEventListener("scroll",onScroll,true);
   for(var i=units.length-1;i>=0;i--){ destroyUnit(units[i]); } units=[]; byEl=new WeakMap(); pageCap=null;
   document.documentElement.classList.remove("glass-gl");
 }
