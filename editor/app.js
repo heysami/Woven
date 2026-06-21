@@ -38862,8 +38862,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // first click outside an editor never draws or marquees).
               if (editingWbIdRef.current
                   && !e.target.closest('[data-wb-id="' + editingWbIdRef.current + '"]')) {
-                const id = commitWbEditingNowRef.current && commitWbEditingNowRef.current();
-                if (id) setSelectedWbIds(new Set([id]));
+                const committedId = commitWbEditingNowRef.current && commitWbEditingNowRef.current();
+                // Sticky stays armed for "make many". A placed sticky enters
+                // edit mode, so the next placement click would otherwise be
+                // eaten just to commit that open editor - forcing a second
+                // click to actually drop the next note. When the sticky tool
+                // is armed, commit the open editor AND place the next note on
+                // this same click instead of swallowing it.
+                if (wbToolRef.current === "sticky") {
+                  wbPointerDownRef.current && wbPointerDownRef.current(e);
+                  return;
+                }
+                if (committedId) setSelectedWbIds(new Set([committedId]));
                 e.preventDefault();
                 return;
               }
@@ -66044,6 +66054,18 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
     const lx1 = item.x1 - bb.x + WB_SVG_PAD, ly1 = item.y1 - bb.y + WB_SVG_PAD;
     const lx2 = item.x2 - bb.x + WB_SVG_PAD, ly2 = item.y2 - bb.y + WB_SVG_PAD;
     const sw = item.size || 3;
+    // Trim the shaft back to each arrowhead's base. Drawing the full line to
+    // the tip made the round line-cap poke past the apex (a blob on the point)
+    // and the thin shaft flare into the wider triangle base (a notched join).
+    // headL matches wbArrowHeadD's L; clamp each trim to half the line length
+    // so a very short arrow can't invert the shaft.
+    const ang = Math.atan2(ly2 - ly1, lx2 - lx1);
+    const headL = Math.max(8, sw * 4);
+    const len = Math.hypot(lx2 - lx1, ly2 - ly1) || 1;
+    const trimEnd = (item.arrowEnd !== false) ? Math.min(headL, len * 0.5) : 0;
+    const trimStart = (item.arrowStart) ? Math.min(headL, len * 0.5) : 0;
+    const sx1 = lx1 + Math.cos(ang) * trimStart, sy1 = ly1 + Math.sin(ang) * trimStart;
+    const sx2 = lx2 - Math.cos(ang) * trimEnd, sy2 = ly2 - Math.sin(ang) * trimEnd;
     return html`
       <svg className="workflow-wb-item workflow-wb-arrow" data-wb-id=${item.id} data-selected=${sel}
         style=${{
@@ -66051,7 +66073,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           width: (bb.w + WB_SVG_PAD * 2) + "px", height: (bb.h + WB_SVG_PAD * 2) + "px",
           zIndex: z, overflow: "visible",
         }}>
-        <path d=${`M ${lx1} ${ly1} L ${lx2} ${ly2}`} stroke=${c} strokeWidth=${sw}
+        <path d=${`M ${sx1} ${sy1} L ${sx2} ${sy2}`} stroke=${c} strokeWidth=${sw}
               fill="none" strokeLinecap="round"
               strokeDasharray=${item.dash ? `${sw * 2.4} ${sw * 2.4}` : "none"}/>
         ${item.arrowEnd !== false && html`<path d=${wbArrowHeadD(lx2, ly2, lx1, ly1, sw)} fill=${c}/>`}
