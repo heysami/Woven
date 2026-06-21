@@ -7,11 +7,12 @@
    surfaces are light with a hairline border. Elevation is replaced by
    hairline borders and near-flat shadows. Modest radii, generous whitespace.
 
-   COLOUR FOLLOWS THE SELECTED SCHEME. This file NEVER re-defines the
-   --primary-/--secondary-/--tertiary- ramps the customizer writes; instead it
-   DERIVES the single accent's roles from the live --primary-* ramp (exactly
-   like pastel + glassmorphism). Pick a blue scheme → restrained blue accent;
-   pick a green scheme → restrained green accent; etc.
+   COLOUR FOLLOWS THE SELECTED SCHEME. This file keeps the --primary-* ramp the
+   customizer writes and DERIVES the single accent's roles from it (exactly like
+   pastel + glassmorphism). Pick a blue scheme → restrained blue accent; pick a
+   green scheme → restrained green accent; etc. The secondary + tertiary ramps
+   are collapsed onto the neutral greys so ONLY the primary accent shows - even
+   in raw decorative SVGs that reference the ramp tokens directly.
 
    DARK MODE is handled by a parallel block scoped to
    :root.ds-scheme-dark[data-theme="minimal"] (the class the editor toggles for
@@ -53,6 +54,21 @@
   --on-primary:#FFFFFF; --on-secondary:#1F2023; --on-tertiary:#1F2023;
   --secondary-surface:#ECECEE; --tertiary-surface:#F4F4F5;
   --chip-primary-fg:var(--primary-700); --chip-secondary-fg:#5C5F66; --chip-tertiary-fg:#5C5F66;
+
+  /* ---- secondary + tertiary RAMPS collapse to the neutral greys ----
+     Decorative SVGs / illustrations reference the raw secondary + tertiary
+     ramp tokens directly (e.g. chart bars, avatars, accent shapes). Remap every
+     step to the neutral ramp so Minimal genuinely shows ONE accent (primary) and
+     no stray red/green/etc. anywhere. (var() re-resolves, so this also follows
+     the dark neutral ramp in dark mode.) */
+  --secondary-50:var(--neutral-50);   --secondary-100:var(--neutral-100); --secondary-200:var(--neutral-200);
+  --secondary-300:var(--neutral-300); --secondary-400:var(--neutral-400); --secondary-500:var(--neutral-500);
+  --secondary-600:var(--neutral-600); --secondary-700:var(--neutral-700); --secondary-800:var(--neutral-800);
+  --secondary-900:var(--neutral-900); --secondary-950:var(--neutral-950);
+  --tertiary-50:var(--neutral-50);    --tertiary-100:var(--neutral-100);  --tertiary-200:var(--neutral-200);
+  --tertiary-300:var(--neutral-300);  --tertiary-400:var(--neutral-400);  --tertiary-500:var(--neutral-500);
+  --tertiary-600:var(--neutral-600);  --tertiary-700:var(--neutral-700);  --tertiary-800:var(--neutral-800);
+  --tertiary-900:var(--neutral-900);  --tertiary-950:var(--neutral-950);
 
   /* ---- gradient off: flat primary at both anchors ---- */
   --primary-grad-from:var(--primary-500); --primary-grad-to:var(--primary-500);

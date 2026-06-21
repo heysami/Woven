@@ -17554,7 +17554,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         </div>
         ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
         <footer className="dscz-foot">
-          <div className="dscz-foot-step">Step ${czStep} of 3 · ${["Style", "Tuning", "Build settings"][czStep - 1]}</div>
           <div className="dscz-foot-nav">
             ${czStep > 1
               ? html`<button type="button" className="newproj-cancel" onClick=${() => setCzStep(czStep - 1)} disabled=${busy}>← Back</button>`
@@ -17567,6 +17566,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                   ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
                 </button>`}
           </div>
+          <div className="dscz-foot-step">Step ${czStep} of 3 · ${["Style", "Tuning", "Build settings"][czStep - 1]}</div>
         </footer>
       </div>
     </div>
