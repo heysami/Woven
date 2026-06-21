@@ -2024,12 +2024,10 @@ function applyImports(urls) {
 }
 
 // The friendly starter scene - also the never-blank fallback. Reused by the
-// standalone boot and the embedded handshake so the editor is never empty.
-function seedDemo() {
-  addShape('torusknot'); selection[0].position.set(-1.7, 0.5, 0); selection[0].material.color.set('#ff5d6c');
-  addShape('sphere'); selection[0].position.set(1.6, 0.5, 0); selection[0].material.color.set('#6c7bff');
-  select([]);
-}
+// Default demo objects removed by request - the editor starts EMPTY (standalone
+// boot + embedded handshake both call this; it is now a deliberate no-op so a
+// fresh node has no annoying torusknot/sphere to delete).
+function seedDemo() {}
 
 // ── Node bridge (EMBEDDED): the host node owns scene + imports; this iframe is
 // a driven VIEW. Emit edits up (debounced diff); apply init / imports / set-scene

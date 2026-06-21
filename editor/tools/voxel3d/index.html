@@ -948,16 +948,10 @@ function rebuildAll() {
   renderPalette(); syncSlotInspector(); remesh();
 }
 
-// A tiny demo: a small checker pad + a couple of stacked voxels.
-function seedDemo() {
-  const c = Math.floor(G / 2);
-  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
-    const idx = ((x + z) & 1) ? 1 : 0;
-    setVoxel(c + x, 0, c + z, idx);
-  }
-  setVoxel(c, 1, c, 2); setVoxel(c, 2, c, 2); setVoxel(c, 3, c, 3);
-  setVoxel(c + 2, 1, c, 3); setVoxel(c - 2, 1, c, 2);
-}
+// Default demo voxels removed by request - the editor starts EMPTY. Every boot /
+// fallback / standalone path calls this; it is now a deliberate no-op so a fresh
+// node has no checker pad to clear.
+function seedDemo() {}
 
 // ── WIRED EFFECTS (screen post-process) ──────────────────────────────────────
 // The host forwards a shader-lab `effects` chain on voxel:init / voxel:content.

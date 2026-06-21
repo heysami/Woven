@@ -846,19 +846,7 @@ function allRuntimeLayers(){
 
 function defaultState(){
   return {v:1,canvasW:1280,canvasH:720,background:'#000000',inputs:{camera:false,mic:false},wiredMasks:{},
-    layers:[
-      { id:'L1', name:'Grid pulse', z:0, visible:true,
-        content:{kind:'shape', shape:'rect', color:'#6ee7ff', text:''},
-        positioning:{mode:'grid', cols:8, rows:5, placement:'fixed', gap:0.12, size:0.6},
-        trigger:{source:'position', axis:'x',
-          impacts:[{target:'L2', param:'effect.intensity', map:'linear', range:[0,1]}]},
-        effects:{stack:[{type:'directional-blur', params:{angle:0,length:0.04}, intensity:0.5}]} },
-      { id:'L2', name:'Reactive title', z:1, visible:true,
-        content:{kind:'text', text:'WOVEN', color:'#ffffff'},
-        positioning:{mode:'single', x:0.5, y:0.5, scale:1, rot:0},
-        trigger:{source:'mouse-click', impacts:[]},
-        effects:{stack:[{type:'chromatic-aberration', params:{}, intensity:0.3}]} },
-    ]};
+    layers:[]};
 }
 let STATE = defaultState();
 
@@ -953,14 +941,9 @@ function normalizeState(s){
   s.wiredMasks=(s.wiredMasks && typeof s.wiredMasks==='object') ? s.wiredMasks : {};
   s.layers=(s.layers||[]).map(fillLayer);
   // An empty doc normally falls back to the demo so a fresh node isn't blank -
-  // but NOT when wired layers supply the content (e.g. a packaged custom-app or
-  // any composition driven entirely by wired Layer nodes). Only show the demo
-  // when there's genuinely nothing to render. Tag the fallback as `_isDemo` so a
-  // LATER mm:content (which carries wired layers that resolved a render-tick
-  // after the first mm:init) can drop the demo - otherwise an init that landed
-  // before the wired specs were ready would pin the grid-pulse/WOVEN demo on
-  // top of the real wired composition forever.
-  if(!s.layers.length && !(WIRED.layers && WIRED.layers.length)){ s=defaultState(); s._isDemo=true; }
+  // Start EMPTY when there is nothing to render - no default demo layers. The
+  // user adds layers (or wires Layer nodes) themselves; an empty composition is
+  // the intended blank slate, not a bug to paper over with a grid-pulse demo.
   return s;
 }
 
