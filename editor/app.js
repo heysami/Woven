@@ -53753,12 +53753,26 @@ function workflowKindIo(kind) {
     // resolver ingests it as a LAYER (flavor "layer") - it then joins the
     // z-stack + effect pipeline like any wired layer (see _SHAPE_KIND_IO).
     if (kind === "shape") return _SHAPE_KIND_IO;
+    // `input-camera` / `input-video` are logic kinds (not in the backend KIND_IO
+    // registry). Synthesize an io whose `layer` port resolves as a LAYER so the
+    // composer ingests the live feed as renderable, effect-able content. Their
+    // detection/stream ports are unaffected (handled via the logic projection).
+    if (kind === "input-camera" || kind === "input-video") return _CAMERA_KIND_IO;
     return null;
   } catch (_e) { return null; }
 }
 // Client-side io contract for the `shape` render node (no backend KIND_IO).
 const _SHAPE_KIND_IO = {
   provides: [{ port: "out", label: "Layer", tags: ["layer"],
+    resolve: "typed", resolveArgs: { flavor: "layer" } }],
+  accepts: [],
+};
+// Client-side io contract for the camera/video Source nodes' `layer` port: the
+// live feed flows into a composer as a layer (content kind set in
+// _wiredLayerSpec). Only the `layer` port is a layer source; other ports stay
+// logic-only (resolved via _logicProjection, not as upstream inputs).
+const _CAMERA_KIND_IO = {
+  provides: [{ port: "layer", label: "Layer", tags: ["layer"],
     resolve: "typed", resolveArgs: { flavor: "layer" } }],
   accepts: [],
 };
@@ -59683,6 +59697,12 @@ function _wiredLayerSpec(i, allNodes, allEdges) {
     if (pts) out._points = pts;
     return out;
   }
+  // Camera / video Source nodes wired as a layer: tag the spec so the composer
+  // emits a `camera` / `videostream` content layer (the runtime draws the live
+  // feed and runs the per-layer effect stack on it). The node id flows through as
+  // i.layerId so the runtime can key the right <video> element.
+  if (i.kind === "input-camera") return { ...spec, _camera: true, _cameraKind: "camera" };
+  if (i.kind === "input-video")  return { ...spec, _camera: true, _cameraKind: "videostream" };
   return spec;
 }
 
@@ -60489,7 +60509,7 @@ const SPEC_NODE_DEFS = {
     source: (b, id) => `source/${b}/position-${id}.js`,
     fields: [
       { key: "mode", label: "Mode", type: "select", options: [
-        "single","grid","instances","physics","drawn","rope","camera-feed","grid-3d","scatter-3d","surface"] },
+        "single","grid","instances","physics","boids","drawn","rope","camera-feed","grid-3d","scatter-3d","surface"] },
       { key: "params", label: "Params", type: "object" },
     ],
   },
@@ -60511,6 +60531,7 @@ const SPEC_NODE_DEFS = {
       { key: "z", label: "Z", type: "number" },
       { key: "opacity", label: "Opacity", type: "range", min: 0, max: 1, step: 0.01 },
       { key: "blend", label: "Blend", type: "select", options: ["normal","multiply","screen","overlay"] },
+      { key: "feedback", label: "Feedback", type: "range", min: 0, max: 1, step: 0.01 },
       { key: "visible", label: "Visible", type: "checkbox" },
     ],
   },
@@ -60537,7 +60558,7 @@ function _specDefault(kind) {
   if (kind === "effect")   return { v: 1, type: "chromatic-aberration", intensity: 0.5, params: {} };
   if (kind === "position") return { v: 1, mode: "grid", params: { cols: 4, rows: 4, placement: "fixed" } };
   if (kind === "trigger")  return { v: 1, source: "hover", params: {}, impacts: [] };
-  if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true };
+  if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true, feedback: 0 };
   if (kind === "number-generator") return { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true };
   if (kind === "timeline") return { v: 1, kind: "timeline", duration: 4, loop: true };
   // Logic Graph (W1A): default spec is the §3 projection body - kind + params
@@ -60835,6 +60856,11 @@ const LOGIC_NODE_DEFS = {
     provides: {
       stream: { label: "stream", dtype: "string" },
       ready:  { label: "ready", dtype: "boolean" },
+      // A LAYER output: wiring `layer` into a composer `in` makes the live webcam
+      // feed a renderable layer (content.kind === "camera"), effect-able by the
+      // per-layer effect stack. Mirrors the shape node's `out` layer port. The
+      // detection ports above stay intact (camera-feed / vision-detect still work).
+      layer:  { label: "Layer", dtype: "layer", tags: ["layer"] },
     },
     accepts: {},
   },
@@ -60849,6 +60875,9 @@ const LOGIC_NODE_DEFS = {
       stream:  { label: "stream", dtype: "string" },
       t:       { label: "t", dtype: "number" },
       playing: { label: "playing", dtype: "boolean" },
+      // A LAYER output: wiring `layer` into a composer `in` renders the video
+      // element (the wired asset if a url is present, else the live <video>).
+      layer:   { label: "Layer", dtype: "layer", tags: ["layer"] },
     },
     accepts: {
       asset: { label: "Video asset", dtype: "string", tags: ["asset", "video"] },
@@ -61392,6 +61421,42 @@ export function buildSpec(values) {
 
   return body;
 }`),
+    _positionTemplate("boids", "Boids flock", "boids", {
+      count:      { type: "number", value: 60, min: 1, max: 600, step: 1 },
+      separation: { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
+      alignment:  { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
+      cohesion:   { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
+      perception: { type: "number", value: 0.12, min: 0.01, max: 0.6, step: 0.01 },
+      maxSpeed:   { type: "number", value: 0.35, min: 0.01, max: 2, step: 0.01 },
+      size:       { type: "number", value: 0.05, min: 0.005, max: 0.3, step: 0.005 }
+    }, ["count: values.count", "separation: values.separation", "alignment: values.alignment", "cohesion: values.cohesion", "perception: values.perception", "maxSpeed: values.maxSpeed", "size: values.size"], `export function steer(agent, neighbors, values) {
+  // Reynolds boids: separation + alignment + cohesion within the perception
+  // radius, clamped to maxSpeed. Positions/velocities are in normalized 0..1
+  // space; the composer runtime owns the per-frame integration.
+  let sx = 0, sy = 0, ax = 0, ay = 0, cx = 0, cy = 0, n = 0;
+  for (const o of neighbors) {
+    const dx = agent.x - o.x, dy = agent.y - o.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0 && d < values.perception) {
+      sx += dx / d; sy += dy / d;
+      ax += o.vx; ay += o.vy;
+      cx += o.x; cy += o.y;
+      n++;
+    }
+  }
+  let vx = agent.vx, vy = agent.vy;
+  if (n > 0) {
+    vx += sx * values.separation * 0.01;
+    vy += sy * values.separation * 0.01;
+    vx += (ax / n - agent.vx) * values.alignment * 0.05;
+    vy += (ay / n - agent.vy) * values.alignment * 0.05;
+    vx += (cx / n - agent.x) * values.cohesion * 0.02;
+    vy += (cy / n - agent.y) * values.cohesion * 0.02;
+  }
+  const sp = Math.hypot(vx, vy);
+  if (sp > values.maxSpeed) { vx = vx / sp * values.maxSpeed; vy = vy / sp * values.maxSpeed; }
+  return { vx: vx, vy: vy };
+}`),
     _positionTemplate("drawn", "Drawn path", "drawn", {
       paths: { type: "text", value: "0,0 120,40 240,0" },
       closed: { type: "boolean", value: false }
@@ -61546,6 +61611,7 @@ export function solveSegment(prev, next, values) {
         z: { type: "number", value: 0, step: 1 },
         opacity: { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
         blend: { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
+        feedback: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
         visible: { type: "boolean", value: true }
       }, `export function buildSpec(values) {
   return {
@@ -61554,6 +61620,7 @@ export function solveSegment(prev, next, values) {
     z: values.z,
     opacity: values.opacity,
     blend: values.blend,
+    feedback: values.feedback,
     visible: values.visible
   };
 }`)
@@ -62389,7 +62456,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     const params = (compiled.spec && compiled.spec.params) || {};
     let cols = 0, rows = 0, count = 0, oneD = false;
     if (ovMode === "grid" || ovMode === "grid-3d") { cols = Math.max(1, params.cols | 0); rows = Math.max(1, params.rows | 0); count = cols * rows; }
-    else if (ovMode === "instances" || ovMode === "scatter-3d") { count = Math.max(0, params.count | 0); oneD = true; }
+    else if (ovMode === "instances" || ovMode === "scatter-3d" || ovMode === "boids") { count = Math.max(0, params.count | 0); oneD = true; }
     else return null;
     if (count <= 0) return null;
     const overrides = node.overrides || {};

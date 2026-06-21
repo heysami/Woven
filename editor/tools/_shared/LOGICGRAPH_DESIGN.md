@@ -480,3 +480,72 @@ The shape becomes a wired LAYER (`buildWiredRuntimeLayers` emits a layer whose
   LOWER `z` with a glitch/crt/pixelate effect, and the shape at a HIGHER `z`
   (or vice-versa). The shape's own layer is also effect-capable through the same
   per-layer effect path - z-order + effects work because the shape IS a layer.
+
+## 11. Composer capability extensions (camera/video layers, boids, feedback)
+Three additive extensions to the mmcomposer runtime + the baked slimPlayer. All
+default to current behavior (no regression to layers / effects / triggers /
+positions / the number-timeline-logic binding pipeline).
+
+### 11.1 Live camera / video as a renderable, effect-able LAYER
+`input-camera` and `input-video` gained a `layer` output port (dtype `layer`,
+tags `["layer"]`) ALONGSIDE their existing detection / stream ports. Wiring
+`input-camera.layer` (or `input-video.layer`) into a composer `in` makes the live
+feed a renderable layer that runs the full per-layer effect stack (pixelate,
+ascii, edge-detect, crt, slice, dither, chromatic-aberration, ...).
+
+Client side (app.js), this mirrors the `shape` node exactly:
+- `workflowKindIo` special-cases `input-camera` / `input-video` to return
+  `_CAMERA_KIND_IO` (the `layer` port resolves `typed`, flavor `layer`) since
+  logic kinds are not in the backend KIND_IO registry.
+- `_wiredLayerSpec` tags the spec: `input-camera` -> `_camera:true,
+  _cameraKind:"camera"`; `input-video` -> `_camera:true,
+  _cameraKind:"videostream"`. The node id flows through as `i.layerId`.
+- The detection ports stay intact (camera-feed / vision-detect still work via the
+  logic projection; the `layer` port is the only one resolved as an upstream
+  input).
+
+Runtime side (mmcomposer/index.html), `buildWiredRuntimeLayers` has a `_camera`
+branch BEFORE the `_shape` branch:
+- `_cameraKind === "camera"` -> `content = { kind:"camera" }` and forces
+  `STATE.inputs.camera = true`. `Engine.ensureCameraContent()` (called each frame)
+  requests the webcam once via `enableCamera()` when a camera-content layer
+  exists (the permCam chip stays the manual fallback; getUserMedia may need a
+  gesture).
+- `_cameraKind === "videostream"` -> if a wired child carries a clip url, reuse
+  the existing video-asset path (push to CONTENT, `content.kind:"asset"`);
+  otherwise `content = { kind:"videostream", nodeId }`, keyed to a per-node
+  `<video>` (logicinputs stream capture may set its srcObject).
+
+`drawContent` (editor) + `drawC` (slimPlayer): `kind:"camera"` draws
+`Input.cam.video` cover-fit + horizontally mirrored (selfie-cam); `kind:
+"videostream"` draws the node's `<video>`. Both draw NOTHING until the element is
+ready (`readyState >= 2`, no throw). Effects apply on top via the existing stack,
+exactly like an `asset` video.
+
+User wiring: drop an `input-camera` (or `input-video`) Source node, wire its
+`Layer` output into the composer's `in` port. Add effect nodes / a layer effect
+stack as usual; they run on the live feed.
+
+### 11.2 Boids flocking position mode
+`boids` is a new position mode beside `physics` / `rope`. `Positioning.boids(L,p)`
+keeps per-layer agent state `{x,y,vx,vy}` on `L._boids` across frames (like rope's
+`s.pts`). Each frame it applies Reynolds separation + alignment + cohesion within
+the `perception` radius, clamps to `maxSpeed`, bounces at the 0..1 bounds, and
+returns instances with `rot` from heading. dt comes from `Input.clock` (the frame
+dt), normalized to a ~60fps cadence. Params: `count`, `separation`, `alignment`,
+`cohesion`, `perception`, `maxSpeed`, `size`. The position-node template
+`boids` ("Boids flock") exposes those numeric controls; the editor inspector adds
+the matching sliders; slimPlayer keeps parity (state on `SIM[L.id].a` flagged
+`boids:true`). `L._boids` is runtime-only and stripped at bake.
+
+### 11.3 Per-layer feedback / trail buffer
+Every layer gained a numeric `feedback` field (0..1, default 0), editable in the
+composer inspector (a new "Layer" accordion for inline layers; a read-only field
++ a Layer-node control + `_specDefault` default for wired layers). In PASS A,
+when `feedback > 0` the per-layer buffer is NOT cleared: instead a
+`destination-out` fade with alpha `(1 - feedback)` is drawn over the prior buffer
+so previous frames decay into a trail, then this frame's content is drawn on top.
+The buffer persists across frames because it lives in the existing per-layer
+buffer pool keyed by id (no reallocation when feedback > 0). `feedback === 0`
+keeps the full `clearRect` = current behavior. slimPlayer mirrors this on its
+persistent per-layer buffer.

@@ -480,6 +480,46 @@ function buildWiredRuntimeLayers(){
     // trigger children); its z / opacity / blend come from its own controls, and
     // its points are resolved per-frame in drawContent via LogicBridge.vec. It
     // joins the z-stack + effect pipeline exactly like every other wired layer.
+    // Camera / video Source node wired as a LAYER: the live feed becomes
+    // renderable, effect-able content. input-camera -> content.kind 'camera'
+    // (the live webcam, Input.cam.video) and we force STATE.inputs.camera so the
+    // camera permission/enable path runs. input-video -> reuse the video-asset
+    // path when the node has a wired url (a clip), else content.kind
+    // 'videostream' keyed by the node id. Joins the z-stack + effect pipeline
+    // exactly like every other wired layer.
+    if(spec._camera){
+      const sp = spec.params || {};
+      const kids = Array.isArray(wl.children)?wl.children:[];
+      const assetK = kids.find(k=>k&&k.url);
+      let content;
+      if(spec._cameraKind==='camera'){
+        content = { kind:'camera' };
+        STATE.inputs.camera = true;   // ask the runtime to enable the webcam
+      } else if(assetK && assetK.url){
+        // input-video with a wired clip url: reuse the existing video-asset path.
+        const aid = assetK.fromId||assetK.id||assetK.assetId||('wv'+wi);
+        if(!CONTENT.find(c=>c.id===aid))
+          CONTENT.push({id:aid,url:assetK.url,kind:'video',label:assetK.label||aid});
+        content = { kind:'asset', assetId:aid };
+      } else {
+        content = { kind:'videostream', nodeId: wl.id };
+      }
+      const Lc = fillLayer({
+        id: wl.id || ('W'+wi),
+        name: spec.name || (spec._cameraKind==='camera'?'Camera':'Video'),
+        z: finiteNumber(spec.z,0),
+        visible: spec.visible!==false,
+        content,
+        positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
+        trigger:{source:'none',impacts:[]},
+        effects:{stack:[]},
+      });
+      Lc._wired=true;
+      Lc._opacity = finiteNumber(spec.opacity,1);
+      Lc._blend = blendModeOf(spec.blend);
+      Lc.feedback = Math.max(0,Math.min(1,finiteNumber(spec.feedback,0)));
+      return Lc;
+    }
     if(spec._shape){
       const sp = spec.params || {};
       const content = { kind:'polyshape',
@@ -495,6 +535,7 @@ function buildWiredRuntimeLayers(){
         name: spec.name || ('Shape '+(wi+1)),
         z: finiteNumber(sp.z,0),
         visible: spec.visible!==false,
+        feedback: finiteNumber(sp.feedback, spec.feedback),
         content,
         positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
         trigger:{source:'none',impacts:[]},
@@ -562,6 +603,7 @@ function buildWiredRuntimeLayers(){
       name: spec.name || ('Wired '+(wi+1)),
       z: spec.z ?? (100+wi),
       visible: spec.visible!==false,
+      feedback: spec.feedback,
       content, positioning, trigger,
       effects:{stack},
     });
@@ -608,6 +650,9 @@ function fillLayer(L){
   L.id = L.id||uid();
   L.name = L.name||'Layer';
   L.z = L.z??0; L.visible = L.visible!==false;
+  // feedback (0..1): 0 = clear the layer buffer each frame (default, no change);
+  // >0 = fade the prior buffer so previous frames decay into a trail.
+  L.feedback = Math.max(0,Math.min(1,finiteNumber(L.feedback,0)));
   L.content = Object.assign({kind:'shape',shape:'rect',color:'#6ee7ff',text:'',assetId:''}, L.content||{});
   L.positioning = Object.assign({mode:'single',x:0.5,y:0.5,scale:1,rot:0}, L.positioning||{});
   fillPositioning(L.positioning);
@@ -630,6 +675,7 @@ function fillPositioning(p){
     'scatter-3d':{count:80,bounds:[6,6,6],size:0.05},
     instances:{source:'mouse',count:40,physics:false,size:0.05,spread:0.4},
     physics:{engine:'matter',gravity:[0,1],count:30,size:0.05,bounce:0.4},
+    boids:{count:60,separation:1,alignment:1,cohesion:1,perception:0.12,maxSpeed:0.35,size:0.05},
     drawn:{paths:[],count:30,size:0.04},
     rope:{anchors:[[0.2,0.2],[0.8,0.2]],segments:14,stiffness:0.8,size:0.03},
     'camera-feed':{detector:'hand',source:'camera',size:0.05},
@@ -923,6 +969,7 @@ const Positioning = {
       case 'scatter-3d':  out=this.scatter3d(L,p); break;
       case 'instances':   out=this.instances(L,p,dt); break;
       case 'physics':     out=this.physics(L,p,W,H,dt); break;
+      case 'boids':       out=this.boids(L,p,dt); break;
       case 'drawn':       out=this.drawn(L,p); break;
       case 'rope':        out=this.rope(L,p,dt); break;
       case 'camera-feed': out=this.cameraFeed(L,p); break;
@@ -1056,6 +1103,53 @@ const Positioning = {
     ];
     Matter.Composite.add(eng.world,[...bodies,...walls]);
     this.sim[L.id]={Matter,engine:eng,bodies, _building:false, _W:W,_H:H};
+  },
+  // Boids flocking: per-layer agent state {pos,vel} kept on L._boids across
+  // frames (like rope's s.pts). Each frame applies separation + alignment +
+  // cohesion within the perception radius, clamps to maxSpeed, bounces at the
+  // 0..1 bounds, and returns instances with rot from heading. dt from Input.clock.
+  boids(L,p,dt){
+    const count=Math.max(1,Math.min(2000,finiteNumber(p.count,60)|0));
+    const perc=Math.max(0.001,finiteNumber(p.perception,0.12));
+    const sepW=finiteNumber(p.separation,1);
+    const aliW=finiteNumber(p.alignment,1);
+    const cohW=finiteNumber(p.cohesion,1);
+    const maxSpd=Math.max(0.001,finiteNumber(p.maxSpeed,0.35));
+    const size=finiteNumber(p.size,0.05);
+    let s=L._boids;
+    if(!s){ s={a:[]}; L._boids=s; }
+    const rng=mulberry(hash(L.id+':boids'));
+    // grow / shrink the agent pool to match count
+    while(s.a.length<count){ const ang=rng()*Math.PI*2;
+      s.a.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5}); }
+    if(s.a.length>count) s.a.length=count;
+    const A=s.a, perc2=perc*perc;
+    // accumulate steering against the PREVIOUS positions (snapshot via reading A)
+    for(const ag of A){
+      let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,n=0;
+      for(const o of A){ if(o===ag) continue;
+        const dx=ag.x-o.x, dy=ag.y-o.y, d2=dx*dx+dy*dy;
+        if(d2>0 && d2<perc2){ const d=Math.sqrt(d2);
+          sx+=dx/d; sy+=dy/d; ax+=o.vx; ay+=o.vy; cx+=o.x; cy+=o.y; n++; }
+      }
+      let vx=ag.vx, vy=ag.vy;
+      if(n>0){
+        vx+=sx*sepW*0.01; vy+=sy*sepW*0.01;
+        vx+=(ax/n-ag.vx)*aliW*0.05; vy+=(ay/n-ag.vy)*aliW*0.05;
+        vx+=(cx/n-ag.x)*cohW*0.02; vy+=(cy/n-ag.y)*cohW*0.02;
+      }
+      const sp=Math.hypot(vx,vy)||1e-6;
+      if(sp>maxSpd){ vx=vx/sp*maxSpd; vy=vy/sp*maxSpd; }
+      ag.vx=vx; ag.vy=vy;
+    }
+    // integrate + bounce at bounds (dt-scaled, normalized to ~60fps cadence)
+    const step=Math.min(dt,0.05)*60;
+    for(const ag of A){
+      ag.x+=ag.vx*step*0.016; ag.y+=ag.vy*step*0.016;
+      if(ag.x<0){ ag.x=0; ag.vx=Math.abs(ag.vx); } else if(ag.x>1){ ag.x=1; ag.vx=-Math.abs(ag.vx); }
+      if(ag.y<0){ ag.y=0; ag.vy=Math.abs(ag.vy); } else if(ag.y>1){ ag.y=1; ag.vy=-Math.abs(ag.vy); }
+    }
+    return A.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)}));
   },
   drawn(L,p){
     const paths=p.paths||[];
@@ -1403,6 +1497,17 @@ function drawContent(ctx, L, inst, W, H, baseScale){
       else { ctx.fillStyle='#333'; ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH); ctx.fillStyle='#888';
         ctx.font=`${Math.max(8,sz*0.12)}px ${getMono()}`; ctx.textAlign='center';
         ctx.fillText(m?m.label||'asset':'no asset',0,0); } }
+  } else if(c.kind==='camera'){
+    // Live webcam feed as layer content: cover-fit the whole layer box, mirrored
+    // horizontally (selfie-cam). Draws nothing until the stream is ready (no throw).
+    const v=Input.cam.on?Input.cam.video:null;
+    if(v && v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1;
+      ctx.save(); ctx.scale(-1,1); drawMediaInBox(ctx,v,ar,boxW,boxH,'cover','center','center',false); ctx.restore(); }
+  } else if(c.kind==='videostream'){
+    // input-video without a wired clip url: draw the node's <video> element.
+    const v=videoStreamEl(c.nodeId);
+    if(v && v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1;
+      drawMediaInBox(ctx,v,ar,boxW,boxH,'cover','center','center',false); }
   } else if(c.kind==='text'){
     ctx.fillStyle=c.color||'#fff';
     ctx.font=`700 ${sz*0.4}px ${getSans()}`; ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -1461,6 +1566,17 @@ function drawPolyShape(ctx, c, W, H){
 }
 function getSans(){ return getComputedStyle(document.body).fontFamily; }
 function getMono(){ return 'ui-monospace,Menlo,monospace'; }
+// Per-node <video> elements for input-video layers wired WITHOUT a clip url. The
+// logic-graph stream capture (logicinputs.attach) may set the element's srcObject;
+// until then readyState<2 and the layer draws nothing.
+const _vidStreams={};
+function videoStreamEl(nodeId){
+  if(!nodeId) return null;
+  let v=_vidStreams[nodeId];
+  if(!v){ v=document.createElement('video'); v.muted=true; v.playsInline=true; v.loop=true;
+    v.autoplay=true; _vidStreams[nodeId]=v; }
+  return v;
+}
 
 // Multiply a channel of `dctx` (w×h) by a channel read from `maskCv`.
 //   src - channel READ off the mask: lum (default, luminance × own alpha)|alpha|r|g|b
@@ -1558,6 +1674,8 @@ const Engine = {
   },
   render(dt){
     const W=this.W,H=this.H, ctx=this.ctx, time=Input.clock;
+    // a camera-content layer needs the live webcam; request it once.
+    this.ensureCameraContent();
     // run camera detectors if any layer needs them
     this.runDetectors();
     // inline + wired-spec layers form the full runtime set this frame
@@ -1622,7 +1740,23 @@ const Engine = {
       const scaleMul = ov.scale!=null?ov.scale:1;
       const posOff = ov.position; // [nx,ny] absolute reposition of whole layer
       const buf=getBuf(L.id);
-      buf.cx.clearRect(0,0,W,H); buf.cx.globalAlpha=1;
+      // feedback (trail): when >0, fade the PRIOR buffer instead of clearing it so
+      // previous frames decay into a trail. alpha = 1-feedback (feedback=0 -> full
+      // clear = current behavior; feedback=1 -> never fades). The buffer persists
+      // across frames because it lives in the this._bufs pool keyed by id.
+      const fb=Math.max(0,Math.min(1,L.feedback||0));
+      if(fb>0){
+        buf.cx.save();
+        buf.cx.globalAlpha=1;
+        buf.cx.globalCompositeOperation='destination-out';
+        buf.cx.fillStyle='#000';
+        buf.cx.globalAlpha=1-fb;
+        buf.cx.fillRect(0,0,W,H);
+        buf.cx.restore();
+      } else {
+        buf.cx.clearRect(0,0,W,H);
+      }
+      buf.cx.globalAlpha=1;
       for(const inst of insts){
         let it=inst;
         if(posOff){ it={...inst, x:posOff[0], y:posOff[1]}; }
@@ -1690,6 +1824,19 @@ const Engine = {
         this.ctx.restore();
       }
     }catch(e){ console.warn('wired fx apply failed',e); }
+  },
+  // If any renderable layer draws live camera content, make sure the webcam is
+  // enabled. enableCamera() is idempotent-ish (we guard on cam.on + a pending
+  // flag) so we attempt it at most once until it resolves. getUserMedia may need
+  // a user gesture; the permCam chip remains the manual fallback.
+  _camReq:false,
+  ensureCameraContent(){
+    if(Input.cam.on || this._camReq) return;
+    let need=false;
+    for(const L of allRuntimeLayers()){ if(L.content && L.content.kind==='camera'){ need=true; break; } }
+    if(!need) return;
+    this._camReq=true;
+    Promise.resolve(enableCamera()).catch(()=>{}).then(()=>{ this._camReq=false; });
   },
   _detNeed:null,
   runDetectors(){
@@ -1920,6 +2067,7 @@ function renderInspector(){
       <p class="hint" style="margin:0">Driven by a wired Layer node. Edit properties on the canvas node - except Mask, which is set here.</p>
       <div class="fld"><label>Opacity</label><input type="range" min="0" max="1" step="0.01" value="${spec.opacity??1}" disabled></div>
       <div class="fld"><label>Blend</label><select disabled><option>${spec.blend||'normal'}</option></select></div>
+      <div class="fld"><label>Feedback</label><input type="range" min="0" max="1" step="0.01" value="${spec.feedback??0}" disabled></div>
       <div class="fld"><label>Z</label><input type="number" value="${spec.z??0}" disabled style="width:60px"></div>
       <div class="fld"><label>Content</label><span class="tag">${L.content.kind}</span></div>
       <div class="fld"><label>Position</label><span class="tag">${L.positioning.mode}</span></div>
@@ -1929,6 +2077,12 @@ function renderInspector(){
     body.appendChild(maskAccordion(L));
     return;
   }
+
+  /* LAYER accordion - layer-level fields (feedback / trail) */
+  body.appendChild(accordion('Layer',(b)=>{
+    b.appendChild(fSlider('Feedback',L.feedback||0,0,1,0.01,v=>L.feedback=v));
+    b.appendChild(html('<p class="hint">0 = clear each frame. Higher = previous frames decay into a trail.</p>'));
+  },'layer'));
 
   /* CONTENT accordion */
   body.appendChild(accordion('Content',(b)=>{
@@ -1954,9 +2108,9 @@ function renderInspector(){
   body.appendChild(accordion('Positioning',(b)=>{
     const p=L.positioning;
     b.appendChild(fSelect('Mode',p.mode,
-      [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],
+      [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],['boids','Boids flock'],
        ['drawn','Drawn paths'],['rope','Rope'],['camera-feed','Camera feed'],['grid-3d','3D grid'],['scatter-3d','3D scatter'],['face-3d','Face 3D']],
-      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; renderInspector(); }));
+      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; L._boids=null; renderInspector(); }));
     if(p.mode==='single'){
       b.appendChild(fSlider('X',p.x,0,1,0.01,v=>p.x=v));
       b.appendChild(fSlider('Y',p.y,0,1,0.01,v=>p.y=v));
@@ -2006,6 +2160,15 @@ function renderInspector(){
       b.appendChild(fSlider('Size',p.size,0.01,0.2,0.005,v=>{p.size=v;Positioning.sim[L.id]=null;}));
       b.appendChild(fSlider('Bounce',p.bounce,0,1,0.05,v=>{p.bounce=v;Positioning.sim[L.id]=null;}));
       b.appendChild(html('<p class="hint">matter.js engine (loaded on demand from esm.sh).</p>'));
+    } else if(p.mode==='boids'){
+      b.appendChild(fSlider('Count',p.count,1,600,1,v=>{p.count=v;L._boids=null;}));
+      b.appendChild(fSlider('Separation',p.separation,0,4,0.05,v=>p.separation=v));
+      b.appendChild(fSlider('Alignment',p.alignment,0,4,0.05,v=>p.alignment=v));
+      b.appendChild(fSlider('Cohesion',p.cohesion,0,4,0.05,v=>p.cohesion=v));
+      b.appendChild(fSlider('Perception',p.perception,0.01,0.6,0.01,v=>p.perception=v));
+      b.appendChild(fSlider('Max speed',p.maxSpeed,0.01,2,0.01,v=>p.maxSpeed=v));
+      b.appendChild(fSlider('Size',p.size,0.005,0.3,0.005,v=>p.size=v));
+      b.appendChild(html('<p class="hint">Reynolds flocking: separation + alignment + cohesion within the perception radius.</p>'));
     } else if(p.mode==='drawn'){
       b.appendChild(fSlider('Instances/path',p.count,1,200,1,v=>p.count=v));
       b.appendChild(fSlider('Size',p.size,0.005,0.2,0.005,v=>p.size=v));
@@ -2279,10 +2442,13 @@ function bake(){
   // also pushes any wired asset urls into CONTENT, so assets[] below is complete.
   const wiredLayers=wiredRuntimeLayers().map(L=>{
     const o=deep(L);
-    // carry the wired spec opacity/blend the slim player understands
-    o._wired=true; o._opacity=L._opacity; o._blend=L._blend;
+    // carry the wired spec opacity/blend/feedback the slim player understands
+    o._wired=true; o._opacity=L._opacity; o._blend=L._blend; o.feedback=L.feedback||0;
+    delete o._boids;   // runtime boids agent state - never serialize
     return o;
   });
+  // strip runtime-only boids agent state off inline layers too
+  for(const L of cfg.layers){ if(L&&L._boids) delete L._boids; }
   cfg.layers = cfg.layers.concat(wiredLayers);
   // Pre-bake custom effect fragments so the standalone player needs no fx.js
   // import. Built-in effects are rendered from the embedded EFFECT_SPECS table.
@@ -2395,6 +2561,16 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>i._r=true; i.src=m.url; AC.img[id]=i; return i; }
   function video(id){ if(AC.vid[id])return AC.vid[id]; const m=AC.meta(id); if(!m)return null;
     const v=document.createElement('video'); v.crossOrigin='anonymous'; v.loop=true; v.muted=true; v.playsInline=true; v.src=m.url; v.play().catch(()=>{}); AC.vid[id]=v; return v; }
+  /* per-node <video> for input-video layers wired without a clip url (logic stream
+     capture may set srcObject; until then readyState<2 and nothing draws) */
+  const VSTREAMS={};
+  function vstream(nodeId){ if(!nodeId)return null; let v=VSTREAMS[nodeId]; if(!v){ v=document.createElement('video'); v.muted=true; v.playsInline=true; v.loop=true; v.autoplay=true; VSTREAMS[nodeId]=v; } return v; }
+  /* a camera-content layer needs the webcam; request it once (getUserMedia may
+     need a gesture, the camera button stays the manual fallback) */
+  let camReq=false;
+  function ensureCam(){ if(IN.cam.on||camReq)return; let need=false;
+    for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} } if(!need)return;
+    camReq=true; navigator.mediaDevices.getUserMedia({video:true}).then(st=>{ const v=document.createElement('video');v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; return v.play().then(()=>{ IN.cam={on:true,video:v}; }); }).catch(()=>{}).then(()=>{ camReq=false; }); }
   /* permissions */
   document.getElementById('pc').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({video:true});
     const v=document.createElement('video'); v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; await v.play();
@@ -2444,6 +2620,14 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       const rest=Math.hypot(an[1][0]-an[0][0],an[1][1]-an[0][1])/seg,k=clamp(p.stiffness||0.8,0.05,1);
       for(let it=0;it<6;it++)for(let i=0;i<seg;i++){const a=s.pts[i],b=s.pts[i+1];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6,df=(d-rest)/d*0.5*k;dx*=df;dy*=df;if(i!==0){a.x+=dx;a.y+=dy;}b.x-=dx;b.y-=dy;}
       return s.pts.map(q=>({x:q.x,y:q.y,scale:p.size||0.03,rot:0})); }
+    if(p.mode==='boids'){ const count=Math.max(1,Math.min(2000,num(p.count,60)|0)),perc=Math.max(0.001,num(p.perception,0.12)),sepW=num(p.separation,1),aliW=num(p.alignment,1),cohW=num(p.cohesion,1),maxSpd=Math.max(0.001,num(p.maxSpeed,0.35)),size=num(p.size,0.05);
+      let s=SIM[L.id]; if(!s||!s.boids){s={boids:true,a:[]};SIM[L.id]=s;} const rng=mb(hash(L.id+':boids')),A=s.a,perc2=perc*perc;
+      while(A.length<count){const ang=rng()*Math.PI*2;A.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5});} if(A.length>count)A.length=count;
+      for(const ag of A){let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,n=0;for(const o of A){if(o===ag)continue;const dx=ag.x-o.x,dy=ag.y-o.y,d2=dx*dx+dy*dy;if(d2>0&&d2<perc2){const d=Math.sqrt(d2);sx+=dx/d;sy+=dy/d;ax+=o.vx;ay+=o.vy;cx+=o.x;cy+=o.y;n++;}}
+        let vx=ag.vx,vy=ag.vy;if(n>0){vx+=sx*sepW*0.01;vy+=sy*sepW*0.01;vx+=(ax/n-ag.vx)*aliW*0.05;vy+=(ay/n-ag.vy)*aliW*0.05;vx+=(cx/n-ag.x)*cohW*0.02;vy+=(cy/n-ag.y)*cohW*0.02;}
+        const sp=Math.hypot(vx,vy)||1e-6;if(sp>maxSpd){vx=vx/sp*maxSpd;vy=vy/sp*maxSpd;}ag.vx=vx;ag.vy=vy;}
+      const step=Math.min(dt,0.05)*60;for(const ag of A){ag.x+=ag.vx*step*0.016;ag.y+=ag.vy*step*0.016;if(ag.x<0){ag.x=0;ag.vx=Math.abs(ag.vx);}else if(ag.x>1){ag.x=1;ag.vx=-Math.abs(ag.vx);}if(ag.y<0){ag.y=0;ag.vy=Math.abs(ag.vy);}else if(ag.y>1){ag.y=1;ag.vy=-Math.abs(ag.vy);}}
+      return A.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)})); }
     if(p.mode==='drawn'){ const pts=[].concat(...(p.paths||[])); if(!pts.length)return[{x:.5,y:.5,scale:p.size||0.04,rot:0}];
       const out=[],n=Math.min(p.count|0||pts.length,200); for(let i=0;i<n;i++){const pt=pts[(i/n*pts.length)|0]||pts[0];out.push({x:pt[0],y:pt[1],scale:p.size||0.04,rot:0});} return out; }
     if(p.mode==='camera-feed'){ const lm=IN.detect.landmarks; if(!lm||!lm.length)return[]; const out=[];
@@ -2474,6 +2658,8 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
     if(c.kind==='polyshape'){drawPoly(c);lctx.restore();return;}
     if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
+    else if(c.kind==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.save();lctx.scale(-1,1);drawM(v,ar,bw,bh,'cover','center','center',false);lctx.restore();}}
+    else if(c.kind==='videostream'){const v=vstream(c.nodeId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,'cover','center','center',false);}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
     else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.ellipse(0,0,bw/2,bh/2,0,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-bh/2);lctx.lineTo(bw/2,bh/2);lctx.lineTo(-bw/2,bh/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-bw/2,-bh/2,bw,bh);}
@@ -2500,6 +2686,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   /* loop */
   let last=performance.now();
   function frame(now){const dt=Math.min((now-last)/1000,0.05);last=now;IN.clock=(now-IN.t0)/1000;IN.clickPulse*=0.9;
+    ensureCam();    // a camera-content layer needs the live webcam
     LB.tick(now);   // W2C: tick the logic graph before resolving this frame's bindings
     const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);const ov=impacts(tv);
     ctx.clearRect(0,0,W,H);ctx.fillStyle=CFG.background||'#000';ctx.fillRect(0,0,W,H);
@@ -2511,7 +2698,12 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     for(const L of CFG.layers){if(L.visible===false&&!maskRefs.has(L.id))continue;
       const o=ov[L.id]||{};const ins=positions(L,dt);const sm=o.scale!=null?o.scale:1,pf=o.position;
       lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
-      const b=getBuf(L.id);b.cx.clearRect(0,0,W,H);b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
+      const b=getBuf(L.id);const fb=Math.max(0,Math.min(1,L.feedback||0));
+      // feedback (trail): fade the persistent buffer instead of clearing it, then
+      // draw this frame's content over it. fb=0 -> full clear = current behavior.
+      if(fb>0){b.cx.save();b.cx.globalCompositeOperation='destination-out';b.cx.globalAlpha=1-fb;b.cx.fillStyle='#000';b.cx.fillRect(0,0,W,H);b.cx.restore();}
+      else{b.cx.clearRect(0,0,W,H);}
+      b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
     const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}
     // PASS B - composite visible layers in z-order, applying channel masks
     const ord=[...CFG.layers].filter(L=>L.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
