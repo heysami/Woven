@@ -7234,9 +7234,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._run_get(m.group(1))
         # Match `/source/...html`, `source/...html`, `../source/...html` (the
         # editor often loads iframes with `../source/main/index.html`-style
-        # paths). Normalise once and check the on-disk extension.
+        # paths), AND `design-systems/<id>/...html` (the DS gallery, samples,
+        # shells and templates — iframed by the Library pane / canvas nodes).
+        # Both need `?project=` stamped onto their relative href/src so nested
+        # loads resolve to the right project. WITHOUT this, the gallery's
+        # `<link href="all.css">` loads unstamped and every `@import` inside
+        # all.css (styles.css, components/*, themes/*) is fetched with Referer
+        # = all.css (no project) → the daemon can't resolve the project → 404,
+        # leaving the DS gallery unstyled. Normalise once and check the
+        # on-disk extension.
         norm = url_path.lstrip("/")
-        if norm.endswith(".html") and ("source/" in norm):
+        if norm.endswith(".html") and ("source/" in norm or "design-systems/" in norm):
             # Use the new tier-aware router so workspace mode resolves
             # /source/<x>.html under the active project root.
             file_path = self.translate_path(self.path)
