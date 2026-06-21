@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
 <link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../shells/marketing-shell.css">
 <style>
   /* ============================================================
      Marketing landing - built entirely from DS tokens so colour /
@@ -14,20 +15,11 @@
      leads, secondary accents, tertiary supports, greys are the canvas.
      ============================================================ */
   body{background:var(--surface);color:var(--fg-default);}
-  .lp-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-l);}
+  /* .shell-wrap + masthead/footer chrome come from shells/marketing-shell.css */
   section{position:relative;}
   .eyebrow{display:inline-flex;align-items:center;gap:var(--space-2xs);font:var(--w-semibold) var(--text-xs)/1 var(--font);
     letter-spacing:.10em;text-transform:uppercase;color:var(--primary-fg-emphasis);}
   .eyebrow::before{content:"";width:18px;height:2px;border-radius:2px;background:currentColor;}
-
-  /* ---- nav ---- */
-  .lp-nav{display:flex;align-items:center;gap:var(--space-m);height:76px;}
-  .lp-logo{display:flex;align-items:center;gap:var(--space-xs);font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
-  .lp-logo img{height:32px;width:auto;}
-  .lp-nav__links{display:flex;gap:var(--space-m);margin-left:var(--space-l);}
-  .lp-nav__links a{color:var(--fg-muted);font-weight:var(--w-medium);font-size:var(--text-s);}
-  .lp-nav__links a:hover{color:var(--fg-default);text-decoration:none;}
-  .lp-nav__cta{margin-left:auto;display:flex;align-items:center;gap:var(--space-base);}
 
   /* ---- hero ---- */
   .lp-hero{display:grid;grid-template-columns:1fr 1.08fr;gap:var(--space-2xl);align-items:center;padding-block:var(--space-2xl) var(--space-3xl);}
@@ -114,32 +106,23 @@
   .lp-cta__art{position:relative;}
   .lp-cta__art svg{width:100%;height:auto;display:block;overflow:visible;}
 
-  /* ---- footer ---- */
-  .lp-foot{padding-block:var(--space-2xl);border-top:1px solid var(--border-default);
-    display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:var(--space-l);}
-  .lp-foot__brand p{font-size:var(--text-s);color:var(--fg-muted);max-width:30ch;margin:var(--space-s) 0 0;line-height:1.6;}
-  .lp-foot__col h4{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-subtle);margin:0 0 var(--space-s);}
-  .lp-foot__col a{display:block;font-size:var(--text-s);color:var(--fg-muted);padding:4px 0;}
-  .lp-foot__col a:hover{color:var(--fg-default);text-decoration:none;}
-  .lp-foot__bar{border-top:1px solid var(--border-subtle);padding:var(--space-base) 0;display:flex;align-items:center;gap:var(--space-base);
-    font-size:var(--text-xs);color:var(--fg-subtle);}
+  /* footer chrome comes from shells/marketing-shell.css (.footer--marketing) */
 
   @media(max-width:900px){
-    .lp-hero,.lp-bento,.lp-trio,.lp-stats,.lp-cta,.lp-foot{grid-template-columns:1fr;}
+    .lp-hero,.lp-bento,.lp-trio,.lp-stats,.lp-cta{grid-template-columns:1fr;}
     .lp-bento__feature{grid-row:auto;}
-    .lp-nav__links{display:none;}
   }
 </style>
 </head>
 <body>
 
-<header class="lp-wrap">
-  <nav class="lp-nav">
-    <span class="lp-logo"><img class="app-logo" src="../assets/logo.svg" alt="">Default</span>
-    <div class="lp-nav__links">
+<header class="topbar topbar--marketing">
+  <nav class="shell-wrap topbar__nav">
+    <span class="topbar__brand"><img class="app-logo" src="../assets/logo.svg" alt="">Default</span>
+    <div class="topbar__links">
       <a href="#">Product</a><a href="#">Solutions</a><a href="#">Customers</a><a href="#">Pricing</a><a href="#">Docs</a>
     </div>
-    <div class="lp-nav__cta">
+    <div class="topbar__cta">
       <button class="btn btn--text">Sign in</button>
       <button class="btn btn--primary">Start free</button>
     </div>
@@ -148,7 +131,7 @@
 
 <main>
   <!-- HERO -->
-  <section class="lp-wrap lp-hero">
+  <section class="shell-wrap lp-hero">
     <div>
       <span class="eyebrow">Workspace 2.0 is here</span>
       <h1>The calm home for your team's <b>best work</b>.</h1>
@@ -260,13 +243,13 @@
   </section>
 
   <!-- LOGO CLOUD -->
-  <section class="lp-wrap lp-cloud">
+  <section class="shell-wrap lp-cloud">
     <span class="lp-cloud__label">Trusted by fast-moving teams</span>
     <b>Northwind</b><b>Acme</b><b>Lumen</b><b>Vertex</b><b>Halcyon</b>
   </section>
 
   <!-- BENTO SHOWCASE -->
-  <section class="lp-wrap lp-section">
+  <section class="shell-wrap lp-section">
     <div class="lp-head">
       <span class="eyebrow">One surface</span>
       <h2>Everything your team needs, nothing it doesn't.</h2>
@@ -344,7 +327,7 @@
 
   <!-- FEATURE TRIO (spot illustrations) -->
   <div class="lp-band">
-    <section class="lp-wrap lp-section">
+    <section class="shell-wrap lp-section">
       <div class="lp-head lp-head--center">
         <span class="eyebrow" style="justify-content:center">Why teams switch</span>
         <h2>Built for speed, depth, and trust.</h2>
@@ -388,7 +371,7 @@
   </div>
 
   <!-- STATS -->
-  <section class="lp-wrap lp-section">
+  <section class="shell-wrap lp-section">
     <div class="lp-stats">
       <div class="lp-stat"><div class="lp-stat__n" style="color:var(--primary-fg-emphasis)">12k+</div><div class="lp-stat__l">Teams onboarded</div></div>
       <div class="lp-stat"><div class="lp-stat__n" style="color:var(--secondary-600)">99.9%</div><div class="lp-stat__l">Uptime, measured monthly</div></div>
@@ -398,7 +381,7 @@
 
   <!-- TESTIMONIAL -->
   <div class="lp-band">
-    <section class="lp-wrap lp-section lp-quote">
+    <section class="shell-wrap lp-section lp-quote">
       <div class="lp-quote__mark">“</div>
       <blockquote>We replaced four tools with Default in a week. The team actually enjoys planning now - and we ship twice as often.</blockquote>
       <div class="lp-quote__by">
@@ -409,7 +392,7 @@
   </div>
 
   <!-- CTA -->
-  <section class="lp-wrap lp-section">
+  <section class="shell-wrap lp-section">
     <div class="lp-cta">
       <div>
         <h2>Ready to move faster?</h2>
@@ -435,19 +418,21 @@
   </section>
 
   <!-- FOOTER -->
-  <footer class="lp-wrap">
-    <div class="lp-foot">
-      <div class="lp-foot__brand">
-        <span class="lp-logo" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:26px">Default</span>
-        <p>The calm home for your team's best work. Plan, build, and ship from one fast surface.</p>
+  <footer class="footer footer--marketing">
+    <div class="shell-wrap">
+      <div class="footer__cols">
+        <div class="footer__brand">
+          <span class="topbar__brand" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:26px">Default</span>
+          <p>The calm home for your team's best work. Plan, build, and ship from one fast surface.</p>
+        </div>
+        <div class="footer__col"><h4>Product</h4><a href="#">Overview</a><a href="#">Features</a><a href="#">Integrations</a><a href="#">Pricing</a></div>
+        <div class="footer__col"><h4>Company</h4><a href="#">About</a><a href="#">Careers</a><a href="#">Blog</a><a href="#">Contact</a></div>
+        <div class="footer__col"><h4>Resources</h4><a href="#">Docs</a><a href="#">Guides</a><a href="#">Changelog</a><a href="#">Status</a></div>
       </div>
-      <div class="lp-foot__col"><h4>Product</h4><a href="#">Overview</a><a href="#">Features</a><a href="#">Integrations</a><a href="#">Pricing</a></div>
-      <div class="lp-foot__col"><h4>Company</h4><a href="#">About</a><a href="#">Careers</a><a href="#">Blog</a><a href="#">Contact</a></div>
-      <div class="lp-foot__col"><h4>Resources</h4><a href="#">Docs</a><a href="#">Guides</a><a href="#">Changelog</a><a href="#">Status</a></div>
-    </div>
-    <div class="lp-foot__bar">
-      <span>© 2026 Default Inc.</span>
-      <span style="margin-left:auto">Privacy</span><span>Terms</span><span>Security</span>
+      <div class="footer__bar">
+        <span>© 2026 Default Inc.</span>
+        <span style="margin-left:auto">Privacy</span><span>Terms</span><span>Security</span>
+      </div>
     </div>
   </footer>
 </main>

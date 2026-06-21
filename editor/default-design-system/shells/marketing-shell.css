@@ -1,0 +1,47 @@
+/* ==========================================================================
+   Marketing shell - public-site chrome: a sticky frosted masthead + a
+   multi-column footer. Hand-authored from DS tokens (load styles.css first,
+   or all.css). Use for landing pages, marketing sites, product homepages.
+
+   CANONICAL CHROME ROLES (so the DS + the glass overlay bind without per-page
+   patches): the masthead element carries  .topbar  (role) + .topbar--marketing
+   (skin); the footer carries  .footer  +  .footer--marketing . The glass theme
+   keys off .topbar, so a marketing masthead glasses for free under
+   data-theme="glassmorphism" with no SURF edit.
+   ========================================================================== */
+
+/* Centered content container - shared by the chrome and by page sections. */
+.shell-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-l);box-sizing:border-box;}
+
+/* ---- masthead: <header class="topbar topbar--marketing"> ---- */
+.topbar--marketing{
+  position:sticky;top:0;z-index:100;
+  background:color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter:saturate(1.4) blur(14px);
+  backdrop-filter:saturate(1.4) blur(14px);
+  border-bottom:1px solid var(--border-subtle);
+}
+.topbar--marketing .topbar__nav{display:flex;align-items:center;gap:var(--space-m);height:76px;}
+.topbar__brand{display:flex;align-items:center;gap:var(--space-xs);
+  font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);text-decoration:none;}
+.topbar__brand img,.topbar__brand svg{height:32px;width:auto;display:block;}
+.topbar__links{display:flex;gap:var(--space-m);margin-left:var(--space-l);}
+.topbar__links a{color:var(--fg-muted);font-weight:var(--w-medium);font-size:var(--text-s);text-decoration:none;}
+.topbar__links a:hover,.topbar__links a.is-active{color:var(--fg-default);text-decoration:none;}
+.topbar__cta{margin-left:auto;display:flex;align-items:center;gap:var(--space-base);}
+
+/* ---- footer: <footer class="footer footer--marketing"> ---- */
+.footer--marketing{padding-block:var(--space-2xl);border-top:1px solid var(--border-default);}
+.footer__cols{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:var(--space-l);}
+.footer__brand{display:flex;flex-direction:column;gap:var(--space-2xs);}
+.footer__brand p{font-size:var(--text-s);color:var(--fg-muted);max-width:30ch;margin:var(--space-s) 0 0;line-height:1.6;}
+.footer__col h4{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-subtle);margin:0 0 var(--space-s);}
+.footer__col a{display:block;font-size:var(--text-s);color:var(--fg-muted);padding:4px 0;text-decoration:none;}
+.footer__col a:hover{color:var(--fg-default);text-decoration:none;}
+.footer__bar{border-top:1px solid var(--border-subtle);margin-top:var(--space-xl);padding-top:var(--space-base);
+  display:flex;align-items:center;gap:var(--space-base);font-size:var(--text-xs);color:var(--fg-subtle);}
+
+@media(max-width:900px){
+  .topbar--marketing .topbar__links{display:none;}
+  .footer__cols{grid-template-columns:1fr;}
+}

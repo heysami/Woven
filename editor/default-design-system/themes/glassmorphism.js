@@ -19,7 +19,12 @@ var DPR=Math.min(2, window.devicePixelRatio||1);
    excluded - they are content, not chrome. */
 /* NB: .phone__status (the mobile status bar) is deliberately NOT glass - it reads
    as device chrome, not a glass surface, so it stays a plain bar (see glassmorphism.css). */
-var SURF=".topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.drawer,.fab,.fab-stack .fab,[data-float-panel],.toolbar,.rail,.style-switcher,.sh-top,.lp-nav";
+/* Canonical chrome roles (.topbar/.sidebar/.appbar/.tabbar/.modal/.slideout) cover
+   every shell - app, mobile, marketing (.topbar--marketing), storefront
+   (.topbar--store). [data-glass] is the escape hatch: any bespoke chrome the
+   agent composes binds by stamping data-glass, so no per-page SURF edits.
+   (.sh-top/.lp-nav kept for back-compat with un-migrated pages.) */
+var SURF=".topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.drawer,.fab,.fab-stack .fab,[data-float-panel],[data-glass],.toolbar,.rail,.style-switcher,.sh-top,.lp-nav";
 
 /* OUR pill-POC presets, VERBATIM - light + dark (px values scaled by DPR where
    the shader expects px). The theme picks light/dark per the page's theme. */

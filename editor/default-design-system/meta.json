@@ -650,6 +650,18 @@
       "label": "Mobile phone shell (.phone › status + screen + tabbar)",
       "css": "shells/mobile-shell.css",
       "html": "shells/mobile-shell.html"
+    },
+    {
+      "id": "marketing-shell",
+      "label": "Marketing site shell (.topbar.topbar--marketing masthead + .footer.footer--marketing)",
+      "css": "shells/marketing-shell.css",
+      "html": "shells/marketing-shell.html"
+    },
+    {
+      "id": "storefront-shell",
+      "label": "Storefront shell (.topbar.topbar--store top bar + cart + .footer.footer--store)",
+      "css": "shells/storefront-shell.css",
+      "html": "shells/storefront-shell.html"
     }
   ],
   "templates": [

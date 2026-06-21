@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap">
 <link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../shells/storefront-shell.css">
 <style>
   /* ============================================================
      Interactive storefront - catalogue → cart → checkout → payment →
@@ -14,22 +15,7 @@
      the whole shop recolours with the DS. 60-30-10 with the greys as canvas.
      ============================================================ */
   body{background:var(--surface-default);color:var(--fg-default);}
-  .sh-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-l);}
-
-  /* ---- top bar ---- */
-  .sh-top{background:var(--surface);border-bottom:1px solid var(--border-default);position:sticky;top:0;z-index:20;}
-  .sh-nav{display:flex;align-items:center;gap:var(--space-base);height:70px;}
-  .sh-logo{display:flex;align-items:center;gap:var(--space-xs);font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);}
-  .sh-logo img{height:28px;width:auto;}
-  .sh-cats{display:flex;gap:var(--space-xs);margin-left:var(--space-l);}
-  .sh-cats a{padding:7px 12px;border-radius:var(--radius-pill);font-size:var(--text-s);font-weight:var(--w-medium);color:var(--fg-muted);}
-  .sh-cats a:hover{background:var(--surface-default);color:var(--fg-default);text-decoration:none;}
-  .sh-cats a.is-active{background:var(--primary-surface-subtle);color:var(--primary-fg);}
-  .sh-search{margin-left:auto;display:flex;align-items:center;gap:var(--space-2xs);height:38px;padding:0 var(--space-s);
-    background:var(--surface-default);border:1px solid var(--border-default);border-radius:var(--radius-pill);color:var(--fg-subtle);min-width:150px;}
-  .sh-search input{border:0;background:transparent;outline:none;font:inherit;font-size:var(--text-s);color:var(--fg-default);width:100%;}
-  .sh-cart-btn{position:relative;}
-  .sh-cart-btn .badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;font-size:11px;background:var(--secondary-500);}
+  /* .shell-wrap + top-bar/footer chrome come from shells/storefront-shell.css */
 
   /* ---- hero ---- */
   .sh-hero{margin:var(--space-l) 0;border-radius:var(--radius-2xl);overflow:hidden;position:relative;
@@ -121,32 +107,29 @@
     display:flex;align-items:center;justify-content:center;margin:0 auto var(--space-base);}
   .sh-done__tick svg{width:36px;height:36px;}
 
-  /* ---- footer ---- */
-  .sh-foot{background:var(--surface);border-top:1px solid var(--border-default);margin-top:var(--space-2xl);}
-  .sh-foot__in{display:flex;align-items:center;gap:var(--space-base);padding-block:var(--space-xl);color:var(--fg-subtle);font-size:var(--text-s);}
-  .sh-foot__in a{color:var(--fg-muted);}
+  /* footer chrome comes from shells/storefront-shell.css (.footer--store) */
 
-  @media(max-width:860px){.sh-grid,.sh-values,.sh-promo{grid-template-columns:1fr;}.sh-hero{grid-template-columns:1fr;}.sh-cats,.sh-search{display:none;}}
+  @media(max-width:860px){.sh-grid,.sh-values,.sh-promo{grid-template-columns:1fr;}.sh-hero{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
 
-<header class="sh-top">
-  <div class="sh-wrap sh-nav">
-    <span class="sh-logo"><img class="app-logo" src="../assets/logo.svg" alt="">Default Store</span>
-    <nav class="sh-cats"><a class="is-active" href="#">All</a><a href="#">Apparel</a><a href="#">Gear</a><a href="#">Home</a><a href="#">Sale</a></nav>
-    <div class="sh-search">
+<header class="topbar topbar--store">
+  <div class="shell-wrap topbar__nav">
+    <span class="topbar__brand"><img class="app-logo" src="../assets/logo.svg" alt="">Default Store</span>
+    <nav class="topbar__cats"><a class="is-active" href="#">All</a><a href="#">Apparel</a><a href="#">Gear</a><a href="#">Home</a><a href="#">Sale</a></nav>
+    <div class="topbar__search">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
       <input placeholder="Search the shop…">
     </div>
-    <button class="btn btn--outline-mono sh-cart-btn" id="cartOpen" style="margin-left:var(--space-s)">
+    <button class="btn btn--outline-mono cart-btn" id="cartOpen" style="margin-left:var(--space-s)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:20px;height:20px"><path d="M3 4h2l2.4 12.3a1 1 0 0 0 1 .7h8.7a1 1 0 0 0 1-.8L21 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>
       Cart<span class="badge" id="cartCount" hidden>0</span>
     </button>
   </div>
 </header>
 
-<main class="sh-wrap">
+<main class="shell-wrap">
   <!-- HERO -->
   <section class="sh-hero">
     <div>
@@ -241,9 +224,9 @@
   <div class="sh-drawer__foot" id="drawerFoot"></div>
 </aside>
 
-<footer class="sh-foot">
-  <div class="sh-wrap sh-foot__in">
-    <span class="sh-logo" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:22px">Default Store</span>
+<footer class="footer footer--store">
+  <div class="shell-wrap footer__in">
+    <span class="topbar__brand" style="font-size:var(--text-base)"><img class="app-logo" src="../assets/logo.svg" alt="" style="height:22px">Default Store</span>
     <span style="margin-left:auto">© 2026 Default Store</span><a href="#">Shipping</a><a href="#">Returns</a><a href="#">Help</a>
   </div>
 </footer>

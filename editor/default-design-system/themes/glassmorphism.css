@@ -98,6 +98,7 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
 [data-theme="glassmorphism"] .card,
 [data-theme="glassmorphism"] .section-card,
 [data-theme="glassmorphism"] .topbar,
+[data-theme="glassmorphism"] [data-glass],
 [data-theme="glassmorphism"] .stat-hero,
 [data-theme="glassmorphism"] .chart-card,
 [data-theme="glassmorphism"] .phone__tabbar{

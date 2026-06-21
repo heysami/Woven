@@ -2062,7 +2062,10 @@ def _resolve_style_contract(ds_dir, meta):
         "note": (
             "JS-backed style: link all.css (NOT styles.css), stamp the html "
             "attribute, and include the runtime script (CSS fallback renders "
-            "without it). See templates/ for the canonical wiring."
+            "without it). See templates/ for the canonical wiring. CHROME must "
+            "carry a canonical role class (.topbar/.sidebar/.footer - reuse a "
+            "shell) or [data-glass]; the glass overlay binds by those names, so "
+            "a bespoke chrome namespace renders flat."
             if has_js else
             "CSS-only style: folded unscoped into styles.css at bake time - "
             "linking styles.css renders this look by default, no attribute needed."

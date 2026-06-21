@@ -1,0 +1,40 @@
+/* ==========================================================================
+   Storefront shell - e-commerce chrome: a sticky top bar (brand + category
+   nav + search + cart) and a single-row footer. Hand-authored from DS tokens
+   (load styles.css first, or all.css). Use for shops, product catalogs, carts.
+
+   CANONICAL CHROME ROLES (so the DS + the glass overlay bind without per-page
+   patches): the top bar carries  .topbar  (role) + .topbar--store (skin); the
+   footer carries  .footer  +  .footer--store . The glass theme keys off
+   .topbar, so the storefront bar glasses for free under
+   data-theme="glassmorphism" with no SURF edit.
+   ========================================================================== */
+
+/* Centered content container - shared by the chrome and by page sections. */
+.shell-wrap{max-width:var(--max-content);margin:0 auto;padding:0 var(--space-l);box-sizing:border-box;}
+
+/* ---- top bar: <header class="topbar topbar--store"> ---- */
+.topbar--store{background:var(--surface);border-bottom:1px solid var(--border-default);position:sticky;top:0;z-index:20;}
+.topbar--store .topbar__nav{display:flex;align-items:center;gap:var(--space-base);height:70px;}
+.topbar__brand{display:flex;align-items:center;gap:var(--space-xs);
+  font-weight:var(--w-semibold);font-size:var(--text-h5);color:var(--fg-default);text-decoration:none;}
+.topbar__brand img,.topbar__brand svg{height:28px;width:auto;display:block;}
+.topbar__cats{display:flex;gap:var(--space-xs);margin-left:var(--space-l);}
+.topbar__cats a{padding:7px 12px;border-radius:var(--radius-pill);font-size:var(--text-s);font-weight:var(--w-medium);color:var(--fg-muted);text-decoration:none;}
+.topbar__cats a:hover{background:var(--surface-default);color:var(--fg-default);text-decoration:none;}
+.topbar__cats a.is-active{background:var(--primary-surface-subtle);color:var(--primary-fg);}
+.topbar__search{margin-left:auto;display:flex;align-items:center;gap:var(--space-2xs);height:38px;padding:0 var(--space-s);
+  background:var(--surface-default);border:1px solid var(--border-default);border-radius:var(--radius-pill);color:var(--fg-subtle);min-width:150px;}
+.topbar__search input{border:0;background:transparent;outline:none;font:inherit;font-size:var(--text-s);color:var(--fg-default);width:100%;}
+.cart-btn{position:relative;}
+.cart-btn .badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;font-size:11px;background:var(--secondary-500);}
+
+/* ---- footer: <footer class="footer footer--store"> ---- */
+.footer--store{background:var(--surface);border-top:1px solid var(--border-default);margin-top:var(--space-2xl);}
+.footer__in{display:flex;align-items:center;gap:var(--space-base);padding-block:var(--space-xl);color:var(--fg-subtle);font-size:var(--text-s);}
+.footer__in a{color:var(--fg-muted);text-decoration:none;}
+.footer__in a:hover{color:var(--fg-default);}
+
+@media(max-width:860px){
+  .topbar--store .topbar__cats,.topbar--store .topbar__search{display:none;}
+}

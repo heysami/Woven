@@ -39,6 +39,8 @@ all 8 style overlays in cascade order. Then flip the look with `<html data-theme
 - `meta.json` - machine inventory (id, version, `styles[]`, full `components[]` catalog, `templates[]`, `shells[]`).
 - `shells/app-shell.{css,html}` - the Default side-menu app shell (navy gradient + wave + logo + rail).
 - `shells/mobile-shell.{css,html}` - the phone shell (status bar → scrollable screen → bottom tab bar).
+- `shells/marketing-shell.{css,html}` - public-site chrome (sticky `.topbar--marketing` masthead + `.footer--marketing`).
+- `shells/storefront-shell.{css,html}` - e-commerce chrome (`.topbar--store` bar + cart + `.footer--store`).
 - `themes/*.css` - 8 style overlays (the dark style lives inside `styles.css`). See **Styles** below.
 - `templates/*.html` - 14 full page samples (see **Templates** below). These are part of the DS, NOT
   prototype/asset pages - they demonstrate composition and are linked from the gallery's Page Samples.
@@ -175,6 +177,20 @@ Top bar      .topbar (holds .breadcrumbs or .title-paragraph)
 App shell    .app › .sidebar + .main(.topbar + .content)  - requires shells/app-shell.css
 ```
 
+**Canonical chrome roles (read this before composing any chrome).** Top bars / side rails /
+footers MUST carry a canonical role class so styles AND the glass overlay bind to them - the
+glass runtime keys off these names, so reusing them means glass works with zero per-page wiring:
+```
+.topbar    any top bar / masthead   (skins: .topbar--marketing, .topbar--store; app = plain .topbar)
+.sidebar   any side rail
+.footer    any footer               (skins: .footer--marketing, .footer--store)  - NOT a glass surface
+.appbar / .tabbar   mobile chrome
+[data-glass]   escape hatch: stamp on ANY bespoke chrome to opt it into the glass overlay
+```
+Do NOT invent a private chrome namespace (e.g. `.bm-topbar`, `.site-nav`): the glass overlay
+will not find it and the bar renders flat under the glass style. Reuse a shell, or at minimum
+put `.topbar`/`.sidebar`/`.footer` (or `[data-glass]`) on your chrome element.
+
 ### Titles & text utilities
 ```
 .title-page | --overlay | --paragraph | --mini ; .display .h1 .h2 .h3 .h4 .h5 .h6
@@ -247,6 +263,28 @@ Mobile list  .list-mobile > .list-mobile__row > __body (__title __sub) + .list-m
 Touch helper .cell-lg (56px touch target) ; .segmented--mobile (full-width segmented control)
 ```
 
+### Marketing shell (`shells/marketing-shell.{css,html}`)
+Public-site chrome for landing / marketing / product-homepage builds: a sticky frosted
+masthead + a multi-column footer. Token-driven; depends on `styles.css` (or `all.css`).
+The masthead carries `.topbar` so it glasses for free under `data-theme="glassmorphism"`.
+```
+Masthead     <header class="topbar topbar--marketing"> > <nav class="shell-wrap topbar__nav">
+                  .topbar__brand (logo) + .topbar__links (a…) + .topbar__cta (buttons)
+Footer       <footer class="footer footer--marketing"> > .shell-wrap >
+                  .footer__cols (.footer__brand + .footer__col > h4 + a…) + .footer__bar (legal row)
+Container    .shell-wrap (centered max-width column; reuse for page sections too)
+```
+
+### Storefront shell (`shells/storefront-shell.{css,html}`)
+E-commerce chrome: a sticky top bar (brand + category nav + search + cart) and a single-row
+footer. Token-driven; depends on `styles.css` (or `all.css`). The top bar carries `.topbar`.
+```
+Top bar      <header class="topbar topbar--store"> > <div class="shell-wrap topbar__nav">
+                  .topbar__brand + .topbar__cats (a[.is-active]) + .topbar__search (>input) + .cart-btn(.badge)
+Footer       <footer class="footer footer--store"> > .shell-wrap.footer__in (brand + links)
+Container    .shell-wrap (centered max-width column)
+```
+
 ## Templates (page samples - `templates/`)
 
 Full composed pages, part of the DS (linked from gallery → Page Samples). Reuse as layout blueprints.
@@ -258,8 +296,8 @@ Full composed pages, part of the DS (linked from gallery → Page Samples). Reus
    carries a `.stat-hero` card + `.chart` mini charts (charts partial).
 5. `basic-form.html` - app shell · `.lifecycle` status bar + `.section-card` + form grid.
 6. `exception.html` - 404 / 403 / 400 / session-timeout / expired / maintenance `.exception` cards (no shell).
-7. `landing.html` - marketing site · nav + hero + features + metrics + CTA band + footer (no shell).
-8. `ecommerce.html` - interactive storefront · product grid → cart `.slideout` → checkout → payment → confirmation (no shell).
+7. `landing.html` - marketing site · masthead + hero + features + metrics + CTA band + footer (uses marketing-shell).
+8. `ecommerce.html` - interactive storefront · product grid → cart `.slideout` → checkout → payment → confirmation (uses storefront-shell).
 9. `density.html` - app shell · ultra-dense markets (Linear/Bloomberg register) - `.kpi-strip` +
    `.table--flat`/`--dense` + `.spark` sparklines + mini `.chart`s (data-dense + charts partials).
 10. `document.html` - app shell · boxless editor (Notion/Docs register) - click-to-edit `.doc__title` /
@@ -283,8 +321,16 @@ darkened -600/-700 fills for white text) to hold WCAG contrast.
 
 ## Reuse rules
 
-- Link `styles.css` first; add `shells/app-shell.css` only for shell pages. The font (Plus Jakarta Sans)
-  loads via a Google Fonts `@import` inside `styles.css`; pages also include the matching `<link>` for portability.
+- Link `styles.css` first; add the shell CSS only for the shell you use - `shells/app-shell.css`
+  (apps/dashboards/dense/document), `shells/mobile-shell.css` (phone screens),
+  `shells/marketing-shell.css` (landing/marketing), or `shells/storefront-shell.css` (shops). The font
+  (Plus Jakarta Sans) loads via a Google Fonts `@import` inside `styles.css`; pages also include the
+  matching `<link>` for portability.
+- **Chrome MUST be reusable, never bespoke.** Every top bar / side rail / footer either comes from a
+  shell or carries a canonical role class (`.topbar`/`.sidebar`/`.footer`, see *Navigation / shell*).
+  A private chrome namespace (e.g. `.bm-topbar`, `.site-nav`) is forbidden: the glass overlay binds by
+  role/`.topbar`/`[data-glass]`, so private names render flat under `data-theme="glassmorphism"`. For
+  one-off chrome that genuinely cannot use a shell class, stamp `[data-glass]` on it.
 - Need the data-dense / document / charts components, the mobile shell, or a switchable style? Link
   `all.css` instead of `styles.css` (it `@import`s base + partials + all 8 overlays in cascade order), then
   set `<html data-theme="NAME">` to pick a style. Don't author new partial classes - the catalog covers it.
