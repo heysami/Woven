@@ -92,6 +92,8 @@ STATE (reactive memory; the legal cycle breakers):
 
 RENDER (a sink, not engine-evaluated):
 - `shape` [closed, fill, stroke, strokeWidth, opacity, blend: normal|multiply|screen|overlay, z, smoothing] - (i) p0..p7(vector2) - (o) out(layer). Wire `out` into a composer `in`. fill / stroke are CSS color strings (fill blank = no fill).
+- `type-motion` (Kinetic Type) [text, font, weight, size, color, tracking, align, behavior, speed, amplitude, stagger, path: straight|arc|circle|wave|ring, pathRadius, pathAmplitude, pathRotate, loop, z, opacity, blend, feedback] - (o) out(layer). Per-glyph animated text drawn STRAIGHT to the canvas (no rasterization). 16 behaviors: none, wave, jitter, rotate-cycle, scale-pulse, slot-cycle, fade-stagger, typewriter, fall-gravity, elastic-hop, weightless-float, rainbow-cycle, skew-sway, blur-in, squash-stretch, orbit. This is the PREFERRED way to put TEXT in the composer. Wire `out` into a composer `in`.
+- TEXT-DRIVEN position modes on the `position` node (text made of particles / ropes / outlines): `text-ink` (samples a string's ink into a point cloud; pair with physics + layer feedback for letter-disintegration), `rope-ink` (verlet ropes anchored to glyph ink), `text-outline` (ordered contour points of the letters). Each carries text / font / weight controls.
 
 ### 4. Composition patterns (the reusable idioms)
 
@@ -103,6 +105,7 @@ RENDER (a sink, not engine-evaluated):
 - DISTANCE / GESTURE FROM TWO POINTS: two vector2 outputs -> `op-vector` (mode=distance) a,b -> d(number) -> op-map -> a param (e.g. pinch distance drives scale).
 - LAYER Z-ORDER for behind / front: give the background layer a LOWER `z`, the foreground shape a HIGHER `z`. The composer sorts ascending by z, so lower z paints first (behind).
 - EFFECT ON A LAYER: wire an `effect` node into the layer's `in` port (the layer accepts `effect` tagged inputs). The effect applies to THAT layer only. Drive the effect live by binding a logic output into `effect.param:<key>`.
+- TEXT IN THE COMPOSER: use the `type-motion` (Kinetic Type) node for animated text, or a `layer` with `text` content for plain static text. Both draw STRAIGHT to the canvas and are the correct primitives here. Do NOT use a `formatted-text` (HTML) node as composer layer content: HTML cannot be drawn to a canvas directly, so the composer has to rasterize it with html2canvas (adds refresh lag, same-origin only). Reserve `formatted-text` for rich static HTML used OUTSIDE the live composer.
 
 ### 5. Three worked end-to-end recipes (copy-pasteable: node list + controls + every edge)
 
@@ -174,6 +177,6 @@ Edges:
 
 1. IDENTIFY INPUTS. Map each driver in the request to a source kind: "camera / hand / face" -> input-camera + vision-detect; "mouse / click / hover" -> input-pointer; "touch / pinch" -> input-touch; "tilt / phone orientation" -> input-gyro; "mic / sound / beat" -> input-audio; "scroll / wheel" -> input-scroll; "keyboard / WASD / arrows" -> input-keyboard; "read text in the video" -> vision-ocr.
 2. PICK PROCESSORS. Smooth raw pointer / sensor values through `state-smooth`. Remap ranges with `op-map`. Combine / threshold with `op-math` / `op-compare` / `op-logic`. Derive points / distances with `op-vector`. Hold or branch with `flow-gate` / `flow-if`. Accumulate with `state-counter` / `state-latch` / `state-timer`.
-3. CHOOSE OUTPUTS / TARGETS. To draw between tracked points -> `shape` (p0..p7) -> composer. To animate a transform -> `position.param:<key>`. To drive a visual effect -> `effect.param:intensity` (or per-type params). Remember: layers have no param ports, drive their wired position / effect instead.
+3. CHOOSE OUTPUTS / TARGETS. To show TEXT -> `type-motion` (Kinetic Type, animated) or a `layer` with `text` content (static); NOT `formatted-text` (that needs rasterizing in the composer). To draw between tracked points -> `shape` (p0..p7) -> composer. To animate a transform -> `position.param:<key>`. To drive a visual effect -> `effect.param:intensity` (or per-type params). Remember: layers have no param ports, drive their wired position / effect instead.
 4. WIRE + SET LIVE. Place the composer (mm-composer / composer), wire every layer / shape `out` into its `in`, set z-order for behind / front, then put the composition in LIVE mode so the engine ticks the graph against real input.
 """
