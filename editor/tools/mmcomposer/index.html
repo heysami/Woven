@@ -8,6 +8,11 @@
 <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
 <link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <script src="/editor/tools/_shared/tooltip.js" defer></script>
+<!-- html2canvas-pro (vendored, build-less): rasterizes wired HTML/iframe layer
+     content (baked formatted-text / composer compositions) into an offscreen
+     image the 2D canvas can draw. Optional - a missing lib degrades to a clear
+     placeholder, never throws. -->
+<script src="/editor/tools/materiallab/html2canvas-pro.min.js" defer></script>
 <style>
   :root{
     /* Local tool vars remapped onto Woven tokens (woven-theme.css). The CHROME
@@ -759,8 +764,18 @@ function buildWiredRuntimeLayers(){
     // render type, defaulting any wired asset with a url to an image.
     let content;
     if(assetK && assetK.url){
-      const rk=String(assetK.assetKind||assetK.kind||'').toLowerCase();
-      const vis=(rk==='video'||rk==='mp4'||rk==='webm') ? 'video' : 'image';
+      // The resolved asset child carries `assetKind` as a RENDER type
+      // ("img"/"video"/"iframe") AND the upstream node's MEDIUM as `kind`
+      // ("image"/"video"/"html"/"svg"/...). HTML/iframe content (a baked
+      // formatted-text or composer composition) is NOT a bitmap - an <img> would
+      // never paint it - so route it to the rasterized-HTML path (kind:'html'),
+      // which renders the live HTML into an offscreen image via html2canvas.
+      const rk=String(assetK.assetKind||'').toLowerCase();
+      const mk=String(assetK.kind||'').toLowerCase();
+      const url=String(assetK.url||'');
+      const isHtml = rk==='iframe' || mk==='html' || mk==='htm' || /\.html?(\?|#|$)/i.test(url);
+      const isVideo = rk==='video' || mk==='video' || mk==='mp4' || mk==='webm';
+      const vis = isVideo ? 'video' : (isHtml ? 'html' : 'image');
       const aid=assetK.fromId||assetK.id||assetK.assetId||('wa'+wi);
       if(!CONTENT.find(c=>c.id===aid))
         CONTENT.push({id:aid,url:assetK.url,kind:vis,label:assetK.label||aid});
@@ -940,8 +955,12 @@ function normalizeState(s){
   // An empty doc normally falls back to the demo so a fresh node isn't blank -
   // but NOT when wired layers supply the content (e.g. a packaged custom-app or
   // any composition driven entirely by wired Layer nodes). Only show the demo
-  // when there's genuinely nothing to render.
-  if(!s.layers.length && !(WIRED.layers && WIRED.layers.length)) s=defaultState();
+  // when there's genuinely nothing to render. Tag the fallback as `_isDemo` so a
+  // LATER mm:content (which carries wired layers that resolved a render-tick
+  // after the first mm:init) can drop the demo - otherwise an init that landed
+  // before the wired specs were ready would pin the grid-pulse/WOVEN demo on
+  // top of the real wired composition forever.
+  if(!s.layers.length && !(WIRED.layers && WIRED.layers.length)){ s=defaultState(); s._isDemo=true; }
   return s;
 }
 
@@ -969,7 +988,93 @@ const Assets = {
     const m=this.meta(id); if(!m) return null;
     const a=new Audio(); a.loop=true; a.src=m.url; this.aud[id]=a; return a;
   },
-  reset(){ this.img={}; this.vid={}; this.aud={}; }
+  // HTML / iframe layer content (a baked formatted-text or composer composition):
+  // load the live HTML into a hidden, same-origin offscreen iframe, then
+  // rasterize it with html2canvas-pro into an offscreen <canvas> the 2D layer
+  // pipeline can drawImage(). The result is cached per (url + size) and
+  // re-rastered lazily (size change or a slow refresh tick) so animated HTML
+  // stays roughly live without thrashing. Fail-soft: a missing html2canvas, a
+  // cross-origin doc, or a render error leaves rec.ready=false (the drawer paints
+  // a clear placeholder + warns once). NO getBoundingClientRect on the hot path -
+  // the target raster size is the composition's canvas size.
+  htmlRec:{},
+  html(id){
+    let rec=this.htmlRec[id];
+    if(!rec){ rec={ready:false,canvas:null,iframe:null,busy:false,warned:false,err:null,
+                    url:null,w:0,h:0,last:0}; this.htmlRec[id]=rec; }
+    const m=this.meta(id); if(!m||!m.url){ rec.err='no url'; return rec; }
+    const W=Math.max(1,(typeof STATE!=='undefined'&&STATE?STATE.canvasW:1280)|0);
+    const H=Math.max(1,(typeof STATE!=='undefined'&&STATE?STATE.canvasH:720)|0);
+    const now=(typeof performance!=='undefined'?performance.now():Date.now());
+    const sizeChanged = rec.w!==W || rec.h!==H || rec.url!==m.url;
+    // Refresh cadence: re-raster at most ~every 1.2s so HTML with motion updates
+    // without rasterizing every frame (html2canvas is expensive).
+    const stale = rec.ready && (now-rec.last>1200);
+    if(!rec.busy && (sizeChanged || stale || (!rec.ready && !rec.err))){
+      this._rasterHtml(id,rec,m.url,W,H);
+    }
+    return rec;
+  },
+  _rasterHtml(id,rec,url,W,H){
+    if(typeof window==='undefined'||typeof window.html2canvas!=='function'){
+      // html2canvas-pro is loaded with `defer`; it may not be ready on the first
+      // frames. Do NOT set a sticky err - leave rec so html() retries next frame
+      // once the library lands. Warn at most once to flag a truly missing lib.
+      if(!rec.warned){ console.warn('[mm] html2canvas not ready yet - retrying HTML layer raster:',url); rec.warned=true; }
+      return;
+    }
+    rec.busy=true; rec.url=url; rec.w=W; rec.h=H;
+    let fr=rec.iframe;
+    const haveFrame = fr && fr._mmUrl===url;
+    if(!haveFrame){
+      if(fr&&fr.parentNode) try{ fr.parentNode.removeChild(fr); }catch(e){}
+      fr=document.createElement('iframe');
+      fr.setAttribute('aria-hidden','true');
+      // Off-screen but laid out at the composition's pixel size so the captured
+      // page reflows to the same aspect/scale the canvas draws at.
+      fr.style.cssText='position:fixed;left:-10000px;top:0;border:0;visibility:hidden;pointer-events:none';
+      fr.width=W; fr.height=H; fr.style.width=W+'px'; fr.style.height=H+'px';
+      fr._mmUrl=url;
+      document.body.appendChild(fr);
+      rec.iframe=fr;
+      fr.onload=()=>{ rec._loaded=true; this._captureHtml(id,rec,fr,W,H); };
+      fr.onerror=()=>{ rec.busy=false; rec.err='iframe-error';
+        if(!rec.warned){ console.warn('[mm] HTML layer iframe failed to load:',url); rec.warned=true; } };
+      try{ fr.src=url; }catch(e){ rec.busy=false; rec.err='src'; }
+    } else {
+      // Reuse the loaded iframe, just re-capture (size already matches).
+      fr.width=W; fr.height=H; fr.style.width=W+'px'; fr.style.height=H+'px';
+      this._captureHtml(id,rec,fr,W,H);
+    }
+  },
+  _captureHtml(id,rec,fr,W,H){
+    let doc=null;
+    try{ doc=fr.contentDocument||(fr.contentWindow&&fr.contentWindow.document); }catch(e){ doc=null; }
+    if(!doc||!doc.body){
+      rec.busy=false; rec.err='cross-origin';
+      if(!rec.warned){ console.warn('[mm] HTML layer content is not same-origin - cannot rasterize:',rec.url); rec.warned=true; }
+      return;
+    }
+    let bg='transparent';
+    try{ const c=fr.contentWindow.getComputedStyle(doc.body).backgroundColor; if(c&&c!=='rgba(0, 0, 0, 0)'&&c!=='transparent') bg=c; }catch(e){}
+    try{
+      window.html2canvas(doc.documentElement,{
+        backgroundColor:bg, width:W, height:H, windowWidth:W, windowHeight:H,
+        scale:1, logging:false, useCORS:true, allowTaint:false,
+      }).then(cv=>{
+        rec.canvas=cv; rec.ready=true; rec.err=null;
+        rec.last=(typeof performance!=='undefined'?performance.now():Date.now());
+        rec.busy=false;
+      }).catch(e=>{
+        rec.busy=false; rec.err='render';
+        if(!rec.warned){ console.warn('[mm] html2canvas failed for HTML layer:',rec.url,e); rec.warned=true; }
+      });
+    }catch(e){ rec.busy=false; rec.err='render'; }
+  },
+  reset(){ this.img={}; this.vid={}; this.aud={};
+    for(const k in this.htmlRec){ const r=this.htmlRec[k]; if(r&&r.iframe&&r.iframe.parentNode){ try{ r.iframe.parentNode.removeChild(r.iframe); }catch(e){} } }
+    this.htmlRec={};
+  }
 };
 
 /* ===========================================================================
@@ -2584,6 +2689,21 @@ function drawMediaInBox(ctx, media, ar, boxW, boxH, fit, alignX, alignY, tile){
   const y=alignY==='top' ? -boxH/2 : alignY==='bottom' ? boxH/2-h : -h/2;
   ctx.drawImage(media,x,y,w,h);
 }
+// Visible placeholder for an HTML/iframe layer whose raster is not ready yet
+// (loading) or could not be produced (cross-origin / missing html2canvas). A
+// dashed frame + label so the layer reads as "HTML content here", never blank.
+function drawHtmlPlaceholder(ctx,boxW,boxH,sz,label,err){
+  ctx.save();
+  ctx.fillStyle='rgba(40,44,52,0.55)'; ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH);
+  ctx.strokeStyle='#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.01); ctx.setLineDash([sz*0.06,sz*0.04]);
+  ctx.strokeRect(-boxW/2+2,-boxH/2+2,boxW-4,boxH-4); ctx.setLineDash([]);
+  ctx.fillStyle='#cfe9ff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font=`${Math.max(9,sz*0.11)}px ${getMono()}`;
+  ctx.fillText(err? 'HTML (cannot rasterize)' : 'HTML loading...', 0, -sz*0.08);
+  ctx.fillStyle='#7fa6c0'; ctx.font=`${Math.max(8,sz*0.08)}px ${getMono()}`;
+  ctx.fillText(String(label||'').slice(0,40), 0, sz*0.06);
+  ctx.restore();
+}
 // Kinetic Type (PART 1): per-glyph transform library. Pure function of the
 // behavior name + glyph index i + glyph count n + clock t + speed / amplitude /
 // stagger. Returns a transform the drawer applies (translate / rotate / scale /
@@ -2797,6 +2917,10 @@ function drawContent(ctx, L, inst, W, H, baseScale){
     if(m && m.kind==='video'){ const v=Assets.video(c.assetId);
       if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1;
         drawMediaInBox(ctx,v,ar,boxW,boxH,inst.fit,inst.alignX,inst.alignY,inst.tile); } }
+    else if(m && m.kind==='html'){ const rec=Assets.html(c.assetId);
+      if(rec&&rec.ready&&rec.canvas){ const ar=rec.canvas.width/rec.canvas.height||1;
+        drawMediaInBox(ctx,rec.canvas,ar,boxW,boxH,inst.fit,inst.alignX,inst.alignY,inst.tile); }
+      else { drawHtmlPlaceholder(ctx,boxW,boxH,sz,m?m.label:'HTML',rec&&rec.err); } }
     else { const im=Assets.image(c.assetId);
       if(im&&im._ready){ const ar=im.width/im.height||1;
         drawMediaInBox(ctx,im,ar,boxW,boxH,inst.fit,inst.alignX,inst.alignY,inst.tile); }
@@ -2851,6 +2975,9 @@ function drawShatterContent(ctx, L, W, H){
     const m=Assets.meta(c.assetId);
     if(m && m.kind==='video'){ const v=Assets.video(c.assetId);
       if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1; drawMediaInBox(ctx,v,ar,W,H,'cover','center','center',false); } }
+    else if(m && m.kind==='html'){ const rec=Assets.html(c.assetId);
+      if(rec&&rec.ready&&rec.canvas){ const ar=rec.canvas.width/rec.canvas.height||1; drawMediaInBox(ctx,rec.canvas,ar,W,H,'cover','center','center',false); }
+      else { ctx.fillStyle='#444'; ctx.fillRect(-W/2,-H/2,W,H); } }
     else { const im=Assets.image(c.assetId);
       if(im&&im._ready){ const ar=im.width/im.height||1; drawMediaInBox(ctx,im,ar,W,H,'cover','center','center',false); }
       else { ctx.fillStyle='#444'; ctx.fillRect(-W/2,-H/2,W,H); } }
@@ -3840,7 +3967,17 @@ if(EMBEDDED){
       storeWired(d);                       // re-receive wired arrays; re-render
       Assets.reset();
       if(WIRED.effects.length) ensureFXChain();
-      renderAll();                         // no mm:state echo (external inputs changed)
+      // Demo-eviction: if STATE is the auto-injected demo (the saved doc was
+      // empty) and wired layers have now arrived, the wired composition is the
+      // real content - drop the grid-pulse/WOVEN demo so it doesn't sit on top.
+      // suppressEmit so this programmatic correction is not echoed as a user edit.
+      if(STATE && STATE._isDemo && WIRED.layers && WIRED.layers.length){
+        suppressEmit=true; STATE=normalizeState({v:1,canvasW:STATE.canvasW,canvasH:STATE.canvasH,
+          background:STATE.background,inputs:STATE.inputs,wiredMasks:STATE.wiredMasks,layers:[]});
+        suppressEmit=false; rebuild();
+      } else {
+        renderAll();                       // no mm:state echo (external inputs changed)
+      }
     } else if(d.type==='mm:select'){
       // Selected on the canvas → float panels OUTSIDE the core viewport, then
       // report panel extents + layer-row geometry (after layout settles).
@@ -4032,6 +4169,37 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>i._r=true; i.src=m.url; AC.img[id]=i; return i; }
   function video(id){ if(AC.vid[id])return AC.vid[id]; const m=AC.meta(id); if(!m)return null;
     const v=document.createElement('video'); v.crossOrigin='anonymous'; v.loop=true; v.muted=true; v.playsInline=true; v.src=m.url; v.play().catch(()=>{}); AC.vid[id]=v; return v; }
+  /* HTML / iframe layer content parity: load the live HTML into a hidden,
+     same-origin offscreen iframe and rasterize it with html2canvas-pro into an
+     offscreen canvas the 2D pipeline can drawImage(). Cached per (url+size),
+     re-rastered lazily (~1.2s). html2canvas-pro is loaded once by absolute URL
+     (same toolchain origin as logicgraph.js); a missing lib / cross-origin doc /
+     render error leaves rec.ready=false (the drawer paints a flat fill) - the
+     rest of the composition still plays. Mirrors the editor Assets.html path. */
+  const HC={recs:{},lib:null,loading:false};
+  function ensureH2C(){ if(HC.lib||HC.loading)return; if(typeof window.html2canvas==='function'){HC.lib=window.html2canvas;return;}
+    HC.loading=true; const s=document.createElement('script'); s.src='/editor/tools/materiallab/html2canvas-pro.min.js';
+    s.onload=()=>{ HC.lib=window.html2canvas||null; HC.loading=false; }; s.onerror=()=>{ HC.loading=false; HC.err=true; };
+    document.head.appendChild(s); }
+  function htmlRaster(id){ let rec=HC.recs[id]; if(!rec){rec={ready:false,canvas:null,iframe:null,busy:false,url:null,w:0,h:0,last:0};HC.recs[id]=rec;}
+    const m=AC.meta(id); if(!m||!m.url)return rec; ensureH2C(); if(!HC.lib)return rec;
+    const now=performance.now(); const sizeChanged=rec.w!==W||rec.h!==H||rec.url!==m.url; const stale=rec.ready&&(now-rec.last>1200);
+    if(!rec.busy&&(sizeChanged||stale||(!rec.ready&&!rec.err))) rasterHtml(rec,m.url);
+    return rec; }
+  function rasterHtml(rec,url){ rec.busy=true; rec.url=url; rec.w=W; rec.h=H;
+    let fr=rec.iframe; const have=fr&&fr._u===url;
+    if(!have){ if(fr&&fr.parentNode)try{fr.parentNode.removeChild(fr);}catch(e){}
+      fr=document.createElement('iframe'); fr.setAttribute('aria-hidden','true');
+      fr.style.cssText='position:fixed;left:-10000px;top:0;border:0;visibility:hidden;pointer-events:none';
+      fr.width=W; fr.height=H; fr.style.width=W+'px'; fr.style.height=H+'px'; fr._u=url; rec.iframe=fr; document.body.appendChild(fr);
+      fr.onload=()=>captureHtml(rec,fr); fr.onerror=()=>{rec.busy=false;rec.err='iframe';}; try{fr.src=url;}catch(e){rec.busy=false;rec.err='src';}
+    } else { fr.width=W; fr.height=H; fr.style.width=W+'px'; fr.style.height=H+'px'; captureHtml(rec,fr); } }
+  function captureHtml(rec,fr){ let doc=null; try{doc=fr.contentDocument||(fr.contentWindow&&fr.contentWindow.document);}catch(e){doc=null;}
+    if(!doc||!doc.body){rec.busy=false;rec.err='cross-origin';return;}
+    let bg='transparent'; try{const c=fr.contentWindow.getComputedStyle(doc.body).backgroundColor; if(c&&c!=='rgba(0, 0, 0, 0)'&&c!=='transparent')bg=c;}catch(e){}
+    try{ HC.lib(doc.documentElement,{backgroundColor:bg,width:W,height:H,windowWidth:W,windowHeight:H,scale:1,logging:false,useCORS:true,allowTaint:false})
+      .then(cv=>{rec.canvas=cv;rec.ready=true;rec.err=null;rec.last=performance.now();rec.busy=false;})
+      .catch(()=>{rec.busy=false;rec.err='render';}); }catch(e){rec.busy=false;rec.err='render';} }
   /* per-node <video> for input-video layers wired without a clip url (logic stream
      capture may set srcObject; until then readyState<2 and nothing draws) */
   const VSTREAMS={};
@@ -4453,7 +4621,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   /* SHATTER: draw the full intact content (cover-fit) - baked twin of
      drawShatterContent. The caller has already clipped to the cell + moved origin. */
   function drawShatterC(L){const c=L.content;lctx.save();lctx.translate(W/2,H/2);
-    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,W,H,'cover','center','center',false);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,W,H,'cover','center','center',false);}else{lctx.fillStyle='#444';lctx.fillRect(-W/2,-H/2,W,H);}}}
+    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,W,H,'cover','center','center',false);}}else if(m&&m.kind==='html'){const rec=htmlRaster(c.assetId);if(rec&&rec.ready&&rec.canvas){const ar=rec.canvas.width/rec.canvas.height||1;drawM(rec.canvas,ar,W,H,'cover','center','center',false);}else{lctx.fillStyle='#444';lctx.fillRect(-W/2,-H/2,W,H);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,W,H,'cover','center','center',false);}else{lctx.fillStyle='#444';lctx.fillRect(-W/2,-H/2,W,H);}}}
     else if(c.kind==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.save();lctx.scale(-1,1);drawM(v,ar,W,H,'cover','center','center',false);lctx.restore();}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(Math.min(W,H)*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else{lctx.fillStyle=c.color||'#6ee7ff';lctx.fillRect(-W/2,-H/2,W,H);}
@@ -4464,7 +4632,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       lctx.translate(-cell.cx,-cell.cy);drawShatterC(L);lctx.restore();return;}
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
     if(c.kind==='polyshape'){drawPoly(c);lctx.restore();return;}
-    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
+    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else if(m&&m.kind==='html'){const rec=htmlRaster(c.assetId);if(rec&&rec.ready&&rec.canvas){const ar=rec.canvas.width/rec.canvas.height||1;drawM(rec.canvas,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
     else if(c.kind==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.save();lctx.scale(-1,1);drawM(v,ar,bw,bh,'cover','center','center',false);lctx.restore();}}
     else if(c.kind==='videostream'){const v=vstream(c.nodeId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,'cover','center','center',false);}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
