@@ -16506,13 +16506,13 @@ function dsMix(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
 // colour. Returned as an inline-SVG data URL so the preview can swap it onto
 // the <img class="app-logo"> without a network round-trip; the daemon writes
 // the same dot colour into assets/logo.svg at bake.
-function dsDefaultLogoSvg(dot) {
+function dsDefaultLogoSvg(dot, ink) {
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Logo">'
-    + '<path fill="#FFFFFF" fill-rule="evenodd" d="M9 9h12.5a15 15 0 0 1 0 30H9V9Zm8.4 7.6v14.8h4.1a7.4 7.4 0 0 0 0-14.8h-4.1Z"/>'
+    + '<path fill="' + (ink || "#FFFFFF") + '" fill-rule="evenodd" d="M9 9h12.5a15 15 0 0 1 0 30H9V9Zm8.4 7.6v14.8h4.1a7.4 7.4 0 0 0 0-14.8h-4.1Z"/>'
     + '<circle cx="40" cy="12.5" r="4" fill="' + (dot || "#E20E10") + '"/></svg>';
 }
-function dsDefaultLogoDataUrl(dot) {
-  return "data:image/svg+xml," + encodeURIComponent(dsDefaultLogoSvg(dot));
+function dsDefaultLogoDataUrl(dot, ink) {
+  return "data:image/svg+xml," + encodeURIComponent(dsDefaultLogoSvg(dot, ink));
 }
 // 50..950 tint/shade ramp from a base hex (base sits at 500).
 const DS_RAMP_STOPS = [
@@ -17209,12 +17209,22 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     // The gallery's token-docs (ramp swatches/hex, spacing bars) are JS-rendered
     // from computed values, so nudge them to re-read after the override lands.
     try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
-    // Logo — uploaded custom logo wins; otherwise the bundled "D" with its
-    // accent dot following the secondary colour.
-    const defaultLogo = dsDefaultLogoDataUrl(settings.secondary || DS_DEFAULTS.secondary);
+    // Logo — uploaded custom logo wins; otherwise the bundled "D" monogram.
+    // The "D" fill follows each logo's INHERITED colour (the sidebar/topbar text
+    // colour, which every style + light/dark already sets to contrast its own
+    // chrome), so the monogram stays legible on a dark navy rail, a light pastel
+    // rail, a white topbar, etc. — instead of a hardcoded white that vanishes on
+    // light surfaces. The accent dot still follows the secondary colour.
+    const win = doc.defaultView || window;
     const imgs = doc.querySelectorAll(".sidebar__logo img, .topnav__logo img, img.app-logo");
     imgs.forEach(img => {
-      const target = (settings.logo && settings.logo.dataUrl) ? settings.logo.dataUrl : defaultLogo;
+      if (settings.logo && settings.logo.dataUrl) {
+        if (img.getAttribute("src") !== settings.logo.dataUrl) img.setAttribute("src", settings.logo.dataUrl);
+        return;
+      }
+      let ink = "";
+      try { ink = win.getComputedStyle(img).color || ""; } catch {}
+      const target = dsDefaultLogoDataUrl(settings.secondary || DS_DEFAULTS.secondary, ink);
       if (img.getAttribute("src") !== target) img.setAttribute("src", target);
     });
   }, [custom, settings.logo, settings.secondary, previewDark, settings.styleId]);
