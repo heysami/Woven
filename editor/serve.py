@@ -2014,6 +2014,66 @@ def _list_local_fonts(project_root):
     return out
 
 
+def _resolve_style_contract(ds_dir, meta):
+    """Resolve a DS's baked `defaultStyle` into a complete, machine-readable
+    build recipe — so any agent inheriting the DS is AWARE the active style is
+    e.g. glass and knows exactly HOW to wire it on a feature page (link target,
+    <html> attribute, runtime script, fallback note). Returns None when no
+    default style is baked (the DS is its neutral base look).
+
+    Two bake shapes (see the 2c block in /__projects bake):
+      • CSS-only style → folded UNSCOPED into styles.css at bake time. Linking
+        styles.css is enough; no attribute or script needed.
+      • JS-backed style (themes/<id>.js exists — e.g. glassmorphism's WebGL
+        dispersion-prism) → CANNOT fold into static CSS, so it stays a scoped
+        [data-theme="<id>"] overlay. A consuming page MUST link all.css, stamp
+        data-theme="<id>" on <html>, and include the runtime script. The CSS
+        fallback still renders if WebGL is unavailable.
+    """
+    if not isinstance(meta, dict):
+        return None
+    style_id = (meta.get("defaultStyle") or "").strip()
+    if not style_id:
+        return None
+    # Pull the human label/desc from the meta styles[] catalog if present.
+    entry = {}
+    for s in (meta.get("styles") or []):
+        if isinstance(s, dict) and s.get("id") == style_id:
+            entry = s
+            break
+    css_rel = "themes/" + style_id + ".css"
+    js_rel  = "themes/" + style_id + ".js"
+    has_js  = bool(ds_dir) and os.path.isfile(os.path.join(ds_dir, js_rel))
+    contract = {
+        "id":    style_id,
+        "label": entry.get("label") or style_id.title(),
+        "desc":  entry.get("desc") or "",
+        "attr":  entry.get("attr") or ('data-theme="' + style_id + '"'),
+        "jsBacked": has_js,
+        # The recipe a feature page must follow to render in this style.
+        "requires": {
+            # JS-backed styles stay scoped → must link the all.css aggregator
+            # (pulls base + components + the scoped overlay). CSS-only styles
+            # are baked into styles.css, so the base link already carries them.
+            "link":     "all.css" if has_js else "styles.css",
+            "htmlAttr": ('data-theme="' + style_id + '"') if has_js else "",
+            "script":   js_rel if has_js else "",
+        },
+        "note": (
+            "JS-backed style: link all.css (NOT styles.css), stamp the html "
+            "attribute, and include the runtime script (CSS fallback renders "
+            "without it). See templates/ for the canonical wiring."
+            if has_js else
+            "CSS-only style: folded unscoped into styles.css at bake time — "
+            "linking styles.css renders this look by default, no attribute needed."
+        ),
+    }
+    if has_js:
+        contract["js"] = js_rel
+        contract["css"] = css_rel
+    return contract
+
+
 def _project_paths(project_root: str) -> dict:
     """Per-project derived paths. v3.1 — branches deprecated; `merges`
     retained for legacy callers but no longer used."""
@@ -10096,6 +10156,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "version": meta.get("version") or "",
                         "label": meta.get("label") or "",
                         "genre": meta.get("genre") or "",
+                        # The user-selected style baked as this DS's default
+                        # look ("" = neutral base). styleContract carries the
+                        # full build recipe so a consuming agent is aware the
+                        # active style is e.g. glass and knows how to wire it.
+                        "defaultStyle": meta.get("defaultStyle") or "",
+                        "styleContract": _resolve_style_contract(sub, meta),
                         "exists": True,
                         "hasGallery": os.path.isfile(os.path.join(sub, "gallery.html")),
                         "hasStyles":  os.path.isfile(os.path.join(sub, "styles.css")),
@@ -10125,6 +10191,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             "version": meta.get("version") or "",
             "label":   meta.get("label") or "",
             "genre":   meta.get("genre") or "",
+            # Active baked style ("" = neutral base) + its full build recipe.
+            "defaultStyle":  meta.get("defaultStyle") or "",
+            "styleContract": _resolve_style_contract(ds_dir, meta),
             "builtFrom": meta.get("builtFrom") or [],
             "parentRef": meta.get("parentRef"),
             "updates":   meta.get("updates") or [],
@@ -10567,6 +10636,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return data if isinstance(data, dict) else {}
         except Exception:
             return {}
+
+    def _resolve_style_contract(self, ds_dir, meta):
+        """Build the full build-recipe for a DS's baked `defaultStyle`, so any
+        agent inheriting the DS knows (a) the active style is e.g. glass and
+        (b) exactly how to wire it on a feature page. Returns None when no
+        default style is baked (the DS is its neutral base look).
+
+        A CSS-only style is folded unscoped into styles.css at bake time, so
+        linking styles.css is enough. A JS-backed style (a themes/<id>.js
+        exists — e.g. glassmorphism's WebGL dispersion-prism) CANNOT bake into
+        static CSS; it stays a scoped overlay, so a consuming page MUST link
+        all.css, stamp `data-theme="<id>"` on <html>, and include the runtime
+        script (the CSS fallback still renders if WebGL is unavailable)."""
+        return _resolve_style_contract(ds_dir, meta)
 
     # ── GET /__resolve_font?name=<family> ────────────────────────────────
     # Checks the LOCAL font library first (design-systems/*/fonts/ — fonts
@@ -17586,6 +17669,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         meta["schemes"] = schemes
         meta["defaultScheme"] = "dark" if dark_only else "light"
         meta["defaultStyle"] = default_style
+        # Persist the full build recipe for the baked style so any agent
+        # inheriting this DS is aware of the active style (e.g. glass) and
+        # knows exactly how to wire it — link target, <html> attribute, and
+        # runtime script for JS-backed styles. None when neutral base.
+        meta["defaultStyleContract"] = _resolve_style_contract(ds_dir, meta)
         try:
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)

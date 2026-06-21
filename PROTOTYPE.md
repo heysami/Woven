@@ -42,9 +42,24 @@ All five are *inherited from a single chosen genre*. You don't invent any of the
 
 This rule is modelled on the open-design (`nexu-io/open-design`) RULE 1 / 5-direction picker discipline: the pick UI applies *even when the brief looks complete* — do not justify skipping with "the brief is rich enough." Skip only in the four narrow carve-outs below; everything else fires the stop-and-ask.
 
+### Mandatory DS pre-flight — run this BEFORE evaluating any trigger
+
+**You may not assume "no design system." You must detect it.** Before deciding whether Step -1 fires, actually look:
+- `GET /__design_systems` (the daemon enumerates every committed DS, with `defaultStyle` + `styleContract`), AND/OR
+- check `editor/data.js` for `meta.dsRef`, AND/OR list `design-systems/` at the project root.
+
+If any of these shows a committed DS, **carve-out #1 fires automatically — inherit it and skip the direction-pick.** A DS exists is a fact on disk, never a guess. Trigger A ("No DS") cannot apply until this probe has returned empty. The single most common past failure was asserting "this is a new prototype with no design system" without running this check, then brainstorming over a DS the user had already built and styled.
+
 ### Carve-outs that skip stop-and-ask (and only these)
 
-1. **Active design system detected.** A `design-systems/<id>/` folder exists at the project root (the canonical Woven location — see §12), OR the brief names a DS the agent has access to ("use the LXP DS"), OR the user dropped a brand spec / tokens file / DS reference into the project tree. → Read the DS's `styles.css` + `gallery.html`, inherit vocabulary, skip to Step two. The genre commit IS the DS commit.
+1. **Active design system detected.** A `design-systems/<id>/` folder exists at the project root (the canonical Woven location — see §12), OR `meta.dsRef` is set in `editor/data.js`, OR the brief names a DS the agent has access to ("use the LXP DS"), OR the user dropped a brand spec / tokens file / DS reference into the project tree. → **Inherit the DS; do NOT brainstorm or emit a direction-pick.** Read the DS and **honor its baked active style** (see the *Mandatory DS pre-flight* below), inherit vocabulary, skip to Step two. The genre commit IS the DS commit.
+
+   **Honor the baked style — do not inherit the neutral base by mistake.** A DS records the user-selected style in `meta.json` → `defaultStyle` (e.g. `"glassmorphism"`), with the full build recipe in `defaultStyleContract` (also returned by `GET /__design_systems`). The DS's `genre` string describes the *base* look and will read neutral even when a style is active — **`defaultStyle` is authoritative, not `genre`.** When `defaultStyle` is set, every page you write MUST follow `defaultStyleContract.requires`:
+   - link `requires.link` (for a JS-backed style this is `all.css`, NOT `styles.css` — `styles.css` is the neutral base only);
+   - stamp `requires.htmlAttr` on `<html>` (e.g. `data-theme="glassmorphism"`) when non-empty;
+   - include `requires.script` before `</body>` when non-empty (the runtime, e.g. `themes/glassmorphism.js` — its CSS fallback still renders without WebGL).
+
+   Copy a file from the DS's `templates/` as the canonical worked example of the wiring — they ship with the active style already applied correctly.
 2. **In-place edit of an existing prototype.** The user is replying inside an active design with a tweak ("make the headline bigger", "swap slide 3 image", "add a feature row", "tighten the spacing"). → Apply the tweak, no direction question.
 3. **Explicit override in the current turn.** The user typed verbatim "just build", "skip questions", "no questions, go", "you pick", "your call", or an obvious equivalent. → Pick the closest-shipped-product genre yourself, commit it in a one-line comment, build. The user delegated; honor it.
 4. **Reply to your own direction question.** The user's current message answers the three-options ask you just emitted ("option 2", "the bento one", "yes do that", "1 but warmer"). → Apply the pick (and any small swap), build, no re-confirm.
@@ -53,7 +68,7 @@ This rule is modelled on the open-design (`nexu-io/open-design`) RULE 1 / 5-dire
 
 Fire the UI whenever none of the four carve-outs apply AND at least one of these is true. In practice this means almost every new-prototype turn.
 
-**Trigger A — No DS + new prototype.** The default. If you're being asked to start a prototype from scratch and no design system is committed, fire.
+**Trigger A — No DS + new prototype.** Fires only AFTER the *Mandatory DS pre-flight* above has returned empty — i.e. you have actually confirmed no DS is committed (no `meta.dsRef`, no `design-systems/<id>/`, nothing from `GET /__design_systems`). If you're being asked to start a prototype from scratch and that probe came back empty, fire. Never reach this trigger by assuming "no DS" without the probe.
 
 **Trigger B — Vague or incomplete direction.** At least one of these is missing or hand-wavy:
 - **Subject** (what is the prototype OF?)
