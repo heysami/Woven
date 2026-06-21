@@ -17,7 +17,9 @@ var DPR=Math.min(2, window.devicePixelRatio||1);
    shader's uScroll cancels for elements that scroll with the page), so sticky AND
    scrolling chrome both render correctly. breadcrumb/page-head are deliberately
    excluded — they are content, not chrome. */
-var SURF=".topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.phone__status,.modal,.slideout,.drawer,.fab,.fab-stack .fab,[data-float-panel],.toolbar,.segmented,.rail,.style-switcher,.sh-top,.lp-nav";
+/* NB: .phone__status (the mobile status bar) is deliberately NOT glass — it reads
+   as device chrome, not a glass surface, so it stays a plain bar (see glassmorphism.css). */
+var SURF=".topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.drawer,.fab,.fab-stack .fab,[data-float-panel],.toolbar,.segmented,.rail,.style-switcher,.sh-top,.lp-nav";
 
 /* OUR pill-POC presets, VERBATIM — light + dark (px values scaled by DPR where
    the shader expects px). The theme picks light/dark per the page's theme. */
@@ -282,7 +284,13 @@ function renderUnit(u){
   gl.bindBuffer(gl.ARRAY_BUFFER,u.buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,u.tex); gl.uniform1i(u.U.uPage,0);
   gl.uniform2f(u.U.uPagePx, pageCapW, pageCapH);   // LOGICAL device size, not the (possibly down-scaled) texture px
-  gl.uniform1f(u.U.uScroll, (window.scrollY||0)*DPR);
+  /* Pan the captured backdrop by the TOTAL scroll under this host: window scroll
+     PLUS every scrollable ancestor (e.g. the mobile .phone__screen). The texture is
+     captured once; scrolling just samples it at a shifted offset, so a bar over an
+     inner scroll container refracts the content moving behind it without re-capture. */
+  var sY = window.scrollY||0;
+  for(var an=el.parentElement; an && an!==document.body && an!==document.documentElement; an=an.parentElement){ if(an.scrollTop) sY += an.scrollTop; }
+  gl.uniform1f(u.U.uScroll, sY*DPR);
   gl.uniform2f(u.U.uCanvas, cw, ch);
   gl.uniform2f(u.U.uCardTL, rc.left*DPR, rc.top*DPR);
   var dark=isDark()?1:0, P=dark?PRESETS.dark:PRESETS.light;
@@ -305,18 +313,7 @@ function frame(){
 var syncTimer=0;
 function scheduleSync(){ clearTimeout(syncTimer); syncTimer=setTimeout(syncUnits, 200); }
 function onResize(){ syncUnits(); scheduleCap(); }
-function onScroll(e){
-  /* PAGE scroll is handled by the shader's uScroll pan (renderUnit reads the host
-     rect + window.scrollY each frame). But an INNER scroll container (e.g. the
-     mobile .phone__screen) moves content the window-scroll pan can't see —
-     window.scrollY stays 0 — so the captured texture freezes and the glass keeps
-     refracting stale content behind the bars (the "blob"). Inner scroll events do
-     NOT bubble, so this listener runs in the CAPTURE phase to catch them; on settle
-     we re-rasterise, and since html2canvas captures the container at its CURRENT
-     scroll position the glass then refracts the live content. */
-  var t = e && e.target;
-  if(t && t.nodeType===1 && t!==document.documentElement && t!==document.body){ scheduleCap(); }
-}
+function onScroll(){ /* sticky hosts hold their rect; renderUnit reads rc + per-unit scroll each frame */ }
 function onMove(e){ mouse=[e.clientX*DPR, e.clientY*DPR]; }
 
 function mount(){
@@ -326,7 +323,7 @@ function mount(){
   document.documentElement.classList.add("glass-gl");
   window.addEventListener("resize",onResize,{passive:true});
   window.addEventListener("pointermove",onMove,{passive:true});
-  window.addEventListener("scroll",onScroll,{passive:true,capture:true});
+  window.addEventListener("scroll",onScroll,{passive:true});
   /* observe ONLY to discover new/removed chrome (debounced syncUnits). We do NOT
      re-capture on mutation — html2canvas adds + removes its own clone nodes while
      capturing, which would re-trigger capture forever and hang the page. */
@@ -341,7 +338,7 @@ function teardown(){
   if(raf){ cancelAnimationFrame(raf); raf=0; }
   if(capTimer){ clearTimeout(capTimer); capTimer=0; }
   if(mo){ try{mo.disconnect();}catch(e){} mo=null; }
-  window.removeEventListener("resize",onResize); window.removeEventListener("pointermove",onMove); window.removeEventListener("scroll",onScroll,true);
+  window.removeEventListener("resize",onResize); window.removeEventListener("pointermove",onMove); window.removeEventListener("scroll",onScroll);
   for(var i=units.length-1;i>=0;i--){ destroyUnit(units[i]); } units=[]; byEl=new WeakMap(); pageCap=null;
   document.documentElement.classList.remove("glass-gl");
 }

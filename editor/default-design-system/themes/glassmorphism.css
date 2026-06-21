@@ -108,6 +108,15 @@ html.lg-dark[data-theme="glassmorphism"] body{ background:#171A1F; }   /* solid 
   box-shadow:var(--glass-shadow), var(--glass-specular);
 }
 
+/* The mobile STATUS BAR is device chrome, NOT a glass surface — keep it a plain,
+   transparent bar (the time + glyphs sit over the phone's own background). It is
+   excluded from the WebGL SURF list in glassmorphism.js for the same reason. */
+[data-theme="glassmorphism"] .phone__status{
+  background:transparent;
+  -webkit-backdrop-filter:none; backdrop-filter:none;
+  border:0; box-shadow:none;
+}
+
 /* denser glass for chrome rails + overlays (more opacity = more readable) */
 [data-theme="glassmorphism"] .sidebar,
 [data-theme="glassmorphism"] .modal,
