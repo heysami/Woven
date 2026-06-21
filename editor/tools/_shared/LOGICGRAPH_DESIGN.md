@@ -729,39 +729,78 @@ no simplify), `size` (per-instance scale). The position-node template
 the matching fields (all null `L._textOutline`); the baked slimPlayer keeps parity
 via `traceInk` + `rdpB` / `rdpClosedB` / `resampleClosedB`.
 
-### 11.7 Fluid effect (approximate real-time fluid, Stam stable-fluids, coarse grid) - DONE
-The long-noted "Navier-Stokes fluid" gap is now DONE, delivered as an
-APPROXIMATE coarse solver (true high-res GPU fluid stays out of scope). `fluid`
-SHIPS as a per-LAYER effect (added to the composer-local effect catalog
-`FX_TYPES_LOCAL` / `FX_LABELS_LOCAL`, picker label "Fluid (real-time)"), NOT as a
-GL shader in `fx.js`.
+### 11.7 Fluid effect (real-time Stam stable-fluids, GPU stateful + CPU fallback) - DONE
+The long-noted "Navier-Stokes fluid" gap is DONE. `fluid` SHIPS as a per-LAYER
+effect (composer-local catalog `FX_TYPES_LOCAL` / `FX_LABELS_LOCAL`, picker label
+"Fluid (real-time)"). It now runs on the GPU via the SHARED fx.js STATEFUL-FX
+foundation (below), with the original CPU solver kept as a fallback.
 
-Architecture choice (and why): the shared GL fx chain (`GLFx` editor /
-`applyFxFrom` baked) is a STATELESS ping-pong that compiles ONE program per effect
-type for ALL layers - it cannot own a persistent per-layer velocity / dye field.
-A stable-fluids solver is intrinsically stateful (the field must survive across
-frames), so `fluid` is delivered as a CPU sim that owns its field (keyed by layer
-id, like `Positioning.sim`) and writes back into the layer's 2D buffer. It still
-COMPOSES on the layer like any effect: it is declared in the layer's effect stack,
-runs in PASS B right before masking + the GL chain, and the GL chain filters
-`type==='fluid'` out so it is never (mis)compiled as a shader pass.
+Stateful-FX foundation (fx.js, NEW - the part the GPU fluid stands on):
+apply()/applyToImageData() are STATELESS - every effect is one fullscreen pass and
+the two ping-pong FBOs are transient (never read across frames). Some effects need
+PERSISTENT per-instance state. fx.js adds a stateful subsystem ALONGSIDE the
+stateless chain (additive, the 15 stateless effects + apply()/applyToImageData()
+are byte-for-byte unchanged). Public API on the chain:
+`chain.stepStateful(instanceId, type, { params, intensity, source, pointer:{x,y,
+dx,dy,down,hover}, dt, time, iterations, target })` lazily creates an instance's
+PERSISTENT textures (single or ping-pong pairs) keyed by `instanceId` (the layer
+id) + sized to the source, runs the effect's ordered MULTI-PASS sequence (with a
+configurable solver iteration count) into those textures, then a DISPLAY pass to a
+2D canvas (or `target`). `chain.disposeStateful(instanceId)` frees one instance;
+`dispose()` frees all; `chain.hasStateful(type)` / `chain.statefulAvailable()`
+report capability (the WebGL2-unavailable STUB returns null from stepStateful so
+callers fall back to CPU). Stateful effects are declared in `STATEFUL_EFFECTS`:
+each entry lists its persistent `textures` ({channels, ping, filter, wrap}), its
+`programs` (fragment sources, compiled once per chain, shared by all instances),
+and a `display` pass. The foundation is GENERIC: feedback (one ping texture + a
+fade/composite pass) and GPU particles (a position/velocity ping pair + update +
+draw passes) can be added as further `STATEFUL_EFFECTS` entries with NO runtime
+changes (see 11.9). Float render targets (RGBA16F via EXT_color_buffer_float,
+probed for framebuffer-completeness) are used when available, falling back to
+RGBA8 (LINEAR filtering on float falls back to NEAREST without
+OES_texture_float_linear).
 
-Solver (`FluidSim` editor / `fluidStep` baked, identical math for parity): Jos
-Stam stable-fluids on a COARSE grid - default 72 cells on the long axis (control
-`grid`, 16-120), the short axis derived from the canvas aspect. Per step:
-semi-Lagrangian advection (backward trace + bilinear sample), velocity diffusion,
-and a FIXED 12-iteration Jacobi / Gauss-Seidel pressure projection (two projects
-per frame, the canonical velocity-step shape). The layer's rendered RGBA pixels
-ARE the dye (downsampled into the grid each frame, continuously refreshed at 6%
-so the layer keeps animating while stirred); the pointer (`Input.px/py` delta +
-`Input.hoverAny`) injects velocity + force in a gaussian splat. The advected dye
-is bilinearly upsampled back over the full-res buffer. Controls: `viscosity`,
-`force`, `fade`, `radius`, `grid`. All math is finite-safe (clamped substep,
-bounded indices); verified finite + stable (bounded velocity, fading dye) across
-120 frames. No `getBoundingClientRect`, no `Math.random`. Reduced motion not
-honored (per scope). app.js registers the `_effectTemplate("fluid", ...)`
-buildSpec + the `fluid` option in the effect-node field list; baked parity via
-`fluidStep` + `layerFluid`.
+GPU fluid (first `STATEFUL_EFFECTS` entry): a Stam stable-fluids solver fully on
+the GPU. Persistent per-layer textures: velocity (RG, ping-pong), pressure (R,
+ping-pong), divergence (R, single), dye (RGBA, ping-pong), curl (R, single). The
+sim runs on a coarse grid (control `grid`, default 128 on the long axis, clamped
+32-512; short axis from the source aspect); the display pass samples the full-res
+source. Per-step pass sequence: (1) seed dye - refresh a fraction (6%, full on the
+first frame) of the dye from the LAYER's rendered pixels so the flow stirs the
+real content; (2) splat - inject velocity + dye from the pointer (gaussian splat,
+only while hovering/down, driven by `pointer.dx/dy`); (3) advect velocity
+(semi-Lagrangian; `viscosity` acts as velocity dissipation); (4) optional
+vorticity confinement (`curl` amount > 0: curl pass then a vorticity force pass);
+(5) divergence; (6) pressure Jacobi x N (`iterations`, default 24, clamped 1-60);
+(7) gradient subtract (divergence-free velocity); (8) advect dye + fade (`fade`);
+(9) display - composite stirred dye over the source by `uIntensity`. Controls map
+to the existing `fluid` template: `viscosity`, `force`, `fade`, `radius`, `grid`,
+plus NEW `iterations` and `curl` (added to `_effectTemplate("fluid")` in app.js +
+`FLUID_UNIFORMS` in the composer). NO `getBoundingClientRect`, NO `Math.random`,
+build-less raw WebGL2.
+
+CPU fallback (kept, unchanged math): the original Jos Stam coarse solver
+(`FluidSim` editor / `fluidStep` baked) - semi-Lagrangian advection, velocity
+diffusion, a fixed 12-iteration Jacobi projection (two projects/frame), the layer
+pixels as dye (6% refresh), gaussian pointer splat, bilinear upsample. It runs
+when WebGL2/float is unavailable (the chain is a stub, or `stepStateful` returns
+null). It honors `viscosity`/`force`/`fade`/`radius`/`grid` (the `iterations` /
+`curl` refinements are GPU-only).
+
+Composer wiring: a `stepFluid(cv,id,params,dt,time)` dispatcher (editor) /
+`stepFluid(cv,id,params,dt)` (baked) prefers the GPU path and falls back to CPU,
+writing the result back into the layer buffer `cv` so masking + the stateless GL
+effect chain compose on top exactly as before. It runs in PASS B right before
+masking, and the GL chain still filters `type==='fluid'` out so it is never
+(mis)compiled as a shader pass. GPU buffers are disposed when a layer (or its
+fluid effect) is removed (`disposeFluid` editor / `disposeFlu` baked, driven off
+the live-layer prune in PASS A) and on `rebuild()`. Per-frame pointer deltas are
+tracked once in `Input.tick()` (editor `Input.pdx/pdy`) / the baked frame loop
+(`IN.pdx/pdy`) - no per-frame getBoundingClientRect. Baked parity: the standalone
+slimPlayer inlines a self-contained GPU fluid (`GFLU`) on its existing WebGL2
+context using the SAME shaders + pass sequence + param mapping as fx.js, with the
+baked `fluidStep` CPU solver as the same fallback, so editor + export stir
+identically.
 
 ### 11.8 Shatter position mode (voronoi fracture + matter.js rigid bodies) - DONE
 The long-noted "fracture + rigidbody" gap is now DONE. `shatter` SHIPS as a
@@ -866,6 +905,22 @@ lazy `logicvision` import when any baked layer carries the effect). Camera
 permission stays gesture-gated via the existing `ensureCameraContent` / `ensureCam`
 path (a `source==='camera'` morph counts as needing the webcam). NO `Math.random`,
 NO per-frame `getBoundingClientRect`, fail-soft to identity.
+
+### 11.10 Next on the stateful-FX path (feedback / particles) - NOT YET DONE
+The stateful-FX foundation in fx.js (see 11.7) is GENERIC by design - a stateful
+effect is just an entry in `STATEFUL_EFFECTS` declaring its persistent textures +
+ordered passes + a display pass, with NO runtime changes needed to add one. Two
+existing composer features are natural candidates to migrate onto it later (not
+done yet, called out so a future wave does not re-invent the plumbing):
+- Per-layer feedback / trail (11.3) is today a CPU `destination-out` fade on the
+  layer 2D buffer. It could become a stateful effect with ONE ping texture (the
+  trail accumulator) + a fade/composite pass, keeping the trail in GPU memory
+  instead of round-tripping pixels.
+- GPU particles could become a stateful effect with a position/velocity ping pair
+  (update pass) + a draw pass, replacing CPU verlet point clouds where density
+  warrants the GPU.
+Both would reuse `stepStateful` / `disposeStateful` and the float-or-RGBA8 target
+handling verbatim. Until then they keep their current CPU implementations.
 
 ---
 

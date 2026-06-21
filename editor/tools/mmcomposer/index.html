@@ -196,7 +196,8 @@ const FX_LABELS_LOCAL = {...FX_LABELS, fluid:'Fluid (real-time)', 'face-morph':'
 // declarative param controls for the fluid effect (mirrors the fx.js uniform shape)
 const FLUID_UNIFORMS = [
   {from:'viscosity', def:0.2}, {from:'force', def:1}, {from:'fade', def:0.04},
-  {from:'radius', def:0.12}, {from:'grid', def:72},
+  {from:'radius', def:0.12}, {from:'grid', def:128},
+  {from:'iterations', def:24}, {from:'curl', def:0},
 ];
 // face-morph is also a composer-local CPU effect (a facial-landmark mesh warp);
 // these are its parametric controls (mirrors the app.js effect template).
@@ -976,12 +977,19 @@ const Assets = {
    ===========================================================================*/
 const Input = {
   px:0.5, py:0.5, down:false, clicks:0, clickPulse:0, hoverAny:false,
+  // per-frame pointer delta (computed in tick from the previous frame's px/py).
+  // Consumed by the GPU fluid splat (chain.stepStateful pointer.dx/dy).
+  pdx:0, pdy:0, _ppx:0.5, _ppy:0.5,
   t0:performance.now(), clock:0,
   cam:{ on:false, video:null, stream:null },
   mic:{ on:false, ctx:null, analyser:null, data:null, freq:null, src:null },
   detect:{ hand:0, face:0, object:0, ocr:'', landmarks:null },
   resetClock(){ this.t0=performance.now(); },
-  tick(){ this.clock=(performance.now()-this.t0)/1000; this.clickPulse*=0.9; },
+  tick(){
+    this.clock=(performance.now()-this.t0)/1000; this.clickPulse*=0.9;
+    this.pdx=this.px-this._ppx; this.pdy=this.py-this._ppy;
+    this._ppx=this.px; this._ppy=this.py;
+  },
 };
 
 /* pointer wiring on the stage host (no per-frame getBoundingClientRect) */
@@ -1844,6 +1852,41 @@ const FluidSim = {
 };
 function layerHasFluid(L){ const st=L&&L.effects&&L.effects.stack; if(!st) return null;
   for(const e of st){ if(e&&e.type==='fluid') return e; } return null; }
+// Fluid step dispatcher: prefer the shared GPU stateful solver (chain.stepStateful
+// in fx.js - persistent per-layer velocity/pressure/dye buffers). Fall back to the
+// CPU FluidSim when WebGL2/float is unavailable (the chain is a stub, or stepStateful
+// returns null). Either way the result is written back into the layer buffer `cv` so
+// masking + the GL effect chain compose on top exactly as before. Set keys:
+//   _gpuFluidIds tracks which layer ids hold GPU buffers (for disposal on removal).
+const _gpuFluidIds=new Set();
+function stepFluid(cv, id, params, dt, time){
+  const chain=ensureFXChain();
+  if(chain && chain.statefulAvailable && chain.statefulAvailable() && chain.hasStateful('fluid')){
+    try{
+      const out=chain.stepStateful(id, 'fluid', {
+        params, intensity:1, source:cv, dt, time,
+        pointer:{ x:Input.px, y:Input.py, dx:Input.pdx, dy:Input.pdy, down:Input.down, hover:Input.hoverAny },
+      });
+      if(out){
+        _gpuFluidIds.add(id);
+        const cx=cv.getContext('2d'); cx.clearRect(0,0,cv.width,cv.height); cx.drawImage(out,0,0,cv.width,cv.height);
+        return;
+      }
+    }catch(e){ /* fall through to CPU */ }
+  }
+  // CPU fallback (stub chain / no float / GPU step failed).
+  FluidSim.step(cv, id, params, dt);
+}
+// Free a layer's GPU fluid buffers (called when a layer is removed / its fluid
+// effect is cleared / the composition is reset).
+function disposeFluid(id){
+  if(_gpuFluidIds.has(id)){
+    const chain=_fxChain;
+    if(chain && chain.disposeStateful){ try{ chain.disposeStateful(id); }catch(e){} }
+    _gpuFluidIds.delete(id);
+  }
+  if(FluidSim.fields[id]) delete FluidSim.fields[id];
+}
 
 /* ===========================================================================
    FACE-MORPH  -  parametric facial-landmark mesh warp (Parametric Portrait
@@ -3068,6 +3111,10 @@ const Engine = {
     // prune buffers for layers that no longer exist
     const live=new Set(layers.map(L=>L.id));
     for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
+    // free GPU/CPU fluid buffers for layers (or fluid effects) that went away.
+    const fluidLive=new Set(layers.filter(L=>layerHasFluid(L)).map(L=>L.id));
+    for(const id of Array.from(_gpuFluidIds)){ if(!fluidLive.has(id)) disposeFluid(id); }
+    for(const id of Object.keys(FluidSim.fields)){ if(!fluidLive.has(id)) disposeFluid(id); }
     // 4b) PASS B - composite visible layers in z-order, applying channel masks.
     const ordered=[...layers].filter(L=>L.visible).sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ordered){
@@ -3079,7 +3126,7 @@ const Engine = {
       // BEFORE masking / GL effects. The sim owns the field (cannot live in the
       // stateless GL ping-pong chain) but composes on the layer like any effect.
       const fluidEff=layerHasFluid(L);
-      if(fluidEff){ FluidSim.step(buf.cv, L.id, (fluidEff.params||{}), dt); }
+      if(fluidEff){ stepFluid(buf.cv, L.id, (fluidEff.params||{}), dt, time); }
       // FACE-MORPH: detect landmarks + mesh-warp the layer pixels (CPU, like fluid).
       const morphEff=layerHasFaceMorph(L);
       if(morphEff){ FaceMorph.step(buf.cv, L, (morphEff.params||{})); }
@@ -3633,7 +3680,7 @@ function renderInspector(){
           const cur=(eff.params&&eff.params[u.from]!=null)?eff.params[u.from]:u.def;
           card.appendChild(numField(u.from,cur,v=>{ eff.params=eff.params||{}; eff.params[u.from]=v; }));
         }
-        card.appendChild(html('<p class="hint">Approximate real-time fluid (Stam stable-fluids, coarse grid). Move the pointer over the stage to stir. viscosity/force/fade/radius shape the flow; grid sizes the solver (16-120).</p>'));
+        card.appendChild(html('<p class="hint">Real-time Stam stable-fluids (GPU; CPU fallback when WebGL2/float is unavailable). Move the pointer over the stage to stir. viscosity/force/fade/radius shape the flow; grid sizes the solver; iterations sets the pressure-solve count; curl adds swirl (GPU only).</p>'));
         b.appendChild(card); return;
       }
       // face-morph is a CPU facial-landmark mesh warp - render its own controls.
@@ -3703,6 +3750,8 @@ function rebuild(){
   const selWired  = !selInline && wiredRuntimeLayers().find(l=>l.id===selId);
   if(!selId || (!selInline && !selWired)) selId=STATE.layers[0]&&STATE.layers[0].id;
   Positioning.reset();
+  // free all fluid buffers (CPU fields + GPU stateful instances) on rebuild.
+  for(const id of Array.from(_gpuFluidIds)) disposeFluid(id);
   FluidSim.reset();
   FaceMorph.reset();
   Engine.resize();
@@ -3971,7 +4020,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     return boxes.filter(b=>b.length).map(bx=>{ let r=0,g=0,bl=0; for(const p of bx){ r+=p[0]; g+=p[1]; bl+=p[2]; } const k=bx.length;
       return {color:[Math.round(r/k),Math.round(g/k),Math.round(bl/k)],count:k}; }); }
   /* input */
-  const IN={px:.5,py:.5,down:false,clickPulse:0,hover:false,t0:performance.now(),clock:0,
+  const IN={px:.5,py:.5,pdx:0,pdy:0,_ppx:.5,_ppy:.5,down:false,clickPulse:0,hover:false,t0:performance.now(),clock:0,
     cam:{on:false,video:null},mic:{on:false,an:null,data:null,freq:null},detect:{hand:0,face:0,object:0,landmarks:null}};
   stage.addEventListener('pointermove',e=>{IN.px=clamp((e.clientX-rect.left)/rect.width,0,1);IN.py=clamp((e.clientY-rect.top)/rect.height,0,1);IN.hover=true;});
   stage.addEventListener('pointerleave',()=>IN.hover=false);
@@ -4442,9 +4491,102 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
   function applyTop(time){ if(!GLOK||!TOP.length)return; applyFxFrom(c2d,TOP,time,null); ctx.save(); ctx.globalCompositeOperation='copy'; ctx.drawImage(cgl,0,0,W,H); ctx.restore(); }
+  /* GPU FLUID (baked twin of fx.js stepStateful('fluid')) - Stam stable-fluids on
+     the WebGL2 context. Persistent per-layer velocity/pressure/divergence/dye
+     textures (float RGBA16F when renderable, else RGBA8). Same pass sequence +
+     param mapping as the editor so editor + export stir identically. Falls back to
+     the CPU fluidStep when WebGL2/float is unavailable. */
+  const GFLU=(function(){
+    if(!GLOK) return null;
+    gl.getExtension('EXT_color_buffer_float');
+    const floatLin=!!gl.getExtension('OES_texture_float_linear');
+    const HF=0x140B;
+    // probe RGBA16F renderability
+    let useF=false; try{ const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,4,4,0,gl.RGBA,HF,null);
+      const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+      useF=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.deleteFramebuffer(fb);gl.deleteTexture(t);}catch(e){useF=false;}
+    const HDR='#version 300 es\nprecision highp float;precision highp sampler2D;in vec2 vUv;out vec4 fragColor;uniform vec2 uResolution;uniform vec2 uTexel;uniform float uTime;uniform float uDt;\n';
+    const SRC={
+      seedDye:HDR+'uniform sampler2D uDye;uniform sampler2D uSrc;uniform float uSeed;void main(){vec4 p=texture(uDye,vUv);vec4 s=texture(uSrc,vUv);fragColor=mix(p,s,clamp(uSeed,0.0,1.0));}',
+      splatVel:HDR+'uniform sampler2D uVel;uniform vec2 uPoint;uniform vec2 uForce;uniform float uRadius;void main(){vec2 v=texture(uVel,vUv).xy;vec2 d=vUv-uPoint;float f=exp(-dot(d,d)/max(1e-5,uRadius*uRadius));fragColor=vec4(v+uForce*f,0.0,1.0);}',
+      advect:HDR+'uniform sampler2D uVel;uniform sampler2D uField;uniform float uDissipation;void main(){vec2 vel=texture(uVel,vUv).xy;vec2 c=vUv-uDt*vel*uTexel;fragColor=uDissipation*texture(uField,c);}',
+      curl:HDR+'uniform sampler2D uVel;void main(){float l=texture(uVel,vUv-vec2(uTexel.x,0.0)).y;float r=texture(uVel,vUv+vec2(uTexel.x,0.0)).y;float b=texture(uVel,vUv-vec2(0.0,uTexel.y)).x;float t=texture(uVel,vUv+vec2(0.0,uTexel.y)).x;fragColor=vec4(0.5*((r-l)-(t-b)),0.0,0.0,1.0);}',
+      vorticity:HDR+'uniform sampler2D uVel;uniform sampler2D uCurl;uniform float uAmount;void main(){float l=texture(uCurl,vUv-vec2(uTexel.x,0.0)).x;float r=texture(uCurl,vUv+vec2(uTexel.x,0.0)).x;float b=texture(uCurl,vUv-vec2(0.0,uTexel.y)).x;float t=texture(uCurl,vUv+vec2(0.0,uTexel.y)).x;float c=texture(uCurl,vUv).x;vec2 force=0.5*vec2(abs(t)-abs(b),abs(r)-abs(l));force/=(length(force)+1e-5);force*=uAmount*c;force.y*=-1.0;vec2 vel=texture(uVel,vUv).xy+force*uDt;fragColor=vec4(vel,0.0,1.0);}',
+      divergence:HDR+'uniform sampler2D uVel;void main(){float l=texture(uVel,vUv-vec2(uTexel.x,0.0)).x;float r=texture(uVel,vUv+vec2(uTexel.x,0.0)).x;float b=texture(uVel,vUv-vec2(0.0,uTexel.y)).y;float t=texture(uVel,vUv+vec2(0.0,uTexel.y)).y;fragColor=vec4(0.5*((r-l)+(t-b)),0.0,0.0,1.0);}',
+      pressure:HDR+'uniform sampler2D uPres;uniform sampler2D uDiv;void main(){float l=texture(uPres,vUv-vec2(uTexel.x,0.0)).x;float r=texture(uPres,vUv+vec2(uTexel.x,0.0)).x;float b=texture(uPres,vUv-vec2(0.0,uTexel.y)).x;float t=texture(uPres,vUv+vec2(0.0,uTexel.y)).x;float dv=texture(uDiv,vUv).x;fragColor=vec4((l+r+b+t-dv)*0.25,0.0,0.0,1.0);}',
+      gradient:HDR+'uniform sampler2D uVel;uniform sampler2D uPres;void main(){float l=texture(uPres,vUv-vec2(uTexel.x,0.0)).x;float r=texture(uPres,vUv+vec2(uTexel.x,0.0)).x;float b=texture(uPres,vUv-vec2(0.0,uTexel.y)).x;float t=texture(uPres,vUv+vec2(0.0,uTexel.y)).x;vec2 vel=texture(uVel,vUv).xy-0.5*vec2(r-l,t-b);fragColor=vec4(vel,0.0,1.0);}',
+      display:HDR+'uniform sampler2D uDye;uniform sampler2D uSrc;uniform float uIntensity;void main(){vec4 s=texture(uSrc,vUv);vec4 d=texture(uDye,vUv);fragColor=mix(s,d,clamp(uIntensity,0.0,1.0));}',
+    };
+    const P={};
+    function prog(name){ if(P[name])return P[name]; const p=comp(SRC[name]); if(p)P[name]=p; return p; }
+    function fmt(ch){ if(useF){ if(ch===1)return[gl.R16F,gl.RED,HF]; if(ch===2)return[gl.RG16F,gl.RG,HF]; return[gl.RGBA16F,gl.RGBA,HF]; }
+      if(ch===1)return[gl.R8,gl.RED,gl.UNSIGNED_BYTE]; if(ch===2)return[gl.RG8,gl.RG,gl.UNSIGNED_BYTE]; return[gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE]; }
+    function mkTex(ch,lin,sw,sh){ const tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);const fl=(lin&&(!useF||floatLin))?gl.LINEAR:gl.NEAREST;
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,fl);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,fl);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      const F=fmt(ch);gl.texImage2D(gl.TEXTURE_2D,0,F[0],sw,sh,0,F[1],F[2],null);
+      const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);return{tex:tx,fbo:fb}; }
+    function mkOut(sw,sh){ const tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,sw,sh,0,gl.RGBA,gl.UNSIGNED_BYTE,null);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tx,0);gl.bindFramebuffer(gl.FRAMEBUFFER,null);return{tex:tx,fbo:fb,w:sw,h:sh}; }
+    const inst={};let sTex=null,outFB=null,outCv=null,outCx=null;
+    function uloc(p,n){ p._u=p._u||{}; if(n in p._u)return p._u[n]; const l=gl.getUniformLocation(p,n);p._u[n]=l;return l; }
+    function ensure(id,sw,sh){ let f=inst[id]; if(f&&f.sw===sw&&f.sh===sh)return f; if(f)free(id);
+      f={sw,sh,frame:0,vel:[mkTex(2,true,sw,sh),mkTex(2,true,sw,sh)],vc:0,pres:[mkTex(1,false,sw,sh),mkTex(1,false,sw,sh)],pc:0,div:mkTex(1,false,sw,sh),dye:[mkTex(4,true,sw,sh),mkTex(4,true,sw,sh)],dc:0,curl:mkTex(1,false,sw,sh)};
+      inst[id]=f;return f; }
+    function rd(f,k){ return f[k][f[k==='vel'?'vc':k==='pres'?'pc':'dc']]; }
+    function wr(f,k){ const c=f[k==='vel'?'vc':k==='pres'?'pc':'dc'];return f[k][c===0?1:0]; }
+    function sw_(f,k){ if(k==='vel')f.vc=1-f.vc;else if(k==='pres')f.pc=1-f.pc;else f.dc=1-f.dc; }
+    function pass(p,outFb,sw,sh,binds,setU){ gl.bindFramebuffer(gl.FRAMEBUFFER,outFb);gl.viewport(0,0,sw,sh);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+      gl.uniform2f(uloc(p,'uResolution'),sw,sh);gl.uniform2f(uloc(p,'uTexel'),1/sw,1/sh);gl.uniform1f(uloc(p,'uTime'),0);if(setU)setU(p);
+      for(let u=0;u<binds.length;u++){gl.activeTexture(gl.TEXTURE0+u);gl.bindTexture(gl.TEXTURE_2D,binds[u][1]);const l=uloc(p,binds[u][0]);if(l!=null)gl.uniform1i(l,u);}
+      gl.drawArrays(gl.TRIANGLES,0,3); }
+    function clr(fb,sw,sh){ gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.viewport(0,0,sw,sh);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.bindFramebuffer(gl.FRAMEBUFFER,null); }
+    function free(id){ const f=inst[id];if(!f)return;['vel','pres','dye'].forEach(k=>{gl.deleteTexture(f[k][0].tex);gl.deleteFramebuffer(f[k][0].fbo);gl.deleteTexture(f[k][1].tex);gl.deleteFramebuffer(f[k][1].fbo);});gl.deleteTexture(f.div.tex);gl.deleteFramebuffer(f.div.fbo);gl.deleteTexture(f.curl.tex);gl.deleteFramebuffer(f.curl.fbo);delete inst[id]; }
+    function step(cv,id,params,dt){
+      const ow=cv.width,oh=cv.height;if(ow<2||oh<2)return false;
+      const la=Math.max(32,Math.min(512,Math.round(num(params.grid,128))));let sw,sh;if(ow>=oh){sw=la;sh=Math.max(8,Math.round(la*oh/ow));}else{sh=la;sw=Math.max(8,Math.round(la*ow/oh));}
+      const f=ensure(id,sw,sh);
+      if(!sTex){sTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,sTex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);}
+      gl.bindTexture(gl.TEXTURE_2D,sTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);
+      const sdt=Math.min(0.033,Math.max(0.0005,dt)),seed=f.frame===0?1:0.06;
+      // 1 seed dye
+      {const p=prog('seedDye');if(!p)return false;pass(p,wr(f,'dye').fbo,sw,sh,[['uDye',rd(f,'dye').tex],['uSrc',sTex]],pp=>{gl.uniform1f(uloc(pp,'uDt'),sdt);gl.uniform1f(uloc(pp,'uSeed'),seed);});sw_(f,'dye');}
+      // 2 splat
+      if(IN.hover||IN.down){const p=prog('splatVel');if(p){const force=num(params.force,1)*6.0,fx=IN.pdx*force,fy=IN.pdy*force,rad=Math.max(0.01,num(params.radius,0.12))*0.5;
+        pass(p,wr(f,'vel').fbo,sw,sh,[['uVel',rd(f,'vel').tex]],pp=>{gl.uniform1f(uloc(pp,'uDt'),sdt);gl.uniform2f(uloc(pp,'uPoint'),clamp(IN.px,0,1),clamp(IN.py,0,1));gl.uniform2f(uloc(pp,'uForce'),fx,fy);gl.uniform1f(uloc(pp,'uRadius'),rad);});sw_(f,'vel');}}
+      // 3 advect velocity
+      {const p=prog('advect');if(!p)return false;const vd=1-Math.min(0.5,Math.max(0,num(params.viscosity,0.2)))*0.5;pass(p,wr(f,'vel').fbo,sw,sh,[['uVel',rd(f,'vel').tex],['uField',rd(f,'vel').tex]],pp=>{gl.uniform1f(uloc(pp,'uDt'),sdt);gl.uniform1f(uloc(pp,'uDissipation'),vd);});sw_(f,'vel');}
+      // 4 vorticity
+      const ca=num(params.curl,0);if(ca>0){const cp=prog('curl');if(cp){pass(cp,f.curl.fbo,sw,sh,[['uVel',rd(f,'vel').tex]],pp=>gl.uniform1f(uloc(pp,'uDt'),sdt));const vp=prog('vorticity');if(vp){pass(vp,wr(f,'vel').fbo,sw,sh,[['uVel',rd(f,'vel').tex],['uCurl',f.curl.tex]],pp=>{gl.uniform1f(uloc(pp,'uDt'),sdt);gl.uniform1f(uloc(pp,'uAmount'),ca);});sw_(f,'vel');}}}
+      // 5 divergence
+      {const p=prog('divergence');if(!p)return false;pass(p,f.div.fbo,sw,sh,[['uVel',rd(f,'vel').tex]],pp=>gl.uniform1f(uloc(pp,'uDt'),sdt));}
+      // 6 pressure jacobi xN
+      {const p=prog('pressure');if(!p)return false;clr(rd(f,'pres').fbo,sw,sh);const it=Math.max(1,Math.min(60,Math.round(num(params.iterations,24))));for(let k=0;k<it;k++){pass(p,wr(f,'pres').fbo,sw,sh,[['uPres',rd(f,'pres').tex],['uDiv',f.div.tex]],pp=>gl.uniform1f(uloc(pp,'uDt'),sdt));sw_(f,'pres');}}
+      // 7 gradient subtract
+      {const p=prog('gradient');if(!p)return false;pass(p,wr(f,'vel').fbo,sw,sh,[['uVel',rd(f,'vel').tex],['uPres',rd(f,'pres').tex]],pp=>gl.uniform1f(uloc(pp,'uDt'),sdt));sw_(f,'vel');}
+      // 8 advect dye + fade
+      {const p=prog('advect');if(!p)return false;const dd=1-Math.min(0.5,Math.max(0,num(params.fade,0.04)));pass(p,wr(f,'dye').fbo,sw,sh,[['uVel',rd(f,'vel').tex],['uField',rd(f,'dye').tex]],pp=>{gl.uniform1f(uloc(pp,'uDt'),sdt);gl.uniform1f(uloc(pp,'uDissipation'),dd);});sw_(f,'dye');}
+      f.frame++;
+      // display -> RGBA8 out FBO at source res, read back into cv
+      if(!outFB||outFB.w!==ow||outFB.h!==oh){if(outFB){gl.deleteTexture(outFB.tex);gl.deleteFramebuffer(outFB.fbo);}outFB=mkOut(ow,oh);outCv=document.createElement('canvas');outCv.width=ow;outCv.height=oh;outCx=outCv.getContext('2d');}
+      {const p=prog('display');if(!p)return false;pass(p,outFB.fbo,ow,oh,[['uSrc',sTex],['uDye',rd(f,'dye').tex]],pp=>{gl.uniform1f(uloc(pp,'uDt'),sdt);gl.uniform1f(uloc(pp,'uIntensity'),1);});}
+      const px=new Uint8Array(ow*oh*4);gl.bindFramebuffer(gl.FRAMEBUFFER,outFB.fbo);gl.readPixels(0,0,ow,oh,gl.RGBA,gl.UNSIGNED_BYTE,px);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      const out=new Uint8ClampedArray(ow*oh*4),rb=ow*4;for(let y=0;y<oh;y++){const s=(oh-1-y)*rb;out.set(px.subarray(s,s+rb),y*rb);}
+      outCx.putImageData(new ImageData(out,ow,oh),0,0);const cx2=cv.getContext('2d');cx2.clearRect(0,0,ow,oh);cx2.drawImage(outCv,0,0);
+      return true;
+    }
+    return {step,free};
+  })();
+  const _gpuFluIds=new Set();
+  function stepFluid(cv,id,params,dt){
+    if(GFLU){ try{ if(GFLU.step(cv,id,params,dt)){ _gpuFluIds.add(id); return; } }catch(e){} }
+    fluidStep(cv,id,params,dt);   // CPU fallback (no WebGL2/float, or GPU step failed)
+  }
+  function disposeFlu(id){ if(_gpuFluIds.has(id)){ if(GFLU)try{GFLU.free(id);}catch(e){} _gpuFluIds.delete(id); } if(FLU[id])delete FLU[id]; }
   /* loop */
   let last=performance.now();
   function frame(now){const dt=Math.min((now-last)/1000,0.05);last=now;IN.clock=(now-IN.t0)/1000;IN.clickPulse*=0.9;
+    IN.pdx=IN.px-IN._ppx;IN.pdy=IN.py-IN._ppy;IN._ppx=IN.px;IN._ppy=IN.py;
     ensureCam();    // a camera-content layer needs the live webcam
     LB.tick(now);   // W2C: tick the logic graph before resolving this frame's bindings
     const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);const ov=impacts(tv);
@@ -4464,11 +4606,13 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       else{b.cx.clearRect(0,0,W,H);}
       b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
     const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}
+    // free fluid buffers (GPU + CPU) for layers / fluid effects that went away
+    const fluLive=new Set(CFG.layers.filter(L=>layerFluid(L)).map(L=>L.id));for(const id of Array.from(_gpuFluIds)){if(!fluLive.has(id))disposeFlu(id);}for(const id in FLU){if(!fluLive.has(id))disposeFlu(id);}
     // PASS B - composite visible layers in z-order, applying channel masks
     const ord=[...CFG.layers].filter(L=>L.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ord){const b=rendered[L.id];if(!b)continue;const o=ov[L.id]||{};
       // FLUID: stir the layer buffer with the persistent coarse Stam solver before compositing.
-      const fe=layerFluid(L); if(fe)fluidStep(b.cv,L.id,(fe.params||{}),dt);
+      const fe=layerFluid(L); if(fe)stepFluid(b.cv,L.id,(fe.params||{}),dt);
       const me=layerMorph(L); if(me)FM.step(b.cv,L,(me.params||{}));
       lctx.clearRect(0,0,W,H);lctx.drawImage(b.cv,0,0);
       if(L.mask&&L.mask.by){const mb=rendered[L.mask.by];if(mb)maskCh(lctx,mb.cv,L.mask.src,L.mask.dst);}

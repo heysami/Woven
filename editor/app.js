@@ -61699,17 +61699,25 @@ const SPEC_SOURCE_TEMPLATES = {
       scale: { type: "number", value: 12, min: 1, max: 64, step: 1 },
       mix: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 }
     }, ["scale: values.scale", "mix: values.mix"]),
-    // fluid: approximate real-time fluid (Stam stable-fluids, coarse grid). Runs
-    // as a per-layer CPU sim in the composer (NOT a GL shader): the layer's pixels
-    // are the dye, the pointer injects velocity + dye. viscosity/force/fade/radius
-    // shape the flow; grid sizes the coarse solver (16-120 on the long axis).
+    // fluid: real-time Stam stable-fluids. Runs as a per-layer GPU stateful effect
+    // in the composer (chain.stepStateful in fx.js: persistent velocity/pressure/
+    // dye buffers, multi-pass solver), falling back to a CPU sim when WebGL2/float
+    // is unavailable. The layer's pixels are the dye, the pointer injects velocity
+    // + dye. viscosity/force/fade/radius shape the flow; grid sizes the solver grid
+    // on the long axis; iterations sets the pressure-Jacobi count; curl adds
+    // vorticity confinement (swirl). The CPU fallback honors viscosity/force/fade/
+    // radius/grid (iterations/curl are GPU-only refinements).
     _effectTemplate("fluid", "Fluid (real-time)", "fluid", {
-      viscosity: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
-      force:     { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
-      fade:      { type: "number", value: 0.04, min: 0, max: 0.5, step: 0.005 },
-      radius:    { type: "number", value: 0.12, min: 0.02, max: 0.5, step: 0.01 },
-      grid:      { type: "number", value: 72, min: 16, max: 120, step: 1 }
-    }, ["viscosity: values.viscosity", "force: values.force", "fade: values.fade", "radius: values.radius", "grid: values.grid"]),
+      viscosity:  { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+      force:      { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
+      fade:       { type: "number", value: 0.04, min: 0, max: 0.5, step: 0.005 },
+      radius:     { type: "number", value: 0.12, min: 0.02, max: 0.5, step: 0.01 },
+      grid:       { type: "number", value: 128, min: 16, max: 512, step: 1 },
+      iterations: { type: "number", value: 24, min: 1, max: 60, step: 1 },
+      curl:       { type: "number", value: 0, min: 0, max: 50, step: 1 }
+    }, ["viscosity: values.viscosity", "force: values.force", "fade: values.fade",
+        "radius: values.radius", "grid: values.grid", "iterations: values.iterations",
+        "curl: values.curl"]),
     // face-morph: parametric facial-landmark mesh warp (Parametric Portrait Morph).
     // A per-layer CPU effect in the composer (NOT a GL shader): FaceLandmarker
     // (via logicvision; still-image cache OR throttled camera/video detect) ->

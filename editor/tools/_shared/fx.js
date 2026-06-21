@@ -12,6 +12,42 @@
 //   chain.setTime(t);     // seconds, for time-based effects (uTime uniform)
 //   chain.dispose();      // free all GL resources
 //
+// Stateful, multi-pass effects (NEW - additive, separate from apply())
+// --------------------------------------------------------------------
+// apply()/applyToImageData() above are STATELESS: every effect is one fullscreen
+// pass and the two ping-pong FBOs are transient (reused, never read across
+// frames). Some effects (a Stam fluid solver, feedback trails, GPU particles)
+// need PERSISTENT per-instance state that survives across frames. The stateful
+// subsystem adds that without touching the stateless path:
+//
+//   const out = chain.stepStateful(instanceId, type, {
+//     params,                 // effect controls (same shape as `effects[].params`)
+//     intensity,              // 0..1 mix amount for the display pass
+//     source,                 // the layer's rendered pixels (canvas/img/ImageData)
+//     pointer:{x,y,dx,dy,down,hover}, // normalised 0..1 pointer + per-frame delta
+//     dt,                     // seconds since last step (clamped internally)
+//     time,                   // seconds (uTime)
+//     iterations,             // solver iteration count override (e.g. pressure xN)
+//     target,                 // optional 2D canvas to draw the result into
+//   }) -> HTMLCanvasElement (a fresh 2D canvas, like apply()) or `target` if given.
+//
+//   chain.disposeStateful(instanceId);   // free THAT instance's persistent buffers
+//   chain.hasStateful(type);             // is `type` a registered stateful effect?
+//   chain.statefulAvailable();           // false on the stub / when WebGL2 absent
+//
+// Each stateful instance owns a set of PERSISTENT textures (single or ping-pong
+// pairs) keyed by instanceId (the caller's layer id) and sized to the source.
+// They are lazily created on first stepStateful(instanceId,...), resized when the
+// source size changes, and freed by disposeStateful(instanceId) (or dispose(),
+// which frees them all). The subsystem is GENERIC: a stateful effect definition
+// declares its N persistent textures + an ordered pass list, so feedback and
+// particle systems can adopt the same path later. Float textures (RGBA16F via
+// EXT_color_buffer_float) are used when available, falling back to RGBA8.
+//
+// Registered stateful types today: 'fluid' (GPU Stam stable-fluids - see
+// STATEFUL_EFFECTS below). The stub chain (no WebGL2) returns null from
+// stepStateful so the caller can fall back to a CPU implementation.
+//
 //   `source` may be an HTMLCanvasElement, HTMLImageElement, ImageBitmap,
 //   HTMLVideoElement, ImageData, or an OffscreenCanvas. width/height are read
 //   from the source.
@@ -436,6 +472,201 @@ vec4 fxMain() {
   },
 };
 
+// ===========================================================================
+// STATEFUL, MULTI-PASS EFFECTS (the persistent-buffer subsystem)
+// ===========================================================================
+// A stateful effect is a definition with:
+//   textures: { name: { channels:1|2|4, ping:bool, filter:'nearest'|'linear',
+//                       wrap:'clamp'|'repeat' } }
+//     ping=true allocates a read/write PAIR (ping-pong) keyed by `name`. The
+//     instance owns one such set, sized to the source, PERSISTENT across frames.
+//   programs: { name: fragSrc }   // compiled once per chain (shared by instances)
+//   passes(ctx) -> [ Pass, ... ]  // ordered, called every step; may repeat a
+//     program N times for solver iterations. A Pass declares the program, the
+//     output texture (a ping target swaps after the pass), the input texture
+//     bindings (sampler name -> texture key), and a uniform setter.
+//   display: { program }          // FINAL pass: combines state + uIntensity ->
+//     the visible RGBA result (drawn to the chain canvas / target).
+// The runtime (createStatefulRunner inside createFXChain) lazily creates an
+// instance's textures, resizes them, runs passes() into the persistent set, then
+// the display pass to the canvas. disposeStateful frees one instance.
+//
+// This is GENERIC: feedback (one ping texture + a fade/composite pass) and GPU
+// particles (a position/velocity ping pair + an update + a draw pass) can be
+// added as further STATEFUL_EFFECTS entries with NO runtime changes.
+// ---------------------------------------------------------------------------
+
+// Shared header for stateful fragment shaders. Float-friendly: outputs are
+// written to RGBA16F when available; the runtime binds whatever attachment the
+// instance allocated. Each shader reads simulation textures at vUv.
+const SFX_HEADER = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+out vec4 fragColor;
+uniform vec2 uResolution;   // sim resolution in texels
+uniform vec2 uTexel;        // 1.0 / uResolution
+uniform float uTime;
+uniform float uDt;
+`;
+
+// Bilinear-correct neighbour sampling is implicit (LINEAR filter). gl_FragCoord
+// is NOT used; everything is in vUv space so it survives any viewport.
+
+// ---- GPU FLUID (Stam stable-fluids, the first stateful effect) ------------
+// Persistent textures (per instance, sized to the layer's sim resolution):
+//   vel   - velocity field, RG, ping-pong (advected + projected each frame)
+//   pres  - pressure field, R,  ping-pong (Jacobi solved each frame)
+//   div   - divergence,     R,  single    (recomputed each frame)
+//   dye   - colour carried by the flow, RGBA, ping-pong (the layer pixels)
+// Pass sequence per step:
+//   1. seedDye   - refresh a fraction of dye from the layer source (uSrc)
+//   2. splat     - inject velocity + dye from the pointer (gaussian splat)
+//   3. advectVel - semi-Lagrangian advect velocity by itself
+//   4. curl/vort - (optional) vorticity confinement to re-add swirl
+//   5. divergence- compute div of velocity
+//   6. pressure  - Jacobi solve x N (configurable iterations, default 24)
+//   7. gradient  - subtract pressure gradient (make velocity divergence-free)
+//   8. advectDye - advect dye by the (now divergence-free) velocity, then fade
+//   9. display   - composite dye over the layer source by uIntensity
+const FLUID_SHADERS = {
+  // Refresh dye from the live layer source so the flow stirs real content.
+  // uSeed=1 on the first frame (full copy), small (~0.06) afterwards.
+  seedDye: SFX_HEADER + `
+uniform sampler2D uDye;
+uniform sampler2D uSrc;
+uniform float uSeed;
+void main(){
+  vec4 prev = texture(uDye, vUv);
+  vec4 src  = texture(uSrc, vUv);
+  fragColor = mix(prev, src, clamp(uSeed, 0.0, 1.0));
+}`,
+  // Inject pointer velocity + a dye splat in a gaussian falloff around uPoint.
+  splatVel: SFX_HEADER + `
+uniform sampler2D uVel;
+uniform vec2 uPoint;     // pointer pos 0..1
+uniform vec2 uForce;     // velocity to add at the centre
+uniform float uRadius;   // splat radius (uv units)
+void main(){
+  vec2 v = texture(uVel, vUv).xy;
+  vec2 d = vUv - uPoint;
+  float f = exp(-dot(d, d) / max(1e-5, uRadius * uRadius));
+  fragColor = vec4(v + uForce * f, 0.0, 1.0);
+}`,
+  // Semi-Lagrangian advection (shared by velocity + dye). uField is what we
+  // carry, uVel is the velocity that transports it. uDissipation fades the
+  // result (1.0 = no fade).
+  advect: SFX_HEADER + `
+uniform sampler2D uVel;
+uniform sampler2D uField;
+uniform float uDissipation;
+void main(){
+  vec2 vel = texture(uVel, vUv).xy;
+  vec2 coord = vUv - uDt * vel * uTexel;
+  fragColor = uDissipation * texture(uField, coord);
+}`,
+  // Vorticity / curl: compute scalar curl of velocity (stored in R).
+  curl: SFX_HEADER + `
+uniform sampler2D uVel;
+void main(){
+  float l = texture(uVel, vUv - vec2(uTexel.x, 0.0)).y;
+  float r = texture(uVel, vUv + vec2(uTexel.x, 0.0)).y;
+  float b = texture(uVel, vUv - vec2(0.0, uTexel.y)).x;
+  float t = texture(uVel, vUv + vec2(0.0, uTexel.y)).x;
+  float c = 0.5 * ((r - l) - (t - b));
+  fragColor = vec4(c, 0.0, 0.0, 1.0);
+}`,
+  // Vorticity confinement: push velocity toward concentrations of curl.
+  vorticity: SFX_HEADER + `
+uniform sampler2D uVel;
+uniform sampler2D uCurl;
+uniform float uAmount;
+void main(){
+  float l = texture(uCurl, vUv - vec2(uTexel.x, 0.0)).x;
+  float r = texture(uCurl, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture(uCurl, vUv - vec2(0.0, uTexel.y)).x;
+  float t = texture(uCurl, vUv + vec2(0.0, uTexel.y)).x;
+  float c = texture(uCurl, vUv).x;
+  vec2 force = 0.5 * vec2(abs(t) - abs(b), abs(r) - abs(l));
+  force /= (length(force) + 1e-5);
+  force *= uAmount * c;
+  force.y *= -1.0;
+  vec2 vel = texture(uVel, vUv).xy + force * uDt;
+  fragColor = vec4(vel, 0.0, 1.0);
+}`,
+  // Divergence of the velocity field (stored in R).
+  divergence: SFX_HEADER + `
+uniform sampler2D uVel;
+void main(){
+  float l = texture(uVel, vUv - vec2(uTexel.x, 0.0)).x;
+  float r = texture(uVel, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture(uVel, vUv - vec2(0.0, uTexel.y)).y;
+  float t = texture(uVel, vUv + vec2(0.0, uTexel.y)).y;
+  float div = 0.5 * ((r - l) + (t - b));
+  fragColor = vec4(div, 0.0, 0.0, 1.0);
+}`,
+  // One Jacobi iteration of the pressure Poisson equation.
+  pressure: SFX_HEADER + `
+uniform sampler2D uPres;
+uniform sampler2D uDiv;
+void main(){
+  float l = texture(uPres, vUv - vec2(uTexel.x, 0.0)).x;
+  float r = texture(uPres, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture(uPres, vUv - vec2(0.0, uTexel.y)).x;
+  float t = texture(uPres, vUv + vec2(0.0, uTexel.y)).x;
+  float div = texture(uDiv, vUv).x;
+  float p = (l + r + b + t - div) * 0.25;
+  fragColor = vec4(p, 0.0, 0.0, 1.0);
+}`,
+  // Subtract the pressure gradient so velocity becomes divergence-free.
+  gradient: SFX_HEADER + `
+uniform sampler2D uVel;
+uniform sampler2D uPres;
+void main(){
+  float l = texture(uPres, vUv - vec2(uTexel.x, 0.0)).x;
+  float r = texture(uPres, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture(uPres, vUv - vec2(0.0, uTexel.y)).x;
+  float t = texture(uPres, vUv + vec2(0.0, uTexel.y)).x;
+  vec2 vel = texture(uVel, vUv).xy - 0.5 * vec2(r - l, t - b);
+  fragColor = vec4(vel, 0.0, 1.0);
+}`,
+  // Display: composite the stirred dye over the layer source by intensity.
+  display: SFX_HEADER + `
+uniform sampler2D uDye;
+uniform sampler2D uSrc;
+uniform float uIntensity;
+void main(){
+  vec4 src = texture(uSrc, vUv);
+  vec4 dye = texture(uDye, vUv);
+  fragColor = mix(src, dye, clamp(uIntensity, 0.0, 1.0));
+}`,
+};
+
+// The fluid stateful effect definition. `sim` divides the source resolution so
+// the solver runs on a coarse grid (cheap + stable); the display pass samples
+// the full-res source. Params map to the existing `fluid` template:
+//   viscosity (dissipation of velocity), force, fade (dye dissipation),
+//   radius (splat size), iterations (Jacobi count), curl (vorticity amount).
+const STATEFUL_EFFECTS = {
+  fluid: {
+    // sim resolution = source long axis capped, to keep the solver coarse.
+    simLongAxis(params) {
+      // `grid` keeps the legacy control name; default 128 (finer than the CPU 72
+      // because the GPU can afford it). Clamp to a sane GPU range.
+      return Math.max(32, Math.min(512, Math.round(num(params.grid, 128))));
+    },
+    textures: {
+      vel:  { channels: 2, ping: true,  filter: 'linear', wrap: 'clamp' },
+      pres: { channels: 1, ping: true,  filter: 'nearest', wrap: 'clamp' },
+      div:  { channels: 1, ping: false, filter: 'nearest', wrap: 'clamp' },
+      dye:  { channels: 4, ping: true,  filter: 'linear', wrap: 'clamp' },
+      curl: { channels: 1, ping: false, filter: 'nearest', wrap: 'clamp' },
+    },
+    programs: FLUID_SHADERS,
+    display: { program: 'display' },
+  },
+};
+
 // num(): coerce a param to a finite number with fallback.
 function num(v, d) {
   const n = Number(v);
@@ -563,6 +794,16 @@ export function createFXChain() {
 
   // Ping-pong FBOs.
   const fbos = [makeFBO(gl), makeFBO(gl)];
+
+  // Float-texture support for the stateful subsystem (RGBA16F render targets).
+  // EXT_color_buffer_float lets us render TO float textures; without it we fall
+  // back to RGBA8 (clamped, lower precision, still works for the fluid solver).
+  // HALF_FLOAT (0x140B) sized internal formats are core in WebGL2.
+  gl.getExtension('EXT_color_buffer_float');
+  const floatLinear = !!gl.getExtension('OES_texture_float_linear');
+  const HALF_FLOAT = 0x140B;
+  // Probe whether an RGBA16F FBO is actually renderable on this GPU.
+  const useFloat = probeFloatRenderable(gl, HALF_FLOAT);
 
   function ensureSize(w, h) {
     w = Math.max(1, w | 0);
@@ -785,16 +1026,380 @@ export function createFXChain() {
   function resize(w, h) { ensureSize(w, h); }
   function setTime(t) { time = num(t, 0); }
 
+  // =========================================================================
+  // STATEFUL SUBSYSTEM RUNTIME
+  // =========================================================================
+  // Per-stateful-type GLSL programs are compiled once and shared by all
+  // instances (keyed by `${type}:${progName}` in the same `programs` cache).
+  // Per-instance persistent textures live in `statefulInstances` keyed by
+  // instanceId. Each instance carries its own sim size + texture set.
+  const statefulInstances = new Map(); // instanceId -> instance record
+  // A small upload texture for the stateful source (the layer pixels), separate
+  // from `srcTex` so a stateful step never disturbs the stateless path's state.
+  let sfxSrcTex = null;
+  // A reusable RGBA8 FBO we render the display pass into (then copy to a 2D
+  // canvas), independent of `fbos` / `width` / `height` so stateful steps and
+  // apply() never collide on the shared ping-pong.
+  let sfxOutFBO = null;
+
+  function sfxProgram(type, progName, fragSrc) {
+    const key = type + ':' + progName;
+    let entry = programs.get(key);
+    if (entry) return entry;
+    const frag = compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+    if (!frag) return null;
+    const program = gl.createProgram();
+    gl.attachShader(program, vert);
+    gl.attachShader(program, frag);
+    gl.bindAttribLocation(program, 0, 'aPos');
+    gl.linkProgram(program);
+    gl.deleteShader(frag);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.warn('[fx] stateful program link failed (' + key + '):', gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+      return null;
+    }
+    entry = { program, uniforms: new Map() };
+    programs.set(key, entry);
+    return entry;
+  }
+
+  // Allocate ONE sim texture (+ FBO) of the given channel count at sw x sh.
+  function makeSimTex(channels, filter, wrap, sw, sh) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    const fmt = simFormat(channels);
+    // Linear filtering on float textures requires OES_texture_float_linear; fall
+    // back to NEAREST when filtering a float target we cannot linearly sample.
+    const usableLinear = filter === 'linear' && (!useFloat || floatLinear);
+    const f = usableLinear ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+    const wmode = wrap === 'repeat' ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wmode);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wmode);
+    gl.texImage2D(gl.TEXTURE_2D, 0, fmt.internal, sw, sh, 0, fmt.format, fmt.type, null);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { tex, fbo, channels };
+  }
+
+  // Internal/format/type triplet for a sim texture of `channels` components.
+  function simFormat(channels) {
+    if (useFloat) {
+      if (channels === 1) return { internal: gl.R16F,    format: gl.RED,  type: HALF_FLOAT };
+      if (channels === 2) return { internal: gl.RG16F,   format: gl.RG,   type: HALF_FLOAT };
+      return { internal: gl.RGBA16F, format: gl.RGBA, type: HALF_FLOAT };
+    }
+    // RGBA8 fallback: pack everything into RGBA8 (single/dual channel waste some
+    // components but the math is identical at lower precision).
+    if (channels === 1) return { internal: gl.R8,    format: gl.RED,  type: gl.UNSIGNED_BYTE };
+    if (channels === 2) return { internal: gl.RG8,   format: gl.RG,   type: gl.UNSIGNED_BYTE };
+    return { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE };
+  }
+
+  // Create / fetch / resize an instance's persistent textures for `type`.
+  function ensureStatefulInstance(instanceId, type, sw, sh) {
+    const def = STATEFUL_EFFECTS[type];
+    if (!def) return null;
+    let inst = statefulInstances.get(instanceId);
+    if (inst && inst.type === type && inst.sw === sw && inst.sh === sh) return inst;
+    if (inst) disposeStatefulInstance(inst);   // type or size changed -> rebuild
+    inst = { type, sw, sh, tex: {}, frame: 0 };
+    for (const name in def.textures) {
+      const t = def.textures[name];
+      if (t.ping) {
+        inst.tex[name] = {
+          ping: true,
+          a: makeSimTex(t.channels, t.filter, t.wrap, sw, sh),
+          b: makeSimTex(t.channels, t.filter, t.wrap, sw, sh),
+          cur: 0,
+        };
+      } else {
+        inst.tex[name] = { ping: false, a: makeSimTex(t.channels, t.filter, t.wrap, sw, sh) };
+      }
+    }
+    statefulInstances.set(instanceId, inst);
+    return inst;
+  }
+
+  // Read side of a ping texture (or the single texture).
+  function sfxRead(inst, name) {
+    const e = inst.tex[name];
+    return e.ping ? (e.cur === 0 ? e.a : e.b) : e.a;
+  }
+  // Write side of a ping texture (the slot we render INTO this pass).
+  function sfxWrite(inst, name) {
+    const e = inst.tex[name];
+    return e.ping ? (e.cur === 0 ? e.b : e.a) : e.a;
+  }
+  // Swap a ping texture after a pass that wrote into its write side.
+  function sfxSwap(inst, name) {
+    const e = inst.tex[name];
+    if (e.ping) e.cur = 1 - e.cur;
+  }
+
+  // Bind named textures to texture units and set the matching sampler uniforms.
+  // `binds` is [{ name:samplerUniform, tex:<GLTexture | {tex:GLTexture}> }] - the
+  // `tex` may be a raw GL texture (uSrc) OR a sim-texture record (sfxRead returns
+  // { tex, fbo }); we unwrap the record so both forms work.
+  function sfxBindSamplers(prog, binds) {
+    for (let u = 0; u < binds.length; u++) {
+      gl.activeTexture(gl.TEXTURE0 + u);
+      const t = binds[u].tex;
+      gl.bindTexture(gl.TEXTURE_2D, (t && t.tex !== undefined) ? t.tex : t);
+      const loc = sfxUloc(prog, binds[u].name);
+      if (loc != null) gl.uniform1i(loc, u);
+    }
+  }
+  function sfxUloc(entry, name) {
+    if (entry.uniforms.has(name)) return entry.uniforms.get(name);
+    const loc = gl.getUniformLocation(entry.program, name);
+    entry.uniforms.set(name, loc);
+    return loc;
+  }
+
+  // Run one fullscreen stateful pass: program, output FBO, sampler binds, and a
+  // uniform setter callback that receives (gl, prog, sfxUloc).
+  function sfxPass(prog, outFBO, sw, sh, binds, setUniforms) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outFBO);
+    gl.viewport(0, 0, sw, sh);
+    gl.useProgram(prog.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform2f(sfxUloc(prog, 'uResolution'), sw, sh);
+    gl.uniform2f(sfxUloc(prog, 'uTexel'), 1 / sw, 1 / sh);
+    gl.uniform1f(sfxUloc(prog, 'uTime'), time);
+    if (setUniforms) setUniforms(prog);
+    sfxBindSamplers(prog, binds);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // The public step. Returns a 2D canvas (or draws into opts.target) or null on
+  // failure / unknown type (caller may then fall back to a CPU path).
+  function stepStateful(instanceId, type, opts) {
+    const def = STATEFUL_EFFECTS[type];
+    if (!def || !opts || !opts.source) return null;
+    const source = opts.source;
+    // Output (display) resolution = source resolution.
+    let ow = 0, oh = 0;
+    if (source instanceof ImageData) { ow = source.width; oh = source.height; }
+    else { ow = source.width || source.videoWidth || 0; oh = source.height || source.videoHeight || 0; }
+    if (ow < 2 || oh < 2) return null;
+
+    // Sim resolution: coarse grid derived from the def + params, preserving AR.
+    const params = opts.params || {};
+    const longAxis = def.simLongAxis ? def.simLongAxis(params) : Math.max(ow, oh);
+    let sw, sh;
+    if (ow >= oh) { sw = longAxis; sh = Math.max(8, Math.round(longAxis * oh / ow)); }
+    else { sh = longAxis; sw = Math.max(8, Math.round(longAxis * ow / oh)); }
+
+    const inst = ensureStatefulInstance(instanceId, type, sw, sh);
+    if (!inst) return null;
+
+    // Upload the layer source into a dedicated texture.
+    if (!sfxSrcTex) { sfxSrcTex = gl.createTexture(); setupTex(gl, sfxSrcTex); }
+    gl.bindTexture(gl.TEXTURE_2D, sfxSrcTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    if (source instanceof ImageData) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ow, oh, 0, gl.RGBA, gl.UNSIGNED_BYTE, source.data);
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    }
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+
+    const dt = Math.min(0.033, Math.max(0.0005, num(opts.dt, 1 / 60)));
+    const ptr = opts.pointer || {};
+    const seed = inst.frame === 0 ? 1 : 0.06;
+
+    // Dispatch per-type pass orchestration. Today: fluid.
+    if (type === 'fluid') {
+      runFluidPasses(inst, type, def, params, opts, ptr, dt, seed, sw, sh);
+    }
+    inst.frame++;
+
+    // DISPLAY pass -> RGBA8 output FBO at output (source) resolution.
+    if (!sfxOutFBO || sfxOutFBO.w !== ow || sfxOutFBO.h !== oh) {
+      if (sfxOutFBO) { gl.deleteFramebuffer(sfxOutFBO.fbo); gl.deleteTexture(sfxOutFBO.tex); }
+      sfxOutFBO = makeRGBA8FBO(gl, ow, oh);
+    }
+    const disp = sfxProgram(type, def.display.program, def.programs[def.display.program]);
+    if (disp) {
+      sfxPass(disp, sfxOutFBO.fbo, ow, oh,
+        [{ name: 'uSrc', tex: sfxSrcTex }, { name: 'uDye', tex: sfxRead(inst, 'dye') }],
+        (prog) => {
+          gl.uniform1f(sfxUloc(prog, 'uDt'), dt);
+          gl.uniform1f(sfxUloc(prog, 'uIntensity'), clamp01(opts.intensity == null ? 1 : opts.intensity));
+        });
+    }
+
+    // Read the output FBO into a 2D canvas (flip rows: GL is bottom-up).
+    return sfxReadToCanvas(ow, oh, opts.target);
+  }
+
+  // Fluid solver pass orchestration (Stam stable-fluids on the GPU).
+  function runFluidPasses(inst, type, def, params, opts, ptr, dt, seed, sw, sh) {
+    const P = (name) => sfxProgram(type, name, def.programs[name]);
+    // 1) seed dye from the layer source.
+    {
+      const pr = P('seedDye'); if (!pr) return;
+      sfxPass(pr, sfxWrite(inst, 'dye').fbo, sw, sh,
+        [{ name: 'uDye', tex: sfxRead(inst, 'dye') }, { name: 'uSrc', tex: sfxSrcTex }],
+        (prog) => { gl.uniform1f(sfxUloc(prog, 'uDt'), dt); gl.uniform1f(sfxUloc(prog, 'uSeed'), seed); });
+      sfxSwap(inst, 'dye');
+    }
+    // 2) splat pointer velocity (only while the pointer is over the stage).
+    if (ptr.hover || ptr.down) {
+      const pr = P('splatVel');
+      if (pr) {
+        const force = num(params.force, 1) * 6.0;
+        // dx/dy are per-frame normalised pointer deltas; scale into velocity.
+        const fx = num(ptr.dx, 0) * force;
+        const fy = num(ptr.dy, 0) * force;
+        const radius = Math.max(0.01, num(params.radius, 0.12)) * 0.5;
+        sfxPass(pr, sfxWrite(inst, 'vel').fbo, sw, sh,
+          [{ name: 'uVel', tex: sfxRead(inst, 'vel') }],
+          (prog) => {
+            gl.uniform1f(sfxUloc(prog, 'uDt'), dt);
+            gl.uniform2f(sfxUloc(prog, 'uPoint'), clamp01(num(ptr.x, 0.5)), clamp01(num(ptr.y, 0.5)));
+            gl.uniform2f(sfxUloc(prog, 'uForce'), fx, fy);
+            gl.uniform1f(sfxUloc(prog, 'uRadius'), radius);
+          });
+        sfxSwap(inst, 'vel');
+      }
+    }
+    // 3) advect velocity by itself (viscosity acts as velocity dissipation).
+    {
+      const pr = P('advect'); if (!pr) return;
+      const velDiss = 1 - Math.min(0.5, Math.max(0, num(params.viscosity, 0.2))) * 0.5;
+      sfxPass(pr, sfxWrite(inst, 'vel').fbo, sw, sh,
+        [{ name: 'uVel', tex: sfxRead(inst, 'vel') }, { name: 'uField', tex: sfxRead(inst, 'vel') }],
+        (prog) => { gl.uniform1f(sfxUloc(prog, 'uDt'), dt); gl.uniform1f(sfxUloc(prog, 'uDissipation'), velDiss); });
+      sfxSwap(inst, 'vel');
+    }
+    // 4) optional vorticity confinement (curl -> vorticity force).
+    const curlAmt = num(params.curl, 0);
+    if (curlAmt > 0) {
+      const cp = P('curl');
+      if (cp) {
+        sfxPass(cp, inst.tex.curl.a.fbo, sw, sh,
+          [{ name: 'uVel', tex: sfxRead(inst, 'vel') }],
+          (prog) => gl.uniform1f(sfxUloc(prog, 'uDt'), dt));
+        const vp = P('vorticity');
+        if (vp) {
+          sfxPass(vp, sfxWrite(inst, 'vel').fbo, sw, sh,
+            [{ name: 'uVel', tex: sfxRead(inst, 'vel') }, { name: 'uCurl', tex: inst.tex.curl.a.tex }],
+            (prog) => { gl.uniform1f(sfxUloc(prog, 'uDt'), dt); gl.uniform1f(sfxUloc(prog, 'uAmount'), curlAmt); });
+          sfxSwap(inst, 'vel');
+        }
+      }
+    }
+    // 5) divergence.
+    {
+      const pr = P('divergence'); if (!pr) return;
+      sfxPass(pr, inst.tex.div.a.fbo, sw, sh,
+        [{ name: 'uVel', tex: sfxRead(inst, 'vel') }],
+        (prog) => gl.uniform1f(sfxUloc(prog, 'uDt'), dt));
+    }
+    // 6) pressure Jacobi x iterations (default 24). Clear pressure first.
+    {
+      const pr = P('pressure'); if (!pr) return;
+      // zero the read side of pressure so the solve starts from 0.
+      clearFBO(sfxRead(inst, 'pres').fbo, sw, sh);
+      const iters = Math.max(1, Math.min(60, Math.round(num(opts.iterations, num(params.iterations, 24)))));
+      for (let k = 0; k < iters; k++) {
+        sfxPass(pr, sfxWrite(inst, 'pres').fbo, sw, sh,
+          [{ name: 'uPres', tex: sfxRead(inst, 'pres') }, { name: 'uDiv', tex: inst.tex.div.a.tex }],
+          (prog) => gl.uniform1f(sfxUloc(prog, 'uDt'), dt));
+        sfxSwap(inst, 'pres');
+      }
+    }
+    // 7) subtract pressure gradient (velocity becomes ~divergence-free).
+    {
+      const pr = P('gradient'); if (!pr) return;
+      sfxPass(pr, sfxWrite(inst, 'vel').fbo, sw, sh,
+        [{ name: 'uVel', tex: sfxRead(inst, 'vel') }, { name: 'uPres', tex: sfxRead(inst, 'pres') }],
+        (prog) => gl.uniform1f(sfxUloc(prog, 'uDt'), dt));
+      sfxSwap(inst, 'vel');
+    }
+    // 8) advect dye by the divergence-free velocity, fade by `fade`.
+    {
+      const pr = P('advect'); if (!pr) return;
+      const dyeDiss = 1 - Math.min(0.5, Math.max(0, num(params.fade, 0.04)));
+      sfxPass(pr, sfxWrite(inst, 'dye').fbo, sw, sh,
+        [{ name: 'uVel', tex: sfxRead(inst, 'vel') }, { name: 'uField', tex: sfxRead(inst, 'dye') }],
+        (prog) => { gl.uniform1f(sfxUloc(prog, 'uDt'), dt); gl.uniform1f(sfxUloc(prog, 'uDissipation'), dyeDiss); });
+      sfxSwap(inst, 'dye');
+    }
+  }
+
+  // bottom-up readPixels -> top-down 2D canvas (or provided target).
+  function sfxReadToCanvas(w, h, target) {
+    const px = new Uint8Array(w * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sfxOutFBO.fbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const out = new Uint8ClampedArray(w * h * 4);
+    const rowBytes = w * 4;
+    for (let y = 0; y < h; y++) {
+      const src = (h - 1 - y) * rowBytes;
+      out.set(px.subarray(src, src + rowBytes), y * rowBytes);
+    }
+    const id = new ImageData(out, w, h);
+    let cv, ctx;
+    if (target && target.getContext) { cv = target; if (cv.width !== w) cv.width = w; if (cv.height !== h) cv.height = h; ctx = cv.getContext('2d'); }
+    else { const m = mk2DCanvas(w, h); cv = m.canvas; ctx = m.ctx; }
+    ctx.putImageData(id, 0, 0);
+    return cv;
+  }
+
+  function clearFBO(fbo, w, h) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function disposeStatefulInstance(inst) {
+    for (const name in inst.tex) {
+      const e = inst.tex[name];
+      gl.deleteTexture(e.a.tex); gl.deleteFramebuffer(e.a.fbo);
+      if (e.ping) { gl.deleteTexture(e.b.tex); gl.deleteFramebuffer(e.b.fbo); }
+    }
+  }
+  function disposeStateful(instanceId) {
+    const inst = statefulInstances.get(instanceId);
+    if (!inst) return;
+    disposeStatefulInstance(inst);
+    statefulInstances.delete(instanceId);
+  }
+  function hasStateful(type) { return !!STATEFUL_EFFECTS[type]; }
+  function statefulAvailable() { return true; }
+
   function dispose() {
     for (const { program } of programs.values()) gl.deleteProgram(program);
     programs.clear();
     for (const f of fbos) { gl.deleteFramebuffer(f.fbo); gl.deleteTexture(f.tex); }
+    for (const inst of statefulInstances.values()) disposeStatefulInstance(inst);
+    statefulInstances.clear();
+    if (sfxSrcTex) gl.deleteTexture(sfxSrcTex);
+    if (sfxOutFBO) { gl.deleteFramebuffer(sfxOutFBO.fbo); gl.deleteTexture(sfxOutFBO.tex); }
     gl.deleteTexture(srcTex);
     gl.deleteBuffer(quad);
     gl.deleteShader(vert);
   }
 
-  return { apply, applyToImageData, resize, dispose, setTime };
+  return {
+    apply, applyToImageData, resize, dispose, setTime,
+    stepStateful, disposeStateful, hasStateful, statefulAvailable,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +1445,43 @@ function resizeFBO(gl, f, w, h) {
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
 
+// A plain RGBA8 FBO at w x h (used for the stateful display output). Carries its
+// size so the caller can decide whether to reallocate on resize.
+function makeRGBA8FBO(gl, w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { fbo, tex, w, h };
+}
+
+// Probe whether a small RGBA16F texture is actually framebuffer-complete here.
+// Returns false on GPUs that report the extension but cannot render to float.
+function probeFloatRenderable(gl, halfFloatType) {
+  try {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 4, 4, 0, gl.RGBA, halfFloatType, null);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo);
+    gl.deleteTexture(tex);
+    return ok;
+  } catch (_e) {
+    return false;
+  }
+}
+
 function clamp01(v) {
   v = Number(v);
   if (!Number.isFinite(v)) return 1;
@@ -874,6 +1516,13 @@ function stubChain() {
     resize() {},
     dispose() {},
     setTime() {},
+    // Stateful subsystem: unavailable on the stub. stepStateful returns null so
+    // the caller falls back to its CPU implementation; the other methods are
+    // present (no-op) so the API surface matches the real chain.
+    stepStateful() { return null; },
+    disposeStateful() {},
+    hasStateful(type) { return !!STATEFUL_EFFECTS[type]; },
+    statefulAvailable() { return false; },
   };
 }
 
