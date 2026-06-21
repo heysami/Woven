@@ -48,6 +48,11 @@ function asNumber(v) {
   return finiteNumber(v, 0);
 }
 function vec2(x, y) { return { x: finiteNumber(x, 0), y: finiteNumber(y, 0) }; }
+// color dtype: {r,g,b,a} components 0..1. extract*() return this shape.
+function color(r, g, b, a) {
+  return { r: clamp(finiteNumber(r, 0), 0, 1), g: clamp(finiteNumber(g, 0), 0, 1),
+    b: clamp(finiteNumber(b, 0), 0, 1), a: a == null ? 1 : clamp(finiteNumber(a, 1), 0, 1) };
+}
 
 // state-* kinds break cycles: they read previous-frame state, so a back-edge
 // into a state node does NOT count as a hard dependency for the topo sort.
@@ -184,6 +189,7 @@ export const LogicGraph = {
       keyboard: inputs.keyboard || {}, scroll: inputs.scroll || {},
       gyro: inputs.gyro || {}, audio: inputs.audio || {},
       streams: inputs.streams || {}, readback: inputs.readback || {},
+      palettes: inputs.palettes || {},
       dt: finiteNumber(inputs.dt, 0), time: finiteNumber(inputs.time, ctx.time || 0),
     };
     const ports = {};
@@ -361,6 +367,35 @@ export const LogicGraph = {
       let region = { x: 0, y: 0, w: 0, h: 0 };
       if (words.length && words[0].bbox) { const b = words[0].bbox; region = { x: finiteNumber(b.x, 0), y: finiteNumber(b.y, 0), w: finiteNumber(b.w, 0), h: finiteNumber(b.h, 0) }; }
       return { text: text, matched: matched, region: region, count: words.length };
+    },
+
+    // ---- palette extraction (source over a wired image) -----------------------
+    // The N dominant colors of a wired image. Extraction (image decode + median
+    // cut) runs in the RUNTIME (mmcomposer / slimPlayer) - canvas / Image are not
+    // available here in the pure engine - and the resulting colors are entered
+    // into frame.palettes[node.id] = { colors:[{r,g,b,a}], dominant:{r,g,b,a} },
+    // EXACTLY how vision-detect results reach the engine via frame.streams. The
+    // runtime caches by image-url + count so it never re-extracts per frame. This
+    // evaluator just maps the cached colors onto the node's typed output ports:
+    //   color0..color7 (dtype color), dominant (color),
+    //   domR / domG / domB (number 0..1) so the dominant can ALSO drive numeric
+    //   params (e.g. an effect color channel) through the normal logic binding.
+    'palette'(node, read, frame, ctx, state) {
+      const pal = (frame.palettes && frame.palettes[node.id]) || {};
+      const colors = Array.isArray(pal.colors) ? pal.colors : [];
+      const count = Math.max(2, Math.min(8, Math.floor(finiteNumber(node.params && node.params.count, 5))));
+      const out = {};
+      for (let i = 0; i < 8; i++) {
+        const c = colors[i] || colors[colors.length ? (i % colors.length) : 0] || null;
+        out['color' + i] = c ? color(c.r, c.g, c.b, c.a) : color(0, 0, 0, 1);
+      }
+      const dom = pal.dominant || colors[0] || null;
+      const dc = dom ? color(dom.r, dom.g, dom.b, dom.a) : color(0, 0, 0, 1);
+      out.dominant = dc;
+      out.domR = dc.r; out.domG = dc.g; out.domB = dc.b;
+      out.ready = colors.length > 0;
+      out.count = Math.min(count, colors.length);
+      return out;
     },
 
     // ---- 2.3 literals ---------------------------------------------------------
@@ -587,6 +622,28 @@ export const LogicGraph = {
     // ---- 2.7 output sink ------------------------------------------------------
     'output-binding'(node, read) {
       return { value: asNumber(read(node.id, 'value', 0)) };
+    },
+
+    // ---- audio output (synth SINK) --------------------------------------------
+    // audio-out is a SINK: it consumes wired logic values (or its own control
+    // defaults) and republishes them as resolved out-ports so the runtime bridge
+    // can read them and push them into LogicAudio.set() each frame. The actual
+    // WebAudio graph lives in logicaudio.js (gesture-gated); the engine just
+    // resolves the parameter values deterministically. `trigger` is edge-detected
+    // here so the bridge gets a one-frame note-on pulse. waveform comes from the
+    // node control (no numeric input). Numeric inputs fall back to the control
+    // value when unwired, so a bare audio-out still plays a steady tone.
+    'audio-out'(node, read, frame, ctx, state) {
+      const p = node.params || {};
+      const freq = asNumber(read(node.id, 'frequency', finiteNumber(p.frequency, 220)));
+      const gain = clamp(asNumber(read(node.id, 'gain', finiteNumber(p.gain, 0.2))), 0, 1);
+      const cutoff = asNumber(read(node.id, 'cutoff', finiteNumber(p.cutoff, 8000)));
+      const wave = (typeof p.waveform === 'string') ? p.waveform : 'sine';
+      const trigger = LogicGraph._rise(state, node.id + ':trig', truthy(read(node.id, 'trigger', false)));
+      return {
+        frequency: finiteNumber(freq, 220), gain: gain,
+        cutoff: finiteNumber(cutoff, 8000), waveform: wave, trigger: trigger,
+      };
     },
   },
 };

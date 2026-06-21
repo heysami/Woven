@@ -152,6 +152,15 @@ no-emoji rule - pick non-emoji-rendering marks in W1A.
 - **`vision-ocr`** `⊜` - tesseract.js. in: `stream:string`. controls:
   `{ query:text, interval:number(ms, throttle) }`. out: `text:string`,
   `matched:boolean` (query found), `region:region`, `count:number`.
+- **`palette`** `◧` - image dominant-color extraction (DONE; see §13). in:
+  `image:string` (an asset/image node). controls: `{ count:number(2-8),
+  quality:number(sample-stride) }`. out: `color0`..`color7` (dtype `color`),
+  `dominant` (color), `domR`/`domG`/`domB` (number 0..1, the dominant color's
+  channels so it can ALSO drive numeric params), `ready:boolean`, `count:number`.
+  Extraction (downsample + median-cut) runs in the RUNTIME (canvas decode, like
+  number-generator pixel-map), cached by image-url + count; the colors reach the
+  engine via `frame.palettes[nodeId]` exactly how vision-detect reaches it via
+  `frame.streams`. The "image palette extraction" gap is DONE.
 
 ### 2.3 Literals (number is covered by number-generator - NOT re-added here)
 - **`value-bool`** `⊤` - out `value:boolean`. controls `{ value:boolean }`.
@@ -221,8 +230,10 @@ breakers (a graph cycle must pass through a state node).
   `{ text, font(css family), weight:number(100-900), size:number, color:text,
   tracking:number(letter-spacing em), align:select[center,left,right],
   behavior:select[...16], speed:number, amplitude:number, stagger:number(per-glyph
-  delay), loop:boolean, opacity:number, blend:select[...], z:number,
-  feedback:number }`. See §12 for the full contract + behavior list.
+  delay), path:select[straight,arc,circle,wave,ring], pathRadius:number,
+  pathAmplitude:number, pathRotate:boolean, loop:boolean, opacity:number,
+  blend:select[...], z:number, feedback:number }`. See §12 for the full contract +
+  behavior list (12.3) and the text-on-path placement (12.6).
 
 ### 2.7 Output sink (writing back)
 Logic outputs reach targets by an edge into an existing `param:<key>` port. To also
@@ -233,6 +244,22 @@ let logic READ a target's current value and to write structured transforms:
   `{ target:select[wired layers], param:select[x,y,scale,rotation,opacity,...] }`.
   Emits the same `_bindings` entry an edge-into-`param:` would; useful when the
   target param isn't a numeric control port. MVP can skip this and rely on edges.
+
+### 2.9 Output (audio synth SINK) - DONE (see §14)
+- **`audio-out`** `◢` - the missing "audio output / image->sound" category. A
+  WebAudio synth voice driven by the logic graph. accepts: `frequency:number`,
+  `gain:number(0..1)`, `cutoff:number`, `trigger:event` (note-on). controls:
+  `{ waveform:select[sine,square,saw,triangle], frequency, gain, cutoff }` (the
+  numeric inputs fall back to these when unwired). It is a true logic SINK: the
+  engine evaluates it (republishing the resolved params + an edge-detected
+  trigger), and the mmcomposer LogicBridge feeds those values into
+  `LogicAudio.set()` each frame while Live. WebAudio graph: oscillator (waveform)
+  -> gain -> lowpass filter -> destination; the AudioContext is created behind a
+  user gesture via the logicpermission overlay (NO native dialog, NO autostart at
+  load). Baked slimPlayer parity: a published piece can also produce audio
+  (gesture-gated). Wire number-generator / timeline / vision / palette ->
+  `audio-out.frequency` to make sound react to visuals. The "audio-output node"
+  gap is DONE.
 
 ---
 
@@ -603,17 +630,242 @@ does not consume a base instance set - seeding it would have been invasive, so t
 disintegration drift was kept inside `textInk` instead, additive and non-
 regressing).
 
-Rope-anchored-to-ink (DEFERRED, phase-2b): the second consumer - feeding a
-text-ink sampling into `rope` as its anchor set - was NOT built. `rope` resolves
-its verlet chain from exactly two anchors (`anchors[0]` pinned, `anchors[1]`
-pointer-or-pinned) with a single rest-length and a linear segment seed; accepting
-an N-point ink set would require re-architecting its anchoring + relaxation and
-risked regressing the shipped rope. It remains a finer follow-up.
+Rope-anchored-to-ink: SHIPPED as its own `rope-ink` position mode (see 11.5). The
+earlier worry about re-architecting the 2-anchor `rope` was sidestepped: rather
+than overload `rope`, `rope-ink` is a separate, additive mode that samples the ink
+into an N-point ANCHOR cloud and grows ONE short verlet rope per anchor. The
+shipped `rope` (exactly two anchors, pointer-draggable free end) is untouched.
 
-Finer follow-ups (NOT done): (a) ORDERED-OUTLINE-for-shape - the current sampler
-returns an unordered shuffled cloud (ideal for particles/dust); a contour-ordered
-variant would let the points feed a closed `shape`/polyline that traces the glyph
-outline. (b) FULL rope-anchored-to-ink per the paragraph above.
+Finer follow-ups (DONE): ORDERED-OUTLINE-for-shape - this `text-ink` sampler
+returns an unordered shuffled cloud (ideal for particles/dust + ink anchors); the
+contour-ordered variant now SHIPS as the `text-outline` position mode (see 11.6),
+whose ordered boundary points can feed a closed `shape`/polyline that strokes the
+glyph outline.
+
+### 11.5 Rope-ink position mode (physics ropes anchored to glyph ink)
+`rope-ink` ("Rope ink") is a position mode beside `text-ink` / `rope` that
+delivers the "Elastic Type" look: physics ropes hanging + swinging from the glyph
+ink. It REUSES the 11.4 ink sampler to get a LOW-density ANCHOR cloud, then grows
+a short verlet rope (a chain of `segments` nodes) from each anchor and relaxes it
+each frame under gravity - identical verlet + constraint math to the shipped
+`rope`, just one chain PER ink point instead of a single 2-anchor span.
+
+Anchors: `sampleTextInk(text,font,weight,anchors,W,H,hash(L.id+':rope-ink'))`
+(editor) / `sampleInk(...)` (baked) with `anchors` (the anchor count) passed as
+the sampler's `density`. Each returned ink point becomes the FIXED top (node 0) of
+one rope.
+
+Per-rope verlet (mirrors `rope`): each rope seeds `segments+1` nodes hanging
+straight down from its anchor at a rest length `clamp(0.12/segments,0.004,0.2)`.
+Per frame every node verlet-integrates (`x += (x-px)*damping`,
+`y += (y-py)*damping + 0.0006*gravity`), node 0 is re-pinned to its anchor, then 6
+relaxation passes pull each segment toward `rest` (node 0 immovable). Each emitted
+instance carries `rot = atan2` of its local segment heading so the layer content
+orients along the swinging rope. Returns ALL rope nodes flattened into one
+`[{x,y,scale,rot}]` array (length `anchors * (segments+1)`), so it flows through
+PASS A like every mode (effects + feedback + blend compose for free).
+
+Caching (NO per-frame re-sampling, NO `getBoundingClientRect`): the anchor cloud +
+all per-rope verlet state live on `L._ropeInk = { sig, ropes }` (editor) /
+`SIM[L.id] = { riSig, ropes }` (slimPlayer). The signature is
+`text|font|weight|anchors|segments|WxH`; the ink is re-sampled and the ropes
+re-seeded ONLY when the signature changes (or, in the editor, when a
+sampling-affecting inspector control nulls `L._ropeInk`). The verlet node state
+PERSISTS across frames like `rope`'s `s.pts`, so the ropes keep swinging.
+
+Params: `text`, `font` (css family), `weight` (100-900), `anchors` (anchor count =
+low-density ink sample, 1-300), `segments` (per-rope chain length, 1-24),
+`gravity` (0-3, scales the per-frame fall), `stiffness` (0.05-1, constraint
+strength), `damping` (0.8-1, verlet velocity retention), `size` (per-instance
+scale). The position-node template `rope-ink` (app.js) exposes these with
+`sampleAnchors` + `stepRope` buildSpec helpers; the editor inspector adds the
+matching fields (sampling-affecting ones null `L._ropeInk`); the baked slimPlayer
+keeps parity (same anchors via `sampleInk`, same verlet integration). `L._ropeInk`
+is runtime-only and stripped at bake.
+
+This SUPERSEDES the deferred phase-2b note (full rope-anchored-to-ink) recorded in
+11.4 + 12.5: that follow-up is now built as `rope-ink`.
+
+### 11.6 Text-outline position mode (ordered glyph-OUTLINE contour tracing)
+`text-outline` ("Text outline") is a position mode beside `text-ink` / `rope-ink`
+that delivers ORDERED glyph boundary loops - the long-deferred "ordered glyph
+OUTLINE" follow-up from 11.4 + 12.5, now SHIPPED. Where `text-ink` returns an
+unordered shuffled point CLOUD (good for particles/dust), `text-outline` walks the
+glyph boundary IN ORDER, so a layer renders content ALONG the outlines
+(stroked-outline text, marching dots around the letters) and the ordered points can
+later feed a closed `shape`/polyline. Each emitted instance carries `rot = local
+tangent` so oriented content (dashes, arrows) follows the contour direction.
+
+Tracing method (canvas-only, NO opentype, build-less): `traceTextOutline(...)`
+(editor) / `traceInk(...)` (baked) draw the text large + centered on the SAME
+offscreen alpha canvas approach as `sampleTextInk`, threshold the alpha into a
+1px-padded BINARY GRID (downsampled on a stride so big canvases stay cheap, grid
+capped ~220 cells on the long axis), then BORDER-FOLLOW / marching-squares trace
+each filled-region boundary into an ORDERED loop (Moore 8-neighbour tracing,
+clockwise from the backtrack direction, starting only at the left edge of a run so
+each contour is visited once). Letter outlines AND their counters (holes) come out
+as separate loops. Each contour is then Ramer-Douglas-Peucker simplified
+(`simplify` epsilon, in grid cells; RDP split on a closed loop at its two
+farthest-apart points), resampled to `density` evenly arc-length-spaced points,
+normalized 0..1, and tagged with the local tangent `rot`. All contours are
+concatenated into one ordered `[{x,y,scale,rot}]` array that flows through PASS A
+like every mode (effects + feedback + blend compose for free). Pure +
+DETERMINISTIC (no `Math.random`; tracing order is grid-scan deterministic) and no
+`getBoundingClientRect`.
+
+Caching (NO per-frame re-trace): the traced loops live on
+`L._textOutline = { sig, pts }` (editor) / `SIM[L.id] = { toSig, pts }`
+(slimPlayer). Signature = `text|font|weight|density|simplify|size|WxH`; the glyph
+alpha is re-traced ONLY when the signature changes (or, in the editor, when a
+sampling-affecting inspector control nulls `L._textOutline`). `L._textOutline` is
+runtime-only and stripped at bake; the baked CFG carries the positioning params so
+the slimPlayer `traceInk` reproduces the SAME loops.
+
+Params: `text`, `font` (css family), `weight` (100-900), `density` (points PER
+contour after resample, 3-800), `simplify` (RDP epsilon in grid cells, 0-4; 0 =
+no simplify), `size` (per-instance scale). The position-node template
+`text-outline` (app.js) exposes these with a `traceTextOutline` + `rdp` /
+`rdpClosed` / `resampleClosed` buildSpec helper bundle; the editor inspector adds
+the matching fields (all null `L._textOutline`); the baked slimPlayer keeps parity
+via `traceInk` + `rdpB` / `rdpClosedB` / `resampleClosedB`.
+
+### 11.7 Fluid effect (approximate real-time fluid, Stam stable-fluids, coarse grid) - DONE
+The long-noted "Navier-Stokes fluid" gap is now DONE, delivered as an
+APPROXIMATE coarse solver (true high-res GPU fluid stays out of scope). `fluid`
+SHIPS as a per-LAYER effect (added to the composer-local effect catalog
+`FX_TYPES_LOCAL` / `FX_LABELS_LOCAL`, picker label "Fluid (real-time)"), NOT as a
+GL shader in `fx.js`.
+
+Architecture choice (and why): the shared GL fx chain (`GLFx` editor /
+`applyFxFrom` baked) is a STATELESS ping-pong that compiles ONE program per effect
+type for ALL layers - it cannot own a persistent per-layer velocity / dye field.
+A stable-fluids solver is intrinsically stateful (the field must survive across
+frames), so `fluid` is delivered as a CPU sim that owns its field (keyed by layer
+id, like `Positioning.sim`) and writes back into the layer's 2D buffer. It still
+COMPOSES on the layer like any effect: it is declared in the layer's effect stack,
+runs in PASS B right before masking + the GL chain, and the GL chain filters
+`type==='fluid'` out so it is never (mis)compiled as a shader pass.
+
+Solver (`FluidSim` editor / `fluidStep` baked, identical math for parity): Jos
+Stam stable-fluids on a COARSE grid - default 72 cells on the long axis (control
+`grid`, 16-120), the short axis derived from the canvas aspect. Per step:
+semi-Lagrangian advection (backward trace + bilinear sample), velocity diffusion,
+and a FIXED 12-iteration Jacobi / Gauss-Seidel pressure projection (two projects
+per frame, the canonical velocity-step shape). The layer's rendered RGBA pixels
+ARE the dye (downsampled into the grid each frame, continuously refreshed at 6%
+so the layer keeps animating while stirred); the pointer (`Input.px/py` delta +
+`Input.hoverAny`) injects velocity + force in a gaussian splat. The advected dye
+is bilinearly upsampled back over the full-res buffer. Controls: `viscosity`,
+`force`, `fade`, `radius`, `grid`. All math is finite-safe (clamped substep,
+bounded indices); verified finite + stable (bounded velocity, fading dye) across
+120 frames. No `getBoundingClientRect`, no `Math.random`. Reduced motion not
+honored (per scope). app.js registers the `_effectTemplate("fluid", ...)`
+buildSpec + the `fluid` option in the effect-node field list; baked parity via
+`fluidStep` + `layerFluid`.
+
+### 11.8 Shatter position mode (voronoi fracture + matter.js rigid bodies) - DONE
+The long-noted "fracture + rigidbody" gap is now DONE. `shatter` SHIPS as a
+position mode beside `physics` (it does NOT touch the existing `physics` mode).
+
+Fracture: `buildVoronoiCells(count, W, H, seed)` (editor) / `voronoiCells` (baked)
+scatters `count` sites DETERMINISTICALLY (mulberry seeded by the layer-id file
+hash, NO `Math.random`), then builds each convex Voronoi cell by Sutherland-Hodgman
+clipping the W x H bounds rectangle against the perpendicular-bisector half-plane
+between the site and every other site. The cells tile the rectangle EXACTLY
+(verified 100% area coverage), so the shards re-assemble the image at rest.
+
+Rigid bodies: each cell becomes a matter.js body via `Bodies.fromVertices` (the
+SAME engine the `physics` mode loads on demand from esm.sh; the baked player adds
+its own `import('https://esm.sh/matter-js@0.19.0')` loader since it is otherwise
+self-contained), centered at the cell centroid, with floor + side + ceiling walls
+so shards settle on screen. At rest the bodies sit at the centroids (rot 0). On a
+trigger - `Input.clickPulse` edge (burst from the click point) or a clock-cadence
+`auto` burst (`period`) - `shatterBurst` applies an outward impulse from the burst
+point + a small upward kick + a random angular velocity (deterministic mulberry),
+so shards fly and tumble apart under gravity. `slowmo` scales the engine substep
+(slow-motion). The mode returns the per-shard transforms `[{x,y,scale,rot,
+_shard}]` ([{x,y,scale,rot}] plus the cell for clipping).
+
+Shard clipping: `drawContent` (editor) / `drawC` (baked) detect `inst._shard` and
+draw the WHOLE intact layer content (cover-fit via `drawShatterContent` /
+`drawShatterC`) CLIPPED to the cell polygon (translated to the cell's rest
+centroid), under the body's live `{x,y,rot}` transform. So each shard carries its
+own exact slice of the image and they reassemble seamlessly at rest. This is the
+true per-shard cell clip (not a simplified transformed-piece approximation).
+
+Caching: the voronoi + bodies are cached on `Positioning.sim[id]` (editor) /
+`SIM[id]` (baked) by a signature of `count` + bounds; changing the shard count or
+canvas size rebuilds, everything else (gravity / burst / spin / slowmo / trigger)
+is applied live without a rebuild. Controls: `count` (shards), `gravity`, `burst`
+(force), `spin`, `slowmo` (time scale), `trigger` (click / auto) + `period`.
+app.js registers `_positionTemplate("shatter", "Shatter", "shatter", ...)` with a
+`fracture(count, W, H, rng)` buildSpec helper, the `shatter` option in the
+position-node field list, and `shatter` in the per-instance override panel (1D
+count, like instances). Baked parity is full (same voronoi + matter setup + burst
+math + shard clip). matter.js bodies are runtime-only and never serialized.
+
+### 11.9 Face-morph effect (facial-landmark mesh warp, Parametric Portrait Morph) - DONE
+The long-noted "facial-landmark morph" gap is now DONE. `face-morph` SHIPS as a
+per-LAYER CPU effect in the composer, intercepted in PASS B exactly like `fluid`
+(the GL chain filters `type==='face-morph'` out so it is never compiled as a
+shader pass). It reads the layer's rendered pixels as the source texture, detects
+478-point FaceMesh landmarks, triangulates, warps by parametric expression
+controls, and composites back into the layer buffer so the existing effect stack
++ feedback still apply.
+
+Detection (via `logicvision`, lazy CDN, fail-soft): two paths were added to
+`LogicVision`. Still IMAGE portraits use `detectFaceImage(img, key)` - a one-shot
+FaceLandmarker run in IMAGE running-mode, cached by the asset url (NO per-frame
+re-detect; re-detect only on url change; resolves to `[]` on no-face / no-model so
+it is not retried forever). Live camera/video use `detectFaceVideo(videoEl, key)` -
+a VIDEO running-mode detect throttled to `DETECT_INTERVAL_MS` (the same ~15fps cap
+as the streaming detector), state per key so several effects on one feed share one
+inference. Both return the SAME shape (`faceDetsFromRaw`: per-face normalized 478
+mesh + bbox + named points), so the morph reads one shape regardless of source.
+The IMAGE-mode task is a SEPARATE FaceLandmarker instance (`'faceImage'`) since
+MediaPipe ties running-mode to the instance. Everything stays lazy + fail-soft: a
+missing model means no warp, never a throw.
+
+Mesh: `FaceMorph.buildMesh` (editor) / `FM.build` (baked) collects a curated
+COARSE FaceMesh subset (`FACEMORPH_GROUPS` mouth/brow/jaw/cheek + `FACEMORPH_EYE`
+lids + `FACEMORPH_RING` silhouette + `FACEMORPH_NOSE`) plus 4 image corners and 4
+edge midpoints as fixed anchors (so the background outside the face is held still),
+and triangulates with a deterministic Bowyer-Watson `delaunay` (NO `Math.random`;
+super-triangle + circumcircle test, returns a flat vertex-index list). The base
+mesh is cached by a low-precision point-hash signature: a still image builds it
+once; a live feed rebuilds on detection change.
+
+Parametric deform (`FaceMorph.deform` / `FM.deform`): starts from identity (every
+anchor fixed) and moves landmark groups, all scaled by the master `amount` and by
+the ring-derived face scale. `smile` lifts/spreads the mouth corners (up+out) and
+nudges the lips; `browRaise` lifts both brows; `eyeWiden` opens the lids (upper up,
+lower down); `jawDrop` drops chin/jaw + lower lip; `cheekPuff` bulges the cheeks
+outward from center; `headTilt` rotates the whole face region about the face
+center (anchors stay put). Dest points are clamped to 0..1 so sampling stays
+finite.
+
+Render (`warpMeshAffine` / `bWarp`): per-triangle affine texture map on canvas2d
+(no WebGL). The current layer pixels are snapshotted into an offscreen texture;
+for each triangle the canvas is clipped to the DEST triangle (outset ~0.6px toward
+its centroid for seam coverage) and the texture is drawn under the affine that maps
+the SRC triangle onto the DEST triangle (the 6-coefficient solve is finite-guarded;
+degenerate triangles are skipped).
+
+Live track: when `track` is on AND the source is a live feed, `trackExpression` /
+`bTrack` derive coarse expression signals (mouth width/openness, brow-eye gap, eye
+openness, each scale-normalized by the inter-ocular distance with a neutral
+baseline subtracted) and ADD an exaggerated copy to the manual sliders - a
+funhouse-mirror that mimics the user. Still images ignore `track`.
+
+Controls: `amount`, `smile`, `browRaise`, `eyeWiden`, `jawDrop`, `cheekPuff`,
+`headTilt`, `track` (boolean), `source` (auto/image/camera). app.js registers
+`_effectTemplate("face-morph", "Face morph", "face-morph", ...)` buildSpec + the
+`face-morph` option in the effect-node field list. Baked parity is full (same
+subset constants + `bDel` Delaunay + `bWarp` affine + `deform` + `bTrack`, plus a
+lazy `logicvision` import when any baked layer carries the effect). Camera
+permission stays gesture-gated via the existing `ensureCameraContent` / `ensureCam`
+path (a `source==='camera'` morph counts as needing the webcam). NO `Math.random`,
+NO per-frame `getBoundingClientRect`, fail-soft to identity.
 
 ---
 
@@ -633,8 +885,9 @@ not a node the engine evaluates), mirroring `shape`.
 - controls: `text`, `font` (css family stack), `weight` (100-900), `size` (px),
   `color` (css), `tracking` (letter-spacing in em), `align` (center/left/right),
   `behavior` (the library below), `speed`, `amplitude`, `stagger` (per-glyph
-  delay in seconds), `loop` (boolean), plus the layer-shared `opacity`, `blend`,
-  `z`, `feedback`.
+  delay in seconds), `loop` (boolean), the TEXT-ON-PATH controls (`path`,
+  `pathRadius`, `pathAmplitude`, `pathRotate` - see 12.6), plus the layer-shared
+  `opacity`, `blend`, `z`, `feedback`.
 
 ### 12.2 Wiring + ingest path (mirrors `shape`)
 - app.js `workflowKindIo("type-motion")` returns `_TYPEMOTION_KIND_IO`, whose
@@ -678,9 +931,157 @@ glyph-outline tessellation, it samples drawn glyph INK from an offscreen canvas
 (`getImageData`, alpha-threshold, deterministic shuffle, normalize). This is
 font-agnostic (any css `font-family`) and needs no opentype in the runtime. The
 particle / dust + letter-disintegration consumer is fully built (`text-ink` +
-`drift` + layer `feedback`). Still NOT built: (a) `type-motion` EXPOSING the cloud
-as vector2 `out` ports on the node itself (the cloud currently lives in the
-position mode, not as node outputs); (b) an ordered glyph-OUTLINE variant for
-feeding a closed `shape`/polyline (the sampler returns an unordered cloud, ideal
-for particles but not for tracing an outline); (c) full rope-anchored-to-ink
-(rope still takes exactly two anchors - see 11.4). These remain finer follow-ups.
+`drift` + layer `feedback`), and the physics-rope-anchored-to-ink consumer now
+SHIPS as the `rope-ink` position mode (see 11.5) - the deferred phase-2b
+rope-anchored-to-ink note is superseded. The ordered glyph-OUTLINE variant is now
+also DONE: it SHIPS as the `text-outline` POSITION mode (see 11.6), which border-
+follows / marching-squares traces the glyph alpha into ORDERED contour loops (still
+canvas-only, no opentype) suitable for feeding a closed `shape`/polyline or
+marching dots. Still NOT built: `type-motion` EXPOSING the cloud as vector2 `out`
+ports on the node itself (the cloud / outline currently lives in the position
+modes, not as node outputs) - a finer follow-up.
+
+### 12.6 Text on path (per-glyph BASE placement along a curve)
+`type-motion` can lay each glyph's BASE position along a curve instead of the
+straight x-axis baseline, via four controls: `path`
+(straight/arc/circle/wave/ring), `pathRadius` (em-fraction of the block-width
+proxy `ref`, used by arc/circle/ring), `pathAmplitude` (px, used by wave), and
+`pathRotate` (rotate each glyph to the path tangent). `path=straight` is the
+LEGACY layout - identical math, NO regression. The per-glyph BEHAVIOR animation
+(12.3) still applies ON TOP of the path placement: for non-straight paths the
+behavior dx/dy offset is applied in the glyph's LOCAL frame (after the tangent
+rotation), so wave/jitter/orbit/etc. read correctly along the curve.
+
+`path=circle` / `path=ring` + `behavior=rotate-cycle` delivers the "Spoke & Word
+Type" text-wraps-around-a-wheel look. The placement helper
+`typeMotionPathPoint(path, s, total, radius, amplitude, ref)` (editor) /
+`tmPathPoint(...)` (baked - kept identical) maps each glyph's CENTER arc-length
+`s` (measured by `ctx.measureText` advances, the same advance walk the straight
+layout uses) to a base `{x,y,rot}`: circle/ring spread evenly over 2*pi by
+arc-length fraction starting at top; arc bows a ~210deg partial circle; wave is a
+sinusoidal y over the straight x with a slope-following tangent. All math is finite
+for `total=0`. No `getBoundingClientRect`; the params ride on `content` (typemotion
+layer) so the baked CFG carries them and `drawTM` reproduces the path identically.
+
+---
+
+## 13. The `palette` extraction node (image -> N dominant colors) - DONE
+
+`palette` `◧` is a logic SOURCE/processor over a wired IMAGE. It is a true logic
+node (`_isLogicKind("palette")` is true), so the engine evaluates it and its
+outputs reach targets through the normal `kind:"logic"` binding path (numeric
+ports into `param:<key>`) PLUS a new color path into a `shape`'s fill/stroke.
+
+### 13.1 Ports + controls
+- accepts: `image` (dtype `string`, tags `["asset","image"]`) - wire an asset
+  node here (mirrors `input-audio`'s `asset` accept).
+- controls: `count` (2-8 dominant colors), `quality` (sample-stride; higher =
+  faster + coarser).
+- provides: `color0`..`color7` (dtype `color` = `{r,g,b,a}` 0..1, sorted most
+  populous first), `dominant` (color = `color0`), `domR`/`domG`/`domB` (number
+  0..1 - the dominant color's channels, so it can drive numeric params with NO new
+  engine path), `ready` (boolean), `count` (number).
+
+### 13.2 Extraction (runtime, cached, never per-frame)
+The pure engine has no canvas/Image, so extraction runs in the RUNTIME exactly
+like number-generator pixel-map. At PROJECTION time the editor resolves the wired
+image url (`_paletteImageUrl`, mirrors `_numberPixmapUrl`) and bakes it onto the
+projection node as `params._imageUrl`, so the runtime knows what to decode without
+re-walking the graph. The runtime (`_extractPalette` editor / `extractPalette`
+baked, identical math) downsamples the image to <=160px on the long axis, samples
+pixels on the `quality` stride (skipping transparent), then `_medianCut` /
+`medianCut` recursively splits the pixel set on the widest channel into `count`
+buckets and averages each. The result is cached by `url + '@' + count` and NEVER
+re-extracted per frame (mirrors `Sources._pixel`'s `_imgCache`). The colors are
+entered into `frame.palettes[nodeId] = { colors:[{r,g,b,a}], dominant }` - EXACTLY
+how vision-detect results reach the engine via `frame.streams`. Deterministic (no
+`Math.random`), no `getBoundingClientRect`, build-less (native canvas).
+
+### 13.3 Consuming paths (both wired + working)
+1. NUMERIC: `palette.domR/domG/domB` -> any numeric `param:<key>` (e.g. an effect
+   color channel, a position param) via the existing `kind:"logic"` binding +
+   `LogicBridge.applyScalar` - zero new engine code.
+2. COLOR: `palette.color0..7 / dominant` -> a `shape` node's NEW `fill` / `stroke`
+   color accept ports (dtype `color`). Collected at projection time into
+   `spec._colorPoints[fill|stroke] = { kind:"logic", ref:{node,port} }`
+   (`_shapeColorBindings`, the color sibling of `_shapePointBindings`); the runtime
+   resolves the full `{r,g,b,a}` via `LogicBridge.color(ref)` -> a CSS `rgba(...)`
+   string and overrides the shape's drawn fill / stroke (the text controls remain
+   the fallback when unwired). Editor `drawPolyShape` + baked `drawPoly` honor it.
+   This is the working color->control binding path the contract asked for.
+
+## 14. The `audio-out` synth node (audio output / image->sound) - DONE
+
+`audio-out` `◢` is a true logic SINK that produces sound. See §2.9 for ports.
+
+### 14.1 Engine (sink republishing)
+The engine evaluator resolves `frequency` / `gain` / `cutoff` from wired inputs
+(falling back to the node's controls when unwired), reads `waveform` from the
+control, and edge-detects `trigger` into a one-frame note-on pulse
+(`LogicGraph._rise`). It emits these as the node's out-ports so the runtime bridge
+can read them. Pure + deterministic (no DOM in the engine).
+
+### 14.2 Runtime module (`editor/tools/_shared/logicaudio.js`)
+`LogicAudio.attach(opts) -> { set(params), suspend(), resume(), dispose() }`
+mirrors the LogicInputs / LogicVision shape. WebAudio graph:
+`oscillator(waveform) -> gain -> lowpass filter -> destination`. The AudioContext
+is NEVER created at module load (per §6 / the im-permission rules): `attach()`
+returns a context-less handle, and the FIRST `set()` that wants sound
+(`on !== false && gain > 0`) creates the context behind the `LogicPermission`
+overlay (gate 1 = our explanatory prompt on the user gesture; the browser's own
+audio unlock is implicit on the same gesture). Until the user allows it, `set()`
+is a silent no-op (nothing throws, nothing autostarts). Once a context exists,
+`set()` is a cheap per-frame ramp: frequency / gain / cutoff use
+`setTargetAtTime` (no zipper noise), the waveform swaps only on change (no node
+churn), and a rising `trigger` fires a short attack-decay note-on envelope.
+
+### 14.3 Bridge feed (per frame, Live only)
+The mmcomposer LogicBridge collects every `audio-out` node id from the projection,
+lazy-loads `logicaudio.js`, and after each `LogicGraph.tick` calls
+`LogicBridge._driveAudio` -> `audioHandle.set({frequency,gain,cutoff,waveform,
+trigger,on:true})` from the resolved out-ports (MVP = one mono voice from the first
+audio-out node). Pausing (`setLive(false)`) suspends the context; resuming resumes
+it. The baked slimPlayer mirrors this verbatim (`LB.driveAudio` in `LB.tick`,
+loading `logicaudio.js` by absolute URL), so the published piece produces audio
+too (gesture-gated). No CDN (WebAudio is native), no `getBoundingClientRect`.
+
+## 15. Editor tool features (spline-3d, vector-editor)
+
+These ship inside the standalone editor tools (not the logic graph), tracked
+here so the long-noted gaps are visible.
+
+### 15.1 3D text in the spline-3d tool - DONE
+The "3D text" gap is DONE. `editor/tools/spline3d/index.html` now adds a
+"3D Text" object via the toolbar (`data-add="text3d"`) and a "3D Text" inspector
+panel (text / font / size / depth / bevel). It is rendered as REAL extruded +
+beveled glyph geometry with three.js `TextGeometry` + `FontLoader` (typeface.json
+fonts loaded from the same esm.sh CDN as the rest of the tool's three.js, cached
+per font, FAIL-SOFT: a missing CDN flashes a notice and removes the placeholder
+rather than throwing). TextGeometry was chosen over troika-three-text because the
+extrude/bevel + the tool's MeshPhysicalMaterial modes (glass / metal / clearcoat)
+are exactly what TextGeometry gives for free, whereas troika's SDF shader is flat
+and ignores those material modes. The text object reuses the existing material
+system, orbits / lights like every other object, serialises into the scene JSON
+(`userData.text3d` → `serializeScene`/`restoreScene`, rebuilt async on load) and
+bakes into the `.glb` on Export via the generic object-export path. Additive: the
+existing primitives, SVG-extrude, boolean/CSG, blob, cloth, liquid and export
+paths are untouched. No `getBoundingClientRect` per frame; deterministic.
+
+### 15.2 SVG path-offset in the vector-editor - DONE
+The "SVG path-offset" gap is DONE. The vector-editor (in `editor/app.js`) gains an
+"Offset path" operation alongside the boolean-ops / convert-text-to-outlines
+affordances. Controls: distance (canvas units, negative = inset), steps
+(concentric count 1..24 for the "Expansive" offset look) and join (miter / round).
+Algorithm (`_vecOffsetRing` / `_vecOffsetShapeRings` / `_vecRingsToD`): each
+selected shape is sampled into closed rings (reusing `_vecShapeToPolygon`); every
+vertex is displaced along its corner bisector (average of the two adjacent edge
+normals), winding-normalised by signed area so a positive distance always inflates;
+convex corners are finished with a miter join clamped to a miter limit (no infinite
+spikes at acute angles) or a round join that fans arc points past that limit.
+Negative distance insets. For steps > 1 it emits N concentric copies (step k
+offset by k·distance). When the vendored polygon-clipping lib is present the offset
+rings are unioned to drop self-overlaps from large offsets; otherwise the raw
+offset stands (robust + finite on its own). Each result is inserted as a new
+editable `path` shape inheriting the source paint (recolorable), so it bakes to the
+`.svg` like every other shape. Additive: draw / boolean / text-outline / trace /
+node-edit paths are untouched. Deterministic (no randomness, time or layout reads).

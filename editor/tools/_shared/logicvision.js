@@ -131,6 +131,59 @@ export const LogicVision = {
     return rec.result;
   },
 
+  // ── still-IMAGE face landmarks (detect once, cache by key) ─────────────────-
+  // Portraits are static, so re-running per frame is wasteful. detectFaceImage
+  // runs FaceLandmarker in IMAGE mode ONCE for a given key (the image url), caches
+  // the normalized landmark detections, and returns the cached value on every
+  // later call. Returns null until the model + detection resolve (caller treats
+  // null as "no warp yet"); returns an empty array if no face / model unavailable.
+  // `src` is an <img>, <canvas>, or anything detect()-able; `key` is a stable id
+  // (the asset url). Fail-soft: never throws, marks the key resolved-empty on error
+  // so it is not retried forever.
+  _imgFace: {},   // key -> { state:'pending'|'done', dets:[{landmarks,...}] }
+  detectFaceImage(src, key) {
+    key = key != null ? String(key) : '';
+    const rec = this._imgFace[key];
+    if (rec) return rec.state === 'done' ? rec.dets : null;
+    if (!src || !key) return [];
+    const slot = this._imgFace[key] = { state: 'pending', dets: [] };
+    this._ensureMp('faceImage').then((task) => {
+      if (!task) { slot.state = 'done'; slot.dets = []; return; }
+      let raw;
+      try { raw = task.detect(src); }
+      catch (e) { slot.state = 'done'; slot.dets = []; return; }
+      slot.dets = faceDetsFromRaw(raw, src);
+      slot.state = 'done';
+    }).catch(() => { slot.state = 'done'; slot.dets = []; });
+    return null;
+  },
+
+  // ── per-frame face landmarks on a live <video>/camera (throttled) ──────────-
+  // detectFaceVideo runs FaceLandmarker in VIDEO mode against a playing element,
+  // capped to DETECT_INTERVAL_MS like the streaming detector. Returns the latest
+  // cached detections array (possibly stale by up to one interval). State is kept
+  // per `key` so several effects on one feed share one inference. Fail-soft.
+  _vidFace: {},   // key -> { last, busy, dets:[] }
+  detectFaceVideo(videoEl, key) {
+    key = key != null ? String(key) : 'vidface';
+    let rec = this._vidFace[key];
+    if (!rec) rec = this._vidFace[key] = { last: 0, busy: false, dets: [] };
+    if (!videoEl || !videoEl.videoWidth) return rec.dets;
+    const t = now();
+    if (!rec.busy && (t - rec.last) >= DETECT_INTERVAL_MS) {
+      rec.last = t; rec.busy = true;
+      this._ensureMp('face').then((task) => {
+        if (!task) { rec.busy = false; return; }
+        let raw;
+        try { raw = task.detectForVideo(videoEl, now()); }
+        catch (e) { rec.busy = false; return; }
+        rec.dets = faceDetsFromRaw(raw, videoEl);
+        rec.busy = false;
+      }).catch(() => { rec.busy = false; });
+    }
+    return rec.dets;
+  },
+
   // ── register an OCR processor; returns latest cached result ─────────────────
   ocr(handle, opts) {
     opts = opts || {};
@@ -205,9 +258,13 @@ export const LogicVision = {
       if (this._mpTasks[detector] !== undefined) return this._mpTasks[detector];
       this._mpTasks[detector] = null;  // mark in-flight (avoids double init)
       return mod.FilesetResolver.forVisionTasks(CDN.mpWasm).then((fileset) => {
-        const baseFor = (url) => ({ baseOptions: { modelAssetPath: url, delegate: 'GPU' }, runningMode: 'VIDEO' });
+        const baseFor = (url, mode) => ({ baseOptions: { modelAssetPath: url, delegate: 'GPU' }, runningMode: mode || 'VIDEO' });
         let create;
-        if (detector === 'hand') create = mod.HandLandmarker.createFromOptions(fileset, Object.assign(baseFor(CDN.handModel), { numHands: 4 }));
+        // 'faceImage' is a still-IMAGE-mode FaceLandmarker (one-shot detect on an
+        // <img>/<canvas>), distinct from the VIDEO-mode 'face' task; MediaPipe ties
+        // runningMode to the task instance, so a separate instance is required.
+        if (detector === 'faceImage') create = mod.FaceLandmarker.createFromOptions(fileset, Object.assign(baseFor(CDN.faceModel, 'IMAGE'), { numFaces: 1, outputFaceBlendshapes: false }));
+        else if (detector === 'hand') create = mod.HandLandmarker.createFromOptions(fileset, Object.assign(baseFor(CDN.handModel), { numHands: 4 }));
         else if (detector === 'object') create = mod.ObjectDetector.createFromOptions(fileset, Object.assign(baseFor(CDN.objectModel), { scoreThreshold: 0.4, maxResults: 8 }));
         else create = mod.FaceLandmarker.createFromOptions(fileset, Object.assign(baseFor(CDN.faceModel), { numFaces: 4, outputFaceBlendshapes: false }));
         return create.then((task) => { this._mpTasks[detector] = task; return task; });
@@ -247,6 +304,7 @@ export const LogicVision = {
     for (const d in this._mpTasks) { const task = this._mpTasks[d]; if (task && task.close) { try { task.close(); } catch (e) {} } }
     if (this._tess && this._tess.terminate) { try { this._tess.terminate(); } catch (e) {} }
     this._streams = {}; this._detect = {}; this._ocr = {}; this._mpTasks = {};
+    this._imgFace = {}; this._vidFace = {};
   },
 };
 
@@ -305,6 +363,27 @@ function normalizeMpResult(detector, raw, videoEl) {
   };
   r._dets = dets;
   return r;
+}
+
+// Shape a FaceLandmarker result (IMAGE or VIDEO) into the same per-face detection
+// objects normalizeMpResult emits for the 'face' detector: each carries the full
+// normalized 478-point mesh (landmarks[]) plus a bbox/centroid and a few named
+// points. Shared by detectFaceImage + detectFaceVideo so the morph effect reads
+// one shape regardless of source. Returns [] for a missing / faceless result.
+function faceDetsFromRaw(raw, srcEl) {
+  const dets = [];
+  if (raw && raw.faceLandmarks) {
+    for (const lm of raw.faceLandmarks) {
+      const pts = normalizedLandmarks(lm);
+      const bb = bboxOfLandmarks(pts);
+      dets.push({
+        x: bb.cx, y: bb.cy, w: bb.w, h: bb.h, confidence: 1, gesture: '',
+        landmarks: pts,
+        nose: pts[1] || null, leftEye: pts[33] || null, rightEye: pts[263] || null,
+      });
+    }
+  }
+  return dets;
 }
 
 // Copy a MediaPipe landmark list into a plain normalized [{x,y}] array (each

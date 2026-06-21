@@ -188,6 +188,23 @@ import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABE
 import { Sources } from '../_shared/sources.js';
 import { LogicGraph } from '../_shared/logicgraph.js';
 const EFFECT_SPECS = fxProgramSpecs();
+// 'fluid' is a composer-local per-layer effect (a CPU Stam stable-fluids sim that
+// stirs the layer buffer; see FluidSim) - it is NOT a GL shader in fx.js, so we
+// augment the shared catalog locally for the picker + its param controls.
+const FX_TYPES_LOCAL = [...FX_TYPES.slice(0,-1), 'fluid', 'face-morph', 'custom'];
+const FX_LABELS_LOCAL = {...FX_LABELS, fluid:'Fluid (real-time)', 'face-morph':'Face morph'};
+// declarative param controls for the fluid effect (mirrors the fx.js uniform shape)
+const FLUID_UNIFORMS = [
+  {from:'viscosity', def:0.2}, {from:'force', def:1}, {from:'fade', def:0.04},
+  {from:'radius', def:0.12}, {from:'grid', def:72},
+];
+// face-morph is also a composer-local CPU effect (a facial-landmark mesh warp);
+// these are its parametric controls (mirrors the app.js effect template).
+const FACEMORPH_NUMS = [
+  {from:'amount', def:1}, {from:'smile', def:0}, {from:'browRaise', def:0},
+  {from:'eyeWiden', def:0}, {from:'jawDrop', def:0}, {from:'cheekPuff', def:0},
+  {from:'headTilt', def:0},
+];
 let _fxChain=null, _fxFailed=false;
 function ensureFXChain(){
   if(_fxChain || _fxFailed) return _fxChain;
@@ -206,9 +223,12 @@ function ensureFXChain(){
    ===========================================================================*/
 const LogicBridge = {
   plan:null, projection:null, _sig:'', live:true,
-  inputsMod:null, visionMod:null, _inputHandle:null, _attachedEl:null,
+  inputsMod:null, visionMod:null, audioMod:null, _inputHandle:null, _attachedEl:null,
   _ports:{}, _last:performance.now(), _wantInputs:false, _streamHandles:[],
-  // Lazy, optional W2D modules. Absent module -> graceful no-op.
+  _paletteCache:new Map(),   // url+count -> { ready, colors:[{r,g,b,a}], dominant }
+  _paletteNodes:[],          // [{ id, url, count }] resolved from the projection
+  _audioHandle:null, _audioNodes:[],
+  // Lazy, optional W2D / audio modules. Absent module -> graceful no-op.
   async _ensureModules(){
     if(this.inputsMod===null){
       try{ const m=await import('../_shared/logicinputs.js'); this.inputsMod=(m&&m.LogicInputs)||false; }
@@ -218,14 +238,22 @@ const LogicBridge = {
       try{ const m=await import('../_shared/logicvision.js'); this.visionMod=(m&&m.LogicVision)||false; }
       catch(e){ this.visionMod=false; }
     }
+    if(this.audioMod===null && this._audioNodes.length){
+      try{ const m=await import('../_shared/logicaudio.js'); this.audioMod=(m&&m.LogicAudio)||false; }
+      catch(e){ this.audioMod=false; }
+    }
   },
   // Whether the current projection has any nodes/outputs worth ticking.
   active(){ const p=this.projection; return !!(p && ((p.nodes&&p.nodes.length)||(p.outputs&&p.outputs.length))); },
   setLive(on){
+    const was=this.live;
     this.live=!!on;
     if(!this.live){ // pause: drop the DOM input capture so a paused piece is inert.
       try{ this._inputHandle && this._inputHandle.dispose && this._inputHandle.dispose(); }catch(e){}
       this._inputHandle=null; this._attachedEl=null; this._ports={};
+      if(this._audioHandle){ try{ this._audioHandle.suspend&&this._audioHandle.suspend(); }catch(e){} }
+    } else if(!was){
+      if(this._audioHandle){ try{ this._audioHandle.resume&&this._audioHandle.resume(); }catch(e){} }
     }
   },
   // Receive a new projection from the host (mm:init / mm:content). Recompile only
@@ -239,7 +267,33 @@ const LogicBridge = {
     // Build the readback synthetic-node lookup (per-frame mutated constants).
     this._readbacks = (next && Array.isArray(next.readbacks)) ? next.readbacks : [];
     this._streamHandles = this._collectStreamHandles(next);
+    this._paletteNodes = this._collectPaletteNodes(next);
+    this._audioNodes = this._collectAudioNodes(next);
     this._wantInputs = this.active();
+    // warm the audio module if the new projection has an audio-out node.
+    if(this._audioNodes.length) this._ensureModules();
+    // tear down audio if the graph no longer has any audio-out node.
+    if(!this._audioNodes.length && this._audioHandle){ try{ this._audioHandle.dispose&&this._audioHandle.dispose(); }catch(e){} this._audioHandle=null; }
+  },
+  _collectPaletteNodes(proj){
+    if(!proj||!Array.isArray(proj.nodes)) return [];
+    const out=[];
+    for(const n of proj.nodes){
+      if(n && n.kind==='palette'){
+        const p=n.params||{};
+        const url=p._imageUrl||null;
+        const count=Math.max(2,Math.min(8,Math.floor(Number(p.count)||5)));
+        const quality=Math.max(1,Math.min(16,Math.floor(Number(p.quality)||4)));
+        if(url) out.push({ id:n.id, url, count, quality });
+      }
+    }
+    return out;
+  },
+  _collectAudioNodes(proj){
+    if(!proj||!Array.isArray(proj.nodes)) return [];
+    const out=[];
+    for(const n of proj.nodes){ if(n && n.kind==='audio-out') out.push(n.id); }
+    return out;
   },
   _collectStreamHandles(proj){
     // Camera/video source nodes expose a stream handle keyed by their node id; a
@@ -272,8 +326,24 @@ const LogicBridge = {
       try{ streams=this.visionMod.frame(this._streamHandles)||{}; }catch(e){ streams={}; }
     }
     base.streams=streams;
+    base.palettes=this._paletteFrame();
     base.readback=this._readbackMap();
     return base;
+  },
+  // Build frame.palettes[nodeId] = { colors:[{r,g,b,a}], dominant } from the
+  // per-url cache. Extraction kicks off once per (url+count) and the colors are
+  // cached forever after - NEVER re-extracted per frame (mirrors the
+  // number-generator pixel-map image cache). Image decode + median-cut run in
+  // _extractPalette below; until ready the node sees an empty palette.
+  _paletteFrame(){
+    const out={};
+    for(const pn of (this._paletteNodes||[])){
+      const key=pn.url+'@'+pn.count;
+      let rec=this._paletteCache.get(key);
+      if(!rec){ rec={ ready:false, colors:[], dominant:null }; this._paletteCache.set(key,rec); _extractPalette(pn.url,pn.count,pn.quality,rec); }
+      out[pn.id]={ colors:rec.colors, dominant:rec.dominant };
+    }
+    return out;
   },
   // Read-back: collect the current resolved value of each wired target param so
   // a logic graph can read its own outputs back (contract §5.4). Also mutate the
@@ -302,6 +372,22 @@ const LogicBridge = {
     catch(e){ out={}; }
     this._ports=(out&&out._ports)||{};
     this._out=out||{};
+    this._driveAudio(surfaceEl);
+  },
+  // Push each audio-out node's resolved params into LogicAudio.set(). The first
+  // audible frame creates the gesture-gated AudioContext (handled inside
+  // LogicAudio); until the user allows it, this is a silent no-op. One LogicAudio
+  // voice per audio-out node id. Only runs while Live.
+  _driveAudio(surfaceEl){
+    if(!this._audioNodes.length || !this.audioMod) return;
+    if(!this._audioHandle){
+      try{ this._audioHandle=this.audioMod.attach({ mount: (surfaceEl&&surfaceEl.ownerDocument&&surfaceEl.ownerDocument.body)||document.body }); }
+      catch(e){ this._audioHandle=null; return; }
+    }
+    // MVP drives a SINGLE voice from the first audio-out node (the synth is mono).
+    const id=this._audioNodes[0];
+    const p=this._ports && this._ports[id];
+    if(p) { try{ this._audioHandle.set({ frequency:p.frequency, gain:p.gain, cutoff:p.cutoff, waveform:p.waveform, trigger:p.trigger, on:true }); }catch(e){} }
   },
   // Resolve a single `kind:"logic"` binding ref to its current scalar value.
   // Returns undefined when the port has not been computed (paused / missing).
@@ -327,6 +413,18 @@ const LogicBridge = {
     if(v && typeof v==='object' && 'x' in v) return { x:Number(v.x)||0, y:Number(v.y)||0 };
     return null;
   },
+  // Resolve a `kind:"logic"` color ref to a CSS color string. A color port emits
+  // {r,g,b,a} in 0..1 (palette color0..7 / dominant). Returns null when the port
+  // is missing so the caller can fall back to the authored text control. Used by
+  // the shape render node to drive fill / stroke from palette colors.
+  color(ref){
+    if(!ref) return null;
+    const op=this._ports && this._ports[ref.node]; if(!op) return null;
+    const v=op[ref.port]; if(v==null||typeof v!=='object'||!('r' in v)) return null;
+    const cc=(x)=>Math.max(0,Math.min(255,Math.round((Number(x)||0)*255)));
+    const a=(v.a==null?1:Math.max(0,Math.min(1,Number(v.a)||0)));
+    return 'rgba('+cc(v.r)+','+cc(v.g)+','+cc(v.b)+','+a+')';
+  },
   // Overlay logic-binding values onto a params object BEFORE Sources.applyScalar.
   // Logic bindings are scalar here (per-instance vector logic uses ctx.index in
   // the engine, resolved via the engine's flow-repeat values - MVP overlays the
@@ -344,6 +442,64 @@ const LogicBridge = {
   // True if a spec carries any logic binding (so a static consumer ticks each frame).
   hasLogic(spec){ const b=spec&&spec._bindings; if(!b) return false; for(const k in b){ if(b[k]&&b[k].kind==='logic') return true; } return false; },
 };
+
+/* Palette extraction (PART A): downsample an image to a small canvas, then
+   median-cut its pixels into `count` dominant color buckets. Runs ONCE per
+   (url+count) - the result is written into `rec` (the per-url cache record) so
+   it is NEVER re-extracted per frame (mirrors Sources._pixel's _imgCache). The
+   dominant color is the bucket with the most pixels; the rest are sorted by
+   population. crossOrigin='anonymous' so getImageData does not taint the canvas
+   for project-served images. No native dialog, no getBoundingClientRect. */
+function _extractPalette(url, count, quality, rec){
+  if(!url || !rec) return;
+  const im=new Image(); try{ im.crossOrigin='anonymous'; }catch(e){}
+  im.onload=()=>{ try{
+    const W=Math.max(1,Math.min(im.naturalWidth||1,160)), H=Math.max(1,Math.min(im.naturalHeight||1,160));
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    const cx=cv.getContext('2d',{willReadFrequently:true}); cx.drawImage(im,0,0,W,H);
+    const data=cx.getImageData(0,0,W,H).data;
+    const stride=Math.max(1,Math.floor(Number(quality)||4));
+    const px=[];
+    for(let i=0;i<data.length;i+=4*stride){
+      const a=data[i+3]; if(a<8) continue;   // skip transparent
+      px.push([data[i],data[i+1],data[i+2]]);
+    }
+    const buckets=_medianCut(px, Math.max(2,Math.min(8,count|0)));
+    const cols=buckets.map(b=>({ r:b.color[0]/255, g:b.color[1]/255, b:b.color[2]/255, a:1, _n:b.count }));
+    cols.sort((a,b)=>(b._n||0)-(a._n||0));   // most populous first = dominant
+    rec.colors=cols.map(c=>({ r:c.r, g:c.g, b:c.b, a:1 }));
+    rec.dominant=rec.colors[0]||null;
+    rec.ready=true;
+  }catch(e){ rec.ready=false; } };
+  im.onerror=()=>{ rec.ready=false; };
+  im.src=url;
+}
+/* Median-cut color quantization: recursively split the pixel set along the
+   channel with the largest spread until we have `n` buckets, then average each
+   bucket. Returns [{ color:[r,g,b], count }]. Deterministic (no Math.random). */
+function _medianCut(pixels, n){
+  if(!pixels.length) return [];
+  let boxes=[pixels.slice()];
+  while(boxes.length<n){
+    // pick the box with the largest channel range to split.
+    let bi=-1, bestRange=-1, bestCh=0;
+    for(let i=0;i<boxes.length;i++){
+      const bx=boxes[i]; if(bx.length<2) continue;
+      let mn=[255,255,255], mx=[0,0,0];
+      for(const p of bx){ for(let c=0;c<3;c++){ if(p[c]<mn[c])mn[c]=p[c]; if(p[c]>mx[c])mx[c]=p[c]; } }
+      for(let c=0;c<3;c++){ const r=mx[c]-mn[c]; if(r>bestRange){ bestRange=r; bi=i; bestCh=c; } }
+    }
+    if(bi<0) break;
+    const bx=boxes[bi]; bx.sort((a,b)=>a[bestCh]-b[bestCh]);
+    const mid=bx.length>>1;
+    boxes.splice(bi,1,bx.slice(0,mid),bx.slice(mid));
+  }
+  return boxes.filter(b=>b.length).map(bx=>{
+    let r=0,g=0,bl=0; for(const p of bx){ r+=p[0]; g+=p[1]; bl+=p[2]; }
+    const k=bx.length;
+    return { color:[Math.round(r/k),Math.round(g/k),Math.round(bl/k)], count:k };
+  });
+}
 
 /* ---------- Parent-node bridge -------------------------------------------- */
 const Q = new URLSearchParams(location.search);
@@ -529,6 +685,7 @@ function buildWiredRuntimeLayers(){
         strokeWidth: finiteNumber(sp.strokeWidth,2),
         smoothing: Math.max(0,Math.min(1,finiteNumber(sp.smoothing,0))),
         points: spec._points || {},
+        colorPoints: spec._colorPoints || {},
       };
       const Ls = fillLayer({
         id: wl.id || ('W'+wi),
@@ -566,6 +723,12 @@ function buildWiredRuntimeLayers(){
         speed: finiteNumber(sp.speed,1),
         amplitude: finiteNumber(sp.amplitude,1),
         stagger: finiteNumber(sp.stagger,0.08),
+        // TEXT ON PATH controls (PART A): glyph BASE positions follow this curve
+        // before the behavior animation is layered on. straight = legacy layout.
+        path: (['straight','arc','circle','wave','ring'].includes(sp.path)?sp.path:'straight'),
+        pathRadius: finiteNumber(sp.pathRadius,0.3),
+        pathAmplitude: finiteNumber(sp.pathAmplitude,30),
+        pathRotate: sp.pathRotate!==false,
         loop: sp.loop!==false,
       };
       const Lt = fillLayer({
@@ -713,10 +876,13 @@ function fillPositioning(p){
     'scatter-3d':{count:80,bounds:[6,6,6],size:0.05},
     instances:{source:'mouse',count:40,physics:false,size:0.05,spread:0.4},
     physics:{engine:'matter',gravity:[0,1],count:30,size:0.05,bounce:0.4},
+    shatter:{count:24,gravity:[0,1.4],burst:0.04,spin:0.4,slowmo:1,trigger:'click',period:3},
     boids:{count:60,separation:1,alignment:1,cohesion:1,perception:0.12,maxSpeed:0.35,size:0.05},
     drawn:{paths:[],count:30,size:0.04},
     'text-ink':{text:'INK',font:'sans-serif',weight:700,density:200,jitter:0,drift:0,size:0.02},
+    'text-outline':{text:'INK',font:'sans-serif',weight:700,density:120,simplify:0.6,size:0.02},
     rope:{anchors:[[0.2,0.2],[0.8,0.2]],segments:14,stiffness:0.8,size:0.03},
+    'rope-ink':{text:'INK',font:'sans-serif',weight:700,anchors:40,segments:6,gravity:1,stiffness:0.8,damping:0.99,size:0.02},
     'camera-feed':{detector:'hand',source:'camera',size:0.05},
     'face-3d':{meshId:'',size:1},
   }[p.mode]||{};
@@ -1008,10 +1174,13 @@ const Positioning = {
       case 'scatter-3d':  out=this.scatter3d(L,p); break;
       case 'instances':   out=this.instances(L,p,dt); break;
       case 'physics':     out=this.physics(L,p,W,H,dt); break;
+      case 'shatter':     out=this.shatter(L,p,W,H,dt); break;
       case 'boids':       out=this.boids(L,p,dt); break;
       case 'drawn':       out=this.drawn(L,p); break;
       case 'text-ink':    out=this.textInk(L,p,W,H,dt); break;
+      case 'text-outline':out=this.textOutline(L,p,W,H); break;
       case 'rope':        out=this.rope(L,p,dt); break;
+      case 'rope-ink':    out=this.ropeInk(L,p,W,H,dt); break;
       case 'camera-feed': out=this.cameraFeed(L,p); break;
       case 'face-3d':     out=this.face3d(L,p); break;
       default:            out=[{x:.5,y:.5,scale:1,rot:0}];
@@ -1144,6 +1313,90 @@ const Positioning = {
     Matter.Composite.add(eng.world,[...bodies,...walls]);
     this.sim[L.id]={Matter,engine:eng,bodies, _building:false, _W:W,_H:H};
   },
+  // SHATTER / FRACTURE: voronoi-fracture the layer bounds into N shards, each a
+  // matter.js rigid body. At rest the shards tile the image (drawContent clips the
+  // FULL layer content to each shard's voronoi cell, so they re-assemble exactly).
+  // On a trigger (click pulse / auto burst by clock) the shards gain an outward
+  // impulse from the burst point + gravity and fly/tumble apart. Slow-mo via the
+  // time-scale control. Deterministic (mulberry seeded by file hash). The voronoi
+  // + bodies are cached by signature and rebuilt only on count / bounds change.
+  shatter(L,p,W,H,dt){
+    const s=this.sim[L.id];
+    if(!s||!s.engine){ this.initShatter(L,p,W,H); return (this.sim[L.id]&&this.sim[L.id].fallback)||[]; }
+    // pick up live gravity edits without a rebuild
+    s.engine.gravity.x=finiteNumber(p.gravity&&p.gravity[0],0);
+    s.engine.gravity.y=finiteNumber(p.gravity&&p.gravity[1],1.4);
+    // trigger: explicit click pulse, OR auto-burst on a clock cadence. Each fires
+    // ONCE per pulse (edge-detected on s._burst) so the shards don't re-launch
+    // every frame.
+    const trig=(p.trigger==null?'click':p.trigger);
+    let fire=false, bx=0.5, by=0.5;
+    if(trig==='auto'){
+      const period=Math.max(0.5,finiteNumber(p.period,3));
+      const ph=Math.floor(Input.clock/period);
+      if(ph!==s._lastPhase){ s._lastPhase=ph; fire=true; bx=0.5; by=0.5; }
+    } else {
+      if(Input.clickPulse>0.5 && !s._burst){ s._burst=true; fire=true; bx=Input.px; by=Input.py; }
+      if(Input.clickPulse<=0.5) s._burst=false;
+    }
+    if(fire) this.shatterBurst(s,p,W,H,bx,by);
+    // step the engine in slow-mo (time scale). Clamp the substep so a paused tab
+    // resuming does not explode the solver.
+    const slow=Math.max(0.02,Math.min(2,finiteNumber(p.slowmo,1)));
+    s.Matter.Engine.update(s.engine, Math.min(dt*1000,33)*slow);
+    return s.shards.map((sh,i)=>{
+      const b=sh.body;
+      return {x:b.position.x/W, y:b.position.y/H, scale:1, rot:b.angle, _shard:sh.cell, _shardSeed:i};
+    });
+  },
+  shatterBurst(s,p,W,H,bx,by){
+    const M=s.Matter; if(!M) return;
+    const force=finiteNumber(p.burst,0.04);
+    const spin=finiteNumber(p.spin,0.4);
+    const cx=bx*W, cy=by*H;
+    const rng=mulberry(hash((s.sigKey||'')+':burst:'+(s._lastPhase||0)+':'+Math.round(bx*1000)+'x'+Math.round(by*1000)));
+    for(const sh of s.shards){
+      const b=sh.body;
+      let dx=b.position.x-cx, dy=b.position.y-cy;
+      const d=Math.hypot(dx,dy)||1; dx/=d; dy/=d;
+      const mag=force*(0.6+rng()*0.8)*(b.mass||1);
+      M.Body.applyForce(b, b.position, {x:dx*mag, y:dy*mag - force*0.3*(b.mass||1)});
+      M.Body.setAngularVelocity(b, (rng()-0.5)*spin);
+    }
+  },
+  async initShatter(L,p,W,H){
+    if(this.sim[L.id]&&this.sim[L.id]._building) return;
+    const count=Math.max(2,Math.min(160,finiteNumber(p.count,24)|0));
+    const sigKey=L.id+':shatter:'+count+':'+(W|0)+'x'+(H|0);
+    // deterministic voronoi sites + cells (no Math.random)
+    const cells=buildVoronoiCells(count,W,H,hash(sigKey));
+    this.sim[L.id]={_building:true, sigKey,
+      fallback:cells.map((c,i)=>({x:c.cx/W,y:c.cy/H,scale:1,rot:0,_shard:c,_shardSeed:i}))};
+    const Mod=await loadMod('matter'); if(!Mod){ return; }
+    const Matter=Mod.default||Mod;
+    const eng=Matter.Engine.create();
+    eng.gravity.x=finiteNumber(p.gravity&&p.gravity[0],0);
+    eng.gravity.y=finiteNumber(p.gravity&&p.gravity[1],1.4);
+    const shards=[];
+    for(const c of cells){
+      // body from the cell polygon (centered at its centroid). fromVertices may
+      // decompose concave cells; voronoi cells are convex so this is a single part.
+      const verts=c.poly.map(pt=>({x:pt[0]-c.cx, y:pt[1]-c.cy}));
+      let body=Matter.Bodies.fromVertices(c.cx, c.cy, [verts], {restitution:0.25, friction:0.4, frictionAir:0.012}, true);
+      if(!body){ body=Matter.Bodies.circle(c.cx,c.cy,Math.max(4,c.r),{restitution:0.25,friction:0.4}); }
+      Matter.Body.setStatic(body,false);
+      shards.push({body, cell:c});
+    }
+    // floor + side walls so shards settle on screen rather than vanishing
+    const walls=[
+      Matter.Bodies.rectangle(W/2,H+40,W*3,80,{isStatic:true}),
+      Matter.Bodies.rectangle(-40,H/2,80,H*3,{isStatic:true}),
+      Matter.Bodies.rectangle(W+40,H/2,80,H*3,{isStatic:true}),
+      Matter.Bodies.rectangle(W/2,-H,W*3,80,{isStatic:true}),
+    ];
+    Matter.Composite.add(eng.world,[...shards.map(sh=>sh.body),...walls]);
+    this.sim[L.id]={Matter,engine:eng,shards,sigKey, _building:false, _W:W,_H:H, _burst:false, _lastPhase:-1};
+  },
   // Boids flocking: per-layer agent state {pos,vel} kept on L._boids across
   // frames (like rope's s.pts). Each frame applies separation + alignment +
   // cohesion within the perception radius, clamps to maxSpeed, bounces at the
@@ -1228,6 +1481,65 @@ const Positioning = {
     }
     return s.pts.map((q,i)=>({x:q.x,y:q.y,scale:p.size,rot:0}));
   },
+  // ROPE INK (Elastic Type): sample the glyph ink into a LOW-density ANCHOR cloud
+  // (reuse sampleTextInk with `anchors` as the density), then grow a short verlet
+  // rope of `segments` nodes hanging from each anchor. Each frame every node
+  // integrates (verlet + gravity*damping) and relaxes its segment-length
+  // constraints with node 0 PINNED to the anchor - identical math to rope() but
+  // one chain per ink point. Returns ALL rope nodes as instances; rot is the
+  // segment heading so the layer content orients along each swinging rope. The
+  // anchor cloud + per-rope verlet state are CACHED on L._ropeInk keyed by a
+  // signature of text/font/weight/anchors/segments/WxH so we re-sample ONLY on
+  // change (no per-frame sampling, no getBoundingClientRect); state persists
+  // across frames like rope's s.pts.
+  ropeInk(L,p,W,H,dt){
+    const text=p.text!=null?String(p.text):'';
+    const font=(p.font&&String(p.font).trim())?p.font:'sans-serif';
+    const weight=p.weight||700;
+    const anchors=Math.max(1,Math.min(300,finiteNumber(p.anchors,40)|0));
+    const seg=Math.max(1,Math.min(24,finiteNumber(p.segments,6)|0));
+    const grav=0.0006*Math.max(0,finiteNumber(p.gravity,1));
+    const drag=clamp(finiteNumber(p.damping,0.99),0.8,1);
+    const k=clamp(finiteNumber(p.stiffness,0.8),0.05,1);
+    const size=finiteNumber(p.size,0.02);
+    const sig=text+'|'+font+'|'+weight+'|'+anchors+'|'+seg+'|'+(W|0)+'x'+(H|0);
+    let s=L._ropeInk;
+    if(!s||s.sig!==sig){
+      const base=sampleTextInk(text,font,weight,anchors,W,H,hash(L.id+':rope-ink'));
+      // rest length: each rope hangs ~12% of the layer height in total, split
+      // across its segments (scaled to normalized space, capped sensibly).
+      const rest=clamp(0.12/seg,0.004,0.2);
+      const ropes=base.map(a=>{
+        const pts=[];
+        for(let i=0;i<=seg;i++) pts.push({x:a[0],y:a[1]+rest*i,px:a[0],py:a[1]+rest*i});
+        return {anchor:a,pts,rest};
+      });
+      s={sig,ropes}; L._ropeInk=s;
+    }
+    if(!s.ropes.length) return [{x:0.5,y:0.5,scale:size,rot:0}];
+    const out=[];
+    for(const r of s.ropes){
+      const pts=r.pts, n=pts.length;
+      // verlet integrate (gravity scaled by damping cadence like rope())
+      for(const q of pts){ const vx=(q.x-q.px)*drag, vy=(q.y-q.py)*drag;
+        q.px=q.x; q.py=q.y; q.x+=vx; q.y+=vy+grav; }
+      // pin node 0 to the ink anchor
+      pts[0].x=r.anchor[0]; pts[0].y=r.anchor[1];
+      // constraint relaxation toward rest length
+      for(let it=0;it<6;it++)for(let i=0;i<n-1;i++){
+        const a=pts[i], b=pts[i+1];
+        let dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1e-6;
+        const diff=(d-r.rest)/d*0.5*k; dx*=diff; dy*=diff;
+        if(i!==0){ a.x+=dx; a.y+=dy; } b.x-=dx; b.y-=dy;
+      }
+      // emit each node with rot from the local segment heading
+      for(let i=0;i<n;i++){ const q=pts[i];
+        const nb=pts[Math.min(i+1,n-1)], pb=pts[Math.max(i-1,0)];
+        out.push({x:q.x,y:q.y,scale:size,rot:Math.atan2(nb.y-pb.y,nb.x-pb.x)});
+      }
+    }
+    return out;
+  },
   cameraFeed(L,p){
     const det=p.detector;
     const lm=Input.detect.landmarks;
@@ -1290,6 +1602,25 @@ const Positioning = {
     }
     return s.parts.map(q=>({x:clamp(q.x,-0.1,1.1),y:clamp(q.y,-0.1,1.2),scale:size,rot:0}));
   },
+  // TEXT OUTLINE (PART B): marching-squares / border-follow trace of the glyph
+  // alpha into ORDERED boundary loops (resampled + normalized). Returns the
+  // ordered points as the instance array so a layer renders content ALONG the
+  // glyph outlines (stroked-outline text, marching dots) - rot is the local
+  // tangent. CACHED on L._textOutline keyed by text/font/weight/density/WxH (+
+  // simplify/size) so we do NOT re-trace every frame (mirrors text-ink caching).
+  textOutline(L,p,W,H){
+    const text=p.text!=null?String(p.text):'';
+    const font=(p.font&&String(p.font).trim())?p.font:'sans-serif';
+    const weight=p.weight||700;
+    const density=Math.max(3,Math.min(2000,finiteNumber(p.density,120)|0));
+    const simplify=Math.max(0,finiteNumber(p.simplify,0.6));
+    const size=finiteNumber(p.size,0.02);
+    const sig=text+'|'+font+'|'+weight+'|'+density+'|'+simplify+'|'+size+'|'+(W|0)+'x'+(H|0);
+    let s=L._textOutline;
+    if(!s||s.sig!==sig){ s={sig, pts:traceTextOutline(text,font,weight,density,W,H,size,simplify)}; L._textOutline=s; }
+    if(!s.pts.length) return [{x:0.5,y:0.5,scale:size,rot:0}];
+    return s.pts;
+  },
   face3d(L,p){
     // minimal stub: arrange instances on a sphere-ish face mask, optionally
     // driven by face landmarks if a camera detector is active.
@@ -1306,6 +1637,496 @@ const Positioning = {
 function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
 function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+/* ===========================================================================
+   VORONOI FRACTURE  -  used by the SHATTER position mode. Scatter `count` sites
+   deterministically (mulberry, NO Math.random), then build each convex Voronoi
+   cell by clipping the W x H bounds rectangle against the perpendicular bisector
+   half-planes between the site and every other site (Sutherland-Hodgman). Returns
+   [{poly:[[x,y]...], cx,cy, r, site:[x,y]}] in absolute pixel space. The cells
+   exactly tile the rectangle (re-assemble the image at rest). Pure geometry, no
+   getBoundingClientRect, finite-safe.
+   ===========================================================================*/
+function clipPolyHalfPlane(poly, nx, ny, c){
+  // keep the side where nx*x + ny*y <= c
+  const out=[]; const n=poly.length; if(!n) return out;
+  for(let i=0;i<n;i++){
+    const a=poly[i], b=poly[(i+1)%n];
+    const da=nx*a[0]+ny*a[1]-c, db=nx*b[0]+ny*b[1]-c;
+    const ain=da<=0, bin=db<=0;
+    if(ain) out.push(a);
+    if(ain!==bin){
+      const t=da/(da-db);
+      out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]);
+    }
+  }
+  return out;
+}
+function buildVoronoiCells(count, W, H, seed){
+  const rng=mulberry((seed>>>0)||1);
+  const sites=[];
+  for(let i=0;i<count;i++){ sites.push([ (0.06+rng()*0.88)*W, (0.06+rng()*0.88)*H ]); }
+  const rect=[[0,0],[W,0],[W,H],[0,H]];
+  const cells=[];
+  for(let i=0;i<sites.length;i++){
+    const si=sites[i];
+    let poly=rect.map(p=>p.slice());
+    for(let j=0;j<sites.length && poly.length;j++){
+      if(j===i) continue;
+      const sj=sites[j];
+      // bisector: points closer to si than sj -> keep nx*x+ny*y <= c
+      const nx=sj[0]-si[0], ny=sj[1]-si[1];
+      const c=(sj[0]*sj[0]-si[0]*si[0]+sj[1]*sj[1]-si[1]*si[1])/2;
+      poly=clipPolyHalfPlane(poly,nx,ny,c);
+    }
+    if(poly.length<3) continue;
+    // centroid + bounding radius
+    let cx=0,cy=0; for(const pt of poly){ cx+=pt[0]; cy+=pt[1]; } cx/=poly.length; cy/=poly.length;
+    let r=0; for(const pt of poly){ r=Math.max(r,Math.hypot(pt[0]-cx,pt[1]-cy)); }
+    cells.push({poly, cx, cy, r:Math.max(2,r), site:si});
+  }
+  return cells;
+}
+/* ===========================================================================
+   FLUID  -  approximate real-time fluid (Stam stable-fluids, coarse grid).
+   Delivered as a per-LAYER effect: the layer's rendered RGBA pixels ARE the dye
+   that gets advected/stirred by a velocity field; the pointer (Input.px/py +
+   velocity) injects force + dye. State is persistent per layer id (a velocity
+   grid + an RGB dye field), so it composes on the layer like other effects while
+   owning the field a stateless GL pass cannot. Coarse grid (default 72 cells on
+   the long axis) + a fixed small Jacobi/Gauss-Seidel iteration count keep it
+   cheap + stable. This is NOT high-res GPU fluid: it is a convincing coarse
+   solver. NO getBoundingClientRect, finite-safe, no Math.random.
+   ===========================================================================*/
+const FluidSim = {
+  fields:{},   // layer id -> field state
+  reset(){ this.fields={}; },
+  get(id, W, H, longAxis){
+    // grid cells (interior); +2 for border so indexing is (i in 1..N) safe.
+    const ar=W/H;
+    let gx, gy;
+    if(ar>=1){ gx=longAxis; gy=Math.max(8,Math.round(longAxis/ar)); }
+    else { gy=longAxis; gx=Math.max(8,Math.round(longAxis*ar)); }
+    let f=this.fields[id];
+    if(f && f.gx===gx && f.gy===gy) return f;
+    const N=(gx+2)*(gy+2);
+    f={ gx, gy, N,
+      u:new Float32Array(N), v:new Float32Array(N), u0:new Float32Array(N), v0:new Float32Array(N),
+      r:new Float32Array(N), g:new Float32Array(N), b:new Float32Array(N), a:new Float32Array(N),
+      r0:new Float32Array(N), g0:new Float32Array(N), b0:new Float32Array(N), a0:new Float32Array(N),
+      px:0.5, py:0.5, init:false, scratch:null };
+    this.fields[id]=f; return f;
+  },
+  // Step the solver one frame and write the advected dye back into `cv` (the
+  // layer's 2D buffer). force/fade/viscosity/radius are 0..1-ish controls.
+  step(cv, id, params, dt){
+    const W=cv.width, H=cv.height; if(W<2||H<2) return;
+    const longAxis=Math.max(16,Math.min(120, Math.round(finiteNumber(params.grid,72))));
+    const f=this.get(id,W,H,longAxis);
+    const gx=f.gx, gy=f.gy, RW=gx+2;
+    const idx=(i,j)=> i + j*RW;
+    const ctx=cv.getContext('2d',{willReadFrequently:true}); if(!ctx) return;
+    // 1) SAMPLE the layer pixels into the dye field (downsample to grid). On the
+    //    first frame we seed the field; afterwards we ADD a little of the live
+    //    content so the dye is continuously refreshed from the layer (this lets
+    //    the layer keep animating while being stirred).
+    let img; try{ img=ctx.getImageData(0,0,W,H); }catch(e){ return; }
+    const d=img.data;
+    const seed=!f.init;
+    const refresh=seed?1:0.06;
+    for(let j=1;j<=gy;j++){
+      const py=Math.min(H-1, Math.floor((j-0.5)/gy*H));
+      for(let i=1;i<=gx;i++){
+        const px=Math.min(W-1, Math.floor((i-0.5)/gx*W));
+        const o=(py*W+px)*4, k=idx(i,j);
+        f.r[k]=f.r[k]*(1-refresh)+d[o]*refresh;
+        f.g[k]=f.g[k]*(1-refresh)+d[o+1]*refresh;
+        f.b[k]=f.b[k]*(1-refresh)+d[o+2]*refresh;
+        f.a[k]=f.a[k]*(1-refresh)+d[o+3]*refresh;
+      }
+    }
+    f.init=true;
+    // 2) POINTER injects velocity + a dye splat. Velocity from pointer delta.
+    const dvx=(Input.px-f.px), dvy=(Input.py-f.py); f.px=Input.px; f.py=Input.py;
+    const force=finiteNumber(params.force,1)*40;
+    const radius=Math.max(0.02,finiteNumber(params.radius,0.12));
+    if(Input.hoverAny){
+      const cgx=Input.px*gx, cgy=Input.py*gy;
+      const rad=radius*Math.max(gx,gy);
+      const r2=rad*rad;
+      for(let j=1;j<=gy;j++) for(let i=1;i<=gx;i++){
+        const ddx=i-cgx, ddy=j-cgy, q=ddx*ddx+ddy*ddy;
+        if(q>r2) continue;
+        const fall=Math.exp(-q/(r2*0.5)), k=idx(i,j);
+        f.u[k]+=dvx*force*fall; f.v[k]+=dvy*force*fall;
+      }
+    }
+    // 3) STEP: diffuse + project velocity, advect velocity, project; advect dye.
+    const visc=finiteNumber(params.viscosity,0.2)*0.00012;
+    const ITERS=12;     // fixed small Jacobi/Gauss-Seidel iteration count
+    const N=Math.max(gx,gy);
+    const sdt=Math.min(0.033,Math.max(0.001,dt));
+    const set_bnd=(bmode,x)=>{
+      for(let i=1;i<=gx;i++){ x[idx(i,0)]=bmode===2?-x[idx(i,1)]:x[idx(i,1)]; x[idx(i,gy+1)]=bmode===2?-x[idx(i,gy)]:x[idx(i,gy)]; }
+      for(let j=1;j<=gy;j++){ x[idx(0,j)]=bmode===1?-x[idx(1,j)]:x[idx(1,j)]; x[idx(gx+1,j)]=bmode===1?-x[idx(gx,j)]:x[idx(gx,j)]; }
+      x[idx(0,0)]=0.5*(x[idx(1,0)]+x[idx(0,1)]);
+      x[idx(0,gy+1)]=0.5*(x[idx(1,gy+1)]+x[idx(0,gy)]);
+      x[idx(gx+1,0)]=0.5*(x[idx(gx,0)]+x[idx(gx+1,1)]);
+      x[idx(gx+1,gy+1)]=0.5*(x[idx(gx,gy+1)]+x[idx(gx+1,gy)]);
+    };
+    const lin_solve=(bmode,x,x00,aa,cc)=>{
+      const invc=1/cc;
+      for(let it=0;it<ITERS;it++){
+        for(let j=1;j<=gy;j++) for(let i=1;i<=gx;i++){
+          x[idx(i,j)]=(x00[idx(i,j)]+aa*(x[idx(i-1,j)]+x[idx(i+1,j)]+x[idx(i,j-1)]+x[idx(i,j+1)]))*invc;
+        }
+        set_bnd(bmode,x);
+      }
+    };
+    const diffuse=(bmode,x,x00,diff)=>{ const aa=sdt*diff*N*N; lin_solve(bmode,x,x00,aa,1+4*aa); };
+    const advect=(bmode,dn,d0,uu,vv)=>{
+      const dt0x=sdt*gx, dt0y=sdt*gy;
+      for(let j=1;j<=gy;j++) for(let i=1;i<=gx;i++){
+        let xx=i-dt0x*uu[idx(i,j)], yy=j-dt0y*vv[idx(i,j)];
+        if(xx<0.5)xx=0.5; if(xx>gx+0.5)xx=gx+0.5; const i0=xx|0, i1=i0+1;
+        if(yy<0.5)yy=0.5; if(yy>gy+0.5)yy=gy+0.5; const j0=yy|0, j1=j0+1;
+        const s1=xx-i0, s0=1-s1, t1=yy-j0, t0=1-t1;
+        dn[idx(i,j)]=s0*(t0*d0[idx(i0,j0)]+t1*d0[idx(i0,j1)])+s1*(t0*d0[idx(i1,j0)]+t1*d0[idx(i1,j1)]);
+      }
+      set_bnd(bmode,dn);
+    };
+    const project=(uu,vv,pp,div)=>{
+      const h=1/N;
+      for(let j=1;j<=gy;j++) for(let i=1;i<=gx;i++){
+        div[idx(i,j)]=-0.5*h*(uu[idx(i+1,j)]-uu[idx(i-1,j)]+vv[idx(i,j+1)]-vv[idx(i,j-1)]);
+        pp[idx(i,j)]=0;
+      }
+      set_bnd(0,div); set_bnd(0,pp);
+      lin_solve(0,pp,div,1,4);
+      for(let j=1;j<=gy;j++) for(let i=1;i<=gx;i++){
+        uu[idx(i,j)]-=0.5*(pp[idx(i+1,j)]-pp[idx(i-1,j)])/h;
+        vv[idx(i,j)]-=0.5*(pp[idx(i,j+1)]-pp[idx(i,j-1)])/h;
+      }
+      set_bnd(1,uu); set_bnd(2,vv);
+    };
+    // velocity step (u0/v0 reused as scratch)
+    f.u0.set(f.u); f.v0.set(f.v);
+    diffuse(1,f.u,f.u0,visc); diffuse(2,f.v,f.v0,visc);
+    project(f.u,f.v,f.u0,f.v0);
+    f.u0.set(f.u); f.v0.set(f.v);
+    advect(1,f.u,f.u0,f.u0,f.v0); advect(2,f.v,f.v0,f.u0,f.v0);
+    project(f.u,f.v,f.u0,f.v0);
+    // dye step: advect each channel along the velocity field, then fade.
+    const fade=1-Math.min(0.5,Math.max(0,finiteNumber(params.fade,0.04)));
+    f.r0.set(f.r); f.g0.set(f.g); f.b0.set(f.b); f.a0.set(f.a);
+    advect(0,f.r,f.r0,f.u,f.v); advect(0,f.g,f.g0,f.u,f.v);
+    advect(0,f.b,f.b0,f.u,f.v); advect(0,f.a,f.a0,f.u,f.v);
+    for(let k=0;k<f.N;k++){ f.r[k]*=fade; f.g[k]*=fade; f.b[k]*=fade; f.a[k]*=fade; }
+    // 4) WRITE the dye field back into the layer buffer (bilinear upsample). We
+    //    paint via putImageData on the full-res buffer using nearest cell sample
+    //    plus bilinear blend for smoothness.
+    for(let py=0;py<H;py++){
+      const gyf=Math.min(gy-0.001, Math.max(0, (py+0.5)/H*gy - 0.5)) + 1;
+      const j0=gyf|0, j1=Math.min(gy+1,j0+1), tj=gyf-j0;
+      for(let px=0;px<W;px++){
+        const gxf=Math.min(gx-0.001, Math.max(0, (px+0.5)/W*gx - 0.5)) + 1;
+        const i0=gxf|0, i1=Math.min(gx+1,i0+1), ti=gxf-i0;
+        const o=(py*W+px)*4;
+        const w00=(1-ti)*(1-tj), w10=ti*(1-tj), w01=(1-ti)*tj, w11=ti*tj;
+        const k00=idx(i0,j0),k10=idx(i1,j0),k01=idx(i0,j1),k11=idx(i1,j1);
+        d[o]  =f.r[k00]*w00+f.r[k10]*w10+f.r[k01]*w01+f.r[k11]*w11;
+        d[o+1]=f.g[k00]*w00+f.g[k10]*w10+f.g[k01]*w01+f.g[k11]*w11;
+        d[o+2]=f.b[k00]*w00+f.b[k10]*w10+f.b[k01]*w01+f.b[k11]*w11;
+        d[o+3]=f.a[k00]*w00+f.a[k10]*w10+f.a[k01]*w01+f.a[k11]*w11;
+      }
+    }
+    ctx.putImageData(img,0,0);
+  }
+};
+function layerHasFluid(L){ const st=L&&L.effects&&L.effects.stack; if(!st) return null;
+  for(const e of st){ if(e&&e.type==='fluid') return e; } return null; }
+
+/* ===========================================================================
+   FACE-MORPH  -  parametric facial-landmark mesh warp (Parametric Portrait
+   Morph). A per-LAYER CPU effect intercepted in PASS B (like fluid): it reads
+   the layer's rendered pixels as the source texture, detects 478-point face
+   landmarks via logicvision (still-IMAGE cache for asset portraits, throttled
+   VIDEO detect for camera/video), Delaunay-triangulates a deterministic coarse
+   subset (landmarks + face-oval ring + image-corner/edge anchors), moves target
+   landmark groups by parametric controls (smile / browRaise / eyeWiden / jawDrop
+   / cheekPuff / headTilt, scaled by amount), and re-renders by per-triangle
+   affine texture mapping on a 2D canvas (clip to dest triangle, drawImage with
+   the src->dest affine). FAIL-SOFT to identity (no warp) when no face / model.
+   NO Math.random (deterministic), NO getBoundingClientRect, finite-safe.
+
+   FACEMORPH_GROUPS / FACEMORPH_RING / FACEMORPH_CORNERS are canonical MediaPipe
+   FaceMesh indices (a curated coarse subset, ~70 points) so the mesh stays small
+   + stable. The same constants + math are duplicated in the baked twin (FM* in
+   slimPlayer) so editor + export render identically.
+   =========================================================================== */
+// Curated coarse landmark subset by region (canonical FaceMesh indices). Each
+// group is moved as a unit by the matching control.
+const FACEMORPH_GROUPS = {
+  mouthCornerL:[61], mouthCornerR:[291],
+  mouthTop:[0,13,37,267], mouthBot:[17,14,84,314],
+  browL:[55,65,52,105,107], browR:[285,295,282,334,336],
+  jaw:[152,148,176,377,400], chin:[152],
+  cheekL:[50,205,123], cheekR:[280,425,352],
+};
+// Eye lids (upper/lower) for eyeWiden (upper goes up, lower goes down).
+const FACEMORPH_EYE = { upL:[159,158,160,157], loL:[145,144,153,154],
+                        upR:[386,385,387,388], loR:[374,373,380,381] };
+// Face-oval ring (silhouette) - anchors the warp to the head outline so the
+// background outside the face is held still by the corner/edge anchors.
+const FACEMORPH_RING = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,
+  379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+// nose tip + bridge (kept as stable interior anchors, lightly driven by tilt)
+const FACEMORPH_NOSE = [1,4,5,6,2];
+const FaceMorph = {
+  meshes:{},   // layer id -> { sig, srcPts:Float32Array[2N], idx:Int32Array[3T], groups, ringStart }
+  _vis:null,   // resolved LogicVision module (or false). Lazy: only loaded when a
+               // face-morph effect actually runs, so the rest of the tool never
+               // pulls MediaPipe. Reuses LogicBridge.visionMod if it already loaded.
+  reset(){ this.meshes={}; },
+  ensureVision(){
+    if(LogicBridge.visionMod) return LogicBridge.visionMod;
+    if(this._vis!==null) return this._vis||null;
+    this._vis=false;   // mark in-flight (avoid double import)
+    import('../_shared/logicvision.js').then(m=>{ this._vis=(m&&m.LogicVision)||false; if(this._vis&&!LogicBridge.visionMod) LogicBridge.visionMod=this._vis; }).catch(()=>{ this._vis=false; });
+    return null;
+  },
+  // Resolve the layer's face landmarks for THIS source. Still images: cached
+  // detect keyed by the asset url (no per-frame re-detect; re-detect only on url
+  // change). Camera/video: throttled VIDEO detect. Returns the first face's
+  // normalized 478 [{x,y}] list, or null if not ready / no face / no module.
+  landmarksFor(L, source){
+    const vis=this.ensureVision(); if(!vis) return null;
+    const c=L.content||{};
+    const wantImg = source==='image' || (source!=='camera' && !(source==='auto' && (c.kind==='camera'||c.kind==='videostream')) && c.kind==='asset');
+    if(wantImg && c.kind==='asset'){
+      const m=Assets.meta(c.assetId); if(!m||m.kind!=='image') return null;
+      const im=Assets.image(c.assetId); if(!im||!im._ready||!im.naturalWidth) return null;
+      const dets=vis.detectFaceImage(im, m.url); if(!dets) return null;
+      return dets.length?dets[0].landmarks:[];
+    }
+    // camera / video / live
+    let v=null, key='';
+    if(c.kind==='camera' || source==='camera'){ v=Input.cam.on?Input.cam.video:null; key='cam'; }
+    else if(c.kind==='videostream'){ v=videoStreamEl(c.nodeId); key='vs:'+c.nodeId; }
+    else if(c.kind==='asset'){ const m=Assets.meta(c.assetId); if(m&&m.kind==='video'){ v=Assets.video(c.assetId); key='av:'+c.assetId; } }
+    if(!v||v.readyState<2||!v.videoWidth) return null;
+    const dets=vis.detectFaceVideo(v, key);
+    return dets&&dets.length?dets[0].landmarks:[];
+  },
+  // Build (or reuse) the base mesh for this layer: collect the subset points in
+  // image-normalized 0..1 space, add the 4 corners + 4 edge midpoints as fixed
+  // anchors, and Delaunay-triangulate. Cached by a signature of the landmark
+  // count + a low-precision hash of the points so it only rebuilds on real change.
+  buildMesh(id, lms){
+    if(!lms||lms.length<468) return null;
+    const pts=[]; const groupMap={};   // groupName -> [vertexIndex,...]
+    const pushPt=(p)=>{ pts.push(p.x,p.y); return (pts.length/2)-1; };
+    const addGroup=(name, ids)=>{ const arr=groupMap[name]||(groupMap[name]=[]); for(const li of ids){ const p=lms[li]; if(p) arr.push(pushPt(p)); } };
+    // mover groups
+    for(const g in FACEMORPH_GROUPS) addGroup(g, FACEMORPH_GROUPS[g]);
+    for(const g in FACEMORPH_EYE) addGroup('eye_'+g, FACEMORPH_EYE[g]);
+    addGroup('nose', FACEMORPH_NOSE);
+    // silhouette ring (anchored region edge)
+    addGroup('ring', FACEMORPH_RING);
+    // image-corner + edge-midpoint anchors (held fixed -> background stays put)
+    const anchorStart=pts.length/2;
+    const anchors=[[0,0],[1,0],[1,1],[0,1],[0.5,0],[1,0.5],[0.5,1],[0,0.5]];
+    for(const a of anchors) pushPt({x:a[0],y:a[1]});
+    // deterministic signature (low-precision) so identical detections reuse mesh
+    let h=2166136261>>>0; for(let i=0;i<pts.length;i++){ h^=(Math.round(pts[i]*512))>>>0; h=Math.imul(h,16777619)>>>0; }
+    const sig=lms.length+':'+(pts.length/2)+':'+h;
+    const tris=delaunay(pts);
+    const mesh={ sig, srcPts:Float32Array.from(pts), idx:Int32Array.from(tris), groups:groupMap, anchorStart };
+    this.meshes[id]=mesh; return mesh;
+  },
+  // Apply parametric deformation: returns a Float32Array of dest points (same
+  // order as srcPts) in 0..1 image space. amount is the master multiplier.
+  deform(mesh, params, live){
+    const sp=mesh.srcPts, n=sp.length/2;
+    const dp=new Float32Array(sp);   // start from identity (every anchor fixed)
+    const amount=Math.max(0,Math.min(2,finiteNumber(params.amount,1)));
+    if(amount<=0) return dp;
+    const smile=finiteNumber(params.smile,0), brow=finiteNumber(params.browRaise,0);
+    const eye=finiteNumber(params.eyeWiden,0), jaw=finiteNumber(params.jawDrop,0);
+    const cheek=finiteNumber(params.cheekPuff,0), tilt=finiteNumber(params.headTilt,0);
+    // face center + scale from the ring (for tilt pivot + proportional moves)
+    const ring=mesh.groups.ring||[]; let cx=0.5,cy=0.5,fs=0.3;
+    if(ring.length){ let sx=0,sy=0; for(const vi of ring){ sx+=sp[vi*2]; sy+=sp[vi*2+1]; } cx=sx/ring.length; cy=sy/ring.length;
+      let mr=0; for(const vi of ring){ mr=Math.max(mr,Math.hypot(sp[vi*2]-cx,sp[vi*2+1]-cy)); } fs=mr||0.3; }
+    const mv=(vi,dx,dy)=>{ dp[vi*2]+=dx*amount; dp[vi*2+1]+=dy*amount; };
+    const grp=(name)=>mesh.groups[name]||[];
+    // SMILE: mouth corners up + out; upper lip up a touch, lower lip down a touch.
+    const sAmt=smile*fs;
+    for(const vi of grp('mouthCornerL')) mv(vi, -0.10*sAmt, -0.18*sAmt);
+    for(const vi of grp('mouthCornerR')) mv(vi,  0.10*sAmt, -0.18*sAmt);
+    for(const vi of grp('mouthTop')) mv(vi, 0, -0.05*sAmt);
+    for(const vi of grp('mouthBot')) mv(vi, 0,  0.06*sAmt);
+    // BROW RAISE: both brows up.
+    const bAmt=brow*fs;
+    for(const vi of grp('browL')) mv(vi,0,-0.22*bAmt);
+    for(const vi of grp('browR')) mv(vi,0,-0.22*bAmt);
+    // EYE WIDEN: upper lids up, lower lids down.
+    const eAmt=eye*fs;
+    for(const vi of grp('eye_upL')) mv(vi,0,-0.10*eAmt);
+    for(const vi of grp('eye_upR')) mv(vi,0,-0.10*eAmt);
+    for(const vi of grp('eye_loL')) mv(vi,0, 0.10*eAmt);
+    for(const vi of grp('eye_loR')) mv(vi,0, 0.10*eAmt);
+    // JAW DROP: chin/jaw down (open mouth look).
+    const jAmt=jaw*fs;
+    for(const vi of grp('jaw')) mv(vi,0,0.30*jAmt);
+    for(const vi of grp('mouthBot')) mv(vi,0,0.14*jAmt);
+    // CHEEK PUFF: cheeks bulge outward from center.
+    const cAmt=cheek*fs;
+    const puff=(name,sgn)=>{ for(const vi of grp(name)){ const ox=sp[vi*2]-cx; mv(vi, sgn*0.16*cAmt*(0.5+Math.abs(ox)/fs*0.5), 0.05*cAmt); } };
+    puff('cheekL',-1); puff('cheekR', 1);
+    // HEAD TILT: rotate the whole face region (movers + ring + nose) about the
+    // face center by tilt radians (anchors stay fixed -> the silhouette shears
+    // into the held background, a stylised tilt). Skips the corner/edge anchors.
+    if(tilt){ const ang=tilt*0.5*amount, ca=Math.cos(ang), sa=Math.sin(ang);
+      const seen=new Set();
+      const rot=(vi)=>{ if(seen.has(vi))return; seen.add(vi); const x=dp[vi*2]-cx,y=dp[vi*2+1]-cy; dp[vi*2]=cx+x*ca-y*sa; dp[vi*2+1]=cy+x*sa+y*ca; };
+      for(const name in mesh.groups){ if(name==='ring'){ for(const vi of grp('ring')) rot(vi); } else for(const vi of grp(name)) rot(vi); }
+    }
+    // clamp to image bounds so affine sampling stays finite/in-range
+    for(let i=0;i<n;i++){ dp[i*2]=clamp(dp[i*2],0,1); dp[i*2+1]=clamp(dp[i*2+1],0,1); }
+    return dp;
+  },
+  // PASS-B entry: warp the layer buffer `cv` in place. params from the effect.
+  step(cv, L, params){
+    const W=cv.width, H=cv.height; if(W<2||H<2) return;
+    const source=params.source||'auto';
+    const lms=this.landmarksFor(L, source);
+    if(!lms||!lms.length) return;   // fail soft: no warp until a face resolves
+    const live = source!=='image' && this.isLiveContent(L, source);
+    let mesh=this.meshes[L.id];
+    // for live sources rebuild when the detection signature changes; for still
+    // images the cached detection is stable so the mesh is built once.
+    if(!mesh){ mesh=this.buildMesh(L.id, lms); if(!mesh) return; }
+    else if(live){ const probe=this.buildMesh(L.id, lms); if(!probe) return; mesh=probe; }
+    // LIVE TRACK: when track is on and the source is a live feed, derive the
+    // current expression from the raw landmarks and ADD an exaggerated version to
+    // the manual sliders (funhouse mirror). Still images ignore track (no motion).
+    let p=params;
+    if(params.track && live){ const ex=trackExpression(lms); if(ex){ p=Object.assign({}, params,
+      { smile:finiteNumber(params.smile,0)+ex.smile*2.2, jawDrop:finiteNumber(params.jawDrop,0)+ex.jaw*2.2,
+        browRaise:finiteNumber(params.browRaise,0)+ex.brow*2.2, eyeWiden:finiteNumber(params.eyeWiden,0)+ex.eye*2.2 }); } }
+    const dst=this.deform(mesh, p, live);
+    warpMeshAffine(cv, mesh.srcPts, dst, mesh.idx);
+  },
+  // Whether THIS layer's resolved source is a live feed (camera / videostream /
+  // video asset), used to decide mesh rebuild + track behaviour.
+  isLiveContent(L, source){
+    const c=L.content||{};
+    if(source==='camera') return true;
+    if(c.kind==='camera'||c.kind==='videostream') return true;
+    if(c.kind==='asset'){ const m=Assets.meta(c.assetId); return !!(m&&m.kind==='video'); }
+    return false;
+  }
+};
+function layerHasFaceMorph(L){ const st=L&&L.effects&&L.effects.stack; if(!st) return null;
+  for(const e of st){ if(e&&e.type==='face-morph') return e; } return null; }
+/* trackExpression: derive coarse expression signals (smile / jaw / brow / eye)
+   from raw normalized landmarks, each measured relative to an inter-ocular base
+   distance so it is scale-invariant, with a fixed neutral baseline subtracted so
+   a relaxed face reads ~0. Returns deltas (can be negative). Used by live track.
+   Finite-safe; returns null on degenerate input. */
+function trackExpression(lms){
+  if(!lms||lms.length<468) return null;
+  const P=i=>lms[i]; const D=(a,b)=>{ const p=P(a),q=P(b); if(!p||!q) return 0; return Math.hypot(p.x-q.x,p.y-q.y); };
+  const eyeBase=D(33,263)||0.001;   // inter-ocular distance (scale ref)
+  // mouth width (corners) and openness (lips), brow-to-eye gap, eye openness
+  const mouthW=D(61,291)/eyeBase, mouthOpen=D(13,14)/eyeBase;
+  const browGapL=(P(159)&&P(105))?(P(159).y-P(105).y)/eyeBase:0;
+  const browGapR=(P(386)&&P(334))?(P(386).y-P(334).y)/eyeBase:0;
+  const eyeOpenL=D(159,145)/eyeBase, eyeOpenR=D(386,374)/eyeBase;
+  // neutral baselines (typical relaxed face, FaceMesh) -> deltas
+  const smile=clamp((mouthW-0.95)*1.2,-1,1);
+  const jaw=clamp((mouthOpen-0.10)*1.6,0,1);
+  const brow=clamp(((browGapL+browGapR)/2-0.42)*2.2,-1,1);
+  const eye=clamp(((eyeOpenL+eyeOpenR)/2-0.22)*3,-1,1);
+  return { smile, jaw, brow, eye };
+}
+/* delaunay: Bowyer-Watson triangulation of flat [x0,y0,x1,y1,...] points in 0..1
+   space. Deterministic (NO Math.random). Returns a flat [i0,i1,i2,...] vertex
+   index list. Degenerate input -> []. Used to build the face mesh from the
+   landmark subset + anchors. */
+function delaunay(flat){
+  const n=flat.length/2; if(n<3) return [];
+  const pts=new Array(n); for(let i=0;i<n;i++) pts[i]=[flat[i*2],flat[i*2+1]];
+  // super-triangle enclosing all points (0..1 box, padded)
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const p of pts){ if(p[0]<minx)minx=p[0]; if(p[1]<miny)miny=p[1]; if(p[0]>maxx)maxx=p[0]; if(p[1]>maxy)maxy=p[1]; }
+  const dx=maxx-minx||1, dy=maxy-miny||1, dmax=Math.max(dx,dy), midx=(minx+maxx)/2, midy=(miny+maxy)/2;
+  const sa=[midx-20*dmax,midy-dmax], sb=[midx,midy+20*dmax], sc=[midx+20*dmax,midy-dmax];
+  const verts=pts.concat([sa,sb,sc]); const si0=n, si1=n+1, si2=n+2;
+  // each triangle: [a,b,c, ccx,ccy,ccr2]
+  const circ=(a,b,c)=>{ const ax=verts[a][0],ay=verts[a][1],bx=verts[b][0],by=verts[b][1],cx=verts[c][0],cy=verts[c][1];
+    const d=2*(ax*(by-cy)+bx*(cy-ay)+cx*(ay-by)); if(Math.abs(d)<1e-12) return null;
+    const ux=((ax*ax+ay*ay)*(by-cy)+(bx*bx+by*by)*(cy-ay)+(cx*cx+cy*cy)*(ay-by))/d;
+    const uy=((ax*ax+ay*ay)*(cx-bx)+(bx*bx+by*by)*(ax-cx)+(cx*cx+cy*cy)*(bx-ax))/d;
+    const r2=(ax-ux)*(ax-ux)+(ay-uy)*(ay-uy); return [ux,uy,r2]; };
+  const c0=circ(si0,si1,si2); if(!c0) return [];
+  let tris=[[si0,si1,si2,c0[0],c0[1],c0[2]]];
+  for(let i=0;i<n;i++){ const px=verts[i][0],py=verts[i][1]; const bad=[];
+    for(let t=0;t<tris.length;t++){ const tr=tris[t]; const ddx=px-tr[3],ddy=py-tr[4]; if(ddx*ddx+ddy*ddy<tr[5]) bad.push(t); }
+    // boundary edges of the bad-triangle polygon (edges not shared by two bad tris)
+    const edges=[];
+    for(const t of bad){ const tr=tris[t]; const e=[[tr[0],tr[1]],[tr[1],tr[2]],[tr[2],tr[0]]];
+      for(const ed of e){ let shared=false;
+        for(const t2 of bad){ if(t2===t)continue; const tr2=tris[t2]; const e2=[[tr2[0],tr2[1]],[tr2[1],tr2[2]],[tr2[2],tr2[0]]];
+          for(const ed2 of e2){ if((ed[0]===ed2[1]&&ed[1]===ed2[0])||(ed[0]===ed2[0]&&ed[1]===ed2[1])){ shared=true; break; } }
+          if(shared)break; }
+        if(!shared) edges.push(ed); } }
+    // remove bad tris (descending index) then add new tris from edges to point i
+    bad.sort((a,b)=>b-a); for(const t of bad) tris.splice(t,1);
+    for(const ed of edges){ const cc=circ(ed[0],ed[1],i); if(!cc)continue; tris.push([ed[0],ed[1],i,cc[0],cc[1],cc[2]]); }
+  }
+  const out=[];
+  for(const tr of tris){ if(tr[0]>=n||tr[1]>=n||tr[2]>=n) continue; out.push(tr[0],tr[1],tr[2]); }
+  return out;
+}
+/* warpMeshAffine: per-triangle affine texture map. For each triangle, snapshot
+   the SOURCE pixels (the current cv content), clear cv, then for each tri clip to
+   the DEST triangle and draw the snapshot with the affine that maps the src
+   triangle onto the dest triangle. Coords are 0..1 -> scaled to W,H. Standard
+   2D-canvas texture-mapping (no WebGL). All math finite-guarded. */
+function warpMeshAffine(cv, srcPts, dstPts, idx){
+  const W=cv.width, H=cv.height; const ctx=cv.getContext('2d'); if(!ctx) return;
+  // snapshot source into an offscreen canvas (the texture)
+  let tex=FaceMorph._tex; if(!tex){ tex=FaceMorph._tex=document.createElement('canvas'); }
+  if(tex.width!==W||tex.height!==H){ tex.width=W; tex.height=H; }
+  const tctx=tex.getContext('2d'); tctx.clearRect(0,0,W,H); tctx.drawImage(cv,0,0);
+  ctx.clearRect(0,0,W,H);
+  for(let t=0;t<idx.length;t+=3){
+    const i0=idx[t],i1=idx[t+1],i2=idx[t+2];
+    const sx0=srcPts[i0*2]*W, sy0=srcPts[i0*2+1]*H, sx1=srcPts[i1*2]*W, sy1=srcPts[i1*2+1]*H, sx2=srcPts[i2*2]*W, sy2=srcPts[i2*2+1]*H;
+    const dx0=dstPts[i0*2]*W, dy0=dstPts[i0*2+1]*H, dx1=dstPts[i1*2]*W, dy1=dstPts[i1*2+1]*H, dx2=dstPts[i2*2]*W, dy2=dstPts[i2*2+1]*H;
+    // affine A mapping src->dest: solve for [a,b,c,d,e,f] with a tiny outset so
+    // neighbouring triangles overlap by ~0.5px (no seams).
+    const denom=(sx0*(sy2-sy1)-sx1*sy2+sx2*sy1+(sx1-sx2)*sy0);
+    if(Math.abs(denom)<1e-6) continue;
+    const a=-(sy0*(dx2-dx1)-sy1*dx2+sy2*dx1+(sy1-sy2)*dx0)/denom;
+    const b= (sy1*dy2+sy0*(dy1-dy2)-sy2*dy1+(sy2-sy1)*dy0)/denom;
+    const c= (sx0*(dx2-dx1)-sx1*dx2+sx2*dx1+(sx1-sx2)*dx0)/denom;
+    const d=-(sx1*dy2+sx0*(dy1-dy2)-sx2*dy1+(sx2-sx1)*dy0)/denom;
+    const e= (sx0*(sy2*dx1-sy1*dx2)+sy0*(sx1*dx2-sx2*dx1)+(sx2*sy1-sx1*sy2)*dx0)/denom;
+    const f= (sx0*(sy2*dy1-sy1*dy2)+sy0*(sx1*dy2-sx2*dy1)+(sx2*sy1-sx1*sy2)*dy0)/denom;
+    if(![a,b,c,d,e,f].every(Number.isFinite)) continue;
+    ctx.save();
+    // clip to dest triangle (outset toward centroid-normal for seam coverage)
+    const mcx=(dx0+dx1+dx2)/3, mcy=(dy0+dy1+dy2)/3, gpx=(x,y)=>{ const ddx=x-mcx,ddy=y-mcy,l=Math.hypot(ddx,ddy)||1; return [x+ddx/l*0.6,y+ddy/l*0.6]; };
+    const p0=gpx(dx0,dy0),p1=gpx(dx1,dy1),p2=gpx(dx2,dy2);
+    ctx.beginPath(); ctx.moveTo(p0[0],p0[1]); ctx.lineTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]); ctx.closePath(); ctx.clip();
+    ctx.setTransform(a,b,c,d,e,f);
+    ctx.drawImage(tex,0,0);
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.restore();
+  }
+}
 /* sampleTextInk: draw `text` large + centered on an OFFSCREEN 2D canvas sized to
    the layer bounds (W x H), read the ink (alpha>threshold) pixel coordinates,
    deterministically shuffle them (Fisher-Yates with a mulberry RNG seeded by
@@ -1339,6 +2160,130 @@ function sampleTextInk(text,font,weight,density,W,H,seed){
   const rng=mulberry((seed>>>0)||1);
   for(let i=ink.length-1;i>0;i--){ const j=(rng()*(i+1))|0; const t=ink[i]; ink[i]=ink[j]; ink[j]=t; }
   return ink.slice(0,Math.min(density,ink.length));
+}
+
+/* traceTextOutline (PART B): draw `text` large + centered on an OFFSCREEN alpha
+   canvas (same approach as sampleTextInk), threshold the alpha to a binary grid,
+   then BORDER-FOLLOW / marching-squares trace the glyph boundary into ORDERED
+   point loops (one per contour - letter outlines + counters). Unlike text-ink
+   (an unordered shuffled cloud) the points walk the boundary IN ORDER, so a
+   consumer can stroke the outline / march dots around letters / feed shape.
+   Each contour is optionally RDP-simplified (epsilon), resampled to `density`
+   evenly-spaced points, normalized 0..1, with rot = local tangent angle. Pure +
+   deterministic (no Math.random, no getBoundingClientRect). Callers CACHE by
+   signature so this runs only on text/font/weight/density/WxH change. Returns a
+   FLAT ordered array [{x,y,scale,rot}] (all contours concatenated) or [] on
+   empty/degenerate input so callers fall back gracefully. */
+function traceTextOutline(text,font,weight,density,W,H,size,epsilon){
+  W=Math.max(1,W|0); H=Math.max(1,H|0);
+  if(!text||!text.length) return [];
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const cx=cv.getContext('2d',{willReadFrequently:true}); if(!cx) return [];
+  cx.clearRect(0,0,W,H);
+  let fs=Math.max(8,Math.floor(H*0.6));
+  cx.textBaseline='middle'; cx.textAlign='center';
+  cx.font=weight+' '+fs+'px '+font;
+  const maxW=W*0.92; let m=cx.measureText(text).width;
+  if(m>maxW){ fs=Math.max(6,Math.floor(fs*maxW/m)); cx.font=weight+' '+fs+'px '+font; }
+  cx.fillStyle='#fff'; cx.fillText(text, W/2, H/2);
+  let img; try{ img=cx.getImageData(0,0,W,H); }catch(e){ return []; }
+  const d=img.data;
+  // Downsample alpha to a binary grid on a stride so tracing stays cheap on big
+  // canvases. The grid resolution scales with sqrt(area) but is capped.
+  const gridMax=220;
+  const stride=Math.max(1,Math.ceil(Math.max(W,H)/gridMax));
+  const gw=Math.ceil(W/stride), gh=Math.ceil(H/stride);
+  const grid=new Uint8Array((gw+2)*(gh+2));      // 1px padded border (all 0)
+  const GW=gw+2;
+  const at=(gx,gy)=>grid[(gy+1)*GW+(gx+1)];
+  for(let gy=0;gy<gh;gy++){ const py=Math.min(H-1,gy*stride);
+    for(let gx=0;gx<gw;gx++){ const px=Math.min(W-1,gx*stride);
+      if(d[(py*W+px)*4+3]>90) grid[(gy+1)*GW+(gx+1)]=1; } }
+  // Border-follow (Moore-neighbour tracing) every outer boundary we have not yet
+  // visited. We trace OUTER contours (filled-region boundaries); counters (holes)
+  // are reached as separate filled-region boundaries of their own outer letter,
+  // which Moore tracing also picks up where the fill meets background.
+  const visited=new Uint8Array((gw+2)*(gh+2));
+  const loops=[];
+  // 8-neighbour offsets, clockwise from E.
+  const NX=[1,1,0,-1,-1,-1,0,1], NY=[0,1,1,1,0,-1,-1,-1];
+  for(let gy=0;gy<gh;gy++) for(let gx=0;gx<gw;gx++){
+    if(!at(gx,gy)) continue;
+    if(at(gx-1,gy)) continue;                    // only start at a left edge of a run
+    const key=(gy+1)*GW+(gx+1);
+    if(visited[key]) continue;
+    // Moore boundary tracing starting at (gx,gy) with backtrack from the west.
+    const loop=[]; let cx0=gx, cy0=gy, bdir=4;   // came from West (index 4)
+    let guard=0, maxSteps=gw*gh*4+16;
+    const startX=cx0, startY=cy0;
+    do{
+      visited[(cy0+1)*GW+(cx0+1)]=1;
+      loop.push([cx0,cy0]);
+      // search clockwise from the backtrack direction for the next filled cell.
+      let found=-1;
+      for(let k=0;k<8;k++){
+        const dir=(bdir+1+k)&7;
+        const nx=cx0+NX[dir], ny=cy0+NY[dir];
+        if(at(nx,ny)){ found=dir; cx0=nx; cy0=ny; bdir=(dir+4)&7; break; }
+      }
+      if(found<0) break;                          // isolated cell
+      guard++;
+    } while((cx0!==startX||cy0!==startY) && guard<maxSteps);
+    if(loop.length>=8) loops.push(loop);
+  }
+  if(!loops.length) return [];
+  // Per contour: RDP-simplify (epsilon in grid cells), resample to `density`
+  // even points by arc-length, normalize to 0..1, attach local tangent rot.
+  const out=[];
+  const eps=Math.max(0,epsilon||0);
+  const dens=Math.max(3,Math.min(2000,density|0));
+  for(const loop of loops){
+    let pts=loop;
+    if(eps>0 && pts.length>4) pts=rdpClosed(pts,eps);
+    const rs=resampleClosed(pts,dens);
+    const N=rs.length;
+    for(let i=0;i<N;i++){
+      const a=rs[i], nb=rs[(i+1)%N], pb=rs[(i-1+N)%N];
+      const rot=Math.atan2(nb[1]-pb[1], nb[0]-pb[0]);
+      out.push({ x:clamp((a[0]*stride)/W,0,1), y:clamp((a[1]*stride)/H,0,1), scale:size, rot });
+    }
+  }
+  return out;
+}
+/* Ramer-Douglas-Peucker on a CLOSED polyline (grid-space points). */
+function rdpClosed(pts,eps){
+  if(pts.length<4) return pts.slice();
+  // split the closed loop at the two farthest-apart points, RDP each open half.
+  let ai=0,bi=0,best=-1;
+  for(let i=1;i<pts.length;i++){ const dx=pts[i][0]-pts[0][0],dy=pts[i][1]-pts[0][1],dd=dx*dx+dy*dy; if(dd>best){best=dd;bi=i;} }
+  const half1=rdp(pts.slice(ai,bi+1),eps), half2=rdp(pts.slice(bi).concat([pts[0]]),eps);
+  const merged=half1.concat(half2.slice(1,-1));
+  return merged.length>=3?merged:pts.slice();
+}
+function rdp(pts,eps){
+  if(pts.length<3) return pts.slice();
+  let dmax=0,idx=0; const a=pts[0],b=pts[pts.length-1];
+  const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1e-6;
+  for(let i=1;i<pts.length-1;i++){ const px=pts[i][0]-a[0],py=pts[i][1]-a[1];
+    const dist=Math.abs(px*dy - py*dx)/len; if(dist>dmax){dmax=dist;idx=i;} }
+  if(dmax>eps){ const l=rdp(pts.slice(0,idx+1),eps), r=rdp(pts.slice(idx),eps); return l.slice(0,-1).concat(r); }
+  return [a,b];
+}
+/* Resample a CLOSED polyline to `count` evenly arc-length-spaced points. */
+function resampleClosed(pts,count){
+  const n=pts.length; if(n<2) return pts.slice();
+  let per=0; const seg=new Array(n);
+  for(let i=0;i<n;i++){ const a=pts[i],b=pts[(i+1)%n]; const dl=Math.hypot(b[0]-a[0],b[1]-a[1]); seg[i]=dl; per+=dl; }
+  if(per<=0) return [pts[0].slice()];
+  const out=[]; const stepL=per/count; let i=0, acc=0, target=0;
+  for(let k=0;k<count;k++){
+    while(i<n && acc+seg[i]<target){ acc+=seg[i]; i++; }
+    if(i>=n){ out.push(pts[(n-1)][0]!==undefined?pts[n-1].slice():pts[0].slice()); target+=stepL; continue; }
+    const a=pts[i], b=pts[(i+1)%n]; const t=seg[i]>0?(target-acc)/seg[i]:0;
+    out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]);
+    target+=stepL;
+  }
+  return out;
 }
 
 /* SOURCES - parametric value-source evaluator now lives in ../_shared/sources.js
@@ -1535,7 +2480,9 @@ class GLFx {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 
     let inputTex=this.srcTex, ping=0;
-    const passes=stack.filter(e=>e&&e.type);
+    // 'fluid' + 'face-morph' are CPU layer-buffer effects (handled before this
+    // chain in PASS B), never GL passes.
+    const passes=stack.filter(e=>e&&e.type&&e.type!=='fluid'&&e.type!=='face-morph');
     if(!passes.length){ // straight copy to screen
       this.blit(this.srcTex,w,h,{type:'__copy'},time,1,null); return;
     }
@@ -1667,6 +2614,38 @@ function typeMotionXform(behavior, i, n, t, speed, amp, stagger){
   }
   return o;
 }
+// TEXT ON PATH (PART A): map an arc-length `s` (px, 0..total) along the chosen
+// path to a BASE point + tangent (relative to the layer center, which the caller
+// has already translated ctx to). `total` is the full block advance (px). radius
+// is in em-fractions of the layer's min-dimension proxy `ref`; amplitude is px.
+// straight returns the legacy x-axis layout so there is NO regression. Kept
+// identical to the baked twin tmPathPoint so editor + export match exactly.
+function typeMotionPathPoint(path, s, total, radius, amplitude, ref){
+  const T=total>0?total:1;
+  if(path==='straight'){ return {x:s - T/2, y:0, rot:0}; }
+  const R=Math.max(1, radius*ref);
+  if(path==='wave'){
+    // straight x-axis baseline with a sinusoidal y; tangent follows the slope.
+    const x=s - T/2;
+    const k=(Math.PI*2)/Math.max(1,T*0.5);      // ~2 humps across the block
+    const y=Math.sin(s*k)*amplitude;
+    const dy=Math.cos(s*k)*amplitude*k;          // d(y)/d(s)
+    return {x, y, rot:Math.atan2(dy,1)};
+  }
+  if(path==='circle'||path==='ring'){
+    // full closed loop: glyphs spread evenly over 2*pi by arc-length fraction.
+    // start at top (-pi/2). 'ring' faces glyphs outward (tangent + pi/2 already
+    // baked into the radial layout); both place on the circle of radius R.
+    const a=-Math.PI/2 + (s/T)*Math.PI*2;
+    const x=Math.cos(a)*R, y=Math.sin(a)*R;
+    return {x, y, rot:a+Math.PI/2};              // tangent direction (CCW)
+  }
+  // arc: a partial circular arc (~210deg) bowing the line into a smile.
+  const sweep=Math.PI*7/6, a0=-Math.PI/2 - sweep/2;
+  const a=a0 + (T>0?(s/T):0)*sweep;
+  const x=Math.cos(a)*R, y=Math.sin(a)*R + R;    // shift down so chord sits near center
+  return {x, y, rot:a+Math.PI/2};
+}
 // Kinetic Type (PART 2): lay out + draw the per-glyph animated text into the
 // current ctx (already translated to the layer center, rotated by inst.rot).
 // `size` is the glyph pixel size; layout uses ctx.measureText advances + the
@@ -1681,14 +2660,14 @@ function drawTypeMotion(ctx, c, t){
   const font = (c.font&&String(c.font).trim())?c.font:'sans-serif';
   const tracking = (c.tracking||0)*size;       // tracking is in em -> px
   const speed=c.speed!=null?c.speed:1, amp=c.amplitude!=null?c.amplitude:1, stag=c.stagger!=null?c.stagger:0.08;
-  // loop: periodic behaviors loop intrinsically. When loop is OFF, clamp the
-  // clock so one-shot reveals (typewriter / fall / slot) play once and hold.
-  const tt = (c.loop===false) ? Math.min(t, n*stag + 2.0) : t;
   ctx.font = weight+' '+size+'px '+font;
   ctx.textBaseline='middle';
   ctx.textAlign='left';                         // we place each glyph manually
   const glyphs=Array.from(text);
   const n=glyphs.length;
+  // loop: periodic behaviors loop intrinsically. When loop is OFF, clamp the
+  // clock so one-shot reveals (typewriter / fall / slot) play once and hold.
+  const tt = (c.loop===false) ? Math.min(t, n*stag + 2.0) : t;
   // measure total advance (per-glyph width + tracking between glyphs)
   let total=0; const adv=new Array(n);
   for(let i=0;i<n;i++){ const w=ctx.measureText(glyphs[i]).width; adv[i]=w; total+=w; if(i<n-1) total+=tracking; }
@@ -1697,15 +2676,33 @@ function drawTypeMotion(ctx, c, t){
   let startX = -total/2;
   if(c.align==='left') startX = 0;
   else if(c.align==='right') startX = -total;
+  // PART A: text-on-path. straight = legacy x-axis layout. Otherwise lay each
+  // glyph's BASE along the curve by its CENTER arc-length, optionally rotate to
+  // the tangent, and apply the BEHAVIOR transform ON TOP in the glyph's local
+  // frame so wave/jitter/etc. still read correctly along the curve.
+  const path=(c.path&&c.path!=='straight')?c.path:'straight';
+  const pathRadius=c.pathRadius!=null?c.pathRadius:0.3;
+  const pathAmp=c.pathAmplitude!=null?c.pathAmplitude:30;
+  const pathRotate=c.pathRotate!==false;
+  const ref=Math.max(total, size*2);            // radius scales with the block
   let penX=startX;
   for(let i=0;i<n;i++){
-    const x = penX + adv[i]/2;                   // glyph center
+    const x = penX + adv[i]/2;                   // glyph center (linear arc-length)
     const o = typeMotionXform(c.behavior||'wave', i, n, tt, speed, amp, stag);
     if(o.reveal<=0){ penX += adv[i]+tracking; continue; }
     const dx = o._em ? o.dx*size : o.dx;
     const dy = o._em ? o.dy*size : o.dy;
     ctx.save();
-    ctx.translate(x+dx, dy);
+    if(path==='straight'){
+      ctx.translate(x+dx, dy);
+    } else {
+      // arc-length of this glyph's center measured from the block start.
+      const s = (x - startX);
+      const bp = typeMotionPathPoint(path, s, total, pathRadius, pathAmp, ref);
+      ctx.translate(bp.x, bp.y);
+      if(pathRotate && bp.rot) ctx.rotate(bp.rot);
+      ctx.translate(dx, dy);                     // behavior offset in local frame
+    }
     if(o.rot) ctx.rotate(o.rot);
     if(o.skew) ctx.transform(1,0,o.skew,1,0,0);
     if(o.sx!==1||o.sy!==1) ctx.scale(o.sx,o.sy);
@@ -1721,6 +2718,27 @@ function drawContent(ctx, L, inst, W, H, baseScale){
   const cx=inst.x*W, cy=inst.y*H;
   const sz=Math.min(W,H)*(inst.scale||1)*baseScale;
   const boxW=(inst.w?inst.w*W:sz), boxH=(inst.h?inst.h*H:sz);
+  // SHATTER shard: draw the WHOLE layer content but clipped to this shard's
+  // voronoi cell. The body transform (inst.x/y = current centroid, inst.rot) moves
+  // the shard; we clip to the cell polygon (relative to its rest centroid) so the
+  // shards tile exactly at rest and carry their slice of the image when they fly.
+  if(inst._shard){
+    const cell=inst._shard;
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(inst.rot||0);
+    ctx.beginPath();
+    const poly=cell.poly;
+    ctx.moveTo(poly[0][0]-cell.cx, poly[0][1]-cell.cy);
+    for(let i=1;i<poly.length;i++) ctx.lineTo(poly[i][0]-cell.cx, poly[i][1]-cell.cy);
+    ctx.closePath();
+    ctx.clip();
+    // draw the full layer content positioned so the cell's rest pixels line up
+    ctx.translate(-cell.cx, -cell.cy);
+    drawShatterContent(ctx, L, W, H);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.translate(cx,cy); ctx.rotate(inst.rot||0);
   if(c.kind==='polyshape'){
@@ -1777,6 +2795,33 @@ function drawContent(ctx, L, inst, W, H, baseScale){
   }
   ctx.restore();
 }
+// Draw the layer's full intact content into the current (already clipped +
+// translated to stage origin) context, filling the W x H bounds. This is the
+// "whole image" that the SHATTER voronoi cells are cut from, so every shard shows
+// its own slice. cover-fit assets so the image fills the frame like a single
+// placement at scale 1.
+function drawShatterContent(ctx, L, W, H){
+  const c=L.content;
+  ctx.save();
+  ctx.translate(W/2,H/2);
+  if(c.kind==='asset'){
+    const m=Assets.meta(c.assetId);
+    if(m && m.kind==='video'){ const v=Assets.video(c.assetId);
+      if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1; drawMediaInBox(ctx,v,ar,W,H,'cover','center','center',false); } }
+    else { const im=Assets.image(c.assetId);
+      if(im&&im._ready){ const ar=im.width/im.height||1; drawMediaInBox(ctx,im,ar,W,H,'cover','center','center',false); }
+      else { ctx.fillStyle='#444'; ctx.fillRect(-W/2,-H/2,W,H); } }
+  } else if(c.kind==='camera'){
+    const v=Input.cam.on?Input.cam.video:null;
+    if(v && v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1; ctx.save(); ctx.scale(-1,1); drawMediaInBox(ctx,v,ar,W,H,'cover','center','center',false); ctx.restore(); }
+  } else if(c.kind==='text'){
+    ctx.fillStyle=c.color||'#fff'; ctx.font=`700 ${Math.min(W,H)*0.4}px ${getSans()}`;
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(c.text||'TEXT',0,0);
+  } else { // shape / generator / fallback: fill the bounds with the layer color
+    ctx.fillStyle=c.color||'#6ee7ff'; ctx.fillRect(-W/2,-H/2,W,H);
+  }
+  ctx.restore();
+}
 // Draw a polygon / polyline from the shape node's wired logic points. Each
 // p0..p7 binding is resolved per-frame from the SAME LogicBridge value path the
 // param bindings use (LogicBridge.vec -> the engine's per-frame _ports), then
@@ -1812,8 +2857,13 @@ function drawPolyShape(ctx, c, W, H){
     for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
   }
   if(c.closed) ctx.closePath();
-  if(c.fill){ ctx.fillStyle=c.fill; ctx.fill(); }
-  if(c.stroke && c.strokeWidth>0){ ctx.strokeStyle=c.stroke; ctx.lineWidth=c.strokeWidth; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke(); }
+  // Color binding (PART A): a wired palette color overrides the authored text
+  // control. cp.fill / cp.stroke are logic refs resolved to a CSS color string.
+  const cp=c.colorPoints||{};
+  const fillC=(cp.fill&&cp.fill.kind==='logic')?(LogicBridge.color(cp.fill.ref)||c.fill):c.fill;
+  const strokeC=(cp.stroke&&cp.stroke.kind==='logic')?(LogicBridge.color(cp.stroke.ref)||c.stroke):c.stroke;
+  if(fillC){ ctx.fillStyle=fillC; ctx.fill(); }
+  if(strokeC && c.strokeWidth>0){ ctx.strokeStyle=strokeC; ctx.lineWidth=c.strokeWidth; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke(); }
 }
 function getSans(){ return getComputedStyle(document.body).fontFamily; }
 function getMono(){ return 'ui-monospace,Menlo,monospace'; }
@@ -2025,6 +3075,14 @@ const Engine = {
       const ov=overrides[L.id]||{};
       // Copy into the scratch buffer so masking/effects never mutate this layer's
       // stored pixels - another layer may still read it as a mask source.
+      // FLUID effect: stir the layer pixels with a persistent coarse Stam solver
+      // BEFORE masking / GL effects. The sim owns the field (cannot live in the
+      // stateless GL ping-pong chain) but composes on the layer like any effect.
+      const fluidEff=layerHasFluid(L);
+      if(fluidEff){ FluidSim.step(buf.cv, L.id, (fluidEff.params||{}), dt); }
+      // FACE-MORPH: detect landmarks + mesh-warp the layer pixels (CPU, like fluid).
+      const morphEff=layerHasFaceMorph(L);
+      if(morphEff){ FaceMorph.step(buf.cv, L, (morphEff.params||{})); }
       this.lctx.clearRect(0,0,W,H); this.lctx.drawImage(buf.cv,0,0);
       // mask: multiply a channel of this layer by a channel of another layer
       if(L.mask && L.mask.by){
@@ -2084,7 +3142,12 @@ const Engine = {
   ensureCameraContent(){
     if(Input.cam.on || this._camReq) return;
     let need=false;
-    for(const L of allRuntimeLayers()){ if(L.content && L.content.kind==='camera'){ need=true; break; } }
+    for(const L of allRuntimeLayers()){
+      if(L.content && L.content.kind==='camera'){ need=true; break; }
+      // a face-morph effect targeting the camera also needs the webcam
+      const fm=layerHasFaceMorph(L);
+      if(fm && (fm.params||{}).source==='camera'){ need=true; break; }
+    }
     if(!need) return;
     this._camReq=true;
     Promise.resolve(enableCamera()).catch(()=>{}).then(()=>{ this._camReq=false; });
@@ -2359,9 +3422,9 @@ function renderInspector(){
   body.appendChild(accordion('Positioning',(b)=>{
     const p=L.positioning;
     b.appendChild(fSelect('Mode',p.mode,
-      [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],['boids','Boids flock'],
-       ['drawn','Drawn paths'],['text-ink','Text ink'],['rope','Rope'],['camera-feed','Camera feed'],['grid-3d','3D grid'],['scatter-3d','3D scatter'],['face-3d','Face 3D']],
-      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; L._boids=null; L._textInk=null; renderInspector(); }));
+      [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],['shatter','Shatter'],['boids','Boids flock'],
+       ['drawn','Drawn paths'],['text-ink','Text ink'],['text-outline','Text outline'],['rope','Rope'],['rope-ink','Rope ink'],['camera-feed','Camera feed'],['grid-3d','3D grid'],['scatter-3d','3D scatter'],['face-3d','Face 3D']],
+      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; L._boids=null; L._textInk=null; L._ropeInk=null; L._textOutline=null; renderInspector(); }));
     if(p.mode==='single'){
       b.appendChild(fSlider('X',p.x,0,1,0.01,v=>p.x=v));
       b.appendChild(fSlider('Y',p.y,0,1,0.01,v=>p.y=v));
@@ -2411,6 +3474,15 @@ function renderInspector(){
       b.appendChild(fSlider('Size',p.size,0.01,0.2,0.005,v=>{p.size=v;Positioning.sim[L.id]=null;}));
       b.appendChild(fSlider('Bounce',p.bounce,0,1,0.05,v=>{p.bounce=v;Positioning.sim[L.id]=null;}));
       b.appendChild(html('<p class="hint">matter.js engine (loaded on demand from esm.sh).</p>'));
+    } else if(p.mode==='shatter'){
+      b.appendChild(fSlider('Shards',p.count,2,160,1,v=>{p.count=v;Positioning.sim[L.id]=null;}));
+      b.appendChild(fSlider('Gravity',p.gravity[1],-3,3,0.05,v=>{p.gravity[1]=v;}));
+      b.appendChild(fSlider('Burst',p.burst,0,0.2,0.005,v=>p.burst=v));
+      b.appendChild(fSlider('Spin',p.spin,0,3,0.05,v=>p.spin=v));
+      b.appendChild(fSlider('Slow-mo',p.slowmo,0.05,2,0.05,v=>p.slowmo=v));
+      b.appendChild(fSelect('Trigger',p.trigger||'click',[['click','Click'],['auto','Auto burst']],v=>{p.trigger=v;Positioning.sim[L.id]=null;}));
+      if((p.trigger||'click')==='auto') b.appendChild(fSlider('Period',p.period||3,0.5,12,0.5,v=>p.period=v));
+      b.appendChild(html('<p class="hint">Voronoi-fractured rigid shards (matter.js). At rest they tile the image; click (or auto-burst) flies them apart. Slow-mo scales time.</p>'));
     } else if(p.mode==='boids'){
       b.appendChild(fSlider('Count',p.count,1,600,1,v=>{p.count=v;L._boids=null;}));
       b.appendChild(fSlider('Separation',p.separation,0,4,0.05,v=>p.separation=v));
@@ -2438,11 +3510,37 @@ function renderInspector(){
       b.appendChild(fSlider('Jitter',p.jitter||0,0,1,0.01,v=>p.jitter=v));
       b.appendChild(fSlider('Drift',p.drift||0,0,2,0.05,v=>p.drift=v));
       b.appendChild(html('<p class="hint">Text sampled to an ink point cloud. Drift + layer Feedback (above) gives letter-disintegration trails.</p>'));
+    } else if(p.mode==='text-outline'){
+      // sampling-affecting controls null L._textOutline so the glyph alpha is
+      // re-traced (the signature keys text/font/weight/density/simplify/size/WxH,
+      // but nulling here forces an immediate refresh on edit).
+      b.appendChild(fText('Text',p.text!=null?p.text:'INK',v=>{p.text=v;L._textOutline=null;}));
+      b.appendChild(fText('Font family',p.font||'sans-serif',v=>{p.font=v;L._textOutline=null;}));
+      b.appendChild(fSlider('Weight',p.weight||700,100,900,100,v=>{p.weight=v;L._textOutline=null;}));
+      b.appendChild(fSlider('Density',p.density,3,800,1,v=>{p.density=v;L._textOutline=null;}));
+      b.appendChild(fSlider('Simplify',p.simplify!=null?p.simplify:0.6,0,4,0.1,v=>{p.simplify=v;L._textOutline=null;}));
+      b.appendChild(fSlider('Size',p.size,0.005,0.2,0.005,v=>{p.size=v;L._textOutline=null;}));
+      b.appendChild(html('<p class="hint">Glyph outlines traced to ORDERED boundary loops (marching-squares). Points walk the outline in order with tangent rotation, so content strokes the letters / marches dots around them.</p>'));
     } else if(p.mode==='rope'){
       b.appendChild(fSlider('Segments',p.segments,2,40,1,v=>{p.segments=v;Positioning.sim[L.id]=null;}));
       b.appendChild(fSlider('Stiffness',p.stiffness,0.05,1,0.05,v=>p.stiffness=v));
       b.appendChild(fSlider('Size',p.size,0.005,0.15,0.005,v=>p.size=v));
       b.appendChild(html('<p class="hint">Verlet rope; hover preview to drag the free end.</p>'));
+    } else if(p.mode==='rope-ink'){
+      // sampling-affecting controls null L._ropeInk so the anchor cloud + verlet
+      // ropes are rebuilt (the signature keys text/font/weight/anchors/segments/WxH,
+      // but nulling here forces an immediate refresh on edit). gravity/stiffness/
+      // damping/size feed the per-frame integration and need no rebuild.
+      b.appendChild(fText('Text',p.text!=null?p.text:'INK',v=>{p.text=v;L._ropeInk=null;}));
+      b.appendChild(fText('Font family',p.font||'sans-serif',v=>{p.font=v;L._ropeInk=null;}));
+      b.appendChild(fSlider('Weight',p.weight||700,100,900,100,v=>{p.weight=v;L._ropeInk=null;}));
+      b.appendChild(fSlider('Anchors',p.anchors,1,300,1,v=>{p.anchors=v;L._ropeInk=null;}));
+      b.appendChild(fSlider('Segments',p.segments,1,24,1,v=>{p.segments=v;L._ropeInk=null;}));
+      b.appendChild(fSlider('Gravity',p.gravity,0,3,0.05,v=>p.gravity=v));
+      b.appendChild(fSlider('Stiffness',p.stiffness,0.05,1,0.05,v=>p.stiffness=v));
+      b.appendChild(fSlider('Damping',p.damping,0.8,1,0.005,v=>p.damping=v));
+      b.appendChild(fSlider('Size',p.size,0.005,0.2,0.005,v=>p.size=v));
+      b.appendChild(html('<p class="hint">Glyph ink sampled to anchors; a short verlet rope swings from each under gravity (Elastic Type).</p>'));
     } else if(p.mode==='camera-feed'){
       b.appendChild(fSelect('Detector',p.detector,[['hand','Hand'],['face','Face'],['object','Object'],['ocr','OCR (text)']],v=>p.detector=v));
       const srcOpts=[['camera','Live camera'],...CONTENT.filter(c=>c.kind==='video').map(c=>['video:'+c.id,'Video: '+(c.label||c.id)])];
@@ -2516,8 +3614,8 @@ function renderInspector(){
       const eh=document.createElement('div'); eh.className='eh';
       const sel=document.createElement('select');
       const selType=(eff.type==='shader')?'custom':eff.type;
-      sel.innerHTML=FX_TYPES
-        .map(v=>`<option value="${v}" ${v===selType?'selected':''}>${FX_LABELS[v]||v}</option>`).join('');
+      sel.innerHTML=FX_TYPES_LOCAL
+        .map(v=>`<option value="${v}" ${v===selType?'selected':''}>${FX_LABELS_LOCAL[v]||v}</option>`).join('');
       sel.onchange=e=>{ eff.type=e.target.value; emit(); renderInspector(); };
       eh.appendChild(sel);
       const up=document.createElement('button'); up.className='iconbtn sm'; up.innerHTML=ICONS.up;
@@ -2529,6 +3627,29 @@ function renderInspector(){
       eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
       card.appendChild(eh);
       card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
+      // fluid is a CPU layer-buffer sim, not a GL shader - render its own controls.
+      if(eff.type==='fluid'){
+        for(const u of FLUID_UNIFORMS){
+          const cur=(eff.params&&eff.params[u.from]!=null)?eff.params[u.from]:u.def;
+          card.appendChild(numField(u.from,cur,v=>{ eff.params=eff.params||{}; eff.params[u.from]=v; }));
+        }
+        card.appendChild(html('<p class="hint">Approximate real-time fluid (Stam stable-fluids, coarse grid). Move the pointer over the stage to stir. viscosity/force/fade/radius shape the flow; grid sizes the solver (16-120).</p>'));
+        b.appendChild(card); return;
+      }
+      // face-morph is a CPU facial-landmark mesh warp - render its own controls.
+      if(eff.type==='face-morph'){
+        eff.params=eff.params||{};
+        const curSrc=eff.params.source||'auto';
+        card.appendChild(fSelect('source',curSrc,[['auto','Auto'],['image','Image'],['camera','Camera']],v=>{ eff.params.source=v; }));
+        for(const u of FACEMORPH_NUMS){
+          const cur=(eff.params[u.from]!=null)?eff.params[u.from]:u.def;
+          card.appendChild(numField(u.from,cur,v=>{ eff.params[u.from]=v; }));
+        }
+        const curTrack=eff.params.track?'1':'';
+        card.appendChild(fSelect('track',curTrack,[['','off'],['1','on']],v=>{ eff.params.track=!!v; }));
+        card.appendChild(html('<p class="hint">Parametric portrait morph: detects face landmarks (still image cached, camera/video throttled), triangulates, and mesh-warps. amount scales all moves; smile/browRaise/eyeWiden/jawDrop/cheekPuff/headTilt drive groups. track on (camera/video) exaggerates the live expression. Fails soft to no warp if no face.</p>'));
+        b.appendChild(card); return;
+      }
       // per-effect params (the fx.js declarative contract - these drive the shader)
       for(const u of uniformsFor(eff)){
         const cur=(eff.params&&eff.params[u.from]!=null)?eff.params[u.from]:u.def;
@@ -2582,6 +3703,8 @@ function rebuild(){
   const selWired  = !selInline && wiredRuntimeLayers().find(l=>l.id===selId);
   if(!selId || (!selInline && !selWired)) selId=STATE.layers[0]&&STATE.layers[0].id;
   Positioning.reset();
+  FluidSim.reset();
+  FaceMorph.reset();
   Engine.resize();
   renderAll();
 }
@@ -2782,12 +3905,20 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
      origin as the served editor toolchain) and feature-detected; a missing
      module degrades to no logic (the rest of the composition still plays).
      Defaults to LIVE (a published piece runs on load). */
-  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,readbacks:[],streams:[],last:performance.now(),live:true,
+  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,audio:null,audioHandle:null,audioNodes:[],readbacks:[],streams:[],paletteNodes:[],paletteCache:{},last:performance.now(),live:true,
     value(ref){ if(!ref)return undefined; const o=this.ports[ref.node]; if(!o)return undefined; const v=o[ref.port];
       if(v==null)return undefined; if(typeof v==='number')return v; if(typeof v==='boolean')return v?1:0;
       if(v&&typeof v==='object'&&'x'in v)return Number(v.x)||0; const n=Number(v); return Number.isFinite(n)?n:undefined; },
     vec(ref){ if(!ref)return null; const o=this.ports[ref.node]; if(!o)return null; const v=o[ref.port]; if(v==null)return null;
       if(v&&typeof v==='object'&&'x'in v)return {x:Number(v.x)||0,y:Number(v.y)||0}; return null; },
+    color(ref){ if(!ref)return null; const o=this.ports[ref.node]; if(!o)return null; const v=o[ref.port];
+      if(v==null||typeof v!=='object'||!('r'in v))return null; const cc=x=>Math.max(0,Math.min(255,Math.round((Number(x)||0)*255)));
+      const a=(v.a==null?1:Math.max(0,Math.min(1,Number(v.a)||0))); return 'rgba('+cc(v.r)+','+cc(v.g)+','+cc(v.b)+','+a+')'; },
+    paletteFrame(){ const out={}; for(const pn of this.paletteNodes){ const key=pn.url+'@'+pn.count; let rec=this.paletteCache[key];
+      if(!rec){ rec={ready:false,colors:[],dominant:null}; this.paletteCache[key]=rec; extractPalette(pn.url,pn.count,pn.quality,rec); }
+      out[pn.id]={colors:rec.colors,dominant:rec.dominant}; } return out; },
+    driveAudio(){ if(!this.audioNodes.length||!this.audio)return; if(!this.audioHandle){ try{ this.audioHandle=this.audio.attach({mount:document.body}); }catch(e){ this.audioHandle=null; return; } }
+      const p=this.ports[this.audioNodes[0]]; if(p){ try{ this.audioHandle.set({frequency:p.frequency,gain:p.gain,cutoff:p.cutoff,waveform:p.waveform,trigger:p.trigger,on:true}); }catch(e){} } },
     applyScalar(p){ const b=p&&p._bindings; if(!b)return p; for(const k in b){ const s=b[k]; if(!s||s.kind!=='logic')continue;
       const val=this.value(s.ref); if(val===undefined)continue; p[k]=val;
       if(k==='rotation'||k==='rotateZ')p.rot=(num(p.rotation,0)+num(p.rotateZ,0))*Math.PI/180; } return p; },
@@ -2801,16 +3932,44 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     tick(now){ if(!this.live||!this.plan||!this.LG)return; const dt=Math.min((now-this.last)/1000,0.05); this.last=now;
       let inp={dt,time:now/1000}; if(this.handle&&this.handle.sample){ try{ const s=this.handle.sample()||{}; inp=Object.assign({},s,{dt:(s.dt!=null?s.dt:dt),time:(s.time!=null?s.time:inp.time)}); }catch(e){} }
       let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
-      inp.streams=streams; inp.readback=this.readbackMap();
-      let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{}; },
+      inp.streams=streams; inp.palettes=this.paletteFrame(); inp.readback=this.readbackMap();
+      let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{};
+      this.driveAudio(); },
   };
   if(LOGIC && (LOGIC.nodes&&LOGIC.nodes.length || LOGIC.outputs&&LOGIC.outputs.length)){
     LB.readbacks=Array.isArray(LOGIC.readbacks)?LOGIC.readbacks:[];
     LB.streams=(LOGIC.nodes||[]).filter(n=>n&&(n.kind==='input-camera'||n.kind==='input-video')).map(n=>n.id);
+    LB.paletteNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='palette'&&n.params&&n.params._imageUrl).map(n=>({id:n.id,url:n.params._imageUrl,count:Math.max(2,Math.min(8,(n.params.count|0)||5)),quality:Math.max(1,Math.min(16,(n.params.quality|0)||4))}));
+    LB.audioNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='audio-out').map(n=>n.id);
     import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
     import('/editor/tools/_shared/logicinputs.js').then(m=>{ const M=m&&m.LogicInputs; if(M&&M.attach){ try{ LB.handle=M.attach(stage,{}); }catch(e){} } }).catch(()=>{});
     import('/editor/tools/_shared/logicvision.js').then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
+    if(LB.audioNodes.length) import('/editor/tools/_shared/logicaudio.js').then(m=>{ LB.audio=m&&m.LogicAudio; }).catch(()=>{});
   }
+  /* FACE-MORPH needs logicvision (FaceLandmarker) even when there is no logic
+     graph: load it lazily if any layer carries a face-morph effect. Fail-soft
+     (a missing module just means no warp). */
+  if(!LB.vis){ let hasMorph=false;
+    for(const L of CFG.layers){ if(layerMorph(L)){ hasMorph=true; break; } }
+    if(hasMorph) import('/editor/tools/_shared/logicvision.js').then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
+  }
+  /* Palette extraction parity (PART A): downsample + median-cut once per
+     (url+count), cached forever (never per frame). Mirrors the editor runtime. */
+  function extractPalette(url,count,quality,rec){ if(!url||!rec)return; const im=new Image(); try{im.crossOrigin='anonymous';}catch(e){}
+    im.onload=()=>{ try{ const w=Math.max(1,Math.min(im.naturalWidth||1,160)),h=Math.max(1,Math.min(im.naturalHeight||1,160));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d',{willReadFrequently:true}); cx.drawImage(im,0,0,w,h);
+      const d=cx.getImageData(0,0,w,h).data; const st=Math.max(1,(quality|0)||4); const px=[];
+      for(let i=0;i<d.length;i+=4*st){ if(d[i+3]<8)continue; px.push([d[i],d[i+1],d[i+2]]); }
+      const bk=medianCut(px,Math.max(2,Math.min(8,count|0))); const cols=bk.map(b=>({r:b.color[0]/255,g:b.color[1]/255,b:b.color[2]/255,a:1,_n:b.count}));
+      cols.sort((a,b)=>(b._n||0)-(a._n||0)); rec.colors=cols.map(c=>({r:c.r,g:c.g,b:c.b,a:1})); rec.dominant=rec.colors[0]||null; rec.ready=true;
+    }catch(e){ rec.ready=false; } }; im.onerror=()=>{ rec.ready=false; }; im.src=url; }
+  function medianCut(pixels,n){ if(!pixels.length)return []; let boxes=[pixels.slice()];
+    while(boxes.length<n){ let bi=-1,best=-1,ch=0; for(let i=0;i<boxes.length;i++){ const bx=boxes[i]; if(bx.length<2)continue;
+      let mn=[255,255,255],mx=[0,0,0]; for(const p of bx){ for(let c=0;c<3;c++){ if(p[c]<mn[c])mn[c]=p[c]; if(p[c]>mx[c])mx[c]=p[c]; } }
+      for(let c=0;c<3;c++){ const r=mx[c]-mn[c]; if(r>best){ best=r; bi=i; ch=c; } } } if(bi<0)break;
+      const bx=boxes[bi]; bx.sort((a,b)=>a[ch]-b[ch]); const mid=bx.length>>1; boxes.splice(bi,1,bx.slice(0,mid),bx.slice(mid)); }
+    return boxes.filter(b=>b.length).map(bx=>{ let r=0,g=0,bl=0; for(const p of bx){ r+=p[0]; g+=p[1]; bl+=p[2]; } const k=bx.length;
+      return {color:[Math.round(r/k),Math.round(g/k),Math.round(bl/k)],count:k}; }); }
   /* input */
   const IN={px:.5,py:.5,down:false,clickPulse:0,hover:false,t0:performance.now(),clock:0,
     cam:{on:false,video:null},mic:{on:false,an:null,data:null,freq:null},detect:{hand:0,face:0,object:0,landmarks:null}};
@@ -2832,7 +3991,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
      need a gesture, the camera button stays the manual fallback) */
   let camReq=false;
   function ensureCam(){ if(IN.cam.on||camReq)return; let need=false;
-    for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} } if(!need)return;
+    for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} const mm=layerMorph(L); if(mm&&(mm.params||{}).source==='camera'){need=true;break;} } if(!need)return;
     camReq=true; navigator.mediaDevices.getUserMedia({video:true}).then(st=>{ const v=document.createElement('video');v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; return v.play().then(()=>{ IN.cam={on:true,video:v}; }); }).catch(()=>{}).then(()=>{ camReq=false; }); }
   /* permissions */
   document.getElementById('pc').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({video:true});
@@ -2850,6 +4009,140 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
   function mb(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
   function num(v,f){const n=Number(v);return Number.isFinite(n)?n:f;}
+  /* VORONOI fracture (baked twin of buildVoronoiCells) - deterministic sites +
+     half-plane clip cells that tile the W x H rect. Used by SHATTER. */
+  function clipHP(poly,nx,ny,c){const out=[],n=poly.length;if(!n)return out;
+    for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n],da=nx*a[0]+ny*a[1]-c,db=nx*b[0]+ny*b[1]-c,ain=da<=0,bin=db<=0;
+      if(ain)out.push(a); if(ain!==bin){const t=da/(da-db);out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);}} return out; }
+  function voronoiCells(count,seed){const rng=mb((seed>>>0)||1),sites=[];
+    for(let i=0;i<count;i++)sites.push([(0.06+rng()*0.88)*W,(0.06+rng()*0.88)*H]);
+    const rect=[[0,0],[W,0],[W,H],[0,H]],cells=[];
+    for(let i=0;i<sites.length;i++){const si=sites[i];let poly=rect.map(p=>p.slice());
+      for(let j=0;j<sites.length&&poly.length;j++){if(j===i)continue;const sj=sites[j],nx=sj[0]-si[0],ny=sj[1]-si[1],c=(sj[0]*sj[0]-si[0]*si[0]+sj[1]*sj[1]-si[1]*si[1])/2;poly=clipHP(poly,nx,ny,c);}
+      if(poly.length<3)continue;let cx=0,cy=0;for(const pt of poly){cx+=pt[0];cy+=pt[1];}cx/=poly.length;cy/=poly.length;
+      let r=0;for(const pt of poly)r=Math.max(r,Math.hypot(pt[0]-cx,pt[1]-cy));cells.push({poly,cx,cy,r:Math.max(2,r),site:si});}
+    return cells; }
+  /* lazy matter.js (the editor's CDN loader is not in this self-contained file) */
+  let _matterMod=null,_matterReq=false;
+  function loadMatter(){ if(_matterMod)return Promise.resolve(_matterMod);
+    return import('https://esm.sh/matter-js@0.19.0').then(m=>{_matterMod=m&&(m.default||m);return _matterMod;}).catch(()=>null); }
+  /* FLUID: baked twin of FluidSim - coarse Stam stable-fluids stirring the layer
+     buffer pixels (the dye) + pointer-injected velocity. State per layer id. */
+  const FLU={};
+  function fluidGet(id,longAxis){const ar=W/H;let gx,gy;if(ar>=1){gx=longAxis;gy=Math.max(8,Math.round(longAxis/ar));}else{gy=longAxis;gx=Math.max(8,Math.round(longAxis*ar));}
+    let f=FLU[id];if(f&&f.gx===gx&&f.gy===gy)return f;const N=(gx+2)*(gy+2);
+    f={gx,gy,N,u:new Float32Array(N),v:new Float32Array(N),u0:new Float32Array(N),v0:new Float32Array(N),
+      r:new Float32Array(N),g:new Float32Array(N),b:new Float32Array(N),a:new Float32Array(N),
+      r0:new Float32Array(N),g0:new Float32Array(N),b0:new Float32Array(N),a0:new Float32Array(N),px:0.5,py:0.5,init:false};
+    FLU[id]=f;return f;}
+  function fluidStep(cv,id,params,dt){const w=cv.width,h=cv.height;if(w<2||h<2)return;
+    const longAxis=Math.max(16,Math.min(120,Math.round(num(params.grid,72)))),f=fluidGet(id,longAxis),gx=f.gx,gy=f.gy,RW=gx+2,idx=(i,j)=>i+j*RW;
+    const cx2=cv.getContext('2d',{willReadFrequently:true});if(!cx2)return;let img;try{img=cx2.getImageData(0,0,w,h);}catch(e){return;}const d=img.data;
+    const refresh=f.init?0.06:1;
+    for(let j=1;j<=gy;j++){const py=Math.min(h-1,Math.floor((j-0.5)/gy*h));for(let i=1;i<=gx;i++){const px=Math.min(w-1,Math.floor((i-0.5)/gx*w)),o=(py*w+px)*4,k=idx(i,j);
+      f.r[k]=f.r[k]*(1-refresh)+d[o]*refresh;f.g[k]=f.g[k]*(1-refresh)+d[o+1]*refresh;f.b[k]=f.b[k]*(1-refresh)+d[o+2]*refresh;f.a[k]=f.a[k]*(1-refresh)+d[o+3]*refresh;}}
+    f.init=true;
+    const dvx=(IN.px-f.px),dvy=(IN.py-f.py);f.px=IN.px;f.py=IN.py;const force=num(params.force,1)*40,radius=Math.max(0.02,num(params.radius,0.12));
+    if(IN.hover){const cgx=IN.px*gx,cgy=IN.py*gy,rad=radius*Math.max(gx,gy),r2=rad*rad;
+      for(let j=1;j<=gy;j++)for(let i=1;i<=gx;i++){const ddx=i-cgx,ddy=j-cgy,q=ddx*ddx+ddy*ddy;if(q>r2)continue;const fall=Math.exp(-q/(r2*0.5)),k=idx(i,j);f.u[k]+=dvx*force*fall;f.v[k]+=dvy*force*fall;}}
+    const visc=num(params.viscosity,0.2)*0.00012,ITERS=12,N=Math.max(gx,gy),sdt=Math.min(0.033,Math.max(0.001,dt));
+    const bnd=(bm,x)=>{for(let i=1;i<=gx;i++){x[idx(i,0)]=bm===2?-x[idx(i,1)]:x[idx(i,1)];x[idx(i,gy+1)]=bm===2?-x[idx(i,gy)]:x[idx(i,gy)];}for(let j=1;j<=gy;j++){x[idx(0,j)]=bm===1?-x[idx(1,j)]:x[idx(1,j)];x[idx(gx+1,j)]=bm===1?-x[idx(gx,j)]:x[idx(gx,j)];}
+      x[idx(0,0)]=0.5*(x[idx(1,0)]+x[idx(0,1)]);x[idx(0,gy+1)]=0.5*(x[idx(1,gy+1)]+x[idx(0,gy)]);x[idx(gx+1,0)]=0.5*(x[idx(gx,0)]+x[idx(gx+1,1)]);x[idx(gx+1,gy+1)]=0.5*(x[idx(gx,gy+1)]+x[idx(gx+1,gy)]);};
+    const lin=(bm,x,x00,aa,cc)=>{const ic=1/cc;for(let it=0;it<ITERS;it++){for(let j=1;j<=gy;j++)for(let i=1;i<=gx;i++)x[idx(i,j)]=(x00[idx(i,j)]+aa*(x[idx(i-1,j)]+x[idx(i+1,j)]+x[idx(i,j-1)]+x[idx(i,j+1)]))*ic;bnd(bm,x);}};
+    const dif=(bm,x,x00,df)=>{const aa=sdt*df*N*N;lin(bm,x,x00,aa,1+4*aa);};
+    const adv=(bm,dn,d0,uu,vv)=>{const dx0=sdt*gx,dy0=sdt*gy;for(let j=1;j<=gy;j++)for(let i=1;i<=gx;i++){let xx=i-dx0*uu[idx(i,j)],yy=j-dy0*vv[idx(i,j)];if(xx<0.5)xx=0.5;if(xx>gx+0.5)xx=gx+0.5;const i0=xx|0,i1=i0+1;if(yy<0.5)yy=0.5;if(yy>gy+0.5)yy=gy+0.5;const j0=yy|0,j1=j0+1,s1=xx-i0,s0=1-s1,t1=yy-j0,t0=1-t1;dn[idx(i,j)]=s0*(t0*d0[idx(i0,j0)]+t1*d0[idx(i0,j1)])+s1*(t0*d0[idx(i1,j0)]+t1*d0[idx(i1,j1)]);}bnd(bm,dn);};
+    const prj=(uu,vv,pp,dv)=>{const hh=1/N;for(let j=1;j<=gy;j++)for(let i=1;i<=gx;i++){dv[idx(i,j)]=-0.5*hh*(uu[idx(i+1,j)]-uu[idx(i-1,j)]+vv[idx(i,j+1)]-vv[idx(i,j-1)]);pp[idx(i,j)]=0;}bnd(0,dv);bnd(0,pp);lin(0,pp,dv,1,4);for(let j=1;j<=gy;j++)for(let i=1;i<=gx;i++){uu[idx(i,j)]-=0.5*(pp[idx(i+1,j)]-pp[idx(i-1,j)])/hh;vv[idx(i,j)]-=0.5*(pp[idx(i,j+1)]-pp[idx(i,j-1)])/hh;}bnd(1,uu);bnd(2,vv);};
+    f.u0.set(f.u);f.v0.set(f.v);dif(1,f.u,f.u0,visc);dif(2,f.v,f.v0,visc);prj(f.u,f.v,f.u0,f.v0);f.u0.set(f.u);f.v0.set(f.v);adv(1,f.u,f.u0,f.u0,f.v0);adv(2,f.v,f.v0,f.u0,f.v0);prj(f.u,f.v,f.u0,f.v0);
+    const fade=1-Math.min(0.5,Math.max(0,num(params.fade,0.04)));f.r0.set(f.r);f.g0.set(f.g);f.b0.set(f.b);f.a0.set(f.a);
+    adv(0,f.r,f.r0,f.u,f.v);adv(0,f.g,f.g0,f.u,f.v);adv(0,f.b,f.b0,f.u,f.v);adv(0,f.a,f.a0,f.u,f.v);
+    for(let k=0;k<f.N;k++){f.r[k]*=fade;f.g[k]*=fade;f.b[k]*=fade;f.a[k]*=fade;}
+    for(let py=0;py<h;py++){const gyf=Math.min(gy-0.001,Math.max(0,(py+0.5)/h*gy-0.5))+1,j0=gyf|0,j1=Math.min(gy+1,j0+1),tj=gyf-j0;
+      for(let px=0;px<w;px++){const gxf=Math.min(gx-0.001,Math.max(0,(px+0.5)/w*gx-0.5))+1,i0=gxf|0,i1=Math.min(gx+1,i0+1),ti=gxf-i0,o=(py*w+px)*4,w00=(1-ti)*(1-tj),w10=ti*(1-tj),w01=(1-ti)*tj,w11=ti*tj,k00=idx(i0,j0),k10=idx(i1,j0),k01=idx(i0,j1),k11=idx(i1,j1);
+        d[o]=f.r[k00]*w00+f.r[k10]*w10+f.r[k01]*w01+f.r[k11]*w11;d[o+1]=f.g[k00]*w00+f.g[k10]*w10+f.g[k01]*w01+f.g[k11]*w11;d[o+2]=f.b[k00]*w00+f.b[k10]*w10+f.b[k01]*w01+f.b[k11]*w11;d[o+3]=f.a[k00]*w00+f.a[k10]*w10+f.a[k01]*w01+f.a[k11]*w11;}}
+    cx2.putImageData(img,0,0);}
+  function layerFluid(L){const st=L&&L.effects&&L.effects.stack;if(!st)return null;for(const e of st)if(e&&e.type==='fluid')return e;return null;}
+  function layerMorph(L){const st=L&&L.effects&&L.effects.stack;if(!st)return null;for(const e of st)if(e&&e.type==='face-morph')return e;return null;}
+  /* FACE-MORPH: baked twin of FaceMorph - same canonical FaceMesh subset, same
+     Delaunay + per-triangle affine warp + parametric deformation. Reads landmarks
+     from logicvision (LB.vis): still-image cache for asset portraits, throttled
+     video detect for camera/video. Fails soft to no warp. NO Math.random, NO
+     getBoundingClientRect. */
+  const FMG={mouthCornerL:[61],mouthCornerR:[291],mouthTop:[0,13,37,267],mouthBot:[17,14,84,314],
+    browL:[55,65,52,105,107],browR:[285,295,282,334,336],jaw:[152,148,176,377,400],chin:[152],
+    cheekL:[50,205,123],cheekR:[280,425,352]};
+  const FME={upL:[159,158,160,157],loL:[145,144,153,154],upR:[386,385,387,388],loR:[374,373,380,381]};
+  const FMR=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+  const FMN=[1,4,5,6,2];
+  const FM={meshes:{},_tex:null,
+    lms(L,source){ if(!LB.vis)return null; const c=L.content||{};
+      const wantImg=source==='image'||(source!=='camera'&&!(source==='auto'&&(c.kind==='camera'||c.kind==='videostream'))&&c.kind==='asset');
+      if(wantImg&&c.kind==='asset'){ const m=AC.meta(c.assetId); if(!m||m.kind!=='image')return null; const im=image(c.assetId); if(!im||!im._r||!im.naturalWidth)return null;
+        const dets=LB.vis.detectFaceImage(im,m.url); if(!dets)return null; return dets.length?dets[0].landmarks:[]; }
+      let v=null,key='';
+      if(c.kind==='camera'||source==='camera'){ v=IN.cam.on?IN.cam.video:null; key='cam'; }
+      else if(c.kind==='videostream'){ v=vstream(c.nodeId); key='vs:'+c.nodeId; }
+      else if(c.kind==='asset'){ const m=AC.meta(c.assetId); if(m&&m.kind==='video'){ v=video(c.assetId); key='av:'+c.assetId; } }
+      if(!v||v.readyState<2||!v.videoWidth)return null; const dets=LB.vis.detectFaceVideo(v,key); return dets&&dets.length?dets[0].landmarks:[]; },
+    build(id,lms){ if(!lms||lms.length<468)return null; const pts=[]; const g={};
+      const pp=p=>{pts.push(p.x,p.y);return(pts.length/2)-1;}; const ag=(name,ids)=>{const a=g[name]||(g[name]=[]);for(const li of ids){const p=lms[li];if(p)a.push(pp(p));}};
+      for(const k in FMG)ag(k,FMG[k]); for(const k in FME)ag('eye_'+k,FME[k]); ag('nose',FMN); ag('ring',FMR);
+      const anc=[[0,0],[1,0],[1,1],[0,1],[0.5,0],[1,0.5],[0.5,1],[0,0.5]]; for(const a of anc)pp({x:a[0],y:a[1]});
+      const tris=bDel(pts); const mesh={srcPts:Float32Array.from(pts),idx:Int32Array.from(tris),groups:g}; this.meshes[id]=mesh; return mesh; },
+    deform(mesh,p){ const sp=mesh.srcPts,n=sp.length/2,dp=new Float32Array(sp);
+      const amt=Math.max(0,Math.min(2,num(p.amount,1))); if(amt<=0)return dp;
+      const sm=num(p.smile,0),br=num(p.browRaise,0),ey=num(p.eyeWiden,0),jw=num(p.jawDrop,0),ch=num(p.cheekPuff,0),tl=num(p.headTilt,0);
+      const ring=mesh.groups.ring||[]; let cx=0.5,cy=0.5,fs=0.3;
+      if(ring.length){let sx=0,sy=0;for(const vi of ring){sx+=sp[vi*2];sy+=sp[vi*2+1];}cx=sx/ring.length;cy=sy/ring.length;let mr=0;for(const vi of ring)mr=Math.max(mr,Math.hypot(sp[vi*2]-cx,sp[vi*2+1]-cy));fs=mr||0.3;}
+      const mv=(vi,dx,dy)=>{dp[vi*2]+=dx*amt;dp[vi*2+1]+=dy*amt;}; const gr=name=>mesh.groups[name]||[];
+      const sA=sm*fs; for(const vi of gr('mouthCornerL'))mv(vi,-0.10*sA,-0.18*sA); for(const vi of gr('mouthCornerR'))mv(vi,0.10*sA,-0.18*sA);
+      for(const vi of gr('mouthTop'))mv(vi,0,-0.05*sA); for(const vi of gr('mouthBot'))mv(vi,0,0.06*sA);
+      const bA=br*fs; for(const vi of gr('browL'))mv(vi,0,-0.22*bA); for(const vi of gr('browR'))mv(vi,0,-0.22*bA);
+      const eA=ey*fs; for(const vi of gr('eye_upL'))mv(vi,0,-0.10*eA); for(const vi of gr('eye_upR'))mv(vi,0,-0.10*eA); for(const vi of gr('eye_loL'))mv(vi,0,0.10*eA); for(const vi of gr('eye_loR'))mv(vi,0,0.10*eA);
+      const jA=jw*fs; for(const vi of gr('jaw'))mv(vi,0,0.30*jA); for(const vi of gr('mouthBot'))mv(vi,0,0.14*jA);
+      const cA=ch*fs; const pf=(name,sgn)=>{for(const vi of gr(name)){const ox=sp[vi*2]-cx;mv(vi,sgn*0.16*cA*(0.5+Math.abs(ox)/fs*0.5),0.05*cA);}}; pf('cheekL',-1);pf('cheekR',1);
+      if(tl){const ang=tl*0.5*amt,ca=Math.cos(ang),sa=Math.sin(ang),seen=new Set();const rot=vi=>{if(seen.has(vi))return;seen.add(vi);const x=dp[vi*2]-cx,y=dp[vi*2+1]-cy;dp[vi*2]=cx+x*ca-y*sa;dp[vi*2+1]=cy+x*sa+y*ca;};
+        for(const name in mesh.groups){if(name==='ring'){for(const vi of gr('ring'))rot(vi);}else for(const vi of gr(name))rot(vi);}}
+      for(let i=0;i<n;i++){dp[i*2]=clamp(dp[i*2],0,1);dp[i*2+1]=clamp(dp[i*2+1],0,1);} return dp; },
+    isLive(L,source){const c=L.content||{};if(source==='camera')return true;if(c.kind==='camera'||c.kind==='videostream')return true;if(c.kind==='asset'){const m=AC.meta(c.assetId);return!!(m&&m.kind==='video');}return false;},
+    step(cv,L,p){ const w=cv.width,h=cv.height; if(w<2||h<2)return; const source=p.source||'auto';
+      const lms=this.lms(L,source); if(!lms||!lms.length)return; const live=source!=='image'&&this.isLive(L,source);
+      let mesh=this.meshes[L.id];
+      if(!mesh){mesh=this.build(L.id,lms);if(!mesh)return;} else if(live){const pr=this.build(L.id,lms);if(!pr)return;mesh=pr;}
+      let pp=p; if(p.track&&live){const ex=bTrack(lms); if(ex){pp=Object.assign({},p,{smile:num(p.smile,0)+ex.smile*2.2,jawDrop:num(p.jawDrop,0)+ex.jaw*2.2,browRaise:num(p.browRaise,0)+ex.brow*2.2,eyeWiden:num(p.eyeWiden,0)+ex.eye*2.2});}}
+      const dst=this.deform(mesh,pp); bWarp(cv,mesh.srcPts,dst,mesh.idx,FM); }
+  };
+  function bTrack(lms){ if(!lms||lms.length<468)return null; const P=i=>lms[i],D=(a,b)=>{const p=P(a),q=P(b);if(!p||!q)return 0;return Math.hypot(p.x-q.x,p.y-q.y);};
+    const eb=D(33,263)||0.001,mW=D(61,291)/eb,mO=D(13,14)/eb,bL=(P(159)&&P(105))?(P(159).y-P(105).y)/eb:0,bR=(P(386)&&P(334))?(P(386).y-P(334).y)/eb:0,eL=D(159,145)/eb,eR=D(386,374)/eb;
+    return {smile:clamp((mW-0.95)*1.2,-1,1),jaw:clamp((mO-0.10)*1.6,0,1),brow:clamp(((bL+bR)/2-0.42)*2.2,-1,1),eye:clamp(((eL+eR)/2-0.22)*3,-1,1)}; }
+  function bDel(flat){ const n=flat.length/2; if(n<3)return[]; const pts=new Array(n); for(let i=0;i<n;i++)pts[i]=[flat[i*2],flat[i*2+1]];
+    let mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity; for(const p of pts){if(p[0]<mnx)mnx=p[0];if(p[1]<mny)mny=p[1];if(p[0]>mxx)mxx=p[0];if(p[1]>mxy)mxy=p[1];}
+    const dx=mxx-mnx||1,dy=mxy-mny||1,dm=Math.max(dx,dy),mx=(mnx+mxx)/2,my=(mny+mxy)/2;
+    const verts=pts.concat([[mx-20*dm,my-dm],[mx,my+20*dm],[mx+20*dm,my-dm]]),s0=n,s1=n+1,s2=n+2;
+    const circ=(a,b,c)=>{const ax=verts[a][0],ay=verts[a][1],bx=verts[b][0],by=verts[b][1],cx=verts[c][0],cy=verts[c][1],d=2*(ax*(by-cy)+bx*(cy-ay)+cx*(ay-by));if(Math.abs(d)<1e-12)return null;
+      const ux=((ax*ax+ay*ay)*(by-cy)+(bx*bx+by*by)*(cy-ay)+(cx*cx+cy*cy)*(ay-by))/d,uy=((ax*ax+ay*ay)*(cx-bx)+(bx*bx+by*by)*(ax-cx)+(cx*cx+cy*cy)*(bx-ax))/d;return[ux,uy,(ax-ux)*(ax-ux)+(ay-uy)*(ay-uy)];};
+    const c0=circ(s0,s1,s2); if(!c0)return[]; let tris=[[s0,s1,s2,c0[0],c0[1],c0[2]]];
+    for(let i=0;i<n;i++){const px=verts[i][0],py=verts[i][1],bad=[];
+      for(let t=0;t<tris.length;t++){const tr=tris[t],ddx=px-tr[3],ddy=py-tr[4];if(ddx*ddx+ddy*ddy<tr[5])bad.push(t);}
+      const edges=[]; for(const t of bad){const tr=tris[t],e=[[tr[0],tr[1]],[tr[1],tr[2]],[tr[2],tr[0]]];
+        for(const ed of e){let sh=false; for(const t2 of bad){if(t2===t)continue;const tr2=tris[t2],e2=[[tr2[0],tr2[1]],[tr2[1],tr2[2]],[tr2[2],tr2[0]]];
+          for(const ed2 of e2){if((ed[0]===ed2[1]&&ed[1]===ed2[0])||(ed[0]===ed2[0]&&ed[1]===ed2[1])){sh=true;break;}} if(sh)break;} if(!sh)edges.push(ed);}}
+      bad.sort((a,b)=>b-a); for(const t of bad)tris.splice(t,1);
+      for(const ed of edges){const cc=circ(ed[0],ed[1],i);if(!cc)continue;tris.push([ed[0],ed[1],i,cc[0],cc[1],cc[2]]);}}
+    const out=[]; for(const tr of tris){if(tr[0]>=n||tr[1]>=n||tr[2]>=n)continue;out.push(tr[0],tr[1],tr[2]);} return out; }
+  function bWarp(cv,srcPts,dstPts,idx,host){ const W=cv.width,H=cv.height,ctx=cv.getContext('2d');if(!ctx)return;
+    let tex=host._tex;if(!tex){tex=host._tex=document.createElement('canvas');} if(tex.width!==W||tex.height!==H){tex.width=W;tex.height=H;}
+    const tctx=tex.getContext('2d');tctx.clearRect(0,0,W,H);tctx.drawImage(cv,0,0);ctx.clearRect(0,0,W,H);
+    for(let t=0;t<idx.length;t+=3){const i0=idx[t],i1=idx[t+1],i2=idx[t+2];
+      const sx0=srcPts[i0*2]*W,sy0=srcPts[i0*2+1]*H,sx1=srcPts[i1*2]*W,sy1=srcPts[i1*2+1]*H,sx2=srcPts[i2*2]*W,sy2=srcPts[i2*2+1]*H;
+      const dx0=dstPts[i0*2]*W,dy0=dstPts[i0*2+1]*H,dx1=dstPts[i1*2]*W,dy1=dstPts[i1*2+1]*H,dx2=dstPts[i2*2]*W,dy2=dstPts[i2*2+1]*H;
+      const dn=(sx0*(sy2-sy1)-sx1*sy2+sx2*sy1+(sx1-sx2)*sy0); if(Math.abs(dn)<1e-6)continue;
+      const a=-(sy0*(dx2-dx1)-sy1*dx2+sy2*dx1+(sy1-sy2)*dx0)/dn,b=(sy1*dy2+sy0*(dy1-dy2)-sy2*dy1+(sy2-sy1)*dy0)/dn,c=(sx0*(dx2-dx1)-sx1*dx2+sx2*dx1+(sx1-sx2)*dx0)/dn,
+        d=-(sx1*dy2+sx0*(dy1-dy2)-sx2*dy1+(sx2-sx1)*dy0)/dn,e=(sx0*(sy2*dx1-sy1*dx2)+sy0*(sx1*dx2-sx2*dx1)+(sx2*sy1-sx1*sy2)*dx0)/dn,f=(sx0*(sy2*dy1-sy1*dy2)+sy0*(sx1*dy2-sx2*dy1)+(sx2*sy1-sx1*sy2)*dy0)/dn;
+      if(![a,b,c,d,e,f].every(Number.isFinite))continue;
+      ctx.save(); const mcx=(dx0+dx1+dx2)/3,mcy=(dy0+dy1+dy2)/3,gp=(x,y)=>{const ddx=x-mcx,ddy=y-mcy,l=Math.hypot(ddx,ddy)||1;return[x+ddx/l*0.6,y+ddy/l*0.6];};
+      const p0=gp(dx0,dy0),p1=gp(dx1,dy1),p2=gp(dx2,dy2);
+      ctx.beginPath();ctx.moveTo(p0[0],p0[1]);ctx.lineTo(p1[0],p1[1]);ctx.lineTo(p2[0],p2[1]);ctx.closePath();ctx.clip();
+      ctx.setTransform(a,b,c,d,e,f);ctx.drawImage(tex,0,0);ctx.setTransform(1,0,0,1,0,0);ctx.restore();} }
   /* sampleInk: editor parity for sampleTextInk - draw text on an offscreen canvas
      sized to the layer (W x H), read ink pixels (alpha>threshold), deterministic
      shuffle (mb RNG, NO Math.random), take `density`, return normalized [x,y]. */
@@ -2871,7 +4164,49 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     for(let i=ink.length-1;i>0;i--){const j=(rng()*(i+1))|0,t=ink[i];ink[i]=ink[j];ink[j]=t;}
     return ink.slice(0,Math.min(density,ink.length));
   }
-  /* positioning (subset: single/grid/instances/rope/drawn/text-ink/camera-feed; physics→grid fallback, face-3d→procedural) */
+  /* traceInk: baked twin of traceTextOutline (PART B) - marching-squares /
+     border-follow trace of the glyph alpha into ORDERED boundary loops, RDP
+     simplified, resampled to `density`, normalized, with tangent rot. Same math
+     as the editor so the exported file matches exactly. */
+  function rdpB(pts,eps){ if(pts.length<3)return pts.slice();
+    let dmax=0,idx=0;const a=pts[0],b=pts[pts.length-1],dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1e-6;
+    for(let i=1;i<pts.length-1;i++){const px=pts[i][0]-a[0],py=pts[i][1]-a[1],dist=Math.abs(px*dy-py*dx)/len;if(dist>dmax){dmax=dist;idx=i;}}
+    if(dmax>eps){const l=rdpB(pts.slice(0,idx+1),eps),r=rdpB(pts.slice(idx),eps);return l.slice(0,-1).concat(r);}
+    return [a,b]; }
+  function rdpClosedB(pts,eps){ if(pts.length<4)return pts.slice();
+    let bi=0,best=-1;for(let i=1;i<pts.length;i++){const dx=pts[i][0]-pts[0][0],dy=pts[i][1]-pts[0][1],dd=dx*dx+dy*dy;if(dd>best){best=dd;bi=i;}}
+    const h1=rdpB(pts.slice(0,bi+1),eps),h2=rdpB(pts.slice(bi).concat([pts[0]]),eps),merged=h1.concat(h2.slice(1,-1));
+    return merged.length>=3?merged:pts.slice(); }
+  function resampleClosedB(pts,count){ const n=pts.length;if(n<2)return pts.slice();
+    let per=0;const seg=new Array(n);for(let i=0;i<n;i++){const a=pts[i],b=pts[(i+1)%n],dl=Math.hypot(b[0]-a[0],b[1]-a[1]);seg[i]=dl;per+=dl;}
+    if(per<=0)return[pts[0].slice()];const out=[],stepL=per/count;let i=0,acc=0,target=0;
+    for(let k=0;k<count;k++){while(i<n&&acc+seg[i]<target){acc+=seg[i];i++;}if(i>=n){out.push(pts[n-1].slice());target+=stepL;continue;}const a=pts[i],b=pts[(i+1)%n],t=seg[i]>0?(target-acc)/seg[i]:0;out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);target+=stepL;}
+    return out; }
+  function traceInk(text,font,weight,density,size,epsilon){
+    if(!text||!text.length)return[];
+    const cv=document.createElement('canvas');cv.width=Math.max(1,W|0);cv.height=Math.max(1,H|0);
+    const cx=cv.getContext('2d',{willReadFrequently:true});if(!cx)return[];
+    cx.clearRect(0,0,cv.width,cv.height);cx.textBaseline='middle';cx.textAlign='center';
+    let fs=Math.max(8,Math.floor(cv.height*0.6));cx.font=weight+' '+fs+'px '+font;
+    const maxW=cv.width*0.92,m=cx.measureText(text).width;
+    if(m>maxW){fs=Math.max(6,Math.floor(fs*maxW/m));cx.font=weight+' '+fs+'px '+font;}
+    cx.fillStyle='#fff';cx.fillText(text,cv.width/2,cv.height/2);
+    let img;try{img=cx.getImageData(0,0,cv.width,cv.height);}catch(e){return[];}
+    const d=img.data,ww=cv.width,hh=cv.height,gridMax=220,stride=Math.max(1,Math.ceil(Math.max(ww,hh)/gridMax)),gw=Math.ceil(ww/stride),gh=Math.ceil(hh/stride),GW=gw+2;
+    const grid=new Uint8Array((gw+2)*(gh+2)),at=(gx,gy)=>grid[(gy+1)*GW+(gx+1)];
+    for(let gy=0;gy<gh;gy++){const py=Math.min(hh-1,gy*stride);for(let gx=0;gx<gw;gx++){const px=Math.min(ww-1,gx*stride);if(d[(py*ww+px)*4+3]>90)grid[(gy+1)*GW+(gx+1)]=1;}}
+    const visited=new Uint8Array((gw+2)*(gh+2)),loops=[],NX=[1,1,0,-1,-1,-1,0,1],NY=[0,1,1,1,0,-1,-1,-1];
+    for(let gy=0;gy<gh;gy++)for(let gx=0;gx<gw;gx++){if(!at(gx,gy))continue;if(at(gx-1,gy))continue;if(visited[(gy+1)*GW+(gx+1)])continue;
+      const loop=[];let cx0=gx,cy0=gy,bdir=4,guard=0,maxSteps=gw*gh*4+16,sX=cx0,sY=cy0;
+      do{visited[(cy0+1)*GW+(cx0+1)]=1;loop.push([cx0,cy0]);let found=-1;for(let k=0;k<8;k++){const dir=(bdir+1+k)&7,nx=cx0+NX[dir],ny=cy0+NY[dir];if(at(nx,ny)){found=dir;cx0=nx;cy0=ny;bdir=(dir+4)&7;break;}}if(found<0)break;guard++;}while((cx0!==sX||cy0!==sY)&&guard<maxSteps);
+      if(loop.length>=8)loops.push(loop);}
+    if(!loops.length)return[];
+    const out=[],eps=Math.max(0,epsilon||0),dens=Math.max(3,Math.min(2000,density|0));
+    for(const loop of loops){let pts=loop;if(eps>0&&pts.length>4)pts=rdpClosedB(pts,eps);const rs=resampleClosedB(pts,dens),N=rs.length;
+      for(let i=0;i<N;i++){const a=rs[i],nb=rs[(i+1)%N],pb=rs[(i-1+N)%N],rot=Math.atan2(nb[1]-pb[1],nb[0]-pb[0]);out.push({x:clamp((a[0]*stride)/ww,0,1),y:clamp((a[1]*stride)/hh,0,1),scale:size,rot});}}
+    return out;
+  }
+  /* positioning (subset: single/grid/instances/rope/rope-ink/drawn/text-ink/text-outline/camera-feed; physics→grid fallback, face-3d→procedural) */
   const SIM={};
   function positions(L,dt){ const p=L.positioning;
     LB.applyScalar(p);   // W2C: overlay logic-graph scalar bindings before resolve
@@ -2885,6 +4220,33 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
         out.push({x:clamp((c+0.5)/cols+(z-0.5)*depth,0.02,0.98),y:clamp((r+0.5)/rows+(z-0.5)*depth,0.02,0.98),scale:base*(1.18-z*0.36),rot:(z-0.5)*0.35});} return out; }
     if(p.mode==='scatter-3d'){ const out=[],count=Math.min(Math.max(1,num(p.count,80)|0),600),b=Array.isArray(p.bounds)?p.bounds:[p.boundsX,p.boundsY,p.boundsZ],bx=Math.max(0.01,num(b[0],6)),by=Math.max(0.01,num(b[1],6)),bz=Math.max(0.01,num(b[2],6)),maxB=Math.max(bx,by,bz,0.01),sx=Math.min(0.92,bx/maxB*0.92),sy=Math.min(0.92,by/maxB*0.92),rng=mb(hash(L.id+':scatter-3d')),base=num(p.size,0.05);
       for(let i=0;i<count;i++){const x=0.5+(rng()-0.5)*sx,y=0.5+(rng()-0.5)*sy,z=rng();out.push({x:clamp(x,0.02,0.98),y:clamp(y,0.02,0.98),scale:base*(0.62+z*0.78),rot:(rng()-0.5)*0.8});} return out; }
+    if(p.mode==='shatter'){ let s=SIM[L.id];
+      const count=Math.max(2,Math.min(160,num(p.count,24)|0));
+      const sigKey=L.id+':shatter:'+count+':'+(W|0)+'x'+(H|0);
+      if(!s||s.shKey!==sigKey){ const cells=voronoiCells(count,hash(sigKey));
+        s={shKey:sigKey, cells, engine:null, shards:null, _building:false, _burst:false, _lastPhase:-1, sigKey};
+        SIM[L.id]=s;
+        s._building=true;
+        loadMatter().then(M=>{ if(!M||SIM[L.id]!==s){s._building=false;return;} const eng=M.Engine.create();
+          eng.gravity.x=num(p.gravity&&p.gravity[0],0); eng.gravity.y=num(p.gravity&&p.gravity[1],1.4);
+          const shards=[];
+          for(const c of cells){ const verts=c.poly.map(pt=>({x:pt[0]-c.cx,y:pt[1]-c.cy}));
+            let body=M.Bodies.fromVertices(c.cx,c.cy,[verts],{restitution:0.25,friction:0.4,frictionAir:0.012},true);
+            if(!body)body=M.Bodies.circle(c.cx,c.cy,Math.max(4,c.r),{restitution:0.25,friction:0.4});
+            M.Body.setStatic(body,false); shards.push({body,cell:c}); }
+          const walls=[M.Bodies.rectangle(W/2,H+40,W*3,80,{isStatic:true}),M.Bodies.rectangle(-40,H/2,80,H*3,{isStatic:true}),M.Bodies.rectangle(W+40,H/2,80,H*3,{isStatic:true}),M.Bodies.rectangle(W/2,-H,W*3,80,{isStatic:true})];
+          M.Composite.add(eng.world,[...shards.map(sh=>sh.body),...walls]);
+          s.M=M; s.engine=eng; s.shards=shards; s._building=false; }); }
+      if(!s.engine||!s.shards){ return s.cells.map((c,i)=>({x:c.cx/W,y:c.cy/H,scale:1,rot:0,_shard:c,_shardSeed:i})); }
+      s.engine.gravity.x=num(p.gravity&&p.gravity[0],0); s.engine.gravity.y=num(p.gravity&&p.gravity[1],1.4);
+      const trig=(p.trigger==null?'click':p.trigger); let fire=false,bx=0.5,by=0.5;
+      if(trig==='auto'){const period=Math.max(0.5,num(p.period,3)),ph=Math.floor(IN.clock/period);if(ph!==s._lastPhase){s._lastPhase=ph;fire=true;}}
+      else{if(IN.clickPulse>0.5&&!s._burst){s._burst=true;fire=true;bx=IN.px;by=IN.py;}if(IN.clickPulse<=0.5)s._burst=false;}
+      if(fire){const M=s.M,force=num(p.burst,0.04),spin=num(p.spin,0.4),cx=bx*W,cy=by*H,rng=mb(hash((s.sigKey||'')+':burst:'+(s._lastPhase||0)+':'+Math.round(bx*1000)+'x'+Math.round(by*1000)));
+        for(const sh of s.shards){const b=sh.body;let dx=b.position.x-cx,dy=b.position.y-cy;const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;const mag=force*(0.6+rng()*0.8)*(b.mass||1);M.Body.applyForce(b,b.position,{x:dx*mag,y:dy*mag-force*0.3*(b.mass||1)});M.Body.setAngularVelocity(b,(rng()-0.5)*spin);}}
+      const slow=Math.max(0.02,Math.min(2,num(p.slowmo,1)));
+      s.M.Engine.update(s.engine,Math.min(dt*1000,33)*slow);
+      return s.shards.map((sh,i)=>({x:sh.body.position.x/W,y:sh.body.position.y/H,scale:1,rot:sh.body.angle,_shard:sh.cell,_shardSeed:i})); }
     if(p.mode==='instances'||p.mode==='physics'){ const s=SIM[L.id]||(SIM[L.id]={items:[]}); const want=p.count|0;
       if(p.source==='random'||p.mode==='physics'){while(s.items.length<want)s.items.push(spawn());}
       else if(p.source==='interaction'){if(IN.clickPulse>0.5&&s.items.length<want)for(let i=0;i<3&&s.items.length<want;i++)s.items.push(spawn(IN.px,IN.py));}
@@ -2904,6 +4266,20 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       const rest=Math.hypot(an[1][0]-an[0][0],an[1][1]-an[0][1])/seg,k=clamp(p.stiffness||0.8,0.05,1);
       for(let it=0;it<6;it++)for(let i=0;i<seg;i++){const a=s.pts[i],b=s.pts[i+1];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6,df=(d-rest)/d*0.5*k;dx*=df;dy*=df;if(i!==0){a.x+=dx;a.y+=dy;}b.x-=dx;b.y-=dy;}
       return s.pts.map(q=>({x:q.x,y:q.y,scale:p.size||0.03,rot:0})); }
+    if(p.mode==='rope-ink'){ const text=p.text!=null?String(p.text):''; const font=(p.font&&String(p.font).trim())?p.font:'sans-serif'; const weight=p.weight||700;
+      const anchors=Math.max(1,Math.min(300,num(p.anchors,40)|0)),seg=Math.max(1,Math.min(24,num(p.segments,6)|0)),grav=0.0006*Math.max(0,num(p.gravity,1)),drag=clamp(num(p.damping,0.99),0.8,1),k=clamp(num(p.stiffness,0.8),0.05,1),size=num(p.size,0.02);
+      const sig=text+'|'+font+'|'+weight+'|'+anchors+'|'+seg+'|'+(W|0)+'x'+(H|0); let s=SIM[L.id];
+      if(!s||s.riSig!==sig){ const base=sampleInk(text,font,weight,anchors,hash(L.id+':rope-ink')); const rest=clamp(0.12/seg,0.004,0.2);
+        const ropes=base.map(a=>{const pts=[];for(let i=0;i<=seg;i++)pts.push({x:a[0],y:a[1]+rest*i,px:a[0],py:a[1]+rest*i});return{anchor:a,pts,rest};});
+        s={riSig:sig,ropes}; SIM[L.id]=s; }
+      if(!s.ropes.length)return[{x:.5,y:.5,scale:size,rot:0}];
+      const out=[];
+      for(const r of s.ropes){ const pts=r.pts,n=pts.length;
+        for(const q of pts){const vx=(q.x-q.px)*drag,vy=(q.y-q.py)*drag;q.px=q.x;q.py=q.y;q.x+=vx;q.y+=vy+grav;}
+        pts[0].x=r.anchor[0];pts[0].y=r.anchor[1];
+        for(let it=0;it<6;it++)for(let i=0;i<n-1;i++){const a=pts[i],b=pts[i+1];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6,df=(d-r.rest)/d*0.5*k;dx*=df;dy*=df;if(i!==0){a.x+=dx;a.y+=dy;}b.x-=dx;b.y-=dy;}
+        for(let i=0;i<n;i++){const q=pts[i],nb=pts[Math.min(i+1,n-1)],pb=pts[Math.max(i-1,0)];out.push({x:q.x,y:q.y,scale:size,rot:Math.atan2(nb.y-pb.y,nb.x-pb.x)});}}
+      return out; }
     if(p.mode==='boids'){ const count=Math.max(1,Math.min(2000,num(p.count,60)|0)),perc=Math.max(0.001,num(p.perception,0.12)),sepW=num(p.separation,1),aliW=num(p.alignment,1),cohW=num(p.cohesion,1),maxSpd=Math.max(0.001,num(p.maxSpeed,0.35)),size=num(p.size,0.05);
       let s=SIM[L.id]; if(!s||!s.boids){s={boids:true,a:[]};SIM[L.id]=s;} const rng=mb(hash(L.id+':boids')),A=s.a,perc2=perc*perc;
       while(A.length<count){const ang=rng()*Math.PI*2;A.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5});} if(A.length>count)A.length=count;
@@ -2926,6 +4302,12 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       const step=Math.min(dt,0.05)*60,grav=0.0006*drift,dragF=0.99,jt=jitter*0.0008*drift;
       for(const q of s.parts){const vx=(q.x-q.px)*dragF,vy=(q.y-q.py)*dragF;q.px=q.x;q.py=q.y;const jx=jt?(Math.sin((IN.clock+q.seed*6.28)*3.1)*jt):0;q.x+=vx+jx;q.y+=vy+grav*step;}
       return s.parts.map(q=>({x:clamp(q.x,-0.1,1.1),y:clamp(q.y,-0.1,1.2),scale:size,rot:0})); }
+    if(p.mode==='text-outline'){ const text=p.text!=null?String(p.text):''; const font=(p.font&&String(p.font).trim())?p.font:'sans-serif'; const weight=p.weight||700;
+      const density=Math.max(3,Math.min(2000,num(p.density,120)|0)),simplify=Math.max(0,num(p.simplify,0.6)),size=num(p.size,0.02);
+      const sig=text+'|'+font+'|'+weight+'|'+density+'|'+simplify+'|'+size+'|'+(W|0)+'x'+(H|0); let s=SIM[L.id];
+      if(!s||s.toSig!==sig){ s={toSig:sig,pts:traceInk(text,font,weight,density,size,simplify)}; SIM[L.id]=s; }
+      if(!s.pts.length)return[{x:.5,y:.5,scale:size,rot:0}];
+      return s.pts; }
     if(p.mode==='camera-feed'){ const lm=IN.detect.landmarks; if(!lm||!lm.length)return[]; const out=[];
       for(const set of lm){const step=Math.max(1,(set.length/24)|0);for(let i=0;i<set.length;i+=step){const kp=set[i];out.push({x:clamp(kp.x,0,1),y:clamp(kp.y,0,1),scale:p.size||0.05,rot:0});}} return out; }
     if(p.mode==='face-3d'){ const out=[],n=60; for(let i=0;i<n;i++){const a=i/n*Math.PI*2,r=0.18*(0.6+0.4*Math.sin(a*3+IN.clock));out.push({x:0.5+Math.cos(a)*r,y:0.5+Math.sin(a)*r*1.2,scale:(p.size||1)*0.16,rot:a});} return out; }
@@ -2949,7 +4331,9 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     if(sm>0&&pts.length>2){const close=!!c.closed,N=pts.length,at=k=>pts[((k%N)+N)%N];lctx.moveTo(pts[0][0],pts[0][1]);const last=close?N:N-1;
       for(let i=0;i<last;i++){const p0=at(i-1),p1=at(i),p2=at(i+1),p3=at(i+2);const c1x=p1[0]+((p2[0]-p0[0])/6)*sm,c1y=p1[1]+((p2[1]-p0[1])/6)*sm,c2x=p2[0]-((p3[0]-p1[0])/6)*sm,c2y=p2[1]-((p3[1]-p1[1])/6)*sm;lctx.bezierCurveTo(c1x,c1y,c2x,c2y,p2[0],p2[1]);}}
     else{lctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)lctx.lineTo(pts[i][0],pts[i][1]);}
-    if(c.closed)lctx.closePath();if(c.fill){lctx.fillStyle=c.fill;lctx.fill();}if(c.stroke&&c.strokeWidth>0){lctx.strokeStyle=c.stroke;lctx.lineWidth=c.strokeWidth;lctx.lineJoin='round';lctx.lineCap='round';lctx.stroke();}}
+    if(c.closed)lctx.closePath();
+    const cp=c.colorPoints||{};const fillC=(cp.fill&&cp.fill.kind==='logic')?(LB.color(cp.fill.ref)||c.fill):c.fill;const strokeC=(cp.stroke&&cp.stroke.kind==='logic')?(LB.color(cp.stroke.ref)||c.stroke):c.stroke;
+    if(fillC){lctx.fillStyle=fillC;lctx.fill();}if(strokeC&&c.strokeWidth>0){lctx.strokeStyle=strokeC;lctx.lineWidth=c.strokeWidth;lctx.lineJoin='round';lctx.lineCap='round';lctx.stroke();}}
   /* Kinetic Type: identical per-glyph transform library to the editor's
      typeMotionXform - kept in sync so baked export matches the editor exactly. */
   function tmXform(behavior,i,n,t,speed,amp,stagger){
@@ -2976,6 +4360,17 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     }
     return o;
   }
+  /* TEXT ON PATH (PART A): baked twin of typeMotionPathPoint - same math so the
+     exported file lays glyphs on the path identically to the editor. */
+  function tmPathPoint(path,s,total,radius,amplitude,ref){
+    var T=total>0?total:1;
+    if(path==='straight'){return {x:s-T/2,y:0,rot:0};}
+    var R=Math.max(1,radius*ref);
+    if(path==='wave'){var x=s-T/2,k=(Math.PI*2)/Math.max(1,T*0.5),y=Math.sin(s*k)*amplitude,dy=Math.cos(s*k)*amplitude*k;return {x:x,y:y,rot:Math.atan2(dy,1)};}
+    if(path==='circle'||path==='ring'){var a=-Math.PI/2+(s/T)*Math.PI*2;return {x:Math.cos(a)*R,y:Math.sin(a)*R,rot:a+Math.PI/2};}
+    var sweep=Math.PI*7/6,a0=-Math.PI/2-sweep/2,aa=a0+(T>0?(s/T):0)*sweep;
+    return {x:Math.cos(aa)*R,y:Math.sin(aa)*R+R,rot:aa+Math.PI/2};
+  }
   function drawTM(c,t){
     var text=c.text!=null?String(c.text):''; if(!text.length)return;
     var size=Math.max(1,c.size||120),weight=c.weight||800,font=(c.font&&String(c.font).trim())?c.font:'sans-serif';
@@ -2986,12 +4381,16 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     var total=0,adv=new Array(n);
     for(var i=0;i<n;i++){var w=lctx.measureText(glyphs[i]).width;adv[i]=w;total+=w;if(i<n-1)total+=tracking;}
     var startX=-total/2; if(c.align==='left')startX=0; else if(c.align==='right')startX=-total;
+    var path=(c.path&&c.path!=='straight')?c.path:'straight';
+    var pathRadius=c.pathRadius!=null?c.pathRadius:0.3,pathAmp=c.pathAmplitude!=null?c.pathAmplitude:30,pathRotate=c.pathRotate!==false,ref=Math.max(total,size*2);
     var penX=startX;
     for(var i=0;i<n;i++){
       var x=penX+adv[i]/2,o=tmXform(c.behavior||'wave',i,n,tt,speed,amp,stag);
       if(o.reveal<=0){penX+=adv[i]+tracking;continue;}
       var dx=o._em?o.dx*size:o.dx,dy=o._em?o.dy*size:o.dy;
-      lctx.save(); lctx.translate(x+dx,dy);
+      lctx.save();
+      if(path==='straight'){lctx.translate(x+dx,dy);}
+      else{var s=x-startX,bp=tmPathPoint(path,s,total,pathRadius,pathAmp,ref);lctx.translate(bp.x,bp.y);if(pathRotate&&bp.rot)lctx.rotate(bp.rot);lctx.translate(dx,dy);}
       if(o.rot)lctx.rotate(o.rot);
       if(o.skew)lctx.transform(1,0,o.skew,1,0,0);
       if(o.sx!==1||o.sy!==1)lctx.scale(o.sx,o.sy);
@@ -3002,7 +4401,18 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       penX+=adv[i]+tracking;
     }
   }
+  /* SHATTER: draw the full intact content (cover-fit) - baked twin of
+     drawShatterContent. The caller has already clipped to the cell + moved origin. */
+  function drawShatterC(L){const c=L.content;lctx.save();lctx.translate(W/2,H/2);
+    if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,W,H,'cover','center','center',false);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,W,H,'cover','center','center',false);}else{lctx.fillStyle='#444';lctx.fillRect(-W/2,-H/2,W,H);}}}
+    else if(c.kind==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.save();lctx.scale(-1,1);drawM(v,ar,W,H,'cover','center','center',false);lctx.restore();}}
+    else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(Math.min(W,H)*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
+    else{lctx.fillStyle=c.color||'#6ee7ff';lctx.fillRect(-W/2,-H/2,W,H);}
+    lctx.restore();}
   function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul,bw=inst.w?inst.w*W:sz,bh=inst.h?inst.h*H:sz;
+    if(inst._shard){const cell=inst._shard,poly=cell.poly;lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
+      lctx.beginPath();lctx.moveTo(poly[0][0]-cell.cx,poly[0][1]-cell.cy);for(let i=1;i<poly.length;i++)lctx.lineTo(poly[i][0]-cell.cx,poly[i][1]-cell.cy);lctx.closePath();lctx.clip();
+      lctx.translate(-cell.cx,-cell.cy);drawShatterC(L);lctx.restore();return;}
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
     if(c.kind==='polyshape'){drawPoly(c);lctx.restore();return;}
     if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
@@ -3028,7 +4438,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       switch(dst){case'r':bd[i]*=mv;break;case'g':bd[i+1]*=mv;break;case'b':bd[i+2]*=mv;break;case'rgb':bd[i]*=mv;bd[i+1]*=mv;bd[i+2]*=mv;break;default:bd[i+3]*=mv;}}
     dctx.putImageData(base,0,0);}
   const BUFS={};
-  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy'&&e.type!=='fluid'&&e.type!=='face-morph');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
   function applyTop(time){ if(!GLOK||!TOP.length)return; applyFxFrom(c2d,TOP,time,null); ctx.save(); ctx.globalCompositeOperation='copy'; ctx.drawImage(cgl,0,0,W,H); ctx.restore(); }
@@ -3057,6 +4467,9 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     // PASS B - composite visible layers in z-order, applying channel masks
     const ord=[...CFG.layers].filter(L=>L.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ord){const b=rendered[L.id];if(!b)continue;const o=ov[L.id]||{};
+      // FLUID: stir the layer buffer with the persistent coarse Stam solver before compositing.
+      const fe=layerFluid(L); if(fe)fluidStep(b.cv,L.id,(fe.params||{}),dt);
+      const me=layerMorph(L); if(me)FM.step(b.cv,L,(me.params||{}));
       lctx.clearRect(0,0,W,H);lctx.drawImage(b.cv,0,0);
       if(L.mask&&L.mask.by){const mb=rendered[L.mask.by];if(mb)maskCh(lctx,mb.cv,L.mask.src,L.mask.dst);}
       const baseOp=L._wired?(L._opacity!=null?L._opacity:1):1;

@@ -419,6 +419,73 @@ function ports(out, nodeId) { return out._ports[nodeId] || {}; }
   ok('vision missing point degrades to 0,0', out['T.pk'] && approx(out['T.pk'].x, 0) && approx(out['T.pk'].y, 0), JSON.stringify(out['T.pk']));
 })();
 
+// ── palette node (colors arrive via frame.palettes, like streams) ───────────-
+(function () {
+  // Feed a synthetic palette frame for node "pal"; check color0..7 + dominant +
+  // domR/domG/domB map the cached colors onto typed ports, and that domR/G/B are
+  // plain numbers (so the dominant can drive numeric params).
+  const g = {
+    nodes: [{ id: 'pal', kind: 'palette', params: { count: 3, _imageUrl: 'x' } }],
+    edges: [],
+    outputs: [
+      { sourceNode: 'pal', sourcePort: 'dominant', targetNode: 'T', targetParam: 'c0' },
+      { sourceNode: 'pal', sourcePort: 'domR', targetNode: 'T', targetParam: 'r' },
+      { sourceNode: 'pal', sourcePort: 'domG', targetNode: 'T', targetParam: 'g' },
+      { sourceNode: 'pal', sourcePort: 'color1', targetNode: 'T', targetParam: 'c1' },
+      { sourceNode: 'pal', sourcePort: 'ready', targetNode: 'T', targetParam: 'rd' },
+    ],
+  };
+  const plan = LogicGraph.compile(g);
+  const inputs = { palettes: { pal: { colors: [
+    { r: 1, g: 0, b: 0, a: 1 }, { r: 0, g: 1, b: 0, a: 1 }, { r: 0, g: 0, b: 1, a: 1 },
+  ], dominant: { r: 1, g: 0, b: 0, a: 1 } } } };
+  const out = LogicGraph.tick(plan, inputs, {});
+  ok('palette dominant is the first color', out['T.c0'] && approx(out['T.c0'].r, 1) && approx(out['T.c0'].g, 0), JSON.stringify(out['T.c0']));
+  ok('palette domR/domG are numbers 0..1', typeof out['T.r'] === 'number' && approx(out['T.r'], 1) && approx(out['T.g'], 0));
+  ok('palette color1 reads second bucket', out['T.c1'] && approx(out['T.c1'].g, 1) && approx(out['T.c1'].r, 0), JSON.stringify(out['T.c1']));
+  ok('palette ready true when colors present', out['T.rd'] === true);
+  // empty palette degrades to black + not ready (nothing throws).
+  const out0 = LogicGraph.tick(plan, { palettes: {} }, {});
+  ok('palette empty degrades to black', out0['T.c0'] && approx(out0['T.c0'].r, 0) && approx(out0['T.c0'].g, 0));
+  ok('palette empty ready false', out0['T.rd'] === false);
+})();
+
+// ── audio-out SINK (republishes resolved params + edge-detects trigger) ──────-
+(function () {
+  // Drive frequency from a value-vec2 (its .x), gain from a number; leave cutoff
+  // unwired so it falls back to the control default; wire a pointer click into
+  // trigger and confirm the event fires ONLY on the rising frame.
+  const g = {
+    nodes: [
+      { id: 'f', kind: 'value-vec2', params: { x: 440, y: 0 } },
+      { id: 'gn', kind: 'value-vec2', params: { x: 0.5, y: 0 } },
+      { id: 'ptr', kind: 'input-pointer', params: {} },
+      { id: 'ao', kind: 'audio-out', params: { waveform: 'square', frequency: 220, gain: 0.2, cutoff: 6000 } },
+    ],
+    edges: [
+      { from: { node: 'f', port: 'value' }, to: { node: 'ao', port: 'frequency' } },
+      { from: { node: 'gn', port: 'value' }, to: { node: 'ao', port: 'gain' } },
+      { from: { node: 'ptr', port: 'clicked' }, to: { node: 'ao', port: 'trigger' } },
+    ],
+    outputs: [
+      { sourceNode: 'ao', sourcePort: 'frequency', targetNode: 'T', targetParam: 'freq' },
+      { sourceNode: 'ao', sourcePort: 'gain', targetNode: 'T', targetParam: 'gain' },
+      { sourceNode: 'ao', sourcePort: 'cutoff', targetNode: 'T', targetParam: 'cut' },
+      { sourceNode: 'ao', sourcePort: 'waveform', targetNode: 'T', targetParam: 'wave' },
+      { sourceNode: 'ao', sourcePort: 'trigger', targetNode: 'T', targetParam: 'trig' },
+    ],
+  };
+  const plan = LogicGraph.compile(g);
+  const f1 = LogicGraph.tick(plan, { pointer: { isDown: true }, dt: 0.016 }, {});
+  ok('audio-out frequency from wired input', approx(f1['T.freq'], 440), 'freq=' + f1['T.freq']);
+  ok('audio-out gain from wired input', approx(f1['T.gain'], 0.5));
+  ok('audio-out cutoff falls back to control', approx(f1['T.cut'], 6000), 'cut=' + f1['T.cut']);
+  ok('audio-out waveform from control', f1['T.wave'] === 'square');
+  ok('audio-out trigger fires on rising click', f1['T.trig'] === true);
+  const f2 = LogicGraph.tick(plan, { pointer: { isDown: true }, dt: 0.016 }, {});
+  ok('audio-out trigger false while held', f2['T.trig'] === false);
+})();
+
 // ── summary ─────────────────────────────────────────────────────────────────-
 console.log('\n========================================');
 console.log('SUMMARY: ' + passed + ' passed, ' + failed + ' failed, ' + (passed + failed) + ' total');

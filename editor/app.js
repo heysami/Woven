@@ -55740,6 +55740,122 @@ function _vecPolygonToD(polys) {
   return parts.join(" ");
 }
 
+// ── Path offset (inflate / deflate an outline) ──────────────────────────────
+// Polygon offsetting on a SAMPLED closed ring: each vertex is displaced along
+// the average of its two adjacent edge normals (the "outward" normal, sign set
+// by the ring's winding so a positive distance always inflates). `join` picks
+// how convex corners are finished:
+//   • miter - extend the displaced edges to their intersection (sharp corner),
+//     clamped to a miter limit so spikes at very acute angles don't explode.
+//   • round - emit a small fan of points along the corner arc (rounded corner).
+// Negative distance insets. Deterministic: no randomness, no DOM, no time.
+// Self-intersection cleanup (for large insets that fold a ring inside-out) is
+// handled by the caller via polygon-clipping union when that lib is present;
+// the raw offset here stays robust and finite on its own.
+function _vecSignedArea(ring) {
+  let a = 0;
+  // ring is closed (last point repeats first); iterate unique edges.
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x1, y1] = ring[i], [x2, y2] = ring[i + 1];
+    a += x1 * y2 - x2 * y1;
+  }
+  return a / 2;
+}
+function _vecOffsetRing(ring, dist, join, miterLimit = 4) {
+  if (!ring || ring.length < 4) return null;   // need >=3 distinct points + close
+  // Drop the duplicated closing point; work on the distinct loop.
+  const pts = ring.slice(0, ring.length - 1);
+  const n = pts.length;
+  if (n < 3) return null;
+  // Winding normalisation: with the per-edge normal taken as [ey, -ex], that
+  // normal points OUTWARD for a ring whose signed area is positive and inward
+  // for a negative one. Flip the sign so a positive `dist` always inflates and
+  // a negative one insets, regardless of how the ring was authored.
+  const sign = _vecSignedArea(ring) >= 0 ? 1 : -1;
+  const d = dist * sign;
+  // Per-edge unit normals (rotate edge direction by -90 degrees).
+  const edgeN = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len = Math.hypot(ex, ey) || 1e-9;
+    edgeN.push([ey / len, -ex / len]);
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const nPrev = edgeN[(i - 1 + n) % n];   // normal of edge entering p
+    const nNext = edgeN[i];                  // normal of edge leaving p
+    // Bisector (sum of the two edge normals).
+    let bx = nPrev[0] + nNext[0], by = nPrev[1] + nNext[1];
+    const bl = Math.hypot(bx, by);
+    if (bl < 1e-6) {
+      // Nearly-reversed edges (180 degree spike): just push along nNext.
+      out.push([p[0] + nNext[0] * d, p[1] + nNext[1] * d]);
+      continue;
+    }
+    bx /= bl; by /= bl;
+    // cos(theta/2) between the bisector and an edge normal → miter length.
+    const cosHalf = bx * nNext[0] + by * nNext[1];
+    const miter = cosHalf > 1e-6 ? 1 / cosHalf : miterLimit;
+    if (join === "round" && miter > miterLimit) {
+      // Round the corner: fan a few points along the arc between the two
+      // displaced edge endpoints, centred on p.
+      const a0 = Math.atan2(nPrev[1], nPrev[0]);
+      let a1 = Math.atan2(nNext[1], nNext[0]);
+      let da = a1 - a0;
+      while (da > Math.PI) da -= 2 * Math.PI;
+      while (da < -Math.PI) da += 2 * Math.PI;
+      const steps = Math.max(1, Math.ceil(Math.abs(da) / (Math.PI / 8)));
+      for (let s = 0; s <= steps; s++) {
+        const ang = a0 + (da * s) / steps;
+        out.push([p[0] + Math.cos(ang) * d, p[1] + Math.sin(ang) * d]);
+      }
+    } else {
+      // Miter join, clamped so acute corners don't shoot to infinity.
+      const m = Math.min(miter, miterLimit);
+      out.push([p[0] + bx * d * m, p[1] + by * d * m]);
+    }
+  }
+  if (out.length < 3) return null;
+  out.push([out[0][0], out[0][1]]);   // re-close
+  return out;
+}
+// Offset every sampled ring of a shape by `dist`. Returns rings (array of
+// closed point loops) or null. When polygon-clipping is present the rings are
+// unioned to drop self-overlaps that large offsets can introduce.
+function _vecOffsetShapeRings(shape, dist, join, sampleStep = 4) {
+  const rings = _vecShapeToPolygon(shape, sampleStep);
+  if (!rings || !rings.length) return null;
+  const offset = rings.map(r => _vecOffsetRing(r, dist, join)).filter(Boolean);
+  if (!offset.length) return null;
+  // Validate finiteness (defensive - bad geometry must never crash the editor).
+  for (const r of offset) for (const [x, y] of r) {
+    if (!isFinite(x) || !isFinite(y)) return null;
+  }
+  const pc = (typeof window !== "undefined") && window.polygonClipping;
+  if (pc && offset.length) {
+    try {
+      const polys = offset.map(r => [r]);
+      const merged = pc.union(polys[0], ...polys.slice(1));
+      // merged is MultiPolygon: [ [ring, hole...], ... ]; flatten to rings.
+      const flat = [];
+      for (const poly of merged) for (const ring of poly) if (ring && ring.length >= 4) flat.push(ring);
+      if (flat.length) return flat;
+    } catch (e) { /* fall through to raw offset */ }
+  }
+  return offset;
+}
+function _vecRingsToD(rings) {
+  if (!rings || !rings.length) return "";
+  const parts = [];
+  for (const ring of rings) {
+    if (!ring || ring.length < 2) continue;
+    parts.push("M " + ring.map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L ") + " Z");
+  }
+  return parts.join(" ");
+}
+
 function _vecShapeBBox(shape) {
   if (!shape) return null;
   if (shape.type === "rect")     return { x: shape.x, y: shape.y, w: shape.w, h: shape.h };
@@ -55941,6 +56057,11 @@ function WorkflowVectorEditorNode({
   const [draftShape, setDraftShape] = useState(null);
   const [editingTextId, setEditingTextId] = useState(null);
   const [opState, setOpState] = useState({ phase: "idle", message: "" });
+  // Offset-path controls (distance in canvas units, concentric step count,
+  // corner join style). Local to the editor session.
+  const [offsetDist, setOffsetDist]   = useState("8");
+  const [offsetSteps, setOffsetSteps] = useState("1");
+  const [offsetJoin, setOffsetJoin]   = useState("miter");
   // Per-shape node-edit mode. nodeEditId carries the id of the path
   // currently in anchor-edit mode; selectedAnchor is "<subpathIdx>:<anchorIdx>"
   // and drives which anchor's Bézier handles are shown.
@@ -56346,6 +56467,56 @@ function WorkflowVectorEditorNode({
       commitShapes([...shapes.filter(s => !selIds.has(s.id)), newShape], { selection: [newShape.id] });
       setOpState({ phase: "done", message: `${op} ✓` });
       setTimeout(() => setOpState({ phase: "idle", message: "" }), 1000);
+    } catch (err) {
+      setOpState({ phase: "error", message: String(err && err.message || err) });
+    }
+  };
+
+  // ── Offset path (inflate / deflate outline, optional concentric repeats) ──
+  // Takes each selected shape, samples its outline, and emits offset copies as
+  // new editable path shapes. `offsetSteps` makes concentric rings (the
+  // "Expansive" look); each successive ring is offset by step*distance. Works
+  // with positive (inflate) and negative (inset) distance. Recolorable - the
+  // new paths inherit the source paint, which the user can then re-style.
+  const runOffsetPath = () => {
+    if (selectedShapes.length < 1) {
+      setOpState({ phase: "error", message: "Select a shape to offset." });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1500);
+      return;
+    }
+    const dist  = parseFloat(offsetDist);
+    const steps = Math.max(1, Math.min(24, Math.round(parseFloat(offsetSteps) || 1)));
+    const join  = offsetJoin === "round" ? "round" : "miter";
+    if (!isFinite(dist) || dist === 0) {
+      setOpState({ phase: "error", message: "Enter a non-zero distance." });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1500);
+      return;
+    }
+    try {
+      const created = [];
+      for (const base of selectedShapes) {
+        for (let k = 1; k <= steps; k++) {
+          const rings = _vecOffsetShapeRings(base, dist * k, join);
+          if (!rings) continue;
+          const d = _vecRingsToD(rings);
+          if (!d) continue;
+          const sh = _makeShape("path", { d, closed: true });
+          sh.name = steps > 1 ? `Offset ${k}/${steps}` : `Offset (${dist})`;
+          sh.fill = base.fill;
+          sh.stroke = base.stroke;
+          sh.strokeWidth = base.strokeWidth;
+          sh.opacity = base.opacity;
+          created.push(sh);
+        }
+      }
+      if (!created.length) {
+        setOpState({ phase: "error", message: "Offset produced nothing - try a smaller distance." });
+        setTimeout(() => setOpState({ phase: "idle", message: "" }), 1800);
+        return;
+      }
+      commitShapes([...shapes, ...created], { selection: created.map(s => s.id) });
+      setOpState({ phase: "done", message: `offset ${created.length} path${created.length === 1 ? "" : "s"} ✓` });
+      setTimeout(() => setOpState({ phase: "idle", message: "" }), 1200);
     } catch (err) {
       setOpState({ phase: "error", message: String(err && err.message || err) });
     }
@@ -57127,6 +57298,42 @@ function WorkflowVectorEditorNode({
               <button className="workflow-vector-bool" title="Intersect - overlap only" onClick=${(e) => { e.stopPropagation(); runBooleanOp("intersection"); }}>∩</button>
               <button className="workflow-vector-bool" title="XOR - non-overlapping parts" onClick=${(e) => { e.stopPropagation(); runBooleanOp("xor"); }}>⊕</button>
             </div>
+          </div>
+          `}
+          ${selection.length >= 1 && html`
+          <div className="workflow-vector-section">
+            <div className="workflow-vector-section-head">Offset path</div>
+            <div className="workflow-vector-pos-grid">
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>Distance</span>
+                <input type="number" step="1" value=${offsetDist}
+                  title="Outward distance in canvas units. Negative insets."
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onInput=${(e) => setOffsetDist(e.target.value)}/>
+              </label>
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>Steps</span>
+                <input type="number" step="1" min="1" max="24" value=${offsetSteps}
+                  title="Concentric copies. >1 makes the expansive offset look."
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onInput=${(e) => setOffsetSteps(e.target.value)}/>
+              </label>
+            </div>
+            <div className="workflow-vector-pos-grid">
+              <label className="workflow-vector-field workflow-vector-field-stacked">
+                <span>Join</span>
+                <select value=${offsetJoin}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onChange=${(e) => setOffsetJoin(e.target.value)}>
+                  <option value="miter">Miter</option>
+                  <option value="round">Round</option>
+                </select>
+              </label>
+            </div>
+            <button className="workflow-vector-outline-btn"
+              title="Offset the selected outline(s) by the distance as new editable paths. Steps make concentric rings."
+              onClick=${(e) => { e.stopPropagation(); runOffsetPath(); }}
+            >Offset path → new path(s)</button>
           </div>
           `}
           ${(singleSel || opState.phase !== "idle") && html`
@@ -59699,6 +59906,22 @@ function _shapePointBindings(shapeNodeId, allNodes, allEdges) {
   }
   return Object.keys(points).length ? points : null;
 }
+// Shape render node color path: collect the fill / stroke color bindings. Each
+// edge `<logicNode>.<colorPort> -> shape.fill|stroke` becomes
+// spec._colorPoints[fill|stroke] = { kind:"logic", ref:{ node, port } }; the
+// runtime resolves the full {r,g,b,a} via LogicBridge.color and overrides the
+// drawn fill / stroke (the text controls are the fallback when unwired). This is
+// the working color->control binding path (palette colors driving a shape).
+function _shapeColorBindings(shapeNodeId, allNodes, allEdges) {
+  const colors = {};
+  for (const e of (allEdges || [])) {
+    const to = workflowParseEdgeRef(e.to || ""); if (!to || to.node !== shapeNodeId) continue;
+    if (to.port !== "fill" && to.port !== "stroke") continue;
+    const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+    colors[to.port] = { kind: "logic", ref: { node: from.node, port: from.port } };
+  }
+  return Object.keys(colors).length ? colors : null;
+}
 // Resolve the spec a wired LAYER input carries on its way to the composer. For
 // a `shape` layer, attach its p0..p7 logic point bindings (and tag the layer so
 // the runtime knows it is a polyshape); for everything else, pass the spec
@@ -59707,8 +59930,10 @@ function _wiredLayerSpec(i, allNodes, allEdges) {
   const spec = i.spec || {};
   if (i.kind === "shape") {
     const pts = _shapePointBindings(i.fromId, allNodes, allEdges);
+    const cols = _shapeColorBindings(i.fromId, allNodes, allEdges);
     const out = { ...spec, _shape: true };
     if (pts) out._points = pts;
+    if (cols) out._colorPoints = cols;
     return out;
   }
   // Camera / video Source nodes wired as a layer: tag the spec so the composer
@@ -59810,10 +60035,51 @@ function _logicProjection(allNodes, allEdges) {
       projNode(fromNode);
       continue;
     }
+    // wire from a logic OUTPUT (a color port) into a `shape` node's fill / stroke
+    // color accept. Like p0..p7, the shape is a renderable sink, but the SOURCE
+    // logic node (e.g. palette) must be projected so its color port computes each
+    // frame for the runtime to resolve spec._colorPoints via LogicBridge.color.
+    if (_isLogicKind(fromNode.kind) && toNode.kind === "shape" && (to.port === "fill" || to.port === "stroke")) {
+      projNode(fromNode);
+      continue;
+    }
+  }
+  // Always project palette + audio-out nodes even when nothing is wired into / out
+  // of them: palette must extract its image (runtime side-effect) and audio-out is
+  // a SINK that plays its control defaults. For palette, resolve the wired image
+  // url at projection time (like _numberPixmapUrl) so the runtime knows what to
+  // decode without re-walking the graph.
+  for (const n of nodes) {
+    if (!n) continue;
+    if (n.kind === "palette") {
+      projNode(n);
+      const url = _paletteImageUrl(n, nodes, edges);
+      if (url && include[n.id]) {
+        include[n.id] = { ...include[n.id],
+          params: { ...(include[n.id].params || {}), _imageUrl: url } };
+      }
+    } else if (n.kind === "audio-out") {
+      projNode(n);
+    }
   }
   const nodeList = Object.keys(include).map(id => include[id]);
   if (!nodeList.length && !outputs.length) return null;
   return { nodes: nodeList, edges: projEdges, outputs, readbacks };
+}
+// Resolve the image asset URL wired into a palette node's `image` accept port
+// (mirrors _numberPixmapUrl for number-generator's pixel-map). The runtime
+// downsamples this image + median-cuts it to the node's `count` dominant colors.
+function _paletteImageUrl(paletteNode, allNodes, allEdges) {
+  for (const e of (allEdges || [])) {
+    const to = workflowParseEdgeRef(e.to || ""); if (!to || to.node !== paletteNode.id || to.port !== "image") continue;
+    const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+    const img = (allNodes || []).find(n => n.id === from.node);
+    if (img && img.kind === "asset") { const u = _composerAssetUrl(img); if (u) return u; }
+    // custom-app / section that resolves to an asset: reuse _composerAssetUrl's
+    // delegation chain by trying it directly on the source node.
+    if (img) { try { const u = _composerAssetUrl(img); if (u) return u; } catch (_e) {} }
+  }
+  return null;
 }
 
 // Editor-side LIVE preview of a wired value source (number-generator / timeline).
@@ -60517,7 +60783,7 @@ const SPEC_NODE_DEFS = {
         "chromatic-aberration","directional-blur","displacement","slice",
         "pixelate","dither","posterize","pixel-sort",
         "ascii","crt","halftone","ink","edge-detect",
-        "particle-grid","pattern","custom"] },
+        "particle-grid","pattern","fluid","face-morph","custom"] },
       { key: "intensity", label: "Intensity", type: "range", min: 0, max: 1, step: 0.01 },
       { key: "params", label: "Params", type: "object" },
       { key: "glsl", label: "Custom GLSL (type=custom)", type: "textarea" },
@@ -60528,7 +60794,7 @@ const SPEC_NODE_DEFS = {
     source: (b, id) => `source/${b}/position-${id}.js`,
     fields: [
       { key: "mode", label: "Mode", type: "select", options: [
-        "single","grid","instances","physics","boids","drawn","text-ink","rope","camera-feed","grid-3d","scatter-3d","surface"] },
+        "single","grid","instances","physics","shatter","boids","drawn","text-ink","text-outline","rope","rope-ink","camera-feed","grid-3d","scatter-3d","surface"] },
       { key: "params", label: "Params", type: "object" },
     ],
   },
@@ -60951,6 +61217,41 @@ const LOGIC_NODE_DEFS = {
       stream: { label: "stream", dtype: "string" },
     },
   },
+  // ── Palette extraction (image -> N dominant colors) ───────────────────
+  // Takes a wired IMAGE asset and emits its N dominant colors. Extraction
+  // (downsample + median-cut) runs in the mmcomposer / slimPlayer runtime
+  // (canvas/image decode, like number-generator pixel-map), cached by
+  // image-url + count; the colors reach the engine via frame.palettes[nodeId]
+  // (exactly how vision-detect results reach it via frame.streams). color0..7
+  // are dtype `color`; domR/domG/domB expose the dominant color's channels as
+  // NUMBERS so it can also drive numeric params. See LOGICGRAPH_DESIGN.md §2.2.
+  "palette": {
+    glyph: "◧", label: "Palette", section: "Processors", w: 240, h: 440,
+    desc: "Extract N dominant colors from a wired image",
+    controls: {
+      count:   { type: "number", value: 5, min: 2, max: 8, step: 1 },
+      quality: { type: "number", value: 4, min: 1, max: 16, step: 1 },
+    },
+    provides: {
+      color0:   { label: "color0", dtype: "color" },
+      color1:   { label: "color1", dtype: "color" },
+      color2:   { label: "color2", dtype: "color" },
+      color3:   { label: "color3", dtype: "color" },
+      color4:   { label: "color4", dtype: "color" },
+      color5:   { label: "color5", dtype: "color" },
+      color6:   { label: "color6", dtype: "color" },
+      color7:   { label: "color7", dtype: "color" },
+      dominant: { label: "dominant", dtype: "color" },
+      domR:     { label: "dom R", dtype: "number" },
+      domG:     { label: "dom G", dtype: "number" },
+      domB:     { label: "dom B", dtype: "number" },
+      ready:    { label: "ready", dtype: "boolean" },
+      count:    { label: "count", dtype: "number" },
+    },
+    accepts: {
+      image: { label: "Image asset", dtype: "string", tags: ["asset", "image"] },
+    },
+  },
   // ── 2.3 Literals (number is number-generator - not re-added here) ──────
   "value-bool": {
     glyph: "⊤", label: "Boolean", section: "Literals", w: 200, h: 200,
@@ -61195,6 +61496,12 @@ const LOGIC_NODE_DEFS = {
       p5: { label: "p5", dtype: "vector2" },
       p6: { label: "p6", dtype: "vector2" },
       p7: { label: "p7", dtype: "vector2" },
+      // COLOR accept ports: wire a palette `colorN` / `dominant` (dtype color)
+      // here to drive the shape's fill / stroke at runtime, overriding the text
+      // controls. Resolved per-frame via LogicBridge.color (see _shapeColorBindings
+      // + drawPolyShape). This is the working color->control path (PART A).
+      fill:   { label: "fill (color)", dtype: "color" },
+      stroke: { label: "stroke (color)", dtype: "color" },
     },
   },
   // The `type-motion` node draws PER-GLYPH animated text into a layer buffer.
@@ -61203,10 +61510,11 @@ const LOGIC_NODE_DEFS = {
   // pipeline exactly like every other layer. Its glyph loop is driven by
   // Input.clock + the per-glyph behavior library (see the composer drawContent
   // 'typemotion' branch). It is a SINK, not a graph node the engine evaluates,
-  // so it is EXCLUDED from _isLogicKind (mirrors `shape`). v1 uses canvas
-  // measureText advances + per-glyph transforms (no opentype); a phase-2 bridge
-  // (glyph outline -> vector2 points feeding rope / particle / shape) is NOT
-  // YET built - see editor/tools/_shared/LOGICGRAPH_DESIGN.md.
+  // so it is EXCLUDED from _isLogicKind (mirrors `shape`). Uses canvas
+  // measureText advances + per-glyph transforms (no opentype); supports
+  // text-on-path glyph BASE placement (path controls, §12.6). The glyph-outline
+  // -> ordered points bridge SHIPS as the `text-outline` POSITION mode (§11.6).
+  // See editor/tools/_shared/LOGICGRAPH_DESIGN.md.
   "type-motion": {
     glyph: "⒜", label: "Kinetic Type", section: "Render", w: 240, h: 560,
     desc: "Per-glyph animated text (kinetic typography)",
@@ -61227,6 +61535,15 @@ const LOGIC_NODE_DEFS = {
       speed:     { type: "number", value: 1, min: 0, max: 20, step: 0.05 },
       amplitude: { type: "number", value: 1, min: 0, max: 10, step: 0.01 },
       stagger:   { type: "number", value: 0.08, min: 0, max: 2, step: 0.01 },
+      // TEXT ON PATH: lay each glyph's BASE position along a curve (advance by
+      // glyph width along arc-length). The per-glyph BEHAVIOR animation still
+      // applies ON TOP. path=straight = current straight layout (no regression).
+      // path=circle/ring + behavior=rotate-cycle gives the "Spoke & Word Type"
+      // text-wraps-around-a-wheel look. See LOGICGRAPH_DESIGN.md §12.6.
+      path:        { type: "select", value: "straight", options: ["straight", "arc", "circle", "wave", "ring"] },
+      pathRadius:  { type: "number", value: 0.3, min: 0.02, max: 2, step: 0.01 },
+      pathAmplitude: { type: "number", value: 30, min: 0, max: 400, step: 1 },
+      pathRotate:  { type: "boolean", value: true },
       loop:      { type: "boolean", value: true },
       opacity:   { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
       blend:     { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
@@ -61240,10 +61557,38 @@ const LOGIC_NODE_DEFS = {
     },
     accepts: {},
   },
+  // ── 2.9 Output (audio synth SINK) ─────────────────────────────────────
+  // audio-out is the missing "audio output / image->sound" category: wire
+  // number-generator / timeline / vision / palette outputs into its frequency /
+  // gain / cutoff / trigger and the piece makes sound that reacts to visuals.
+  // It is a true logic node (the engine evaluates it as a SINK that republishes
+  // resolved params), and the mmcomposer LogicBridge feeds those resolved values
+  // into LogicAudio.set() each frame while Live. The WebAudio graph
+  // (oscillator -> gain -> lowpass -> destination) and the gesture-gated
+  // AudioContext live in editor/tools/_shared/logicaudio.js. Baked slimPlayer
+  // parity: the published piece can also produce audio (gesture-gated). See
+  // LOGICGRAPH_DESIGN.md §2.9.
+  "audio-out": {
+    glyph: "◢", label: "Audio out", section: "Output", w: 240, h: 360,
+    desc: "WebAudio synth: oscillator -> gain -> lowpass -> out",
+    controls: {
+      waveform:  { type: "select", value: "sine", options: ["sine", "square", "saw", "triangle"] },
+      frequency: { type: "number", value: 220, min: 20, max: 20000, step: 1 },
+      gain:      { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+      cutoff:    { type: "number", value: 8000, min: 20, max: 20000, step: 1 },
+    },
+    provides: {},
+    accepts: {
+      frequency: { label: "frequency", dtype: "number" },
+      gain:      { label: "gain", dtype: "number" },
+      cutoff:    { label: "cutoff", dtype: "number" },
+      trigger:   { label: "trigger", dtype: "event" },
+    },
+  },
 };
 
 // Stable palette ordering for the Logic section.
-const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Render"];
+const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Render", "Output"];
 const LOGIC_NODE_KINDS = Object.keys(LOGIC_NODE_DEFS);
 
 // Author a logic node's JS module string in the SAME controls / buildSpec
@@ -61354,6 +61699,38 @@ const SPEC_SOURCE_TEMPLATES = {
       scale: { type: "number", value: 12, min: 1, max: 64, step: 1 },
       mix: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 }
     }, ["scale: values.scale", "mix: values.mix"]),
+    // fluid: approximate real-time fluid (Stam stable-fluids, coarse grid). Runs
+    // as a per-layer CPU sim in the composer (NOT a GL shader): the layer's pixels
+    // are the dye, the pointer injects velocity + dye. viscosity/force/fade/radius
+    // shape the flow; grid sizes the coarse solver (16-120 on the long axis).
+    _effectTemplate("fluid", "Fluid (real-time)", "fluid", {
+      viscosity: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+      force:     { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
+      fade:      { type: "number", value: 0.04, min: 0, max: 0.5, step: 0.005 },
+      radius:    { type: "number", value: 0.12, min: 0.02, max: 0.5, step: 0.01 },
+      grid:      { type: "number", value: 72, min: 16, max: 120, step: 1 }
+    }, ["viscosity: values.viscosity", "force: values.force", "fade: values.fade", "radius: values.radius", "grid: values.grid"]),
+    // face-morph: parametric facial-landmark mesh warp (Parametric Portrait Morph).
+    // A per-layer CPU effect in the composer (NOT a GL shader): FaceLandmarker
+    // (via logicvision; still-image cache OR throttled camera/video detect) ->
+    // deterministic Delaunay triangulation -> parametric deform of landmark groups
+    // -> per-triangle affine texture-map warp. Fails soft to no warp if no face.
+    // amount scales all moves; smile/browRaise/eyeWiden/jawDrop/cheekPuff/headTilt
+    // drive groups; track (on, camera/video) exaggerates the live expression;
+    // source picks auto/image/camera.
+    _effectTemplate("face-morph", "Face morph", "face-morph", {
+      amount:    { type: "number", value: 1, min: 0, max: 2, step: 0.01 },
+      smile:     { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      browRaise: { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      eyeWiden:  { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      jawDrop:   { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      cheekPuff: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      headTilt:  { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      track:     { type: "boolean", value: false },
+      source:    { type: "select", value: "auto", options: ["auto", "image", "camera"] }
+    }, ["amount: values.amount", "smile: values.smile", "browRaise: values.browRaise",
+        "eyeWiden: values.eyeWiden", "jawDrop: values.jawDrop", "cheekPuff: values.cheekPuff",
+        "headTilt: values.headTilt", "track: values.track", "source: values.source"]),
     {
       id: "custom-shader",
       label: "Custom shader effect",
@@ -61483,6 +61860,29 @@ export function buildSpec(values) {
 
   return body;
 }`),
+    // shatter: voronoi-fracture the layer bounds into N rigid shards (matter.js).
+    // At rest the shards tile the image; on a trigger (click / auto-burst) they fly
+    // apart from the burst point under gravity, tumbling (spin). slowmo scales time.
+    // Deterministic voronoi sites (mulberry / file hash) - cached + rebuilt on
+    // count / bounds change by the composer runtime.
+    _positionTemplate("shatter", "Shatter", "shatter", {
+      count:   { type: "number", value: 24, min: 2, max: 160, step: 1 },
+      gravity: { type: "number", value: 1.4, min: -3, max: 3, step: 0.05 },
+      burst:   { type: "number", value: 0.04, min: 0, max: 0.2, step: 0.005 },
+      spin:    { type: "number", value: 0.4, min: 0, max: 3, step: 0.05 },
+      slowmo:  { type: "number", value: 1, min: 0.05, max: 2, step: 0.05 },
+      period:  { type: "number", value: 3, min: 0.5, max: 12, step: 0.5 },
+      trigger: { type: "text", value: "click" }
+    }, ["count: values.count", "gravity: [0, values.gravity]", "burst: values.burst", "spin: values.spin", "slowmo: values.slowmo", "period: values.period", "trigger: values.trigger"], `export function fracture(count, W, H, rng) {
+  // Scatter \`count\` voronoi sites deterministically (rng = seeded mulberry, NO
+  // Math.random), then clip the W x H rect against each pair's perpendicular
+  // bisector to build the convex cells. The cells tile the rect exactly, so the
+  // shards re-assemble the image at rest. The composer runtime turns each cell
+  // into a matter.js rigid body and clips the layer content to the cell.
+  const sites = [];
+  for (let i = 0; i < count; i++) sites.push([(0.06 + rng() * 0.88) * W, (0.06 + rng() * 0.88) * H]);
+  return sites;
+}`),
     _positionTemplate("boids", "Boids flock", "boids", {
       count:      { type: "number", value: 60, min: 1, max: 600, step: 1 },
       separation: { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
@@ -61570,6 +61970,107 @@ export function pointAt(progress, values) {
   for (let i = ink.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = ink[i]; ink[i] = ink[j]; ink[j] = t; }
   return ink.slice(0, Math.min(density, ink.length));
 }`),
+    _positionTemplate("text-outline", "Text outline", "text-outline", {
+      text:     { type: "text", value: "INK" },
+      font:     { type: "text", value: "sans-serif" },
+      weight:   { type: "number", value: 700, min: 100, max: 900, step: 100 },
+      density:  { type: "number", value: 120, min: 3, max: 800, step: 1 },
+      simplify: { type: "number", value: 0.6, min: 0, max: 4, step: 0.1 },
+      size:     { type: "number", value: 0.02, min: 0.005, max: 0.2, step: 0.005 }
+    }, ["text: values.text", "font: values.font", "weight: values.weight", "density: values.density", "simplify: values.simplify", "size: values.size"], `export function traceTextOutline(text, font, weight, density, W, H, size, epsilon) {
+  // Draw the text large + centered on an OFFSCREEN alpha canvas (same approach as
+  // sampleTextInk), threshold to a binary grid, then BORDER-FOLLOW / marching-
+  // squares trace the glyph boundary into ORDERED point loops (NOT an unordered
+  // cloud like text-ink). Each contour is RDP-simplified (epsilon), resampled to
+  // \`density\` even points by arc-length, normalized 0..1, with rot = local
+  // tangent. Pure + deterministic (NO Math.random, NO getBoundingClientRect).
+  // The composer runtime CACHES this keyed by text/font/weight/density/simplify/
+  // size/WxH so it does NOT re-trace every frame. Returns a FLAT ordered array
+  // [{x,y,scale,rot}] (all contours concatenated) so a layer renders content
+  // ALONG the glyph outlines and the ordered points can later feed shape/stroke.
+  if (!text) return [];
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, W | 0); cv.height = Math.max(1, H | 0);
+  const cx = cv.getContext("2d", { willReadFrequently: true });
+  if (!cx) return [];
+  cx.textBaseline = "middle"; cx.textAlign = "center";
+  let fs = Math.max(8, Math.floor(cv.height * 0.6));
+  cx.font = weight + " " + fs + "px " + font;
+  const maxW = cv.width * 0.92, m = cx.measureText(text).width;
+  if (m > maxW) { fs = Math.max(6, Math.floor(fs * maxW / m)); cx.font = weight + " " + fs + "px " + font; }
+  cx.fillStyle = "#fff"; cx.fillText(text, cv.width / 2, cv.height / 2);
+  let img; try { img = cx.getImageData(0, 0, cv.width, cv.height); } catch (e) { return []; }
+  const d = img.data, ww = cv.width, hh = cv.height;
+  const gridMax = 220, stride = Math.max(1, Math.ceil(Math.max(ww, hh) / gridMax));
+  const gw = Math.ceil(ww / stride), gh = Math.ceil(hh / stride), GW = gw + 2;
+  const grid = new Uint8Array((gw + 2) * (gh + 2));
+  const at = (gx, gy) => grid[(gy + 1) * GW + (gx + 1)];
+  for (let gy = 0; gy < gh; gy++) { const py = Math.min(hh - 1, gy * stride);
+    for (let gx = 0; gx < gw; gx++) { const px = Math.min(ww - 1, gx * stride);
+      if (d[(py * ww + px) * 4 + 3] > 90) grid[(gy + 1) * GW + (gx + 1)] = 1; } }
+  const visited = new Uint8Array((gw + 2) * (gh + 2)), loops = [];
+  const NX = [1, 1, 0, -1, -1, -1, 0, 1], NY = [0, 1, 1, 1, 0, -1, -1, -1];
+  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+    if (!at(gx, gy) || at(gx - 1, gy) || visited[(gy + 1) * GW + (gx + 1)]) continue;
+    const loop = []; let cx0 = gx, cy0 = gy, bdir = 4, guard = 0, maxSteps = gw * gh * 4 + 16, sX = cx0, sY = cy0;
+    do {
+      visited[(cy0 + 1) * GW + (cx0 + 1)] = 1; loop.push([cx0, cy0]);
+      let found = -1;
+      for (let k = 0; k < 8; k++) { const dir = (bdir + 1 + k) & 7, nx = cx0 + NX[dir], ny = cy0 + NY[dir];
+        if (at(nx, ny)) { found = dir; cx0 = nx; cy0 = ny; bdir = (dir + 4) & 7; break; } }
+      if (found < 0) break; guard++;
+    } while ((cx0 !== sX || cy0 !== sY) && guard < maxSteps);
+    if (loop.length >= 8) loops.push(loop);
+  }
+  if (!loops.length) return [];
+  const out = [], eps = Math.max(0, epsilon || 0), dens = Math.max(3, Math.min(2000, density | 0));
+  for (const loop of loops) {
+    let pts = loop;
+    if (eps > 0 && pts.length > 4) pts = rdpClosed(pts, eps);
+    const rs = resampleClosed(pts, dens), N = rs.length;
+    for (let i = 0; i < N; i++) {
+      const a = rs[i], nb = rs[(i + 1) % N], pb = rs[(i - 1 + N) % N];
+      const rot = Math.atan2(nb[1] - pb[1], nb[0] - pb[0]);
+      out.push({ x: Math.max(0, Math.min(1, (a[0] * stride) / ww)), y: Math.max(0, Math.min(1, (a[1] * stride) / hh)), scale: size, rot });
+    }
+  }
+  return out;
+}
+
+export function rdp(pts, eps) {
+  if (pts.length < 3) return pts.slice();
+  let dmax = 0, idx = 0; const a = pts[0], b = pts[pts.length - 1];
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1e-6;
+  for (let i = 1; i < pts.length - 1; i++) { const px = pts[i][0] - a[0], py = pts[i][1] - a[1];
+    const dist = Math.abs(px * dy - py * dx) / len; if (dist > dmax) { dmax = dist; idx = i; } }
+  if (dmax > eps) { const l = rdp(pts.slice(0, idx + 1), eps), r = rdp(pts.slice(idx), eps); return l.slice(0, -1).concat(r); }
+  return [a, b];
+}
+
+export function rdpClosed(pts, eps) {
+  if (pts.length < 4) return pts.slice();
+  let bi = 0, best = -1;
+  for (let i = 1; i < pts.length; i++) { const dx = pts[i][0] - pts[0][0], dy = pts[i][1] - pts[0][1], dd = dx * dx + dy * dy; if (dd > best) { best = dd; bi = i; } }
+  const h1 = rdp(pts.slice(0, bi + 1), eps), h2 = rdp(pts.slice(bi).concat([pts[0]]), eps);
+  const merged = h1.concat(h2.slice(1, -1));
+  return merged.length >= 3 ? merged : pts.slice();
+}
+
+export function resampleClosed(pts, count) {
+  const n = pts.length; if (n < 2) return pts.slice();
+  let per = 0; const seg = new Array(n);
+  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; seg[i] = Math.hypot(b[0] - a[0], b[1] - a[1]); per += seg[i]; }
+  if (per <= 0) return [pts[0].slice()];
+  const out = [], stepL = per / count; let i = 0, acc = 0, target = 0;
+  for (let k = 0; k < count; k++) {
+    while (i < n && acc + seg[i] < target) { acc += seg[i]; i++; }
+    if (i >= n) { out.push(pts[n - 1].slice()); target += stepL; continue; }
+    const a = pts[i], b = pts[(i + 1) % n], t = seg[i] > 0 ? (target - acc) / seg[i] : 0;
+    out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    target += stepL;
+  }
+  return out;
+}`),
     _positionTemplate("rope", "Rope", "rope", {
       anchors: { type: "text", value: "0,0 300,0" },
       segments: { type: "number", value: 12, min: 2, max: 128, step: 1 },
@@ -61585,6 +62086,63 @@ export function solveSegment(prev, next, values) {
   const dx = next.x - prev.x;
   const dy = next.y - prev.y;
   return { x: prev.x + dx * values.stiffness, y: prev.y + dy * values.stiffness };
+}`),
+    _positionTemplate("rope-ink", "Rope ink", "rope-ink", {
+      text:      { type: "text", value: "INK" },
+      font:      { type: "text", value: "sans-serif" },
+      weight:    { type: "number", value: 700, min: 100, max: 900, step: 100 },
+      anchors:   { type: "number", value: 40, min: 1, max: 300, step: 1 },
+      segments:  { type: "number", value: 6, min: 1, max: 24, step: 1 },
+      gravity:   { type: "number", value: 1, min: 0, max: 3, step: 0.05 },
+      stiffness: { type: "number", value: 0.8, min: 0.05, max: 1, step: 0.05 },
+      damping:   { type: "number", value: 0.99, min: 0.8, max: 1, step: 0.005 },
+      size:      { type: "number", value: 0.02, min: 0.005, max: 0.2, step: 0.005 }
+    }, ["text: values.text", "font: values.font", "weight: values.weight", "anchors: values.anchors", "segments: values.segments", "gravity: values.gravity", "stiffness: values.stiffness", "damping: values.damping", "size: values.size"], `export function sampleAnchors(text, font, weight, anchors, W, H, rng) {
+  // Sample the glyph ink into a LOW-density anchor cloud (the same offscreen-canvas
+  // ink read as text-ink, just with \`anchors\` as the density). Each returned point
+  // becomes the FIXED top of one verlet rope. The composer runtime CACHES this keyed
+  // by text/font/weight/anchors/WxH so it does NOT re-sample every frame.
+  if (!text) return [];
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, W | 0); cv.height = Math.max(1, H | 0);
+  const cx = cv.getContext("2d", { willReadFrequently: true });
+  if (!cx) return [];
+  cx.textBaseline = "middle"; cx.textAlign = "center";
+  let fs = Math.max(8, Math.floor(cv.height * 0.6));
+  cx.font = weight + " " + fs + "px " + font;
+  const maxW = cv.width * 0.92, m = cx.measureText(text).width;
+  if (m > maxW) { fs = Math.max(6, Math.floor(fs * maxW / m)); cx.font = weight + " " + fs + "px " + font; }
+  cx.fillStyle = "#fff"; cx.fillText(text, cv.width / 2, cv.height / 2);
+  let img; try { img = cx.getImageData(0, 0, cv.width, cv.height); } catch (e) { return []; }
+  const d = img.data, ww = cv.width, hh = cv.height, ink = [];
+  const stride = Math.max(1, Math.round(Math.sqrt((ww * hh) / (anchors * 24))));
+  for (let y = 0; y < hh; y += stride) for (let x = 0; x < ww; x += stride) {
+    if (d[(y * ww + x) * 4 + 3] > 40) ink.push([x / ww, y / hh]);
+  }
+  for (let i = ink.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = ink[i]; ink[i] = ink[j]; ink[j] = t; }
+  return ink.slice(0, Math.min(anchors, ink.length));
+}
+
+export function stepRope(rope, anchor, values) {
+  // One verlet pass for a single rope hanging from \`anchor\` (the ink point). Each
+  // node integrates (x += (x-px)*damping, y += (y-py)*damping + gravity), then the
+  // segment-length constraints relax toward rest with node 0 PINNED to the anchor.
+  const pts = rope.pts, n = pts.length, rest = rope.rest;
+  for (const q of pts) {
+    const vx = (q.x - q.px) * values.damping, vy = (q.y - q.py) * values.damping;
+    q.px = q.x; q.py = q.y;
+    q.x += vx; q.y += vy + 0.0006 * values.gravity;
+  }
+  pts[0].x = anchor[0]; pts[0].y = anchor[1];
+  const k = Math.max(0.05, Math.min(1, values.stiffness));
+  for (let it = 0; it < 6; it++) for (let i = 0; i < n - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    let dx = b.x - a.x, dy = b.y - a.y, dd = Math.hypot(dx, dy) || 1e-6;
+    const diff = (dd - rest) / dd * 0.5 * k; dx *= diff; dy *= diff;
+    if (i !== 0) { a.x += dx; a.y += dy; }
+    b.x -= dx; b.y -= dy;
+  }
+  return pts;
 }`),
     _positionTemplate("camera-feed", "Camera feed", "camera-feed", {
       detector: { type: "select", value: "hand", options: ["hand", "face", "object", "ocr"] },
@@ -62552,7 +63110,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
     const params = (compiled.spec && compiled.spec.params) || {};
     let cols = 0, rows = 0, count = 0, oneD = false;
     if (ovMode === "grid" || ovMode === "grid-3d") { cols = Math.max(1, params.cols | 0); rows = Math.max(1, params.rows | 0); count = cols * rows; }
-    else if (ovMode === "instances" || ovMode === "scatter-3d" || ovMode === "boids") { count = Math.max(0, params.count | 0); oneD = true; }
+    else if (ovMode === "instances" || ovMode === "scatter-3d" || ovMode === "boids" || ovMode === "shatter") { count = Math.max(0, params.count | 0); oneD = true; }
     else return null;
     if (count <= 0) return null;
     const overrides = node.overrides || {};

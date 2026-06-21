@@ -166,6 +166,7 @@
   <button class="tool" data-add="icosahedron" title="Icosahedron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2l9 6.5-3.5 10.5h-11L3 8.5z"/><path d="M12 2v17M3 8.5l9 4 9-4M6.5 19L12 12l5.5 7"/></svg></button>
   <button class="tool" data-add="pyramid" title="Pyramid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3L3 19h18z"/><path d="M12 3v16M3 19l9-5 9 5"/></svg></button>
   <button class="tool" data-add="helix" title="Helix"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3c8 1 8 4 0 5s-8 4 0 5 8 4 0 5"/></svg></button>
+  <button class="tool" data-add="text3d" title="3D Text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7V5h16v2M9 19h6M12 5v14"/></svg></button>
   <div class="sep"></div>
   <button class="tool" data-add="cloth" title="Cloth (fabric sim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h16v3c-2 2-2 4-4 4s-2-2-4-2-2 2-4 2-2-2-4-4z"/><path d="M4 7v13M20 7v13M4 20c2-3 4 0 4-2s2 1 4 0 2-2 4 0 2-1 4 2"/></svg></button>
   <button class="tool" data-add="liquid" title="Liquid (metaball sim)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3c3 5 6 7 6 11a6 6 0 0 1-12 0c0-4 3-6 6-11z"/></svg></button>
@@ -314,6 +315,28 @@
     </details>
 
     <details class="wv-acc">
+      <summary>3D Text <span class="tag" id="txt-tag"></span></summary>
+      <div class="wv-acc-body">
+      <div class="field"><label>Text</label><input type="text" id="txt-text" value="Hello" placeholder="Type text…" style="flex:1;min-width:0"/></div>
+      <div class="field"><label>Font</label>
+        <select id="txt-font">
+          <option value="helvetiker">Helvetiker</option>
+          <option value="helvetiker_bold">Helvetiker Bold</option>
+          <option value="optimer">Optimer</option>
+          <option value="gentilis">Gentilis</option>
+          <option value="droid_sans">Droid Sans</option>
+          <option value="droid_serif">Droid Serif</option>
+        </select>
+      </div>
+      <div class="field"><label>Size</label><input type="range" id="txt-size" min="0.3" max="3" step="0.05" value="1"/><span class="val" id="txt-size-v">1.0</span></div>
+      <div class="field"><label>Depth</label><input type="range" id="txt-depth" min="0.05" max="2" step="0.05" value="0.4"/><span class="val" id="txt-depth-v">.40</span></div>
+      <div class="field"><label>Bevel</label><input type="range" id="txt-bevel" min="0" max="0.3" step="0.01" value="0.04"/><span class="val" id="txt-bevel-v">.04</span></div>
+      <div class="row"><button class="btn ghost full" id="txt-add">Add 3D Text</button></div>
+      <div class="empty" style="padding:6px 4px;font-size:11px">Real extruded + beveled text. Uses the selected Material (glass / metal / etc.), orbits, lights and bakes into the .glb on Export. Edit the fields then re-add, or tweak a selected text object live.</div>
+      </div>
+    </details>
+
+    <details class="wv-acc">
       <summary>Simulation</summary>
       <div class="wv-acc-body">
       <div class="field"><label>Physics (gravity)</label><button class="btn" id="sim-toggle" style="flex:0 0 64px">Off</button></div>
@@ -370,6 +393,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshBVH } from 'three-mesh-bvh';
@@ -689,6 +714,95 @@ function reExtrude(brush, depth, bevel) {
   brush.geometry.dispose();
   brush.geometry = extrudeGeometry(brush.userData.svgShapes, depth, bevel);
   brush.userData.extrude = { depth, bevel };
+}
+
+// ── 3D Text (extruded + beveled, real geometry) ────────────────────────────
+// Real beveled glyph geometry via three.js TextGeometry, so it reuses the
+// tool's MeshPhysicalMaterial pipeline (glass / metal / clearcoat), orbits and
+// lights like every other object, and bakes into the .glb on Export exactly
+// like the extruded-SVG path. Fonts are typeface.json loaded from a CDN, cached
+// per name, and fail SOFT - a missing CDN flashes a notice and adds nothing
+// (never throws). troika-three-text was the SDF alternative but its custom
+// shader is flat (no extrude/bevel) and does not honour the glass/metal
+// material modes, so TextGeometry is the clean fit here.
+const FONT_BASE = 'https://esm.sh/three@0.163.0/examples/fonts/';
+const FONT_URLS = {
+  helvetiker:      FONT_BASE + 'helvetiker_regular.typeface.json',
+  helvetiker_bold: FONT_BASE + 'helvetiker_bold.typeface.json',
+  optimer:         FONT_BASE + 'optimer_regular.typeface.json',
+  gentilis:        FONT_BASE + 'gentilis_regular.typeface.json',
+  droid_sans:      FONT_BASE + 'droid/droid_sans_regular.typeface.json',
+  droid_serif:     FONT_BASE + 'droid/droid_serif_regular.typeface.json',
+};
+const fontLoader = new FontLoader();
+const fontCache = new Map();          // name → THREE.Font
+function loadFont(name) {
+  if (fontCache.has(name)) return Promise.resolve(fontCache.get(name));
+  const url = FONT_URLS[name] || FONT_URLS.helvetiker;
+  return new Promise((resolve, reject) => {
+    fontLoader.load(url, font => { fontCache.set(name, font); resolve(font); }, undefined, reject);
+  });
+}
+// Build centred, upright, normalised beveled glyph geometry for `text`.
+function textGeometry(font, text, size, depth, bevel) {
+  const geo = new TextGeometry(text || ' ', {
+    font, size, height: depth, curveSegments: 8,
+    bevelEnabled: bevel > 0.0001, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 3,
+  });
+  geo.computeBoundingBox();
+  const c = new THREE.Vector3(); geo.boundingBox.getCenter(c);
+  geo.translate(-c.x, -c.y, -c.z);     // centre on origin so it orbits cleanly
+  geo.computeVertexNormals();
+  return geo;
+}
+function buildTextMesh(brush, spec) {
+  return loadFont(spec.font).then(font => {
+    const next = textGeometry(font, spec.text, spec.size, spec.depth, spec.bevel);
+    brush.geometry.dispose();
+    brush.geometry = next;
+    brush.userData.text3d = { text: spec.text, font: spec.font, size: spec.size, depth: spec.depth, bevel: spec.bevel };
+  });
+}
+// Create the (placeholder) brush for a text object and register it in the
+// scene. Shared by addText3D (interactive) and restoreScene (no DOM access).
+// Geometry is filled in asynchronously by buildTextMesh once the font resolves.
+function makeTextBrush(spec) {
+  const hex = new THREE.Color().setHSL(nextHue % 1, 0.6, 0.6); nextHue += 0.17;
+  // Start with a tiny placeholder so the object exists even before the font
+  // resolves (fail-soft); buildTextMesh swaps in the real glyphs when ready.
+  const brush = new Brush(new THREE.BoxGeometry(0.01, 0.01, 0.01), physicalMat('#ffffff'));
+  brush.material.color.copy(hex);
+  brush.castShadow = brush.receiveShadow = true; brush.position.set(0, 0.6, 0);
+  brush.name = 'text-' + (objects.length + 1);
+  brush.userData.mode = 'solid'; brush.userData.vel = new THREE.Vector3();
+  brush.userData.text3d = { ...spec };
+  scene.add(brush); objects.push(brush);
+  return brush;
+}
+function addText3D() {
+  const spec = {
+    text:  ($('#txt-text').value || 'Text'),
+    font:  $('#txt-font').value || 'helvetiker',
+    size:  parseFloat($('#txt-size').value),
+    depth: parseFloat($('#txt-depth').value),
+    bevel: parseFloat($('#txt-bevel').value),
+  };
+  const brush = makeTextBrush(spec);
+  select([brush]);
+  buildTextMesh(brush, spec).then(() => {
+    flash('3D Text · "' + spec.text + '" · ' + spec.font); refresh(); saveSoon();
+  }).catch(err => {
+    flash('Font unavailable - 3D Text skipped'); console.error(err);
+    // Fail soft: remove the empty placeholder rather than leave a speck.
+    scene.remove(brush); const i = objects.indexOf(brush); if (i >= 0) objects.splice(i, 1);
+    select([]); refresh();
+  });
+}
+// Live re-build the selected text object when a field changes.
+function reText(brush, patch) {
+  if (!brush || !brush.userData.text3d) return;
+  const spec = { ...brush.userData.text3d, ...patch };
+  buildTextMesh(brush, spec).then(() => { refresh(); saveSoon(); }).catch(err => { flash('Font unavailable'); console.error(err); });
 }
 
 // ── Selection ─────────────────────────────────────────────────────────────
@@ -1123,7 +1237,7 @@ function addLiquid() {
 const toolbar = $('#toolbar');
 toolbar.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
   const k = b.dataset.add;
-  if (k === 'cloth') addCloth(); else if (k === 'liquid') addLiquid(); else addShape(k);
+  if (k === 'cloth') addCloth(); else if (k === 'liquid') addLiquid(); else if (k === 'text3d') addText3D(); else addShape(k);
 }));
 toolbar.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
 function setTool(t) { toolbar.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t)); gizmo.setMode(t === 'rotate' ? 'rotate' : t === 'scale' ? 'scale' : 'translate'); }
@@ -1431,6 +1545,23 @@ $('#ex-bevel').addEventListener('input', e => {
   const s = selection[0]; if (s && s.userData.svgShapes) reExtrude(s, parseFloat($('#ex-depth').value), v);
 });
 
+// 3D Text wiring
+$('#txt-add').addEventListener('click', addText3D);
+$('#txt-text').addEventListener('input', e => { const s = selection[0]; if (s && s.userData.text3d) reText(s, { text: e.target.value || ' ' }); });
+$('#txt-font').addEventListener('change', e => { const s = selection[0]; if (s && s.userData.text3d) reText(s, { font: e.target.value }); });
+$('#txt-size').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#txt-size-v').textContent = v.toFixed(1);
+  const s = selection[0]; if (s && s.userData.text3d) reText(s, { size: v });
+});
+$('#txt-depth').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#txt-depth-v').textContent = v.toFixed(2).slice(1);
+  const s = selection[0]; if (s && s.userData.text3d) reText(s, { depth: v });
+});
+$('#txt-bevel').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#txt-bevel-v').textContent = v.toFixed(2).slice(1);
+  const s = selection[0]; if (s && s.userData.text3d) reText(s, { bevel: v });
+});
+
 // Inspector refresh
 function refresh() {
   $('#count').textContent = (objects.length + sims.length) + ' object' + ((objects.length + sims.length) === 1 ? '' : 's');
@@ -1472,7 +1603,16 @@ function refresh() {
       $('#ex-depth').value = ex.depth; $('#ex-depth-v').textContent = ex.depth.toFixed(2).slice(1);
       $('#ex-bevel').value = ex.bevel; $('#ex-bevel-v').textContent = ex.bevel.toFixed(2).slice(1);
     }
-  } else { $('#ex-tag').textContent = ''; }
+    // Sync 3D Text fields to the selected text object (live re-build target).
+    const tx = s.userData.text3d;
+    $('#txt-tag').textContent = tx ? '· editing selected' : '';
+    if (tx) {
+      $('#txt-text').value = tx.text; $('#txt-font').value = tx.font;
+      $('#txt-size').value = tx.size; $('#txt-size-v').textContent = (+tx.size).toFixed(1);
+      $('#txt-depth').value = tx.depth; $('#txt-depth-v').textContent = (+tx.depth).toFixed(2).slice(1);
+      $('#txt-bevel').value = tx.bevel; $('#txt-bevel-v').textContent = (+tx.bevel).toFixed(2).slice(1);
+    }
+  } else { $('#ex-tag').textContent = ''; $('#txt-tag').textContent = ''; }
 }
 
 // Keyboard
@@ -1784,11 +1924,12 @@ function serializeScene() {
   const objs = [];
   for (const o of objects) {
     if (o.userData.isBlobDot) continue;
-    if (!o.userData.kind && !o.userData.svgText) continue;   // only reconstructable
+    if (!o.userData.kind && !o.userData.svgText && !o.userData.text3d) continue;   // only reconstructable
     const m = o.material;
     objs.push({
       name: o.name || null,
       kind: o.userData.kind || null, svgText: o.userData.svgText || null, extrude: o.userData.extrude || null,
+      text3d: o.userData.text3d || null,
       pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scl: o.scale.toArray(),
       mode: o.userData.mode || 'solid', color: (m && m.color) ? '#' + m.color.getHexString() : '#cccccc',
       rough: m && 'roughness' in m ? m.roughness : null, metal: m && 'metalness' in m ? m.metalness : null,
@@ -1817,6 +1958,7 @@ function restoreScene(data) {
   for (const d of data.objects) {
     let o = null;
     if (d.svgText) { addExtrudedSVG(d.svgText, 'svg'); o = objects[objects.length - 1]; if (d.extrude && o && o.userData.svgShapes) reExtrude(o, d.extrude.depth, d.extrude.bevel); }
+    else if (d.text3d) { o = makeTextBrush(d.text3d); buildTextMesh(o, d.text3d).then(() => { refresh(); }).catch(err => console.error(err)); }
     else if (d.kind) { addShape(d.kind); o = objects[objects.length - 1]; }
     if (!o) continue;
     if (d.name) o.name = d.name;   // stable name so the rig's bind can target this part
