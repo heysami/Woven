@@ -16469,15 +16469,15 @@ const DS_PREVIEW_VIEWS = [
    the base/default style; "dark" is handled by the Light/Dark preview switch,
    so it's omitted here. Keep in sync with default-design-system/meta.json styles. */
 const DS_PREVIEW_STYLES = [
-  { v: "",               label: "Default style" },
-  { v: "minimal",        label: "Minimal" },
-  { v: "pastel",         label: "Pastel" },
-  { v: "glassmorphism",  label: "Glassmorphism" },
-  { v: "claymorphism",   label: "Claymorphism" },
-  { v: "neumorphism",    label: "Neumorphism" },
-  { v: "techminimalism", label: "Tech-minimalism" },
-  { v: "neobrutalism",   label: "Neobrutalism" },
-  { v: "grainism",       label: "Grainism" },
+  { v: "",               label: "Default style",   desc: "The system as shipped" },
+  { v: "minimal",        label: "Minimal",         desc: "Hairline borders, airy" },
+  { v: "pastel",         label: "Pastel",          desc: "Soft tints, gentle" },
+  { v: "glassmorphism",  label: "Glassmorphism",   desc: "Frosted, translucent" },
+  { v: "claymorphism",   label: "Claymorphism",    desc: "Puffy, soft 3D" },
+  { v: "neumorphism",    label: "Neumorphism",     desc: "Extruded soft UI" },
+  { v: "techminimalism", label: "Tech-minimalism", desc: "Sharp, mono, dense" },
+  { v: "neobrutalism",   label: "Neobrutalism",    desc: "Hard borders, offset" },
+  { v: "grainism",       label: "Grainism",        desc: "Grainy, textured" },
 ];
 
 const DS_SPACE_RATIOS = [
@@ -17325,7 +17325,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
 
   const fontObj = DS_FONT_CATALOG.find(f => f.key === settings.fontKey) || DS_FONT_CATALOG[0];
   const roundPct = Math.round((settings.roundness ?? 1) * 100);
-  const dirty = custom.dirty || !!settings.logo;
 
   // Portal to <body> - the overlay must escape the landing's .landing-main
   // stacking context (z-index:1, below the z-index:4 header).
@@ -17344,24 +17343,35 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         <div className="dscz-body">
           <div className="dscz-controls">
 
-            <div className="dscz-steptabs" role="tablist">
-              ${[{ n: 1, label: "Style" }, { n: 2, label: "Tuning" }, { n: 3, label: "Build settings" }].map(s => html`
+            <div className="dscz-stepper" role="tablist">
+              ${[{ n: 1, label: "Style" }, { n: 2, label: "Tuning" }, { n: 3, label: "Build settings" }].map((s, i) => html`
+                ${i > 0 && html`<span key=${"l" + s.n} className=${"dscz-step-line" + (czStep >= s.n ? " is-done" : "")} aria-hidden="true"></span>`}
                 <button key=${s.n} type="button" role="tab"
-                  className=${"dscz-steptab" + (czStep === s.n ? " is-active" : "")}
+                  className=${"dscz-step" + (czStep === s.n ? " is-active" : (czStep > s.n ? " is-done" : ""))}
                   aria-selected=${czStep === s.n}
                   onClick=${() => setCzStep(s.n)}>
-                  <span className="dscz-steptab-n">${s.n}</span> ${s.label}
+                  <span className="dscz-step-dot">${czStep > s.n ? "✓" : s.n}</span>
+                  <span className="dscz-step-label">${s.label}</span>
                 </button>`)}
             </div>
 
             ${czStep === 1 && html`
             <section className="dscz-group">
               <div className="dscz-group-label">Style</div>
-              <select className="dscz-select" value=${settings.styleId || ""}
-                onChange=${(e) => set({ styleId: e.target.value })}>
-                ${DS_PREVIEW_STYLES.map(st => html`<option key=${st.v} value=${st.v}>${st.label}</option>`)}
-              </select>
-              <div className="dscz-row-hint">The visual style baked as this design system's default. Tuning (next step) layers palette, roundness, type &amp; logo on top. The preview updates live.</div>
+              <div className="dscz-row-hint">The visual style baked as this design system's default. Tuning (next step) layers palette, roundness, type & logo on top. The preview updates live.</div>
+              <div className="dscz-styletiles" role="radiogroup" aria-label="Design system style">
+                ${DS_PREVIEW_STYLES.map(st => html`
+                  <button key=${st.v} type="button" role="radio"
+                    aria-checked=${(settings.styleId || "") === st.v}
+                    className=${"dscz-styletile" + ((settings.styleId || "") === st.v ? " is-active" : "")}
+                    onClick=${() => set({ styleId: st.v })}>
+                    <span className="dscz-styletile-vis" data-dsstyle=${st.v || "default"}>
+                      <span className="t-card"><span className="t-bar"></span><span className="t-chip"></span></span>
+                    </span>
+                    <span className="dscz-styletile-name">${st.label}</span>
+                    <span className="dscz-styletile-desc">${st.desc}</span>
+                  </button>`)}
+              </div>
             </section>`}
 
             ${czStep === 2 && html`<${React.Fragment}>
@@ -17539,15 +17549,13 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
         </div>
         ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
         <footer className="dscz-foot">
-          ${czStep > 1
-            ? html`<button type="button" className="newproj-cancel" onClick=${() => setCzStep(czStep - 1)} disabled=${busy}>← Back</button>`
-            : onBack
-              ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
-              : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
-          <div className="dscz-foot-right">
-            ${dirty
-              ? html`<span className="dscz-foot-note">Customized</span>`
-              : html`<span className="dscz-foot-note dscz-foot-note-muted">Defaults</span>`}
+          <div className="dscz-foot-step">Step ${czStep} of 3 · ${["Style", "Tuning", "Build settings"][czStep - 1]}</div>
+          <div className="dscz-foot-nav">
+            ${czStep > 1
+              ? html`<button type="button" className="newproj-cancel" onClick=${() => setCzStep(czStep - 1)} disabled=${busy}>← Back</button>`
+              : onBack
+                ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
+                : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
             ${czStep < 3
               ? html`<button type="button" className="newproj-create" onClick=${() => setCzStep(czStep + 1)} disabled=${busy}>Next →</button>`
               : !previewOnly && html`<button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>

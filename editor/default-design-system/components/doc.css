@@ -88,12 +88,18 @@
 /* ---- Document canvas -----------------------------------------------------
    Centred reading column with generous line-height + comfortable padding. */
 .doc{
-  position:relative;
-  max-width:720px;margin-inline:auto;
+  display:grid;
+  grid-template-columns:minmax(0,720px) 220px;
+  justify-content:center;
+  align-items:start;
+  gap:var(--space-2xl);
+  margin-inline:auto;
   padding:var(--space-2xl) var(--space-l);
   font:var(--w-regular) var(--text-base)/var(--lh-relaxed) var(--font);
   color:var(--fg-default);
 }
+/* Reading column - holds the title + all editable blocks. */
+.doc__main{min-width:0;}
 
 /* Editable title - large, boxless, with an empty-state placeholder. */
 .doc__title{
@@ -182,10 +188,20 @@
 /* ---- Comments / outline rail --------------------------------------------
    Optional narrow right-hand rail with a hairline left border + muted text. */
 .doc-rail{
-  position:absolute;top:var(--space-2xl);right:0;
-  width:200px;padding-left:var(--space-base);
+  position:sticky;top:var(--space-2xl);
+  padding-left:var(--space-base);
   border-left:1px solid var(--border-default);
   font-size:var(--text-s);line-height:var(--lh-relaxed);color:var(--fg-muted);
+}
+/* Narrow canvases (preview / small panes): drop the rail under the document
+   instead of overlapping the reading column. */
+@media (max-width:880px){
+  .doc{grid-template-columns:minmax(0,1fr);}
+  .doc-rail{
+    position:static;border-left:0;padding-left:0;
+    border-top:1px solid var(--border-default);
+    margin-top:var(--space-l);padding-top:var(--space-l);
+  }
 }
 
 /* ---- Inline formatting toolbar ------------------------------------------
