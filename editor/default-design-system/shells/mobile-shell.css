@@ -71,9 +71,13 @@
 /* big touch target helper */
 .cell-lg{min-height:56px;display:flex;align-items:center;}
 
-/* ---- full-width segmented control variant ---- */
-.segmented--mobile{display:flex;width:100%;box-sizing:border-box;}
-.segmented--mobile button{flex:1 1 0;height:34px;text-align:center;}
+/* ---- full-width segmented control variant ----
+   Scoped as .segmented.segmented--mobile (2 classes) so it always beats the base
+   .segmented{display:inline-flex} from styles.css regardless of stylesheet ORDER —
+   the editor injects all.css AFTER this shell file, which (at equal specificity)
+   would otherwise let the base inline-flex win and pack the tabs to the left. */
+.segmented.segmented--mobile{display:flex;width:100%;box-sizing:border-box;}
+.segmented.segmented--mobile button{flex:1 1 0;height:34px;text-align:center;}
 
 /* ---- bottom tab bar ---- */
 .phone__tabbar{
