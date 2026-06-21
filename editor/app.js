@@ -724,6 +724,9 @@ const Icon = {
   Monitor:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></svg>`,
   Tablet:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="4" y="2" width="8" height="12" rx="1.2"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>`,
   Phone:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="5" y="1.5" width="6" height="13" rx="1.4"/><path d="M7 12.5h2"/></svg>`,
+  // W3E - Logic Graph "Live" run toggle (lightning bolt). Single mark at the
+  // canonical 1.5pt stroke so the composer node bar reads as one family.
+  Bolt:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8.5 2L4 9h3.5l-.5 5L12 7H8.5z"/></svg>`,
 };
 
 // v2.51 - skill glyphs live as plain strings in media-models.js (a data-only
@@ -23479,6 +23482,23 @@ function workflowPortPosition(node, side, ctx) {
     if (side === "in")  return { x: node.x,     y: node.y + bodyTop + bodyH * 0.5 };
     if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
   }
+  // Logic Graph (W1A): named provides (right edge) + accepts (left edge),
+  // evenly spaced below the 30px spec-node bar. Same distribution the renderer
+  // in WorkflowSpecNode uses, so dots + wire endpoints line up.
+  {
+    const logicSide = workflowLogicPortSide(node, side);
+    if (logicSide) {
+      const rows = _logicPortRows(node);
+      const list = logicSide === "out" ? rows.provides : rows.accepts;
+      const bodyTop = 30;
+      const bodyH = Math.max(0, h - bodyTop);
+      const total = Math.max(1, list.length);
+      const i = list.indexOf(side);
+      const idx = i < 0 ? 0 : i;
+      const y = node.y + bodyTop + bodyH * (idx + 0.5) / total;
+      return { x: logicSide === "out" ? node.x + w : node.x, y };
+    }
+  }
   // number-generator pixel-map image input - LEFT edge, near the top.
   if (side === "pixmap") return { x: node.x, y: node.y + 24 };
   // Auto-exposed numeric param ports on spec nodes - LEFT edge, spaced by the
@@ -23491,6 +23511,17 @@ function workflowPortPosition(node, side, ctx) {
     const i = keys.indexOf(side.slice(6));
     const idx = i < 0 ? 0 : i;
     return { x: node.x, y: node.y + bodyTop + bodyH * (idx + 0.5) / total };
+  }
+  // Logic Graph (W2C): read-back OUTPUT ports - RIGHT edge, mirroring the
+  // param INPUT ports' vertical positions so the two rails align across the node.
+  if (typeof side === "string" && side.startsWith("paramout:")) {
+    const keys = _specReadbackKeys(node);
+    const bodyTop = 30;
+    const bodyH = Math.max(0, h - bodyTop);
+    const total = Math.max(1, keys.length);
+    const i = keys.indexOf(side.slice("paramout:".length));
+    const idx = i < 0 ? 0 : i;
+    return { x: node.x + w, y: node.y + bodyTop + bodyH * (idx + 0.5) / total };
   }
   // Default in/out - left/right edge at vertical centre. When the node is
   // SELECTED with floating panels, push the endpoints out to the panels' OUTER
@@ -23536,10 +23567,37 @@ function workflowEdgePath(x1, y1, x2, y2, fromDir, toDir) {
   const td = (toDir   === undefined) ? (x2 >= x1 ? -1 :  1) : toDir;
   return `M ${x1} ${y1} C ${x1 + offset * fd} ${y1} ${x2 + offset * td} ${y2} ${x2} ${y2}`;
 }
+// Logic Graph (W1A): a logic node's ports are its named provides (right /
+// source) + accepts (left / target). Returns "out" for a provides port, "in"
+// for an accepts port, or null if `node` is not a logic node / `port` is not a
+// declared port. `edit` is the shared spawn-menu port, treated as a left input.
+function workflowLogicPortSide(node, port) {
+  if (!node || typeof port !== "string") return null;
+  const def = (typeof LOGIC_NODE_DEFS !== "undefined") && LOGIC_NODE_DEFS[node.kind];
+  if (!def) return null;
+  if (def.provides && Object.prototype.hasOwnProperty.call(def.provides, port)) return "out";
+  if (def.accepts && Object.prototype.hasOwnProperty.call(def.accepts, port)) return "in";
+  if (port === "edit") return "in";
+  return null;
+}
+
+// Ordered RENDERED port lists for a logic node: provides on the right, accepts
+// on the left. `edit` is excluded - it is a spawn-menu affordance, not a drawn
+// port (same as every other spec node). Shared by the geometry above and the
+// renderer in WorkflowSpecNode so dots + wire endpoints stay aligned.
+function _logicPortRows(node) {
+  const def = (typeof LOGIC_NODE_DEFS !== "undefined") && node && LOGIC_NODE_DEFS[node.kind];
+  if (!def) return { provides: [], accepts: [] };
+  return {
+    provides: Object.keys(def.provides || {}),
+    accepts: Object.keys(def.accepts || {}),
+  };
+}
+
 // Port side → direction. -1 extends leftward (port on left side of node),
 // +1 extends rightward. Includes prototype + agent named ports so binding
 // lines curve out in the right direction.
-function workflowPortDir(side) {
+function workflowPortDir(side, node) {
   if (side === "out" || WORKFLOW_PROTO_RIGHT_SIDES.has(side) || WORKFLOW_AGENT_RIGHT_SIDES.has(side)) return 1;
   if (side === "in"  || WORKFLOW_PROTO_LEFT_SIDES.has(side)  || WORKFLOW_AGENT_LEFT_SIDES.has(side))  return -1;
   // Iterator dynamic ports: output-N curves rightward, input-N curves leftward.
@@ -23548,6 +23606,16 @@ function workflowPortDir(side) {
   // Layer-anchored ports: input layer rows curve leftward, source rows rightward.
   if (/^layerout:/.test(side)) return 1;
   if (/^layerin:/.test(side))  return -1;
+  // Logic Graph read-back ports (paramout:) emit rightward; param: inputs leftward.
+  if (typeof side === "string" && side.startsWith("paramout:")) return 1;
+  // Logic Graph ports: provides curve rightward, accepts leftward. Names can
+  // collide across kinds (op-vector has both `x` provides + `x` accepts), so
+  // this needs the node to disambiguate; absent a node we fall through to -1.
+  if (node) {
+    const ls = workflowLogicPortSide(node, side);
+    if (ls === "out") return 1;
+    if (ls === "in")  return -1;
+  }
   return -1;
 }
 
@@ -23555,9 +23623,17 @@ function workflowPortDir(side) {
 // Used during edge creation to decide which endpoint is `from` (source) and
 // which is `to` (target), so edges always read as data flowing right→left
 // regardless of which port the user grabbed first.
-function workflowIsSourcePort(side) {
+function workflowIsSourcePort(side, node) {
+  // Logic Graph: a logic node's provides ports are sources, accepts are
+  // targets; resolve by node when given (port names collide across kinds).
+  if (node) {
+    const ls = workflowLogicPortSide(node, side);
+    if (ls === "out") return true;
+    if (ls === "in")  return false;
+  }
   return side === "out"
     || (typeof side === "string" && /^layerout:/.test(side))
+    || (typeof side === "string" && /^paramout:/.test(side))   // logic read-back source
     || WORKFLOW_PROTO_RIGHT_SIDES.has(side)
     || WORKFLOW_AGENT_RIGHT_SIDES.has(side);
 }
@@ -23602,14 +23678,65 @@ function workflowPortFlavor(node, side) {
   // Parametric value sources + the numeric param ports they feed.
   if ((kind === "number-generator" || kind === "timeline") && side === "out") return "number";
   if (typeof side === "string" && side.startsWith("param:")) return "number";
+  // Logic Graph read-back ports emit the param's current numeric value.
+  if (typeof side === "string" && side.startsWith("paramout:")) return "number";
   return null;
 }
 
 function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
   const a = workflowPortFlavor(fromNode, fromPort);
   const b = workflowPortFlavor(toNode,   toPort);
+  // Logic Graph (W1A) typed-port check. dtype lives alongside tags in
+  // WORKFLOW_CONNECT_DEFS[kind].provides/.accepts[port]. It is ADDITIONAL to the
+  // flavor check and only enforced when BOTH endpoints carry a dtype - legacy
+  // nodes have no dtype, so legacy wiring is unaffected (the early return below
+  // fires before any dtype lookup matters). `from` is the source (right-side /
+  // provides) and `to` is the target (left-side / accepts) by the caller's
+  // normalisation in startEdgeDrag.
+  const fromDt = workflowPortDtype(fromNode, fromPort, "provides");
+  const toDt   = workflowPortDtype(toNode,   toPort,   "accepts");
+  if (fromDt && toDt && !workflowDtypesCompatible(fromDt, toDt)) return false;
   if (a == null || b == null) return true;   // wildcard at either end
   return a === b;
+}
+
+// Logic Graph typed-port dtypes (contract §1). Each is a real data type so we
+// can validate edges + colour them. dtype is read from the kind's connect-def
+// (provides for source ports, accepts for target ports); a port with no dtype
+// returns null and is exempt from the dtype check entirely.
+const WORKFLOW_DTYPES = ["event", "number", "vector2", "region", "boolean", "string", "color"];
+function workflowPortDtype(node, port, side) {
+  if (!node || typeof port !== "string") return null;
+  // Logic Graph read-back ports carry the number dtype so they validate against
+  // a logic accept's number/boolean dtype (contract §1 number<->boolean rule).
+  if (port.startsWith("paramout:")) return "number";
+  const eff = workflowConnectEffectiveDef(node);
+  if (!eff) return null;
+  // side hint picks provides (source) vs accepts (target); fall back to the
+  // other map so a lone lookup still resolves either way.
+  const primary = side === "provides" ? eff.provides : eff.accepts;
+  const secondary = side === "provides" ? eff.accepts : eff.provides;
+  const spec = (primary && primary[port]) || (secondary && secondary[port]);
+  return spec && typeof spec.dtype === "string" ? spec.dtype : null;
+}
+
+// Compatibility rules (contract §1):
+//   same dtype always connects.
+//   event   -> boolean  (pulse read as true the frame it fires).
+//   number <-> boolean  (0=false, !=0=true).
+//   string  only takes another string (explicit op-tostring; no silent coerce).
+//   vector2 / region expose component sub-ports rather than auto-coercing, so
+//     they only mate with their own dtype here.
+function workflowDtypesCompatible(from, to) {
+  if (from === to) return true;
+  if (from === "event" && to === "boolean") return true;
+  if ((from === "number" && to === "boolean") || (from === "boolean" && to === "number")) return true;
+  return false;
+}
+
+// Per-dtype CSS class on a port zone / edge, so styles.css can colour them.
+function workflowDtypeClass(dtype) {
+  return dtype && WORKFLOW_DTYPES.includes(dtype) ? " workflow-dtype-" + dtype : "";
 }
 
 /* ───────────────────── Connector-spawn pipeline (v3.8) ─────────────────────
@@ -37070,9 +37197,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!fromNode) return;
     const portCtx = { selectedIds: selectedNodeIdsRef.current, layerGeom: layerGeomRef.current, appLayout: appNodeLayoutRef.current };
     const p = workflowPortPosition(fromNode, fromPort, portCtx);
-    setPendingEdge({ fromNodeId, fromPort, fromX: p.x, fromY: p.y, toX: p.x, toY: p.y, snapped: false });
+    const fromIsSource0 = workflowIsSourcePort(fromPort, fromNode);
+    // W3E edge type-compat highlight: carry the source port's dtype + direction
+    // on the pending edge so the canvas can glow dtype-compatible target ports and
+    // dim incompatible ones while dragging from a typed (logic) port. Dragging
+    // from an UNTYPED port carries no dtype and triggers no highlight (legacy).
+    const fromDtype = workflowPortDtype(fromNode, fromPort, fromIsSource0 ? "provides" : "accepts");
+    setPendingEdge({ fromNodeId, fromPort, fromX: p.x, fromY: p.y, toX: p.x, toY: p.y, snapped: false,
+                     fromDtype: fromDtype || null, fromIsSource: fromIsSource0 });
 
-    const fromIsSource = workflowIsSourcePort(fromPort);
+    const fromIsSource = fromIsSource0;
     // Gather drop-zone candidates at a point: the top document's hits PLUS any
     // layer-row hit-targets inside same-origin tool iframes under the cursor
     // (cross-document elementsFromPoint can't see into the iframe, so peek its
@@ -37100,12 +37234,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const ds = el.dataset || {};
         if (!ds.portNode || !ds.portSide) continue;
         if (ds.portNode === fromNodeId) continue;
+        const otherNode = (data.nodes || []).find(n => n.id === ds.portNode);
         // Direction check: source-side ports only mate with target-side ports.
-        if (workflowIsSourcePort(ds.portSide) === fromIsSource) continue;
+        // (Pass otherNode so logic ports with colliding names resolve correctly.)
+        if (workflowIsSourcePort(ds.portSide, otherNode) === fromIsSource) continue;
         // Flavor check (Phase-4 finisher): reject obviously wrong wires like
         // a folder port into a text-only input. Wildcard ports (skill nodes
         // we can't resolve, agent's file-out sink) still accept anything.
-        const otherNode = (data.nodes || []).find(n => n.id === ds.portNode);
         const srcNode = fromIsSource ? fromNode : otherNode;
         const srcPort = fromIsSource ? fromPort : ds.portSide;
         const dstNode = fromIsSource ? otherNode : fromNode;
@@ -39097,6 +39232,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           data-space=${spaceHeld ? "true" : "false"}
           data-node-dragging=${nodeDragging ? "true" : "false"}
           data-edge-dragging=${pendingEdge ? "true" : "false"}
+          data-edge-dtype=${pendingEdge && pendingEdge.fromDtype ? pendingEdge.fromDtype : null}
+          data-edge-dir=${pendingEdge && pendingEdge.fromDtype ? (pendingEdge.fromIsSource ? "from-source" : "from-target") : null}
           data-wb-mode=${wbMode ? "whiteboard" : "build"}
           data-wb-tool=${wbMode ? wbTool : "none"}
           data-wb-dragging=${wbDragging ? "true" : "false"}
@@ -42051,6 +42188,25 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-id">playhead · keyframes</span>
           </div>
         </div>
+        ${LOGIC_NODE_SECTIONS.map(section => {
+          const kinds = LOGIC_NODE_KINDS.filter(k => LOGIC_NODE_DEFS[k].section === section);
+          if (!kinds.length) return null;
+          return html`
+            <div key=${"logic-sec-" + section} className="workflow-library-section-head">Logic · ${section}</div>
+            <div className="workflow-library-list">
+              ${kinds.map(kind => {
+                const def = LOGIC_NODE_DEFS[kind];
+                return html`<div key=${kind} className="workflow-library-item" draggable=${true}
+                  onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind })); }}
+                  title=${"Drag onto canvas - " + def.label + ". " + def.desc + "."}>
+                  <span className="workflow-library-item-glyph">${def.glyph}</span>
+                  <span className="workflow-library-item-label">${def.label}</span>
+                  <span className="workflow-library-item-id">${def.desc}</span>
+                </div>`;
+              })}
+            </div>
+          `;
+        })}
       </div>
       ` : null}
       ${tab === "protos" ? html`
@@ -59428,6 +59584,12 @@ function _numberPixmapUrl(srcNode, allNodes, allEdges) {
   }
   return null;
 }
+// True when a node kind is one of the Logic Graph kinds (registered in
+// LOGIC_NODE_DEFS by W1A). Defensive: LOGIC_NODE_DEFS is defined later in this
+// file but always exists by the time bindings resolve at render time.
+function _isLogicKind(kind) {
+  return typeof kind === "string" && typeof LOGIC_NODE_DEFS !== "undefined" && !!LOGIC_NODE_DEFS[kind];
+}
 function _specParamBindings(specNodeId, allNodes, allEdges) {
   const out = {};
   for (const e of (allEdges || [])) {
@@ -59435,8 +59597,17 @@ function _specParamBindings(specNodeId, allNodes, allEdges) {
     if (!to.port.startsWith("param:")) continue;
     const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
     const src = (allNodes || []).find(n => n.id === from.node);
-    if (!src || (src.kind !== "number-generator" && src.kind !== "timeline")) continue;
+    if (!src) continue;
     const paramKey = to.port.slice("param:".length);
+    // Logic Graph (W2C): an edge from a logic node's OUTPUT port into
+    // target.param:<key> writes a `kind:"logic"` binding that the tool runtime
+    // resolves from LogicGraph.tick(...) instead of Sources.eval. The `ref`
+    // points at the source logic node + port; the engine computes the value.
+    if (_isLogicKind(src.kind)) {
+      out[paramKey] = { kind: "logic", ref: { node: src.id, port: from.port } };
+      continue;
+    }
+    if (src.kind !== "number-generator" && src.kind !== "timeline") continue;
     if (src.kind === "timeline") {
       // Each wired param is its own TRACK; attach that track (keyframes +
       // perInstance + stagger) keyed by "<targetNode>.<param>".
@@ -59462,6 +59633,89 @@ function _specWithBindings(spec, specNodeId, allNodes, allEdges) {
   if (b) out._bindings = b;
   if (ov) out._overrides = ov;   // Phase-2 per-cell/instance overrides
   return out;
+}
+
+// Logic Graph (W2C): build the serialized PROJECTION of the logic-graph slice
+// (contract §3) the tool runtime hands to LogicGraph.compile/tick. It is derived
+// from data.nodes/data.edges - the canvas stays the single source of truth.
+//
+//   logic = {
+//     nodes:   [{ id, kind, params }],            // params = compiled control values
+//     edges:   [{ from:{node,port,dtype}, to:{node,port,dtype} }],
+//     outputs: [{ sourceNode, sourcePort, targetNode, targetParam }],
+//   }
+//
+// `nodes` carries every logic node PLUS any non-logic spec node (number-generator
+// / timeline) that feeds a logic accept port, so the engine can Sources.eval it.
+// `edges` are wires whose TARGET is a logic accept port. `outputs` are wires from
+// a logic OUTPUT port into a target's `param:<key>` port (pre-resolved).
+function _logicProjection(allNodes, allEdges) {
+  const nodes = allNodes || [], edges = allEdges || [];
+  const byId = {};
+  for (const n of nodes) { if (n && n.id != null) byId[n.id] = n; }
+  const include = {};                  // nodeId -> projection node body
+  const projNode = (n) => {
+    if (!n || include[n.id]) return;
+    const spec = n.spec || {};
+    // Logic + number-generator/timeline all persist their compiled control
+    // values on spec.params; logic falls back to its kind default.
+    const params = (spec && spec.params) ? spec.params : ((_specDefault(n.kind) || {}).params || {});
+    include[n.id] = { id: n.id, kind: spec.kind || n.kind, params, spec };
+  };
+  const projEdges = [];
+  const outputs = [];
+  const readbacks = [];   // synthetic constant nodes fed by inputs.readback each frame
+  // A read-back port "paramout:<key>" on position/effect/layer is a SOURCE that
+  // exposes that param's CURRENT resolved value back into the graph. We project
+  // it as a synthetic constant number-node (id "<node>::paramout::<key>") wired
+  // in place of the real source; the runtime mutates its params.value per frame
+  // from inputs.readback[targetNode][param] (contract §5.4), and the engine's
+  // readIn resolves it via Sources.eval like any wired number.
+  const readbackNode = (srcNodeId, key) => {
+    const synthId = srcNodeId + "::paramout::" + key;
+    if (!include[synthId]) {
+      include[synthId] = { id: synthId, kind: "number-generator",
+        params: { value: 0 }, spec: { v: 1, kind: "number", sub: "constant", params: { value: 0 } },
+        _readback: { node: srcNodeId, param: key } };
+      readbacks.push({ synthId, node: srcNodeId, param: key });
+    }
+    return synthId;
+  };
+  for (const e of edges) {
+    if (!e) continue;
+    const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+    const to = workflowParseEdgeRef(e.to || ""); if (!to) continue;
+    const fromNode = byId[from.node], toNode = byId[to.node];
+    if (!fromNode || !toNode) continue;
+    // logic.out -> target.param:<key>  =>  an output sink.
+    if (_isLogicKind(fromNode.kind) && typeof to.port === "string" && to.port.startsWith("param:")) {
+      projNode(fromNode);
+      outputs.push({ sourceNode: from.node, sourcePort: from.port, targetNode: to.node, targetParam: to.port.slice("param:".length) });
+      continue;
+    }
+    // wire whose TARGET is a logic accept port  =>  an internal logic edge.
+    if (_isLogicKind(toNode.kind) && workflowLogicPortSide(toNode, to.port) === "in") {
+      projNode(toNode);
+      // Read-back source port (target.paramout:<key>) wired into a logic accept:
+      // route the edge through a synthetic per-frame constant node.
+      let fromId = from.node, fromPort = from.port, fromDt = null;
+      if (typeof from.port === "string" && from.port.startsWith("paramout:")) {
+        const key = from.port.slice("paramout:".length);
+        fromId = readbackNode(from.node, key); fromPort = "out"; fromDt = "number";
+      } else {
+        projNode(fromNode);   // include the source even if non-logic (number-generator)
+        fromDt = workflowPortDtype(fromNode, from.port, "provides") || null;
+      }
+      projEdges.push({
+        from: { node: fromId, port: fromPort, dtype: fromDt },
+        to:   { node: to.node, port: to.port, dtype: workflowPortDtype(toNode, to.port, "accepts") || null },
+      });
+      continue;
+    }
+  }
+  const nodeList = Object.keys(include).map(id => include[id]);
+  if (!nodeList.length && !outputs.length) return null;
+  return { nodes: nodeList, edges: projEdges, outputs, readbacks };
 }
 
 // Editor-side LIVE preview of a wired value source (number-generator / timeline).
@@ -59527,6 +59781,16 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   // Tool-reported floating-panel extents (kept locally so this node can size its
   // own iframe break-out; also reported up to the surface for layer-port coords).
   const [panelExtents, setPanelExtents] = useState(null);
+  // W3E Logic-Graph Run/Live: only the mm-composer tool runs a logic graph. The
+  // toggle flips the tool's INERT-by-default logicRun seam via mm:logic-run, and
+  // listens for the throttled mm:logic-ports report to show live port values on
+  // wired logic nodes. Persisted per node (node.logicLive) so it survives reloads.
+  const supportsLive = cfg && cfg.prefix === "mm";
+  const [live, setLive] = useState(!!node.logicLive);
+  // Map of logicNodeId -> { port: value } from the tool's last report. Held in a
+  // ref (no re-render churn) and broadcast to the logic node renderers via a
+  // window event they subscribe to, so this node owns the channel.
+  const livePortsRef = useRef({});
 
   const branch = useMemo(() => {
     for (const e of (allEdges || [])) {
@@ -59576,6 +59840,10 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
             ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
         )),
       })),
+      // Logic Graph (W2C): serialized logic-graph projection (contract §3) sent
+      // alongside effects/positions/triggers/layers so the tool runtime can
+      // LogicGraph.compile/tick and resolve `kind:"logic"` param bindings.
+      logic: _logicProjection(allNodes, allEdges),
     };
   }, [inputs, allNodes, allEdges]);
   const contentKey = JSON.stringify(contentAssets);
@@ -59598,6 +59866,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   const lastWrittenRef = useRef("");
   const saveTimerRef = useRef(null);
   const pendingRef = useRef(null);
+  const liveRef = useRef(live); liveRef.current = live;
 
   const postToIframe = useCallback((msg) => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
@@ -59658,9 +59927,12 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
                    content: contentRef.current, imports: importsRef.current,
                    effects: specsRef.current.effects, positions: specsRef.current.positions,
-                   triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
+                   triggers: specsRef.current.triggers, layers: specsRef.current.layers,
+                   logic: specsRef.current.logic, branch });
     postToIframe({ type: cfg.prefix + ":select", selected: !!selectedRef.current });
-  }, [cfg.prefix, branch, postToIframe]);
+    // W3E: restore the run/live seam after a (re)load so a persisted toggle holds.
+    if (supportsLive) postToIframe({ type: cfg.prefix + ":logic-run", on: !!liveRef.current });
+  }, [cfg.prefix, branch, postToIframe, supportsLive]);
 
   // iframe → node: ready (push init) + state edits (persist).
   useEffect(() => {
@@ -59682,11 +59954,31 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
       } else if (d.type === cfg.prefix + ":deselect") {
         // Click on the floating-iframe backdrop (outside panels/canvas) → collapse.
         onDeselect && onDeselect();
+      } else if (d.type === cfg.prefix + ":logic-ports") {
+        // W3E live value preview: the tool reports its resolved out-ports (throttled
+        // ~10Hz, only while Live is on). Cache + broadcast so wired logic nodes can
+        // show each output port's current value next to it.
+        const vals = (d && d.values) || {};
+        livePortsRef.current = vals;
+        try { window.dispatchEvent(new CustomEvent("th:logic-ports", { detail: { sourceId: node.id, values: vals } })); } catch (_e) {}
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, [node.id, cfg.prefix, sendInit, persistState, reportAppNodeLayout, reportLayerGeom]);
+
+  // W3E: push the run/live state to the tool whenever it changes (and right after
+  // ready/init). When Live turns off we also broadcast an empty ports map so the
+  // logic nodes drop their live readouts immediately.
+  useEffect(() => {
+    if (!supportsLive) return;
+    if (readyRef.current) postToIframe({ type: cfg.prefix + ":logic-run", on: !!live });
+    if (!live) {
+      livePortsRef.current = {};
+      try { window.dispatchEvent(new CustomEvent("th:logic-ports", { detail: { sourceId: node.id, values: {} } })); } catch (_e) {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, supportsLive, cfg.prefix, postToIframe, node.id]);
 
   // Notify the tool when selection changes so it can float / hide its panels.
   const selectedRef = useRef(selected); selectedRef.current = selected;
@@ -59700,7 +59992,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   // Reactive content/imports/specs push.
   useEffect(() => {
     if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls,
-      effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers });
+      effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers, logic: specs.logic });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentKey, importKey, specKey, cfg.prefix, postToIframe]);
 
@@ -59760,6 +60052,14 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
         <span className="workflow-node-label">${cfg.label}</span>
         <span className="workflow-node-bar-spacer"/>
         ${cfg.imports && importUrls.length > 0 && html`<span className="workflow-node-fmttext-tag" title=${importUrls.length + " wired import(s)"}>${importUrls.length}</span>`}
+        ${supportsLive && html`<button
+          className=${"workflow-node-live-toggle" + (live ? " is-live" : "")}
+          data-live=${live ? "true" : "false"}
+          title=${live ? "Live: logic graph is running on real input - click to make it inert" : "Run the logic graph live on real input (pointer / camera / etc.)"}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); const next = !live; setLive(next); onChange({ logicLive: next }); }}>
+          <${Icon.Bolt}/><span className="workflow-node-live-label">Live</span>
+        </button>`}
         ${node.bakedAt && html`<span className="workflow-node-composer-baked-tag" title=${"Saved → " + bakedPathTarget}>saved</span>`}
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
@@ -59906,6 +60206,8 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
             ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
         )),
       })),
+      // Logic Graph (W2C): projection scoped to the custom-app subgraph.
+      logic: _logicProjection(scopedNodes, scopedEdges),
     };
   }, [previewInputs, scopedNodes, scopedEdges]);
 
@@ -59946,7 +60248,8 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
     postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
                    content: contentRef.current, imports: importsRef.current,
                    effects: specsRef.current.effects, positions: specsRef.current.positions,
-                   triggers: specsRef.current.triggers, layers: specsRef.current.layers, branch });
+                   triggers: specsRef.current.triggers, layers: specsRef.current.layers,
+                   logic: specsRef.current.logic, branch });
     // Keep panels collapsed: never report selected - the preview is chrome-free.
     postToIframe({ type: cfg.prefix + ":select", selected: false });
     postToIframe({ type: cfg.prefix + ":preview-mode", on: true });
@@ -59969,7 +60272,7 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
   // Reactive content/imports/specs push → live preview as settings / input change.
   useEffect(() => {
     if (readyRef.current && cfg) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls,
-      effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers });
+      effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers, logic: specs.logic });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentKey, importKey, specKey, cfg, postToIframe]);
 
@@ -60178,6 +60481,15 @@ function _specDefault(kind) {
   if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true };
   if (kind === "number-generator") return { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true };
   if (kind === "timeline") return { v: 1, kind: "timeline", duration: 4, loop: true };
+  // Logic Graph (W1A): default spec is the §3 projection body - kind + params
+  // seeded from the authored control values.
+  if (typeof LOGIC_NODE_DEFS !== "undefined" && LOGIC_NODE_DEFS[kind]) {
+    const params = {};
+    for (const [k, d] of Object.entries(LOGIC_NODE_DEFS[kind].controls || {})) {
+      params[k] = d && typeof d === "object" && Object.prototype.hasOwnProperty.call(d, "value") ? d.value : d;
+    }
+    return { v: 1, kind, params };
+  }
   return { v: 1 };
 }
 function _specInputValue(v) {
@@ -60321,6 +60633,463 @@ function _positionTemplate(id, label, mode, controls, params, helpers) {
 }
 function _triggerTemplate(id, label, source, controls, params, helpers, impacts) {
   return { id, label, source: _triggerSource(source, controls, params, helpers, impacts) };
+}
+
+/* ───────────────────── Logic Graph nodes (Wave 1A) ─────────────────────
+   Single source of truth for the §2 logic taxonomy. Each entry drives - via
+   the small folds below - its WORKFLOW_NODE_FACTORY default, its
+   WORKFLOW_CONNECT_DEFS provides/accepts (with typed dtype ports), its
+   SPEC_NODE_DEFS render def, its SPEC_SOURCE_TEMPLATES authored controls /
+   buildSpec module, and its palette item. W1A registers + wires only - no
+   runtime evaluation (that is W1B/W2).
+
+   Shape per kind:
+     glyph  unicode mark (NOT emoji) per the contract.
+     label  node title.
+     desc   one-line palette description.
+     section  palette grouping ("Sources","Processors","Literals",...).
+     w,h    node body size.
+     controls  authored control schema (same shape number-generator uses):
+              { key: { type, value, ... } }. May be {} for pure operators.
+     provides  right-side output ports: { port: { label, dtype } }.
+     accepts   left-side input ports:  { port: { label, dtype } }.
+   The persisted spec is { v:1, kind, params:{...controls values} } - the
+   projection the future engine (W1B) reads. */
+const LOGIC_NODE_DEFS = {
+  // ── 2.1 Sources (no inputs; emit typed outputs) ──────────────────────
+  "input-pointer": {
+    glyph: "‹", label: "Pointer", section: "Sources", w: 220, h: 300,
+    desc: "Mouse / single-pointer on the render surface",
+    controls: {
+      space:  { type: "select", value: "normalized", options: ["normalized", "pixels"] },
+      button: { type: "select", value: "any", options: ["any", "left", "right", "middle"] },
+    },
+    provides: {
+      x:       { label: "x", dtype: "number" },
+      y:       { label: "y", dtype: "number" },
+      isDown:  { label: "isDown", dtype: "boolean" },
+      clicked: { label: "clicked", dtype: "event" },
+      downX:   { label: "downX", dtype: "number" },
+      downY:   { label: "downY", dtype: "number" },
+      upX:     { label: "upX", dtype: "number" },
+      upY:     { label: "upY", dtype: "number" },
+      hover:   { label: "hover", dtype: "boolean" },
+      pos:     { label: "pos", dtype: "vector2" },
+    },
+    accepts: {},
+  },
+  "input-touch": {
+    glyph: "⊛", label: "Touch", section: "Sources", w: 220, h: 320,
+    desc: "Multi-touch on the render surface",
+    controls: {
+      maxPoints: { type: "number", value: 5, min: 1, max: 10, step: 1 },
+      space:     { type: "select", value: "normalized", options: ["normalized", "pixels"] },
+    },
+    provides: {
+      count:      { label: "count", dtype: "number" },
+      pos:        { label: "pos", dtype: "vector2" },
+      touches:    { label: "touches", dtype: "vector2" },
+      isDown:     { label: "isDown", dtype: "boolean" },
+      center:     { label: "center", dtype: "vector2" },
+      spread:     { label: "spread", dtype: "number" },
+      pinchDelta: { label: "pinchDelta", dtype: "number" },
+      rotation:   { label: "rotation", dtype: "number" },
+      tap:        { label: "tap", dtype: "event" },
+    },
+    accepts: {},
+  },
+  "input-keyboard": {
+    glyph: "⎄", label: "Keyboard", section: "Sources", w: 220, h: 280,
+    desc: "Keyboard on the render surface",
+    controls: {
+      key:    { type: "text", value: "" },
+      repeat: { type: "boolean", value: false },
+    },
+    provides: {
+      key:      { label: "key", dtype: "string" },
+      isDown:   { label: "isDown", dtype: "boolean" },
+      pressed:  { label: "pressed", dtype: "event" },
+      released: { label: "released", dtype: "event" },
+      axisX:    { label: "axisX", dtype: "number" },
+      axisY:    { label: "axisY", dtype: "number" },
+    },
+    accepts: {},
+  },
+  "input-scroll": {
+    glyph: "⇕", label: "Scroll", section: "Sources", w: 220, h: 280,
+    desc: "Wheel / scroll on the render surface",
+    controls: {
+      space:    { type: "select", value: "normalized", options: ["normalized", "pixels"] },
+      clampMin: { type: "number", value: 0, step: 0.01 },
+      clampMax: { type: "number", value: 1, step: 0.01 },
+    },
+    provides: {
+      deltaY:   { label: "deltaY", dtype: "number" },
+      deltaX:   { label: "deltaX", dtype: "number" },
+      accumY:   { label: "accumY", dtype: "number" },
+      accumX:   { label: "accumX", dtype: "number" },
+      velocity: { label: "velocity", dtype: "number" },
+    },
+    accepts: {},
+  },
+  "input-gyro": {
+    glyph: "┑", label: "Gyro", section: "Sources", w: 220, h: 260,
+    desc: "Device orientation (mobile-primary)",
+    controls: {
+      smoothing: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+    },
+    provides: {
+      alpha: { label: "alpha", dtype: "number" },
+      beta:  { label: "beta", dtype: "number" },
+      gamma: { label: "gamma", dtype: "number" },
+      tilt:  { label: "tilt", dtype: "vector2" },
+      ready: { label: "ready", dtype: "boolean" },
+    },
+    accepts: {},
+  },
+  "input-audio": {
+    glyph: "▿", label: "Audio", section: "Sources", w: 220, h: 300,
+    desc: "Microphone / audio asset level, pitch, bands",
+    controls: {
+      source:    { type: "select", value: "mic", options: ["mic", "asset"] },
+      band:      { type: "select", value: "full", options: ["bass", "mid", "treble", "full"] },
+      fftSize:   { type: "number", value: 2048, min: 32, max: 32768, step: 1 },
+      smoothing: { type: "number", value: 0.8, min: 0, max: 1, step: 0.01 },
+    },
+    provides: {
+      level: { label: "level", dtype: "number" },
+      pitch: { label: "pitch", dtype: "number" },
+      band:  { label: "band", dtype: "number" },
+      beat:  { label: "beat", dtype: "event" },
+    },
+    accepts: {
+      asset: { label: "Audio asset (source=asset)", dtype: "string", tags: ["asset", "audio"] },
+    },
+  },
+  "input-camera": {
+    glyph: "⊙", label: "Camera", section: "Sources", w: 220, h: 240,
+    desc: "Live webcam stream handle",
+    controls: {
+      facing:     { type: "select", value: "user", options: ["user", "environment"] },
+      resolution: { type: "select", value: "medium", options: ["low", "medium", "high"] },
+    },
+    provides: {
+      stream: { label: "stream", dtype: "string" },
+      ready:  { label: "ready", dtype: "boolean" },
+    },
+    accepts: {},
+  },
+  "input-video": {
+    glyph: "▷", label: "Video", section: "Sources", w: 220, h: 240,
+    desc: "A video asset / clip as a stream handle",
+    controls: {
+      loop:     { type: "boolean", value: true },
+      autoplay: { type: "boolean", value: true },
+    },
+    provides: {
+      stream:  { label: "stream", dtype: "string" },
+      t:       { label: "t", dtype: "number" },
+      playing: { label: "playing", dtype: "boolean" },
+    },
+    accepts: {
+      asset: { label: "Video asset", dtype: "string", tags: ["asset", "video"] },
+    },
+  },
+  // ── 2.2 Processors (stream in -> structured data out) ─────────────────
+  "vision-detect": {
+    glyph: "◉", label: "Vision detect", section: "Processors", w: 240, h: 300,
+    desc: "MediaPipe Tasks Vision: face / hand / object detection",
+    controls: {
+      detector: { type: "select", value: "face", options: ["face", "hand", "object"] },
+      target:   { type: "select", value: "present", options: ["present", "count", "location", "gesture"] },
+    },
+    provides: {
+      present:    { label: "present", dtype: "boolean" },
+      count:      { label: "count", dtype: "number" },
+      pos:        { label: "pos", dtype: "vector2" },
+      region:     { label: "region", dtype: "region" },
+      gesture:    { label: "gesture", dtype: "string" },
+      confidence: { label: "confidence", dtype: "number" },
+    },
+    accepts: {
+      stream: { label: "stream", dtype: "string" },
+    },
+  },
+  "vision-ocr": {
+    glyph: "⊜", label: "Vision OCR", section: "Processors", w: 240, h: 280,
+    desc: "tesseract.js text recognition over a stream",
+    controls: {
+      query:    { type: "text", value: "" },
+      interval: { type: "number", value: 500, min: 50, max: 10000, step: 50 },
+    },
+    provides: {
+      text:    { label: "text", dtype: "string" },
+      matched: { label: "matched", dtype: "boolean" },
+      region:  { label: "region", dtype: "region" },
+      count:   { label: "count", dtype: "number" },
+    },
+    accepts: {
+      stream: { label: "stream", dtype: "string" },
+    },
+  },
+  // ── 2.3 Literals (number is number-generator - not re-added here) ──────
+  "value-bool": {
+    glyph: "⊤", label: "Boolean", section: "Literals", w: 200, h: 200,
+    desc: "Constant boolean value",
+    controls: { value: { type: "boolean", value: true } },
+    provides: { value: { label: "value", dtype: "boolean" } },
+    accepts: {},
+  },
+  "value-string": {
+    glyph: "⊏", label: "String", section: "Literals", w: 220, h: 220,
+    desc: "Constant text value",
+    controls: { value: { type: "text", value: "" } },
+    provides: { value: { label: "value", dtype: "string" } },
+    accepts: {},
+  },
+  "value-vec2": {
+    glyph: "⊕", label: "Vector2", section: "Literals", w: 200, h: 240,
+    desc: "Constant {x,y} vector",
+    controls: {
+      x: { type: "number", value: 0.5, step: 0.01 },
+      y: { type: "number", value: 0.5, step: 0.01 },
+    },
+    provides: { value: { label: "value", dtype: "vector2" } },
+    accepts: {},
+  },
+  // ── 2.4 Operators (pure, stateless) ──────────────────────────────────
+  "op-math": {
+    glyph: "∑", label: "Math", section: "Operators", w: 220, h: 240,
+    desc: "Binary math on two numbers",
+    controls: { op: { type: "select", value: "add", options: ["add", "sub", "mul", "div", "mod", "min", "max", "pow", "atan2"] } },
+    provides: { r: { label: "r", dtype: "number" } },
+    accepts: { a: { label: "a", dtype: "number" }, b: { label: "b", dtype: "number" } },
+  },
+  "op-unary": {
+    glyph: "ƒ", label: "Unary", section: "Operators", w: 220, h: 220,
+    desc: "Unary math on one number",
+    controls: { op: { type: "select", value: "abs", options: ["abs", "neg", "floor", "round", "sin", "cos", "sqrt", "sign"] } },
+    provides: { r: { label: "r", dtype: "number" } },
+    accepts: { a: { label: "a", dtype: "number" } },
+  },
+  "op-compare": {
+    glyph: "≷", label: "Compare", section: "Operators", w: 220, h: 240,
+    desc: "Compare two numbers, emit boolean",
+    controls: {
+      op:      { type: "select", value: "gt", options: ["eq", "ne", "lt", "gt", "le", "ge"] },
+      epsilon: { type: "number", value: 0.0001, step: 0.0001 },
+    },
+    provides: { r: { label: "r", dtype: "boolean" } },
+    accepts: { a: { label: "a", dtype: "number" }, b: { label: "b", dtype: "number" } },
+  },
+  "op-logic": {
+    glyph: "&", label: "Logic", section: "Operators", w: 220, h: 240,
+    desc: "Boolean logic on two booleans",
+    controls: { op: { type: "select", value: "and", options: ["and", "or", "xor", "nand", "nor"] } },
+    provides: { r: { label: "r", dtype: "boolean" } },
+    accepts: { a: { label: "a", dtype: "boolean" }, b: { label: "b", dtype: "boolean" } },
+  },
+  "op-map": {
+    glyph: "↦", label: "Map", section: "Operators", w: 240, h: 320,
+    desc: "Remap + clamp + ease a number",
+    controls: {
+      inMin:  { type: "number", value: 0, step: 0.01 },
+      inMax:  { type: "number", value: 1, step: 0.01 },
+      outMin: { type: "number", value: 0, step: 0.01 },
+      outMax: { type: "number", value: 1, step: 0.01 },
+      clamp:  { type: "boolean", value: true },
+      ease:   { type: "select", value: "linear", options: ["linear", "in", "out", "inout"] },
+    },
+    provides: { r: { label: "r", dtype: "number" } },
+    accepts: { x: { label: "x", dtype: "number" } },
+  },
+  "op-vector": {
+    glyph: "⊿", label: "Vector", section: "Operators", w: 240, h: 280,
+    desc: "Make / break / measure vec2",
+    controls: { mode: { type: "select", value: "make", options: ["make", "break", "distance", "add", "scale", "lerp"] } },
+    // W1A exposes the SUPERSET of ports across modes; the engine (W1B) reads
+    // only the ports relevant to the selected mode.
+    provides: {
+      v: { label: "v", dtype: "vector2" },
+      x: { label: "x", dtype: "number" },
+      y: { label: "y", dtype: "number" },
+      d: { label: "d", dtype: "number" },
+    },
+    accepts: {
+      x: { label: "x", dtype: "number" },
+      y: { label: "y", dtype: "number" },
+      v: { label: "v", dtype: "vector2" },
+      a: { label: "a", dtype: "vector2" },
+      b: { label: "b", dtype: "vector2" },
+      t: { label: "t", dtype: "number" },
+    },
+  },
+  "op-tostring": {
+    glyph: "“”", label: "To string", section: "Operators", w: 240, h: 240,
+    desc: "Format a value into a string",
+    controls: { template: { type: "text", value: "{v}" } },
+    provides: { s: { label: "s", dtype: "string" } },
+    // `a` accepts the union number|boolean|vector2; W1A picks one dtype for the
+    // port (number) - the explicit op-tostring is the only coercion path per
+    // §1, so its input is intentionally permissive and the engine reads
+    // whatever is wired. number<->boolean already mate; vector2 needs op-vector
+    // break first or a vector2-tagged wire (no dtype gate blocks vector2->this
+    // because string only takes string, see note in report).
+    accepts: { a: { label: "a", dtype: "number" } },
+  },
+  // ── 2.5 Control flow ─────────────────────────────────────────────────
+  "flow-if": {
+    glyph: "⋔", label: "If / select", section: "Control flow", w: 240, h: 260,
+    desc: "Pass then-branch when cond, else else-branch",
+    controls: {},
+    provides: { r: { label: "r", dtype: "number" } },
+    accepts: {
+      cond: { label: "cond", dtype: "boolean" },
+      then: { label: "then", dtype: "number" },
+      else: { label: "else", dtype: "number" },
+    },
+  },
+  "flow-gate": {
+    glyph: "⊳", label: "Gate", section: "Control flow", w: 240, h: 240,
+    desc: "Pass value only while open; else hold last",
+    controls: { holdLast: { type: "boolean", value: true } },
+    provides: { r: { label: "r", dtype: "number" } },
+    accepts: {
+      value: { label: "value", dtype: "number" },
+      open:  { label: "open", dtype: "boolean" },
+    },
+  },
+  "flow-while": {
+    glyph: "↻", label: "While", section: "Control flow", w: 240, h: 260,
+    desc: "Bounded per-frame loop while cond holds",
+    controls: { maxIterations: { type: "number", value: 64, min: 1, max: 10000, step: 1 } },
+    provides: {
+      count: { label: "count", dtype: "number" },
+      last:  { label: "last", dtype: "number" },
+    },
+    accepts: {
+      cond: { label: "cond", dtype: "boolean" },
+      body: { label: "body", dtype: "number" },
+    },
+  },
+  "flow-repeat": {
+    glyph: "⟳", label: "Repeat", section: "Control flow", w: 240, h: 240,
+    desc: "Run body n times; emit per-iteration vector",
+    controls: {},
+    provides: {
+      sum:    { label: "sum", dtype: "number" },
+      values: { label: "values", dtype: "number" },
+    },
+    accepts: {
+      n:    { label: "n", dtype: "number" },
+      body: { label: "body", dtype: "number" },
+    },
+  },
+  // ── 2.6 State (reactive memory; the legal cycle breakers) ─────────────
+  "state-counter": {
+    glyph: "№", label: "Counter", section: "State", w: 220, h: 260,
+    desc: "Count inc events; reset clears",
+    controls: {
+      step: { type: "number", value: 1, step: 1 },
+      wrap: { type: "number", value: 0, step: 1 },
+    },
+    provides: { count: { label: "count", dtype: "number" } },
+    accepts: {
+      inc:   { label: "inc", dtype: "event" },
+      reset: { label: "reset", dtype: "event" },
+    },
+  },
+  "state-toggle": {
+    glyph: "⇄", label: "Toggle", section: "State", w: 220, h: 220,
+    desc: "Flip a boolean on each flip event",
+    controls: { initial: { type: "boolean", value: false } },
+    provides: { on: { label: "on", dtype: "boolean" } },
+    accepts: { flip: { label: "flip", dtype: "event" } },
+  },
+  "state-latch": {
+    glyph: "⎍", label: "Latch", section: "State", w: 220, h: 240,
+    desc: "Sample hold when set rises, then keep it",
+    controls: {},
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: {
+      set:  { label: "set", dtype: "boolean" },
+      hold: { label: "hold", dtype: "number" },
+    },
+  },
+  "state-timer": {
+    glyph: "⧗", label: "Timer", section: "State", w: 220, h: 260,
+    desc: "Elapsed time between start / stop events",
+    controls: { autostart: { type: "boolean", value: false } },
+    provides: {
+      elapsed: { label: "elapsed", dtype: "number" },
+      running: { label: "running", dtype: "boolean" },
+    },
+    accepts: {
+      start: { label: "start", dtype: "event" },
+      stop:  { label: "stop", dtype: "event" },
+    },
+  },
+  "state-smooth": {
+    glyph: "∿", label: "Smooth", section: "State", w: 220, h: 240,
+    desc: "Critically-damped pursuit of a target number",
+    controls: {
+      stiffness: { type: "number", value: 8, min: 0, max: 200, step: 0.1 },
+      damping:   { type: "number", value: 1, min: 0, max: 10, step: 0.01 },
+    },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: { target: { label: "target", dtype: "number" } },
+  },
+};
+
+// Stable palette ordering for the Logic section.
+const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State"];
+const LOGIC_NODE_KINDS = Object.keys(LOGIC_NODE_DEFS);
+
+// Author a logic node's JS module string in the SAME controls / buildSpec
+// convention number-generator uses, so it inherits the controls UI +
+// serialization. The persisted spec is the §3 projection node body.
+function _logicSource(kind, controls) {
+  return _sourceModule(controls || {}, `export function buildSpec(values) {
+  return { v: 1, kind: ${JSON.stringify(kind)}, params: { ...values } };
+}`);
+}
+
+// Logic Graph (W1A): register each logic kind in SPEC_NODE_DEFS so the canvas
+// routes it to WorkflowSpecNode (renders body + controls + typed ports) and so
+// its source / compiled JSON sidecars mirror like every other spec node.
+for (const [kind, def] of Object.entries(LOGIC_NODE_DEFS)) {
+  SPEC_NODE_DEFS[kind] = {
+    glyph: def.glyph, label: def.label,
+    canonical: (b, id) => `source/${b}/logic-${id}.json`,
+    source: (b, id) => `source/${b}/logic-${id}.js`,
+    logic: true,
+    fields: [],
+  };
+}
+
+// Logic Graph (W1A): fold each logic kind into the node factory + connection
+// registry. WORKFLOW_NODE_FACTORY / WORKFLOW_CONNECT_DEFS are defined far
+// earlier as plain objects; we mutate them at module-init (this file runs
+// top-to-bottom once) AFTER LOGIC_NODE_DEFS exists. Ports carry a `dtype`
+// alongside `tags` per contract §1 - logic ports default to empty tags
+// (legacy tag wiring is a no-op for them) and rely on the dtype check; a few
+// stream/asset accept ports keep real tags so they can also mate with legacy
+// asset producers.
+for (const [kind, def] of Object.entries(LOGIC_NODE_DEFS)) {
+  WORKFLOW_NODE_FACTORY[kind] = (p) => ({
+    kind, w: def.w || 220, h: def.h || 260,
+    spec: (p && p.spec) || _specDefault(kind),
+  });
+  const portMap = (ports) => {
+    const out = {};
+    for (const [name, ps] of Object.entries(ports || {})) {
+      out[name] = { label: ps.label || name, tags: Array.isArray(ps.tags) ? ps.tags : [], dtype: ps.dtype };
+    }
+    return out;
+  };
+  const provides = portMap(def.provides);
+  const accepts = { ...portMap(def.accepts), edit: { label: "Edit " + (def.label || kind).toLowerCase(), tags: ["text-gen", "asset-gen"] } };
+  WORKFLOW_CONNECT_DEFS[kind] = { label: def.label, provides, accepts };
 }
 
 const SPEC_SOURCE_TEMPLATES = {
@@ -60753,6 +61522,14 @@ export function buildSpec(values) {
     }
   ]
 };
+// Logic Graph (W1A): one authored template per logic kind, folded into the
+// shared SPEC_SOURCE_TEMPLATES map so the spec-node UI / Code tabs render their
+// controls exactly like number-generator's.
+for (const [kind, def] of Object.entries(LOGIC_NODE_DEFS)) {
+  SPEC_SOURCE_TEMPLATES[kind] = [
+    { id: kind, label: def.label, source: _logicSource(kind, def.controls) },
+  ];
+}
 function _specTemplate(kind, id) {
   const list = SPEC_SOURCE_TEMPLATES[kind] || [];
   return list.find(t => t.id === id) || list[0] || { id: "custom", label: "Custom", source: "export const controls = {};\nexport function buildSpec() { return { v: 1 }; }" };
@@ -60836,6 +61613,9 @@ function _sourceWithSpecValues(kind, source, spec) {
   } else if (kind === "timeline") {
     if (controls.duration) controls.duration.value = spec.duration ?? controls.duration.value;
     if (controls.loop) controls.loop.value = spec.loop !== false;
+  } else if (typeof LOGIC_NODE_DEFS !== "undefined" && LOGIC_NODE_DEFS[kind]) {
+    // Logic Graph (W1A): control values live in spec.params (the §3 projection).
+    for (const [k, v] of Object.entries(spec.params || {})) if (controls[k]) controls[k].value = v;
   }
   return _replaceSourceControls(source, controls);
 }
@@ -60879,6 +61659,17 @@ function _specParamKeys(node) {
   if (_PARAM_KEYS_CACHE.size > 500) _PARAM_KEYS_CACHE.clear();
   _PARAM_KEYS_CACHE.set(cacheKey, keys);
   return keys;
+}
+
+// Logic Graph (W2C): the param keys a node exposes as READ-BACK output ports
+// (contract §5.4 / §2.7). position / effect / trigger reuse their numeric param
+// keys (same ports a logic node can also DRIVE); layer has no param input ports
+// but exposes its `opacity` param so logic can read a layer's current opacity.
+function _specReadbackKeys(node) {
+  if (!node) return [];
+  if (node.kind === "layer") return ["opacity"];
+  if (WORKFLOW_PARAM_PORT_KINDS.has(node.kind)) return _specParamKeys(node);
+  return [];
 }
 
 // Richer than _specParamKeys: the tunable numeric controls of a spec node with
@@ -61374,6 +62165,8 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   // Phase-1 parametric ports: numeric controls this kind auto-exposes, and the
   // subset currently driven by a wired Number (those rows go read-only).
   const paramKeys = useMemo(() => _specParamKeys(node), [node.kind, scriptSource]);
+  // Logic Graph (W2C): read-back OUTPUT param ports (paramout:<key>).
+  const readbackKeys = useMemo(() => _specReadbackKeys(node), [node.kind, scriptSource]);
   const boundParams = useMemo(() => {
     const s = new Set();
     for (const e of (allEdges || [])) {
@@ -61749,8 +62542,46 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   }
 
   const hasIn = node.kind === "layer";
+  // Logic Graph (W1A): logic nodes render their named typed ports (provides on
+  // the right, accepts on the left) in place of the single legacy out / in /
+  // param ports. Geometry mirrors workflowPortPosition's logic branch exactly.
+  const isLogic = !!(cfg && cfg.logic);
+  const logicRows = isLogic ? _logicPortRows(node) : null;
+  const logicDef = isLogic && LOGIC_NODE_DEFS[node.kind];
+  // W3E live value preview: while a downstream composer node is in Live mode it
+  // broadcasts th:logic-ports { values:{ <logicNodeId>:{ <port>:value } } } on a
+  // throttle. A logic node subscribes and shows its own out-port values next to
+  // the provides ports. Mirrors the binding-tick preview pattern (an event/rAF
+  // feed driving a small numeric readout), but the source is the running tool.
+  const [livePorts, setLivePorts] = useState(null);
+  useEffect(() => {
+    if (!isLogic) return;
+    const onPorts = (ev) => {
+      const det = ev && ev.detail; if (!det) return;
+      const v = det.values && det.values[node.id];
+      // null/empty -> Live off (or this node not in the running graph): clear.
+      setLivePorts(v && typeof v === "object" ? v : null);
+    };
+    window.addEventListener("th:logic-ports", onPorts);
+    return () => window.removeEventListener("th:logic-ports", onPorts);
+  }, [isLogic, node.id]);
+  // Format a port value compactly for the inline readout (number / boolean /
+  // vector2 / region / string), keeping it short so it fits beside the port.
+  const fmtPortValue = (v) => {
+    if (v == null) return null;
+    if (typeof v === "number") return Number.isFinite(v) ? (Math.round(v * 1000) / 1000).toString() : null;
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (typeof v === "string") return v.length > 10 ? v.slice(0, 9) + "…" : v;
+    if (typeof v === "object") {
+      const r3 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+      if ("x" in v && "y" in v && !("w" in v)) return r3(v.x) + "," + r3(v.y);
+      if ("w" in v && "h" in v) return r3(v.w) + "×" + r3(v.h);
+      if ("r" in v && "g" in v && "b" in v) return "rgb";
+    }
+    return null;
+  };
   return html`
-    <div className=${"workflow-node workflow-node-spec workflow-node-spec-" + node.kind}
+    <div className=${"workflow-node workflow-node-spec workflow-node-spec-" + node.kind + (isLogic ? " workflow-node-logic" : "")}
       data-selected=${selected ? "true" : "false"} onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
@@ -61760,7 +62591,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
         <span className="workflow-node-bar-spacer"/>
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
-      <div className="workflow-spec-body" onMouseDown=${(e) => e.stopPropagation()} style=${{ padding: "8px 10px", overflow: "auto", height: "calc(100% - 30px)" }}>
+      <div className="workflow-spec-body" onMouseDown=${(e) => e.stopPropagation()} style=${{ padding: isLogic ? "8px 16px" : "8px 10px", overflow: "auto", height: "calc(100% - 30px)" }}>
         ${templates.length > 1 && html`<div style=${{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px", marginBottom: "8px" }}>
           <select className="workflow-spec-input"
             value=${selectedTemplateId}
@@ -61798,10 +62629,10 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           ${renderTimelinePanel()}
         `}
       </div>
-      ${hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+      ${!isLogic && hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
         title="Wire an asset (content) + optional Position / Trigger / Effect into this layer."
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">content</span></div>`}
-      ${paramKeys.map((key, i) => {
+      ${!isLogic && paramKeys.map((key, i) => {
         const total = Math.max(1, paramKeys.length);
         const topPx = 30 + (h - 30) * (i + 0.5) / total;
         const bound = boundParams.has(key);
@@ -61812,14 +62643,50 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           title=${(bound ? "Driven by a wired Number - param: " : "Bind a Number into param: ") + key}
           onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("param:" + key, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">${key}</span></div>`;
       })}
-      ${node.kind === "number-generator" && (spec.sub === "pixel-map") && html`<div
+      ${!isLogic && node.kind === "number-generator" && (spec.sub === "pixel-map") && html`<div
         className="workflow-port-zone workflow-port-zone-in workflow-port-zone-pixmap" data-port-node=${node.id} data-port-side="pixmap"
         style=${{ top: "15px", bottom: "auto", height: "18px" }}
         title="Wire an image asset here - sampled by the pixel-map sub-type."
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("pixmap", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">pixel map</span></div>`}
-      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+      ${!isLogic && html`<div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
         title=${"Wire this " + cfg.label + " into a host editor."}
-        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${(cfg.label || "out").toLowerCase()}</span></div>
+        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${(cfg.label || "out").toLowerCase()}</span></div>`}
+      ${!isLogic && readbackKeys.map((key, i) => {
+        const total = Math.max(1, readbackKeys.length);
+        const topPx = 30 + (h - 30) * (i + 0.5) / total;
+        return html`<div key=${"pro-" + key}
+          className=${"workflow-port-zone workflow-port-zone-out workflow-port-zone-paramout workflow-dtype-number"}
+          data-port-node=${node.id} data-port-side=${"paramout:" + key} data-dtype="number"
+          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
+          title=${"Read-back: this " + cfg.label.toLowerCase() + "'s current " + key + " value, fed back into a Logic graph."}
+          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("paramout:" + key, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${key}</span></div>`;
+      })}
+      ${isLogic && logicRows.accepts.map((port, i) => {
+        const total = Math.max(1, logicRows.accepts.length);
+        const topPx = 30 + (h - 30) * (i + 0.5) / total;
+        const ps = (logicDef.accepts || {})[port] || {};
+        return html`<div key=${"la-" + port}
+          className=${"workflow-port-zone workflow-port-zone-in" + workflowDtypeClass(ps.dtype)}
+          data-port-node=${node.id} data-port-side=${port} data-dtype=${ps.dtype || null}
+          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
+          title=${(ps.label || port) + (ps.dtype ? " : " + ps.dtype : "")}
+          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge(port, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">${port}</span></div>`;
+      })}
+      ${isLogic && logicRows.provides.map((port, i) => {
+        const total = Math.max(1, logicRows.provides.length);
+        const topPx = 30 + (h - 30) * (i + 0.5) / total;
+        const ps = (logicDef.provides || {})[port] || {};
+        // W3E live preview: when Live is on this port's current value shows next
+        // to the label, and an "active" dot pulses (driven by th:logic-ports).
+        const hasLive = livePorts && Object.prototype.hasOwnProperty.call(livePorts, port);
+        const liveStr = hasLive ? fmtPortValue(livePorts[port]) : null;
+        return html`<div key=${"lp-" + port}
+          className=${"workflow-port-zone workflow-port-zone-out" + workflowDtypeClass(ps.dtype) + (hasLive ? " is-live" : "")}
+          data-port-node=${node.id} data-port-side=${port} data-dtype=${ps.dtype || null}
+          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
+          title=${(ps.label || port) + (ps.dtype ? " : " + ps.dtype : "") + (liveStr != null ? " = " + liveStr : "")}
+          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge(port, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${port}</span>${liveStr != null && html`<span className="workflow-port-live-value">${liveStr}</span>`}</div>`;
+      })}
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
     </div>
   `;
@@ -65977,12 +66844,17 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
         // the path (data-direction) lets CSS pick the keyframe for fwd / rev.
         const isActive = !!selectedNodeId && (fromRef.node === selectedNodeId || toRef.node === selectedNodeId);
         const direction = !isActive ? null : (fromRef.node === selectedNodeId ? "outgoing" : "incoming");
+        // Logic Graph (W1A): colour the wire by its source port's dtype (null
+        // for legacy edges, which keeps the default accent stroke).
+        const edgeDtype = workflowPortDtype(fn, fromRef.port, "provides")
+          || workflowPortDtype(tn, toRef.port, "accepts") || null;
         return html`
           <path
             key=${"e" + i}
-            className=${"workflow-edge" + (isSelected ? " workflow-edge-selected" : "") + (isActive ? " workflow-edge-active" : "")}
+            className=${"workflow-edge" + (isSelected ? " workflow-edge-selected" : "") + (isActive ? " workflow-edge-active" : "") + workflowDtypeClass(edgeDtype)}
             data-direction=${direction}
-            d=${workflowEdgePath(a.x, a.y, b.x, b.y, workflowPortDir(fromRef.port), workflowPortDir(toRef.port))}
+            data-dtype=${edgeDtype}
+            d=${workflowEdgePath(a.x, a.y, b.x, b.y, workflowPortDir(fromRef.port, fn), workflowPortDir(toRef.port, tn))}
             style=${{ pointerEvents: "stroke" }}
             onMouseDown=${(ev) => { ev.stopPropagation(); onSelectEdge(i); }}
           />
@@ -65994,8 +66866,8 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
           d=${workflowEdgePath(
             pendingEdge.fromX, pendingEdge.fromY,
             pendingEdge.toX, pendingEdge.toY,
-            workflowPortDir(pendingEdge.fromPort),
-            pendingEdge.snapped && pendingEdge.snapTarget ? workflowPortDir(pendingEdge.snapTarget.port) : undefined
+            workflowPortDir(pendingEdge.fromPort, nodeById[pendingEdge.fromNodeId]),
+            pendingEdge.snapped && pendingEdge.snapTarget ? workflowPortDir(pendingEdge.snapTarget.port, nodeById[pendingEdge.snapTarget.node]) : undefined
           )}
         />
       `}

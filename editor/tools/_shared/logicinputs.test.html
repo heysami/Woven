@@ -1,0 +1,138 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LogicInputs / LogicVision manual test harness</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #0e1116; color: #e7ebf2; }
+  header { padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  header p { margin: 4px 0 0; font-size: 12px; color: #8b94a6; }
+  .wrap { display: grid; grid-template-columns: 1fr 360px; gap: 16px; padding: 16px; align-items: start; }
+  #surface {
+    position: relative; height: 420px; border-radius: 12px; outline: none;
+    background: radial-gradient(120% 120% at 30% 20%, #1b2233, #0f1320);
+    border: 1px solid rgba(255,255,255,0.10); overflow: hidden; touch-action: none;
+  }
+  #surface .hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #5b6478; font-size: 13px; pointer-events: none; }
+  #dot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #4f7cff; box-shadow: 0 0 18px #4f7cff; transition: background .1s; }
+  #dot.down { background: #ff5c7a; box-shadow: 0 0 18px #ff5c7a; }
+  .panel { background: #141821; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; }
+  .panel h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8b94a6; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  button { font: inherit; font-size: 13px; cursor: pointer; padding: 8px 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.14); background: #1c2230; color: #dbe2ee; }
+  button:hover { border-color: rgba(255,255,255,0.28); }
+  pre { margin: 0; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: #b7c2d4; max-height: 360px; overflow: auto; }
+  video { width: 100%; border-radius: 8px; background: #000; margin-top: 8px; display: none; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .status { font-size: 12px; color: #8b94a6; }
+  .ok { color: #5fd08a; } .bad { color: #ff7a8c; }
+</style>
+
+<header>
+  <h1>LogicInputs / LogicVision manual test harness</h1>
+  <p>Move / click / scroll / type over the surface. getUserMedia, gyro and camera cannot be headlessly tested - use the buttons (a real user gesture) to verify capture. Serve over http(s); file:// blocks ES module imports and getUserMedia.</p>
+</header>
+
+<div class="wrap">
+  <div>
+    <div id="surface" tabindex="0">
+      <div class="hint">render surface - pointer / touch / keyboard / scroll captured here</div>
+      <div id="dot"></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Sensors + vision (user gesture required)</h2>
+      <div class="btns">
+        <button id="btnGyro">requestSensor('gyro')</button>
+        <button id="btnAudio">requestSensor('audio')</button>
+        <button id="btnCam">requestCamera()</button>
+        <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+          video file <input id="fileVid" type="file" accept="video/*" style="display:none">
+          <button type="button" id="btnFile">choose</button>
+        </label>
+        <button id="btnDetect">toggle detect</button>
+        <button id="btnOcr">toggle ocr</button>
+      </div>
+      <div class="row"><span class="status" id="statGyro">gyro: idle</span></div>
+      <div class="row"><span class="status" id="statAudio">audio: idle</span></div>
+      <div class="row"><span class="status" id="statCam">camera/video: idle</span></div>
+      <video id="vid" playsinline muted></video>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>live sample()</h2>
+    <pre id="out">attaching...</pre>
+  </div>
+</div>
+
+<script type="module">
+  import { LogicInputs } from './logicinputs.js';
+  import { LogicVision } from './logicvision.js';
+
+  const surface = document.getElementById('surface');
+  const out = document.getElementById('out');
+  const dot = document.getElementById('dot');
+  const vid = document.getElementById('vid');
+
+  const handle = LogicInputs.attach(surface, { audioBand: 'full' });
+
+  let streamHandle = null;
+  let detectOn = false, ocrOn = false;
+
+  function fmt(v) { return JSON.stringify(v, (k, val) => (typeof val === 'number' ? Math.round(val * 1000) / 1000 : val), 2); }
+
+  function loop() {
+    const s = handle.sample();
+    // mirror the pointer dot
+    dot.style.left = (s.pointer.x * surface.clientWidth) + 'px';
+    dot.style.top = (s.pointer.y * surface.clientHeight) + 'px';
+    dot.classList.toggle('down', s.pointer.isDown);
+
+    let vision = {};
+    if (streamHandle && (detectOn || ocrOn)) {
+      if (detectOn) LogicVision.detect(streamHandle, { detector: 'face', target: 'present' });
+      if (ocrOn) LogicVision.ocr(streamHandle, { query: '', interval: 1200 });
+      vision = LogicVision.frame([streamHandle]);
+    }
+
+    out.textContent = fmt({ inputs: s, streams: vision });
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  document.getElementById('btnGyro').onclick = async () => {
+    const st = document.getElementById('statGyro');
+    const ok = await handle.requestSensor('gyro');
+    st.textContent = 'gyro: ' + (ok ? 'granted' : 'denied / unavailable');
+    st.className = 'status ' + (ok ? 'ok' : 'bad');
+  };
+  document.getElementById('btnAudio').onclick = async () => {
+    const st = document.getElementById('statAudio');
+    const ok = await handle.requestSensor('audio');
+    st.textContent = 'audio: ' + (ok ? 'granted (talk / play sound)' : 'denied / unavailable');
+    st.className = 'status ' + (ok ? 'ok' : 'bad');
+  };
+  document.getElementById('btnCam').onclick = async () => {
+    const st = document.getElementById('statCam');
+    const h = await LogicVision.requestCamera({ facing: 'user', resolution: 'medium' });
+    if (h) {
+      streamHandle = h;
+      const rec = LogicVision._streams[h];
+      vid.style.display = 'block'; vid.srcObject = rec.el.srcObject; vid.play().catch(() => {});
+      st.textContent = 'camera: live (handle ' + h + ')'; st.className = 'status ok';
+    } else { st.textContent = 'camera: denied / unavailable'; st.className = 'status bad'; }
+  };
+  document.getElementById('btnFile').onclick = () => document.getElementById('fileVid').click();
+  document.getElementById('fileVid').onchange = (e) => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    vid.src = URL.createObjectURL(f); vid.loop = true; vid.style.display = 'block'; vid.muted = true; vid.play().catch(() => {});
+    streamHandle = LogicVision.attachVideo(vid);
+    const st = document.getElementById('statCam');
+    st.textContent = 'video: loaded (handle ' + streamHandle + ')'; st.className = 'status ok';
+  };
+  document.getElementById('btnDetect').onclick = () => { detectOn = !detectOn; document.getElementById('btnDetect').textContent = detectOn ? 'detect: ON' : 'toggle detect'; };
+  document.getElementById('btnOcr').onclick = () => { ocrOn = !ocrOn; document.getElementById('btnOcr').textContent = ocrOn ? 'ocr: ON' : 'toggle ocr'; };
+
+  window.addEventListener('beforeunload', () => { handle.dispose(); LogicVision.dispose(); });
+</script>

@@ -186,6 +186,7 @@ function loadMod(key){
    into the standalone player verbatim. */
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue } from '../_shared/fx.js';
 import { Sources } from '../_shared/sources.js';
+import { LogicGraph } from '../_shared/logicgraph.js';
 const EFFECT_SPECS = fxProgramSpecs();
 let _fxChain=null, _fxFailed=false;
 function ensureFXChain(){
@@ -193,6 +194,145 @@ function ensureFXChain(){
   try{ _fxChain=createFXChain(); }catch(e){ _fxFailed=true; console.warn('fx.createFXChain failed',e); }
   return _fxChain;
 }
+
+/* ===========================================================================
+   LOGIC GRAPH BRIDGE (W2C)
+   Compiles the serialized logic projection (contract §3) once per change, then
+   ticks it each frame with real input. `kind:"logic"` param bindings read their
+   value from the tick output ports instead of Sources.eval. The W2D input
+   modules (logicinputs.js / logicvision.js) are loaded lazily + feature-detected
+   so a missing module degrades to empty inputs (nothing throws). Capture + tick
+   only run while the piece is in a play/live state (see LogicBridge.live).
+   ===========================================================================*/
+const LogicBridge = {
+  plan:null, projection:null, _sig:'', live:true,
+  inputsMod:null, visionMod:null, _inputHandle:null, _attachedEl:null,
+  _ports:{}, _last:performance.now(), _wantInputs:false, _streamHandles:[],
+  // Lazy, optional W2D modules. Absent module -> graceful no-op.
+  async _ensureModules(){
+    if(this.inputsMod===null){
+      try{ const m=await import('../_shared/logicinputs.js'); this.inputsMod=(m&&m.LogicInputs)||false; }
+      catch(e){ this.inputsMod=false; }
+    }
+    if(this.visionMod===null){
+      try{ const m=await import('../_shared/logicvision.js'); this.visionMod=(m&&m.LogicVision)||false; }
+      catch(e){ this.visionMod=false; }
+    }
+  },
+  // Whether the current projection has any nodes/outputs worth ticking.
+  active(){ const p=this.projection; return !!(p && ((p.nodes&&p.nodes.length)||(p.outputs&&p.outputs.length))); },
+  setLive(on){
+    this.live=!!on;
+    if(!this.live){ // pause: drop the DOM input capture so a paused piece is inert.
+      try{ this._inputHandle && this._inputHandle.dispose && this._inputHandle.dispose(); }catch(e){}
+      this._inputHandle=null; this._attachedEl=null; this._ports={};
+    }
+  },
+  // Receive a new projection from the host (mm:init / mm:content). Recompile only
+  // when the serialized graph actually changed (cheap signature compare).
+  setProjection(proj){
+    const next=proj||null;
+    let sig=''; try{ sig=JSON.stringify(next); }catch(e){ sig=String(Math.random()); }
+    if(sig===this._sig) return;
+    this._sig=sig; this.projection=next;
+    this.plan = (next && this.active()) ? LogicGraph.compile(next) : null;
+    // Build the readback synthetic-node lookup (per-frame mutated constants).
+    this._readbacks = (next && Array.isArray(next.readbacks)) ? next.readbacks : [];
+    this._streamHandles = this._collectStreamHandles(next);
+    this._wantInputs = this.active();
+  },
+  _collectStreamHandles(proj){
+    // Camera/video source nodes expose a stream handle keyed by their node id; a
+    // processor reads it. We pass the set of source-node ids to LogicVision.frame.
+    if(!proj||!Array.isArray(proj.nodes)) return [];
+    const out=[];
+    for(const n of proj.nodes){ if(n && (n.kind==='input-camera'||n.kind==='input-video')) out.push(n.id); }
+    return out;
+  },
+  // Attach DOM input capture to the render surface (idempotent). Surface rect is
+  // cached inside LogicInputs (W2D) - we never call getBoundingClientRect here.
+  _ensureInput(surfaceEl){
+    if(!this.inputsMod || !surfaceEl) return;
+    if(this._inputHandle && this._attachedEl===surfaceEl) return;
+    try{ this._inputHandle && this._inputHandle.dispose && this._inputHandle.dispose(); }catch(e){}
+    try{ this._inputHandle=this.inputsMod.attach(surfaceEl,{}); this._attachedEl=surfaceEl; }
+    catch(e){ this._inputHandle=null; }
+  },
+  // Build the per-frame inputs object per contract §6.1: merge LogicInputs.sample()
+  // with { streams: LogicVision.frame(handles) } and the readback map.
+  _buildInputs(now){
+    const dt=Math.min((now-this._last)/1000,0.05); this._last=now;
+    let base={ dt, time:(now)/1000 };
+    if(this._inputHandle && this._inputHandle.sample){
+      try{ const s=this._inputHandle.sample()||{}; base=Object.assign({},s,{dt:(s.dt!=null?s.dt:dt),time:(s.time!=null?s.time:base.time)}); }
+      catch(e){}
+    }
+    let streams={};
+    if(this.visionMod && this.visionMod.frame && this._streamHandles.length){
+      try{ streams=this.visionMod.frame(this._streamHandles)||{}; }catch(e){ streams={}; }
+    }
+    base.streams=streams;
+    base.readback=this._readbackMap();
+    return base;
+  },
+  // Read-back: collect the current resolved value of each wired target param so
+  // a logic graph can read its own outputs back (contract §5.4). Also mutate the
+  // synthetic constant projection nodes in place so the engine resolves them via
+  // Sources.eval (no recompile needed).
+  _readbackProvider:null,
+  setReadbackProvider(fn){ this._readbackProvider=fn; },
+  _readbackMap(){
+    const map={};
+    const prov=this._readbackProvider;
+    for(const rb of (this._readbacks||[])){
+      let val=0; if(prov){ try{ val=Number(prov(rb.node,rb.param)); if(!Number.isFinite(val)) val=0; }catch(e){ val=0; } }
+      (map[rb.node]||(map[rb.node]={}))[rb.param]=val;
+      // Feed the synthetic constant node so engine readIn picks it up.
+      const sn=this.plan && this.plan.nodes && this.plan.nodes[rb.synthId];
+      if(sn){ if(!sn.spec) sn.spec={kind:'number',sub:'constant',params:{}}; if(!sn.spec.params) sn.spec.params={}; sn.spec.params.value=val; }
+    }
+    return map;
+  },
+  // Tick once per frame; cache the resolved out-ports. No-op when paused / empty.
+  tick(surfaceEl, now){
+    if(!this.live || !this.plan){ this._ports={}; return; }
+    if(this._wantInputs && this.inputsMod) this._ensureInput(surfaceEl);
+    let out;
+    try{ out=LogicGraph.tick(this.plan, this._buildInputs(now||performance.now()), {index:0,count:1}); }
+    catch(e){ out={}; }
+    this._ports=(out&&out._ports)||{};
+    this._out=out||{};
+  },
+  // Resolve a single `kind:"logic"` binding ref to its current scalar value.
+  // Returns undefined when the port has not been computed (paused / missing).
+  value(ref){
+    if(!ref) return undefined;
+    const op=this._ports && this._ports[ref.node];
+    if(!op) return undefined;
+    const v=op[ref.port];
+    if(v==null) return undefined;
+    if(typeof v==='number') return v;
+    if(typeof v==='boolean') return v?1:0;
+    if(v && typeof v==='object' && 'x' in v) return Number(v.x)||0;   // vector2 -> x
+    const n=Number(v); return Number.isFinite(n)?n:undefined;
+  },
+  // Overlay logic-binding values onto a params object BEFORE Sources.applyScalar.
+  // Logic bindings are scalar here (per-instance vector logic uses ctx.index in
+  // the engine, resolved via the engine's flow-repeat values - MVP overlays the
+  // scalar). Mutates p[key]; rotation keys keep p.rot in sync like applyScalar.
+  applyScalar(p){
+    const b=p&&p._bindings; if(!b) return p;
+    for(const k in b){ const src=b[k]; if(!src||src.kind!=='logic') continue;
+      const val=this.value(src.ref);
+      if(val===undefined) continue;
+      p[k]=val;
+      if(k==='rotation'||k==='rotateZ') p.rot=(finiteNumber(p.rotation,0)+finiteNumber(p.rotateZ,0))*Math.PI/180;
+    }
+    return p;
+  },
+  // True if a spec carries any logic binding (so a static consumer ticks each frame).
+  hasLogic(spec){ const b=spec&&spec._bindings; if(!b) return false; for(const k in b){ if(b[k]&&b[k].kind==='logic') return true; } return false; },
+};
 
 /* ---------- Parent-node bridge -------------------------------------------- */
 const Q = new URLSearchParams(location.search);
@@ -225,7 +365,7 @@ let gotInit=false;
      WIRED.layers    [{id,spec:{name,z,opacity,blend,visible},children:[...]}]
                       each child = {type:'asset'|'position'|'trigger'|'effect',...}
    ------------------------------------------------------------------------- */
-let WIRED = { effects:[], positions:[], triggers:[], layers:[] };
+let WIRED = { effects:[], positions:[], triggers:[], layers:[], logic:null };
 let _wiredVer=0, _wiredCache=null, _wiredCacheVer=-1;
 function storeWired(d){
   WIRED = {
@@ -233,8 +373,13 @@ function storeWired(d){
     positions: Array.isArray(d.positions) ? d.positions : [],
     triggers:  Array.isArray(d.triggers)  ? d.triggers  : [],
     layers:    Array.isArray(d.layers)    ? d.layers    : [],
+    logic:     (d.logic && typeof d.logic==='object') ? d.logic : null,
   };
   _wiredVer++; _wiredCache=null;   // invalidate synthesized-layer cache
+  // Logic Graph (W2C): recompile the logic plan when the projection changes;
+  // warm the optional W2D input modules so capture is ready on the next frame.
+  LogicBridge.setProjection(WIRED.logic);
+  if(LogicBridge.active()) LogicBridge._ensureModules();
 }
 /* Synthesize runtime layers from WIRED.layers: a wired layer is a node that
    wires content+position+trigger+effect via its `children`. Returns layers in
@@ -362,7 +507,7 @@ function buildWiredRuntimeLayers(){
       let intensity = fx.intensity??1, params = fx.params||{};
       const b = fx._bindings;
       if(b){ params = Object.assign({}, params);
-        for(const k in b){ const src=b[k]; if(!src||Sources.isVector(src)) continue;
+        for(const k in b){ const src=b[k]; if(!src||src.kind==='logic'||Sources.isVector(src)) continue;
           const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
           if(k==='intensity') intensity=val; else params[k]=val; }
       }
@@ -466,7 +611,10 @@ function triggerBoundParams(spec){
   const params=Object.assign({}, (spec&&spec.params)||{});
   const b=spec&&spec._bindings;
   if(b){ for(const k in b){ const src=b[k]; if(!src) continue;
-    const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+    // W2C: logic-graph binding reads from the engine tick output; others Sources.eval.
+    let val;
+    if(src.kind==='logic') val=LogicBridge.value(src.ref);
+    else val=Sources.eval(src,{index:0,time:Input.clock,count:1});
     if(typeof val==='number'&&isFinite(val)) params[k]=val;
   }}
   // Native timeline-trigger eval reads `dur`; the source control is `duration`.
@@ -719,7 +867,10 @@ const Positioning = {
     const p=normalizeRuntimePositioning(L.positioning,W,H);
     // Phase-1: scalar bindings overlay onto params BEFORE mode resolve; vector
     // (per-instance) bindings overlay onto each resolved transform AFTER.
+    // W2C: run Sources first (it sets logic-binding keys to 0 since it can't
+    // resolve "logic"), THEN LogicBridge so the real engine value wins last.
     Sources.applyScalar(p, Input.clock);
+    LogicBridge.applyScalar(p);
     let out;
     switch(p.mode){
       case 'single':      out=[{x:p.x,y:p.y,scale:p.scale,rot:p.rot}]; break;
@@ -1279,8 +1430,35 @@ const Engine = {
     refreshHostRect();
   },
   onPointerDown(x,y){ /* hook for instance/physics spawning handled in Positioning */ },
+  // W2C run/live gating: the logic graph executes + captures input only when the
+  // piece is in a play/live state. In the editor iframe it is INERT by default
+  // (logicRun=false) - W3E flips it via window.__mmLogicRun(on); the standalone
+  // player (slimPlayer) defaults to live. We gate on the existing preview-play
+  // (this.playing) AND the logicRun seam.
+  logicRun:false,
+  // W3E live value preview: post the engine's resolved out-ports back to the host
+  // on a throttle (~10Hz) while logicRun is on, so the editor can show each logic
+  // node output port's current value next to it. Cheap: only the _ports map, only
+  // when EMBEDDED + logicRun, and only if there is logic to report.
+  _portsT:0,
+  _reportPorts(now){
+    if(!EMBEDDED) return;
+    if(now-this._portsT<100) return;     // throttle to ~10Hz
+    this._portsT=now;
+    const ports=(LogicBridge && LogicBridge._ports) || null;
+    if(!ports) return;
+    // Only post when there is at least one node's ports to report (avoid spamming
+    // empty maps when the composition carries no logic graph).
+    let any=false; for(const k in ports){ any=true; break; }
+    if(!any) return;
+    try{ parent.postMessage({type:'mm:logic-ports',nodeId:NODE,values:ports},'*'); }catch(e){}
+  },
   frame(now){
     const dt=Math.min((now-this.last)/1000, 0.05); this.last=now;
+    // Tick the logic graph BEFORE render so this frame's binding consults see
+    // fresh port values. Gated by play + the run/live seam.
+    LogicBridge.setLive(this.playing && this.logicRun);
+    if(this.playing && this.logicRun){ LogicBridge.tick(stageHost, now); this._reportPorts(now); }
     if(this.playing){ Input.tick(); this.render(dt); }
     // fps
     this.fpsAcc+=dt; this.fpsN++; if(now-this.fpsT>500){
@@ -1302,20 +1480,25 @@ const Engine = {
     //    wired source ANIMATES the trigger rather than freezing at build time.
     //    Static bindings were already baked once in buildWiredRuntimeLayers.
     for(const L of layers){ const ts=L._trigSpec;
-      if(ts && ts._bindings && Sources.isDynamic(ts)){
+      // W2C: logic bindings always animate (they re-tick each frame), so they
+      // trigger the re-resolve too - not just Number/Timeline dynamic sources.
+      if(ts && ts._bindings && (Sources.isDynamic(ts) || LogicBridge.hasLogic(ts))){
         const p=triggerBoundParams(ts);
         Object.assign(L.trigger, p);
         L.trigger.impacts=triggerResolvedImpacts(ts, p);
       }
     }
-    // 0b) re-resolve time-varying EFFECT param bindings (Number/Timeline) so a
-    //     wired source ANIMATES an effect param / intensity rather than freezing
+    // 0b) re-resolve time-varying EFFECT param bindings (Number/Timeline/logic) so
+    //     a wired source ANIMATES an effect param / intensity rather than freezing
     //     at the build-time clock (the wired-layer stack is cached by _wiredVer).
     //     Static bindings stay as baked in buildWiredRuntimeLayers.
     for(const L of layers){ const st=L.effects&&L.effects.stack; if(!st) continue;
-      for(const e of st){ const fx=e._fxSpec; if(!fx||!Sources.isDynamic(fx)) continue;
-        for(const k in fx._bindings){ const src=fx._bindings[k]; if(!src||Sources.isVector(src)) continue;
-          const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+      for(const e of st){ const fx=e._fxSpec; if(!fx||!(Sources.isDynamic(fx)||LogicBridge.hasLogic(fx))) continue;
+        for(const k in fx._bindings){ const src=fx._bindings[k]; if(!src) continue;
+          let val;
+          if(src.kind==='logic') val=LogicBridge.value(src.ref);
+          else { if(Sources.isVector(src)) continue; val=Sources.eval(src,{index:0,time:Input.clock,count:1}); }
+          if(val===undefined||val===null) continue;
           if(k==='intensity') e.intensity=val; else (e.params||(e.params={}))[k]=val;
         }
       }
@@ -1976,6 +2159,9 @@ if(EMBEDDED){
       _detached=!!d.selected;
       document.body.classList.toggle('detached-panels', _detached);
       requestAnimationFrame(()=>{ reportPanels(); reportLayerGeom(); });
+    } else if(d.type==='mm:logic-run'){
+      // W3E run/live toggle from the host: execute + capture input when on.
+      Engine.logicRun=!!d.on;
     }
   });
 
@@ -2016,10 +2202,14 @@ function bake(){
   // WIRED top-level effects → final post-process stack (same shader-lab catalog,
   // same param contract - no collapsing).
   const topFx=(WIRED.effects||[]).map(e=>bakeEffect({type:(e.glsl&&String(e.glsl).trim())?'custom':e.type, params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl}));
+  // W2C: bake the logic-graph projection so the published piece reacts to real
+  // input (the slim player loads logicgraph.js + W2D capture, contract §5.5).
+  const logic=(WIRED.logic && typeof WIRED.logic==='object')?WIRED.logic:null;
   return BAKED_TEMPLATE
     .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
     .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';')
-    .replace('/*__TOPFX__*/','window.__MM_TOPFX__='+JSON.stringify(topFx)+';');
+    .replace('/*__TOPFX__*/','window.__MM_TOPFX__='+JSON.stringify(topFx)+';')
+    .replace('/*__LOGIC__*/','window.__MM_LOGIC__='+JSON.stringify(logic)+';');
 }
 /* Serialize one effect for the baked player. Custom effects carry a precompiled
    fragment (`_frag`); built-ins carry just type/params/intensity and resolve
@@ -2048,15 +2238,16 @@ const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
 /*__CFG__*/
 /*__ASSETS__*/
 /*__TOPFX__*/
+/*__LOGIC__*/
 ${'/* ===== slim player ===== */'}
 (${slimPlayer.toString()})(window.__MM_CFG__, window.__MM_ASSETS__||[],
   ${JSON.stringify(Object.assign({__copy:{frag:EFFECT_COPY_FRAG,uniforms:[]}}, EFFECT_SPECS))}, ${JSON.stringify(FX_VERT)},
-  window.__MM_TOPFX__||[]);
+  window.__MM_TOPFX__||[], window.__MM_LOGIC__||null);
 <\/script></body></html>`;
 
 /* slimPlayer: a self-contained reimplementation of the core runtime. It is a
    FUNCTION (stringified into the baked file). It must not reference outer scope. */
-function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
+function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   TOPFX=TOPFX||[];
   const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
   const host=document.getElementById('h'), stage=document.getElementById('s');
@@ -2067,6 +2258,38 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
   function fit(){ const ar=W/H; let w=host.clientWidth,h=w/ar; if(h>host.clientHeight){h=host.clientHeight;w=h*ar;}
     stage.style.width=w+'px'; stage.style.height=h+'px'; rect=stage.getBoundingClientRect(); }
   let rect={left:0,top:0,width:1,height:1}; addEventListener('resize',fit); fit();
+  /* W2C live/share logic bridge: the published piece reacts to real input.
+     logicgraph.js + the W2D capture modules are loaded by ABSOLUTE URL (same
+     origin as the served editor toolchain) and feature-detected; a missing
+     module degrades to no logic (the rest of the composition still plays).
+     Defaults to LIVE (a published piece runs on load). */
+  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,readbacks:[],streams:[],last:performance.now(),live:true,
+    value(ref){ if(!ref)return undefined; const o=this.ports[ref.node]; if(!o)return undefined; const v=o[ref.port];
+      if(v==null)return undefined; if(typeof v==='number')return v; if(typeof v==='boolean')return v?1:0;
+      if(v&&typeof v==='object'&&'x'in v)return Number(v.x)||0; const n=Number(v); return Number.isFinite(n)?n:undefined; },
+    applyScalar(p){ const b=p&&p._bindings; if(!b)return p; for(const k in b){ const s=b[k]; if(!s||s.kind!=='logic')continue;
+      const val=this.value(s.ref); if(val===undefined)continue; p[k]=val;
+      if(k==='rotation'||k==='rotateZ')p.rot=(num(p.rotation,0)+num(p.rotateZ,0))*Math.PI/180; } return p; },
+    readbackMap(){ const m={}; for(const rb of this.readbacks){ let val=0; const L=CFG.layers.find(x=>x&&x.id===rb.node);
+      if(L){ if(rb.param==='opacity')val=num(L._opacity!=null?L._opacity:(L.opacity!=null?L.opacity:1),1);
+        else { const pp=L.positioning||{}; val=num(pp[rb.param],0); } }
+      (m[rb.node]||(m[rb.node]={}))[rb.param]=val;
+      const sn=this.plan&&this.plan.nodes&&this.plan.nodes[rb.synthId];
+      if(sn){ if(!sn.spec)sn.spec={kind:'number',sub:'constant',params:{}}; if(!sn.spec.params)sn.spec.params={}; sn.spec.params.value=val; } }
+      return m; },
+    tick(now){ if(!this.live||!this.plan||!this.LG)return; const dt=Math.min((now-this.last)/1000,0.05); this.last=now;
+      let inp={dt,time:now/1000}; if(this.handle&&this.handle.sample){ try{ const s=this.handle.sample()||{}; inp=Object.assign({},s,{dt:(s.dt!=null?s.dt:dt),time:(s.time!=null?s.time:inp.time)}); }catch(e){} }
+      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
+      inp.streams=streams; inp.readback=this.readbackMap();
+      let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{}; },
+  };
+  if(LOGIC && (LOGIC.nodes&&LOGIC.nodes.length || LOGIC.outputs&&LOGIC.outputs.length)){
+    LB.readbacks=Array.isArray(LOGIC.readbacks)?LOGIC.readbacks:[];
+    LB.streams=(LOGIC.nodes||[]).filter(n=>n&&(n.kind==='input-camera'||n.kind==='input-video')).map(n=>n.id);
+    import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
+    import('/editor/tools/_shared/logicinputs.js').then(m=>{ const M=m&&m.LogicInputs; if(M&&M.attach){ try{ LB.handle=M.attach(stage,{}); }catch(e){} } }).catch(()=>{});
+    import('/editor/tools/_shared/logicvision.js').then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
+  }
   /* input */
   const IN={px:.5,py:.5,down:false,clickPulse:0,hover:false,t0:performance.now(),clock:0,
     cam:{on:false,video:null},mic:{on:false,an:null,data:null,freq:null},detect:{hand:0,face:0,object:0,landmarks:null}};
@@ -2099,6 +2322,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
   /* positioning (subset: single/grid/instances/rope/drawn/camera-feed; physics→grid fallback, face-3d→procedural) */
   const SIM={};
   function positions(L,dt){ const p=L.positioning;
+    LB.applyScalar(p);   // W2C: overlay logic-graph scalar bindings before resolve
     if(p.mode==='single')return[{x:p.x,y:p.y,scale:p.scale,rot:p.rot}];
     if(p.mode==='grid'){ const out=[],cols=Math.max(1,p.cols|0),rows=Math.max(1,p.rows|0),rng=mb(hash(L.id)),gap=Math.max(0,num(p.gap,0)),sc=Math.max(1,Math.min(cols,num(p.spanCols,1)|0)),sr=Math.max(1,Math.min(rows,num(p.spanRows,1)|0)),cw=(W-gap*(cols+1))/cols,ch=(H-gap*(rows+1))/rows,bw=Math.max(1,cw*sc+gap*(sc-1)),bh=Math.max(1,ch*sr+gap*(sr-1)),sx=num(p.shiftX,0),sy=num(p.shiftY,0),rot=(num(p.rotation,0)+num(p.rotateZ,0))*Math.PI/180;
       for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){ if(p.placement==='random'&&rng()<0.25)continue;
@@ -2177,6 +2401,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
   /* loop */
   let last=performance.now();
   function frame(now){const dt=Math.min((now-last)/1000,0.05);last=now;IN.clock=(now-IN.t0)/1000;IN.clickPulse*=0.9;
+    LB.tick(now);   // W2C: tick the logic graph before resolving this frame's bindings
     const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);const ov=impacts(tv);
     ctx.clearRect(0,0,W,H);ctx.fillStyle=CFG.background||'#000';ctx.fillRect(0,0,W,H);
     // layers read as a mask must render even when hidden
@@ -2212,13 +2437,41 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX){
 Engine.init();
 refreshHostRect();
 
+// W2C read-back provider: resolve a target node's CURRENT param value so a logic
+// graph can read its own outputs back (contract §5.4). Looks the target up among
+// the live runtime layers (wired layers carry the canvas node id) and returns the
+// param's current value (opacity from the layer, x/y/scale/rotation from its
+// positioning). Falls back to 0 when the target / param is not found.
+LogicBridge.setReadbackProvider((nodeId, param)=>{
+  const layers=allRuntimeLayers();
+  let L=layers.find(x=>x && (x.id===nodeId));
+  // wired layers may key by spec/source node id of a CHILD - also match _trigSpec
+  // / positioning owner via the wired layer mapping.
+  if(!L){ const wl=(WIRED.layers||[]).find(w=>w && w.id===nodeId); if(wl) L=layers.find(x=>x && x.id===wl.id); }
+  if(!L) return 0;
+  if(param==='opacity') return finiteNumber(L._opacity!=null?L._opacity:(L.opacity!=null?L.opacity:1),1);
+  const p=L.positioning||{};
+  if(param==='x') return finiteNumber(p.x,0);
+  if(param==='y') return finiteNumber(p.y,0);
+  if(param==='scale'||param==='size') return finiteNumber(p.scale!=null?p.scale:p.size,1);
+  if(param==='rotation'||param==='rotateZ') return finiteNumber(p.rotation!=null?p.rotation:p.rotateZ,0);
+  // generic: trigger/effect params live on the spec params
+  if(p[param]!=null) return finiteNumber(p[param],0);
+  return 0;
+});
+
+// W3E seam: toggle logic-graph execution + input capture from the host (Run/Live).
+window.__mmLogicRun=function(on){ Engine.logicRun=!!on; };
+
 if(EMBEDDED){
   const announce=()=>{ try{ parent.postMessage({type:'mm:ready',nodeId:NODE},'*'); }catch(e){} };
   announce();
   // fallback to demo if host never sends init
   setTimeout(()=>{ if(!gotInit){ STATE=defaultState(); rebuild(); } }, 1200);
 } else {
-  // standalone editor: start from the default demo
+  // standalone editor: start from the default demo. Standalone is a live view,
+  // so the logic graph runs by default (W2C run/live default).
+  Engine.logicRun=true;
   STATE=defaultState(); rebuild();
 }
 </script>

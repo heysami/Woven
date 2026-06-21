@@ -9355,6 +9355,142 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
 
+/* Logic Graph (W1A) typed-port colours. Each dtype gets a token; a port zone
+   or edge carrying `.workflow-dtype-<type>` recolours its diamond / stroke so
+   the data type reads at a glance. Legacy ports / edges carry no dtype class
+   and keep the default --accent green, so nothing existing changes.
+   number=teal, boolean=amber, vector2=violet, region=blue, string=grey,
+   event=pink, color=lime (contract §1). */
+:root {
+  --dtype-event:   oklch(70% 0.20 350);
+  --dtype-number:  oklch(70% 0.13 195);
+  --dtype-vector2: oklch(64% 0.20 300);
+  --dtype-region:  oklch(62% 0.17 255);
+  --dtype-boolean: oklch(78% 0.15 75);
+  --dtype-string:  oklch(72% 0.02 250);
+  --dtype-color:   oklch(80% 0.20 130);
+}
+.workflow-dtype-event   .workflow-port-dot { background: var(--dtype-event);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-event) 70%, transparent)); }
+.workflow-dtype-number  .workflow-port-dot { background: var(--dtype-number);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-number) 70%, transparent)); }
+.workflow-dtype-vector2 .workflow-port-dot { background: var(--dtype-vector2);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-vector2) 70%, transparent)); }
+.workflow-dtype-region  .workflow-port-dot { background: var(--dtype-region);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-region) 70%, transparent)); }
+.workflow-dtype-boolean .workflow-port-dot { background: var(--dtype-boolean);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-boolean) 70%, transparent)); }
+.workflow-dtype-string  .workflow-port-dot { background: var(--dtype-string);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-string) 70%, transparent)); }
+.workflow-dtype-color   .workflow-port-dot { background: var(--dtype-color);
+  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-color) 70%, transparent)); }
+/* Typed edges take the same stroke colour. The :not() guards keep the selected
+   (hot orange) + pending states winning even though those rules are single-class
+   (the dtype rule is two-class and would otherwise out-specify them). */
+.workflow-edge.workflow-dtype-event:not(.workflow-edge-selected):not(.workflow-edge-pending)   { stroke: var(--dtype-event); }
+.workflow-edge.workflow-dtype-number:not(.workflow-edge-selected):not(.workflow-edge-pending)  { stroke: var(--dtype-number); }
+.workflow-edge.workflow-dtype-vector2:not(.workflow-edge-selected):not(.workflow-edge-pending) { stroke: var(--dtype-vector2); }
+.workflow-edge.workflow-dtype-region:not(.workflow-edge-selected):not(.workflow-edge-pending)  { stroke: var(--dtype-region); }
+.workflow-edge.workflow-dtype-boolean:not(.workflow-edge-selected):not(.workflow-edge-pending) { stroke: var(--dtype-boolean); }
+.workflow-edge.workflow-dtype-string:not(.workflow-edge-selected):not(.workflow-edge-pending)  { stroke: var(--dtype-string); }
+.workflow-edge.workflow-dtype-color:not(.workflow-edge-selected):not(.workflow-edge-pending)   { stroke: var(--dtype-color); }
+
+/* ── W3E: edge type-compatibility highlight while dragging from a typed port ──
+   When an edge drag starts from a logic (dtype-carrying) port, the canvas root
+   gets data-edge-dtype=<srcType> + data-edge-dir=(from-source|from-target).
+   We DIM every port, then re-light only the dtype-compatible ones on the
+   correct side, so a valid drop target glows and everything else recedes.
+   Compatibility mirrors workflowDtypesCompatible(): same dtype always; event ->
+   boolean; number <-> boolean. Untyped drags carry no data-edge-dtype, so none
+   of these rules match and legacy edge dragging is unchanged. */
+.workflow-canvas-wrap[data-edge-dtype] .workflow-port-zone {
+  opacity: 0.28; transition: opacity .12s ease;
+}
+/* from-source (provides) drag: light compatible ACCEPT-side (in) ports. */
+.workflow-canvas-wrap[data-edge-dtype="event"][data-edge-dir="from-source"]   .workflow-port-zone-in.workflow-dtype-event,
+.workflow-canvas-wrap[data-edge-dtype="event"][data-edge-dir="from-source"]   .workflow-port-zone-in.workflow-dtype-boolean,
+.workflow-canvas-wrap[data-edge-dtype="number"][data-edge-dir="from-source"]  .workflow-port-zone-in.workflow-dtype-number,
+.workflow-canvas-wrap[data-edge-dtype="number"][data-edge-dir="from-source"]  .workflow-port-zone-in.workflow-dtype-boolean,
+.workflow-canvas-wrap[data-edge-dtype="boolean"][data-edge-dir="from-source"] .workflow-port-zone-in.workflow-dtype-boolean,
+.workflow-canvas-wrap[data-edge-dtype="boolean"][data-edge-dir="from-source"] .workflow-port-zone-in.workflow-dtype-number,
+.workflow-canvas-wrap[data-edge-dtype="vector2"][data-edge-dir="from-source"] .workflow-port-zone-in.workflow-dtype-vector2,
+.workflow-canvas-wrap[data-edge-dtype="region"][data-edge-dir="from-source"]  .workflow-port-zone-in.workflow-dtype-region,
+.workflow-canvas-wrap[data-edge-dtype="string"][data-edge-dir="from-source"]  .workflow-port-zone-in.workflow-dtype-string,
+.workflow-canvas-wrap[data-edge-dtype="color"][data-edge-dir="from-source"]   .workflow-port-zone-in.workflow-dtype-color,
+/* from-target (accepts) drag: light compatible SOURCE-side (out) ports. Because
+   compat(from,to) is direction-aware, the symmetric pairs (event->boolean,
+   number<->boolean) flip here: a boolean accept lights event/number/boolean
+   sources; a number accept lights number/boolean sources. */
+.workflow-canvas-wrap[data-edge-dtype="event"][data-edge-dir="from-target"]   .workflow-port-zone-out.workflow-dtype-event,
+.workflow-canvas-wrap[data-edge-dtype="number"][data-edge-dir="from-target"]  .workflow-port-zone-out.workflow-dtype-number,
+.workflow-canvas-wrap[data-edge-dtype="number"][data-edge-dir="from-target"]  .workflow-port-zone-out.workflow-dtype-boolean,
+.workflow-canvas-wrap[data-edge-dtype="boolean"][data-edge-dir="from-target"] .workflow-port-zone-out.workflow-dtype-boolean,
+.workflow-canvas-wrap[data-edge-dtype="boolean"][data-edge-dir="from-target"] .workflow-port-zone-out.workflow-dtype-number,
+.workflow-canvas-wrap[data-edge-dtype="boolean"][data-edge-dir="from-target"] .workflow-port-zone-out.workflow-dtype-event,
+.workflow-canvas-wrap[data-edge-dtype="vector2"][data-edge-dir="from-target"] .workflow-port-zone-out.workflow-dtype-vector2,
+.workflow-canvas-wrap[data-edge-dtype="region"][data-edge-dir="from-target"]  .workflow-port-zone-out.workflow-dtype-region,
+.workflow-canvas-wrap[data-edge-dtype="string"][data-edge-dir="from-target"]  .workflow-port-zone-out.workflow-dtype-string,
+.workflow-canvas-wrap[data-edge-dtype="color"][data-edge-dir="from-target"]   .workflow-port-zone-out.workflow-dtype-color {
+  opacity: 1;
+}
+/* ── W3E: live value readout on logic out-ports (shown while a downstream
+   composer is in Live mode). A compact pill beside the port label, plus an
+   "active" pulse on the diamond. No layout thrash: pure paint. The pill lives
+   INSIDE the (otherwise hover-gated) port label, so we force it visible whenever
+   the port is live - the value preview is the point, it must not need a hover. */
+.workflow-port-live-value {
+  margin-left: 5px; padding: 0 4px; border-radius: 5px;
+  font-size: 9px; line-height: 1.5; font-variant-numeric: tabular-nums;
+  background: color-mix(in oklch, var(--accent, #79f) 22%, transparent);
+  color: var(--text, #222); white-space: nowrap; pointer-events: none;
+  max-width: 64px; overflow: hidden; text-overflow: ellipsis;
+  text-transform: none; letter-spacing: 0; font-weight: 600;
+}
+/* Force the live pill (and its host label) visible while the port is live, even
+   when the node is neither selected nor hovered. */
+.workflow-port-zone-out.is-live .workflow-port-label { opacity: 1; }
+.workflow-port-zone-out.is-live .workflow-port-dot {
+  animation: workflow-port-live-pulse 1.1s ease-in-out infinite;
+}
+@keyframes workflow-port-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent, #79f) 55%, transparent); }
+  50%      { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent, #79f) 0%, transparent); }
+}
+
+/* ── W3E: Run/Live toggle on the composer node bar. Inert by default; "is-live"
+   lights it as a green pill with the bolt mark + label. ── */
+.workflow-node-live-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin: 0 4px; padding: 2px 7px; border-radius: 12px;
+  border: 1px solid var(--line, #ddd); background: transparent;
+  color: var(--muted, #888); font-size: 10px; line-height: 1.4;
+  cursor: pointer; transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.workflow-node-live-toggle:hover { color: var(--text, #222); border-color: var(--accent, #79f); }
+.workflow-node-live-toggle .workflow-node-live-label { font-weight: 600; letter-spacing: .02em; }
+.workflow-node-live-toggle.is-live {
+  background: color-mix(in oklch, var(--dtype-color, #4caf50) 22%, transparent);
+  border-color: color-mix(in oklch, var(--dtype-color, #4caf50) 60%, transparent);
+  color: color-mix(in oklch, var(--dtype-color, #4caf50) 80%, var(--text, #111));
+}
+.workflow-node-live-toggle.is-live svg { animation: workflow-port-live-pulse 1.1s ease-in-out infinite; border-radius: 50%; }
+
+/* ── W3E node-body polish: typed logic port labels take a faint dtype-coloured
+   border + text so the port type reads on the LABEL, not just the diamond. Only
+   logic ports carry a .workflow-dtype-* class on the zone, so legacy labels are
+   untouched. ── */
+.workflow-port-zone.workflow-dtype-event   .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-event) 55%, var(--border)); color: var(--dtype-event); }
+.workflow-port-zone.workflow-dtype-number  .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-number) 55%, var(--border)); color: var(--dtype-number); }
+.workflow-port-zone.workflow-dtype-vector2 .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-vector2) 55%, var(--border)); color: var(--dtype-vector2); }
+.workflow-port-zone.workflow-dtype-region  .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-region) 55%, var(--border)); color: var(--dtype-region); }
+.workflow-port-zone.workflow-dtype-boolean .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-boolean) 55%, var(--border)); color: var(--dtype-boolean); }
+.workflow-port-zone.workflow-dtype-string  .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-string) 55%, var(--border)); color: var(--dtype-string); }
+.workflow-port-zone.workflow-dtype-color   .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-color) 55%, var(--border)); color: var(--dtype-color); }
+/* Compact dropdowns / inputs in a logic node body (no template/code clutter for
+   the small atomic nodes - the controls are the whole story). */
+.workflow-node-logic .workflow-spec-input { font-size: 11px; }
+.workflow-node-logic .workflow-spec-row { margin-bottom: 7px; }
+
 /* Prototype gets 4 ports - left/right × top/bottom quarters of the body.
    Each quarter zone has a port dot pinned to the outer edge and a small
    label adjacent to the dot. The bar takes 32px at the top.
