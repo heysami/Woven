@@ -103,8 +103,11 @@
 
   /* ---- CTA ---- */
   .lp-cta{position:relative;overflow:hidden;border-radius:var(--radius-2xl);
-    background:linear-gradient(120deg,var(--primary-grad-from),var(--primary-grad-to));color:#fff;
+    background:linear-gradient(120deg,var(--primary-grad-from),var(--primary-grad-to));color:var(--on-primary);
     padding:var(--space-3xl) var(--space-2xl);display:grid;grid-template-columns:1.3fr 1fr;gap:var(--space-xl);align-items:center;}
+  /* Text reverses with the fill (see ecommerce .sh-hero); neumorphism's fill is
+     the monochrome base, so it tracks --fg-default which flips with the scheme. */
+  [data-theme="neumorphism"] .lp-cta{color:var(--fg-default);}
   .lp-cta h2{font-size:var(--text-h2);font-weight:var(--w-light);margin:0;line-height:1.1;letter-spacing:-.02em;}
   .lp-cta p{opacity:.85;margin:var(--space-s) 0 var(--space-l);font-size:var(--text-base);}
   .lp-cta .btn--light{background:#fff;color:var(--primary-700);}

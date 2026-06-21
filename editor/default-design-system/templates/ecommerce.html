@@ -33,9 +33,14 @@
 
   /* ---- hero ---- */
   .sh-hero{margin:var(--space-l) 0;border-radius:var(--radius-2xl);overflow:hidden;position:relative;
-    background:linear-gradient(120deg,var(--primary-grad-from),var(--primary-grad-to));color:#fff;
+    background:linear-gradient(120deg,var(--primary-grad-from),var(--primary-grad-to));color:var(--on-primary);
     display:grid;grid-template-columns:1.2fr .8fr;align-items:center;gap:var(--space-base);padding:var(--space-2xl);}
-  .sh-hero .badge{background:rgba(255,255,255,.18);color:#fff;}
+  /* Hero text reverses with the fill: --on-primary is each style's contrast colour
+     for the brand fill (dark on pastel's soft tint, light on saturated/ dark fills).
+     Neumorphism's hero fill is the monochrome base (not a brand colour), so it
+     tracks --fg-default instead, which flips dark↔light with the scheme. */
+  [data-theme="neumorphism"] .sh-hero{color:var(--fg-default);}
+  .sh-hero .badge{background:color-mix(in srgb, currentColor 16%, transparent);color:currentColor;}
   .sh-hero h1{font-size:clamp(2rem,4vw,var(--text-h1));font-weight:var(--w-light);margin:var(--space-s) 0 0;line-height:1.05;letter-spacing:-.02em;}
   .sh-hero p{opacity:.88;margin:var(--space-s) 0 var(--space-l);font-size:var(--text-h5);}
   .sh-hero .btn--light{background:#fff;color:var(--primary-700);}
