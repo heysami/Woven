@@ -5,7 +5,7 @@
 
    THE LOOK (canonical Soft UI, per design-library/material-soft-ui-foam.md):
    - ONE shared base colour. The page background AND every component background
-     are the SAME mid-tone (#E0E5EC light / #2C313C dark). Components have NO
+     are the SAME mid-tone (#ECF0F3 light / #2C313C dark). Components have NO
      independent fill - depth comes ONLY from shadow. A control that is the same
      colour as its page but appears extruded/recessed is the entire illusion.
    - Light source is FIXED top-left, never per-component. RAISED elements carry a
@@ -40,9 +40,9 @@
      a separate sheet of paper - only the shadow tells you what's raised/sunk.
      The base/highlight/shadow trio is the style's NEUTRAL substrate (not the
      scheme); it stays fixed in light mode. */
-  --neu-base:#E0E5EC;          /* shared page + component tone */
-  --neu-dark:#A3B1C6;          /* bottom-right cast shadow (cool grey-blue) */
-  --neu-light:#FFFFFF;         /* top-left highlight                        */
+  --neu-base:#ECF0F3;          /* shared page + component tone (light, airy) */
+  --neu-dark:#D1D9E6;          /* bottom-right cast shadow (soft, not muddy)  */
+  --neu-light:#FFFFFF;         /* top-left highlight                          */
   --neu-accent:var(--primary-400);        /* subtle accent FOLLOWS the scheme (links / active) */
   --neu-accent-strong:var(--primary-600); /* pressed/active accent FOLLOWS the scheme           */
   --neu-text:#4B5566;          /* low-contrast ink, never pure black        */
@@ -63,7 +63,7 @@
 
   /* light-end neutrals used as soft fills collapse to the base too */
   --neutral-50:var(--neu-base); --neutral-70:var(--neu-base); --neutral-80:var(--neu-base);
-  --neutral-100:var(--neu-base); --neutral-150:#D6DCE5; --neutral-200:#CBD2DD;
+  --neutral-100:var(--neu-base); --neutral-150:#E2E7EE; --neutral-200:#D6DCE5;
 
   /* ---- text / ink - low contrast, never pure black ---- */
   --fg-default:var(--neu-text); --fg-muted:var(--neu-text-muted); --fg-subtle:var(--neu-text-subtle);
@@ -97,7 +97,7 @@
   /* ---- charts: monochrome-with-one-accent (accent follows the scheme) ---- */
   --series-1:var(--neu-accent-strong); --series-2:var(--neu-accent);
   --series-3:#8C9BB5; --series-4:#B0BAC9; --series-5:#5B6B86;
-  --chart-grid:#CBD2DD; --chart-axis:var(--neu-text-subtle);
+  --chart-grid:#DCE2EA; --chart-axis:var(--neu-text-subtle);
 }
 
 /* ==========================================================================
@@ -264,6 +264,31 @@
   background:var(--neu-base);box-shadow:var(--neu-inset-sm);color:var(--neu-text-subtle);
 }
 
+/* text / tertiary buttons stay FLAT links - never a puffy extruded pill.
+   A "Sign in" link should read as quiet text + scheme accent, underline on
+   hover, not as a raised soft-UI button. */
+[data-theme="neumorphism"] .btn--text,
+[data-theme="neumorphism"] .btn--tertiary,
+[data-theme="neumorphism"] .btn--tertiary-mono{
+  background:transparent;border:0;box-shadow:none;border-radius:0;
+  padding:0;height:auto;color:var(--neu-accent-strong);
+}
+[data-theme="neumorphism"] .btn--text:hover,
+[data-theme="neumorphism"] .btn.is-hover.btn--text,
+[data-theme="neumorphism"] .btn--tertiary:hover,
+[data-theme="neumorphism"] .btn--tertiary-mono:hover{
+  background:transparent;box-shadow:none;text-decoration:underline;color:var(--neu-accent-strong);
+}
+[data-theme="neumorphism"] .btn--text:active,
+[data-theme="neumorphism"] .btn.is-pressed.btn--text,
+[data-theme="neumorphism"] .btn--tertiary:active{
+  background:transparent;box-shadow:none;text-decoration:underline;opacity:.75;
+}
+[data-theme="neumorphism"] .btn--text:disabled,
+[data-theme="neumorphism"] .btn--tertiary:disabled{
+  background:transparent;box-shadow:none;color:var(--neu-text-subtle);
+}
+
 /* ==========================================================================
    Badges + tags - small raised pills, monochrome (no brand fill).
    ========================================================================== */
@@ -314,10 +339,12 @@
 /* ==========================================================================
    Sidebar + topbar - flat onto the base, soft inset rail / raised bar.
    ========================================================================== */
+/* Sidebar reads as a FLAT continuation of the page - no heavy recessed
+   trough (the old full-rail inset made the whole nav look muddy). */
 [data-theme="neumorphism"] .sidebar{
   background:var(--neu-base);
   color:var(--neu-text);
-  box-shadow:var(--neu-inset-sm);
+  box-shadow:none;
 }
 [data-theme="neumorphism"] .sidebar__wave{display:none;}
 [data-theme="neumorphism"] .sidebar__logo .title{color:var(--neu-text);}
@@ -328,13 +355,15 @@
   color:var(--neu-text-muted);border:0;border-radius:var(--radius-base);
   backdrop-filter:none;box-shadow:none;
 }
+/* hover stays quiet - just ink darkens, no shadow (keeps the rail calm) */
 [data-theme="neumorphism"] .nav-link:hover{
-  background:var(--neu-base);backdrop-filter:none;box-shadow:var(--neu-raise-sm);color:var(--neu-text);
+  background:var(--neu-base);backdrop-filter:none;box-shadow:none;color:var(--neu-text);
 }
-/* active nav item is a PRESSED well - the canonical soft-UI selected state */
+/* active item LIFTS into a clean raised chip with the scheme accent - reads
+   far cleaner than a pressed well on the soft base. */
 [data-theme="neumorphism"] .nav-link.is-active{
   background:var(--neu-base);color:var(--neu-accent-strong);
-  backdrop-filter:none;box-shadow:var(--neu-inset-sm);
+  backdrop-filter:none;box-shadow:var(--neu-raise-sm);
 }
 
 [data-theme="neumorphism"] .topbar{
@@ -355,7 +384,7 @@
   border-color:transparent;color:var(--neu-text);
 }
 [data-theme="neumorphism"] .table--flat th{color:var(--neu-text-muted);}
-[data-theme="neumorphism"] .table--flat tbody tr:hover td{background:rgba(163,177,198,.16);}
+[data-theme="neumorphism"] .table--flat tbody tr:hover td{background:rgba(209,217,230,.5);}
 [data-theme="neumorphism"] .table--flat tbody tr.row--selected td,
 [data-theme="neumorphism"] .table--flat tbody tr.row--active td{background:color-mix(in srgb, var(--neu-accent) 14%, transparent);}
 
@@ -412,7 +441,7 @@
 [data-theme="neumorphism"] .appbar,
 [data-theme="neumorphism"] .phone__tabbar{border-color:transparent;}
 [data-theme="neumorphism"] .list-mobile__row + .list-mobile__row{border-top-color:transparent;}
-[data-theme="neumorphism"] .list-mobile__row:hover{background:rgba(163,177,198,.16);}
+[data-theme="neumorphism"] .list-mobile__row:hover{background:rgba(209,217,230,.5);}
 [data-theme="neumorphism"] .tabbar__item{color:var(--neu-text-subtle);}
 [data-theme="neumorphism"] .tabbar__item.is-active{color:var(--neu-accent-strong);}
 /* active tab pill becomes a soft RAISED chip (was a flat brand-tint pill) */

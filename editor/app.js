@@ -17408,6 +17408,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 dark=${settings.primaryDark} darkFb=${settings.primary || DS_DEFAULTS.primary}
                 onLight=${(v) => set({ primary: v, paletteName: null })} onResetLight=${() => set({ primary: null, paletteName: null })}
                 onDark=${(v) => set({ primaryDark: v })} onResetDark=${() => set({ primaryDark: null })}/>
+              ${settings.styleId !== "minimal" ? html`<${React.Fragment}>
               <${DsColorRowLD} label="Secondary" showDark=${settings.schemeDark}
                 light=${settings.secondary} lightFb=${DS_DEFAULTS.secondary}
                 dark=${settings.secondaryDark} darkFb=${settings.secondary || DS_DEFAULTS.secondary}
@@ -17418,6 +17419,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 dark=${settings.tertiaryDark} darkFb=${settings.tertiary || DS_DEFAULTS.tertiary}
                 onLight=${(v) => set({ tertiary: v, paletteName: null })} onResetLight=${() => set({ tertiary: null, paletteName: null })}
                 onDark=${(v) => set({ tertiaryDark: v })} onResetDark=${() => set({ tertiaryDark: null })}/>
+              <//>` : html`<div className="dscz-row-hint">Minimal uses a single accent. Secondary and tertiary are neutralised to grey, so only Primary applies.</div>`}
               <${DsColorRowLD} label="Neutral (grey base)" showDark=${settings.schemeDark}
                 light=${settings.neutral} lightFb=${DS_DEFAULTS.neutral}
                 dark=${settings.neutralDark} darkFb=${dsDarkSurfaceDefault(settings.primaryDark || settings.primary || DS_DEFAULTS.primary)}
