@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>static fixture</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0b0b; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+  var c = document.getElementById('stage');
+  var ctx = c.getContext('2d');
+  c.width = window.innerWidth;
+  c.height = window.innerHeight;
+  // Draw exactly once. No animation loop, no input handlers.
+  ctx.fillStyle = '#0b0b0b';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#4aa3ff';
+  ctx.fillRect(c.width / 2 - 80, c.height / 2 - 80, 160, 160);
+  ctx.fillStyle = '#e8e8e8';
+  ctx.font = '20px sans-serif';
+  ctx.fillText('static, no input', 40, 60);
+</script>
+</body>
+</html>

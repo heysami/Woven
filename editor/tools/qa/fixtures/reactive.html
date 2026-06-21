@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>reactive fixture</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1410; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+  var c = document.getElementById('stage');
+  var ctx = c.getContext('2d');
+  function size() {
+    c.width = window.innerWidth;
+    c.height = window.innerHeight;
+  }
+  size();
+  window.addEventListener('resize', size);
+  // The shape sits still until the mouse moves, then follows it.
+  // Idle: no motion. Interaction (move/drag/click): large change.
+  var tx = -1, ty = -1;      // target (mouse)
+  var px, py;                // current shape position
+  var seeded = false;
+  window.addEventListener('mousemove', function (e) {
+    tx = e.clientX; ty = e.clientY;
+  });
+  window.addEventListener('click', function (e) {
+    tx = e.clientX; ty = e.clientY;
+  });
+  function draw() {
+    if (!seeded) {
+      px = c.width / 2; py = c.height / 2;
+      seeded = true;
+    }
+    // Only chase once we have a real pointer target. With no input the
+    // shape stays exactly put, so idle frames are identical.
+    if (tx >= 0) {
+      px += (tx - px) * 0.25;
+      py += (ty - py) * 0.25;
+    }
+    ctx.fillStyle = '#0d1410';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#5ff2a0';
+    ctx.beginPath();
+    ctx.arc(px, py, 70, 0, Math.PI * 2);
+    ctx.fill();
+    requestAnimationFrame(draw);
+  }
+  draw();
+</script>
+</body>
+</html>
