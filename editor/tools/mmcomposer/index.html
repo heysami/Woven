@@ -1099,16 +1099,38 @@ stageHost.addEventListener('pointerdown',e=>{
 });
 window.addEventListener('pointerup',()=>{ Input.down=false; });
 
-/* ---------- Camera / Mic permission ---------------------------------------- */
+/* ---------- Camera / Mic permission (TOGGLES - on AND off) ----------------- */
+// When you turn the camera ON, add a visible Camera layer so the live feed
+// actually shows (a camera-content layer is what renders the webcam; the chip
+// alone only grabs the stream). When you turn it OFF, stop the tracks (so the
+// OS camera light goes out without a page refresh) and remove the auto layer.
+function ensureCameraLayer(){
+  if(allRuntimeLayers().some(L=>L.content && L.content.kind==='camera')) return;
+  const z=Math.max(0,...STATE.layers.map(l=>l.z||0))+1;
+  STATE.layers.push(fillLayer({ id:uid(), name:'Camera', z, visible:true,
+    content:{kind:'camera'}, positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
+    trigger:{source:'none',impacts:[]}, effects:{stack:[]}, _camAuto:true }));
+}
 async function enableCamera(){
   try{
     const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
     const v=document.createElement('video'); v.autoplay=true; v.playsInline=true; v.muted=true;
     v.srcObject=stream; await v.play();
-    Input.cam={on:true,video:v,stream}; STATE.inputs.camera=true;
+    Input.cam={on:true,video:v,stream}; Input.camOff=false; STATE.inputs.camera=true;
     document.getElementById('permCam').className='chip on';
     Detectors.ensure();  // (re)build detectors for camera-feed/camera triggers
+    ensureCameraLayer();  // make the live feed visible immediately
+    renderAll(); emit();
   }catch(e){ showErr('Camera denied: '+e.message); }
+}
+function disableCamera(){
+  try{ if(Input.cam.stream) Input.cam.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  Input.cam={on:false,video:null,stream:null}; Input.camOff=true; STATE.inputs.camera=false;
+  document.getElementById('permCam').className='chip off';
+  const before=STATE.layers.length;
+  STATE.layers=STATE.layers.filter(L=>!L._camAuto);   // drop the auto Camera layer (keep user-added ones)
+  if(selId && !STATE.layers.some(l=>l.id===selId)) selId=null;
+  renderAll(); if(STATE.layers.length!==before) emit();
 }
 async function enableMic(){
   try{
@@ -1117,12 +1139,18 @@ async function enableMic(){
     const src=ctx.createMediaStreamSource(stream);
     const an=ctx.createAnalyser(); an.fftSize=2048; src.connect(an);
     Input.mic={on:true,ctx,analyser:an,data:new Uint8Array(an.frequencyBinCount),
-      freq:new Uint8Array(an.frequencyBinCount),src};
+      freq:new Uint8Array(an.frequencyBinCount),src,stream};
     STATE.inputs.mic=true; document.getElementById('permMic').className='chip on';
   }catch(e){ showErr('Mic denied: '+e.message); }
 }
-document.getElementById('permCam').onclick=enableCamera;
-document.getElementById('permMic').onclick=enableMic;
+function disableMic(){
+  try{ if(Input.mic.stream) Input.mic.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  try{ if(Input.mic.ctx) Input.mic.ctx.close(); }catch(e){}
+  Input.mic={on:false,ctx:null,analyser:null,data:null,freq:null,src:null,stream:null};
+  STATE.inputs.mic=false; document.getElementById('permMic').className='chip off';
+}
+document.getElementById('permCam').onclick=()=>{ Input.cam.on?disableCamera():enableCamera(); };
+document.getElementById('permMic').onclick=()=>{ Input.mic.on?disableMic():enableMic(); };
 
 /* ===========================================================================
    AUDIO ANALYSIS  (mic OR a wired audio asset → loudness / pitch / band)
@@ -3297,7 +3325,7 @@ const Engine = {
   // a user gesture; the permCam chip remains the manual fallback.
   _camReq:false,
   ensureCameraContent(){
-    if(Input.cam.on || this._camReq) return;
+    if(Input.cam.on || this._camReq || Input.camOff) return;   // respect an explicit camera-off toggle
     let need=false;
     for(const L of allRuntimeLayers()){
       if(L.content && L.content.kind==='camera'){ need=true; break; }

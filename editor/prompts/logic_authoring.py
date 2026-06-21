@@ -56,7 +56,7 @@ SOURCES (no inputs):
 - `input-scroll` [space, clampMin, clampMax] - (o) deltaY(number) deltaX(number) accumY(number) accumX(number) velocity(number)
 - `input-gyro` [smoothing] - (o) alpha(number) beta(number) gamma(number) tilt(vector2) ready(boolean)
 - `input-audio` [source, band, fftSize, smoothing] - (i) asset(string) - (o) level(number) pitch(number) band(number) beat(event)
-- `input-camera` [facing, resolution] - (o) stream(string) ready(boolean)
+- `input-camera` [facing, resolution] - (o) stream(string) ready(boolean) layer(layer). The composer CAN render the live webcam: wire the `layer` output into a composer `in` and the feed becomes a real layer (content.kind camera), with the per-layer effect stack + feedback applying on top. The `stream` output feeds vision-detect / vision-ocr. (The Camera chip in the composer toolbar toggles the webcam on/off and adds the feed layer too.)
 - `input-video` [loop, autoplay] - (i) asset(string) - (o) stream(string) t(number) playing(boolean)
 
 PROCESSORS (stream in):
@@ -111,27 +111,26 @@ RENDER (a sink, not engine-evaluated):
 
 Node ids below are illustrative; pick unique ids. Each recipe ends by wiring into an mm-composer (Interactive composer) and you set Live mode to run it.
 
-RECIPE A - "Camera + hand + fingertip polygon + glitchy image behind"
+RECIPE A - "Camera + hand + fingertip polygon + glitchy live camera behind"
 Nodes:
   - `cam` kind=input-camera (facing=user)
   - `hand` kind=vision-detect (detector=hand, target=location)
   - `poly` kind=shape (closed=true, stroke="#6ee7ff", strokeWidth=3, fill="", z=10)
-  - `bgimg` kind=layer (z=0)  with an asset wired in (the image to show behind); OR reuse the webcam by leaving an asset layer; see note.
   - `glitch` kind=effect (type=slice  OR  type=pixel-sort  OR  type=crt; there is NO effect literally named "glitch", these read as glitchy)
   - `comp` kind=mm-composer
 Edges:
-  - cam.stream -> hand.stream
+  - cam.stream -> hand.stream            (detection feed)
   - hand.thumbTip -> poly.p0
   - hand.indexTip -> poly.p1
   - hand.middleTip -> poly.p2
   - hand.ringTip -> poly.p3
   - hand.pinkyTip -> poly.p4
-  - glitch.out -> bgimg.in            (effect applies to the background layer)
-  - <assetNode>.out -> bgimg.in       (the image content of the background layer)
-  - bgimg.out -> comp.in              (background layer, low z = behind)
-  - poly.out -> comp.in               (shape layer, high z = in front)
+  - cam.layer -> comp.in                 (the LIVE webcam as a layer, low z = behind)
+  - glitch.out -> <the cam layer>.in     (apply the glitch effect to the camera layer; the cam.layer is a real layer that accepts effects)
+  - poly.out -> comp.in                  (shape layer, high z = in front)
+(To put a still IMAGE behind instead of the camera, use a `layer` with an asset wired in at low z; for the LIVE camera, cam.layer is the right output.)
 Optional reactivity: hand.confidence -> map1(op-map 0..1 -> 0..1) -> glitch.param:intensity so the glitch strengthens with detection confidence.
-NOTE on "the webcam behind": the `position` mode `camera-feed` positions a layer's content AT the detected landmarks; it does NOT paint raw webcam pixels as a full background. To literally show the camera image behind, use a video / image asset layer (or a webcam-asset layer) at low z; the polygon and detection still come from `cam` + `hand`.
+NOTE on "the webcam behind": the composer renders the live webcam directly - wire `cam.layer` into `comp.in` (low z) and the feed shows as a layer; the glitch effect on that layer + the polygon (high z) compose on top. Do NOT claim the composer cannot show a live camera and do NOT build a separate prototype iframe for it - it works natively via the camera layer. (The `position` mode `camera-feed` is a different thing: it places instances AT detected landmarks, it does not paint the feed - use the `cam.layer` output for the visible feed.)
 
 RECIPE B - "Tilt your phone to pan a parallax layer, brightness reacts to mic"
 Nodes:
