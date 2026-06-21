@@ -341,19 +341,27 @@
    ========================================================================== */
 /* Sidebar reads as a FLAT continuation of the page - no heavy recessed
    trough (the old full-rail inset made the whole nav look muddy). */
+/* Sidebar reads as a FLAT continuation of the page - no heavy recessed
+   trough (the old full-rail inset made the whole nav look muddy).
+   overflow:visible lets the raised active chip's soft shadow breathe instead
+   of being cropped at the rail edge (base shell clips it). */
 [data-theme="neumorphism"] .sidebar{
   background:var(--neu-base);
   color:var(--neu-text);
   box-shadow:none;
+  overflow:visible;
 }
+[data-theme="neumorphism"] .sidebar__nav{overflow:visible;}
 [data-theme="neumorphism"] .sidebar__wave{display:none;}
 [data-theme="neumorphism"] .sidebar__logo .title{color:var(--neu-text);}
 [data-theme="neumorphism"] .sidebar__logo .sep{background:var(--neu-dark);}
 [data-theme="neumorphism"] .sidebar__section{color:var(--neu-text-subtle);}
 [data-theme="neumorphism"] .sidebar__user{border-top:0;}
+/* small side gutter so the raised chip's left highlight + right cast both have
+   room and never touch the rail edge */
 [data-theme="neumorphism"] .nav-link{
   color:var(--neu-text-muted);border:0;border-radius:var(--radius-base);
-  backdrop-filter:none;box-shadow:none;
+  backdrop-filter:none;box-shadow:none;margin-inline:var(--space-2xs);
 }
 /* hover stays quiet - just ink darkens, no shadow (keeps the rail calm) */
 [data-theme="neumorphism"] .nav-link:hover{
