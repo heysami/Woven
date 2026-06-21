@@ -60528,7 +60528,7 @@ const SPEC_NODE_DEFS = {
     source: (b, id) => `source/${b}/position-${id}.js`,
     fields: [
       { key: "mode", label: "Mode", type: "select", options: [
-        "single","grid","instances","physics","boids","drawn","rope","camera-feed","grid-3d","scatter-3d","surface"] },
+        "single","grid","instances","physics","boids","drawn","text-ink","rope","camera-feed","grid-3d","scatter-3d","surface"] },
       { key: "params", label: "Params", type: "object" },
     ],
   },
@@ -61535,6 +61535,40 @@ export function pointAt(progress, values) {
   const path = parsePaths(values.paths)[0] || [[0, 0]];
   const index = Math.max(0, Math.min(path.length - 1, Math.floor(progress * path.length)));
   return path[index];
+}`),
+    _positionTemplate("text-ink", "Text ink", "text-ink", {
+      text:    { type: "text", value: "INK" },
+      font:    { type: "text", value: "sans-serif" },
+      weight:  { type: "number", value: 700, min: 100, max: 900, step: 100 },
+      density: { type: "number", value: 200, min: 1, max: 800, step: 1 },
+      jitter:  { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      drift:   { type: "number", value: 0, min: 0, max: 2, step: 0.05 },
+      size:    { type: "number", value: 0.02, min: 0.005, max: 0.2, step: 0.005 }
+    }, ["text: values.text", "font: values.font", "weight: values.weight", "density: values.density", "jitter: values.jitter", "drift: values.drift", "size: values.size"], `export function sampleTextInk(text, font, weight, density, W, H, rng) {
+  // Draw the text large + centered on an OFFSCREEN 2D canvas sized to the layer
+  // bounds, read the ink (alpha>threshold) pixels, deterministic-shuffle them
+  // (rng - NO Math.random), take \`density\` of them, normalize to 0..1. The
+  // composer runtime CACHES this keyed by text/font/weight/density/W/H so it does
+  // NOT re-sample every frame; pair drift>0 with layer feedback for disintegration.
+  if (!text) return [];
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, W | 0); cv.height = Math.max(1, H | 0);
+  const cx = cv.getContext("2d", { willReadFrequently: true });
+  if (!cx) return [];
+  cx.textBaseline = "middle"; cx.textAlign = "center";
+  let fs = Math.max(8, Math.floor(cv.height * 0.6));
+  cx.font = weight + " " + fs + "px " + font;
+  const maxW = cv.width * 0.92, m = cx.measureText(text).width;
+  if (m > maxW) { fs = Math.max(6, Math.floor(fs * maxW / m)); cx.font = weight + " " + fs + "px " + font; }
+  cx.fillStyle = "#fff"; cx.fillText(text, cv.width / 2, cv.height / 2);
+  let img; try { img = cx.getImageData(0, 0, cv.width, cv.height); } catch (e) { return []; }
+  const d = img.data, ww = cv.width, hh = cv.height, ink = [];
+  const stride = Math.max(1, Math.round(Math.sqrt((ww * hh) / (density * 24))));
+  for (let y = 0; y < hh; y += stride) for (let x = 0; x < ww; x += stride) {
+    if (d[(y * ww + x) * 4 + 3] > 40) ink.push([x / ww, y / hh]);
+  }
+  for (let i = ink.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = ink[i]; ink[i] = ink[j]; ink[j] = t; }
+  return ink.slice(0, Math.min(density, ink.length));
 }`),
     _positionTemplate("rope", "Rope", "rope", {
       anchors: { type: "text", value: "0,0 300,0" },

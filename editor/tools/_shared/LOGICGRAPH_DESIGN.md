@@ -559,6 +559,62 @@ buffer pool keyed by id (no reallocation when feedback > 0). `feedback === 0`
 keeps the full `clearRect` = current behavior. slimPlayer mirrors this on its
 persistent per-layer buffer.
 
+### 11.4 Text-ink position mode (glyph-ink -> point cloud)
+`text-ink` ("Text ink") is a position mode beside `drawn` / `boids` / `rope` that
+turns a CSS-font text string into a NORMALIZED point cloud, then renders the
+layer content (a small shape/asset) at each point - "text made of particles".
+
+Ink-sampling approach (font-agnostic, NO opentype in the runtime): draw the text
+large + centered on an OFFSCREEN 2D canvas sized to the layer bounds (W x H),
+`getImageData`, collect the pixels whose alpha clears a threshold (>40),
+deterministically Fisher-Yates shuffle them with a `mulberry` RNG seeded by
+`hash(L.id + ':text-ink')` (NO `Math.random`), and take `density` of them
+normalized to 0..1. A small raster stride keeps very large canvases cheap. Works
+with ANY `font-family` because we sample drawn INK, not glyph outlines. The helper
+is `sampleTextInk(text,font,weight,density,W,H,seed)` (editor, module top-level)
+with a parity copy `sampleInk(...)` inside the baked slimPlayer.
+
+Caching (do NOT re-sample every frame, mirrors `drawn`/`rope`): the sampled cloud
++ its signature live on `L._textInk = { sig, base }` (editor) / `SIM[L.id] =
+{ tiSig, base, parts }` (slimPlayer). The signature is
+`text|font|weight|density|WxH`; the offscreen canvas is re-sampled ONLY when the
+signature changes (or, in the editor, when a sampling-affecting inspector control
+nulls `L._textInk`). The mode switch + control edits clear the cache so the cloud
+refreshes immediately.
+
+Params: `text`, `font` (css family), `weight` (100-900), `density` (target point
+count, 1-800), `jitter` (per-point spread), `drift` (0 = static cloud; >0 =
+disintegration), `size` (per-instance scale). The position-node template
+`text-ink` exposes these; the editor inspector adds the matching fields; slimPlayer
+keeps parity. `L._textInk` is runtime-only and stripped at bake.
+
+Particle / dust + disintegration recipe (text-ink + drift + feedback): with
+`drift = 0` the cloud is static (a per-point deterministic `jitter` is the only
+spread). With `drift > 0` the cloud SEEDS a verlet particle per ink point
+(`parts`, integrated each frame under gravity `0.0006 * drift` + an optional
+time-varying jitter), so the letters fall apart into drifting dust. Pair drift
+with a non-zero layer `feedback` (11.3) and the disintegrating particles leave
+decaying trails - "letters disintegrate into particles". Because text-ink returns
+a normal instance array `[{x,y,scale,rot}]`, it flows through PASS A exactly like
+any mode: each instance is drawn via `drawContent`, so the per-layer EFFECT stack
++ feedback + blend compose on top for free. The drift is SELF-CONTAINED in the
+mode (no change to the Matter.js `physics` mode, which spawns random bodies and
+does not consume a base instance set - seeding it would have been invasive, so the
+disintegration drift was kept inside `textInk` instead, additive and non-
+regressing).
+
+Rope-anchored-to-ink (DEFERRED, phase-2b): the second consumer - feeding a
+text-ink sampling into `rope` as its anchor set - was NOT built. `rope` resolves
+its verlet chain from exactly two anchors (`anchors[0]` pinned, `anchors[1]`
+pointer-or-pinned) with a single rest-length and a linear segment seed; accepting
+an N-point ink set would require re-architecting its anchoring + relaxation and
+risked regressing the shipped rope. It remains a finer follow-up.
+
+Finer follow-ups (NOT done): (a) ORDERED-OUTLINE-for-shape - the current sampler
+returns an unordered shuffled cloud (ideal for particles/dust); a contour-ordered
+variant would let the points feed a closed `shape`/polyline that traces the glyph
+outline. (b) FULL rope-anchored-to-ink per the paragraph above.
+
 ---
 
 ## 12. The `type-motion` render node (Kinetic Type, per-glyph animated text)
@@ -615,12 +671,16 @@ control compose on top automatically: a wired Effect node on the layer post-
 processes the rasterised glyphs, and a non-zero `feedback` leaves a decaying
 trail of the moving letters. z-order + opacity + blend behave like any layer.
 
-### 12.5 Phase-2 bridge (NOT YET built)
-`window.opentype` is available (used by the vector / font editors) but v1 does
-NOT use it - canvas `measureText` advances + per-glyph transforms are enough. A
-future phase will add a "glyph outline -> vector2 points" bridge: tessellate each
-glyph's outline into points the `type-motion` node EXPOSES as vector2 outputs,
-feeding `rope` / particle / `shape` nodes (letters that shatter into particles,
-flow along a rope, or morph into a polyshape). This requires opentype glyph-path
-sampling + new `out` point ports on the node and is explicitly OUT OF SCOPE for
-v1; the current node has no point outputs.
+### 12.5 Phase-2 bridge (glyph-ink -> points: PARTIALLY built)
+The "text -> point cloud" bridge now SHIPS as the `text-ink` POSITION mode (see
+11.4), taking a different route than originally sketched: instead of `opentype`
+glyph-outline tessellation, it samples drawn glyph INK from an offscreen canvas
+(`getImageData`, alpha-threshold, deterministic shuffle, normalize). This is
+font-agnostic (any css `font-family`) and needs no opentype in the runtime. The
+particle / dust + letter-disintegration consumer is fully built (`text-ink` +
+`drift` + layer `feedback`). Still NOT built: (a) `type-motion` EXPOSING the cloud
+as vector2 `out` ports on the node itself (the cloud currently lives in the
+position mode, not as node outputs); (b) an ordered glyph-OUTLINE variant for
+feeding a closed `shape`/polyline (the sampler returns an unordered cloud, ideal
+for particles but not for tracing an outline); (c) full rope-anchored-to-ink
+(rope still takes exactly two anchors - see 11.4). These remain finer follow-ups.

@@ -715,6 +715,7 @@ function fillPositioning(p){
     physics:{engine:'matter',gravity:[0,1],count:30,size:0.05,bounce:0.4},
     boids:{count:60,separation:1,alignment:1,cohesion:1,perception:0.12,maxSpeed:0.35,size:0.05},
     drawn:{paths:[],count:30,size:0.04},
+    'text-ink':{text:'INK',font:'sans-serif',weight:700,density:200,jitter:0,drift:0,size:0.02},
     rope:{anchors:[[0.2,0.2],[0.8,0.2]],segments:14,stiffness:0.8,size:0.03},
     'camera-feed':{detector:'hand',source:'camera',size:0.05},
     'face-3d':{meshId:'',size:1},
@@ -1009,6 +1010,7 @@ const Positioning = {
       case 'physics':     out=this.physics(L,p,W,H,dt); break;
       case 'boids':       out=this.boids(L,p,dt); break;
       case 'drawn':       out=this.drawn(L,p); break;
+      case 'text-ink':    out=this.textInk(L,p,W,H,dt); break;
       case 'rope':        out=this.rope(L,p,dt); break;
       case 'camera-feed': out=this.cameraFeed(L,p); break;
       case 'face-3d':     out=this.face3d(L,p); break;
@@ -1239,6 +1241,55 @@ const Positioning = {
     }
     return out;
   },
+  // TEXT INK: sample a CSS-font glyph string into a normalized point cloud, then
+  // render the layer content (a small shape/asset) at each ink point - "text made
+  // of particles". Font-agnostic: we draw the text large on an OFFSCREEN 2D canvas,
+  // read getImageData, collect pixels whose alpha clears a threshold, shuffle
+  // deterministically (mulberry, NO Math.random), and take `density` of them. The
+  // sampled cloud + canvas are CACHED on L._textInk keyed by a signature of
+  // text/font/weight/density/W/H so we do NOT re-sample every frame - only when the
+  // signature changes (mirrors drawn/rope caching). When `drift`>0 the cloud seeds
+  // a verlet particle set that falls under gravity + jitter, giving "letters
+  // disintegrate into particles"; pair with layer Feedback for trails.
+  textInk(L,p,W,H,dt){
+    const text=p.text!=null?String(p.text):'';
+    const font=(p.font&&String(p.font).trim())?p.font:'sans-serif';
+    const weight=p.weight||700;
+    const density=Math.max(1,Math.min(2000,finiteNumber(p.density,200)|0));
+    const size=finiteNumber(p.size,0.04);
+    const jitter=Math.max(0,finiteNumber(p.jitter,0));
+    const drift=Math.max(0,finiteNumber(p.drift,0));
+    const sig=text+'|'+font+'|'+weight+'|'+density+'|'+(W|0)+'x'+(H|0);
+    let s=L._textInk;
+    if(!s||s.sig!==sig){ s={sig, base:sampleTextInk(text,font,weight,density,W,H,hash(L.id+':text-ink'))}; L._textInk=s; }
+    const base=s.base;
+    if(!base.length) return [{x:0.5,y:0.5,scale:size,rot:0}];
+    if(drift<=0){
+      // static cloud: a deterministic per-point jitter, no per-frame state.
+      if(s.parts) s.parts=null;
+      const rng=mulberry(hash(L.id+':text-ink:j'));
+      return base.map(pt=>({
+        x:clamp(pt[0]+(jitter?(rng()-0.5)*jitter*0.1:0),0,1),
+        y:clamp(pt[1]+(jitter?(rng()-0.5)*jitter*0.1:0),0,1),
+        scale:size, rot:0 }));
+    }
+    // drift>0: integrate a verlet particle per ink point. Reset when the sampled
+    // base changes (new signature) or particle count drifts from the cloud size.
+    if(!s.parts || s.parts.length!==base.length || s.driftSig!==(text+'|'+font+'|'+weight+'|'+density)){
+      const rng=mulberry(hash(L.id+':text-ink:p'));
+      s.parts=base.map(pt=>({x:pt[0],y:pt[1],px:pt[0]-(rng()-0.5)*0.002,py:pt[1]-(rng()-0.5)*0.002,seed:rng()}));
+      s.driftSig=text+'|'+font+'|'+weight+'|'+density;
+    }
+    const step=Math.min(dt,0.05)*60, grav=0.0006*drift, dragF=0.99;
+    const jt=jitter*0.0008*drift;
+    for(const q of s.parts){
+      const vx=(q.x-q.px)*dragF, vy=(q.y-q.py)*dragF;
+      q.px=q.x; q.py=q.y;
+      const jx=jt?(Math.sin((Input.clock+q.seed*6.28)*3.1)*jt):0;
+      q.x+=vx+jx; q.y+=vy+grav*step;
+    }
+    return s.parts.map(q=>({x:clamp(q.x,-0.1,1.1),y:clamp(q.y,-0.1,1.2),scale:size,rot:0}));
+  },
   face3d(L,p){
     // minimal stub: arrange instances on a sphere-ish face mask, optionally
     // driven by face landmarks if a camera detector is active.
@@ -1255,6 +1306,40 @@ const Positioning = {
 function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
 function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+/* sampleTextInk: draw `text` large + centered on an OFFSCREEN 2D canvas sized to
+   the layer bounds (W x H), read the ink (alpha>threshold) pixel coordinates,
+   deterministically shuffle them (Fisher-Yates with a mulberry RNG seeded by
+   `seed` - NO Math.random), take `density` of them, and return normalized 0..1
+   [x,y] pairs. Font-agnostic (any CSS family). Callers CACHE the result keyed by a
+   signature so this runs only when text/font/weight/density/W/H change. Returns []
+   on empty text or a degenerate canvas so callers can fall back gracefully. */
+function sampleTextInk(text,font,weight,density,W,H,seed){
+  W=Math.max(1,W|0); H=Math.max(1,H|0);
+  if(!text||!text.length) return [];
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const cx=cv.getContext('2d',{willReadFrequently:true}); if(!cx) return [];
+  cx.clearRect(0,0,W,H);
+  // size the type to fill most of the layer width without overflowing height.
+  let fs=Math.max(8,Math.floor(H*0.6));
+  cx.textBaseline='middle'; cx.textAlign='center';
+  cx.font=weight+' '+fs+'px '+font;
+  const maxW=W*0.92;
+  let m=cx.measureText(text).width;
+  if(m>maxW){ fs=Math.max(6,Math.floor(fs*maxW/m)); cx.font=weight+' '+fs+'px '+font; }
+  cx.fillStyle='#fff';
+  cx.fillText(text, W/2, H/2);
+  let img; try{ img=cx.getImageData(0,0,W,H); }catch(e){ return []; }
+  const d=img.data, ink=[];
+  // subsample the raster on a small stride so very large canvases stay cheap; the
+  // stride scales with how many pixels we have versus the target density.
+  const stride=Math.max(1,Math.round(Math.sqrt((W*H)/(density*24))));
+  for(let y=0;y<H;y+=stride) for(let x=0;x<W;x+=stride){ if(d[(y*W+x)*4+3]>40) ink.push([x/W,y/H]); }
+  if(!ink.length) return [];
+  // deterministic Fisher-Yates shuffle, then take `density` points.
+  const rng=mulberry((seed>>>0)||1);
+  for(let i=ink.length-1;i>0;i--){ const j=(rng()*(i+1))|0; const t=ink[i]; ink[i]=ink[j]; ink[j]=t; }
+  return ink.slice(0,Math.min(density,ink.length));
+}
 
 /* SOURCES - parametric value-source evaluator now lives in ../_shared/sources.js
    (imported above), shared with the 3D tools. applyScalar/applyVector take the
@@ -2275,8 +2360,8 @@ function renderInspector(){
     const p=L.positioning;
     b.appendChild(fSelect('Mode',p.mode,
       [['single','Single'],['grid','Grid'],['instances','Instances'],['physics','Physics'],['boids','Boids flock'],
-       ['drawn','Drawn paths'],['rope','Rope'],['camera-feed','Camera feed'],['grid-3d','3D grid'],['scatter-3d','3D scatter'],['face-3d','Face 3D']],
-      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; L._boids=null; renderInspector(); }));
+       ['drawn','Drawn paths'],['text-ink','Text ink'],['rope','Rope'],['camera-feed','Camera feed'],['grid-3d','3D grid'],['scatter-3d','3D scatter'],['face-3d','Face 3D']],
+      v=>{ p.mode=v; fillPositioning(p); Positioning.sim[L.id]=null; L._boids=null; L._textInk=null; renderInspector(); }));
     if(p.mode==='single'){
       b.appendChild(fSlider('X',p.x,0,1,0.01,v=>p.x=v));
       b.appendChild(fSlider('Y',p.y,0,1,0.01,v=>p.y=v));
@@ -2341,6 +2426,18 @@ function renderInspector(){
       b.appendChild(html(`<p class="hint">Drag on the preview to draw paths. Stored points: ${(p.paths||[]).reduce((a,x)=>a+x.length,0)}.</p>`));
       const clr=document.createElement('button'); clr.className='sm'; clr.textContent='Clear paths';
       clr.onclick=()=>{ p.paths=[]; emit(); renderInspector(); }; b.appendChild(clr);
+    } else if(p.mode==='text-ink'){
+      // sampling-affecting controls clear L._textInk so the offscreen canvas is
+      // re-sampled (the signature already keys text/font/weight/density/W/H, but
+      // nulling here forces an immediate refresh on edit).
+      b.appendChild(fText('Text',p.text!=null?p.text:'INK',v=>{p.text=v;L._textInk=null;}));
+      b.appendChild(fText('Font family',p.font||'sans-serif',v=>{p.font=v;L._textInk=null;}));
+      b.appendChild(fSlider('Weight',p.weight||700,100,900,100,v=>{p.weight=v;L._textInk=null;}));
+      b.appendChild(fSlider('Density',p.density,1,800,1,v=>{p.density=v;L._textInk=null;}));
+      b.appendChild(fSlider('Size',p.size,0.005,0.2,0.005,v=>p.size=v));
+      b.appendChild(fSlider('Jitter',p.jitter||0,0,1,0.01,v=>p.jitter=v));
+      b.appendChild(fSlider('Drift',p.drift||0,0,2,0.05,v=>p.drift=v));
+      b.appendChild(html('<p class="hint">Text sampled to an ink point cloud. Drift + layer Feedback (above) gives letter-disintegration trails.</p>'));
     } else if(p.mode==='rope'){
       b.appendChild(fSlider('Segments',p.segments,2,40,1,v=>{p.segments=v;Positioning.sim[L.id]=null;}));
       b.appendChild(fSlider('Stiffness',p.stiffness,0.05,1,0.05,v=>p.stiffness=v));
@@ -2753,7 +2850,28 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
   function mb(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
   function num(v,f){const n=Number(v);return Number.isFinite(n)?n:f;}
-  /* positioning (subset: single/grid/instances/rope/drawn/camera-feed; physics→grid fallback, face-3d→procedural) */
+  /* sampleInk: editor parity for sampleTextInk - draw text on an offscreen canvas
+     sized to the layer (W x H), read ink pixels (alpha>threshold), deterministic
+     shuffle (mb RNG, NO Math.random), take `density`, return normalized [x,y]. */
+  function sampleInk(text,font,weight,density,seed){
+    if(!text||!text.length)return[];
+    const cv=document.createElement('canvas');cv.width=Math.max(1,W|0);cv.height=Math.max(1,H|0);
+    const cx=cv.getContext('2d',{willReadFrequently:true});if(!cx)return[];
+    cx.clearRect(0,0,cv.width,cv.height);cx.textBaseline='middle';cx.textAlign='center';
+    let fs=Math.max(8,Math.floor(cv.height*0.6));cx.font=weight+' '+fs+'px '+font;
+    const maxW=cv.width*0.92,m=cx.measureText(text).width;
+    if(m>maxW){fs=Math.max(6,Math.floor(fs*maxW/m));cx.font=weight+' '+fs+'px '+font;}
+    cx.fillStyle='#fff';cx.fillText(text,cv.width/2,cv.height/2);
+    let img;try{img=cx.getImageData(0,0,cv.width,cv.height);}catch(e){return[];}
+    const d=img.data,ww=cv.width,hh=cv.height,ink=[];
+    const stride=Math.max(1,Math.round(Math.sqrt((ww*hh)/(density*24))));
+    for(let y=0;y<hh;y+=stride)for(let x=0;x<ww;x+=stride){if(d[(y*ww+x)*4+3]>40)ink.push([x/ww,y/hh]);}
+    if(!ink.length)return[];
+    const rng=mb((seed>>>0)||1);
+    for(let i=ink.length-1;i>0;i--){const j=(rng()*(i+1))|0,t=ink[i];ink[i]=ink[j];ink[j]=t;}
+    return ink.slice(0,Math.min(density,ink.length));
+  }
+  /* positioning (subset: single/grid/instances/rope/drawn/text-ink/camera-feed; physics→grid fallback, face-3d→procedural) */
   const SIM={};
   function positions(L,dt){ const p=L.positioning;
     LB.applyScalar(p);   // W2C: overlay logic-graph scalar bindings before resolve
@@ -2796,6 +2914,18 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       return A.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)})); }
     if(p.mode==='drawn'){ const pts=[].concat(...(p.paths||[])); if(!pts.length)return[{x:.5,y:.5,scale:p.size||0.04,rot:0}];
       const out=[],n=Math.min(p.count|0||pts.length,200); for(let i=0;i<n;i++){const pt=pts[(i/n*pts.length)|0]||pts[0];out.push({x:pt[0],y:pt[1],scale:p.size||0.04,rot:0});} return out; }
+    if(p.mode==='text-ink'){ const text=p.text!=null?String(p.text):''; const font=(p.font&&String(p.font).trim())?p.font:'sans-serif'; const weight=p.weight||700;
+      const density=Math.max(1,Math.min(2000,num(p.density,200)|0)),size=num(p.size,0.04),jitter=Math.max(0,num(p.jitter,0)),drift=Math.max(0,num(p.drift,0));
+      const sig=text+'|'+font+'|'+weight+'|'+density+'|'+(W|0)+'x'+(H|0); let s=SIM[L.id];
+      if(!s||s.tiSig!==sig){ s={tiSig:sig,base:sampleInk(text,font,weight,density,hash(L.id+':text-ink'))}; SIM[L.id]=s; }
+      const base=s.base; if(!base.length)return[{x:.5,y:.5,scale:size,rot:0}];
+      if(drift<=0){ s.parts=null; const rng=mb(hash(L.id+':text-ink:j'));
+        return base.map(pt=>({x:clamp(pt[0]+(jitter?(rng()-0.5)*jitter*0.1:0),0,1),y:clamp(pt[1]+(jitter?(rng()-0.5)*jitter*0.1:0),0,1),scale:size,rot:0})); }
+      if(!s.parts||s.parts.length!==base.length){ const rng=mb(hash(L.id+':text-ink:p'));
+        s.parts=base.map(pt=>({x:pt[0],y:pt[1],px:pt[0]-(rng()-0.5)*0.002,py:pt[1]-(rng()-0.5)*0.002,seed:rng()})); }
+      const step=Math.min(dt,0.05)*60,grav=0.0006*drift,dragF=0.99,jt=jitter*0.0008*drift;
+      for(const q of s.parts){const vx=(q.x-q.px)*dragF,vy=(q.y-q.py)*dragF;q.px=q.x;q.py=q.y;const jx=jt?(Math.sin((IN.clock+q.seed*6.28)*3.1)*jt):0;q.x+=vx+jx;q.y+=vy+grav*step;}
+      return s.parts.map(q=>({x:clamp(q.x,-0.1,1.1),y:clamp(q.y,-0.1,1.2),scale:size,rot:0})); }
     if(p.mode==='camera-feed'){ const lm=IN.detect.landmarks; if(!lm||!lm.length)return[]; const out=[];
       for(const set of lm){const step=Math.max(1,(set.length/24)|0);for(let i=0;i<set.length;i+=step){const kp=set[i];out.push({x:clamp(kp.x,0,1),y:clamp(kp.y,0,1),scale:p.size||0.05,rot:0});}} return out; }
     if(p.mode==='face-3d'){ const out=[],n=60; for(let i=0;i<n;i++){const a=i/n*Math.PI*2,r=0.18*(0.6+0.4*Math.sin(a*3+IN.clock));out.push({x:0.5+Math.cos(a)*r,y:0.5+Math.sin(a)*r*1.2,scale:(p.size||1)*0.16,rot:a});} return out; }
