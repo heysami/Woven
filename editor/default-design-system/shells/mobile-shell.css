@@ -77,7 +77,10 @@
    the editor injects all.css AFTER this shell file, which (at equal specificity)
    would otherwise let the base inline-flex win and pack the tabs to the left. */
 .segmented.segmented--mobile{display:flex;width:100%;box-sizing:border-box;}
-.segmented.segmented--mobile button{flex:1 1 0;height:34px;text-align:center;}
+/* The buttons are flex containers (align-items:center), so the LABEL is centred
+   with justify-content — text-align alone does nothing on a flex child, which left
+   the labels pinned to the left of each segment. */
+.segmented.segmented--mobile button{flex:1 1 0;height:34px;justify-content:center;text-align:center;}
 
 /* ---- bottom tab bar ---- */
 .phone__tabbar{
