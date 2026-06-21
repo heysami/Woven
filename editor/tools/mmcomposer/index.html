@@ -447,6 +447,28 @@ const LogicBridge = {
   },
   // True if a spec carries any logic binding (so a static consumer ticks each frame).
   hasLogic(spec){ const b=spec&&spec._bindings; if(!b) return false; for(const k in b){ if(b[k]&&b[k].kind==='logic') return true; } return false; },
+  // GENERIC PHYSICS FORCES: resolve every wired `force` node in the projection
+  // into a plain list the PhysicsWorld applies. Each force's `pos` is resolved
+  // via vec(ref) from THIS frame's ticked ports, so pos can be input-pointer.pos,
+  // input-touch.pos, vision-detect.indexTip, an op-vector output, ANYTHING - the
+  // mouse is never hardcoded. Returns [] when nothing is wired.
+  forces(){
+    const p=this.projection; const list=p&&Array.isArray(p.forces)?p.forces:null;
+    if(!list||!list.length) return [];
+    const out=[];
+    for(const f of list){
+      if(!f) continue;
+      const pr=f.params||{};
+      out.push({
+        type:pr.type||'attract',
+        radius:Number.isFinite(+pr.radius)?+pr.radius:0.3,
+        strength:Number.isFinite(+pr.strength)?+pr.strength:1,
+        falloff:Number.isFinite(+pr.falloff)?+pr.falloff:1,
+        pos:(f.pos&&f.pos.ref)?this.vec(f.pos.ref):null,
+      });
+    }
+    return out;
+  },
 };
 
 /* Palette extraction (PART A): downsample an image to a small canvas, then
@@ -1275,6 +1297,160 @@ const Detectors = {
 };
 
 /* ===========================================================================
+   PHYSICS WORLD  -  ONE shared Matter.Engine/World for the whole composer.
+   Every physics object (gravity instances, shatter shards, rope / rope-ink
+   chains, boids) lives in this SAME world so they COLLIDE with each other and
+   respond to GENERIC FORCES wired from any input (see the `force` logic node).
+   The mouse is just one possible force source - nothing here is hardcoded to it.
+
+   - Lazy created the first frame any physics object exists (matter.js loaded on
+     demand via loadMod('matter'), same module the old per-mode sims used).
+   - Stepped ONCE per render frame with a fixed-timestep accumulator (beginFrame),
+     THEN each physics mode READS its body transforms (no per-mode stepping).
+   - Bodies are REUSED across frames; a layer rebuilds its bodies only when its
+     sim signature (count / WxH / segments / text...) changes, never per frame.
+   - Collision categories let rope nodes skip self-collision (per-rope group) but
+     still collide with everything else. Total body count is clamped (logged).
+   - Deterministic: all spawn jitter is mulberry(hash(...)), never Math.random.
+   See editor/tools/_shared/PHYSICS_WORLD_DESIGN.md. The baked slimPlayer carries
+   a faithful twin (PW there) so editor + export behave identically.
+   ===========================================================================*/
+const PW = {
+  Matter:null, engine:null, world:null, _loading:false,
+  W:0, H:0, _accum:0, _fixed:1/60, _bodyCap:3000, _clamped:false,
+  // per-layer record: { kind, sig, bodies:[], constraints:[], group, ... }
+  layers:{},
+  // collision category bits (sensible defaults: everything collides).
+  CAT:{ DEFAULT:0x0001, ROPE:0x0002, BOIDS:0x0004, WALL:0x0008 },
+  _ropeGroup:-1,    // descending negative group ids: same-group bodies never collide
+  reset(){
+    // drop the whole world (canvas resize / project reload). Lazy-rebuilt on demand.
+    this.Matter=null; this.engine=null; this.world=null; this.layers={};
+    this._accum=0; this._loading=false; this._clamped=false; this._ropeGroup=-1;
+  },
+  // Lazy world creation. Returns true once the engine is live.
+  ensure(W,H){
+    this.W=W; this.H=H;
+    if(this.engine) return true;
+    if(this._loading) return false;
+    this._loading=true;
+    loadMod('matter').then(M=>{
+      const Matter=M&&(M.default||M); if(!Matter){ this._loading=false; return; }
+      const eng=Matter.Engine.create();
+      eng.gravity.x=0; eng.gravity.y=1;     // default downward; per-mode tunes it
+      this.Matter=Matter; this.engine=eng; this.world=eng.world; this._loading=false;
+    }).catch(()=>{ this._loading=false; });
+    return false;
+  },
+  // World gravity. physics/shatter modes push their authored gravity here each
+  // frame (last writer wins; a single shared world has ONE gravity vector). When
+  // no gravity-bearing mode is present the default downward pull stays.
+  setGravity(gx,gy){ if(this.engine){ this.engine.gravity.x=finiteNumber(gx,0); this.engine.gravity.y=finiteNumber(gy,1); } },
+  nextRopeGroup(){ return this._ropeGroup--; },
+  _count(){ let n=0; for(const id in this.layers){ const r=this.layers[id]; if(r&&r.bodies) n+=r.bodies.length; } return n; },
+  // Register a layer's bodies + constraints into the shared world. Replaces any
+  // prior record for that id (used on signature change). Enforces the body cap.
+  register(id, rec){
+    this.remove(id);
+    if(!this.engine||!this.Matter) return;
+    const M=this.Matter;
+    let bodies=rec.bodies||[];
+    // clamp total body count - drop this layer's bodies past the budget (logged once).
+    const room=Math.max(0,this._bodyCap-this._count());
+    if(bodies.length>room){
+      if(!this._clamped){ console.warn('[PhysicsWorld] body cap '+this._bodyCap+' reached; clamping layer '+id+' to '+room+' bodies'); this._clamped=true; }
+      bodies=bodies.slice(0,room); rec.bodies=bodies;
+      const kept=new Set(bodies);
+      if(rec.dyn) rec.dyn=rec.dyn.filter(b=>kept.has(b));
+      if(rec.nodes) rec.nodes=rec.nodes.filter(b=>kept.has(b));
+    }
+    if(bodies.length) M.Composite.add(this.world, bodies);
+    if(rec.constraints&&rec.constraints.length) M.Composite.add(this.world, rec.constraints);
+    this.layers[id]=rec;
+  },
+  remove(id){
+    const r=this.layers[id]; if(!r) return;
+    if(this.engine&&this.Matter){ const M=this.Matter;
+      if(r.constraints&&r.constraints.length) for(const c of r.constraints){ try{ M.Composite.remove(this.world,c); }catch(e){} }
+      if(r.bodies&&r.bodies.length) for(const b of r.bodies){ try{ M.Composite.remove(this.world,b); }catch(e){} }
+    }
+    delete this.layers[id];
+  },
+  // Drop world records for layers that no longer exist this frame.
+  prune(liveSet){ for(const id of Object.keys(this.layers)){ if(!liveSet.has(id)) this.remove(id); } },
+  // ── GENERIC FORCES ────────────────────────────────────────────────────────
+  // Resolve every wired force node's pos via LogicBridge.vec and apply it to all
+  // world bodies within radius. pos is NORMALIZED 0..1; we convert to pixels.
+  //   attract : pull bodies toward pos        repel : push away
+  //   vortex  : tangential swirl around pos    drag  : damp velocity near pos
+  //   wind    : constant push in pos's heading (pos read as a direction vector)
+  // forceList entries: { type, radius, strength, falloff, pos:{x,y}|null }.
+  applyForces(forceList){
+    if(!this.engine||!this.Matter||!forceList||!forceList.length) return;
+    const M=this.Matter, W=this.W||1, H=this.H||1;
+    const bodies=M.Composite.allBodies(this.world);
+    for(const f of forceList){
+      if(!f) continue;
+      const type=f.type||'attract';
+      const strength=finiteNumber(f.strength,1);
+      if(strength===0) continue;
+      const radN=Math.max(0.0001,finiteNumber(f.radius,0.3));
+      const radPx=radN*Math.max(W,H);
+      const falloff=Math.max(0,finiteNumber(f.falloff,1));
+      // wind has no center: pos is a DIRECTION (heading). Default rightward.
+      if(type==='wind'){
+        const px=(f.pos&&Number.isFinite(f.pos.x))?f.pos.x:1;
+        const py=(f.pos&&Number.isFinite(f.pos.y))?f.pos.y:0.5;
+        let dx=px-0.5, dy=py-0.5; const dl=Math.hypot(dx,dy)||1e-6; dx/=dl; dy/=dl;
+        const mag=strength*1e-5;
+        for(const b of bodies){ if(b.isStatic) continue; M.Body.applyForce(b,b.position,{x:dx*mag*(b.mass||1),y:dy*mag*(b.mass||1)}); }
+        continue;
+      }
+      if(!f.pos||!Number.isFinite(f.pos.x)||!Number.isFinite(f.pos.y)) continue;
+      const cx=f.pos.x*W, cy=f.pos.y*H, r2=radPx*radPx;
+      for(const b of bodies){
+        if(b.isStatic) continue;
+        let dx=cx-b.position.x, dy=cy-b.position.y;
+        const d2=dx*dx+dy*dy; if(d2>r2) continue;
+        const d=Math.sqrt(d2)||1e-6;
+        // normalized falloff 1 at center -> 0 at radius edge (pow by `falloff`).
+        const t=1-d/radPx, fall=falloff<=0?1:Math.pow(Math.max(0,t),falloff);
+        const m=(b.mass||1);
+        if(type==='attract'||type==='repel'){
+          const sgn=(type==='attract')?1:-1;
+          const mag=sgn*strength*2e-4*fall*m;
+          M.Body.applyForce(b,b.position,{x:dx/d*mag, y:dy/d*mag});
+        } else if(type==='vortex'){
+          // tangential (perpendicular to the radial direction) + slight inward pull.
+          const tx=-dy/d, ty=dx/d, mag=strength*2e-4*fall*m;
+          M.Body.applyForce(b,b.position,{x:tx*mag + dx/d*mag*0.15, y:ty*mag + dy/d*mag*0.15});
+        } else if(type==='drag'){
+          // velocity damping near pos (stronger toward center). No applyForce -
+          // scale velocity directly so it reads as "thicken the medium here".
+          const damp=1-Math.min(0.9,strength*0.5*fall);
+          M.Body.setVelocity(b,{x:b.velocity.x*damp, y:b.velocity.y*damp});
+        }
+      }
+    }
+  },
+  // Step the shared world ONCE per render frame (fixed-step accumulator) AFTER
+  // applying forces. Called from Engine.render before pass A reads body positions.
+  // `slow` is the shatter time-scale (1 = realtime); other modes pass 1.
+  beginFrame(dt, forceList, slow){
+    if(!this.engine||!this.Matter) return;
+    this.applyForces(forceList);
+    const sc=Math.max(0.02,Math.min(2,finiteNumber(slow,1)));
+    // clamp the accumulator so a backgrounded tab resuming cannot explode the solver.
+    this._accum=Math.min(this._accum+Math.min(dt,0.05), this._fixed*5);
+    let steps=0;
+    while(this._accum>=this._fixed && steps<5){
+      this.Matter.Engine.update(this.engine, this._fixed*1000*sc);
+      this._accum-=this._fixed; steps++;
+    }
+  },
+};
+
+/* ===========================================================================
    POSITIONING  -  resolve a layer to an array of instance transforms
    Each instance: {x,y,scale,rot}  in 0..1 normalized canvas space
    ===========================================================================*/
@@ -1299,11 +1475,11 @@ const Positioning = {
       case 'instances':   out=this.instances(L,p,dt); break;
       case 'physics':     out=this.physics(L,p,W,H,dt); break;
       case 'shatter':     out=this.shatter(L,p,W,H,dt); break;
-      case 'boids':       out=this.boids(L,p,dt); break;
+      case 'boids':       out=this.boids(L,p,dt,W,H); break;
       case 'drawn':       out=this.drawn(L,p); break;
       case 'text-ink':    out=this.textInk(L,p,W,H,dt); break;
       case 'text-outline':out=this.textOutline(L,p,W,H); break;
-      case 'rope':        out=this.rope(L,p,dt); break;
+      case 'rope':        out=this.rope(L,p,dt,W,H); break;
       case 'rope-ink':    out=this.ropeInk(L,p,W,H,dt); break;
       case 'camera-feed': out=this.cameraFeed(L,p); break;
       case 'face-3d':     out=this.face3d(L,p); break;
@@ -1409,33 +1585,47 @@ const Positioning = {
     function spawnInst(x,y){ return {x:x??Math.random(),y:y??Math.random(),
       vx:(Math.random()-0.5)*0.01,vy:(Math.random()-0.5)*0.01,vr:(Math.random()-0.5)*0.1,rot:0,life:1+Math.random()}; }
   },
+  // PHYSICS / GRAVITY: N circular bodies in the SHARED world (collide with shatter
+  // shards, ropes, boids and each other). Authored gravity drives the shared world
+  // gravity. Bodies + the bounding walls are rebuilt only when count / WxH change;
+  // every frame just READS body transforms (the shared world is stepped centrally
+  // in Engine.render). Deterministic spawn via mulberry(hash) - no Math.random.
   physics(L,p,W,H,dt){
-    const s=this.sim[L.id];
-    if(!s||!s.engine){ this.initPhysics(L,p,W,H); return (this.sim[L.id]&&this.sim[L.id].fallback)||[]; }
-    s.Matter.Engine.update(s.engine, Math.min(dt*1000,33));
-    return s.bodies.map(b=>({x:b.position.x/W, y:b.position.y/H, scale:p.size, rot:b.angle}));
-  },
-  async initPhysics(L,p,W,H){
-    if(this.sim[L.id]&&this.sim[L.id]._building) return;
-    this.sim[L.id]={_building:true, fallback:Array.from({length:p.count|0},(_,i)=>(
-      {x:(i%8+0.5)/8,y:0.2+Math.floor(i/8)*0.1,scale:p.size,rot:0}))};
-    const M=await loadMod('matter'); if(!M){ return; }
-    const Matter=M.default||M;
-    const eng=Matter.Engine.create();
-    eng.gravity.x=p.gravity[0]; eng.gravity.y=p.gravity[1];
-    const bodies=[];
-    const rad=p.size*Math.min(W,H)*0.5;
-    for(let i=0;i<(p.count|0);i++){
-      const b=Matter.Bodies.circle(Math.random()*W, Math.random()*H*0.5, Math.max(4,rad),
-        {restitution:p.bounce,friction:0.05}); bodies.push(b);
+    if(!PW.ensure(W,H)){
+      return Array.from({length:p.count|0},(_,i)=>({x:(i%8+0.5)/8,y:0.2+Math.floor(i/8)*0.1,scale:p.size,rot:0}));
     }
-    const walls=[
-      Matter.Bodies.rectangle(W/2,H+30,W,60,{isStatic:true}),
-      Matter.Bodies.rectangle(-30,H/2,60,H,{isStatic:true}),
-      Matter.Bodies.rectangle(W+30,H/2,60,H,{isStatic:true}),
+    PW.setGravity(p.gravity&&p.gravity[0], p.gravity&&p.gravity[1]);
+    const count=Math.max(0,p.count|0);
+    const sig='physics:'+count+':'+(W|0)+'x'+(H|0);
+    let rec=PW.layers[L.id];
+    if(!rec || rec.kind!=='physics' || rec.sig!==sig || rec._W!==W || rec._H!==H){
+      const M=PW.Matter, rad=Math.max(4,p.size*Math.min(W,H)*0.5);
+      const rng=mulberry(hash(L.id+':physics'));
+      const bodies=[];
+      for(let i=0;i<count;i++){
+        bodies.push(M.Bodies.circle(rng()*W, rng()*H*0.5, rad,
+          {restitution:finiteNumber(p.bounce,0.4), friction:0.05,
+           collisionFilter:{category:PW.CAT.DEFAULT, mask:0xFFFF}}));
+      }
+      const walls=this._worldWalls(M,W,H);
+      const dyn=bodies.slice();   // the bodies we emit as instances (no walls)
+      // walls ride in rec.bodies so they are removed + counted with the layer.
+      rec={kind:'physics', sig, _W:W, _H:H, bodies:bodies.concat(walls), constraints:[], dyn};
+      PW.register(L.id, rec);
+    }
+    rec.size=p.size;
+    return (rec.dyn||[]).map(b=>({x:b.position.x/W, y:b.position.y/H, scale:p.size, rot:b.angle}));
+  },
+  // shared bounding walls (floor + 3 sides) so loose bodies settle on screen.
+  // Static, category WALL, collide with everything. Owned by the spawning layer
+  // record so they are removed with it.
+  _worldWalls(M,W,H){
+    const o={isStatic:true, collisionFilter:{category:PW.CAT.WALL, mask:0xFFFF}};
+    return [
+      M.Bodies.rectangle(W/2,H+30,W*3,60,o),
+      M.Bodies.rectangle(-30,H/2,60,H*3,o),
+      M.Bodies.rectangle(W+30,H/2,60,H*3,o),
     ];
-    Matter.Composite.add(eng.world,[...bodies,...walls]);
-    this.sim[L.id]={Matter,engine:eng,bodies, _building:false, _W:W,_H:H};
   },
   // SHATTER / FRACTURE: voronoi-fracture the layer bounds into N shards, each a
   // matter.js rigid body. At rest the shards tile the image (drawContent clips the
@@ -1444,42 +1634,68 @@ const Positioning = {
   // impulse from the burst point + gravity and fly/tumble apart. Slow-mo via the
   // time-scale control. Deterministic (mulberry seeded by file hash). The voronoi
   // + bodies are cached by signature and rebuilt only on count / bounds change.
+  // SHATTER / FRACTURE in the SHARED world: voronoi-fracture the layer bounds into
+  // N shard bodies that COLLIDE with everything (other shatter layers, gravity
+  // bodies, ropes, boids). At rest they tile the image; a trigger (click / auto /
+  // a wired force can also blow them) flings them apart. Shards are rebuilt only on
+  // count / WxH change; the shared world is stepped centrally (slow-mo folded in by
+  // Engine.render). burst is edge-detected so it fires once per pulse.
   shatter(L,p,W,H,dt){
-    const s=this.sim[L.id];
-    if(!s||!s.engine){ this.initShatter(L,p,W,H); return (this.sim[L.id]&&this.sim[L.id].fallback)||[]; }
-    // pick up live gravity edits without a rebuild
-    s.engine.gravity.x=finiteNumber(p.gravity&&p.gravity[0],0);
-    s.engine.gravity.y=finiteNumber(p.gravity&&p.gravity[1],1.4);
-    // trigger: explicit click pulse, OR auto-burst on a clock cadence. Each fires
-    // ONCE per pulse (edge-detected on s._burst) so the shards don't re-launch
-    // every frame.
+    const count=Math.max(2,Math.min(160,finiteNumber(p.count,24)|0));
+    const sigKey=L.id+':shatter:'+count+':'+(W|0)+'x'+(H|0);
+    if(!PW.ensure(W,H)){
+      const cells=buildVoronoiCells(count,W,H,hash(sigKey));
+      return cells.map((c,i)=>({x:c.cx/W,y:c.cy/H,scale:1,rot:0,_shard:c,_shardSeed:i}));
+    }
+    PW.setGravity(finiteNumber(p.gravity&&p.gravity[0],0), finiteNumber(p.gravity&&p.gravity[1],1.4));
+    let rec=PW.layers[L.id];
+    if(!rec || rec.kind!=='shatter' || rec.sig!==sigKey){
+      const M=PW.Matter;
+      const cells=buildVoronoiCells(count,W,H,hash(sigKey));
+      const shards=[];
+      for(const c of cells){
+        const verts=c.poly.map(pt=>({x:pt[0]-c.cx, y:pt[1]-c.cy}));
+        let body=M.Bodies.fromVertices(c.cx, c.cy, [verts], {restitution:0.25, friction:0.4, frictionAir:0.012,
+          collisionFilter:{category:PW.CAT.DEFAULT, mask:0xFFFF}}, true);
+        if(!body){ body=M.Bodies.circle(c.cx,c.cy,Math.max(4,c.r),{restitution:0.25,friction:0.4,
+          collisionFilter:{category:PW.CAT.DEFAULT, mask:0xFFFF}}); }
+        M.Body.setStatic(body,false);
+        shards.push({body, cell:c});
+      }
+      const o={isStatic:true, collisionFilter:{category:PW.CAT.WALL, mask:0xFFFF}};
+      const walls=[
+        M.Bodies.rectangle(W/2,H+40,W*3,80,o), M.Bodies.rectangle(-40,H/2,80,H*3,o),
+        M.Bodies.rectangle(W+40,H/2,80,H*3,o), M.Bodies.rectangle(W/2,-H,W*3,80,o),
+      ];
+      const dyn=shards.map(sh=>sh.body);
+      rec={kind:'shatter', sig:sigKey, sigKey, _W:W, _H:H, shards, dyn,
+        bodies:dyn.concat(walls), constraints:[], _burst:false, _lastPhase:-1};
+      PW.register(L.id, rec);
+    }
+    // trigger: explicit click pulse, OR auto-burst on a clock cadence (edge-detected).
     const trig=(p.trigger==null?'click':p.trigger);
     let fire=false, bx=0.5, by=0.5;
     if(trig==='auto'){
       const period=Math.max(0.5,finiteNumber(p.period,3));
       const ph=Math.floor(Input.clock/period);
-      if(ph!==s._lastPhase){ s._lastPhase=ph; fire=true; bx=0.5; by=0.5; }
+      if(ph!==rec._lastPhase){ rec._lastPhase=ph; fire=true; }
     } else {
-      if(Input.clickPulse>0.5 && !s._burst){ s._burst=true; fire=true; bx=Input.px; by=Input.py; }
-      if(Input.clickPulse<=0.5) s._burst=false;
+      if(Input.clickPulse>0.5 && !rec._burst){ rec._burst=true; fire=true; bx=Input.px; by=Input.py; }
+      if(Input.clickPulse<=0.5) rec._burst=false;
     }
-    if(fire) this.shatterBurst(s,p,W,H,bx,by);
-    // step the engine in slow-mo (time scale). Clamp the substep so a paused tab
-    // resuming does not explode the solver.
-    const slow=Math.max(0.02,Math.min(2,finiteNumber(p.slowmo,1)));
-    s.Matter.Engine.update(s.engine, Math.min(dt*1000,33)*slow);
-    return s.shards.map((sh,i)=>{
+    if(fire) this.shatterBurst(rec,p,W,H,bx,by);
+    return rec.shards.map((sh,i)=>{
       const b=sh.body;
       return {x:b.position.x/W, y:b.position.y/H, scale:1, rot:b.angle, _shard:sh.cell, _shardSeed:i};
     });
   },
-  shatterBurst(s,p,W,H,bx,by){
-    const M=s.Matter; if(!M) return;
+  shatterBurst(rec,p,W,H,bx,by){
+    const M=PW.Matter; if(!M) return;
     const force=finiteNumber(p.burst,0.04);
     const spin=finiteNumber(p.spin,0.4);
     const cx=bx*W, cy=by*H;
-    const rng=mulberry(hash((s.sigKey||'')+':burst:'+(s._lastPhase||0)+':'+Math.round(bx*1000)+'x'+Math.round(by*1000)));
-    for(const sh of s.shards){
+    const rng=mulberry(hash((rec.sigKey||'')+':burst:'+(rec._lastPhase||0)+':'+Math.round(bx*1000)+'x'+Math.round(by*1000)));
+    for(const sh of rec.shards){
       const b=sh.body;
       let dx=b.position.x-cx, dy=b.position.y-cy;
       const d=Math.hypot(dx,dy)||1; dx/=d; dy/=d;
@@ -1488,44 +1704,16 @@ const Positioning = {
       M.Body.setAngularVelocity(b, (rng()-0.5)*spin);
     }
   },
-  async initShatter(L,p,W,H){
-    if(this.sim[L.id]&&this.sim[L.id]._building) return;
-    const count=Math.max(2,Math.min(160,finiteNumber(p.count,24)|0));
-    const sigKey=L.id+':shatter:'+count+':'+(W|0)+'x'+(H|0);
-    // deterministic voronoi sites + cells (no Math.random)
-    const cells=buildVoronoiCells(count,W,H,hash(sigKey));
-    this.sim[L.id]={_building:true, sigKey,
-      fallback:cells.map((c,i)=>({x:c.cx/W,y:c.cy/H,scale:1,rot:0,_shard:c,_shardSeed:i}))};
-    const Mod=await loadMod('matter'); if(!Mod){ return; }
-    const Matter=Mod.default||Mod;
-    const eng=Matter.Engine.create();
-    eng.gravity.x=finiteNumber(p.gravity&&p.gravity[0],0);
-    eng.gravity.y=finiteNumber(p.gravity&&p.gravity[1],1.4);
-    const shards=[];
-    for(const c of cells){
-      // body from the cell polygon (centered at its centroid). fromVertices may
-      // decompose concave cells; voronoi cells are convex so this is a single part.
-      const verts=c.poly.map(pt=>({x:pt[0]-c.cx, y:pt[1]-c.cy}));
-      let body=Matter.Bodies.fromVertices(c.cx, c.cy, [verts], {restitution:0.25, friction:0.4, frictionAir:0.012}, true);
-      if(!body){ body=Matter.Bodies.circle(c.cx,c.cy,Math.max(4,c.r),{restitution:0.25,friction:0.4}); }
-      Matter.Body.setStatic(body,false);
-      shards.push({body, cell:c});
-    }
-    // floor + side walls so shards settle on screen rather than vanishing
-    const walls=[
-      Matter.Bodies.rectangle(W/2,H+40,W*3,80,{isStatic:true}),
-      Matter.Bodies.rectangle(-40,H/2,80,H*3,{isStatic:true}),
-      Matter.Bodies.rectangle(W+40,H/2,80,H*3,{isStatic:true}),
-      Matter.Bodies.rectangle(W/2,-H,W*3,80,{isStatic:true}),
-    ];
-    Matter.Composite.add(eng.world,[...shards.map(sh=>sh.body),...walls]);
-    this.sim[L.id]={Matter,engine:eng,shards,sigKey, _building:false, _W:W,_H:H, _burst:false, _lastPhase:-1};
-  },
-  // Boids flocking: per-layer agent state {pos,vel} kept on L._boids across
-  // frames (like rope's s.pts). Each frame applies separation + alignment +
-  // cohesion within the perception radius, clamps to maxSpeed, bounces at the
-  // 0..1 bounds, and returns instances with rot from heading. dt from Input.clock.
-  boids(L,p,dt){
+  // BOIDS flocking in the SHARED world: each agent is a small circular body
+  // (CAT.BOIDS) so it COLLIDES with other agents + every other physics object.
+  // The classic separation/alignment/cohesion steering is computed in normalized
+  // space and SET as the body velocity each frame (Body.setVelocity), so the flock
+  // look is preserved EXACTLY while collisions + wired forces (applied centrally in
+  // beginFrame, BEFORE this step) still nudge the agents. World gravity is canceled
+  // for boids (they fly, not fall): we read velocity AFTER forces, blend in the
+  // steering, then write it back - gravity that would have accumulated is overwritten.
+  // Bodies are rebuilt only on count / WxH change; positions read from the bodies.
+  boids(L,p,dt,W,H){
     const count=Math.max(1,Math.min(2000,finiteNumber(p.count,60)|0));
     const perc=Math.max(0.001,finiteNumber(p.perception,0.12));
     const sepW=finiteNumber(p.separation,1);
@@ -1533,40 +1721,61 @@ const Positioning = {
     const cohW=finiteNumber(p.cohesion,1);
     const maxSpd=Math.max(0.001,finiteNumber(p.maxSpeed,0.35));
     const size=finiteNumber(p.size,0.05);
-    let s=L._boids;
-    if(!s){ s={a:[]}; L._boids=s; }
-    const rng=mulberry(hash(L.id+':boids'));
-    // grow / shrink the agent pool to match count
-    while(s.a.length<count){ const ang=rng()*Math.PI*2;
-      s.a.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5}); }
-    if(s.a.length>count) s.a.length=count;
-    const A=s.a, perc2=perc*perc;
-    // accumulate steering against the PREVIOUS positions (snapshot via reading A)
-    for(const ag of A){
-      let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,n=0;
-      for(const o of A){ if(o===ag) continue;
-        const dx=ag.x-o.x, dy=ag.y-o.y, d2=dx*dx+dy*dy;
-        if(d2>0 && d2<perc2){ const d=Math.sqrt(d2);
-          sx+=dx/d; sy+=dy/d; ax+=o.vx; ay+=o.vy; cx+=o.x; cy+=o.y; n++; }
+    W=W||PW.W||1; H=H||PW.H||1;
+    if(!PW.ensure(W,H)){
+      // fallback: legacy normalized integration on L._boids until the world loads.
+      let s=L._boids; if(!s){ s={a:[]}; L._boids=s; }
+      const rng=mulberry(hash(L.id+':boids'));
+      while(s.a.length<count){ const ang=rng()*Math.PI*2; s.a.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5}); }
+      if(s.a.length>count) s.a.length=count;
+      return s.a.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)}));
+    }
+    const sig='boids:'+count+':'+(W|0)+'x'+(H|0);
+    let rec=PW.layers[L.id];
+    if(!rec || rec.kind!=='boids' || rec.sig!==sig){
+      const M=PW.Matter, rng=mulberry(hash(L.id+':boids'));
+      const rad=Math.max(2,size*Math.min(W,H)*0.5);
+      const bodies=[];
+      for(let i=0;i<count;i++){
+        const b=M.Bodies.circle(rng()*W, rng()*H, rad,
+          {restitution:0.4, frictionAir:0, friction:0,
+           collisionFilter:{category:PW.CAT.BOIDS, mask:0xFFFF}});
+        const ang=rng()*Math.PI*2;
+        M.Body.setVelocity(b,{x:Math.cos(ang)*maxSpd*W*0.5*(1/60), y:Math.sin(ang)*maxSpd*H*0.5*(1/60)});
+        bodies.push(b);
       }
-      let vx=ag.vx, vy=ag.vy;
+      rec={kind:'boids', sig, _W:W, _H:H, bodies, dyn:bodies.slice(), constraints:[]};
+      PW.register(L.id, rec);
+    }
+    const A=rec.dyn||rec.bodies, perc2=perc*perc;
+    // matter velocity is px/step; normalize by the canvas dimension so the steering
+    // coefficients match the old normalized-space look.
+    const M=PW.Matter;
+    // snapshot normalized positions/velocities for the steering pass.
+    const nx=new Array(A.length), ny=new Array(A.length), nvx=new Array(A.length), nvy=new Array(A.length);
+    for(let i=0;i<A.length;i++){ const b=A[i]; nx[i]=b.position.x/W; ny[i]=b.position.y/H; nvx[i]=b.velocity.x/W; nvy[i]=b.velocity.y/H; }
+    for(let i=0;i<A.length;i++){
+      let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,n=0;
+      for(let j=0;j<A.length;j++){ if(j===i) continue;
+        const dx=nx[i]-nx[j], dy=ny[i]-ny[j], d2=dx*dx+dy*dy;
+        if(d2>0 && d2<perc2){ const d=Math.sqrt(d2);
+          sx+=dx/d; sy+=dy/d; ax+=nvx[j]; ay+=nvy[j]; cx+=nx[j]; cy+=ny[j]; n++; }
+      }
+      let vx=nvx[i], vy=nvy[i];
       if(n>0){
         vx+=sx*sepW*0.01; vy+=sy*sepW*0.01;
-        vx+=(ax/n-ag.vx)*aliW*0.05; vy+=(ay/n-ag.vy)*aliW*0.05;
-        vx+=(cx/n-ag.x)*cohW*0.02; vy+=(cy/n-ag.y)*cohW*0.02;
+        vx+=(ax/n-nvx[i])*aliW*0.05; vy+=(ay/n-nvy[i])*aliW*0.05;
+        vx+=(cx/n-nx[i])*cohW*0.02; vy+=(cy/n-ny[i])*cohW*0.02;
       }
       const sp=Math.hypot(vx,vy)||1e-6;
       if(sp>maxSpd){ vx=vx/sp*maxSpd; vy=vy/sp*maxSpd; }
-      ag.vx=vx; ag.vy=vy;
+      // soft wrap toward the bounds so the flock stays on screen (collisions handle the rest).
+      if(nx[i]<0.02 && vx<0) vx=Math.abs(vx); else if(nx[i]>0.98 && vx>0) vx=-Math.abs(vx);
+      if(ny[i]<0.02 && vy<0) vy=Math.abs(vy); else if(ny[i]>0.98 && vy>0) vy=-Math.abs(vy);
+      // write back as pixel velocity (overwrites any gravity accumulation = boids fly).
+      M.Body.setVelocity(A[i],{x:vx*W, y:vy*H});
     }
-    // integrate + bounce at bounds (dt-scaled, normalized to ~60fps cadence)
-    const step=Math.min(dt,0.05)*60;
-    for(const ag of A){
-      ag.x+=ag.vx*step*0.016; ag.y+=ag.vy*step*0.016;
-      if(ag.x<0){ ag.x=0; ag.vx=Math.abs(ag.vx); } else if(ag.x>1){ ag.x=1; ag.vx=-Math.abs(ag.vx); }
-      if(ag.y<0){ ag.y=0; ag.vy=Math.abs(ag.vy); } else if(ag.y>1){ ag.y=1; ag.vy=-Math.abs(ag.vy); }
-    }
-    return A.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)}));
+    return A.map(b=>({x:b.position.x/W, y:b.position.y/H, scale:size, rot:Math.atan2(b.velocity.y,b.velocity.x)}));
   },
   drawn(L,p){
     const paths=p.paths||[];
@@ -1577,33 +1786,78 @@ const Positioning = {
       out.push({x:pt[0],y:pt[1],scale:p.size,rot:0}); }
     return out;
   },
-  rope(L,p,dt){
-    let s=this.sim[L.id];
+  // ROPE in the SHARED world: a chain of small circular bodies joined by stiff
+  // distance constraints. Node 0 is pinned to anchor[0] (static, repositioned each
+  // frame); the rest hang + swing under the shared world gravity by default and
+  // COLLIDE with every other physics object. Self-collision within the chain is
+  // suppressed via a per-rope negative collision group. The mouse is NO LONGER
+  // hardcoded to the free end - a wired `force` drives it now (curtain drag etc).
+  // The shared world is stepped centrally; this just builds/reads the bodies.
+  rope(L,p,dt,W,H){
+    W=W||PW.W||1; H=H||PW.H||1;
     const anchors=p.anchors||[[0.2,0.2],[0.8,0.2]];
     const seg=Math.max(2,p.segments|0);
-    if(!s||s.seg!==seg){ s={seg, pts:[]}; this.sim[L.id]=s;
-      for(let i=0;i<=seg;i++){ const t=i/seg;
-        s.pts.push({x:lerp(anchors[0][0],anchors[1][0],t),y:lerp(anchors[0][1],anchors[1][1],t),ox:0,oy:0,
-          px:lerp(anchors[0][0],anchors[1][0],t),py:lerp(anchors[0][1],anchors[1][1],t)}); }
+    if(!PW.ensure(W,H)){
+      const out=[]; for(let i=0;i<=seg;i++){ const t=i/seg;
+        out.push({x:lerp(anchors[0][0],anchors[1][0],t),y:lerp(anchors[0][1],anchors[1][1],t),scale:p.size,rot:0}); }
+      return out;
     }
-    // verlet integrate
-    const grav=0.0006, drag=0.99;
-    for(const q of s.pts){ const vx=(q.x-q.px)*drag, vy=(q.y-q.py)*drag;
-      q.px=q.x; q.py=q.y; q.x+=vx; q.y+=vy+grav; }
-    // anchors: first pinned, last follows pointer if hovering else pinned
-    s.pts[0].x=anchors[0][0]; s.pts[0].y=anchors[0][1];
-    const last=s.pts[s.pts.length-1];
-    if(Input.hoverAny){ last.x=Input.px; last.y=Input.py; } else { last.x=anchors[1][0]; last.y=anchors[1][1]; }
-    // constraint relaxation
-    const rest=Math.hypot(anchors[1][0]-anchors[0][0],anchors[1][1]-anchors[0][1])/seg;
-    const k=clamp(p.stiffness,0.05,1);
-    for(let it=0;it<6;it++)for(let i=0;i<seg;i++){
-      const a=s.pts[i], b=s.pts[i+1];
-      let dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1e-6;
-      const diff=(d-rest)/d*0.5*k; dx*=diff; dy*=diff;
-      if(i!==0){ a.x+=dx; a.y+=dy; } b.x-=dx; b.y-=dy;
+    const sig='rope:'+seg+':'+(W|0)+'x'+(H|0)+':'+anchors[0][0]+','+anchors[0][1]+'|'+anchors[1][0]+','+anchors[1][1];
+    let rec=PW.layers[L.id];
+    if(!rec || rec.kind!=='rope' || rec.sig!==sig){
+      rec=this._buildRope(L,[{anchor:anchors[0], end:anchors[1]}], seg,
+        Math.hypot(anchors[1][0]-anchors[0][0],anchors[1][1]-anchors[0][1])/seg,
+        clamp(finiteNumber(p.stiffness,0.8),0.05,1), W, H, 'rope', sig);
     }
-    return s.pts.map((q,i)=>({x:q.x,y:q.y,scale:p.size,rot:0}));
+    this._pinRope(rec, W, H);
+    rec.size=p.size;
+    return (rec.nodes||[]).map(b=>({x:b.position.x/W, y:b.position.y/H, scale:p.size, rot:b.angle}));
+  },
+  // Build one or more rope chains as bodies + constraints. `chains` is a list of
+  // { anchor:[nx,ny], end:[nx,ny] } (end = initial layout target, used to seed the
+  // chain straight toward it). rest is normalized segment length; k is stiffness.
+  // node 0 of each chain is STATIC (the pin); the rest are dynamic + collide.
+  _buildRope(L, chains, seg, rest, k, W, H, kind, sig){
+    const M=PW.Matter;
+    const rad=Math.max(2, Math.min(W,H)*Math.max(0.004, finiteNumber(L.positioning&&L.positioning.size,0.02))*0.4);
+    const nodes=[], bodies=[], constraints=[];
+    for(const ch of chains){
+      const grp=PW.nextRopeGroup();
+      const ax=ch.anchor[0], ay=ch.anchor[1];
+      const ex=(ch.end?ch.end[0]:ax), ey=(ch.end?ch.end[1]:ay+rest*seg);
+      const chainBodies=[];
+      for(let i=0;i<=seg;i++){
+        const t=i/seg, nx=lerp(ax,ex,t)*W, ny=lerp(ay,ey,t)*H;
+        const b=M.Bodies.circle(nx, ny, rad, {
+          friction:0.02, frictionAir:0.02, restitution:0.2,
+          collisionFilter:{group:grp, category:PW.CAT.ROPE, mask:0xFFFF},
+        });
+        if(i===0) M.Body.setStatic(b,true);     // node 0 pinned
+        chainBodies.push(b); nodes.push(b); bodies.push(b);
+      }
+      // stiff distance constraints between consecutive nodes (length = rest in px).
+      const restPx=rest*Math.max(W,H);
+      for(let i=0;i<seg;i++){
+        constraints.push(M.Constraint.create({
+          bodyA:chainBodies[i], bodyB:chainBodies[i+1],
+          length:restPx, stiffness:k, damping:0.1,
+        }));
+      }
+      chainBodies._anchor=ch.anchor;
+    }
+    const rec={kind, sig, _W:W, _H:H, nodes, bodies, dyn:nodes.slice(), constraints, chains};
+    PW.register(L.id, rec);
+    return rec;
+  },
+  // Re-pin each chain's node 0 to its (possibly animated) anchor each frame.
+  _pinRope(rec, W, H){
+    const M=PW.Matter; const ch=rec.chains; if(!ch) return;
+    let idx=0; const nodes=rec.nodes; const per=(nodes.length/ch.length)|0;
+    for(let c=0;c<ch.length;c++){
+      const b=nodes[c*per]; if(!b) continue;
+      const a=ch[c].anchor;
+      try{ M.Body.setPosition(b,{x:a[0]*W, y:a[1]*H}); M.Body.setVelocity(b,{x:0,y:0}); }catch(e){}
+    }
   },
   // ROPE INK (Elastic Type): sample the glyph ink into a LOW-density ANCHOR cloud
   // (reuse sampleTextInk with `anchors` as the density), then grow a short verlet
@@ -1616,50 +1870,48 @@ const Positioning = {
   // signature of text/font/weight/anchors/segments/WxH so we re-sample ONLY on
   // change (no per-frame sampling, no getBoundingClientRect); state persists
   // across frames like rope's s.pts.
+  // ROPE INK (Elastic Type) in the SHARED world: sample the glyph ink into a
+  // LOW-density anchor cloud, then grow a short body chain from each anchor (node 0
+  // pinned to the ink point). Each chain hangs + swings under shared gravity by
+  // default and COLLIDES with every other physics object; self-collision within a
+  // chain is suppressed per-rope. A wired `force` (e.g. input-pointer.pos ->
+  // force(attract)) drags the whole ink-curtain - the generalization of the old
+  // hardcoded pointer pin. The anchor cloud is sampled ONLY on signature change
+  // (no per-frame sampling, no getBoundingClientRect).
   ropeInk(L,p,W,H,dt){
     const text=p.text!=null?String(p.text):'';
     const font=(p.font&&String(p.font).trim())?p.font:'sans-serif';
     const weight=p.weight||700;
     const anchors=Math.max(1,Math.min(300,finiteNumber(p.anchors,40)|0));
     const seg=Math.max(1,Math.min(24,finiteNumber(p.segments,6)|0));
-    const grav=0.0006*Math.max(0,finiteNumber(p.gravity,1));
-    const drag=clamp(finiteNumber(p.damping,0.99),0.8,1);
     const k=clamp(finiteNumber(p.stiffness,0.8),0.05,1);
     const size=finiteNumber(p.size,0.02);
-    const sig=text+'|'+font+'|'+weight+'|'+anchors+'|'+seg+'|'+(W|0)+'x'+(H|0);
-    let s=L._ropeInk;
-    if(!s||s.sig!==sig){
+    const sig='rope-ink|'+text+'|'+font+'|'+weight+'|'+anchors+'|'+seg+'|'+(W|0)+'x'+(H|0);
+    if(!PW.ensure(W,H)){
       const base=sampleTextInk(text,font,weight,anchors,W,H,hash(L.id+':rope-ink'));
-      // rest length: each rope hangs ~12% of the layer height in total, split
-      // across its segments (scaled to normalized space, capped sensibly).
-      const rest=clamp(0.12/seg,0.004,0.2);
-      const ropes=base.map(a=>{
-        const pts=[];
-        for(let i=0;i<=seg;i++) pts.push({x:a[0],y:a[1]+rest*i,px:a[0],py:a[1]+rest*i});
-        return {anchor:a,pts,rest};
-      });
-      s={sig,ropes}; L._ropeInk=s;
+      if(!base.length) return [{x:0.5,y:0.5,scale:size,rot:0}];
+      const rest=clamp(0.12/seg,0.004,0.2), out=[];
+      for(const a of base) for(let i=0;i<=seg;i++) out.push({x:a[0],y:a[1]+rest*i,scale:size,rot:0});
+      return out;
     }
-    if(!s.ropes.length) return [{x:0.5,y:0.5,scale:size,rot:0}];
-    const out=[];
-    for(const r of s.ropes){
-      const pts=r.pts, n=pts.length;
-      // verlet integrate (gravity scaled by damping cadence like rope())
-      for(const q of pts){ const vx=(q.x-q.px)*drag, vy=(q.y-q.py)*drag;
-        q.px=q.x; q.py=q.y; q.x+=vx; q.y+=vy+grav; }
-      // pin node 0 to the ink anchor
-      pts[0].x=r.anchor[0]; pts[0].y=r.anchor[1];
-      // constraint relaxation toward rest length
-      for(let it=0;it<6;it++)for(let i=0;i<n-1;i++){
-        const a=pts[i], b=pts[i+1];
-        let dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1e-6;
-        const diff=(d-r.rest)/d*0.5*k; dx*=diff; dy*=diff;
-        if(i!==0){ a.x+=dx; a.y+=dy; } b.x-=dx; b.y-=dy;
-      }
-      // emit each node with rot from the local segment heading
-      for(let i=0;i<n;i++){ const q=pts[i];
-        const nb=pts[Math.min(i+1,n-1)], pb=pts[Math.max(i-1,0)];
-        out.push({x:q.x,y:q.y,scale:size,rot:Math.atan2(nb.y-pb.y,nb.x-pb.x)});
+    PW.setGravity(0, Math.max(0,finiteNumber(p.gravity,1)));   // rope-ink: gravity control = downward pull
+    let rec=PW.layers[L.id];
+    if(!rec || rec.kind!=='rope-ink' || rec.sig!==sig){
+      const base=sampleTextInk(text,font,weight,anchors,W,H,hash(L.id+':rope-ink'));
+      if(!base.length){ PW.remove(L.id); return [{x:0.5,y:0.5,scale:size,rot:0}]; }
+      const rest=clamp(0.12/seg,0.004,0.2);
+      const chains=base.map(a=>({anchor:a, end:[a[0], Math.min(0.999,a[1]+rest*seg)]}));
+      rec=this._buildRope(L, chains, seg, rest, k, W, H, 'rope-ink', sig);
+    }
+    this._pinRope(rec, W, H);
+    rec.size=size;
+    const nodes=rec.nodes, nPer=seg+1, out=[];
+    for(let c=0;c<rec.chains.length;c++){
+      for(let i=0;i<nPer;i++){
+        const q=nodes[c*nPer+i]; if(!q) continue;
+        const nb=nodes[c*nPer+Math.min(i+1,nPer-1)], pb=nodes[c*nPer+Math.max(i-1,0)];
+        out.push({x:q.position.x/W, y:q.position.y/H, scale:size,
+          rot:Math.atan2((nb.position.y-pb.position.y),(nb.position.x-pb.position.x))});
       }
     }
     return out;
@@ -3212,6 +3464,23 @@ const Engine = {
       if(b.cv.width!==W||b.cv.height!==H){ b.cv.width=W; b.cv.height=H; }
       return b;
     };
+    // 4a0) UNIFIED PHYSICS WORLD: prune dead layers, then step the ONE shared
+    //      Matter world ONCE (fixed-step accumulator) AFTER applying every wired
+    //      generic force. Each physics MODE below then just READS its body
+    //      transforms - it never steps the engine itself. Shatter's slow-mo is the
+    //      smallest slowmo across any shatter layer (a single shared time-scale).
+    if(PW.engine){
+      // a layer keeps its world record only while it is STILL a physics mode AND
+      // still present; switching a layer to a non-physics mode (or removing it)
+      // tears its bodies out of the shared world.
+      const PHYS=new Set(['physics','shatter','boids','rope','rope-ink']);
+      const livePhys=new Set();
+      for(const L of layers){ const pp=positionedLayer(L).positioning; if(pp&&PHYS.has(pp.mode)) livePhys.add(L.id); }
+      PW.prune(livePhys);
+      let slow=1;
+      for(const L of layers){ const pp=L.positioning; if(pp&&pp.mode==='shatter'){ slow=Math.min(slow,Math.max(0.02,Math.min(2,finiteNumber(pp.slowmo,1)))); } }
+      PW.beginFrame(dt, LogicBridge.forces(), slow);
+    }
     // 4a) PASS A - draw each layer's content into its own buffer. Physics/instances
     //     resolve exactly once here (a mask-source layer is NOT stepped twice).
     const rendered={};
@@ -3888,6 +4157,7 @@ function rebuild(){
   const selWired  = !selInline && wiredRuntimeLayers().find(l=>l.id===selId);
   if(!selId || (!selInline && !selWired)) selId=STATE.layers[0]&&STATE.layers[0].id;
   Positioning.reset();
+  PW.reset();   // drop the shared physics world (bodies rebuild lazily on demand)
   // free all fluid buffers (CPU fields + GPU stateful instances) on rebuild.
   for(const id of Array.from(_gpuFluidIds)) disposeFluid(id);
   FluidSim.reset();
@@ -4119,6 +4389,13 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     applyScalar(p){ const b=p&&p._bindings; if(!b)return p; for(const k in b){ const s=b[k]; if(!s||s.kind!=='logic')continue;
       const val=this.value(s.ref); if(val===undefined)continue; p[k]=val;
       if(k==='rotation'||k==='rotateZ')p.rot=(num(p.rotation,0)+num(p.rotateZ,0))*Math.PI/180; } return p; },
+    // GENERIC PHYSICS FORCES (baked twin): resolve every wired `force` node's pos
+    // via vec(ref) into the list PW applies. Mirrors the editor LogicBridge.forces.
+    forces(){ const list=(LOGIC&&Array.isArray(LOGIC.forces))?LOGIC.forces:null; if(!list||!list.length)return [];
+      const out=[]; for(const f of list){ if(!f)continue; const pr=f.params||{};
+        out.push({ type:pr.type||'attract', radius:Number.isFinite(+pr.radius)?+pr.radius:0.3,
+          strength:Number.isFinite(+pr.strength)?+pr.strength:1, falloff:Number.isFinite(+pr.falloff)?+pr.falloff:1,
+          pos:(f.pos&&f.pos.ref)?this.vec(f.pos.ref):null }); } return out; },
     readbackMap(){ const m={}; for(const rb of this.readbacks){ let val=0; const L=CFG.layers.find(x=>x&&x.id===rb.node);
       if(L){ if(rb.param==='opacity')val=num(L._opacity!=null?L._opacity:(L.opacity!=null?L.opacity:1),1);
         else { const pp=L.positioning||{}; val=num(pp[rb.param],0); } }
@@ -4254,6 +4531,58 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   let _matterMod=null,_matterReq=false;
   function loadMatter(){ if(_matterMod)return Promise.resolve(_matterMod);
     return import('https://esm.sh/matter-js@0.19.0').then(m=>{_matterMod=m&&(m.default||m);return _matterMod;}).catch(()=>null); }
+  /* UNIFIED PHYSICS WORLD (baked twin of the editor PW): ONE Matter world for the
+     whole player so every physics object collides + reacts to wired forces. Lazy
+     created, fixed-step accumulator, body cap, per-rope self-collision group. */
+  const PW={ M:null,engine:null,world:null,loading:false, W:W,H:H, accum:0, fixed:1/60, cap:3000, clamped:false,
+    layers:{}, CAT:{DEFAULT:1,ROPE:2,BOIDS:4,WALL:8}, ropeGroup:-1,
+    ensure(){ if(this.engine)return true; if(this.loading)return false; this.loading=true;
+      loadMatter().then(M=>{ if(!M){this.loading=false;return;} const eng=M.Engine.create(); eng.gravity.x=0; eng.gravity.y=1;
+        this.M=M; this.engine=eng; this.world=eng.world; this.loading=false; }).catch(()=>{this.loading=false;}); return false; },
+    setGravity(gx,gy){ if(this.engine){ this.engine.gravity.x=num(gx,0); this.engine.gravity.y=num(gy,1); } },
+    nextRopeGroup(){ return this.ropeGroup--; },
+    count(){ let n=0; for(const id in this.layers){ const r=this.layers[id]; if(r&&r.bodies)n+=r.bodies.length; } return n; },
+    register(id,rec){ this.remove(id); if(!this.engine)return; const M=this.M; let bodies=rec.bodies||[];
+      const room=Math.max(0,this.cap-this.count());
+      if(bodies.length>room){ if(!this.clamped){console.warn('[PhysicsWorld] body cap '+this.cap+' reached; clamping');this.clamped=true;}
+        bodies=bodies.slice(0,room); rec.bodies=bodies; const kept=new Set(bodies);
+        if(rec.dyn)rec.dyn=rec.dyn.filter(b=>kept.has(b)); if(rec.nodes)rec.nodes=rec.nodes.filter(b=>kept.has(b)); }
+      if(bodies.length)M.Composite.add(this.world,bodies);
+      if(rec.constraints&&rec.constraints.length)M.Composite.add(this.world,rec.constraints); this.layers[id]=rec; },
+    remove(id){ const r=this.layers[id]; if(!r)return; if(this.engine){ const M=this.M;
+      if(r.constraints)for(const c of r.constraints){try{M.Composite.remove(this.world,c);}catch(e){}}
+      if(r.bodies)for(const b of r.bodies){try{M.Composite.remove(this.world,b);}catch(e){}} } delete this.layers[id]; },
+    prune(live){ for(const id of Object.keys(this.layers)){ if(!live.has(id))this.remove(id); } },
+    applyForces(fl){ if(!this.engine||!fl||!fl.length)return; const M=this.M,W2=this.W||1,H2=this.H||1,bodies=M.Composite.allBodies(this.world);
+      for(const f of fl){ if(!f)continue; const type=f.type||'attract',strength=num(f.strength,1); if(strength===0)continue;
+        const radN=Math.max(0.0001,num(f.radius,0.3)),radPx=radN*Math.max(W2,H2),falloff=Math.max(0,num(f.falloff,1));
+        if(type==='wind'){ const px=(f.pos&&Number.isFinite(f.pos.x))?f.pos.x:1,py=(f.pos&&Number.isFinite(f.pos.y))?f.pos.y:0.5;
+          let dx=px-0.5,dy=py-0.5; const dl=Math.hypot(dx,dy)||1e-6; dx/=dl; dy/=dl; const mag=strength*1e-5;
+          for(const b of bodies){ if(b.isStatic)continue; M.Body.applyForce(b,b.position,{x:dx*mag*(b.mass||1),y:dy*mag*(b.mass||1)}); } continue; }
+        if(!f.pos||!Number.isFinite(f.pos.x)||!Number.isFinite(f.pos.y))continue; const cx=f.pos.x*W2,cy=f.pos.y*H2,r2=radPx*radPx;
+        for(const b of bodies){ if(b.isStatic)continue; let dx=cx-b.position.x,dy=cy-b.position.y; const d2=dx*dx+dy*dy; if(d2>r2)continue;
+          const d=Math.sqrt(d2)||1e-6,t=1-d/radPx,fall=falloff<=0?1:Math.pow(Math.max(0,t),falloff),m=(b.mass||1);
+          if(type==='attract'||type==='repel'){ const sgn=type==='attract'?1:-1,mag=sgn*strength*2e-4*fall*m; M.Body.applyForce(b,b.position,{x:dx/d*mag,y:dy/d*mag}); }
+          else if(type==='vortex'){ const tx=-dy/d,ty=dx/d,mag=strength*2e-4*fall*m; M.Body.applyForce(b,b.position,{x:tx*mag+dx/d*mag*0.15,y:ty*mag+dy/d*mag*0.15}); }
+          else if(type==='drag'){ const damp=1-Math.min(0.9,strength*0.5*fall); M.Body.setVelocity(b,{x:b.velocity.x*damp,y:b.velocity.y*damp}); } } } },
+    beginFrame(dt,fl,slow){ if(!this.engine)return; this.applyForces(fl); const sc=Math.max(0.02,Math.min(2,num(slow,1)));
+      this.accum=Math.min(this.accum+Math.min(dt,0.05),this.fixed*5); let steps=0;
+      while(this.accum>=this.fixed&&steps<5){ this.M.Engine.update(this.engine,this.fixed*1000*sc); this.accum-=this.fixed; steps++; } },
+    worldWalls(W2,H2){ const M=this.M,o={isStatic:true,collisionFilter:{category:this.CAT.WALL,mask:0xFFFF}};
+      return [M.Bodies.rectangle(W2/2,H2+30,W2*3,60,o),M.Bodies.rectangle(-30,H2/2,60,H2*3,o),M.Bodies.rectangle(W2+30,H2/2,60,H2*3,o)]; },
+    buildRope(L,chains,seg,rest,k,kind,sig){ const M=this.M,W2=this.W,H2=this.H;
+      const rad=Math.max(2,Math.min(W2,H2)*Math.max(0.004,num(L.positioning&&L.positioning.size,0.02))*0.4);
+      const nodes=[],bodies=[],constraints=[];
+      for(const ch of chains){ const grp=this.nextRopeGroup(),ax=ch.anchor[0],ay=ch.anchor[1],ex=(ch.end?ch.end[0]:ax),ey=(ch.end?ch.end[1]:ay+rest*seg);
+        const cb=[]; for(let i=0;i<=seg;i++){ const t=i/seg,nx=lerp(ax,ex,t)*W2,ny=lerp(ay,ey,t)*H2;
+          const b=M.Bodies.circle(nx,ny,rad,{friction:0.02,frictionAir:0.02,restitution:0.2,collisionFilter:{group:grp,category:this.CAT.ROPE,mask:0xFFFF}});
+          if(i===0)M.Body.setStatic(b,true); cb.push(b);nodes.push(b);bodies.push(b); }
+        const restPx=rest*Math.max(W2,H2); for(let i=0;i<seg;i++)constraints.push(M.Constraint.create({bodyA:cb[i],bodyB:cb[i+1],length:restPx,stiffness:k,damping:0.1})); }
+      const rec={kind,sig,_W:W2,_H:H2,nodes,bodies,dyn:nodes.slice(),constraints,chains}; this.register(L.id,rec); return rec; },
+    pinRope(rec){ const M=this.M,ch=rec.chains; if(!ch)return; const nodes=rec.nodes,per=(nodes.length/ch.length)|0;
+      for(let c=0;c<ch.length;c++){ const b=nodes[c*per]; if(!b)continue; const a=ch[c].anchor;
+        try{ M.Body.setPosition(b,{x:a[0]*this.W,y:a[1]*this.H}); M.Body.setVelocity(b,{x:0,y:0}); }catch(e){} } },
+  };
   /* FLUID: baked twin of FluidSim - coarse Stam stable-fluids stirring the layer
      buffer pixels (the dye) + pointer-injected velocity. State per layer id. */
   const FLU={};
@@ -4448,74 +4777,80 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
         out.push({x:clamp((c+0.5)/cols+(z-0.5)*depth,0.02,0.98),y:clamp((r+0.5)/rows+(z-0.5)*depth,0.02,0.98),scale:base*(1.18-z*0.36),rot:(z-0.5)*0.35});} return out; }
     if(p.mode==='scatter-3d'){ const out=[],count=Math.min(Math.max(1,num(p.count,80)|0),600),b=Array.isArray(p.bounds)?p.bounds:[p.boundsX,p.boundsY,p.boundsZ],bx=Math.max(0.01,num(b[0],6)),by=Math.max(0.01,num(b[1],6)),bz=Math.max(0.01,num(b[2],6)),maxB=Math.max(bx,by,bz,0.01),sx=Math.min(0.92,bx/maxB*0.92),sy=Math.min(0.92,by/maxB*0.92),rng=mb(hash(L.id+':scatter-3d')),base=num(p.size,0.05);
       for(let i=0;i<count;i++){const x=0.5+(rng()-0.5)*sx,y=0.5+(rng()-0.5)*sy,z=rng();out.push({x:clamp(x,0.02,0.98),y:clamp(y,0.02,0.98),scale:base*(0.62+z*0.78),rot:(rng()-0.5)*0.8});} return out; }
-    if(p.mode==='shatter'){ let s=SIM[L.id];
-      const count=Math.max(2,Math.min(160,num(p.count,24)|0));
-      const sigKey=L.id+':shatter:'+count+':'+(W|0)+'x'+(H|0);
-      if(!s||s.shKey!==sigKey){ const cells=voronoiCells(count,hash(sigKey));
-        s={shKey:sigKey, cells, engine:null, shards:null, _building:false, _burst:false, _lastPhase:-1, sigKey};
-        SIM[L.id]=s;
-        s._building=true;
-        loadMatter().then(M=>{ if(!M||SIM[L.id]!==s){s._building=false;return;} const eng=M.Engine.create();
-          eng.gravity.x=num(p.gravity&&p.gravity[0],0); eng.gravity.y=num(p.gravity&&p.gravity[1],1.4);
-          const shards=[];
-          for(const c of cells){ const verts=c.poly.map(pt=>({x:pt[0]-c.cx,y:pt[1]-c.cy}));
-            let body=M.Bodies.fromVertices(c.cx,c.cy,[verts],{restitution:0.25,friction:0.4,frictionAir:0.012},true);
-            if(!body)body=M.Bodies.circle(c.cx,c.cy,Math.max(4,c.r),{restitution:0.25,friction:0.4});
-            M.Body.setStatic(body,false); shards.push({body,cell:c}); }
-          const walls=[M.Bodies.rectangle(W/2,H+40,W*3,80,{isStatic:true}),M.Bodies.rectangle(-40,H/2,80,H*3,{isStatic:true}),M.Bodies.rectangle(W+40,H/2,80,H*3,{isStatic:true}),M.Bodies.rectangle(W/2,-H,W*3,80,{isStatic:true})];
-          M.Composite.add(eng.world,[...shards.map(sh=>sh.body),...walls]);
-          s.M=M; s.engine=eng; s.shards=shards; s._building=false; }); }
-      if(!s.engine||!s.shards){ return s.cells.map((c,i)=>({x:c.cx/W,y:c.cy/H,scale:1,rot:0,_shard:c,_shardSeed:i})); }
-      s.engine.gravity.x=num(p.gravity&&p.gravity[0],0); s.engine.gravity.y=num(p.gravity&&p.gravity[1],1.4);
+    if(p.mode==='shatter'){ const count=Math.max(2,Math.min(160,num(p.count,24)|0)),sigKey=L.id+':shatter:'+count+':'+(W|0)+'x'+(H|0);
+      if(!PW.ensure()){ const cells=voronoiCells(count,hash(sigKey)); return cells.map((c,i)=>({x:c.cx/W,y:c.cy/H,scale:1,rot:0,_shard:c,_shardSeed:i})); }
+      PW.setGravity(num(p.gravity&&p.gravity[0],0),num(p.gravity&&p.gravity[1],1.4)); let rec=PW.layers[L.id];
+      if(!rec||rec.kind!=='shatter'||rec.sig!==sigKey){ const M=PW.M,cells=voronoiCells(count,hash(sigKey)),shards=[];
+        for(const c of cells){ const verts=c.poly.map(pt=>({x:pt[0]-c.cx,y:pt[1]-c.cy}));
+          let body=M.Bodies.fromVertices(c.cx,c.cy,[verts],{restitution:0.25,friction:0.4,frictionAir:0.012,collisionFilter:{category:PW.CAT.DEFAULT,mask:0xFFFF}},true);
+          if(!body)body=M.Bodies.circle(c.cx,c.cy,Math.max(4,c.r),{restitution:0.25,friction:0.4,collisionFilter:{category:PW.CAT.DEFAULT,mask:0xFFFF}});
+          M.Body.setStatic(body,false); shards.push({body,cell:c}); }
+        const o={isStatic:true,collisionFilter:{category:PW.CAT.WALL,mask:0xFFFF}};
+        const walls=[M.Bodies.rectangle(W/2,H+40,W*3,80,o),M.Bodies.rectangle(-40,H/2,80,H*3,o),M.Bodies.rectangle(W+40,H/2,80,H*3,o),M.Bodies.rectangle(W/2,-H,W*3,80,o)];
+        const dyn=shards.map(sh=>sh.body); rec={kind:'shatter',sig:sigKey,sigKey,shards,dyn,bodies:dyn.concat(walls),constraints:[],_burst:false,_lastPhase:-1}; PW.register(L.id,rec); }
       const trig=(p.trigger==null?'click':p.trigger); let fire=false,bx=0.5,by=0.5;
-      if(trig==='auto'){const period=Math.max(0.5,num(p.period,3)),ph=Math.floor(IN.clock/period);if(ph!==s._lastPhase){s._lastPhase=ph;fire=true;}}
-      else{if(IN.clickPulse>0.5&&!s._burst){s._burst=true;fire=true;bx=IN.px;by=IN.py;}if(IN.clickPulse<=0.5)s._burst=false;}
-      if(fire){const M=s.M,force=num(p.burst,0.04),spin=num(p.spin,0.4),cx=bx*W,cy=by*H,rng=mb(hash((s.sigKey||'')+':burst:'+(s._lastPhase||0)+':'+Math.round(bx*1000)+'x'+Math.round(by*1000)));
-        for(const sh of s.shards){const b=sh.body;let dx=b.position.x-cx,dy=b.position.y-cy;const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;const mag=force*(0.6+rng()*0.8)*(b.mass||1);M.Body.applyForce(b,b.position,{x:dx*mag,y:dy*mag-force*0.3*(b.mass||1)});M.Body.setAngularVelocity(b,(rng()-0.5)*spin);}}
-      const slow=Math.max(0.02,Math.min(2,num(p.slowmo,1)));
-      s.M.Engine.update(s.engine,Math.min(dt*1000,33)*slow);
-      return s.shards.map((sh,i)=>({x:sh.body.position.x/W,y:sh.body.position.y/H,scale:1,rot:sh.body.angle,_shard:sh.cell,_shardSeed:i})); }
-    if(p.mode==='instances'||p.mode==='physics'){ const s=SIM[L.id]||(SIM[L.id]={items:[]}); const want=p.count|0;
-      if(p.source==='random'||p.mode==='physics'){while(s.items.length<want)s.items.push(spawn());}
+      if(trig==='auto'){const period=Math.max(0.5,num(p.period,3)),ph=Math.floor(IN.clock/period);if(ph!==rec._lastPhase){rec._lastPhase=ph;fire=true;}}
+      else{if(IN.clickPulse>0.5&&!rec._burst){rec._burst=true;fire=true;bx=IN.px;by=IN.py;}if(IN.clickPulse<=0.5)rec._burst=false;}
+      if(fire){const M=PW.M,force=num(p.burst,0.04),spin=num(p.spin,0.4),cx=bx*W,cy=by*H,rng=mb(hash((rec.sigKey||'')+':burst:'+(rec._lastPhase||0)+':'+Math.round(bx*1000)+'x'+Math.round(by*1000)));
+        for(const sh of rec.shards){const b=sh.body;let dx=b.position.x-cx,dy=b.position.y-cy;const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;const mag=force*(0.6+rng()*0.8)*(b.mass||1);M.Body.applyForce(b,b.position,{x:dx*mag,y:dy*mag-force*0.3*(b.mass||1)});M.Body.setAngularVelocity(b,(rng()-0.5)*spin);}}
+      return rec.shards.map((sh,i)=>({x:sh.body.position.x/W,y:sh.body.position.y/H,scale:1,rot:sh.body.angle,_shard:sh.cell,_shardSeed:i})); }
+    if(p.mode==='physics'){ const count=Math.max(0,p.count|0),sig='physics:'+count+':'+(W|0)+'x'+(H|0);
+      if(!PW.ensure()){ return Array.from({length:count},(_,i)=>({x:(i%8+0.5)/8,y:0.2+Math.floor(i/8)*0.1,scale:p.size,rot:0})); }
+      PW.setGravity(p.gravity&&p.gravity[0],p.gravity&&p.gravity[1]); let rec=PW.layers[L.id];
+      if(!rec||rec.kind!=='physics'||rec.sig!==sig){ const M=PW.M,rad=Math.max(4,(p.size||0.05)*Math.min(W,H)*0.5),rng=mb(hash(L.id+':physics')),bodies=[];
+        for(let i=0;i<count;i++)bodies.push(M.Bodies.circle(rng()*W,rng()*H*0.5,rad,{restitution:num(p.bounce,0.4),friction:0.05,collisionFilter:{category:PW.CAT.DEFAULT,mask:0xFFFF}}));
+        const dyn=bodies.slice(),walls=PW.worldWalls(W,H); rec={kind:'physics',sig,bodies:bodies.concat(walls),dyn,constraints:[]}; PW.register(L.id,rec); }
+      return (rec.dyn||[]).map(b=>({x:b.position.x/W,y:b.position.y/H,scale:p.size,rot:b.angle})); }
+    if(p.mode==='instances'){ const s=SIM[L.id]||(SIM[L.id]={items:[]}); const want=p.count|0;
+      if(p.source==='random'){while(s.items.length<want)s.items.push(spawn());}
       else if(p.source==='interaction'){if(IN.clickPulse>0.5&&s.items.length<want)for(let i=0;i<3&&s.items.length<want;i++)s.items.push(spawn(IN.px,IN.py));}
       else{if(IN.hover&&s.items.length<want)s.items.push(spawn(IN.px,IN.py));}
       while(s.items.length>want)s.items.shift();
-      const g=(p.mode==='physics'?(p.gravity?p.gravity[1]:1):1)*0.0006;
-      for(const it of s.items){it.vy+=g;it.x+=it.vx;it.y+=it.vy;it.life-=dt*0.2;it.rot+=it.vr;
+      for(const it of s.items){it.vy+=0.0006;it.x+=it.vx;it.y+=it.vy;it.life-=dt*0.2;it.rot+=it.vr;
         if(it.x<0||it.x>1)it.vx*=-1; if(it.y>1){it.y=1;it.vy*=-0.5;}}
       s.items=s.items.filter(it=>it.life>0);
       return s.items.map(it=>({x:it.x,y:it.y,scale:(p.size||0.05)*(0.6+it.life*0.6),rot:it.rot}));
       function spawn(x,y){return{x:x!=null?x:Math.random(),y:y!=null?y:Math.random(),vx:(Math.random()-0.5)*0.01,vy:(Math.random()-0.5)*0.01,vr:(Math.random()-0.5)*0.1,rot:0,life:1+Math.random()};}}
-    if(p.mode==='rope'){ let s=SIM[L.id]; const an=p.anchors||[[0.2,0.2],[0.8,0.2]]; const seg=Math.max(2,p.segments|0);
-      if(!s||s.seg!==seg){s={seg,pts:[]};SIM[L.id]=s;for(let i=0;i<=seg;i++){const t=i/seg;s.pts.push({x:lerp(an[0][0],an[1][0],t),y:lerp(an[0][1],an[1][1],t),px:lerp(an[0][0],an[1][0],t),py:lerp(an[0][1],an[1][1],t)});}}
-      for(const q of s.pts){const vx=(q.x-q.px)*0.99,vy=(q.y-q.py)*0.99;q.px=q.x;q.py=q.y;q.x+=vx;q.y+=vy+0.0006;}
-      s.pts[0].x=an[0][0];s.pts[0].y=an[0][1]; const last=s.pts[s.pts.length-1];
-      if(IN.hover){last.x=IN.px;last.y=IN.py;}else{last.x=an[1][0];last.y=an[1][1];}
-      const rest=Math.hypot(an[1][0]-an[0][0],an[1][1]-an[0][1])/seg,k=clamp(p.stiffness||0.8,0.05,1);
-      for(let it=0;it<6;it++)for(let i=0;i<seg;i++){const a=s.pts[i],b=s.pts[i+1];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6,df=(d-rest)/d*0.5*k;dx*=df;dy*=df;if(i!==0){a.x+=dx;a.y+=dy;}b.x-=dx;b.y-=dy;}
-      return s.pts.map(q=>({x:q.x,y:q.y,scale:p.size||0.03,rot:0})); }
-    if(p.mode==='rope-ink'){ const text=p.text!=null?String(p.text):''; const font=(p.font&&String(p.font).trim())?p.font:'sans-serif'; const weight=p.weight||700;
-      const anchors=Math.max(1,Math.min(300,num(p.anchors,40)|0)),seg=Math.max(1,Math.min(24,num(p.segments,6)|0)),grav=0.0006*Math.max(0,num(p.gravity,1)),drag=clamp(num(p.damping,0.99),0.8,1),k=clamp(num(p.stiffness,0.8),0.05,1),size=num(p.size,0.02);
-      const sig=text+'|'+font+'|'+weight+'|'+anchors+'|'+seg+'|'+(W|0)+'x'+(H|0); let s=SIM[L.id];
-      if(!s||s.riSig!==sig){ const base=sampleInk(text,font,weight,anchors,hash(L.id+':rope-ink')); const rest=clamp(0.12/seg,0.004,0.2);
-        const ropes=base.map(a=>{const pts=[];for(let i=0;i<=seg;i++)pts.push({x:a[0],y:a[1]+rest*i,px:a[0],py:a[1]+rest*i});return{anchor:a,pts,rest};});
-        s={riSig:sig,ropes}; SIM[L.id]=s; }
-      if(!s.ropes.length)return[{x:.5,y:.5,scale:size,rot:0}];
-      const out=[];
-      for(const r of s.ropes){ const pts=r.pts,n=pts.length;
-        for(const q of pts){const vx=(q.x-q.px)*drag,vy=(q.y-q.py)*drag;q.px=q.x;q.py=q.y;q.x+=vx;q.y+=vy+grav;}
-        pts[0].x=r.anchor[0];pts[0].y=r.anchor[1];
-        for(let it=0;it<6;it++)for(let i=0;i<n-1;i++){const a=pts[i],b=pts[i+1];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6,df=(d-r.rest)/d*0.5*k;dx*=df;dy*=df;if(i!==0){a.x+=dx;a.y+=dy;}b.x-=dx;b.y-=dy;}
-        for(let i=0;i<n;i++){const q=pts[i],nb=pts[Math.min(i+1,n-1)],pb=pts[Math.max(i-1,0)];out.push({x:q.x,y:q.y,scale:size,rot:Math.atan2(nb.y-pb.y,nb.x-pb.x)});}}
+    if(p.mode==='rope'){ const an=p.anchors||[[0.2,0.2],[0.8,0.2]],seg=Math.max(2,p.segments|0);
+      if(!PW.ensure()){ const out=[];for(let i=0;i<=seg;i++){const t=i/seg;out.push({x:lerp(an[0][0],an[1][0],t),y:lerp(an[0][1],an[1][1],t),scale:p.size||0.03,rot:0});} return out; }
+      const sig='rope:'+seg+':'+(W|0)+'x'+(H|0)+':'+an[0][0]+','+an[0][1]+'|'+an[1][0]+','+an[1][1]; let rec=PW.layers[L.id];
+      if(!rec||rec.kind!=='rope'||rec.sig!==sig){ rec=PW.buildRope(L,[{anchor:an[0],end:an[1]}],seg,Math.hypot(an[1][0]-an[0][0],an[1][1]-an[0][1])/seg,clamp(num(p.stiffness,0.8),0.05,1),'rope',sig); }
+      PW.pinRope(rec); return (rec.nodes||[]).map(b=>({x:b.position.x/W,y:b.position.y/H,scale:p.size||0.03,rot:b.angle})); }
+    if(p.mode==='rope-ink'){ const text=p.text!=null?String(p.text):'',font=(p.font&&String(p.font).trim())?p.font:'sans-serif',weight=p.weight||700;
+      const anchors=Math.max(1,Math.min(300,num(p.anchors,40)|0)),seg=Math.max(1,Math.min(24,num(p.segments,6)|0)),k=clamp(num(p.stiffness,0.8),0.05,1),size=num(p.size,0.02);
+      const sig='rope-ink|'+text+'|'+font+'|'+weight+'|'+anchors+'|'+seg+'|'+(W|0)+'x'+(H|0);
+      if(!PW.ensure()){ const base=sampleInk(text,font,weight,anchors,hash(L.id+':rope-ink')); if(!base.length)return[{x:.5,y:.5,scale:size,rot:0}];
+        const rest=clamp(0.12/seg,0.004,0.2),out=[]; for(const a of base)for(let i=0;i<=seg;i++)out.push({x:a[0],y:a[1]+rest*i,scale:size,rot:0}); return out; }
+      PW.setGravity(0,Math.max(0,num(p.gravity,1))); let rec=PW.layers[L.id];
+      if(!rec||rec.kind!=='rope-ink'||rec.sig!==sig){ const base=sampleInk(text,font,weight,anchors,hash(L.id+':rope-ink'));
+        if(!base.length){ PW.remove(L.id); return[{x:.5,y:.5,scale:size,rot:0}]; }
+        const rest=clamp(0.12/seg,0.004,0.2),chains=base.map(a=>({anchor:a,end:[a[0],Math.min(0.999,a[1]+rest*seg)]}));
+        rec=PW.buildRope(L,chains,seg,rest,k,'rope-ink',sig); }
+      PW.pinRope(rec); const nodes=rec.nodes,nPer=seg+1,out=[];
+      for(let c=0;c<rec.chains.length;c++)for(let i=0;i<nPer;i++){ const q=nodes[c*nPer+i]; if(!q)continue;
+        const nb=nodes[c*nPer+Math.min(i+1,nPer-1)],pb=nodes[c*nPer+Math.max(i-1,0)];
+        out.push({x:q.position.x/W,y:q.position.y/H,scale:size,rot:Math.atan2(nb.position.y-pb.position.y,nb.position.x-pb.position.x)}); }
       return out; }
     if(p.mode==='boids'){ const count=Math.max(1,Math.min(2000,num(p.count,60)|0)),perc=Math.max(0.001,num(p.perception,0.12)),sepW=num(p.separation,1),aliW=num(p.alignment,1),cohW=num(p.cohesion,1),maxSpd=Math.max(0.001,num(p.maxSpeed,0.35)),size=num(p.size,0.05);
-      let s=SIM[L.id]; if(!s||!s.boids){s={boids:true,a:[]};SIM[L.id]=s;} const rng=mb(hash(L.id+':boids')),A=s.a,perc2=perc*perc;
-      while(A.length<count){const ang=rng()*Math.PI*2;A.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5});} if(A.length>count)A.length=count;
-      for(const ag of A){let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,n=0;for(const o of A){if(o===ag)continue;const dx=ag.x-o.x,dy=ag.y-o.y,d2=dx*dx+dy*dy;if(d2>0&&d2<perc2){const d=Math.sqrt(d2);sx+=dx/d;sy+=dy/d;ax+=o.vx;ay+=o.vy;cx+=o.x;cy+=o.y;n++;}}
-        let vx=ag.vx,vy=ag.vy;if(n>0){vx+=sx*sepW*0.01;vy+=sy*sepW*0.01;vx+=(ax/n-ag.vx)*aliW*0.05;vy+=(ay/n-ag.vy)*aliW*0.05;vx+=(cx/n-ag.x)*cohW*0.02;vy+=(cy/n-ag.y)*cohW*0.02;}
-        const sp=Math.hypot(vx,vy)||1e-6;if(sp>maxSpd){vx=vx/sp*maxSpd;vy=vy/sp*maxSpd;}ag.vx=vx;ag.vy=vy;}
-      const step=Math.min(dt,0.05)*60;for(const ag of A){ag.x+=ag.vx*step*0.016;ag.y+=ag.vy*step*0.016;if(ag.x<0){ag.x=0;ag.vx=Math.abs(ag.vx);}else if(ag.x>1){ag.x=1;ag.vx=-Math.abs(ag.vx);}if(ag.y<0){ag.y=0;ag.vy=Math.abs(ag.vy);}else if(ag.y>1){ag.y=1;ag.vy=-Math.abs(ag.vy);}}
-      return A.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)})); }
+      if(!PW.ensure()){ let s=SIM[L.id]; if(!s||!s.boids){s={boids:true,a:[]};SIM[L.id]=s;} const rng=mb(hash(L.id+':boids')),A=s.a;
+        while(A.length<count){const ang=rng()*Math.PI*2;A.push({x:rng(),y:rng(),vx:Math.cos(ang)*maxSpd*0.5,vy:Math.sin(ang)*maxSpd*0.5});} if(A.length>count)A.length=count;
+        return A.map(ag=>({x:ag.x,y:ag.y,scale:size,rot:Math.atan2(ag.vy,ag.vx)})); }
+      const sig='boids:'+count+':'+(W|0)+'x'+(H|0); let rec=PW.layers[L.id];
+      if(!rec||rec.kind!=='boids'||rec.sig!==sig){ const M=PW.M,rng=mb(hash(L.id+':boids')),rad=Math.max(2,size*Math.min(W,H)*0.5),bodies=[];
+        for(let i=0;i<count;i++){ const b=M.Bodies.circle(rng()*W,rng()*H,rad,{restitution:0.4,frictionAir:0,friction:0,collisionFilter:{category:PW.CAT.BOIDS,mask:0xFFFF}});
+          const ang=rng()*Math.PI*2; M.Body.setVelocity(b,{x:Math.cos(ang)*maxSpd*W*0.5*(1/60),y:Math.sin(ang)*maxSpd*H*0.5*(1/60)}); bodies.push(b); }
+        rec={kind:'boids',sig,bodies,dyn:bodies.slice(),constraints:[]}; PW.register(L.id,rec); }
+      const A=rec.dyn||rec.bodies,perc2=perc*perc,M=PW.M;
+      const nx=new Array(A.length),ny=new Array(A.length),nvx=new Array(A.length),nvy=new Array(A.length);
+      for(let i=0;i<A.length;i++){const b=A[i];nx[i]=b.position.x/W;ny[i]=b.position.y/H;nvx[i]=b.velocity.x/W;nvy[i]=b.velocity.y/H;}
+      for(let i=0;i<A.length;i++){ let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,n=0;
+        for(let j=0;j<A.length;j++){if(j===i)continue;const dx=nx[i]-nx[j],dy=ny[i]-ny[j],d2=dx*dx+dy*dy;if(d2>0&&d2<perc2){const d=Math.sqrt(d2);sx+=dx/d;sy+=dy/d;ax+=nvx[j];ay+=nvy[j];cx+=nx[j];cy+=ny[j];n++;}}
+        let vx=nvx[i],vy=nvy[i]; if(n>0){vx+=sx*sepW*0.01;vy+=sy*sepW*0.01;vx+=(ax/n-nvx[i])*aliW*0.05;vy+=(ay/n-nvy[i])*aliW*0.05;vx+=(cx/n-nx[i])*cohW*0.02;vy+=(cy/n-ny[i])*cohW*0.02;}
+        const sp=Math.hypot(vx,vy)||1e-6;if(sp>maxSpd){vx=vx/sp*maxSpd;vy=vy/sp*maxSpd;}
+        if(nx[i]<0.02&&vx<0)vx=Math.abs(vx);else if(nx[i]>0.98&&vx>0)vx=-Math.abs(vx);
+        if(ny[i]<0.02&&vy<0)vy=Math.abs(vy);else if(ny[i]>0.98&&vy>0)vy=-Math.abs(vy);
+        M.Body.setVelocity(A[i],{x:vx*W,y:vy*H}); }
+      return A.map(b=>({x:b.position.x/W,y:b.position.y/H,scale:size,rot:Math.atan2(b.velocity.y,b.velocity.x)})); }
     if(p.mode==='drawn'){ const pts=[].concat(...(p.paths||[])); if(!pts.length)return[{x:.5,y:.5,scale:p.size||0.04,rot:0}];
       const out=[],n=Math.min(p.count|0||pts.length,200); for(let i=0;i<n;i++){const pt=pts[(i/n*pts.length)|0]||pts[0];out.push({x:pt[0],y:pt[1],scale:p.size||0.04,rot:0});} return out; }
     if(p.mode==='text-ink'){ const text=p.text!=null?String(p.text):''; const font=(p.font&&String(p.font).trim())?p.font:'sans-serif'; const weight=p.weight||700;
@@ -4773,6 +5108,13 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     // layers read as a mask must render even when hidden
     const maskRefs=new Set();for(const L of CFG.layers){if(L.mask&&L.mask.by)maskRefs.add(L.mask.by);}
     const getBuf=(id)=>{let b=BUFS[id];if(!b){const cv=document.createElement('canvas');cv.width=W;cv.height=H;b=BUFS[id]={cv,cx:cv.getContext('2d')};}if(b.cv.width!==W||b.cv.height!==H){b.cv.width=W;b.cv.height=H;}return b;};
+    // UNIFIED PHYSICS WORLD: prune dead/non-physics layers, then step the ONE
+    // shared world once (fixed-step) after applying wired forces. positions()
+    // below just READS body transforms (same contract as the editor).
+    if(PW.engine){ const PHYS=new Set(['physics','shatter','boids','rope','rope-ink']),livePhys=new Set();
+      for(const L of CFG.layers){const pp=L.positioning;if(pp&&PHYS.has(pp.mode))livePhys.add(L.id);} PW.prune(livePhys);
+      let slow=1; for(const L of CFG.layers){const pp=L.positioning;if(pp&&pp.mode==='shatter')slow=Math.min(slow,Math.max(0.02,Math.min(2,num(pp.slowmo,1))));}
+      PW.beginFrame(dt,LB.forces(),slow); }
     // PASS A - draw each needed layer into lb, copy to its own buffer (positions resolve once)
     const rendered={};
     for(const L of CFG.layers){if(L.visible===false&&!maskRefs.has(L.id))continue;

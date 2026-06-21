@@ -60063,9 +60063,35 @@ function _logicProjection(allNodes, allEdges) {
       projNode(n);
     }
   }
+  // PHYSICS FORCES: collect every `force` node into a dedicated `forces` array the
+  // composer enumerates each frame (the cleanest enumeration path - force is a
+  // SINK with no output port, so it never rides through `outputs`). Each force
+  // carries its compiled params + the {node,port} ref wired into its `pos` accept
+  // (or null when unwired); the composer resolves pos via LogicBridge.vec per
+  // frame and applies the field to its shared Matter world. Always projected so
+  // its upstream `pos` chain (input-pointer / vision / op-vector) ticks even when
+  // nothing reads the force's (nonexistent) output. No mouse hardcoding anywhere.
+  const forces = [];
+  for (const n of nodes) {
+    if (!n || n.kind !== "force") continue;
+    projNode(n);
+    let posRef = null;
+    for (const e of edges) {
+      if (!e) continue;
+      const to = workflowParseEdgeRef(e.to || ""); if (!to || to.node !== n.id || to.port !== "pos") continue;
+      const from = workflowParseEdgeRef(e.from || ""); if (!from) continue;
+      posRef = { kind: "logic", ref: { node: from.node, port: from.port } };
+      // make sure the SOURCE chain is projected + ticked (case (b) already does
+      // this when force.pos is recognized as an accept, but be explicit/defensive).
+      const fromNode = byId[from.node]; if (fromNode) projNode(fromNode);
+      break;
+    }
+    const inc = include[n.id];
+    forces.push({ id: n.id, params: (inc && inc.params) || (n.spec && n.spec.params) || {}, pos: posRef });
+  }
   const nodeList = Object.keys(include).map(id => include[id]);
-  if (!nodeList.length && !outputs.length) return null;
-  return { nodes: nodeList, edges: projEdges, outputs, readbacks };
+  if (!nodeList.length && !outputs.length && !forces.length) return null;
+  return { nodes: nodeList, edges: projEdges, outputs, readbacks, forces };
 }
 // Resolve the image asset URL wired into a palette node's `image` accept port
 // (mirrors _numberPixmapUrl for number-generator's pixel-map). The runtime
@@ -61460,6 +61486,31 @@ const LOGIC_NODE_DEFS = {
     provides: { value: { label: "value", dtype: "number" } },
     accepts: { target: { label: "target", dtype: "number" } },
   },
+  // ── 2.75 Physics (generic force field for the composer's unified world) ──
+  // The `force` node is a SINK that injects a GENERIC force into the mm-composer's
+  // ONE shared Matter world (see editor/tools/_shared/PHYSICS_WORLD_DESIGN.md). It
+  // is never hardcoded to the mouse: its `pos` accept takes ANY wired vector2
+  // (input-pointer.pos, input-touch.pos, vision-detect.indexTip, an op-vector
+  // output, ...). The composer collects every force node into projection.forces
+  // (see _logicProjection) and applies it to all world bodies within `radius` each
+  // frame, resolving `pos` per-frame via LogicBridge.vec. type picks the field
+  // shape; for `wind`, pos is read as a DIRECTION (heading) rather than a center.
+  // It is a true logic kind (projected + ticked) but emits NO output port - the
+  // composer enumerates it directly, so it needs no engine evaluator.
+  "force": {
+    glyph: "⌖", label: "Force", section: "Physics", w: 240, h: 320,
+    desc: "Generic physics force into the composer's shared world",
+    controls: {
+      type:     { type: "select", value: "attract", options: ["attract", "repel", "vortex", "drag", "wind"] },
+      radius:   { type: "number", value: 0.3, min: 0.01, max: 2, step: 0.01 },
+      strength: { type: "number", value: 1, min: -10, max: 10, step: 0.05 },
+      falloff:  { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
+    },
+    provides: {},
+    accepts: {
+      pos: { label: "pos", dtype: "vector2" },
+    },
+  },
   // ── 2.8 Render (a renderable composition primitive, NOT a pure logic node)
   // The `shape` node draws a polygon / polyline from up to 8 logic vector2
   // points. It is wired into a composer/mm-composer `in` port like a layer (its
@@ -61589,7 +61640,7 @@ const LOGIC_NODE_DEFS = {
 };
 
 // Stable palette ordering for the Logic section.
-const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Render", "Output"];
+const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Physics", "Render", "Output"];
 const LOGIC_NODE_KINDS = Object.keys(LOGIC_NODE_DEFS);
 
 // Author a logic node's JS module string in the SAME controls / buildSpec

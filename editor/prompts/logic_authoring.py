@@ -90,6 +90,9 @@ STATE (reactive memory; the legal cycle breakers):
 - `state-timer` [autostart] - (i) start(event) stop(event) - (o) elapsed(number) running(boolean)
 - `state-smooth` [stiffness, damping] - (i) target(number) - (o) value(number). Critically-damped pursuit. Pass EVERY raw pointer / sensor value through this before it drives a param.
 
+PHYSICS (drives the composer's ONE shared physics world):
+- `force` [type: attract|repel|vortex|drag|wind, radius, strength, falloff] - (i) pos(vector2) - (o) none. A GENERIC force field injected into the mm-composer's single shared Matter world. EVERY physics object (position modes `gravity`/physics, `shatter`, `rope`, `rope-ink`, `boids`) lives in that ONE world, so they collide with each other AND react to wired forces. The force is NEVER hardcoded to the mouse: wire ANY vector2 into `pos` (input-pointer.pos, input-touch.pos, vision-detect.indexTip, an op-vector output, ...). Each frame the composer resolves `pos` and applies the field to all bodies within `radius` (falloff = edge softness; strength can be negative to invert). type: attract pulls bodies toward pos; repel pushes away; vortex swirls tangentially; drag damps velocity near pos; wind pushes constantly in pos's heading (pos read as a direction, center ignored). `force` has no output - just place it and wire its `pos`; the composer enumerates it.
+
 RENDER (a sink, not engine-evaluated):
 - `shape` [closed, fill, stroke, strokeWidth, opacity, blend: normal|multiply|screen|overlay, z, smoothing] - (i) p0..p7(vector2) - (o) out(layer). Wire `out` into a composer `in`. fill / stroke are CSS color strings (fill blank = no fill).
 - `type-motion` (Kinetic Type) [text, font, weight, size, color, tracking, align, behavior, speed, amplitude, stagger, path: straight|arc|circle|wave|ring, pathRadius, pathAmplitude, pathRotate, loop, z, opacity, blend, feedback] - (o) out(layer). Per-glyph animated text drawn STRAIGHT to the canvas (no rasterization). 16 behaviors: none, wave, jitter, rotate-cycle, scale-pulse, slot-cycle, fade-stagger, typewriter, fall-gravity, elastic-hop, weightless-float, rainbow-cycle, skew-sway, blur-in, squash-stretch, orbit. This is the PREFERRED way to put TEXT in the composer. Wire `out` into a composer `in`.
@@ -105,6 +108,7 @@ RENDER (a sink, not engine-evaluated):
 - DISTANCE / GESTURE FROM TWO POINTS: two vector2 outputs -> `op-vector` (mode=distance) a,b -> d(number) -> op-map -> a param (e.g. pinch distance drives scale).
 - LAYER Z-ORDER for behind / front: give the background layer a LOWER `z`, the foreground shape a HIGHER `z`. The composer sorts ascending by z, so lower z paints first (behind).
 - EFFECT ON A LAYER: wire an `effect` node into the layer's `in` port (the layer accepts `effect` tagged inputs). The effect applies to THAT layer only. Drive the effect live by binding a logic output into `effect.param:<key>`.
+- PHYSICS: the composer has ONE shared physics world. Every physics object (position modes `gravity`/physics, `shatter`, `rope`, `rope-ink`, `boids`) collides in that one world AND reacts to wired `force` nodes. To make physics INTERACTIVE, wire an input into a `force` node, NOT into the simulation directly: e.g. `input-pointer.pos -> force(type=attract).pos` drags a rope-ink curtain toward the mouse; `vision-detect.indexTip -> force(type=repel).pos` lets a hand push particles away; `input-touch.pos -> force(type=vortex).pos` swirls shatter shards. The mouse is just one source - any vector2 works. With NO force wired, the defaults hold: ropes hang and swing under gravity, boids flock, shatter shatters - now collidable and force-ready. Do NOT claim the composer cannot do interactive physics; it can, via the shared world + `force`.
 - TEXT IN THE COMPOSER: use the `type-motion` (Kinetic Type) node for animated text, or a `layer` with `text` content for plain static text. Both draw STRAIGHT to the canvas and are the correct primitives here. Do NOT use a `formatted-text` (HTML) node as composer layer content: HTML cannot be drawn to a canvas directly, so the composer has to rasterize it with html2canvas (adds refresh lag, same-origin only). Reserve `formatted-text` for rich static HTML used OUTSIDE the live composer.
 
 ### 5. Three worked end-to-end recipes (copy-pasteable: node list + controls + every edge)
@@ -172,9 +176,21 @@ Edges:
   - lay.out -> comp.in
   (cnt.count can drive any numeric param, e.g. position.param:rotation, via an op-map if you want a counted rotation.)
 
+RECIPE D - "A curtain of letters you can drag with the mouse (interactive physics)"
+Nodes:
+  - `ptr` kind=input-pointer
+  - `pull` kind=force (type=attract, radius=0.35, strength=2, falloff=1)
+  - `lay` kind=layer
+  - `comp` kind=mm-composer
+Layer setup: set the `lay` layer's position mode to `rope-ink` (text="HELLO", anchors ~40, segments ~6). The ink anchors pin the top of each short rope; the rest hangs + swings under the shared world gravity.
+Edges:
+  - ptr.pos -> pull.pos                   (the mouse position becomes the force center; NOT hardcoded - swap for vision-detect.indexTip to push with a hand)
+  - lay.out -> comp.in
+Result: the letter-curtain hangs by default; moving the mouse drags the nearby rope nodes toward the pointer (attract). Use type=repel to shove them away, type=vortex to swirl. Add a `gravity` (physics) or `shatter` layer to the SAME composer and its bodies collide with the curtain in the one shared world.
+
 ### 6. Translation procedure (user sentence -> wired graph)
 
-1. IDENTIFY INPUTS. Map each driver in the request to a source kind: "camera / hand / face" -> input-camera + vision-detect; "mouse / click / hover" -> input-pointer; "touch / pinch" -> input-touch; "tilt / phone orientation" -> input-gyro; "mic / sound / beat" -> input-audio; "scroll / wheel" -> input-scroll; "keyboard / WASD / arrows" -> input-keyboard; "read text in the video" -> vision-ocr.
+1. IDENTIFY INPUTS. Map each driver in the request to a source kind: "camera / hand / face" -> input-camera + vision-detect; "mouse / click / hover" -> input-pointer; "touch / pinch" -> input-touch; "tilt / phone orientation" -> input-gyro; "mic / sound / beat" -> input-audio; "scroll / wheel" -> input-scroll; "keyboard / WASD / arrows" -> input-keyboard; "read text in the video" -> vision-ocr. For "drag / push / pull / swirl / blow physics objects" -> a `force` node (attract / repel / vortex / drag / wind) with its `pos` wired from the chosen input source.
 2. PICK PROCESSORS. Smooth raw pointer / sensor values through `state-smooth`. Remap ranges with `op-map`. Combine / threshold with `op-math` / `op-compare` / `op-logic`. Derive points / distances with `op-vector`. Hold or branch with `flow-gate` / `flow-if`. Accumulate with `state-counter` / `state-latch` / `state-timer`.
 3. CHOOSE OUTPUTS / TARGETS. To show TEXT -> `type-motion` (Kinetic Type, animated) or a `layer` with `text` content (static); NOT `formatted-text` (that needs rasterizing in the composer). To draw between tracked points -> `shape` (p0..p7) -> composer. To animate a transform -> `position.param:<key>`. To drive a visual effect -> `effect.param:intensity` (or per-type params). Remember: layers have no param ports, drive their wired position / effect instead.
 4. WIRE + SET LIVE. Place the composer (mm-composer / composer), wire every layer / shape `out` into its `in`, set z-order for behind / front, then put the composition in LIVE mode so the engine ticks the graph against real input.
