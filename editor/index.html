@@ -21,31 +21,33 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <!-- Diamond-frost backdrop filter for the Projects-landing header. A soft
-       gaussian pre-blur makes it frosty, then a DIAMOND-shaped convolution
-       kernel (a box blur rotated 45deg = a rhombus of 1s, Manhattan radius 4)
-       smears each sample into a small diamond, so the content scrolling behind
-       the glass reads as a field of little diamonds rather than a round blur.
+  <!-- Diamond-frost backdrop filter for the Projects-landing header. This is a
+       PURE BOX BLUR ROTATED 45deg: a box blur is a uniform (all-ones) averaging
+       kernel, and a square rotated 45deg is a diamond - so the kernel is a
+       filled diamond of ones (Manhattan radius 7), no gaussian anywhere. Each
+       sample smears into a diamond, so the content scrolling behind the glass
+       reads as a field of small frosted diamonds rather than a round blur.
        Referenced by `.landing-header { backdrop-filter: url(#landingDiamondFrost) }`. -->
   <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
     <filter id="landingDiamondFrost" x="-15%" y="-15%" width="130%" height="130%"
             color-interpolation-filters="sRGB">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="soft"/>
-      <feConvolveMatrix in="soft" order="13" divisor="85"
+      <feConvolveMatrix in="SourceGraphic" order="15" divisor="113"
         edgeMode="duplicate" preserveAlpha="false"
-        kernelMatrix="0 0 0 0 0 0 1 0 0 0 0 0 0
-                      0 0 0 0 0 1 1 1 0 0 0 0 0
-                      0 0 0 0 1 1 1 1 1 0 0 0 0
-                      0 0 0 1 1 1 1 1 1 1 0 0 0
-                      0 0 1 1 1 1 1 1 1 1 1 0 0
-                      0 1 1 1 1 1 1 1 1 1 1 1 0
-                      1 1 1 1 1 1 1 1 1 1 1 1 1
-                      0 1 1 1 1 1 1 1 1 1 1 1 0
-                      0 0 1 1 1 1 1 1 1 1 1 0 0
-                      0 0 0 1 1 1 1 1 1 1 0 0 0
-                      0 0 0 0 1 1 1 1 1 0 0 0 0
-                      0 0 0 0 0 1 1 1 0 0 0 0 0
-                      0 0 0 0 0 0 1 0 0 0 0 0 0"/>
+        kernelMatrix="0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
+                      0 0 0 0 0 0 1 1 1 0 0 0 0 0 0
+                      0 0 0 0 0 1 1 1 1 1 0 0 0 0 0
+                      0 0 0 0 1 1 1 1 1 1 1 0 0 0 0
+                      0 0 0 1 1 1 1 1 1 1 1 1 0 0 0
+                      0 0 1 1 1 1 1 1 1 1 1 1 1 0 0
+                      0 1 1 1 1 1 1 1 1 1 1 1 1 1 0
+                      1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+                      0 1 1 1 1 1 1 1 1 1 1 1 1 1 0
+                      0 0 1 1 1 1 1 1 1 1 1 1 1 0 0
+                      0 0 0 1 1 1 1 1 1 1 1 1 0 0 0
+                      0 0 0 0 1 1 1 1 1 1 1 0 0 0 0
+                      0 0 0 0 0 1 1 1 1 1 0 0 0 0 0
+                      0 0 0 0 0 0 1 1 1 0 0 0 0 0 0
+                      0 0 0 0 0 0 0 1 0 0 0 0 0 0 0"/>
     </filter>
   </svg>
   <div id="root"></div>

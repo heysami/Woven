@@ -575,12 +575,15 @@ button {
   left: 0;
   right: 0;
   z-index: 4;
-  background: color-mix(in srgb, var(--bg, #f7f4ec) 60%, transparent);
-  /* Diamond-shaped backdrop blur (see #landingDiamondFrost in index.html):
-     a soft gaussian + a 45deg-rotated box (= diamond) convolution, so the
-     content behind the glass reads as a field of small frosted diamonds. */
-  backdrop-filter: url(#landingDiamondFrost) saturate(1.04);
-  -webkit-backdrop-filter: url(#landingDiamondFrost) saturate(1.04);
+  /* Tinted with the diamond field's OWN cream (shader base 0.962/0.957/0.947 =
+     rgb(245,244,241)) so the header reads as the same light surface, not a grey
+     cast. Kept semi-transparent so the frosted blur behind it stays visible. */
+  background: rgba(245, 244, 241, 0.58);
+  /* Pure 45deg box blur (filled-diamond kernel, no gaussian) - see
+     #landingDiamondFrost in index.html. Content behind the glass smears into a
+     field of small frosted diamonds. */
+  backdrop-filter: url(#landingDiamondFrost);
+  -webkit-backdrop-filter: url(#landingDiamondFrost);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex: none;
   padding: 0;
