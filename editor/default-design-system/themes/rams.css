@@ -41,15 +41,18 @@
    ========================================================================== */
 
 :root[data-theme="rams"]{
-  /* ---- the warm-grey device substrate (fixed neutral identity, light mode) ----
-     A tight ramp of warm greys; the page is the darkest step so panels read as
-     the raised device face and keys rise off the face. */
-  --ram-deep:#B6B8BB;     /* deepest recess tone / cast shadow body */
-  --ram-groove:#C5C7CA;   /* recessed well floor (grooves, tracks)  */
-  --ram-bg:#D1D3D6;       /* page substrate (the desk)              */
-  --ram-face:#DFE1E3;     /* panel / card face                      */
-  --ram-key:#EAEBED;      /* raised key body                        */
-  --ram-key-top:#F5F6F7;  /* gradient top of a raised key (lit)     */
+  /* ---- the device substrate is DERIVED from the scheme's neutral ramp ----
+     The customizer's "Neutral (grey base)" control writes --neutral-50..200 at
+     :root; we read those steps so the device greys track the chosen grey LEVEL
+     (and stay subtle - the page is only a hair darker than the keys, depth comes
+     from bevel + shadow, not from heavy colour steps). We do NOT re-define
+     --neutral-* here (that would break the link + loop the var refs). */
+  --ram-deep:var(--neutral-200);    /* deepest recess tone / cast shadow body */
+  --ram-groove:var(--neutral-100);  /* recessed well floor (grooves, tracks)  */
+  --ram-bg:var(--neutral-80);       /* page substrate (the desk)              */
+  --ram-face:var(--neutral-70);     /* panel / card face                      */
+  --ram-key:var(--neutral-50);      /* raised key body                        */
+  --ram-key-top:#FFFFFF;            /* gradient top of a raised key (lit)     */
 
   /* ---- bevel + cast tones (neutral graphite, never pure #000/#FFF) ---- */
   --ram-bevel-hi:rgba(255,255,255,.78);  /* upper-lip highlight        */
@@ -59,13 +62,13 @@
   --ram-cast-1:rgba(40,44,52,.15);       /* tight contact shadow       */
   --ram-cast-2:rgba(40,44,52,.09);       /* ambient drop               */
 
-  /* ---- ink: neutral near-black, restrained ---- */
-  --ram-ink:#262830; --ram-ink-muted:#585B62; --ram-ink-subtle:#888B92;
+  /* ---- ink: derived from the neutral ramp so it tracks the chosen grey ---- */
+  --ram-ink:var(--neutral-900); --ram-ink-muted:var(--neutral-700); --ram-ink-subtle:var(--neutral-500);
 
   /* ---- the single accent FOLLOWS the scheme ---- */
   --ram-accent:var(--primary-500);
   --ram-accent-strong:var(--primary-600);
-  --ram-on-accent:#FFFFFF;
+  --ram-on-accent:#FFFFFF;            /* white text on the saturated accent key */
 
   /* ---- gradients (carried on background) ---- */
   --ram-grad-key:linear-gradient(180deg,var(--ram-key-top) 0%,var(--ram-key) 100%);
@@ -94,12 +97,11 @@
   --ram-press:inset 0 2px 4px var(--ram-well-top),
               inset 0 1px 0 var(--ram-bevel-lo);
 
-  /* ---- remap semantic surfaces onto the warm substrate ---- */
+  /* ---- remap semantic surfaces onto the substrate (NOT --neutral-*, which we
+     leave to the customizer so the grey control drives the whole device) ---- */
   --surface:var(--ram-face); --surface-default:var(--ram-bg);
   --surface-medium:var(--ram-groove); --surface-strong:var(--ram-deep);
-  --surface-inverse:#262830;
-  --neutral-50:var(--ram-key); --neutral-70:var(--ram-face); --neutral-80:var(--ram-face);
-  --neutral-100:var(--ram-groove); --neutral-150:var(--ram-groove); --neutral-200:var(--ram-deep);
+  --surface-inverse:var(--neutral-900);
 
   /* ---- ink ---- */
   --fg-default:var(--ram-ink); --fg-muted:var(--ram-ink-muted); --fg-subtle:var(--ram-ink-subtle);
@@ -578,3 +580,28 @@
              0 2px 4px var(--ram-cast-1),0 6px 14px var(--ram-cast-2);
 }
 [data-theme="rams"] .fab:active{transform:translateY(1px);box-shadow:inset 0 2px 4px rgba(0,0,0,.28);}
+
+/* ==========================================================================
+   Brand bands (storefront hero, marketing CTA) - in rams the --primary
+   gradient flattens to a light device panel, so their default white
+   (--on-primary) text would vanish. Flip those to ink + give them the raised
+   device face, the way neumorphism flips its hero to --fg-default.
+   ========================================================================== */
+[data-theme="rams"] .sh-hero,
+[data-theme="rams"] .sh-promo,
+[data-theme="rams"] .cta,
+[data-theme="rams"] .cta-band{
+  color:var(--ram-ink);
+  background:var(--ram-grad-face);
+  border:1px solid var(--ram-edge);
+  box-shadow:var(--ram-raise);
+}
+/* the hero's white "Shop" button → a seated accent key so it still reads */
+[data-theme="rams"] .sh-hero .btn--light{
+  background:var(--ram-grad-key);border:1px solid var(--ram-edge);
+  color:var(--ram-accent-strong);box-shadow:var(--ram-raise-sm);
+}
+/* logo mark on a brand chip flattens too - keep its mark legible on the face */
+[data-theme="rams"] .topbar__logo,
+[data-theme="rams"] .sh-logo,
+[data-theme="rams"] .brandmark{color:var(--ram-ink);}
