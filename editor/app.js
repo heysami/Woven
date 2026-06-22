@@ -43104,53 +43104,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
         </div>
       </div>
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Composition</div>
-        <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "formatted-text" }));
-            }}
-            title="Drag onto canvas - rich text node. Type directly; wire a Typography node to enable selection-based level picking."
-          >
-            <span className="workflow-library-item-glyph">¶</span>
-            <span className="workflow-library-item-label">Formatted text</span>
-            <span className="workflow-library-item-id">rich</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "color-palette" }));
-            }}
-            title="Drag onto canvas - color swatches with name + value. Wire into a design-system node."
-          >
-            <span className="workflow-library-item-glyph">●</span>
-            <span className="workflow-library-item-label">Color palette</span>
-            <span className="workflow-library-item-id">swatches</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "typography" }));
-            }}
-            title="Drag onto canvas - type scale rendered with real fonts. Wire into a design-system node."
-          >
-            <span className="workflow-library-item-glyph">Aa</span>
-            <span className="workflow-library-item-label">Typography</span>
-            <span className="workflow-library-item-id">scale</span>
-          </div>
-        </div>
-      </div>
-      <div className="workflow-library-section">
         <div className="workflow-library-section-head">Asset generators</div>
         <div className="workflow-library-list">
           ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
@@ -43344,6 +43297,48 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Canvas}/></span>
             <span className="workflow-library-item-label">Prototype generator</span>
             <span className="workflow-library-item-id">agent · DS-aware preset</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "formatted-text" }));
+            }}
+            title="Drag onto canvas - rich text node. Type directly; wire a Typography node to enable selection-based level picking."
+          >
+            <span className="workflow-library-item-glyph">¶</span>
+            <span className="workflow-library-item-label">Formatted text</span>
+            <span className="workflow-library-item-id">rich</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "color-palette" }));
+            }}
+            title="Drag onto canvas - color swatches with name + value. Wire into a design-system node."
+          >
+            <span className="workflow-library-item-glyph">●</span>
+            <span className="workflow-library-item-label">Color palette</span>
+            <span className="workflow-library-item-id">swatches</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "typography" }));
+            }}
+            title="Drag onto canvas - type scale rendered with real fonts. Wire into a design-system node."
+          >
+            <span className="workflow-library-item-glyph">Aa</span>
+            <span className="workflow-library-item-label">Typography</span>
+            <span className="workflow-library-item-id">scale</span>
           </div>
         </div>
       </div>
