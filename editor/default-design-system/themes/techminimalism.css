@@ -36,8 +36,11 @@
   /* ---- Text - graphite scale, cool neutral greys ---- */
   --fg-default:#0E1014; --fg-muted:#52565C; --fg-subtle:#878C92; --fg-on-surface:#FFFFFF;
 
-  /* ---- Hairline borders (the load-bearing decoration - no shadows) ---- */
-  --border-default:#0E1014; --border-subtle:#C9CDD0;
+  /* ---- Hairline borders (the load-bearing decoration - no shadows) ----
+     Genuine light-grey hairlines, NOT near-black rules. A 1px #0E1014 line
+     reads as a heavy brutalist stroke; a 1px light-grey line reads as the
+     thin technical hairline this style wants (Teenage Engineering / PO). */
+  --border-default:#C7CBCE; --border-subtle:#E2E4E6;
   --interactive-hover:#E7E9EA; --interactive-active:#DDE0E1;
 
   /* ---- Cool neutral ramp (light end → concrete greys) ---- */
@@ -192,16 +195,16 @@
    CARDS / SECTIONS - flat, hairline-framed rectangles, zero shadow.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .card{
-  background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
+  background:var(--surface);border:1px solid var(--border-subtle);border-radius:0;box-shadow:none;
 }
 [data-theme="techminimalism"] .card--plain{
-  background:var(--surface);border:1px solid var(--border-subtle);
+  background:var(--surface);border:1px solid var(--border-subtle);border-radius:0;
 }
 [data-theme="techminimalism"] .card--filled{
-  background:var(--surface-inverse);color:var(--fg-on-surface);border:1px solid var(--border-default);
+  background:var(--surface-inverse);color:var(--fg-on-surface);border:1px solid var(--border-default);border-radius:0;
 }
 [data-theme="techminimalism"] .section-card{
-  background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
+  background:var(--surface);border:1px solid var(--border-subtle);border-radius:0;box-shadow:none;
 }
 
 /* --------------------------------------------------------------------------
@@ -302,12 +305,12 @@
    STAT-HERO / CHART-CARD - flat hairline panels, mono technical labels.
    -------------------------------------------------------------------------- */
 [data-theme="techminimalism"] .stat-hero{
-  background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
+  background:var(--surface);border:1px solid var(--border-subtle);border-radius:0;box-shadow:none;
 }
 [data-theme="techminimalism"] .stat-hero__value{font-variant-numeric:tabular-nums;}
 [data-theme="techminimalism"] .stat-hero__delta{border-radius:2px;}
 [data-theme="techminimalism"] .chart-card{
-  background:var(--surface);border:1px solid var(--border-subtle);border-radius:2px;box-shadow:none;
+  background:var(--surface);border:1px solid var(--border-subtle);border-radius:0;box-shadow:none;
 }
 
 /* --------------------------------------------------------------------------
