@@ -10029,6 +10029,15 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
                 ${(c.page || (c.anchor && c.anchor.text)) && html`
                   <div className="th-comment-loc">${c.page || ""}${c.anchor && c.anchor.text ? " · “" + c.anchor.text.slice(0, 40) + "”" : ""}</div>
                 `}
+                ${c.shot && !liveMode && html`
+                  <a className="th-comment-shot" href=${apiUrl("/__share_comment_shot?comment=" + encodeURIComponent(c.id) + "&v=" + encodeURIComponent(c.shotAt || ""))}
+                    target="_blank" rel="noopener" title="Open the page screenshot captured when this comment was posted"
+                    style=${{ display: "block", marginTop: "6px", border: "1px solid var(--th-line, #2a2a30)", borderRadius: "6px", overflow: "hidden", lineHeight: 0 }}>
+                    <img src=${apiUrl("/__share_comment_shot?comment=" + encodeURIComponent(c.id) + "&v=" + encodeURIComponent(c.shotAt || ""))}
+                      alt="Page at comment time" loading="lazy" style=${{ display: "block", width: "100%", height: "auto" }}
+                      onError=${(e) => { const a = e.target.closest(".th-comment-shot"); if (a) a.style.display = "none"; }}/>
+                  </a>
+                `}
                 ${(c.replies || []).map(r => html`
                   <div className="th-comment-reply" key=${r.id}>
                     <span className="th-comment-reply-author">${authorName(r.author)}</span>
@@ -46759,6 +46768,16 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                 ${c.page}${c.anchor && c.anchor.selector ? " · " + c.anchor.selector : ""}
               </div>
               <div className="workflow-comment-card-text">${c.text}</div>
+              ${c.shot && html`
+                <a className="workflow-comment-card-shot" href=${apiUrl("/__share_comment_shot?comment=" + encodeURIComponent(c.id) + "&v=" + encodeURIComponent(c.shotAt || ""))}
+                  target="_blank" rel="noopener" title="Open the page screenshot captured when this comment was posted"
+                  onClick=${(e) => e.stopPropagation()}
+                  style=${{ display: "block", marginTop: "6px", border: "1px solid var(--th-line, #2a2a30)", borderRadius: "6px", overflow: "hidden", lineHeight: 0 }}>
+                  <img src=${apiUrl("/__share_comment_shot?comment=" + encodeURIComponent(c.id) + "&v=" + encodeURIComponent(c.shotAt || ""))}
+                    alt="Page at comment time" loading="lazy" style=${{ display: "block", width: "100%", height: "auto" }}
+                    onError=${(e) => { const a = e.target.closest(".workflow-comment-card-shot"); if (a) a.style.display = "none"; }}/>
+                </a>
+              `}
               ${(c.replies || []).map(r => html`
                 <div key=${r.id} className="workflow-comment-card-reply">
                   <b>${(r.author && r.author.name) || "Anonymous"}</b> ${r.text}

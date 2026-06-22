@@ -47,6 +47,7 @@ serve.py wiring (see "share mode" section there):
 """
 from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
+import base64
 import http.server
 import json
 import mimetypes
@@ -503,6 +504,8 @@ def comment_add(project_root, prototype, *, page, anchor, pin, text, author):
         "status":    "open",
         "processedAt": "",
         "replies":   [],
+        "shot":      "",     # filename of the page screenshot, set by comment_set_shot
+        "shotAt":    "",
     }
     with _COMMENTS_LOCK:
         data = comments_load(project_root)
@@ -574,7 +577,79 @@ def comment_delete(project_root, comment_id):
         if len(data["comments"]) == before:
             return False
         _comments_save(project_root, data)
+    # Drop the page screenshot too - the comment it belonged to is gone.
+    try:
+        p = comment_shot_abspath(project_root, comment_id)
+        if p and os.path.isfile(p):
+            os.remove(p)
+    except OSError:
+        pass
     return True
+
+
+# ── Page screenshots ────────────────────────────────────────────────────
+# When a reviewer posts a comment the viewer captures what they're looking at
+# (html2canvas on the same-origin prototype iframe) and uploads it here. We
+# store it as a JPEG at share/comment-shots/<comment-id>.jpg - keyed purely on
+# the comment id so the file is resolvable without a path stored in the record
+# (which could drift). The gate serves it back to the viewer sidebar; the
+# editor serves it back to the comment inbox.
+
+# Decoded-byte ceiling for an uploaded screenshot. A viewport JPEG is well
+# under this even at 2x DPR; the cap just bounds a hostile/buggy client.
+_SHOT_MAX_BYTES = 12 * 1024 * 1024
+
+
+def _comment_shots_dir(project_root):
+    return os.path.join(project_root, "share", "comment-shots")
+
+
+def comment_shot_abspath(project_root, comment_id):
+    """Absolute path the screenshot for `comment_id` would live at (whether or
+    not it exists yet). None for a malformed id - guards path traversal."""
+    if not COMMENT_ID_OK.match(comment_id or ""):
+        return None
+    return os.path.join(_comment_shots_dir(project_root), comment_id + ".jpg")
+
+
+def comment_set_shot(project_root, comment_id, data_url):
+    """Decode a `data:image/...;base64,…` URL and store it as the comment's
+    page screenshot. Returns the updated comment, or raises ValueError on a
+    malformed / oversized / non-image payload or an unknown comment id."""
+    if not isinstance(data_url, str) or "," not in data_url:
+        raise ValueError("shot must be a data URL")
+    head, _comma, b64 = data_url.partition(",")
+    if "base64" not in head:
+        raise ValueError("shot must be base64-encoded")
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise ValueError("shot is not valid base64")
+    if not raw:
+        raise ValueError("shot is empty")
+    if len(raw) > _SHOT_MAX_BYTES:
+        raise ValueError("shot is too large")
+    # Sniff a real image header - JPEG (FFD8) or PNG - so we never persist
+    # arbitrary bytes under an image filename.
+    if not (raw[:2] == b"\xff\xd8" or raw[:8] == b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("shot is not a JPEG or PNG image")
+    with _COMMENTS_LOCK:
+        data = comments_load(project_root)
+        c = _find_comment(data, comment_id)
+        if c is None:
+            raise ValueError(f"unknown comment: {comment_id}")
+        out = comment_shot_abspath(project_root, comment_id)
+        if out is None:
+            raise ValueError(f"invalid comment id: {comment_id}")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        tmp = out + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, out)
+        c["shot"]   = comment_id + ".jpg"
+        c["shotAt"] = _now_iso()
+        _comments_save(project_root, data)
+    return c
 
 
 def comments_mark_processed(project_root, comment_ids):
@@ -788,6 +863,15 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if root is None:
                 return self._send_json(500, {"error": "project unavailable"})
             return self._send_json(200, {"comments": comments_list(root, rec.get("prototype"))})
+        m = re.match(r"^/api/comments/(c-[a-f0-9]+)/shot$", sub)
+        if m:
+            root = self._project_root(rec)
+            if root is None:
+                return self._send_json(500, {"error": "project unavailable"})
+            path = comment_shot_abspath(root, m.group(1))
+            if not path or not os.path.isfile(path):
+                return self._send_json(404, {"error": "no screenshot"})
+            return self._send_file(path, cache=True)
         # Whitelisted project files. /p/ is the share viewer's prefix; the live
         # editor's prototype iframes load /source/… and /design-systems/…
         # directly (resolved relative to /s/<tok>/live/) - serve both through
@@ -847,6 +931,19 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         root = self._project_root(rec)
         if root is None:
             return self._send_json(500, {"error": "project unavailable"})
+        # Page-screenshot upload - a base64 image far exceeds the 64KB JSON
+        # body the comment routes use, so handle it before the generic read.
+        ms = re.match(r"^/api/comments/(c-[a-f0-9]+)/shot$", sub)
+        if ms:
+            try:
+                shot_body = self._read_json_body(max_bytes=20 * 1024 * 1024)
+            except ValueError as e:
+                return self._send_json(400, {"error": str(e)})
+            try:
+                comment_set_shot(root, ms.group(1), shot_body.get("shot"))
+            except ValueError as e:
+                return self._send_json(400, {"error": str(e)})
+            return self._send_json(200, {"ok": True})
         try:
             body = self._read_json_body()
         except ValueError as e:

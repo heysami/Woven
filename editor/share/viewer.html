@@ -17,6 +17,11 @@
   <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+  <!-- html2canvas-pro - on comment-post we screenshot the prototype page the
+       reviewer is looking at (same-origin iframe → we can render its doc).
+       Tolerant: if it fails to load, commenting still works, just without the
+       attached screenshot. -->
+  <script src="https://unpkg.com/html2canvas-pro@1.5.8/dist/html2canvas-pro.min.js"></script>
 </head>
 <body>
   <div id="root"></div>

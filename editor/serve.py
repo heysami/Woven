@@ -7380,6 +7380,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
             return self._share_comments_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__share_comment_shot":
+            return self._share_comment_shot_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ls_dirs":
             return self._ls_dirs(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__fs_list":
@@ -14176,6 +14178,34 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         # Immutable per ?v= - the client always passes the mtime, so a long
         # cache is safe and avoids re-downloading the PNG on every poll.
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
+
+    # GET /__share_comment_shot?project=<id>&comment=<c-id>[&v=<shotAt>]
+    # Serves the page screenshot a reviewer's browser captured when posting
+    # the comment (share/comment-shots/<c-id>.jpg, path owned by shares.py).
+    # The comment inbox <img> hits this with ?v=shotAt to bust the cache.
+    # 404 when the comment has no screenshot (UI just omits the thumbnail).
+    def _share_comment_shot_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        cid = (_qs_get(qs, "comment") or "").strip()
+        path = _shares.comment_shot_abspath(project_root, cid)
+        if not path or not os.path.isfile(path):
+            return self._reply(404, {"error": "no screenshot"})
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return self._reply(500, {"error": f"read failed: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        # Immutable per ?v=shotAt - a screenshot never changes once captured.
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         self.end_headers()
         with contextlib.suppress(Exception):

@@ -186,6 +186,12 @@ button { font: inherit; cursor: pointer; }
   margin-bottom: 4px;
 }
 .sv-comment-text { white-space: pre-wrap; word-break: break-word; }
+.sv-comment-shot {
+  display: block; margin-top: 7px; border: 1px solid var(--sv-line);
+  border-radius: 6px; overflow: hidden; line-height: 0;
+}
+.sv-comment-shot:hover { border-color: var(--sv-accent); }
+.sv-comment-shot img { display: block; width: 100%; height: auto; }
 .sv-comment-missing { color: var(--sv-warn); font-size: 11px; margin-top: 4px; }
 
 .sv-status-chip {

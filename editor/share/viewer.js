@@ -100,6 +100,43 @@
     return null;
   };
 
+  // Capture what the reviewer is currently looking at in the prototype iframe
+  // and return it as a JPEG data URL (or null). The iframe is same-origin, so
+  // html2canvas can render its document directly. We crop to the visible
+  // viewport (what they actually see) and draw a green box around the pinned
+  // element so the screenshot reads on its own in the inbox. Best-effort: any
+  // failure returns null and the comment posts without a screenshot.
+  const captureShot = async (frame, anchor) => {
+    try {
+      const win = frame && frame.contentWindow;
+      const doc = frame && frame.contentDocument;
+      if (!win || !doc || typeof window.html2canvas !== "function") return null;
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const vw = Math.max(1, win.innerWidth || doc.documentElement.clientWidth || 1);
+      const vh = Math.max(1, win.innerHeight || doc.documentElement.clientHeight || 1);
+      const canvas = await window.html2canvas(doc.documentElement, {
+        backgroundColor: "#ffffff", useCORS: true, allowTaint: false, logging: false,
+        scale,
+        x: win.scrollX || 0, y: win.scrollY || 0,
+        width: vw, height: vh, windowWidth: vw, windowHeight: vh,
+      });
+      // Box the commented element (rect is viewport-relative = canvas-relative).
+      try {
+        const el = resolveEl(doc, anchor);
+        const ctx = canvas.getContext("2d");
+        if (el && ctx) {
+          const r = el.getBoundingClientRect();
+          if (r.width && r.height) {
+            ctx.lineWidth = 2 * scale;
+            ctx.strokeStyle = "#16a06b";
+            ctx.strokeRect(r.left * scale, r.top * scale, r.width * scale, r.height * scale);
+          }
+        }
+      } catch {}
+      return canvas.toDataURL("image/jpeg", 0.82);
+    } catch { return null; }
+  };
+
   // Inject (once per document) the hover/flash styles used by comment mode.
   const ensureDocStyles = (doc) => {
     if (!doc || doc.getElementById("__sv_styles")) return;
@@ -224,6 +261,13 @@
             </div>
           </div>
         ` : html`<div className="sv-comment-text">${c.text}</div>`}
+        ${c.shot && html`
+          <a className="sv-comment-shot" href=${api("comments/" + c.id + "/shot")}
+            target="_blank" rel="noopener" title="Open the captured page screenshot"
+            onClick=${(e) => e.stopPropagation()}>
+            <img src=${api("comments/" + c.id + "/shot")} alt="Page at comment time" loading="lazy"/>
+          </a>
+        `}
         ${(c.replies || []).length > 0 && html`
           <div className="sv-replies">
             ${c.replies.map((r) => html`
@@ -497,12 +541,28 @@
       if (!requireIdentity()) return;
       setPosting(true);
       try {
+        // Snapshot the page BEFORE tearing the composer down - this captures
+        // exactly what the reviewer is looking at, with the pinned element
+        // boxed. The composer/pins live in THIS document (not the iframe), so
+        // they don't bleed into the shot.
+        const shot = await captureShot(iframeRef.current, d.anchor);
         const r = await fetch(api("comments"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ page: d.page, anchor: d.anchor, pin: d.pin, text, author: identity }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || "failed to post comment");
+        // Attach the screenshot to the freshly-created comment. Best-effort:
+        // the comment already exists, so a failed upload just means no image.
+        const cid = j.comment && j.comment.id;
+        if (cid && shot) {
+          try {
+            await fetch(api("comments/" + cid + "/shot"), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ shot }),
+            });
+          } catch {}
+        }
         setDraft(null); setDraftText("");
         refetchComments();
       } catch (e) {
