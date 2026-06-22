@@ -706,6 +706,23 @@ function buildWiredRuntimeLayers(){
     }
     if(spec._shape){
       const sp = spec.params || {};
+      const kids = Array.isArray(wl.children)?wl.children:[];
+      // CONTENT FILL: a wired camera / video / image fills the polygon INTERIOR
+      // (clipped to the shape) instead of a flat color. This is how a polygon
+      // SHOWS + CLIPS live content - e.g. a glitchy face inside a hand-drawn
+      // quad: wire input-camera.layer into the shape's `content` port. The
+      // shape's drawn pixels are then the clipped content, so any effect on
+      // THIS layer (below) is CONFINED to the polygon interior.
+      const fillK = kids.find(k=>k && (k.type==='asset' || (k.type==='layer' && (k.kind==='input-camera'||k.kind==='input-video'))));
+      let fillSrc='', fillAssetId='';
+      if(fillK){
+        if(fillK.kind==='input-camera'){ fillSrc='camera'; STATE.inputs.camera=true; }
+        else if(fillK.kind==='input-video'){ fillSrc='videostream'; fillAssetId=fillK.fromId||''; }
+        else if(fillK.type==='asset' && fillK.url){ fillSrc='asset';
+          const aid=fillK.fromId||fillK.assetId||('sf'+wi);
+          if(!CONTENT.find(c=>c.id===aid)) CONTENT.push({id:aid,url:fillK.url,kind:'image',label:fillK.label||aid});
+          fillAssetId=aid; }
+      }
       const content = { kind:'polyshape',
         closed: sp.closed!==false,
         fill: (sp.fill!=null?String(sp.fill):'').trim(),
@@ -714,7 +731,25 @@ function buildWiredRuntimeLayers(){
         smoothing: Math.max(0,Math.min(1,finiteNumber(sp.smoothing,0))),
         points: spec._points || {},
         colorPoints: spec._colorPoints || {},
+        fillSrc, fillAssetId,
       };
+      // EFFECT children → this shape layer's OWN effect stack. Because the layer
+      // buffer holds only the clipped fill, the effect runs ONLY on the polygon
+      // interior (same per-layer effect path as every other layer). Static param
+      // values bake here; time-varying bindings re-resolve each frame via _fxSpec.
+      const effK = kids.filter(k=>k&&k.type==='effect');
+      const stack = effK.map(e=>{
+        const fx = wiredChildSpec(e);
+        const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fx.type==='custom' || fx.type==='shader';
+        let intensity = fx.intensity??1, params = fx.params||{};
+        const b = fx._bindings;
+        if(b){ params = Object.assign({}, params);
+          for(const k in b){ const src=b[k]; if(!src||src.kind==='logic'||Sources.isVector(src)) continue;
+            const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+            if(k==='intensity') intensity=val; else params[k]=val; }
+        }
+        return {type:isCustom?'custom':fx.type, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
+      });
       const Ls = fillLayer({
         id: wl.id || ('W'+wi),
         name: spec.name || ('Shape '+(wi+1)),
@@ -724,7 +759,7 @@ function buildWiredRuntimeLayers(){
         content,
         positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
         trigger:{source:'none',impacts:[]},
-        effects:{stack:[]},
+        effects:{stack},
       });
       Ls._wired=true;
       Ls._opacity = finiteNumber(sp.opacity,1);
@@ -3295,7 +3330,19 @@ function drawPolyShape(ctx, c, W, H){
   const cp=c.colorPoints||{};
   const fillC=(cp.fill&&cp.fill.kind==='logic')?(LogicBridge.color(cp.fill.ref)||c.fill):c.fill;
   const strokeC=(cp.stroke&&cp.stroke.kind==='logic')?(LogicBridge.color(cp.stroke.ref)||c.stroke):c.stroke;
-  if(fillC){ ctx.fillStyle=fillC; ctx.fill(); }
+  // CONTENT FILL: clip to the polygon and draw a wired camera / image so the
+  // shape SHOWS that content only inside its outline (the path is preserved for
+  // the stroke below). Replaces the flat color fill when present. Camera is
+  // mirrored to match the selfie-cam layer. Falls back to nothing if not ready.
+  if(c.fillSrc){
+    ctx.save(); ctx.clip();
+    if(c.fillSrc==='camera'){ const v=Input.cam.on?Input.cam.video:null;
+      if(v&&v.readyState>=2){ const ar=v.videoWidth/v.videoHeight||1; ctx.translate(W/2,H/2); ctx.scale(-1,1); drawMediaInBox(ctx,v,ar,W,H,'cover','center','center',false); } }
+    else if(c.fillSrc==='asset'){ const im=Assets.image(c.fillAssetId);
+      if(im&&im._ready){ const ar=im.width/im.height||1; ctx.translate(W/2,H/2); drawMediaInBox(ctx,im,ar,W,H,'cover','center','center',false); } }
+    ctx.restore();
+  }
+  if(fillC && !c.fillSrc){ ctx.fillStyle=fillC; ctx.fill(); }
   if(strokeC && c.strokeWidth>0){ ctx.strokeStyle=strokeC; ctx.lineWidth=c.strokeWidth; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke(); }
 }
 function getSans(){ return getComputedStyle(document.body).fontFamily; }
@@ -3598,6 +3645,8 @@ const Engine = {
     let need=false;
     for(const L of allRuntimeLayers()){
       if(L.content && L.content.kind==='camera'){ need=true; break; }
+      // a polyshape filled with the camera (content.fillSrc) also needs the webcam
+      if(L.content && L.content.fillSrc==='camera'){ need=true; break; }
       // a face-morph effect targeting the camera also needs the webcam
       const fm=layerHasFaceMorph(L);
       if(fm && (fm.params||{}).source==='camera'){ need=true; break; }
@@ -4496,7 +4545,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
      need a gesture, the camera button stays the manual fallback) */
   let camReq=false;
   function ensureCam(){ if(IN.cam.on||camReq)return; let need=false;
-    for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} const mm=layerMorph(L); if(mm&&(mm.params||{}).source==='camera'){need=true;break;} } if(!need)return;
+    for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} if(L.content&&L.content.fillSrc==='camera'){need=true;break;} const mm=layerMorph(L); if(mm&&(mm.params||{}).source==='camera'){need=true;break;} } if(!need)return;
     camReq=true; navigator.mediaDevices.getUserMedia({video:true}).then(st=>{ const v=document.createElement('video');v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; return v.play().then(()=>{ IN.cam={on:true,video:v}; }); }).catch(()=>{}).then(()=>{ camReq=false; }); }
   /* permissions */
   document.getElementById('pc').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({video:true});
@@ -4896,7 +4945,14 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     else{lctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)lctx.lineTo(pts[i][0],pts[i][1]);}
     if(c.closed)lctx.closePath();
     const cp=c.colorPoints||{};const fillC=(cp.fill&&cp.fill.kind==='logic')?(LB.color(cp.fill.ref)||c.fill):c.fill;const strokeC=(cp.stroke&&cp.stroke.kind==='logic')?(LB.color(cp.stroke.ref)||c.stroke):c.stroke;
-    if(fillC){lctx.fillStyle=fillC;lctx.fill();}if(strokeC&&c.strokeWidth>0){lctx.strokeStyle=strokeC;lctx.lineWidth=c.strokeWidth;lctx.lineJoin='round';lctx.lineCap='round';lctx.stroke();}}
+    // CONTENT FILL (baked twin): clip to the polygon + draw a wired camera /
+    // image so the shape shows that content only inside its outline. Path is
+    // preserved for the stroke. Camera mirrored to match the selfie-cam layer.
+    if(c.fillSrc){lctx.save();lctx.clip();
+      if(c.fillSrc==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.translate(W/2,H/2);lctx.scale(-1,1);drawM(v,ar,W,H,'cover','center','center',false);}}
+      else if(c.fillSrc==='asset'){const im=image(c.fillAssetId);if(im&&im._r){const ar=im.width/im.height||1;lctx.translate(W/2,H/2);drawM(im,ar,W,H,'cover','center','center',false);}}
+      lctx.restore();}
+    if(fillC&&!c.fillSrc){lctx.fillStyle=fillC;lctx.fill();}if(strokeC&&c.strokeWidth>0){lctx.strokeStyle=strokeC;lctx.lineWidth=c.strokeWidth;lctx.lineJoin='round';lctx.lineCap='round';lctx.stroke();}}
   /* Kinetic Type: identical per-glyph transform library to the editor's
      typeMotionXform - kept in sync so baked export matches the editor exactly. */
   function tmXform(behavior,i,n,t,speed,amp,stagger){

@@ -49,20 +49,32 @@ A composer LAYER is: content (an asset / camera / video / a wired position+effec
 
 There is NO effect literally named "glitch" - use `slice`, `pixel-sort`, or `crt`, which read as glitchy.
 
-### Masking + region-confined effects (one layer masked by another)
+### Region-confined effects (clip content + an effect to a polygon)
 
-A layer can be MASKED by another layer's pixels: the mask layer's chosen channel multiplies a channel of the masked layer, so the masked layer only shows where the mask has coverage. This is the ONLY way to confine content or an effect to a REGION (e.g. "glitch only inside the polygon", "video only inside the circle"). Fields on the masked layer: `by` (id of the layer read as the mask; "" = no mask), `src` (channel READ off the mask layer: lum|alpha|r|g|b; lum = luminance x the mask's own alpha), `dst` (channel of THIS layer to multiply: alpha|r|g|b|rgb; alpha is the usual "clip to the mask shape"). The mask layer can be hidden (visible=false) and still drive - mask sources render in a pre-pass.
+To confine content OR an effect to a REGION (e.g. "glitchy face only inside the fingertip polygon", "video only inside a circle") the FIRST-CLASS, fully-wireable way is the `shape` node's `content` port:
 
-IMPORTANT - what you WIRE vs what you set in the COMPOSER inspector:
-- The mask binding has NO node port. You CANNOT wire "shape masks layer" as an edge. Set it in the composer node's inspector: select the layer to be masked, open its Mask accordion, set "Masked by" to the mask layer and pick src/dst. It persists with the composer (STATE.wiredMasks).
-- The mask layer needs COVERAGE in the channel you read. A `shape` with `fill=""` (stroke only) masks just along the outline. For "fill the region" give the shape a solid `fill` (e.g. "#ffffff") so its interior has alpha/luminance; keep a second stroked shape on top if you also want a visible border.
-- Per-layer effects on a wired camera/shape/type layer are ALSO inspector-only (see the effect note above). So a region-confined effect is: WIRE the skeleton (layers + the shape's live points), then in the composer add the effect to the target layer's stack AND set its "Masked by". This last step is not expressible as edges - do it in the composer, or hand it to the user as the finishing step.
-- The mask SOURCE layer must actually BE in the composition. If the mask shape is a wired node, it MUST be wired `shape.out -> comp.in` - even when you set it `visible:false`. `visible:false` only skips Pass-B COMPOSITING (so the white fill never paints); the layer is still rendered in Pass A as a mask source ONLY because it is in the composition. An ORPHANED mask shape (points wired but `.out` never wired into the composer) is NOT a layer, so `rendered[mask.by]` is undefined and the renderer's `if(mb)` guard SILENTLY skips the mask - the effect then covers the whole frame and the "mask" does nothing. This is the single most common way a correct-looking `mask.by` produces no visible masking.
+- Wire a layer-flavored source into `shape.content` to FILL + CLIP the polygon with that content instead of a flat color: `input-camera.layer -> shape.content` (live webcam, mirrored to match the feed) or an image `asset -> shape.content`. The shape's drawn pixels become that content, clipped to the polygon path the `p0..p7` points define.
+- Wire an `effect` into `shape.content` too (`glitch.out -> shape.content`) and it runs ONLY on this shape layer's pixels - i.e. ONLY inside the polygon. (`content` is a multi-wire port like `layer.in`: it takes the content source AND the effect.) Bind `effect.param:intensity` as usual for reactive strength.
+- This is all EDGES - no composer-inspector step, no second layer, no `mask.by`. The polygon is the clip.
 
-Worked example - "glitchy face inside a fingertip polygon":
-  Wire (skeleton): `input-camera.layer -> comp.in` (z 0, the plain face behind); `input-camera.layer -> comp.in` a SECOND time (z 10, the copy to be glitched + clipped); `cam.stream -> vision-detect(hand)`; the fingertips -> a FILLED `shape` (closed, fill="#ffffff", z 20) `.p0..p4`; `shape.out -> comp.in`.
-  Then in the composer inspector: (1) add a `slice` (or pixel-sort / crt) effect to the SECOND camera layer's Effects stack; (2) set that layer's Mask "Masked by" = the shape layer (src=alpha, dst=alpha); (3) hide the shape layer, or drop its fill and keep a thin stroke for a visible border. Result: the top camera copy is glitched and clipped to the polygon, over the untouched face.
-  The pure-wiring shortcut (NOT confined to the polygon): `effect.out -> comp.in` glitches the entire composite - simpler, but the polygon then does nothing to it.
+Worked recipe - "glitchy face inside a fingertip polygon" (fully wired):
+```
+cam   = input-camera
+poly  = shape (closed)
+glitch= effect (type=slice | pixel-sort | crt)
+comp  = mm-composer
+cam.stream -> vision-detect(hand)              # detect the hand(s)
+<fingertip vector2 ports> -> poly.p0..pN       # the polygon corners
+cam.layer  -> comp.in                          # clean camera underneath (z low)
+cam.layer  -> poly.content                     # fill the polygon with the camera
+glitch.out -> poly.content                     # glitch ONLY inside the polygon
+poly.out   -> comp.in                          # the clipped, glitched polygon on top (z high)
+```
+Result: clean feed everywhere, glitch + distortion confined to the polygon, over the untouched face. (For TWO hands forming the quad, use two vision-detect(hand) nodes with `hand=leftmost` / `hand=rightmost` - see the camera section.)
+
+### Masking one whole layer by another (general, inspector-set)
+
+For masking a NON-shape layer (e.g. clip a video layer to a separate logo's alpha) there is also the layer MASK: a layer's chosen channel is multiplied by another layer's channel. Fields on the masked layer: `by` (id of the mask layer), `src` (channel read off the mask: lum|alpha|r|g|b), `dst` (channel multiplied: alpha|r|g|b|rgb). The mask layer can be `visible:false` (it still renders in a pre-pass). This binding has no node port - set it in the composer node's inspector (the layer's Mask accordion). Prefer the `shape.content` route above for the common "effect inside a polygon" case; reach for `mask.by` only when the mask is a separate non-polygon layer.
 
 ### The shared physics world + forces
 
@@ -89,7 +101,7 @@ With NO force wired, the world runs its defaults: ropes hang + swing, boids floc
 
 The `camera-feed` POSITION mode is a different thing: it places instances AT landmarks, it does NOT paint the feed. For the visible feed always use `input-camera.layer`.
 
-HAND CAVEAT: vision-detect emits the PRIMARY detection's landmarks only, and `target` is present|count|location|gesture (there is NO left/right hand selector). With two hands in frame, two vision-detect(hand) nodes both read the SAME primary hand - you cannot build a polygon spanning the left hand AND the right hand from two nodes. Build a fingertip polygon from ONE hand's five points (thumbTip, indexTip, middleTip, ringTip, pinkyTip).
+TWO HANDS: by default vision-detect emits the PRIMARY detection's landmarks (dets[0]). To address two hands separately, set the `hand` control: run two vision-detect(hand) nodes off the SAME camera stream, one `hand=leftmost` and one `hand=rightmost`, and each emits that hand's landmarks - so a polygon can span the left hand AND the right hand (e.g. thumb+index of each forming a quad around the face). `hand` also offers `primary` (default, dets[0]) and `second` (dets[1]). Selection picks by on-screen x, which is self-consistent with the landmark coords a shape/mask reads off the same detection. count/present stay global. (A single-hand polygon from one hand's five fingertips - thumbTip, indexTip, middleTip, ringTip, pinkyTip - is still the simplest option when one hand is enough.)
 
 ### Feedback (per-layer trail)
 

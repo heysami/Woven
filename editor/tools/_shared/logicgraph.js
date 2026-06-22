@@ -335,9 +335,23 @@ export const LogicGraph = {
       const handle = read(node.id, 'stream', null);
       const st = handle != null ? (frame.streams && frame.streams[handle]) : null;
       const dets = (st && Array.isArray(st.detections)) ? st.detections : [];
-      const first = dets[0] || null;
       const present = dets.length > 0;
-      // Named landmark vector2 ports read the PRIMARY detection's named point
+      // Detection selector. Default `primary` = dets[0] (the legacy behavior).
+      // With more than one detection present (e.g. detector=hand running two
+      // hands) `hand` addresses a SPECIFIC one, so two vision-detect nodes can
+      // read two different hands: `leftmost`/`rightmost` pick by on-screen x
+      // (self-consistent with the landmark coords a shape/mask reads off the
+      // same det), `second` = dets[1]. Selection never changes present/count
+      // (those stay global); pos/region/gesture/confidence + the named landmark
+      // points all reflect the SELECTED detection.
+      const which = (node.params && node.params.hand) || 'primary';
+      let first = dets[0] || null;
+      if (dets.length > 1) {
+        if (which === 'second') first = dets[1];
+        else if (which === 'leftmost') first = dets.reduce((a, b) => (b.x < a.x ? b : a), dets[0]);
+        else if (which === 'rightmost') first = dets.reduce((a, b) => (b.x > a.x ? b : a), dets[0]);
+      }
+      // Named landmark vector2 ports read the SELECTED detection's named point
       // (hand: wrist/thumbTip/indexTip/middleTip/ringTip/pinkyTip; face:
       // nose/leftEye/rightEye), produced by logicvision normalizeMpResult. A
       // missing point degrades to {x:0,y:0} like every other vector2 port here.

@@ -2,32 +2,26 @@
 
 Node ids below are illustrative; pick unique ids. Each recipe ends by wiring into an mm-composer (Interactive composer) and you set Live mode to run it.
 
-RECIPE A - "Camera + hand + fingertip polygon, glitchy camera"
-Two HONEST variants - pick by whether the glitch must be CONFINED to the polygon. (The polygon spans ONE hand's fingertips: a single vision-detect(hand) exposes only the primary hand and has no left/right selector - do NOT try to span two hands with two nodes.)
-Nodes (both variants):
+RECIPE A - "Camera + hands + fingertip polygon, face glitchy ONLY inside it"
+Fully wired (no composer-inspector step). The `shape.content` port fills + CLIPS the polygon with the camera and runs the effect ONLY inside it.
+Nodes:
   - `cam` kind=input-camera (facing=user)
-  - `hand` kind=vision-detect (detector=hand, target=location)
-  - `poly` kind=shape (closed=true, z=10)
-  - `glitch` kind=effect (type=slice  OR  type=pixel-sort  OR  type=crt; there is NO effect literally named "glitch", these read as glitchy)
+  - `handL` kind=vision-detect (detector=hand, hand=leftmost)
+  - `handR` kind=vision-detect (detector=hand, hand=rightmost)
+  - `poly` kind=shape (closed=true, z=10)   # fill/stroke optional - content fill overrides flat fill
+  - `glitch` kind=effect (type=slice OR pixel-sort OR crt; there is NO effect literally named "glitch", these read as glitchy)
   - `comp` kind=mm-composer
-Shared edges:
-  - cam.stream -> hand.stream            (detection feed)
-  - hand.thumbTip -> poly.p0 ; hand.indexTip -> poly.p1 ; hand.middleTip -> poly.p2 ; hand.ringTip -> poly.p3 ; hand.pinkyTip -> poly.p4
-  - cam.layer -> comp.in                 (the LIVE webcam as a layer)
-  - poly.out -> comp.in                  (the polygon, on top)
-
-Variant 1 - WHOLE-FRAME glitch (pure wiring, simplest):
-  - glitch.out -> comp.in                (TOP-LEVEL effect: glitches the ENTIRE composite; the polygon is just an outline on top)
-  Set poly stroke="#6ee7ff", strokeWidth=3, fill="". The glitch is NOT confined to the polygon - it covers everything. This is the only fully-wireable option.
-  Optional reactivity: hand.confidence -> op-map(0..1 -> 0..1) -> glitch.param:intensity (glitch strengthens with detection confidence).
-
-Variant 2 - glitch CONFINED to the polygon (face glitchy only inside the fingertips):
-  This needs a layer MASK, which is a COMPOSER-INSPECTOR setting, NOT an edge (there is no mask port; and a wired camera layer ignores wired effects - it has no `in` and synthesizes with an empty effect stack). Wiring gives the skeleton; you finish in the composer.
-  - cam.layer -> comp.in   AGAIN (a SECOND camera layer, z above the plain one - this copy gets glitched + clipped)
-  - give `poly` a solid FILL (fill="#ffffff") so its interior has coverage; poly.out -> comp.in
-  - if you instead make a SEPARATE hidden mask shape, it STILL must be wired `maskShape.out -> comp.in`. visible:false only stops it from painting; an orphaned mask shape (points wired but `.out` not wired into the composer) is not a layer, so `mask.by` finds no source and silently does nothing (the renderer guards with `if(mb)`) - the glitch then covers the whole frame.
-  Then in the composer node's inspector: (1) add the `slice` effect to the SECOND camera layer's Effects stack; (2) set that layer's Mask "Masked by" = the poly layer (src=alpha, dst=alpha); (3) hide the poly layer, or drop its fill and keep a thin stroke for a visible outline. See "Masking + region-confined effects" in `runtime`.
-  If you cannot reach the inspector programmatically, BUILD the skeleton above and hand the user the two inspector steps as the finish - do NOT silently fall back to Variant 1 and claim the polygon confines the glitch.
+Edges:
+  - cam.stream -> handL.stream ; cam.stream -> handR.stream     (detection feed to both hands)
+  - handL.thumbTip -> poly.p0 ; handL.indexTip -> poly.p1 ; handR.indexTip -> poly.p2 ; handR.thumbTip -> poly.p3
+  - cam.layer  -> comp.in        (clean webcam underneath, z low)
+  - cam.layer  -> poly.content   (fill + clip the polygon with the live camera)
+  - glitch.out -> poly.content   (the glitch runs ONLY on the polygon's pixels = inside the quad)
+  - poly.out   -> comp.in        (the clipped, glitched polygon on top, z high)
+Result: clean face everywhere, glitch + distortion confined to the quad your two hands form. No mask.by, no inspector step, no second camera layer.
+Reactivity (optional): handL.confidence -> op-map(0..1 -> 0..1) -> glitch.param:intensity.
+ONE HAND instead: drop handR, use a single `hand` (hand=primary) and wire its five fingertips (thumbTip/indexTip/middleTip/ringTip/pinkyTip) into poly.p0..p4.
+WHOLE-FRAME glitch instead (NOT confined): skip poly.content and wire `glitch.out -> comp.in` (top-level) - glitches the entire composite; the polygon is then just a drawn outline.
 
 NOTE on "the live webcam": the composer renders the live webcam directly - wire `cam.layer` into `comp.in` and the feed shows as a layer. Do NOT claim the composer cannot show a live camera and do NOT build a separate prototype iframe for it - it works natively via the camera layer. (To put a still IMAGE behind instead, use a `layer` with an asset wired in at low z. The `position` mode `camera-feed` is a different thing: it places instances AT detected landmarks, it does not paint the feed - use `cam.layer` for the visible feed.)
 

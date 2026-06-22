@@ -62390,6 +62390,7 @@ const LOGIC_NODE_DEFS = {
     controls: {
       detector: { type: "select", value: "face", options: ["face", "hand", "object"] },
       target:   { type: "select", value: "present", options: ["present", "count", "location", "gesture"] },
+      hand:     { type: "select", value: "primary", options: ["primary", "leftmost", "rightmost", "second"] },
     },
     provides: {
       present:    { label: "present", dtype: "boolean" },
@@ -62742,6 +62743,12 @@ const LOGIC_NODE_DEFS = {
       // + drawPolyShape). This is the working color->control path (PART A).
       fill:   { label: "fill (color)", dtype: "color" },
       stroke: { label: "stroke (color)", dtype: "color" },
+      // CONTENT FILL: wire a layer-flavored source (input-camera.layer or an
+      // image asset) here to FILL + CLIP the polygon with that content instead
+      // of a flat color; wire an `effect` here too and it applies ONLY inside
+      // the polygon (the shape becomes a live clip mask). Multi-wire like
+      // layer.in - the composer reads these as the shape layer's content + fx.
+      content:{ label: "Fill content / effect", tags: ["asset", "layer", "effect"] },
     },
   },
   // The `type-motion` node draws PER-GLYPH animated text into a layer buffer.
