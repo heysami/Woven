@@ -17935,79 +17935,51 @@ function DsTemplateModal({ projectId, dsId, dsLabel, onClose, onApplied }) {
    `roundness` is the customizer's 0-1 multiplier on the radius ladder; the base
    button uses --radius-xl (24px), so f≈ pill(1) · 16px(0.67) · mid(0.5) ·
    crisp(0.1) · square(0). */
-const DS_TUNING_PRESETS = [
-  { id: "onyx", name: "Onyx · brutalist mono", dark: true,
-    primary: "#24252D", secondary: "#F5172A", tertiary: "#4A4D55", neutral: "#80838A",
-    neutralDark: "#16171B",
-    fontKey: "space-grotesk", baseFontPx: 15, typeRatio: 1.25, spacingBasePx: 14, spacingRatio: 1.333,
-    roundness: 0,
-    note: "Monochrome charcoal + one electric-red accent - premium and technical, so it leans dark, dense, and totally square-cornered under a geometric grotesk." },
-  { id: "teal-coral", name: "Teal & Coral · warm humanist", dark: false,
-    primary: "#0E9F8C", secondary: "#F0533C", tertiary: "#8AA39E", neutral: "#8E8070",
-    fontKey: "dm-sans", baseFontPx: 17, typeRatio: 1.2, spacingBasePx: 18, spacingRatio: 1.618,
-    roundness: 1,
-    note: "Warm sand under fresh teal + coral - friendly and human, so it stays light, airy, and fully pill-rounded with a soft humanist sans." },
-  { id: "violet-amber", name: "Violet & Amber · vivid play", dark: true,
-    primary: "#6D28D9", secondary: "#F59E0B", tertiary: "#9890AE", neutral: "#8A8196",
-    fontKey: "poppins", baseFontPx: 16, typeRatio: 1.25, spacingBasePx: 16, spacingRatio: 1.5,
-    roundness: 1,
-    note: "Saturated violet glows on dark far better than light; amber keeps it vivid and playful, so geometric Poppins on a balanced scale with full pill corners." },
-  { id: "editorial-forest", name: "Forest & Magenta · editorial serif", dark: false,
-    primary: "#15803D", secondary: "#DB2777", tertiary: "#8DA394", neutral: "#7A8A7A",
-    fontKey: "fraunces", baseFontPx: 18, typeRatio: 1.333, spacingBasePx: 18, spacingRatio: 1.618,
-    roundness: 0.1,
-    note: "Forest green + magenta with a high-contrast serif reads like print editorial - light, generous, large type ladder, and crisp near-square corners." },
-  { id: "marine-gold", name: "Marine & Gold · dense dashboard", dark: true,
-    primary: "#2389B6", secondary: "#FFB703", tertiary: "#8ECAE6", neutral: "#7C8794",
-    neutralDark: "#0E1620",
-    fontKey: "ibm-plex-sans", baseFontPx: 15, typeRatio: 1.2, spacingBasePx: 15, spacingRatio: 1.333,
-    roundness: 0.5,
-    note: "Deep marine + gold over a neutral-dark slate feels confident and data-dense - dark, compact, neutral Plex sans with medium 12px corners." },
-  { id: "indigo-tangerine", name: "Indigo & Tangerine · bright SaaS", dark: false,
-    primary: "#4338CA", secondary: "#EA580C", tertiary: "#9094B3", neutral: "#8E8080",
-    fontKey: "figtree", baseFontPx: 15, typeRatio: 1.2, spacingBasePx: 14, spacingRatio: 1.333,
-    roundness: 0.67,
-    note: "Indigo + tangerine is classic SaaS energy - bright and light, tightened to a compact productivity rhythm with a friendly 16px rounded-rect button." },
+/* The template DS surfaced as a gallery of its UI STYLES - the data-theme
+   overlays bundled under themes/*.css. Each row renders ONE style on the same
+   two surfaces (the marketing landing + the component gallery) on the default
+   tokens, so the difference you see is purely the style. Tech-minimalism is
+   shown in its graphite-dark register; the rest in their light register.
+   `js` flags the styles that ship a runtime (themes/<id>.js) the thumbnail
+   must inject to render the real thing. Keep in sync with DS_PREVIEW_STYLES /
+   default-design-system/meta.json. */
+const DS_STYLE_SAMPLES = [
+  { id: "default", name: "Default", styleId: "", dark: false,
+    note: "The system as shipped - restrained institutional product UI on the base light tokens." },
+  { id: "minimal", name: "Minimal", styleId: "minimal", dark: false,
+    note: "Light, white nav with a primary-only palette and flat hairline elevation - airy and quiet." },
+  { id: "pastel", name: "Pastel", styleId: "pastel", dark: false,
+    note: "Soft pastel palette and nav, no bold fills or gradients - gentle and approachable." },
+  { id: "glassmorphism", name: "Glassmorphism", styleId: "glassmorphism", dark: false, js: true,
+    note: "iOS liquid-glass: translucent backdrop-blur surfaces with a live dispersion-prism edge accent." },
+  { id: "rams", name: "Rams", styleId: "rams", dark: false,
+    note: "Dieter Rams / Braun skeuomorphism: warm-grey device face, hairline bevels, controls that depress on press." },
+  { id: "neumorphism", name: "Neumorphism", styleId: "neumorphism", dark: false,
+    note: "Soft UI: one base colour with extruded dual shadows for raised and pressed states, fully monochrome." },
+  { id: "techminimalism", name: "Tech-minimalism", styleId: "techminimalism", dark: true,
+    note: "Frutiger-DORFic / Teenage Engineering in its graphite-dark register: concrete ground, a single safety-orange signal, mono micro-labels and hairlines." },
+  { id: "neobrutalism", name: "Neobrutalism", styleId: "neobrutalism", dark: false,
+    note: "Monochrome editorial: cream paper, ink borders, zero radius, hard zero-blur offset shadows." },
+  { id: "analog", name: "Analog", styleId: "analog", dark: false, js: true,
+    note: "Ink-on-paper halftone: light surfaces with a live per-element halftone gradient on nav, filled cards and buttons." },
+  { id: "claymorphism", name: "Claymorphism", styleId: "claymorphism", dark: false,
+    note: "Soft-UI foam: chunky radii and puffy dual drop-and-inset clay shadows." },
 ];
 
-/* Turn a preset into the full settings object buildDsCustomization expects. */
-function dsTuningSettings(p) {
-  return {
-    ...dsDefaultSettings(),
-    primary: p.primary, secondary: p.secondary, tertiary: p.tertiary, neutral: p.neutral || null,
-    neutralDark: p.neutralDark || null,
-    fontKey: p.fontKey,
-    baseFontPx: p.baseFontPx ?? null, typeRatio: p.typeRatio ?? null,
-    typeTouched: p.typeRatio != null || p.baseFontPx != null,
-    spacingBasePx: p.spacingBasePx ?? null, spacingRatio: p.spacingRatio ?? null,
-    spacingTouched: p.spacingRatio != null || p.spacingBasePx != null,
-    roundness: p.roundness == null ? 1 : p.roundness,
-    schemeLight: !p.dark, schemeDark: !!p.dark,
-  };
-}
-// Human-readable chips describing one preset's tuning.
-function dsTuningChips(p) {
-  const font = (DS_FONT_CATALOG.find(f => f.key === p.fontKey) || {}).name || p.fontKey;
-  const dens = p.spacingRatio == null ? "Balanced"
-    : (p.spacingRatio <= 1.333 ? "Compact" : (p.spacingRatio >= 1.618 ? "Airy" : "Balanced"));
-  const f = p.roundness == null ? 1 : p.roundness;
-  const round = f <= 0.02 ? "Square corners"
-    : f >= 0.92 ? "Pill"
-    : (Math.round(24 * f) + "px corners");
-  return [
-    { k: "scheme", v: p.dark ? "Dark" : "Light" },
-    { k: "font",   v: font },
-    { k: "dens",   v: dens },
-    { k: "round",  v: round },
-  ];
+// Human-readable chips describing one style sample.
+function dsStyleSampleChips(p) {
+  const chips = [{ k: "scheme", v: p.dark ? "Dark" : "Light" }];
+  if (p.js) chips.push({ k: "runtime", v: "Live canvas" });
+  return chips;
 }
 
 /* One scaled, non-interactive preview thumbnail. The page renders at a fixed
    logical desktop size (1280×800) and is CSS-scaled to fill the card; a
-   ResizeObserver keeps the scale exact as the column resizes. The preset's
-   tuning (override CSS + webfont link + dark theme attr) is injected into the
-   iframe head on load - the same mechanism the live customizer uses. */
-function DsTuneThumb({ file, custom, dark }) {
+   ResizeObserver keeps the scale exact as the column resizes. The chosen UI
+   STYLE overlay (data-theme = styleId, the full all.css bundle, the dark class
+   when requested, and the style's JS runtime if it ships one) is injected into
+   the iframe head on load - the same mechanism the live customizer uses. */
+function DsTuneThumb({ file, custom, dark, styleId, js }) {
   const LOGICAL_W = 1280, LOGICAL_H = 800;
   const wrapRef = useRef(null);
   const iframeRef = useRef(null);
@@ -18028,9 +18000,36 @@ function DsTuneThumb({ file, custom, dark }) {
     let doc;
     try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.head) return;
+    // Pull in the full bundle (component partials + every style overlay) so the
+    // data-theme overlay below actually has rules to apply - most templates only
+    // link styles.css themselves. Re-apply once it lands.
+    if (!doc.getElementById("__ds_all")) {
+      const allLink = doc.createElement("link");
+      allLink.id = "__ds_all"; allLink.rel = "stylesheet";
+      const allUrl = apiUrl("/__default_ds/all.css");
+      allLink.href = allUrl + (allUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+      allLink.addEventListener("load", () => { try { apply(); } catch {} });
+      doc.head.appendChild(allLink);
+    }
+    // Style overlay: data-theme carries the style id; a STYLE wins over the
+    // plain dark scheme, and the style's own dark variant is reached by toggling
+    // the ds-scheme-dark class the editor uses (e.g. techminimalism's
+    // :root.ds-scheme-dark[data-theme="techminimalism"] block).
     if (doc.documentElement) {
-      if (dark) doc.documentElement.setAttribute("data-theme", "dark");
+      const theme = styleId || (dark ? "dark" : "");
+      if (theme) doc.documentElement.setAttribute("data-theme", theme);
       else doc.documentElement.removeAttribute("data-theme");
+      doc.documentElement.classList.toggle("ds-scheme-dark", !!dark);
+    }
+    // JS-backed styles (glassmorphism dispersion-prism, analog halftone) ship a
+    // runtime under themes/<id>.js - inject it so the thumbnail shows the real
+    // thing, not the CSS fallback. Self-activates on data-theme.
+    if (js && styleId && doc.body && !doc.getElementById("__ds_style_js")) {
+      const s = doc.createElement("script");
+      s.id = "__ds_style_js"; s.defer = true;
+      const jsUrl = apiUrl("/__default_ds/themes/" + styleId + ".js");
+      s.src = jsUrl + (jsUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+      doc.body.appendChild(s);
     }
     let link = doc.getElementById("__ds_custom_font");
     if (custom.font && custom.font.googleFontsUrl) {
@@ -18039,13 +18038,18 @@ function DsTuneThumb({ file, custom, dark }) {
     } else if (link) { link.parentNode.removeChild(link); }
     let style = doc.getElementById("__ds_custom_style");
     if (!style) { style = doc.createElement("style"); style.id = "__ds_custom_style"; }
-    style.textContent = (custom.overrideCss || "") + "\n" + (custom.darkCss || "");
+    // Light overrides always apply; the computed dark role block is scoped to
+    // [data-theme="dark"] which a STYLE overlay shadows, so also bind it to the
+    // ds-scheme-dark class we toggle above.
+    let darkCss = custom.darkCss || "";
+    if (darkCss) darkCss = darkCss.replace('[data-theme="dark"]{', '[data-theme="dark"], :root.ds-scheme-dark{');
+    style.textContent = (custom.overrideCss || "") + "\n" + darkCss;
     doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
     try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
     try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
-  }, [custom, dark]);
+  }, [custom, dark, styleId, js]);
 
-  // Re-apply when the tuning changes after the frame is already loaded.
+  // Re-apply when the style changes after the frame is already loaded.
   useEffect(() => { apply(); }, [apply]);
 
   return html`
@@ -18053,7 +18057,7 @@ function DsTuneThumb({ file, custom, dark }) {
       <iframe
         ref=${iframeRef}
         className="deflib-thumb-frame"
-        title="Tuning preview"
+        title="Style preview"
         loading="lazy"
         scrolling="no"
         style=${{ width: LOGICAL_W + "px", height: LOGICAL_H + "px", transform: "scale(" + scale + ")" }}
@@ -18076,41 +18080,39 @@ function DefaultLibraryLanding() {
   const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
   const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
 
-  // Compute each preset's override once.
-  const tunings = useMemo(
-    () => DS_TUNING_PRESETS.map(p => ({ preset: p, custom: buildDsCustomization(dsTuningSettings(p)) })),
-    []
-  );
+  // The style samples all ride the default tokens - the only difference shown
+  // is the UI style overlay - so the base customisation is computed once.
+  const baseCustom = useMemo(() => buildDsCustomization(dsDefaultSettings()), []);
 
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
         name="Template Design System"
-        desc=${html`The template design system every new project can inherit - tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below is a curated retune shown on two surfaces - the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) - with the tuning it uses labelled. <strong>Try customisation</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
+        desc=${html`The template design system every new project can inherit - tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below showcases one of its <strong>UI styles</strong> on the same two surfaces - the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) - on the default tokens, so the difference you see is purely the style. <strong>Try customisation</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
         action=${html`<button className="sysadd-bar-btn" type="button"
           onClick=${() => setTuneOpen(true)}
           title="Open the token customizer against a live preview (sandbox - nothing is saved)">
           <${Icon.Palette}/><span>Try customisation</span></button>`}
       />
 
-      <div className="deflib-samples-head">Template Design System Samples</div>
+      <div className="deflib-samples-head">Template Design System Samples · UI styles</div>
       <div className="deflib-rows">
-        ${tunings.map(({ preset, custom }) => html`
+        ${DS_STYLE_SAMPLES.map(preset => html`
           <div key=${preset.id} className="deflib-row">
             <div className="deflib-row-head">
               <span className="deflib-row-name">${preset.name}</span>
               <div className="deflib-row-chips">
-                ${dsTuningChips(preset).map(c => html`<span key=${c.k} className=${"deflib-chip deflib-chip-" + c.k}>${c.v}</span>`)}
+                ${dsStyleSampleChips(preset).map(c => html`<span key=${c.k} className=${"deflib-chip deflib-chip-" + c.k}>${c.v}</span>`)}
               </div>
             </div>
             <div className="deflib-row-note">${preset.note}</div>
             <div className="deflib-grid">
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="templates/landing.html" custom=${custom} dark=${preset.dark}/>
+                <${DsTuneThumb} file="templates/landing.html" custom=${baseCustom} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js}/>
                 <figcaption className="deflib-cap">Landing page</figcaption>
               </figure>
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="gallery.html" custom=${custom} dark=${preset.dark}/>
+                <${DsTuneThumb} file="gallery.html" custom=${baseCustom} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js}/>
                 <figcaption className="deflib-cap">Design system</figcaption>
               </figure>
             </div>
