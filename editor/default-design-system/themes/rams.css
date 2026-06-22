@@ -194,6 +194,27 @@
   --tertiary-fg:var(--tertiary-300);
   --tertiary-600:var(--tertiary-300); --tertiary-700:var(--tertiary-300);
 
+  /* status semantics (alert / toast / status) - the surface -50/-100 tints stay
+     LIGHT in the base, so on the dark device they'd be bright cards with
+     low-contrast text. Dark-adapt them: surface = a dark tint of the hue, text
+     steps (-700/-900) lift to light. Icons keep the saturated -500. */
+  --success-50:color-mix(in srgb,var(--success-500) 16%,var(--ram-face));
+  --success-100:color-mix(in srgb,var(--success-500) 26%,var(--ram-face));
+  --success-200:color-mix(in srgb,var(--success-500) 42%,var(--ram-face));
+  --success-700:var(--success-300); --success-900:var(--success-200);
+  --error-50:color-mix(in srgb,var(--error-500) 16%,var(--ram-face));
+  --error-100:color-mix(in srgb,var(--error-500) 26%,var(--ram-face));
+  --error-200:color-mix(in srgb,var(--error-500) 42%,var(--ram-face));
+  --error-700:var(--error-300); --error-900:var(--error-200);
+  --attention-50:color-mix(in srgb,var(--attention-500) 16%,var(--ram-face));
+  --attention-100:color-mix(in srgb,var(--attention-500) 26%,var(--ram-face));
+  --attention-200:color-mix(in srgb,var(--attention-500) 42%,var(--ram-face));
+  --attention-700:var(--attention-300); --attention-900:var(--attention-200);
+  --info-50:color-mix(in srgb,var(--info-500) 16%,var(--ram-face));
+  --info-100:color-mix(in srgb,var(--info-500) 26%,var(--ram-face));
+  --info-200:color-mix(in srgb,var(--info-500) 42%,var(--ram-face));
+  --info-700:var(--info-300); --info-900:var(--info-200);
+
   --series-1:var(--ram-accent-strong); --series-2:var(--ram-accent);
   --series-3:#A6A9B0; --series-4:#6B6E75; --series-5:#C9CBD0;
   --chart-grid:#313338; --chart-axis:var(--ram-ink-subtle);
@@ -238,8 +259,7 @@
    ========================================================================== */
 [data-theme="rams"] .input,
 [data-theme="rams"] .select,
-[data-theme="rams"] .textarea,
-[data-theme="rams"] .input--bare{
+[data-theme="rams"] .textarea{
   background:var(--ram-grad-well);
   border:1px solid var(--ram-edge);
   border-radius:var(--radius-s);
@@ -255,9 +275,7 @@
 [data-theme="rams"] .input:focus,
 [data-theme="rams"] .select:focus,
 [data-theme="rams"] .textarea:focus,
-[data-theme="rams"] .input--bare:focus,
-[data-theme="rams"] .input.is-focus,
-[data-theme="rams"] .input--bare.is-focus{
+[data-theme="rams"] .input.is-focus{
   outline:none;
   border-color:color-mix(in srgb,var(--ram-accent) 55%,var(--ram-edge));
   box-shadow:var(--ram-recess),0 0 0 2px color-mix(in srgb,var(--ram-accent) 30%,transparent);
@@ -267,6 +285,57 @@
 [data-theme="rams"] .textarea:disabled{
   background:var(--ram-face);box-shadow:var(--ram-recess-sm);color:var(--ram-ink-subtle);opacity:.75;
 }
+
+/* ==========================================================================
+   INPUT CONTAINERS + flat variants - the collision class. The base nests a
+   BORDERLESS input inside an outer field (search bar, affix) OR makes some
+   inputs intentionally flat (boxless editor, readonly). Our generic well rule
+   would double-treat them (a well inside a well, or a recess where the base
+   wants flat). So: the OUTER container becomes the single milled well and the
+   inner input goes transparent/flat; the intentionally-flat variants are reset.
+   ========================================================================== */
+/* search bar: the whole bar is ONE groove, the inner input sits flat in it */
+[data-theme="rams"] .dg-filters__search{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);box-shadow:var(--ram-recess-sm);
+}
+[data-theme="rams"] .dg-filters__search .input,
+[data-theme="rams"] .dg-filters__search .input:focus{
+  background:transparent;border:0;box-shadow:none;
+}
+[data-theme="rams"] .dg-filters__search .vsep{background:var(--ram-edge);}
+/* input-affix (search/date/unit/stepper/password/otp): outer is the groove */
+[data-theme="rams"] .input-affix{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);box-shadow:var(--ram-recess-sm);
+}
+[data-theme="rams"] .input-affix input{background:transparent;}
+[data-theme="rams"] .stepper-btn{
+  background:var(--ram-grad-key);color:var(--ram-ink);box-shadow:var(--ram-raise-sm);border:0;
+}
+[data-theme="rams"] .stepper-btn:active{box-shadow:var(--ram-press);}
+[data-theme="rams"] .otp input{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);box-shadow:var(--ram-recess-sm);color:var(--ram-ink);
+}
+/* boxless document editor + readonly: stay FLAT (no well) */
+[data-theme="rams"] .input--bare,
+[data-theme="rams"] .textarea--bare,
+[data-theme="rams"] .input.is-readonly,
+[data-theme="rams"] .input[readonly]{
+  background:transparent;border:0;box-shadow:none;color:var(--ram-ink);
+}
+[data-theme="rams"] .input--bare:hover,
+[data-theme="rams"] .textarea--bare:hover{background:var(--ram-face);}
+[data-theme="rams"] .input--bare:focus,
+[data-theme="rams"] .input--bare.is-focus,
+[data-theme="rams"] .textarea--bare:focus{
+  outline:none;background:var(--ram-face);box-shadow:inset 0 -1px 0 0 var(--ram-accent);
+}
+/* datagrid filter chips: dropdown triggers read as seated keys, not flat pills */
+[data-theme="rams"] .dg-chip{
+  background:var(--ram-grad-key);border:1px solid var(--ram-edge);
+  box-shadow:var(--ram-raise-sm);color:var(--ram-ink);
+}
+[data-theme="rams"] .dg-chip:hover{box-shadow:var(--ram-raise);}
+[data-theme="rams"] .dg-chip:active{box-shadow:var(--ram-press);transform:translateY(1px);}
 
 /* ==========================================================================
    Buttons - keys seated in the face: subtle gradient + hairline bevel, a faint
@@ -482,10 +551,13 @@
   background:var(--ram-grad-well);border:1px solid var(--ram-edge);
   box-shadow:var(--ram-recess-sm);overflow:hidden;
 }
-[data-theme="rams"] .progress__bar,
-[data-theme="rams"] .progress > div{
+[data-theme="rams"] .progress__fill{
   background:var(--ram-grad-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
 }
+/* keep the semantic progress fills (pending/error/success) on their own hue */
+[data-theme="rams"] .progress--pending .progress__fill{background:var(--attention-500);}
+[data-theme="rams"] .progress--error .progress__fill{background:var(--error-500);}
+[data-theme="rams"] .progress--success .progress__fill{background:var(--success-500);}
 
 /* ==========================================================================
    Modal - a raised device slab; dividers soften to warm seams.
