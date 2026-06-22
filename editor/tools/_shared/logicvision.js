@@ -40,7 +40,7 @@ const CDN = {
   tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
 };
 
-const DETECT_INTERVAL_MS = 66;   // ~15fps cap for MediaPipe inference
+const DETECT_INTERVAL_MS = 40;   // ~25fps cap for MediaPipe inference (lower = smoother hand tracking)
 const num = (v, f) => { const n = Number(v); return Number.isFinite(n) ? n : f; };
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
