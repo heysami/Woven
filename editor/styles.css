@@ -26154,3 +26154,76 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .sv-mini-btn:hover { color: var(--text); background: rgba(0, 0, 0, 0.04); }
 .sv-mini-btn.danger:hover { color: #dc2626; border-color: #fecaca; }
+
+/* ─── Projects housekeeping (permanent trash purge) ───────────────────────
+   Trigger sits below the projects grid; the panel reuses the .newproj-overlay
+   / .newproj-card modal chrome with a selectable table of soft-deleted
+   projects for bulk forever-delete. */
+.landing-housekeeping {
+  display: flex;
+  justify-content: center;
+  margin: 28px 0 8px;
+}
+.landing-hk-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.landing-hk-trigger:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.landing-hk-trigger-label { font-weight: 600; }
+.landing-hk-trigger-sub { color: var(--text-faint); font-size: 11px; }
+
+.hk-card { max-width: 760px; max-height: 84vh; }
+.hk-body { overflow: auto; gap: 12px; }
+.hk-intro { margin: 0 0 4px; color: var(--text-faint); font-size: 12.5px; line-height: 1.5; }
+.hk-intro code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.hk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.hk-table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-faint);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+.hk-table tbody td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.hk-table tbody tr { cursor: pointer; }
+.hk-table tbody tr:hover { background: rgba(0, 0, 0, 0.03); }
+.hk-table tbody tr[data-sel="true"] { background: rgba(44, 95, 255, 0.08); }
+.hk-table tbody tr[data-sel="true"]:hover { background: rgba(44, 95, 255, 0.12); }
+.hk-col-check { width: 34px; text-align: center; }
+.hk-col-size { width: 92px; text-align: right; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.hk-pid { font-weight: 600; color: var(--text); }
+.hk-when { color: var(--text-faint); white-space: nowrap; }
+
+.hk-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hk-foot-info { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.hk-foot-actions { display: flex; gap: 8px; }

@@ -1327,7 +1327,7 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
         imp = { x: panRef.current.x, y: panRef.current.y, z: zoomRef.current };
       }
       if (isZoomGesture) {
-        const dz = Math.exp(-e.deltaY * 0.003);
+        const dz = Math.exp(-e.deltaY * 0.006);
         const newZoom = Math.max(0.08, Math.min(3, imp.z * dz));
         const r = el.getBoundingClientRect();
         const mx = e.clientX - r.left;
@@ -4282,6 +4282,17 @@ function PrototypeView() {
   const active = D.frames.find(f => f.id === activeId) || first;
   const iframeRef = useRef(null);
   const [nonce, setNonce] = useState(0);
+  // Display scale for the stage frame. 1 = native. The first-time prototype
+  // auto-switch (spawnFromComposer) sets a one-shot flag so that very first
+  // view opens at 75%; every later visit is native. Consumed in a layout
+  // effect (before paint, no 100%->75% flash) so it fires exactly once.
+  const [protoScale, setProtoScale] = useState(1);
+  useLayoutEffect(() => {
+    if (_pendingFirstProtoZoom) {
+      _pendingFirstProtoZoom = false;
+      setProtoScale(0.75);
+    }
+  }, []);
 
   // After each (re)mount of the iframe, run the frame's setupScript inside the
   // iframe's window. Many source prototypes route by internal state (`useState`)
@@ -4404,17 +4415,29 @@ function PrototypeView() {
           <span className="proto-stage-url">${entry}${hashOf(active.hash)}</span>
         </div>
         <div className="proto-frame-wrap">
-          <div className="proto-frame" style=${{ width: active.w, height: active.h }}>
-            ${frameNeedsPlaceholder(active)
-              ? html`<${FramePlaceholder} frame=${active}/>`
-              : html`<iframe
-                  key=${activeId + "-" + nonce}
-                  ref=${iframeRef}
-                  src=${src}
-                  title=${active.label}
-                  style=${{ width: "100%", height: "100%", border: 0, background: "var(--surface)" }}
-                />`}
-          </div>
+          ${(() => {
+            const frameEl = html`<div className="proto-frame" style=${{
+                width: active.w,
+                height: active.h,
+                ...(protoScale !== 1 ? { transform: `scale(${protoScale})`, transformOrigin: "top left" } : {}),
+              }}>
+              ${frameNeedsPlaceholder(active)
+                ? html`<${FramePlaceholder} frame=${active}/>`
+                : html`<iframe
+                    key=${activeId + "-" + nonce}
+                    ref=${iframeRef}
+                    src=${src}
+                    title=${active.label}
+                    style=${{ width: "100%", height: "100%", border: 0, background: "var(--surface)" }}
+                  />`}
+            </div>`;
+            // Scaled: a sizer matching the scaled footprint keeps the stage's
+            // centering + scrollbars honest (transform alone doesn't shrink the
+            // layout box). Native scale renders the frame directly, unchanged.
+            return protoScale !== 1
+              ? html`<div className="proto-frame-sizer" style=${{ width: Math.round(active.w * protoScale), height: Math.round(active.h * protoScale) }}>${frameEl}</div>`
+              : frameEl;
+          })()}
         </div>
       </div>
     </div>
@@ -7440,6 +7463,12 @@ function apiUrl(path) {
 // the Prototype tab so the user lands where the work happens. This must fire
 // at most once per project, ever - tracked by a per-project localStorage flag
 // so it never repeats after the first time (even across reloads / new chats).
+// One-shot: set true when the first-time prototype auto-switch fires (see
+// spawnFromComposer), read+cleared once by PrototypeView so that very first
+// prototype view opens at 75% rather than native 100%. Module-level (not
+// localStorage) - it only needs to survive the setView -> mount tick, and the
+// "once per project, ever" guarantee already lives in AUTO_PROTO_KEY.
+let _pendingFirstProtoZoom = false;
 const AUTO_PROTO_KEY = "th:autoProtoMode:v1";
 function autoProtoAlreadyFired() {
   const proj = activeProjectId();
@@ -21620,6 +21649,113 @@ function CloneFromGithubDialog({ onClose, onCreated }) {
   `, document.body);
 }
 
+// Housekeeping - permanent bulk-delete of soft-deleted projects. Project delete
+// (_project_delete) only MOVES a project to projects/.trash/; nothing else ever
+// empties it. This panel lists those trash entries and hard-deletes the selected
+// ones - the only forever-delete path in the product.
+function ProjectsHousekeeping({ onClose }) {
+  const [items, setItems] = useState(null);          // null = loading
+  const [sel, setSel] = useState(() => new Set());   // selected trash-folder names
+  const [err, setErr] = useState(null);
+  const [purging, setPurging] = useState(false);
+
+  const load = useCallback(() => {
+    setItems(null); setErr(null); setSel(new Set());
+    fetch("/__projects/trash")
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => setItems(j.items || []))
+      .catch(e => { setErr(e.message || String(e)); setItems([]); });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const fmtSize = (b) => {
+    if (!b) return "0 B";
+    const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0, n = b;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+  };
+  const fmtWhen = (iso) => { if (!iso) return "-"; try { return new Date(iso).toLocaleString(); } catch { return iso; } };
+
+  const list = items || [];
+  const toggle = (name) => setSel(s => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  const allSelected = list.length > 0 && list.every(it => sel.has(it.name));
+  const toggleAll = () => setSel(allSelected ? new Set() : new Set(list.map(it => it.name)));
+  const selectedItems = list.filter(it => sel.has(it.name));
+  const totalSel = selectedItems.reduce((a, it) => a + (it.sizeBytes || 0), 0);
+
+  const purge = async () => {
+    const names = selectedItems.map(it => it.name);
+    if (!names.length) return;
+    const ok = await uiConfirm(
+      `Permanently delete ${names.length} project${names.length > 1 ? "s" : ""} (${fmtSize(totalSel)})?\n\n` +
+      `This removes the files from disk for good - it cannot be undone.`
+    );
+    if (!ok) return;
+    setPurging(true); setErr(null);
+    try {
+      const r = await fetch("/__projects/trash/purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+      load();
+      if ((j.errors || []).length) setErr(`${j.errors.length} entr${j.errors.length > 1 ? "ies" : "y"} couldn't be deleted.`);
+    } catch (e) {
+      setErr(e.message || String(e));
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  return html`
+    <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <div className="newproj-card hk-card">
+        <header className="newproj-card-head">
+          <h2>Housekeeping</h2>
+          <button className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+        </header>
+        <div className="newproj-card-body hk-body">
+          <p className="hk-intro">Deleted projects are moved to <code>.trash/</code> and kept until you remove them here. Permanent delete cannot be undone.</p>
+          ${err && html`<div className="shares-error-banner">${err}</div>`}
+          ${items === null
+            ? html`<div className="runs-empty">Loading…</div>`
+            : list.length === 0
+              ? html`<div className="runs-empty">Trash is empty - nothing to clean up.</div>`
+              : html`
+                <table className="hk-table">
+                  <thead><tr>
+                    <th className="hk-col-check"><input type="checkbox" checked=${allSelected} onChange=${toggleAll} aria-label="Select all"/></th>
+                    <th>Project</th><th>Deleted</th><th className="hk-col-size">Size</th>
+                  </tr></thead>
+                  <tbody>
+                    ${list.map(it => html`
+                      <tr key=${it.name} data-sel=${sel.has(it.name)} onClick=${() => toggle(it.name)}>
+                        <td className="hk-col-check"><input type="checkbox" checked=${sel.has(it.name)} onChange=${() => toggle(it.name)} onClick=${e => e.stopPropagation()} aria-label=${"Select " + it.projectId}/></td>
+                        <td><span className="hk-pid">${it.projectId}</span></td>
+                        <td className="hk-when">${fmtWhen(it.deletedAt)}</td>
+                        <td className="hk-col-size">${fmtSize(it.sizeBytes)}</td>
+                      </tr>
+                    `)}
+                  </tbody>
+                </table>
+              `}
+        </div>
+        <footer className="newproj-card-foot hk-foot">
+          <span className="hk-foot-info">${sel.size} selected${sel.size ? " · " + fmtSize(totalSel) : ""}</span>
+          <div className="hk-foot-actions">
+            <button className="tbtn" onClick=${onClose}>Close</button>
+            <button className="tbtn tbtn-danger" disabled=${!sel.size || purging} onClick=${purge}>
+              ${purging ? "Deleting…" : "Delete permanently"}
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  `;
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
   const [cloningGithub, setCloningGithub] = useState(false);  // "From GitHub" dialog
@@ -21631,6 +21767,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [housekeepingOpen, setHousekeepingOpen] = useState(false);
   // v3.3 - Top-level landing tabs. "projects" is the legacy default; "orchestrators"
   // surfaces the orchestrator registry (per .claude/agents/*.manifest.json).
   const [activeTab, setActiveTab] = useState("projects");
@@ -22262,6 +22399,16 @@ function ProjectsLanding({ info, projects, onReload }) {
             `}
           </div>
         `}
+        ${activeTab === "projects" && html`
+          <div className="landing-housekeeping">
+            <button className="landing-hk-trigger" onClick=${() => setHousekeepingOpen(true)} title="Manage and permanently delete projects in the trash">
+              <${Icon.Trash}/>
+              <span className="landing-hk-trigger-label">Housekeeping</span>
+              <span className="landing-hk-trigger-sub">empty trash · delete projects forever</span>
+            </button>
+          </div>
+        `}
+        ${housekeepingOpen && html`<${ProjectsHousekeeping} onClose=${() => setHousekeepingOpen(false)}/>`}
         </div>
       </main>
     </div>
@@ -44947,7 +45094,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       // the latest scale value. setCanvasScale + ref-stashed scroll runs
       // once per event; rapid bursts compound through React state.
       setCanvasScale((oldScale) => {
-        const dz = Math.exp(-e.deltaY * 0.003);
+        const dz = Math.exp(-e.deltaY * 0.006);
         const newScale = Math.max(0.25, Math.min(3, oldScale * dz));
         if (newScale === oldScale) return oldScale;
         const r = host.getBoundingClientRect();
@@ -74116,13 +74263,17 @@ function App() {
     const composed = selectionBlock ? `${selectionBlock}\n\n${text}` : text;
     const wrappedPrompt = composeModeAwarePrompt("editor", composed);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
-    // First message on an empty project that asks to build a prototype -> jump
-    // straight to the Prototype view. One-shot per project (see markAutoProtoFired);
-    // never repeats once fired.
+    // First message that asks to build a prototype -> jump straight to the
+    // Prototype view. Two cases, both covered by the single setView:
+    //   - empty project: the Prototype tab shows the create flow.
+    //   - a main prototype already exists: the editor (no ?prototype= override)
+    //     is already scoped to the project default/main prototype, so switching
+    //     to the Prototype tab opens THAT first.
+    // One-shot per project (see markAutoProtoFired); never repeats once fired.
     if (view !== "prototype"
         && !autoProtoAlreadyFired()
-        && (model.frames || []).length === 0
         && looksLikePrototypeRequest(text)) {
+      _pendingFirstProtoZoom = true;   // PrototypeView opens this first one at 75%
       setView("prototype");
       markAutoProtoFired();
     }
@@ -74139,7 +74290,7 @@ function App() {
     setRunFinished(false);
     saveSettings({ lastRunId: run.runId });
     return run;
-  }, [activeBranchIdForChat, agentId, permissionMode, view, model]);
+  }, [activeBranchIdForChat, agentId, permissionMode, view]);
 
   // "Update from source" - top-right toolbar action on the editor view.
   // Dispatches a Workflow 1 (regenerate) agent run: the agent reads the

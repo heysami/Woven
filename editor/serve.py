@@ -7170,6 +7170,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._project_rename(qs)
             if parsed.path == "/__projects/delete":
                 return self._project_delete(qs)
+            if parsed.path == "/__projects/trash/purge":
+                return self._project_trash_purge(qs)
             if parsed.path == "/__projects/duplicate":
                 return self._project_duplicate(qs)
             if parsed.path == "/__prototypes/duplicate":
@@ -7345,6 +7347,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._workspace_info()
         if url_path == "/__projects":
             return self._projects_list()
+        if url_path == "/__projects/trash":
+            return self._project_trash_list()
         if url_path == "/__runs":
             return self._runs_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__system_runs":
@@ -18487,15 +18491,30 @@ class H(http.server.SimpleHTTPRequestHandler):
                 })
         except OSError:
             pass
-        # Refuse if a run is currently scoped to this project.
+        # Refuse only if a run is GENUINELY mid-turn (still generating) for this
+        # project. A "warm" session - turn finished (turn_done), process parked
+        # idle waiting for a possible reply - must NOT block deletion: it reads
+        # as "DONE" in the UI, so refusing there is baffling UX. Tear those warm
+        # sessions down and proceed.
         try:
             with RUNS_LOCK:
-                active = [s for s in RUNS.values() if s.project_id == proj_id and not s.done]
-            if active:
+                unfinished = [s for s in RUNS.values() if s.project_id == proj_id and not s.done]
+            live = [s for s in unfinished if not getattr(s, "turn_done", False)]
+            if live:
                 return self._reply(409, {
                     "error": "project has active agent runs",
-                    "runIds": [s.run_id for s in active],
+                    "runIds": [s.run_id for s in live],
                 })
+            # Warm/idle sessions for this project: terminate so we don't move the
+            # project dir out from under a parked subprocess. Best-effort; the
+            # reader thread flips done=True when each proc exits.
+            for s in unfinished:
+                try:
+                    s.stop_reason = "project-deleted"
+                    if getattr(s, "proc", None):
+                        s.proc.terminate()
+                except Exception:
+                    pass
         except NameError:
             pass  # RUNS isn't defined yet at module import - only at request time
         # Trash sits next to the active projects (projects/.trash/) so deleting
@@ -18522,6 +18541,90 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
         return self._reply(200, {"ok": True, "id": proj_id, "trashedTo": target})
+
+    # ── Project trash (soft-deleted projects) ─────────────────────────────
+    # Soft delete moves projects/<id>/ to projects/.trash/<id>-<YYYYMMDD-HHMMSS>/.
+    # Nothing else ever empties that dir, so the housekeeping panel lists it and
+    # purges entries in bulk - the only hard-delete path in the product.
+    def _trash_dir(self):
+        if not WORKSPACE_DIR:
+            return None
+        return os.path.join(PROJECTS_DIR, ".trash") if PROJECTS_DIR \
+            else os.path.join(WORKSPACE_DIR, ".trash")
+
+    def _dir_size_bytes(self, path):
+        total = 0
+        for root, _dirs, files in os.walk(path):
+            for fn in files:
+                try:
+                    total += os.lstat(os.path.join(root, fn)).st_size
+                except OSError:
+                    pass
+        return total
+
+    # GET /__projects/trash → { items: [{ name, projectId, deletedAt, sizeBytes }] }
+    def _project_trash_list(self):
+        if not WORKSPACE_DIR:
+            return self._reply(400, {"error": "workspace mode not enabled"})
+        trash = self._trash_dir()
+        items = []
+        if trash and os.path.isdir(trash):
+            stamp_re = re.compile(r"^(?P<pid>.+)-(?P<stamp>\d{8}-\d{6})$")
+            for name in os.listdir(trash):
+                if name.startswith("."):
+                    continue
+                full = os.path.join(trash, name)
+                if not os.path.isdir(full):
+                    continue
+                m = stamp_re.match(name)
+                pid = m.group("pid") if m else name
+                try:
+                    mtime = os.path.getmtime(full)
+                except OSError:
+                    mtime = 0
+                items.append({
+                    "name": name,
+                    "projectId": pid,
+                    "deletedAt": _dt.datetime.fromtimestamp(mtime).isoformat() if mtime else None,
+                    "sizeBytes": self._dir_size_bytes(full),
+                })
+        items.sort(key=lambda it: it.get("deletedAt") or "", reverse=True)
+        return self._reply(200, {"items": items})
+
+    # POST /__projects/trash/purge  body: { names: [<trash-folder-name>, ...] }
+    # Permanently removes the named trash entries. Each name must be a direct
+    # child of the trash dir (validated + path-confined) - no traversal, never
+    # touches a live project.
+    def _project_trash_purge(self, qs):
+        if not WORKSPACE_DIR:
+            return self._reply(400, {"error": "workspace mode not enabled"})
+        trash = self._trash_dir()
+        if not trash or not os.path.isdir(trash):
+            return self._reply(404, {"error": "no trash directory"})
+        body = self._read_json_body()
+        names = body.get("names") or []
+        if not isinstance(names, list) or not names:
+            return self._reply(400, {"error": "names must be a non-empty list"})
+        name_ok = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+        trash_real = os.path.realpath(trash)
+        removed, errors = [], []
+        for raw in names:
+            name = str(raw or "").strip()
+            if not name or "/" in name or "\\" in name or not name_ok.match(name):
+                errors.append({"name": name, "error": "invalid name"})
+                continue
+            target = os.path.join(trash, name)
+            # Confine: the resolved path must sit DIRECTLY under the trash dir.
+            real = os.path.realpath(target)
+            if os.path.dirname(real) != trash_real or not os.path.isdir(real):
+                errors.append({"name": name, "error": "not a trash entry"})
+                continue
+            try:
+                shutil.rmtree(real)
+                removed.append(name)
+            except OSError as e:
+                errors.append({"name": name, "error": "%s: %s" % (type(e).__name__, e)})
+        return self._reply(200, {"ok": True, "removed": removed, "errors": errors})
 
     # POST /__projects/duplicate  body: { id, newId?, label? }
     # Copies <WORKSPACE_DIR>/projects/<id>/ to projects/<newId>/ WITHOUT touching
