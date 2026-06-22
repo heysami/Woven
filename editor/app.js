@@ -17556,19 +17556,8 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
           <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
         </header>
         <div className="dscz-body">
+          <div className="dscz-side">
           <div className="dscz-controls">
-
-            <div className="dscz-stepper" role="tablist">
-              ${[{ n: 1, label: "Style" }, { n: 2, label: "Tuning" }, { n: 3, label: "Build settings" }].map((s, i) => html`
-                ${i > 0 && html`<span key=${"l" + s.n} className=${"dscz-step-line" + (czStep >= s.n ? " is-done" : "")} aria-hidden="true"></span>`}
-                <button key=${s.n} type="button" role="tab"
-                  className=${"dscz-step" + (czStep === s.n ? " is-active" : (czStep > s.n ? " is-done" : ""))}
-                  aria-selected=${czStep === s.n}
-                  onClick=${() => setCzStep(s.n)}>
-                  <span className="dscz-step-dot">${czStep > s.n ? "✓" : s.n}</span>
-                  <span className="dscz-step-label">${s.label}</span>
-                </button>`)}
-            </div>
 
             ${czStep === 1 && html`
             <section className="dscz-group">
@@ -17746,6 +17735,22 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
                 value=${settings.buildPolicy}
                 onChange=${(bp) => set({ buildPolicy: bp })}/>`}
           </div>
+          ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
+          <footer className="dscz-foot">
+            <div className="dscz-foot-nav">
+              ${czStep > 1
+                ? html`<button type="button" className="newproj-cancel" onClick=${() => setCzStep(czStep - 1)} disabled=${busy}>← Back</button>`
+                : onBack
+                  ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
+                  : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
+              ${czStep < 3
+                ? html`<button type="button" className="newproj-create" onClick=${() => setCzStep(czStep + 1)} disabled=${busy}>Next →</button>`
+                : !previewOnly && html`<button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
+                    ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
+                  </button>`}
+            </div>
+          </footer>
+          </div>
 
           <div className="dscz-preview" style=${{ background: previewDark ? "#222428" : "#ffffff" }}>
             <div className="dscz-preview-tabs" role="tablist">
@@ -17782,22 +17787,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
               onLoad=${() => { applyToFrame(); setFrameReady(true); }}/>
           </div>
         </div>
-        ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
-        <footer className="dscz-foot">
-          <div className="dscz-foot-nav">
-            ${czStep > 1
-              ? html`<button type="button" className="newproj-cancel" onClick=${() => setCzStep(czStep - 1)} disabled=${busy}>← Back</button>`
-              : onBack
-                ? html`<button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>`
-                : html`<button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>${previewOnly ? "Close" : "Cancel"}</button>`}
-            ${czStep < 3
-              ? html`<button type="button" className="newproj-create" onClick=${() => setCzStep(czStep + 1)} disabled=${busy}>Next →</button>`
-              : !previewOnly && html`<button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy}>
-                  ${busy ? (busyLabel || "Creating…") : (confirmLabel || "Create project")}
-                </button>`}
-          </div>
-          <div className="dscz-foot-step">Step ${czStep} of 3 · ${["Style", "Tuning", "Build settings"][czStep - 1]}</div>
-        </footer>
       </div>
     </div>
   `, document.body);
@@ -21821,52 +21810,32 @@ function ProjectsLanding({ info, projects, onReload }) {
 
   // ──────────────────────────────────────────────────────────────────────────
   // Mount the landing's diamond-field shader on a single full-page canvas
-  // behind the whole landing. The shader draws (from ONE grid) the dark
-  // header band, the triangle-tooth boundary, and the light field below.
-  // boundaryFn returns the live header height each frame so the dark band
-  // always ends exactly at the bottom of the (variable-height) header.
-  // The disposer returned by mountShader stops the RAF + frees the GL
+  // behind the whole landing. The shader draws ONE uniform light diamond field
+  // top to bottom - the header is a frosted-glass element over it (no dark band,
+  // no teeth). The disposer returned by mountShader stops the RAF + frees the GL
   // context the moment the user enters a project (this component unmounts).
   // ──────────────────────────────────────────────────────────────────────────
   const bgCanvasRef = useRef(null);
-  const darkbandCanvasRef = useRef(null);
   useEffect(() => {
     if (!bgCanvasRef.current || typeof window.mountShader !== "function") return;
-    const boundaryFn = () => {
-      const h = document.querySelector(".landing-header");
-      return h ? h.offsetHeight : 150;
-    };
     const disposeBg = window.mountShader(bgCanvasRef.current, window.SHADER_BG, {
       track: window,
-      boundaryFn,
     });
-    // The dark-band overlay canvas sits ABOVE .landing-main so cards
-    // scrolling up are visually clipped by the zigzag teeth (alpha = dm).
-    // Same boundary function so both canvases agree on where the line is.
-    let disposeDark;
-    if (darkbandCanvasRef.current && window.SHADER_DARKBAND) {
-      disposeDark = window.mountShader(darkbandCanvasRef.current, window.SHADER_DARKBAND, {
-        track: window,
-        alpha: true,
-        boundaryFn,
-      });
-    }
-    return () => { if (disposeBg) disposeBg(); if (disposeDark) disposeDark(); };
+    return () => { if (disposeBg) disposeBg(); };
   }, []);
 
-  // v3.5.x - Sticky landing-header support. The header position-sticks at
-  // top: 0 within .landing-root (which is the scroll container). The bg
-  // canvas is masked to be opaque only down to header.offsetHeight + teeth
-  // height (so the dark band + teeth stick at top while cards scroll behind
-  // them - light-field area below is transparent so cards remain visible).
-  // We need to update the CSS `--dark-band-height` variable whenever the
-  // header height changes (different tab, viewport resize, projects load).
+  // The frosted-glass header is taken out of flow (position: absolute, pinned
+  // top) so the scrolling cards pass BEHIND it and pick up the diamond-frost
+  // blur. .landing-main therefore needs a top padding equal to the live header
+  // height so its content starts just below the header instead of under it. We
+  // publish that height as the CSS var `--landing-header-h` and keep it in sync
+  // whenever the header height changes (different tab, viewport resize, load).
   useEffect(() => {
     const root = document.querySelector(".landing-root");
     const header = document.querySelector(".landing-header");
     if (!root || !header) return;
     const update = () => {
-      root.style.setProperty("--dark-band-height", header.offsetHeight + "px");
+      root.style.setProperty("--landing-header-h", header.offsetHeight + "px");
     };
     update();
     if (typeof ResizeObserver !== "undefined") {
@@ -21928,7 +21897,6 @@ function ProjectsLanding({ info, projects, onReload }) {
   return html`
     <div className="landing-root">
       <canvas ref=${bgCanvasRef} className="landing-bg-canvas" aria-hidden="true"></canvas>
-      <canvas ref=${darkbandCanvasRef} className="landing-darkband-canvas" aria-hidden="true"></canvas>
       <header className="landing-header">
         <div className="landing-header-inner">
           <div className="landing-brandrow">

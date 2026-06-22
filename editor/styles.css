@@ -536,8 +536,7 @@ button {
    keeps the warm-paper TE palette unchanged.
    =========================================================================== */
 .landing-root {
-  --landing-header-bg: #121716;   /* must match SHADER_BG headerCol vec3(0.071,0.090,0.086) */
-  --landing-teeth-h:   24px;      /* exact lower half of a 48px diamond - leave room below header */
+  --landing-header-h:  150px;     /* live header height, kept in sync from app.js */
   --landing-radius:    11px;
   position: fixed;
   inset: 0;
@@ -553,9 +552,9 @@ button {
   display: flex;
   flex-direction: column;
 }
-/* Background canvas - full viewport, paints the dark band + teeth + light
-   field with diamond pattern. z-index: 0 (the lowest) - it's the
-   absolute background. Cards stack ABOVE it. */
+/* Background canvas - full viewport, paints the uniform light diamond field.
+   z-index: 0 (the lowest) - it's the absolute background. Cards stack ABOVE
+   it; the frosted header stacks above them. */
 .landing-bg-canvas {
   position: fixed;
   inset: 0;
@@ -565,44 +564,37 @@ button {
   z-index: 0;
   pointer-events: none;
 }
-/* Dark-band OVERLAY canvas - same geometry as the bg canvas but the shader
-   outputs alpha = dm so only the dark-band + teeth-zigzag area is opaque.
-   z-index: 3 places it ABOVE .landing-main (z=1) so cards scrolling up
-   are visually clipped by the natural teeth zigzag (transparent below the
-   teeth, opaque above). The header content (z=2) lives between this
-   overlay and the bg, painted ON the dark band. */
-.landing-darkband-canvas {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  z-index: 3;
-  pointer-events: none;
-}
 
-/* Header - a flex item at top, doesn't scroll (root has overflow:hidden).
-   z-index: 4 so the logo / tabs / filter / new-project sit ABOVE the
-   dark-band overlay canvas (z=3). */
+/* Header - FROSTED GLASS over the same light diamond field. Taken out of flow
+   (absolute, pinned to the top of the fixed .landing-root) so the scrolling
+   cards pass BEHIND it and are blurred by the diamond-frost backdrop filter.
+   The boundary is just this box's straight bottom edge - no teeth, no overlap. */
 .landing-header {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 4;
-  background: transparent;
-  border-bottom: none;        /* the teeth ARE the boundary now */
+  background: color-mix(in srgb, var(--bg, #f7f4ec) 60%, transparent);
+  /* Diamond-shaped backdrop blur (see #landingDiamondFrost in index.html):
+     a soft gaussian + a 45deg-rotated box (= diamond) convolution, so the
+     content behind the glass reads as a field of small frosted diamonds. */
+  backdrop-filter: url(#landingDiamondFrost) saturate(1.04);
+  -webkit-backdrop-filter: url(#landingDiamondFrost) saturate(1.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex: none;
   padding: 0;
 }
-/* Main is the SCROLL CONTAINER. z=1 places content ABOVE the bg canvas
-   (z=0) but BELOW the darkband overlay canvas (z=3) - the darkband
-   shader makes the dark area fully opaque (including the diamond
-   intrusions reaching up from the light field), so any card scrolling
-   into the dark band is cleanly hidden, no white triangles. */
+/* Main is the SCROLL CONTAINER, filling the whole root (the header floats
+   above it). Its content is pushed below the header by a top padding equal to
+   the live header height, then scrolls up underneath the frosted glass. */
 .landing-main {
   position: relative;
   z-index: 1;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-top: var(--landing-header-h, 150px);
 }
 .landing-header-inner {
   position: relative;
@@ -626,40 +618,40 @@ button {
   gap: 12px;
   font-weight: 700;
   font-size: 18px;
-  color: #f4f6f5;
+  color: var(--text, #1a1a1a);
   letter-spacing: -0.01em;
 }
 /* Diamond-W logo mark - 5 lattice diamonds straight off the grid (see §3.1
-   of landing-diamonds/README.md). Green fill, green drop-shadow so the mark
-   glows against the dark band. */
+   of landing-diamonds/README.md). Green fill with a soft shadow so the mark
+   sits cleanly on the light frosted header. */
 .landing-logo-mark {
   width: 34px;
   height: auto;
   display: block;
   fill: var(--accent);
-  filter: drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 55%, transparent));
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.14));
 }
 .landing-meta {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: rgba(235, 240, 238, 0.74);
+  color: var(--text-muted, rgba(0, 0, 0, 0.6));
 }
 .landing-meta-label {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(225, 232, 229, 0.55);
+  color: rgba(0, 0, 0, 0.5);
 }
 .landing-meta-path {
   font-family: var(--font-mono);
   font-size: 11.5px;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.10);
   border-radius: var(--radius-sm);
-  color: rgba(235, 240, 238, 0.74);
+  color: var(--text-muted, rgba(0, 0, 0, 0.62));
 }
 .landing-titlebar {
   display: flex;
@@ -770,10 +762,16 @@ button {
 }
 .dscz-head-titles h2 { margin: 0; font: 600 17px/1.2 var(--font-sans, system-ui, sans-serif); }
 .dscz-head-titles p { margin: 5px 0 0; font: 400 12.5px/1.5 var(--font-sans, system-ui, sans-serif); opacity: 0.66; max-width: 760px; }
-.dscz-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 268px 1fr; }
+.dscz-body { flex: 1 1 auto; min-height: 0; display: flex; }
+/* Right-docked controls column: the preview fills the space to its left; the
+   controls scroll and the footer pins to the bottom, both at the panel width. */
+.dscz-side {
+  order: 1; flex: 0 0 300px; width: 300px; min-width: 0;
+  display: flex; flex-direction: column; min-height: 0;
+  border-left: 1px solid var(--border, rgba(0,0,0,0.1));
+}
 .dscz-controls {
-  overflow-y: auto; padding: 16px 16px 24px;
-  border-right: 1px solid var(--border, rgba(0,0,0,0.1));
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 16px 24px;
   display: flex; flex-direction: column; gap: 20px;
 }
 /* Sequential stepper for the 3-step DS customizer (Style · Tuning · Build settings). */
@@ -1036,7 +1034,7 @@ button {
 .dscz-logo-thumb { max-height: 48px; max-width: 100%; object-fit: contain; }
 /* dark check backdrop so a white/transparent logo reads in the picker */
 .dscz-logo-drop:has(.dscz-logo-thumb) { background: #1f2733; border-style: solid; }
-.dscz-preview { background: #fff; min-width: 0; position: relative; display: flex; flex-direction: column; }
+.dscz-preview { order: 0; flex: 1 1 auto; background: #fff; min-width: 0; position: relative; display: flex; flex-direction: column; }
 .dscz-preview-tabs {
   flex: 0 0 auto; display: flex; gap: 2px; overflow-x: auto; align-items: center;
   padding: 8px 10px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.1));
@@ -1105,28 +1103,26 @@ button {
 @media (max-width: 720px) {
   .deflib-grid { grid-template-columns: 1fr; }
 }
-.dscz-err { margin: 0; padding: 8px 22px 0; }
+.dscz-err { margin: 0; padding: 8px 16px 0; }
 .dscz-foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 12px 22px; border-top: 1px solid var(--border, rgba(0,0,0,0.1));
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-top: 1px solid var(--border, rgba(0,0,0,0.1));
 }
-.dscz-foot-step { font: 500 12px/1 var(--font-sans, system-ui, sans-serif); opacity: 0.55; }
-.dscz-foot-nav { display: flex; align-items: center; gap: 8px; }
+.dscz-foot-nav { flex: 1 1 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 @media (max-width: 880px) {
-  .dscz-body { grid-template-columns: 1fr; }
   .dscz-preview { display: none; }
+  .dscz-side { flex: 1 1 auto; width: auto; border-left: 0; }
 }
 
-/* ── v3.3 - Landing tabs (Projects | System) - DARK (sits on the dark
- * header backdrop, so it keeps the dark-mode treatment regardless of the
- * cream landing body below). ─────────────────────────────────────────── */
+/* ── v3.3 - Landing tabs (Projects | Shares | Capabilities) - sit on the
+ * light frosted header, so they use a dark-ink-on-light treatment. ────── */
 .landing-tabs {
   display: inline-flex;
   align-items: stretch;
   gap: 4px;
   padding: 4px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 10px;
 }
 .landing-tab {
@@ -1136,7 +1132,7 @@ button {
   padding: 8px 18px;
   background: transparent;
   border: 0;
-  color: rgba(225, 232, 229, 0.60);
+  color: rgba(0, 0, 0, 0.55);
   border-radius: 6px;
   font-size: 16px;
   font-weight: 600;
@@ -1144,10 +1140,10 @@ button {
   cursor: pointer;
   transition: background-color 120ms, color 120ms;
 }
-.landing-tab:hover { color: #f4f6f5; }
+.landing-tab:hover { color: var(--text, #1a1a1a); }
 .landing-tab.is-active {
-  background: rgba(255, 255, 255, 0.10);
-  color: #f4f6f5;
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--text, #1a1a1a);
 }
 .landing-tab-count {
   display: inline-block;
@@ -1155,13 +1151,13 @@ button {
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(225, 232, 229, 0.75);
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.6);
   font-variant-numeric: tabular-nums;
 }
 .landing-tab.is-active .landing-tab-count {
-  background: rgba(255, 255, 255, 0.18);
-  color: #f4f6f5;
+  background: rgba(0, 0, 0, 0.14);
+  color: var(--text, #1a1a1a);
 }
 
 /* ── v3.3 - Orchestrators landing view - LIGHT MODE ────────────────────── */
@@ -2473,19 +2469,19 @@ button {
   height: 36px;
   padding: 0 12px;
   width: 236px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.6);
   font: inherit;
   font-size: 13px;
-  color: #eef2f0;
+  color: var(--text, #1a1a1a);
 }
-.landing-filter::placeholder { color: rgba(225, 232, 229, 0.45); }
+.landing-filter::placeholder { color: rgba(0, 0, 0, 0.4); }
 .landing-filter:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent);
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.85);
 }
 .landing-new-btn {
   display: inline-flex;
@@ -2508,8 +2504,8 @@ button {
 .landing-new-btn:active { filter: brightness(0.95); }
 .landing-new-btn[disabled],
 .landing-new-btn[data-disabled="true"] {
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(235, 240, 238, 0.5);
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.4);
   cursor: not-allowed;
   filter: none;
 }
@@ -2542,8 +2538,8 @@ button {
 .landing-new-caret:active { filter: brightness(0.95); }
 .landing-new-caret[disabled],
 .landing-new-caret[data-disabled="true"] {
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(235, 240, 238, 0.5);
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.4);
   cursor: not-allowed;
   filter: none;
 }
@@ -2668,45 +2664,43 @@ button {
 }
 .newproj-link:hover { text-decoration: underline; }
 
-/* Status chips on the dark band - scoped overrides for the indicator pills
-   defined elsewhere in this file. Without this they paint near-black ink on
-   the dark header and disappear. We tint borders/backgrounds to match the
-   workspace-path chip and lift text/icons to a legible near-white.
-   Scope is strictly `.landing-header` so the same pills on the workflow
-   toolbar and editor toolbar (white surfaces) are untouched. */
+/* Status chips on the frosted header - scoped overrides for the indicator pills
+   defined elsewhere in this file. The header is a light frosted surface now, so
+   we tint borders/backgrounds to match the workspace-path chip and keep the
+   text/icons as dark legible ink. Scope is strictly `.landing-header` so the
+   same pills on the workflow toolbar and editor toolbar are untouched. */
 .landing-header .daemon-indicator,
 .landing-header .cli-indicator,
 .landing-header .model-status-indicator,
 .landing-header .landing-gh-btn,
 .landing-header .workflow-toolbar-gear {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(235, 240, 238, 0.82);
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--text-muted, rgba(0, 0, 0, 0.7));
 }
 .landing-header .daemon-indicator:hover,
 .landing-header .cli-indicator:hover,
 .landing-header .model-status-indicator:hover,
 .landing-header .landing-gh-btn:hover,
 .landing-header .workflow-toolbar-gear:hover {
-  background: rgba(255, 255, 255, 0.10);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #f4f6f5;
+  background: rgba(0, 0, 0, 0.07);
+  border-color: rgba(0, 0, 0, 0.18);
+  color: var(--text, #1a1a1a);
 }
 /* Re-assert the signed-in accent border - the override above would otherwise
    flatten it back to the neutral pill border (equal specificity, later source). */
 .landing-header .landing-gh-btn.is-in { border-color: var(--accent); }
 .landing-header .cli-label,
-.landing-header .model-status-label { color: rgba(235, 240, 238, 0.82); }
-.landing-header .workflow-toolbar-gear svg { color: rgba(235, 240, 238, 0.82); }
+.landing-header .model-status-label { color: var(--text-muted, rgba(0, 0, 0, 0.7)); }
+.landing-header .workflow-toolbar-gear svg { color: var(--text-muted, rgba(0, 0, 0, 0.7)); }
 .landing-header .model-status-indicator { color: #fff; background: color-mix(in oklch, var(--hot) 60%, transparent); border-color: color-mix(in oklch, var(--hot) 70%, transparent); }
 .landing-header .model-status-indicator:hover { background: color-mix(in oklch, var(--hot) 75%, transparent); }
 /* v3.x - degraded "key but no CLI" pill stays amber even on the dark band. */
 .landing-header .model-status-indicator[data-variant="warn"] { color: #fff; background: color-mix(in oklch, var(--warn, #d97706) 62%, transparent); border-color: color-mix(in oklch, var(--warn, #d97706) 72%, transparent); }
 .landing-header .model-status-indicator[data-variant="warn"]:hover { background: color-mix(in oklch, var(--warn, #d97706) 78%, transparent); }
 
-/* Main area below the dark band - content sits over the light diamond field.
-   Pull it up by one "tooth" (half-diamond, 24px) + a hair so the grid
-   visually starts inside the teeth zone, exactly as the reference does. */
+/* Main area - content sits over the light diamond field and scrolls up behind
+   the frosted header (whose height is reserved by .landing-main's padding-top). */
 .landing-main {
   position: relative;
   z-index: 1;
@@ -2717,7 +2711,7 @@ button {
   z-index: 2;
   max-width: 1240px;
   margin: 0 auto;
-  padding: calc(var(--landing-teeth-h) + 4px) 30px 96px;
+  padding: 24px 30px 96px;
 }
 
 .landing-create-card {
