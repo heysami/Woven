@@ -15,7 +15,7 @@
    A style is activated by setting the attribute on the root element:
      <html data-theme="pastel">   (default = no attribute = the light style)
    Available: dark, minimal, pastel, glassmorphism, claymorphism,
-              neumorphism, techminimalism, neobrutalism, analog.
+              neumorphism, techminimalism, neobrutalism, analog, rams.
    ========================================================================== */
 
 /* 1. base */
@@ -36,3 +36,4 @@
 @import url("themes/techminimalism.css");
 @import url("themes/neobrutalism.css");
 @import url("themes/analog.css");
+@import url("themes/rams.css");

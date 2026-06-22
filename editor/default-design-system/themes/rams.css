@@ -1,0 +1,580 @@
+/* ==========================================================================
+   Rams - STYLE OVERLAY for the Template Design System.
+   Activate via <html data-theme="rams">. Load AFTER styles.css (and any
+   component/shell CSS), so these scoped overrides win on specificity + order.
+
+   THE LOOK (elegant skeuomorphism, Dieter Rams / Braun):
+   - "Less, but better." A warm light-grey device face (Braun ABS / brushed
+     aluminium), NOT pure white. Depth is read from a SINGLE fixed light source
+     ABOVE: every surface carries a very subtle TOP-TO-BOTTOM gradient (lighter
+     at the top where the light lands, a touch darker at the foot) plus a
+     hairline BEVEL - a 1px highlight on the upper lip, a 1px warm shadow on the
+     lower lip. Nothing glossy; the gradient is a whisper, not a sheen.
+   - The signature is the RECESSED-WELL + RAISED-KEY pair. Controls that own a
+     track (switch, segmented, button group, tabs, inputs, checkbox/radio) sink
+     a milled GROOVE into the face (inset gradient + inner top shadow) and the
+     active element rises as a proud KEY inside it. Stand-alone buttons read as
+     keys seated in the panel with a faint cut-line around them; they DEPRESS on
+     :active (gradient flips, key sinks 1px) like a real Braun control.
+   - Borders are hairline warm seams, never heavy ink. Radii are gentle and
+     physical. Type stays the base humanist grotesque, set quietly.
+
+   COLOUR: the warm-grey device substrate (face / key / groove / bevel) is the
+   style's fixed NEUTRAL IDENTITY per mode. The single restrained ACCENT
+   (links / active / checked / focus / chart series) FOLLOWS THE SELECTED SCHEME
+   via the --primary-* ramp the customizer writes - a blue scheme gives a quiet
+   blue signal, a green scheme a quiet green, etc. This file never re-defines
+   the --primary-/--secondary-/--tertiary- ramps.
+
+   DARK MODE: a parallel block scoped to :root.ds-scheme-dark[data-theme="rams"]
+   (the class the editor toggles for dark previews) swaps the substrate to a
+   warm graphite device (black-ABS Braun), keeps the light overhead, and
+   re-points the accent to a lighter ramp step. Every raise/recess token
+   references the substrate trio, so redefining the trio re-casts everything.
+
+   The two load-bearing recipes (gradient carried on `background`, depth carried
+   on `box-shadow`):
+     raised key  : linear-gradient(180deg,key-top,key) + inset top highlight +
+                   inset foot shadow + soft outer contact cast.
+     recessed well: linear-gradient(180deg,groove-top,groove) + inset top
+                   shadow + inset bottom highlight (light on the lower lip).
+   ========================================================================== */
+
+:root[data-theme="rams"]{
+  /* ---- the warm-grey device substrate (fixed neutral identity, light mode) ----
+     A tight ramp of warm greys; the page is the darkest step so panels read as
+     the raised device face and keys rise off the face. */
+  --ram-deep:#B6B8BB;     /* deepest recess tone / cast shadow body */
+  --ram-groove:#C5C7CA;   /* recessed well floor (grooves, tracks)  */
+  --ram-bg:#D1D3D6;       /* page substrate (the desk)              */
+  --ram-face:#DFE1E3;     /* panel / card face                      */
+  --ram-key:#EAEBED;      /* raised key body                        */
+  --ram-key-top:#F5F6F7;  /* gradient top of a raised key (lit)     */
+
+  /* ---- bevel + cast tones (neutral graphite, never pure #000/#FFF) ---- */
+  --ram-bevel-hi:rgba(255,255,255,.78);  /* upper-lip highlight        */
+  --ram-bevel-lo:rgba(66,70,78,.30);     /* lower-lip inner shadow     */
+  --ram-well-top:rgba(66,70,78,.36);     /* well inner top shadow      */
+  --ram-edge:rgba(70,74,82,.26);         /* hairline seam / cut-line   */
+  --ram-cast-1:rgba(40,44,52,.15);       /* tight contact shadow       */
+  --ram-cast-2:rgba(40,44,52,.09);       /* ambient drop               */
+
+  /* ---- ink: neutral near-black, restrained ---- */
+  --ram-ink:#262830; --ram-ink-muted:#585B62; --ram-ink-subtle:#888B92;
+
+  /* ---- the single accent FOLLOWS the scheme ---- */
+  --ram-accent:var(--primary-500);
+  --ram-accent-strong:var(--primary-600);
+  --ram-on-accent:#FFFFFF;
+
+  /* ---- gradients (carried on background) ---- */
+  --ram-grad-key:linear-gradient(180deg,var(--ram-key-top) 0%,var(--ram-key) 100%);
+  --ram-grad-key-press:linear-gradient(180deg,var(--ram-key) 0%,var(--ram-key-top) 100%);
+  --ram-grad-face:linear-gradient(180deg,var(--ram-key) 0%,var(--ram-face) 100%);
+  --ram-grad-well:linear-gradient(180deg,var(--ram-groove) 0%,var(--ram-face) 100%);
+  --ram-grad-accent:linear-gradient(180deg,
+      color-mix(in srgb,var(--ram-accent) 86%,#fff) 0%,var(--ram-accent) 100%);
+
+  /* ---- depth recipes (carried on box-shadow) ---- */
+  --ram-raise:inset 0 1px 0 var(--ram-bevel-hi),
+              inset 0 -1px 1px var(--ram-bevel-lo),
+              0 1px 1px var(--ram-cast-1),
+              0 2px 4px var(--ram-cast-2);
+  --ram-raise-sm:inset 0 1px 0 var(--ram-bevel-hi),
+                 inset 0 -1px 0 var(--ram-bevel-lo),
+                 0 1px 2px var(--ram-cast-1);
+  --ram-raise-lg:inset 0 1px 0 var(--ram-bevel-hi),
+                 inset 0 -1px 1px var(--ram-bevel-lo),
+                 0 2px 4px var(--ram-cast-1),
+                 0 8px 18px var(--ram-cast-2);
+  --ram-recess:inset 0 2px 3px var(--ram-well-top),
+               inset 0 -1px 0 var(--ram-bevel-hi);
+  --ram-recess-sm:inset 0 1px 2px var(--ram-well-top),
+                  inset 0 -1px 0 var(--ram-bevel-hi);
+  --ram-press:inset 0 2px 4px var(--ram-well-top),
+              inset 0 1px 0 var(--ram-bevel-lo);
+
+  /* ---- remap semantic surfaces onto the warm substrate ---- */
+  --surface:var(--ram-face); --surface-default:var(--ram-bg);
+  --surface-medium:var(--ram-groove); --surface-strong:var(--ram-deep);
+  --surface-inverse:#262830;
+  --neutral-50:var(--ram-key); --neutral-70:var(--ram-face); --neutral-80:var(--ram-face);
+  --neutral-100:var(--ram-groove); --neutral-150:var(--ram-groove); --neutral-200:var(--ram-deep);
+
+  /* ---- ink ---- */
+  --fg-default:var(--ram-ink); --fg-muted:var(--ram-ink-muted); --fg-subtle:var(--ram-ink-subtle);
+  --fg-on-surface:var(--ram-ink);
+
+  /* ---- borders are hairline neutral seams ---- */
+  --border-default:var(--ram-edge); --border-subtle:rgba(70,74,82,.18);
+  --interactive-hover:var(--ram-key); --interactive-active:var(--ram-groove);
+
+  /* ---- primary role kept restrained; the accent does the talking ---- */
+  --primary-surface:var(--ram-accent); --primary-surface-muted:var(--ram-face);
+  --primary-surface-subtle:var(--ram-face);
+  --primary-fg:var(--ram-accent-strong); --primary-fg-emphasis:var(--ram-accent-strong);
+  --primary-border:var(--ram-edge);
+  --primary-hover:var(--ram-accent); --primary-active:var(--ram-accent-strong);
+  --on-primary:var(--ram-on-accent);
+  --primary-grad-from:var(--ram-key); --primary-grad-to:var(--ram-face);
+
+  /* ---- radii: gentle, physical ---- */
+  --radius-xs:4px; --radius-s:6px; --radius-base:8px; --radius-m:10px;
+  --radius-l:13px; --radius-xl:16px; --radius-2xl:20px;
+
+  /* ---- the system's flat drop-shadows become the soft warm cast ---- */
+  --shadow-xs:var(--ram-raise-sm); --shadow-s:var(--ram-raise-sm);
+  --shadow-base:var(--ram-raise); --shadow-m:var(--ram-raise);
+  --shadow-l:var(--ram-raise-lg); --shadow-xl:var(--ram-raise-lg);
+  --shadow-hard:var(--ram-raise);
+
+  /* ---- charts: warm monochrome with the scheme accent leading ---- */
+  --series-1:var(--ram-accent-strong); --series-2:var(--ram-accent);
+  --series-3:#888B92; --series-4:#AEB1B6; --series-5:#585B62;
+  --chart-grid:#CDCFD2; --chart-axis:var(--ram-ink-subtle);
+}
+
+/* ==========================================================================
+   DARK Rams - warm graphite device (black-ABS Braun). Light stays overhead;
+   the bevel highlight is a soft warm sheen, the cast is a deep warm shadow.
+   Redefining the substrate trio + bevel/cast tones re-casts every raise/recess
+   token, so component CSS below is mode-agnostic.
+   ========================================================================== */
+:root.ds-scheme-dark[data-theme="rams"]{
+  --ram-deep:#111214;     /* deepest recess / cast body */
+  --ram-groove:#181A1D;   /* recessed well floor        */
+  --ram-bg:#1E2023;       /* page substrate             */
+  --ram-face:#282A2E;     /* panel / card face          */
+  --ram-key:#313338;      /* raised key body            */
+  --ram-key-top:#3B3D43;  /* lit top of a raised key    */
+
+  --ram-bevel-hi:rgba(238,242,250,.10);  /* cool sheen on the upper lip */
+  --ram-bevel-lo:rgba(0,0,0,.46);
+  --ram-well-top:rgba(0,0,0,.55);
+  --ram-edge:rgba(0,0,0,.45);
+  --ram-cast-1:rgba(0,0,0,.40);
+  --ram-cast-2:rgba(0,0,0,.28);
+
+  --ram-ink:#E6E8EC; --ram-ink-muted:#A6A9B0; --ram-ink-subtle:#797C83;
+
+  --ram-accent:var(--primary-400);
+  --ram-accent-strong:var(--primary-300);
+  --ram-on-accent:#101216;
+
+  --ram-grad-accent:linear-gradient(180deg,
+      color-mix(in srgb,var(--ram-accent) 78%,#fff) 0%,var(--ram-accent) 100%);
+
+  --surface:var(--ram-face); --surface-default:var(--ram-bg);
+  --surface-medium:var(--ram-groove); --surface-strong:var(--ram-deep);
+  --surface-inverse:#E6E8EC;
+  --neutral-50:var(--ram-key); --neutral-70:var(--ram-face); --neutral-80:var(--ram-face);
+  --neutral-100:var(--ram-groove); --neutral-150:var(--ram-groove); --neutral-200:var(--ram-deep);
+
+  --fg-default:var(--ram-ink); --fg-muted:var(--ram-ink-muted); --fg-subtle:var(--ram-ink-subtle);
+  --fg-on-surface:var(--ram-ink);
+
+  --border-default:var(--ram-edge); --border-subtle:rgba(0,0,0,.30);
+  --interactive-hover:var(--ram-key); --interactive-active:var(--ram-groove);
+
+  --primary-surface:var(--ram-accent); --primary-surface-muted:var(--ram-face);
+  --primary-surface-subtle:var(--ram-face);
+  --primary-fg:var(--ram-accent-strong); --primary-fg-emphasis:var(--ram-accent-strong);
+  --primary-border:var(--ram-edge);
+  --primary-hover:var(--ram-accent); --primary-active:var(--ram-accent-strong);
+  --on-primary:var(--ram-on-accent);
+  --primary-grad-from:var(--ram-key); --primary-grad-to:var(--ram-face);
+
+  --series-1:var(--ram-accent-strong); --series-2:var(--ram-accent);
+  --series-3:#A6A9B0; --series-4:#6B6E75; --series-5:#C9CBD0;
+  --chart-grid:#313338; --chart-axis:var(--ram-ink-subtle);
+}
+
+/* ==========================================================================
+   Page substrate - the warm device desk.
+   ========================================================================== */
+[data-theme="rams"] body{background:var(--ram-bg);color:var(--ram-ink);}
+[data-theme="rams"] .app,
+[data-theme="rams"] .main,
+[data-theme="rams"] .content{background:var(--ram-bg);}
+
+/* ==========================================================================
+   RAISED panels - cards / section cards lift off the desk as the device face.
+   ========================================================================== */
+[data-theme="rams"] .card,
+[data-theme="rams"] .card--plain,
+[data-theme="rams"] .card--filled,
+[data-theme="rams"] .section-card,
+[data-theme="rams"] .chart-card,
+[data-theme="rams"] .stat-hero{
+  background:var(--ram-grad-face);
+  border:1px solid var(--ram-edge);
+  border-radius:var(--radius-l);
+  box-shadow:var(--ram-raise);
+  color:var(--ram-ink);
+}
+[data-theme="rams"] .card--filled{color:var(--ram-ink);}
+[data-theme="rams"] .stat-hero__value,
+[data-theme="rams"] .stat-hero__label{color:var(--ram-ink);}
+/* the section-card accent disc becomes a milled well with the accent mark */
+[data-theme="rams"] .section-card__icon{
+  background:var(--ram-grad-well);
+  border:1px solid var(--ram-edge);
+  box-shadow:var(--ram-recess-sm);
+  color:var(--ram-accent-strong);
+}
+
+/* ==========================================================================
+   RECESSED wells - inputs / selects / textareas are milled into the face.
+   ========================================================================== */
+[data-theme="rams"] .input,
+[data-theme="rams"] .select,
+[data-theme="rams"] .textarea,
+[data-theme="rams"] .input--bare{
+  background:var(--ram-grad-well);
+  border:1px solid var(--ram-edge);
+  border-radius:var(--radius-s);
+  box-shadow:var(--ram-recess);
+  color:var(--ram-ink);
+}
+[data-theme="rams"] .input::placeholder,
+[data-theme="rams"] .textarea::placeholder{color:var(--ram-ink-subtle);}
+[data-theme="rams"] .input:hover,
+[data-theme="rams"] .select:hover,
+[data-theme="rams"] .textarea:hover{border-color:var(--ram-edge);}
+/* focus deepens the well + a quiet accent rim (no hard ring) */
+[data-theme="rams"] .input:focus,
+[data-theme="rams"] .select:focus,
+[data-theme="rams"] .textarea:focus,
+[data-theme="rams"] .input--bare:focus,
+[data-theme="rams"] .input.is-focus,
+[data-theme="rams"] .input--bare.is-focus{
+  outline:none;
+  border-color:color-mix(in srgb,var(--ram-accent) 55%,var(--ram-edge));
+  box-shadow:var(--ram-recess),0 0 0 2px color-mix(in srgb,var(--ram-accent) 30%,transparent);
+}
+[data-theme="rams"] .input:disabled,
+[data-theme="rams"] .select:disabled,
+[data-theme="rams"] .textarea:disabled{
+  background:var(--ram-face);box-shadow:var(--ram-recess-sm);color:var(--ram-ink-subtle);opacity:.75;
+}
+
+/* ==========================================================================
+   Buttons - keys seated in the face: subtle gradient + hairline bevel, a faint
+   cut-line seam, soft contact cast. They DEPRESS on :active.
+   ========================================================================== */
+[data-theme="rams"] .btn{
+  background:var(--ram-grad-key);
+  border:1px solid var(--ram-edge);
+  border-radius:var(--radius-base);
+  box-shadow:var(--ram-raise-sm);
+  color:var(--ram-ink);
+  transition:box-shadow 120ms ease-out,background 120ms ease-out,transform 60ms ease-out;
+}
+[data-theme="rams"] .btn:hover{background:var(--ram-grad-key);box-shadow:var(--ram-raise);}
+[data-theme="rams"] .btn:active,
+[data-theme="rams"] .btn.is-pressed{
+  background:var(--ram-grad-key-press);box-shadow:var(--ram-press);transform:translateY(1px);
+}
+
+/* primary CTA: same seated key, faced with the quiet accent gradient */
+[data-theme="rams"] .btn--primary{
+  background:var(--ram-grad-accent);
+  border-color:color-mix(in srgb,var(--ram-accent-strong) 60%,var(--ram-edge));
+  color:var(--ram-on-accent);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.32),
+             inset 0 -1px 1px rgba(0,0,0,.18),
+             0 1px 1px var(--ram-cast-1),0 2px 4px var(--ram-cast-2);
+  font-weight:var(--w-semibold);
+}
+[data-theme="rams"] .btn--primary:hover,
+[data-theme="rams"] .btn.is-hover.btn--primary{
+  background:var(--ram-grad-accent);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.36),
+             inset 0 -1px 1px rgba(0,0,0,.2),
+             0 2px 4px var(--ram-cast-1),0 4px 8px var(--ram-cast-2);
+}
+[data-theme="rams"] .btn--primary:active,
+[data-theme="rams"] .btn.is-pressed.btn--primary{
+  background:linear-gradient(180deg,var(--ram-accent) 0%,
+      color-mix(in srgb,var(--ram-accent) 86%,#fff) 100%);
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.28),inset 0 1px 0 rgba(0,0,0,.18);
+  transform:translateY(1px);
+}
+
+/* outline / light keep the seated-key body, accent ink, no fill flip */
+[data-theme="rams"] .btn--outline,
+[data-theme="rams"] .btn--light,
+[data-theme="rams"] .btn--outline-mono,
+[data-theme="rams"] .btn--outline-mono-shadow{
+  background:var(--ram-grad-key);border:1px solid var(--ram-edge);
+  color:var(--ram-accent-strong);box-shadow:var(--ram-raise-sm);
+}
+[data-theme="rams"] .btn--outline-mono,
+[data-theme="rams"] .btn--outline-mono-shadow{color:var(--ram-ink);}
+[data-theme="rams"] .btn--outline:hover,
+[data-theme="rams"] .btn--light:hover,
+[data-theme="rams"] .btn--outline-mono:hover{background:var(--ram-grad-key);box-shadow:var(--ram-raise);}
+[data-theme="rams"] .btn--outline:active,
+[data-theme="rams"] .btn--light:active,
+[data-theme="rams"] .btn--outline-mono:active{
+  background:var(--ram-grad-key-press);box-shadow:var(--ram-press);transform:translateY(1px);
+}
+
+/* a "well" button reads as a pressed recess at rest */
+[data-theme="rams"] .btn--well{
+  background:var(--ram-grad-well);box-shadow:var(--ram-recess-sm);color:var(--ram-ink);
+}
+
+[data-theme="rams"] .btn:disabled,
+[data-theme="rams"] .btn.is-disabled{
+  background:var(--ram-face);box-shadow:var(--ram-recess-sm);
+  color:var(--ram-ink-subtle);transform:none;border-color:var(--ram-edge);
+}
+
+/* text / tertiary buttons stay FLAT quiet links - never a seated key */
+[data-theme="rams"] .btn--text,
+[data-theme="rams"] .btn--tertiary,
+[data-theme="rams"] .btn--tertiary-mono{
+  background:transparent;border:0;box-shadow:none;border-radius:0;
+  padding:0;height:auto;color:var(--ram-accent-strong);
+}
+[data-theme="rams"] .btn--tertiary-mono{color:var(--ram-ink-muted);}
+[data-theme="rams"] .btn--text:hover,
+[data-theme="rams"] .btn--tertiary:hover,
+[data-theme="rams"] .btn--tertiary-mono:hover{
+  background:transparent;box-shadow:none;text-decoration:underline;transform:none;
+}
+[data-theme="rams"] .btn--text:active,
+[data-theme="rams"] .btn--tertiary:active{background:transparent;box-shadow:none;opacity:.75;transform:none;}
+[data-theme="rams"] .btn--text:disabled,
+[data-theme="rams"] .btn--tertiary:disabled{background:transparent;box-shadow:none;color:var(--ram-ink-subtle);}
+
+/* split-dropdown caret: one seated key, flat segments, hairline divider */
+[data-theme="rams"] .btn-split{border-radius:var(--radius-base);box-shadow:var(--ram-raise-sm);}
+[data-theme="rams"] .btn-split .btn{
+  box-shadow:none;border:0;
+  border-radius:var(--radius-base);border-top-right-radius:0;border-bottom-right-radius:0;
+}
+[data-theme="rams"] .btn-split .btn:hover{box-shadow:none;}
+[data-theme="rams"] .btn-split__caret{
+  box-shadow:none;border:0;border-left:1px solid var(--ram-edge);
+  border-radius:0 var(--radius-base) var(--radius-base) 0;color:var(--ram-ink);
+}
+
+/* ==========================================================================
+   Button group - one milled groove holding flat segments; active = raised key.
+   ========================================================================== */
+[data-theme="rams"] .btn-group{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-m);box-shadow:var(--ram-recess-sm);padding:3px;overflow:visible;
+}
+[data-theme="rams"] .btn-group .btn{
+  background:transparent;border:0;border-right:0;box-shadow:none;color:var(--ram-ink-muted);
+  border-radius:var(--radius-s);transform:none;
+}
+[data-theme="rams"] .btn-group .btn:hover{background:transparent;box-shadow:none;color:var(--ram-ink);}
+[data-theme="rams"] .btn-group .btn.is-active{
+  background:var(--ram-grad-key);color:var(--ram-ink);box-shadow:var(--ram-raise-sm);
+}
+
+/* ==========================================================================
+   Badges + tags - small seated keys, warm monochrome.
+   ========================================================================== */
+[data-theme="rams"] .badge,
+[data-theme="rams"] .tag{
+  background:var(--ram-grad-key);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-pill);box-shadow:var(--ram-raise-sm);color:var(--ram-ink-muted);
+}
+[data-theme="rams"] .badge--light,
+[data-theme="rams"] .tag--light,
+[data-theme="rams"] .badge--outline,
+[data-theme="rams"] .tag--outline{
+  background:var(--ram-grad-key);border:1px solid var(--ram-edge);color:var(--ram-accent-strong);
+}
+
+/* ==========================================================================
+   Switch (segmented toggle) - recessed groove + a single raised active key.
+   ========================================================================== */
+[data-theme="rams"] .switch{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-pill);box-shadow:var(--ram-recess-sm);overflow:visible;padding:3px;
+}
+[data-theme="rams"] .switch button{
+  background:transparent;border:0;color:var(--ram-ink-muted);border-radius:var(--radius-pill);
+  transition:box-shadow 120ms ease-out,color 120ms ease-out;
+}
+[data-theme="rams"] .switch button.is-active{
+  background:var(--ram-grad-key);color:var(--ram-ink);box-shadow:var(--ram-raise-sm);
+}
+
+/* ==========================================================================
+   Segmented control - same groove + raised active key.
+   ========================================================================== */
+[data-theme="rams"] .segmented{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-m);box-shadow:var(--ram-recess-sm);padding:3px;
+}
+[data-theme="rams"] .segmented--outline{background:var(--ram-grad-well);}
+[data-theme="rams"] .segmented button{background:transparent;color:var(--ram-ink-muted);border-right:0;}
+[data-theme="rams"] .segmented button.is-active{
+  background:var(--ram-grad-key);color:var(--ram-ink);box-shadow:var(--ram-raise-sm);
+}
+
+/* ==========================================================================
+   Tabs - underline tabs get a quiet accent rule; card tabs become seated keys.
+   ========================================================================== */
+[data-theme="rams"] .tabs--cards .tab{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);box-shadow:none;color:var(--ram-ink-muted);
+}
+[data-theme="rams"] .tabs--cards .tab.is-active{
+  background:var(--ram-grad-key);box-shadow:var(--ram-raise-sm);color:var(--ram-ink);
+}
+[data-theme="rams"] .tabs--underline .tab.is-active{color:var(--ram-accent-strong);box-shadow:inset 0 -2px 0 var(--ram-accent);}
+
+/* ==========================================================================
+   Checkbox / radio - milled well at rest; checked = raised key with the mark.
+   The inline-SVG tick can't read a CSS var, so it carries a warm ink stroke.
+   ========================================================================== */
+[data-theme="rams"] .checkbox,
+[data-theme="rams"] .radio{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);
+  box-shadow:var(--ram-recess-sm);border-radius:var(--radius-xs);
+}
+[data-theme="rams"] .radio,
+[data-theme="rams"] .checkbox--circle{border-radius:50%;}
+[data-theme="rams"] .checkbox:hover:not(:disabled),
+[data-theme="rams"] .radio:hover:not(:disabled){border-color:var(--ram-edge);box-shadow:var(--ram-recess-sm);}
+[data-theme="rams"] .checkbox:checked{
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23262830' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") center/13px no-repeat,
+             var(--ram-grad-key);
+  border-color:var(--ram-edge);box-shadow:var(--ram-raise-sm);
+}
+[data-theme="rams"] .radio:checked{
+  background:var(--ram-grad-key);border:1px solid var(--ram-edge);box-shadow:var(--ram-raise-sm);
+  position:relative;
+}
+[data-theme="rams"] .radio:checked::after{
+  content:"";position:absolute;inset:0;margin:auto;width:8px;height:8px;border-radius:50%;
+  background:var(--ram-accent-strong);
+}
+[data-theme="rams"] .checkbox:disabled,
+[data-theme="rams"] .radio:disabled{background:var(--ram-face);box-shadow:var(--ram-recess-sm);opacity:.6;}
+/* dark graphite key needs a light tick (the data-URI stroke can't read a var) */
+:root.ds-scheme-dark[data-theme="rams"] .checkbox:checked{
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23E6E8EC' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") center/13px no-repeat,
+             var(--ram-grad-key);
+}
+
+/* ==========================================================================
+   Progress - a milled track with a raised accent fill.
+   ========================================================================== */
+[data-theme="rams"] .progress{
+  background:var(--ram-grad-well);border:1px solid var(--ram-edge);
+  box-shadow:var(--ram-recess-sm);overflow:hidden;
+}
+[data-theme="rams"] .progress__bar,
+[data-theme="rams"] .progress > div{
+  background:var(--ram-grad-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
+}
+
+/* ==========================================================================
+   Modal - a raised device slab; dividers soften to warm seams.
+   ========================================================================== */
+[data-theme="rams"] .modal{
+  background:var(--ram-grad-face);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-xl);box-shadow:var(--ram-raise-lg);color:var(--ram-ink);
+}
+[data-theme="rams"] .modal__head,
+[data-theme="rams"] .modal-row{border-bottom-color:var(--ram-edge);}
+[data-theme="rams"] .modal__foot--form{background:transparent;border-top-color:var(--ram-edge);}
+[data-theme="rams"] .modal__title{color:var(--ram-ink);}
+[data-theme="rams"] .modal__sub{color:var(--ram-ink-muted);}
+[data-theme="rams"] .modal__close{background:var(--ram-grad-key);border:1px solid var(--ram-edge);box-shadow:var(--ram-raise-sm);}
+[data-theme="rams"] .modal__close:hover{box-shadow:var(--ram-raise);}
+[data-theme="rams"] .modal__close:active{box-shadow:var(--ram-press);transform:translateY(1px);}
+
+/* ==========================================================================
+   KPI strip - one milled panel; cells split by warm seams, not heavy borders.
+   ========================================================================== */
+[data-theme="rams"] .kpi-strip{
+  background:var(--ram-grad-face);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-l);box-shadow:var(--ram-raise);overflow:hidden;
+}
+[data-theme="rams"] .kpi{border-left-color:var(--ram-edge);}
+[data-theme="rams"] .kpi__label{color:var(--ram-ink-muted);}
+[data-theme="rams"] .kpi__value{color:var(--ram-ink);}
+
+/* ==========================================================================
+   Sidebar + topbar - the chrome reads as the device face; active nav = key.
+   ========================================================================== */
+[data-theme="rams"] .sidebar{
+  background:var(--ram-grad-face);color:var(--ram-ink);
+  border-right:1px solid var(--ram-edge);box-shadow:1px 0 2px var(--ram-cast-2);overflow:visible;
+}
+[data-theme="rams"] .sidebar__nav{overflow:visible;}
+[data-theme="rams"] .sidebar__wave{display:none;}
+[data-theme="rams"] .sidebar__logo .title{color:var(--ram-ink);}
+[data-theme="rams"] .sidebar__logo .sep{background:var(--ram-edge);}
+[data-theme="rams"] .sidebar__section{color:var(--ram-ink-subtle);}
+[data-theme="rams"] .sidebar__user{border-top-color:var(--ram-edge);}
+[data-theme="rams"] .nav-link{
+  color:var(--ram-ink-muted);border:0;border-radius:var(--radius-s);
+  backdrop-filter:none;box-shadow:none;margin-inline:var(--space-2xs);
+}
+[data-theme="rams"] .nav-link:hover{background:var(--ram-key);backdrop-filter:none;box-shadow:none;color:var(--ram-ink);}
+[data-theme="rams"] .nav-link.is-active{
+  background:var(--ram-grad-key);color:var(--ram-accent-strong);
+  backdrop-filter:none;box-shadow:var(--ram-raise-sm);
+}
+[data-theme="rams"] .topbar{
+  background:var(--ram-grad-face);border-bottom:1px solid var(--ram-edge);box-shadow:0 1px 2px var(--ram-cast-2);
+}
+
+/* ==========================================================================
+   Tables - flat on the face; hover is a faint recess; header is a warm seam.
+   ========================================================================== */
+[data-theme="rams"] .table--flat,
+[data-theme="rams"] .table--dense{
+  background:var(--ram-grad-face);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-m);box-shadow:var(--ram-raise-sm);overflow:hidden;
+}
+[data-theme="rams"] .table--flat th,
+[data-theme="rams"] .table--dense th{color:var(--ram-ink-muted);border-color:var(--ram-edge);}
+[data-theme="rams"] .table--flat td,
+[data-theme="rams"] .table--dense td{border-color:var(--ram-edge);color:var(--ram-ink);}
+[data-theme="rams"] .table--flat tbody tr:hover td{background:color-mix(in srgb,var(--ram-deep) 30%,transparent);}
+[data-theme="rams"] .table--flat tbody tr.row--selected td,
+[data-theme="rams"] .table--flat tbody tr.row--active td{background:color-mix(in srgb,var(--ram-accent) 12%,transparent);}
+
+/* ==========================================================================
+   Phone shell - the frame is one extruded device; tabbar active = raised key.
+   ========================================================================== */
+[data-theme="rams"] .phone{
+  background:var(--ram-grad-face);border:1px solid var(--ram-edge);
+  border-radius:var(--radius-2xl);box-shadow:var(--ram-raise-lg);color:var(--ram-ink);
+}
+[data-theme="rams"] .phone__status,
+[data-theme="rams"] .phone__screen,
+[data-theme="rams"] .appbar,
+[data-theme="rams"] .list-mobile,
+[data-theme="rams"] .phone__tabbar{background:transparent;}
+[data-theme="rams"] .appbar{border-bottom-color:var(--ram-edge);}
+[data-theme="rams"] .phone__tabbar{border-top-color:var(--ram-edge);}
+[data-theme="rams"] .list-mobile__row + .list-mobile__row{border-top-color:var(--ram-edge);}
+[data-theme="rams"] .list-mobile__row:hover{background:color-mix(in srgb,var(--ram-deep) 30%,transparent);}
+[data-theme="rams"] .tabbar__item{color:var(--ram-ink-subtle);}
+[data-theme="rams"] .tabbar__item.is-active{color:var(--ram-accent-strong);}
+[data-theme="rams"] .tabbar__item.is-active .tabbar__icon{
+  background:var(--ram-grad-key);color:var(--ram-accent-strong);box-shadow:var(--ram-raise-sm);
+}
+
+/* ==========================================================================
+   FAB - a round raised key with the accent face.
+   ========================================================================== */
+[data-theme="rams"] .fab{
+  background:var(--ram-grad-accent);border:1px solid color-mix(in srgb,var(--ram-accent-strong) 60%,var(--ram-edge));
+  color:var(--ram-on-accent);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 1px rgba(0,0,0,.18),
+             0 2px 4px var(--ram-cast-1),0 6px 14px var(--ram-cast-2);
+}
+[data-theme="rams"] .fab:active{transform:translateY(1px);box-shadow:inset 0 2px 4px rgba(0,0,0,.28);}
