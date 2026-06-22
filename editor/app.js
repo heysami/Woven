@@ -29154,6 +29154,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const [wbGhost, setWbGhost] = useState(null);     // drag-to-size preview (shape/textbox/arrow)
   const [wbDragging, setWbDragging] = useState(false);
   const wbDraggingRef = useRef(false); wbDraggingRef.current = wbDragging;
+  // True while a TABLE node is being dragged/resized by its header/handle. The
+  // reconcile effect uses it to keep cell-bound items following the table even
+  // when they're selected (the skip-selected-while-dragging guard is meant for
+  // hand-dragging an item directly, NOT for the table moving under it).
+  const tableDragRef = useRef(false);
   const wbLiveStrokeRef = useRef(null);             // <svg> for the imperative in-progress pen path
   const wbItems = data.wb || [];
   const wbItemsRef = useRef(wbItems); wbItemsRef.current = wbItems;
@@ -30351,6 +30356,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       addWbItem(item);
       setSelectedWbIds(new Set([item.id]));
       setEditingWbId(item.id);
+      // Bind it to a table cell if it was dropped on a table.
+      if (wbReassignBindingsRef.current) wbReassignBindingsRef.current(new Set([item.id]), new Set());
       wbAfterCommit(tool);
       return;
     }
@@ -30471,6 +30478,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         addWbItem(item);
         setSelectedWbIds(new Set([item.id]));
         if (tool === "textbox") setEditingWbId(item.id);
+        // Bind a box drawn on a table to its cell (arrows keep their own
+        // endpoint binding, so don't cell-bind them).
+        if (tool !== "arrow" && wbReassignBindingsRef.current) wbReassignBindingsRef.current(new Set([item.id]), new Set());
         wbAfterCommit(tool);
       };
       window.addEventListener("mousemove", onMove);
@@ -30621,7 +30631,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
       const tById = new Map((d.nodes || []).filter(n => n.kind === "table").map(t => [t.id, t]));
-      const dragging = wbDraggingRef.current || nodeDraggingRef.current;
+      // Skip items being HAND-dragged (so reconcile doesn't fight them). But
+      // when a TABLE is the thing being dragged, its bound items must follow
+      // even if they happen to be selected - so don't skip then.
+      const dragging = (wbDraggingRef.current || nodeDraggingRef.current) && !tableDragRef.current;
       const skipWb = dragging ? selectedWbIdsRef.current : null;
       const skipNode = dragging ? selectedNodeIdsRef.current : null;
       const target = (cell) => {
@@ -30693,6 +30706,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return changed ? { ...d, wb: nextWb, nodes: nextNodes } : d;
     });
   }, [setData]);
+  // Ref so the tool-creation paths (defined earlier) can bind a freshly
+  // PLACED item to the table cell under it - placing is a click, not a drag,
+  // so it never hit the drag-end reassign below.
+  const wbReassignBindingsRef = useRef(null); wbReassignBindingsRef.current = wbReassignBindings;
   // Fire reassign on every drag → idle transition.
   const wbPrevDragRef = useRef(false);
   useEffect(() => {
@@ -40050,11 +40067,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // so bail here or this would start a table move underneath them.
               // The move grip is deliberately NOT listed - it falls through so
               // dragging it moves the table.
-              // A table is a real node - let it own ALL its events (header drag,
-              // cell select, resize). Bailing here stops the wb-mode node path
-              // from ALSO selecting/dragging it (which doubled the drag + left a
-              // mixed node+wb selection that hid the connectors).
-              if (e.target.closest(".workflow-node-table")) return;
+              // With the SELECT tool, a table owns ALL its events (header drag,
+              // cell select, resize) - bail so the wb-mode node path doesn't
+              // ALSO select/drag it (double-drag + mixed selection). But the
+              // CREATION tools (sticky / text / pen / shape / arrow) must still
+              // fall through so you can drop those items ONTO a table.
+              if (wbToolRef.current === "select" && e.target.closest(".workflow-node-table")) return;
               if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
@@ -40215,12 +40233,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 selected=${selectedNodeIds.has(n.id)}
                 tableSel=${tableSel}
-                onSelect=${() => { setSelectedNodeId(n.id); if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set()); }}
+                onSelect=${() => {
+                  // Only the select tool selects the table - a creation tool
+                  // click is placing an item ON the table, so don't steal its
+                  // selection (or clear the just-placed item's selection).
+                  if (wbToolRef.current !== "select") return;
+                  setSelectedNodeId(n.id);
+                  if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
+                }}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onRemove=${() => removeNode(n.id)}
                 onChange=${(patch) => updateNode(n.id, patch)}
-                onDragStart=${() => startNodeDrag(n.id)}
-                onDragEnd=${() => setNodeDragging(false)}
+                onDragStart=${() => { tableDragRef.current = true; startNodeDrag(n.id); }}
+                onDragEnd=${() => { tableDragRef.current = false; setNodeDragging(false); }}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onOp=${tableOp}
                 onCellSelect=${(tableId, range) => setTableSel({ tableId, ...range })}
