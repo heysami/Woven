@@ -230,7 +230,7 @@ function ensureFXChain(){
 const LogicBridge = {
   plan:null, projection:null, _sig:'', live:true,
   inputsMod:null, visionMod:null, audioMod:null, _inputHandle:null, _attachedEl:null,
-  _ports:{}, _last:performance.now(), _wantInputs:false, _streamHandles:[], _streamDetectors:[],
+  _ports:{}, _last:performance.now(), _wantInputs:false, _streamHandles:[], _streamDetectors:[], _streamOcr:[], _sensors:[], _sensorRequested:{},
   _paletteCache:new Map(),   // url+count -> { ready, colors:[{r,g,b,a}], dominant }
   _paletteNodes:[],          // [{ id, url, count }] resolved from the projection
   _audioHandle:null, _audioNodes:[],
@@ -274,6 +274,9 @@ const LogicBridge = {
     this._readbacks = (next && Array.isArray(next.readbacks)) ? next.readbacks : [];
     this._streamHandles = this._collectStreamHandles(next);
     this._streamDetectors = this._collectStreamDetectors(next);
+    this._streamOcr = this._collectStreamOcr(next);
+    this._sensors = this._collectSensors(next);
+    this._sensorRequested = {};
     this._paletteNodes = this._collectPaletteNodes(next);
     this._audioNodes = this._collectAudioNodes(next);
     this._wantInputs = this.active();
@@ -330,6 +333,38 @@ const LogicBridge = {
     }
     return out;
   },
+  // Same pairing for vision-ocr nodes: register tesseract OCR intent on the
+  // stream it reads, else LogicVision.frame() runs no OCR and text stays empty.
+  _collectStreamOcr(proj){
+    if(!proj||!Array.isArray(proj.nodes)||!Array.isArray(proj.edges)) return [];
+    const out=[];
+    for(const n of proj.nodes){
+      if(!n||n.kind!=='vision-ocr') continue;
+      const e=proj.edges.find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');
+      const handle=(e&&e.from)?e.from.node:null;
+      if(handle==null) continue;
+      const src=proj.nodes.find(x=>x&&x.id===handle);
+      const p=n.params||{};
+      out.push({ handle:handle, srcKind:(src&&src.kind)||'input-camera', query:p.query!=null?String(p.query):'', interval:p.interval||500 });
+    }
+    return out;
+  },
+  // Which device SENSORS the graph needs (input-gyro -> 'gyro', input-audio ->
+  // 'audio'). The composer must request these via LogicInputs.requestSensor or
+  // the listeners are never attached and the nodes stay 0 (gesture-gated).
+  _collectSensors(proj){
+    if(!proj||!Array.isArray(proj.nodes)) return [];
+    const s=new Set();
+    for(const n of proj.nodes){ if(!n)continue; if(n.kind==='input-gyro')s.add('gyro'); if(n.kind==='input-audio')s.add('audio'); }
+    return Array.from(s);
+  },
+  // Trigger the permission overlay for each needed sensor ONCE (the overlay
+  // button is the user gesture; requestSensor is idempotent once granted).
+  _requestSensors(){
+    if(!this._inputHandle || !this._inputHandle.requestSensor || !this._sensors) return;
+    const done=this._sensorRequested||(this._sensorRequested={});
+    for(const kind of this._sensors){ if(done[kind]) continue; done[kind]=true; try{ this._inputHandle.requestSensor(kind); }catch(e){} }
+  },
   // Attach DOM input capture to the render surface (idempotent). Surface rect is
   // cached inside LogicInputs (W2D) - we never call getBoundingClientRect here.
   _ensureInput(surfaceEl){
@@ -354,15 +389,17 @@ const LogicBridge = {
       // what makes frame() actually detect (idempotent intent update per frame).
       // ALSO hand LogicVision the already-running camera <video> element under
       // the same handle, so it has something to detect on (no 2nd getUserMedia).
+      const camVidFor=(srcKind,handle)=>{ try{ if(srcKind==='input-camera'){ return (typeof Input!=='undefined'&&Input.cam&&Input.cam.on&&Input.cam.video)?Input.cam.video:null; } if(srcKind==='input-video'&&typeof vstream==='function'){ return vstream(handle); } }catch(e){} return null; };
       if(this._streamDetectors){
         for(const d of this._streamDetectors){
           try{ this.visionMod.detect && this.visionMod.detect(d.handle,{detector:d.detector,target:d.target}); }catch(e){}
-          try{
-            let vel=null;
-            if(d.srcKind==='input-camera'){ if(typeof Input!=='undefined'&&Input.cam&&Input.cam.on&&Input.cam.video) vel=Input.cam.video; }
-            else if(d.srcKind==='input-video'&&typeof vstream==='function'){ vel=vstream(d.handle); }
-            if(vel && this.visionMod.attachVideoAs) this.visionMod.attachVideoAs(d.handle, vel, d.srcKind==='input-video'?'video':'camera');
-          }catch(e){}
+          try{ const vel=camVidFor(d.srcKind,d.handle); if(vel && this.visionMod.attachVideoAs) this.visionMod.attachVideoAs(d.handle, vel, d.srcKind==='input-video'?'video':'camera'); }catch(e){}
+        }
+      }
+      if(this._streamOcr){
+        for(const d of this._streamOcr){
+          try{ this.visionMod.ocr && this.visionMod.ocr(d.handle,{query:d.query,interval:d.interval}); }catch(e){}
+          try{ const vel=camVidFor(d.srcKind,d.handle); if(vel && this.visionMod.attachVideoAs) this.visionMod.attachVideoAs(d.handle, vel, d.srcKind==='input-video'?'video':'camera'); }catch(e){}
         }
       }
       try{ streams=this.visionMod.frame(this._streamHandles)||{}; }catch(e){ streams={}; }
@@ -408,7 +445,7 @@ const LogicBridge = {
   // Tick once per frame; cache the resolved out-ports. No-op when paused / empty.
   tick(surfaceEl, now){
     if(!this.live || !this.plan){ this._ports={}; return; }
-    if(this._wantInputs && this.inputsMod) this._ensureInput(surfaceEl);
+    if(this._wantInputs && this.inputsMod){ this._ensureInput(surfaceEl); this._requestSensors(); }
     let out;
     try{ out=LogicGraph.tick(this.plan, this._buildInputs(now||performance.now()), {index:0,count:1}); }
     catch(e){ out={}; }
@@ -4518,7 +4555,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
      origin as the served editor toolchain) and feature-detected; a missing
      module degrades to no logic (the rest of the composition still plays).
      Defaults to LIVE (a published piece runs on load). */
-  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,audio:null,audioHandle:null,audioNodes:[],readbacks:[],streams:[],streamDetectors:[],paletteNodes:[],paletteCache:{},last:performance.now(),live:true,
+  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,audio:null,audioHandle:null,audioNodes:[],readbacks:[],streams:[],streamDetectors:[],streamOcr:[],sensors:[],paletteNodes:[],paletteCache:{},last:performance.now(),live:true,
     value(ref){ if(!ref)return undefined; const o=this.ports[ref.node]; if(!o)return undefined; const v=o[ref.port];
       if(v==null)return undefined; if(typeof v==='number')return v; if(typeof v==='boolean')return v?1:0;
       if(v&&typeof v==='object'&&'x'in v)return Number(v.x)||0; const n=Number(v); return Number.isFinite(n)?n:undefined; },
@@ -4551,7 +4588,10 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       return m; },
     tick(now){ if(!this.live||!this.plan||!this.LG)return; const dt=Math.min((now-this.last)/1000,0.05); this.last=now;
       let inp={dt,time:now/1000}; if(this.handle&&this.handle.sample){ try{ const s=this.handle.sample()||{}; inp=Object.assign({},s,{dt:(s.dt!=null?s.dt:dt),time:(s.time!=null?s.time:inp.time)}); }catch(e){} }
-      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ if(this.streamDetectors){for(const d of this.streamDetectors){ try{this.vis.detect&&this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){} try{let vel=null;if(d.srcKind==='input-camera'){if(IN.cam&&IN.cam.on&&IN.cam.video)vel=IN.cam.video;}else if(d.srcKind==='input-video'&&typeof vstream==='function'){vel=vstream(d.handle);}if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
+      // request device sensors (gyro/mic) ONCE - else input-gyro/input-audio stay 0
+      if(this.handle&&this.handle.requestSensor&&this.sensors){ const done=this._sensorReq||(this._sensorReq={}); for(const k of this.sensors){ if(done[k])continue; done[k]=true; try{ this.handle.requestSensor(k); }catch(e){} } }
+      const camVidFor=(srcKind,handle)=>{ try{ if(srcKind==='input-camera'){ return (IN.cam&&IN.cam.on&&IN.cam.video)?IN.cam.video:null; } if(srcKind==='input-video'&&typeof vstream==='function'){ return vstream(handle); } }catch(e){} return null; };
+      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ if(this.streamDetectors){for(const d of this.streamDetectors){ try{this.vis.detect&&this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){} try{const vel=camVidFor(d.srcKind,d.handle);if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} if(this.streamOcr){for(const d of this.streamOcr){ try{this.vis.ocr&&this.vis.ocr(d.handle,{query:d.query,interval:d.interval});}catch(e){} try{const vel=camVidFor(d.srcKind,d.handle);if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
       inp.streams=streams; inp.palettes=this.paletteFrame(); inp.readback=this.readbackMap();
       let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{};
       this.driveAudio(); },
@@ -4563,6 +4603,8 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     // so the player registers detection intent (else frame() returns no detections
     // and every landmark stays {0,0} - hand/face detection never turns on).
     LB.streamDetectors=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-detect').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};if(!e||!e.from)return null;const src=(LOGIC.nodes||[]).find(x=>x&&x.id===e.from.node);return {handle:e.from.node,srcKind:(src&&src.kind)||'input-camera',detector:p.detector||'face',target:p.target||'present'};}).filter(Boolean);
+    LB.streamOcr=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-ocr').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};if(!e||!e.from)return null;const src=(LOGIC.nodes||[]).find(x=>x&&x.id===e.from.node);return {handle:e.from.node,srcKind:(src&&src.kind)||'input-camera',query:p.query!=null?String(p.query):'',interval:p.interval||500};}).filter(Boolean);
+    LB.sensors=Array.from(new Set((LOGIC.nodes||[]).map(n=>n&&n.kind==='input-gyro'?'gyro':(n&&n.kind==='input-audio'?'audio':null)).filter(Boolean)));
     LB.paletteNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='palette'&&n.params&&n.params._imageUrl).map(n=>({id:n.id,url:n.params._imageUrl,count:Math.max(2,Math.min(8,(n.params.count|0)||5)),quality:Math.max(1,Math.min(16,(n.params.quality|0)||4))}));
     LB.audioNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='audio-out').map(n=>n.id);
     import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
