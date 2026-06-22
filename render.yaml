@@ -1,0 +1,46 @@
+# Render blueprint for the Woven share broker.
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo.
+# Set the secret env vars (CF_API_TOKEN, DATABASE_URL, ADMIN_TOKEN) in the
+# dashboard - they are marked sync:false so they are NOT read from this file.
+services:
+  - type: web
+    name: woven-broker
+    runtime: python
+    rootDir: broker
+    plan: starter          # paid tier so it never cold-sleeps mid-provision
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: CF_API_TOKEN          # secret - set in dashboard
+        sync: false
+      - key: DATABASE_URL          # secret - Supabase connection string
+        sync: false
+      - key: ADMIN_TOKEN           # secret - protects /admin/reap
+        sync: false
+      - key: CF_ACCOUNT_ID
+        value: 0d7b52ff0f6513b1c175d33761c497a7
+      - key: CF_ZONE_ID
+        value: c25b3eee7496fa194bb7afded911aa35
+      - key: BASE_DOMAIN
+        value: getwoven.design
+      - key: REAP_TTL_DAYS
+        value: "45"
+
+  # Daily reaper - prunes installs idle longer than REAP_TTL_DAYS.
+  - type: cron
+    name: woven-broker-reaper
+    runtime: python
+    rootDir: broker
+    schedule: "0 4 * * *"   # 04:00 UTC daily
+    buildCommand: pip install httpx==0.28.1
+    startCommand: >-
+      python -c "import os,httpx;
+      r=httpx.post(os.environ['BROKER_URL'].rstrip('/')+'/admin/reap',
+      headers={'X-Admin-Token':os.environ['ADMIN_TOKEN']}, timeout=120);
+      print(r.status_code, r.text)"
+    envVars:
+      - key: BROKER_URL            # https://woven-broker.onrender.com
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
