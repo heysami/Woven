@@ -116,7 +116,10 @@
   window.mountCardShader = function (canvas, fragBody, opts) {
     opts = opts || {};
     const tint = (opts.tint && opts.tint.length === 3) ? opts.tint : [0.962, 0.957, 0.947];
-    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: false });
+    // preserveDrawingBuffer:true so the landing-header halftone's html2canvas
+    // capture can read these card fills - without it the buffer is cleared after
+    // compositing and the cards rasterise blank/black behind the glass.
+    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: true });
     if (!gl) { console.warn("no webgl"); return function () { }; }
 
     const FS =

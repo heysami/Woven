@@ -579,15 +579,30 @@ button {
      rgb(245,244,241)) so the header reads as the same light surface, not a grey
      cast. Kept semi-transparent so the frosted blur behind it stays visible. */
   background: rgba(245, 244, 241, 0.5);
-  /* Content-driven frost: a 45deg box blur (filled-diamond kernel) then a
-     posterize, both in #landingDiamondFrost (index.html). No overlay screen -
-     the effect processes the actual content scrolling behind, it isn't a fixed
-     texture painted on top. */
+  /* Content-driven frost - the FALLBACK when the halftone canvas can't run
+     (no WebGL2 / no html2canvas): a 45deg box blur (filled-diamond kernel) then
+     a posterize, both in #landingDiamondFrost (index.html). When the halftone
+     canvas IS active it paints opaquely over this and becomes the surface. */
   backdrop-filter: url(#landingDiamondFrost);
   -webkit-backdrop-filter: url(#landingDiamondFrost);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex: none;
   padding: 0;
+}
+/* Diamond-halftone glass canvas - a WebGL2 surface glued to the header that
+   rasterises the content behind and renders it as see-through diamond dots
+   (landing-halftone.js). z-index 0 keeps it above the header background but
+   below .landing-header-inner (z-index 2), so the brand / tabs / controls stay
+   crisp on top. Transparent until the first capture lands, so the CSS frost
+   above shows through in the meantime / when the runtime can't start. */
+.landing-header-halftone {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
 }
 /* Main is the SCROLL CONTAINER, filling the whole root (the header floats
    above it). Its content is pushed below the header by a top padding equal to

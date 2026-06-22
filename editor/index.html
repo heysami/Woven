@@ -156,6 +156,11 @@
        on the landing canvas without bundler ceremony. Safe everywhere: a
        guard inside the file makes it a no-op if loaded twice. -->
   <script src="landing-shaders.js"></script>
+  <!-- Landing-header diamond-halftone glass: rasterises the landing content into
+       one texture (html2canvas) and a WebGL2 canvas glued to the header samples
+       it as see-through diamond dots. Falls back to the CSS frost if WebGL2 /
+       html2canvas are unavailable. Loaded after html2canvas-pro (above). -->
+  <script src="landing-halftone.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
