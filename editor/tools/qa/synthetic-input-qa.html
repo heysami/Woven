@@ -1,0 +1,73 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Synthetic-input node QA</title></head>
+<body style="margin:0;background:#0a0a0a;color:#ddd;font:12px ui-monospace,monospace">
+<!--
+  Synthetic-input QA for the interactive logic-graph (mm-composer) nodes.
+  Drives the REAL composer with MOCK camera input (a stock hand/face image
+  rendered into a moving canvas -> MediaStream, swapped in for getUserMedia) and
+  SYNTHETIC pointer/keyboard events, then reads the live node ports. Lets vision
+  + input nodes be verified headlessly - no real webcam or human needed.
+  Fixtures: tools/qa/fixtures/*.jpg (MediaPipe public test assets, Apache-2.0).
+  Run: serve the repo and open this file; or drive window.qa.* from a harness.
+-->
+<iframe id="cf" src="../mmcomposer/index.html?nodeId=qa" style="width:900px;height:560px;border:0;display:block;background:#000"></iframe>
+<pre id="log" style="position:fixed;right:0;top:0;width:560px;height:100vh;overflow:auto;margin:0;padding:8px;background:#000;white-space:pre-wrap"></pre>
+<script type="module">
+const cf=document.getElementById('cf'), logEl=document.getElementById('log');
+const results=[]; const rec=(name,pass,detail)=>{ results.push({n:name,v:pass?'PASS':'FAIL',d:detail}); logEl.textContent=results.map(r=>`${r.v}  ${r.n.padEnd(20)} ${r.d}`).join('\n'); window.__qa=results; };
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let lastPorts={}; addEventListener('message',e=>{ const d=e.data; if(d&&d.type==='mm:logic-ports') lastPorts=d.values||{}; });
+
+// ---- MOCK CAMERA: a moving canvas drawing a fixture -> MediaStream ----
+const mock={canvas:null,ctx:null,img:null,mode:'hand',t:0,stream:null};
+function startMockPaint(){ mock.canvas=document.createElement('canvas'); mock.canvas.width=640; mock.canvas.height=480; mock.ctx=mock.canvas.getContext('2d');
+  (function paint(){ mock.t++; const x=mock.ctx; x.fillStyle='#17202c'; x.fillRect(0,0,640,480);
+    if(mock.mode==='text'){ x.fillStyle='#fff'; x.font='bold 110px sans-serif'; x.textBaseline='middle'; x.textAlign='center'; x.fillText('HELLO',320,240); }
+    else if(mock.img&&mock.img.complete&&mock.img.naturalWidth){ const dx=55*Math.sin(mock.t/45); const s=Math.min(640/mock.img.width,480/mock.img.height)*0.95; const w=mock.img.width*s,h=mock.img.height*s; x.drawImage(mock.img,(640-w)/2+dx,(480-h)/2,w,h); }
+    requestAnimationFrame(paint); })();
+  mock.stream=mock.canvas.captureStream(30);
+}
+function setFixture(mode,url){ return new Promise(res=>{ mock.mode=mode; if(!url){res();return;} const im=new Image(); im.onload=()=>{mock.img=im;res();}; im.onerror=()=>res(); im.src=url; }); }
+function installCameraMock(){ const w=cf.contentWindow; const md=w.navigator.mediaDevices; const orig=md.getUserMedia.bind(md); md.getUserMedia=async(c)=>{ if(c&&c.video) return mock.stream; return orig(c); }; }
+
+// ---- composer driver ----
+function post(msg){ cf.contentWindow.postMessage(Object.assign({nodeId:'qa'},msg),'*'); }
+function initGraph(payload){ const base={type:'mm:init',state:{v:1,canvasW:900,canvasH:560,background:'#0c0f14',inputs:{camera:false,mic:false},wiredMasks:{},layers:[]},content:[],imports:{},effects:[],positions:[],triggers:[],layers:[],logic:null}; post(Object.assign(base,payload)); post({type:'mm:logic-run',on:true}); lastPorts={}; }
+// idempotent: only enable if the chip is OFF (clicking an ON chip disables it)
+function enableComposerCamera(){ try{ const b=cf.contentDocument.getElementById('permCam'); if(b && /\boff\b/.test(b.className)) b.click(); }catch(e){} }
+// synthetic pointer on the composer's INPUT surface (#stageHost, where LogicInputs attaches)
+function ptr(type,nx,ny,onWin){ const d=cf.contentDocument, w=cf.contentWindow; const sf=d.getElementById('stageHost')||d.body; const r=sf.getBoundingClientRect(); const ev=new w.PointerEvent(type,{clientX:r.left+nx*r.width,clientY:r.top+ny*r.height,pointerType:'mouse',pointerId:1,bubbles:true}); (onWin?w:sf).dispatchEvent(ev); }
+const E=(fn,fp,tn,tp)=>({from:{node:fn,port:fp},to:{node:tn,port:tp}});
+
+async function run(){
+  await new Promise(r=>{ if(cf.contentDocument&&cf.contentDocument.readyState==='complete') r(); else cf.addEventListener('load',r); });
+  await sleep(400); installCameraMock(); startMockPaint();
+
+  // 1) vision-detect HAND on the stock hand fixture
+  await setFixture('hand','fixtures/hand_pointing.jpg');
+  initGraph({ logic:{nodes:[{id:'cam',kind:'input-camera',params:{}},{id:'h',kind:'vision-detect',params:{detector:'hand'}}],edges:[E('cam','stream','h','stream')],outputs:[],readbacks:[],forces:[]} });
+  enableComposerCamera(); await sleep(5000);
+  { const h=lastPorts.h||{}; const ok=h.present===true && h.indexTip && (h.indexTip.x!==0||h.indexTip.y!==0); rec('vision-detect (hand)', ok, `present=${h.present} count=${h.count} indexTip=(${h.indexTip&&h.indexTip.x?.toFixed(2)},${h.indexTip&&h.indexTip.y?.toFixed(2)}) gesture=${h.gesture}`); }
+
+  // 2) vision-detect FACE on the stock portrait fixture
+  await setFixture('face','fixtures/face_portrait.jpg');
+  initGraph({ logic:{nodes:[{id:'cam',kind:'input-camera',params:{}},{id:'f',kind:'vision-detect',params:{detector:'face'}}],edges:[E('cam','stream','f','stream')],outputs:[],readbacks:[],forces:[]} });
+  enableComposerCamera(); await sleep(7000);
+  { const f=lastPorts.f||{}; const ok=f.present===true && f.nose && (f.nose.x!==0||f.nose.y!==0); rec('vision-detect (face)', ok, `present=${f.present} nose=(${f.nose&&f.nose.x?.toFixed(2)},${f.nose&&f.nose.y?.toFixed(2)})`); }
+
+  // 3) vision-ocr on synthetic "HELLO" text
+  await setFixture('text');
+  initGraph({ logic:{nodes:[{id:'cam',kind:'input-camera',params:{}},{id:'o',kind:'vision-ocr',params:{query:'HELLO',interval:300}}],edges:[E('cam','stream','o','stream')],outputs:[],readbacks:[],forces:[]} });
+  enableComposerCamera(); await sleep(11000);
+  { const o=lastPorts.o||{}; const ok=typeof o.text==='string' && /hello/i.test(o.text); rec('vision-ocr', ok, `text=${JSON.stringify((o.text||'').slice(0,20))} matched=${o.matched}`); }
+
+  // 4) input-pointer DRAG (synthetic)
+  initGraph({ logic:{nodes:[{id:'p',kind:'input-pointer',params:{}}],edges:[],outputs:[],readbacks:[],forces:[]} });
+  await sleep(400); ptr('pointermove',0.3,0.3); ptr('pointerdown',0.3,0.3); ptr('pointermove',0.8,0.7); await sleep(300);
+  { const p=lastPorts.p||{}; const ok=p.isDown===true && Math.abs((p.x||0)-0.8)<0.05; rec('input-pointer (drag)', ok, `isDown=${p.isDown} x=${p.x?.toFixed(2)} downX=${p.downX?.toFixed(2)}`); ptr('pointerup',0.8,0.7,true); }
+
+  rec('— DONE —', true, `${results.filter(r=>r.v==='PASS').length}/${results.length-0} passed`);
+  window.__qaDone=true;
+}
+run();
+window.qa={ setFixture, initGraph, enableComposerCamera, ptr, getPorts:()=>lastPorts };
+</script></body></html>
