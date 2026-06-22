@@ -7241,14 +7241,18 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    tokens are the full whiteboard palette; renderers fall back to raw CSS
    colors for non-token values. */
 :root {
-  --wb-ink:    oklch(30% 0.012 60);
-  --wb-gray:   oklch(62% 0.01 70);
-  --wb-blue:   oklch(56% 0.13 245);
-  --wb-green:  oklch(58% 0.13 155);
-  --wb-yellow: oklch(86% 0.12 95);
-  --wb-pink:   oklch(72% 0.13 5);
-  --wb-purple: oklch(58% 0.14 295);
-  --wb-orange: oklch(68% 0.16 50);
+  /* FigJam/Miro-tuned palette: a cohesive, friendly set - cool-neutral ink +
+     gray, and chroma harmonised across the hues so no single colour shouts.
+     Used as ink/stroke/text, sticky + shape fills (mixed light), and table
+     cell tints (mixed lighter still). */
+  --wb-ink:    oklch(34% 0.022 264);
+  --wb-gray:   oklch(72% 0.013 264);
+  --wb-blue:   oklch(64% 0.146 242);
+  --wb-green:  oklch(68% 0.142 158);
+  --wb-yellow: oklch(85% 0.135 92);
+  --wb-pink:   oklch(69% 0.158 8);
+  --wb-purple: oklch(60% 0.165 300);
+  --wb-orange: oklch(73% 0.152 58);
 }
 /* Build mode: visible but completely inert - explicitly cover descendants
    too, since a child with `pointer-events: auto` would otherwise punch
@@ -7333,10 +7337,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   position: absolute;
   box-sizing: border-box;
   border-style: solid;
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-}
-.workflow-wb-table-cell.is-sel {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  /* background + border-color come inline: a soft tint of the fill token and a
+     calculated subtle shade of that tint (see WorkflowWbTable). */
 }
 /* Full-bleed transparent layer that captures cell range-selection while the
    table is selected. Sits above the cells, below the resize strips. */
