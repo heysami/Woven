@@ -7382,6 +7382,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._share_comments_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comment_shot":
             return self._share_comment_shot_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__share_housekeeping":
+            return self._share_housekeeping_get()
         if url_path == "/__ls_dirs":
             return self._ls_dirs(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__fs_list":
@@ -14294,6 +14296,45 @@ class H(http.server.SimpleHTTPRequestHandler):
         with contextlib.suppress(Exception):
             self.wfile.write(data)
 
+    # GET /__share_housekeeping
+    # Cross-project screenshot inventory for the Shares > Housekeeping view.
+    # Every prototype that has been shared (taken from the share registry, so
+    # "shared before or currently") is grouped per project+prototype, with how
+    # many of its review comments carry a page screenshot and the disk those
+    # screenshots occupy. Orphan comment groups inside those same projects
+    # (share record since deleted, comments + images left behind) surface too,
+    # flagged shareExists:false - those are exactly what cleanup is for.
+    def _share_housekeeping_get(self):
+        recs = _shares.shares_load().get("shares", [])
+        by_key, proj_ids, seen = {}, [], set()
+        for r in recs:
+            pid = r.get("project")
+            if not pid:
+                continue
+            if pid not in seen:
+                seen.add(pid); proj_ids.append(pid)
+            by_key[(pid, r.get("prototype"))] = r
+        groups = []
+        for pid in proj_ids:
+            try:
+                root = resolve_project_root({"project": pid})
+            except Exception:
+                continue
+            for proto, s in _shares.comment_image_stats(root).items():
+                rec = by_key.get((pid, proto))
+                groups.append({
+                    "project":       pid,
+                    "prototype":     proto,
+                    "label":         (rec or {}).get("label") or proto,
+                    "shareExists":   rec is not None,
+                    "totalComments": s["total"],
+                    "withImages":    s["withImages"],
+                    "imageBytes":    s["imageBytes"],
+                })
+        # Most screenshots first - that's what you opened housekeeping to clear.
+        groups.sort(key=lambda g: (-g["withImages"], -g["totalComments"]))
+        return self._reply(200, {"groups": groups})
+
     # POST /__share/create?project=<id>  body {prototype, emailGate?, label?, start?}
     # Idempotent per (project, prototype) - re-creating returns the existing
     # share. start defaults true: create-and-tunnel is the one-click path.
@@ -14453,6 +14494,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 ids = _shares.comments_mark_processed(project_root, body.get("commentIds"))
                 _broadcast_share_comments_changed(pid, proto)
                 return self._reply(200, {"ok": True, "processed": ids})
+            if op == "clear_shots":
+                ids = _shares.comments_clear_shots(project_root, body.get("commentIds"))
+                _broadcast_share_comments_changed(pid, proto)
+                return self._reply(200, {"ok": True, "cleared": ids})
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         return self._reply(400, {"error": f"unknown op: {op!r}"})

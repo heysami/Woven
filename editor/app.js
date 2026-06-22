@@ -28402,6 +28402,29 @@ const WORKFLOW_ALIGN_ACTIONS = [
 // transform, so reading its DOM rect each frame keeps the strip glued
 // through pan/zoom - same pattern as WorkflowNodeTopActions). Icon-only
 // buttons with the shared portal-tip tooltip.
+/* WorkflowBulkDeleteBar - the floating "option bar" that appears once one or
+   more output (asset) nodes are checkbox-selected for cleanup. Fixed at the
+   bottom-center of the viewport, above the chat dock, so it's reachable from
+   anywhere on the canvas. Delete is destructive of the node (not the file on
+   disk) and confirms before acting; Clear drops the selection. */
+function WorkflowBulkDeleteBar({ count, onDelete, onClear }) {
+  const [busy, setBusy] = useState(false);
+  const doDelete = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onDelete(); } finally { setBusy(false); }
+  };
+  return createPortal(html`
+    <div className="workflow-bulk-bar" onMouseDown=${(e) => e.stopPropagation()}>
+      <span className="workflow-bulk-bar-count">${count} selected</span>
+      <button className="workflow-bulk-bar-btn" onClick=${onClear} disabled=${busy}>Clear</button>
+      <button className="workflow-bulk-bar-btn is-danger" onClick=${doDelete} disabled=${busy}>
+        <${Icon.Trash}/> ${busy ? "Deleting…" : "Delete"}
+      </button>
+    </div>
+  `, document.body);
+}
+
 function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
   const [rect, setRect] = useState(null);
   const [tipState, setTipState] = useState(null);
@@ -29009,6 +29032,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   //      moves the whole group by the same delta.
   const [selectedNodeIds, setSelectedNodeIds] = useState(() => new Set());
   const selectedNodeIdsRef = useRef(selectedNodeIds); selectedNodeIdsRef.current = selectedNodeIds;
+  // ── Bulk-delete selection ──
+  // A SEPARATE selection from the normal click/marquee one above: explicit
+  // checkboxes on output (asset) nodes feed this set. Kept orthogonal so
+  // ticking boxes for cleanup never disturbs the chat-context selection, the
+  // single-asset action bar, or the align bar. When non-empty, a floating
+  // delete bar appears (see WorkflowBulkDeleteBar) and every asset node shows
+  // its checkbox (body[data-wf-bulk-active]).
+  const [bulkSel, setBulkSel] = useState(() => new Set());
+  const toggleBulkNode = useCallback((id) => {
+    if (!id) return;
+    setBulkSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }, []);
+  const clearBulkSel = useCallback(() => setBulkSel(new Set()), []);
   // ── Whiteboard mode ──
   // Build (false, default) vs Whiteboard (true). Same canvas, same pan/zoom;
   // both node + whiteboard content stay visible in BOTH modes - the mode
@@ -31191,6 +31227,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     for (const id of Array.from(sel)) { removeNode(id); count++; }
     return count;
   }, [selectionRef, removeNode]);
+
+  // Bulk-delete the checkbox-selected output nodes. Same removeNode the single
+  // ×/Delete-key path uses (graph + edges + daemon-sync), so the generated
+  // files on disk are left alone - this only clears the canvas.
+  const bulkDeleteSelected = useCallback(async () => {
+    const ids = Array.from(bulkSel);
+    if (!ids.length) return;
+    const ok = await uiConfirm(
+      `Remove ${ids.length} output${ids.length > 1 ? "s" : ""} from the canvas? `
+      + `The node${ids.length > 1 ? "s are" : " is"} deleted; the generated file${ids.length > 1 ? "s stay" : " stays"} on disk.`);
+    if (!ok) return;
+    for (const id of ids) removeNode(id);
+    clearBulkSel();
+  }, [bulkSel, removeNode, clearBulkSel]);
+  // Mirror "bulk mode on" to the body so every asset node reveals its checkbox
+  // (CSS gate), and prune ids whose node has since vanished.
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.body.setAttribute("data-wf-bulk-active", bulkSel.size ? "true" : "false");
+    }
+    return () => { if (typeof document !== "undefined") document.body.removeAttribute("data-wf-bulk-active"); };
+  }, [bulkSel.size]);
+  useEffect(() => {
+    if (!bulkSel.size) return;
+    const live = new Set((data.nodes || []).map(n => n.id));
+    let drift = false;
+    for (const id of bulkSel) if (!live.has(id)) { drift = true; break; }
+    if (drift) setBulkSel(prev => new Set(Array.from(prev).filter(id => live.has(id))));
+  }, [data.nodes, bulkSel]);
 
   // Phase 4a - settings dialog open state + per-skill run states.
   // runStates is keyed by skill node id; each entry holds { status, error, ranAt }.
@@ -40108,6 +40173,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.boundTo?.node]}
                 selected=${selectedNodeIds.has(n.id)}
+                bulkChecked=${bulkSel.has(n.id)}
+                onBulkToggle=${() => toggleBulkNode(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 replaceTarget=${assetReplaceMap[n.id] || null}
                 onReplace=${() => replaceAssetOutput(n.id)}
@@ -41132,6 +41199,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       />`}
       ${(selectedNodeIds.size + selectedWbIds.size) > 1 && html`
         <${WorkflowGroupAlignBar} onAlign=${alignSelection} onSaveGroup=${saveSelectionAsGroup}/>
+      `}
+      ${bulkSel.size > 0 && html`
+        <${WorkflowBulkDeleteBar} count=${bulkSel.size} onDelete=${bulkDeleteSelected} onClear=${clearBulkSel}/>
       `}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
       ${connectorNode && connectorMenus && html`<${WorkflowConnectorSpawn}
@@ -51227,7 +51297,7 @@ function assetImageHasTransparentBg(img) {
   } catch { return false; }
 }
 
-function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible }) {
+function WorkflowAssetNode({ node, zoom, orphaned, selected, bulkChecked, onBulkToggle, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   // Canvas LOD - embed kinds (live iframes) gate at the embed floor and get
   // hidden+veiled when far; raster/video kinds gate INITIAL load only (at
@@ -52449,15 +52519,22 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       data-dragging=${dragging ? "true" : "false"}
       data-orphan=${orphaned ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
+      data-bulk-checked=${bulkChecked ? "true" : "false"}
       data-kind=${kind}
       data-lod=${lod}
       data-transparent-bg=${bgTransparent ? "true" : "false"}
       data-animated=${node.animated ? "true" : "false"}
       data-run-status=${node.runStatus || ""}
-      onMouseDownCapture=${() => onSelect && onSelect()}
+      onMouseDownCapture=${(e) => { if (e.target && e.target.closest && e.target.closest("[data-wf-bulk]")) return; onSelect && onSelect(); }}
       title=${node.runStatus === "error" && node.runError ? ("Run error: " + node.runError) : undefined}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
+      <label className=${"workflow-node-bulk-check" + (bulkChecked ? " is-checked" : "")}
+        data-wf-bulk="1" title="Select for bulk delete"
+        onMouseDown=${(e) => e.stopPropagation()} onClick=${(e) => e.stopPropagation()}>
+        <input type="checkbox" data-wf-bulk="1" checked=${!!bulkChecked}
+          onChange=${(e) => { e.stopPropagation(); onBulkToggle && onBulkToggle(); }}/>
+      </label>
       ${galleryReminderOpen && html`
         <div className="workflow-ds-reminder" onMouseDown=${(e) => e.stopPropagation()}>
           <div className="workflow-ds-reminder-body">

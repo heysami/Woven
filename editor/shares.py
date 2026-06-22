@@ -652,6 +652,51 @@ def comment_set_shot(project_root, comment_id, data_url):
     return c
 
 
+def comment_image_stats(project_root):
+    """Per-prototype screenshot inventory for the housekeeping view:
+    {prototype: {"total": n, "withImages": n, "imageBytes": n}}. `withImages`
+    and `imageBytes` count only screenshots that still exist on disk."""
+    out = {}
+    for c in comments_load(project_root).get("comments", []):
+        proto = c.get("prototype") or "-"
+        g = out.setdefault(proto, {"total": 0, "withImages": 0, "imageBytes": 0})
+        g["total"] += 1
+        if c.get("shot"):
+            p = comment_shot_abspath(project_root, c.get("id"))
+            try:
+                if p and os.path.isfile(p):
+                    g["withImages"] += 1
+                    g["imageBytes"] += os.path.getsize(p)
+            except OSError:
+                pass
+    return out
+
+
+def comments_clear_shots(project_root, comment_ids):
+    """Strip the page screenshot from each given comment - removes the file and
+    clears shot/shotAt, leaving the comment thread intact. Returns the ids that
+    had a screenshot to clear. One load/save for the whole batch."""
+    wanted = set(comment_ids or [])
+    cleared, paths = [], []
+    with _COMMENTS_LOCK:
+        data = comments_load(project_root)
+        for c in data.get("comments", []):
+            if c.get("id") in wanted and c.get("shot"):
+                cleared.append(c["id"])
+                paths.append(comment_shot_abspath(project_root, c["id"]))
+                c["shot"] = ""
+                c["shotAt"] = ""
+        if cleared:
+            _comments_save(project_root, data)
+    for p in paths:
+        try:
+            if p and os.path.isfile(p):
+                os.remove(p)
+        except OSError:
+            pass
+    return cleared
+
+
 def comments_mark_processed(project_root, comment_ids):
     """Stamp processedAt on the given comments - called when the editor
     dispatches them to an agent run. Status is left alone; 'processed' is
