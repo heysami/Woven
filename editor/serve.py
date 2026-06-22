@@ -3802,7 +3802,7 @@ def _broadcast_workflow_change(project_id: str) -> None:
 # NOT node kinds, so they skip the kind registry / runStatus / reconciler
 # machinery entirely). Shared by the editor's POST /__workflow save and
 # the agent-facing POST /__workflow/wb ops endpoint.
-_WB_ITEM_TYPES = ("text", "textbox", "sticky", "ink", "shape", "arrow", "image")
+_WB_ITEM_TYPES = ("text", "textbox", "sticky", "ink", "shape", "arrow", "image", "table")
 
 def _sanitize_wb_items(items):
     """Permissive structural sanitize, mirroring the node sanitize in
@@ -3839,6 +3839,27 @@ def _sanitize_wb_items(items):
                 entry["points"] = [float(p) for p in pts[:8000]]
             except Exception:
                 continue
+        if typ == "table":
+            # Grid geometry: col widths + row heights (number lists) and a list
+            # of {r,c,rs,cs} merge regions. Coerce defensively; bound items/nodes
+            # carry their own cell:{tableId,r,c,ox,oy} (passed through as-is on
+            # the wb item / node, like any other unknown field).
+            try:
+                entry["cols"] = [float(v) for v in (entry.get("cols") or [])[:1000]]
+                entry["rows"] = [float(v) for v in (entry.get("rows") or [])[:1000]]
+            except Exception:
+                continue
+            if not entry["cols"] or not entry["rows"]: continue
+            merges = entry.get("merges")
+            clean_merges = []
+            if isinstance(merges, list):
+                for m in merges[:4000]:
+                    if not isinstance(m, dict): continue
+                    try:
+                        clean_merges.append({k: int(m[k]) for k in ("r", "c", "rs", "cs")})
+                    except Exception:
+                        continue
+            entry["merges"] = clean_merges
         seen.add(wid)
         clean.append(entry)
     return clean
