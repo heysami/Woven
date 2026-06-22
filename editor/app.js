@@ -1031,6 +1031,66 @@ function pulseInteractingFlag(ms = 140) {
   }, ms);
 }
 
+// v3.x - Resolve the element that a forwarded wheel should actually scroll
+// inside a (same-origin) node iframe. Chrome pins the wheel target to whatever
+// was under the pointer at the last pointer-MOVE; right after a click-select
+// the iframe was still pointer-events:none, so plain wheels land on the parent
+// wrap and we forward them in. window.scrollBy only moves the iframe's ROOT
+// scroller, but most prototypes pin html/body and scroll an inner container -
+// so we hit-test the pointer position and climb to the nearest ancestor that
+// can scroll in the wheel's direction. Returns null when nothing inner
+// qualifies (caller falls back to contentWindow.scrollBy).
+function findScrollableUnderPointer(doc, ifr, e, dx, dy) {
+  if (!doc) return null;
+  // Pointer in iframe-local, un-scaled coords. The node iframe is CSS-scaled
+  // to fit, so derive the scale from rendered-width / layout-width (same
+  // conversion the cmd+wheel forwarder uses).
+  const fr = ifr.getBoundingClientRect();
+  const cw = ifr.clientWidth || ifr.offsetWidth || fr.width || 1;
+  const ch = ifr.clientHeight || ifr.offsetHeight || fr.height || 1;
+  const sx = fr.width > 0 ? cw / fr.width : 1;
+  const sy = fr.height > 0 ? ch / fr.height : 1;
+  const lx = (e.clientX - fr.left) * sx;
+  const ly = (e.clientY - fr.top) * sy;
+  let el = null;
+  try { el = doc.elementFromPoint(lx, ly); } catch {}
+  const win = doc.defaultView || window;
+  const canScroll = (node) => {
+    if (!node || node.nodeType !== 1) return false;
+    let st; try { st = win.getComputedStyle(node); } catch { return false; }
+    if (dy) {
+      const oy = st.overflowY;
+      if ((oy === "auto" || oy === "scroll" || oy === "overlay") &&
+          node.scrollHeight > node.clientHeight + 1) {
+        const room = dy > 0
+          ? node.scrollTop + node.clientHeight < node.scrollHeight - 1
+          : node.scrollTop > 0;
+        if (room) return true;
+      }
+    }
+    if (dx) {
+      const ox = st.overflowX;
+      if ((ox === "auto" || ox === "scroll" || ox === "overlay") &&
+          node.scrollWidth > node.clientWidth + 1) {
+        const room = dx > 0
+          ? node.scrollLeft + node.clientWidth < node.scrollWidth - 1
+          : node.scrollLeft > 0;
+        if (room) return true;
+      }
+    }
+    return false;
+  };
+  for (let node = el; node && node !== doc; node = node.parentElement) {
+    if (canScroll(node)) return node;
+  }
+  // Document-level scroller fallback (overflow on html/body).
+  const root = doc.scrollingElement || doc.documentElement;
+  if (root && (root.scrollHeight > root.clientHeight + 1 || root.scrollWidth > root.clientWidth + 1)) {
+    return root;
+  }
+  return null;
+}
+
 function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScroll = false, disableEmptyDragPan = false, interactive = true } = {}) {
   const wrapRef = useRef(null);
   const [pan, setPan] = useState({ x: initial.x, y: initial.y });
@@ -1238,7 +1298,20 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
             if (ifr && ifr.contentWindow) {
               try {
                 const m = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? (ifr.clientHeight || 600) : 1);
-                ifr.contentWindow.scrollBy(e.deltaX * m, e.deltaY * m);
+                const dx = e.deltaX * m, dy = e.deltaY * m;
+                const doc = ifr.contentDocument;
+                // scrollBy on the window only moves the iframe's ROOT scroller.
+                // Most prototypes pin html/body (overflow:hidden) and scroll an
+                // inner container (`.app{overflow:auto}`) instead - so a plain
+                // window.scrollBy is a silent no-op and the node looks frozen
+                // until the pointer physically moves and native scroll-chaining
+                // finds the real scroller. Resolve that scroller ourselves:
+                // hit-test the element under the pointer (in iframe-local,
+                // un-scaled coords), then walk up to the nearest ancestor that
+                // can actually scroll in the wheel's direction.
+                const scroller = findScrollableUnderPointer(doc, ifr, e, dx, dy);
+                if (scroller) scroller.scrollBy(dx, dy);
+                else ifr.contentWindow.scrollBy(dx, dy);
                 e.preventDefault();
               } catch { /* cross-origin iframe - leave native handling */ }
             }
@@ -7831,7 +7904,7 @@ function formatWbContext({ wb, selectedWbIds } = {}) {
   const tail = items.length > MAX ? [`  …and ${items.length - MAX} more items`] : [];
   return [
     `<whiteboard count="${items.length}" selected="${Array.from(sel).length}">`,
-    `The user is in WHITEBOARD MODE on the workflow canvas. The items below are the whiteboard annotation layer - the top-level \`wb\` array in workflow/workflow.json (siblings of nodes/edges; NOT nodes). Read the full state from that file. To create / modify / delete whiteboard items, POST /__workflow/wb?project=<id> with JSON {"add":[items],"update":[{"id":…, …patch}],"remove":[ids]} - NEVER edit workflow.json directly (it bypasses the write lock). Item types: text, textbox, sticky, ink, shape, arrow, image. Geometry is world-space canvas coords (x/y/w/h; arrows use x1/y1/x2/y2; ink stores a flat points array relative to x/y). Colors are tokens: ink|gray|blue|green|yellow|pink|purple|orange. Omit "id" and "z" on added items - the daemon assigns them.`,
+    `The user is in WHITEBOARD MODE on the workflow canvas. The items below are the whiteboard annotation layer - the top-level \`wb\` array in workflow/workflow.json (siblings of nodes/edges; NOT nodes). Read the full state from that file. To create / modify / delete whiteboard items, POST /__workflow/wb?project=<id> with JSON {"add":[items],"update":[{"id":…, …patch}],"remove":[ids]} - NEVER edit workflow.json directly (it bypasses the write lock). Item types: text, textbox, sticky, ink, shape, arrow, image, table. Geometry is world-space canvas coords (x/y/w/h; arrows use x1/y1/x2/y2; ink stores a flat points array relative to x/y). A table is a grid: cols=[colWidths], rows=[rowHeights] (w/h must equal their sums), merges=[{r,c,rs,cs}] for merged regions; OTHER wb items and nodes attach to a cell via their own cell:{tableId,r,c,ox,oy} field (ox/oy = the item's top-left offset from the cell). Colors are tokens: ink|gray|blue|green|yellow|pink|purple|orange. Omit "id" and "z" on added items - the daemon assigns them.`,
     "",
     ...lines,
     ...tail,
@@ -8958,7 +9031,7 @@ function dockSlot(i, count) {
    ChatDrawer's wiring stays in App; tasks/comments/git render their embedded
    panels here. The left edge resizes the whole dock; the column/row dividers
    resize the panes. Only polls /__runs while a tasks tile is open. */
-function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating }) {
+function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating, hidden }) {
   const [runs, setRuns] = useState([]);
   // Drag-to-swap state: dragId = the tile being dragged by its grip; overId =
   // the tile currently under the pointer (the swap target). Tile rects are
@@ -9032,7 +9105,8 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartCh
   const rowDividerStyle = count === 3 ? { left: "var(--dock-col-split, 50%)", right: "0" } : null;
 
   return html`
-    <div className=${"right-dock" + (floating ? " right-dock-floating" : "")}>
+    <div className=${"right-dock" + (floating ? " right-dock-floating" : "")}
+      style=${hidden ? { display: "none" } : null} aria-hidden=${hidden ? "true" : null}>
       <div className="dock-resize-edge" onMouseDown=${onResizeStart} title="Drag to resize the dock"/>
       <div className="dock-grid" data-count=${count}>
         ${windows.map((w, i) => {
@@ -20716,6 +20790,7 @@ function SharesLanding({ onCountChange }) {
   const [copiedId, setCopiedId] = useState(null);
   const [query, setQuery] = useState("");       // free-text filter
   const [projectFilter, setProjectFilter] = useState("");  // "" = all projects
+  const [hkOpen, setHkOpen] = useState(false);  // Housekeeping (screenshot cleanup) overlay
   const reload = useCallback(() => {
     fetch("/__shares")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
@@ -20805,6 +20880,10 @@ function SharesLanding({ onCountChange }) {
             </select>
           `}
           <span className="shares-toolbar-count">${filteredShares.length} of ${shares.length}</span>
+          <button className="shares-btn shares-hk-open" onClick=${() => setHkOpen(true)}
+            title="Housekeeping - review and bulk-delete comment screenshots across shared prototypes">
+            <${Icon.Image}/> Housekeeping
+          </button>
         </div>
       `}
       ${cfMissing && html`
@@ -20904,8 +20983,182 @@ function SharesLanding({ onCountChange }) {
           </div>
         `;
       })}
+      ${hkOpen && html`<${ShareHousekeepingModal} onClose=${() => { setHkOpen(false); reload(); }}/>`}
     </div>
   `;
+}
+
+/* ShareHousekeepingModal - reached from the Shares tab's "Housekeeping" button.
+   Two views in one overlay:
+     1. Group list - every prototype that has been shared (or still has review
+        comments) across all projects, with how many comments carry a page
+        screenshot and the disk those screenshots occupy (GET /__share_housekeeping).
+     2. Per-prototype table - all comments for the picked group, filterable by
+        status / image presence / text, with per-row + select-all checkboxes and
+        a bulk "Delete images" action (POST /__share_comments op:"clear_shots").
+   Deleting only strips the screenshot (file + shot/shotAt fields); the comment
+   thread itself is left intact. Cross-project, so URLs carry the group's own
+   project id rather than going through apiUrl (which forces the active one). */
+function ShareHousekeepingModal({ onClose }) {
+  const [groups, setGroups] = useState(null);   // null = loading
+  const [err, setErr] = useState(null);
+  const [sel, setSel] = useState(null);         // picked group {project, prototype, label}
+  const [comments, setComments] = useState(null);
+  const [detailErr, setDetailErr] = useState(null);
+  const [filter, setFilter] = useState("withImages");
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState({});     // commentId → true
+  const [busy, setBusy] = useState(false);
+
+  const loadGroups = useCallback(() => {
+    fetch("/__share_housekeeping")
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("failed to load"))))
+      .then(j => setGroups(j.groups || []))
+      .catch(e => setErr(String(e.message || e)));
+  }, []);
+  useEffect(() => { loadGroups(); }, [loadGroups]);
+
+  const loadComments = useCallback((g) => {
+    setComments(null); setDetailErr(null);
+    fetch(`/__share_comments?project=${encodeURIComponent(g.project)}&prototype=${encodeURIComponent(g.prototype)}`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("failed to load comments"))))
+      .then(j => setComments(j.comments || []))
+      .catch(e => setDetailErr(String(e.message || e)));
+  }, []);
+
+  const openGroup = (g) => { setSel(g); setPicked({}); setFilter("withImages"); setQ(""); loadComments(g); };
+  const shotUrl = (g, c) => `/__share_comment_shot?project=${encodeURIComponent(g.project)}&comment=${encodeURIComponent(c.id)}&v=${encodeURIComponent(c.shotAt || "")}`;
+
+  const visible = useMemo(() => {
+    let list = comments || [];
+    if (filter === "withImages") list = list.filter(c => c.shot);
+    else if (filter !== "all") list = list.filter(c => (c.status || "open") === filter);
+    const needle = q.trim().toLowerCase();
+    if (needle) list = list.filter(c =>
+      ((c.text || "") + " " + ((c.author && c.author.name) || "") + " " + (c.page || "")).toLowerCase().includes(needle));
+    return list;
+  }, [comments, filter, q]);
+  const withImageVisible = useMemo(() => visible.filter(c => c.shot), [visible]);
+  const pickedIds = Object.keys(picked).filter(id => picked[id]);
+  const allChecked = withImageVisible.length > 0 && withImageVisible.every(c => picked[c.id]);
+  const toggleAll = () => {
+    if (allChecked) { setPicked({}); return; }
+    const n = {}; withImageVisible.forEach(c => { n[c.id] = true; }); setPicked(n);
+  };
+
+  const fmtBytes = (n) => {
+    n = n || 0;
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(0) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
+  };
+
+  const deleteSelected = async () => {
+    if (!sel || pickedIds.length === 0 || busy) return;
+    if (!(await uiConfirm(`Delete ${pickedIds.length} screenshot${pickedIds.length > 1 ? "s" : ""}? The comment thread${pickedIds.length > 1 ? "s stay" : " stays"} - only the image${pickedIds.length > 1 ? "s are" : " is"} removed.`))) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/__share_comments?project=${encodeURIComponent(sel.project)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "clear_shots", prototype: sel.prototype, commentIds: pickedIds }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "delete failed");
+      setPicked({});
+      loadComments(sel);
+      loadGroups();
+    } catch (e) { setDetailErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  return createPortal(html`
+    <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <div className="newproj-card shares-hk-card">
+        <header className="newproj-card-head">
+          <h2>${sel ? "Screenshots · " + sel.label : "Share housekeeping"}</h2>
+          <button className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+        </header>
+        <div className="newproj-card-body shares-hk-body">
+          ${!sel ? html`
+            ${err && html`<div className="shares-error-banner">${err}</div>`}
+            ${groups === null && html`<div className="runs-empty">Loading…</div>`}
+            ${groups !== null && groups.length === 0 && html`<div className="runs-empty">No shared prototypes with comments yet.</div>`}
+            ${groups !== null && groups.length > 0 && html`
+              <div className="shares-hk-grouplist">
+                ${groups.map(g => html`
+                  <button className="shares-hk-grouprow" key=${g.project + "/" + g.prototype} onClick=${() => openGroup(g)}>
+                    <div className="shares-hk-grouprow-main">
+                      <div className="shares-hk-grouprow-label">
+                        ${g.label}${!g.shareExists ? html`<span className="shares-chip">unshared</span>` : ""}
+                      </div>
+                      <div className="shares-hk-grouprow-sub"><code>${g.project}</code> · <code>source/${g.prototype}/</code></div>
+                    </div>
+                    <div className="shares-hk-grouprow-stats">
+                      <span className="shares-hk-grouprow-imgs" title="comments with a screenshot"><${Icon.Image}/> ${g.withImages}</span>
+                      <span className="shares-hk-grouprow-bytes">${fmtBytes(g.imageBytes)}</span>
+                      <span className="shares-hk-grouprow-total">${g.totalComments} comment${g.totalComments === 1 ? "" : "s"}</span>
+                    </div>
+                  </button>
+                `)}
+              </div>
+            `}
+          ` : html`
+            <div className="shares-hk-detail-toolbar">
+              <button className="shares-btn" onClick=${() => { setSel(null); setComments(null); setPicked({}); }}>← Back</button>
+              <div className="th-tasks-filter" role="tablist" aria-label="Filter comments">
+                ${[["withImages", "With images"], ["open", "Open"], ["done", "Done"], ["archived", "Archived"], ["all", "All"]].map(([k, lbl]) => html`
+                  <button key=${k} role="tab" aria-selected=${filter === k}
+                    className=${"th-tasks-filter-btn" + (filter === k ? " is-active" : "")}
+                    onClick=${() => setFilter(k)}>${lbl}</button>
+                `)}
+              </div>
+              <input className="shares-search" type="search" placeholder="Search comments…" value=${q} onInput=${e => setQ(e.target.value)}/>
+            </div>
+            ${detailErr && html`<div className="shares-error-banner">${detailErr}</div>`}
+            <div className="shares-hk-bulkbar">
+              <label className="shares-hk-selall">
+                <input type="checkbox" checked=${allChecked} disabled=${withImageVisible.length === 0} onChange=${toggleAll}/>
+                Select all images (${withImageVisible.length})
+              </label>
+              <span style=${{ flex: 1 }}></span>
+              <button className="shares-btn shares-btn-danger" disabled=${pickedIds.length === 0 || busy} onClick=${deleteSelected}>
+                ${busy ? "Deleting…" : `Delete ${pickedIds.length || ""} image${pickedIds.length === 1 ? "" : "s"}`}
+              </button>
+            </div>
+            ${comments === null && html`<div className="runs-empty">Loading…</div>`}
+            ${comments !== null && visible.length === 0 && html`<div className="runs-empty">No comments match this filter.</div>`}
+            ${comments !== null && visible.length > 0 && html`
+              <table className="shares-hk-table">
+                <thead><tr>
+                  <th className="shares-hk-col-check"></th><th>Image</th><th>Author</th>
+                  <th>Page</th><th>Comment</th><th>When</th><th>Status</th>
+                </tr></thead>
+                <tbody>
+                  ${visible.map(c => html`
+                    <tr key=${c.id} className=${c.shot ? "" : "is-noimg"}>
+                      <td className="shares-hk-col-check">
+                        ${c.shot ? html`<input type="checkbox" checked=${!!picked[c.id]}
+                          onChange=${e => setPicked(p => ({ ...p, [c.id]: e.target.checked }))}/>` : ""}
+                      </td>
+                      <td>${c.shot
+                        ? html`<a href=${shotUrl(sel, c)} target="_blank" rel="noopener" className="shares-hk-thumb">
+                            <img src=${shotUrl(sel, c)} loading="lazy" alt="Screenshot"/></a>`
+                        : html`<span className="shares-hk-noimg">none</span>`}</td>
+                      <td>${(c.author && c.author.name) || "Anonymous"}</td>
+                      <td className="shares-hk-page" title=${c.page || ""}>${c.page || ""}</td>
+                      <td className="shares-hk-text">${(c.text || "").slice(0, 140)}</td>
+                      <td className="shares-hk-when">${formatIsoAge(c.createdAt)}</td>
+                      <td><span className=${"sv-status-chip " + (c.status || "open")}>${c.status || "open"}</span></td>
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
+            `}
+          `}
+        </div>
+      </div>
+    </div>
+  `, document.body);
 }
 
 /* GitHubAccountButton - landing-page (top-right) GitHub account control. Sign-in
@@ -22088,6 +22341,10 @@ function WorkflowCanvas() {
   // drawer's --workflow-chat-width slot + canvas-shrink margin). chatRun is
   // the focused thread; a sync effect mirrors it into a thread window.
   const [dockWindows, setDockWindows]   = useState([]);
+  // Fullscreen canvas mode lives HERE (not inside WorkflowSurface) so the
+  // sibling RightDock can hide with it - the dock is rendered by WorkflowCanvas,
+  // not WorkflowSurface, so it never saw the surface-local fullscreen flag.
+  const [fullscreen, setFullscreen]     = useState(false);
   const [dockColSplit, setDockColSplit] = useState(() => Number(loadDock().colSplit) || 50);
   const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
@@ -23278,6 +23535,8 @@ function WorkflowCanvas() {
       onCloseHistory=${() => setHistoryOpen(false)}
       chatActive=${dockWindows.length > 0}
       chatBusy=${!!chatRun && !chatRunFinished}
+      fullscreen=${fullscreen}
+      setFullscreen=${setFullscreen}
       onOpenWindow=${openWindow}
       openKinds=${openKinds}
       onLibResizeStart=${startLibResize}
@@ -23313,6 +23572,7 @@ function WorkflowCanvas() {
     ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
     <${RightDock}
       floating
+      hidden=${fullscreen}
       windows=${dockWindows}
       onClose=${closeWindow}
       onSwap=${swapWindows}
@@ -23934,6 +24194,26 @@ const WORKFLOW_WB_FACTORY = {
     path: p.path || "", naturalW: p.naturalW ?? null, naturalH: p.naturalH ?? null,
     rotation: p.rotation ?? 0,
   }),
+  // A grid item. cols/rows are width/height arrays; merges is a list of
+  // rectangular regions { r, c, rs, cs } (anchor + row/col span). w/h are kept
+  // == sum(cols)/sum(rows) so the generic bbox/hit-test/overlay machinery
+  // treats it like any other box. It holds no content - other wb items AND
+  // workflow nodes BIND to a cell via their own `cell:{tableId,r,c,ox,oy}`
+  // field; see the wb-table helpers + the reconcile effect.
+  "table": (p = {}) => {
+    const cols = (Array.isArray(p.cols) && p.cols.length)
+      ? p.cols.map(n => Math.max(WB_TABLE_MIN_COL, Math.round(n)))
+      : Array.from({ length: Math.max(1, p.ncols || 4) }, () => WB_TABLE_DEFAULT_COL);
+    const rows = (Array.isArray(p.rows) && p.rows.length)
+      ? p.rows.map(n => Math.max(WB_TABLE_MIN_ROW, Math.round(n)))
+      : Array.from({ length: Math.max(1, p.nrows || 4) }, () => WB_TABLE_DEFAULT_ROW);
+    return {
+      type: "table", x: p.x ?? 0, y: p.y ?? 0,
+      w: cols.reduce((a, b) => a + b, 0), h: rows.reduce((a, b) => a + b, 0),
+      cols, rows, merges: Array.isArray(p.merges) ? p.merges : [],
+      color: p.color || "gray",
+    };
+  },
 };
 
 function wbMakeItem(type, payload) {
@@ -23958,6 +24238,80 @@ function wbMaxZ(items) {
   let z = 0;
   for (const it of (items || [])) if (typeof it.z === "number" && it.z > z) z = it.z;
   return z;
+}
+
+/* ───────────────────────── Whiteboard table geometry ─────────────────────
+   Pure helpers over a `table` wb item. Everything is world-space px. A cell
+   is addressed by its logical (r,c); merged cells collapse to their top-left
+   ANCHOR (r,c). Bound items store cell:{tableId,r,c,ox,oy} and are kept at
+   cellRect(r,c).topLeft + (ox,oy) by the reconcile effect. */
+const WB_TABLE_MIN_COL = 40;
+const WB_TABLE_MIN_ROW = 28;
+const WB_TABLE_DEFAULT_COL = 150;
+const WB_TABLE_DEFAULT_ROW = 44;
+
+function wbTableCols(t) {
+  return (t && Array.isArray(t.cols) && t.cols.length) ? t.cols
+    : [WB_TABLE_DEFAULT_COL, WB_TABLE_DEFAULT_COL, WB_TABLE_DEFAULT_COL];
+}
+function wbTableRows(t) {
+  return (t && Array.isArray(t.rows) && t.rows.length) ? t.rows
+    : [WB_TABLE_DEFAULT_ROW, WB_TABLE_DEFAULT_ROW, WB_TABLE_DEFAULT_ROW];
+}
+function wbTableTotalW(t) { return wbTableCols(t).reduce((a, b) => a + (b || 0), 0); }
+function wbTableTotalH(t) { return wbTableRows(t).reduce((a, b) => a + (b || 0), 0); }
+// Keep the cached bbox (w/h) in lockstep with the col/row arrays.
+function wbTableSync(t) { return { ...t, w: wbTableTotalW(t), h: wbTableTotalH(t) }; }
+function wbTableColLeft(t, c) {
+  const cols = wbTableCols(t); let x = t.x || 0;
+  for (let i = 0; i < c && i < cols.length; i++) x += cols[i] || 0;
+  return x;
+}
+function wbTableRowTop(t, r) {
+  const rows = wbTableRows(t); let y = t.y || 0;
+  for (let i = 0; i < r && i < rows.length; i++) y += rows[i] || 0;
+  return y;
+}
+// The merge region covering logical cell (r,c), or null.
+function wbTableMergeAt(t, r, c) {
+  for (const m of (t && t.merges) || []) {
+    if (m && r >= m.r && r < m.r + m.rs && c >= m.c && c < m.c + m.cs) return m;
+  }
+  return null;
+}
+// World rect for the cell at (r,c), expanded to its full merge region. Also
+// reports the anchor (ar,ac) and span (rs,cs).
+function wbTableCellRect(t, r, c) {
+  const m = wbTableMergeAt(t, r, c);
+  const ar = m ? m.r : r, ac = m ? m.c : c, rs = m ? m.rs : 1, cs = m ? m.cs : 1;
+  const cols = wbTableCols(t), rows = wbTableRows(t);
+  let w = 0; for (let i = 0; i < cs; i++) w += cols[ac + i] || 0;
+  let h = 0; for (let i = 0; i < rs; i++) h += rows[ar + i] || 0;
+  return { x: wbTableColLeft(t, ac), y: wbTableRowTop(t, ar), w, h, ar, ac, rs, cs };
+}
+// Logical cell anchor under a world point (snapped to its merge anchor), or
+// null if the point is outside the grid.
+function wbTableCellAt(t, wx, wy) {
+  const cols = wbTableCols(t), rows = wbTableRows(t);
+  const x0 = t.x || 0, y0 = t.y || 0;
+  if (wx < x0 || wy < y0 || wx > x0 + wbTableTotalW(t) || wy > y0 + wbTableTotalH(t)) return null;
+  let c = -1, x = x0; for (let i = 0; i < cols.length; i++) { if (wx < x + (cols[i] || 0)) { c = i; break; } x += cols[i] || 0; }
+  let r = -1, y = y0; for (let i = 0; i < rows.length; i++) { if (wy < y + (rows[i] || 0)) { r = i; break; } y += rows[i] || 0; }
+  if (c < 0) c = cols.length - 1;
+  if (r < 0) r = rows.length - 1;
+  const m = wbTableMergeAt(t, r, c);
+  return m ? { r: m.r, c: m.c } : { r, c };
+}
+// Do two {r,c,rs,cs} rectangles overlap?
+function wbTableRangesOverlap(a, b) {
+  return a.r < b.r + b.rs && b.r < a.r + a.rs && a.c < b.c + b.cs && b.c < a.c + a.cs;
+}
+// List the distinct merge-anchor cells of a logical rectangle {r0,c0,r1,c1}.
+function wbTableNormRange(rg) {
+  return {
+    r0: Math.min(rg.r0, rg.r1), c0: Math.min(rg.c0, rg.c1),
+    r1: Math.max(rg.r0, rg.r1), c1: Math.max(rg.c0, rg.c1),
+  };
 }
 
 function wbDistToSeg(px, py, x1, y1, x2, y2) {
@@ -28628,7 +28982,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   `;
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onLibResizeStart }) {
+function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onLibResizeStart }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -28677,8 +29031,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const selectedWbIdsRef = useRef(selectedWbIds); selectedWbIdsRef.current = selectedWbIds;
   const [editingWbId, setEditingWbId] = useState(null);
   const editingWbIdRef = useRef(null); editingWbIdRef.current = editingWbId;
+  // Whiteboard table: the live cell-range selection (for merge / row+col ops)
+  // and the per-cell right-click menu. tableSel = {tableId,r0,c0,r1,c1}; the
+  // menu carries the cell it opened on plus a viewport anchor.
+  const [tableSel, setTableSel] = useState(null);
+  const tableSelRef = useRef(null); tableSelRef.current = tableSel;
+  const [tableMenu, setTableMenu] = useState(null);
   const [wbGhost, setWbGhost] = useState(null);     // drag-to-size preview (shape/textbox/arrow)
   const [wbDragging, setWbDragging] = useState(false);
+  const wbDraggingRef = useRef(false); wbDraggingRef.current = wbDragging;
   const wbLiveStrokeRef = useRef(null);             // <svg> for the imperative in-progress pen path
   const wbItems = data.wb || [];
   const wbItemsRef = useRef(wbItems); wbItemsRef.current = wbItems;
@@ -29218,12 +29579,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // into an iframe (same-origin iframes capture mousemove and the parent
   // window listener stops firing once the cursor crosses the boundary).
   const [nodeDragging, setNodeDragging] = useState(false);
+  const nodeDraggingRef = useRef(false); nodeDraggingRef.current = nodeDragging;
 
   // Fullscreen canvas mode - hides the top bar + library + library drag
   // handle + chat-panel margin so the whole viewport is canvas. Session-only
   // (NOT persisted) - losing the chrome on reload would confuse first-time
-  // users who don't know the affordance exists. Esc exits.
-  const [fullscreen, setFullscreen] = useState(false);
+  // users who don't know the affordance exists. Esc exits. State lives in the
+  // parent WorkflowCanvas so the sibling RightDock can hide with it too.
   useEffect(() => {
     // Esc exits (only when ON). Cmd/Ctrl+. toggles in both directions -
     // matches the zoom-mode shortcut so the two "take over the viewport"
@@ -29884,7 +30246,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // it commits a SECTION NODE (kind: "section") onto the workflow canvas
     // instead of a whiteboard item - a quick way to frame a region while
     // whiteboarding. Sections stay visible in both modes, so it lands live.
-    if (tool === "shape" || tool === "textbox" || tool === "arrow" || tool === "section") {
+    if (tool === "shape" || tool === "textbox" || tool === "arrow" || tool === "section" || tool === "table") {
       e.preventDefault();
       const color = wbToolColor(tool);
       const x0 = wp.x, y0 = wp.y;
@@ -29931,6 +30293,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             setSelectedNodeIds(new Set([id]));
           }
           wbAfterCommit("section");
+          return;
+        }
+        if (tool === "table") {
+          // Size the grid to the drawn box: ~150px columns / 44px rows, at
+          // least 2x2. A bare click drops a default 4x3.
+          const gx = dragged ? Math.min(x0, lastWp.x) : x0;
+          const gy = dragged ? Math.min(y0, lastWp.y) : y0;
+          const gw = dragged ? Math.abs(lastWp.x - x0) : 4 * WB_TABLE_DEFAULT_COL;
+          const gh = dragged ? Math.abs(lastWp.y - y0) : 3 * WB_TABLE_DEFAULT_ROW;
+          const ncols = Math.max(2, Math.round(gw / WB_TABLE_DEFAULT_COL));
+          const nrows = Math.max(2, Math.round(gh / WB_TABLE_DEFAULT_ROW));
+          const tItem = wbMakeItem("table", { x: Math.round(gx), y: Math.round(gy), ncols, nrows, color: "gray" });
+          addWbItem(tItem);
+          setSelectedWbIds(new Set([tItem.id]));
+          if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
+          wbAfterCommit("table");
           return;
         }
         if (tool === "arrow") {
@@ -30020,7 +30398,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (handle.includes("n")) { y = orig.y + dy; h = orig.h - dy; }
         if (w < 24) { if (handle.includes("w")) x -= (24 - w); w = 24; }
         if (h < 24) { if (handle.includes("n")) y -= (24 - h); h = 24; }
-        if (item.type === "ink" && Array.isArray(orig.points) && orig.w > 0 && orig.h > 0) {
+        if (item.type === "table" && orig.w > 0 && orig.h > 0) {
+          // Scale the whole grid: distribute the new w/h across columns/rows
+          // proportionally (respecting per-cell minimums). Bound content keeps
+          // its size; the reconcile effect re-pins it as the cells stretch.
+          const oc = wbTableCols(orig), or = wbTableRows(orig);
+          const sx = Math.max(oc.length * WB_TABLE_MIN_COL, w) / orig.w;
+          const sy = Math.max(or.length * WB_TABLE_MIN_ROW, h) / orig.h;
+          const cols = oc.map(v => Math.max(WB_TABLE_MIN_COL, Math.round(v * sx)));
+          const rows = or.map(v => Math.max(WB_TABLE_MIN_ROW, Math.round(v * sy)));
+          const nw = cols.reduce((a, b) => a + b, 0), nh = rows.reduce((a, b) => a + b, 0);
+          // 'w'/'n' handles grow from the far edge - keep that edge anchored.
+          const nx = handle.includes("w") ? orig.x + orig.w - nw : orig.x;
+          const ny = handle.includes("n") ? orig.y + orig.h - nh : orig.y;
+          updateWbItem(id, { x: nx, y: ny, w: nw, h: nh, cols, rows });
+        } else if (item.type === "ink" && Array.isArray(orig.points) && orig.w > 0 && orig.h > 0) {
           const sx = w / orig.w, sy = h / orig.h;
           updateWbItem(id, {
             x, y, w, h,
@@ -30090,6 +30482,222 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
   }, [data.nodes, data.wb, setData]);
 
+  // ─────────────── Whiteboard table: bindings + mutations ───────────────
+  // Strip a cell binding off a wb item / node (returns a fresh object).
+  const wbStripCell = (o) => { const { cell, ...rest } = o; return rest; };
+
+  // Cell-binding reconcile. Whenever wb items / nodes change, re-pin every
+  // cell-bound entity to its table cell's top-left + stored (ox,oy). This is
+  // what slides "surrounding cells' items" when a row/column is resized,
+  // inserted, swapped, or merged - the content keeps its own size, only its
+  // position follows the cell. Items in the active drag selection are skipped
+  // (the user is moving them by hand); bindings to a vanished table are
+  // cleared. Returns the same object on no-change so it can't render-loop.
+  useEffect(() => {
+    const wb = data.wb;
+    if (!Array.isArray(wb) || !wb.some(it => it && it.type === "table")) return;
+    const hasBound = wb.some(it => it && it.cell) || (data.nodes || []).some(n => n && n.cell);
+    if (!hasBound) return;
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      const tById = new Map(list.filter(it => it.type === "table").map(t => [t.id, t]));
+      const dragging = wbDraggingRef.current || nodeDraggingRef.current;
+      const skipWb = dragging ? selectedWbIdsRef.current : null;
+      const skipNode = dragging ? selectedNodeIdsRef.current : null;
+      const target = (cell) => {
+        const t = tById.get(cell.tableId);
+        if (!t) return undefined;                 // table gone → drop bind
+        const rows = wbTableRows(t), cols = wbTableCols(t);
+        const r = Math.max(0, Math.min(cell.r || 0, rows.length - 1));
+        const c = Math.max(0, Math.min(cell.c || 0, cols.length - 1));
+        const rect = wbTableCellRect(t, r, c);
+        return { x: Math.round(rect.x + (cell.ox || 0)), y: Math.round(rect.y + (cell.oy || 0)) };
+      };
+      let changed = false;
+      const nextWb = list.map(it => {
+        if (!it || !it.cell) return it;
+        if (skipWb && skipWb.has(it.id)) return it;
+        if (!tById.has(it.cell.tableId)) { changed = true; return wbStripCell(it); }
+        const tg = target(it.cell);
+        if (!tg || (it.x === tg.x && it.y === tg.y)) return it;
+        changed = true; return { ...it, x: tg.x, y: tg.y };
+      });
+      const nextNodes = (d.nodes || []).map(n => {
+        if (!n || !n.cell) return n;
+        if (skipNode && skipNode.has(n.id)) return n;
+        if (!tById.has(n.cell.tableId)) { changed = true; return wbStripCell(n); }
+        const tg = target(n.cell);
+        if (!tg || ((n.x || 0) === tg.x && (n.y || 0) === tg.y)) return n;
+        changed = true; return { ...n, x: tg.x, y: tg.y };
+      });
+      return changed ? { ...d, wb: nextWb, nodes: nextNodes } : d;
+    });
+  }, [data.wb, data.nodes, setData]);
+
+  // (Re)bind moved wb items + nodes to whatever table cell now sits under
+  // their centre - or unbind them if they were dragged off every table. The
+  // offset is captured from the drop position so reconcile leaves them put.
+  const wbReassignBindings = useCallback((wbIds, nodeIds) => {
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      const tables = list.filter(it => it.type === "table");
+      if (!tables.length) return d;
+      const cellFor = (bb) => {
+        const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+        let best = null, bz = -Infinity;
+        for (const t of tables) {
+          if (cx < t.x || cy < t.y || cx > t.x + (t.w || 0) || cy > t.y + (t.h || 0)) continue;
+          if ((t.z || 0) >= bz) { bz = t.z || 0; best = t; }
+        }
+        if (!best) return null;
+        const cell = wbTableCellAt(best, cx, cy);
+        if (!cell) return null;
+        const rect = wbTableCellRect(best, cell.r, cell.c);
+        return { tableId: best.id, r: cell.r, c: cell.c, ox: Math.round(bb.x - rect.x), oy: Math.round(bb.y - rect.y) };
+      };
+      let changed = false;
+      const nextWb = list.map(it => {
+        if (it.type === "table" || !wbIds.has(it.id)) return it;
+        const cell = cellFor(wbItemBBox(it));
+        if (cell) { changed = true; return { ...it, cell }; }
+        if (it.cell) { changed = true; return wbStripCell(it); }
+        return it;
+      });
+      const nextNodes = (d.nodes || []).map(n => {
+        if (!nodeIds.has(n.id)) return n;
+        const cell = cellFor({ x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 });
+        if (cell) { changed = true; return { ...n, cell }; }
+        if (n.cell) { changed = true; return wbStripCell(n); }
+        return n;
+      });
+      return changed ? { ...d, wb: nextWb, nodes: nextNodes } : d;
+    });
+  }, [setData]);
+  // Fire reassign on every drag → idle transition.
+  const wbPrevDragRef = useRef(false);
+  useEffect(() => {
+    const dragging = wbDragging || nodeDragging;
+    if (wbPrevDragRef.current && !dragging) {
+      const wbIds = new Set(selectedWbIdsRef.current);
+      const nodeIds = new Set(selectedNodeIdsRef.current);
+      if (wbIds.size || nodeIds.size) wbReassignBindings(wbIds, nodeIds);
+    }
+    wbPrevDragRef.current = dragging;
+  }, [wbDragging, nodeDragging, wbReassignBindings]);
+
+  // The grid mutation transaction. Every structural change (resize / insert /
+  // delete / swap / merge / split a row or column) runs through here so the
+  // table item AND every bound item/node's cell reference update atomically;
+  // the reconcile effect above then repositions the bound content.
+  const tableOp = useCallback((tableId, op, args = {}) => {
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      const t = list.find(it => it.id === tableId && it.type === "table");
+      if (!t) return d;
+      let cols = wbTableCols(t).slice();
+      let rows = wbTableRows(t).slice();
+      let merges = (t.merges || []).map(m => ({ ...m }));
+      let colMap = null, rowMap = null;   // old index → new index | null (=unbind)
+      let mergeRemap = null;              // cell → anchor cell | null
+
+      if (op === "resizeCol") {
+        const c = args.c | 0; if (c < 0 || c >= cols.length) return d;
+        cols[c] = Math.max(WB_TABLE_MIN_COL, Math.round(args.size));
+      } else if (op === "resizeRow") {
+        const r = args.r | 0; if (r < 0 || r >= rows.length) return d;
+        rows[r] = Math.max(WB_TABLE_MIN_ROW, Math.round(args.size));
+      } else if (op === "insertCol") {
+        const at = Math.max(0, Math.min(cols.length, args.at | 0));
+        cols.splice(at, 0, WB_TABLE_DEFAULT_COL);
+        merges = merges.map(m => m.c >= at ? { ...m, c: m.c + 1 }
+          : (at > m.c && at < m.c + m.cs) ? { ...m, cs: m.cs + 1 } : m);
+        colMap = (c) => c >= at ? c + 1 : c;
+      } else if (op === "insertRow") {
+        const at = Math.max(0, Math.min(rows.length, args.at | 0));
+        rows.splice(at, 0, WB_TABLE_DEFAULT_ROW);
+        merges = merges.map(m => m.r >= at ? { ...m, r: m.r + 1 }
+          : (at > m.r && at < m.r + m.rs) ? { ...m, rs: m.rs + 1 } : m);
+        rowMap = (r) => r >= at ? r + 1 : r;
+      } else if (op === "deleteCol") {
+        if (cols.length <= 1) return d;
+        const c = args.c | 0; if (c < 0 || c >= cols.length) return d;
+        cols.splice(c, 1);
+        merges = merges.map(m => {
+          if (c < m.c) return { ...m, c: m.c - 1 };
+          if (c >= m.c && c < m.c + m.cs) return { ...m, cs: m.cs - 1 };
+          return m;
+        }).filter(m => m.rs >= 1 && m.cs >= 1 && (m.rs > 1 || m.cs > 1));
+        colMap = (cc) => cc === c ? null : (cc > c ? cc - 1 : cc);
+      } else if (op === "deleteRow") {
+        if (rows.length <= 1) return d;
+        const r = args.r | 0; if (r < 0 || r >= rows.length) return d;
+        rows.splice(r, 1);
+        merges = merges.map(m => {
+          if (r < m.r) return { ...m, r: m.r - 1 };
+          if (r >= m.r && r < m.r + m.rs) return { ...m, rs: m.rs - 1 };
+          return m;
+        }).filter(m => m.rs >= 1 && m.cs >= 1 && (m.rs > 1 || m.cs > 1));
+        rowMap = (rr) => rr === r ? null : (rr > r ? rr - 1 : rr);
+      } else if (op === "swapCol") {
+        const a = args.a | 0, b = args.b | 0;
+        if (a === b || a < 0 || b < 0 || a >= cols.length || b >= cols.length) return d;
+        const tmp = cols[a]; cols[a] = cols[b]; cols[b] = tmp;
+        // merges touching either column would become non-rectangular - drop them.
+        merges = merges.filter(m => !((a >= m.c && a < m.c + m.cs) || (b >= m.c && b < m.c + m.cs)));
+        colMap = (cc) => cc === a ? b : cc === b ? a : cc;
+      } else if (op === "swapRow") {
+        const a = args.a | 0, b = args.b | 0;
+        if (a === b || a < 0 || b < 0 || a >= rows.length || b >= rows.length) return d;
+        const tmp = rows[a]; rows[a] = rows[b]; rows[b] = tmp;
+        merges = merges.filter(m => !((a >= m.r && a < m.r + m.rs) || (b >= m.r && b < m.r + m.rs)));
+        rowMap = (rr) => rr === a ? b : rr === b ? a : rr;
+      } else if (op === "merge") {
+        const rg = wbTableNormRange(args);
+        const rs = rg.r1 - rg.r0 + 1, cs = rg.c1 - rg.c0 + 1;
+        if (rs * cs < 2) return d;
+        const region = { r: rg.r0, c: rg.c0, rs, cs };
+        merges = merges.filter(m => !wbTableRangesOverlap(m, region));
+        merges.push(region);
+        mergeRemap = (cell) => (cell.r >= rg.r0 && cell.r <= rg.r1 && cell.c >= rg.c0 && cell.c <= rg.c1)
+          ? { r: rg.r0, c: rg.c0 } : null;
+      } else if (op === "split") {
+        const r = args.r | 0, c = args.c | 0;
+        merges = merges.filter(m => !(m.r === r && m.c === c));
+      } else {
+        return d;
+      }
+
+      const nt = wbTableSync({ ...t, cols, rows, merges });
+
+      // Remap every bound item/node's cell ref. Index ops shift r/c so the
+      // content rides its cell; merge snaps swallowed cells to the anchor and
+      // recomputes (ox,oy) so the item doesn't jump.
+      const remap = (o) => {
+        const cell = o.cell;
+        if (!cell || cell.tableId !== tableId) return o;
+        let r = cell.r, c = cell.c, ox = cell.ox, oy = cell.oy;
+        if (rowMap) { const nr = rowMap(r); if (nr === null) return wbStripCell(o); r = nr; }
+        if (colMap) { const nc = colMap(c); if (nc === null) return wbStripCell(o); c = nc; }
+        if (mergeRemap) {
+          const a = mergeRemap({ r, c });
+          if (a) {
+            const oldRect = wbTableCellRect(t, cell.r, cell.c);
+            const newRect = wbTableCellRect(nt, a.r, a.c);
+            ox = Math.round((oldRect.x + (ox || 0)) - newRect.x);
+            oy = Math.round((oldRect.y + (oy || 0)) - newRect.y);
+            r = a.r; c = a.c;
+          }
+        }
+        return { ...o, cell: { tableId, r, c, ox, oy } };
+      };
+
+      const nextWb = list.map(it => it.id === tableId ? nt : (it.cell ? remap(it) : it));
+      const nextNodes = (d.nodes || []).map(n => n.cell ? remap(n) : n);
+      return { ...d, wb: nextWb, nodes: nextNodes };
+    });
+    setTableSel(null);
+  }, [setData]);
+
   // Whiteboard keyboard: tool hotkeys + the Esc ladder. Mounted only in
   // whiteboard mode. Cmd+D / Delete live in the main shortcut block below
   // (which early-returns for wb mode before the node branches).
@@ -30121,7 +30729,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (isEditingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", f: "section", l: "arrow", i: "eyedropper" };
+      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", g: "table", f: "section", l: "arrow", i: "eyedropper" };
       const tool = map[(e.key || "").toLowerCase()];
       if (tool) { setWbTool(tool); e.preventDefault(); }
     };
@@ -40381,6 +40989,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               }}
               onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               onItemDoubleClick=${(id) => { if (wbMode) setEditingWbId(id); }}
+              tableSel=${tableSel}
+              onTableOp=${tableOp}
+              onTableCellSelect=${(tableId, range) => setTableSel({ tableId, ...range })}
+              onTableCellMenu=${(tableId, r, c, vpX, vpY) => {
+                // If the right-clicked cell is inside the live range, the menu
+                // acts on the whole range (merge); otherwise it targets the one
+                // cell and resets the selection to it.
+                const cur = tableSelRef.current;
+                let range = (cur && cur.tableId === tableId) ? wbTableNormRange(cur) : null;
+                if (!range || r < range.r0 || r > range.r1 || c < range.c0 || c > range.c1) {
+                  range = { r0: r, c0: c, r1: r, c1: c };
+                  setTableSel({ tableId, r0: r, c0: c, r1: r, c1: c });
+                }
+                setTableMenu({ tableId, r, c, range, vpX, vpY });
+              }}
             />
             ${(wbMode || selectedWbIds.size > 0) && html`
               <${WorkflowWbSelectionOverlay}
@@ -40464,6 +41087,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }}
         />
       `}
+      ${tableMenu && html`<${WorkflowTableMenu}
+        menu=${tableMenu}
+        table=${(data.wb || []).find(it => it.id === tableMenu.tableId && it.type === "table")}
+        onOp=${tableOp}
+        onClose=${() => setTableMenu(null)}
+      />`}
       ${ctxMenu && ctxMenu.wb && html`<${CanvasContextMenu}
         x=${ctxMenu.vpX}
         y=${ctxMenu.vpY}
@@ -68049,7 +68678,197 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
   `;
 }
 
-function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghost, liveStrokeRef, onCommitText, onEditDone, onHandleDown, onItemDoubleClick }) {
+/* A whiteboard table: a grid of cells. Holds no content itself - other wb
+   items + workflow nodes bind to its cells (see the wb-table helpers + the
+   reconcile effect). When NOT selected the whole body is a move target (the
+   canvas hit-test grabs it like any box). When selected, the cell layer goes
+   live: drag to rubber-band a cell range, the boundary strips resize rows /
+   columns, and the end buttons append. Merge / split / insert / delete / move
+   live in the right-click menu. A grip at the top-left re-enables moving the
+   selected table. */
+function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, onCellMenu }) {
+  const z = Math.round(item.z || 0);
+  const cols = wbTableCols(item), rows = wbTableRows(item);
+  const lineC = wbColorCSS(item.color || "gray");
+  const rootRef = useRef(null);
+  // Prefix sums (relative to the table's top-left) for cell geometry.
+  const colX = useMemo(() => { const a = [0]; for (const w of cols) a.push(a[a.length - 1] + w); return a; }, [cols]);
+  const rowY = useMemo(() => { const a = [0]; for (const h of rows) a.push(a[a.length - 1] + h); return a; }, [rows]);
+  const totalW = colX[colX.length - 1], totalH = rowY[rowY.length - 1];
+  const px = (v) => v / Math.max(zoom, 0.1);   // world px for a constant on-screen size
+  const HW = px(7), GRIP = px(15), PLUS = px(18), line = px(1);
+
+  const covered = (r, c) => { const m = wbTableMergeAt(item, r, c); return m && !(m.r === r && m.c === c); };
+  const span = (r, c) => { const m = wbTableMergeAt(item, r, c); return { rs: m ? m.rs : 1, cs: m ? m.cs : 1 }; };
+
+  // world cell (r,c) under a screen point, using a rect captured at gesture start.
+  const cellAtClient = (cx, cy, rect) => {
+    const wx = (cx - rect.left) / Math.max(zoom, 0.1);
+    const wy = (cy - rect.top) / Math.max(zoom, 0.1);
+    let c = cols.length - 1; for (let i = 0; i < cols.length; i++) { if (wx < colX[i + 1]) { c = i; break; } }
+    let r = rows.length - 1; for (let i = 0; i < rows.length; i++) { if (wy < rowY[i + 1]) { r = i; break; } }
+    return { r: Math.max(0, Math.min(r, rows.length - 1)), c: Math.max(0, Math.min(c, cols.length - 1)) };
+  };
+
+  // Rubber-band cell selection (only when the table is already selected).
+  const onCellDown = (e) => {
+    if (!selected || e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const rect = rootRef.current.getBoundingClientRect();
+    const a = cellAtClient(e.clientX, e.clientY, rect);
+    let range = { r0: a.r, c0: a.c, r1: a.r, c1: a.c };
+    onCellSelect && onCellSelect(item.id, range);
+    const onMove = (ev) => {
+      const f = cellAtClient(ev.clientX, ev.clientY, rect);
+      range = { r0: a.r, c0: a.c, r1: f.r, c1: f.c };
+      onCellSelect && onCellSelect(item.id, range);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Drag a row/column boundary to resize the row/column before it.
+  const onBoundaryDown = (e, axis, index) => {
+    e.stopPropagation(); e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const orig = axis === "col" ? cols[index] : rows[index];
+    const onMove = (ev) => {
+      const d = axis === "col"
+        ? (ev.clientX - startX) / Math.max(zoom, 0.1)
+        : (ev.clientY - startY) / Math.max(zoom, 0.1);
+      onOp && onOp(item.id, axis === "col" ? "resizeCol" : "resizeRow",
+        axis === "col" ? { c: index, size: orig + d } : { r: index, size: orig + d });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const selRange = (selected && tableSel && tableSel.tableId === item.id) ? wbTableNormRange(tableSel) : null;
+
+  return html`
+    <div ref=${rootRef} className="workflow-wb-item workflow-wb-table" data-wb-id=${item.id}
+      data-selected=${selected ? "true" : "false"}
+      style=${{ left: item.x + "px", top: item.y + "px", width: totalW + "px", height: totalH + "px", zIndex: z }}
+      onContextMenu=${(e) => {
+        e.preventDefault(); e.stopPropagation();
+        const rect = rootRef.current.getBoundingClientRect();
+        const cc = cellAtClient(e.clientX, e.clientY, rect);
+        onCellMenu && onCellMenu(item.id, cc.r, cc.c, e.clientX, e.clientY);
+      }}>
+      <!-- cells -->
+      ${rows.map((_, r) => cols.map((__, c) => {
+        if (covered(r, c)) return null;
+        const sp = span(r, c);
+        const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
+        return html`<div key=${"c" + r + "_" + c}
+          className=${"workflow-wb-table-cell" + (isSel ? " is-sel" : "")}
+          style=${{
+            left: colX[c] + "px", top: rowY[r] + "px",
+            width: (colX[c + sp.cs] - colX[c]) + "px",
+            height: (rowY[r + sp.rs] - rowY[r]) + "px",
+            borderColor: lineC, borderWidth: line + "px",
+          }}/>`;
+      }))}
+      <!-- cell interaction layer (only live when selected) -->
+      ${selected && html`<div className="workflow-wb-table-hit"
+        style=${{ inset: 0 }} onMouseDown=${onCellDown}/>`}
+      <!-- column resize strips -->
+      ${selected && cols.map((_, i) => html`<div key=${"cb" + i}
+        className="workflow-wb-table-colgrip"
+        style=${{ left: (colX[i + 1] - HW / 2) + "px", top: 0, width: HW + "px", height: totalH + "px" }}
+        title="Drag to resize column"
+        onMouseDown=${(e) => onBoundaryDown(e, "col", i)}/>`)}
+      <!-- row resize strips -->
+      ${selected && rows.map((_, i) => html`<div key=${"rb" + i}
+        className="workflow-wb-table-rowgrip"
+        style=${{ left: 0, top: (rowY[i + 1] - HW / 2) + "px", width: totalW + "px", height: HW + "px" }}
+        title="Drag to resize row"
+        onMouseDown=${(e) => onBoundaryDown(e, "row", i)}/>`)}
+      <!-- append column / row -->
+      ${selected && html`<button type="button" className="workflow-wb-table-add"
+        title="Add column"
+        style=${{ left: (totalW + px(4)) + "px", top: (totalH / 2 - PLUS / 2) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); onOp && onOp(item.id, "insertCol", { at: cols.length }); }}>+</button>`}
+      ${selected && html`<button type="button" className="workflow-wb-table-add"
+        title="Add row"
+        style=${{ left: (totalW / 2 - PLUS / 2) + "px", top: (totalH + px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); onOp && onOp(item.id, "insertRow", { at: rows.length }); }}>+</button>`}
+      <!-- move grip (re-enables moving a selected table) - sits just inside the
+           top-left so the canvas hit-test grabs the table when dragged. It does
+           NOT stop propagation, so mousedown bubbles to the canvas move gesture. -->
+      ${selected && html`<div className="workflow-wb-table-movegrip"
+        title="Drag to move table"
+        style=${{ left: px(2) + "px", top: px(2) + "px", width: GRIP + "px", height: GRIP + "px" }}>
+        <svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 1.5 9.6 3.4 H6.4 Z M8 14.5 6.4 12.6 H9.6 Z M1.5 8 3.4 6.4 V9.6 Z M14.5 8 12.6 9.6 V6.4 Z M6.5 6.5h3v3h-3z" fill=${lineC}/></svg>
+      </div>`}
+    </div>`;
+}
+
+/* Right-click menu for a table cell / cell-range. Fixed-positioned in
+   viewport coords. Acts on the clicked cell (r,c) and, for merge, the live
+   range. */
+function WorkflowTableMenu({ menu, table, onOp, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onDown = (e) => {
+      if (e.target && e.target.closest && e.target.closest(".canvas-ctxmenu")) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onClose]);
+  if (!menu || !table) return null;
+  const { tableId, r, c, range } = menu;
+  const area = range ? (range.r1 - range.r0 + 1) * (range.c1 - range.c0 + 1) : 1;
+  const m = wbTableMergeAt(table, r, c);
+  const isMergeAnchor = !!m && m.r === r && m.c === c;
+  const ncols = wbTableCols(table).length, nrows = wbTableRows(table).length;
+  const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+  const left = clamp(menu.vpX, 6, window.innerWidth - 190);
+  const top  = clamp(menu.vpY, 6, window.innerHeight - 380);
+  const run = (op, args) => { onOp && onOp(tableId, op, args); onClose && onClose(); };
+  const Item = (label, op, args, disabled, danger) => html`
+    <button type="button"
+      className=${"canvas-ctxmenu-item" + (disabled ? " is-disabled" : "") + (danger ? " canvas-ctxmenu-danger" : "")}
+      disabled=${!!disabled}
+      onClick=${() => !disabled && run(op, args)}><span>${label}</span></button>`;
+  const Sep = () => html`<div className="canvas-ctxmenu-divider"/>`;
+  return createPortal(html`
+    <div className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+      ${Item("Merge cells", "merge", range, area < 2)}
+      ${Item("Split cell", "split", { r, c }, !isMergeAnchor)}
+      ${Sep()}
+      ${Item("Insert row above", "insertRow", { at: r })}
+      ${Item("Insert row below", "insertRow", { at: r + 1 })}
+      ${Item("Insert column left", "insertCol", { at: c })}
+      ${Item("Insert column right", "insertCol", { at: c + 1 })}
+      ${Sep()}
+      ${Item("Move row up", "swapRow", { a: r, b: r - 1 }, r <= 0)}
+      ${Item("Move row down", "swapRow", { a: r, b: r + 1 }, r >= nrows - 1)}
+      ${Item("Move column left", "swapCol", { a: c, b: c - 1 }, c <= 0)}
+      ${Item("Move column right", "swapCol", { a: c, b: c + 1 }, c >= ncols - 1)}
+      ${Sep()}
+      ${Item("Delete row", "deleteRow", { r }, nrows <= 1, true)}
+      ${Item("Delete column", "deleteCol", { c }, ncols <= 1, true)}
+    </div>
+  `, document.body);
+}
+
+function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghost, liveStrokeRef, onCommitText, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
   const sorted = useMemo(() => {
     const list = (items || []).slice();
     list.sort((a, b) => (a.z || 0) - (b.z || 0));
@@ -68070,17 +68889,27 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghos
           onItemDoubleClick(id);
         }
       }}>
-      ${sorted.map(it => html`
-        <${WorkflowWbItem}
-          key=${it.id}
-          item=${it}
-          zoom=${zoom}
-          selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
-          editing=${editingWbId === it.id}
-          onCommitText=${(t, h) => onCommitText && onCommitText(it.id, t, h)}
-          onEditDone=${() => onEditDone && onEditDone(it.id)}
-        />
-      `)}
+      ${sorted.map(it => it.type === "table"
+        ? html`<${WorkflowWbTable}
+            key=${it.id}
+            item=${it}
+            zoom=${zoom}
+            selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
+            tableSel=${tableSel}
+            onOp=${onTableOp}
+            onCellSelect=${onTableCellSelect}
+            onCellMenu=${onTableCellMenu}
+          />`
+        : html`<${WorkflowWbItem}
+            key=${it.id}
+            item=${it}
+            zoom=${zoom}
+            selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
+            editing=${editingWbId === it.id}
+            onCommitText=${(t, h) => onCommitText && onCommitText(it.id, t, h)}
+            onEditDone=${() => onEditDone && onEditDone(it.id)}
+          />`
+      )}
       ${ghost && ghost.type === "arrow" && html`
         <svg className="workflow-wb-ghost" style=${{ overflow: "visible", position: "absolute", left: 0, top: 0, width: "1px", height: "1px", zIndex: 100001 }}>
           <path d=${`M ${ghost.x1} ${ghost.y1} L ${ghost.x2} ${ghost.y2}`}
@@ -68116,6 +68945,7 @@ const WB_TOOL_DEFS = [
   { id: "sticky",  label: "Sticky note", hotkey: "S" },
   { id: "pen",     label: "Pen",         hotkey: "P" },
   { id: "shape",   label: "Box",         hotkey: "R" },
+  { id: "table",   label: "Table",       hotkey: "G" },
   { id: "section", label: "Section",     hotkey: "F" },
   { id: "arrow",   label: "Arrow",       hotkey: "L" },
   { id: "eyedropper", label: "Eyedropper", hotkey: "I" },
@@ -68128,6 +68958,7 @@ const WB_TOOL_GLYPHS = {
   sticky:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5 H13.5 V9.5 L9.5 13.5 H2.5 Z" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M9.5 13.5 V9.5 H13.5" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
   pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>`,
   shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
+  table:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="2.8" width="12" height="10.4" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M2 6.6 H14 M2 9.8 H14 M6.4 2.8 V13.2 M10 2.8 V13.2" stroke="currentColor" strokeWidth="1.2" fill="none"/></svg>`,
   section: html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="2.4" width="12" height="11.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M2 6 H14" stroke="currentColor" strokeWidth="1.4" fill="none"/><path d="M3.6 4.2 H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none"/></svg>`,
   arrow:   html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L12 4 M12 4 H7.4 M12 4 V8.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>`,
   eyedropper: html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M9.6 3.1 12.9 6.4 M11.2 4.7 13.4 2.5 A1.4 1.4 0 0 0 11.4 0.5 L9.6 2.7 Z M10.4 5.5 4.6 11.3 A1.6 1.6 0 0 0 4.2 12 L3.6 13.8 A0.5 0.5 0 0 0 4.2 14.4 L6 13.8 A1.6 1.6 0 0 0 6.7 13.4 L12.5 7.6 Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>`,

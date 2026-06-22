@@ -7326,6 +7326,59 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   user-select: none;
   -webkit-user-drag: none;
 }
+/* ── Whiteboard table ── a grid item; cells host other wb items / nodes via
+   the cell-binding reconcile. Lines come from the item's `color` token. */
+.workflow-wb-table { box-sizing: border-box; }
+.workflow-wb-table-cell {
+  position: absolute;
+  box-sizing: border-box;
+  border-style: solid;
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+}
+.workflow-wb-table-cell.is-sel {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+}
+/* Full-bleed transparent layer that captures cell range-selection while the
+   table is selected. Sits above the cells, below the resize strips. */
+.workflow-wb-table-hit { position: absolute; cursor: cell; }
+.workflow-wb-table-colgrip,
+.workflow-wb-table-rowgrip {
+  position: absolute;
+  background: transparent;
+}
+.workflow-wb-table-colgrip { cursor: col-resize; }
+.workflow-wb-table-rowgrip { cursor: row-resize; }
+.workflow-wb-table-colgrip:hover,
+.workflow-wb-table-rowgrip:hover {
+  background: color-mix(in oklch, var(--accent) 45%, transparent);
+}
+.workflow-wb-table-add {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.12);
+}
+.workflow-wb-table-add:hover { background: var(--accent-soft); }
+.workflow-wb-table-movegrip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border-radius: 4px;
+  cursor: move;
+  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.12);
+}
+
 /* Drag-to-size ghost + selection overlay (overlay is a sibling of the
    layer, only mounted in whiteboard mode). */
 .workflow-wb-ghost-rect {
@@ -7362,6 +7415,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-wb-tool="pen"]:not([data-space="true"]):not([data-panning="true"]),
 .workflow-canvas-wrap[data-wb-tool="shape"]:not([data-space="true"]):not([data-panning="true"]),
 .workflow-canvas-wrap[data-wb-tool="textbox"]:not([data-space="true"]):not([data-panning="true"]),
+.workflow-canvas-wrap[data-wb-tool="table"]:not([data-space="true"]):not([data-panning="true"]),
 .workflow-canvas-wrap[data-wb-tool="arrow"]:not([data-space="true"]):not([data-panning="true"]) {
   cursor: crosshair;
 }
@@ -25630,6 +25684,52 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ─── Share mode - Housekeeping overlay (screenshot cleanup) ──────────────
+   Reuses .newproj-overlay (scrim) + .newproj-card (chrome) but widens the
+   card and makes the body scroll, since the detail view holds a table. */
+.shares-hk-open { margin-left: 4px; display: inline-flex; align-items: center; gap: 6px; }
+.shares-hk-card { max-width: 940px; max-height: 86vh; }
+.shares-hk-body { overflow: auto; gap: 12px; }
+
+.shares-hk-grouplist { display: flex; flex-direction: column; gap: 8px; }
+.shares-hk-grouprow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  background: var(--bg, #fff); color: var(--text, #1a1a1a);
+}
+.shares-hk-grouprow:hover { border-color: var(--accent, #2c5fff); }
+.shares-hk-grouprow-label { font: 600 14px/1.3 var(--font-sans, system-ui, sans-serif); display: flex; align-items: center; gap: 8px; }
+.shares-hk-grouprow-sub { font: 11px/1.4 var(--font-mono); opacity: 0.7; margin-top: 2px; }
+.shares-hk-grouprow-sub code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; }
+.shares-hk-grouprow-stats { display: flex; align-items: center; gap: 14px; flex: none; white-space: nowrap; }
+.shares-hk-grouprow-imgs { display: inline-flex; align-items: center; gap: 5px; font: 600 13px var(--font-sans, system-ui, sans-serif); }
+.shares-hk-grouprow-bytes { font: 12px var(--font-mono); opacity: 0.65; }
+.shares-hk-grouprow-total { font: 12px var(--font-sans, system-ui, sans-serif); opacity: 0.6; }
+
+.shares-hk-detail-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.shares-hk-detail-toolbar .shares-search { flex: 1; min-width: 160px; }
+.shares-hk-bulkbar { display: flex; align-items: center; gap: 10px; }
+.shares-hk-selall { display: inline-flex; align-items: center; gap: 7px; font: 13px var(--font-sans, system-ui, sans-serif); cursor: pointer; }
+
+.shares-hk-table { width: 100%; border-collapse: collapse; font: 13px var(--font-sans, system-ui, sans-serif); }
+.shares-hk-table th {
+  text-align: left; font: 600 11px/1.2 var(--font-sans, system-ui, sans-serif);
+  letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6;
+  padding: 6px 8px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.12)); position: sticky; top: 0;
+  background: var(--bg, #fff);
+}
+.shares-hk-table td { padding: 8px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.07)); vertical-align: top; }
+.shares-hk-table tr.is-noimg { opacity: 0.6; }
+.shares-hk-col-check { width: 26px; }
+.shares-hk-thumb { display: block; width: 132px; }
+.shares-hk-thumb img { display: block; width: 132px; height: auto; border-radius: 4px; border: 1px solid var(--border, rgba(0,0,0,0.12)); }
+.shares-hk-noimg { font: 11px var(--font-mono); opacity: 0.5; }
+.shares-hk-page { font: 11px var(--font-mono); opacity: 0.75; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shares-hk-text { max-width: 280px; }
+.shares-hk-when { white-space: nowrap; opacity: 0.7; }
 
 /* ─── Share mode - prototype node comments dock ──────────────────────────
    Docks to the host node's LEFT edge (code panel + inspector dock own the
