@@ -17337,6 +17337,11 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       const __ds_bust = "v=" + Date.now();
       const __allUrl = apiUrl("/__default_ds/all.css");
       allLink.href = __allUrl + (__allUrl.indexOf("?") >= 0 ? "&" : "?") + __ds_bust;
+      // Re-apply once the bundle has actually loaded - otherwise getComputedStyle
+      // (used to recolour the logo monogram) reads the unstyled defaults and bakes
+      // a white logo on styles like analog whose rail is light. (Was the cause of
+      // the page-to-page logo inconsistency.)
+      allLink.addEventListener("load", () => { try { applyToFrame(); } catch {} });
       doc.head.appendChild(allLink);
     }
     // Some styles ship a runtime (themes/<id>.js): glassmorphism (WebGL
