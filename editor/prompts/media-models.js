@@ -141,10 +141,13 @@
     higgsfield: {
       id: "higgsfield",
       label: "Higgsfield",
-      hint: "image · video (Soul, motion control)",
+      hint: "video (DoP image→video) · paste your key as KEY_ID:KEY_SECRET",
       envKey: "TH_HIGGSFIELD_API_KEY",
-      docsUrl: "https://higgsfield.ai/",
+      docsUrl: "https://cloud.higgsfield.ai/",
       integrated: true,
+      // Higgsfield auths with `Authorization: Key KEY_ID:KEY_SECRET` (compound
+      // key+secret), NOT a single bearer token. The stored value is the whole
+      // "KEY_ID:KEY_SECRET" string; the renderer sends it after `Key `.
       testable: false, // no free test endpoint; first real Run validates the key
     },
   };
@@ -224,10 +227,16 @@
     { id: "claude-haiku-4-5",      provider: "anthropic", label: "claude-haiku-4.5",   hint: "Anthropic · fast + cheap",    caps: ["text", "vision"], integrated: true },
   ];
 
-  // Video models. Dispatched through fal's sync POST endpoint and parsed via
-  // _fal_extract_video_url (handles { video: { url } } / { videos: [{ url }] }
-  // / { url } shapes). Models that accept an input image carry the i2v cap;
-  // t2v means pure text-to-video. Refreshed June 2026 against fal model docs.
+  // Video models. fal rows dispatch through fal's sync POST endpoint and parse
+  // via _fal_extract_video_url ({ video: { url } } / { videos: [{ url }] } /
+  // { url }); Higgsfield rows dispatch through the async higgsfield renderer.
+  // Caps vocabulary:
+  //   t2v      = pure text-to-video (no input frame)
+  //   i2v      = accepts a START input image the motion is generated from
+  //   endframe = ALSO accepts an END/last frame so motion is pinned at both
+  //              ends (start+end interpolation). Read by orchestrators that
+  //              want two-ended scene control (e.g. motion-studio).
+  // Refreshed June 2026 against fal model docs + the Higgsfield SDK.
   //
   // The bare `fal-ai/luma-dream-machine` endpoint is DEPRECATED (returns
   // {"detail":[{"msg":"This endpoint is deprecated…"}]}). Luma now ships
@@ -251,6 +260,13 @@
     { id: "fal-ai/seedance-2.0",                                   provider: "fal", label: "seedance-2.0",       hint: "fal · ByteDance Seedance 2.0",                  caps: ["t2v", "i2v"], integrated: true },
     // Pika - v2 Turbo still current.
     { id: "fal-ai/pika/v2/turbo/text-to-video",                    provider: "fal", label: "pika-v2",            hint: "fal · Pika v2 (animated)",                      caps: ["t2v"],         integrated: true },
+    // Higgsfield DoP (platform.higgsfield.ai) - image→video with an optional
+    // END frame so motion is pinned at both ends. Async submit+poll via
+    // serve.py's _higgsfield_generate_video. The end-frame field is best-effort
+    // pending live API confirmation (see the serve.py renderer header note).
+    { id: "dop-lite",    provider: "higgsfield", label: "Higgsfield DoP Lite",    hint: "Higgsfield · fast preview (image→video, +end frame)", caps: ["i2v", "endframe"], integrated: true },
+    { id: "dop-turbo",   provider: "higgsfield", label: "Higgsfield DoP Turbo",   hint: "Higgsfield · 2x faster (image→video, +end frame)",    caps: ["i2v", "endframe"], integrated: true },
+    { id: "dop-preview", provider: "higgsfield", label: "Higgsfield DoP Preview", hint: "Higgsfield · top quality (image→video, +end frame)",  caps: ["i2v", "endframe"], integrated: true },
   ];
 
   // 3D-model generators. caps: `t23d` = text→3D, `i23d` = image→3D. Bytes are

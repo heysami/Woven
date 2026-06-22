@@ -1002,6 +1002,149 @@ def _fal_generate_video(api_key, prompt, model, aspect, options):
     return _download_bytes(video_url)
 
 
+# ── Higgsfield (DoP image→video) ────────────────────────────────────────────
+# Higgsfield's public API (platform.higgsfield.ai). CONFIRMED from the official
+# SDK (github.com/higgsfield-ai/higgsfield-js):
+#   • Auth:   Authorization: Key KEY_ID:KEY_SECRET   (compound key+secret - the
+#             stored media-config value IS the whole "KEY_ID:KEY_SECRET" string,
+#             same header shape fal uses, just a key:secret pair)
+#   • Submit: POST /v1/image2video/dop
+#             body: { input: { model, prompt,
+#                              input_images: [{type:"image_url", image_url}] } }
+#   • Models: dop-lite / dop-turbo / dop-preview
+#   • Poll:   GET  /requests/{id}/status   (queued/in_progress/completed/failed/nsfw)
+#   • Result: jobs[0].results.raw.url (full) / .min.url (thumb)
+# UNVERIFIED (no public source agrees - validate on first real Run, hence the
+# provider is testable:false):
+#   • the END/last-frame field. The SDK shows input_images as an ARRAY, so the
+#     end frame is sent as a 2nd entry. If Higgsfield wants a dedicated field
+#     (end_image / input_images_end), change _higgsfield_build_input here.
+#   • the submit-response id field - we walk id / request_id / generation_id /
+#     nested jobs[0].id.
+_HIGGSFIELD_BASE = "https://platform.higgsfield.ai"
+
+
+def _higgsfield_request(api_key, path, body=None, method="POST", timeout=60):
+    url = f"{_HIGGSFIELD_BASE}{path}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url, method=method,
+        headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
+        data=data,
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+    return json.loads(raw) if raw else {}
+
+
+def _higgsfield_extract_id(payload):
+    """The submit-response id field isn't documented consistently; try the
+    common spellings + one level of job-set nesting."""
+    if not isinstance(payload, dict):
+        raise RuntimeError("higgsfield: non-object submit response")
+    for k in ("id", "request_id", "generation_id", "job_id"):
+        v = payload.get(k)
+        if isinstance(v, str) and v:
+            return v
+    js = payload.get("jobs")
+    if isinstance(js, list) and js and isinstance(js[0], dict):
+        v = js[0].get("id")
+        if isinstance(v, str) and v:
+            return v
+    jset = payload.get("job_set") or payload.get("jobSet")
+    if isinstance(jset, dict) and isinstance(jset.get("id"), str):
+        return jset["id"]
+    raise RuntimeError(
+        f"higgsfield: no job id in submit response "
+        f"(keys: {list(payload.keys())})")
+
+
+def _higgsfield_status(payload):
+    """Normalise the status (queued/in_progress/completed/failed/nsfw), tolerating
+    job-set nesting."""
+    if isinstance(payload, dict):
+        s = payload.get("status")
+        if isinstance(s, str):
+            return s.lower()
+        js = payload.get("jobs")
+        if isinstance(js, list) and js and isinstance(js[0], dict):
+            s = js[0].get("status")
+            if isinstance(s, str):
+                return s.lower()
+    return "unknown"
+
+
+def _higgsfield_extract_video_url(payload):
+    """Confirmed shape: jobs[0].results.raw.url (with .min.url thumb); also walk
+    flatter fallbacks."""
+    if isinstance(payload, dict):
+        js = payload.get("jobs")
+        if isinstance(js, list) and js and isinstance(js[0], dict):
+            res = js[0].get("results")
+            if isinstance(res, dict):
+                for k in ("raw", "min"):
+                    slot = res.get(k)
+                    if isinstance(slot, dict) and isinstance(slot.get("url"), str):
+                        return slot["url"]
+        res = payload.get("results")
+        if isinstance(res, dict):
+            for k in ("raw", "min"):
+                slot = res.get(k)
+                if isinstance(slot, dict) and isinstance(slot.get("url"), str):
+                    return slot["url"]
+        for k in ("video_url", "url"):
+            if isinstance(payload.get(k), str):
+                return payload[k]
+    raise RuntimeError("higgsfield: no video url in status response")
+
+
+def _higgsfield_generate_video(api_key, prompt, model, aspect, options):
+    """Higgsfield DoP image→video. Requires a START frame (the image the motion
+    is generated from); an optional END frame pins the final frame. Frames
+    arrive in options as URLs or data-URIs (image_url / start_image_url +
+    end_image_url). Async: submit → poll /requests/{id}/status → download mp4."""
+    opts = options if isinstance(options, dict) else {}
+    mdl = (model or "").strip() or "dop-turbo"
+    # DoP ids may arrive bare ("dop-turbo") or namespaced ("higgsfield/dop-turbo").
+    if "/" in mdl:
+        mdl = mdl.rsplit("/", 1)[-1]
+
+    start_url = opts.get("start_image_url") or opts.get("image_url")
+    end_url = opts.get("end_image_url")
+    if not start_url:
+        raise RuntimeError(
+            "higgsfield DoP needs a start frame "
+            "(wire an image input, or set options.image_url)")
+    input_images = [{"type": "image_url", "image_url": start_url}]
+    if end_url:
+        # UNVERIFIED end-frame shape (see header). Sent as a 2nd array entry
+        # tagged role:"end"; adjust once the official field is confirmed.
+        input_images.append({"type": "image_url", "image_url": end_url, "role": "end"})
+
+    inp = {"model": mdl, "prompt": prompt or "", "input_images": input_images}
+    for k in ("seed", "motions", "motion", "duration", "negative_prompt", "enhance_prompt"):
+        if k in opts and opts[k] is not None:
+            inp[k] = opts[k]
+
+    submit = _higgsfield_request(api_key, "/v1/image2video/dop", {"input": inp},
+                                 method="POST", timeout=60)
+    job_id = _higgsfield_extract_id(submit)
+
+    # DoP renders run ~30s to a few minutes; poll up to ~6 min.
+    deadline = time.time() + 360
+    last = None
+    while time.time() < deadline:
+        time.sleep(3)
+        last = _higgsfield_request(api_key, f"/requests/{job_id}/status",
+                                   method="GET", timeout=60)
+        st = _higgsfield_status(last)
+        if st == "completed":
+            return _download_bytes(_higgsfield_extract_video_url(last), timeout=180)
+        if st in ("failed", "nsfw"):
+            raise RuntimeError(f"higgsfield job {st}: {json.dumps(last)[:300]}")
+    raise RuntimeError("higgsfield: timed out waiting for DoP render")
+
+
 def _fal_transform_image(api_key, model, input_abs_path, options, input_data_uri=None):
     """fal.ai image-in / image-out endpoints (rembg, upscale, etc.). Accepts
     either a local file path (encoded server-side) or a pre-built data URI
@@ -1212,6 +1355,9 @@ _GENERATE_DISPATCH = {
     # fal.run, parses the response with _fal_extract_video_url, and
     # downloads the mp4 bytes to the spawned `.mp4` path.
     ("video-gen",      "fal"):    "fal_video",
+    # Higgsfield DoP image→video (async submit+poll). Accepts a start frame
+    # (required) + an optional end frame; see _higgsfield_generate_video.
+    ("video-gen",      "higgsfield"): "higgsfield_video",
     # v3.5 - 3D model generation via fal (triposr, hyper3d-rodin,
     # hunyuan3d-v2 family etc.). Bytes are a .glb / .gltf file. Without
     # this entry the orchestrator's 3D drawer got `no renderer for
@@ -11574,7 +11720,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             raw_uri = body.get("input_data_uri")
             in_path = (body.get("input_path") or "").strip()
             if raw_uri or in_path:
-                if provider != "openai" or not (model or "").startswith("gpt-image"):
+                # Higgsfield DoP video is image→video: an input frame IS the
+                # start frame, so it's allowed here (resolved to options.image_url
+                # in the dispatch branch below).
+                _hf_video = (provider == "higgsfield" and skill == "video-gen")
+                if not _hf_video and (provider != "openai" or not (model or "").startswith("gpt-image")):
                     return self._reply(400, {
                         "error":
                             f"This skill ({skill}, {model}) doesn't accept an input image. " +
@@ -11654,6 +11804,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # generation, this can take 30s-5min depending on
                     # the model, so we extend timeout to 300s.
                     bytes_ = _fal_generate_video(api_key, prompt, model, aspect, options)
+                elif provider == "higgsfield" and skill == "video-gen":
+                    # Higgsfield DoP image→video (async submit+poll). Resolve a
+                    # wired start frame (input_path / input_data_uri) into the
+                    # options the renderer reads; an end frame can be passed via
+                    # options.end_image_url.
+                    hf_opts = dict(options or {})
+                    if not hf_opts.get("image_url") and not hf_opts.get("start_image_url"):
+                        if input_data_uri:
+                            hf_opts["image_url"] = input_data_uri
+                        elif input_abs:
+                            hf_opts["image_url"] = _file_to_data_uri(input_abs)
+                    bytes_ = _higgsfield_generate_video(api_key, prompt, model, aspect, hf_opts)
                 elif provider == "fal" and skill == "3d-gen":
                     # v3.5 - 3D model generation. Bytes are .glb / .gltf.
                     # Long timeout (up to 10min for some models).
