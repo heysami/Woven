@@ -13586,18 +13586,33 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _qa_resolve_url(self, qs):
         """Shared resolver for /__qa/resolve + /__qa/run.
 
-        Returns a dict: { node, kind, bakedPath, url, baked, message }.
-        On hard errors (unknown project / node / missing workflow.json) it
-        raises _QAResolveError(code, payload) so the caller can _reply().
+        Two target shapes:
+          • node=<nodeId> - the ISOLATED runtime of one baked interactive piece
+            (resolved from node.bakedPath). defaultMode=interactive.
+          • page=<slug | relative source path> - the COMPOSED page/app surface
+            as the editor renders it (source/<slug>/index.html etc), served
+            through the daemon with ?project= so the design-system imports
+            resolve exactly like the real app. defaultMode=render.
+
+        Returns a dict: { target, node, page, kind, bakedPath, url, baked,
+        defaultMode, message }. On hard errors (unknown project / node / page /
+        missing workflow.json) it raises _QAResolveError(code, payload) so the
+        caller can _reply().
         """
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
             raise _QAResolveError(400, {"error": str(e)})
-        node_id = (_qs_get(qs, "node") or "").strip()
-        if not node_id:
-            raise _QAResolveError(400, {"error": "missing ?node=<nodeId>"})
         project_id = (_qs_get(qs, "project") or "").strip()
+        node_id = (_qs_get(qs, "node") or "").strip()
+        page = (_qs_get(qs, "page") or "").strip()
+        if node_id and page:
+            raise _QAResolveError(400, {"error": "pass node= OR page=, not both"})
+        if not node_id and not page:
+            raise _QAResolveError(400, {"error": "missing ?node=<nodeId> or "
+                                        "?page=<slug | relative source path>"})
+        if page:
+            return self._qa_resolve_page(project_root, project_id, page)
         wf_path = os.path.join(project_root, "workflow", "workflow.json")
         if not os.path.isfile(wf_path):
             raise _QAResolveError(404, {"error": "workflow.json not found", "path": wf_path})
@@ -13614,29 +13629,85 @@ class H(http.server.SimpleHTTPRequestHandler):
         baked_path = (node.get("bakedPath") or "").strip()
         if not baked_path:
             return {
-                "node":      node_id,
-                "kind":      kind,
-                "bakedPath": None,
-                "url":       None,
-                "baked":     False,
-                "message":   ("node has no bakedPath - bake it first in the "
-                              "editor (the bake runs client-side and stamps "
-                              "node.bakedPath)"),
+                "target":      "node",
+                "node":        node_id,
+                "page":        None,
+                "kind":        kind,
+                "bakedPath":   None,
+                "url":         None,
+                "baked":       False,
+                "defaultMode": "interactive",
+                "message":     ("node has no bakedPath - bake it first in the "
+                                "editor (the bake runs client-side and stamps "
+                                "node.bakedPath)"),
             }
         rel = baked_path.lstrip("/")
         url = "http://127.0.0.1:" + str(PORT) + "/" + urllib.parse.quote(rel)
         if project_id:
             url += "?project=" + urllib.parse.quote(project_id)
         return {
-            "node":      node_id,
-            "kind":      kind,
-            "bakedPath": baked_path,
-            "url":       url,
-            "baked":     True,
-            "message":   "resolved",
+            "target":      "node",
+            "node":        node_id,
+            "page":        None,
+            "kind":        kind,
+            "bakedPath":   baked_path,
+            "url":         url,
+            "baked":       True,
+            "defaultMode": "interactive",
+            "message":     "resolved",
         }
 
-    # GET /__qa/resolve?project=<id>&node=<nodeId>
+    # Resolve a composed page/app surface to the SAME daemon-served URL the
+    # editor renders. A baked node tests one piece in isolation; a page tests
+    # the whole surface (chrome + DS shells + the piece in place) exactly as the
+    # user sees it. Served via /source/** with ?project= so the design-system
+    # @imports resolve (a raw file:// or unstamped load 404s them -> unstyled).
+    def _qa_resolve_page(self, project_root, project_id, page):
+        rel = page.lstrip("/")
+        # Normalise to a "source/..." relative path.
+        if not rel.startswith("source/"):
+            if "/" in rel or rel.endswith(".html"):
+                # "<slug>/about.html" or "<slug>/sub/index.html"
+                rel = "source/" + rel
+            else:
+                # bare slug -> the prototype's root page
+                rel = "source/" + rel + "/index.html"
+        # Directory-ish target -> its index.html.
+        if rel.endswith("/"):
+            rel = rel + "index.html"
+        elif not rel.endswith(".html"):
+            rel = rel + "/index.html"
+        abs_path = os.path.normpath(os.path.join(project_root, rel))
+        # Confinement: never resolve outside the project root.
+        root_norm = os.path.normpath(project_root)
+        if not (abs_path == root_norm or abs_path.startswith(root_norm + os.sep)):
+            raise _QAResolveError(400, {"error": "page path escapes project root",
+                                        "page": page})
+        if not os.path.isfile(abs_path):
+            raise _QAResolveError(404, {
+                "error": "page not found on disk: " + rel,
+                "page":  page,
+                "hint":  ("pass a prototype slug (e.g. page=my-app -> "
+                          "source/my-app/index.html) or a relative source path "
+                          "(e.g. page=my-app/about.html). Build the page first "
+                          "if it does not exist yet."),
+            })
+        url = "http://127.0.0.1:" + str(PORT) + "/" + urllib.parse.quote(rel)
+        if project_id:
+            url += "?project=" + urllib.parse.quote(project_id)
+        return {
+            "target":      "page",
+            "node":        None,
+            "page":        rel,
+            "kind":        "page",
+            "bakedPath":   rel,
+            "url":         url,
+            "baked":       True,
+            "defaultMode": "render",
+            "message":     "resolved",
+        }
+
+    # GET /__qa/resolve?project=<id>&node=<nodeId> | &page=<slug|path>
     def _qa_resolve(self, qs):
         try:
             info = self._qa_resolve_url(qs)
@@ -13644,7 +13715,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(e.code, e.payload)
         return self._reply(200, info)
 
-    # GET /__qa/run?project=<id>&node=<nodeId>[&judge=<text>][&nointeract=1]
+    # GET /__qa/run?project=<id>&node=<nodeId> | &page=<slug|path>
+    #   [&judge=<text>] [&mode=interactive|render] [&nointeract=1]
     def _qa_run(self, qs):
         try:
             info = self._qa_resolve_url(qs)
@@ -13655,7 +13727,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, {
                 "verdict":   "unbaked",
                 "message":   info.get("message"),
+                "target":    info.get("target"),
                 "node":      info.get("node"),
+                "page":      info.get("page"),
                 "kind":      info.get("kind"),
                 "bakedPath": None,
                 "url":       None,
@@ -13671,9 +13745,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
         judge = (_qs_get(qs, "judge") or "").strip()
         nointeract = (_qs_get(qs, "nointeract") or "").strip()
+        # Mode: explicit &mode= wins; otherwise the target's default (a page
+        # renders, a node animates/reacts).
+        mode = (_qs_get(qs, "mode") or "").strip().lower()
+        if mode not in ("interactive", "render"):
+            mode = info.get("defaultMode") or "interactive"
         out_dir = tempfile.mkdtemp(prefix="woven-qa-")
         # Run on the same interpreter that runs the daemon (system python).
-        cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir]
+        cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir,
+               "--mode", mode]
         if judge:
             cmd += ["--judge", judge]
         if nointeract and nointeract not in ("0", "false", "no"):
@@ -13723,9 +13803,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "outDir":   out_dir,
             })
         # Surface the verdict + provenance alongside the tool's own report.
+        report.setdefault("target", info.get("target"))
         report.setdefault("node", info.get("node"))
+        report.setdefault("page", info.get("page"))
         report.setdefault("kind", info.get("kind"))
         report.setdefault("url", url)
+        report["mode"] = mode
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
         return self._reply(200, report)

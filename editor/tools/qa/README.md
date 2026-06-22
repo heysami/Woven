@@ -27,12 +27,24 @@ syntax), so it can live alongside the rest of `editor/` which runs on 3.9.
 
 ```
 python3 editor/tools/qa/visual_qa.py --url <url-or-file> \
+    [--mode interactive|render] \
     [--spec <spec.json>] [--out <dir>] [--viewport 1280x720] \
     [--settle-ms 300] [--no-interact] \
     [--judge "<expected effect>"] \
     [--judge-daemon <base-url> --judge-project <id>] \
     [--judge-provider anthropic|openai] [--judge-model <id>]
 ```
+
+- `--mode`       What "working" means for this target (default `interactive`):
+                 - `interactive` - the piece must ANIMATE or REACT. A static,
+                   motionless result fails as `static`. Use for a single baked
+                   interactive node (its isolated runtime).
+                 - `render` - a COMPOSED page/app surface must RENDER correctly.
+                   A correctly painted static page PASSES; a blank / unstyled
+                   flat wash fails as `blank` (the broken-imports failure). The
+                   interaction battery is skipped unless `--spec` supplies steps.
+                 Either mode pairs with `--judge` to also check the RIGHT thing
+                 rendered.
 
 - `--url`        URL (http/https) or a local path / file:// URL. A bare path is
                  resolved to an absolute file:// URL.
@@ -95,10 +107,16 @@ exit-code table is under "Verdict semantics" below.
                 was disabled). Nothing renders or moves.
 - `no-reaction` Idle may animate, but interaction caused effectively no change
                 when interaction was expected. The piece ignores input.
-- `pass`        It animates and/or reacts to input.
-- `effect-wrong` Pixels DID move, but the optional `--judge` frame-judge said
-                the intended effect was NOT achieved (the wrong thing renders).
-                Only reachable when `--judge` is supplied and the judge ran.
+- `pass`        It animates and/or reacts to input (interactive mode), or it
+                rendered real content without errors (render mode).
+- `blank`       RENDER MODE ONLY. The page loaded but painted a blank / flat
+                uniform frame - nothing real rendered. Usually broken CSS/JS
+                imports (e.g. a missing `?project` stamp so the design-system
+                `@import`s 404) or a script bailout. Navigation "succeeded" and
+                no error was thrown, yet the surface is empty/unstyled.
+- `effect-wrong` Pixels DID move (or the page rendered), but the optional
+                `--judge` frame-judge said the intended effect / content was NOT
+                achieved. Only reachable when `--judge` is supplied and ran.
 
 ### Exit codes
 
@@ -107,6 +125,7 @@ exit-code table is under "Verdict semantics" below.
 - `2`  `error`
 - `3`  setup failure (Playwright / Chrome missing, bad spec)
 - `4`  `effect-wrong` (pixels moved but the frame-judge rejected the effect)
+- `5`  `blank` (render mode: loaded but painted nothing / an unstyled wash)
 
 ### Thresholds (documented + tunable in the source)
 
@@ -157,10 +176,35 @@ Two ways:
    NOT start or restart the daemon from this tool; only use it if it is already
    running.
 
-This v1 verifies a single URL you hand it. The NEXT phase is to resolve a
-Woven node id to its served runtime URL automatically, and to auto-trigger this
-harness during a build so a piece that "did not achieve its effect" is caught
-before it ships.
+### The easy path: the daemon `/__qa/*` endpoints
+
+You usually do not invoke this script by hand. An ALREADY-RUNNING Woven daemon
+exposes two endpoints (see `serve.py` `_qa_resolve_url` / `_qa_run`) that resolve
+a target to the exact daemon-served URL the editor renders, then run this script
+for you and return the report JSON:
+
+```
+GET $TH_DAEMON_URL/__qa/resolve?project=<id>&node=<nodeId>     # isolated piece
+GET $TH_DAEMON_URL/__qa/resolve?project=<id>&page=<slug|path>  # composed surface
+GET $TH_DAEMON_URL/__qa/run?project=<id>&node=<nodeId>[&judge=<text>]
+GET $TH_DAEMON_URL/__qa/run?project=<id>&page=<slug>[&judge=<text>][&mode=render]
+```
+
+- `node=<id>` resolves `node.bakedPath` to `/<bakedPath>?project=<id>` and
+  defaults to `mode=interactive`.
+- `page=<slug>` resolves to `/source/<slug>/index.html?project=<id>` (or a
+  relative `<slug>/<file>.html`) and defaults to `mode=render`. Because it
+  serves through the daemon with the `?project=` stamp, the design-system
+  imports resolve EXACTLY as they do in the editor iframe - this is the
+  realistic "how it appears in the app" view, not a raw `file://` or a separate
+  preview server that would 404 the DS CSS and render unstyled.
+- `&mode=interactive|render` overrides the per-target default; `&judge=<text>`
+  forwards to `--judge`; `&nointeract=1` forwards to `--no-interact`.
+
+The endpoint NEVER starts the daemon; it runs inside the daemon process you
+already have up. The capabilities preamble surfaces this to every spawned
+builder agent under "Verify your visual work before you tell the user it is
+done", so agents verify a deliverable instead of self-certifying it.
 
 ## LLM frame-judge (`--judge`)
 

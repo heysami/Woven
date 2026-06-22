@@ -174,6 +174,36 @@ def diff_frames(path_a: str, path_b: str) -> float:
     return _diff_raw(path_a, path_b)
 
 
+# Fraction of a 64x64 grayscale frame that must sit in the single dominant
+# brightness bucket for the frame to count as "blank" (nothing rendered, or a
+# flat unstyled wash because the design-system @imports 404'd). A real rendered
+# page has text + colour variety, so its dominant bucket stays well below this.
+BLANK_DOMINANCE = 0.992
+
+
+def frame_is_blank(path: str) -> Optional[bool]:
+    """Return True if the frame is effectively one flat colour, False if it has
+    real content, or None when we cannot tell (no Pillow, decode error). None is
+    deliberately NOT treated as blank by callers, so a missing optional
+    dependency never turns into a false 'blank' failure.
+
+    This is the realistic-render check: a composed page whose CSS/JS resolved
+    paints text + colour and is NOT blank; a page that loaded but rendered an
+    unstyled flat wash (broken imports, JS bailout) reads as blank here even
+    though navigation 'succeeded' and no error was thrown."""
+    if not _PIL_OK:
+        return None
+    try:
+        img = Image.open(path).convert("L").resize((64, 64))
+    except Exception as exc:
+        log("blank-check: could not open %s (%s)" % (path, exc))
+        return None
+    hist = img.histogram()  # 256 buckets over the 64x64 = 4096 pixels
+    total = sum(hist) or 1
+    peak = max(hist) if hist else 0
+    return (peak / float(total)) >= BLANK_DOMINANCE
+
+
 # ---------------------------------------------------------------------------
 # Browser launch (system Chrome via channel="chrome", fallback to chromium)
 # ---------------------------------------------------------------------------
@@ -754,8 +784,15 @@ def run(args: argparse.Namespace) -> int:
         report["idleFrames"] = idle_frames
 
         # ----- INTERACTION BATTERY -----
+        # render mode is for composed pages where "did it render?" is the
+        # question, not "does it move?"; skip the battery there unless the spec
+        # explicitly asks for steps. interactive mode keeps the default battery.
         interactions: List[Dict[str, Any]] = []
-        if not args.no_interact:
+        render_mode = (args.mode == "render")
+        spec_has_steps = bool(spec.get("interactions"))
+        do_interact = (not args.no_interact) and (
+            spec_has_steps or not render_mode)
+        if do_interact:
             spec_steps = spec.get("interactions")
             if spec_steps:
                 steps = spec_steps
@@ -800,9 +837,18 @@ def run(args: argparse.Namespace) -> int:
     ix_diffs = [ix["diff"] for ix in report["interactions"]]
     max_idle = max(idle_diffs) if idle_diffs else 0.0
     max_ix = max(ix_diffs) if ix_diffs else 0.0
+
+    # Render mode: is the first painted frame blank (nothing rendered / flat
+    # unstyled wash)? None = could not tell (no Pillow); treated as not-blank.
+    first_blank = None
+    if render_mode and report["idleFrames"]:
+        first_blank = frame_is_blank(report["idleFrames"][0]["path"])
+
     report["metrics"] = {
+        "mode": args.mode,
         "maxIdleDiff": max_idle,
         "maxInteractionDiff": max_ix,
+        "firstFrameBlank": first_blank,
         "pixelDeltaThreshold": PIXEL_DELTA_THRESHOLD,
         "diffEpsilon": DIFF_EPSILON,
     }
@@ -811,12 +857,37 @@ def run(args: argparse.Namespace) -> int:
     verdict = "pass"
 
     severe_error = bool(page_errors) or bool(console_errors)
-    interacted = (not args.no_interact) and bool(report["interactions"])
+    interacted = do_interact and bool(report["interactions"])
 
     animates = max_idle > DIFF_EPSILON
     reacts = max_ix > DIFF_EPSILON
 
-    if severe_error:
+    if render_mode:
+        # Composed page: "did it render?" not "does it move?". A correctly
+        # painted static page is a PASS; a blank/unstyled flat wash fails.
+        if severe_error:
+            verdict = "error"
+            if page_errors:
+                reasons.append("uncaught page error(s): %d" % len(page_errors))
+            if console_errors:
+                reasons.append("console error(s): %d" % len(console_errors))
+        elif first_blank is True:
+            verdict = "blank"
+            reasons.append("page rendered a blank / flat-uniform frame - "
+                           "likely broken CSS/JS imports (e.g. missing "
+                           "?project stamping) or a script bailout; it loaded "
+                           "but did not paint real content")
+        else:
+            reasons.append("rendered without errors")
+            if first_blank is None:
+                reasons.append("blank-check unavailable (no Pillow); rendered "
+                               "+ error-free is the verdict basis")
+            if animates:
+                reasons.append("also animates (maxIdleDiff=%.4f)" % max_idle)
+            if interacted and reacts:
+                reasons.append("also reacts to input "
+                               "(maxInteractionDiff=%.4f)" % max_ix)
+    elif severe_error:
         verdict = "error"
         if page_errors:
             reasons.append("uncaught page error(s): %d" % len(page_errors))
@@ -894,6 +965,8 @@ def run(args: argparse.Namespace) -> int:
         return 2
     if verdict == "effect-wrong":
         return 4  # pixels moved but the wrong thing renders (frame-judge)
+    if verdict == "blank":
+        return 5  # render mode: loaded but painted nothing / unstyled wash
     return 1  # static or no-reaction
 
 
@@ -923,6 +996,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Settle delay after load before t=0 (default 300).")
     p.add_argument("--no-interact", action="store_true",
                    help="Skip the interaction battery (idle timeline only).")
+    p.add_argument("--mode", default="interactive",
+                   choices=["interactive", "render"],
+                   help="interactive (default): verify the piece ANIMATES / "
+                        "REACTS - a static, motionless result fails as 'static'. "
+                        "render: verify a composed page/app RENDERED correctly - "
+                        "a correctly-painted static page PASSES; a blank / "
+                        "unstyled flat wash fails as 'blank'. render mode skips "
+                        "the interaction battery unless --spec supplies steps. "
+                        "Pair either mode with --judge to also check the RIGHT "
+                        "thing rendered.")
     p.add_argument("--judge", default=None, metavar="EXPECTED",
                    help="Optional LLM frame-judge. Pass a plain-English "
                         "description of the intended effect; the harness "

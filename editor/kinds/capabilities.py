@@ -170,6 +170,8 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__run/<id>/resume",    "purpose": "Respawn a stopped agent with --resume sessionId (preserves conversation)"},
         {"method": "GET",  "path": "/__kinds/registry",     "purpose": "Per-kind contracts: inputs, outputs, dispatch, fanOut"},
         {"method": "GET",  "path": "/__kinds/reconcile",    "purpose": "Drift detection across workflow.json vs disk"},
+        {"method": "GET",  "path": "/__qa/resolve",         "purpose": "Resolve a baked node OR a composed page to the daemon-served runtime URL (node=<id> | page=<slug|path>)"},
+        {"method": "GET",  "path": "/__qa/run",             "purpose": "VERIFY VISUAL WORK: headless-render a node (mode=interactive) or page (mode=render) in real Chrome, capture frames + simulate input, return a pass/static/no-reaction/blank/error/effect-wrong verdict. Add judge=<expected> for a vision-LLM 'right thing rendered?' check"},
         {"method": "GET",  "path": "/__capabilities",       "purpose": "This catalog - what the app can do"},
         {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files (incl. per-DS local fonts)"},
         {"method": "POST", "path": "/__design_system",      "purpose": "Write a DS trio (vars/primitives/index)"},
@@ -853,6 +855,20 @@ Both default to **fal** (hosted - `tripo3d/triposplat` for splat, `fal-ai/trelli
 {endpoint_lines}
 
 > **WORKSPACE MODE - every daemon URL needs `?project=$TH_PROJECT_ID`.** The daemon hosts many projects under one process. Your shell already has `TH_PROJECT_ID` set (your project's id) and `TH_DAEMON_URL` set (the daemon root). When you `curl` an endpoint, append `?project=$TH_PROJECT_ID` (or `&project=$TH_PROJECT_ID` if the URL already has a query). Forgetting it returns `400 workspace mode with N projects requires explicit ?project=<id>` - that's the daemon telling you to fix the URL, not asking what to do. Always use `$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID` (and same shape for every other endpoint), never the bare `$TH_DAEMON_URL/__workflow`. Bug history: the musem chat got back the install's brand-landing workflow (27 unrelated nodes) because of this.
+
+## Verify your visual work before you tell the user it is done (hard rule)
+
+You CANNOT see what you built by reading the source you wrote. "I wrote the HTML/CSS, so it works" and "the file looks right" are NOT verification - they are how a broken page ships. Before you claim a visual or interactive deliverable is done, RENDER it and look at the result. There is one easy call for this; use it instead of a self-certified "done" or a hand-rolled preview server.
+
+`GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&<target>[&judge=<one-line expected effect>]`
+
+Pick the target:
+- **`&page=<slug>`** (or `&page=<slug>/<file>.html`) - the COMPOSED page/app surface as the user sees it: chrome + design-system shells + every piece in place. Defaults to `mode=render`: it passes a correctly painted page, and FAILS `blank` if the page rendered an unstyled flat wash (the classic broken-`?project`-stamping / 404'd-DS-imports bug). **This is the realistic view** - it serves through the daemon at the same `/source/...?project=` URL the editor iframe loads, NOT a raw `file://` or a separate sandbox that misses the design-system imports.
+- **`&node=<nodeId>`** - ONE baked interactive piece in isolation. Defaults to `mode=interactive`: it captures an idle timeline AND simulates input (pointer / click / drag / scroll / key), so it tells `static` (nothing moves) and `no-reaction` (ignores input) apart from a real `pass`. Bake the node first (the bake stamps `node.bakedPath`).
+
+Read the `verdict`: `pass` (only now may you say it is done) · `blank` (page rendered nothing real - fix imports/paths, re-run) · `static` / `no-reaction` (interactive piece does not move / ignores input - fix the wiring, re-run) · `error` (read `consoleErrors` / `pageErrors`, fix, re-run) · `effect-wrong` (with `judge=`: pixels moved but the wrong thing rendered) · `unbaked` (bake the node first).
+
+To judge content (not just "did it move / render"), add `judge=<plain-English expected result>` - a vision LLM looks at the captured frames and says whether the RIGHT thing rendered. And to see it with your own eyes, the report's `outDir` holds every captured PNG (and `judge.stripPath` a labeled montage) - `Read` one of those frame paths. Fail-soft: a missing Playwright/Chrome reports a clear setup message, never a false pass. Do NOT substitute reading a baked `.html` snapshot or the runtime source for this - those are frozen/partial; RUN the QA against the live render. (For interactive *logic-graph* pieces specifically, `GET /__logic_guide?section=verify` has the deeper protocol.)
 
 {node_kinds_block}
 {custom_skills_block}{mcp_inventory_block}

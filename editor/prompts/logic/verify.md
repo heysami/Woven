@@ -12,6 +12,8 @@ Read the `verdict`:
 - `effect-wrong` - pixels move but the `judge` says it is the wrong thing; revise and re-run.
 - `unbaked` - bake the node first, then re-run.
 
+This is the deep protocol for an interactive LOGIC-GRAPH piece (`mode=interactive`, which captures motion + simulates input). The SAME endpoint also verifies a composed page/app surface: `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>` runs `mode=render`, which passes a correctly painted page and catches a `blank`/unstyled render (broken `?project` stamping / 404'd DS imports). The always-on capabilities preamble documents both targets under "Verify your visual work before you tell the user it is done" - use `page=` for "does the app look right", `node=` for "does this piece move/react".
+
 HARD RULES (these caused real failures):
 - NEVER judge whether a capability works by reading a baked `.html` snapshot or the runtime source - those are frozen/partial. RUN the QA instead; it tests the live engine.
 - NEVER delete the user's nodes to "start clean." Fix in place.
