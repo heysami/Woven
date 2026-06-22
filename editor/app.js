@@ -9860,13 +9860,13 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
                 ${!isGuest && wovenAvail && html`
                   <div className="th-share-mode" title=${s.mode === "woven"
                       ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
-                      : "Quick link - a random trycloudflare.com URL that changes on every restart"}>
-                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
-                      disabled=${isBusy || s.mode !== "woven"}
-                      onClick=${() => s.mode === "woven" && tunnelOp(s.id, "update", { mode: "quick" })}>Quick</button>
+                      : "Randomised link - a random trycloudflare.com URL that changes on every restart"}>
                     <button className=${"th-mode-opt" + (s.mode === "woven" ? " is-on" : "")}
                       disabled=${isBusy || s.mode === "woven"}
                       onClick=${() => s.mode !== "woven" && tunnelOp(s.id, "update", { mode: "woven" })}>Stable</button>
+                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
+                      disabled=${isBusy || s.mode !== "woven"}
+                      onClick=${() => s.mode === "woven" && tunnelOp(s.id, "update", { mode: "quick" })}>Randomised URL</button>
                   </div>
                 `}
                 ${s.shareUrl && linkRow(s.id, s.shareUrl)}
@@ -21148,20 +21148,20 @@ function SharesLanding({ onCountChange }) {
                 ${wovenAvail && html`
                   <div className="th-share-mode" title=${s.mode === "woven"
                       ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
-                      : "Quick link - a random trycloudflare.com URL that changes on every restart"}>
-                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
-                      disabled=${isBusy || s.mode !== "woven"}
-                      onClick=${() => s.mode === "woven" && op(s.id, "update", { mode: "quick" })}>Quick</button>
+                      : "Randomised link - a random trycloudflare.com URL that changes on every restart"}>
                     <button className=${"th-mode-opt" + (s.mode === "woven" ? " is-on" : "")}
                       disabled=${isBusy || s.mode === "woven"}
                       onClick=${() => s.mode !== "woven" && op(s.id, "update", { mode: "woven" })}>Stable</button>
+                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
+                      disabled=${isBusy || s.mode !== "woven"}
+                      onClick=${() => s.mode === "woven" && op(s.id, "update", { mode: "quick" })}>Randomised URL</button>
                   </div>
                 `}
                 ${s.status === "running" || s.status === "starting"
                   ? html`<button className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "stop")} title="Stop the tunnel - the public URL goes dark">Stop</button>`
                   : html`<button className="shares-btn shares-btn-primary" disabled=${isBusy || cfMissing}
-                      title=${cfMissing ? "Install cloudflared first" : (s.mode === "woven" ? "Start the stable tunnel (same URL every time)" : "Start a quick tunnel (the URL will be new)")}
+                      title=${cfMissing ? "Install cloudflared first" : (s.mode === "woven" ? "Start the stable tunnel (same URL every time)" : "Start a randomised tunnel (the URL will be new)")}
                       onClick=${() => op(s.id, "start")}>Start</button>`}
                 <button className="shares-btn" disabled=${isBusy}
                   title=${s.emailGate ? "Switch to open commenting (name only)" : "Require name + email to comment"}
@@ -47917,13 +47917,13 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
           ${wovenAvail && html`
             <div key="mode" className="th-share-mode" title=${share.mode === "woven"
                 ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
-                : "Quick link - a random trycloudflare.com URL that changes on every restart"}>
-              <button className=${"th-mode-opt" + (share.mode !== "woven" ? " is-on" : "")}
-                disabled=${shareBusy || share.mode !== "woven"}
-                onClick=${() => share.mode === "woven" && shareOp("update", { mode: "quick" })}>Quick</button>
+                : "Randomised link - a random trycloudflare.com URL that changes on every restart"}>
               <button className=${"th-mode-opt" + (share.mode === "woven" ? " is-on" : "")}
                 disabled=${shareBusy || share.mode === "woven"}
                 onClick=${() => share.mode !== "woven" && shareOp("update", { mode: "woven" })}>Stable</button>
+              <button className=${"th-mode-opt" + (share.mode !== "woven" ? " is-on" : "")}
+                disabled=${shareBusy || share.mode !== "woven"}
+                onClick=${() => share.mode === "woven" && shareOp("update", { mode: "quick" })}>Randomised URL</button>
             </div>
           `}
           ${share.shareUrl && html`

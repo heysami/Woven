@@ -176,7 +176,11 @@ def share_create(project, prototype, label=None, email_gate=False):
             "prototype":  prototype,
             "label":      (label or "").strip() or f"{project} / {prototype}",
             "emailGate":  bool(email_gate),
-            "mode":       "quick",   # "quick" | "woven" (stable URL); see Woven section
+            # New shares default to the stable (woven) URL when a broker is
+            # configured; fall back to quick if it isn't. Existing records with no
+            # `mode` field stay quick (share_mode()), so this never silently
+            # migrates a live share.
+            "mode":       ("woven" if WOVEN_BROKER_URL else "quick"),
             "active":     False,
             "createdAt":  _now_iso(),
             "lastUrl":    "",
