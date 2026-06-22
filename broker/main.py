@@ -25,6 +25,7 @@ from collections import defaultdict, deque
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import cloudflare as cf
@@ -42,6 +43,12 @@ _hits: dict[str, deque] = defaultdict(deque)
 
 app = FastAPI(title="woven-broker")
 _client: httpx.AsyncClient
+
+
+@app.exception_handler(cf.CloudflareError)
+async def _cf_error(request: Request, exc: cf.CloudflareError) -> JSONResponse:
+    # Surface Cloudflare's actual complaint instead of a blank 500.
+    return JSONResponse(status_code=502, content={"error": "cloudflare", "detail": str(exc)})
 
 
 @app.on_event("startup")
