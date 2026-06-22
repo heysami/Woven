@@ -3922,10 +3922,10 @@ function renderInspector(){
     const spec=WIRED.layers.find(wl=>wl.id===L.id)?.spec||{};
     body.appendChild(html(`<div style="padding:12px;display:flex;flex-direction:column;gap:8px">
       <p class="hint" style="margin:0">Driven by a wired Layer node. Edit properties on the canvas node - except Mask, which is set here.</p>
-      <div class="fld"><label>Opacity</label><input type="range" min="0" max="1" step="0.01" value="${spec.opacity??1}" disabled></div>
-      <div class="fld"><label>Blend</label><select disabled><option>${spec.blend||'normal'}</option></select></div>
-      <div class="fld"><label>Feedback</label><input type="range" min="0" max="1" step="0.01" value="${spec.feedback??0}" disabled></div>
-      <div class="fld"><label>Z</label><input type="number" value="${spec.z??0}" disabled style="width:60px"></div>
+      <div class="fld"><label>Opacity</label><input type="range" min="0" max="1" step="0.01" value="${L._opacity??1}" disabled></div>
+      <div class="fld"><label>Blend</label><select disabled><option>${(L._blend==='source-over'?'normal':L._blend)||'normal'}</option></select></div>
+      <div class="fld"><label>Feedback</label><input type="range" min="0" max="1" step="0.01" value="${L.feedback??0}" disabled></div>
+      <div class="fld"><label>Z</label><input type="number" value="${L.z??0}" disabled style="width:60px"></div>
       <div class="fld"><label>Content</label><span class="tag">${L.content.kind}</span></div>
       <div class="fld"><label>Position</label><span class="tag">${L.positioning.mode}</span></div>
       <div class="fld"><label>Trigger</label><span class="tag">${L.trigger.source}</span></div>
