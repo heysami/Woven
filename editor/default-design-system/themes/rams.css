@@ -186,6 +186,14 @@
   --on-primary:var(--ram-on-accent);
   --primary-grad-from:var(--ram-key); --primary-grad-to:var(--ram-face);
 
+  /* secondary / tertiary used as INLINE text colour in templates (stat numbers,
+     accents) must lift to a lighter ramp step to read on the dark device -
+     the same dark-aware treatment the primary accent already gets. */
+  --secondary-fg:var(--secondary-300);
+  --secondary-500:var(--secondary-300); --secondary-600:var(--secondary-300); --secondary-700:var(--secondary-300);
+  --tertiary-fg:var(--tertiary-300);
+  --tertiary-600:var(--tertiary-300); --tertiary-700:var(--tertiary-300);
+
   --series-1:var(--ram-accent-strong); --series-2:var(--ram-accent);
   --series-3:#A6A9B0; --series-4:#6B6E75; --series-5:#C9CBD0;
   --chart-grid:#313338; --chart-axis:var(--ram-ink-subtle);
@@ -515,8 +523,13 @@
 }
 [data-theme="rams"] .sidebar__nav{overflow:visible;}
 [data-theme="rams"] .sidebar__wave{display:none;}
-[data-theme="rams"] .sidebar__logo .title{color:var(--ram-ink);}
-[data-theme="rams"] .sidebar__logo .sep{background:var(--ram-edge);}
+/* The templates hard-code the wordmark white + the separator white-tint INLINE
+   (style="color:#fff" / background:var(--tint-30)) for the base's dark brand
+   rail. rams flattens that rail to a light device panel, so these must flip -
+   and only !important beats an inline style. --ram-ink is mode-aware (dark in
+   light mode, light in dark mode), so this one rule is correct in BOTH schemes. */
+[data-theme="rams"] .sidebar__logo .title{color:var(--ram-ink) !important;}
+[data-theme="rams"] .sidebar__logo .sep{background:var(--ram-edge) !important;}
 [data-theme="rams"] .sidebar__section{color:var(--ram-ink-subtle);}
 [data-theme="rams"] .sidebar__user{border-top-color:var(--ram-edge);}
 [data-theme="rams"] .nav-link{
@@ -587,21 +600,21 @@
    (--on-primary) text would vanish. Flip those to ink + give them the raised
    device face, the way neumorphism flips its hero to --fg-default.
    ========================================================================== */
+/* These are the SAME two bands the templates flip for neumorphism
+   (templates/ecommerce.html .sh-hero, templates/landing.html .lp-cta) - the
+   authoritative set of brand-fill bands. Keep this rams list in lock-step with
+   that set; if a new brand band is added it gets a neumorphism flip too, so
+   grep `data-theme="neumorphism"` in templates/ to resync. */
 [data-theme="rams"] .sh-hero,
-[data-theme="rams"] .sh-promo,
-[data-theme="rams"] .cta,
-[data-theme="rams"] .cta-band{
+[data-theme="rams"] .lp-cta{
   color:var(--ram-ink);
   background:var(--ram-grad-face);
   border:1px solid var(--ram-edge);
   box-shadow:var(--ram-raise);
 }
-/* the hero's white "Shop" button → a seated accent key so it still reads */
-[data-theme="rams"] .sh-hero .btn--light{
+/* their white CTA buttons → seated accent keys so they still read on the face */
+[data-theme="rams"] .sh-hero .btn--light,
+[data-theme="rams"] .lp-cta .btn--light{
   background:var(--ram-grad-key);border:1px solid var(--ram-edge);
   color:var(--ram-accent-strong);box-shadow:var(--ram-raise-sm);
 }
-/* logo mark on a brand chip flattens too - keep its mark legible on the face */
-[data-theme="rams"] .topbar__logo,
-[data-theme="rams"] .sh-logo,
-[data-theme="rams"] .brandmark{color:var(--ram-ink);}
