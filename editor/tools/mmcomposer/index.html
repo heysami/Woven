@@ -3317,17 +3317,32 @@ function drawPolyShape(ctx, c, W, H){
   // instead of snapping.
   const mirror = (c.fillSrc==='camera');
   const smPts = c._sm || (c._sm = {});
+  // COVER + MIRROR mapping: the camera fill is drawn 'cover' (scaled to fill the
+  // canvas, cropping overflow) and mirrored. Landmark coords are normalized to
+  // the FULL video frame, so mapping them straight to (x*W,y*H) puts the polygon
+  // OFF the fingers (offset grows with the webcam-vs-canvas aspect mismatch).
+  // Map points through the SAME cover+mirror transform so the quad sits exactly
+  // on the hands. Falls back to the plain mapping when not camera-driven / no video.
+  let mapX = (nx)=>nx*W, mapY = (ny)=>ny*H;
+  if(mirror){
+    const camVid = Input.cam.on ? Input.cam.video : null;
+    if(camVid && camVid.videoWidth){
+      const ar = camVid.videoWidth/camVid.videoHeight, s = Math.max(W/ar, H), w = s*ar, h = s;
+      mapX = (nx)=>(W+w)/2 - nx*w;   // mirror (1-nx) folded into the cover rect
+      mapY = (ny)=>(H-h)/2 + ny*h;
+    } else { mapX = (nx)=>(1-nx)*W; }
+  }
   for(let i=0;i<8;i++){
     const ref=bind['p'+i]; if(!ref||ref.kind!=='logic') continue;
     const v=LogicBridge.vec(ref.ref); if(!v) continue;
     // {0,0} is the "no detection" sentinel for landmark ports - skip it so an
     // undetected hand does NOT draw a phantom polygon stuck in the corner.
     if(v.x===0 && v.y===0) continue;
-    let px = mirror ? (1 - v.x) : v.x, py = v.y;
+    let nx = v.x, ny = v.y;
     const pr = smPts['p'+i];
-    if(pr){ px = pr[0] + (px-pr[0])*0.4; py = pr[1] + (py-pr[1])*0.4; }
-    smPts['p'+i] = [px, py];
-    pts.push([px*W, py*H]);
+    if(pr){ nx = pr[0] + (nx-pr[0])*0.4; ny = pr[1] + (ny-pr[1])*0.4; }
+    smPts['p'+i] = [nx, ny];
+    pts.push([mapX(nx), mapY(ny)]);
   }
   if(pts.length<2) return;
   ctx.beginPath();
@@ -4984,7 +4999,10 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   function impacts(tv){const ov={};for(const L of CFG.layers){const t=tv[L.id];if(!t)continue;for(const im of (L.trigger.impacts||[])){if(!im||!im.target)continue;const val=applyMap(t.v,im.map,im.range);const o=ov[im.target]||(ov[im.target]={});if(im.param==='opacity')o.opacity=val;else if(im.param==='scale')o.scale=val;else if(im.param==='position')o.position=[t.vec?t.vec[0]:val,t.vec?t.vec[1]:val];else if(im.param==='effect.intensity')o.eInt=val;}}return ov;}
   /* content draw */
   function drawM(media,ar,bw,bh,fit,ax,ay,tile){fit=['cover','contain','fill','none'].includes(fit)?fit:'contain';ax=ax||'center';ay=ay||'center';if(tile&&media){const pat=lctx.createPattern(media,'repeat');if(pat){lctx.fillStyle=pat;lctx.fillRect(-bw/2,-bh/2,bw,bh);return;}}let w=bw,h=bh;if(fit==='contain'){const s=Math.min(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='cover'){const s=Math.max(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='none'){h=bh;w=h*(ar||1);}const x=ax==='left'?-bw/2:ax==='right'?bw/2-w:-w/2,y=ay==='top'?-bh/2:ay==='bottom'?bh/2-h:-h/2;lctx.drawImage(media,x,y,w,h);}
-  function drawPoly(c){const pts=[];const bind=c.points||{};const mirror=(c.fillSrc==='camera');const smPts=c._sm||(c._sm={});for(let i=0;i<8;i++){const ref=bind['p'+i];if(!ref||ref.kind!=='logic')continue;const v=LB.vec(ref.ref);if(!v)continue;if(v.x===0&&v.y===0)continue;let px=mirror?(1-v.x):v.x,py=v.y;const pr=smPts['p'+i];if(pr){px=pr[0]+(px-pr[0])*0.4;py=pr[1]+(py-pr[1])*0.4;}smPts['p'+i]=[px,py];pts.push([px*W,py*H]);}
+  function drawPoly(c){const pts=[];const bind=c.points||{};const mirror=(c.fillSrc==='camera');const smPts=c._sm||(c._sm={});
+    let mapX=(nx)=>nx*W,mapY=(ny)=>ny*H;
+    if(mirror){const camVid=IN.cam.on?IN.cam.video:null;if(camVid&&camVid.videoWidth){const ar=camVid.videoWidth/camVid.videoHeight,s=Math.max(W/ar,H),w=s*ar,h=s;mapX=(nx)=>(W+w)/2-nx*w;mapY=(ny)=>(H-h)/2+ny*h;}else{mapX=(nx)=>(1-nx)*W;}}
+    for(let i=0;i<8;i++){const ref=bind['p'+i];if(!ref||ref.kind!=='logic')continue;const v=LB.vec(ref.ref);if(!v)continue;if(v.x===0&&v.y===0)continue;let nx=v.x,ny=v.y;const pr=smPts['p'+i];if(pr){nx=pr[0]+(nx-pr[0])*0.4;ny=pr[1]+(ny-pr[1])*0.4;}smPts['p'+i]=[nx,ny];pts.push([mapX(nx),mapY(ny)]);}
     if(pts.length<2)return;lctx.setTransform(1,0,0,1,0,0);lctx.beginPath();const sm=Math.max(0,Math.min(1,c.smoothing||0));
     if(sm>0&&pts.length>2){const close=!!c.closed,N=pts.length,at=k=>pts[((k%N)+N)%N];lctx.moveTo(pts[0][0],pts[0][1]);const last=close?N:N-1;
       for(let i=0;i<last;i++){const p0=at(i-1),p1=at(i),p2=at(i+1),p3=at(i+2);const c1x=p1[0]+((p2[0]-p0[0])/6)*sm,c1y=p1[1]+((p2[1]-p0[1])/6)*sm,c2x=p2[0]-((p3[0]-p1[0])/6)*sm,c2y=p2[1]-((p3[1]-p1[1])/6)*sm;lctx.bezierCurveTo(c1x,c1y,c2x,c2y,p2[0],p2[1]);}}
