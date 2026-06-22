@@ -2,26 +2,33 @@
 
 Node ids below are illustrative; pick unique ids. Each recipe ends by wiring into an mm-composer (Interactive composer) and you set Live mode to run it.
 
-RECIPE A - "Camera + hand + fingertip polygon + glitchy live camera behind"
-Nodes:
+RECIPE A - "Camera + hand + fingertip polygon, glitchy camera"
+Two HONEST variants - pick by whether the glitch must be CONFINED to the polygon. (The polygon spans ONE hand's fingertips: a single vision-detect(hand) exposes only the primary hand and has no left/right selector - do NOT try to span two hands with two nodes.)
+Nodes (both variants):
   - `cam` kind=input-camera (facing=user)
   - `hand` kind=vision-detect (detector=hand, target=location)
-  - `poly` kind=shape (closed=true, stroke="#6ee7ff", strokeWidth=3, fill="", z=10)
+  - `poly` kind=shape (closed=true, z=10)
   - `glitch` kind=effect (type=slice  OR  type=pixel-sort  OR  type=crt; there is NO effect literally named "glitch", these read as glitchy)
   - `comp` kind=mm-composer
-Edges:
+Shared edges:
   - cam.stream -> hand.stream            (detection feed)
-  - hand.thumbTip -> poly.p0
-  - hand.indexTip -> poly.p1
-  - hand.middleTip -> poly.p2
-  - hand.ringTip -> poly.p3
-  - hand.pinkyTip -> poly.p4
-  - cam.layer -> comp.in                 (the LIVE webcam as a layer, low z = behind)
-  - glitch.out -> <the cam layer>.in     (apply the glitch effect to the camera layer; the cam.layer is a real layer that accepts effects)
-  - poly.out -> comp.in                  (shape layer, high z = in front)
-(To put a still IMAGE behind instead of the camera, use a `layer` with an asset wired in at low z; for the LIVE camera, cam.layer is the right output.)
-Optional reactivity: hand.confidence -> map1(op-map 0..1 -> 0..1) -> glitch.param:intensity so the glitch strengthens with detection confidence.
-NOTE on "the webcam behind": the composer renders the live webcam directly - wire `cam.layer` into `comp.in` (low z) and the feed shows as a layer; the glitch effect on that layer + the polygon (high z) compose on top. Do NOT claim the composer cannot show a live camera and do NOT build a separate prototype iframe for it - it works natively via the camera layer. (The `position` mode `camera-feed` is a different thing: it places instances AT detected landmarks, it does not paint the feed - use the `cam.layer` output for the visible feed.)
+  - hand.thumbTip -> poly.p0 ; hand.indexTip -> poly.p1 ; hand.middleTip -> poly.p2 ; hand.ringTip -> poly.p3 ; hand.pinkyTip -> poly.p4
+  - cam.layer -> comp.in                 (the LIVE webcam as a layer)
+  - poly.out -> comp.in                  (the polygon, on top)
+
+Variant 1 - WHOLE-FRAME glitch (pure wiring, simplest):
+  - glitch.out -> comp.in                (TOP-LEVEL effect: glitches the ENTIRE composite; the polygon is just an outline on top)
+  Set poly stroke="#6ee7ff", strokeWidth=3, fill="". The glitch is NOT confined to the polygon - it covers everything. This is the only fully-wireable option.
+  Optional reactivity: hand.confidence -> op-map(0..1 -> 0..1) -> glitch.param:intensity (glitch strengthens with detection confidence).
+
+Variant 2 - glitch CONFINED to the polygon (face glitchy only inside the fingertips):
+  This needs a layer MASK, which is a COMPOSER-INSPECTOR setting, NOT an edge (there is no mask port; and a wired camera layer ignores wired effects - it has no `in` and synthesizes with an empty effect stack). Wiring gives the skeleton; you finish in the composer.
+  - cam.layer -> comp.in   AGAIN (a SECOND camera layer, z above the plain one - this copy gets glitched + clipped)
+  - give `poly` a solid FILL (fill="#ffffff") so its interior has coverage; poly.out -> comp.in
+  Then in the composer node's inspector: (1) add the `slice` effect to the SECOND camera layer's Effects stack; (2) set that layer's Mask "Masked by" = the poly layer (src=alpha, dst=alpha); (3) hide the poly layer, or drop its fill and keep a thin stroke for a visible outline. See "Masking + region-confined effects" in `runtime`.
+  If you cannot reach the inspector programmatically, BUILD the skeleton above and hand the user the two inspector steps as the finish - do NOT silently fall back to Variant 1 and claim the polygon confines the glitch.
+
+NOTE on "the live webcam": the composer renders the live webcam directly - wire `cam.layer` into `comp.in` and the feed shows as a layer. Do NOT claim the composer cannot show a live camera and do NOT build a separate prototype iframe for it - it works natively via the camera layer. (To put a still IMAGE behind instead, use a `layer` with an asset wired in at low z. The `position` mode `camera-feed` is a different thing: it places instances AT detected landmarks, it does not paint the feed - use `cam.layer` for the visible feed.)
 
 RECIPE B - "Tilt your phone to pan a parallax layer, brightness reacts to mic"
 Nodes:

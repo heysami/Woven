@@ -26,7 +26,7 @@ A composer LAYER is: content (an asset / camera / video / a wired position+effec
 
 ### Effect types (the `effect` node, control `type`; every effect also has `intensity` 0..1)
 
-18 types. Bind `effect.param:intensity` (universal) or a per-type numeric param. An effect wired into a layer's `in` applies to THAT layer only; wired into the composer top-level it applies to the whole frame.
+18 types. Bind `effect.param:intensity` (universal) or a per-type numeric param. An effect wired into a generic `layer` node's `in` applies to THAT layer only; wired into the composer top-level (`comp.in`) it applies to the WHOLE frame. CAVEAT: a wired CAMERA / SHAPE / Kinetic-Type layer IGNORES effects you wire toward it (it always synthesizes with an empty effect stack, and `input-camera` has no `in` port to begin with) - add its effect in the composer inspector's Effects accordion instead. To confine an effect to a REGION (e.g. only inside a polygon) you need a layer MASK - see "Masking + region-confined effects" below.
 
 - `chromatic-aberration` - RGB split. params: amount (0.01, 0..0.1), angle (0, -180..180 deg). Glitchy fringe.
 - `directional-blur` - motion blur along an angle. params: length (0.02, 0..0.2), angle (0, -180..180 deg).
@@ -48,6 +48,20 @@ A composer LAYER is: content (an asset / camera / video / a wired position+effec
 - `custom` (template "Custom shader effect") - your own GLSL fragment. controls: intensity, plus author-defined params; write `fragmentShader(values)` returning the body (friendly aliases tex / uv / uRes / o; runtime supplies the #version header). Use when no built-in fits.
 
 There is NO effect literally named "glitch" - use `slice`, `pixel-sort`, or `crt`, which read as glitchy.
+
+### Masking + region-confined effects (one layer masked by another)
+
+A layer can be MASKED by another layer's pixels: the mask layer's chosen channel multiplies a channel of the masked layer, so the masked layer only shows where the mask has coverage. This is the ONLY way to confine content or an effect to a REGION (e.g. "glitch only inside the polygon", "video only inside the circle"). Fields on the masked layer: `by` (id of the layer read as the mask; "" = no mask), `src` (channel READ off the mask layer: lum|alpha|r|g|b; lum = luminance x the mask's own alpha), `dst` (channel of THIS layer to multiply: alpha|r|g|b|rgb; alpha is the usual "clip to the mask shape"). The mask layer can be hidden (visible=false) and still drive - mask sources render in a pre-pass.
+
+IMPORTANT - what you WIRE vs what you set in the COMPOSER inspector:
+- The mask binding has NO node port. You CANNOT wire "shape masks layer" as an edge. Set it in the composer node's inspector: select the layer to be masked, open its Mask accordion, set "Masked by" to the mask layer and pick src/dst. It persists with the composer (STATE.wiredMasks).
+- The mask layer needs COVERAGE in the channel you read. A `shape` with `fill=""` (stroke only) masks just along the outline. For "fill the region" give the shape a solid `fill` (e.g. "#ffffff") so its interior has alpha/luminance; keep a second stroked shape on top if you also want a visible border.
+- Per-layer effects on a wired camera/shape/type layer are ALSO inspector-only (see the effect note above). So a region-confined effect is: WIRE the skeleton (layers + the shape's live points), then in the composer add the effect to the target layer's stack AND set its "Masked by". This last step is not expressible as edges - do it in the composer, or hand it to the user as the finishing step.
+
+Worked example - "glitchy face inside a fingertip polygon":
+  Wire (skeleton): `input-camera.layer -> comp.in` (z 0, the plain face behind); `input-camera.layer -> comp.in` a SECOND time (z 10, the copy to be glitched + clipped); `cam.stream -> vision-detect(hand)`; the fingertips -> a FILLED `shape` (closed, fill="#ffffff", z 20) `.p0..p4`; `shape.out -> comp.in`.
+  Then in the composer inspector: (1) add a `slice` (or pixel-sort / crt) effect to the SECOND camera layer's Effects stack; (2) set that layer's Mask "Masked by" = the shape layer (src=alpha, dst=alpha); (3) hide the shape layer, or drop its fill and keep a thin stroke for a visible border. Result: the top camera copy is glitched and clipped to the polygon, over the untouched face.
+  The pure-wiring shortcut (NOT confined to the polygon): `effect.out -> comp.in` glitches the entire composite - simpler, but the polygon then does nothing to it.
 
 ### The shared physics world + forces
 
@@ -73,6 +87,8 @@ With NO force wired, the world runs its defaults: ropes hang + swing, boids floc
 - `stream` (dtype string) - the detection feed. Wire it into `vision-detect.stream` (face|hand|object) or `vision-ocr.stream`. vision-detect emits present / count / pos / region / gesture / confidence plus per-landmark vector2 points (hand: wrist, thumbTip, indexTip, middleTip, ringTip, pinkyTip; face: nose, leftEye, rightEye). Feed those landmarks into a `shape` (p0..p7) or a `force.pos`.
 
 The `camera-feed` POSITION mode is a different thing: it places instances AT landmarks, it does NOT paint the feed. For the visible feed always use `input-camera.layer`.
+
+HAND CAVEAT: vision-detect emits the PRIMARY detection's landmarks only, and `target` is present|count|location|gesture (there is NO left/right hand selector). With two hands in frame, two vision-detect(hand) nodes both read the SAME primary hand - you cannot build a polygon spanning the left hand AND the right hand from two nodes. Build a fingertip polygon from ONE hand's five points (thumbTip, indexTip, middleTip, ringTip, pinkyTip).
 
 ### Feedback (per-layer trail)
 
