@@ -394,7 +394,8 @@
         if (doc && doc.readyState !== "loading") {
           const curPath = pathPart(page);
           for (const c of comments) {
-            if ((c.status || "open") === "archived") continue;
+            const st = (c.status || "open");
+            if (st === "archived" || st === "done") continue;
             if (pathPart(c.page) !== curPath) continue;
             const el = resolveEl(doc, c.anchor);
             if (!el) continue;
@@ -675,7 +676,7 @@
               onLoad=${onFrameLoad}
             ></iframe>`}
             ${commentMode && html`<div className="sv-hint">Click any element to pin a comment - Esc to cancel</div>`}
-            ${pins.map((p) => html`
+            ${commentMode && pins.map((p) => html`
               <button
                 key=${p.id}
                 className=${"sv-pin" + (p.draft ? " sv-pin-draft" : "") + (p.done ? " is-done" : "")
@@ -687,7 +688,7 @@
                   const c = comments.find((x) => x.id === p.id);
                   if (c) { setSidebarOpen(true); focusComment(c); }
                 }}
-              >${p.num}</button>
+              >${p.draft ? "+" : ""}</button>
             `)}
             ${draft && html`
               <div className="sv-composer" style=${composerStyle}>
