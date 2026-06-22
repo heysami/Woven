@@ -2,9 +2,9 @@
 // Landing-screen shader runtime - adapted from the `landing-diamonds` reference
 // prototype. Drives a single full-page WebGL canvas behind the Projects landing
 // that draws ONE uniform LIGHT diamond field with cursor-driven 3D lighting.
-// The old dark header band + triangle-tooth boundary are gone: the header is now
-// a frosted-glass element layered over this same light field (see styles.css /
-// `#landingDiamondFrost`), so the surface reads identically top to bottom.
+// The old dark header band + triangle-tooth boundary are gone; the header is a
+// separate flat black bar (see styles.css .landing-header) sitting over this
+// field, so the field itself is uniform top to bottom.
 // Uniforms: iResolution(px), iTime(s), iMouse(px,y-up), uScale(dpr)
 //           (uBoundary is still declared by mountShader but no longer used here)
 // Exposes:  window.mountShader(canvas, fragBody, opts)
@@ -116,10 +116,7 @@
   window.mountCardShader = function (canvas, fragBody, opts) {
     opts = opts || {};
     const tint = (opts.tint && opts.tint.length === 3) ? opts.tint : [0.962, 0.957, 0.947];
-    // preserveDrawingBuffer:true so the landing-header halftone's html2canvas
-    // capture can read these card fills - without it the buffer is cleared after
-    // compositing and the cards rasterise blank/black behind the glass.
-    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: true });
+    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: false });
     if (!gl) { console.warn("no webgl"); return function () { }; }
 
     const FS =

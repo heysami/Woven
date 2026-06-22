@@ -565,44 +565,19 @@ button {
   pointer-events: none;
 }
 
-/* Header - FROSTED GLASS over the same light diamond field. Taken out of flow
-   (absolute, pinned to the top of the fixed .landing-root) so the scrolling
-   cards pass BEHIND it and are blurred by the diamond-frost backdrop filter.
-   The boundary is just this box's straight bottom edge - no teeth, no overlap. */
+/* Header - a flat BLACK bar, pinned to the top of the fixed .landing-root and
+   taken out of flow so the cards scroll behind it. No shader, no glass, no
+   teeth - just a solid surface with a straight bottom edge. */
 .landing-header {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 4;
-  /* Tinted with the diamond field's OWN cream (shader base 0.962/0.957/0.947 =
-     rgb(245,244,241)) so the header reads as the same light surface, not a grey
-     cast. Kept semi-transparent so the frosted blur behind it stays visible. */
-  background: rgba(245, 244, 241, 0.5);
-  /* Content-driven frost - the FALLBACK when the halftone canvas can't run
-     (no WebGL2 / no html2canvas): a 45deg box blur (filled-diamond kernel) then
-     a posterize, both in #landingDiamondFrost (index.html). When the halftone
-     canvas IS active it paints opaquely over this and becomes the surface. */
-  backdrop-filter: url(#landingDiamondFrost);
-  -webkit-backdrop-filter: url(#landingDiamondFrost);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #101314;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex: none;
   padding: 0;
-}
-/* Diamond-halftone glass canvas - a WebGL2 surface glued to the header that
-   rasterises the content behind and renders it as see-through diamond dots
-   (landing-halftone.js). z-index 0 keeps it above the header background but
-   below .landing-header-inner (z-index 2), so the brand / tabs / controls stay
-   crisp on top. Transparent until the first capture lands, so the CSS frost
-   above shows through in the meantime / when the runtime can't start. */
-.landing-header-halftone {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  z-index: 0;
-  pointer-events: none;
 }
 /* Main is the SCROLL CONTAINER, filling the whole root (the header floats
    above it). Its content is pushed below the header by a top padding equal to
@@ -637,40 +612,38 @@ button {
   gap: 12px;
   font-weight: 700;
   font-size: 18px;
-  color: var(--text, #1a1a1a);
+  color: #f4f6f5;
   letter-spacing: -0.01em;
 }
-/* Diamond-W logo mark - 5 lattice diamonds straight off the grid (see §3.1
-   of landing-diamonds/README.md). Green fill with a soft shadow so the mark
-   sits cleanly on the light frosted header. */
+/* Diamond-W logo mark - green fill + green glow so the mark reads on the black header. */
 .landing-logo-mark {
   width: 34px;
   height: auto;
   display: block;
   fill: var(--accent);
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.14));
+  filter: drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 55%, transparent));
 }
 .landing-meta {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: var(--text-muted, rgba(0, 0, 0, 0.6));
+  color: rgba(235, 240, 238, 0.74);
 }
 .landing-meta-label {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.5);
+  color: rgba(225, 232, 229, 0.55);
 }
 .landing-meta-path {
   font-family: var(--font-mono);
   font-size: 11.5px;
   padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: var(--radius-sm);
-  color: var(--text-muted, rgba(0, 0, 0, 0.62));
+  color: rgba(235, 240, 238, 0.74);
 }
 .landing-titlebar {
   display: flex;
@@ -1134,14 +1107,14 @@ button {
 }
 
 /* ── v3.3 - Landing tabs (Projects | Shares | Capabilities) - sit on the
- * light frosted header, so they use a dark-ink-on-light treatment. ────── */
+ * black header, so they use a light-on-dark treatment. ─────────────────── */
 .landing-tabs {
   display: inline-flex;
   align-items: stretch;
   gap: 4px;
   padding: 4px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
 }
 .landing-tab {
@@ -1151,7 +1124,7 @@ button {
   padding: 8px 18px;
   background: transparent;
   border: 0;
-  color: rgba(0, 0, 0, 0.55);
+  color: rgba(225, 232, 229, 0.60);
   border-radius: 6px;
   font-size: 16px;
   font-weight: 600;
@@ -1159,10 +1132,10 @@ button {
   cursor: pointer;
   transition: background-color 120ms, color 120ms;
 }
-.landing-tab:hover { color: var(--text, #1a1a1a); }
+.landing-tab:hover { color: #f4f6f5; }
 .landing-tab.is-active {
-  background: rgba(0, 0, 0, 0.07);
-  color: var(--text, #1a1a1a);
+  background: rgba(255, 255, 255, 0.10);
+  color: #f4f6f5;
 }
 .landing-tab-count {
   display: inline-block;
@@ -1170,13 +1143,13 @@ button {
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.6);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(225, 232, 229, 0.75);
   font-variant-numeric: tabular-nums;
 }
 .landing-tab.is-active .landing-tab-count {
-  background: rgba(0, 0, 0, 0.14);
-  color: var(--text, #1a1a1a);
+  background: rgba(255, 255, 255, 0.18);
+  color: #f4f6f5;
 }
 
 /* ── v3.3 - Orchestrators landing view - LIGHT MODE ────────────────────── */
@@ -2488,19 +2461,19 @@ button {
   height: 36px;
   padding: 0 12px;
   width: 236px;
-  border: 1px solid rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.06);
   font: inherit;
   font-size: 13px;
-  color: var(--text, #1a1a1a);
+  color: #eef2f0;
 }
-.landing-filter::placeholder { color: rgba(0, 0, 0, 0.4); }
+.landing-filter::placeholder { color: rgba(225, 232, 229, 0.45); }
 .landing-filter:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent);
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.10);
 }
 .landing-new-btn {
   display: inline-flex;
@@ -2523,8 +2496,8 @@ button {
 .landing-new-btn:active { filter: brightness(0.95); }
 .landing-new-btn[disabled],
 .landing-new-btn[data-disabled="true"] {
-  background: rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(235, 240, 238, 0.5);
   cursor: not-allowed;
   filter: none;
 }
@@ -2557,8 +2530,8 @@ button {
 .landing-new-caret:active { filter: brightness(0.95); }
 .landing-new-caret[disabled],
 .landing-new-caret[data-disabled="true"] {
-  background: rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(235, 240, 238, 0.5);
   cursor: not-allowed;
   filter: none;
 }
@@ -2683,35 +2656,36 @@ button {
 }
 .newproj-link:hover { text-decoration: underline; }
 
-/* Status chips on the frosted header - scoped overrides for the indicator pills
-   defined elsewhere in this file. The header is a light frosted surface now, so
-   we tint borders/backgrounds to match the workspace-path chip and keep the
-   text/icons as dark legible ink. Scope is strictly `.landing-header` so the
-   same pills on the workflow toolbar and editor toolbar are untouched. */
+/* Status chips on the black header - scoped overrides for the indicator pills
+   defined elsewhere in this file. Without this they paint near-black ink on the
+   dark header and disappear. We tint borders/backgrounds to match the
+   workspace-path chip and lift text/icons to a legible near-white. Scope is
+   strictly `.landing-header` so the same pills on the workflow toolbar and
+   editor toolbar (white surfaces) are untouched. */
 .landing-header .daemon-indicator,
 .landing-header .cli-indicator,
 .landing-header .model-status-indicator,
 .landing-header .landing-gh-btn,
 .landing-header .workflow-toolbar-gear {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.12);
-  color: var(--text-muted, rgba(0, 0, 0, 0.7));
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(235, 240, 238, 0.82);
 }
 .landing-header .daemon-indicator:hover,
 .landing-header .cli-indicator:hover,
 .landing-header .model-status-indicator:hover,
 .landing-header .landing-gh-btn:hover,
 .landing-header .workflow-toolbar-gear:hover {
-  background: rgba(0, 0, 0, 0.07);
-  border-color: rgba(0, 0, 0, 0.18);
-  color: var(--text, #1a1a1a);
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f4f6f5;
 }
 /* Re-assert the signed-in accent border - the override above would otherwise
    flatten it back to the neutral pill border (equal specificity, later source). */
 .landing-header .landing-gh-btn.is-in { border-color: var(--accent); }
 .landing-header .cli-label,
-.landing-header .model-status-label { color: var(--text-muted, rgba(0, 0, 0, 0.7)); }
-.landing-header .workflow-toolbar-gear svg { color: var(--text-muted, rgba(0, 0, 0, 0.7)); }
+.landing-header .model-status-label { color: rgba(235, 240, 238, 0.82); }
+.landing-header .workflow-toolbar-gear svg { color: rgba(235, 240, 238, 0.82); }
 .landing-header .model-status-indicator { color: #fff; background: color-mix(in oklch, var(--hot) 60%, transparent); border-color: color-mix(in oklch, var(--hot) 70%, transparent); }
 .landing-header .model-status-indicator:hover { background: color-mix(in oklch, var(--hot) 75%, transparent); }
 /* v3.x - degraded "key but no CLI" pill stays amber even on the dark band. */

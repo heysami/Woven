@@ -21824,36 +21824,12 @@ function ProjectsLanding({ info, projects, onReload }) {
     return () => { if (disposeBg) disposeBg(); };
   }, []);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Diamond-halftone glass header. A WebGL2 canvas glued to .landing-header
-  // rasterises the landing content (html2canvas) and renders it as see-through
-  // diamond dots (landing-halftone.js). Returns null + leaves the CSS frost in
-  // place if WebGL2 / html2canvas are unavailable. The controller is stashed so
-  // the tab/projects effect below can ask it to re-rasterise (one texture,
-  // overwritten in place - never builds up).
-  // ──────────────────────────────────────────────────────────────────────────
-  const halftoneCanvasRef = useRef(null);
-  const halftoneRef = useRef(null);
-  useEffect(() => {
-    if (!halftoneCanvasRef.current || typeof window.mountLandingHalftone !== "function") return;
-    const header = document.querySelector(".landing-header");
-    const main = document.querySelector(".landing-main");
-    if (!header || !main) return;
-    halftoneRef.current = window.mountLandingHalftone(halftoneCanvasRef.current, header, main);
-    return () => { if (halftoneRef.current) { halftoneRef.current.dispose(); halftoneRef.current = null; } };
-  }, []);
-  // Re-rasterise when the content behind the glass changes: tab switch, project
-  // count, or filter. The runtime debounces + guards, so rapid changes coalesce.
-  useEffect(() => {
-    if (halftoneRef.current) halftoneRef.current.recapture();
-  }, [activeTab, projects.length, filter]);
-
-  // The frosted-glass header is taken out of flow (position: absolute, pinned
-  // top) so the scrolling cards pass BEHIND it and pick up the diamond-frost
-  // blur. .landing-main therefore needs a top padding equal to the live header
-  // height so its content starts just below the header instead of under it. We
-  // publish that height as the CSS var `--landing-header-h` and keep it in sync
-  // whenever the header height changes (different tab, viewport resize, load).
+  // The black header is taken out of flow (position: absolute, pinned top), so
+  // the scrolling cards pass behind it. .landing-main therefore needs a top
+  // padding equal to the live header height so its content starts just below the
+  // header instead of under it. We publish that height as the CSS var
+  // `--landing-header-h` and keep it in sync whenever the header height changes
+  // (different tab, viewport resize, load).
   useEffect(() => {
     const root = document.querySelector(".landing-root");
     const header = document.querySelector(".landing-header");
@@ -21922,7 +21898,6 @@ function ProjectsLanding({ info, projects, onReload }) {
     <div className="landing-root">
       <canvas ref=${bgCanvasRef} className="landing-bg-canvas" aria-hidden="true"></canvas>
       <header className="landing-header">
-        <canvas ref=${halftoneCanvasRef} className="landing-header-halftone" aria-hidden="true"></canvas>
         <div className="landing-header-inner">
           <div className="landing-brandrow">
             <span className="landing-brand">

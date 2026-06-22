@@ -21,41 +21,6 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <!-- Diamond-frost backdrop filter for the Projects-landing header. Runs the
-       backdrop (the content scrolling behind the glass) through a BOX BLUR
-       ROTATED 45deg (a box blur is a uniform all-ones kernel; a square rotated
-       45deg is a diamond, so the kernel is a filled diamond of ones), then a
-       gentle POSTERIZE (discrete feComponentTransfer collapses each channel to a
-       few flat levels). Both stages process the actual content - there is no
-       overlay screen painted on top. (A true luminance-driven halftone screen
-       would need feImage/feTile, which render nothing inside a backdrop-filter
-       in Chromium - a fixed dot overlay just reads as static, so it's omitted.)
-       Referenced by `.landing-header { backdrop-filter: url(#landingDiamondFrost) }`. -->
-  <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
-    <filter id="landingDiamondFrost" x="-15%" y="-15%" width="130%" height="130%"
-            color-interpolation-filters="sRGB">
-      <!-- box blur tilted 45deg: filled-diamond (all-ones) kernel, Manhattan radius 5 -->
-      <feConvolveMatrix in="SourceGraphic" order="11" divisor="61"
-        edgeMode="duplicate" preserveAlpha="false" result="blur"
-        kernelMatrix="0 0 0 0 0 1 0 0 0 0 0
-                      0 0 0 0 1 1 1 0 0 0 0
-                      0 0 0 1 1 1 1 1 0 0 0
-                      0 0 1 1 1 1 1 1 1 0 0
-                      0 1 1 1 1 1 1 1 1 1 0
-                      1 1 1 1 1 1 1 1 1 1 1
-                      0 1 1 1 1 1 1 1 1 1 0
-                      0 0 1 1 1 1 1 1 1 0 0
-                      0 0 0 1 1 1 1 1 0 0 0
-                      0 0 0 0 1 1 1 0 0 0 0
-                      0 0 0 0 0 1 0 0 0 0 0"/>
-      <!-- posterize: collapse each channel to a few flat levels -->
-      <feComponentTransfer in="blur">
-        <feFuncR type="discrete" tableValues="0.12 0.42 0.66 0.86 0.97"/>
-        <feFuncG type="discrete" tableValues="0.12 0.42 0.66 0.86 0.97"/>
-        <feFuncB type="discrete" tableValues="0.12 0.42 0.66 0.86 0.97"/>
-      </feComponentTransfer>
-    </filter>
-  </svg>
   <div id="root"></div>
   <!-- Boot veil. Painted from static HTML the instant the document loads -
        before app.js parses, data.js evaluates, or React mounts - so a full
@@ -156,11 +121,6 @@
        on the landing canvas without bundler ceremony. Safe everywhere: a
        guard inside the file makes it a no-op if loaded twice. -->
   <script src="landing-shaders.js"></script>
-  <!-- Landing-header diamond-halftone glass: rasterises the landing content into
-       one texture (html2canvas) and a WebGL2 canvas glued to the header samples
-       it as see-through diamond dots. Falls back to the CSS frost if WebGL2 /
-       html2canvas are unavailable. Loaded after html2canvas-pro (above). -->
-  <script src="landing-halftone.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
