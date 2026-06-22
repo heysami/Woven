@@ -5333,6 +5333,20 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .canvas-ctxmenu-danger:not(:disabled):hover {
   background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
 }
+.canvas-ctxmenu-label {
+  font: 600 10px var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 4px 10px 2px;
+}
+.canvas-ctxmenu-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px 6px;
+  max-width: 200px;
+}
 
 /* v3.2 - Phase 2: Sub-element select badge. Floats OUTSIDE the top-right
    of the parent node so it's always visible without overlapping the node
@@ -9688,6 +9702,18 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    mirrored for the right-hand labels. */
 .workflow-port-label-left  { right: 100%; margin-right: 10px; }
 .workflow-port-label-right { left:  100%; margin-left:  10px; }
+/* When a node is SELECTED the connector [+] buttons appear centred on each
+   side - right where a single centred port's label sits. Shifting the label
+   sideways would clip it (it already lives in the node's 64px overflow buffer),
+   so nudge it UP to clear the [+]. Scoped to the standard centred in/out zones
+   only: multi-port agent / prototype ports use their own zones + offsets and
+   are left untouched. */
+.workflow-node[data-selected="true"] .workflow-port-zone-in  > .workflow-port-label-left,
+.workflow-node[data-selected="true"] .workflow-port-zone-out > .workflow-port-label-right,
+.workflow-node-section[data-selected="true"] .workflow-port-zone-in  > .workflow-port-label-left,
+.workflow-node-section[data-selected="true"] .workflow-port-zone-out > .workflow-port-label-right {
+  transform: translateY(-50%) translateY(-22px);
+}
 /* v3.8 - port labels are quiet by default: hidden until the node is
    SELECTED (data-selected is flagged imperatively by WorkflowSurface's
    selection effect) OR hovered. v3.8.1 fix: the old rule only had

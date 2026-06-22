@@ -30699,6 +30699,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const list = Array.isArray(d.wb) ? d.wb : [];
       const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
       if (!t) return d;
+
+      // Per-cell fill - a pure paint change (no geometry / binding remap).
+      // fill "default" reverts a cell to the table's own fill.
+      if (op === "setCellFill") {
+        const rg = wbTableNormRange(args);
+        const cf = { ...(t.cellFills || {}) };
+        for (let r = rg.r0; r <= rg.r1; r++) {
+          for (let c = rg.c0; c <= rg.c1; c++) {
+            const k = r + "," + c;
+            if (args.fill == null || args.fill === "default") delete cf[k];
+            else cf[k] = args.fill;
+          }
+        }
+        const nt2 = { ...t, cellFills: cf };
+        return { ...d, nodes: (d.nodes || []).map(n => n.id === tableId ? nt2 : n) };
+      }
+
       let cols = wbTableCols(t).slice();
       let rows = wbTableRows(t).slice();
       let merges = (t.merges || []).map(m => ({ ...m }));
@@ -67225,16 +67242,21 @@ function formatDirectionForPrompt(d) {
    Geometry lives on the node (node.cols / node.rows / node.merges). */
 function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, tableSel }) {
   const cols = wbTableCols(node), rows = wbTableRows(node);
-  const fillTok = node.fill || "white";
-  const cellBg = fillTok === "none" ? "transparent"
-               : fillTok === "white" ? "#fff"
-               : `color-mix(in oklch, ${wbColorCSS(fillTok)} 16%, #fff)`;
-  // Line colour is AUTOMATIC from the fill: a clean light grey for white/none,
-  // otherwise the fill's own hue at full strength - a crisp matching line,
-  // never a muddy grey.
-  const cellBorder = (fillTok === "white" || fillTok === "none")
-    ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
-    : wbColorCSS(fillTok);
+  // Per-cell fill: node.cellFills["r,c"] overrides the table default node.fill.
+  // The line colour is AUTOMATIC from each cell's fill (clean light grey for
+  // white/none, else the fill's own hue at full strength - never muddy).
+  const tableFill = node.fill || "white";
+  const cellFills = node.cellFills || {};
+  const cellColors = (r, c) => {
+    const f = cellFills[r + "," + c] || tableFill;
+    const bg = f === "none" ? "transparent"
+             : f === "white" ? "#fff"
+             : `color-mix(in oklch, ${wbColorCSS(f)} 16%, #fff)`;
+    const border = (f === "white" || f === "none")
+      ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
+      : wbColorCSS(f);
+    return { bg, border };
+  };
   const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
   const rootRef = useRef(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -67339,11 +67361,12 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
           if (covered(r, c)) return null;
           const sp = span(r, c);
           const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
+          const cc = cellColors(r, c);
           return html`<div key=${"c" + r + "_" + c} className="workflow-wb-table-cell"
             style=${{
               left: colX[c] + "px", top: rowY[r] + "px",
               width: (colX[c + sp.cs] - colX[c]) + "px", height: (rowY[r + sp.rs] - rowY[r]) + "px",
-              background: isSel ? selBg : cellBg, borderColor: cellBorder, borderWidth: line + "px",
+              background: isSel ? selBg : cc.bg, borderColor: cc.border, borderWidth: line + "px",
             }}/>`;
         }))}
       </div>
@@ -69368,8 +69391,17 @@ function WorkflowTableMenu({ menu, table, onOp, onClose }) {
       disabled=${!!disabled}
       onClick=${() => !disabled && run(op, args)}><span>${label}</span></button>`;
   const Sep = () => html`<div className="canvas-ctxmenu-divider"/>`;
+  const setFill = (fill) => { onOp && onOp(tableId, "setCellFill", { ...range, fill }); onClose && onClose(); };
   return createPortal(html`
     <div className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+      <div className="canvas-ctxmenu-label">Cell colour</div>
+      <div className="canvas-ctxmenu-swatches">
+        <button type="button" className="workflow-wb-swatch workflow-wb-swatch-white" title="White" onClick=${() => setFill("white")}/>
+        <button type="button" className="workflow-wb-swatch workflow-wb-swatch-none" title="None" onClick=${() => setFill("none")}/>
+        ${WB_COLOR_TOKENS.map(tok => html`<button key=${tok} type="button" className="workflow-wb-swatch" title=${tok} style=${{ background: `var(--wb-${tok})` }} onClick=${() => setFill(tok)}/>`)}
+      </div>
+      ${Item("Reset cell colour", "setCellFill", { ...range, fill: "default" })}
+      ${Sep()}
       ${Item("Merge cells", "merge", range, area < 2)}
       ${Item("Split cell", "split", { r, c }, !isMergeAnchor)}
       ${Sep()}
