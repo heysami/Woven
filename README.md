@@ -241,7 +241,7 @@ Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip
 | Symptom                                              | Fix                                                                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Top-right pill stays red after pasting a key         | Click the **gear icon → Test** on that provider row in Settings to verify the key.                     |
-| **CLI missing** chip is amber                        | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`.          |
+| **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`. (Shows **Codex CLI missing** if Codex is your preferred CLI.) |
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the repo root.         |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
 | Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#6-step-2--add-asset-provider-keys-image--video--svg)). |
@@ -252,16 +252,15 @@ Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip
 
 ```
 <workspace-dir>/
-├── workspace.json                  # project registry (auto-managed)
-├── projects/
-│   └── <project-id>/
-│       ├── source/                 # the generated prototype HTML/CSS/JS lives here
-│       ├── editor/data.js          # canvas state (frames, nodes, arrows)
-│       └── workflow/workflow.json  # workflow graph
-└── design-systems/
-    └── <ds-id>/                    # reusable design systems shared across projects
+├── workspace.json                          # project registry (auto-managed)
+└── projects/
+    └── <project-id>/
+        ├── source/                         # the generated prototype HTML/CSS/JS lives here
+        ├── editor/data.js                  # canvas state (frames, nodes, arrows)
+        ├── workflow/workflow.json          # workflow graph
+        └── design-systems/<ds-id>/         # this project's reusable design systems (tokens + gallery + DESIGN.md)
 
-~/.test-harness/media-config.json   # your provider API keys (mode 0600, per-user)
+~/.test-harness/media-config.json           # your provider API keys (mode 0600, per-user)
 ```
 
 That's it. You're set up.
