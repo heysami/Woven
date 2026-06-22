@@ -7312,6 +7312,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
     linear-gradient(to top right, transparent 44%, var(--danger) 46%, var(--danger) 54%, transparent 56%),
     var(--surface) !important;
 }
+.workflow-wb-swatch-white {
+  background: #fff !important;
+  border-color: oklch(0% 0 0 / 0.22);
+}
 .workflow-wb-sticky {
   background: color-mix(in oklch, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
   box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 4px 12px oklch(0% 0 0 / 0.07);
@@ -7332,7 +7336,37 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 /* ── Whiteboard table ── a grid item; cells host other wb items / nodes via
    the cell-binding reconcile. Lines come from the item's `color` token. */
-.workflow-wb-table { box-sizing: border-box; }
+/* Same card treatment as workflow nodes: a subtle warm (--hot) glow + soft
+   outline ring at rest, lifting on hover, and a 2px accent outline when
+   selected. The glow rings the rounded body (the cell-wrap is inset:0 at the
+   same 10px radius). */
+.workflow-wb-table {
+  box-sizing: border-box;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--hot) 6%, transparent),
+    0 1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
+    0 6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
+  transition: box-shadow 0.12s ease;
+}
+.workflow-wb-table:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--hot) 12%, transparent),
+    0 2px 8px color-mix(in oklch, var(--hot) 11%, transparent),
+    0 10px 28px color-mix(in oklch, var(--hot) 9%, transparent);
+}
+.workflow-wb-table[data-selected="true"] {
+  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline-offset: -2px;
+}
+/* Rounds the table corners like a node by clipping the cell grid. Bound items
+   live OUTSIDE this wrap (separate wb items / nodes), so they're never clipped;
+   the resize strips / add buttons / move grip are siblings too. */
+.workflow-wb-table-cellwrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
 .workflow-wb-table-cell {
   position: absolute;
   box-sizing: border-box;

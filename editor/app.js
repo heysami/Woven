@@ -24211,9 +24211,10 @@ const WORKFLOW_WB_FACTORY = {
       type: "table", x: p.x ?? 0, y: p.y ?? 0,
       w: cols.reduce((a, b) => a + b, 0), h: rows.reduce((a, b) => a + b, 0),
       cols, rows, merges: Array.isArray(p.merges) ? p.merges : [],
-      // `fill` is the cell-tint token; the grid line is a calculated subtle
-      // shade of it (see WorkflowWbTable). `color` kept for back-compat.
-      fill: p.fill || "gray", color: p.color || "gray",
+      // `fill` = cell tint ("white" / "none" / a colour token); `lineColor` =
+      // the grid line colour token ("none" for borderless). `color` kept for
+      // back-compat.
+      fill: p.fill || "white", lineColor: p.lineColor || "gray", color: p.color || "gray",
     };
   },
 };
@@ -30365,7 +30366,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const gh = dragged ? Math.abs(lastWp.y - y0) : 3 * WB_TABLE_DEFAULT_ROW;
           const ncols = Math.max(2, Math.round(gw / WB_TABLE_DEFAULT_COL));
           const nrows = Math.max(2, Math.round(gh / WB_TABLE_DEFAULT_ROW));
-          const tItem = wbMakeItem("table", { x: Math.round(gx), y: Math.round(gy), ncols, nrows, fill: F.fill || "gray" });
+          const tItem = wbMakeItem("table", { x: Math.round(gx), y: Math.round(gy), ncols, nrows, fill: F.fill || "white", lineColor: F.lineColor || "gray" });
           addWbItem(tItem);
           setSelectedWbIds(new Set([tItem.id]));
           if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
@@ -68878,6 +68879,9 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
   return html`
     <div className="workflow-wb-overlay" style=${{ zIndex: 100000 }}>
       ${sel.map(it => {
+        // Tables draw their own rounded accent outline (node treatment) via
+        // CSS [data-selected], so skip the square overlay outline for them.
+        if (it.type === "table") return null;
         const bb = wbItemBBox(it);
         return html`
           <div key=${"o" + it.id} className="workflow-wb-outline"
@@ -68934,12 +68938,15 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
 function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, onCellMenu }) {
   const z = Math.round(item.z || 0);
   const cols = wbTableCols(item), rows = wbTableRows(item);
-  // Cells are a soft tint of the fill token; the grid line is a slightly
-  // deeper shade calculated FROM that tint (mix toward --text, so it stays a
-  // subtle, theme-aware shade difference rather than a flat colour).
-  const fillCss = wbColorCSS(item.fill || item.color || "gray");
-  const cellBg = `color-mix(in oklch, ${fillCss} 15%, var(--surface))`;
-  const cellBorder = `color-mix(in oklch, ${cellBg} 85%, var(--text))`;
+  // Fill: "white" (paper), "none" (transparent), or a colour token rendered as
+  // a soft tint. Line: a real colour token (or "none"), used at full strength -
+  // a clean, chosen line rather than a muddy auto-derived shade.
+  const fillTok = item.fill || "white";
+  const cellBg = fillTok === "none" ? "transparent"
+               : fillTok === "white" ? "#fff"
+               : `color-mix(in oklch, ${wbColorCSS(fillTok)} 16%, #fff)`;
+  const lineTok = item.lineColor || "gray";
+  const cellBorder = lineTok === "none" ? "transparent" : wbColorCSS(lineTok);
   const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
   const rootRef = useRef(null);
   // Prefix sums (relative to the table's top-left) for cell geometry.
@@ -69014,21 +69021,24 @@ function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, o
         const cc = cellAtClient(e.clientX, e.clientY, rect);
         onCellMenu && onCellMenu(item.id, cc.r, cc.c, e.clientX, e.clientY);
       }}>
-      <!-- cells -->
-      ${rows.map((_, r) => cols.map((__, c) => {
-        if (covered(r, c)) return null;
-        const sp = span(r, c);
-        const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
-        return html`<div key=${"c" + r + "_" + c}
-          className="workflow-wb-table-cell"
-          style=${{
-            left: colX[c] + "px", top: rowY[r] + "px",
-            width: (colX[c + sp.cs] - colX[c]) + "px",
-            height: (rowY[r + sp.rs] - rowY[r]) + "px",
-            background: isSel ? selBg : cellBg,
-            borderColor: cellBorder, borderWidth: line + "px",
-          }}/>`;
-      }))}
+      <!-- cells (clipped to a rounded frame so the table corners round like a
+           node; bound items live OUTSIDE this wrap so they're never clipped) -->
+      <div className="workflow-wb-table-cellwrap" style=${{ borderRadius: "10px" }}>
+        ${rows.map((_, r) => cols.map((__, c) => {
+          if (covered(r, c)) return null;
+          const sp = span(r, c);
+          const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
+          return html`<div key=${"c" + r + "_" + c}
+            className="workflow-wb-table-cell"
+            style=${{
+              left: colX[c] + "px", top: rowY[r] + "px",
+              width: (colX[c + sp.cs] - colX[c]) + "px",
+              height: (rowY[r + sp.rs] - rowY[r]) + "px",
+              background: isSel ? selBg : cellBg,
+              borderColor: cellBorder, borderWidth: line + "px",
+            }}/>`;
+        }))}
+      </div>
       <!-- cell interaction layer (only live when selected) -->
       ${selected && html`<div className="workflow-wb-table-hit"
         style=${{ inset: 0 }} onMouseDown=${onCellDown}/>`}
@@ -69061,7 +69071,7 @@ function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, o
       ${selected && html`<div className="workflow-wb-table-movegrip"
         title="Drag to move table"
         style=${{ left: px(2) + "px", top: px(2) + "px", width: GRIP + "px", height: GRIP + "px" }}>
-        <svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 1.5 9.6 3.4 H6.4 Z M8 14.5 6.4 12.6 H9.6 Z M1.5 8 3.4 6.4 V9.6 Z M14.5 8 12.6 9.6 V6.4 Z M6.5 6.5h3v3h-3z" fill=${`color-mix(in oklch, ${fillCss} 45%, var(--text))`}/></svg>
+        <svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 1.5 9.6 3.4 H6.4 Z M8 14.5 6.4 12.6 H9.6 Z M1.5 8 3.4 6.4 V9.6 Z M14.5 8 12.6 9.6 V6.4 Z M6.5 6.5h3v3h-3z" fill="var(--text-faint)"/></svg>
       </div>`}
     </div>`;
 }
@@ -69251,13 +69261,19 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
   // Tables get their own Cell-fill row (the grid line derives from it), so keep
   // them out of the generic Color row.
   const showGenericColors = showColors && ((!hasBox && !hasTable) || hasOtherColorable);
-  const swatchRow = (cur, onPick, allowNone) => html`
+  const swatchRow = (cur, onPick, allowNone, leadingWhite) => html`
     <div className="workflow-wb-swatches">
       ${allowNone && html`
         <button type="button"
           className=${"workflow-wb-swatch workflow-wb-swatch-none" + (cur === "none" ? " is-active" : "")}
           title="None"
           onClick=${() => onPick("none")}/>
+      `}
+      ${leadingWhite && html`
+        <button type="button"
+          className=${"workflow-wb-swatch workflow-wb-swatch-white" + (cur === "white" ? " is-active" : "")}
+          title="White"
+          onClick=${() => onPick("white")}/>
       `}
       ${WB_COLOR_TOKENS.map(tok => html`
         <button key=${tok} type="button"
@@ -69350,9 +69366,16 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Cell fill</div>
           ${swatchRow(
-            (first && first.fill) || F.fill || "gray",
+            (first && first.fill) || F.fill || "white",
             (v) => { if (onFmt) onFmt({ fill: v }); if (sel.length && onPatchSelection) onPatchSelection({ fill: v }); },
-            false)}
+            true, true)}
+        </div>
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Line color</div>
+          ${swatchRow(
+            (first && first.lineColor) || F.lineColor || "gray",
+            (v) => { if (onFmt) onFmt({ lineColor: v }); if (sel.length && onPatchSelection) onPatchSelection({ lineColor: v }); },
+            true, false)}
         </div>
       `}
       ${showText && html`
