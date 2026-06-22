@@ -18183,7 +18183,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         #     Mirrors the dark-scheme bake, but as a string axis recorded in
         #     meta.defaultStyle. Palette/scheme tuning above already landed in
         #     :root{}; surface-only styles layer on top, palette-defining styles
-        #     (pastel/minimal/grainism) win on the tokens they redeclare.
+        #     (pastel/minimal/analog) win on the tokens they redeclare.
         #     A JS-backed style (a themes/<id>.js exists, e.g. glassmorphism's
         #     real WebGL dispersion-prism) bakes differently: keep the overlay
         #     SCOPED, stamp data-theme="<id>" on every page, point pages at

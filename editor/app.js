@@ -16564,7 +16564,7 @@ const DS_PREVIEW_STYLES = [
   { v: "neumorphism",    label: "Neumorphism",     desc: "Extruded soft UI" },
   { v: "techminimalism", label: "Tech-minimalism", desc: "Sharp, mono, dense" },
   { v: "neobrutalism",   label: "Neobrutalism",    desc: "Hard borders, offset" },
-  { v: "grainism",       label: "Grainism",        desc: "Grainy, textured" },
+  { v: "analog",       label: "Analog",        desc: "Grainy, textured" },
 ];
 
 const DS_SPACE_RATIOS = [

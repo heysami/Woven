@@ -24,7 +24,7 @@
     { "id": "neumorphism", "label": "Neumorphism", "attr": "data-theme=\"neumorphism\"", "file": "themes/neumorphism.css", "desc": "Soft UI: single base colour, extruded dual shadow raised/pressed, monochrome." },
     { "id": "techminimalism", "label": "Tech-minimalism", "attr": "data-theme=\"techminimalism\"", "file": "themes/techminimalism.css", "desc": "Frutiger-DORFic / Teenage Engineering: concrete grey, single safety-orange, mono micro-labels, hairlines." },
     { "id": "neobrutalism", "label": "Neobrutalism", "attr": "data-theme=\"neobrutalism\"", "file": "themes/neobrutalism.css", "desc": "Monochrome editorial: cream paper, ink borders, zero radius, zero-blur offset shadow." },
-    { "id": "grainism", "label": "Grainism", "attr": "data-theme=\"grainism\"", "file": "themes/grainism.css", "desc": "Pastel base + subtle SVG grain / optional halftone overlay." }
+    { "id": "analog", "label": "Analog", "attr": "data-theme=\"analog\"", "file": "themes/analog.css", "desc": "Pastel base + real monochrome film grain (multiply) and an optional amplitude-modulated halftone screen." }
   ],
   "assets": [
     "assets/sidebar-grid.svg",

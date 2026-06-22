@@ -879,17 +879,17 @@ button {
 }
 .dscz-styletile-vis[data-dsstyle="neobrutalism"] .t-bar { background: #111; border-radius: 0; }
 .dscz-styletile-vis[data-dsstyle="neobrutalism"] .t-chip { background: #ff5c8a; border: 2px solid #111; border-radius: 0; }
-.dscz-styletile-vis[data-dsstyle="grainism"] {
+.dscz-styletile-vis[data-dsstyle="analog"] {
   background: #cdb89a;
   background-image: radial-gradient(rgba(0,0,0,0.16) 1px, transparent 1px);
   background-size: 3px 3px;
 }
-.dscz-styletile-vis[data-dsstyle="grainism"] .t-card {
+.dscz-styletile-vis[data-dsstyle="analog"] .t-card {
   background: #f3ece0; border-radius: 5px;
   background-image: radial-gradient(rgba(0,0,0,0.06) 1px, transparent 1px); background-size: 3px 3px;
 }
-.dscz-styletile-vis[data-dsstyle="grainism"] .t-bar { background: #b8a583; }
-.dscz-styletile-vis[data-dsstyle="grainism"] .t-chip { background: #a8702f; }
+.dscz-styletile-vis[data-dsstyle="analog"] .t-bar { background: #b8a583; }
+.dscz-styletile-vis[data-dsstyle="analog"] .t-chip { background: #a8702f; }
 
 /* Build-settings checkboxes (imagery / orchestrators allow-lists). */
 .dscz-check {

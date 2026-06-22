@@ -89,7 +89,7 @@ WebGL runtime (`themes/glassmorphism.js`); `claymorphism` is CSS-only.
 | Neumorphism | `data-theme="neumorphism"` | Soft UI: ONE shared base colour for page + every control; depth comes only from a fixed top-left dual shadow (raised vs inset), monochrome. `--neu-base/-light/-dark`, `--neu-raise/-sm/-lg`, `--neu-inset/-sm`, `--neu-accent`. |
 | Tech-minimalism | `data-theme="techminimalism"` | Frutiger-DORFic / Teenage Engineering: concrete off-white + graphite, ONE hot signal on the primary role (follows the scheme), small uppercase tracked mono labels, near-zero radii, flattened shadows. `--font-mono`. |
 | Neobrutalism | `data-theme="neobrutalism"` | Editorial brutalism: uncoated-cream paper + warm dark ink, ZERO radius, 2-3px ink borders, hard zero-blur offset shadow, `:active` translate(2px,2px) press, ~6% paper grain; the primary accent fills follow the scheme (scheme block + ink border + ink shadow). `--nb-paper/-bright/-shade/-deep`, `--nb-ink/-soft`, `--nb-greige`. |
-| Grainism | `data-theme="grainism"` | "Pastel + a whisper of film": pastel base + a fixed full-viewport SVG grain overlay (`mix-blend-mode:overlay`, low opacity), felt not seen. Reusable `.grain` class; `.grain--halftone` swaps grain for a CMYK dot screen. `--grain-opacity`. |
+| Analog | `data-theme="analog"` | "Pastel + film": pastel base + a fixed full-viewport real monochrome film-grain overlay (baked alpha tile painted in the ink colour, `mix-blend-mode:multiply` so it reads on light paper; flips to `screen` in dark). Reusable `.grain` class; `.grain--halftone` swaps grain for a REAL amplitude-modulated halftone screen (dot size encodes tone, diagonal ramp). `--grain-opacity`, `--halftone-opacity`, `--halftone-color`. |
 
 ## Component catalog - by atomic layer
 

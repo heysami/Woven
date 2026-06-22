@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the grainism halftone mask and embed it into themes/grainism.css.
+"""Generate the analog halftone mask and embed it into themes/analog.css.
 
 Bakes a REAL amplitude-modulated halftone screen: dot RADIUS encodes tone, so the
 dots ramp from pinpricks (light) to merged near-solid blobs (dark) along a diagonal
@@ -29,7 +29,7 @@ SS = 3                     # supersampling: positions dot edges accurately, then
 # directional tone: weight of x vs y in the diagonal ramp (light at top-left -> dark at bottom-right)
 WX, WY = 0.55, 0.55
 
-CSS = pathlib.Path(__file__).resolve().parent.parent / "themes" / "grainism.css"
+CSS = pathlib.Path(__file__).resolve().parent.parent / "themes" / "analog.css"
 
 
 def build() -> Image.Image:
