@@ -12,6 +12,8 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
+      - key: PYTHON_VERSION        # 3.14 has no pydantic-core wheel -> pin to 3.12
+        value: "3.12.8"
       - key: CF_API_TOKEN          # secret - set in dashboard
         sync: false
       - key: DATABASE_URL          # secret - Supabase connection string
@@ -40,6 +42,8 @@ services:
       headers={'X-Admin-Token':os.environ['ADMIN_TOKEN']}, timeout=120);
       print(r.status_code, r.text)"
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
       - key: BROKER_URL            # https://woven-broker.onrender.com
         sync: false
       - key: ADMIN_TOKEN
