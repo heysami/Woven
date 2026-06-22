@@ -7435,6 +7435,39 @@ function apiUrl(path) {
   return path + sep + "project=" + encodeURIComponent(proj);
 }
 
+// One-time auto-switch to Prototype view. When the FIRST chat message on an
+// otherwise-empty project asks to create a prototype, we flip the editor into
+// the Prototype tab so the user lands where the work happens. This must fire
+// at most once per project, ever - tracked by a per-project localStorage flag
+// so it never repeats after the first time (even across reloads / new chats).
+const AUTO_PROTO_KEY = "th:autoProtoMode:v1";
+function autoProtoAlreadyFired() {
+  const proj = activeProjectId();
+  if (!proj) return true; // no project id -> don't risk firing
+  try {
+    const seen = JSON.parse(localStorage.getItem(AUTO_PROTO_KEY) || "[]");
+    return Array.isArray(seen) && seen.includes(proj);
+  } catch { return false; }
+}
+function markAutoProtoFired() {
+  const proj = activeProjectId();
+  if (!proj) return;
+  try {
+    const seen = JSON.parse(localStorage.getItem(AUTO_PROTO_KEY) || "[]");
+    const list = Array.isArray(seen) ? seen : [];
+    if (!list.includes(proj)) list.push(proj);
+    localStorage.setItem(AUTO_PROTO_KEY, JSON.stringify(list));
+  } catch { /* storage unavailable - best effort */ }
+}
+// Intent sniff: does the message read as "create/build a prototype"? Kept
+// deliberately narrow (must name a prototype-shaped artifact AND a build verb)
+// so questions like "what's a prototype?" don't trip it.
+function looksLikePrototypeRequest(text) {
+  const t = (text || "").toLowerCase();
+  if (!/\b(prototype|proto|mock\s?up|mockup)\b/.test(t)) return false;
+  return /\b(create|creating|build|building|make|making|start|design|designing|generate|spin\s*up|put\s*together|want|need|let'?s|give\s*me|new)\b/.test(t);
+}
+
 // Sibling origin for the web-proxy iframe: localhost <-> 127.0.0.1 - distinct
 // origins served by the same local daemon (it binds all interfaces). Lets a
 // proxied page run on a REAL origin that is cross-origin to the editor, so it
@@ -16660,12 +16693,12 @@ const DS_PREVIEW_STYLES = [
   { v: "minimal",        label: "Minimal",         desc: "Hairline borders, airy" },
   { v: "pastel",         label: "Pastel",          desc: "Soft tints, gentle" },
   { v: "glassmorphism",  label: "Glassmorphism",   desc: "Frosted, translucent" },
-  { v: "claymorphism",   label: "Claymorphism",    desc: "Puffy, soft 3D" },
+  { v: "rams",           label: "Rams",            desc: "Skeuomorphic, tactile" },
   { v: "neumorphism",    label: "Neumorphism",     desc: "Extruded soft UI" },
   { v: "techminimalism", label: "Tech-minimalism", desc: "Sharp, mono, dense" },
   { v: "neobrutalism",   label: "Neobrutalism",    desc: "Hard borders, offset" },
   { v: "analog",       label: "Analog",        desc: "Grainy, textured" },
-  { v: "rams",           label: "Rams",            desc: "Skeuomorphic, tactile" },
+  { v: "claymorphism",   label: "Claymorphism",    desc: "Puffy, soft 3D" },
 ];
 
 const DS_SPACE_RATIOS = [
@@ -55117,9 +55150,15 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
         const depth = opts._depth || 0;
         let children = [];
         if (depth < 3) {
+          // Children come from edges into the layer node's content port. The
+          // generic `layer` node uses `in`; the `shape` node's content/effect
+          // fill arrives on its `content` port - normalize that to `in` so it is
+          // collected too (the shape's p0..p7 / fill / stroke ports keep their
+          // own names and are filtered out here, since points/colors are bound
+          // separately via _shapePointBindings / _shapeColorBindings).
           const synth = (allEdges || [])
             .filter(e => (e.to || "").split(".", 1)[0] === up.id)
-            .map(e => ({ from: e.from, to: "__layer__." + ((e.to || "").split(".")[1] || "in") }));
+            .map(e => { const p = (e.to || "").split(".")[1] || "in"; return { from: e.from, to: "__layer__." + (p === "content" ? "in" : p) }; });
           children = resolveUpstreamInputs({ id: "__layer__" }, allNodes, synth, { _depth: depth + 1, toPort: "in" });
         }
         out.push({ ...base, type: "layer", label, spec: up.spec || {}, layerId: up.id, children });
@@ -74077,6 +74116,16 @@ function App() {
     const composed = selectionBlock ? `${selectionBlock}\n\n${text}` : text;
     const wrappedPrompt = composeModeAwarePrompt("editor", composed);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    // First message on an empty project that asks to build a prototype -> jump
+    // straight to the Prototype view. One-shot per project (see markAutoProtoFired);
+    // never repeats once fired.
+    if (view !== "prototype"
+        && !autoProtoAlreadyFired()
+        && (model.frames || []).length === 0
+        && looksLikePrototypeRequest(text)) {
+      setView("prototype");
+      markAutoProtoFired();
+    }
     const run = await triggerRun({
       branch: activeBranchIdForChat,
       agentId,
@@ -74090,7 +74139,7 @@ function App() {
     setRunFinished(false);
     saveSettings({ lastRunId: run.runId });
     return run;
-  }, [activeBranchIdForChat, agentId, permissionMode]);
+  }, [activeBranchIdForChat, agentId, permissionMode, view, model]);
 
   // "Update from source" - top-right toolbar action on the editor view.
   // Dispatches a Workflow 1 (regenerate) agent run: the agent reads the
