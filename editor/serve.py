@@ -17981,37 +17981,121 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         override_css = (body.get("dsOverrideCss") or "").strip()
         font = body.get("dsFont") if isinstance(body.get("dsFont"), dict) else None
+        heading_font = body.get("dsHeadingFont") if isinstance(body.get("dsHeadingFont"), dict) else None
 
-        # 1) Font swap - replace the Plus Jakarta Sans Google Fonts URL across
-        #    every html/css in the copied DS, and the --font family in
-        #    styles.css. Keep the template untouched when no font was chosen.
-        if font and (font.get("googleFontsUrl") or font.get("familyCss")):
-            old_url = "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
-            new_url = (font.get("googleFontsUrl") or "").strip()
-            family_css = (font.get("familyCss") or "").strip()
+        # 1) Fonts - body (--font) + optional heading face (--font-heading). Each
+        #    slot may be a Google font (a css2 URL the template's <link>/@import
+        #    point at) or an uploaded face (bytes → assets/fonts/<slot>.<ext> +
+        #    an @font-face). The --font / --font-heading TOKEN values arrive in
+        #    dsOverrideCss and are resolved in step 2; here we only wire up the
+        #    font ASSETS (swap the body URL, inject heading @import + any
+        #    @font-face into styles.css, which every page links). Untouched
+        #    slots leave the template's bundled Plus Jakarta Sans in place.
+        old_url = "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+        ds_styles_path = os.path.join(ds_dir, "styles.css")
+
+        def _write_uploaded_face(f, slot):
+            # Decode an uploaded font, write assets/fonts/<slot>.<ext>, and return
+            # its @font-face block (src pointing at the written file). "" on any
+            # problem or when the slot has no upload.
+            up = f.get("upload") if isinstance(f, dict) else None
+            if not (up and up.get("dataUrl")):
+                return ""
+            ext = (up.get("ext") or "").lower().lstrip(".")
+            allowed = {"woff2": "woff2", "woff": "woff", "ttf": "truetype", "otf": "opentype"}
+            if ext not in allowed:
+                return ""
+            fmt = (up.get("format") or "").strip() or allowed[ext]
+            m = re.match(r"^data:([^;,]*)?(;base64)?,(.*)$", up.get("dataUrl") or "", re.DOTALL)
+            if not m:
+                return ""
+            try:
+                payload = m.group(3) or ""
+                raw = base64.b64decode(payload) if m.group(2) else urllib.parse.unquote_to_bytes(payload)
+            except Exception:
+                return ""
+            if not raw or len(raw) > 2 * 1024 * 1024:
+                return ""
+            fonts_dir = os.path.join(ds_dir, "assets", "fonts")
+            os.makedirs(fonts_dir, exist_ok=True)
+            fname = slot + "." + ext
+            with open(os.path.join(fonts_dir, fname), "wb") as fh:
+                fh.write(raw)
+            fam = (f.get("name") or slot).replace("'", "").replace('"', "").strip() or slot
+            return ("@font-face{font-family:'" + fam + "';src:url(assets/fonts/" + fname
+                    + ") format('" + fmt + "');font-weight:100 900;font-style:normal;font-display:swap;}")
+
+        body_url = (font.get("googleFontsUrl") or "").strip() if font else ""
+        heading_url = (heading_font.get("googleFontsUrl") or "").strip() if heading_font else ""
+        body_face = _write_uploaded_face(font, "body")
+        heading_face = _write_uploaded_face(heading_font, "heading")
+
+        # Rewire the body font reference everywhere. A Google body font swaps the
+        # bundled URL in place (covers every page's <link> + the styles.css
+        # @import). An uploaded (or otherwise URL-less) body font instead strips
+        # the bundled Plus Jakarta references so it stops loading unused.
+        if body_url and body_url != old_url:
             for root, _dirs, files in os.walk(ds_dir):
                 for fn in files:
                     if not fn.lower().endswith((".html", ".css")):
                         continue
                     fp = os.path.join(root, fn)
                     try:
-                        with open(fp, "r", encoding="utf-8") as f:
-                            txt = f.read()
+                        with open(fp, "r", encoding="utf-8") as fh:
+                            txt = fh.read()
                     except Exception:
                         continue
-                    new_txt = txt
-                    if new_url:
-                        new_txt = new_txt.replace(old_url, new_url)
-                    if family_css and fn == "styles.css":
-                        new_txt = re.sub(
-                            r"--font:[^;]+;",
-                            "--font:" + family_css + ";",
-                            new_txt,
-                            count=1,
-                        )
-                    if new_txt != txt:
-                        with open(fp, "w", encoding="utf-8") as f:
-                            f.write(new_txt)
+                    if old_url in txt:
+                        with open(fp, "w", encoding="utf-8") as fh:
+                            fh.write(txt.replace(old_url, body_url))
+        elif body_face:
+            for root, _dirs, files in os.walk(ds_dir):
+                for fn in files:
+                    if not fn.lower().endswith((".html", ".css")):
+                        continue
+                    fp = os.path.join(root, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8") as fh:
+                            txt = fh.read()
+                    except Exception:
+                        continue
+                    nt = re.sub(r'[ \t]*<link[^>]*fonts\.googleapis\.com[^>]*Plus\+Jakarta[^>]*>\s*\n?', "", txt)
+                    nt = re.sub(r"@import\s+url\(\s*['\"]?[^)]*Plus\+Jakarta[^)]*['\"]?\s*\);\s*\n?", "", nt)
+                    if nt != txt:
+                        with open(fp, "w", encoding="utf-8") as fh:
+                            fh.write(nt)
+
+        # Inject the heading @import (when its own Google font) + any uploaded
+        # @font-face into styles.css. @import must precede every other rule, so
+        # land the block right after the last leading @import (else before :root).
+        extra_imports = []
+        if heading_url and heading_url not in (body_url, old_url):
+            extra_imports.append("@import url('" + heading_url + "');")
+        extra_faces = [b for b in (body_face, heading_face) if b]
+        if extra_imports or extra_faces:
+            try:
+                with open(ds_styles_path, "r", encoding="utf-8") as fh:
+                    scss = fh.read()
+            except Exception:
+                scss = ""
+            block = ""
+            if extra_imports:
+                block += "\n".join(extra_imports) + "\n"
+            if extra_faces:
+                block += "\n".join(extra_faces) + "\n"
+            imports = list(re.finditer(r'@import[^;]*;', scss))
+            if imports:
+                pos = imports[-1].end()
+                scss = scss[:pos] + "\n" + block + scss[pos:]
+            else:
+                mroot = re.search(r':root\s*\{', scss)
+                pos = mroot.start() if mroot else 0
+                scss = scss[:pos] + block + scss[pos:]
+            try:
+                with open(ds_styles_path, "w", encoding="utf-8") as fh:
+                    fh.write(scss)
+            except Exception:
+                pass
 
         # 1b) Logo swap - the user can upload a sidebar/topnav logo. Decode the
         #     data URL, write assets/logo.<ext>, and (for non-svg) repoint every
@@ -18277,6 +18361,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # knows exactly how to wire it - link target, <html> attribute, and
         # runtime script for JS-backed styles. None when neutral base.
         meta["defaultStyleContract"] = _resolve_style_contract(ds_dir, meta)
+        # Record the chosen type stack so an inheriting agent knows the body /
+        # heading faces without reparsing styles.css. heading == body unless the
+        # user opted into a separate heading font.
+        _body_name = (font.get("name") if font else "") or "Plus Jakarta Sans"
+        _heading_name = (heading_font.get("name") if heading_font else "") or _body_name
+        meta["fonts"] = {"body": _body_name, "heading": _heading_name}
         # Build policy - what imagery / polish / orchestrators a build on this
         # DS may use. None (all-auto) → drop any prior block so absent == auto.
         _bp = _normalize_build_policy(body.get("dsBuildPolicy"))

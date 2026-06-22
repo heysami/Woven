@@ -16493,32 +16493,109 @@ const DS_PALETTES = [
   { name: "Forest Pine",       colors: ["#2F3E46","#354F52","#52796F","#84A98C","#CAD2C5"] },
 ];
 
-// Curated Google-Fonts catalog for the family picker. familyCss includes a
-// sensible system fallback; url is the css2 link the daemon swaps in.
+// Curated Google-Fonts catalog for the family picker, grouped by `cat`
+// (sans · serif · mono · condensed). familyCss includes a category-appropriate
+// system fallback; url is the css2 link the daemon swaps in. The picker also
+// offers a "Custom" slot (DS_CUSTOM_FONT_KEY) for a typed Google family name or
+// an uploaded font file - see dsResolveFontSlot.
 const DS_FONT_CATALOG = [
-  { key:"plus-jakarta-sans", name:"Plus Jakarta Sans", serif:false },
-  { key:"inter",             name:"Inter",             serif:false },
-  { key:"work-sans",         name:"Work Sans",         serif:false },
-  { key:"manrope",           name:"Manrope",           serif:false },
-  { key:"dm-sans",           name:"DM Sans",           serif:false },
-  { key:"poppins",           name:"Poppins",           serif:false },
-  { key:"montserrat",        name:"Montserrat",        serif:false },
-  { key:"ibm-plex-sans",     name:"IBM Plex Sans",     serif:false },
-  { key:"figtree",           name:"Figtree",           serif:false },
-  { key:"source-serif-4",    name:"Source Serif 4",    serif:true  },
-  { key:"fraunces",          name:"Fraunces",          serif:true  },
-  { key:"space-grotesk",     name:"Space Grotesk",     serif:false },
+  // sans
+  { key:"plus-jakarta-sans", name:"Plus Jakarta Sans", cat:"sans" },
+  { key:"inter",             name:"Inter",             cat:"sans" },
+  { key:"work-sans",         name:"Work Sans",         cat:"sans" },
+  { key:"manrope",           name:"Manrope",           cat:"sans" },
+  { key:"dm-sans",           name:"DM Sans",           cat:"sans" },
+  { key:"poppins",           name:"Poppins",           cat:"sans" },
+  { key:"montserrat",        name:"Montserrat",        cat:"sans" },
+  { key:"ibm-plex-sans",     name:"IBM Plex Sans",     cat:"sans" },
+  { key:"figtree",           name:"Figtree",           cat:"sans" },
+  { key:"space-grotesk",     name:"Space Grotesk",     cat:"sans" },
+  // serif
+  { key:"source-serif-4",    name:"Source Serif 4",    cat:"serif" },
+  { key:"fraunces",          name:"Fraunces",          cat:"serif" },
+  // monospace
+  { key:"jetbrains-mono",    name:"JetBrains Mono",     cat:"mono" },
+  { key:"ibm-plex-mono",     name:"IBM Plex Mono",      cat:"mono" },
+  { key:"space-mono",        name:"Space Mono",         cat:"mono", w:"400;700" },
+  { key:"roboto-mono",       name:"Roboto Mono",        cat:"mono" },
+  { key:"source-code-pro",   name:"Source Code Pro",    cat:"mono" },
+  { key:"fira-code",         name:"Fira Code",          cat:"mono" },
+  // condensed / narrow
+  { key:"archivo-narrow",    name:"Archivo Narrow",     cat:"condensed", w:"400;500;600;700" },
+  { key:"roboto-condensed",  name:"Roboto Condensed",   cat:"condensed" },
+  { key:"oswald",            name:"Oswald",             cat:"condensed" },
+  { key:"barlow-condensed",  name:"Barlow Condensed",   cat:"condensed" },
+  { key:"saira-condensed",   name:"Saira Condensed",    cat:"condensed" },
+  { key:"pt-sans-narrow",    name:"PT Sans Narrow",     cat:"condensed", w:"400;700" },
 ];
+// Picker optgroups (order = render order). Custom is appended separately.
+const DS_FONT_GROUPS = [
+  { cat:"sans",      label:"Sans-serif" },
+  { cat:"serif",     label:"Serif" },
+  { cat:"mono",      label:"Monospace" },
+  { cat:"condensed", label:"Condensed" },
+];
+// Sentinel fontKey for the typed-name / uploaded-file slot.
+const DS_CUSTOM_FONT_KEY = "__custom";
+// Upload extension → @font-face format() string.
+const DS_FONT_FORMATS = { woff2:"woff2", woff:"woff", ttf:"truetype", otf:"opentype" };
+function dsFontFallback(cat) {
+  if (cat === "serif")     return "Georgia,'Times New Roman',serif";
+  if (cat === "mono")      return "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+  if (cat === "condensed") return "'Arial Narrow',-apple-system,BlinkMacSystemFont,sans-serif";
+  return "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+}
 function dsFontCss(font) {
-  const fb = font.serif
-    ? "Georgia,'Times New Roman',serif"
-    : "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
-  return "'" + font.name + "'," + fb;
+  return "'" + font.name + "'," + dsFontFallback(font.cat);
 }
 function dsFontUrl(font) {
+  // Per-entry weight axis: some families don't ship the full 300-700 set, and
+  // requesting a missing weight makes the css2 endpoint 400 (the font then
+  // silently fails to load), so constrained families carry their own `w`.
+  const w = (font && font.w) || "300;400;500;600;700";
   return "https://fonts.googleapis.com/css2?family="
     + font.name.replace(/ /g, "+")
-    + ":wght@300;400;500;600;700&display=swap";
+    + ":wght@" + w + "&display=swap";
+}
+// A typed custom family could be any Google font, so we can't assume its weight
+// set; request the family with no wght axis (loads its default style) - that
+// never 400s as long as the family exists. Other weights fall back gracefully.
+function dsCustomFontUrl(name) {
+  return "https://fonts.googleapis.com/css2?family="
+    + name.trim().replace(/ /g, "+")
+    + "&display=swap";
+}
+// Resolve one font slot (catalog key, typed Google family, or uploaded face)
+// into a payload: { name, familyCss, googleFontsUrl?, faceName?, upload? }.
+// Upload wins over a typed name. Returns null for "no choice" (default).
+function dsResolveFontSlot(fontKey, customName, customFont) {
+  if (fontKey === DS_CUSTOM_FONT_KEY) {
+    if (customFont && customFont.dataUrl) {
+      const fam = ((customFont.name || "Custom Font").replace(/['"]/g, "").trim()) || "Custom Font";
+      return {
+        name: fam, faceName: fam,
+        familyCss: "'" + fam + "'," + dsFontFallback("sans"),
+        upload: { dataUrl: customFont.dataUrl, ext: customFont.ext, format: customFont.format },
+      };
+    }
+    const nm = (customName || "").trim();
+    if (nm) {
+      const f = { name: nm, cat: "sans" };
+      return { name: nm, familyCss: dsFontCss(f), googleFontsUrl: dsCustomFontUrl(nm) };
+    }
+    return null;
+  }
+  const f = DS_FONT_CATALOG.find(x => x.key === fontKey);
+  if (!f) return null;
+  return { name: f.name, familyCss: dsFontCss(f), googleFontsUrl: dsFontUrl(f) };
+}
+// @font-face block for an uploaded face (preview uses the data URL inline; the
+// daemon rewrites src to assets/fonts/<slot>.<ext> at bake). "" when no upload.
+function dsFontFaceCss(resolved) {
+  if (!resolved || !resolved.upload) return "";
+  return "@font-face{font-family:'" + resolved.faceName + "';src:url("
+    + resolved.upload.dataUrl + ") format('" + resolved.upload.format
+    + "');font-weight:100 900;font-style:normal;font-display:swap;}";
 }
 
 // Type-scale ratios (typescale.com vocabulary).
@@ -16900,13 +16977,28 @@ function buildDsCustomization(s) {
       `--radius-2xl:${px(R["2xl"])};`, `--radius-pill:${px(R.pill)};`,
     );
   }
-  // ── Font family (the --font var; webfont swapped server-side / via <link>) ──
-  let font = null;
-  if (s.fontKey && s.fontKey !== D.fontKey) {
-    const f = DS_FONT_CATALOG.find(x => x.key === s.fontKey);
-    if (f) {
-      font = { familyCss: dsFontCss(f), googleFontsUrl: dsFontUrl(f), name: f.name };
-      lines.push(`--font:${font.familyCss};`);
+  // ── Fonts: body (--font) + optional separate heading face (--font-heading).
+  //    Each slot may be a catalog Google font, a typed Google family, or an
+  //    uploaded face. Uploads emit an @font-face (faceLines) injected alongside
+  //    the token override. --font-heading defaults to var(--font) in the
+  //    template, so it's only emitted when the user opts into a second font. ──
+  let font = null, headingFont = null;
+  const faceLines = [];
+  const bodyResolved = dsResolveFontSlot(s.fontKey, s.bodyCustomName, s.bodyCustomFont);
+  if (bodyResolved && bodyResolved.familyCss !== D.fontFamilyCss) {
+    font = bodyResolved;
+    lines.push(`--font:${bodyResolved.familyCss};`);
+    const ff = dsFontFaceCss(bodyResolved);
+    if (ff) faceLines.push(ff);
+  }
+  if (s.twoFonts) {
+    const headResolved = dsResolveFontSlot(s.headingFontKey, s.headingCustomName, s.headingCustomFont);
+    const bodyFamily = font ? font.familyCss : D.fontFamilyCss;
+    if (headResolved && headResolved.familyCss !== bodyFamily) {
+      headingFont = headResolved;
+      lines.push(`--font-heading:${headResolved.familyCss};`);
+      const ff = dsFontFaceCss(headResolved);
+      if (ff) faceLines.push(ff);
     }
   }
   // ── Type scale (base size + modular ratio → full ladder) ──
@@ -16938,7 +17030,12 @@ function buildDsCustomization(s) {
   const overrideCss = lines.length
     ? ":root{\n  " + lines.join("\n  ") + "\n}"
     : "";
-  return { overrideCss, font, dirty: lines.length > 0 || !!s.styleId, darkCss: buildDsDarkCss(s) };
+  return {
+    overrideCss, font, headingFont,
+    fontFaceCss: faceLines.join("\n"),
+    dirty: lines.length > 0 || !!s.styleId,
+    darkCss: buildDsDarkCss(s),
+  };
 }
 
 /* Build the design-system half of a bake payload from the customizer's
@@ -16952,6 +17049,7 @@ function dsBuildBakePayload(s, custom, label) {
     dsOverrideCss: custom.overrideCss,
     dsDarkCss: custom.darkCss,
     dsFont: custom.font,
+    dsHeadingFont: custom.headingFont || null,
     dsLabel: label || "Template Design System",
   };
   if (s.logo && s.logo.dataUrl) {
@@ -16986,7 +17084,14 @@ function dsDefaultSettings() {
     successColorDark: null, attentionColorDark: null, errorColorDark: null, infoColorDark: null,
     paletteName: null,   // label of the applied Coolors preset (display only)
     roundness: 1,
+    // Fonts. fontKey = body face. twoFonts splits headings (h5/h6+) onto
+    // headingFontKey. Either slot can be DS_CUSTOM_FONT_KEY → a typed Google
+    // family (…CustomName) or an uploaded face (…CustomFont = {dataUrl,ext,format,name}).
     fontKey: DS_DEFAULTS.fontKey,
+    bodyCustomName: "", bodyCustomFont: null,
+    twoFonts: false,
+    headingFontKey: DS_DEFAULTS.fontKey,
+    headingCustomName: "", headingCustomFont: null,
     baseFontPx: null, typeRatio: null, typeTouched: false,
     spacingBasePx: null, spacingRatio: null, spacingTouched: false,
     logo: null,   // { dataUrl, ext, name } when the user uploads a sidebar logo
@@ -17358,20 +17463,27 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       gs.src = __jsUrl + (__jsUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
       doc.body.appendChild(gs);
     }
-    // Font webfont link
-    let link = doc.getElementById("__ds_custom_font");
-    if (custom.font && custom.font.googleFontsUrl) {
-      if (!link) {
-        link = doc.createElement("link");
-        link.id = "__ds_custom_font";
-        link.rel = "stylesheet";
-        doc.head.appendChild(link);
+    // Font webfont links - body + (optional) heading. Each is dropped when its
+    // slot has no Google URL (default font, or an uploaded face handled below).
+    const syncFontLink = (id, url) => {
+      let l = doc.getElementById(id);
+      if (url) {
+        if (!l) { l = doc.createElement("link"); l.id = id; l.rel = "stylesheet"; doc.head.appendChild(l); }
+        if (l.getAttribute("href") !== url) l.setAttribute("href", url);
+      } else if (l) {
+        l.parentNode.removeChild(l);
       }
-      if (link.getAttribute("href") !== custom.font.googleFontsUrl) {
-        link.setAttribute("href", custom.font.googleFontsUrl);
-      }
-    } else if (link) {
-      link.parentNode.removeChild(link);
+    };
+    syncFontLink("__ds_custom_font", custom.font && custom.font.googleFontsUrl);
+    syncFontLink("__ds_custom_font_heading", custom.headingFont && custom.headingFont.googleFontsUrl);
+    // Uploaded faces - the preview embeds the data URL directly (the daemon
+    // rewrites these to assets/fonts/* at bake).
+    let face = doc.getElementById("__ds_custom_fontface");
+    if (custom.fontFaceCss) {
+      if (!face) { face = doc.createElement("style"); face.id = "__ds_custom_fontface"; doc.head.appendChild(face); }
+      if (face.textContent !== custom.fontFaceCss) face.textContent = custom.fontFaceCss;
+    } else if (face) {
+      face.parentNode.removeChild(face);
     }
     // Token override - must be the LAST child of <head> so it wins the cascade.
     let style = doc.getElementById("__ds_custom_style");
@@ -17555,10 +17667,28 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
 
             <section className="dscz-group">
               <div className="dscz-group-label">Font family</div>
-              <select className="dscz-select" value=${settings.fontKey}
-                onChange=${(e) => set({ fontKey: e.target.value })}>
-                ${DS_FONT_CATALOG.map(f => html`<option key=${f.key} value=${f.key}>${f.name}${f.serif ? " (serif)" : ""}</option>`)}
-              </select>
+              <${DsFontField}
+                fontKey=${settings.fontKey}
+                customName=${settings.bodyCustomName}
+                customFont=${settings.bodyCustomFont}
+                onFontKey=${(v) => set({ fontKey: v })}
+                onCustomName=${(v) => set({ bodyCustomName: v })}
+                onCustomFont=${(v) => set({ bodyCustomFont: v })}/>
+              <label className="dscz-check" style=${{ marginTop: "2px" }}>
+                <input type="checkbox" checked=${!!settings.twoFonts}
+                  onChange=${(e) => set({ twoFonts: e.target.checked })}/>
+                <span>Use a separate font for headings</span>
+              </label>
+              ${settings.twoFonts && html`
+                <div className="dscz-sub-label">Heading font · h5/h6 and larger</div>
+                <${DsFontField}
+                  fontKey=${settings.headingFontKey}
+                  customName=${settings.headingCustomName}
+                  customFont=${settings.headingCustomFont}
+                  onFontKey=${(v) => set({ headingFontKey: v })}
+                  onCustomName=${(v) => set({ headingCustomName: v })}
+                  onCustomFont=${(v) => set({ headingCustomFont: v })}/>
+                <div className="dscz-row-hint">Headings use this face; base, small & extra-small text keep the font above.</div>`}
             </section>
 
             <section className="dscz-group">
@@ -17924,6 +18054,56 @@ function DefaultLibraryLanding() {
         onClose=${() => setTuneOpen(false)}
         previewOnly=${true}/>`}
     </div>
+  `;
+}
+
+/* One font slot for the customizer: a category-grouped Google-font <select>
+   plus a "Custom" option that reveals a typed-family input and a file upload
+   (.woff2/.woff/.ttf/.otf). Fully controlled - the parent owns fontKey,
+   customName and customFont (= {dataUrl,ext,format,name}) and supplies setters.
+   Used for both the body and the (optional) heading font. */
+function DsFontField({ fontKey, customName, customFont, onFontKey, onCustomName, onCustomFont }) {
+  const fileRef = useRef(null);
+  const [err, setErr] = useState(null);
+  const readFont = (file) => {
+    setErr(null);
+    if (!file) return;
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const fmt = DS_FONT_FORMATS[ext];
+    if (!fmt) { setErr("Unsupported - use .woff2, .woff, .ttf or .otf."); return; }
+    if (file.size > 2 * 1024 * 1024) { setErr("Too large - keep it under 2 MB."); return; }
+    const r = new FileReader();
+    r.onload = () => onCustomFont({ dataUrl: String(r.result), ext, format: fmt, name: file.name.replace(/\.[^.]+$/, "") });
+    r.onerror = () => setErr("Could not read that font file.");
+    r.readAsDataURL(file);
+  };
+  return html`
+    <select className="dscz-select" value=${fontKey} onChange=${(e) => onFontKey(e.target.value)}>
+      ${DS_FONT_GROUPS.map(g => html`
+        <optgroup key=${g.cat} label=${g.label}>
+          ${DS_FONT_CATALOG.filter(f => (f.cat || "sans") === g.cat).map(f => html`<option key=${f.key} value=${f.key}>${f.name}</option>`)}
+        </optgroup>`)}
+      <optgroup label="Custom">
+        <option value=${DS_CUSTOM_FONT_KEY}>Custom font / upload…</option>
+      </optgroup>
+    </select>
+    ${fontKey === DS_CUSTOM_FONT_KEY && html`
+      <div className="dscz-customfont">
+        <input className="dscz-text" type="text" placeholder="Google Fonts family name (e.g. Lora)"
+          value=${customName || ""} onInput=${(e) => onCustomName(e.target.value)}/>
+        <div className="dscz-customfont-or">or</div>
+        <div className="dscz-customfont-file">
+          <button type="button" className="dscz-fontfile"
+            onClick=${() => fileRef.current && fileRef.current.click()}>
+            ${customFont ? ("Font: " + (customFont.name || "uploaded")) : "Upload font file"}
+          </button>
+          ${customFont && html`<button type="button" className="dscz-reset" onClick=${() => onCustomFont(null)}>remove</button>`}
+        </div>
+        <input ref=${fileRef} type="file" accept=".woff2,.woff,.ttf,.otf,font/*" style=${{ display: "none" }}
+          onChange=${(e) => { readFont(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
+        ${err && html`<div className="newproj-error">${err}</div>`}
+        <div className="dscz-row-hint">Type a Google Fonts family name, or upload a font file. An upload wins if both are set.</div>
+      </div>`}
   `;
 }
 
