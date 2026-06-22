@@ -17339,12 +17339,12 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
       allLink.href = __allUrl + (__allUrl.indexOf("?") >= 0 ? "&" : "?") + __ds_bust;
       doc.head.appendChild(allLink);
     }
-    // Glassmorphism ships a WebGL runtime (themes/glassmorphism.js - the real
-    // Material Lab dispersion-prism). Inject it so the preview shows the actual
-    // glass, not just the CSS fallback. Self-activates on data-theme; tears down
-    // when the style changes, so it is harmless for the other styles. (Claymorphism
-    // is pure CSS - no shader runtime.)
-    const jsBackedStyle = settings.styleId === "glassmorphism";
+    // Some styles ship a runtime (themes/<id>.js): glassmorphism (WebGL
+    // dispersion-prism) and analog (per-element halftone canvas). Inject it so
+    // the preview shows the real thing, not just the CSS fallback. Each
+    // self-activates on data-theme and tears down when the style changes, so it
+    // is harmless once loaded. (Claymorphism/neumorphism are pure CSS.)
+    const jsBackedStyle = settings.styleId === "glassmorphism" || settings.styleId === "analog";
     if (jsBackedStyle && doc.body && !doc.getElementById("__ds_mat_js_" + settings.styleId)) {
       const gs = doc.createElement("script");
       gs.id = "__ds_mat_js_" + settings.styleId;
@@ -17389,6 +17389,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
     // The gallery's token-docs (ramp swatches/hex, spacing bars) are JS-rendered
     // from computed values, so nudge them to re-read after the override lands.
     try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
+    try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
     // Logo - uploaded custom logo wins; otherwise the bundled "D" monogram.
     // The "D" fill follows each logo's INHERITED colour (the sidebar/topbar text
     // colour, which every style + light/dark already sets to contrast its own
@@ -17832,6 +17833,7 @@ function DsTuneThumb({ file, custom, dark }) {
     style.textContent = (custom.overrideCss || "") + "\n" + (custom.darkCss || "");
     doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
     try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
+    try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
   }, [custom, dark]);
 
   // Re-apply when the tuning changes after the frame is already loaded.
@@ -22907,7 +22909,16 @@ function WorkflowCanvas() {
         // legacy wb table into the node graph (same id, so cell bindings on
         // bound items still resolve), and drop it from the wb layer.
         const _rawWb = Array.isArray(j.wb) ? j.wb : [];
-        const _migratedTables = _rawWb.filter(it => it && it.type === "table").map(it => ({
+        const _existingNodeIds = new Set((j.nodes || []).map(n => n && n.id));
+        const _wbTables = _rawWb.filter(it => it && it.type === "table");
+        // The daemon MERGES wb on save (so it won't clobber agent-added items),
+        // so a plain client-side filter would let the wb table come back on the
+        // next reload and re-migrate into a DUPLICATE node. Mark each for real
+        // deletion, and skip migrating any table that is already a node.
+        for (const it of _wbTables) {
+          if (deletedWbIdsRef && deletedWbIdsRef.current) deletedWbIdsRef.current.add(it.id);
+        }
+        const _migratedTables = _wbTables.filter(it => !_existingNodeIds.has(it.id)).map(it => ({
           id: it.id, kind: "table", title: it.title || "Table",
           x: it.x || 0, y: it.y || 0, w: it.w || 0, h: it.h || 0,
           cols: it.cols, rows: it.rows, merges: Array.isArray(it.merges) ? it.merges : [],
@@ -22919,7 +22930,11 @@ function WorkflowCanvas() {
           // Legacy files lack the key; default to [] so every reader can
           // assume an array.
           wb: _rawWb.filter(it => !(it && it.type === "table")),
-          nodes: [..._migratedTables, ...(j.nodes || [])].map(n => {
+          nodes: [..._migratedTables, ...(j.nodes || [])].filter((n, i, arr) =>
+            // Drop any duplicate-id node (a prior re-migration may have
+            // persisted two table nodes with the same id) - keep the first.
+            n && n.id && arr.findIndex(m => m && m.id === n.id) === i
+          ).map(n => {
             // A "running" design-system node is ALWAYS stale on a fresh load:
             // unlike agent nodes (whose subprocess hook resumes them), a DS
             // node has no owner that flips it back, so a persisted "running"

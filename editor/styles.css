@@ -7368,6 +7368,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    outline ring at rest, lifting on hover, and a 2px accent outline when
    selected. The glow rings the rounded body (the cell-wrap is inset:0 at the
    same 10px radius). */
+/* The table node reuses .workflow-node (overflow: clip + 64px buffer). Its side
+   port labels (`populate` / `contents`) + the up-shift when selected can run
+   past 64px and clip; widen the buffer so they show in full. */
+.workflow-node-table { overflow-clip-margin: 110px; }
 .workflow-wb-table {
   box-sizing: border-box;
   border-radius: 10px;
