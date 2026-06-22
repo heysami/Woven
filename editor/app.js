@@ -47677,6 +47677,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
   const [comments, setComments] = useState(null);   // null = loading
   const [share, setShare] = useState(null);         // matching /__shares record
   const [cloudflared, setCloudflared] = useState(true);
+  const [wovenAvail, setWovenAvail] = useState(false);  // stable-URL mode offered?
   const [filter, setFilter] = useState("open");
   const [sel, setSel] = useState({});               // commentId → true
   const [busy, setBusy] = useState(false);
@@ -47698,6 +47699,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
       .then(j => {
         if (!j) return;
         setCloudflared(!!(j.cloudflared && j.cloudflared.found));
+        setWovenAvail(!!(j.woven && j.woven.available));
         const mine = (j.shares || []).find(s =>
           s.prototype === slug && (!projectId || s.project === projectId));
         setShare(mine || null);
@@ -47725,12 +47727,13 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
     } catch (e) { flashErr(String(e.message || e)); }
     finally { setShareBusy(false); }
   };
-  const shareOp = async (action) => {
+  const shareOp = async (action, body) => {
     if (!share) return;
     setShareBusy(true);
     try {
       const r = await fetch(`/__share/${share.id}/${action}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `${action} failed`);
@@ -47911,6 +47914,18 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
               ? html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("stop")}>Stop</button>`
               : html`<button className="shares-btn shares-btn-primary" disabled=${shareBusy || !cloudflared} onClick=${() => shareOp("start")}>Start</button>`}
           </div>
+          ${wovenAvail && html`
+            <div key="mode" className="th-share-mode" title=${share.mode === "woven"
+                ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
+                : "Quick link - a random trycloudflare.com URL that changes on every restart"}>
+              <button className=${"th-mode-opt" + (share.mode !== "woven" ? " is-on" : "")}
+                disabled=${shareBusy || share.mode !== "woven"}
+                onClick=${() => share.mode === "woven" && shareOp("update", { mode: "quick" })}>Quick</button>
+              <button className=${"th-mode-opt" + (share.mode === "woven" ? " is-on" : "")}
+                disabled=${shareBusy || share.mode === "woven"}
+                onClick=${() => share.mode !== "woven" && shareOp("update", { mode: "woven" })}>Stable</button>
+            </div>
+          `}
           ${share.shareUrl && html`
             <div key="surl" className="workflow-comments-share-url">
               <code title=${share.shareUrl}>${share.shareUrl}</code>
