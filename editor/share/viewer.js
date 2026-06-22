@@ -29,6 +29,15 @@
       <path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v6a1 1 0 01-1 1H7l-3 3v-3a1 1 0 01-1-1z"/>
     </svg>`;
 
+  // Home glyph for the "Reset" button - sends the prototype iframe back to its
+  // first page (reviewers wander deep and don't want to click all the way back).
+  const HomeIcon = ({ size = 14 }) => html`
+    <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" style=${{ display: "block" }}>
+      <path d="M2.5 7L8 2.5L13.5 7"/><path d="M4 6.5V13h8V6.5"/><path d="M6.5 13V9.5h3V13"/>
+    </svg>`;
+
   // ── URL plumbing ──────────────────────────────────────────────────────
   // location.pathname is /s/<token>/ (gate 301s the slash-less form).
   const BASE = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
@@ -594,6 +603,18 @@
       if (confirm("Delete this comment thread?")) mutate("comments/" + c.id + "/delete", {});
     };
 
+    // Reset = reload the prototype iframe at its first page (index.html). Pure
+    // navigation - touches no comments. onFrameLoad re-syncs the page chip and
+    // rearms comment mode. We also drop any in-flight draft/comment mode so the
+    // composer doesn't dangle over a page that's about to change underfoot.
+    const resetToFirstPage = useCallback(() => {
+      const frame = iframeRef.current;
+      if (!frame || !meta) return;
+      setCommentMode(false);
+      setDraft(null);
+      frame.src = BASE + meta.entry;
+    }, [meta]);
+
     // ── Render ────────────────────────────────────────────────────────
     if (metaErr) {
       return html`<div className="sv-app"><div className="sv-empty" style=${{ marginTop: 120 }}>
@@ -625,6 +646,12 @@
           </span>
           <span className="sv-topbar-spacer"></span>
           <span className="sv-page-chip" title=${page}>${page}</span>
+          ${!gateBlocked && html`<button
+            className="sv-btn"
+            disabled=${page === "index.html"}
+            title=${page === "index.html" ? "Already on the first page" : "Reset - back to the first page of the prototype"}
+            onClick=${resetToFirstPage}
+          ><${HomeIcon}/> Reset</button>`}
           <button
             className=${"sv-btn" + (commentMode ? " is-active" : "")}
             title=${commentMode ? "Exit comment mode (Esc)" : "Comment on an element - click anything in the prototype"}
