@@ -250,17 +250,24 @@ Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip
 
 ## Where things live on disk
 
+In multi-project mode the workspace dir (`TH_WORKSPACE_DIR`) is **separate from the cloned repo** and holds only the daemon-managed data below. (If you run from the repo root with no workspace dir, this same `projects/` tree lives alongside the repo's own `editor/`, `PROTOTYPE.md`, `design-library/`, etc.)
+
 ```
 <workspace-dir>/
 ├── workspace.json                          # project registry (auto-managed)
+├── shares.json                             # live-share registry (auto-managed)
+├── .trash/                                 # recoverable deleted projects (Housekeeping → empty)
 └── projects/
     └── <project-id>/
-        ├── source/                         # the generated prototype HTML/CSS/JS lives here
-        ├── editor/data.js                  # canvas state (frames, nodes, arrows)
-        ├── workflow/workflow.json          # workflow graph
-        └── design-systems/<ds-id>/         # this project's reusable design systems (tokens + gallery + DESIGN.md)
+        ├── source/main/                    # the generated prototype HTML/CSS/JS (per branch; default "main")
+        ├── editor/data.js                  # canvas state (frames, nodes, arrows)  ·  + chat.jsonl
+        ├── workflow/workflow.json          # workflow graph  ·  + runs/ + views/ snapshots
+        ├── design-systems/<ds-id>/         # design systems you build for this project (empty until then)
+        └── .history/, .thumbnail*, …       # edit history + gallery metadata (auto-managed)
 
 ~/.test-harness/media-config.json           # your provider API keys (mode 0600, per-user)
 ```
+
+(`fonts/` and `.system-chats/` also appear at the workspace root once you upload a font or use the Capabilities agent.)
 
 That's it. You're set up.
