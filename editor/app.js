@@ -22901,13 +22901,24 @@ function WorkflowCanvas() {
         // spawned by a still-in-flight brainstorm/Repeater dispatch and
         // belong to a resumable run. Keep them in pending; the per-card
         // resume effect re-attaches polling against the stored runId.
+        // Migration: tables used to be whiteboard items; they're now real
+        // nodes (kind:"table") so they get section-style connectors. Lift any
+        // legacy wb table into the node graph (same id, so cell bindings on
+        // bound items still resolve), and drop it from the wb layer.
+        const _rawWb = Array.isArray(j.wb) ? j.wb : [];
+        const _migratedTables = _rawWb.filter(it => it && it.type === "table").map(it => ({
+          id: it.id, kind: "table", title: it.title || "Table",
+          x: it.x || 0, y: it.y || 0, w: it.w || 0, h: it.h || 0,
+          cols: it.cols, rows: it.rows, merges: Array.isArray(it.merges) ? it.merges : [],
+          fill: it.fill || "white", lineColor: it.lineColor || "gray",
+        }));
         const sanitized = {
           ...j,
           // Whiteboard layer - top-level `wb` array (sibling of nodes/edges).
           // Legacy files lack the key; default to [] so every reader can
           // assume an array.
-          wb: Array.isArray(j.wb) ? j.wb : [],
-          nodes: (j.nodes || []).map(n => {
+          wb: _rawWb.filter(it => !(it && it.type === "table")),
+          nodes: [..._migratedTables, ...(j.nodes || [])].map(n => {
             // A "running" design-system node is ALWAYS stale on a fresh load:
             // unlike agent nodes (whose subprocess hook resumes them), a DS
             // node has no owner that flips it back, so a persisted "running"
@@ -24475,6 +24486,24 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "section", w: 880, h: 560,
     title: p.title || "Section",
   }),
+  // A data grid that lives in the node graph (so it gets section-style in/out
+  // connectors). cols/rows are width/height arrays; merges is a list of
+  // {r,c,rs,cs} regions; w/h are kept == sum(cols)/sum(rows). Other nodes + wb
+  // items bind to a cell via their own cell:{tableId,r,c,ox,oy} field.
+  "table": (p = {}) => {
+    const cols = (Array.isArray(p.cols) && p.cols.length)
+      ? p.cols.map(n => Math.max(WB_TABLE_MIN_COL, Math.round(n)))
+      : Array.from({ length: Math.max(1, p.ncols || 4) }, () => WB_TABLE_DEFAULT_COL);
+    const rows = (Array.isArray(p.rows) && p.rows.length)
+      ? p.rows.map(n => Math.max(WB_TABLE_MIN_ROW, Math.round(n)))
+      : Array.from({ length: Math.max(1, p.nrows || 3) }, () => WB_TABLE_DEFAULT_ROW);
+    return {
+      kind: "table", title: p.title || "Table",
+      w: cols.reduce((a, b) => a + b, 0), h: rows.reduce((a, b) => a + b, 0),
+      cols, rows, merges: Array.isArray(p.merges) ? p.merges : [],
+      fill: p.fill || "white", lineColor: p.lineColor || "gray",
+    };
+  },
   "design-system": (p) => ({
     kind: "design-system", w: 360, h: 720,
     dsId: (p.dsId || "main").toLowerCase(),
@@ -24719,6 +24748,13 @@ const WORKFLOW_CONNECT_DEFS = {
     // INSIDE this frame" - the daemon's downstream walk hands the agent the
     // frame rect + the addNodes layout instruction.
     accepts:  { in: { label: "Generate into section", tags: ["text-gen", "asset-gen"] } },
+  },
+  // A table's cells host nodes/items just like a section's frame, so it carries
+  // the same "section" contents bundle out, and accepts generators in.
+  "table": {
+    label: "Table",
+    provides: { out: { label: "Table contents", tags: ["section"] } },
+    accepts:  { in: { label: "Populate cells", tags: ["text-gen", "asset-gen"] } },
   },
   "skill": {
     label: "Skill",
@@ -25093,7 +25129,7 @@ function workflowResolveAcceptPort(anchor, port, edges) {
 function workflowFindFreeSpot(nodes, x, y, w, h) {
   const PAD = 24;
   const overlaps = (ny) => (nodes || []).some(n => {
-    if (!n || n.kind === "section") return false;
+    if (!n || n.kind === "section" || n.kind === "table") return false;
     const nw = n.w || 280, nh = n.h || 200;
     return x < n.x + nw + PAD && x + w + PAD > n.x && ny < n.y + nh + PAD && ny + h + PAD > n.y;
   });
@@ -25374,7 +25410,7 @@ function workflowSectionContainedNodes(section, nodes) {
   const x0 = section.x, y0 = section.y;
   const x1 = x0 + (section.w || 880), y1 = y0 + (section.h || 560);
   return (nodes || []).filter(n => {
-    if (!n || n.id === section.id || n.kind === "section") return false;
+    if (!n || n.id === section.id || n.kind === "section" || n.kind === "table") return false;
     const cx = (n.x || 0) + (n.w || 280) / 2;
     const cy = (n.y || 0) + (n.h || 200) / 2;
     return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
@@ -30358,18 +30394,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           return;
         }
         if (tool === "table") {
-          // Size the grid to the drawn box: ~150px columns / 44px rows, at
-          // least 2x2. A bare click drops a default 4x3.
+          // Commit a real table NODE (like the section tool) sized to the drawn
+          // box: ~150px columns / 44px rows, at least 2x2. A bare click → 4x3.
           const gx = dragged ? Math.min(x0, lastWp.x) : x0;
           const gy = dragged ? Math.min(y0, lastWp.y) : y0;
           const gw = dragged ? Math.abs(lastWp.x - x0) : 4 * WB_TABLE_DEFAULT_COL;
           const gh = dragged ? Math.abs(lastWp.y - y0) : 3 * WB_TABLE_DEFAULT_ROW;
           const ncols = Math.max(2, Math.round(gw / WB_TABLE_DEFAULT_COL));
           const nrows = Math.max(2, Math.round(gh / WB_TABLE_DEFAULT_ROW));
-          const tItem = wbMakeItem("table", { x: Math.round(gx), y: Math.round(gy), ncols, nrows, fill: F.fill || "white", lineColor: F.lineColor || "gray" });
-          addWbItem(tItem);
-          setSelectedWbIds(new Set([tItem.id]));
-          if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
+          const body = workflowMakeNodeOfKind("table", { ncols, nrows, fill: F.fill || "white", lineColor: F.lineColor || "gray" });
+          if (body) {
+            const id = workflowNewNodeId();
+            setData(d => ({
+              ...d,
+              nodes: [...(d.nodes || []), { id, ...body, x: Math.round(gx), y: Math.round(gy) }],
+            }));
+            setSelectedWbIds(new Set());
+            setSelectedNodeIds(new Set([id]));
+          }
           wbAfterCommit("table");
           return;
         }
@@ -30556,13 +30598,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // (the user is moving them by hand); bindings to a vanished table are
   // cleared. Returns the same object on no-change so it can't render-loop.
   useEffect(() => {
-    const wb = data.wb;
-    if (!Array.isArray(wb) || !wb.some(it => it && it.type === "table")) return;
-    const hasBound = wb.some(it => it && it.cell) || (data.nodes || []).some(n => n && n.cell);
+    const nodes = data.nodes;
+    if (!Array.isArray(nodes) || !nodes.some(n => n && n.kind === "table")) return;
+    const hasBound = (data.wb || []).some(it => it && it.cell) || nodes.some(n => n && n.cell);
     if (!hasBound) return;
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
-      const tById = new Map(list.filter(it => it.type === "table").map(t => [t.id, t]));
+      const tById = new Map((d.nodes || []).filter(n => n.kind === "table").map(t => [t.id, t]));
       const dragging = wbDraggingRef.current || nodeDraggingRef.current;
       const skipWb = dragging ? selectedWbIdsRef.current : null;
       const skipNode = dragging ? selectedNodeIdsRef.current : null;
@@ -30602,7 +30644,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const wbReassignBindings = useCallback((wbIds, nodeIds) => {
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
-      const tables = list.filter(it => it.type === "table");
+      const tables = (d.nodes || []).filter(n => n.kind === "table");
       if (!tables.length) return d;
       const cellFor = (bb) => {
         const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
@@ -30626,7 +30668,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return it;
       });
       const nextNodes = (d.nodes || []).map(n => {
-        if (!nodeIds.has(n.id)) return n;
+        if (n.kind === "table" || !nodeIds.has(n.id)) return n;
         const cell = cellFor({ x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 });
         if (cell) { changed = true; return { ...n, cell }; }
         if (n.cell) { changed = true; return wbStripCell(n); }
@@ -30654,7 +30696,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const tableOp = useCallback((tableId, op, args = {}) => {
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
-      const t = list.find(it => it.id === tableId && it.type === "table");
+      const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
       if (!t) return d;
       let cols = wbTableCols(t).slice();
       let rows = wbTableRows(t).slice();
@@ -30753,8 +30795,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return { ...o, cell: { tableId, r, c, ox, oy } };
       };
 
-      const nextWb = list.map(it => it.id === tableId ? nt : (it.cell ? remap(it) : it));
-      const nextNodes = (d.nodes || []).map(n => n.cell ? remap(n) : n);
+      const nextWb = list.map(it => it.cell ? remap(it) : it);
+      const nextNodes = (d.nodes || []).map(n => n.id === tableId ? nt : (n.cell ? remap(n) : n));
       return { ...d, wb: nextWb, nodes: nextNodes };
     });
     setTableSel(null);
@@ -31183,7 +31225,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const contained = new Set([sid]);
       for (const n of nodes) {
         if (n.id === sid) continue;
-        if (n.kind === "section") continue;   // sections don't nest
+        if (n.kind === "section" || n.kind === "table") continue;   // sections don't nest; tables use cell-binding, not containment
         const cx = (n.x || 0) + ((n.w || 0) / 2);
         const cy = (n.y || 0) + ((n.h || 0) / 2);
         if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) contained.add(n.id);
@@ -40128,6 +40170,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "table").map(n => html`
+              <${WorkflowTableNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                tableSel=${tableSel}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onOp=${tableOp}
+                onCellSelect=${(tableId, range) => setTableSel({ tableId, ...range })}
+                onCellMenu=${(tableId, r, c, vpX, vpY) => {
+                  const cur = tableSelRef.current;
+                  let range = (cur && cur.tableId === tableId) ? wbTableNormRange(cur) : null;
+                  if (!range || r < range.r0 || r > range.r1 || c < range.c0 || c > range.c1) {
+                    range = { r0: r, c0: c, r1: r, c1: c };
+                    setTableSel({ tableId, r0: r, c0: c, r1: r, c1: c });
+                  }
+                  setTableMenu({ tableId, r, c, range, vpX, vpY });
+                }}
+              />
+            `)}
             ${convertCfg && html`<${ConvertSectionModal}
               cfg=${convertCfg}
               onPatch=${(p) => setConvertCfg(c => ({ ...c, ...p }))}
@@ -41317,7 +41386,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       `}
       ${tableMenu && html`<${WorkflowTableMenu}
         menu=${tableMenu}
-        table=${(data.wb || []).find(it => it.id === tableMenu.tableId && it.type === "table")}
+        table=${(data.nodes || []).find(n => n.id === tableMenu.tableId && n.kind === "table")}
         onOp=${tableOp}
         onClose=${() => setTableMenu(null)}
       />`}
@@ -67143,6 +67212,167 @@ function formatDirectionForPrompt(d) {
      - Sections do NOT participate in edges; they have no ports.
      - Lower z-index than nodes so dragging passes through to children
        except for the title bar handle area. */
+/* A table as a real workflow node: a grid whose cells host other nodes / wb
+   items (via their cell:{tableId,r,c,ox,oy} binding + the reconcile effect),
+   with section-style left/right connector ports. Reuses the .workflow-node card
+   treatment (glow + selected outline) and the .workflow-wb-table-* cell CSS.
+   Geometry lives on the node (node.cols / node.rows / node.merges). */
+function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, tableSel }) {
+  const cols = wbTableCols(node), rows = wbTableRows(node);
+  const fillTok = node.fill || "white";
+  const cellBg = fillTok === "none" ? "transparent"
+               : fillTok === "white" ? "#fff"
+               : `color-mix(in oklch, ${wbColorCSS(fillTok)} 16%, #fff)`;
+  // Line colour is AUTOMATIC from the fill: a clean light grey for white/none,
+  // otherwise the fill's own hue at full strength - a crisp matching line,
+  // never a muddy grey.
+  const cellBorder = (fillTok === "white" || fillTok === "none")
+    ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
+    : wbColorCSS(fillTok);
+  const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
+  const rootRef = useRef(null);
+  const colX = useMemo(() => { const a = [0]; for (const w of cols) a.push(a[a.length - 1] + w); return a; }, [cols]);
+  const rowY = useMemo(() => { const a = [0]; for (const h of rows) a.push(a[a.length - 1] + h); return a; }, [rows]);
+  const totalW = colX[colX.length - 1], totalH = rowY[rowY.length - 1];
+  const px = (v) => v / Math.max(zoom, 0.1);
+  const HW = px(7), GRIP = px(15), PLUS = px(18), line = px(1);
+  const covered = (r, c) => { const m = wbTableMergeAt(node, r, c); return m && !(m.r === r && m.c === c); };
+  const span = (r, c) => { const m = wbTableMergeAt(node, r, c); return { rs: m ? m.rs : 1, cs: m ? m.cs : 1 }; };
+  const cellAtClient = (cx, cy, rect) => {
+    const wx = (cx - rect.left) / Math.max(zoom, 0.1), wy = (cy - rect.top) / Math.max(zoom, 0.1);
+    let c = cols.length - 1; for (let i = 0; i < cols.length; i++) { if (wx < colX[i + 1]) { c = i; break; } }
+    let r = rows.length - 1; for (let i = 0; i < rows.length; i++) { if (wy < rowY[i + 1]) { r = i; break; } }
+    return { r: Math.max(0, Math.min(r, rows.length - 1)), c: Math.max(0, Math.min(c, cols.length - 1)) };
+  };
+
+  // Move the whole node by dragging the grip.
+  const onGripDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    let lx = e.clientX, ly = e.clientY;
+    setCanvasDraggingSync(true); onDragStart && onDragStart();
+    const mv = (ev) => {
+      if (isReleasedDuringMove(ev)) { up(); return; }
+      const dx = (ev.clientX - lx) / Math.max(zoom, 0.1), dy = (ev.clientY - ly) / Math.max(zoom, 0.1);
+      lx = ev.clientX; ly = ev.clientY; onMove && onMove(dx, dy);
+    };
+    const up = () => {
+      setCanvasDraggingSync(false); onDragEnd && onDragEnd();
+      window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); window.removeEventListener("blur", up);
+    };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); window.addEventListener("blur", up);
+  }, [zoom, onMove, onDragStart, onDragEnd]);
+
+  // Rubber-band a cell range (table must be selected).
+  const onCellDown = (e) => {
+    if (!selected || e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const rect = rootRef.current.getBoundingClientRect();
+    const a = cellAtClient(e.clientX, e.clientY, rect);
+    onCellSelect && onCellSelect(node.id, { r0: a.r, c0: a.c, r1: a.r, c1: a.c });
+    const mv = (ev) => { const f = cellAtClient(ev.clientX, ev.clientY, rect); onCellSelect && onCellSelect(node.id, { r0: a.r, c0: a.c, r1: f.r, c1: f.c }); };
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  };
+
+  // Drag a row/column boundary to resize it.
+  const onBoundaryDown = (e, axis, index) => {
+    e.stopPropagation(); e.preventDefault();
+    const sx = e.clientX, sy = e.clientY;
+    const orig = axis === "col" ? cols[index] : rows[index];
+    const mv = (ev) => {
+      const d = axis === "col" ? (ev.clientX - sx) / Math.max(zoom, 0.1) : (ev.clientY - sy) / Math.max(zoom, 0.1);
+      onOp && onOp(node.id, axis === "col" ? "resizeCol" : "resizeRow", axis === "col" ? { c: index, size: orig + d } : { r: index, size: orig + d });
+    };
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  };
+
+  // Whole-table resize (bottom-right): scale every column/row proportionally.
+  const onResizeDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const sx = e.clientX, sy = e.clientY;
+    const oc = wbTableCols(node).slice(), or = wbTableRows(node).slice();
+    const ow = oc.reduce((a, b) => a + b, 0), oh = or.reduce((a, b) => a + b, 0);
+    setCanvasDraggingSync(true); onDragStart && onDragStart();
+    const mv = (ev) => {
+      if (isReleasedDuringMove(ev)) { up(); return; }
+      const dw = (ev.clientX - sx) / Math.max(zoom, 0.1), dh = (ev.clientY - sy) / Math.max(zoom, 0.1);
+      const fx = Math.max(oc.length * WB_TABLE_MIN_COL, ow + dw) / ow, fy = Math.max(or.length * WB_TABLE_MIN_ROW, oh + dh) / oh;
+      const ncols = oc.map(v => Math.max(WB_TABLE_MIN_COL, Math.round(v * fx)));
+      const nrows = or.map(v => Math.max(WB_TABLE_MIN_ROW, Math.round(v * fy)));
+      onChange && onChange({ cols: ncols, rows: nrows, w: ncols.reduce((a, b) => a + b, 0), h: nrows.reduce((a, b) => a + b, 0) });
+    };
+    const up = () => {
+      setCanvasDraggingSync(false); onDragEnd && onDragEnd();
+      window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); window.removeEventListener("blur", up);
+    };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); window.addEventListener("blur", up);
+  }, [zoom, node, onChange, onDragStart, onDragEnd]);
+
+  const selRange = (selected && tableSel && tableSel.tableId === node.id) ? wbTableNormRange(tableSel) : null;
+
+  return html`
+    <div ref=${rootRef} className="workflow-node workflow-node-table" data-node-id=${node.id}
+      data-selected=${selected ? "true" : "false"}
+      style=${{ left: node.x + "px", top: node.y + "px", width: totalW + "px", height: totalH + "px" }}
+      onMouseDown=${(e) => { onSelect && onSelect(); }}
+      onContextMenu=${(e) => {
+        e.preventDefault(); e.stopPropagation();
+        const rect = rootRef.current.getBoundingClientRect();
+        const cc = cellAtClient(e.clientX, e.clientY, rect);
+        onCellMenu && onCellMenu(node.id, cc.r, cc.c, e.clientX, e.clientY);
+      }}>
+      <div className="workflow-wb-table-cellwrap" style=${{ borderRadius: "10px" }}>
+        ${rows.map((_, r) => cols.map((__, c) => {
+          if (covered(r, c)) return null;
+          const sp = span(r, c);
+          const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
+          return html`<div key=${"c" + r + "_" + c} className="workflow-wb-table-cell"
+            style=${{
+              left: colX[c] + "px", top: rowY[r] + "px",
+              width: (colX[c + sp.cs] - colX[c]) + "px", height: (rowY[r + sp.rs] - rowY[r]) + "px",
+              background: isSel ? selBg : cellBg, borderColor: cellBorder, borderWidth: line + "px",
+            }}/>`;
+        }))}
+      </div>
+      ${selected && html`<div className="workflow-wb-table-hit" style=${{ inset: 0 }} onMouseDown=${onCellDown}/>`}
+      ${selected && cols.map((_, i) => html`<div key=${"cb" + i} className="workflow-wb-table-colgrip"
+        style=${{ left: (colX[i + 1] - HW / 2) + "px", top: 0, width: HW + "px", height: totalH + "px" }}
+        title="Drag to resize column" onMouseDown=${(e) => onBoundaryDown(e, "col", i)}/>`)}
+      ${selected && rows.map((_, i) => html`<div key=${"rb" + i} className="workflow-wb-table-rowgrip"
+        style=${{ left: 0, top: (rowY[i + 1] - HW / 2) + "px", width: totalW + "px", height: HW + "px" }}
+        title="Drag to resize row" onMouseDown=${(e) => onBoundaryDown(e, "row", i)}/>`)}
+      ${selected && html`<button type="button" className="workflow-wb-table-add" title="Add column"
+        style=${{ left: (totalW - PLUS) + "px", top: (-(PLUS) - px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); onOp && onOp(node.id, "insertCol", { at: cols.length }); }}>+</button>`}
+      ${selected && html`<button type="button" className="workflow-wb-table-add" title="Add row"
+        style=${{ left: "0px", top: (totalH + px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); onOp && onOp(node.id, "insertRow", { at: rows.length }); }}>+</button>`}
+      ${selected && html`<div className="workflow-wb-table-movegrip" title="Drag to move table"
+        style=${{ left: px(2) + "px", top: px(2) + "px", width: GRIP + "px", height: GRIP + "px" }}
+        onMouseDown=${onGripDown}>
+        <svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 1.5 9.6 3.4 H6.4 Z M8 14.5 6.4 12.6 H9.6 Z M1.5 8 3.4 6.4 V9.6 Z M14.5 8 12.6 9.6 V6.4 Z M6.5 6.5h3v3h-3z" fill="var(--text-faint)"/></svg>
+      </div>`}
+      ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize" onMouseDown=${onResizeDown}/>`}
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Populate cells - wire an Agent or Skill here."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+        <span className="workflow-port-label workflow-port-label-left">populate</span>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="Table contents - wire into an Agent / Skill / Design system."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+        <span className="workflow-port-label workflow-port-label-right">contents</span>
+      </div>
+    </div>`;
+}
+
 function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, hasEditorNode, onSaveToLibrary, onConvertToApp, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -68938,14 +69168,15 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
 function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, onCellMenu }) {
   const z = Math.round(item.z || 0);
   const cols = wbTableCols(item), rows = wbTableRows(item);
-  // Fill: "white" (paper), "none" (transparent), or a colour token (soft tint).
-  // Line colour is AUTOMATIC from the fill: a clean light grey for white/none,
-  // otherwise the fill's own hue at full strength - a crisp matching line,
-  // never a muddy grey.
+  // Fill: "white" (paper), "none" (transparent), or a colour token rendered as
+  // a soft tint. Line: a real colour token (or "none"), used at full strength -
+  // a clean, chosen line rather than a muddy auto-derived shade.
   const fillTok = item.fill || "white";
   const cellBg = fillTok === "none" ? "transparent"
                : fillTok === "white" ? "#fff"
                : `color-mix(in oklch, ${wbColorCSS(fillTok)} 16%, #fff)`;
+  // Line colour is AUTOMATIC from the fill (clean light grey for white/none,
+  // else the fill's own hue at full strength).
   const cellBorder = (fillTok === "white" || fillTok === "none")
     ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
     : wbColorCSS(fillTok);
@@ -69056,7 +69287,10 @@ function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, o
         style=${{ left: 0, top: (rowY[i + 1] - HW / 2) + "px", width: totalW + "px", height: HW + "px" }}
         title="Drag to resize row"
         onMouseDown=${(e) => onBoundaryDown(e, "row", i)}/>`)}
-      <!-- Add column at the TOP-RIGHT, add row at the BOTTOM-LEFT. -->
+      <!-- append column / row -->
+      <!-- Add column at the TOP-RIGHT, add row at the BOTTOM-LEFT - off the
+           left/right mid edges so they don't collide with the section-style
+           connectors that live there. -->
       ${selected && html`<button type="button" className="workflow-wb-table-add"
         title="Add column"
         style=${{ left: (totalW - PLUS) + "px", top: (-(PLUS) - px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
@@ -69153,18 +69387,7 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghos
           onItemDoubleClick(id);
         }
       }}>
-      ${sorted.map(it => it.type === "table"
-        ? html`<${WorkflowWbTable}
-            key=${it.id}
-            item=${it}
-            zoom=${zoom}
-            selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
-            tableSel=${tableSel}
-            onOp=${onTableOp}
-            onCellSelect=${onTableCellSelect}
-            onCellMenu=${onTableCellMenu}
-          />`
-        : html`<${WorkflowWbItem}
+      ${sorted.map(it => html`<${WorkflowWbItem}
             key=${it.id}
             item=${it}
             zoom=${zoom}
@@ -69371,7 +69594,6 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
             (first && first.fill) || F.fill || "white",
             (v) => { if (onFmt) onFmt({ fill: v }); if (sel.length && onPatchSelection) onPatchSelection({ fill: v }); },
             true, true)}
-          <div className="workflow-wb-tools-hint" style=${{ marginTop: 0 }}>Grid lines follow the fill colour automatically.</div>
         </div>
       `}
       ${showText && html`

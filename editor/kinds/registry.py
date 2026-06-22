@@ -2829,6 +2829,33 @@ KINDS = {
         "notes": "Pure UI grouping. No semantics. Never created by the orchestrator; manual only.",
     },
 
+    # ── table (data grid in the node graph; cells host nodes/items) ──────────
+    "table": {
+        "title":        "Table (data grid)",
+        "category":     "decoration",
+        "inputs": {
+            "title":     {"type": "text",   "userEditable": True},
+            "w":         {"type": "number", "userEditable": True},
+            "h":         {"type": "number", "userEditable": True},
+            "cols":      {"type": "object"},
+            "rows":      {"type": "object"},
+            "merges":    {"type": "object"},
+            "fill":      {"type": "text",   "userEditable": True},
+            "lineColor": {"type": "text",   "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "Data grid. Manual-only UI element; like a section, its out port carries the nodes/items sitting in its cells.",
+    },
+
     # ── custom-app (section → reusable mini-app; manual-only) ─────────────────
     "custom-app": {
         "title":        "Custom app (packaged section)",
@@ -3500,6 +3527,15 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Section contents", "tags": ["section"],
                        "resolve": "sectionBundle"}],
         "accepts":  [{"port": "in", "label": "Generate into section",
+                       "tags": ["text-gen", "asset-gen"], "ingest": "sectionWrite",
+                       "authoring": _SECTION_AUTHORING}],
+    },
+    # A table carries its cell contents the same way a section carries its
+    # frame contents (sectionBundle resolves nodes whose centre is in the rect).
+    "table": {
+        "provides": [{"port": "out", "label": "Table contents", "tags": ["section"],
+                       "resolve": "sectionBundle"}],
+        "accepts":  [{"port": "in", "label": "Populate cells",
                        "tags": ["text-gen", "asset-gen"], "ingest": "sectionWrite",
                        "authoring": _SECTION_AUTHORING}],
     },
