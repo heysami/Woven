@@ -25,6 +25,7 @@ Variant 2 - glitch CONFINED to the polygon (face glitchy only inside the fingert
   This needs a layer MASK, which is a COMPOSER-INSPECTOR setting, NOT an edge (there is no mask port; and a wired camera layer ignores wired effects - it has no `in` and synthesizes with an empty effect stack). Wiring gives the skeleton; you finish in the composer.
   - cam.layer -> comp.in   AGAIN (a SECOND camera layer, z above the plain one - this copy gets glitched + clipped)
   - give `poly` a solid FILL (fill="#ffffff") so its interior has coverage; poly.out -> comp.in
+  - if you instead make a SEPARATE hidden mask shape, it STILL must be wired `maskShape.out -> comp.in`. visible:false only stops it from painting; an orphaned mask shape (points wired but `.out` not wired into the composer) is not a layer, so `mask.by` finds no source and silently does nothing (the renderer guards with `if(mb)`) - the glitch then covers the whole frame.
   Then in the composer node's inspector: (1) add the `slice` effect to the SECOND camera layer's Effects stack; (2) set that layer's Mask "Masked by" = the poly layer (src=alpha, dst=alpha); (3) hide the poly layer, or drop its fill and keep a thin stroke for a visible outline. See "Masking + region-confined effects" in `runtime`.
   If you cannot reach the inspector programmatically, BUILD the skeleton above and hand the user the two inspector steps as the finish - do NOT silently fall back to Variant 1 and claim the polygon confines the glitch.
 
