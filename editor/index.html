@@ -21,16 +21,15 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <!-- Diamond-frost backdrop filter for the Projects-landing header. The header
-       glass runs the backdrop through a halftone-flavoured chain: a BOX BLUR
+  <!-- Diamond-frost backdrop filter for the Projects-landing header. Runs the
+       backdrop (the content scrolling behind the glass) through a BOX BLUR
        ROTATED 45deg (a box blur is a uniform all-ones kernel; a square rotated
        45deg is a diamond, so the kernel is a filled diamond of ones), then a
-       POSTERIZE (discrete feComponentTransfer collapses each channel to a few
-       flat levels). The third stage - the halftone dot SCREEN - is a CSS
-       diamond-dot overlay on `.landing-header::before` (feImage/feTile, the
-       usual SVG way to build a halftone screen, renders nothing inside a
-       backdrop-filter in Chromium, so the screen lives in CSS instead). Together
-       they read as a field of diamond halftone dots over the frosted glass.
+       gentle POSTERIZE (discrete feComponentTransfer collapses each channel to a
+       few flat levels). Both stages process the actual content - there is no
+       overlay screen painted on top. (A true luminance-driven halftone screen
+       would need feImage/feTile, which render nothing inside a backdrop-filter
+       in Chromium - a fixed dot overlay just reads as static, so it's omitted.)
        Referenced by `.landing-header { backdrop-filter: url(#landingDiamondFrost) }`. -->
   <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
     <filter id="landingDiamondFrost" x="-15%" y="-15%" width="130%" height="130%"
@@ -51,9 +50,9 @@
                       0 0 0 0 0 1 0 0 0 0 0"/>
       <!-- posterize: collapse each channel to a few flat levels -->
       <feComponentTransfer in="blur">
-        <feFuncR type="discrete" tableValues="0.10 0.45 0.74 0.95"/>
-        <feFuncG type="discrete" tableValues="0.10 0.45 0.74 0.95"/>
-        <feFuncB type="discrete" tableValues="0.10 0.45 0.74 0.95"/>
+        <feFuncR type="discrete" tableValues="0.12 0.42 0.66 0.86 0.97"/>
+        <feFuncG type="discrete" tableValues="0.12 0.42 0.66 0.86 0.97"/>
+        <feFuncB type="discrete" tableValues="0.12 0.42 0.66 0.86 0.97"/>
       </feComponentTransfer>
     </filter>
   </svg>

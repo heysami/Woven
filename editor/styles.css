@@ -578,35 +578,16 @@ button {
   /* Tinted with the diamond field's OWN cream (shader base 0.962/0.957/0.947 =
      rgb(245,244,241)) so the header reads as the same light surface, not a grey
      cast. Kept semi-transparent so the frosted blur behind it stays visible. */
-  background: rgba(245, 244, 241, 0.42);
-  /* Halftone-flavoured frost: a 45deg box blur (filled-diamond kernel) then a
-     posterize, both in #landingDiamondFrost (index.html). The diamond-dot
-     halftone SCREEN is the ::before overlay below. */
+  background: rgba(245, 244, 241, 0.5);
+  /* Content-driven frost: a 45deg box blur (filled-diamond kernel) then a
+     posterize, both in #landingDiamondFrost (index.html). No overlay screen -
+     the effect processes the actual content scrolling behind, it isn't a fixed
+     texture painted on top. */
   backdrop-filter: url(#landingDiamondFrost);
   -webkit-backdrop-filter: url(#landingDiamondFrost);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex: none;
   padding: 0;
-  /* New stacking context so the ::before screen's blend mode stays scoped to
-     the header's own frosted backdrop, not the whole page behind it. */
-  isolation: isolate;
-}
-/* Diamond-dot halftone screen - a regular grid of small diamonds blended onto
-   the posterized frost so the backdrop reads as diamond halftone dots. Sits at
-   z-index 0 (above the background, below .landing-header-inner at z-index 2),
-   so the brand / tabs / controls stay crisp on top and only the frosted glass
-   area gets dotted. The dot tile is an inline SVG diamond (CSS backgrounds DO
-   accept data-URI SVG, unlike feImage inside a backdrop-filter). */
-.landing-header::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cpolygon points='5.5,1 10,5.5 5.5,10 1,5.5' fill='%23000'/%3E%3C/svg%3E");
-  background-size: 11px 11px;
-  mix-blend-mode: soft-light;
-  opacity: 0.5;
 }
 /* Main is the SCROLL CONTAINER, filling the whole root (the header floats
    above it). Its content is pushed below the header by a top padding equal to
