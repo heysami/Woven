@@ -16527,22 +16527,31 @@ const DS_FONT_CATALOG = [
   { key:"barlow-condensed",  name:"Barlow Condensed",   cat:"condensed" },
   { key:"saira-condensed",   name:"Saira Condensed",    cat:"condensed" },
   { key:"pt-sans-narrow",    name:"PT Sans Narrow",     cat:"condensed", w:"400;700" },
+  // condensed / narrow serif
+  { key:"cormorant",         name:"Cormorant",          cat:"serif-condensed" },
+  { key:"pt-serif-caption",  name:"PT Serif Caption",   cat:"serif-condensed", w:"400" },
+  { key:"yeseva-one",        name:"Yeseva One",         cat:"serif-condensed", w:"400" },
+  { key:"cinzel",            name:"Cinzel",             cat:"serif-condensed", w:"400;700" },
+  { key:"marcellus",         name:"Marcellus",          cat:"serif-condensed", w:"400" },
+  { key:"rozha-one",         name:"Rozha One",          cat:"serif-condensed", w:"400" },
 ];
 // Picker optgroups (order = render order). Custom is appended separately.
 const DS_FONT_GROUPS = [
-  { cat:"sans",      label:"Sans-serif" },
-  { cat:"serif",     label:"Serif" },
-  { cat:"mono",      label:"Monospace" },
-  { cat:"condensed", label:"Condensed" },
+  { cat:"sans",            label:"Sans-serif" },
+  { cat:"serif",           label:"Serif" },
+  { cat:"mono",            label:"Monospace" },
+  { cat:"condensed",       label:"Condensed sans" },
+  { cat:"serif-condensed", label:"Condensed serif" },
 ];
 // Sentinel fontKey for the typed-name / uploaded-file slot.
 const DS_CUSTOM_FONT_KEY = "__custom";
 // Upload extension → @font-face format() string.
 const DS_FONT_FORMATS = { woff2:"woff2", woff:"woff", ttf:"truetype", otf:"opentype" };
 function dsFontFallback(cat) {
-  if (cat === "serif")     return "Georgia,'Times New Roman',serif";
-  if (cat === "mono")      return "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
-  if (cat === "condensed") return "'Arial Narrow',-apple-system,BlinkMacSystemFont,sans-serif";
+  if (cat === "serif")           return "Georgia,'Times New Roman',serif";
+  if (cat === "serif-condensed") return "'Times New Roman',Georgia,serif";
+  if (cat === "mono")            return "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+  if (cat === "condensed")       return "'Arial Narrow',-apple-system,BlinkMacSystemFont,sans-serif";
   return "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
 }
 function dsFontCss(font) {
