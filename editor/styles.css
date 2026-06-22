@@ -4341,6 +4341,34 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
    its Open button lines up directly under the Start/Stop button above it (the
    stand-alone link row in the Multiplayer section keeps its own 6px padding). */
 .th-share-row .th-live-link { padding-left: 0; padding-right: 0; }
+/* Quick vs Stable (woven) link toggle - a small segmented control. */
+.th-share-mode {
+  display: inline-flex;
+  gap: 2px;
+  margin: 6px 0 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.th-mode-opt {
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.th-mode-opt:hover:not(:disabled) { color: var(--text); }
+.th-mode-opt.is-on {
+  background: var(--surface-1, #fff);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+  cursor: default;
+}
 .th-share-row-label {
   flex: 1 1 auto;
   min-width: 0;

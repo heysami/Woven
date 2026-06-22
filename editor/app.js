@@ -9748,6 +9748,8 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
   const allShares = (data && data.shares) || [];
   const shares = allShares.filter(s => !proj || s.project === proj);
   const cfMissing = !!(data && data.cloudflared && !data.cloudflared.found);
+  // Stable-URL (woven) mode is offered only when the broker is configured.
+  const wovenAvail = !!(data && data.woven && data.woven.available);
   // A session is only live when its tunnel is up (see findLiveShare); 0-people
   // sessions read as "waiting", not loud green.
   const session = findLiveShare(shares, reachable);
@@ -9855,6 +9857,18 @@ function LiveSharesPanel({ railTop, panelRef, onClose }) {
                     </button>
                   `}
                 </div>
+                ${!isGuest && wovenAvail && html`
+                  <div className="th-share-mode" title=${s.mode === "woven"
+                      ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
+                      : "Quick link - a random trycloudflare.com URL that changes on every restart"}>
+                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
+                      disabled=${isBusy || s.mode !== "woven"}
+                      onClick=${() => s.mode === "woven" && tunnelOp(s.id, "update", { mode: "quick" })}>Quick</button>
+                    <button className=${"th-mode-opt" + (s.mode === "woven" ? " is-on" : "")}
+                      disabled=${isBusy || s.mode === "woven"}
+                      onClick=${() => s.mode !== "woven" && tunnelOp(s.id, "update", { mode: "woven" })}>Stable</button>
+                  </div>
+                `}
                 ${s.shareUrl && linkRow(s.id, s.shareUrl)}
               </div>
             `;
@@ -21025,6 +21039,7 @@ function SharesLanding({ onCountChange }) {
 
   const shares = (data && data.shares) || [];
   const cfMissing = data && data.cloudflared && !data.cloudflared.found;
+  const wovenAvail = !!(data && data.woven && data.woven.available);
   // Distinct projects (for the filter dropdown) + the active text/project filter.
   const projectIds = [...new Set(shares.map((s) => s.project))].sort();
   const q = query.trim().toLowerCase();
@@ -21130,11 +21145,23 @@ function SharesLanding({ onCountChange }) {
                 <${Icon.Comment}/> ${cc.open || 0}<span className="shares-row-comments-total">/${cc.total || 0}</span>
               </div>
               <div className="shares-row-actions">
+                ${wovenAvail && html`
+                  <div className="th-share-mode" title=${s.mode === "woven"
+                      ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
+                      : "Quick link - a random trycloudflare.com URL that changes on every restart"}>
+                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
+                      disabled=${isBusy || s.mode !== "woven"}
+                      onClick=${() => s.mode === "woven" && op(s.id, "update", { mode: "quick" })}>Quick</button>
+                    <button className=${"th-mode-opt" + (s.mode === "woven" ? " is-on" : "")}
+                      disabled=${isBusy || s.mode === "woven"}
+                      onClick=${() => s.mode !== "woven" && op(s.id, "update", { mode: "woven" })}>Stable</button>
+                  </div>
+                `}
                 ${s.status === "running" || s.status === "starting"
                   ? html`<button className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "stop")} title="Stop the tunnel - the public URL goes dark">Stop</button>`
                   : html`<button className="shares-btn shares-btn-primary" disabled=${isBusy || cfMissing}
-                      title=${cfMissing ? "Install cloudflared first" : "Start a quick tunnel (the URL will be new)"}
+                      title=${cfMissing ? "Install cloudflared first" : (s.mode === "woven" ? "Start the stable tunnel (same URL every time)" : "Start a quick tunnel (the URL will be new)")}
                       onClick=${() => op(s.id, "start")}>Start</button>`}
                 <button className="shares-btn" disabled=${isBusy}
                   title=${s.emailGate ? "Switch to open commenting (name only)" : "Require name + email to comment"}

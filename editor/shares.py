@@ -59,7 +59,9 @@ import socketserver
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 # ── Module config (set once by init()) ──────────────────────────────────────
 
@@ -79,6 +81,20 @@ EMAIL_OK     = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _TUNNEL_URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 COMMENT_STATUSES = ("open", "done", "archived")
+
+# ── Woven (stable-URL) mode ──────────────────────────────────────────────────
+# A share's `mode` is "quick" (anonymous *.trycloudflare.com, rotates on every
+# restart - the default) or "woven" (a STABLE https://<install>.getwoven.design
+# URL served through a named tunnel the broker provisions). Woven mode uses ONE
+# named tunnel per install (not per share): every woven share multiplexes through
+# it via its own /s/<token>/ path, so each shared prototype still has a distinct,
+# permanent URL. The broker (broker/) holds the Cloudflare API token; the client
+# only ever sees its own tunnel credentials. See docs/features/stable-share-url.md.
+WOVEN_BROKER_URL  = (os.environ.get("WOVEN_BROKER_URL") or "https://woven-broker.onrender.com").rstrip("/")
+WOVEN_BASE_DOMAIN = os.environ.get("WOVEN_BASE_DOMAIN") or "getwoven.design"
+WOVEN_DIR         = os.path.expanduser("~/.woven")
+INSTALL_ID_RE     = re.compile(r"^[a-f0-9]{32}$")
+_WOVEN_HEARTBEAT_INTERVAL = 6 * 3600   # seconds; reaper TTL is 45 days, so this is ample
 
 
 def init(workspace_dir, install_root, resolve_project_root, on_comments_changed=None):
@@ -160,6 +176,7 @@ def share_create(project, prototype, label=None, email_gate=False):
             "prototype":  prototype,
             "label":      (label or "").strip() or f"{project} / {prototype}",
             "emailGate":  bool(email_gate),
+            "mode":       "quick",   # "quick" | "woven" (stable URL); see Woven section
             "active":     False,
             "createdAt":  _now_iso(),
             "lastUrl":    "",
@@ -318,6 +335,8 @@ def tunnel_start(share_id):
     rec = share_get(share_id)
     if rec is None:
         raise ValueError(f"unknown share: {share_id}")
+    if share_mode(rec) == "woven":
+        return _woven_share_start(share_id)
     binary = find_cloudflared()
     if not binary:
         raise RuntimeError("cloudflared not found - install it (macOS: brew install cloudflared)")
@@ -347,6 +366,9 @@ def tunnel_stop(share_id, *, keep_intent=False):
     """SIGTERM the share's tunnel. keep_intent=True leaves `active` as-is
     (used during shutdown so boot-time restore re-opens user-wanted
     tunnels); the normal Stop button clears it."""
+    rec = share_get(share_id)
+    if rec is not None and share_mode(rec) == "woven":
+        return _woven_share_stop(share_id, keep_intent)
     with _TUNNELS_LOCK:
         t = TUNNELS.pop(share_id, None)
     if t is not None:
@@ -372,6 +394,10 @@ def stop_all_tunnels():
         tunnel_stop(sid, keep_intent=True)
     if ids:
         print(f"[share] stopped {len(ids)} tunnel(s) on shutdown", flush=True)
+    # The shared woven tunnel isn't in TUNNELS - stop it too (keep intent so
+    # active woven shares are restored on next boot).
+    if _woven_tunnel_stop():
+        print("[share] stopped woven tunnel on shutdown", flush=True)
 
 
 def restore_active_tunnels():
@@ -395,6 +421,8 @@ def restore_active_tunnels():
 def tunnel_status(rec):
     """Liveness + URL summary for one share record. Status values:
     running / starting / stopped / exited / error / no-cloudflared."""
+    if share_mode(rec) == "woven":
+        return _woven_status(rec)
     with _TUNNELS_LOCK:
         t = TUNNELS.get(rec.get("id"))
     if t is not None and t.proc.poll() is None:
@@ -409,6 +437,320 @@ def tunnel_status(rec):
         return {"status": "no-cloudflared", "url": "", "pid": None,
                 "error": "cloudflared binary not found"}
     return {"status": "stopped", "url": "", "pid": None, "error": ""}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# 2b. Woven mode - one stable named tunnel per install, shared by all woven shares
+# ═════════════════════════════════════════════════════════════════════════
+
+def share_mode(rec):
+    """A record's tunnel mode, defaulting to quick for pre-Woven records."""
+    return "woven" if (rec or {}).get("mode") == "woven" else "quick"
+
+
+def woven_install_id():
+    """Stable per-install identity that the broker maps to a fixed subdomain.
+    Persisted to ~/.woven/install-id so the URL survives daemon restarts; the
+    ONLY thing whose loss changes a user's stable URL. 32 hex chars to match the
+    broker's installId validation."""
+    os.makedirs(WOVEN_DIR, exist_ok=True)
+    p = os.path.join(WOVEN_DIR, "install-id")
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            iid = f.read().strip()
+        if INSTALL_ID_RE.match(iid):
+            return iid
+    except OSError:
+        pass
+    iid = secrets.token_hex(16)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(iid)
+    os.replace(tmp, p)
+    return iid
+
+
+def _woven_state_path():
+    return os.path.join(WOVEN_DIR, "woven.json")
+
+
+def _woven_state_load():
+    try:
+        with open(_woven_state_path(), "r", encoding="utf-8") as f:
+            d = json.load(f) or {}
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _woven_state_save(d):
+    os.makedirs(WOVEN_DIR, exist_ok=True)
+    tmp = _woven_state_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, _woven_state_path())
+
+
+def _woven_creds_path(tunnel_id):
+    return os.path.join(WOVEN_DIR, f"{tunnel_id}.json")
+
+
+def woven_base_url():
+    """https://<install>.getwoven.design once provisioned, else "" - the base
+    every woven share's link is built on (base + /s/<token>/)."""
+    host = (_woven_state_load().get("hostname") or "").strip()
+    return ("https://" + host) if host else ""
+
+
+def _woven_provision(install_id):
+    """Ask the broker for this install's tunnel. Returns {hostname, tunnelId,
+    credentials}. Raises RuntimeError with a readable message on failure."""
+    body = json.dumps({"installId": install_id}).encode("utf-8")
+    req = urllib.request.Request(
+        WOVEN_BROKER_URL + "/provision", data=body,
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = (json.load(e) or {}).get("detail") or e.read().decode("utf-8", "ignore")
+        except Exception:
+            pass
+        raise RuntimeError(f"broker /provision failed ({e.code}): {detail or e.reason}")
+    except Exception as e:
+        raise RuntimeError(f"broker unreachable at {WOVEN_BROKER_URL}: {e}")
+    if not (data.get("hostname") and data.get("tunnelId") and data.get("credentials")):
+        raise RuntimeError(f"broker returned an incomplete provision response: {data}")
+    return data
+
+
+def _woven_ensure_credentials():
+    """Make sure we hold a usable credentials file + hostname for this install.
+    First run (or lost creds) calls the broker once and caches the result; every
+    later run reuses the cache and never touches the broker. Returns the state
+    dict {installId, hostname, tunnelId}."""
+    install_id = woven_install_id()
+    state = _woven_state_load()
+    tid = state.get("tunnelId")
+    if (state.get("installId") == install_id and state.get("hostname") and tid
+            and os.path.isfile(_woven_creds_path(tid))):
+        return state
+    res = _woven_provision(install_id)
+    tid = res["tunnelId"]
+    cp = _woven_creds_path(tid)
+    tmp = cp + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(res["credentials"], f)
+    os.replace(tmp, cp)
+    state = {"installId": install_id, "hostname": res["hostname"], "tunnelId": tid}
+    _woven_state_save(state)
+    print(f"[share] woven install provisioned: {res['hostname']}", flush=True)
+    return state
+
+
+def _woven_write_config(state):
+    """Write the local cloudflared config that maps our stable hostname to the
+    gate port. config_src is 'local' broker-side, so the CLIENT owns ingress -
+    we regenerate this each start with the CURRENT gate port."""
+    cp = os.path.join(WOVEN_DIR, "config.yml")
+    cfg = (
+        f"tunnel: {state['tunnelId']}\n"
+        f"credentials-file: {_woven_creds_path(state['tunnelId'])}\n"
+        f"no-autoupdate: true\n"
+        f"ingress:\n"
+        f"  - hostname: {state['hostname']}\n"
+        f"    service: http://127.0.0.1:{GATE_PORT}\n"
+        f"  - service: http_status:404\n"
+    )
+    tmp = cp + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(cfg)
+    os.replace(tmp, cp)
+    return cp
+
+
+class _WovenTunnel:
+    """The single shared named-tunnel process for this install. starting →
+    running (a connection registered) → exited / error. Unlike a quick tunnel
+    its URL is known up front (the provisioned hostname)."""
+    __slots__ = ("proc", "url", "state", "error", "started_at", "stopping", "log_tail")
+
+    def __init__(self, proc, url):
+        self.proc       = proc
+        self.url        = url
+        self.state      = "starting"
+        self.error      = ""
+        self.started_at = time.time()
+        self.stopping   = False
+        self.log_tail   = []
+
+
+_WOVEN = None                  # the single _WovenTunnel (or None)
+_WOVEN_LOCK = threading.Lock()
+_WOVEN_CONN_RE = re.compile(r"[Rr]egistered tunnel connection|Connection .* registered")
+
+
+def _woven_reader(t):
+    """Drain the named tunnel's output: flip to running once a connection
+    registers, keep a log tail, classify exit."""
+    try:
+        for line in iter(t.proc.stdout.readline, ""):
+            if not line:
+                break
+            line = line.rstrip("\n")
+            t.log_tail.append(line)
+            if len(t.log_tail) > 30:
+                t.log_tail.pop(0)
+            if t.state == "starting" and _WOVEN_CONN_RE.search(line):
+                t.state = "running"
+                print(f"[share] woven tunnel up: {t.url}", flush=True)
+    except Exception:
+        pass
+    try:
+        t.proc.wait(timeout=5)
+    except Exception:
+        pass
+    if t.stopping:
+        t.state = "stopped"
+    elif t.state == "running":
+        t.state = "exited"
+        print("[share] woven tunnel exited", flush=True)
+    else:
+        t.state = "error"
+        t.error = (t.log_tail[-1] if t.log_tail else "cloudflared exited before connecting")
+        print(f"[share] woven tunnel failed: {t.error}", flush=True)
+
+
+def _woven_heartbeat_loop(t):
+    """While the named tunnel is alive, ping /heartbeat periodically so the
+    broker's reaper leaves this install's tunnel in place. Best-effort."""
+    iid = woven_install_id()
+    while True:
+        slept = 0
+        while slept < _WOVEN_HEARTBEAT_INTERVAL:
+            time.sleep(30)
+            slept += 30
+            with _WOVEN_LOCK:
+                if _WOVEN is not t or t.proc.poll() is not None:
+                    return
+        try:
+            body = json.dumps({"installId": iid}).encode("utf-8")
+            req = urllib.request.Request(
+                WOVEN_BROKER_URL + "/heartbeat", data=body,
+                headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=15).close()
+        except Exception:
+            pass
+
+
+def _woven_tunnel_start():
+    """Ensure the single shared named tunnel is running (idempotent).
+    Provisions credentials on first use. Raises on cloudflared/broker failure."""
+    if GATE_PORT is None:
+        raise RuntimeError("share gate server not started")
+    binary = find_cloudflared()
+    if not binary:
+        raise RuntimeError("cloudflared not found - install it (macOS: brew install cloudflared)")
+    state = _woven_ensure_credentials()          # may call the broker (first run only)
+    cfg = _woven_write_config(state)
+    with _WOVEN_LOCK:
+        global _WOVEN
+        if _WOVEN is not None and _WOVEN.proc.poll() is None:
+            return _WOVEN
+        proc = subprocess.Popen(
+            [binary, "--config", cfg, "tunnel", "run"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, stdin=subprocess.DEVNULL,
+        )
+        t = _WovenTunnel(proc, "https://" + state["hostname"])
+        _WOVEN = t
+    threading.Thread(target=_woven_reader, args=(t,), daemon=True,
+                     name="woven-tunnel").start()
+    threading.Thread(target=_woven_heartbeat_loop, args=(t,), daemon=True,
+                     name="woven-heartbeat").start()
+    print(f"[share] woven tunnel starting (pid {proc.pid}) → gate :{GATE_PORT}", flush=True)
+    return t
+
+
+def _woven_tunnel_stop():
+    with _WOVEN_LOCK:
+        global _WOVEN
+        t, _WOVEN = _WOVEN, None
+    if t is not None:
+        t.stopping = True
+        try: t.proc.terminate()
+        except Exception: pass
+        try: t.proc.wait(timeout=3)
+        except Exception:
+            try: t.proc.kill()
+            except Exception: pass
+    return t is not None
+
+
+def _woven_active_count():
+    """How many woven shares currently want a tunnel - the shared named tunnel
+    runs iff this is > 0."""
+    return sum(1 for s in shares_load().get("shares", [])
+               if share_mode(s) == "woven" and s.get("active"))
+
+
+def _woven_share_start(share_id):
+    """Bring up the shared named tunnel (if needed) and mark this woven share
+    active, stamping its base URL so the summary can build the link."""
+    _woven_tunnel_start()
+    base = woven_base_url()
+    share_update(share_id, {"active": True, "lastUrl": base, "lastStartedAt": _now_iso()})
+    with _WOVEN_LOCK:
+        return _WOVEN
+
+
+def _woven_share_stop(share_id, keep_intent):
+    if not keep_intent:
+        share_update(share_id, {"active": False})
+    # Tear the shared tunnel down only when no woven share wants it anymore.
+    if _woven_active_count() == 0:
+        _woven_tunnel_stop()
+    return True
+
+
+def _woven_status(rec):
+    """tunnel_status() equivalent for a woven share - liveness comes from the
+    single shared tunnel, the URL is this install's stable base."""
+    base = woven_base_url() or (rec.get("lastUrl") or "").strip()
+    with _WOVEN_LOCK:
+        t = _WOVEN
+    alive = t is not None and t.proc.poll() is None
+    if rec.get("active") and alive:
+        status = "running" if t.state == "running" else "starting"
+        return {"status": status, "url": base if status == "running" else "",
+                "pid": t.proc.pid, "error": ""}
+    if rec.get("active") and not find_cloudflared():
+        return {"status": "no-cloudflared", "url": "", "pid": None,
+                "error": "cloudflared binary not found"}
+    if rec.get("active") and t is not None and t.state == "error":
+        return {"status": "error", "url": "", "pid": None, "error": t.error or ""}
+    return {"status": "stopped", "url": "", "pid": None, "error": ""}
+
+
+def share_set_mode(share_id, mode):
+    """Switch a share between quick and woven. If it is live, restart it in the
+    new mode (the base URL differs, so URL fields are reset)."""
+    mode = "woven" if mode == "woven" else "quick"
+    rec = share_get(share_id)
+    if rec is None:
+        raise ValueError(f"unknown share: {share_id}")
+    if share_mode(rec) == mode:
+        return share_get(share_id)
+    was_active = bool(rec.get("active"))
+    if was_active:
+        tunnel_stop(share_id)          # stop in the OLD mode (clears active intent)
+    share_update(share_id, {"mode": mode, "lastUrl": "", "prevUrl": "",
+                            "lastUrlChangedAt": ""})
+    if was_active:
+        tunnel_start(share_id)         # restart in the NEW mode
+    return share_get(share_id)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -1078,6 +1420,7 @@ def share_summary(rec):
     out["status"] = st["status"]
     out["pid"]    = st["pid"]
     out["error"]  = st["error"]
+    out["mode"]   = share_mode(rec)
     url = st["url"] or (rec.get("lastUrl") if st["status"] == "running" else "")
     # While running, the canonical link is <tunnel-url>/s/<token>/.
     out["shareUrl"] = (url.rstrip("/") + "/s/" + rec.get("token", "") + "/") if url else ""

@@ -13496,6 +13496,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             "shares":      shares,
             "cloudflared": {"found": bool(cf), "path": cf or ""},
             "gatePort":    _shares.GATE_PORT,
+            # Stable-URL (woven) mode is offered when a broker URL is baked in.
+            "woven":       {"available": bool(_shares.WOVEN_BROKER_URL),
+                            "baseUrl":   _shares.woven_base_url()},
         })
 
     # POST /__live/<id>/(start|stop|kick|role)
@@ -14444,6 +14447,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 patch["label"] = body["label"].strip()[:120]
             if patch:
                 _shares.share_update(share_id, patch)
+            # Switching quick <-> woven may provision + restart the tunnel, so
+            # it can fail (broker/cloudflared) - surface that.
+            if isinstance(body, dict) and body.get("mode") in ("quick", "woven"):
+                try:
+                    _shares.share_set_mode(share_id, body["mode"])
+                except Exception as e:
+                    return self._reply(500, {"error": str(e)})
         elif op == "ack_url":
             _shares.share_update(share_id, {"prevUrl": ""})
         fresh = _shares.share_get(share_id)
