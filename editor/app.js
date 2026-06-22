@@ -61673,6 +61673,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   const lastWrittenRef = useRef("");
   const saveTimerRef = useRef(null);
   const pendingRef = useRef(null);
+  const bakedSaveTimerRef = useRef(null);
   const liveRef = useRef(live); liveRef.current = live;
 
   const postToIframe = useCallback((msg) => {
@@ -61724,6 +61725,38 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     }, 900);
   }, [canonicalPath, bakedPathTarget, cfg.canonicalIsBaked, cfg.stateField, node.bakedPath, onChange, onBakeAutoCreateOutput]);
 
+  // Baked-only persistence: write the baked artifact + stamp bakedPath WITHOUT
+  // touching the saved doc. Driven by the tool's `<prefix>:baked` message, which
+  // fires when wired inputs change (the composition is derived from the graph,
+  // not a user doc edit) - so the published / QA'd output always reflects the
+  // current wiring with no manual bake. Debounced; skipped when the canonical
+  // file IS the baked artifact (then the doc-write path already covers it).
+  const persistBaked = useCallback((baked) => {
+    if (cfg.canonicalIsBaked) return;
+    if (!baked || !(baked.dataUrl || typeof baked.text === "string")) return;
+    clearTimeout(bakedSaveTimerRef.current);
+    bakedSaveTimerRef.current = setTimeout(async () => {
+      try {
+        if (baked.dataUrl) {
+          await fetch(apiUrl("/__write_binary"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: bakedPathTarget, dataUrl: baked.dataUrl }),
+          });
+        } else {
+          await fetch(apiUrl("/__write_text"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: bakedPathTarget, text: baked.text }),
+          });
+        }
+        if (node.bakedPath !== bakedPathTarget) {
+          onChange({ bakedPath: bakedPathTarget, bakedAt: new Date().toISOString() });
+          try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(bakedPathTarget); } catch (_e) {}
+        }
+        try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [bakedPathTarget] } })); } catch (_e) {}
+      } catch (_e) {}
+    }, 900);
+  }, [bakedPathTarget, cfg.canonicalIsBaked, node.bakedPath, onChange, onBakeAutoCreateOutput]);
+
   // Push the init payload. Fired on the tool's ready message AND on the iframe's
   // load event - the tool HTML is often cached, so it can announce ready before
   // our window listener attaches; we'd miss it and a tool's "no init → default"
@@ -61750,6 +61783,11 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
         sendInit();
       } else if (d.type === cfg.prefix + ":state") {
         persistState(d.state, d.baked || null);
+      } else if (d.type === cfg.prefix + ":baked") {
+        // Baked-only refresh (wiring changed): write the baked artifact + stamp
+        // bakedPath WITHOUT touching the saved doc. Keeps the published / QA
+        // output in sync with the wired graph (no manual "bake" needed).
+        persistBaked(d.baked || null);
       } else if (d.type === cfg.prefix + ":panels") {
         // Tool reports its floating-panel extents (CSS px). Drives iframe break-out.
         const lay = { panelL: d.panelL || 0, panelR: d.panelR || 0, panelT: d.panelT || 0, panelB: d.panelB || 0 };
@@ -61772,7 +61810,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [node.id, cfg.prefix, sendInit, persistState, reportAppNodeLayout, reportLayerGeom]);
+  }, [node.id, cfg.prefix, sendInit, persistState, persistBaked, reportAppNodeLayout, reportLayerGeom]);
 
   // W3E: push the run/live state to the tool whenever it changes (and right after
   // ready/init). When Live turns off we also broadcast an empty ports map so the

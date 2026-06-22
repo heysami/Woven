@@ -4238,6 +4238,25 @@ function emit(){
   },700);
 }
 
+// Re-bake WITHOUT persisting STATE. The composition is driven by WIRED nodes
+// (camera / shape / effect graph), which arrive on mm:init / mm:content and are
+// deliberately NOT echoed back as a user doc edit. But the BAKED output is
+// derived from those wired layers, so it must refresh when the wiring changes -
+// otherwise the published / QA'd mm-*.html stays stale and never reflects the
+// graph the user just wired. We post `mm:baked` (baked only); the host writes
+// the file + stamps bakedPath without touching the saved doc. Debounced so a
+// burst of wiring pushes collapses to one write.
+let bakedTimer=null;
+function scheduleBakedRefresh(){
+  if(!EMBEDDED) return;
+  clearTimeout(bakedTimer);
+  bakedTimer=setTimeout(()=>{
+    let baked=null;
+    try{ baked={text:bake()}; }catch(e){ console.warn('bake failed',e); }
+    if(baked){ try{ parent.postMessage({type:'mm:baked',nodeId:NODE,baked},'*'); }catch(e){} }
+  },700);
+}
+
 /* ===========================================================================
    FLOATING PANELS ON SELECT  (Woven detached-panels contract)
    When the node is SELECTED the host grows the iframe beyond the node frame and
@@ -4301,6 +4320,7 @@ if(EMBEDDED){
       STATE = d.state?normalizeState(d.state):defaultState();
       if(WIRED.effects.length) ensureFXChain();   // warm the shared FX chain
       rebuild(); suppressEmit=false;       // NOTE: never echo an mm:state for wired inputs
+      scheduleBakedRefresh();              // ...but DO refresh the baked output so it reflects the wiring
     } else if(d.type==='mm:set-state'){
       suppressEmit=true; STATE=normalizeState(d.state); Assets.reset(); rebuild(); suppressEmit=false;
     } else if(d.type==='mm:content'){
@@ -4319,6 +4339,7 @@ if(EMBEDDED){
       } else {
         renderAll();                       // no mm:state echo (external inputs changed)
       }
+      scheduleBakedRefresh();              // wiring changed → refresh the baked output
     } else if(d.type==='mm:select'){
       // Selected on the canvas → float panels OUTSIDE the core viewport, then
       // report panel extents + layer-row geometry (after layout settles).
