@@ -16565,6 +16565,7 @@ const DS_PREVIEW_STYLES = [
   { v: "techminimalism", label: "Tech-minimalism", desc: "Sharp, mono, dense" },
   { v: "neobrutalism",   label: "Neobrutalism",    desc: "Hard borders, offset" },
   { v: "analog",       label: "Analog",        desc: "Grainy, textured" },
+  { v: "rams",           label: "Rams",            desc: "Skeuomorphic, tactile" },
 ];
 
 const DS_SPACE_RATIOS = [
@@ -40017,6 +40018,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // so bail here or this would start a table move underneath them.
               // The move grip is deliberately NOT listed - it falls through so
               // dragging it moves the table.
+              // A table is a real node - let it own ALL its events (header drag,
+              // cell select, resize). Bailing here stops the wb-mode node path
+              // from ALSO selecting/dragging it (which doubled the drag + left a
+              // mixed node+wb selection that hid the connectors).
+              if (e.target.closest(".workflow-node-table")) return;
               if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
@@ -40177,7 +40183,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 selected=${selectedNodeIds.has(n.id)}
                 tableSel=${tableSel}
-                onSelect=${() => setSelectedNodeId(n.id)}
+                onSelect=${() => { setSelectedNodeId(n.id); if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set()); }}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onRemove=${() => removeNode(n.id)}
                 onChange=${(patch) => updateNode(n.id, patch)}
@@ -67231,6 +67237,10 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
     : wbColorCSS(fillTok);
   const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
   const rootRef = useRef(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const titleInputRef = useRef(null);
+  // Inverse-zoom so the header tab reads at a constant size at any zoom.
+  const invZoom = Math.max(0.25, Math.min(8, 1 / (zoom || 1)));
   const colX = useMemo(() => { const a = [0]; for (const w of cols) a.push(a[a.length - 1] + w); return a; }, [cols]);
   const rowY = useMemo(() => { const a = [0]; for (const h of rows) a.push(a[a.length - 1] + h); return a; }, [rows]);
   const totalW = colX[colX.length - 1], totalH = rowY[rowY.length - 1];
@@ -67352,11 +67362,24 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
         style=${{ left: "0px", top: (totalH + px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
         onMouseDown=${(e) => e.stopPropagation()}
         onClick=${(e) => { e.stopPropagation(); onOp && onOp(node.id, "insertRow", { at: rows.length }); }}>+</button>`}
-      ${selected && html`<div className="workflow-wb-table-movegrip" title="Drag to move table"
-        style=${{ left: px(2) + "px", top: px(2) + "px", width: GRIP + "px", height: GRIP + "px" }}
-        onMouseDown=${onGripDown}>
-        <svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 1.5 9.6 3.4 H6.4 Z M8 14.5 6.4 12.6 H9.6 Z M1.5 8 3.4 6.4 V9.6 Z M14.5 8 12.6 9.6 V6.4 Z M6.5 6.5h3v3h-3z" fill="var(--text-faint)"/></svg>
-      </div>`}
+      <!-- Section-style header tab: the drag handle (same as a section), with an
+           editable title + close. Always visible so it's easy to grab. -->
+      <div className="workflow-node-section-bar"
+        style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%" }}
+        onMouseDown=${onGripDown}
+        onDoubleClick=${(e) => { e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current && titleInputRef.current.focus(), 0); }}>
+        ${editingTitle
+          ? html`<input ref=${titleInputRef} className="workflow-node-section-title-input"
+              value=${node.title || ""}
+              onInput=${(e) => onChange && onChange({ title: e.target.value })}
+              onBlur=${() => setEditingTitle(false)}
+              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
+              onMouseDown=${(e) => e.stopPropagation()}/>`
+          : html`<span className="workflow-node-section-title" title="Double-click to rename">${node.title || "Table"}</span>`}
+        <button className="workflow-node-section-close" data-tip="Remove table"
+          onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
+          onMouseDown=${(e) => e.stopPropagation()}>×</button>
+      </div>
       ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize" onMouseDown=${onResizeDown}/>`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Populate cells - wire an Agent or Skill here."
