@@ -230,7 +230,7 @@ function ensureFXChain(){
 const LogicBridge = {
   plan:null, projection:null, _sig:'', live:true,
   inputsMod:null, visionMod:null, audioMod:null, _inputHandle:null, _attachedEl:null,
-  _ports:{}, _last:performance.now(), _wantInputs:false, _streamHandles:[],
+  _ports:{}, _last:performance.now(), _wantInputs:false, _streamHandles:[], _streamDetectors:[],
   _paletteCache:new Map(),   // url+count -> { ready, colors:[{r,g,b,a}], dominant }
   _paletteNodes:[],          // [{ id, url, count }] resolved from the projection
   _audioHandle:null, _audioNodes:[],
@@ -273,6 +273,7 @@ const LogicBridge = {
     // Build the readback synthetic-node lookup (per-frame mutated constants).
     this._readbacks = (next && Array.isArray(next.readbacks)) ? next.readbacks : [];
     this._streamHandles = this._collectStreamHandles(next);
+    this._streamDetectors = this._collectStreamDetectors(next);
     this._paletteNodes = this._collectPaletteNodes(next);
     this._audioNodes = this._collectAudioNodes(next);
     this._wantInputs = this.active();
@@ -309,6 +310,25 @@ const LogicBridge = {
     for(const n of proj.nodes){ if(n && (n.kind==='input-camera'||n.kind==='input-video')) out.push(n.id); }
     return out;
   },
+  // For each vision-detect node, find the camera/video stream it reads (the FROM
+  // node of the edge into its `stream` port - input-camera.stream IS the node id,
+  // which is also how frame() keys detections) and pair it with that node's
+  // detector. WITHOUT this, LogicVision.frame() has no registered detector for
+  // the stream and returns NO detections - every landmark stays {0,0}. This is
+  // what actually turns hand/face/object detection ON.
+  _collectStreamDetectors(proj){
+    if(!proj||!Array.isArray(proj.nodes)||!Array.isArray(proj.edges)) return [];
+    const out=[];
+    for(const n of proj.nodes){
+      if(!n||n.kind!=='vision-detect') continue;
+      const e=proj.edges.find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');
+      const handle=(e&&e.from)?e.from.node:null;
+      if(handle==null) continue;
+      const p=n.params||{};
+      out.push({ handle:handle, detector:p.detector||'face', target:p.target||'present' });
+    }
+    return out;
+  },
   // Attach DOM input capture to the render surface (idempotent). Surface rect is
   // cached inside LogicInputs (W2D) - we never call getBoundingClientRect here.
   _ensureInput(surfaceEl){
@@ -329,6 +349,11 @@ const LogicBridge = {
     }
     let streams={};
     if(this.visionMod && this.visionMod.frame && this._streamHandles.length){
+      // Register each wired detector on its stream BEFORE frame() runs - this is
+      // what makes frame() actually detect (idempotent intent update per frame).
+      if(this.visionMod.detect && this._streamDetectors){
+        for(const d of this._streamDetectors){ try{ this.visionMod.detect(d.handle,{detector:d.detector,target:d.target}); }catch(e){} }
+      }
       try{ streams=this.visionMod.frame(this._streamHandles)||{}; }catch(e){ streams={}; }
     }
     base.streams=streams;
@@ -4482,7 +4507,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
      origin as the served editor toolchain) and feature-detected; a missing
      module degrades to no logic (the rest of the composition still plays).
      Defaults to LIVE (a published piece runs on load). */
-  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,audio:null,audioHandle:null,audioNodes:[],readbacks:[],streams:[],paletteNodes:[],paletteCache:{},last:performance.now(),live:true,
+  const LB={plan:null,ports:{},mod:null,vis:null,handle:null,audio:null,audioHandle:null,audioNodes:[],readbacks:[],streams:[],streamDetectors:[],paletteNodes:[],paletteCache:{},last:performance.now(),live:true,
     value(ref){ if(!ref)return undefined; const o=this.ports[ref.node]; if(!o)return undefined; const v=o[ref.port];
       if(v==null)return undefined; if(typeof v==='number')return v; if(typeof v==='boolean')return v?1:0;
       if(v&&typeof v==='object'&&'x'in v)return Number(v.x)||0; const n=Number(v); return Number.isFinite(n)?n:undefined; },
@@ -4515,7 +4540,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       return m; },
     tick(now){ if(!this.live||!this.plan||!this.LG)return; const dt=Math.min((now-this.last)/1000,0.05); this.last=now;
       let inp={dt,time:now/1000}; if(this.handle&&this.handle.sample){ try{ const s=this.handle.sample()||{}; inp=Object.assign({},s,{dt:(s.dt!=null?s.dt:dt),time:(s.time!=null?s.time:inp.time)}); }catch(e){} }
-      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
+      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ if(this.vis.detect&&this.streamDetectors){for(const d of this.streamDetectors){try{this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){}}} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
       inp.streams=streams; inp.palettes=this.paletteFrame(); inp.readback=this.readbackMap();
       let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{};
       this.driveAudio(); },
@@ -4523,6 +4548,10 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   if(LOGIC && (LOGIC.nodes&&LOGIC.nodes.length || LOGIC.outputs&&LOGIC.outputs.length)){
     LB.readbacks=Array.isArray(LOGIC.readbacks)?LOGIC.readbacks:[];
     LB.streams=(LOGIC.nodes||[]).filter(n=>n&&(n.kind==='input-camera'||n.kind==='input-video')).map(n=>n.id);
+    // Pair each vision-detect node with the camera stream it reads + its detector,
+    // so the player registers detection intent (else frame() returns no detections
+    // and every landmark stays {0,0} - hand/face detection never turns on).
+    LB.streamDetectors=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-detect').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};return e&&e.from?{handle:e.from.node,detector:p.detector||'face',target:p.target||'present'}:null;}).filter(Boolean);
     LB.paletteNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='palette'&&n.params&&n.params._imageUrl).map(n=>({id:n.id,url:n.params._imageUrl,count:Math.max(2,Math.min(8,(n.params.count|0)||5)),quality:Math.max(1,Math.min(16,(n.params.quality|0)||4))}));
     LB.audioNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='audio-out').map(n=>n.id);
     import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
