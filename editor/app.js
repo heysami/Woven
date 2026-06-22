@@ -70765,10 +70765,9 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
   `;
 }
 
-/* Phase 4b - Settings dialog. One section per provider, driven by
-   window.TH_MEDIA.providers. Integrated providers are interactive (Save /
-   Test / Clear); non-integrated providers render greyed-out with a
-   "coming soon" status so users can see the planned roadmap. */
+/* Phase 4b - Settings dialog. One section per integrated provider, driven by
+   window.TH_MEDIA.providers. Each renders an interactive Save / Test / Clear
+   row. Non-integrated ("soon") roadmap providers are filtered out. */
 function WorkflowSettingsDialog({ onClose }) {
   const [config, setConfig] = useState(null);
   const reload = useCallback(async () => {
@@ -70790,13 +70789,11 @@ function WorkflowSettingsDialog({ onClose }) {
   }, [onClose]);
 
   const providers = (window.TH_MEDIA && window.TH_MEDIA.providers) || {};
-  // Order: integrated first, then everything else alphabetically.
-  const providerIds = Object.keys(providers).sort((a, b) => {
-    const ai = providers[a].integrated ? 0 : 1;
-    const bi = providers[b].integrated ? 0 : 1;
-    if (ai !== bi) return ai - bi;
-    return a.localeCompare(b);
-  });
+  // Only show wired-up providers; the non-integrated "soon" roadmap rows are
+  // hidden. Ordered alphabetically by label.
+  const providerIds = Object.keys(providers)
+    .filter(pid => providers[pid].integrated)
+    .sort((a, b) => (providers[a].label || a).localeCompare(providers[b].label || b));
 
   return createPortal(html`
     <div className="workflow-modal-backdrop" onMouseDown=${onClose}>

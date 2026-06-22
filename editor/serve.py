@@ -255,6 +255,7 @@ _PROVIDER_ENV_KEYS = {
     "elevenlabs":  "TH_ELEVENLABS_API_KEY",
     "imagerouter": "TH_IMAGEROUTER_API_KEY",
     "quiver":      "TH_QUIVER_API_KEY",
+    "higgsfield":  "TH_HIGGSFIELD_API_KEY",
     # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
     # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) -
     # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be

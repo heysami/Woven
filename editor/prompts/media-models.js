@@ -138,6 +138,15 @@
       integrated: true,
       testable: false,
     },
+    higgsfield: {
+      id: "higgsfield",
+      label: "Higgsfield",
+      hint: "image · video (Soul, motion control)",
+      envKey: "TH_HIGGSFIELD_API_KEY",
+      docsUrl: "https://higgsfield.ai/",
+      integrated: true,
+      testable: false, // no free test endpoint; first real Run validates the key
+    },
   };
 
   // v3.4.7 (June 2026) - Catalog refreshed against current provider APIs.
