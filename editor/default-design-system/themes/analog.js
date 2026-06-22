@@ -32,8 +32,9 @@
   // selector -> recipe. Big tonal surfaces use NAV; compact brand controls BTN.
   var TARGETS = [
     { sel: ".sidebar", cfg: NAV },
-    { sel: ".card--filled", cfg: NAV },
-    { sel: ".stat-hero--brand", cfg: NAV },
+    // Filled cards + the landing CTA band are brand-gradient surfaces; give them
+    // the BUTTON profile (corner halftone accent) rather than the full nav ramp.
+    { sel: ".card--filled, .lp-cta, .stat-hero--brand", cfg: BTN },
     { sel: ".btn--primary, .btn-split__caret", cfg: BTN },
   ];
 

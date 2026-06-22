@@ -141,6 +141,7 @@
    and forcing position:relative would override sticky and unstick the rail on
    tall pages. analog.js only adds isolation to it (harmless). */
 [data-theme="analog"] .card--filled,
+[data-theme="analog"] .lp-cta,
 [data-theme="analog"] .stat-hero--brand,
 [data-theme="analog"] .btn--primary,
 [data-theme="analog"] .btn-split__caret{ position:relative; isolation:isolate; }
@@ -190,10 +191,15 @@
   background:var(--surface);
   box-shadow:var(--shadow-s);
 }
-[data-theme="analog"] .card--filled{
+[data-theme="analog"] .card--filled,
+[data-theme="analog"] .lp-cta{
   background:linear-gradient(155deg, var(--analog-start), color-mix(in srgb, var(--analog-end) 16%, var(--analog-start)));
   color:var(--analog-end);
 }
+/* The CTA band's inner light button + eyebrow assume a brand (dark) backing; on
+   the light analog fill flip them to ink so they stay legible. */
+[data-theme="analog"] .lp-cta .btn--light{background:var(--analog-end);color:var(--analog-start);}
+[data-theme="analog"] .lp-cta .eyebrow{color:color-mix(in srgb, var(--analog-end) 62%, transparent);}
 [data-theme="analog"] .section-card{
   background:var(--surface);
   border:1px solid var(--border-subtle);
