@@ -28718,7 +28718,7 @@ function WorkflowPickOpToast({ state }) {
    the canvas's transform / clipping context, then positioned via fixed
    coords from the original click. Closes on outside-click, Escape, or
    when the user picks an action. */
-function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose }) {
+function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     const onDown = (e) => {
@@ -28752,6 +28752,29 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
         disabled=${!canPaste}
         onClick=${onPaste}
       ><span>Paste</span><span className="canvas-ctxmenu-shortcut">⌘V</span></button>
+      ${onBringToFront && html`
+        <div className="canvas-ctxmenu-divider"/>
+        <button
+          className=${itemCls(!hasSelection)}
+          disabled=${!hasSelection}
+          onClick=${onBringToFront}
+        ><span>Bring to front</span><span className="canvas-ctxmenu-shortcut">⇧]</span></button>
+        <button
+          className=${itemCls(!hasSelection)}
+          disabled=${!hasSelection}
+          onClick=${onBringForward}
+        ><span>Bring forward</span><span className="canvas-ctxmenu-shortcut">]</span></button>
+        <button
+          className=${itemCls(!hasSelection)}
+          disabled=${!hasSelection}
+          onClick=${onSendBackward}
+        ><span>Send backward</span><span className="canvas-ctxmenu-shortcut">[</span></button>
+        <button
+          className=${itemCls(!hasSelection)}
+          disabled=${!hasSelection}
+          onClick=${onSendToBack}
+        ><span>Send to back</span><span className="canvas-ctxmenu-shortcut">⇧[</span></button>
+      `}
       <div className="canvas-ctxmenu-divider"/>
       <button
         className=${itemCls(!hasSelection) + " canvas-ctxmenu-danger"}
@@ -30955,6 +30978,121 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }),
     }));
   }, [setData]);
+
+  // ── Layering (send-to-back / bring-to-front) ──────────────────────────
+  // Nodes paint by an explicit integer `z` (default 0); when z is equal the
+  // existing render order is the tiebreak, so a graph that never touches
+  // layering looks byte-identical to before. `mode` is one of:
+  //   "front"    - lift the selection above every other node
+  //   "back"     - drop the selection below every other node
+  //   "forward"  - raise one layer (just above the nearest node above it)
+  //   "backward" - lower one layer (just below the nearest node below it)
+  // Neighbours for the single-step moves are computed against the NON-selected
+  // nodes so a multi-node selection moves as a block.
+  const layerNodes = useCallback((ids, mode) => {
+    const idSet = ids instanceof Set ? ids : new Set(ids || []);
+    if (!idSet.size) return;
+    setData(d => {
+      const nodes = d.nodes || [];
+      if (!nodes.some(n => idSet.has(n.id))) return d;
+      const ez = (n) => (typeof n.z === "number" ? n.z : 0);
+      const sel = nodes.filter(n => idSet.has(n.id));
+      const others = nodes.filter(n => !idSet.has(n.id));
+      const zmap = new Map();
+      if (mode === "front") {
+        const base = others.length ? Math.max(...others.map(ez)) : 0;
+        sel.forEach((n, i) => zmap.set(n.id, base + 1 + i));
+      } else if (mode === "back") {
+        const base = others.length ? Math.min(...others.map(ez)) : 0;
+        sel.forEach((n, i) => zmap.set(n.id, base - sel.length + i));
+      } else if (mode === "forward") {
+        for (const n of sel) {
+          const above = others.filter(o => ez(o) >= ez(n)).map(ez);
+          if (above.length) zmap.set(n.id, Math.min(...above) + 1);
+        }
+      } else if (mode === "backward") {
+        for (const n of sel) {
+          const below = others.filter(o => ez(o) <= ez(n)).map(ez);
+          if (below.length) zmap.set(n.id, Math.max(...below) - 1);
+        }
+      }
+      if (!zmap.size) return d;  // already at the extreme - nothing to do
+      return { ...d, nodes: nodes.map(n => zmap.has(n.id) ? { ...n, z: zmap.get(n.id) } : n) };
+    });
+  }, [setData]);
+  // Layer the current node selection. Returns how many nodes were targeted
+  // (0 = nothing selected) so callers can decide whether to preventDefault.
+  const layerSelectedNodes = useCallback((mode) => {
+    const sel = selectedNodeIdsRef.current || new Set();
+    if (!sel.size) return 0;
+    layerNodes(sel, mode);
+    return sel.size;
+  }, [layerNodes]);
+
+  // Same four-mode layering for whiteboard items. Cleaner than the node case:
+  // wb items already carry a `z` (assigned on add) and the wb layer paints
+  // strictly in z order (see WorkflowWhiteboardLayer's ascending sort), so
+  // changing `z` is all it takes - no DOM-side reflection needed.
+  const layerWbItems = useCallback((ids, mode) => {
+    const idSet = ids instanceof Set ? ids : new Set(ids || []);
+    if (!idSet.size) return;
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      if (!list.some(it => idSet.has(it.id))) return d;
+      const ez = (it) => (typeof it.z === "number" ? it.z : 0);
+      const sel = list.filter(it => idSet.has(it.id));
+      const others = list.filter(it => !idSet.has(it.id));
+      const zmap = new Map();
+      if (mode === "front") {
+        const base = others.length ? Math.max(...others.map(ez)) : 0;
+        sel.forEach((it, i) => zmap.set(it.id, base + 1 + i));
+      } else if (mode === "back") {
+        const base = others.length ? Math.min(...others.map(ez)) : 0;
+        sel.forEach((it, i) => zmap.set(it.id, base - sel.length + i));
+      } else if (mode === "forward") {
+        for (const it of sel) {
+          const above = others.filter(o => ez(o) >= ez(it)).map(ez);
+          if (above.length) zmap.set(it.id, Math.min(...above) + 1);
+        }
+      } else if (mode === "backward") {
+        for (const it of sel) {
+          const below = others.filter(o => ez(o) <= ez(it)).map(ez);
+          if (below.length) zmap.set(it.id, Math.max(...below) - 1);
+        }
+      }
+      if (!zmap.size) return d;
+      return { ...d, wb: list.map(it => zmap.has(it.id) ? { ...it, z: zmap.get(it.id) } : it) };
+    });
+  }, [setData]);
+  const layerSelectedWbItems = useCallback((mode) => {
+    const sel = selectedWbIdsRef.current || new Set();
+    if (!sel.size) return 0;
+    layerWbItems(sel, mode);
+    return sel.size;
+  }, [layerWbItems]);
+
+  // Reflect each node's `z` onto its DOM element's z-index. We write it
+  // imperatively (not through the style prop) so it survives the many
+  // per-kind render passes without threading a `z` prop through ~two dozen
+  // node components; preact never manages z-index, so our value isn't
+  // clobbered on re-render. Scoped to the canvas's direct children so nodes
+  // nested inside an expanded custom-app subgraph are left alone.
+  const _zSig = (data.nodes || [])
+    .map(n => n.id + ":" + (typeof n.z === "number" ? n.z : ""))
+    .join(",");
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const canvas = wrap && wrap.querySelector(".workflow-canvas");
+    if (!canvas) return;
+    const zById = new Map((data.nodes || []).map(n => [n.id, n.z]));
+    const els = canvas.querySelectorAll(
+      ":scope > .workflow-node[data-node-id], :scope > .workflow-node-section[data-node-id]"
+    );
+    els.forEach(el => {
+      const z = zById.get(el.getAttribute("data-node-id"));
+      el.style.zIndex = (typeof z === "number") ? String(z) : "";
+    });
+  }, [_zSig, wrapRef]);
 
   // v3.8 - Connector-spawn: create ONE node from a ⊕ menu item and wire it
   // to the anchor. side "left" → new node feeds the anchor; side "right" →
@@ -34612,6 +34750,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const onKey = (e) => {
       if (isEditingTarget(e.target)) return;
       const cmd = e.metaKey || e.ctrlKey;
+      // ── Layering: [ / ] restack the selected nodes one layer at a time;
+      // Shift sends them all the way ({ = to back, } = to front). Matches
+      // the bracket convention from Figma / Illustrator. No modifier beyond
+      // Shift, so it never collides with the Cmd shortcuts below.
+      if (!cmd && !e.altKey && (e.key === "[" || e.key === "]" || e.key === "{" || e.key === "}")) {
+        const mode = e.key === "}" ? "front"
+                   : e.key === "{" ? "back"
+                   : e.key === "]" ? "forward"
+                   : "backward";
+        // Restack whichever selection is live - nodes and whiteboard items
+        // are both bracket-layerable (mixed selections move together).
+        const moved = (layerSelectedNodes(mode) || 0) + (layerSelectedWbItems(mode) || 0);
+        if (moved > 0) e.preventDefault();
+        return;
+      }
       // ── Unified selection: Delete + Cmd+D act on the WHOLE selection -
       // nodes and whiteboard items together (mixed selections allowed in
       // both modes). Cmd+C/V for wb items ride the native copy/paste
@@ -34667,7 +34820,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId]);
+  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems]);
 
   // Walk edges that TERMINATE at nodeId.in - collect upstream prompt texts
   // and asset references. Skill nodes read this to assemble the actual API call.
@@ -41176,6 +41329,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           if (clip && clip.items) pasteWbClipboardAt(clip.items, ctxMenu.worldX, ctxMenu.worldY);
           setCtxMenu(null);
         }}
+        onBringToFront=${() => { layerSelectedWbItems("front"); setCtxMenu(null); }}
+        onBringForward=${() => { layerSelectedWbItems("forward"); setCtxMenu(null); }}
+        onSendBackward=${() => { layerSelectedWbItems("backward"); setCtxMenu(null); }}
+        onSendToBack=${() => { layerSelectedWbItems("back"); setCtxMenu(null); }}
         onDelete=${() => { removeWbItems(selectedWbIds); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
@@ -41194,6 +41351,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
           setCtxMenu(null);
         }}
+        onBringToFront=${() => { layerSelectedNodes("front"); setCtxMenu(null); }}
+        onBringForward=${() => { layerSelectedNodes("forward"); setCtxMenu(null); }}
+        onSendBackward=${() => { layerSelectedNodes("backward"); setCtxMenu(null); }}
+        onSendToBack=${() => { layerSelectedNodes("back"); setCtxMenu(null); }}
         onDelete=${() => { deleteSelectedNodes(); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
