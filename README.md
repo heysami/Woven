@@ -21,12 +21,14 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 1. [What you need before starting](#1-what-you-need-before-starting)
 2. [Install](#2-install)
 3. [Start the editor](#3-start-the-editor)
-4. [First-run onboarding: connect a model](#4-first-run-onboarding-connect-a-model)
-5. [Optional · add asset-provider keys (image · video · SVG)](#5-optional--add-asset-provider-keys-image--video--svg)
-6. [Required · install local skills (rembg)](#6-required--install-local-skills-rembg)
-7. [Create your first project](#7-create-your-first-project)
-8. [Open the workflow and send your first prompt](#8-open-the-workflow-and-send-your-first-prompt)
-9. [The final prototype](#9-the-final-prototype)
+4. [First-run onboarding: the 5-step setup wizard](#4-first-run-onboarding-the-5-step-setup-wizard)
+5. [Step 1 · connect a model](#5-step-1--connect-a-model)
+6. [Step 2 · add asset-provider keys (image · video · SVG)](#6-step-2--add-asset-provider-keys-image--video--svg)
+7. [Step 3 · review orchestrators](#7-step-3--review-orchestrators)
+8. [Step 4 · install local skills (rembg)](#8-step-4--install-local-skills-rembg)
+9. [Create your first project](#9-create-your-first-project)
+10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
+11. [The final prototype](#11-the-final-prototype)
 
 ---
 
@@ -38,7 +40,7 @@ You only need four things on your machine:
 | ---------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **Python 3.10+** | The editor daemon (`serve.py`) is pure Python with stdlib only.              | `python3 --version`                   |
 | **A modern browser** | Chrome, Edge, Safari, or Firefox (anything from the last ~2 years).      | (no command, just open it)            |
-| **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. You'll wire this up in [Step 4](#4-first-run-onboarding-connect-a-model). | `claude --version` / `codex --version` |
+| **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. **The CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` |
 | **`rembg`**      | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~170 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
 
 You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a single Python file.
@@ -64,7 +66,7 @@ claude login    # (if you installed Claude Code)
 codex login     # (if you installed Codex)
 ```
 
-If you'd rather paste an API key instead of installing a CLI, skip the `npm install` step; you'll paste the key in the onboarding UI in [Step 4](#4-first-run-onboarding-connect-a-model).
+If you'd rather paste an API key instead of installing a CLI, skip the `npm install` step; you'll paste the key in the onboarding UI in [Step 1](#5-step-1--connect-a-model). Note that a key alone runs **simple prompt** nodes only - agentic workflows (node runs, chat, orchestrators) still need a CLI.
 
 ---
 
@@ -90,31 +92,45 @@ TH_WORKSPACE_DIR="$HOME/my-prototypes" python3 editor/serve.py
 
 ---
 
-## 4. First-run onboarding: connect a model
+## 4. First-run onboarding: the 5-step setup wizard
 
-On the very first launch, the **Projects** page shows a setup card. The top-right pill reads **NO MODEL CONFIGURED** in red. That's your cue that nothing will run until you wire up one connection.
+On the very first launch, the **Projects** page shows a setup card. The top-right pill reads **No model configured** in red - your cue that nothing will run until you wire up a connection. While anything required is still missing, the **+ New project** button stays disabled.
 
-![Onboarding · Step 1 · required agent model](docs/screenshots/01-onboarding-step1.png)
+The card is a single wizard with five numbered pips across the top:
 
-The card has two paths, both equivalent for the agent:
+**1 Agent model · 2 Asset keys · 3 Orchestrators · 4 Local skills · 5 Done**
 
-### 4a · Use a CLI
-
-Click **Install a CLI** to open the install-options dialog. The editor lists every supported binary with its install + login commands and live-detects whether each one is on your `PATH`. Once you've installed and signed in, click **I've installed it · refresh**. The dot flips to green and you're done.
-
-![Onboarding · Step 1 · CLI picker](docs/screenshots/02-onboarding-cli-picker.png)
-
-### 4b · Use an API key
-
-Click **Paste an API key** to drop in an Anthropic or OpenAI key. The key is stored locally at `~/.test-harness/media-config.json` (file mode `0600`, never sent anywhere except the provider's own API).
-
-Either path clears the **NO MODEL CONFIGURED** pill the instant it succeeds.
+Click any pip to jump to that step, or use **← Back / Next →** at the bottom. Only **Step 1 (a CLI)** and **Step 4 (rembg)** are required gates; Steps 2 and 3 are optional and never block. The next five sections walk through each step.
 
 ---
 
-## 5. Optional · add asset-provider keys (image · video · SVG)
+## 5. Step 1 · connect a model
 
-Step 1 only covers the **agent's text model**. To unlock image generation, video, vector SVG, audio, etc., add the relevant provider keys in **Step 2** of the onboarding card:
+![Onboarding · Step 1 · agent model](docs/screenshots/01-onboarding-step1.png)
+
+Step 1 wires up the model the agent runs on. There are two paths, and they are **not** equivalent:
+
+### 5a · Install a CLI (required for agents)
+
+A **Claude Code or Codex CLI on your `PATH` is the required backend.** The agent loop, file tools, and context compaction all live in the CLI harness, so node runs, chat, and orchestrators only work once a CLI is connected.
+
+Click **Install a CLI** to open the **Install a model CLI** popup. It lists both supported binaries with copy-paste install + login commands:
+
+![Onboarding · Step 1 · install-a-CLI popup](docs/screenshots/02-onboarding-cli-picker.png)
+
+Run the commands, then click **I've installed it · refresh** (or **I've already set one up · refresh** on the step itself). The status dot flips to green.
+
+### 5b · Paste an API key (simple prompts only)
+
+Click **Paste an API key** to drop in an Anthropic or OpenAI key via Settings. The key is stored locally at `~/.test-harness/media-config.json` (file mode `0600`, never sent anywhere except the provider's own API).
+
+A key on its own runs **single-shot "simple prompt" nodes** only - it does **not** enable agentic workflows. If you finish onboarding on a key alone, the top-right pill turns amber and reads **Agents disabled - no CLI** as a standing nudge to install one.
+
+---
+
+## 6. Step 2 · add asset-provider keys (image · video · SVG)
+
+Step 1 only covers the **agent's text model**. To unlock image generation, video, vector SVG, audio, etc., add the relevant provider keys in **Step 2**:
 
 ![Onboarding · Step 2 · asset providers](docs/screenshots/03-onboarding-asset-providers.png)
 
@@ -131,11 +147,21 @@ These are **optional**. Projects can still be created without them; you just won
 
 ---
 
-## 6. Required · install local skills (rembg)
+## 7. Step 3 · review orchestrators
 
-The wizard's **Step 3 · Local skills** lists Python packages the daemon will install into your user site (`pip install --user`). **`rembg` is the one required entry**: it's the background-removal step in the `raster-foreground` asset pipeline (every character, mascot, or isolated subject runs through it on the way to the canvas). Skip it and foreground asset generation falls over at the cutout stage.
+**Step 3** is a new, optional review step. Orchestrators dispatch whole families of subagents for richer artefacts (photography, illustration, simulations, 3D scenes, motion studios, and so on). Each row has a toggle, so you can turn off any family you don't want auto-dispatched - you can still invoke them by name later.
 
-![Onboarding · Step 3 · Local skills (rembg)](docs/screenshots/03b-onboarding-local-skills.png)
+![Onboarding · Step 3 · orchestrators](docs/screenshots/03c-onboarding-orchestrators.png)
+
+Rows whose pipeline depends on a key you haven't set in Step 2 are shown as **limited** with a short note about what's missing. Nothing here blocks project creation; if in doubt, leave the defaults and click **Next →**.
+
+---
+
+## 8. Step 4 · install local skills (rembg)
+
+The wizard's **Step 4 · Local skills** lists Python packages the daemon will install into your user site (`pip install --user`). **`rembg` is the one required entry**: it's the background-removal step in the `raster-foreground` asset pipeline (every character, mascot, or isolated subject runs through it on the way to the canvas). Skip it and foreground asset generation falls over at the cutout stage.
+
+![Onboarding · Step 4 · Local skills (rembg)](docs/screenshots/03b-onboarding-local-skills.png)
 
 Click **Install rembg** and give it a minute. First install pulls ~170 MB of ONNX model weights.
 
@@ -147,23 +173,33 @@ pip3 install --user rembg
 
 Optional packages (for `particle-gl`, `3d`, etc.) can wait. Install them from the gear icon → Settings when the matching pipeline first asks for them.
 
+Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). Dismiss the card and the **+ New project** button lights up.
+
 ---
 
-## 7. Create your first project
+## 9. Create your first project
 
-Once a model is configured, the top-right warning chip disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header now carries two tabs - **Projects** (your gallery) and **System** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with) - reachable from anywhere on the landing.
+Once a model is configured and rembg is installed, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
 
 ![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 
-Click **+ New project** (or **+ Create your first project** in the empty state). A single-field modal opens:
+Click **+ New project** (or **+ Create your first project** in the empty state - the caret next to it also offers **From GitHub…** to clone an existing repo). The new-project modal opens:
 
-![New project modal · name only](docs/screenshots/05-new-project-wizard.png)
+![New project modal](docs/screenshots/05-new-project-wizard.png)
 
-Type a folder-safe id (alphanumeric + `.` `_` `-`) and click **+ Create**. That's it - no scope picker, no multi-step wizard. The earlier "Blank / Quick designs / Design system / PRD only / Full guided / Custom" branching was removed; every fresh project lands on a clean workflow canvas and you tell the agent what you want from chat. Need one of the old guided runs? Just ask the agent in plain English on the next screen ("brainstorm three design directions", "write a PRD first", "do the full guided flow", …) and the orchestrator skill picks the right stages.
+It has three things on it:
+
+- **Project name** - type a folder-safe id (alphanumeric + `.` `_` `-`); the modal echoes the slug it will use.
+- **Export folder** (optional) - where per-asset Export (the ⤓ on a selected node) drops bundles. On macOS a **Pick…** button opens Finder; you can also change this later from the **Exports** button in the workflow toolbar.
+- **Start from the template design system** (toggle, off by default) - seed a tokenized component library you can recolour, round, and retype.
+
+With the toggle **off**, click **+ Create** and you land straight on a clean workflow canvas - no scope picker, no multi-step wizard. The earlier "Blank / Quick designs / Design system / PRD only / Full guided / Custom" branching was removed; every fresh project starts blank and you tell the agent what you want from chat. Need one of the old guided runs? Just ask the agent in plain English on the next screen ("brainstorm three design directions", "write a PRD first", "do the full guided flow", …) and the orchestrator skill picks the right stages.
+
+With the toggle **on**, the button reads **Customize →** and advances to a wider **design-system customizer** step - a live preview where you tune colour, roundness, type, and spacing before the project is created with that tokenized DS baked in.
 
 ---
 
-## 8. Open the workflow and send your first prompt
+## 10. Open the workflow and send your first prompt
 
 The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (prompt nodes, asset generators, composition tools…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it. No menus to open, no drawers to expand.
 
@@ -179,7 +215,7 @@ Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work, gener
 
 ---
 
-## 9. The final prototype
+## 11. The final prototype
 
 After the agent finishes the run, the workflow canvas fills out with every step that produced the prototype: a column of **Prompt** nodes (one per illustrated subject: Totoro himself, soot sprites, Chibi-Totoro, the Catbus…), each feeding a **Generate image** node, then a **Remove background** node that pipes the cleaned PNG into the final page rendering on the right. The chat drawer streams the agent's tool calls live (Read / Write / Bash) as it scaffolds files into `source/`. The right-most frame is the live phone-mockup of the Ghibli-themed Totoro feeder app, sitting inside the canvas alongside the assets that built it.
 
@@ -208,7 +244,7 @@ Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip
 | **CLI missing** chip is amber                        | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`.          |
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the repo root.         |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
-| Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 5](#5-optional--add-asset-provider-keys-image--video--svg)). |
+| Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#6-step-2--add-asset-provider-keys-image--video--svg)). |
 
 ---
 
