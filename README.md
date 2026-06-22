@@ -38,12 +38,12 @@ You only need four things on your machine:
 
 | Requirement      | Why                                                                          | How to check                          |
 | ---------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
-| **Python 3.10+** | The editor daemon (`serve.py`) is pure Python with stdlib only.              | `python3 --version`                   |
+| **Python 3.9+**  | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (matches the system `python3` on a clean macOS). | `python3 --version`                   |
 | **A modern browser** | Chrome, Edge, Safari, or Firefox (anything from the last ~2 years).      | (no command, just open it)            |
 | **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. **The CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` |
 | **`rembg`**      | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~170 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
 
-You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a single Python file.
+You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a set of pure-Python files (stdlib only, no third-party packages).
 
 ---
 
@@ -201,7 +201,7 @@ With the toggle **on**, the button reads **Customize →** and advances to a wid
 
 ## 10. Open the workflow and send your first prompt
 
-The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (prompt nodes, asset generators, composition tools…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it. No menus to open, no drawers to expand.
+The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (basic tools, asset generators, iterators, and more…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it. No menus to open, no drawers to expand.
 
 ![Empty workflow · canvas-centered composer](docs/screenshots/07-empty-workflow.png)
 
@@ -221,7 +221,7 @@ After the agent finishes the run, the workflow canvas fills out with every step 
 
 ![Final prototype · Totoro feeder app on the workflow canvas](docs/screenshots/09-final-prototype.png)
 
-From here you can switch to **Prototype mode** (the play icon in the toolbar) to interact with the full app outside the canvas frame, or re-run any individual asset node (right-click → Run) to regenerate a single illustration without redoing the whole flow.
+From here you can switch to the **Prototype viewer** (the right-side nav-rail button) to browse the full app in browser-style tabs outside the canvas, or re-run any individual asset node (the **▶ Run** control on the node) to regenerate a single illustration without redoing the whole flow.
 
 ### What the agent generated from a single prompt
 
