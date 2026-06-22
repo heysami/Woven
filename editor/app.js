@@ -68938,15 +68938,17 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
 function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, onCellMenu }) {
   const z = Math.round(item.z || 0);
   const cols = wbTableCols(item), rows = wbTableRows(item);
-  // Fill: "white" (paper), "none" (transparent), or a colour token rendered as
-  // a soft tint. Line: a real colour token (or "none"), used at full strength -
-  // a clean, chosen line rather than a muddy auto-derived shade.
+  // Fill: "white" (paper), "none" (transparent), or a colour token (soft tint).
+  // Line colour is AUTOMATIC from the fill: a clean light grey for white/none,
+  // otherwise the fill's own hue at full strength - a crisp matching line,
+  // never a muddy grey.
   const fillTok = item.fill || "white";
   const cellBg = fillTok === "none" ? "transparent"
                : fillTok === "white" ? "#fff"
                : `color-mix(in oklch, ${wbColorCSS(fillTok)} 16%, #fff)`;
-  const lineTok = item.lineColor || "gray";
-  const cellBorder = lineTok === "none" ? "transparent" : wbColorCSS(lineTok);
+  const cellBorder = (fillTok === "white" || fillTok === "none")
+    ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
+    : wbColorCSS(fillTok);
   const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
   const rootRef = useRef(null);
   // Prefix sums (relative to the table's top-left) for cell geometry.
@@ -69054,15 +69056,15 @@ function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, o
         style=${{ left: 0, top: (rowY[i + 1] - HW / 2) + "px", width: totalW + "px", height: HW + "px" }}
         title="Drag to resize row"
         onMouseDown=${(e) => onBoundaryDown(e, "row", i)}/>`)}
-      <!-- append column / row -->
+      <!-- Add column at the TOP-RIGHT, add row at the BOTTOM-LEFT. -->
       ${selected && html`<button type="button" className="workflow-wb-table-add"
         title="Add column"
-        style=${{ left: (totalW + px(4)) + "px", top: (totalH / 2 - PLUS / 2) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
+        style=${{ left: (totalW - PLUS) + "px", top: (-(PLUS) - px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
         onMouseDown=${(e) => e.stopPropagation()}
         onClick=${(e) => { e.stopPropagation(); onOp && onOp(item.id, "insertCol", { at: cols.length }); }}>+</button>`}
       ${selected && html`<button type="button" className="workflow-wb-table-add"
         title="Add row"
-        style=${{ left: (totalW / 2 - PLUS / 2) + "px", top: (totalH + px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
+        style=${{ left: "0px", top: (totalH + px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
         onMouseDown=${(e) => e.stopPropagation()}
         onClick=${(e) => { e.stopPropagation(); onOp && onOp(item.id, "insertRow", { at: rows.length }); }}>+</button>`}
       <!-- move grip (re-enables moving a selected table) - sits just inside the
@@ -69369,13 +69371,7 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
             (first && first.fill) || F.fill || "white",
             (v) => { if (onFmt) onFmt({ fill: v }); if (sel.length && onPatchSelection) onPatchSelection({ fill: v }); },
             true, true)}
-        </div>
-        <div className="workflow-wb-tools-section">
-          <div className="workflow-wb-tools-sublabel">Line color</div>
-          ${swatchRow(
-            (first && first.lineColor) || F.lineColor || "gray",
-            (v) => { if (onFmt) onFmt({ lineColor: v }); if (sel.length && onPatchSelection) onPatchSelection({ lineColor: v }); },
-            true, false)}
+          <div className="workflow-wb-tools-hint" style=${{ marginTop: 0 }}>Grid lines follow the fill colour automatically.</div>
         </div>
       `}
       ${showText && html`
