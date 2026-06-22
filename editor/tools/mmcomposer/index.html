@@ -324,8 +324,9 @@ const LogicBridge = {
       const e=proj.edges.find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');
       const handle=(e&&e.from)?e.from.node:null;
       if(handle==null) continue;
+      const src=proj.nodes.find(x=>x&&x.id===handle);
       const p=n.params||{};
-      out.push({ handle:handle, detector:p.detector||'face', target:p.target||'present' });
+      out.push({ handle:handle, srcKind:(src&&src.kind)||'input-camera', detector:p.detector||'face', target:p.target||'present' });
     }
     return out;
   },
@@ -351,8 +352,18 @@ const LogicBridge = {
     if(this.visionMod && this.visionMod.frame && this._streamHandles.length){
       // Register each wired detector on its stream BEFORE frame() runs - this is
       // what makes frame() actually detect (idempotent intent update per frame).
-      if(this.visionMod.detect && this._streamDetectors){
-        for(const d of this._streamDetectors){ try{ this.visionMod.detect(d.handle,{detector:d.detector,target:d.target}); }catch(e){} }
+      // ALSO hand LogicVision the already-running camera <video> element under
+      // the same handle, so it has something to detect on (no 2nd getUserMedia).
+      if(this._streamDetectors){
+        for(const d of this._streamDetectors){
+          try{ this.visionMod.detect && this.visionMod.detect(d.handle,{detector:d.detector,target:d.target}); }catch(e){}
+          try{
+            let vel=null;
+            if(d.srcKind==='input-camera'){ if(typeof Input!=='undefined'&&Input.cam&&Input.cam.on&&Input.cam.video) vel=Input.cam.video; }
+            else if(d.srcKind==='input-video'&&typeof vstream==='function'){ vel=vstream(d.handle); }
+            if(vel && this.visionMod.attachVideoAs) this.visionMod.attachVideoAs(d.handle, vel, d.srcKind==='input-video'?'video':'camera');
+          }catch(e){}
+        }
       }
       try{ streams=this.visionMod.frame(this._streamHandles)||{}; }catch(e){ streams={}; }
     }
@@ -4540,7 +4551,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       return m; },
     tick(now){ if(!this.live||!this.plan||!this.LG)return; const dt=Math.min((now-this.last)/1000,0.05); this.last=now;
       let inp={dt,time:now/1000}; if(this.handle&&this.handle.sample){ try{ const s=this.handle.sample()||{}; inp=Object.assign({},s,{dt:(s.dt!=null?s.dt:dt),time:(s.time!=null?s.time:inp.time)}); }catch(e){} }
-      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ if(this.vis.detect&&this.streamDetectors){for(const d of this.streamDetectors){try{this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){}}} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
+      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ if(this.streamDetectors){for(const d of this.streamDetectors){ try{this.vis.detect&&this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){} try{let vel=null;if(d.srcKind==='input-camera'){if(IN.cam&&IN.cam.on&&IN.cam.video)vel=IN.cam.video;}else if(d.srcKind==='input-video'&&typeof vstream==='function'){vel=vstream(d.handle);}if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
       inp.streams=streams; inp.palettes=this.paletteFrame(); inp.readback=this.readbackMap();
       let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{};
       this.driveAudio(); },
@@ -4551,7 +4562,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     // Pair each vision-detect node with the camera stream it reads + its detector,
     // so the player registers detection intent (else frame() returns no detections
     // and every landmark stays {0,0} - hand/face detection never turns on).
-    LB.streamDetectors=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-detect').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};return e&&e.from?{handle:e.from.node,detector:p.detector||'face',target:p.target||'present'}:null;}).filter(Boolean);
+    LB.streamDetectors=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-detect').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};if(!e||!e.from)return null;const src=(LOGIC.nodes||[]).find(x=>x&&x.id===e.from.node);return {handle:e.from.node,srcKind:(src&&src.kind)||'input-camera',detector:p.detector||'face',target:p.target||'present'};}).filter(Boolean);
     LB.paletteNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='palette'&&n.params&&n.params._imageUrl).map(n=>({id:n.id,url:n.params._imageUrl,count:Math.max(2,Math.min(8,(n.params.count|0)||5)),quality:Math.max(1,Math.min(16,(n.params.quality|0)||4))}));
     LB.audioNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='audio-out').map(n=>n.id);
     import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});

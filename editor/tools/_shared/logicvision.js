@@ -120,6 +120,18 @@ export const LogicVision = {
     return handle;
   },
 
+  // Register an ALREADY-RUNNING <video> under a SPECIFIC handle (the camera/video
+  // NODE id), so frame(handle) detects on it. The composer already grabs the
+  // webcam to render the feed; this lets detection reuse that same element with
+  // NO second getUserMedia. Idempotent - safe to call every frame; only updates
+  // the el/playing fields, leaving any cached detection result intact.
+  attachVideoAs(handle, videoEl, kind) {
+    if (handle == null || !videoEl) return;
+    const prev = this._streams[handle];
+    if (prev && prev.el === videoEl) { prev.playing = !videoEl.paused; return; }
+    this._streams[handle] = { kind: kind || 'camera', el: videoEl, stream: videoEl.srcObject || null, t: 0, playing: !videoEl.paused };
+  },
+
   // ── register a detection processor; returns latest cached result ───────────-
   detect(handle, opts) {
     opts = opts || {};
