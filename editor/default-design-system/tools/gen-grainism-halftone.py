@@ -76,24 +76,66 @@ def build() -> Image.Image:
     return Image.fromarray(np.dstack([lum, alpha]), "LA")
 
 
-def main() -> None:
-    img = build()
+# ---- grain knobs ----------------------------------------------------------
+GRAIN_SIZE = 200       # seamless tile edge in px (repeated by the CSS)
+GRAIN_SIGMA = 0.55     # grain softness / clump radius (px); higher = chunkier grain
+GRAIN_SPREAD = 0.42    # how far alpha swings around its 0.5 mean (contrast of the grain)
+GRAIN_LEVELS = 12      # quantise alpha to N levels so the (incompressible) noise PNG stays small
+GRAIN_SEED = 7
+
+
+def build_grain() -> Image.Image:
+    """Seamless monochrome film-grain alpha tile.
+
+    Noise is shaped in the Fourier domain (a Gaussian low-pass) so it is periodic
+    by construction - the tile repeats with no seam - and slightly clumped like
+    real silver-halide grain rather than per-pixel static. Alpha encodes grain
+    coverage; the L channel is a constant (mask-image reads alpha).
+    """
+    n = GRAIN_SIZE
+    rng = np.random.default_rng(GRAIN_SEED)
+    spec = np.fft.fft2(rng.standard_normal((n, n)))
+    fy = np.fft.fftfreq(n)[:, None]
+    fx = np.fft.fftfreq(n)[None, :]
+    r2 = fx * fx + fy * fy
+    lp = np.exp(-r2 * (2 * math.pi * GRAIN_SIGMA) ** 2)   # Gaussian low-pass -> clump
+    field = np.real(np.fft.ifft2(spec * lp))
+    field = (field - field.mean()) / (field.std() + 1e-6)
+    alpha = np.clip(0.5 + GRAIN_SPREAD * field, 0.0, 1.0)
+    q = max(2, GRAIN_LEVELS)
+    alpha = np.round(alpha * (q - 1)) / (q - 1)
+    a8 = (alpha * 255.0).astype(np.uint8)
+    lum = np.full((n, n), 255, dtype=np.uint8)
+    return Image.fromarray(np.dstack([lum, a8]), "LA")
+
+
+def _data_uri(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    data_uri = "data:image/png;base64," + b64
+    return "data:image/png;base64," + b64, len(b64) / 1024
+
+
+def main() -> None:
+    half_uri, half_kb = _data_uri(build())
+    grain_uri, grain_kb = _data_uri(build_grain())
 
     css = CSS.read_text()
     # replace either the placeholder (first run) or a previously-baked data-uri
-    css, n = re.subn(
+    css, n1 = re.subn(
         r"(--halftone-mask:url\(\")[^\"]*(\"\);)",
-        lambda m: m.group(1) + data_uri + m.group(2),
+        lambda m: m.group(1) + half_uri + m.group(2),
         css,
     )
-    if n == 0:
-        raise SystemExit(f"could not find --halftone-mask url() target in {CSS}")
+    css, n2 = re.subn(
+        r"(--grain-tex:url\(\")[^\"]*(\"\);)",
+        lambda m: m.group(1) + grain_uri + m.group(2),
+        css,
+    )
+    if n1 == 0 or n2 == 0:
+        raise SystemExit(f"could not find both mask targets in {CSS} (halftone {n1}, grain {n2})")
     CSS.write_text(css)
-    print(f"baked {len(b64)/1024:.1f} KB base64 into --halftone-mask in {CSS.name}")
+    print(f"baked halftone {half_kb:.1f} KB + grain {grain_kb:.1f} KB base64 into {CSS.name}")
 
 
 if __name__ == "__main__":
