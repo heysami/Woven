@@ -21,33 +21,40 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <!-- Diamond-frost backdrop filter for the Projects-landing header. This is a
-       PURE BOX BLUR ROTATED 45deg: a box blur is a uniform (all-ones) averaging
-       kernel, and a square rotated 45deg is a diamond - so the kernel is a
-       filled diamond of ones (Manhattan radius 7), no gaussian anywhere. Each
-       sample smears into a diamond, so the content scrolling behind the glass
-       reads as a field of small frosted diamonds rather than a round blur.
+  <!-- Diamond-frost backdrop filter for the Projects-landing header. The header
+       glass runs the backdrop through a halftone-flavoured chain: a BOX BLUR
+       ROTATED 45deg (a box blur is a uniform all-ones kernel; a square rotated
+       45deg is a diamond, so the kernel is a filled diamond of ones), then a
+       POSTERIZE (discrete feComponentTransfer collapses each channel to a few
+       flat levels). The third stage - the halftone dot SCREEN - is a CSS
+       diamond-dot overlay on `.landing-header::before` (feImage/feTile, the
+       usual SVG way to build a halftone screen, renders nothing inside a
+       backdrop-filter in Chromium, so the screen lives in CSS instead). Together
+       they read as a field of diamond halftone dots over the frosted glass.
        Referenced by `.landing-header { backdrop-filter: url(#landingDiamondFrost) }`. -->
   <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
     <filter id="landingDiamondFrost" x="-15%" y="-15%" width="130%" height="130%"
             color-interpolation-filters="sRGB">
-      <feConvolveMatrix in="SourceGraphic" order="15" divisor="113"
-        edgeMode="duplicate" preserveAlpha="false"
-        kernelMatrix="0 0 0 0 0 0 0 1 0 0 0 0 0 0 0
-                      0 0 0 0 0 0 1 1 1 0 0 0 0 0 0
-                      0 0 0 0 0 1 1 1 1 1 0 0 0 0 0
-                      0 0 0 0 1 1 1 1 1 1 1 0 0 0 0
-                      0 0 0 1 1 1 1 1 1 1 1 1 0 0 0
-                      0 0 1 1 1 1 1 1 1 1 1 1 1 0 0
-                      0 1 1 1 1 1 1 1 1 1 1 1 1 1 0
-                      1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
-                      0 1 1 1 1 1 1 1 1 1 1 1 1 1 0
-                      0 0 1 1 1 1 1 1 1 1 1 1 1 0 0
-                      0 0 0 1 1 1 1 1 1 1 1 1 0 0 0
-                      0 0 0 0 1 1 1 1 1 1 1 0 0 0 0
-                      0 0 0 0 0 1 1 1 1 1 0 0 0 0 0
-                      0 0 0 0 0 0 1 1 1 0 0 0 0 0 0
-                      0 0 0 0 0 0 0 1 0 0 0 0 0 0 0"/>
+      <!-- box blur tilted 45deg: filled-diamond (all-ones) kernel, Manhattan radius 5 -->
+      <feConvolveMatrix in="SourceGraphic" order="11" divisor="61"
+        edgeMode="duplicate" preserveAlpha="false" result="blur"
+        kernelMatrix="0 0 0 0 0 1 0 0 0 0 0
+                      0 0 0 0 1 1 1 0 0 0 0
+                      0 0 0 1 1 1 1 1 0 0 0
+                      0 0 1 1 1 1 1 1 1 0 0
+                      0 1 1 1 1 1 1 1 1 1 0
+                      1 1 1 1 1 1 1 1 1 1 1
+                      0 1 1 1 1 1 1 1 1 1 0
+                      0 0 1 1 1 1 1 1 1 0 0
+                      0 0 0 1 1 1 1 1 0 0 0
+                      0 0 0 0 1 1 1 0 0 0 0
+                      0 0 0 0 0 1 0 0 0 0 0"/>
+      <!-- posterize: collapse each channel to a few flat levels -->
+      <feComponentTransfer in="blur">
+        <feFuncR type="discrete" tableValues="0.10 0.45 0.74 0.95"/>
+        <feFuncG type="discrete" tableValues="0.10 0.45 0.74 0.95"/>
+        <feFuncB type="discrete" tableValues="0.10 0.45 0.74 0.95"/>
+      </feComponentTransfer>
     </filter>
   </svg>
   <div id="root"></div>
