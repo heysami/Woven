@@ -83,6 +83,17 @@
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
+    // Clip the texture to the host's rounded-rect. CSS `border-radius:inherit`
+    // on a <canvas> does NOT reliably clip the drawn bitmap (it renders as a
+    // rectangle - the dot field showed square corners on pill buttons), so we
+    // clip the 2D context explicitly to the computed corner radius.
+    var rad = radiusOf(el, w, h);
+    ctx.save();
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(0, 0, w, h, rad);
+    else roundRectPath(ctx, 0, 0, w, h, rad);
+    ctx.clip();
+
     var start = toRGB(col.start, [238, 242, 253]);
     var end = toRGB(col.end, [26, 46, 120]);
     ctx.fillStyle = "rgb(" + start[0] + "," + start[1] + "," + start[2] + ")";
@@ -115,6 +126,26 @@
     }
     ctx.fillStyle = "rgb(" + ink + ")";
     ctx.fill();
+    ctx.restore();
+  }
+
+  // Resolve the host's rendered corner radius (px), clamped to a pill, so the
+  // canvas clip follows the same shape as the button/card/rail.
+  function radiusOf(el, w, h) {
+    var s = getComputedStyle(el).borderTopLeftRadius || "0";
+    var px = parseFloat(s) || 0;
+    if (/%\s*$/.test(s)) px = (parseFloat(s) / 100) * Math.min(w, h);
+    return Math.max(0, Math.min(px, Math.min(w, h) / 2));
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   function makeUnit(el, cfg, col) {
