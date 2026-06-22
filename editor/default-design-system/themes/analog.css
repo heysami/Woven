@@ -135,7 +135,11 @@
 [data-theme="analog"] .analog-tex{
   position:absolute; inset:0; z-index:-1; pointer-events:none; border-radius:inherit;
 }
-[data-theme="analog"] .sidebar,
+/* These surfaces are static by default, so they need a positioned + isolated
+   context to contain the z-index:-1 texture. The sidebar is intentionally NOT
+   here: it is already position:sticky + z-index:15 (its own stacking context),
+   and forcing position:relative would override sticky and unstick the rail on
+   tall pages. analog.js only adds isolation to it (harmless). */
 [data-theme="analog"] .card--filled,
 [data-theme="analog"] .stat-hero--brand,
 [data-theme="analog"] .btn--primary,
