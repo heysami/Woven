@@ -21,6 +21,33 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
+  <!-- Diamond-frost backdrop filter for the Projects-landing header. A soft
+       gaussian pre-blur makes it frosty, then a DIAMOND-shaped convolution
+       kernel (a box blur rotated 45deg = a rhombus of 1s, Manhattan radius 4)
+       smears each sample into a small diamond, so the content scrolling behind
+       the glass reads as a field of little diamonds rather than a round blur.
+       Referenced by `.landing-header { backdrop-filter: url(#landingDiamondFrost) }`. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none">
+    <filter id="landingDiamondFrost" x="-15%" y="-15%" width="130%" height="130%"
+            color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="soft"/>
+      <feConvolveMatrix in="soft" order="13" divisor="85"
+        edgeMode="duplicate" preserveAlpha="false"
+        kernelMatrix="0 0 0 0 0 0 1 0 0 0 0 0 0
+                      0 0 0 0 0 1 1 1 0 0 0 0 0
+                      0 0 0 0 1 1 1 1 1 0 0 0 0
+                      0 0 0 1 1 1 1 1 1 1 0 0 0
+                      0 0 1 1 1 1 1 1 1 1 1 0 0
+                      0 1 1 1 1 1 1 1 1 1 1 1 0
+                      1 1 1 1 1 1 1 1 1 1 1 1 1
+                      0 1 1 1 1 1 1 1 1 1 1 1 0
+                      0 0 1 1 1 1 1 1 1 1 1 0 0
+                      0 0 0 1 1 1 1 1 1 1 0 0 0
+                      0 0 0 0 1 1 1 1 1 0 0 0 0
+                      0 0 0 0 0 1 1 1 0 0 0 0 0
+                      0 0 0 0 0 0 1 0 0 0 0 0 0"/>
+    </filter>
+  </svg>
   <div id="root"></div>
   <!-- Boot veil. Painted from static HTML the instant the document loads -
        before app.js parses, data.js evaluates, or React mounts - so a full
@@ -115,8 +142,9 @@
        synchronously when rendering the skill dropdown / Library / Settings. -->
   <script src="prompts/media-models.js"></script>
   <!-- Projects-landing diamond shader (raw-WebGL runtime + the SHADER_BG that
-       draws the dark header band, the triangle-tooth boundary, and the light
-       diamond field as one grid). Loaded as a global so app.js can mount it
+       draws the light diamond field across the whole landing; the header is a
+       frosted-glass element over it, not a separate dark band). Loaded as a
+       global so app.js can mount it
        on the landing canvas without bundler ceremony. Safe everywhere: a
        guard inside the file makes it a no-op if loaded twice. -->
   <script src="landing-shaders.js"></script>

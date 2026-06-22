@@ -1,15 +1,12 @@
 // ============================================================================
-// Landing-screen shader runtime - lifted verbatim from the `landing-diamonds`
-// reference prototype (Documents/Woven IN USE/projects/projects/changing/source/
-// landing-diamonds/shaders.js). Drives a single full-page WebGL canvas behind
-// the Projects landing that draws, from ONE diamond grid:
-//   • the dark header band + its faint diamond fretwork,
-//   • the triangle-tooth boundary (the bottom row of dark diamonds), and
-//   • the light diamond field with cursor-driven 3D lighting.
-// Because the dark band, the teeth and the field share one grid, they can't
-// drift apart and there's no DOM seam to leak a hairline.
-// Uniforms: iResolution(px), iTime(s), iMouse(px,y-up), uScale(dpr),
-//           uBoundary(px-from-top, set per-frame from the landing header height)
+// Landing-screen shader runtime - adapted from the `landing-diamonds` reference
+// prototype. Drives a single full-page WebGL canvas behind the Projects landing
+// that draws ONE uniform LIGHT diamond field with cursor-driven 3D lighting.
+// The old dark header band + triangle-tooth boundary are gone: the header is now
+// a frosted-glass element layered over this same light field (see styles.css /
+// `#landingDiamondFrost`), so the surface reads identically top to bottom.
+// Uniforms: iResolution(px), iTime(s), iMouse(px,y-up), uScale(dpr)
+//           (uBoundary is still declared by mountShader but no longer used here)
 // Exposes:  window.mountShader(canvas, fragBody, opts)
 //           window.SHADER_BG
 // ============================================================================
@@ -308,24 +305,13 @@
   }`;
 
   // ==========================================================================
-  // Unified background shader - verbatim from landing-diamonds/shaders.js.
-  // See landing-diamonds/README.md §1-§2 for the maths.
+  // Unified background shader - the LIGHT diamond field across the whole
+  // landing (no dark band, no teeth boundary). See landing-diamonds/README.md
+  // §1-§2 for the diamond-grid + cursor-lighting maths.
   // ==========================================================================
   window.SHADER_BG = `
   const float PI = 3.14159265;
   const float CELLC = 48.0;     // diamond module in CSS px
-
-  // 1.0 if the diamond owning this fragment is above the boundary (dark side).
-  // The dark/light split runs along shared diamond EDGES, so the boundary is a
-  // grid-perfect zigzag = teeth. centreYT = the diamond centre's px-from-top.
-  float darkAt(vec2 fr){
-    float CELL = CELLC * uScale;
-    vec2 ft = vec2(fr.x, iResolution.y - fr.y);
-    vec2 uv = vec2((ft.x + ft.y), (ft.x - ft.y)) / CELL;
-    vec2 id = floor(uv);
-    float centreYT = 0.5 * (id.x - id.y) * CELL;
-    return step(centreYT, uBoundary);
-  }
 
   void mainImage(out vec4 o, in vec2 frag){
     float CELL = CELLC * uScale;
@@ -335,15 +321,6 @@
     vec2 id = floor(uv);
     vec2 f  = fract(uv) - 0.5;
     float edge = max(abs(f.x), abs(f.y));
-
-    // ---- teeth boundary mask (4-tap AA along the zigzag edges) -------------
-    float dm = 0.25 * (darkAt(frag + vec2(-0.3,-0.3)) + darkAt(frag + vec2(0.3,-0.3))
-                     + darkAt(frag + vec2(-0.3, 0.3)) + darkAt(frag + vec2(0.3, 0.3)));
-
-    // ---- DARK: header colour + faint diamond fretwork (same grid) ----------
-    vec3 headerCol = vec3(0.071, 0.090, 0.086);
-    float fret = smoothstep(0.44, 0.5, edge);
-    vec3 darkCol = headerCol + vec3(0.05, 0.06, 0.055) * fret;
 
     // ---- LIGHT: flat diamond field + cursor lighting -----------------------
     vec3 base = vec3(0.962, 0.957, 0.947);
@@ -374,44 +351,6 @@
     float sel = (sgn > 0.0) ? (fxEdge ? 1.0 : 0.0) : (fxEdge ? 0.0 : 1.0);
     fcol = mix(fcol, vec3(0.995, 0.99, 0.984), innerBand * sel * lit * 0.9);
 
-    o = vec4(mix(fcol, darkCol, dm), 1.0);
-  }`;
-
-  // ==========================================================================
-  // Dark-band overlay shader - same body as SHADER_BG but outputs alpha = dm
-  // so the canvas is opaque in the dark band + teeth zigzag (cards behind it
-  // are hidden) and transparent in the light field (cards remain visible).
-  // The teeth boundary follows the actual zigzag geometry per-pixel rather
-  // than being cut at a flat horizontal CSS line.
-  // Mounted at z-index above .landing-main, behind .landing-header content.
-  // ==========================================================================
-  window.SHADER_DARKBAND = `
-  const float PI = 3.14159265;
-  const float CELLC = 48.0;
-
-  float darkAt(vec2 fr){
-    float CELL = CELLC * uScale;
-    vec2 ft = vec2(fr.x, iResolution.y - fr.y);
-    vec2 uv = vec2((ft.x + ft.y), (ft.x - ft.y)) / CELL;
-    vec2 id = floor(uv);
-    float centreYT = 0.5 * (id.x - id.y) * CELL;
-    return step(centreYT, uBoundary);
-  }
-
-  void mainImage(out vec4 o, in vec2 frag){
-    float CELL = CELLC * uScale;
-    vec2 fragT  = vec2(frag.x, iResolution.y - frag.y);
-    vec2 uv = vec2(fragT.x + fragT.y, fragT.x - fragT.y) / CELL;
-    vec2 f  = fract(uv) - 0.5;
-    float edge = max(abs(f.x), abs(f.y));
-
-    float dm = 0.25 * (darkAt(frag + vec2(-0.3,-0.3)) + darkAt(frag + vec2(0.3,-0.3))
-                     + darkAt(frag + vec2(-0.3, 0.3)) + darkAt(frag + vec2(0.3, 0.3)));
-
-    vec3 headerCol = vec3(0.071, 0.090, 0.086);
-    float fret = smoothstep(0.44, 0.5, edge);
-    vec3 darkCol = headerCol + vec3(0.05, 0.06, 0.055) * fret;
-
-    o = vec4(darkCol, dm);
+    o = vec4(fcol, 1.0);
   }`;
 })();
