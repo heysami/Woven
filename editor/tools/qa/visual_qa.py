@@ -222,6 +222,53 @@ def launch_browser(pw: Any) -> Tuple[Any, str]:
 
 
 # ---------------------------------------------------------------------------
+# Synthetic camera (mock getUserMedia with a detectable fixture)
+# ---------------------------------------------------------------------------
+# A camera/vision piece is BLACK under headless QA (no webcam), so detection
+# never fires and the verdict is a false "static". We inject a getUserMedia
+# override that returns a canvas stream rendering stock fixtures (a hand + a
+# face that MediaPipe reliably detects), so the piece gets a real, moving,
+# DETECTABLE feed. This is what lets an agent verify camera pieces.
+
+_FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+def _fixture_data_uri(name: str) -> Optional[str]:
+    try:
+        with open(os.path.join(_FIXTURE_DIR, name), "rb") as f:
+            return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode("ascii")
+    except OSError:
+        return None
+
+
+def camera_mock_script(choice: str = "both") -> Optional[str]:
+    """JS injected BEFORE page scripts: override navigator.mediaDevices
+    .getUserMedia to return a canvas MediaStream that renders the stock hand /
+    face fixtures (moving slightly so motion-based checks see change). `choice`
+    is hand | face | both | off."""
+    if choice == "off":
+        return None
+    hand = _fixture_data_uri("hand_pointing.jpg") if choice in ("hand", "both") else None
+    face = _fixture_data_uri("face_portrait.jpg") if choice in ("face", "both") else None
+    if not hand and not face:
+        return None
+    return (
+        "(function(){try{"
+        "var HAND=%s,FACE=%s;"
+        "var cv=document.createElement('canvas');cv.width=640;cv.height=480;var cx=cv.getContext('2d');"
+        "var hi=null,fi=null;if(HAND){hi=new Image();hi.src=HAND;}if(FACE){fi=new Image();fi.src=FACE;}"
+        "var t=0;function paint(){t++;cx.fillStyle='#16202c';cx.fillRect(0,0,640,480);"
+        "if(fi&&fi.complete&&fi.naturalWidth){var s=Math.min(300/fi.width,440/fi.height);var w=fi.width*s,h=fi.height*s;cx.drawImage(fi,20+12*Math.sin(t/40),(480-h)/2,w,h);}"
+        "if(hi&&hi.complete&&hi.naturalWidth){var s2=Math.min(320/hi.width,460/hi.height);var w2=hi.width*s2,h2=hi.height*s2;cx.drawImage(hi,330+34*Math.sin(t/32),(480-h2)/2,w2,h2);}"
+        "requestAnimationFrame(paint);}paint();"
+        "var stream=cv.captureStream(30);var md=navigator.mediaDevices;"
+        "if(md){var orig=md.getUserMedia?md.getUserMedia.bind(md):null;"
+        "md.getUserMedia=function(c){if(c&&c.video){window.__qaCam=(window.__qaCam||0)+1;return Promise.resolve(stream);}return orig?orig(c):Promise.reject(new Error('no media'));};}"
+        "}catch(e){}})();"
+    ) % (json.dumps(hand or ""), json.dumps(face or ""))
+
+
+# ---------------------------------------------------------------------------
 # Stage discovery + interaction battery
 # ---------------------------------------------------------------------------
 
@@ -738,6 +785,20 @@ def run(args: argparse.Namespace) -> int:
         log("browser: %s" % browser_label)
 
         context = browser.new_context(viewport={"width": vw, "height": vh})
+        # Camera/mic pieces are black under headless QA. Grant the permissions and
+        # inject a getUserMedia mock that returns a DETECTABLE stock-fixture feed
+        # so vision detection actually fires (the agent can verify camera pieces).
+        try:
+            context.grant_permissions(["camera", "microphone"])
+        except Exception:
+            pass
+        _cam = camera_mock_script(getattr(args, "camera", "both") or "both")
+        if _cam:
+            try:
+                context.add_init_script(_cam)
+                report["cameraMock"] = getattr(args, "camera", "both") or "both"
+            except Exception:
+                pass
         page = context.new_page()
 
         def on_console(msg: Any) -> None:
@@ -762,6 +823,25 @@ def run(args: argparse.Namespace) -> int:
             log("WARN: navigation did not fully settle (%s); continuing" % exc)
         # Short settle for first paint + any boot logic.
         page.wait_for_timeout(settle_ms)
+
+        # Vision warmup: if the piece actually requested the (mocked) camera,
+        # MediaPipe / tesseract load from CDN over several seconds and detection
+        # only drives a visible effect once running - wait so the timeline below
+        # captures the DETECTING state, not a black pre-load frame.
+        if _cam and args.mode != "render":
+            cam_used = 0
+            for _ in range(20):  # poll up to ~2s for getUserMedia to be called
+                try:
+                    cam_used = int(page.evaluate("window.__qaCam||0"))
+                except Exception:
+                    cam_used = 0
+                if cam_used:
+                    break
+                page.wait_for_timeout(100)
+            if cam_used:
+                log("camera piece (getUserMedia called); warming up vision ~7s")
+                report["cameraUsed"] = True
+                page.wait_for_timeout(7000)
 
         # ----- IDLE TIMELINE -----
         idle_frames: List[Dict[str, Any]] = []
@@ -996,6 +1076,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Settle delay after load before t=0 (default 300).")
     p.add_argument("--no-interact", action="store_true",
                    help="Skip the interaction battery (idle timeline only).")
+    p.add_argument("--camera", default="both", choices=["both", "hand", "face", "off"],
+                   help="Synthetic camera fixture fed to getUserMedia for vision "
+                        "pieces (default both = hand+face; off = real/none).")
     p.add_argument("--mode", default="interactive",
                    choices=["interactive", "render"],
                    help="interactive (default): verify the piece ANIMATES / "

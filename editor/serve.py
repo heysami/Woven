@@ -13788,6 +13788,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             cmd += ["--judge", judge]
         if nointeract and nointeract not in ("0", "false", "no"):
             cmd += ["--no-interact"]
+        # Synthetic camera fixture for vision pieces (default both = hand+face).
+        camera = (_qs_get(qs, "camera") or "").strip().lower()
+        if camera in ("both", "hand", "face", "off"):
+            cmd += ["--camera", camera]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=120,
