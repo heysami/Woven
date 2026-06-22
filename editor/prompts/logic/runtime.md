@@ -26,7 +26,7 @@ A composer LAYER is: content (an asset / camera / video / a wired position+effec
 
 ### Effect types (the `effect` node, control `type`; every effect also has `intensity` 0..1)
 
-18 types. Bind `effect.param:intensity` (universal) or a per-type numeric param. An effect wired into a generic `layer` node's `in` applies to THAT layer only; wired into the composer top-level (`comp.in`) it applies to the WHOLE frame. CAVEAT: a wired CAMERA / SHAPE / Kinetic-Type layer IGNORES effects you wire toward it (it always synthesizes with an empty effect stack, and `input-camera` has no `in` port to begin with) - add its effect in the composer inspector's Effects accordion instead. To confine an effect to a REGION (e.g. only inside a polygon) you need a layer MASK - see "Masking + region-confined effects" below.
+18 types. SPEC SHAPE: author an effect as `{ type, intensity (0..1), params:{ ...per-type numeric params... } }` - keep `type` and `intensity` at the TOP level, NOT nested inside `params` (a nested `type` is read as undefined and the effect is silently dropped). Bind `effect.param:intensity` (universal) or a per-type numeric param. An effect wired into a generic `layer` node's `in` - OR into a `shape` node's `content` port - applies to THAT layer only; wired into the composer top-level (`comp.in`) it applies to the WHOLE frame. To confine an effect to a polygon REGION, wire it into a `shape.content` alongside the content to clip - see "Region-confined effects" below.
 
 - `chromatic-aberration` - RGB split. params: amount (0.01, 0..0.1), angle (0, -180..180 deg). Glitchy fringe.
 - `directional-blur` - motion blur along an angle. params: length (0.02, 0..0.2), angle (0, -180..180 deg).

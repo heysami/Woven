@@ -740,15 +740,21 @@ function buildWiredRuntimeLayers(){
       const effK = kids.filter(k=>k&&k.type==='effect');
       const stack = effK.map(e=>{
         const fx = wiredChildSpec(e);
-        const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fx.type==='custom' || fx.type==='shader';
-        let intensity = fx.intensity??1, params = fx.params||{};
+        // Tolerate type / intensity authored at the spec TOP LEVEL or nested in
+        // params (a common hand-authored shape) - top level wins, params is the
+        // fallback. Without this a `{params:{type:"slice"}}` spec yields an
+        // undefined type and the renderer's stack.filter(e=>e.type) drops it.
+        const fp = fx.params||{};
+        const fxType = fx.type || fp.type;
+        const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fxType==='custom' || fxType==='shader';
+        let intensity = fx.intensity!=null?fx.intensity:(fp.intensity!=null?fp.intensity:1), params = fp;
         const b = fx._bindings;
         if(b){ params = Object.assign({}, params);
           for(const k in b){ const src=b[k]; if(!src||src.kind==='logic'||Sources.isVector(src)) continue;
             const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
             if(k==='intensity') intensity=val; else params[k]=val; }
         }
-        return {type:isCustom?'custom':fx.type, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
+        return {type:isCustom?'custom':fxType, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
       });
       const Ls = fillLayer({
         id: wl.id || ('W'+wi),
@@ -857,20 +863,25 @@ function buildWiredRuntimeLayers(){
     // param contract the GLFx (and the WIRED top-level chain) already render.
     const stack = effK.map(e=>{
       const fx = wiredChildSpec(e);
-      const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fx.type==='custom' || fx.type==='shader';
+      // Tolerate type / intensity at the spec top level OR nested in params
+      // (top level wins) - a `{params:{type:...}}` spec would otherwise yield an
+      // undefined type that the renderer's stack.filter(e=>e.type) silently drops.
+      const fp = fx.params||{};
+      const fxType = fx.type || fp.type;
+      const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fxType==='custom' || fxType==='shader';
       // Scalar number bindings → effect intensity / params. The STATIC value is
       // baked here; TIME-VARYING sources (Timeline / algorithmic-with-`t`) are
       // re-resolved every frame in render() via the `_fxSpec` kept below - the
       // wired-layer build is cached by `_wiredVer`, so without that a wired
       // Timeline on an effect param would freeze at this build-time clock value.
-      let intensity = fx.intensity??1, params = fx.params||{};
+      let intensity = fx.intensity!=null?fx.intensity:(fp.intensity!=null?fp.intensity:1), params = fp;
       const b = fx._bindings;
       if(b){ params = Object.assign({}, params);
         for(const k in b){ const src=b[k]; if(!src||src.kind==='logic'||Sources.isVector(src)) continue;
           const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
           if(k==='intensity') intensity=val; else params[k]=val; }
       }
-      return {type:isCustom?'custom':fx.type, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
+      return {type:isCustom?'custom':fxType, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
     });
     const L = fillLayer({
       id: wl.id || ('W'+wi),
@@ -4359,7 +4370,7 @@ function bake(){
   const assets=CONTENT.map(c=>({id:c.id,url:c.url,kind:c.kind,label:c.label}));
   // WIRED top-level effects → final post-process stack (same shader-lab catalog,
   // same param contract - no collapsing).
-  const topFx=(WIRED.effects||[]).map(e=>bakeEffect({type:(e.glsl&&String(e.glsl).trim())?'custom':e.type, params:e.params||{}, intensity:e.intensity??1, glsl:e.glsl}));
+  const topFx=(WIRED.effects||[]).map(e=>{ const fp=e.params||{}; const ty=e.type||fp.type; const inten=e.intensity!=null?e.intensity:(fp.intensity!=null?fp.intensity:1); return bakeEffect({type:(e.glsl&&String(e.glsl).trim())?'custom':ty, params:fp, intensity:inten, glsl:e.glsl}); });
   // W2C: bake the logic-graph projection so the published piece reacts to real
   // input (the slim player loads logicgraph.js + W2D capture, contract §5.5).
   const logic=(WIRED.logic && typeof WIRED.logic==='object')?WIRED.logic:null;
