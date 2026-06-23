@@ -82,13 +82,15 @@
 
 export const FX_TYPES = [
   // distortion
-  'chromatic-aberration', 'directional-blur', 'displacement', 'slice',
+  'chromatic-aberration', 'directional-blur', 'displacement', 'displace-by', 'slice',
   // pixel
   'pixelate', 'dither', 'posterize', 'pixel-sort',
   // artistic
   'ascii', 'crt', 'halftone', 'ink', 'edge-detect',
   // generative
   'particle-grid', 'pattern',
+  // multi-input (read a SECOND layer: displace/composite/key/grade)
+  'blend', 'matte', 'lookup',
   // escape hatch
   'custom',
 ];
@@ -98,6 +100,7 @@ export const FX_LABELS = {
   'chromatic-aberration': 'Chromatic aberration',
   'directional-blur': 'Directional blur',
   'displacement': 'Displacement',
+  'displace-by': 'Displace by layer',
   'slice': 'Slice',
   'pixelate': 'Pixelate',
   'dither': 'Dither',
@@ -110,6 +113,9 @@ export const FX_LABELS = {
   'edge-detect': 'Edge detect',
   'particle-grid': 'Particle grid',
   'pattern': 'Pattern',
+  'blend': 'Blend layers',
+  'matte': 'Matte (key by layer)',
+  'lookup': 'Color lookup (LUT)',
   'custom': 'Custom shader',
 };
 
@@ -202,6 +208,71 @@ vec4 fxMain() {
   float nx = fxNoise(p) - 0.5;
   float ny = fxNoise(p + vec2(31.7, 19.3)) - 0.5;
   return texture(uTex, vUv + vec2(nx, ny) * uScale);
+}`,
+  },
+
+  // Multi-input: warp uTex by a SECOND layer's pixels (the displacement map).
+  // `inputs` declares the extra sampler(s) this effect needs; the host binds the
+  // wired layer's buffer to `uMap` at a texture unit > 0 (see GLFx.blit). The
+  // map's R,G channels are read as a signed offset (0.5 = no shift).
+  'displace-by': {
+    inputs: [{ name: 'uMap', label: 'Displacement map' }],
+    uniforms: { uAmount: { k: '1f', from: 'amount', def: 0.05 } },
+    decls: 'uniform sampler2D uMap; uniform float uAmount;',
+    body: `
+vec4 fxMain() {
+  vec2 off = (texture(uMap, vUv).rg - 0.5) * uAmount;
+  return texture(uTex, vUv + off);
+}`,
+  },
+
+  // Composite this layer (uTex) with a SECOND layer (uSrcB) in a chosen mode.
+  'blend': {
+    inputs: [{ name: 'uSrcB', label: 'Blend layer' }],
+    uniforms: { uMode: { k: '1i', from: 'mode', def: 0 } },
+    decls: 'uniform sampler2D uSrcB; uniform int uMode;',
+    body: `
+vec4 fxMain() {
+  vec4 a = texture(uTex, vUv);
+  vec4 b = texture(uSrcB, vUv);
+  vec3 r;
+  if      (uMode == 1) r = a.rgb + b.rgb;                       // add
+  else if (uMode == 2) r = a.rgb * b.rgb;                       // multiply
+  else if (uMode == 3) r = 1.0 - (1.0 - a.rgb) * (1.0 - b.rgb); // screen
+  else if (uMode == 4) r = abs(a.rgb - b.rgb);                  // difference
+  else                 r = mix(a.rgb, b.rgb, b.a);              // over
+  return vec4(r, max(a.a, b.a));
+}`,
+  },
+
+  // Matte / key: drive this layer's alpha by a channel of a SECOND layer.
+  'matte': {
+    inputs: [{ name: 'uMatte', label: 'Matte layer' }],
+    uniforms: { uChannel: { k: '1i', from: 'channel', def: 0 }, uInvert: { k: '1f', from: 'invert', def: 0.0, bool: true } },
+    decls: 'uniform sampler2D uMatte; uniform int uChannel; uniform float uInvert;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  vec4 m = texture(uMatte, vUv);
+  float mv = uChannel == 1 ? m.r : uChannel == 2 ? m.g : uChannel == 3 ? m.b : uChannel == 4 ? m.a : fxLuma(m.rgb);
+  if (uInvert > 0.5) mv = 1.0 - mv;
+  c.a *= clamp(mv, 0.0, 1.0);
+  return c;
+}`,
+  },
+
+  // Color lookup: grade this layer through a SECOND layer used as a gradient/LUT,
+  // indexing the LUT horizontally by this pixel's luminance.
+  'lookup': {
+    inputs: [{ name: 'uLut', label: 'LUT / gradient layer' }],
+    uniforms: {},
+    decls: 'uniform sampler2D uLut;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  float l = clamp(fxLuma(c.rgb), 0.0, 1.0);
+  vec3 mapped = texture(uLut, vec2(l, 0.5)).rgb;
+  return vec4(mapped, c.a);
 }`,
   },
 
@@ -756,6 +827,10 @@ export function fxProgramSpecs() {
       label: FX_LABELS[type] || type,
       frag: buildBuiltinFrag(def),
       uniforms: Object.keys(def.uniforms || {}).map((name) => ({ name, ...def.uniforms[name] })),
+      // Extra texture inputs this effect samples (e.g. a displacement map). The
+      // host binds each wired layer buffer to the named sampler; empty for the
+      // single-input effects. Plain JSON so it survives the bake into the twin.
+      inputs: def.inputs || [],
     };
   }
   return out;
