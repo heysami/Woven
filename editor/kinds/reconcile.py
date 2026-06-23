@@ -758,13 +758,24 @@ _PROTOTYPE_FOLDER_SKIP_NAMES = {
 # that a build is underway - enough to mount an eager "building" node so the
 # canvas reflects what's happening instead of staying empty until the last
 # write. Cheap, shallow-ish scan (root + one nested level).
+# App-node editor tools bake their OWN deliverable into source/<slug>/ as
+# `<prefix>-<nodeId>.html` - mm-composer (`mm-*.html`), material-lab
+# (`material-*.html`), gaussian-splat-3d (`gsplat-*.html`). Those are app-node
+# outputs, NOT prototype pages. A folder holding only app-node bakes is an
+# app-node build, and must NOT mount an eager "building" Prototype node - it
+# would hang forever, since no index.html ever lands (the orphan-prototype-folder
+# bug a user hit: an mm-composer build spawned a permanently-"Building…" node).
+# If a new .html-baking app-node tool is added, list its prefix here.
+_APP_NODE_HTML_PREFIXES = ("mm-", "material-", "gsplat-")
+
+
 def _folder_has_prototype_artifacts(folder_path):
     try:
         for entry in os.scandir(folder_path):
             nm = entry.name
             if entry.is_file(follow_symlinks=False):
                 low = nm.lower()
-                if low.endswith((".html", ".htm")):
+                if low.endswith((".html", ".htm")) and not low.startswith(_APP_NODE_HTML_PREFIXES):
                     return True
                 if low in ("styles.css", "data.js"):
                     return True
@@ -772,8 +783,10 @@ def _folder_has_prototype_artifacts(folder_path):
                 # one level deep - multi-HTML builds drop pages/ first
                 try:
                     for sub in os.scandir(entry.path):
+                        sl = sub.name.lower()
                         if (sub.is_file(follow_symlinks=False)
-                                and sub.name.lower().endswith((".html", ".htm"))):
+                                and sl.endswith((".html", ".htm"))
+                                and not sl.startswith(_APP_NODE_HTML_PREFIXES)):
                             return True
                 except OSError:
                     pass
