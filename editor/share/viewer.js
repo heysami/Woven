@@ -129,19 +129,7 @@
         x: win.scrollX || 0, y: win.scrollY || 0,
         width: vw, height: vh, windowWidth: vw, windowHeight: vh,
       });
-      // Box the commented element (rect is viewport-relative = canvas-relative).
-      try {
-        const el = resolveEl(doc, anchor);
-        const ctx = canvas.getContext("2d");
-        if (el && ctx) {
-          const r = el.getBoundingClientRect();
-          if (r.width && r.height) {
-            ctx.lineWidth = 2 * scale;
-            ctx.strokeStyle = "#16a06b";
-            ctx.strokeRect(r.left * scale, r.top * scale, r.width * scale, r.height * scale);
-          }
-        }
-      } catch {}
+      // Clean capture of the visible viewport - no annotation baked in.
       return canvas.toDataURL("image/jpeg", 0.82);
     } catch { return null; }
   };
