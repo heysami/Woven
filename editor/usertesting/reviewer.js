@@ -742,6 +742,7 @@
               ${meta.prototype && html`<span className="rv-proto" title=${meta.prototype}>${meta.prototype}</span>`}
             </div>
             <div className="rv-side-body">
+              <${TranscriptPanel} transcript=${meta.transcript} onSeek=${seekToMs} fmt=${fmt} playMs=${playMs}/>
               <${AnswerList} questions=${cfg.questions} answers=${meta.answers} rating=${cfg.rating}/>
             </div>
           </div>
@@ -749,6 +750,31 @@
         ${toast && html`<div className="rv-toast">${toast}</div>`}
       </div>
     `;
+  }
+
+  // ── Transcript panel - the voice STT (whisper) segments, click to seek ──
+  function TranscriptPanel({ transcript, onSeek, fmt, playMs }) {
+    const segs = (transcript && Array.isArray(transcript.segments))
+      ? transcript.segments.filter((s) => (s.text || "").trim()) : [];
+    const engine = (transcript && transcript.engine) || "";
+    const full = (transcript && (transcript.full || "")).trim();
+    return html`
+      <div className="rv-transcript">
+        <div className="rv-side-subhead">Voice transcript
+          ${engine && engine !== "none" ? html`<span className="rv-transcript-engine">${engine}</span>` : null}</div>
+        ${!transcript && html`<div className="rv-no-answer">Not transcribed yet.</div>`}
+        ${transcript && engine === "none" && html`<div className="rv-no-answer">${transcript.note || "No transcription engine available."}</div>`}
+        ${transcript && engine !== "none" && segs.length === 0 && html`<div className="rv-no-answer">${full || "No speech detected in the recording."}</div>`}
+        ${segs.map((s, i) => {
+          const active = playMs != null && s.t0 != null && s.t1 != null && playMs >= s.t0 && playMs < s.t1;
+          return html`<button key=${i} type="button"
+            className=${"rv-transcript-seg" + (active ? " is-active" : "")}
+            onClick=${() => { if (onSeek && s.t0 != null) onSeek(s.t0); }}>
+            <span className="rv-transcript-t">${s.t0 != null ? fmt(s.t0) : ""}</span>
+            <span className="rv-transcript-text">${s.text}</span>
+          </button>`;
+        })}
+      </div>`;
   }
 
   // ── Answers + rating panel ────────────────────────────────────────────

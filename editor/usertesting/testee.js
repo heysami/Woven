@@ -238,6 +238,66 @@
 
     const script = meta ? buildScript(meta.config || {}) : [];
 
+    // ── Device selection (mic + camera) + live mic level meter ────────────────
+    const [audioDevices, setAudioDevices] = useState([]);
+    const [videoDevices, setVideoDevices] = useState([]);
+    const [micId, setMicId] = useState("");
+    const [camId, setCamId] = useState("");
+    const [micLevel, setMicLevel] = useState(0);      // 0..1 for the meter
+    const audioCtxRef = useRef(null);
+    const analyserRef = useRef(null);
+    const meterRafRef = useRef(0);
+
+    const stopMeter = useCallback(() => {
+      try { cancelAnimationFrame(meterRafRef.current); } catch {}
+      try { if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null; } } catch {}
+      analyserRef.current = null;
+    }, []);
+    const startMeter = useCallback((stream) => {
+      stopMeter();
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new Ctx();
+        audioCtxRef.current = ctx;
+        const an = ctx.createAnalyser();
+        an.fftSize = 512;
+        ctx.createMediaStreamSource(stream).connect(an);
+        analyserRef.current = an;
+        const buf = new Uint8Array(an.fftSize);
+        const tick = () => {
+          const a = analyserRef.current;
+          if (!a) return;
+          a.getByteTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+          setMicLevel(Math.min(1, Math.sqrt(sum / buf.length) * 3.5));  // scale so quiet speech shows
+          meterRafRef.current = requestAnimationFrame(tick);
+        };
+        meterRafRef.current = requestAnimationFrame(tick);
+      } catch {}
+    }, [stopMeter]);
+    const enumerate = useCallback(async () => {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        setAudioDevices(devs.filter((d) => d.kind === "audioinput"));
+        setVideoDevices(devs.filter((d) => d.kind === "videoinput"));
+      } catch {}
+    }, []);
+    const pickMic = useCallback(async (id) => {
+      setMicId(id);
+      setPermErr(null);
+      try {
+        (micStreamRef.current || {}).getTracks?.().forEach((t) => t.stop());
+        const mic = await navigator.mediaDevices.getUserMedia({
+          audio: id ? { deviceId: { exact: id } } : true });
+        micStreamRef.current = mic;
+        startMeter(mic);
+      } catch (e) {
+        setPermErr("Could not open that microphone. Pick another one.");
+      }
+    }, [startMeter]);
+    useEffect(() => () => stopMeter(), [stopMeter]);
+
     // ── Permissions gate (BLOCKING) ───────────────────────────────────────────
     const requestPermissions = useCallback(async () => {
       setPermErr(null);
@@ -264,8 +324,18 @@
           + "always records. Allow the camera in your browser, then try again.");
         return;
       }
-      setPhase("calibrate");
-    }, []);
+      // Permission granted unlocks device labels - let the testee pick the right
+      // microphone (e.g. their headset) and camera, with a live mic meter.
+      await enumerate();
+      try {
+        const at = mic.getAudioTracks && mic.getAudioTracks()[0];
+        if (at && at.getSettings) setMicId(at.getSettings().deviceId || "");
+        const vt = cam.getVideoTracks && cam.getVideoTracks()[0];
+        if (vt && vt.getSettings) setCamId(vt.getSettings().deviceId || "");
+      } catch {}
+      startMeter(mic);
+      setPhase("devices");
+    }, [enumerate, startMeter]);
 
     // ── Calibration - webgazer + a 9-point click grid ─────────────────────────
     // We start webgazer (it claims the webcam stream itself), hide its video +
@@ -284,21 +354,28 @@
       if (webgazerReadyRef.current) return;
       try {
         webgazer.setRegression("ridge");
-        webgazer.showVideoPreview(false);
+        // Point gaze at the camera the testee chose (falls back to default if the
+        // webgazer build does not support the constraint).
+        try { if (camId && webgazer.setCameraConstraints) webgazer.setCameraConstraints({ deviceId: { exact: camId } }); } catch {}
+        try { if (camId && webgazer.params) webgazer.params.camConstraints = { deviceId: { exact: camId } }; } catch {}
+        // Free the permission-check camera stream so webgazer can claim the device.
+        try { (camStreamRef.current || {}).getTracks?.().forEach((t) => t.stop()); camStreamRef.current = null; } catch {}
+        // Keep the video preview ON (rendering): webgazer extracts eye features
+        // from the live <video>, and a display:none video yields ZERO gaze. The
+        // container is moved OFF-SCREEN by testee.css so it stays invisible while
+        // still decoding frames. Only the cosmetic overlays are turned off.
+        webgazer.showVideoPreview(true);
         webgazer.showPredictionPoints(false);
         webgazer.showFaceOverlay(false);
         webgazer.showFaceFeedbackBox(false);
         await webgazer.begin();
-        // Belt and braces: hide any DOM webgazer injects.
-        try { webgazer.showVideoPreview(false); } catch {}
-        const vid = document.getElementById("webgazerVideoContainer");
-        if (vid) vid.style.display = "none";
+        try { webgazer.showVideoPreview(true); } catch {}
         webgazerReadyRef.current = true;
       } catch (e) {
         setPermErr("Could not start gaze tracking. Make sure the camera is not in "
           + "use by another app, then reload.");
       }
-    }, []);
+    }, [camId]);
 
     useEffect(() => {
       if (phase === "calibrate") startWebgazer();
@@ -619,7 +696,7 @@
         </div>`;
       return html`<div className="ut-shell ut-norecord">
         <div className="ut-card">
-          <div className="ut-eyebrow">Step 1 of 2 · Permissions</div>
+          <div className="ut-eyebrow">Step 1 of 3 · Permissions</div>
           <h1>Allow microphone and camera</h1>
           <p>This study records your voice and your gaze. Your browser will ask for permission
              for each. Both are required to continue.</p>
@@ -639,12 +716,46 @@
       </div>`;
     }
 
+    // DEVICE SELECTION (mic + camera) - lets a headset user pick the right mic.
+    if (phase === "devices") {
+      const lvlPct = Math.round(micLevel * 100);
+      return html`<div className="ut-shell ut-norecord">
+        <div className="ut-card">
+          <div className="ut-eyebrow">Step 2 of 3 · Microphone & camera</div>
+          <h1>Choose your devices</h1>
+          <p>Pick the microphone you will speak into (your headset, if you wear one) and the webcam
+             for gaze tracking. Speak now - the bar below should move. If it does not, choose a
+             different microphone.</p>
+          <div className="ut-dev-field">
+            <label className="ut-dev-label"><${Icon.Mic}/> Microphone</label>
+            <select className="ut-dev-select" value=${micId} onChange=${(e) => pickMic(e.target.value)}>
+              ${audioDevices.map((d, i) => html`<option key=${d.deviceId} value=${d.deviceId}>${d.label || ("Microphone " + (i + 1))}</option>`)}
+            </select>
+            <div className=${"ut-meter" + (micLevel > 0.06 ? " is-live" : "")}>
+              <div className="ut-meter-fill" style=${{ width: lvlPct + "%" }}></div>
+            </div>
+            <div className="ut-meter-hint">${micLevel > 0.06 ? "Good - your mic is picking up sound." : "Speak to test your microphone."}</div>
+          </div>
+          <div className="ut-dev-field">
+            <label className="ut-dev-label"><${Icon.Eye}/> Camera (for gaze)</label>
+            <select className="ut-dev-select" value=${camId} onChange=${(e) => setCamId(e.target.value)}>
+              ${videoDevices.map((d, i) => html`<option key=${d.deviceId} value=${d.deviceId}>${d.label || ("Camera " + (i + 1))}</option>`)}
+            </select>
+          </div>
+          ${permErr && html`<div className="ut-error">${permErr}</div>`}
+          <div className="ut-actions">
+            <button className="ut-btn ut-btn-primary" onClick=${() => { stopMeter(); setPhase("calibrate"); }}>Continue to calibration</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
     // CALIBRATE
     if (phase === "calibrate") {
       return html`<div className="ut-shell ut-norecord">
         <div className="ut-calib-overlay">
           <div className="ut-calib-head">
-            <div className="ut-eyebrow">Step 2 of 2 · Camera setup</div>
+            <div className="ut-eyebrow">Step 3 of 3 · Calibrate gaze</div>
             <h2>Calibrate gaze tracking</h2>
             <p>Look at each dot and click it ${CLICKS_PER_POINT} times. Keep your head steady and
                your face well lit. ${calibCount} of ${calibPoints.length * CLICKS_PER_POINT} clicks.</p>

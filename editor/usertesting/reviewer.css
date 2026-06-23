@@ -182,6 +182,27 @@ button { font: inherit; cursor: pointer; }
 }
 .rv-marker-hint { font-size: 11px; color: var(--rv-faint); }
 .rv-marker-task .rv-marker-val { color: var(--rv-ink); font-size: 12px; }
+
+/* ---- voice transcript panel ---- */
+.rv-side-subhead {
+  font-family: var(--rv-mono); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--rv-faint); margin: 4px 0 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.rv-transcript { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--rv-line); }
+.rv-transcript-engine {
+  font-size: 9px; letter-spacing: 0.03em; color: var(--rv-accent-text);
+  background: var(--rv-accent-soft); border-radius: 999px; padding: 1px 6px; text-transform: none;
+}
+.rv-transcript-seg {
+  display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  border: none; background: none; cursor: pointer; padding: 5px 6px; border-radius: 6px;
+  color: var(--rv-ink); font-size: 12.5px; line-height: 1.45;
+}
+.rv-transcript-seg:hover { background: var(--rv-bg); }
+.rv-transcript-seg.is-active { background: var(--rv-accent-soft); }
+.rv-transcript-t { flex: none; font-family: var(--rv-mono); font-size: 10.5px; color: var(--rv-faint); min-width: 38px; }
+.rv-transcript-text { flex: 1 1 auto; }
 .rv-duration {
   font-family: var(--rv-mono); font-size: 11.5px; font-weight: 700;
   color: var(--rv-accent-text); background: var(--rv-accent-soft);

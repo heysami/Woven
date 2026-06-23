@@ -189,6 +189,7 @@ class _UTGate:
                 "meta":         _ut.sidecar_read(session, pid, "meta", {}) or {},
                 "answers":      _ut.sidecar_read(session, pid, "answers", None),
                 "markers":      _ut.sidecar_read(session, pid, "markers", None),
+                "transcript":   _ut.sidecar_read(session, pid, "transcript", None),
             })
             return True
         if sub == "/api/stream":

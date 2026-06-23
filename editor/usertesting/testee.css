@@ -208,10 +208,38 @@ p { margin: 0 0 12px; }
   padding: 9px 16px; font-size: 13px; box-shadow: var(--ut-shadow);
 }
 
-/* webgazer injects a fixed video container - keep it hidden as a safety net
-   even if the JS toggles fail (gaze video must never show during the test). */
-#webgazerVideoContainer, #webgazerVideoFeed, #webgazerFaceOverlay,
-#webgazerFaceFeedbackBox, #webgazerGazeDot {
-  display: none !important; visibility: hidden !important;
-  opacity: 0 !important; pointer-events: none !important;
+/* webgazer needs its <video> to keep RENDERING frames or it produces ZERO gaze
+   predictions - so move the whole container OFF-SCREEN (still decoding); never
+   display:none / visibility:hidden it. The cosmetic overlays can be fully hidden. */
+#webgazerVideoContainer {
+  position: fixed !important; left: -10000px !important; top: 0 !important;
+  opacity: 0 !important; pointer-events: none !important; z-index: -1 !important;
 }
+#webgazerFaceOverlay, #webgazerFaceFeedbackBox, #webgazerGazeDot {
+  display: none !important;
+}
+
+/* ---- device selection step (mic + camera) ---- */
+.ut-dev-field { display: flex; flex-direction: column; gap: 7px; margin: 16px 0; }
+.ut-dev-label {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--ut-mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--ut-faint);
+}
+.ut-dev-label svg { width: 14px; height: 14px; }
+.ut-dev-select {
+  width: 100%; padding: 10px 12px; font: 14px var(--ut-font); color: var(--ut-ink);
+  background: var(--ut-panel); border: 1px solid var(--ut-line-strong);
+  border-radius: 8px; cursor: pointer;
+}
+.ut-dev-select:focus { outline: none; border-color: var(--ut-accent); box-shadow: 0 0 0 3px var(--ut-accent-soft); }
+.ut-meter {
+  height: 10px; border-radius: 999px; background: var(--ut-line);
+  overflow: hidden; margin-top: 2px;
+}
+.ut-meter-fill {
+  height: 100%; width: 0%; border-radius: 999px;
+  background: var(--ut-line-strong); transition: width 60ms linear;
+}
+.ut-meter.is-live .ut-meter-fill { background: var(--ut-accent); }
+.ut-meter-hint { font-size: 12px; color: var(--ut-muted); }
