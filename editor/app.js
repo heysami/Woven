@@ -24512,6 +24512,25 @@ function workflowPromptAttachedAssets(promptId, nodes, edges) {
   }
   return out;
 }
+// When an asset.out -> prompt.in edge is created (by drag-wire, by the ⊕ menu,
+// or by a bundle), append the asset's [filename] token to the prompt's text so
+// it shows as a badge and travels downstream. Returns a (possibly new) nodes
+// array; a no-op when the edge isn't asset->prompt or the token already exists.
+function workflowMaybeInsertAssetBadge(nodes, fromRef, toRef) {
+  const f = workflowParseEdgeRef(fromRef);
+  const t = workflowParseEdgeRef(toRef);
+  if (!f || !t || f.port !== "out" || t.port !== "in") return nodes;
+  const fromNode = (nodes || []).find(n => n.id === f.node);
+  const toNode   = (nodes || []).find(n => n.id === t.node);
+  if (!fromNode || fromNode.kind !== "asset" || !toNode || toNode.kind !== "prompt") return nodes;
+  const fname = workflowAssetFileName(fromNode);
+  if (!fname) return nodes;
+  const token = "[" + fname + "]";
+  const cur = typeof toNode.text === "string" ? toNode.text : "";
+  if (cur.indexOf(token) !== -1) return nodes;
+  const sep = !cur ? "" : (cur.endsWith("\n") || cur.endsWith(" ")) ? "" : " ";
+  return nodes.map(n => n.id === toNode.id ? { ...n, text: cur + sep + token } : n);
+}
 
 function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
   const a = workflowPortFlavor(fromNode, fromPort);
@@ -31740,9 +31759,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const edge = side === "left"
         ? { from: `${newId}.${item.newPort}`, to: `${anchorId}.${anchorPort}` }
         : { from: `${anchorId}.${anchorPort}`, to: `${newId}.${item.newPort}` };
+      const nextNodes = workflowMaybeInsertAssetBadge([...(d.nodes || []), node], edge.from, edge.to);
       return {
         ...d,
-        nodes: [...(d.nodes || []), node],
+        nodes: nextNodes,
         edges: [...(d.edges || []), edge],
       };
     });
@@ -38627,22 +38647,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             n.id === toNode.id ? { ...n, assetKind: "html", path: newPath || n.path } : n
           );
         }
-        // Asset → prompt: attach the asset as an inline [filename] badge in the
-        // prompt's text so it both shows on the node and travels downstream as a
-        // reference image. Skip if a matching token is already present.
-        if (fromNode && fromNode.kind === "asset" && toNode && toNode.kind === "prompt"
-            && fromParts.port === "out" && toParts.port === "in") {
-          const fname = workflowAssetFileName(fromNode);
-          const token = "[" + fname + "]";
-          const cur = typeof toNode.text === "string" ? toNode.text : "";
-          if (fname && cur.indexOf(token) === -1) {
-            const sep = !cur ? "" : (cur.endsWith("\n") || cur.endsWith(" ")) ? "" : " ";
-            nextNodes = nextNodes.map(n =>
-              n.id === toNode.id ? { ...n, text: cur + sep + token } : n
-            );
-          }
-        }
       }
+      // Asset → prompt: attach the asset as an inline [filename] badge in the
+      // prompt's text (drag-wire path; the ⊕ menu does the same in spawnConnectedNode).
+      nextNodes = workflowMaybeInsertAssetBadge(nextNodes, fromRef, toRef);
       return { ...d, edges: nextEdges, nodes: nextNodes };
     });
   }, [setData]);
