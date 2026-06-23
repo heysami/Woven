@@ -44,13 +44,13 @@ Every interactive piece is `driver(s) → [sense] → [logic] → [physics] → 
 | **sense** | extract structure from a stream | `vision-detect`, `vision-ocr`, `palette` |
 | **logic** | map / combine / threshold / branch / remember | `op-*`, `flow-*`, `state-*` |
 | **physics** | bodies you push with input | a `position` node in a physics mode (`rope`, `rope-ink`, `shatter`, `boids`, `physics`) + the `force` node |
-| **render** | what you see / hear | an `effect` spec (incl. `custom` GLSL), `shape`, `type-motion`, a `layer`, `audio-out` |
+| **render** | what you see / hear | an `effect` spec (incl. `custom` GLSL), `shape`, `type-motion`, a `sketch` (imperative code layer - the escape hatch for novel per-pixel/temporal/stateful interaction), a `layer`, `audio-out` |
 
-Classify to the NEAREST primitive even when it does not yet do the whole job - the slot author extends it. Example: "camera with a per-row time delay" → a driver slot (`input-camera`) + a render slot (an `effect`, classified as `custom`, that the author extends with a frame-history buffer). You do NOT pre-judge whether the effect runtime can do it; you classify to the nearest primitive and let the author extend.
+Classify to the NEAREST primitive even when it does not yet do the whole job - the slot author extends it. **But when the render is a NOVEL imperative interaction (per-pixel, temporal, stateful) that no primitive expresses - slit-scan, ring-buffer trails, custom pointer mappings, particle toys - classify it to `sketch`.** A `sketch` is an arbitrary-JS code layer (`draw(ctx, frame, controls, content)`) run sandboxed and composited as a real layer; its numeric controls auto-expose `param:` ports so drivers/logic still bind to it. This is the cheap, project-local imperative rung - prefer it to making the author extend the global engine for a one-off.
 
 Mapping examples:
 - **"left click starts a rope"** → driver slot (`input-pointer` on `clicked`) + physics slot (`position` in `rope` mode bound to the pointer).
-- **"camera with per-row time delay"** → driver slot (`input-camera` → its `layer`) + render slot (`effect`/`custom`, author extends with a frame ring-buffer).
+- **"camera with per-row time delay"** → driver slot (`input-camera` → its `layer`) + render slot (`sketch`; the author writes a frame ring-buffer in JS, with the camera wired into the sketch's `in` content port).
 
 Do not over-split. One line in the plan's `decisions[]` for any borderline call.
 

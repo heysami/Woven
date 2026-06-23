@@ -1831,6 +1831,21 @@ KINDS = {
         "completion":   {"requires": []}, "pauseAfter": False,
         "notes": "One composition layer. Wire asset (content) + optional position/trigger/effect into its in-port, then wire its out into a host (mm-composer/image/composer). Author source/<branch>/layer-<id>.js.",
     },
+    "sketch": {
+        "title":        "Sketch (code)",
+        "category":     "container",
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "Imperative code layer: a draw(ctx,frame,controls,content) sketch run in a sandboxed iframe and composited as an mm-composer layer. The escape hatch for interactions not expressible as primitive wiring. Author source/<branch>/sketch-<id>.js.",
+    },
     # ── number-generator ──────────────────────────────────────────────────
     # A value SOURCE: emits a number (constant / algorithmic / randomiser /
     # pixel-map). Wire its `out` into any numeric param port of a
@@ -3033,6 +3048,25 @@ _LAYER_AUTHORING = (
     "The layer's content + behaviour come from what you wire into its in-port: an asset, and optionally "
     "position / trigger / effect nodes. The editor compiles buildSpec(values) into source/{branch}/layer-{id}.json."
 )
+_SKETCH_AUTHORING = (
+    "This is a SKETCH node - an imperative CODE layer for interactions that cannot be expressed by wiring "
+    "primitives (per-pixel/temporal/stateful effects: slit-scan, ring-buffer trails, custom pointer mappings, "
+    "particle toys). Write `source/{branch}/sketch-{id}.js`, not JSON. Your code runs in a SANDBOXED iframe "
+    "inside mm-composer and renders ONE composition layer; it is composited through the normal effect / mask / "
+    "blend chain and survives bake. Shape:\n"
+    "export const controls = { speed:{type:'number',value:1,min:0,max:5,step:0.01}, "
+    "hue:{type:'number',value:0,min:0,max:360} };\n"
+    "export function setup(ctx, env) { /* optional; runs once. env = {width,height} */ }\n"
+    "export function draw(ctx, frame, controls, content) {\n"
+    "  // ctx: 2D context on an OffscreenCanvas sized to the layer (env.width x env.height).\n"
+    "  // frame: { pointer:{x,y,isDown,clicked,...}, touch, keyboard, scroll, gyro, audio, dt, time }; coords 0..1.\n"
+    "  // controls.get('speed') -> live value (from the schema above AND any wired param:<key> port).\n"
+    "  // content: [{ kind:'image'|'video'|'camera', bitmap }] from the wired in-port (draw via ctx.drawImage).\n"
+    "}\n"
+    "Numeric controls auto-expose `param:<key>` input ports, so input-pointer / op-math / state-* nodes can drive "
+    "them. Keep per-frame work allocation-light; never call getBoundingClientRect. The editor stores the module at "
+    "source/{branch}/sketch-{id}.js and ships the code into the composer layer + baked HTML verbatim."
+)
 _NUMBER_AUTHORING = (
     "This is a NUMBER-GENERATOR spec node - a value SOURCE that drives a numeric param of another "
     "block (position/effect/trigger). Write `source/{branch}/number-{id}.js`, not JSON. Shape:\n"
@@ -3610,6 +3644,17 @@ KIND_IO = {
             {"port": "edit", "label": "Edit layer", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/layer-{id}.js",
               "authoring": _LAYER_AUTHORING},
+        ],
+    },
+    "sketch": {
+        "paramPorts": True,   # numeric controls auto-expose `param:<key>` inputs (tag: number)
+        "provides": [{"port": "out", "label": "Sketch layer", "tags": ["layer"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "layer"}}],
+        "accepts":  [
+            {"port": "in", "label": "Content (image / video / camera)", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "edit", "label": "Edit sketch", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/sketch-{id}.js",
+              "authoring": _SKETCH_AUTHORING},
         ],
     },
 }

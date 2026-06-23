@@ -889,6 +889,63 @@ function buildWiredRuntimeLayers(){
       Lt._blend = blendModeOf(sp.blend);
       return Lt;
     }
+    if(spec._sketch){
+      // Sketch node wired as a LAYER: an imperative code surface run in a
+      // sandboxed iframe (SketchHost). content.kind 'sketch' carries the source +
+      // controls + param bindings + the resolved content refs; PASS A ticks the
+      // host and drawContent blits its frame. The per-layer effect stack runs on
+      // top exactly like the shape path (so fx/feedback/blend all still apply).
+      const sp = spec.params || {};
+      const kids = Array.isArray(wl.children)?wl.children:[];
+      const lid = wl.id || ('W'+wi);
+      // Content children (image / video / camera) handed to the sketch as content[].
+      const contentRefs=[];
+      for(const k of kids){
+        if(!k) continue;
+        if(k.type==='layer' && k.kind==='input-camera'){ STATE.inputs.camera=true; contentRefs.push({kind:'camera'}); }
+        else if(k.type==='layer' && k.kind==='input-video'){ contentRefs.push({kind:'videostream', nodeId:k.fromId||''}); }
+        else if(k.type==='asset' && k.url){
+          const aid=k.fromId||k.assetId||('skc'+wi);
+          const mk=String(k.kind||'').toLowerCase();
+          const vis=(mk==='video'||mk==='mp4'||mk==='webm')?'video':'image';
+          if(!CONTENT.find(c=>c.id===aid)) CONTENT.push({id:aid,url:k.url,kind:vis,label:k.label||aid});
+          contentRefs.push({kind:vis, assetId:aid});
+        }
+      }
+      const content = { kind:'sketch', sketchId:lid, code:String(spec.code||''),
+        controls:spec.controls||{}, bindings:spec._bindings||null, content:contentRefs };
+      // EFFECT children → this sketch layer's OWN effect stack (mirrors shape).
+      const effK = kids.filter(k=>k&&k.type==='effect');
+      const stack = effK.map(e=>{
+        const fx = wiredChildSpec(e);
+        const fp = fx.params||{};
+        const fxType = fx.type || fp.type;
+        const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fxType==='custom' || fxType==='shader';
+        let intensity = fx.intensity!=null?fx.intensity:(fp.intensity!=null?fp.intensity:1), params = fp;
+        const b = fx._bindings;
+        if(b){ params = Object.assign({}, params);
+          for(const k in b){ const src=b[k]; if(!src||src.kind==='logic'||Sources.isVector(src)) continue;
+            const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+            if(k==='intensity') intensity=val; else params[k]=val; }
+        }
+        return {type:isCustom?'custom':fxType, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
+      });
+      const Lk = fillLayer({
+        id: lid,
+        name: spec.name || ('Sketch '+(wi+1)),
+        z: finiteNumber(spec.z,0),
+        visible: spec.visible!==false,
+        feedback: finiteNumber(sp.feedback, spec.feedback),
+        content,
+        positioning:{mode:'single',x:0.5,y:0.5,scale:1,rot:0},
+        trigger:{source:'none',impacts:[]},
+        effects:{stack},
+      });
+      Lk._wired=true;
+      Lk._opacity = finiteNumber(spec.opacity,1);
+      Lk._blend = blendModeOf(spec.blend);
+      return Lk;
+    }
     const kids=Array.isArray(wl.children)?wl.children:[];
     const assetK = kids.find(k=>k&&k.type==='asset');
     const posK   = kids.find(k=>k&&k.type==='position');
@@ -3258,6 +3315,93 @@ function drawTypeMotion(ctx, c, t){
     penX += adv[i]+tracking;
   }
 }
+// ── Sketch (imperative code layer) host ────────────────────────────────────
+// A `sketch` layer's body is arbitrary JS (setup/draw) authored by the user or
+// an agent. It runs in a SANDBOXED, same-origin nested iframe (its own document
+// = crash/scope isolation), rendering to a <canvas> the composer reads back via
+// drawImage each frame (synchronous; same-origin = untainted). The per-layer
+// effect / mask / blend stack then composes on top exactly like every other
+// layer, and the slimPlayer twin mirrors this verbatim so baked output matches.
+const SKETCH_SRCDOC = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body><canvas id="c"></canvas><script>
+var _cv=document.getElementById('c'),_ctx=_cv.getContext('2d'),_setup=null,_draw=null,_ran=false,_err=null;
+window.__sketchCanvas=_cv;
+window.__sketchError=function(){return _err;};
+window.__sketchLoad=function(code){
+  try{
+    var strip=String(code||'').replace(/\\bexport\\s+(?=(const|let|var|function|class)\\b)/g,'');
+    var api=new Function('"use strict";'+strip+';return{setup:(typeof setup==="function"?setup:null),draw:(typeof draw==="function"?draw:null)};')();
+    _setup=api.setup;_draw=api.draw;_ran=false;_err=api.draw?null:'sketch must export function draw(ctx, frame, controls, content)';
+  }catch(e){_err='compile: '+(e&&e.message||e);_draw=null;}
+};
+window.__sketchTick=function(W,H,frame,vals,content){
+  if(_cv.width!==W)_cv.width=W; if(_cv.height!==H)_cv.height=H;
+  if(!_draw)return false;
+  var controls={get:function(k){return vals&&(k in vals)?vals[k]:undefined;}};
+  try{ if(!_ran){ if(_setup)_setup(_ctx,{width:W,height:H}); _ran=true; } _draw(_ctx,frame||{},controls,content||[]); _err=null; return true; }
+  catch(e){ _err='draw: '+(e&&e.message||e); return false; }
+};
+<\/script></body></html>`;
+const SketchHost = {
+  _m:{}, _input:null, _inputEl:null,
+  _ensureInput(){
+    if(this._input || this._input===false) return;
+    this._input=false;
+    try{ import('../_shared/logicinputs.js').then(m=>{
+      const LI=(m&&m.LogicInputs)||null;
+      if(LI && typeof stageHost!=='undefined' && stageHost){ this._inputEl=stageHost; this._input=LI.attach(stageHost,{}); }
+    }).catch(()=>{}); }catch(_e){}
+  },
+  frame(dt){
+    this._ensureInput();
+    let base={ pointer:{x:0.5,y:0.5,isDown:false,clicked:false}, dt:dt||0, time:(typeof Input!=='undefined'?Input.clock:0) };
+    try{ if(this._input && this._input.sample){ base=Object.assign({}, this._input.sample()||{}, { dt:dt||0, time:(typeof Input!=='undefined'?Input.clock:0) }); } }catch(_e){}
+    return base;
+  },
+  ensure(id, code, controls){
+    let rec=this._m[id];
+    if(!rec){
+      const ifr=document.createElement('iframe');
+      ifr.setAttribute('sandbox','allow-scripts allow-same-origin');
+      ifr.style.cssText='position:absolute;left:-99999px;top:-99999px;width:2px;height:2px;border:0;visibility:hidden;pointer-events:none;';
+      ifr.srcdoc=SKETCH_SRCDOC;
+      document.body.appendChild(ifr);
+      rec=this._m[id]={ iframe:ifr, code:null, ready:false };
+      ifr.addEventListener('load',()=>{ rec.ready=true; if(rec.code!=null){ try{ ifr.contentWindow.__sketchLoad(rec.code); }catch(_e){} } });
+    }
+    if(code!==rec.code){ rec.code=code; if(rec.ready){ try{ rec.iframe.contentWindow.__sketchLoad(code); }catch(_e){} } }
+  },
+  tick(id, W, H, frame, vals, content){
+    const rec=this._m[id]; if(!rec||!rec.ready) return;
+    const w=rec.iframe.contentWindow; if(!w||!w.__sketchTick) return;
+    try{ w.__sketchTick(W,H,frame,vals,content); }catch(_e){}
+  },
+  canvas(id){ const rec=this._m[id]; if(!rec||!rec.ready) return null; const w=rec.iframe.contentWindow; const cv=w&&w.__sketchCanvas; return (cv&&cv.width)?cv:null; },
+  error(id){ const rec=this._m[id]; if(!rec||!rec.ready) return null; try{ const w=rec.iframe.contentWindow; return (w&&w.__sketchError)?w.__sketchError():null; }catch(_e){ return null; } },
+  prune(activeIds){ for(const id in this._m){ if(!activeIds.has(id)){ try{ this._m[id].iframe.remove(); }catch(_e){} delete this._m[id]; } } },
+};
+// Resolve a sketch layer's live control VALUES: schema defaults overlaid with
+// any wired param: binding (logic ports via LogicBridge.value, number/timeline
+// via Sources.eval) - the SAME binding contract every other spec node uses.
+function sketchControlVals(c){
+  const out={}, ctrls=c.controls||{}, b=c.bindings||null;
+  for(const k in ctrls){ const d=ctrls[k]; out[k]=(d&&typeof d==='object'&&('value' in d))?d.value:d; }
+  if(b){ for(const k in b){ const src=b[k]; if(!src) continue;
+    try{ if(src.kind==='logic'){ const v=LogicBridge.value(src.ref); if(v!=null) out[k]=v; }
+      else { const v=Sources.eval(src,{index:0,time:(typeof Input!=='undefined'?Input.clock:0),count:1}); if(v!=null) out[k]=v; } }catch(_e){} } }
+  return out;
+}
+// Resolve a sketch layer's wired content refs to live CanvasImageSources.
+function sketchContentSources(c){
+  const out=[]; const refs=c.content||[];
+  for(const r of refs){ let bm=null;
+    if(r.kind==='camera'){ bm=(typeof Input!=='undefined'&&Input.cam&&Input.cam.on)?Input.cam.video:null; }
+    else if(r.kind==='videostream'){ bm=videoStreamEl(r.nodeId); }
+    else if(r.kind==='video'){ const v=Assets.video(r.assetId); bm=(v&&v.readyState>=2)?v:null; }
+    else { const im=Assets.image(r.assetId); bm=(im&&im._ready)?im:null; }
+    if(bm) out.push({ kind:r.kind, bitmap:bm });
+  }
+  return out;
+}
 function drawContent(ctx, L, inst, W, H, baseScale){
   const c=L.content;
   const cx=inst.x*W, cy=inst.y*H;
@@ -3330,6 +3474,21 @@ function drawContent(ctx, L, inst, W, H, baseScale){
     // layer). ctx is already centered/rotated by inst; the helper lays out
     // glyphs around (0,0) and animates each by Input.clock.
     drawTypeMotion(ctx, c, Input.clock);
+  } else if(c.kind==='sketch'){
+    // Imperative code layer: blit the latest frame the SketchHost rendered for
+    // this layer (a full-stage canvas) in STAGE space (drop the per-instance
+    // transform) so the sketch owns its own layout; the per-layer effect / mask /
+    // blend stack composes on top. On a compile/draw error, draw a labelled box
+    // (never silent-blank, per the unresolved-wire failure class) instead.
+    const sc=SketchHost.canvas(c.sketchId);
+    if(sc){ ctx.setTransform(1,0,0,1,0,0); try{ ctx.drawImage(sc,0,0,W,H); }catch(_e){} ctx.restore(); return; }
+    const err=SketchHost.error(c.sketchId);
+    if(err){ ctx.fillStyle='rgba(40,10,12,0.55)'; ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH);
+      ctx.fillStyle='#f88'; ctx.font=`${Math.max(9,sz*0.09)}px ${getMono()}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('sketch error', 0, -sz*0.06);
+      ctx.fillStyle='#caa'; ctx.font=`${Math.max(8,sz*0.06)}px ${getMono()}`;
+      ctx.fillText(String(err).slice(0,48), 0, sz*0.06); }
+    // else: warming up (first frame) - draw nothing this tick.
   } else if(c.kind==='generator'){
     // procedural: animated rings
     ctx.strokeStyle=c.color||'#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.03);
@@ -3655,6 +3814,13 @@ const Engine = {
       const scaleMul = ov.scale!=null?ov.scale:1;
       const posOff = ov.position; // [nx,ny] absolute reposition of whole layer
       const buf=getBuf(L.id);
+      // Sketch layer: drive its sandboxed code host BEFORE drawContent so the
+      // blit reads this tick's freshest frame (inputs from the stage; control
+      // values resolved from the schema + any wired param: binding).
+      if(L.content && L.content.kind==='sketch'){
+        SketchHost.ensure(L.content.sketchId, L.content.code, L.content.controls);
+        SketchHost.tick(L.content.sketchId, W, H, SketchHost.frame(dt), sketchControlVals(L.content), sketchContentSources(L.content));
+      }
       // feedback (trail): when >0, fade the PRIOR buffer instead of clearing it so
       // previous frames decay into a trail. alpha = 1-feedback (feedback=0 -> full
       // clear = current behavior; feedback=1 -> never fades). The buffer persists
@@ -3682,6 +3848,7 @@ const Engine = {
     // prune buffers for layers that no longer exist
     const live=new Set(layers.map(L=>L.id));
     for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
+    SketchHost.prune(live);   // tear down iframes for sketch layers that went away
     // free GPU/CPU fluid buffers for layers (or fluid effects) that went away.
     const fluidLive=new Set(layers.filter(L=>layerHasFluid(L)).map(L=>L.id));
     for(const id of Array.from(_gpuFluidIds)){ if(!fluidLive.has(id)) disposeFluid(id); }
@@ -4612,6 +4779,24 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{};
       this.driveAudio(); },
   };
+  // ── Sketch (imperative code layer) host - baked twin of the editor SketchHost.
+  // Same sandboxed-iframe + drawImage-readback contract so the published piece is
+  // interactive identically to the editor. ──
+  const _SKDOC=`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body><canvas id="c"></canvas><script>
+var _cv=document.getElementById('c'),_ctx=_cv.getContext('2d'),_setup=null,_draw=null,_ran=false,_err=null;
+window.__sketchCanvas=_cv;window.__sketchError=function(){return _err;};
+window.__sketchLoad=function(code){try{var strip=String(code||'').replace(/\\bexport\\s+(?=(const|let|var|function|class)\\b)/g,'');var api=new Function('"use strict";'+strip+';return{setup:(typeof setup==="function"?setup:null),draw:(typeof draw==="function"?draw:null)};')();_setup=api.setup;_draw=api.draw;_ran=false;_err=api.draw?null:'sketch must export function draw(ctx, frame, controls, content)';}catch(e){_err='compile: '+(e&&e.message||e);_draw=null;}};
+window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=W;if(_cv.height!==H)_cv.height=H;if(!_draw)return false;var controls={get:function(k){return vals&&(k in vals)?vals[k]:undefined;}};try{if(!_ran){if(_setup)_setup(_ctx,{width:W,height:H});_ran=true;}_draw(_ctx,frame||{},controls,content||[]);_err=null;return true;}catch(e){_err='draw: '+(e&&e.message||e);return false;}};
+<\/script></body></html>`;
+  const SH={_m:{},
+    frame(dt){let b={pointer:{x:0.5,y:0.5,isDown:false,clicked:false},dt:dt||0,time:IN.clock};try{if(LB.handle&&LB.handle.sample){b=Object.assign({},LB.handle.sample()||{},{dt:dt||0,time:IN.clock});}}catch(_e){}return b;},
+    ensure(id,code,controls){let r=this._m[id];if(!r){const f=document.createElement('iframe');f.setAttribute('sandbox','allow-scripts allow-same-origin');f.style.cssText='position:absolute;left:-99999px;top:-99999px;width:2px;height:2px;border:0;visibility:hidden;pointer-events:none;';f.srcdoc=_SKDOC;document.body.appendChild(f);r=this._m[id]={iframe:f,code:null,ready:false};f.addEventListener('load',()=>{r.ready=true;if(r.code!=null){try{f.contentWindow.__sketchLoad(r.code);}catch(_e){}}});}if(code!==r.code){r.code=code;if(r.ready){try{r.iframe.contentWindow.__sketchLoad(code);}catch(_e){}}}},
+    tick(id,W,H,fr,vals,content){const r=this._m[id];if(!r||!r.ready)return;const w=r.iframe.contentWindow;if(!w||!w.__sketchTick)return;try{w.__sketchTick(W,H,fr,vals,content);}catch(_e){}},
+    canvas(id){const r=this._m[id];if(!r||!r.ready)return null;const w=r.iframe.contentWindow;const cv=w&&w.__sketchCanvas;return(cv&&cv.width)?cv:null;},
+    error(id){const r=this._m[id];if(!r||!r.ready)return null;try{const w=r.iframe.contentWindow;return(w&&w.__sketchError)?w.__sketchError():null;}catch(_e){return null;}},
+    prune(ids){for(const id in this._m){if(!ids.has(id)){try{this._m[id].iframe.remove();}catch(_e){}delete this._m[id];}}}};
+  function scVals(c){const out={},ct=c.controls||{},b=c.bindings||null;for(const k in ct){const d=ct[k];out[k]=(d&&typeof d==='object'&&('value'in d))?d.value:d;}if(b){for(const k in b){const s=b[k];if(!s)continue;if(s.kind==='logic'){const v=LB.value(s.ref);if(v!=null)out[k]=v;}}}return out;}
+  function scContent(c){const out=[],rs=c.content||[];for(const r of rs){let bm=null;if(r.kind==='camera'){bm=(IN.cam&&IN.cam.on)?IN.cam.video:null;}else if(r.kind==='videostream'){bm=(typeof vstream==='function')?vstream(r.nodeId):null;}else if(r.kind==='video'){const v=video(r.assetId);bm=(v&&v.readyState>=2)?v:null;}else{const im=image(r.assetId);bm=(im&&im._r)?im:null;}if(bm)out.push({kind:r.kind,bitmap:bm});}return out;}
   if(LOGIC && (LOGIC.nodes&&LOGIC.nodes.length || LOGIC.outputs&&LOGIC.outputs.length)){
     LB.readbacks=Array.isArray(LOGIC.readbacks)?LOGIC.readbacks:[];
     LB.streams=(LOGIC.nodes||[]).filter(n=>n&&(n.kind==='input-camera'||n.kind==='input-video')).map(n=>n.id);
@@ -5210,6 +5395,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     else if(c.kind==='videostream'){const v=vstream(c.nodeId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,'cover','center','center',false);}}
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else if(c.kind==='typemotion'){drawTM(c,IN.clock);}
+    else if(c.kind==='sketch'){const scv=SH.canvas(c.sketchId);if(scv){lctx.setTransform(1,0,0,1,0,0);try{lctx.drawImage(scv,0,0,W,H);}catch(_e){}lctx.restore();return;}const er=SH.error(c.sketchId);if(er){lctx.fillStyle='rgba(40,10,12,0.55)';lctx.fillRect(-bw/2,-bh/2,bw,bh);lctx.fillStyle='#f88';lctx.font=Math.max(9,sz*0.09)+'px monospace';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText('sketch error',0,0);}}
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
     else if(c.kind==='placeholder'){/* unresolved wired layer: draw nothing - stay invisible, never paint over layers below */}
     else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.ellipse(0,0,bw/2,bh/2,0,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-bh/2);lctx.lineTo(bw/2,bh/2);lctx.lineTo(-bw/2,bh/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-bw/2,-bh/2,bw,bh);}
@@ -5346,6 +5532,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     // PASS A - draw each needed layer into lb, copy to its own buffer (positions resolve once)
     const rendered={};
     for(const L of CFG.layers){if(L.visible===false&&!maskRefs.has(L.id))continue;
+      if(L.content&&L.content.kind==='sketch'){SH.ensure(L.content.sketchId,L.content.code,L.content.controls);SH.tick(L.content.sketchId,W,H,SH.frame(dt),scVals(L.content),scContent(L.content));}
       const o=ov[L.id]||{};const ins=positions(L,dt);const sm=o.scale!=null?o.scale:1,pf=o.position;
       lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
       const b=getBuf(L.id);const fb=Math.max(0,Math.min(1,L.feedback||0));
@@ -5354,7 +5541,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       if(fb>0){b.cx.save();b.cx.globalCompositeOperation='destination-out';b.cx.globalAlpha=1-fb;b.cx.fillStyle='#000';b.cx.fillRect(0,0,W,H);b.cx.restore();}
       else{b.cx.clearRect(0,0,W,H);}
       b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
-    const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}
+    const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}SH.prune(live);
     // free fluid buffers (GPU + CPU) for layers / fluid effects that went away
     const fluLive=new Set(CFG.layers.filter(L=>layerFluid(L)).map(L=>L.id));for(const id of Array.from(_gpuFluIds)){if(!fluLive.has(id))disposeFlu(id);}for(const id in FLU){if(!fluLive.has(id))disposeFlu(id);}
     // PASS B - composite visible layers in z-order, applying channel masks

@@ -38,6 +38,7 @@ _SECTIONS = (
     "patterns",
     "recipes",
     "verify",
+    "sketch",
 )
 
 
