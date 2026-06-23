@@ -1082,8 +1082,15 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
 
    ```
    tier = handoff.buildTier                          # simple | standard | full (research committed it)
-   FOR builder IN handoff.builderNodes:              # dependency order; tier decides the set (see Build tier)
-     POST $TH_DAEMON_URL/__workflow/node/<builder>/run ; poll until done    # NO per-drawer lens
+   builders = handoff.builderNodes                   # dependency order; tier decides the set (see Build tier)
+   # AUTO-CHAIN (v3.15): dispatch ONLY the first builder, passing the REST as
+   # &chain=. The daemon advances the chain itself as each builder finishes -
+   # NO chat turn between builders, so the inter-builder gap (a full ~36K-preamble
+   # chat turn, ~3-4 min and growing) collapses to ~0. Do NOT loop a POST per builder.
+   first = builders[0] ; rest = builders[1:]
+   POST $TH_DAEMON_URL/__workflow/node/<first>/run?chain=<comma-joined rest>    # NO per-drawer lens
+   poll the builderNodes until the LAST one is `done` (if any builder hits `error`
+     the chain HALTED there daemon-side - surface that node's error, don't silently retry)
    # the runtime/composer builder is LAST - it assembles the pieces into runtime.html
    run_final_gate(handoff.containerNode)             # contract 3
    ```

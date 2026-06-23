@@ -5754,6 +5754,12 @@ class RunState:
         # agent-kind workflow node. Consumed by _drain_stdout's auto-completion
         # hook to flip the canvas node to done/error on subprocess exit.
         self.workflow_node_id = None
+        # v3.15 - daemon-side build-chain. Ordered node ids to auto-dispatch
+        # after THIS node completes cleanly (set from the /run `chain` query
+        # param). Empty = no chaining (a plain single-node run). This is what
+        # lets the orchestrator's pre-armed builders advance daemon-side with
+        # NO chat turn between them - the inter-builder gap collapses to ~0.
+        self.chain_rest = []
         # Whether THIS run is touching files. Kinds that always modify
         # (edits-apply, regenerate, fork, merge, *-request) set this true at
         # spawn time; freeform runs flip it on the first Write/Edit/MultiEdit/
@@ -6120,6 +6126,57 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
     return out
 
 
+def _maybe_advance_build_chain(state):
+    """v3.15 - daemon-side build-driver. When a chained node-run finishes
+    cleanly, dispatch the NEXT node in the chain via a self-POST to the local
+    /__workflow/node/<id>/run endpoint, threading the remaining chain forward.
+
+    This collapses the inter-builder gap (previously a full chat turn carrying
+    the ~36K preamble + growing transcript, ~3-4 min and growing) to ~0: the
+    orchestrator pre-arms each builder's `text`, so advancing the chain needs
+    no reasoning - just the next dispatch. Safe because the server is threaded
+    (ReusableThreadingTCP) so the self-POST runs on another thread, and each
+    builder still spawns as a fresh slim-tier process (no nesting, no
+    permission wall). Best-effort; never raises into the completion hook.
+    """
+    rest = list(getattr(state, "chain_rest", None) or [])
+    if not rest:
+        return
+    nxt, remaining = rest[0], rest[1:]
+    pid = state.project_id or ""
+    # Guard against a double-dispatch race: if the next node is already
+    # running or done (e.g. a non-compliant chat also POSTed it), skip - just
+    # carry the rest of the chain forward so the tail still advances.
+    try:
+        wf_path = os.path.join(state.project_root, "workflow", "workflow.json")
+        with open(wf_path, "r", encoding="utf-8") as f:
+            _wf = json.load(f)
+        _nn = next((n for n in (_wf.get("nodes") or [])
+                    if isinstance(n, dict) and n.get("id") == nxt), None)
+        if _nn is not None and _nn.get("runStatus") in ("running", "done"):
+            print(f"[auto-chain] {nxt} already {_nn.get('runStatus')}; skipping dispatch", flush=True)
+            nxt, remaining = (remaining[0], remaining[1:]) if remaining else (None, [])
+            if not nxt:
+                return
+    except Exception:
+        pass
+    try:
+        import urllib.request, urllib.parse
+        q = {"project": pid}
+        if remaining:
+            q["chain"] = ",".join(remaining)
+        url = (f"http://127.0.0.1:{PORT}/__workflow/node/"
+               f"{urllib.parse.quote(nxt)}/run?{urllib.parse.urlencode(q)}")
+        req = urllib.request.Request(url, method="POST", data=b"")
+        # The /run handler returns once the spawn STARTS (runStatus=running),
+        # not when the builder finishes - so this is a quick fire-and-forget.
+        urllib.request.urlopen(req, timeout=30).read()
+        print(f"[auto-chain] {getattr(state,'workflow_node_id',None)} done -> "
+              f"dispatched {nxt} ({len(remaining)} left)", flush=True)
+    except Exception as e:
+        print(f"[auto-chain] failed to advance to {nxt!r}: {e}", flush=True)
+
+
 def _fire_node_completion_hook(state, *, exit_code):
     """v2.24 - flip a workflow node's runStatus + record runId, atomically.
 
@@ -6169,6 +6226,12 @@ def _fire_node_completion_hook(state, *, exit_code):
              json.dump(wf, f, indent=2)
     # v2.30 - notify SSE subscribers that workflow.json changed (outside the lock)
     _broadcast_workflow_change(state.project_id)
+    # v3.15 - daemon-side build-chain. If this node carried a chain and exited
+    # cleanly, dispatch the next builder daemon-side (no chat turn). On error
+    # the chain HALTS here (we only advance on exit_code == 0) so the failure
+    # surfaces instead of silently skipping ahead.
+    if exit_code == 0:
+        _maybe_advance_build_chain(state)
     # Live session - drop the agent lease on this node so guests can edit again.
     try: _live.release_agent_lease(state.project_id or project_id, wf_node_id)
     except Exception: pass
@@ -9244,7 +9307,8 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Returns (run_id, None) on success, (None, (status, error_dict)) on
     # failure - caller passes error_dict to self._reply.
     def _spawn_node_agent(self, *, project_root, project_id, branch,
-                          node_id, system_prompt, prompt_text, title):
+                          node_id, system_prompt, prompt_text, title,
+                          chain_rest=None):
         agent_id = "claude"
         defs = AGENT_DEFS.get(agent_id)
         if not defs:
@@ -9359,6 +9423,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
         state.workflow_node_id = node_id
+        # v3.15 - remaining build-chain; the completion hook dispatches the next
+        # one daemon-side (no chat turn) when this node finishes cleanly.
+        state.chain_rest = list(chain_rest or [])
         # History bracket - same shape as _run_create's pre/post-snapshot.
         state.history_pending_id = None
         state.history_before_paths = []
@@ -9417,6 +9484,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception:
             body = {}
         if not isinstance(body, dict): body = {}
+
+        # v3.15 - daemon-side build-chain. `?chain=a,b,c` (or body.chain) lists
+        # the node ids to auto-dispatch after this one finishes cleanly. The
+        # build-driver (chat) kicks off only the FIRST builder with the rest as
+        # the chain; the completion hook advances the rest with no chat turn.
+        _chain_raw = (qs.get("chain") or [""])[0] if hasattr(qs, "get") else ""
+        if not _chain_raw and isinstance(body.get("chain"), (list, str)):
+            _chain_raw = body["chain"] if isinstance(body["chain"], str) else ",".join(body["chain"])
+        chain_rest = [c.strip() for c in _chain_raw.split(",") if c.strip()]
 
         # Load workflow.json
         wf_path = os.path.join(project_root, "workflow", "workflow.json")
@@ -9592,6 +9668,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     system_prompt= preamble_body,
                     prompt_text  = prompt_text,
                     title        = preamble_title,
+                    chain_rest   = chain_rest,
                 )
                 if err_reply:
                     raise RuntimeError(err_reply[1].get("error") or "spawn failed")
