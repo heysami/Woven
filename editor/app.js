@@ -19038,6 +19038,7 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
               allOk ? "Agent CLI connected and required local skills installed."
               : canFinish ? "You can create projects and run simple prompt nodes - but agentic workflows stay disabled until you install a Claude Code or Codex CLI."
               : "Finish the required steps to enable + New project."}</div>
+            <${OnboardingUserTestingToggle}/>
           </div>
         `}
       </div>
@@ -19070,6 +19071,34 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
       ${installOpen && html`<${ModelInstallDialog}
         onClose=${() => setInstallOpen(false)}
         onRefresh=${async () => { await onRefresh(); setInstallOpen(false); }}/>`}
+    </div>
+  `;
+}
+
+/* WS-CAP - Optional "Enable user testing mode" toggle on the onboarding
+   wizard's final step. Purely additive + fully skippable: user testing is
+   off by default and the wizard finishes without it. Reuses the shared
+   useUserTestingCapability() hook so its tri-state matches the Settings row
+   and the prototype-node panel. */
+function OnboardingUserTestingToggle() {
+  const { state, enable, enabling, enableErr } = useUserTestingCapability();
+  return html`
+    <div className="model-setup-optional-row">
+      <div className="model-setup-optional-text">
+        <div className="model-setup-optional-title">User testing mode <span className="model-setup-choice-tag">optional</span></div>
+        <div className="model-setup-optional-desc">${
+          state === "ready" ? "Enabled. Open a prototype node's User testing panel to run sessions."
+          : state === "provisioning" ? "Installing the local speech model (whisper-cpp, ~460 MB)…"
+          : "Run moderated + unmoderated prototype tests. Installs a local speech model (~460 MB) - stays off until you turn it on."}</div>
+        ${enableErr && html`<div className="model-setup-cli-warning"><${Icon.Alert}/><span>${enableErr}</span></div>`}
+      </div>
+      ${state === "off" && html`
+        <button type="button" className="model-setup-wizard-nav" disabled=${enabling} onClick=${enable}>
+          ${enabling ? "Installing…" : "Enable"}
+        </button>
+      `}
+      ${state === "provisioning" && html`<span className="model-setup-optional-status">Installing…</span>`}
+      ${state === "ready" && html`<span className="model-setup-optional-status">✓ on</span>`}
     </div>
   `;
 }
@@ -39291,6 +39320,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // the node's LEFT edge (code panel + picked-element inspector own the
   // right). See WorkflowCommentsPanel.
   const [commentsPanelNodeId, setCommentsPanelNodeId] = useState(null);
+  // WS4 - which prototype node has its User Testing panel open. Mirrors
+  // commentsPanelNodeId exactly: docks to the node's LEFT edge, toggled by
+  // the node's User-testing top-action, floats via WorkflowUserTestingPanel.
+  const [userTestingPanelNodeId, setUserTestingPanelNodeId] = useState(null);
 
   // Expose flow - replace any existing asset nodes bound to this prototype
   // with the new set, pin lockedState, persist via setData. Re-Expose at a
@@ -40729,6 +40762,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 codeOpen=${codePanelNodeId === n.id}
                 onToggleComments=${() => setCommentsPanelNodeId(p => p === n.id ? null : n.id)}
                 commentsOpen=${commentsPanelNodeId === n.id}
+                onToggleUserTesting=${() => setUserTestingPanelNodeId(p => p === n.id ? null : n.id)}
+                userTestingOpen=${userTestingPanelNodeId === n.id}
                 hasPickedChild=${pickedElement?.nodeId === n.id}
                 onOpenCanvasFrames=${openCanvasFrames}
                 onOpenPrototypeView=${openPrototypeView}
@@ -40936,6 +40971,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 onStartChatWithPrompt=${onStartChatWithPrompt}
                 onClose=${() => setCommentsPanelNodeId(null)}
+              />`;
+            })()}
+            ${userTestingPanelNodeId && (() => {
+              // WS4 - User Testing dock. Resolve the host fresh from data
+              // (same pattern as the comments dock) so the panel tracks node
+              // moves/resizes. Docks to the node's LEFT edge.
+              const host = (data.nodes || []).find(n => n.id === userTestingPanelNodeId);
+              if (!host) return null;
+              return html`<${WorkflowUserTestingPanel}
+                key=${"usertestingpanel-" + host.id}
+                node=${host}
+                zoom=${zoom}
+                onClose=${() => setUserTestingPanelNodeId(null)}
               />`;
             })()}
             ${pickedElement && pickedElement.nodeId && (() => {
@@ -47983,6 +48031,541 @@ function isCodeViewableNode(node) {
 // with no gap, matching the user's "stick to it" requirement. Single-file
 // nodes show one body; prototypes enumerate every text file under
 // source/<slug>/ as tabs (default to index.html when present).
+/* ═══════════════════════════════════════════════════════════════════════
+   WS-CAP - User Testing mode capability gate.
+
+   User Testing is an OPT-IN capability (off by default, provisioned on
+   demand). The daemon tracks it via /__user_testing_config:
+     GET  -> { enabled, enabledAt, whisper:{ binary, model, ready } }
+     POST { enabled } -> { ok, config }
+   Tri-state:
+     off          = !enabled
+     provisioning = enabled && !whisper.ready
+     ready        = enabled && whisper.ready
+   The enable action flips the config on, then installs the speech model
+   (whisper-cpp, a ~460MB download via /__local_install) so testee audio
+   can be transcribed, then re-reads the config. On success it broadcasts
+   th:local-skills-changed so every mounted useUserTestingCapability()
+   refetches in lock-step (same channel the local-skill install rows use).
+
+   useUserTestingCapability() is the single shared hook: both the prototype
+   node panel and the Settings / onboarding rows consume it so the gate is
+   computed in exactly one place. */
+function useUserTestingCapability() {
+  const [config, setConfig] = useState(null);   // null = loading
+  const [enabling, setEnabling] = useState(false);
+  const [enableErr, setEnableErr] = useState(null);
+
+  const refetch = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__user_testing_config"));
+      const j = await r.json();
+      setConfig(j || { enabled: false, whisper: {} });
+    } catch {
+      setConfig(prev => prev || { enabled: false, whisper: {} });
+    }
+  }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+  // Refetch whenever a local skill changes - the enable action installs
+  // whisper-cpp and dispatches this same event, so the whole UI flips from
+  // provisioning to ready the moment the model lands.
+  useEffect(() => {
+    const on = () => refetch();
+    window.addEventListener("th:local-skills-changed", on);
+    return () => window.removeEventListener("th:local-skills-changed", on);
+  }, [refetch]);
+
+  // Enable user testing mode: POST config { enabled:true } -> install the
+  // whisper-cpp speech model (synchronous + slow) -> re-GET config. The
+  // install can take minutes; callers should reflect `enabling` as a busy
+  // state but must not block the rest of the UI.
+  const enable = useCallback(async () => {
+    setEnabling(true); setEnableErr(null);
+    try {
+      const r1 = await fetch(apiUrl("/__user_testing_config"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      const j1 = await r1.json().catch(() => ({}));
+      if (!r1.ok || (j1 && j1.ok === false)) throw new Error((j1 && j1.error) || `HTTP ${r1.status}`);
+      // Reflect "enabled but provisioning" immediately so the panel swaps
+      // out of the locked card while the model downloads.
+      if (j1 && j1.config) setConfig(j1.config); else await refetch();
+
+      const r2 = await fetch(apiUrl("/__local_install"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: "whisper-cpp" }),
+      });
+      const j2 = await r2.json().catch(() => ({}));
+      if (!j2 || j2.ok === false) {
+        throw new Error((j2 && (j2.stderr || j2.error)) || `speech model install failed (HTTP ${r2.status})`);
+      }
+      await refetch();
+      try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: "whisper-cpp" } })); } catch {}
+    } catch (e) {
+      setEnableErr(String(e?.message || e));
+    } finally {
+      setEnabling(false);
+    }
+  }, [refetch]);
+
+  const enabled = !!(config && config.enabled);
+  const ready = !!(config && config.enabled && config.whisper && config.whisper.ready);
+  const state = !config ? "loading" : (!enabled ? "off" : (ready ? "ready" : "provisioning"));
+
+  return { state, config, enable, enabling, enableErr, refetch };
+}
+
+/* WS-CAP - Settings row for User Testing mode (the enable-later path).
+   Lives in the Settings dialog's "Things to install" tab alongside the
+   local-skill rows, and reuses the same .workflow-settings-section shell.
+   Reflects the tri-state and offers an Enable button when off. */
+function WorkflowUserTestingSettingsRow() {
+  const { state, config, enable, enabling, enableErr } = useUserTestingCapability();
+  const stateLabel = state === "ready" ? "✓ enabled"
+    : state === "provisioning" ? "enabled · installing speech model…"
+    : state === "off" ? "- not enabled"
+    : "checking…";
+  const dataState = state === "ready" ? "ok" : state === "provisioning" ? "loading" : state === "off" ? "missing" : "loading";
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">User testing mode</span>
+        <span className="workflow-settings-skills">covers: moderated + unmoderated prototype tests</span>
+        <span className="workflow-settings-status" data-state=${dataState}>${stateLabel}</span>
+      </div>
+      <div className="workflow-settings-row">
+        <span className="workflow-settings-localhint">
+          Off by default. Enabling installs a local speech model (whisper-cpp, ~460 MB) so testee audio is transcribed on this machine.
+        </span>
+        ${state === "off" && html`
+          <button
+            type="button"
+            className="tbtn tbtn-primary"
+            disabled=${enabling}
+            onClick=${enable}
+          >${enabling ? "Installing… (a few min)" : "Enable user testing mode"}</button>
+        `}
+        ${state === "provisioning" && html`
+          <button type="button" className="tbtn" disabled=${true}>Installing speech model…</button>
+        `}
+      </div>
+      ${enableErr && html`
+        <div className="workflow-settings-msg workflow-settings-msg-fail">${(enableErr || "").slice(0, 600)}</div>
+      `}
+      ${state === "ready" && config && config.enabledAt && html`
+        <div className="workflow-settings-hint">Enabled ${config.enabledAt}. Open a prototype node's User testing panel to build sessions.</div>
+      `}
+    </div>
+  `;
+}
+
+/* WS4 - User Testing panel docked to a prototype node.
+
+   Floats on the node's LEFT edge, the same docking pattern as
+   WorkflowCommentsPanel (the code panel + picked-element inspector own the
+   right edge, so left is free). Toggled by the node's User-testing top-action.
+
+   When the capability is off it renders a locked card with an "Enable user
+   testing mode" CTA; while provisioning it shows the install state; when
+   ready it shows the full session manager:
+     - sessions for this prototype slug (create / rename / delete)
+     - per-session config editor (flows, questions, rating)
+     - cohorts (add / rename / delete) and participants (add / delete)
+     - two per-participant links (testee + reviewer) built from publishBase
+     - multi-select participants -> "Process into insights"
+   Polls GET /__usertesting while open so statuses refresh as testees finish. */
+function WorkflowUserTestingPanel({ node, onClose, zoom }) {
+  const slug = nodePrototype(node);
+  const cap = useUserTestingCapability();
+  const [data, setData] = useState(null);     // null = loading | { sessions, cloudflared, woven, gatePort, publishBase }
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState({});         // participantId -> true
+  const [processing, setProcessing] = useState(false);
+  const [copied, setCopied] = useState(null); // `${participantId}:${kind}` flash
+  const [openSession, setOpenSession] = useState(null); // sessionId whose config editor is expanded
+  const [panelW] = useState(360);
+  const [hostRectH, setHostRectH] = useState(360);
+
+  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
+
+  // ── Track host node height so the panel matches it (same as comments). ──
+  useEffect(() => {
+    const el = document.querySelector(`.workflow-node[data-node-id="${node.id}"]`);
+    if (!el) return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      setHostRectH(Math.round(r.height / (zoom || 1)));
+    };
+    sync();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(sync); ro.observe(el); }
+    return () => { if (ro) ro.disconnect(); };
+  }, [node.id, node.w, node.h, node.size, zoom]);
+
+  // ── Poll sessions while open + capability is ready (like the Shares tab). ──
+  const refetch = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl("/__usertesting"));
+      const j = await r.json();
+      setData(j || { sessions: [] });
+    } catch {
+      setData(prev => prev || { sessions: [] });
+    }
+  }, []);
+  useEffect(() => {
+    if (cap.state !== "ready") return;
+    refetch();
+    const t = setInterval(refetch, 6000);
+    return () => clearInterval(t);
+  }, [cap.state, refetch]);
+
+  // ── Session op helper. POST /__usertesting { op, ... } -> { ok, session }. ──
+  const op = useCallback(async (body) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__usertesting"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || (j && j.ok === false)) throw new Error((j && j.error) || `${body.op} failed`);
+      await refetch();
+      return j;
+    } catch (e) { flashErr(String(e?.message || e)); return null; }
+    finally { setBusy(false); }
+  }, [refetch]);
+
+  const left = (node.x || 0) - panelW - 18;
+  const top = (node.y || 0);
+  const height = Math.max(360, hostRectH);
+
+  // Sessions belonging to THIS prototype slug.
+  const sessions = useMemo(
+    () => ((data && data.sessions) || []).filter(s => s.prototype === slug),
+    [data, slug]);
+  const publishBase = (data && data.publishBase) || "";
+  const cloudflaredFound = !!(data && data.cloudflared && data.cloudflared.found);
+
+  // ── Link building ─────────────────────────────────────────────────
+  const testeeLink = (p) => publishBase && p.testeeToken ? `${publishBase}/t/${p.testeeToken}/` : "";
+  const reviewerLink = (p) => publishBase && p.reviewerToken ? `${publishBase}/r/${p.reviewerToken}/` : "";
+  const copyLink = async (p, kind) => {
+    const link = kind === "testee" ? testeeLink(p) : reviewerLink(p);
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); } catch {}
+    const tag = `${p.id}:${kind}`;
+    setCopied(tag); setTimeout(() => setCopied(c => c === tag ? null : c), 1400);
+  };
+
+  // ── Selection + processing ────────────────────────────────────────
+  const toggleSel = (pid) => setSel(s => ({ ...s, [pid]: !s[pid] }));
+  const selectedIds = useMemo(() => Object.keys(sel).filter(k => sel[k]), [sel]);
+  const processSelected = async (sessionId) => {
+    const ids = selectedIds;
+    if (!ids.length) return;
+    setProcessing(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__usertesting/process"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, participantIds: ids }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || (j && j.ok === false)) throw new Error((j && j.error) || "processing failed");
+      setSel({});
+    } catch (e) { flashErr(String(e?.message || e)); }
+    finally { setProcessing(false); }
+  };
+
+  // ── Config editor ops (mutate session.config via session-update). ─────
+  const updateConfig = (session, mutate) => {
+    const next = JSON.parse(JSON.stringify(session.config || {}));
+    mutate(next);
+    return op({ op: "session-update", sessionId: session.id, config: next });
+  };
+
+  return html`
+    <div
+      className="workflow-comments-panel workflow-ut-panel"
+      data-host-node-id=${node.id}
+      data-scroll-internally="true"
+      style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
+      onMouseDown=${(e) => e.stopPropagation()}
+      onWheel=${(e) => e.stopPropagation()}
+    >
+      <div className="workflow-comments-panel-bar">
+        <span className="workflow-comments-panel-glyph"><${Icon.List}/></span>
+        <span className="workflow-comments-panel-title">User testing · source/${slug}/</span>
+        <button className="workflow-comments-panel-close" title="Close" onClick=${onClose}>×</button>
+      </div>
+
+      ${cap.state === "loading" && html`<div className="workflow-comments-empty">Checking user testing…</div>`}
+
+      ${cap.state === "off" && html`
+        <div className="workflow-comments-share-first">
+          <div className="workflow-comments-share-first-glyph"><${Icon.Lock}/></div>
+          <div className="workflow-comments-share-first-title">User testing mode is off</div>
+          <div className="workflow-comments-share-first-body">
+            Run moderated + unmoderated tests on this prototype: build sessions, invite participants, and turn their recordings into insights.
+            Enabling installs a local speech model (whisper-cpp, ~460 MB) so testee audio is transcribed on this machine - it stays off until you opt in.
+          </div>
+          <button key="cta" className="workflow-comments-share-cta" disabled=${cap.enabling}
+            title="Enable user testing mode - flips the capability on and installs the local speech model"
+            onClick=${cap.enable}
+          ><${Icon.List}/> ${cap.enabling ? "Installing speech model…" : "Enable user testing mode"}</button>
+          ${cap.enableErr && html`<div key="err" className="workflow-comments-err">${cap.enableErr}</div>`}
+        </div>
+      `}
+
+      ${cap.state === "provisioning" && html`
+        <div className="workflow-comments-share-first">
+          <div className="workflow-comments-share-first-glyph"><${Icon.Download}/></div>
+          <div className="workflow-comments-share-first-title">Installing speech model…</div>
+          <div className="workflow-comments-share-first-body">
+            Downloading whisper-cpp (~460 MB). This runs once and can take a few minutes - you can keep working; the panel unlocks automatically when it finishes.
+          </div>
+          ${cap.enableErr && html`<div className="workflow-comments-err">${cap.enableErr}</div>`}
+        </div>
+      `}
+
+      ${cap.state === "ready" && html`
+        <div className="workflow-ut-body">
+          ${err && html`<div className="workflow-comments-err">${err}</div>`}
+
+          ${!publishBase && html`
+            <div className="workflow-ut-hint">
+              Publish this prototype first so links resolve. Use the Share panel (a stable getwoven.design URL is recommended for tests that run over days).
+              ${!cloudflaredFound && html`<span> cloudflared not installed - set it up via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>).</span>`}
+            </div>
+          `}
+
+          <div className="workflow-ut-row workflow-ut-row-head">
+            <span className="workflow-ut-sessions-label">Sessions</span>
+            <button className="shares-btn shares-btn-primary" disabled=${busy}
+              onClick=${async () => {
+                const label = await uiPrompt("Name this session:", "Usability round");
+                if (label === null) return;
+                const j = await op({ op: "create", prototype: slug, label: label || undefined });
+                if (j && j.session) setOpenSession(j.session.id);
+              }}>${busy ? "…" : "New session"}</button>
+          </div>
+
+          ${data === null && html`<div className="workflow-comments-empty">Loading…</div>`}
+          ${data !== null && sessions.length === 0 && html`
+            <div className="workflow-comments-empty">No sessions yet - create one to start inviting participants.</div>
+          `}
+
+          ${sessions.map(s => html`
+            <div key=${s.id} className="workflow-ut-session">
+              <div className="workflow-ut-session-head">
+                <input
+                  className="workflow-ut-session-label"
+                  value=${s.label || ""}
+                  placeholder="Session label"
+                  onChange=${(e) => op({ op: "session-update", sessionId: s.id, label: e.target.value })}
+                />
+                <button className="shares-btn" title="Edit flows, questions + rating"
+                  onClick=${() => setOpenSession(p => p === s.id ? null : s.id)}
+                >${openSession === s.id ? "Done" : "Config"}</button>
+                <button className="shares-btn" title="Delete this session"
+                  onClick=${async () => {
+                    if (!await uiConfirm(`Delete session "${s.label || s.id}"? Its cohorts + participants are removed too.`)) return;
+                    op({ op: "session-delete", sessionId: s.id });
+                  }}><${Icon.Trash}/></button>
+              </div>
+
+              <div className="workflow-ut-counts">
+                ${["invited", "recording", "complete", "processed"].map(k => html`
+                  <span key=${k} className="workflow-ut-count">${(s.counts && s.counts[k]) || 0} ${k}</span>
+                `)}
+              </div>
+
+              ${openSession === s.id && html`
+                <${UserTestingConfigEditor} session=${s} updateConfig=${updateConfig}/>
+              `}
+
+              <div className="workflow-ut-cohorts">
+                ${(s.cohorts || []).map(c => html`
+                  <div key=${c.id} className="workflow-ut-cohort">
+                    <div className="workflow-ut-cohort-head">
+                      <input
+                        className="workflow-ut-cohort-name"
+                        value=${c.name || ""}
+                        placeholder="Cohort"
+                        onChange=${(e) => op({ op: "cohort-update", sessionId: s.id, cohortId: c.id, name: e.target.value })}
+                      />
+                      <button className="shares-btn" title="Add participant"
+                        onClick=${async () => {
+                          const name = await uiPrompt("Participant name (optional):", "");
+                          if (name === null) return;
+                          const email = await uiPrompt("Participant email (optional):", "");
+                          if (email === null) return;
+                          op({ op: "participant-add", sessionId: s.id, cohortId: c.id, name: name || undefined, email: email || undefined });
+                        }}><${Icon.Plus}/></button>
+                      <button className="shares-btn" title="Delete cohort"
+                        onClick=${async () => {
+                          if (!await uiConfirm(`Delete cohort "${c.name || c.id}" and its participants?`)) return;
+                          op({ op: "cohort-delete", sessionId: s.id, cohortId: c.id });
+                        }}><${Icon.Trash}/></button>
+                    </div>
+
+                    ${(c.participants || []).map(p => html`
+                      <div key=${p.id} className="workflow-ut-participant">
+                        <label className="workflow-ut-pcheck">
+                          <input type="checkbox" checked=${!!sel[p.id]} onChange=${() => toggleSel(p.id)}/>
+                        </label>
+                        <div className="workflow-ut-pmeta">
+                          <span className="workflow-ut-pname">${p.name || p.email || "Participant"}</span>
+                          <span className=${"workflow-ut-pstatus is-" + (p.status || "invited")}>${p.status || "invited"}</span>
+                        </div>
+                        <div className="workflow-ut-plinks">
+                          <button className="shares-btn" disabled=${!testeeLink(p)}
+                            title=${testeeLink(p) ? "Copy the testee link" : "Publish the prototype first to build links"}
+                            onClick=${() => copyLink(p, "testee")}
+                          >${copied === `${p.id}:testee` ? "✓" : "Copy testee"}</button>
+                          <button className="shares-btn" disabled=${!reviewerLink(p)}
+                            title=${reviewerLink(p) ? "Copy the reviewer link" : "Publish the prototype first to build links"}
+                            onClick=${() => copyLink(p, "reviewer")}
+                          >${copied === `${p.id}:reviewer` ? "✓" : "Copy reviewer"}</button>
+                          <button className="shares-btn" disabled=${!reviewerLink(p)}
+                            title="Open the reviewer view in a new tab"
+                            onClick=${() => reviewerLink(p) && window.open(reviewerLink(p), "_blank")}
+                          ><${Icon.External}/></button>
+                          <button className="shares-btn" title="Delete participant"
+                            onClick=${async () => {
+                              if (!await uiConfirm(`Delete ${p.name || p.email || "this participant"}?`)) return;
+                              op({ op: "participant-delete", sessionId: s.id, participantId: p.id });
+                            }}><${Icon.Trash}/></button>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                `)}
+
+                <button className="shares-btn workflow-ut-add-cohort"
+                  onClick=${async () => {
+                    const name = await uiPrompt("Cohort name:", "Cohort " + ((s.cohorts || []).length + 1));
+                    if (name === null) return;
+                    op({ op: "cohort-add", sessionId: s.id, name: name || undefined });
+                  }}><${Icon.Plus}/> Add cohort</button>
+              </div>
+
+              <div className="workflow-ut-process">
+                <button className="shares-btn shares-btn-primary"
+                  disabled=${processing || selectedIds.length === 0}
+                  title=${selectedIds.length === 0 ? "Select participants to process" : "Run an agent that drops an insights table on the canvas"}
+                  onClick=${() => processSelected(s.id)}
+                >${processing ? "Processing…" : `Process ${selectedIds.length || ""} into insights`.trim()}</button>
+              </div>
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* WS4 - per-session config editor: flows (name + task lines), questions
+   (prompt + placement + kind), and the rating (label / min / max). Each
+   change writes the whole config object back via session-update. */
+function UserTestingConfigEditor({ session, updateConfig }) {
+  const cfg = session.config || {};
+  const flows = cfg.flows || [];
+  const questions = cfg.questions || [];
+  const rating = cfg.rating || { enabled: false, min: 1, max: 5, label: "" };
+  const AT_OPTIONS = ["start", "end", "general"];
+  const KIND_OPTIONS = ["text", "choice", "rating", "boolean"];
+  const newId = (prefix) => prefix + "_" + Math.random().toString(36).slice(2, 8);
+
+  return html`
+    <div className="workflow-ut-config">
+      <div className="workflow-ut-config-group">
+        <div className="workflow-ut-config-head">Flows</div>
+        ${flows.map((f, i) => html`
+          <div key=${f.id || i} className="workflow-ut-config-item">
+            <div className="workflow-ut-config-row">
+              <input className="workflow-ut-input" value=${f.name || ""} placeholder="Flow name"
+                onChange=${(e) => updateConfig(session, c => { c.flows[i].name = e.target.value; })}/>
+              <button className="shares-btn" title="Delete flow"
+                onClick=${() => updateConfig(session, c => { c.flows.splice(i, 1); })}><${Icon.Trash}/></button>
+            </div>
+            <textarea className="workflow-ut-textarea" rows="2"
+              placeholder="One task per line"
+              value=${(f.tasks || []).join("\n")}
+              onChange=${(e) => updateConfig(session, c => { c.flows[i].tasks = e.target.value.split("\n").map(t => t.trim()).filter(Boolean); })}/>
+          </div>
+        `)}
+        <button className="shares-btn"
+          onClick=${() => updateConfig(session, c => { c.flows = c.flows || []; c.flows.push({ id: newId("flow"), name: "", tasks: [] }); })}
+        ><${Icon.Plus}/> Add flow</button>
+      </div>
+
+      <div className="workflow-ut-config-group">
+        <div className="workflow-ut-config-head">Questions</div>
+        ${questions.map((q, i) => html`
+          <div key=${q.id || i} className="workflow-ut-config-item">
+            <div className="workflow-ut-config-row">
+              <input className="workflow-ut-input" value=${q.prompt || ""} placeholder="Question prompt"
+                onChange=${(e) => updateConfig(session, c => { c.questions[i].prompt = e.target.value; })}/>
+              <button className="shares-btn" title="Delete question"
+                onClick=${() => updateConfig(session, c => { c.questions.splice(i, 1); })}><${Icon.Trash}/></button>
+            </div>
+            <div className="workflow-ut-config-row">
+              <select className="workflow-ut-select" value=${flowAtValue(q.at, flows)}
+                onChange=${(e) => updateConfig(session, c => { c.questions[i].at = e.target.value; })}>
+                ${AT_OPTIONS.map(a => html`<option key=${a} value=${a}>${a}</option>`)}
+                ${flows.map(f => html`<option key=${f.id} value=${"flow:" + f.id}>flow: ${f.name || f.id}</option>`)}
+              </select>
+              <select className="workflow-ut-select" value=${q.kind || "text"}
+                onChange=${(e) => updateConfig(session, c => { c.questions[i].kind = e.target.value; })}>
+                ${KIND_OPTIONS.map(k => html`<option key=${k} value=${k}>${k}</option>`)}
+              </select>
+            </div>
+          </div>
+        `)}
+        <button className="shares-btn"
+          onClick=${() => updateConfig(session, c => { c.questions = c.questions || []; c.questions.push({ id: newId("q"), at: "end", kind: "text", prompt: "" }); })}
+        ><${Icon.Plus}/> Add question</button>
+      </div>
+
+      <div className="workflow-ut-config-group">
+        <div className="workflow-ut-config-head">Rating</div>
+        <div className="workflow-ut-config-row">
+          <label className="workflow-ut-pcheck">
+            <input type="checkbox" checked=${!!rating.enabled}
+              onChange=${(e) => updateConfig(session, c => { c.rating = c.rating || {}; c.rating.enabled = e.target.checked; })}/>
+            <span> Ask for a rating</span>
+          </label>
+        </div>
+        ${rating.enabled && html`
+          <div className="workflow-ut-config-row">
+            <input className="workflow-ut-input" value=${rating.label || ""} placeholder="Rating label"
+              onChange=${(e) => updateConfig(session, c => { c.rating.label = e.target.value; })}/>
+            <input className="workflow-ut-input workflow-ut-input-num" type="number" value=${rating.min ?? 1} title="Min"
+              onChange=${(e) => updateConfig(session, c => { c.rating.min = Number(e.target.value); })}/>
+            <input className="workflow-ut-input workflow-ut-input-num" type="number" value=${rating.max ?? 5} title="Max"
+              onChange=${(e) => updateConfig(session, c => { c.rating.max = Number(e.target.value); })}/>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+// Map a question `at` value to the dropdown's current selection. A
+// "flow:<id>" pointing at a deleted flow falls back to "general" so the
+// select never shows a dangling option.
+function flowAtValue(at, flows) {
+  if (!at) return "general";
+  if (at.startsWith("flow:")) {
+    const fid = at.slice(5);
+    return (flows || []).some(f => f.id === fid) ? at : "general";
+  }
+  return at;
+}
+
 /* ────────── Share mode - prototype node comments dock ──────────
    Toggled by the 💬 top-action on a prototype node (same family as the
    code-panel toggle). Docks to the node's LEFT edge - the code panel and
@@ -49852,7 +50435,7 @@ const PROTO_DEVICE_PRESETS = [
   { id: "mobile",  label: "Mobile",  w: 390,  h: 844,  Icon: Icon.Phone,   rotatable: true  },
 ];
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, onToggleUserTesting, userTestingOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = nodePrototype(node);
@@ -51017,6 +51600,17 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             active: commentsOpen,
             onClick: onToggleComments,
             className: "workflow-node-top-action-share",
+          },
+          onToggleUserTesting && {
+            key: "user-testing",
+            icon: html`<${Icon.List}/>`,
+            tip: userTestingOpen
+              ? "Hide user testing panel."
+              : "User testing - run moderated + unmoderated tests: build sessions, invite participants, and turn their recordings into insights.",
+            ariaLabel: "User testing",
+            active: userTestingOpen,
+            onClick: onToggleUserTesting,
+            className: "workflow-node-top-action-user-testing",
           },
           onOpenCanvasFrames && {
             key: "canvas-frames",
@@ -71265,6 +71859,7 @@ function WorkflowSettingsDialog({ onClose }) {
             `)}
           ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
+            <${WorkflowUserTestingSettingsRow}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}
