@@ -455,6 +455,30 @@
       }
     }, []);
 
+    // MediaRecorder webm ships with NO duration header, so a.duration is Infinity
+    // and the element cannot seek - every syncAudio/seek above bails on the
+    // isFinite() guard and the audio free-runs, ignoring the timeline. Force the
+    // browser to scan the file (seek past the end) so duration + seeking work.
+    useEffect(() => {
+      const a = audioRef.current;
+      if (!a) return;
+      let done = false;
+      const onMeta = () => { if (a.duration === Infinity) { try { a.currentTime = 1e101; } catch {} } };
+      const onDur = () => {
+        if (!done && isFinite(a.duration) && a.duration > 0) {
+          done = true;
+          try { a.currentTime = 0; } catch {}
+        }
+      };
+      a.addEventListener("loadedmetadata", onMeta);
+      a.addEventListener("durationchange", onDur);
+      if (a.readyState >= 1 && a.duration === Infinity) onMeta();   // metadata already cached
+      return () => {
+        a.removeEventListener("loadedmetadata", onMeta);
+        a.removeEventListener("durationchange", onDur);
+      };
+    }, [meta, recCfg]);
+
     // ── Transport - play/pause/seek drive BOTH replayer and audio together.
     // replayer.play(ms)/pause(ms) take ms from the replay START; our playhead is
     // ms-since-t0, so convert via (sinceT0 - (rrwebStart - t0)).
