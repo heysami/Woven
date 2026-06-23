@@ -4550,8 +4550,7 @@ const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
 #perm{position:absolute;bottom:10px;left:10px;display:flex;gap:6px;z-index:9;font-family:monospace;font-size:12px}
 #perm button{background:#111;color:#6ee7ff;border:1px solid #345;border-radius:18px;padding:5px 10px;cursor:pointer}
 </style></head><body>
-<div id="h"><div id="s"><canvas id="c2d"></canvas><canvas id="cgl"></canvas></div>
-<div id="perm"><button id="pc">◉ camera</button><button id="pm">◉ mic</button></div></div>
+<div id="h"><div id="s"><canvas id="c2d"></canvas><canvas id="cgl"></canvas></div></div>
 <script>
 /*__CFG__*/
 /*__ASSETS__*/
@@ -4716,13 +4715,22 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
   function ensureCam(){ if(IN.cam.on||camReq)return; let need=false;
     for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} if(L.content&&L.content.fillSrc==='camera'){need=true;break;} const mm=layerMorph(L); if(mm&&(mm.params||{}).source==='camera'){need=true;break;} } if(!need)return;
     camReq=true; navigator.mediaDevices.getUserMedia({video:true}).then(st=>{ const v=document.createElement('video');v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; return v.play().then(()=>{ IN.cam={on:true,video:v}; }); }).catch(()=>{}).then(()=>{ camReq=false; }); }
-  /* permissions */
-  document.getElementById('pc').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({video:true});
-    const v=document.createElement('video'); v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; await v.play();
-    IN.cam={on:true,video:v}; }catch(e){} };
-  document.getElementById('pm').onclick=async()=>{ try{ const st=await navigator.mediaDevices.getUserMedia({audio:true});
+  /* permissions - the baked output shows NO camera/mic chips. getUserMedia is
+     blocked outside a user gesture in many browsers, so we grant on the first
+     tap/key anywhere on the piece (ensureCam already runs each frame; this
+     re-fires it inside a gesture context). Modern logic-graph audio
+     (input-audio) is gesture-gated by LogicInputs itself, so it needs no chip
+     either - only the LEGACY layer/trigger audio path is enabled here, and only
+     when the composition actually uses it (so we never prompt for mic in vain). */
+  function ensureMicLegacy(){ if(IN.mic.on)return; try{ navigator.mediaDevices.getUserMedia({audio:true}).then(st=>{
     const ac=new (AudioContext||webkitAudioContext)(); const sr=ac.createMediaStreamSource(st); const an=ac.createAnalyser(); an.fftSize=2048; sr.connect(an);
-    IN.mic={on:true,an,data:new Uint8Array(an.frequencyBinCount),freq:new Uint8Array(an.frequencyBinCount)}; }catch(e){} };
+    IN.mic={on:true,an,data:new Uint8Array(an.frequencyBinCount),freq:new Uint8Array(an.frequencyBinCount)}; }).catch(()=>{}); }catch(e){} }
+  let _usesLegacyAudio=false; try{ for(const L of CFG.layers){ const mm=layerMorph(L);
+    if(mm&&(mm.params||{}).source==='audio'){_usesLegacyAudio=true;break;}
+    if(L&&L.trigger&&L.trigger.source==='audio'){_usesLegacyAudio=true;break;} } }catch(e){}
+  function grantOnGesture(){ try{ ensureCam(); }catch(e){} if(_usesLegacyAudio) ensureMicLegacy(); }
+  addEventListener('pointerdown', grantOnGesture, true);
+  addEventListener('keydown', grantOnGesture, true);
   function audioVal(feat,band){ if(!IN.mic.on)return 0; const an=IN.mic.an;
     if(feat==='loudness'){ an.getByteTimeDomainData(IN.mic.data); let s=0; for(let i=0;i<IN.mic.data.length;i++){const x=(IN.mic.data[i]-128)/128; s+=x*x;} return clamp(Math.sqrt(s/IN.mic.data.length)*3,0,1);}
     an.getByteFrequencyData(IN.mic.freq);
