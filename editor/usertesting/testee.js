@@ -355,15 +355,23 @@
     const CLICKS_PER_POINT = 3;
     const [pointHits, setPointHits] = useState(() => calibPoints.map(() => 0));
     const webgazerReadyRef = useRef(false);
+    const [gazeReady, setGazeReady] = useState(false);
 
     const startWebgazer = useCallback(async () => {
       if (webgazerReadyRef.current) return;
       try {
         webgazer.setRegression("ridge");
-        // Point gaze at the camera the testee chose (falls back to default if the
-        // webgazer build does not support the constraint).
-        try { if (camId && webgazer.setCameraConstraints) webgazer.setCameraConstraints({ deviceId: { exact: camId } }); } catch {}
-        try { if (camId && webgazer.params) webgazer.params.camConstraints = { deviceId: { exact: camId } }; } catch {}
+        // webgazer passes params.camConstraints STRAIGHT to getUserMedia, so it
+        // MUST be shaped { video: {...} }; a bare { deviceId } throws and kills
+        // gaze entirely. deviceId is ideal (not exact) so a busy/odd camera does
+        // not hard-fail.
+        try {
+          if (webgazer.params) {
+            const v = { width: { ideal: 640 }, height: { ideal: 480 } };
+            if (camId) v.deviceId = camId;
+            webgazer.params.camConstraints = { video: v };
+          }
+        } catch {}
         // Free the permission-check camera stream so webgazer can claim the device.
         try { (camStreamRef.current || {}).getTracks?.().forEach((t) => t.stop()); camStreamRef.current = null; } catch {}
         // Keep the video preview ON (rendering): webgazer extracts eye features
@@ -374,9 +382,16 @@
         webgazer.showPredictionPoints(false);
         webgazer.showFaceOverlay(false);
         webgazer.showFaceFeedbackBox(false);
-        await webgazer.begin();
+        try {
+          await webgazer.begin();
+        } catch (e1) {
+          // The chosen camera may be unavailable - retry with any camera.
+          try { if (webgazer.params) webgazer.params.camConstraints = { video: { width: { ideal: 640 }, height: { ideal: 480 } } }; } catch {}
+          await webgazer.begin();
+        }
         try { webgazer.showVideoPreview(true); } catch {}
         webgazerReadyRef.current = true;
+        setGazeReady(true);
       } catch (e) {
         setPermErr("Could not start gaze tracking. Make sure the camera is not in "
           + "use by another app, then reload.");
@@ -775,7 +790,9 @@
               aria-label=${"Calibration point " + (i + 1)}></button>
           `)}
           <div className="ut-calib-foot">
-            <button className="ut-btn ut-btn-primary" disabled=${!calibDone} onClick=${start}>
+            ${!gazeReady && !permErr && html`<span className="ut-gaze-status">Starting gaze tracking…</span>`}
+            ${gazeReady && html`<span className="ut-gaze-status is-ok"><${Icon.Check}/> Gaze tracking active</span>`}
+            <button className="ut-btn ut-btn-primary" disabled=${!calibDone || !gazeReady} onClick=${start}>
               Start the test</button>
           </div>
         </div>
