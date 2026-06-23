@@ -9245,7 +9245,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartCh
   `;
 }
 
-function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, openKinds, hidden }) {
+function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden }) {
   // Which panel is open ("runs" | "tasks" | null).
   const [active, setActive] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -9484,6 +9484,17 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
           <${Icon.User}/>
         </span>
       <//>
+      ${onOpenUserTesting && html`<${HoverTip}
+        placement="left"
+        className="th-right-rail-btn"
+        ariaLabel="Open user testing"
+        tip="User testing - build sessions, invite participants, review recordings & generate insights"
+        onClick=${onOpenUserTesting}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.Eye}/>
+        </span>
+      <//>`}
       <${HoverTip}
         placement="left"
         className=${"th-right-rail-btn th-right-rail-btn-git" + (openKinds?.includes("git") ? " is-active" : "")}
@@ -39324,6 +39335,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // commentsPanelNodeId exactly: docks to the node's LEFT edge, toggled by
   // the node's User-testing top-action, floats via WorkflowUserTestingPanel.
   const [userTestingPanelNodeId, setUserTestingPanelNodeId] = useState(null);
+  const [userTestingGlobalOpen, setUserTestingGlobalOpen] = useState(false);
 
   // Expose flow - replace any existing asset nodes bound to this prototype
   // with the new set, pin lockedState, persist via setData. Re-Expose at a
@@ -40973,19 +40985,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onClose=${() => setCommentsPanelNodeId(null)}
               />`;
             })()}
-            ${userTestingPanelNodeId && (() => {
-              // WS4 - User Testing dock. Resolve the host fresh from data
-              // (same pattern as the comments dock) so the panel tracks node
-              // moves/resizes. Docks to the node's LEFT edge.
-              const host = (data.nodes || []).find(n => n.id === userTestingPanelNodeId);
-              if (!host) return null;
-              return html`<${WorkflowUserTestingPanel}
-                key=${"usertestingpanel-" + host.id}
-                node=${host}
-                zoom=${zoom}
-                onClose=${() => setUserTestingPanelNodeId(null)}
+            ${(userTestingPanelNodeId || userTestingGlobalOpen) && createPortal((() => {
+              // User Testing full-screen workspace (portaled to body so it
+              // escapes the canvas transform). Node entry scopes to the host
+              // prototype's slug; the right-rail entry opens it global (null).
+              const host = userTestingPanelNodeId ? (data.nodes || []).find(n => n.id === userTestingPanelNodeId) : null;
+              if (userTestingPanelNodeId && !host) return null;
+              const utSlug = host ? nodePrototype(host) : null;
+              return html`<${UserTestingScreen}
+                key="ut-screen"
+                slug=${utSlug}
+                onClose=${() => { setUserTestingPanelNodeId(null); setUserTestingGlobalOpen(false); }}
               />`;
-            })()}
+            })(), document.body)}
             ${pickedElement && pickedElement.nodeId && (() => {
               // v3.4.x - Property inspector dock. Mounts when an element
               // is picked inside any prototype / asset iframe. Sits to
@@ -41875,6 +41887,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           onStartNewChat=${onOpenNewChat}
           onStartChatWithPrompt=${onStartChatWithPrompt}
           onOpenWindow=${onOpenWindow}
+          onOpenUserTesting=${() => setUserTestingGlobalOpen(true)}
           openKinds=${openKinds}
           hidden=${fullscreen}/>
       </div>
@@ -48176,6 +48189,323 @@ function WorkflowUserTestingSettingsRow() {
      - two per-participant links (testee + reviewer) built from publishBase
      - multi-select participants -> "Process into insights"
    Polls GET /__usertesting while open so statuses refresh as testees finish. */
+/* User Testing - dedicated FULL-SCREEN workspace (createPortal over the
+   canvas). Opened from a prototype node's User-testing action (scoped to that
+   prototype's slug) OR from the right-rail global entry (slug=null, all
+   prototypes). Left rail = sessions; main = Objective / People / Insights.
+   Reuses the same capability hook + /__usertesting ops + link formula as the
+   old dock; only the presentation is new (composed from the editor's design
+   system, so it reads native). */
+function UserTestingScreen({ slug, onClose }) {
+  const cap = useUserTestingCapability();
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState({});            // participantId -> selected
+  const [processing, setProcessing] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const [activeId, setActiveId] = useState(null); // selected session
+  const [tab, setTab] = useState("objective");
+
+  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const refetch = useCallback(async () => {
+    try { const r = await fetch(apiUrl("/__usertesting")); const j = await r.json(); setData(j || { sessions: [] }); }
+    catch { setData(prev => prev || { sessions: [] }); }
+  }, []);
+  useEffect(() => {
+    if (cap.state !== "ready") return;
+    refetch();
+    const t = setInterval(refetch, 6000);
+    return () => clearInterval(t);
+  }, [cap.state, refetch]);
+
+  const op = useCallback(async (body) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__usertesting"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || (j && j.ok === false)) throw new Error((j && j.error) || `${body.op} failed`);
+      await refetch();
+      return j;
+    } catch (e) { flashErr(String(e?.message || e)); return null; }
+    finally { setBusy(false); }
+  }, [refetch]);
+
+  const allSessions = (data && data.sessions) || [];
+  const sessions = useMemo(() => slug ? allSessions.filter(s => s.prototype === slug) : allSessions, [allSessions, slug]);
+  const publishBase = (data && data.publishBase) || "";
+  const cloudflaredFound = !!(data && data.cloudflared && data.cloudflared.found);
+  const active = useMemo(() => sessions.find(s => s.id === activeId) || null, [sessions, activeId]);
+
+  useEffect(() => {
+    if (!activeId && sessions.length) setActiveId(sessions[0].id);
+    else if (activeId && !sessions.some(s => s.id === activeId)) setActiveId(sessions[0] ? sessions[0].id : null);
+  }, [sessions, activeId]);
+
+  const testeeLink = (p) => publishBase && p.testeeToken ? `${publishBase}/t/${p.testeeToken}/` : "";
+  const reviewerLink = (p) => publishBase && p.reviewerToken ? `${publishBase}/r/${p.reviewerToken}/` : "";
+  const copyLink = async (p, kind) => {
+    const link = kind === "testee" ? testeeLink(p) : reviewerLink(p);
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); } catch {}
+    const tag = `${p.id}:${kind}`; setCopied(tag); setTimeout(() => setCopied(c => c === tag ? null : c), 1400);
+  };
+
+  const toggleSel = (pid) => setSel(s => ({ ...s, [pid]: !s[pid] }));
+  const selectedIds = useMemo(() => Object.keys(sel).filter(k => sel[k]), [sel]);
+  const processSelected = async () => {
+    if (!active || !selectedIds.length) return;
+    setProcessing(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/__usertesting/process"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: active.id, participantIds: selectedIds }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || (j && j.ok === false)) throw new Error((j && j.error) || "processing failed");
+      setSel({});
+    } catch (e) { flashErr(String(e?.message || e)); }
+    finally { setProcessing(false); }
+  };
+
+  const updateConfig = (session, mutate) => {
+    const next = JSON.parse(JSON.stringify(session.config || {}));
+    mutate(next);
+    return op({ op: "session-update", sessionId: session.id, config: next });
+  };
+
+  const newSession = async () => {
+    let useSlug = slug;
+    if (!useSlug) { useSlug = await uiPrompt("Prototype to test (slug, e.g. main):", "main"); if (!useSlug) return; }
+    const label = await uiPrompt("Name this session:", "Usability round 1");
+    if (label === null) return;
+    const j = await op({ op: "create", prototype: useSlug, label: label || undefined });
+    if (j && j.session) { setActiveId(j.session.id); setTab("objective"); }
+  };
+
+  const cohorts = (active && active.cohorts) || [];
+  const COUNT_KEYS = ["invited", "recording", "complete", "processed"];
+
+  return html`
+    <div className="ut-screen" role="dialog" aria-label="User testing" onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
+      <div className="ut-screen-bar">
+        <span className="ut-screen-glyph"><${Icon.Eye}/></span>
+        <div className="ut-screen-titles">
+          <div className="ut-screen-title">User testing</div>
+          <div className="ut-screen-sub">${slug ? `source/${slug}/` : "all prototypes"}</div>
+        </div>
+        <div className="ut-screen-spacer"></div>
+        ${cap.state === "ready" && !publishBase && html`
+          <span className="ut-screen-pubhint">Publish via Share to build links${cloudflaredFound ? "" : " (install cloudflared first)"}.</span>`}
+        <button className="ut-screen-close" title="Close (Esc)" aria-label="Close" onClick=${onClose}>×</button>
+      </div>
+
+      ${cap.state === "loading" && html`<div className="ut-screen-center"><div className="ut-screen-card">Checking user testing…</div></div>`}
+
+      ${cap.state === "off" && html`
+        <div className="ut-screen-center">
+          <div className="ut-screen-card">
+            <div className="ut-screen-card-glyph"><${Icon.Lock}/></div>
+            <div className="ut-screen-card-title">User testing is off</div>
+            <p className="ut-screen-card-body">Run moderated and unmoderated tests on your prototypes: build sessions, invite participants, record their screen, voice and gaze, then turn the recordings into an insights board. Enabling installs a local speech model (whisper-cpp, ~460 MB) so audio is transcribed on this machine - it stays off until you opt in.</p>
+            <button className="tbtn tbtn-primary ut-screen-enable" disabled=${cap.enabling} onClick=${cap.enable}>${cap.enabling ? "Installing speech model…" : "Enable user testing"}</button>
+            ${cap.enableErr && html`<div className="ut-screen-msg ut-screen-msg-fail">${cap.enableErr}</div>`}
+          </div>
+        </div>`}
+
+      ${cap.state === "provisioning" && html`
+        <div className="ut-screen-center">
+          <div className="ut-screen-card">
+            <div className="ut-screen-card-glyph"><${Icon.Download}/></div>
+            <div className="ut-screen-card-title">Installing speech model…</div>
+            <p className="ut-screen-card-body">Downloading whisper-cpp (~460 MB). This runs once and can take a few minutes - it unlocks automatically when it finishes. You can keep working.</p>
+            ${cap.enableErr && html`<div className="ut-screen-msg ut-screen-msg-fail">${cap.enableErr}</div>`}
+          </div>
+        </div>`}
+
+      ${cap.state === "ready" && html`
+        <div className="ut-screen-body">
+          <aside className="ut-side">
+            <div className="ut-side-head">
+              <span className="ut-side-title">Sessions</span>
+              <button className="tbtn tbtn-primary ut-btn-sm" disabled=${busy} onClick=${newSession}><${Icon.Plus}/> New</button>
+            </div>
+            <div className="ut-side-list">
+              ${data === null && html`<div className="ut-side-empty">Loading…</div>`}
+              ${data !== null && sessions.length === 0 && html`<div className="ut-side-empty">No sessions yet. Create one to start.</div>`}
+              ${sessions.map(s => {
+                const c = s.counts || {};
+                const total = (c.invited || 0) + (c.recording || 0) + (c.complete || 0) + (c.processed || 0);
+                return html`
+                <button key=${s.id} className=${"ut-side-item" + (s.id === activeId ? " is-active" : "")} onClick=${() => setActiveId(s.id)}>
+                  <span className="ut-side-item-label">${s.label || "Untitled session"}</span>
+                  <span className="ut-side-item-meta">
+                    ${!slug ? html`<span className="ut-side-item-proto">${s.prototype}</span>` : null}
+                    <span className="ut-side-item-n">${total} ${total === 1 ? "person" : "people"}</span>
+                  </span>
+                </button>`;
+              })}
+            </div>
+          </aside>
+
+          <main className="ut-main">
+            ${err && html`<div className="ut-screen-msg ut-screen-msg-fail ut-main-msg">${err}</div>`}
+            ${!active && html`<div className="ut-main-empty">${sessions.length ? "Select a session on the left." : "Create your first session to get started."}</div>`}
+            ${active && html`
+              <div className="ut-main-head">
+                <input className="ut-main-title" value=${active.label || ""} placeholder="Session name"
+                  onChange=${(e) => op({ op: "session-update", sessionId: active.id, label: e.target.value })}/>
+                <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete session" onClick=${async () => { if (!await uiConfirm(`Delete session "${active.label || active.id}"? Its participants are removed too.`)) return; op({ op: "session-delete", sessionId: active.id }); }}><${Icon.Trash}/></button>
+              </div>
+              <div className="ut-counts">
+                ${COUNT_KEYS.map(k => html`<span key=${k} className=${"ut-count ut-count-" + k}><b>${(active.counts && active.counts[k]) || 0}</b> ${k}</span>`)}
+              </div>
+              <div className="ut-tabs">
+                ${[["objective", "Objective"], ["people", "People"], ["insights", "Insights"]].map(([t, lab]) => html`
+                  <button key=${t} className="ut-tab" data-active=${tab === t ? "true" : "false"} onClick=${() => setTab(t)}>${lab}</button>`)}
+              </div>
+
+              <div className="ut-tabbody">
+                ${tab === "objective" && html`<${UserTestingObjectiveEditor} session=${active} updateConfig=${updateConfig}/>`}
+
+                ${tab === "people" && html`
+                  <div className="ut-people">
+                    ${cohorts.length === 0 && html`<div className="ut-main-empty ut-main-empty-sm">No participant lists yet. Add one, then add people to it.</div>`}
+                    ${cohorts.map(c => html`
+                      <div key=${c.id} className="ut-cohort">
+                        <div className="ut-cohort-head">
+                          <input className="ut-cohort-name" value=${c.name || ""} placeholder="List name"
+                            onChange=${(e) => op({ op: "cohort-update", sessionId: active.id, cohortId: c.id, name: e.target.value })}/>
+                          <button className="tbtn ut-btn-sm" onClick=${async () => { const name = await uiPrompt("Participant name (optional):", ""); if (name === null) return; const email = await uiPrompt("Participant email (optional):", ""); if (email === null) return; op({ op: "participant-add", sessionId: active.id, cohortId: c.id, name: name || undefined, email: email || undefined }); }}><${Icon.Plus}/> Add person</button>
+                          <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete list" onClick=${async () => { if (!await uiConfirm(`Delete list "${c.name || c.id}" and its participants?`)) return; op({ op: "cohort-delete", sessionId: active.id, cohortId: c.id }); }}><${Icon.Trash}/></button>
+                        </div>
+                        <div className="ut-people-list">
+                          ${(c.participants || []).length === 0 && html`<div className="ut-people-empty">No people yet.</div>`}
+                          ${(c.participants || []).map(p => {
+                            const st = p.status || "invited";
+                            const tl = testeeLink(p), rl = reviewerLink(p);
+                            return html`
+                            <div key=${p.id} className="ut-person">
+                              <label className="ut-person-check"><input type="checkbox" checked=${!!sel[p.id]} onChange=${() => toggleSel(p.id)}/></label>
+                              <div className="ut-person-id">
+                                <span className="ut-person-name">${p.name || p.email || "Participant"}</span>
+                                ${p.email && p.name ? html`<span className="ut-person-email">${p.email}</span>` : null}
+                              </div>
+                              <span className="ut-chip" data-state=${st}>${st}</span>
+                              <button className="tbtn ut-btn-danger ut-btn-icon ut-person-del" title="Delete participant" onClick=${async () => { if (!await uiConfirm(`Delete ${p.name || p.email || "this participant"}?`)) return; op({ op: "participant-delete", sessionId: active.id, participantId: p.id }); }}><${Icon.Trash}/></button>
+                              <div className="ut-links">
+                                <div className="ut-link">
+                                  <span className="ut-link-ico ut-link-ico-testee"><${Icon.Play}/></span>
+                                  <div className="ut-link-txt"><span className="ut-link-name">Testee link</span><span className="ut-link-hint">send to the participant; they run the test</span></div>
+                                  <button className="tbtn ut-btn-sm" disabled=${!tl} title=${tl ? "Copy testee link" : "Publish the prototype first to build links"} onClick=${() => copyLink(p, "testee")}>${copied === p.id + ":testee" ? html`<${Icon.Check}/> Copied` : html`<${Icon.Copy}/> Copy`}</button>
+                                </div>
+                                <div className="ut-link">
+                                  <span className="ut-link-ico ut-link-ico-reviewer"><${Icon.Eye}/></span>
+                                  <div className="ut-link-txt"><span className="ut-link-name">Reviewer link</span><span className="ut-link-hint">you open this to watch and mark their recording</span></div>
+                                  <button className="tbtn ut-btn-sm" disabled=${!rl} title=${rl ? "Copy reviewer link" : "Publish the prototype first to build links"} onClick=${() => copyLink(p, "reviewer")}>${copied === p.id + ":reviewer" ? html`<${Icon.Check}/> Copied` : html`<${Icon.Copy}/> Copy`}</button>
+                                  <button className="tbtn ut-btn-sm ut-btn-icon" disabled=${!rl} title="Open reviewer in a new tab" onClick=${() => rl && window.open(rl, "_blank")}><${Icon.External}/></button>
+                                </div>
+                              </div>
+                            </div>`;
+                          })}
+                        </div>
+                      </div>`)}
+                    <button className="tbtn ut-add-cohort" onClick=${async () => { const name = await uiPrompt("Participant list name:", "List " + (cohorts.length + 1)); if (name === null) return; op({ op: "cohort-add", sessionId: active.id, name: name || undefined }); }}><${Icon.Plus}/> Add participant list</button>
+                  </div>`}
+
+                ${tab === "insights" && html`
+                  <div className="ut-insights">
+                    <p className="ut-insights-lede">Select participants in the <b>People</b> tab, then generate a board. An agent reads their transcripts, answers, ratings and behaviour and drops a colour-coded sticky-note table onto the canvas.</p>
+                    <div className="ut-insights-row">
+                      <span className="ut-insights-sel">${selectedIds.length} selected</span>
+                      <button className="tbtn tbtn-primary" disabled=${processing || selectedIds.length === 0} onClick=${processSelected}>${processing ? "Generating…" : "Generate insights board"}</button>
+                    </div>
+                  </div>`}
+              </div>
+            `}
+          </main>
+        </div>`}
+    </div>`;
+}
+
+/* User Testing - the Objective editor (flows + questions + rating) for one
+   session. Same mutation logic as before, restyled with .ut-cfg-* + the
+   editor's shared .landing-input / .tbtn primitives. */
+function UserTestingObjectiveEditor({ session, updateConfig }) {
+  const cfg = session.config || {};
+  const flows = cfg.flows || [];
+  const questions = cfg.questions || [];
+  const rating = cfg.rating || { enabled: false, min: 1, max: 5, label: "" };
+  const AT_OPTIONS = ["start", "end", "general"];
+  const KIND_OPTIONS = ["text", "choice", "rating", "boolean"];
+  const newId = (prefix) => prefix + "_" + Math.random().toString(36).slice(2, 8);
+
+  return html`
+    <div className="ut-cfg">
+      <div className="ut-cfg-group">
+        <div className="ut-cfg-head">Tasks / flows<span className="ut-cfg-sub">what the participant should try to do</span></div>
+        ${flows.map((f, i) => html`
+          <div key=${f.id || i} className="ut-cfg-item">
+            <div className="ut-cfg-row">
+              <input className="landing-input ut-cfg-input" value=${f.name || ""} placeholder="Flow name (e.g. Checkout)"
+                onChange=${(e) => updateConfig(session, c => { c.flows[i].name = e.target.value; })}/>
+              <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete flow" onClick=${() => updateConfig(session, c => { c.flows.splice(i, 1); })}><${Icon.Trash}/></button>
+            </div>
+            <textarea className="landing-input ut-cfg-textarea" rows="2" placeholder="One task per line"
+              value=${(f.tasks || []).join("\n")}
+              onChange=${(e) => updateConfig(session, c => { c.flows[i].tasks = e.target.value.split("\n").map(t => t.trim()).filter(Boolean); })}/>
+          </div>`)}
+        <button className="tbtn ut-cfg-add" onClick=${() => updateConfig(session, c => { c.flows = c.flows || []; c.flows.push({ id: newId("flow"), name: "", tasks: [] }); })}><${Icon.Plus}/> Add flow</button>
+      </div>
+
+      <div className="ut-cfg-group">
+        <div className="ut-cfg-head">Questions<span className="ut-cfg-sub">asked at the start, end, generally, or per flow</span></div>
+        ${questions.map((q, i) => html`
+          <div key=${q.id || i} className="ut-cfg-item">
+            <div className="ut-cfg-row">
+              <input className="landing-input ut-cfg-input" value=${q.prompt || ""} placeholder="Question prompt"
+                onChange=${(e) => updateConfig(session, c => { c.questions[i].prompt = e.target.value; })}/>
+              <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete question" onClick=${() => updateConfig(session, c => { c.questions.splice(i, 1); })}><${Icon.Trash}/></button>
+            </div>
+            <div className="ut-cfg-row">
+              <select className="landing-input ut-cfg-select" value=${flowAtValue(q.at, flows)}
+                onChange=${(e) => updateConfig(session, c => { c.questions[i].at = e.target.value; })}>
+                ${AT_OPTIONS.map(a => html`<option key=${a} value=${a}>${a}</option>`)}
+                ${flows.map(f => html`<option key=${f.id} value=${"flow:" + f.id}>flow: ${f.name || f.id}</option>`)}
+              </select>
+              <select className="landing-input ut-cfg-select" value=${q.kind || "text"}
+                onChange=${(e) => updateConfig(session, c => { c.questions[i].kind = e.target.value; })}>
+                ${KIND_OPTIONS.map(k => html`<option key=${k} value=${k}>${k}</option>`)}
+              </select>
+            </div>
+          </div>`)}
+        <button className="tbtn ut-cfg-add" onClick=${() => updateConfig(session, c => { c.questions = c.questions || []; c.questions.push({ id: newId("q"), at: "end", kind: "text", prompt: "" }); })}><${Icon.Plus}/> Add question</button>
+      </div>
+
+      <div className="ut-cfg-group">
+        <div className="ut-cfg-head">Rating<span className="ut-cfg-sub">an optional numeric score</span></div>
+        <label className="ut-cfg-checkrow">
+          <input type="checkbox" checked=${!!rating.enabled}
+            onChange=${(e) => updateConfig(session, c => { c.rating = c.rating || {}; c.rating.enabled = e.target.checked; })}/>
+          <span>Ask for a rating</span>
+        </label>
+        ${rating.enabled && html`
+          <div className="ut-cfg-row">
+            <input className="landing-input ut-cfg-input" value=${rating.label || ""} placeholder="Rating label (e.g. Overall experience)"
+              onChange=${(e) => updateConfig(session, c => { c.rating.label = e.target.value; })}/>
+            <input className="landing-input ut-cfg-num" type="number" value=${rating.min ?? 1} title="Min"
+              onChange=${(e) => updateConfig(session, c => { c.rating.min = Number(e.target.value); })}/>
+            <input className="landing-input ut-cfg-num" type="number" value=${rating.max ?? 5} title="Max"
+              onChange=${(e) => updateConfig(session, c => { c.rating.max = Number(e.target.value); })}/>
+          </div>`}
+      </div>
+    </div>`;
+}
+
 function WorkflowUserTestingPanel({ node, onClose, zoom }) {
   const slug = nodePrototype(node);
   const cap = useUserTestingCapability();
@@ -48296,7 +48626,7 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
       onWheel=${(e) => e.stopPropagation()}
     >
       <div className="workflow-comments-panel-bar">
-        <span className="workflow-comments-panel-glyph"><${Icon.List}/></span>
+        <span className="workflow-comments-panel-glyph"><${Icon.User}/></span>
         <span className="workflow-comments-panel-title">User testing · source/${slug}/</span>
         <button className="workflow-comments-panel-close" title="Close" onClick=${onClose}>×</button>
       </div>
@@ -51603,7 +51933,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           },
           onToggleUserTesting && {
             key: "user-testing",
-            icon: html`<${Icon.List}/>`,
+            icon: html`<${Icon.Eye}/>`,
             tip: userTestingOpen
               ? "Hide user testing panel."
               : "User testing - run moderated + unmoderated tests: build sessions, invite participants, and turn their recordings into insights.",
