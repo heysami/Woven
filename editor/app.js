@@ -22574,7 +22574,8 @@ function thIsClientNavSafe(url) {
   try {
     const sp = new URL(url, window.location.href).searchParams;
     if (!sp.get("project")) return true;            // landing
-    return (sp.get("view") || null) === "workflow"; // workflow canvas
+    const v = sp.get("view") || null;
+    return v === "workflow" || v === "usertesting"; // canvas + user testing page
   } catch {
     return false;
   }
@@ -39340,8 +39341,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // WS4 - which prototype node has its User Testing panel open. Mirrors
   // commentsPanelNodeId exactly: docks to the node's LEFT edge, toggled by
   // the node's User-testing top-action, floats via WorkflowUserTestingPanel.
-  const [userTestingPanelNodeId, setUserTestingPanelNodeId] = useState(null);
-  const [userTestingGlobalOpen, setUserTestingGlobalOpen] = useState(false);
 
   // Expose flow - replace any existing asset nodes bound to this prototype
   // with the new set, pin lockedState, persist via setData. Re-Expose at a
@@ -40780,8 +40779,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 codeOpen=${codePanelNodeId === n.id}
                 onToggleComments=${() => setCommentsPanelNodeId(p => p === n.id ? null : n.id)}
                 commentsOpen=${commentsPanelNodeId === n.id}
-                onToggleUserTesting=${() => setUserTestingPanelNodeId(p => p === n.id ? null : n.id)}
-                userTestingOpen=${userTestingPanelNodeId === n.id}
+                onToggleUserTesting=${() => { const u = new URL(location.href); u.searchParams.set("view", "usertesting"); u.searchParams.set("utproto", nodePrototype(n) || ""); thNavigate(u.toString()); }}
+                userTestingOpen=${false}
                 hasPickedChild=${pickedElement?.nodeId === n.id}
                 onOpenCanvasFrames=${openCanvasFrames}
                 onOpenPrototypeView=${openPrototypeView}
@@ -40991,19 +40990,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onClose=${() => setCommentsPanelNodeId(null)}
               />`;
             })()}
-            ${(userTestingPanelNodeId || userTestingGlobalOpen) && createPortal((() => {
-              // User Testing full-screen workspace (portaled to body so it
-              // escapes the canvas transform). Node entry scopes to the host
-              // prototype's slug; the right-rail entry opens it global (null).
-              const host = userTestingPanelNodeId ? (data.nodes || []).find(n => n.id === userTestingPanelNodeId) : null;
-              if (userTestingPanelNodeId && !host) return null;
-              const utSlug = host ? nodePrototype(host) : null;
-              return html`<${UserTestingScreen}
-                key="ut-screen"
-                slug=${utSlug}
-                onClose=${() => { setUserTestingPanelNodeId(null); setUserTestingGlobalOpen(false); }}
-              />`;
-            })(), document.body)}
             ${pickedElement && pickedElement.nodeId && (() => {
               // v3.4.x - Property inspector dock. Mounts when an element
               // is picked inside any prototype / asset iframe. Sits to
@@ -41893,7 +41879,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           onStartNewChat=${onOpenNewChat}
           onStartChatWithPrompt=${onStartChatWithPrompt}
           onOpenWindow=${onOpenWindow}
-          onOpenUserTesting=${() => setUserTestingGlobalOpen(true)}
+          onOpenUserTesting=${() => { const u = new URL(location.href); u.searchParams.set("view", "usertesting"); u.searchParams.delete("utproto"); thNavigate(u.toString()); }}
           openKinds=${openKinds}
           hidden=${fullscreen}/>
       </div>
@@ -48480,6 +48466,108 @@ function UserTestingScreen({ slug, onClose }) {
 /* User Testing - the Objective editor (flows + questions + rating) for one
    session. Same mutation logic as before, restyled with .ut-cfg-* + the
    editor's shared .landing-input / .tbtn primitives. */
+/* User Testing - stable CSS selector for a clicked element (copied from the
+   share viewer's cssPath). Prefers an id, else tag + up-to-2 classes +
+   nth-of-type. Used to define a flow's start/end trigger by clicking the
+   element on the prototype. */
+function utCssPath(el) {
+  if (!el || el.nodeType !== 1) return "";
+  const parts = [];
+  let cur = el;
+  while (cur && cur.nodeType === 1 && cur.tagName !== "HTML" && cur.tagName !== "BODY") {
+    if (cur.id && /^[A-Za-z][\w-]*$/.test(cur.id)) { parts.unshift("#" + cur.id); return parts.join(" > "); }
+    let part = cur.tagName.toLowerCase();
+    const cls = Array.from(cur.classList || []).filter((c) => /^[A-Za-z_][\w-]*$/.test(c)).slice(0, 2);
+    if (cls.length) part += "." + cls.join(".");
+    const parent = cur.parentElement;
+    if (parent) {
+      const sibs = Array.from(parent.children).filter((s) => s.tagName === cur.tagName);
+      if (sibs.length > 1) part += ":nth-of-type(" + (sibs.indexOf(cur) + 1) + ")";
+    }
+    parts.unshift(part);
+    cur = parent;
+  }
+  return parts.join(" > ");
+}
+
+/* User Testing - trigger picker. Loads the prototype SAME-ORIGIN in an iframe
+   (so the recording's timing can be auto-derived). The researcher navigates the
+   prototype normally, toggles "Pick element" and clicks the start/end button
+   (captured as a {selector,tag,text} anchor), or for an end trigger uses
+   "Use this page" to end the task on reaching the current page. */
+function PrototypeTriggerPicker({ slug, which, onPick, onPickPage, onClose }) {
+  const frameRef = useRef(null);
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
+  const lastHi = useRef(null);
+  const [navNonce, setNavNonce] = useState(0);
+  const [page, setPage] = useState("");
+  const isEnd = which === "end";
+  const src = withProjectQuery("../source/" + slug + "/index.html", "t=" + EDITOR_SESSION + "-utpick");
+
+  const currentPage = () => {
+    try {
+      const u = new URL(frameRef.current.contentWindow.location.href);
+      const key = "/source/" + slug + "/";
+      const k = u.pathname.indexOf(key);
+      const rel = k >= 0 ? u.pathname.slice(k + key.length) : "";
+      return (rel || "index.html").replace(/^\/+/, "");
+    } catch { return ""; }
+  };
+  const clearHi = () => {
+    if (lastHi.current) { try { lastHi.current.style.outline = lastHi.current.__utPrev || ""; } catch {} lastHi.current = null; }
+  };
+
+  useEffect(() => { pickingRef.current = picking; }, [picking]);
+  useEffect(() => {
+    const fr = frameRef.current;
+    let doc = null;
+    try { doc = fr && fr.contentDocument; } catch { doc = null; }
+    if (!doc) return;
+    setPage(currentPage());
+    const onMove = (e) => {
+      if (!pickingRef.current) return;
+      const t = e.target;
+      if (lastHi.current === t) return;
+      clearHi();
+      if (t && t.nodeType === 1 && t.tagName !== "HTML" && t.tagName !== "BODY") {
+        t.__utPrev = t.style.outline; t.style.outline = "2px solid var(--accent, #2bb673)";
+        lastHi.current = t;
+      }
+    };
+    const onClick = (e) => {
+      if (!pickingRef.current) return;
+      e.preventDefault(); e.stopPropagation();
+      const el = (e.target && e.target.nodeType === 1) ? e.target : null;
+      if (!el || el.tagName === "HTML" || el.tagName === "BODY") return;
+      clearHi();
+      onPick({ selector: utCssPath(el), tag: el.tagName.toLowerCase(), text: (el.textContent || "").trim().slice(0, 200) });
+    };
+    doc.addEventListener("mousemove", onMove, true);
+    doc.addEventListener("click", onClick, true);
+    return () => { try { doc.removeEventListener("mousemove", onMove, true); doc.removeEventListener("click", onClick, true); clearHi(); } catch {} };
+  }, [navNonce]);
+
+  return createPortal(html`
+    <div className="ut-pick" role="dialog" aria-label="Pick trigger" onMouseDown=${(e) => e.stopPropagation()}>
+      <div className="ut-pick-bar">
+        <div className="ut-pick-titles">
+          <div className="ut-pick-title">${isEnd ? "Pick the END of this task" : "Pick the START of this task"}</div>
+          <div className="ut-pick-hint">${picking ? "Now click the button on the prototype." : "Navigate to the right screen, then turn on Pick element."}</div>
+        </div>
+        <div className="ut-pick-spacer"></div>
+        <button className=${"tbtn" + (picking ? " tbtn-primary" : "")} onClick=${() => setPicking(p => !p)}>${picking ? "Picking… (cancel)" : "Pick element"}</button>
+        ${isEnd && html`<button className="tbtn" title="End the task when the testee reaches the page currently shown" onClick=${() => onPickPage(currentPage())}>Use this page${page ? " (" + page + ")" : ""}</button>`}
+        <button className="ut-pick-close" title="Close" aria-label="Close" onClick=${onClose}>×</button>
+      </div>
+      <div className=${"ut-pick-stage" + (picking ? " is-picking" : "")}>
+        <iframe ref=${frameRef} className="ut-pick-frame" src=${src} title="Prototype"
+          onLoad=${() => setNavNonce(n => n + 1)}></iframe>
+      </div>
+    </div>
+  `, document.body);
+}
+
 function UserTestingObjectiveEditor({ session, updateConfig }) {
   const cfg = session.config || {};
   const flows = cfg.flows || [];
@@ -48488,9 +48576,22 @@ function UserTestingObjectiveEditor({ session, updateConfig }) {
   const AT_OPTIONS = ["start", "end", "general"];
   const KIND_OPTIONS = ["text", "choice", "rating", "boolean"];
   const newId = (prefix) => prefix + "_" + Math.random().toString(36).slice(2, 8);
+  const slug = session.prototype;
+  const [picker, setPicker] = useState(null); // { flowIndex, which: "start"|"end" }
+  const trigLabel = (t) => {
+    if (!t) return null;
+    if (t.kind === "page") return "reaches page " + t.page;
+    const txt = (t.text || "").trim();
+    return "click " + (txt ? '"' + txt.slice(0, 28) + (txt.length > 28 ? "…" : "") + '"' : (t.selector || "element"));
+  };
 
   return html`
     <div className="ut-cfg">
+      ${picker && slug && html`<${PrototypeTriggerPicker}
+        slug=${slug} which=${picker.which}
+        onPick=${(anchor) => { const w = picker.which, fi = picker.flowIndex; updateConfig(session, c => { if (w === "start") c.flows[fi].start = anchor; else c.flows[fi].end = { kind: "element", ...anchor }; }); setPicker(null); }}
+        onPickPage=${(pg) => { const fi = picker.flowIndex; updateConfig(session, c => { c.flows[fi].end = { kind: "page", page: pg }; }); setPicker(null); }}
+        onClose=${() => setPicker(null)}/>`}
       <div className="ut-cfg-group">
         <div className="ut-cfg-head">Tasks / flows<span className="ut-cfg-sub">what the participant should try to do</span></div>
         ${flows.map((f, i) => html`
@@ -48503,6 +48604,20 @@ function UserTestingObjectiveEditor({ session, updateConfig }) {
             <${UtBufferedTextarea} className="landing-input ut-cfg-textarea" rows=${2} placeholder="One task per line"
               value=${(f.tasks || []).join("\n")}
               commit=${(v) => updateConfig(session, c => { c.flows[i].tasks = v.split("\n").map(t => t.trim()).filter(Boolean); })}/>
+            <div className="ut-cfg-triggers">
+              <div className="ut-trigger">
+                <span className="ut-trigger-k">Starts on</span>
+                <span className=${"ut-trigger-v" + (f.start ? " is-set" : "")}>${f.start ? trigLabel(f.start) : "recording start (no trigger)"}</span>
+                <button className="tbtn ut-btn-sm" disabled=${!slug} title=${slug ? "" : "Session has no prototype"} onClick=${() => setPicker({ flowIndex: i, which: "start" })}>${f.start ? "Change" : "Pick start"}</button>
+                ${f.start && html`<button className="tbtn ut-btn-sm ut-btn-icon ut-btn-danger" title="Clear start trigger" onClick=${() => updateConfig(session, c => { delete c.flows[i].start; })}><${Icon.Trash}/></button>`}
+              </div>
+              <div className="ut-trigger">
+                <span className="ut-trigger-k">Ends on</span>
+                <span className=${"ut-trigger-v" + (f.end ? " is-set" : "")}>${f.end ? trigLabel(f.end) : "recording end (no trigger)"}</span>
+                <button className="tbtn ut-btn-sm" disabled=${!slug} title=${slug ? "" : "Session has no prototype"} onClick=${() => setPicker({ flowIndex: i, which: "end" })}>${f.end ? "Change" : "Pick end"}</button>
+                ${f.end && html`<button className="tbtn ut-btn-sm ut-btn-icon ut-btn-danger" title="Clear end trigger" onClick=${() => updateConfig(session, c => { delete c.flows[i].end; })}><${Icon.Trash}/></button>`}
+              </div>
+            </div>
           </div>`)}
         <button className="tbtn ut-cfg-add" onClick=${() => updateConfig(session, c => { c.flows = c.flows || []; c.flows.push({ id: newId("flow"), name: "", tasks: [] }); })}><${Icon.Plus}/> Add flow</button>
       </div>
@@ -76526,6 +76641,22 @@ function Root() {
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
   <//>`;
+  // User Testing - its own top-level page (like the workflow canvas), so the
+  // heavy canvas unmounts entirely while you manage sessions / review
+  // recordings. Slug (which prototype) rides ?utproto=; absent = all prototypes.
+  if (hasProject && view === "usertesting") {
+    let utProto = null;
+    try { utProto = new URL(location.href).searchParams.get("utproto") || null; } catch {}
+    const closeUT = () => {
+      const u = new URL(location.href);
+      u.searchParams.set("view", "workflow"); u.searchParams.delete("utproto");
+      thNavigate(u.toString());
+    };
+    return html`<${React.Fragment}>
+      <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT}/>
+      <${ExportPromptHost}/>
+    <//>`;
+  }
   // Otherwise the regular editor for the active project (or single-mode legacy).
   return html`<${React.Fragment}>
     <${App}/>

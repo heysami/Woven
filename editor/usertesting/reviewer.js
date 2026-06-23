@@ -241,6 +241,8 @@
     const [playing, setPlaying] = useState(false);
     const [playMs, setPlayMs] = useState(0);     // ms-since-t0 playhead (for UI)
     const [markers, setMarkers] = useState({ startAt: null, endAt: null, flows: [] });
+    const [replayerReady, setReplayerReady] = useState(false);
+    const detectedRef = useRef(false);
     const [saving, setSaving] = useState(false);
     const [savedAt, setSavedAt] = useState(null);
     const [toast, setToast] = useState(null);
@@ -368,6 +370,7 @@
 
       // Show the FIRST snapshot immediately, paused at 0 (not blank).
       try { replayer.pause(0); } catch {}
+      setReplayerReady(true);
       setTimeout(fit, 0);
 
       // Reset transport when the replay reaches the end.
@@ -469,8 +472,8 @@
       const at = Math.round(playMsRef.current);
       const flows = Array.isArray(m.flows) ? m.flows.slice() : [];
       const i = flows.findIndex((x) => x.id === flowId);
-      if (i === -1) flows.push({ id: flowId, startAt: null, endAt: null, [key]: at });
-      else flows[i] = { ...flows[i], [key]: at };
+      if (i === -1) flows.push({ id: flowId, startAt: null, endAt: null, [key]: at, overridden: true });
+      else flows[i] = { ...flows[i], [key]: at, overridden: true };
       return { ...m, flows };
     });
     const clearMarker = (kind, flowId, edge) => setMarkers((m) => {
@@ -483,6 +486,83 @@
 
     const flowOf = (flowId) => (markers.flows || []).find((x) => x.id === flowId) || {};
 
+    // ── Auto-derive markers from the per-flow triggers defined on the prototype.
+    // Start = when the start element was clicked; End = when the end element was
+    // clicked, or (kind:"page") when that page was reached. We scan rrweb's
+    // MouseInteraction events and resolve each click's node via the replayer's
+    // live DOM mirror (stepping the replayer to the click moment so the node
+    // exists), testing it against the trigger's selector (with a tag+text
+    // fuzzy fallback). All times convert to ms-since-t0.
+    const nodeMatches = (node, anchor) => {
+      if (!node || node.nodeType !== 1 || !anchor) return false;
+      if (anchor.selector) {
+        try { if (node.matches && node.matches(anchor.selector)) return true; } catch {}
+        try { if (node.closest && node.closest(anchor.selector)) return true; } catch {}
+      }
+      if (anchor.tag && anchor.text && node.tagName && node.tagName.toLowerCase() === anchor.tag) {
+        if ((node.textContent || "").trim().slice(0, 200) === anchor.text) return true;
+      }
+      return false;
+    };
+    const detectMarkers = useCallback(() => {
+      const r = replayerRef.current, evs = rrwebEvents;
+      if (!r || !evs || typeof r.getMirror !== "function") return;
+      const mirror = r.getMirror();
+      const t0 = t0Ref.current, rrwebStart = rrwebStartRef.current;
+      const restoreMs = playMsRef.current;
+      const clicks = evs.filter((ev) => ev && ev.type === 3 && ev.data && ev.data.source === 2 && (ev.data.type === 1 || ev.data.type === 2));
+      const firstClickEpoch = (anchor, afterEpoch) => {
+        for (const ev of clicks) {
+          if (afterEpoch != null && ev.timestamp < afterEpoch) continue;
+          try { r.pause(Math.max(0, ev.timestamp - rrwebStart)); } catch {}
+          let node = null;
+          try { node = mirror.getNode(ev.data.id); } catch {}
+          if (nodeMatches(node, anchor)) return ev.timestamp;
+        }
+        return null;
+      };
+      const norm = (s) => (s || "").split("?")[0].split("#")[0];
+      const pageEpoch = (page) => {
+        for (let i = 1; i < evs.length; i++) {
+          const ev = evs[i];
+          if (ev && ev.type === 4 && ev.data && page && norm(ev.data.href).endsWith(norm(page))) return ev.timestamp;
+        }
+        let seen = 0;
+        for (const ev of evs) { if (ev && ev.type === 2) { seen++; if (seen >= 2) return ev.timestamp; } }
+        return null;
+      };
+      const outFlows = (cfg.flows || []).map((f) => {
+        const sE = f.start ? firstClickEpoch(f.start, null) : null;
+        let eE = null;
+        if (f.end) eE = (f.end.kind === "page") ? pageEpoch(f.end.page) : firstClickEpoch(f.end, sE);
+        const sAt = sE != null ? Math.round(sE - t0) : null;
+        const eAt = eE != null ? Math.round(eE - t0) : null;
+        return { id: f.id, startAt: sAt, endAt: eAt, startAuto: sAt, endAuto: eAt };
+      });
+      try { r.pause(Math.max(0, sinceT0ToReplayer(restoreMs))); } catch {}
+      setMarkers((m) => {
+        const prev = new Map((m.flows || []).map((f) => [f.id, f]));
+        const merged = outFlows.map((f) => {
+          const p = prev.get(f.id);
+          if (p && p.overridden) return { ...f, startAt: p.startAt ?? f.startAt, endAt: p.endAt ?? f.endAt, overridden: true };
+          return f;
+        });
+        const ms = merged.map((f) => f.startAt).filter((x) => x != null);
+        const me = merged.map((f) => f.endAt).filter((x) => x != null);
+        return { startAt: ms.length ? Math.min.apply(null, ms) : null, endAt: me.length ? Math.max.apply(null, me) : null, flows: merged };
+      });
+    }, [rrwebEvents, cfg]);
+    const reDetect = () => { detectedRef.current = true; detectMarkers(); };
+
+    // Auto-detect once the replayer is ready, unless markers were already saved.
+    useEffect(() => {
+      if (!replayerReady || detectedRef.current) return;
+      detectedRef.current = true;
+      const hasSaved = markers && ((markers.flows || []).some((f) => f.startAt != null || f.endAt != null) || markers.startAt != null);
+      const hasTriggers = (cfg.flows || []).some((f) => f.start || f.end);
+      if (!hasSaved && hasTriggers) detectMarkers();
+    }, [replayerReady]);
+
     const saveMarkers = useCallback(async () => {
       setSaving(true);
       try {
@@ -491,6 +571,7 @@
           endAt: markers.endAt ?? null,
           flows: (markers.flows || []).map((f) => ({
             id: f.id, startAt: f.startAt ?? null, endAt: f.endAt ?? null,
+            startAuto: f.startAuto ?? null, endAuto: f.endAuto ?? null, overridden: !!f.overridden,
           })),
         };
         const r = await fetch(api("markers"), {
@@ -619,35 +700,31 @@
               </div>
             </div>
 
-            <!-- Marker tools -->
+            <!-- Marker tools: auto-derived from each flow's prototype triggers;
+                 the tester can nudge a marker to the playhead or clear it. -->
             <div className="rv-markers">
-              <div className="rv-marker-group">
+              <div className="rv-marker-group rv-marker-task">
                 <span className="rv-marker-label"><${Icon.Flag}/> Task</span>
-                <button className="rv-mbtn" onClick=${setStart}>Set start</button>
-                <span className="rv-marker-val">${markers.startAt != null ? fmt(markers.startAt) : "·"}
-                  ${markers.startAt != null && html`<button className="rv-clear" title="Clear"
-                    onClick=${() => clearMarker("start")}>×</button>`}</span>
-                <button className="rv-mbtn" onClick=${setEnd}>Set end</button>
-                <span className="rv-marker-val">${markers.endAt != null ? fmt(markers.endAt) : "·"}
-                  ${markers.endAt != null && html`<button className="rv-clear" title="Clear"
-                    onClick=${() => clearMarker("end")}>×</button>`}</span>
-                ${taskDuration != null && html`<span className="rv-duration">task ${fmt(taskDuration)}</span>`}
+                <span className="rv-marker-val">${markers.startAt != null ? fmt(markers.startAt) : "·"} → ${markers.endAt != null ? fmt(markers.endAt) : "·"}</span>
+                ${taskDuration != null && html`<span className="rv-duration">total ${fmt(taskDuration)}</span>`}
+                <button className="rv-mbtn" title="Recompute markers from the prototype triggers" onClick=${reDetect}>Re-detect</button>
               </div>
-              ${cfg.flows.map((flow) => {
+              ${(cfg.flows || []).length === 0 && html`<div className="rv-marker-hint">No tasks defined for this session.</div>`}
+              ${(cfg.flows || []).map((flow) => {
                 const fm = flowOf(flow.id);
                 const dur = (fm.startAt != null && fm.endAt != null) ? fm.endAt - fm.startAt : null;
+                const hasTrig = !!(flow.start || flow.end);
                 return html`
                   <div className="rv-marker-group" key=${flow.id}>
-                    <span className="rv-marker-label rv-flow-name">${flow.name || flow.id}</span>
-                    <button className="rv-mbtn" onClick=${() => setFlowEdge(flow.id, "in")}>Set in</button>
-                    <span className="rv-marker-val">${fm.startAt != null ? fmt(fm.startAt) : "·"}
-                      ${fm.startAt != null && html`<button className="rv-clear" title="Clear"
-                        onClick=${() => clearMarker("flow", flow.id, "in")}>×</button>`}</span>
-                    <button className="rv-mbtn" onClick=${() => setFlowEdge(flow.id, "out")}>Set out</button>
-                    <span className="rv-marker-val">${fm.endAt != null ? fmt(fm.endAt) : "·"}
-                      ${fm.endAt != null && html`<button className="rv-clear" title="Clear"
-                        onClick=${() => clearMarker("flow", flow.id, "out")}>×</button>`}</span>
+                    <span className="rv-marker-label rv-flow-name">${flow.name || flow.id}${fm.overridden ? html`<span className="rv-edited" title="Manually adjusted">edited</span>` : null}</span>
+                    <span className="rv-marker-val" title="Task start (auto, from the start trigger)">${fm.startAt != null ? fmt(fm.startAt) : (hasTrig ? "not found" : "·")}
+                      <button className="rv-clear" title="Set start to the current playhead" onClick=${() => setFlowEdge(flow.id, "in")}>set</button>
+                      ${fm.startAt != null && html`<button className="rv-clear" title="Clear" onClick=${() => clearMarker("flow", flow.id, "in")}>×</button>`}</span>
+                    <span className="rv-marker-val" title="Task end (auto, from the end trigger)">${fm.endAt != null ? fmt(fm.endAt) : (hasTrig ? "not found" : "·")}
+                      <button className="rv-clear" title="Set end to the current playhead" onClick=${() => setFlowEdge(flow.id, "out")}>set</button>
+                      ${fm.endAt != null && html`<button className="rv-clear" title="Clear" onClick=${() => clearMarker("flow", flow.id, "out")}>×</button>`}</span>
                     ${dur != null && html`<span className="rv-duration">${fmt(dur)}</span>`}
+                    ${!hasTrig && html`<span className="rv-marker-hint">no trigger set</span>`}
                   </div>`;
               })}
               <div className="rv-marker-save">
