@@ -43,6 +43,18 @@ STATE (reactive memory; the legal cycle breakers):
 - `state-timer` [autostart] - (i) start(event) stop(event) - (o) elapsed(number) running(boolean)
 - `state-smooth` [stiffness, damping] - (i) target(number) - (o) value(number). Critically-damped pursuit. Pass EVERY raw pointer / sensor value through this before it drives a param.
 
+CHOP SIGNAL (generators, time-domain operators, and the `channel` dtype - a Float32Array of samples; bridge it to a scalar with chan-sample/chan-analyze, never wire a channel straight into a scalar param):
+- `gen-lfo` [wave: sine|tri|saw|square, freq, phase, lo, hi] - (o) value(number) phase(number). Stateless low-frequency oscillator over time, mapped to lo..hi.
+- `gen-noise` [speed, seed, lo, hi] - (o) value(number). Smooth 1D value noise over time.
+- `gen-clock` [] - (o) time(number) frame(number) fps(number). Wall clock.
+- `op-slope` [] - (i) x(number) - (o) slope(number). Derivative (rate of change per second).
+- `chop-filter` [mode: low|high, cutoff] - (i) x(number) - (o) value(number). One-pole low/high-pass.
+- `state-delay` [frames] - (i) x(number) - (o) value(number). Delay a number by N frames.
+- `state-trigger` [attack, decay, sustain, release] - (i) gate(event) - (o) value(number). ADSR envelope 0..1.
+- `state-trail` [length] - (i) x(number) - (o) channel(channel). Record a scalar into a rolling channel (a scope / oscilloscope source).
+- `chan-sample` [mode: index|phase] - (i) channel(channel) index(number) phase(number) - (o) value(number). Read one sample.
+- `chan-analyze` [mode: avg|min|max|rms|sum] - (i) channel(channel) - (o) value(number). Reduce a channel to a number.
+
 PHYSICS (drives the composer's ONE shared physics world; full force model in the `runtime` section):
 - `force` [type: attract|repel|vortex|drag|wind, radius, strength, falloff] - (i) pos(vector2) - (o) none. A GENERIC force field injected into the mm-composer's single shared Matter world. EVERY physics object (position modes `physics`/gravity, `shatter`, `rope`, `rope-ink`, `boids`) lives in that ONE world, so they collide with each other AND react to wired forces. The force is NEVER hardcoded to the mouse: wire ANY vector2 into `pos` (input-pointer.pos, input-touch.pos, vision-detect.indexTip, an op-vector output, ...). `force` has no output - just place it and wire its `pos`; the composer enumerates it.
 

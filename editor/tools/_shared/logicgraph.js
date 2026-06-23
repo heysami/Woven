@@ -633,6 +633,113 @@ export const LogicGraph = {
       return { value: finiteNumber(s.value, 0) };
     },
 
+    // ---- 2.65 CHOP signal generators / operators / channel bridges -----------
+    // Low-frequency oscillator. Stateless (phase from frame.time) so it is
+    // deterministic and needs no cycle-breaker.
+    'gen-lfo'(node, read, frame) {
+      const p = node.params || {};
+      const freq = finiteNumber(p.freq, 1), phase = finiteNumber(p.phase, 0);
+      const lo = finiteNumber(p.lo, 0), hi = finiteNumber(p.hi, 1);
+      let x = (finiteNumber(frame.time, 0) * freq + phase) % 1; if (x < 0) x += 1;
+      let w;
+      if (p.wave === 'tri') w = 1 - Math.abs(x * 2 - 1);
+      else if (p.wave === 'saw') w = x;
+      else if (p.wave === 'square') w = x < 0.5 ? 0 : 1;
+      else w = 0.5 - 0.5 * Math.cos(x * 6.283185307);
+      return { value: lo + (hi - lo) * w, phase: x };
+    },
+    // Smooth 1D value noise over time.
+    'gen-noise'(node, read, frame) {
+      const p = node.params || {};
+      const t = finiteNumber(frame.time, 0) * finiteNumber(p.speed, 1) + finiteNumber(p.seed, 0);
+      const lo = finiteNumber(p.lo, 0), hi = finiteNumber(p.hi, 1);
+      const i = Math.floor(t), f = t - i;
+      const h = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+      const u = f * f * (3 - 2 * f);
+      return { value: lo + (hi - lo) * (h(i) * (1 - u) + h(i + 1) * u) };
+    },
+    // Wall clock: seconds, integer frame count, fps.
+    'gen-clock'(node, read, frame, ctx, state) {
+      const s = (state[node.id] || (state[node.id] = { frame: 0 }));
+      s.frame++;
+      const dt = clamp(finiteNumber(frame.dt, 0), 0, 1);
+      return { time: finiteNumber(frame.time, 0), frame: s.frame, fps: dt > 0 ? 1 / dt : 0 };
+    },
+    // Derivative: rate of change per second.
+    'op-slope'(node, read, frame, ctx, state) {
+      const s = (state[node.id] || (state[node.id] = { prev: 0, init: false }));
+      const x = asNumber(read(node.id, 'x', 0));
+      const dt = clamp(finiteNumber(frame.dt, 0), 1e-4, 1);
+      if (!s.init) { s.prev = x; s.init = true; }
+      const slope = (x - s.prev) / dt; s.prev = x;
+      return { slope: finiteNumber(slope, 0) };
+    },
+    // One-pole low/high-pass filter.
+    'chop-filter'(node, read, frame, ctx, state) {
+      const s = (state[node.id] || (state[node.id] = { y: 0, init: false }));
+      const x = asNumber(read(node.id, 'x', 0));
+      const k = clamp(finiteNumber(node.params && node.params.cutoff, 0.2), 0, 1);
+      if (!s.init) { s.y = x; s.init = true; }
+      s.y += k * (x - s.y);
+      return { value: (node.params && node.params.mode === 'high') ? (x - s.y) : s.y };
+    },
+    // Delay a number by N frames (ring buffer).
+    'state-delay'(node, read, frame, ctx, state) {
+      const n = Math.max(1, Math.min(240, Math.round(finiteNumber(node.params && node.params.frames, 8))));
+      const s = (state[node.id] || (state[node.id] = { buf: [], n }));
+      if (s.n !== n) { s.buf = []; s.n = n; }
+      const x = asNumber(read(node.id, 'x', 0));
+      s.buf.push(x); while (s.buf.length > n) s.buf.shift();
+      return { value: s.buf.length >= n ? s.buf[0] : x };
+    },
+    // ADSR envelope driven by a gate event/boolean.
+    'state-trigger'(node, read, frame, ctx, state) {
+      const s = (state[node.id] || (state[node.id] = { v: 0, peaked: false }));
+      const p = node.params || {};
+      const a = Math.max(1e-3, finiteNumber(p.attack, 0.05)), d = Math.max(1e-3, finiteNumber(p.decay, 0.1));
+      const sus = clamp(finiteNumber(p.sustain, 0.6), 0, 1), rel = Math.max(1e-3, finiteNumber(p.release, 0.3));
+      const dt = clamp(finiteNumber(frame.dt, 0), 0, 0.064);
+      const gate = truthy(read(node.id, 'gate', false));
+      if (gate) {
+        if (!s.peaked) { s.v += dt / a; if (s.v >= 1) { s.v = 1; s.peaked = true; } }
+        else { s.v += (sus - s.v) * Math.min(1, dt / d); }
+      } else {
+        s.peaked = false; s.v += (0 - s.v) * Math.min(1, dt / rel); if (s.v < 1e-4) s.v = 0;
+      }
+      return { value: clamp(s.v, 0, 1) };
+    },
+    // Record a scalar into a rolling CHANNEL (oldest->newest) - a scope source.
+    'state-trail'(node, read, frame, ctx, state) {
+      const n = Math.max(2, Math.min(4096, Math.round(finiteNumber(node.params && node.params.length, 128))));
+      const s = (state[node.id] || (state[node.id] = { data: new Float32Array(n), n, head: 0, count: 0 }));
+      if (s.n !== n) { s.data = new Float32Array(n); s.n = n; s.head = 0; s.count = 0; }
+      s.data[s.head] = asNumber(read(node.id, 'x', 0)); s.head = (s.head + 1) % n; if (s.count < n) s.count++;
+      const out = new Float32Array(s.count);
+      for (let i = 0; i < s.count; i++) out[i] = s.data[(s.head - s.count + i + n * 2) % n];
+      return { channel: { data: out, rate: 0 } };
+    },
+    // Channel -> number: read one sample by index or by phase (0..1).
+    'chan-sample'(node, read) {
+      const ch = read(node.id, 'channel', null);
+      const data = ch && ch.data; if (!data || !data.length) return { value: 0 };
+      let idx;
+      if (node.params && node.params.mode === 'phase') idx = Math.round(clamp(asNumber(read(node.id, 'phase', 0)), 0, 1) * (data.length - 1));
+      else idx = Math.round(asNumber(read(node.id, 'index', 0)));
+      idx = Math.max(0, Math.min(data.length - 1, idx));
+      return { value: finiteNumber(data[idx], 0) };
+    },
+    // Channel -> number: reduce (min/max/avg/rms/sum).
+    'chan-analyze'(node, read) {
+      const ch = read(node.id, 'channel', null);
+      const data = ch && ch.data; if (!data || !data.length) return { value: 0 };
+      const mode = (node.params && node.params.mode) || 'avg';
+      let mn = Infinity, mx = -Infinity, sum = 0, sq = 0;
+      for (let i = 0; i < data.length; i++) { const v = data[i]; if (v < mn) mn = v; if (v > mx) mx = v; sum += v; sq += v * v; }
+      const n = data.length;
+      const r = mode === 'min' ? mn : mode === 'max' ? mx : mode === 'sum' ? sum : mode === 'rms' ? Math.sqrt(sq / n) : sum / n;
+      return { value: finiteNumber(r, 0) };
+    },
+
     // ---- 2.7 output sink ------------------------------------------------------
     'output-binding'(node, read) {
       return { value: asNumber(read(node.id, 'value', 0)) };

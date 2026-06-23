@@ -24556,7 +24556,7 @@ function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
 // can validate edges + colour them. dtype is read from the kind's connect-def
 // (provides for source ports, accepts for target ports); a port with no dtype
 // returns null and is exempt from the dtype check entirely.
-const WORKFLOW_DTYPES = ["event", "number", "vector2", "region", "boolean", "string", "color"];
+const WORKFLOW_DTYPES = ["event", "number", "vector2", "region", "boolean", "string", "color", "channel"];
 function workflowPortDtype(node, port, side) {
   if (!node || typeof port !== "string") return null;
   // Logic Graph read-back ports carry the number dtype so they validate against
@@ -64646,6 +64646,100 @@ const LOGIC_NODE_DEFS = {
     },
     provides: { value: { label: "value", dtype: "number" } },
     accepts: { target: { label: "target", dtype: "number" } },
+  },
+  // ── 2.65 CHOP signal layer (generators / operators / channel bridges) ──────
+  "gen-lfo": {
+    glyph: "∿", label: "LFO", section: "Generate", w: 220, h: 300,
+    desc: "Low-frequency oscillator (sine/tri/saw/square)",
+    controls: {
+      wave: { type: "select", value: "sine", options: ["sine", "tri", "saw", "square"] },
+      freq: { type: "number", value: 1, min: 0, max: 30, step: 0.01 },
+      phase: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      lo: { type: "number", value: 0, step: 0.01 },
+      hi: { type: "number", value: 1, step: 0.01 },
+    },
+    provides: { value: { label: "value", dtype: "number" }, phase: { label: "phase", dtype: "number" } },
+    accepts: {},
+  },
+  "gen-noise": {
+    glyph: "≈", label: "Noise", section: "Generate", w: 220, h: 280,
+    desc: "Smooth value noise over time",
+    controls: {
+      speed: { type: "number", value: 1, min: 0, max: 20, step: 0.01 },
+      seed: { type: "number", value: 0, step: 1 },
+      lo: { type: "number", value: 0, step: 0.01 },
+      hi: { type: "number", value: 1, step: 0.01 },
+    },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: {},
+  },
+  "gen-clock": {
+    glyph: "◷", label: "Clock", section: "Generate", w: 220, h: 220,
+    desc: "Wall clock: time, frame count, fps",
+    controls: {},
+    provides: { time: { label: "time", dtype: "number" }, frame: { label: "frame", dtype: "number" }, fps: { label: "fps", dtype: "number" } },
+    accepts: {},
+  },
+  "op-slope": {
+    glyph: "∂", label: "Slope", section: "Operators", w: 220, h: 200,
+    desc: "Rate of change (derivative) of a number",
+    controls: {},
+    provides: { slope: { label: "slope", dtype: "number" } },
+    accepts: { x: { label: "x", dtype: "number" } },
+  },
+  "chop-filter": {
+    glyph: "≀", label: "Filter", section: "Operators", w: 220, h: 240,
+    desc: "One-pole low/high-pass smoothing filter",
+    controls: {
+      mode: { type: "select", value: "low", options: ["low", "high"] },
+      cutoff: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+    },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: { x: { label: "x", dtype: "number" } },
+  },
+  "state-delay": {
+    glyph: "⇥", label: "Delay", section: "State", w: 220, h: 220,
+    desc: "Delay a number by N frames",
+    controls: { frames: { type: "number", value: 8, min: 1, max: 240, step: 1 } },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: { x: { label: "x", dtype: "number" } },
+  },
+  "state-trigger": {
+    glyph: "◺", label: "Envelope", section: "State", w: 220, h: 320,
+    desc: "ADSR envelope driven by a gate event",
+    controls: {
+      attack: { type: "number", value: 0.05, min: 0.001, max: 5, step: 0.01 },
+      decay: { type: "number", value: 0.1, min: 0.001, max: 5, step: 0.01 },
+      sustain: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      release: { type: "number", value: 0.3, min: 0.001, max: 5, step: 0.01 },
+    },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: { gate: { label: "gate", dtype: "event" } },
+  },
+  "state-trail": {
+    glyph: "≋", label: "Trail", section: "State", w: 220, h: 220,
+    desc: "Record a number into a rolling channel (a scope)",
+    controls: { length: { type: "number", value: 128, min: 2, max: 4096, step: 1 } },
+    provides: { channel: { label: "channel", dtype: "channel" } },
+    accepts: { x: { label: "x", dtype: "number" } },
+  },
+  "chan-sample": {
+    glyph: "⊏", label: "Sample", section: "Channel", w: 220, h: 240,
+    desc: "Read one sample of a channel by index or phase",
+    controls: { mode: { type: "select", value: "index", options: ["index", "phase"] } },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: {
+      channel: { label: "channel", dtype: "channel" },
+      index: { label: "index", dtype: "number" },
+      phase: { label: "phase", dtype: "number" },
+    },
+  },
+  "chan-analyze": {
+    glyph: "Σ", label: "Analyze", section: "Channel", w: 220, h: 220,
+    desc: "Reduce a channel to a number (min/max/avg/rms/sum)",
+    controls: { mode: { type: "select", value: "avg", options: ["avg", "min", "max", "rms", "sum"] } },
+    provides: { value: { label: "value", dtype: "number" } },
+    accepts: { channel: { label: "channel", dtype: "channel" } },
   },
   // ── 2.75 Physics (generic force field for the composer's unified world) ──
   // The `force` node is a SINK that injects a GENERIC force into the mm-composer's
