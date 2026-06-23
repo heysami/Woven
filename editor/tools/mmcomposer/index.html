@@ -4451,6 +4451,19 @@ if(EMBEDDED){
     } else if(d.type==='mm:logic-run'){
       // W3E run/live toggle from the host: execute + capture input when on.
       Engine.logicRun=!!d.on;
+    } else if(d.type==='mm:rasterize-request'){
+      // Round-trip "send back": rasterize the current composite (the #c2d 2D
+      // canvas already holds the flattened frame at canvasW x canvasH device px,
+      // no DPR scaling) and hand the host a dataURL it writes to disk. A forced
+      // render(0) guarantees a fresh frame even when the rAF loop is paused.
+      let dataUrl=null, err=null;
+      try{
+        Engine.render(0);
+        dataUrl = Engine.c2d.toDataURL(d.mime||'image/png', 0.92);
+        if(!dataUrl || dataUrl.length<32){ dataUrl=null; err='empty'; }
+      }catch(e){ err = String((e&&e.message)||e); }  // tainted canvas → throws
+      try{ parent.postMessage({type:'mm:rasterized',nodeId:NODE,dataUrl,err,
+        reqId:d.reqId||null,w:STATE.canvasW,h:STATE.canvasH},'*'); }catch(e){}
     }
   });
 

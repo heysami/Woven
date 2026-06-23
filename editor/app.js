@@ -7461,6 +7461,21 @@ function apiUrl(path) {
   return path + sep + "project=" + encodeURIComponent(proj);
 }
 
+// Inverse of apiUrl for daemon-served assets: turn a resolved <img>.src (an
+// absolute URL the browser built against the iframe's baseURI, e.g.
+// http://host/source/main/images/foo.png?project=..&_z=3) back into the
+// project-relative on-disk path "source/main/images/foo.png". Returns null for
+// anything not under source/ (data:/blob: inlines, external CDNs) so callers can
+// bail cleanly - only source/ files can be written back.
+function urlToSourcePath(rawUrl) {
+  try {
+    const u = new URL(rawUrl, location.href);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const p = decodeURIComponent(u.pathname).replace(/^\/+/, "");
+    return p.startsWith("source/") ? p : null;
+  } catch { return null; }
+}
+
 // One-time auto-switch to Prototype view. When the FIRST chat message on an
 // otherwise-empty project asks to create a prototype, we flip the editor into
 // the Prototype tab so the user lands where the work happens. This must fire
@@ -46405,6 +46420,54 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     } finally { setBusy(false); }
   }, [selectedId, branch, sourceNode, setData, onClose, showToast]);
 
+  // ─── Op: send a selected prototype image to a new mm-composer ───────
+  // Spawns an asset node (the image's source file) + a composer node wired
+  // to it, seeded to the image's natural pixel size with the image as the
+  // base layer. The composer carries sendBackTarget = the source path, so its
+  // "Send back" button rasterizes the edit straight over that file. Picks the
+  // largest image when the selection contains several.
+  const sendImageToComposer = useCallback(() => {
+    const doc = docRef.current;
+    if (!doc || !selectedId) { showToast("Selection lost"); return; }
+    const el = doc.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
+    if (!el) { showToast("Selection lost"); return; }
+    const imgs = (el.tagName === "IMG" ? [el] : Array.from(el.querySelectorAll("img")))
+      .filter(im => im.currentSrc || im.getAttribute("src"));
+    if (!imgs.length) { showToast("No image in the selection"); return; }
+    imgs.sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight));
+    const img = imgs[0];
+    const srcPath = urlToSourcePath(img.currentSrc || img.src);
+    if (!srcPath) { showToast("That image isn't a source/ file - can't round-trip it"); return; }
+    if (!(setData && sourceNode)) return;
+    const natW = img.naturalWidth || img.width || 1024;
+    const natH = img.naturalHeight || img.height || 1024;
+    const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const assetId = "n" + stamp + "a";
+    const compId = "n" + stamp + "c";
+    const baseX = (sourceNode.x || 0) + (sourceNode.w || 720) + 80;
+    const baseY = (sourceNode.y || 0);
+    const compDoc = {
+      v: 1, canvasW: natW, canvasH: natH, background: "transparent",
+      inputs: { camera: false, mic: false }, wiredMasks: {},
+      layers: [{
+        id: "base", name: "Source", z: 0, visible: true,
+        content: { kind: "asset", assetId },
+        positioning: { mode: "single", x: 0.5, y: 0.5, scale: 1, rot: 0, fit: "cover" },
+      }],
+    };
+    setData(d => ({
+      ...d,
+      nodes: [
+        ...(d.nodes || []),
+        { id: assetId, kind: "asset", assetKind: "image", x: baseX, y: baseY, w: 220, h: 180, path: srcPath, spawnedBy: "zoom-to-composer" },
+        { id: compId, kind: "mm-composer", x: baseX + 300, y: baseY, w: 960, h: 640, doc: compDoc, sendBackTarget: srcPath, spawnedBy: "zoom-to-composer" },
+      ],
+      edges: [...(d.edges || []), { from: assetId + ".out", to: compId + ".in" }],
+    }));
+    showToast("Sent to composer → edit, then 'Send back'" + (imgs.length > 1 ? " (largest of " + imgs.length + " images)" : ""));
+    onClose();
+  }, [selectedId, docRef, setData, sourceNode, showToast, onClose]);
+
   // ─── Available HTML assets (for the Import picker) ──────────────────
   // Pulled from the live workflow data - every node with kind=asset,
   // assetKind=html, and a real source/ path is a candidate. Inline-only
@@ -47003,6 +47066,14 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     `);
   }
 
+  // Does the current selection contain a raster image we could round-trip to
+  // the composer? (the element itself is an <img>, or it has <img> descendants).
+  let selectedHasImage = false;
+  if (selectedId && docRef.current) {
+    const selEl = docRef.current.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
+    if (selEl) selectedHasImage = selEl.tagName === "IMG" || !!selEl.querySelector("img");
+  }
+
   // Footer (close, send-to-agent, export hint).
   overlayChildren.push(html`
     <footer key="foot" className="zoom-footer">
@@ -47055,6 +47126,13 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
             onClick=${() => { setTool("export"); setExportPanel({ zid: selectedId, name: "", w: "", h: "", inheritVars: true, inlineFallback: false }); }}
             title="Export the selected subtree as a standalone HTML component"
           >⎘ Export selection</button>
+        `}
+        ${selectedId && selectedHasImage && html`
+          <button
+            className="zoom-footer-btn"
+            onClick=${sendImageToComposer}
+            title="Send the image in this selection to a new composer node - edit it there, then 'Send back' to overwrite the original in place"
+          ><${Icon.Image}/> Send image → composer</button>
         `}
       </div>
     </footer>
@@ -61858,11 +61936,32 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   const pendingRef = useRef(null);
   const bakedSaveTimerRef = useRef(null);
   const liveRef = useRef(live); liveRef.current = live;
+  // Round-trip "send back to prototype": when this composer was spawned from a
+  // prototype image (node.sendBackTarget = that image's source path), the bar
+  // shows a button that asks the tool to rasterize and writes the result back
+  // over that path. sendBack tracks button feedback: idle|working|done|error.
+  const sendBackTargetRef = useRef(node.sendBackTarget || null);
+  sendBackTargetRef.current = node.sendBackTarget || null;
+  const [sendBack, setSendBack] = useState("idle");
+  const sendBackTimerRef = useRef(null);
 
   const postToIframe = useCallback((msg) => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
     if (win) { try { win.postMessage({ ...msg, nodeId: node.id }, "*"); } catch (_e) {} }
   }, [node.id]);
+
+  // Ask the tool to rasterize the current composition; the reply (mm:rasterized)
+  // is written back over node.sendBackTarget in onMsg. Mime matches the target
+  // extension so a .jpg stays JPEG / .webp stays WebP (parity with the crop modal).
+  const doSendBack = useCallback(() => {
+    const target = node.sendBackTarget;
+    if (!target) return;
+    const ext = (target.split(".").pop() || "").toLowerCase();
+    const mime = (ext === "jpg" || ext === "jpeg") ? "image/jpeg"
+      : ext === "webp" ? "image/webp" : "image/png";
+    setSendBack("working");
+    postToIframe({ type: cfg.prefix + ":rasterize-request", mime, reqId: "sb" });
+  }, [node.sendBackTarget, cfg.prefix, postToIframe]);
 
   // Persist an edit from the iframe: cache state, write the canonical JSON
   // (single writer), optionally write the baked deliverable, stamp bakedPath.
@@ -61971,6 +62070,29 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
         // bakedPath WITHOUT touching the saved doc. Keeps the published / QA
         // output in sync with the wired graph (no manual "bake" needed).
         persistBaked(d.baked || null);
+      } else if (d.type === cfg.prefix + ":rasterized") {
+        // Round-trip "send back": the tool rasterized the composition - write the
+        // bytes over the original prototype image path (same /__write_binary +
+        // th:asset-refresh path the crop modal uses), so the prototype + any node
+        // referencing that file pick up the edit in place. No HTML rewrite.
+        const target = sendBackTargetRef.current;
+        if (!d.dataUrl || d.err || !target) {
+          setSendBack("error");
+        } else {
+          (async () => {
+            try {
+              const r = await fetch(apiUrl("/__write_binary"), {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: target, dataUrl: d.dataUrl }),
+              });
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [target] } }));
+              setSendBack("done");
+            } catch (_e) { setSendBack("error"); }
+          })();
+        }
+        clearTimeout(sendBackTimerRef.current);
+        sendBackTimerRef.current = setTimeout(() => setSendBack("idle"), 1800);
       } else if (d.type === cfg.prefix + ":panels") {
         // Tool reports its floating-panel extents (CSS px). Drives iframe break-out.
         const lay = { panelL: d.panelL || 0, panelR: d.panelR || 0, panelT: d.panelT || 0, panelB: d.panelB || 0 };
@@ -62089,6 +62211,17 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
           <${Icon.Bolt}/><span className="workflow-node-live-label">Live</span>
         </button>`}
         ${node.bakedAt && html`<span className="workflow-node-composer-baked-tag" title=${"Saved → " + bakedPathTarget}>saved</span>`}
+        ${node.sendBackTarget && html`<button
+          className=${"workflow-node-sendback" + (sendBack === "done" ? " is-done" : sendBack === "error" ? " is-error" : "")}
+          data-state=${sendBack}
+          disabled=${sendBack === "working"}
+          title=${"Send back to prototype - rasterize this composition and overwrite " + node.sendBackTarget + " in place (undoable via history)."}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); doSendBack(); }}>
+          <${Icon.Send}/><span className="workflow-node-sendback-label">${
+            sendBack === "working" ? "Sending…" : sendBack === "done" ? "Sent" : sendBack === "error" ? "Failed" : "Send back"
+          }</span>
+        </button>`}
         <button className="workflow-node-close" onClick=${(e) => { e.stopPropagation(); onRemove(); }}>×</button>
       </div>
       <iframe
