@@ -196,8 +196,10 @@
     const rrwebStopRef = useRef(null);
     const cursorBufRef = useRef([]);
     const gazeBufRef = useRef([]);
-    const gazeRecvRef = useRef(0);    // diag: total gaze callbacks during the test
-    const gazeValidRef = useRef(0);   // diag: callbacks with a finite x/y point
+    const gazeRecvRef = useRef(0);    // diag: gaze LISTENER callbacks during the test
+    const gazeValidRef = useRef(0);   // valid gaze points captured (via polling)
+    const gazePollRef = useRef(0);    // getCurrentPrediction() poll interval id
+    const gazePollNRef = useRef(0);   // diag: poll attempts
     const [gazeStats, setGazeStats] = useState(null);
     const rrwebBufRef = useRef([]);
     const flushTimerRef = useRef(null);
@@ -470,21 +472,27 @@
       // 3. cursor - top document + same-origin iframe document.
       installCursor();
 
-      // 4. gaze - webgazer listener (already running from calibration).
+      // 4. gaze. The setGazeListener callback goes SILENT once recording starts
+      // (measured: 0 callbacks), so POLL getCurrentPrediction() on an interval -
+      // it returns the latest {x,y} while webgazer's loop runs. resume() guards
+      // against an auto-pause. The listener is kept only to diagnose whether it
+      // ever fires.
+      try { if (webgazer.resume) webgazer.resume(); } catch {}
       try {
-        webgazer.setGazeListener((data) => {
-          gazeRecvRef.current++;                    // diag: webgazer is firing at all
-          if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
-          gazeValidRef.current++;
-          gazeBufRef.current.push({
-            t: Date.now() - t0Ref.current,
-            x: Math.round(data.x), y: Math.round(data.y),
-            conf: null,   // webgazer exposes no normalized conf; slot kept for the reviewer
-          });
-          if (gazeBufRef.current.length >= GAZE_FLUSH_EVENTS) flushGaze();
-        });
+        webgazer.setGazeListener(() => { gazeRecvRef.current++; });   // diag only
         webgazer.showPredictionPoints(false);
-      } catch { /* gaze listener best-effort */ }
+      } catch {}
+      try {
+        gazePollRef.current = setInterval(async () => {
+          gazePollNRef.current++;
+          let p = null;
+          try { p = await Promise.resolve(webgazer.getCurrentPrediction()); } catch {}
+          if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+          gazeValidRef.current++;
+          gazeBufRef.current.push({ t: Date.now() - t0Ref.current, x: Math.round(p.x), y: Math.round(p.y), conf: null });
+          if (gazeBufRef.current.length >= GAZE_FLUSH_EVENTS) flushGaze();
+        }, 100);
+      } catch {}
 
       // 5. audio - MediaRecorder on the mic stream, timesliced.
       try {
@@ -616,13 +624,14 @@
       try { if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive")
         mediaRecorderRef.current.stop(); } catch {}
       try { webgazer.clearGazeListener(); } catch {}
+      try { clearInterval(gazePollRef.current); } catch {}
       try { webgazer.pause(); } catch {}
       try { if (cleanupCursorRef.current) cleanupCursorRef.current(); } catch {}
 
       // Gaze diagnostics (shown on the done screen) so we can see, without a
       // webcam on our side, whether webgazer fired during the test at all.
-      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current });
-      try { console.log("[ut] gaze: callbacks=" + gazeRecvRef.current + " validPoints=" + gazeValidRef.current); } catch {}
+      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current, polls: gazePollNRef.current });
+      try { console.log("[ut] gaze: listenerCb=" + gazeRecvRef.current + " polls=" + gazePollNRef.current + " validPoints=" + gazeValidRef.current); } catch {}
 
       // Flush remaining buffers, then wait for every stream tail to drain.
       flushRrweb(); flushCursor(); flushGaze();
@@ -827,7 +836,7 @@
           <div className="ut-done-mark"><${Icon.Check} size=${28}/></div>
           <h1>Thank you</h1>
           <p>Your session has been recorded and uploaded. You can close this tab now.</p>
-          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured${gazeStats.recv ? " (" + gazeStats.recv + " callbacks)" : ""}.${gazeStats.valid === 0 ? " Gaze tracking produced no usable points during the test." : ""}</p>`}
+          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured (listener ${gazeStats.recv} cb, polled ${gazeStats.polls}x).${gazeStats.valid === 0 ? " No usable gaze points during the test." : ""}</p>`}
         </div>
       </div>`;
     }
