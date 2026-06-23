@@ -426,7 +426,11 @@
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
-    }, [stopRaf, pauseAudio]);
+      // NOTE: deps stay [stopRaf] only. pauseAudio/syncAudio/sinceT0ToReplayer are
+      // declared BELOW this callback; listing them here reads them in their TDZ
+      // during render and crashes the whole reviewer. The tick uses them at rAF
+      // time (after init), and they are stable, so the closure stays correct.
+    }, [stopRaf]);
 
     // ── Audio control - slaved to the rrweb player (the master clock).
     const playAudio = useCallback(() => {
