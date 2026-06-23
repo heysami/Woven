@@ -719,6 +719,27 @@ function buildCustomFrag(glsl) {
   );
 }
 
+// Stable short hash (djb2) of a string - used to key a `custom-stateful` effect's
+// per-instance buffers + compiled programs so two distinct custom effects sharing
+// the `custom-stateful` type never collide in the instance/program caches.
+function hashStr(s) {
+  let h = 5381;
+  s = String(s);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+// Build the full fragment source for a STATEFUL program authored declaratively
+// (the `custom-stateful` path). The body is written against the SFX_HEADER
+// contract (vUv, fragColor, uResolution, uTexel, uTime, uDt already declared);
+// the author adds only their own `uniform sampler2D`s + extra uniforms + main().
+// A self-versioned shader (its own `#version`) is used verbatim.
+function buildStatefulFrag(glsl) {
+  const s = String(glsl || '');
+  if (/#version/.test(s)) return s;
+  return SFX_HEADER + '\n' + s;
+}
+
 // ---------------------------------------------------------------------------
 // Serializable program specs - the single source of truth shared with other
 // runtimes (the mmcomposer editor GLFx + its baked standalone player). Each
@@ -1101,13 +1122,16 @@ export function createFXChain() {
   }
 
   // Create / fetch / resize an instance's persistent textures for `type`.
-  function ensureStatefulInstance(instanceId, type, sw, sh) {
-    const def = STATEFUL_EFFECTS[type];
+  // `def` is the effect definition (STATEFUL_EFFECTS[type] for built-ins, or the
+  // spec's inline definition for custom-stateful). `sig` distinguishes two
+  // custom-stateful effects that share the type string - a changed sig (different
+  // textures/programs) forces a rebuild just like a changed size.
+  function ensureStatefulInstance(instanceId, type, def, sw, sh, sig) {
     if (!def) return null;
     let inst = statefulInstances.get(instanceId);
-    if (inst && inst.type === type && inst.sw === sw && inst.sh === sh) return inst;
-    if (inst) disposeStatefulInstance(inst);   // type or size changed -> rebuild
-    inst = { type, sw, sh, tex: {}, frame: 0 };
+    if (inst && inst.type === type && inst.sig === sig && inst.sw === sw && inst.sh === sh) return inst;
+    if (inst) disposeStatefulInstance(inst);   // type/sig/size changed -> rebuild
+    inst = { type, sig, sw, sh, tex: {}, frame: 0 };
     for (const name in def.textures) {
       const t = def.textures[name];
       if (t.ping) {
@@ -1181,7 +1205,12 @@ export function createFXChain() {
   // The public step. Returns a 2D canvas (or draws into opts.target) or null on
   // failure / unknown type (caller may then fall back to a CPU path).
   function stepStateful(instanceId, type, opts) {
-    const def = STATEFUL_EFFECTS[type];
+    // Built-in stateful effects resolve their def from the static registry; a
+    // `custom-stateful` effect carries its serializable def inline on the spec
+    // (opts.def), so a per-project effect node can ship a brand-new stateful
+    // effect with NO engine change.
+    const custom = type === 'custom-stateful';
+    const def = custom ? (opts && opts.def) : STATEFUL_EFFECTS[type];
     if (!def || !opts || !opts.source) return null;
     const source = opts.source;
     // Output (display) resolution = source resolution.
@@ -1190,14 +1219,28 @@ export function createFXChain() {
     else { ow = source.width || source.videoWidth || 0; oh = source.height || source.videoHeight || 0; }
     if (ow < 2 || oh < 2) return null;
 
-    // Sim resolution: coarse grid derived from the def + params, preserving AR.
+    // Sim resolution. Built-ins (fluid) downscale to a coarse solver grid via
+    // simLongAxis(). A declarative def may set `sim` to a long-axis cap, or leave
+    // it 0/absent to run at FULL source resolution - image-fidelity effects like
+    // a per-row delay need every real row, not a coarse grid.
     const params = opts.params || {};
-    const longAxis = def.simLongAxis ? def.simLongAxis(params) : Math.max(ow, oh);
+    let simCap = 0;
+    if (def.simLongAxis) simCap = def.simLongAxis(params);
+    else if (typeof def.sim === 'number') simCap = def.sim;
     let sw, sh;
-    if (ow >= oh) { sw = longAxis; sh = Math.max(8, Math.round(longAxis * oh / ow)); }
-    else { sh = longAxis; sw = Math.max(8, Math.round(longAxis * ow / oh)); }
+    if (simCap && simCap > 0) {
+      if (ow >= oh) { sw = simCap; sh = Math.max(8, Math.round(simCap * oh / ow)); }
+      else { sh = simCap; sw = Math.max(8, Math.round(simCap * ow / oh)); }
+    } else {
+      sw = ow; sh = oh;
+    }
 
-    const inst = ensureStatefulInstance(instanceId, type, sw, sh);
+    // A custom-stateful def shares the `custom-stateful` type string, so key its
+    // instance buffers + programs by a hash of its textures + programs.
+    const sig = custom
+      ? hashStr(JSON.stringify(def.textures || {}) + '|' + JSON.stringify(def.programs || {}))
+      : type;
+    const inst = ensureStatefulInstance(instanceId, type, def, sw, sh, sig);
     if (!inst) return null;
 
     // Upload the layer source into a dedicated texture.
@@ -1218,9 +1261,12 @@ export function createFXChain() {
     const ptr = opts.pointer || {};
     const seed = inst.frame === 0 ? 1 : 0.06;
 
-    // Dispatch per-type pass orchestration. Today: fluid.
+    // Dispatch the per-step pass orchestration: the hand-written fluid solver, or
+    // the GENERIC declarative runner for any def that carries a `passes` list.
     if (type === 'fluid') {
       runFluidPasses(inst, type, def, params, opts, ptr, dt, seed, sw, sh);
+    } else if (Array.isArray(def.passes)) {
+      runDeclarativePasses(inst, sig, def, params, ptr, dt, sw, sh);
     }
     inst.frame++;
 
@@ -1229,14 +1275,31 @@ export function createFXChain() {
       if (sfxOutFBO) { gl.deleteFramebuffer(sfxOutFBO.fbo); gl.deleteTexture(sfxOutFBO.tex); }
       sfxOutFBO = makeRGBA8FBO(gl, ow, oh);
     }
-    const disp = sfxProgram(type, def.display.program, def.programs[def.display.program]);
+    const dispName = def.display && def.display.program;
+    const dispFrag = custom ? buildStatefulFrag(def.programs[dispName]) : (dispName ? def.programs[dispName] : null);
+    const disp = dispName ? sfxProgram(sig, dispName, dispFrag) : null;
     if (disp) {
-      sfxPass(disp, sfxOutFBO.fbo, ow, oh,
-        [{ name: 'uSrc', tex: sfxSrcTex }, { name: 'uDye', tex: sfxRead(inst, 'dye') }],
-        (prog) => {
-          gl.uniform1f(sfxUloc(prog, 'uDt'), dt);
-          gl.uniform1f(sfxUloc(prog, 'uIntensity'), clamp01(opts.intensity == null ? 1 : opts.intensity));
+      const intensity = clamp01(opts.intensity == null ? 1 : opts.intensity);
+      if (Array.isArray(def.display.inputs)) {
+        // Generic display: bind declared inputs ('source' -> the layer pixels,
+        // any other name -> that persistent texture's read side).
+        const binds = def.display.inputs.map((b) => ({
+          name: b.sampler,
+          tex: b.tex === 'source' ? sfxSrcTex : sfxRead(inst, b.tex),
+        }));
+        sfxPass(disp, sfxOutFBO.fbo, ow, oh, binds, (prog) => {
+          applyDeclUniforms(prog, def.display, params, ptr, dt);
+          gl.uniform1f(sfxUloc(prog, 'uIntensity'), intensity);
         });
+      } else {
+        // Built-in fluid display (uSrc + uDye), unchanged.
+        sfxPass(disp, sfxOutFBO.fbo, ow, oh,
+          [{ name: 'uSrc', tex: sfxSrcTex }, { name: 'uDye', tex: sfxRead(inst, 'dye') }],
+          (prog) => {
+            gl.uniform1f(sfxUloc(prog, 'uDt'), dt);
+            gl.uniform1f(sfxUloc(prog, 'uIntensity'), intensity);
+          });
+      }
     }
 
     // Read the output FBO into a 2D canvas (flip rows: GL is bottom-up).
@@ -1339,6 +1402,55 @@ export function createFXChain() {
     }
   }
 
+  // Generic declarative stateful runner - the engine side of `custom-stateful`.
+  // Turns a SERIALIZABLE spec (textures + GLSL program strings + an ordered pass
+  // list) into the exact ping-pong FBO orchestration runFluidPasses does by hand,
+  // so a brand-new stateful effect needs ZERO engine code. Each pass:
+  //   { program, output, inputs:[{sampler,tex}], uniforms:[{name,from,def,bool,k}],
+  //     swap?:bool (default true), when?:'always'|'pointer' }
+  // `tex` resolves 'source' -> the layer pixels, else a persistent texture name.
+  // Use a ping texture for feedback (read + write the same buffer); a single
+  // (non-ping) texture must not be both an input and the output of one pass.
+  function runDeclarativePasses(inst, sig, def, params, ptr, dt, sw, sh) {
+    const passes = def.passes || [];
+    for (let i = 0; i < passes.length; i++) {
+      const p = passes[i];
+      if (!p || !p.program || !p.output || !inst.tex[p.output]) continue;
+      if (p.when === 'pointer' && !(ptr.hover || ptr.down)) continue;
+      const prog = sfxProgram(sig, p.program, buildStatefulFrag(def.programs[p.program]));
+      if (!prog) continue;
+      const binds = (p.inputs || []).map((b) => ({
+        name: b.sampler,
+        tex: b.tex === 'source' ? sfxSrcTex : sfxRead(inst, b.tex),
+      }));
+      sfxPass(prog, sfxWrite(inst, p.output).fbo, sw, sh, binds,
+        (prg) => applyDeclUniforms(prg, p, params, ptr, dt));
+      if (p.swap !== false) sfxSwap(inst, p.output); // advances a ping; no-op for single
+    }
+  }
+
+  // Set the standard stateful uniforms (uDt + pointer) plus a descriptor's own
+  // declarative uniforms (resolved from `params` via fxUniformValue) on `prog`.
+  // A uniform the shader does not declare resolves to a null location and is
+  // silently ignored by GL, so over-setting is safe.
+  function applyDeclUniforms(prog, descr, params, ptr, dt) {
+    gl.uniform1f(sfxUloc(prog, 'uDt'), num(dt, 1 / 60));
+    gl.uniform2f(sfxUloc(prog, 'uPointer'), clamp01(num(ptr.x, 0.5)), clamp01(num(ptr.y, 0.5)));
+    gl.uniform2f(sfxUloc(prog, 'uPointerDelta'), num(ptr.dx, 0), num(ptr.dy, 0));
+    gl.uniform1f(sfxUloc(prog, 'uDown'), ptr.down ? 1 : 0);
+    gl.uniform1f(sfxUloc(prog, 'uHover'), ptr.hover ? 1 : 0);
+    const us = (descr && descr.uniforms) || [];
+    for (let i = 0; i < us.length; i++) {
+      const u = us[i];
+      if (!u || !u.name) continue;
+      const loc = sfxUloc(prog, u.name);
+      if (loc == null) continue;
+      const v = fxUniformValue(u, params);
+      if (u.k === '1i') gl.uniform1i(loc, v | 0);
+      else gl.uniform1f(loc, v);
+    }
+  }
+
   // bottom-up readPixels -> top-down 2D canvas (or provided target).
   function sfxReadToCanvas(w, h, target) {
     const px = new Uint8Array(w * h * 4);
@@ -1380,7 +1492,7 @@ export function createFXChain() {
     disposeStatefulInstance(inst);
     statefulInstances.delete(instanceId);
   }
-  function hasStateful(type) { return !!STATEFUL_EFFECTS[type]; }
+  function hasStateful(type) { return type === 'custom-stateful' || !!STATEFUL_EFFECTS[type]; }
   function statefulAvailable() { return true; }
 
   function dispose() {
@@ -1521,7 +1633,7 @@ function stubChain() {
     // present (no-op) so the API surface matches the real chain.
     stepStateful() { return null; },
     disposeStateful() {},
-    hasStateful(type) { return !!STATEFUL_EFFECTS[type]; },
+    hasStateful(type) { return type === 'custom-stateful' || !!STATEFUL_EFFECTS[type]; },
     statefulAvailable() { return false; },
   };
 }

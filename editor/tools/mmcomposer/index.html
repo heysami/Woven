@@ -2431,6 +2431,38 @@ function disposeFluid(id){
   }
   if(FluidSim.fields[id]) delete FluidSim.fields[id];
 }
+// CUSTOM-STATEFUL effects: a per-project effect node can ship a brand-new
+// multi-frame / persistent-buffer effect as a SERIALIZABLE spec carried on
+// eff.stateful (its own textures + GLSL program strings + an ordered pass list).
+// Each routes to the shared fx.js stateful runner - the SAME path as fluid - so
+// no engine change is needed per effect. Intercepted in PASS B (like fluid):
+// the layer pixels are read as the source, the result is written back into the
+// layer buffer `cv`, and the single-pass GL chain composes on top. Instance ids
+// are per (layer, effect index) so several custom-stateful effects coexist.
+function layerCustomStatefuls(L){ const st=L&&L.effects&&L.effects.stack; if(!st) return [];
+  const out=[]; for(let i=0;i<st.length;i++){ const e=st[i]; if(e&&e.type==='custom-stateful'&&e.stateful) out.push({eff:e,idx:i}); } return out; }
+const _gpuCsIds=new Set();
+function csInstId(layerId,idx){ return layerId+':cs'+idx; }
+function stepCustomStateful(cv, layerId, idx, eff, dt, time){
+  const chain=ensureFXChain();
+  if(!(chain && chain.statefulAvailable && chain.statefulAvailable() && chain.hasStateful('custom-stateful'))) return;
+  const id=csInstId(layerId,idx);
+  try{
+    const out=chain.stepStateful(id, 'custom-stateful', {
+      def:eff.stateful, params:(eff.params||{}), intensity:(eff.intensity==null?1:eff.intensity),
+      source:cv, dt, time,
+      pointer:{ x:Input.px, y:Input.py, dx:Input.pdx, dy:Input.pdy, down:Input.down, hover:Input.hoverAny },
+    });
+    if(out){ _gpuCsIds.add(id); const cx=cv.getContext('2d'); cx.clearRect(0,0,cv.width,cv.height); cx.drawImage(out,0,0,cv.width,cv.height); }
+  }catch(e){ /* unsupported / shader compile failure -> leave the layer pixels unmodified */ }
+}
+function disposeCustomStateful(id){
+  if(_gpuCsIds.has(id)){
+    const chain=_fxChain;
+    if(chain && chain.disposeStateful){ try{ chain.disposeStateful(id); }catch(e){} }
+    _gpuCsIds.delete(id);
+  }
+}
 
 /* ===========================================================================
    FACE-MORPH  -  parametric facial-landmark mesh warp (Parametric Portrait
@@ -3069,7 +3101,7 @@ class GLFx {
     let inputTex=this.srcTex, ping=0;
     // 'fluid' + 'face-morph' are CPU layer-buffer effects (handled before this
     // chain in PASS B), never GL passes.
-    const passes=stack.filter(e=>e&&e.type&&e.type!=='fluid'&&e.type!=='face-morph');
+    const passes=stack.filter(e=>e&&e.type&&e.type!=='fluid'&&e.type!=='face-morph'&&e.type!=='custom-stateful');
     if(!passes.length){ // straight copy to screen
       this.blit(this.srcTex,w,h,{type:'__copy'},time,1,null); return;
     }
@@ -3853,6 +3885,10 @@ const Engine = {
     const fluidLive=new Set(layers.filter(L=>layerHasFluid(L)).map(L=>L.id));
     for(const id of Array.from(_gpuFluidIds)){ if(!fluidLive.has(id)) disposeFluid(id); }
     for(const id of Object.keys(FluidSim.fields)){ if(!fluidLive.has(id)) disposeFluid(id); }
+    // free GPU custom-stateful buffers for layers / effects that went away.
+    const csLive=new Set();
+    for(const L of layers){ for(const cs of layerCustomStatefuls(L)) csLive.add(csInstId(L.id,cs.idx)); }
+    for(const id of Array.from(_gpuCsIds)){ if(!csLive.has(id)) disposeCustomStateful(id); }
     // 4b) PASS B - composite visible layers in z-order, applying channel masks.
     const ordered=[...layers].filter(L=>L.visible).sort((a,b)=>(a.z||0)-(b.z||0));
     for(const L of ordered){
@@ -3868,6 +3904,9 @@ const Engine = {
       // FACE-MORPH: detect landmarks + mesh-warp the layer pixels (CPU, like fluid).
       const morphEff=layerHasFaceMorph(L);
       if(morphEff){ FaceMorph.step(buf.cv, L, (morphEff.params||{})); }
+      // CUSTOM-STATEFUL: run each serializable multi-frame effect on the layer
+      // pixels before masking / GL effects (same staging as fluid).
+      for(const cs of layerCustomStatefuls(L)){ stepCustomStateful(buf.cv, L.id, cs.idx, cs.eff, dt, time); }
       this.lctx.clearRect(0,0,W,H); this.lctx.drawImage(buf.cv,0,0);
       // mask: multiply a channel of this layer by a channel of another layer
       if(L.mask && L.mask.by){
@@ -4493,6 +4532,7 @@ function rebuild(){
   PW.reset();   // drop the shared physics world (bodies rebuild lazily on demand)
   // free all fluid buffers (CPU fields + GPU stateful instances) on rebuild.
   for(const id of Array.from(_gpuFluidIds)) disposeFluid(id);
+  for(const id of Array.from(_gpuCsIds)) disposeCustomStateful(id);
   FluidSim.reset();
   FaceMorph.reset();
   Engine.resize();
@@ -5415,7 +5455,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       switch(dst){case'r':bd[i]*=mv;break;case'g':bd[i+1]*=mv;break;case'b':bd[i+2]*=mv;break;case'rgb':bd[i]*=mv;bd[i+1]*=mv;bd[i+2]*=mv;break;default:bd[i+3]*=mv;}}
     dctx.putImageData(base,0,0);}
   const BUFS={};
-  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy'&&e.type!=='fluid'&&e.type!=='face-morph');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  function applyFxFrom(srcC,stack,time,iOv){ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy'&&e.type!=='fluid'&&e.type!=='face-morph'&&e.type!=='custom-stateful');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
   function applyTop(time){ if(!GLOK||!TOP.length)return; applyFxFrom(c2d,TOP,time,null); ctx.save(); ctx.globalCompositeOperation='copy'; ctx.drawImage(cgl,0,0,W,H); ctx.restore(); }
