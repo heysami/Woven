@@ -18,7 +18,7 @@ The picked option's child tags are the **immutable contract** for everything dow
 | `<palette>#bg,#surface,#fg,#muted,#border,#accent</palette>` | `:root` CSS variables in `styles.css` | One CSS var per token. Don't invent extra tokens of different hue; derive shades via `oklch()` from THESE. |
 | `<display font="X">` | `--font-display: "X", <sensible fallbacks>;` AND a Google-Fonts `<link>` in every page's `<head>` | If `X` is a system font (Times New Roman, Georgia, Arial, etc.), skip the `<link>` - the family resolves locally. |
 | `<body font="X">` | `--font-body: "X", <sensible fallbacks>;` AND a `<link>` for the family (one combined Google Fonts `<link>` if both display + body are Google). | Same system-font carve-out. |
-| `<axes>Shell: <shell-X> · Style: <style-Y> · Aesthetic: <aesthetic-Z></axes>` | The three detail files to Read in Phase B | These IDs identify exactly which files under `./prototype/` to inherit vocabulary from. |
+| `<axes>Shell: <shell-X> · Style: <style-Y> · Aesthetic: <aesthetic-Z></axes>` | The three detail files to Read in Phase B | These IDs identify exactly which files under `./prototype/` to inherit vocabulary from. A committed aesthetic (≠ none) is authoritative over the style's native look per Phase B.5 - it is a lock on the build's cultural register, not a hint. |
 | `<vibe>…</vibe>` + `<why>…</why>` + `<label>…</label>` | The genre-commit one-line comment at the top of `styles.css` (or `app.js` line 1) | Captures the WHY for downstream readers. |
 | `<image src="…option-N.png"/>` | (Reference only - do NOT embed the preview PNG in `source/`; it was for the chat preview, not the build.) | Stays in `.prototype-options/` as ephemera. |
 
@@ -104,7 +104,30 @@ Once Phase A is locked, `Read` the three detail files identified in `<axes>`:
 
 Plus, if a `recipe-<id>.md` was named, `Read` that too - recipes bundle all three picks with proven combinations.
 
-**These detail files inform vocabulary, not Phase A locks.** The style detail file may suggest a default font; **the picked `<display font>` overrides that suggestion** - Phase A wins every conflict. The detail files exist to fill in the picks the Step -1 UI didn't surface (shape language, motion budget, voice register, secondary tokens, slot annotation conventions).
+**These detail files inform vocabulary, not Phase A locks.** The style detail file may suggest a default font; **the picked `<display font>` overrides that suggestion** - Phase A wins every conflict. The detail files exist to fill in the picks the Step -1 UI didn't surface (shape language, motion budget, voice register, secondary tokens, slot annotation conventions). When an aesthetic was committed, how it ranks against the style's own vocabulary is governed by Phase B.5 below - do not treat aesthetic and style as co-equal flavour.
+
+## Phase B.5 - Aesthetic authority: the committed aesthetic is NOT optional flavour (run when `<axes>` aesthetic ≠ none)
+
+This is the rule whose absence caused the recurring failure: **the picked aesthetic gets silently overridden by the style/shell/recipe template, and the build snaps back to that template's native look** (dense-mono-dark → Bloomberg, swiss-grid → Müller-Brockmann, sf-pro → iOS). The style and shell detail files carry a strong implicit aesthetic; without this gate the agent reads that concrete native look, treats the committed aesthetic as faint seasoning, and ships the template. The user picked the aesthetic on purpose. Dropping it back to the template default is the single most disappointing outcome of this flow and is **forbidden**.
+
+When `<axes>` committed an aesthetic that is not `(none)`, that aesthetic is the **authoritative cultural register for the build**. It outranks the style's and the recipe's *native* aesthetic. Precedence, top to bottom:
+
+1. **Phase A locks** (palette hexes, font families) - immutable, win every conflict.
+2. **Committed aesthetic** - owns decoration vocabulary, ornament, texture, era cues, motion personality, type *personality* (within the locked families), and palette *mood* (within the locked hexes). When the style's native register and the committed aesthetic disagree about how a surface should feel, the aesthetic wins.
+3. **Style** - owns surface/depth grammar, density, shape language, optical inheritance: the chassis the aesthetic is dressed onto, not the look itself.
+4. **Shell** - owns layout skeleton only.
+
+A recipe's own `Aesthetic:` line (often `(none)`) does NOT override a separately-committed aesthetic. If the picked option paired `aesthetic-vaporwave` with `style-dense-mono-dark`, the build is "a dense data terminal rendered in vaporwave" - magenta/cyan gradients, chrome bezels, Floral-Shoppe melancholy on the dense chassis - NOT a stock Bloomberg terminal with the aesthetic quietly discarded.
+
+### Translation assessment - run it before writing source, act on the verdict
+
+Before Phase C, decide how far the style/shell chassis can actually carry the committed aesthetic, and act:
+
+- **Translatable** - the aesthetic's decoration vocabulary maps cleanly onto the chassis. Build the fusion; note it in the Phase F summary.
+- **Partial** - some cues translate, some fight the chassis (e.g. vaporwave's wide tracking + airy density vs dense-mono's every-pixel-earns-its-keep). Build every cue that translates, push the rest as far as the chassis allows, and in Phase F name the one or two cues the chassis could not fully carry and why.
+- **In tension** - aesthetic and style pull hard against each other. STILL apply the aesthetic to the maximum degree the chassis physically allows (never fall back to the bare template), AND in the Phase F report add a one-line note offering to swap the style for one that carries the aesthetic better. The decision is the user's; the default is "keep the aesthetic, flag the friction", never "silently keep the template".
+
+The forbidden outcome in every case is shipping the style's native look with the committed aesthetic absent. If the aesthetic is genuinely impossible to express on the chosen chassis, say so explicitly and ask - do not decide it away.
 
 ## Phase C - Write source per Subagent 1 conventions
 
@@ -141,6 +164,6 @@ The acid-design studio case would propose steps 1, 2, 3, 4 pre-ticked (and likel
 
 ## Phase F - Report done
 
-After Phases A-E complete, summarise to the user: what was locked from the pick (palette + fonts + axes), the approved roster from the Phase A.5 gate, which orchestrators actually ran (with their reported outcomes - `kept N slots, dropped M`) and which self-gated to a no-op, and what's next (typically: "click Run on the workflow canvas to generate the per-asset bitmaps", or "the polish layer is live - refresh to see microanimations"). If the user picked `none`, say the build shipped CSS/SVG-only and which passes remain available on ask.
+After Phases A-E complete, summarise to the user: what was locked from the pick (palette + fonts + axes), and - when an aesthetic was committed - the Phase B.5 translation verdict (translatable / partial / in-tension), naming any aesthetic cue the chassis could not fully carry and, for an in-tension verdict, offering the style swap. The approved roster from the Phase A.5 gate, which orchestrators actually ran (with their reported outcomes - `kept N slots, dropped M`) and which self-gated to a no-op, and what's next (typically: "click Run on the workflow canvas to generate the per-asset bitmaps", or "the polish layer is live - refresh to see microanimations"). If the user picked `none`, say the build shipped CSS/SVG-only and which passes remain available on ask.
 
 If any phase failed (Phase B detail-file missing, Phase C render error, Phase E orchestrator dispatch error), report it explicitly - don't claim "done" when the pipeline broke partway.
