@@ -11977,9 +11977,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           ${isNew && events.length === 0 && !preamble && html`
             <div className="chat-empty chat-empty-new">
               <div className="chat-empty-title">New chat</div>
-              <div className="chat-empty-sub">
-                Ask the agent anything - it has Read/Edit/Bash access in <code>${run?.branch || "main"}</code>.
-              </div>
             </div>
           `}
           ${!isNew && events.length === 0 && status === "connecting" && html`<div className="chat-empty">Loading conversation…</div>`}
@@ -22495,7 +22492,9 @@ function ProjectsLanding({ info, projects, onReload }) {
                           >
                             <span className="landing-card-star-glyph"><${Icon.Play}/></span>
                             <span className="landing-card-star-label">${sp.label || sp.id}</span>
-                            <span className="landing-card-star-slug">${sp.id}</span>
+                            ${sp.label && sp.label !== sp.id
+                              ? html`<span className="landing-card-star-slug">${sp.id}</span>`
+                              : null}
                           </button>
                           <button
                             className="landing-card-star-edit"

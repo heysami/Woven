@@ -3257,7 +3257,8 @@ button {
 }
 .landing-card-star-btn:hover .landing-card-star-glyph { color: var(--accent); }
 .landing-card-star-label {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
