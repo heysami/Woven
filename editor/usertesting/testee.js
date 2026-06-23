@@ -203,6 +203,13 @@
     // diag: webgazer's hidden <video> liveness during the test. If it freezes,
     // getEyePatches() reads a stale/black frame and every prediction is null.
     const gazeVidRef = useRef({ exists: false, rs: 0, vw: 0, paused: true, advanced: 0, lastCt: -1 });
+    // diag: WHY the face tracker yields nothing. err = webgazer's swallowed
+    // "can't get pupil features" message (an exception, e.g. WebGL context loss);
+    // ctxLost = a webglcontextlost event fired; faceMax = best face count from a
+    // direct estimateFaces() probe; canvasW = videoElementCanvas width (0 = the
+    // getEyePatches guard bails before detection).
+    const gazeDiagRef = useRef({ err: "", ctxLost: false, faceMax: 0, canvasW: -1 });
+    const gazeLogRestoreRef = useRef(null);
     const [gazeStats, setGazeStats] = useState(null);
     const rrwebBufRef = useRef([]);
     const flushTimerRef = useRef(null);
@@ -481,6 +488,27 @@
       // against an auto-pause. The listener is kept only to diagnose whether it
       // ever fires.
       try { if (webgazer.resume) webgazer.resume(); } catch {}
+      // Capture WHY the tracker fails. webgazer swallows tracker exceptions to
+      // console.log("can't get pupil features", e); a lost WebGL context (TF.js
+      // backend) surfaces as a canvas event. Both are otherwise invisible.
+      try {
+        const gd = gazeDiagRef.current;
+        const origLog = console.log;
+        console.log = function () {
+          try {
+            const a = arguments;
+            if (typeof a[0] === "string" && a[0].indexOf("pupil features") >= 0) {
+              gd.err = String((a[1] && a[1].message) || a[1] || a[0]).slice(0, 120);
+            }
+          } catch {}
+          return origLog.apply(console, arguments);
+        };
+        gazeLogRestoreRef.current = () => { try { console.log = origLog; } catch {} };
+        const onCtxLost = () => { gd.ctxLost = true; };
+        window.addEventListener("webglcontextlost", onCtxLost, true);
+        const prevRestore = gazeLogRestoreRef.current;
+        gazeLogRestoreRef.current = () => { try { window.removeEventListener("webglcontextlost", onCtxLost, true); } catch {}; prevRestore(); };
+      } catch {}
       try {
         webgazer.setGazeListener(() => { gazeRecvRef.current++; });   // diag only
         webgazer.showPredictionPoints(false);
@@ -502,6 +530,22 @@
               if (v.paused) { try { await v.play(); } catch {} }
             }
           } catch {}
+          // Every ~500ms, run a direct face-detection probe so the done screen
+          // can name the failing layer (no face vs thrown exception vs 0-w canvas).
+          if (gazePollNRef.current % 5 === 0) {
+            try {
+              const gd = gazeDiagRef.current;
+              const c = document.getElementById("webgazerVideoCanvas");
+              if (c) gd.canvasW = c.width;
+              const tr = webgazer.getTracker && webgazer.getTracker();
+              const model = tr && tr.model && (await tr.model);
+              const v = document.getElementById("webgazerVideoFeed");
+              if (model && v && v.videoWidth) {
+                const faces = await model.estimateFaces({ input: v, returnTensors: false, flipHorizontal: false, predictIrises: false });
+                gd.faceMax = Math.max(gd.faceMax, (faces && faces.length) || 0);
+              }
+            } catch (e) { gazeDiagRef.current.err = String((e && e.message) || e).slice(0, 120); }
+          }
           let p = null;
           try { p = await Promise.resolve(webgazer.getCurrentPrediction()); } catch {}
           if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
@@ -642,13 +686,14 @@
         mediaRecorderRef.current.stop(); } catch {}
       try { webgazer.clearGazeListener(); } catch {}
       try { clearInterval(gazePollRef.current); } catch {}
+      try { if (gazeLogRestoreRef.current) gazeLogRestoreRef.current(); } catch {}
       try { webgazer.pause(); } catch {}
       try { if (cleanupCursorRef.current) cleanupCursorRef.current(); } catch {}
 
       // Gaze diagnostics (shown on the done screen) so we can see, without a
       // webcam on our side, whether webgazer fired during the test at all.
-      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current, polls: gazePollNRef.current, vid: { ...gazeVidRef.current } });
-      try { console.log("[ut] gaze: listenerCb=" + gazeRecvRef.current + " polls=" + gazePollNRef.current + " validPoints=" + gazeValidRef.current + " video=" + JSON.stringify(gazeVidRef.current)); } catch {}
+      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current, polls: gazePollNRef.current, vid: { ...gazeVidRef.current }, diag: { ...gazeDiagRef.current } });
+      try { console.log("[ut] gaze: listenerCb=" + gazeRecvRef.current + " polls=" + gazePollNRef.current + " validPoints=" + gazeValidRef.current + " video=" + JSON.stringify(gazeVidRef.current) + " diag=" + JSON.stringify(gazeDiagRef.current)); } catch {}
 
       // Flush remaining buffers, then wait for every stream tail to drain.
       flushRrweb(); flushCursor(); flushGaze();
@@ -853,7 +898,7 @@
           <div className="ut-done-mark"><${Icon.Check} size=${28}/></div>
           <h1>Thank you</h1>
           <p>Your session has been recorded and uploaded. You can close this tab now.</p>
-          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured (listener ${gazeStats.recv} cb, polled ${gazeStats.polls}x).${gazeStats.vid ? ` Video: exists=${String(gazeStats.vid.exists)} rs=${gazeStats.vid.rs} ${gazeStats.vid.vw}px paused=${String(gazeStats.vid.paused)} frames=${gazeStats.vid.advanced}/${gazeStats.polls}.` : ""}${gazeStats.valid === 0 ? " No usable gaze points during the test." : ""}</p>`}
+          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured (listener ${gazeStats.recv} cb, polled ${gazeStats.polls}x).${gazeStats.vid ? ` Video: exists=${String(gazeStats.vid.exists)} rs=${gazeStats.vid.rs} ${gazeStats.vid.vw}px paused=${String(gazeStats.vid.paused)} frames=${gazeStats.vid.advanced}/${gazeStats.polls}.` : ""}${gazeStats.diag ? ` Tracker: faces=${gazeStats.diag.faceMax} canvasW=${gazeStats.diag.canvasW} ctxLost=${String(gazeStats.diag.ctxLost)}${gazeStats.diag.err ? ' err="' + gazeStats.diag.err + '"' : ""}.` : ""}${gazeStats.valid === 0 ? " No usable gaze points during the test." : ""}</p>`}
         </div>
       </div>`;
     }
