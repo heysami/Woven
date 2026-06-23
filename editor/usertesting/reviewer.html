@@ -2,15 +2,17 @@
 <!-- Woven user-testing REVIEWER REPLAY - the page a researcher sees at
      /r/<token>/. Served by the user-testing GATE (sibling of the share gate
      in editor/shares.py); never by the main daemon. Replays one testee's
-     recorded session: rrweb DOM replay (via the vendored rrweb-player, which
-     bundles the rrweb replayer) with synced audio, a cursor + gaze overlay, a
-     scrubber, and marker tools that pin where the task start / end (and
-     optional per-flow in/out) count so timing is accurate.
+     recorded session: rrweb DOM replay (via the vendored rrweb Replayer, the
+     same build testee.js records with) with synced audio, a cursor + gaze
+     overlay, a scrubber, and marker tools that pin where the task start / end
+     (and optional per-flow in/out) count so timing is accurate.
 
      Architecture mirrors editor/share/viewer.html verbatim: React 18 +
      ReactDOM + htm UMD from unpkg (NO build step, NO JSX), served same-origin.
-     rrweb-player is vendored locally (vendor/rrweb-player.min.js + .css) so the
-     runtime never depends on a CDN. -->
+     rrweb is vendored locally (vendor/rrweb.min.js) so the runtime never
+     depends on a CDN. We drive rrweb.Replayer directly (NOT rrweb-player):
+     the recorder uses rrweb 2.0.0-alpha.4, and rrweb-player 2.0.0 silently
+     cannot replay its events (version skew), so we own the transport here. -->
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -21,16 +23,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
-  <!-- Vendored rrweb-player styles (the replayer chrome + frame). -->
-  <link rel="stylesheet" href="vendor/rrweb-player.min.css"/>
   <link rel="stylesheet" href="reviewer.css"/>
   <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
-  <!-- Vendored rrweb-player UMD (exposes window.rrwebPlayer; the constructor is
-       its .default export). Bundles the rrweb replayer - no separate rrweb file
-       is needed. Loaded BEFORE reviewer.js so the global is ready at boot. -->
-  <script src="vendor/rrweb-player.min.js"></script>
+  <!-- Vendored rrweb UMD (exposes window.rrweb with rrweb.Replayer - the same
+       build testee.js records with). We drive the Replayer directly instead of
+       rrweb-player to avoid version skew. Loaded BEFORE reviewer.js so the
+       global is ready at boot. -->
+  <script src="vendor/rrweb.min.js"></script>
 </head>
 <body>
   <div id="root"></div>

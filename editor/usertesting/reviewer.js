@@ -23,8 +23,8 @@
 
    GET  api/stream?name=rrweb
         -> JSON ARRAY of rrweb events. The SERVER parses rrweb.jsonl for us.
-           Events keep their NATIVE epoch-ms `timestamp`; rrweb-player consumes
-           them as-is (it rebases internally to the first event).
+           Events keep their NATIVE epoch-ms `timestamp`; rrweb.Replayer
+           consumes them as-is (it rebases internally to the first event).
    GET  api/stream?name=cursor
         -> JSON ARRAY of { t, x, y, type }  (t = ms relative to meta.t0)
    GET  api/stream?name=gaze
@@ -42,15 +42,21 @@
    • rrweb events keep native epoch-ms timestamps; subtract t0 to get ms-since-
      t0. rrweb-player's getMetaData().startTime is the first event's epoch-ms.
    • The PLAYHEAD this runtime tracks (playMs) is ms-since-t0. We derive it from
-     the player's own time (player time + rrwebStart - t0) so cursor, gaze, and
-     audio all align to the same clock as the DOM replay.
+     the replayer's own time (replayer.getCurrentTime() + rrwebStart - t0) so
+     cursor, gaze, and audio all align to the same clock as the DOM replay.
+     rrweb.Replayer emits NO per-frame time event, so we run our own rAF loop
+     while playing that reads getCurrentTime() and advances the playhead.
    • AUDIO SYNC: audio.currentTime (seconds) === playMs/1000. We keep audio
-     slaved to the rrweb player: on a > tolerance drift we hard-seek audio to
-     the player time; play/pause drives both together. The rrweb player is the
+     slaved to the rrweb replayer: on a > tolerance drift we hard-seek audio to
+     the replayer time; play/pause drives both together. The replayer is the
      master clock (it owns the DOM frames the researcher is reading).
+   • SCALING: rrweb.Replayer renders into `.replayer-wrapper` at the RECORDED
+     viewport size and does NOT auto-fit (rrweb-player used to). We CSS-scale
+     the wrapper to fit `.rv-player-host` (transform: scale, origin top-left)
+     and recompute on host resize + after the first full snapshot is built.
    ────────────────────────────────────────────────────────────────────────── */
 
-/* global React, ReactDOM, htm, rrwebPlayer */
+/* global React, ReactDOM, htm, rrweb */
 (() => {
   const html = htm.bind(React.createElement);
   const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -60,10 +66,10 @@
   const api = (p) => BASE + "api/" + p;
   const streamUrl = (name) => api("stream?name=" + encodeURIComponent(name));
 
-  // rrweb-player UMD exposes window.rrwebPlayer; the constructor is its
-  // `default` export. Tolerate either shape so a future bundle change is safe.
-  const RRWebPlayer = (typeof rrwebPlayer !== "undefined")
-    ? (rrwebPlayer && (rrwebPlayer.default || rrwebPlayer)) : null;
+  // rrweb UMD exposes window.rrweb with the Replayer constructor (the same
+  // build testee.js records with). We drive it directly.
+  const RRWebReplayer = (typeof rrweb !== "undefined" && rrweb && rrweb.Replayer)
+    ? rrweb.Replayer : null;
 
   // ── Line icons (Woven Icon.* set - 16-box, 1.5pt round stroke, currentColor).
   const Icon = {
@@ -240,13 +246,16 @@
     const [toast, setToast] = useState(null);
 
     const stageRef = useRef(null);          // the player container (overlay anchor)
-    const playerHostRef = useRef(null);     // div rrweb-player mounts into
-    const playerRef = useRef(null);         // rrwebPlayer instance
-    const replayerRef = useRef(null);       // player.getReplayer()
+    const playerHostRef = useRef(null);     // div rrweb.Replayer mounts into
+    const replayerRef = useRef(null);       // rrweb.Replayer instance
     const audioRef = useRef(null);          // <audio> element
     const playMsRef = useRef(0); playMsRef.current = playMs;
+    const playingRef = useRef(false);       // mirrors `playing` for the rAF loop
     const rrwebStartRef = useRef(0);        // first rrweb event epoch-ms
     const t0Ref = useRef(0);
+    const rafRef = useRef(0);               // playhead rAF handle (driven by us)
+    const scaleRef = useRef(1);             // current wrapper CSS scale (fit)
+    const fitRef = useRef(null);            // recompute-fit fn (set after build)
 
     const showToast = (m) => { setToast(m); setTimeout(() => setToast(null), 4000); };
 
@@ -289,73 +298,112 @@
       Promise.all(jobs).catch(() => setStreamErr("Some recording streams failed to load."));
     }, [meta, recCfg]);
 
-    // ── Build the rrweb-player once events are in. rrweb-player bundles the
-    // rrweb replayer; we hand it the raw event array.
+    // ── Build the rrweb.Replayer once events are in. The Replayer renders the
+    // DOM replay into a `.replayer-wrapper` (containing the iframe) at the
+    // RECORDED viewport size; it does NOT auto-fit, so we CSS-scale the wrapper
+    // to the host below. rrweb.Replayer emits no per-frame time event, so the
+    // transport (play/pause/seek) drives our own rAF playhead loop instead.
     useEffect(() => {
-      if (!rrwebEvents || !playerHostRef.current || !RRWebPlayer) return;
-      if (playerRef.current) return;          // build once
+      if (!rrwebEvents || !playerHostRef.current || !RRWebReplayer) return;
+      if (replayerRef.current) return;        // build once
       if (rrwebEvents.length < 2) return;     // replayer needs >= 2 events
-      let inst;
+      const host = playerHostRef.current;
+      let replayer;
       try {
-        inst = new RRWebPlayer({
-          target: playerHostRef.current,
-          props: {
-            events: rrwebEvents,
-            showController: false,
-            autoPlay: false,
-            mouseTail: false,            // we draw our own cursor overlay
-            speedOption: [1, 2, 4, 8],
-          },
+        replayer = new RRWebReplayer(rrwebEvents, {
+          root: host,
+          mouseTail: false,        // we draw our own cursor overlay
+          skipInactive: false,
+          speed: 1,
         });
       } catch (e) {
         setStreamErr("The DOM replay could not be initialised.");
         return;
       }
-      playerRef.current = inst;
-      const replayer = (typeof inst.getReplayer === "function") ? inst.getReplayer() : null;
       replayerRef.current = replayer;
       try {
-        const md = replayer && replayer.getMetaData ? replayer.getMetaData() : null;
+        const md = replayer.getMetaData ? replayer.getMetaData() : null;
         rrwebStartRef.current = (md && md.startTime) || (rrwebEvents[0] && rrwebEvents[0].timestamp) || 0;
       } catch {
         rrwebStartRef.current = (rrwebEvents[0] && rrwebEvents[0].timestamp) || 0;
       }
 
-      // rrweb-player emits "ui-update-current-time" (ms from replay start) and
-      // "finish" / "start" / "pause". We track its time as the master clock and
-      // convert to ms-since-t0: playerTime + rrwebStart - t0.
-      const onTime = (e) => {
-        const playerMs = (e && e.payload != null) ? e.payload : 0;
-        const sinceT0 = playerMs + rrwebStartRef.current - t0Ref.current;
-        setPlayMs(sinceT0);
-        syncAudio(playerMs);
-      };
-      const onState = (e) => {
-        const s = e && e.payload && e.payload.player;
-        if (s === "playing") { setPlaying(true); playAudio(); }
-        else if (s === "paused") { setPlaying(false); pauseAudio(); }
-      };
-      const onFinish = () => { setPlaying(false); pauseAudio(); };
-      try {
-        inst.addEventListener("ui-update-current-time", onTime);
-        inst.addEventListener("ui-update-player-state", onState);
-        inst.addEventListener("finish", onFinish);
-      } catch {}
+      // Recorded viewport: prefer the first meta (type-4) event's width/height,
+      // fall back to the wrapper's own box.
+      const metaEvt = rrwebEvents.find((ev) => ev && ev.type === 4 && ev.data);
+      const recW = (metaEvt && metaEvt.data.width) || 0;
+      const recH = (metaEvt && metaEvt.data.height) || 0;
 
-      // Expose the rendered prototype rect for the overlay. rrweb-player wraps
-      // the replay in `.rr-player` containing the iframe; we read the iframe's
-      // box + the recorded viewport (replayer dimensions) so overlay coords map
-      // onto the scaled/letterboxed replay correctly.
-      // (read lazily via getPlayerFrame, never cached per frame here.)
+      // Scale the `.replayer-wrapper` to fit `.rv-player-host`, centred. The
+      // wrapper sits at the recorded viewport size; we transform: scale() it.
+      const fit = () => {
+        const wrap = host.querySelector(".replayer-wrapper");
+        if (!wrap) return;
+        const w = recW || parseFloat(wrap.style.width) || wrap.offsetWidth || 1;
+        const h = recH || parseFloat(wrap.style.height) || wrap.offsetHeight || 1;
+        const hostW = host.clientWidth || 1;
+        const hostH = host.clientHeight || 1;
+        const scale = Math.min(hostW / w, hostH / h) || 1;
+        scaleRef.current = scale;
+        // Centre: host is flex-centered, but a scaled element keeps its layout
+        // box at the unscaled size, so we offset by the leftover space.
+        const offX = Math.max(0, (hostW - w * scale) / 2);
+        const offY = Math.max(0, (hostH - h * scale) / 2);
+        wrap.style.position = "absolute";
+        wrap.style.left = "0";
+        wrap.style.top = "0";
+        wrap.style.transformOrigin = "top left";
+        wrap.style.transform = "translate(" + offX + "px," + offY + "px) scale(" + scale + ")";
+      };
+      fitRef.current = fit;
+      // Recompute on host resize.
+      const ro = new ResizeObserver(fit);
+      ro.observe(host);
+      // The wrapper + its iframe snapshot land asynchronously; fit once now and
+      // again on the next frames so the first full snapshot is sized correctly.
+      fit();
+      const t1 = setTimeout(fit, 0);
+      const t2 = setTimeout(fit, 120);
+      const t3 = setTimeout(fit, 400);
+
+      // Show the FIRST snapshot immediately, paused at 0 (not blank).
+      try { replayer.pause(0); } catch {}
+      setTimeout(fit, 0);
+
+      // Reset transport when the replay reaches the end.
+      const onFinish = () => { stopRaf(); setPlaying(false); playingRef.current = false; pauseAudio(); };
+      try { replayer.on("finish", onFinish); } catch {}
 
       return () => {
-        try {
-          inst.removeEventListener("ui-update-current-time", onTime);
-          inst.removeEventListener("ui-update-player-state", onState);
-          inst.removeEventListener("finish", onFinish);
-        } catch {}
+        stopRaf();
+        try { ro.disconnect(); } catch {}
+        clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+        try { replayer.off && replayer.off("finish", onFinish); } catch {}
+        try { replayer.pause(); } catch {}
+        fitRef.current = null;
+        replayerRef.current = null;
       };
     }, [rrwebEvents]);
+
+    // ── Playhead rAF loop. rrweb.Replayer has no per-frame time event, so while
+    // playing we poll getCurrentTime() (ms from replay start) and advance the
+    // ms-since-t0 playhead + audio sync. Started by play, stopped by pause/finish.
+    const stopRaf = useCallback(() => {
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
+    }, []);
+    const startRaf = useCallback(() => {
+      stopRaf();
+      const tick = () => {
+        const r = replayerRef.current;
+        if (!r) { rafRef.current = 0; return; }
+        let curMs = 0;
+        try { curMs = r.getCurrentTime() || 0; } catch {}
+        setPlayMs(curMs + rrwebStartRef.current - t0Ref.current);
+        syncAudio(curMs);
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    }, [stopRaf]);
 
     // ── Audio control - slaved to the rrweb player (the master clock).
     const playAudio = useCallback(() => {
@@ -365,38 +413,53 @@
     const pauseAudio = useCallback(() => {
       const a = audioRef.current; if (a) { try { a.pause(); } catch {} }
     }, []);
-    // Keep audio.currentTime within tolerance of the player time. playerMs is ms
-    // from the rrweb replay START; audio offset is ms from t0; the two share t0
-    // only if recording started together - we align via rrwebStart - t0 so the
-    // audio second-clock matches the DOM frames.
-    const syncAudio = useCallback((playerMs) => {
+    // Keep audio.currentTime within tolerance of the replayer time. replayerMs
+    // is ms from the rrweb replay START; audio offset is ms from t0; the two
+    // share t0 only if recording started together - we align via rrwebStart - t0
+    // so the audio second-clock matches the DOM frames.
+    const syncAudio = useCallback((replayerMs) => {
       const a = audioRef.current;
       if (!a || !a.src || !isFinite(a.duration)) return;
-      const targetSec = (playerMs + rrwebStartRef.current - t0Ref.current) / 1000;
+      const targetSec = (replayerMs + rrwebStartRef.current - t0Ref.current) / 1000;
       if (targetSec < 0 || targetSec > a.duration + 0.5) return;
       if (Math.abs(a.currentTime - targetSec) > 0.25) {
         try { a.currentTime = Math.max(0, Math.min(a.duration, targetSec)); } catch {}
       }
     }, []);
 
-    // ── Transport - play/pause/seek drive BOTH player and audio together.
-    const togglePlay = useCallback(() => {
-      const p = playerRef.current; if (!p) return;
-      if (playing) { try { p.pause(); } catch {} setPlaying(false); pauseAudio(); }
-      else { try { p.play(); } catch {} setPlaying(true); playAudio(); }
-    }, [playing, playAudio, pauseAudio]);
+    // ── Transport - play/pause/seek drive BOTH replayer and audio together.
+    // replayer.play(ms)/pause(ms) take ms from the replay START; our playhead is
+    // ms-since-t0, so convert via (sinceT0 - (rrwebStart - t0)).
+    const sinceT0ToReplayer = (sinceT0) =>
+      Math.max(0, sinceT0 - (rrwebStartRef.current - t0Ref.current));
 
-    // Seek by ms-since-t0. rrweb-player.goto wants ms-from-replay-start.
+    const togglePlay = useCallback(() => {
+      const r = replayerRef.current; if (!r) return;
+      if (playingRef.current) {
+        try { r.pause(); } catch {}
+        setPlaying(false); playingRef.current = false; stopRaf(); pauseAudio();
+      } else {
+        const fromMs = sinceT0ToReplayer(playMsRef.current);
+        try { r.play(fromMs); } catch {}
+        setPlaying(true); playingRef.current = true; playAudio(); startRaf();
+      }
+    }, [playAudio, pauseAudio, startRaf, stopRaf]);
+
+    // Seek by ms-since-t0. replayer.pause(ms) jumps + holds; if we were playing
+    // we resume from there. Keep audio in sync.
     const seekToMs = useCallback((sinceT0) => {
-      const p = playerRef.current; if (!p) return;
-      const playerMs = Math.max(0, sinceT0 - (rrwebStartRef.current - t0Ref.current));
-      try { p.goto(playerMs, playing); } catch {}
+      const r = replayerRef.current; if (!r) return;
+      const replayerMs = sinceT0ToReplayer(sinceT0);
+      const wasPlaying = playingRef.current;
+      try { r.pause(replayerMs); } catch {}
+      if (wasPlaying) { try { r.play(replayerMs); } catch {} }
       setPlayMs(sinceT0);
+      syncAudio(replayerMs);
       const a = audioRef.current;
       if (a && a.src && isFinite(a.duration)) {
         try { a.currentTime = Math.max(0, Math.min(a.duration, sinceT0 / 1000)); } catch {}
       }
-    }, [playing]);
+    }, [syncAudio]);
 
     // ── Marker tools - each sets the marker to the CURRENT playhead.
     const setStart = () => setMarkers((m) => ({ ...m, startAt: Math.round(playMsRef.current) }));
@@ -443,21 +506,24 @@
       } finally { setSaving(false); }
     }, [markers]);
 
-    // The rendered prototype rect for the overlay. Reads the player iframe box
-    // + the recorded viewport so overlay coords (iframe space) map onto the
-    // possibly-scaled replay. Called from the overlay's rAF; cheap DOM reads.
+    // The rendered prototype rect for the overlay. Reads the ON-SCREEN scaled
+    // `.replayer-wrapper` box + the recorded viewport (its unscaled CSS size) so
+    // overlay coords (recorded iframe space) map onto the scaled replay. Called
+    // from the overlay's rAF; cheap DOM reads (getBoundingClientRect already
+    // reflects the CSS transform we applied).
     const getPlayerFrame = useCallback(() => {
       const host = playerHostRef.current;
       if (!host) return null;
-      const iframe = host.querySelector("iframe");
-      if (!iframe) return null;
-      const r = iframe.getBoundingClientRect();
+      const wrap = host.querySelector(".replayer-wrapper");
+      if (!wrap) return null;
+      const r = wrap.getBoundingClientRect();  // post-transform, on-screen px
       if (!r.width || !r.height) return null;
-      // Recorded viewport: rrweb sets the iframe's width/height attributes to
-      // the replay dimensions; the wrapper CSS-scales it. Prefer the attribute
-      // size (recording space) and fall back to the rendered box.
-      const vw = parseFloat(iframe.getAttribute("width")) || r.width;
-      const vh = parseFloat(iframe.getAttribute("height")) || r.height;
+      // Recorded viewport = the wrapper's UNSCALED size. rrweb sets the wrapper's
+      // inline width/height (and the iframe matches); fall back to the rendered
+      // box divided by the current scale.
+      const scale = scaleRef.current || 1;
+      const vw = parseFloat(wrap.style.width) || (r.width / scale);
+      const vh = parseFloat(wrap.style.height) || (r.height / scale);
       return { left: r.left, top: r.top, width: r.width, height: r.height, vw, vh };
     }, []);
 

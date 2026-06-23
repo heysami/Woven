@@ -14892,7 +14892,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.32);
-  z-index: 500;
+  /* Above full-screen overlays (git-diff 9000, user-testing screen 9500) so
+     uiPrompt/uiConfirm dialogs are never hidden behind them - a blocking
+     dialog must be the top-most layer. */
+  z-index: 10050;
   display: grid;
   place-items: center;
   padding: 24px;

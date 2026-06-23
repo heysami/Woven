@@ -25508,6 +25508,12 @@ const WORKFLOW_CONNECT_DEFS = {
     accepts:  { in:   { label: "Content + behaviour", tags: ["asset", "position", "trigger", "effect"] },
                 edit: { label: "Edit layer", tags: ["text-gen", "asset-gen"] } },
   },
+  "sketch": {
+    label: "Sketch",
+    provides: { out: { label: "Sketch layer", tags: ["layer"] } },
+    accepts:  { in:   { label: "Content (image / video / camera)", tags: ["asset", "layer"] },
+                edit: { label: "Edit sketch", tags: ["text-gen", "asset-gen"] } },
+  },
   "number-generator": {
     label: "Number",
     provides: { out: { label: "Number", tags: ["number"] } },
@@ -43686,6 +43692,13 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-id">content + behaviour</span>
           </div>
           <div className="workflow-library-item" draggable=${true}
+            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "sketch" })); }}
+            title="Drag onto canvas - a Sketch: an imperative code layer (draw(ctx,frame,controls,content)) run in a sandboxed iframe and composited as a layer. The escape hatch for interactions not expressible by wiring primitives. Wire into the Interactive composer; numeric controls auto-expose param: ports.">
+            <span className="workflow-library-item-glyph">&lt;/&gt;</span>
+            <span className="workflow-library-item-label">Sketch</span>
+            <span className="workflow-library-item-id">code layer</span>
+          </div>
+          <div className="workflow-library-item" draggable=${true}
             onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "position" })); }}
             title="Drag onto canvas - a Position source (single / grid / instances / physics / drawn / rope / camera-feed + 3D modes). Wire into a layer, except direct-to-pixel/spline/voxel editors with no layer concept.">
             <span className="workflow-library-item-glyph">⊞</span>
@@ -48189,6 +48202,38 @@ function WorkflowUserTestingSettingsRow() {
      - two per-participant links (testee + reviewer) built from publishBase
      - multi-select participants -> "Process into insights"
    Polls GET /__usertesting while open so statuses refresh as testees finish. */
+/* User Testing - buffered text inputs. Inline edits persist via a full
+   config/session round-trip, so binding value directly to server data and
+   saving on every keystroke drops + reorders characters under fast typing.
+   These hold a local value, resync from the prop only while UNFOCUSED, and
+   commit once on blur / Enter. */
+function UtBufferedInput({ value, commit, className, placeholder, title, type, numeric }) {
+  const [v, setV] = useState(value == null ? "" : String(value));
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setV(value == null ? "" : String(value)); }, [value]);
+  const doCommit = () => {
+    focused.current = false;
+    const cur = value == null ? "" : String(value);
+    if (v !== cur) commit(numeric ? Number(v) : v);
+  };
+  return html`<input className=${className} type=${type || "text"} placeholder=${placeholder || ""} title=${title || ""}
+    value=${v}
+    onFocus=${() => { focused.current = true; }}
+    onInput=${(e) => setV(e.target.value)}
+    onBlur=${doCommit}
+    onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }}/>`;
+}
+function UtBufferedTextarea({ value, commit, className, placeholder, rows }) {
+  const [v, setV] = useState(value == null ? "" : String(value));
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setV(value == null ? "" : String(value)); }, [value]);
+  return html`<textarea className=${className} placeholder=${placeholder || ""} rows=${rows || 2}
+    value=${v}
+    onFocus=${() => { focused.current = true; }}
+    onInput=${(e) => setV(e.target.value)}
+    onBlur=${() => { focused.current = false; commit(v); }}/>`;
+}
+
 /* User Testing - dedicated FULL-SCREEN workspace (createPortal over the
    canvas). Opened from a prototype node's User-testing action (scoped to that
    prototype's slug) OR from the right-rail global entry (slug=null, all
@@ -48357,8 +48402,8 @@ function UserTestingScreen({ slug, onClose }) {
             ${!active && html`<div className="ut-main-empty">${sessions.length ? "Select a session on the left." : "Create your first session to get started."}</div>`}
             ${active && html`
               <div className="ut-main-head">
-                <input className="ut-main-title" value=${active.label || ""} placeholder="Session name"
-                  onChange=${(e) => op({ op: "session-update", sessionId: active.id, label: e.target.value })}/>
+                <${UtBufferedInput} className="ut-main-title" value=${active.label} placeholder="Session name"
+                  commit=${(v) => op({ op: "session-update", sessionId: active.id, label: v })}/>
                 <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete session" onClick=${async () => { if (!await uiConfirm(`Delete session "${active.label || active.id}"? Its participants are removed too.`)) return; op({ op: "session-delete", sessionId: active.id }); }}><${Icon.Trash}/></button>
               </div>
               <div className="ut-counts">
@@ -48378,8 +48423,8 @@ function UserTestingScreen({ slug, onClose }) {
                     ${cohorts.map(c => html`
                       <div key=${c.id} className="ut-cohort">
                         <div className="ut-cohort-head">
-                          <input className="ut-cohort-name" value=${c.name || ""} placeholder="List name"
-                            onChange=${(e) => op({ op: "cohort-update", sessionId: active.id, cohortId: c.id, name: e.target.value })}/>
+                          <${UtBufferedInput} className="ut-cohort-name" value=${c.name} placeholder="List name"
+                            commit=${(v) => op({ op: "cohort-update", sessionId: active.id, cohortId: c.id, name: v })}/>
                           <button className="tbtn ut-btn-sm" onClick=${async () => { const name = await uiPrompt("Participant name (optional):", ""); if (name === null) return; const email = await uiPrompt("Participant email (optional):", ""); if (email === null) return; op({ op: "participant-add", sessionId: active.id, cohortId: c.id, name: name || undefined, email: email || undefined }); }}><${Icon.Plus}/> Add person</button>
                           <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete list" onClick=${async () => { if (!await uiConfirm(`Delete list "${c.name || c.id}" and its participants?`)) return; op({ op: "cohort-delete", sessionId: active.id, cohortId: c.id }); }}><${Icon.Trash}/></button>
                         </div>
@@ -48451,13 +48496,13 @@ function UserTestingObjectiveEditor({ session, updateConfig }) {
         ${flows.map((f, i) => html`
           <div key=${f.id || i} className="ut-cfg-item">
             <div className="ut-cfg-row">
-              <input className="landing-input ut-cfg-input" value=${f.name || ""} placeholder="Flow name (e.g. Checkout)"
-                onChange=${(e) => updateConfig(session, c => { c.flows[i].name = e.target.value; })}/>
+              <${UtBufferedInput} className="landing-input ut-cfg-input" value=${f.name} placeholder="Flow name (e.g. Checkout)"
+                commit=${(v) => updateConfig(session, c => { c.flows[i].name = v; })}/>
               <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete flow" onClick=${() => updateConfig(session, c => { c.flows.splice(i, 1); })}><${Icon.Trash}/></button>
             </div>
-            <textarea className="landing-input ut-cfg-textarea" rows="2" placeholder="One task per line"
+            <${UtBufferedTextarea} className="landing-input ut-cfg-textarea" rows=${2} placeholder="One task per line"
               value=${(f.tasks || []).join("\n")}
-              onChange=${(e) => updateConfig(session, c => { c.flows[i].tasks = e.target.value.split("\n").map(t => t.trim()).filter(Boolean); })}/>
+              commit=${(v) => updateConfig(session, c => { c.flows[i].tasks = v.split("\n").map(t => t.trim()).filter(Boolean); })}/>
           </div>`)}
         <button className="tbtn ut-cfg-add" onClick=${() => updateConfig(session, c => { c.flows = c.flows || []; c.flows.push({ id: newId("flow"), name: "", tasks: [] }); })}><${Icon.Plus}/> Add flow</button>
       </div>
@@ -48467,8 +48512,8 @@ function UserTestingObjectiveEditor({ session, updateConfig }) {
         ${questions.map((q, i) => html`
           <div key=${q.id || i} className="ut-cfg-item">
             <div className="ut-cfg-row">
-              <input className="landing-input ut-cfg-input" value=${q.prompt || ""} placeholder="Question prompt"
-                onChange=${(e) => updateConfig(session, c => { c.questions[i].prompt = e.target.value; })}/>
+              <${UtBufferedInput} className="landing-input ut-cfg-input" value=${q.prompt} placeholder="Question prompt"
+                commit=${(v) => updateConfig(session, c => { c.questions[i].prompt = v; })}/>
               <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete question" onClick=${() => updateConfig(session, c => { c.questions.splice(i, 1); })}><${Icon.Trash}/></button>
             </div>
             <div className="ut-cfg-row">
@@ -48495,12 +48540,12 @@ function UserTestingObjectiveEditor({ session, updateConfig }) {
         </label>
         ${rating.enabled && html`
           <div className="ut-cfg-row">
-            <input className="landing-input ut-cfg-input" value=${rating.label || ""} placeholder="Rating label (e.g. Overall experience)"
-              onChange=${(e) => updateConfig(session, c => { c.rating.label = e.target.value; })}/>
-            <input className="landing-input ut-cfg-num" type="number" value=${rating.min ?? 1} title="Min"
-              onChange=${(e) => updateConfig(session, c => { c.rating.min = Number(e.target.value); })}/>
-            <input className="landing-input ut-cfg-num" type="number" value=${rating.max ?? 5} title="Max"
-              onChange=${(e) => updateConfig(session, c => { c.rating.max = Number(e.target.value); })}/>
+            <${UtBufferedInput} className="landing-input ut-cfg-input" value=${rating.label} placeholder="Rating label (e.g. Overall experience)"
+              commit=${(v) => updateConfig(session, c => { c.rating = c.rating || {}; c.rating.label = v; })}/>
+            <${UtBufferedInput} className="landing-input ut-cfg-num" type="number" numeric=${true} value=${rating.min ?? 1} title="Min"
+              commit=${(v) => updateConfig(session, c => { c.rating = c.rating || {}; c.rating.min = v; })}/>
+            <${UtBufferedInput} className="landing-input ut-cfg-num" type="number" numeric=${true} value=${rating.max ?? 5} title="Max"
+              commit=${(v) => updateConfig(session, c => { c.rating = c.rating || {}; c.rating.max = v; })}/>
           </div>`}
       </div>
     </div>`;
@@ -62649,6 +62694,12 @@ function _wiredLayerSpec(i, allNodes, allEdges) {
   // runs the per-layer effect + feedback stack on it). All params ride on
   // spec.params (authored controls), passed through unchanged.
   if (i.kind === "type-motion") return { ...spec, _typemotion: true };
+  // Sketch node wired as a layer: tag the spec so the composer emits a `sketch`
+  // content layer (the runtime hosts the code in a sandboxed iframe and blits its
+  // frame into the layer buffer, then runs the per-layer effect / mask / blend
+  // stack on it). Attach param: bindings (logic / number-generator) so numeric
+  // controls can be driven by the graph, exactly like effect / position nodes.
+  if (i.kind === "sketch") return { ..._specWithBindings(spec, i.fromId, allNodes, allEdges), _sketch: true };
   return spec;
 }
 
@@ -63658,6 +63709,15 @@ const SPEC_NODE_DEFS = {
       { key: "loop", label: "Loop", type: "checkbox" },
     ],
   },
+  "sketch": {
+    glyph: "</>", label: "Sketch", canonical: (b, id) => `source/${b}/sketch-${id}.json`,
+    source: (b, id) => `source/${b}/sketch-${id}.js`,
+    fields: [
+      // The sketch's body lives in its source module (controls + draw); the Code
+      // tab edits it. `controls` is the schema the panel + param: ports read.
+      { key: "controls", label: "Controls", type: "object" },
+    ],
+  },
 };
 
 function _specDefault(kind) {
@@ -63667,6 +63727,13 @@ function _specDefault(kind) {
   if (kind === "layer")    return { v: 1, name: "Layer", z: 0, opacity: 1, blend: "normal", visible: true, feedback: 0 };
   if (kind === "number-generator") return { v: 1, kind: "number", sub: "algorithmic", params: { expr: "Math.sin(i*0.3 + t)" }, vector: true };
   if (kind === "timeline") return { v: 1, kind: "timeline", duration: 4, loop: true };
+  if (kind === "sketch") {
+    // Seed a fresh sketch from its default template so a just-dropped node renders
+    // the working pointer-follow sketch (and exposes its param: ports) immediately,
+    // rather than the empty-code error box.
+    try { return _compileSpecSource("sketch", _specTemplate("sketch").source).spec; }
+    catch (_e) { return { v: 1, kind: "sketch", controls: {}, code: "" }; }
+  }
   // Logic Graph (W1A): default spec is the §3 projection body - kind + params
   // seeded from the authored control values.
   if (typeof LOGIC_NODE_DEFS !== "undefined" && LOGIC_NODE_DEFS[kind]) {
@@ -65214,6 +65281,37 @@ export function buildSpec(values) {
     }
   ]
 };
+// Sketch: the imperative code-layer template. Unlike every other spec node it
+// exports `draw()` (and optional `setup()`) instead of `buildSpec()` - the source
+// itself ships to the sandboxed SketchHost. A fresh node renders a pointer-follow
+// dot so "drop it, wire it, it works" holds even before any authoring.
+SPEC_SOURCE_TEMPLATES["sketch"] = [
+  {
+    id: "pointer-follow",
+    label: "Pointer follow",
+    source: _sourceModule({
+      size: { type: "number", value: 0.12, min: 0.01, max: 0.5, step: 0.01 },
+      hue: { type: "number", value: 200, min: 0, max: 360, step: 1 },
+    }, `// A sketch is an imperative code LAYER. It runs in a sandboxed iframe inside
+// mm-composer and renders ONE composition layer (composited through the normal
+// effect / mask / blend chain, and baked into interactive HTML).
+//   ctx     : 2D context on an OffscreenCanvas sized to the layer.
+//   frame   : { pointer:{x,y,isDown,...}, touch, keyboard, scroll, gyro, audio, dt, time } (coords 0..1).
+//   controls: controls.get('size') -> live value (schema above AND any wired param: port).
+//   content : [{ kind, bitmap }] from the wired in-port (draw via ctx.drawImage).
+export function setup(ctx, env) { /* once; env = { width, height } */ }
+export function draw(ctx, frame, controls, content) {
+  const w = ctx.canvas.width, h = ctx.canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const p = frame.pointer || { x: 0.5, y: 0.5 };
+  const r = controls.get("size") * Math.min(w, h);
+  ctx.fillStyle = "hsl(" + controls.get("hue") + " 80% 60%)";
+  ctx.beginPath();
+  ctx.arc(p.x * w, p.y * h, r, 0, Math.PI * 2);
+  ctx.fill();
+}`),
+  },
+];
 // Logic Graph (W1A): one authored template per logic kind, folded into the
 // shared SPEC_SOURCE_TEMPLATES map so the spec-node UI / Code tabs render their
 // controls exactly like number-generator's.
@@ -65233,7 +65331,7 @@ function _compileSpecSource(kind, source) {
   const transformed = _stripExports(source);
   let api;
   try {
-    api = Function(`"use strict";\n${transformed}\nreturn {\n  controls: (typeof controls !== "undefined" ? controls : {}),\n  buildSpec: (typeof buildSpec === "function" ? buildSpec : null)\n};`)();
+    api = Function(`"use strict";\n${transformed}\nreturn {\n  controls: (typeof controls !== "undefined" ? controls : {}),\n  buildSpec: (typeof buildSpec === "function" ? buildSpec : null),\n  draw: (typeof draw === "function" ? draw : null)\n};`)();
   } catch (err) {
     throw new Error(err.message || String(err));
   }
@@ -65241,6 +65339,14 @@ function _compileSpecSource(kind, source) {
   const values = {};
   for (const [k, def] of Object.entries(controls)) {
     values[k] = def && typeof def === "object" && Object.prototype.hasOwnProperty.call(def, "value") ? def.value : def;
+  }
+  // Sketch is an imperative code layer: the module exports `controls` + `draw()`
+  // (and optional `setup()`), NOT buildSpec - the source itself ships to the
+  // sandboxed runtime. The spec carries the controls schema + the full source so
+  // the SketchHost can re-eval it; the editor never runs the draw code itself.
+  if (kind === "sketch") {
+    if (!api.draw) throw new Error("sketch source must export function draw(ctx, frame, controls, content)");
+    return { controls, values, spec: { v: 1, kind: "sketch", controls, code: String(source || "") } };
   }
   if (!api.buildSpec) throw new Error("source must export function buildSpec(values)");
   const spec = api.buildSpec(values, controls);
@@ -65312,6 +65418,12 @@ function _sourceWithSpecValues(kind, source, spec) {
   return _replaceSourceControls(source, controls);
 }
 function _specToScript(kind, raw) {
+  // Sketch stores its full source on spec.code (there is no buildSpec round-trip);
+  // recover it directly, falling back to the default template for a fresh node.
+  if (kind === "sketch") {
+    const code = raw && raw.code;
+    return (typeof code === "string" && code.trim()) ? code : _specTemplate(kind).source;
+  }
   const spec = { ..._specDefault(kind), ...(raw || {}) };
   let tpl = _specTemplate(kind);
   if (kind === "effect") tpl = _specTemplate(kind, spec.type === "custom" ? "custom-shader" : spec.type);
@@ -65329,7 +65441,7 @@ function _scriptToSpec(kind, script) {
 // Phase-1 parametric blocks: these kinds auto-expose each of their NUMERIC
 // controls as a `param:<key>` input port (tag: number). Mirrors registry.py
 // KIND_IO[...].paramPorts (the backend source of truth). Layer is excluded.
-const WORKFLOW_PARAM_PORT_KINDS = new Set(["position", "effect", "trigger", "number-generator"]);
+const WORKFLOW_PARAM_PORT_KINDS = new Set(["position", "effect", "trigger", "number-generator", "sketch"]);
 const _PARAM_KEYS_CACHE = new Map();
 // Ordered list of numeric control keys for a paramPorts node - used by BOTH the
 // edge geometry (workflowPortPosition) and the rendered port rail so the dots
