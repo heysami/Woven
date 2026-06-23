@@ -9789,6 +9789,9 @@ function SubagentPanel({ agent, runTitle }) {
   const a = agent || {};
   const state = a.error ? "failed" : a.done ? "done" : "running";
   const dot   = a.error ? "fail"   : a.done ? "done" : "live";
+  // Prompt collapses by default so the task history (activity + result) is what
+  // you land on when opening a subagent; click the header to reveal the prompt.
+  const [promptOpen, setPromptOpen] = useState(false);
   return html`
     <div className="th-rail-panel th-rail-panel-embedded th-subagent-panel">
       <div className="runs-panel-head th-subagent-head">
@@ -9804,8 +9807,11 @@ function SubagentPanel({ agent, runTitle }) {
         ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
         ${a.prompt && html`
           <div className="th-tasks-agent-sec">
-            <div className="th-tasks-agent-sec-h">Prompt</div>
-            <pre className="th-tasks-agent-pre th-subagent-pre">${a.prompt}</pre>
+            <button className="th-tasks-agent-sec-h th-tasks-agent-sec-toggle" onClick=${() => setPromptOpen((v) => !v)} aria-expanded=${promptOpen}>
+              <span className="tool-caret" data-open=${promptOpen}>▸</span>
+              Prompt
+            </button>
+            ${promptOpen && html`<pre className="th-tasks-agent-pre th-subagent-pre">${a.prompt}</pre>`}
           </div>`}
         ${a.actions && a.actions.length > 0 && html`
           <div className="th-tasks-agent-sec">
@@ -41420,6 +41426,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -41561,6 +41568,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -41608,6 +41616,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onDeselect=${() => setSelectedNodeIds(new Set())}
@@ -41652,6 +41661,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -41674,6 +41684,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onDeselect=${() => setSelectedNodeIds(new Set())}
@@ -50330,6 +50341,22 @@ function WorkflowLodVeil({ zoom, glyph, label, mode = "fill" }) {
   `;
 }
 
+// v3.9.x - Lightweight LOD for the app-node EDITORS (composer / driven app-tool /
+// custom-app / vector / spline-3d). Before this they were the one family left out
+// of the zoom-out placeholder: zoomed far out they kept painting their full editor
+// chrome + live driven iframes, which read as visual noise and burned compositing.
+// Unlike the iframe-scale container nodes, these keep their heavy body MOUNTED and
+// live at every zoom (so postMessage wiring, layer-port geometry, and logic-graph
+// state survive a round-trip to far zoom) - the body is only display:none'd via the
+// root's [data-lod="far"] (the browser then throttles its rAF) while the veil paints
+// on top. No "cold" state: these are editors the user opened, so they load eagerly.
+// lodVisible === undefined (embedded composer previews, zoom-mode renders) -> never
+// veiled. Mirrors the far-zoom floor the container nodes use (WORKFLOW_LOD_EMBED_ZOOM).
+function workflowAppNodeLodHidden(lodVisible, zoom) {
+  if (typeof lodVisible !== "boolean") return false;
+  return !lodVisible || (zoom || 1) < WORKFLOW_LOD_EMBED_ZOOM;
+}
+
 // ─── WorkflowSimOrInteractiveNode ─────────────────────────────────────────
 // v3.3 - Container renderer for the `simulation` + `interactive-media` kinds.
 // Slim companion to WorkflowPrototypeNode: an iframe pointing at the
@@ -56940,7 +56967,7 @@ const COMPOSER_ALIGN_PRESETS = [
   { id: "fill",          label: "▣", anchor: "fill",          zeroAll: true, nullW: true, nullH: true, hint: "Fill canvas (anchor every edge)" },
 ];
 
-function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onUnwireAsset, onBakeAutoCreateOutput, allNodes, allEdges, embedded }) {
+function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onUnwireAsset, onBakeAutoCreateOutput, allNodes, allEdges, embedded, lodVisible }) {
   const w = node.w || 520;
   const h = node.h || 460;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
@@ -57801,10 +57828,12 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
+      data-lod=${workflowAppNodeLodHidden(lodVisible, zoom) ? "far" : "full"}
       style=${embedded
         ? { position: "absolute", inset: 0, width: "100%", height: "100%" }
         : { left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
+      ${workflowAppNodeLodHidden(lodVisible, zoom) && html`<${WorkflowLodVeil} zoom=${zoom} glyph=${"▣"} label=${"Composer"} mode="fill"/>`}
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">▣</span>
         <span className="workflow-node-label">Composer</span>
@@ -58771,7 +58800,7 @@ function WorkflowVectorEditorNode({
   node, zoom, selected, onSelect, onMove, onResize, onRemove,
   onChange, onDragStart, onDragEnd, onStartEdge,
   allNodes, allEdges, onBakeAutoCreateOutput,
-  reportLayerGeom, reportAppNodeLayout,
+  reportLayerGeom, reportAppNodeLayout, lodVisible,
 }) {
   const w = node.w || 720;
   const h = node.h || 520;
@@ -60099,8 +60128,10 @@ function WorkflowVectorEditorNode({
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
+      data-lod=${workflowAppNodeLodHidden(lodVisible, zoom) ? "far" : "full"}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined }}
     >
+      ${workflowAppNodeLodHidden(lodVisible, zoom) && html`<${WorkflowLodVeil} zoom=${zoom} glyph=${"✐"} label=${"Vector editor"} mode="fill"/>`}
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">✎</span>
         <span className="workflow-node-label">Vector editor</span>
@@ -62352,7 +62383,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
    up. Imports are node-owned (not serialized into the scene) and resolved via
    the shared io-contract resolver - no bespoke edge walk. */
 const SPLINE_TOOL_SRC = "/editor/tools/spline3d/index.html";
-function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, allNodes, allEdges }) {
+function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, allNodes, allEdges, lodVisible }) {
   const w = node.w || 720;
   const h = node.h || 540;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
@@ -62531,8 +62562,10 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onDeselect, onMo
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
+      data-lod=${workflowAppNodeLodHidden(lodVisible, zoom) ? "far" : "full"}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-l": (detached ? lay.panelL : 0) + "px", "--node-panel-r": (detached ? lay.panelR : 0) + "px" }}
     >
+      ${workflowAppNodeLodHidden(lodVisible, zoom) && html`<${WorkflowLodVeil} zoom=${zoom} glyph=${"⬢"} label=${"3D editor"} mode="fill"/>`}
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">⬢</span>
         <span className="workflow-node-label">3D editor</span>
@@ -63029,7 +63062,7 @@ function _bindingIsDynamic(binding) {
   return s.sub === "algorithmic" && /\bt\b/.test(String((s.params && s.params.expr) || ""));
 }
 
-function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, reportLayerGeom, allNodes, allEdges }) {
+function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBakeAutoCreateOutput, reportAppNodeLayout, reportLayerGeom, allNodes, allEdges, lodVisible }) {
   const cfg = APP_NODE_TOOLS[node.kind];
   const w = node.w || 720;
   const h = node.h || 540;
@@ -63385,8 +63418,10 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
       data-detached=${detached ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
+      data-lod=${workflowAppNodeLodHidden(lodVisible, zoom) ? "far" : "full"}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-l": (detached ? lay.panelL : 0) + "px", "--node-panel-r": (detached ? lay.panelR : 0) + "px" }}
     >
+      ${workflowAppNodeLodHidden(lodVisible, zoom) && html`<${WorkflowLodVeil} zoom=${zoom} glyph=${"✦"} label=${cfg.label} mode="fill"/>`}
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph">${cfg.glyph}</span>
         <span className="workflow-node-label">${cfg.label}</span>
@@ -63480,7 +63515,7 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
 // node. Read-only preview (panels stay hidden); the right column renders the
 // agent-constructed settings as live sliders / selects. Output resolves through
 // the captured output node (see _customAppOutputNode / io_resolve._r_custom_app).
-function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onExpand, reportAppNodeLayout, allNodes, allEdges }) {
+function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onExpand, reportAppNodeLayout, allNodes, allEdges, lodVisible }) {
   const w = node.w || 720;
   const h = node.h || 520;
   const io = node.io || {};
@@ -63688,8 +63723,10 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
       data-selected=${selected ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
+      data-lod=${workflowAppNodeLodHidden(lodVisible, zoom) ? "far" : "full"}
       style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
+      ${workflowAppNodeLodHidden(lodVisible, zoom) && html`<${WorkflowLodVeil} zoom=${zoom} glyph=${"❑"} label=${node.title || "Custom app"} mode="fill"/>`}
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph"><${Icon.Package}/></span>
         <span className="workflow-node-label">${node.title || "Custom app"}</span>
