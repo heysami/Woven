@@ -53,9 +53,6 @@
       "game_loop_*",
       "game_overlay_*",
       "game_runtime_*",
-      "cp_game_world_pick_*",
-      "cp_game_feedback_pick_*",
-      "cp_game_runtime_pick_*",
       "cp_game_gate_*"
     ]
   },

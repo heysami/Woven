@@ -47,9 +47,6 @@
       "sb_motion_*",
       "sb_interactions_*",
       "sb_runtime_*",
-      "cp_sb_composition_pick_*",
-      "cp_sb_motion_pick_*",
-      "cp_sb_runtime_pick_*",
       "cp_sb_gate_*"
     ]
   },

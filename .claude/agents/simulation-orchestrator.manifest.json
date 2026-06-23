@@ -6,7 +6,7 @@
   "defaultEnabled": true,
   "subagentName": "simulation-orchestrator",
   "playbookPath": ".claude/agents/simulation-orchestrator.md",
-  "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 2d-isometric / 3d-environment / iconographic-anim / text-art / hybrid) and orchestrates 7 component drawers + the 3 quality lenses to produce a lens-verified runnable simulation embedded as a canvas card. 2d-isometric for stacked / axonometric briefs (SimCity, Habbo, Theme Hospital canon); text-art for TUI / ASCII / ANSI / htop-style monitors / pipeline status boards / retro-modem dashboards where the terminal aesthetic IS the medium. Runs 4-researcher fleet + synthesiser; user-steerage interrupt before any drawer fires; §8.3 loop-until-bar with 5-iteration cap; multi-draft at scene + loop cruxes via iterator-remix. Two cross-boundary contracts the orchestrator enforces beyond the per-drawer lens trios: §1.2 iframe ↔ host pointer + scroll contract (touch-action policy, overlay pointer-events budget, scroll-past affordance for hero-slot sims, wheel forwarding, pointer-capture cleanup) and §5.6 Phase F layered-interaction QA + fix pass the chat caller runs after Step-8 QA - catches violations no per-component lens can see because they live at the iframe ↔ host boundary no drawer owns.",
+  "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 2d-isometric / 3d-environment / iconographic-anim / text-art / hybrid), commits a buildTier (simple|standard|full), and scaffolds a tier-sized builder set (entities / scene / loop / controls / overlay / runtime) + container, then HANDS BACK. The build-driver (workflow-mode chat) dispatches the builders in dependency order with NO per-drawer lens; the runtime/composer builder assembles runtime.html LAST; a SINGLE final QA+lens gate (integration QA + the craft/aesthetic/concept trio ONCE) judges the assembled runtime, not fragments. 2d-isometric for stacked / axonometric briefs (SimCity, Habbo, Theme Hospital canon); text-art for TUI / ASCII / htop-style monitors where the terminal aesthetic IS the medium. Cold-isolated per simId; never self-drives the build (permission-wall guard).",
   "triggers": [
     {
       "mode": "chat",
@@ -50,8 +50,6 @@
       "sim_controls_*",
       "sim_overlay_*",
       "sim_runtime_*",
-      "cp_sim_scene_pick_*",
-      "cp_sim_loop_pick_*",
       "cp_sim_gate_*"
     ]
   },

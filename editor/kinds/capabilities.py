@@ -1061,7 +1061,7 @@ The rule:
 
 A brief can pass MULTIPLE predicates - dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-orchestrator AND visual-orchestrator. The game-orchestrator builds the playable surface inside a `game-mount` iframe; visual-orchestrator fills the surrounding `<img>` slots.
 
-Per-slot drawer cardinality varies by family:
+Per-slot builder cardinality varies by family. **The heavy families below list their FULL-tier builder set; the committed `buildTier` (simple / standard / full - see "Build tier" above) scopes it down, and the lens is NOT per-builder - it runs once at the final QA+lens gate (contract 3 above).**
 
 - **visual** - one drawer per slot (one of `raster-foreground` / `raster-photo` / `vector-icon` / `vector-mark` / `shader` / `particle-2d` / `particle-gl` / `lottie` / `3d` / `video` / `motion`). `motion` = Hyperframes HTML composition (https://hyperframes.heygen.com/) - a single `.html` file with a paused GSAP timeline + clip elements, plays in-browser AND renders to video via the Hyperframes runtime. The WORKHORSE for narrative HTML animation (typography reveals, multi-clip scenes, hero animations). Picked when motion is needed but a real `.mp4` isn't (and as a fallback when `video` can't run because no fal API key is configured).
 - **simulation** - seven drawers per slot (`sim_research_<simId>`, `sim_entities_<simId>`, `sim_scene_<simId>`, `sim_loop_<simId>`, `sim_controls_<simId>`, `sim_overlay_<simId>`, `sim_runtime_<simId>`).
@@ -1072,14 +1072,48 @@ Per-slot drawer cardinality varies by family:
 - **motion-studio** - seven drawers per slot (`ms_research_<msId>`, `ms_storyboard_<msId>`, `ms_concept_<msId>`, `ms_scenes_<msId>`, `ms_motion_<msId>`, `ms_interactions_<msId>`, `ms_runtime_<msId>`) PLUS ~2 visual-orchestrator sub-dispatches per scene (1 concept plate + 1 production asset; more for raster sequences / parallax layers; typically 6-16 per slot). The concept plates are a MANDATORY user-review gate: cheap hi-res stills of each composed frame (UI included) get approved BEFORE any video generation fires.
 - **interactive-polish** - POST-PASS orchestrator (different shape). Up to six drawers per project (`polish_research_<polishId>`, `polish_microanimation_<polishId>`, `polish_pointer_<polishId>`, `polish_hover_<polishId>`, `polish_shader_<polishId>`, `polish_runtime_<polishId>`). Drawers may be SKIPPED if their opportunity type has zero sites. No slot tag - operates on the whole project. Optionally co-dispatches visual-orchestrator's shader skill for one procedural overlay.
 
-### Two contracts the orchestrator subagents now follow (avoiding the biiiird / flyyyy / coolcam zombie-node bug)
+### Three contracts of the orchestrator family (build-driver + final gate + anti-zombie)
 
-When the orchestrator subagent stalls mid-loop (subagent permission compounding, daemon timeout, large transcript), earlier versions left **trees of stranded "running" or "none" nodes** on the canvas - the user saw 7 nodes and got 2 nodes' worth of value. Two playbook rules fix this:
+An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It never runs the builder drawers and never judges quality - that is **the build-driver's job, which is YOU (the workflow-mode chat)**. This split is deliberate: the build runs hundreds of Bash/curl/Write actions that belong to the thread the user already authorised, not to a cold Task subagent that re-gates every call (the permission-wall bug - the orchestrator playbooks carry a guard against self-driving for exactly this reason). Three contracts make the hand-off reliable:
 
-1. **Incremental scaffold + dispatch.** Orchestrators no longer batch-scaffold all drawer nodes upfront. They scaffold ONE drawer, dispatch it, wait for `done`, then scaffold the next. The container is scaffolded LAST, only after every drawer commits. If the orchestrator stalls at step 3, only the completed nodes exist; the rest of the canvas stays clean.
-2. **Step-8 QA pass.** After all drawers `done` + container committed, the orchestrator opens the agent's host HTML in preview, screenshots + console + network checks the assembled iframe in context, scores per-slot (loads / renders / fits / matches brief), and either Edits the agent's HTML for layout fixes (slot size, `allow=` attributes, surrounding chrome z-index) OR re-dispatches a drawer with the failure quote in `priorVerdicts`. Writes `workflow/<family>-plan.json` with a `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}` block. This is the simulation-side / interactive-side / narrative-side mirror of `visual-orchestrator.md` Step 8. Per-drawer lens scores can pass while the assembled iframe fails in the host shell - Step-8 catches that.
+1. **Incremental scaffold + dispatch (anti-zombie).** The orchestrator scaffolds ONE builder, dispatches it, waits for `done`, scaffolds the next; the container is scaffolded LAST. If it stalls, only completed nodes exist - no tree of stranded `none` nodes (the biiiird / flyyyy / coolcam bug).
 
-When the orchestrator returns its hand-off envelope, chat should read the `qa` block - if `qa.blocked[]` is non-empty, relay it to the user; don't silently override.
+2. **You DRIVE the build after the hand-off - do NOT skip this (the testsim bug).** When `Task(<family>-orchestrator)` returns its hand-off envelope, the build is **not done** - the orchestrator only scaffolded *armed* builder nodes (their `text` carries the full per-builder brief). YOU now run them. Skip this and the builders sit at `runStatus: none` forever and the slot ships empty - or you wrongly hand-write the whole runtime yourself (testsim: the orchestrator scaffolded 6 sim drawers, nobody ran them, chat wrote `runtime.html` monolithically → ugly). The loop, per family:
+
+   ```
+   tier = handoff.buildTier                          # simple | standard | full (research committed it)
+   FOR builder IN handoff.builderNodes:              # dependency order; tier decides the set (see Build tier)
+     POST $TH_DAEMON_URL/__workflow/node/<builder>/run ; poll until done    # NO per-drawer lens
+   # the runtime/composer builder is LAST - it assembles the pieces into runtime.html
+   run_final_gate(handoff.containerNode)             # contract 3
+   ```
+
+3. **Final QA+lens gate - judged ONCE on the assembled runtime, not per drawer.** Quality is decided on the thing the user actually sees. After the builders assemble `runtime.html`:
+
+   ```
+   FOR outer_iter IN 1..3:
+     qa  = GET $TH_DAEMON_URL/__qa/run?node=<containerNode>&mode=interactive   # WORKS? loads/renders/no-blank/no console errors
+     # GOOD? the lens trio, ONE set, on the assembled runtime (componentKind=runtime, componentId=<slotId>)
+     addNodes [craft_lens_<slotId>_<iter>, aesthetic_lens_<slotId>_<iter>, concept_lens_<slotId>_<iter>]
+     POST /run each in parallel ; poll all ; read verdicts from QUALITY_REPORT.json
+     IF qa.verdict == pass AND count(lens verdict == pass) >= 2:
+       POST /__workflow/node/<containerNode>/commit   outputs.lensVerdict=pass runStatus=done   ; BREAK
+     # else re-dispatch ONLY the responsible builder with the failing verdict in priorVerdicts,
+     #      re-run the composer to re-assemble, loop.
+   IF not committed after 3: emit <decision-request id="cp_<family>_gate_<slotId>">  Accept / Push deeper / Replace  ; honour the pick.
+   ```
+
+   This single gate **replaces both** the old per-drawer lens loop (`3 lenses × ~5 drawers × ≤5 iters` = up to ~75 lens runs/slot, judging fragments out of context) **and** the old bolted-on Step-8 QA. They are now ONE pass on the assembled result (~3-9 lens runs/slot, judged in context) - deep AND in-place. The old failure mode it kills: *per-drawer lens scores passing while the assembled iframe is broken or ugly.* Write `workflow/<family>-plan.json` with `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}`; relay any `qa.blocked[]` to the user verbatim.
+
+### Build tier - not every slot needs the full decomposition
+
+Research commits a `buildTier` from the slot's complexity; the orchestrator scaffolds the matching builder set; you read it from the hand-off. A globe-with-dots is one small file, not seven drawers.
+
+- **simple** → research + the runtime/composer builder ONLY (it writes `runtime.html` directly). Single-surface pieces one script can carry.
+- **standard** → research + the 2-3 core builders + runtime (e.g. sim: entities + scene + loop + runtime).
+- **full** → research + the complete builder set + runtime. Genuinely complex / multi-subsystem pieces.
+
+The final gate (contract 3) is identical at every tier - only the builder count changes. `simple` is the common case: research + 1 builder + 1 gate ≈ 4-6 runs, vs the old fixed ~30-90.
 
 Worked examples:
 
@@ -1123,7 +1157,7 @@ The agent writes these tags into the HTML in step 3 (before any orchestrator dis
 
 ### Cost calibration
 
-A visual-orchestrator dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx orchestrator dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations - significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards." The orchestrator-plan gate below is where this cost surfaces by default - the per-option plan lines carry the slot counts, so the user approves the budget along with the roster.
+A visual-orchestrator dispatch is fast (~10s, one drawer per slot). A sim / im / nx / game / scrapbook / motion dispatch is heavier, but tier-scoped: research + a tier-sized builder set (1 builder at `simple`, the full set at `full`) + ONE final QA+lens gate on the assembled runtime. A `simple` slot ≈ 4-6 runs; a `full` slot ≈ 15-25. Multiply by slot count: 8 narrative slots at `full` is still meaningful, so surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards." The orchestrator-plan gate below is where this cost surfaces by default - the per-option plan lines carry the slot counts, so the user approves the budget along with the roster.
 
 ## Orchestrator plan gate - MANDATORY stop-and-ask BEFORE any orchestrator dispatch
 

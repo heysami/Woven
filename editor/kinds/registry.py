@@ -199,7 +199,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/simulations/{simId}/scene.html",
                 "completion": {"requires": [
                     "files: scene.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": "Renderer. Medium picked by paradigm. Lens-gated.",
             },
@@ -207,7 +206,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/simulations/{simId}/loop.js",
                 "completion": {"requires": [
                     "files: loop.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Deterministic accumulator tick. Lens-gated on craft "
@@ -228,7 +226,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/simulations/{simId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": "Glue. Lens-gated on craft + aesthetic + concept.",
             },
@@ -250,7 +247,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/interactives/{imId}/mapping.js",
                 "completion": {"requires": [
                     "files: mapping.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Pure-function input→output transforms. Lens-gated on craft "
@@ -261,7 +257,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/interactives/{imId}/output-{medium}.html",
                 "completion": {"requires": [
                     "files: output-{medium}.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Per-medium output drawer. "
@@ -272,7 +267,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/interactives/{imId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": "Glue + permission UX. Lens-gated on all three lenses.",
             },
@@ -290,7 +284,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/hero3d/{heroId}/materials.js",
                 "completion": {"requires": [
                     "files: materials.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Material cast factories (transmission/chrome/iridescence). "
@@ -301,7 +294,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/hero3d/{heroId}/scene.js",
                 "completion": {"requires": [
                     "files: scene.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": "World + lighting + camera + composition. Lens-gated.",
             },
@@ -319,7 +311,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/hero3d/{heroId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": "Composer + post chain + veil + harness. All three lenses.",
             },
@@ -350,7 +341,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/scene3d/{sceneId}/subsystems/{sysId}.js",
                 "completion": {"requires": [
                     "files: subsystems/{sysId}.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "ONE effect's {geometry+material+sim}, rendered + verified "
@@ -374,7 +364,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/scene3d/{sceneId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Composes all N subsystems under one renderer/env/post chain + "
@@ -421,71 +410,6 @@ KINDS = {
             },
 
             # ── Multi-draft pick checkpoints (mirror cp_remix_pick) ───────────
-            "cp_sim_scene_pick_": {
-                "outputsRoot": "DECISION_cp_sim_scene_pick_{simId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_sim_scene_pick_{simId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 scene drafts produced by iterator-remix.",
-            },
-            "cp_sim_loop_pick_": {
-                "outputsRoot": "DECISION_cp_sim_loop_pick_{simId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_sim_loop_pick_{simId}.json exists with non-empty values",
-                ]},
-            },
-            "cp_im_mapping_pick_": {
-                "outputsRoot": "DECISION_cp_im_mapping_pick_{imId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_im_mapping_pick_{imId}.json exists with non-empty values",
-                ]},
-            },
-            "cp_im_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_im_runtime_pick_{imId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_im_runtime_pick_{imId}.json exists with non-empty values",
-                ]},
-            },
-            "cp_im_output_pick_": {
-                "outputsRoot": "DECISION_cp_im_output_pick_{imId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_im_output_pick_{imId}.json exists with non-empty values",
-                ]},
-            },
-            "cp_h3d_material_pick_": {
-                "outputsRoot": "DECISION_cp_h3d_material_pick_{heroId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_h3d_material_pick_{heroId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 lead-material drafts (iterator-remix).",
-            },
-            "cp_h3d_scene_pick_": {
-                "outputsRoot": "DECISION_cp_h3d_scene_pick_{heroId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_h3d_scene_pick_{heroId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 camera-axis scene drafts (iterator-remix).",
-            },
-            "cp_h3d_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_h3d_runtime_pick_{heroId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_h3d_runtime_pick_{heroId}.json exists with non-empty values",
-                ]},
-            },
-            "cp_s3d_subsystem_pick_": {
-                "outputsRoot": "DECISION_cp_s3d_subsystem_pick_{sceneId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_s3d_subsystem_pick_{sceneId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 lead-subsystem drafts (iterator-remix).",
-            },
-            "cp_s3d_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_s3d_runtime_pick_{sceneId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_s3d_runtime_pick_{sceneId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 ambient-energy runtime drafts (iterator-remix).",
-            },
 
             # ── Family release gates (mirror cp_coherence_gate) ───────────────
             "cp_sim_gate_": {
@@ -548,7 +472,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/narratives/{nxId}/spine.js",
                 "completion": {"requires": [
                     "files: spine.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Scripted timeline - what's revealed when, by which voice, "
@@ -560,7 +483,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/narratives/{nxId}/scene.html",
                 "completion": {"requires": [
                     "files: scene.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "three.js / WebGL scene of the 'place'. §8.7 crux - "
@@ -572,7 +494,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/narratives/{nxId}/ambient.html",
                 "completion": {"requires": [
                     "files: ambient.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Soundscape (ambient room-tone + optional voice tracks). "
@@ -597,7 +518,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/narratives/{nxId}/overlay.svg",
                 "completion": {"requires": [
                     "files: overlay.svg exists",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Poetic captions / mood text overlaid on the scene at "
@@ -609,7 +529,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/narratives/{nxId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Glue file - composes scene + camera + ambient + reveals + "
@@ -621,25 +540,6 @@ KINDS = {
             },
 
             # ── Multi-draft pick checkpoints (mirror cp_remix_pick) ───────────
-            "cp_nx_scene_pick_": {
-                "outputsRoot": "DECISION_cp_nx_scene_pick_{nxId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_nx_scene_pick_{nxId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 scene drafts (aestheticRegister axis).",
-            },
-            "cp_nx_ambient_pick_": {
-                "outputsRoot": "DECISION_cp_nx_ambient_pick_{nxId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_nx_ambient_pick_{nxId}.json exists with non-empty values",
-                ]},
-            },
-            "cp_nx_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_nx_runtime_pick_{nxId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_nx_runtime_pick_{nxId}.json exists with non-empty values",
-                ]},
-            },
 
             # ── Family release gate (mirror cp_coherence_gate) ────────────────
             "cp_nx_gate_": {
@@ -681,7 +581,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/objective.js",
                 "completion": {"requires": [
                     "files: objective.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Single source of truth for score / streak / progress / "
@@ -694,7 +593,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/world.html",
                 "completion": {"requires": [
                     "files: world.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Full-bleed living scene. §8.7 crux - 3-draft remix on "
@@ -708,7 +606,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/physics.js",
                 "completion": {"requires": [
                     "files: physics.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Physics engine setup (matter.js / planck.js / cannon-es "
@@ -721,7 +618,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/input-{modality}.js",
                 "completion": {"requires": [
                     "files: input-{modality}.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Per-modality input drawer. "
@@ -734,7 +630,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/feedback.js",
                 "completion": {"requires": [
                     "files: feedback.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Juice / particles / screen-shake / audio cues. §8.7 crux "
@@ -747,7 +642,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/loop.js",
                 "completion": {"requires": [
                     "files: loop.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Master tick loop - fixed-step accumulator composing "
@@ -761,7 +655,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: overlay.svg exists",
                     "files: overlay.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Minimal UI peek (score corner, progress edge, control "
@@ -774,7 +667,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/games/{gameId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Glue file - composes world + physics + input(s) + "
@@ -787,27 +679,6 @@ KINDS = {
             },
 
             # ── Multi-draft pick checkpoints ──────────────────────────────────
-            "cp_game_world_pick_": {
-                "outputsRoot": "DECISION_cp_game_world_pick_{gameId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_game_world_pick_{gameId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 world drafts (camera/perspective axis).",
-            },
-            "cp_game_feedback_pick_": {
-                "outputsRoot": "DECISION_cp_game_feedback_pick_{gameId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_game_feedback_pick_{gameId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 feedback drafts (juice axis).",
-            },
-            "cp_game_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_game_runtime_pick_{gameId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_game_runtime_pick_{gameId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 runtime drafts (pacing axis).",
-            },
 
             # ── Family release gate ───────────────────────────────────────────
             "cp_game_gate_": {
@@ -857,7 +728,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: composition.html exists, non-empty",
                     "files: composition.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Layered HTML/CSS scrapbook composition. Co-dispatches "
@@ -871,7 +741,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/typography.css",
                 "completion": {"requires": [
                     "files: typography.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Web font picks (Google Fonts) + handcrafted raster "
@@ -886,7 +755,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: motion.css exists, non-empty",
                     "files: motion.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "CSS drift animations + PNG-sequence loops (transparent "
@@ -900,7 +768,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/interactions.js",
                 "completion": {"requires": [
                     "files: interactions.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Hover-tilt / scroll-reveal / drag-to-rearrange / "
@@ -913,7 +780,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Composed runtime - inlines composition + typography + "
@@ -925,27 +791,6 @@ KINDS = {
             },
 
             # ── Multi-draft pick checkpoints ──────────────────────────────────
-            "cp_sb_composition_pick_": {
-                "outputsRoot": "DECISION_cp_sb_composition_pick_{sbId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_sb_composition_pick_{sbId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 composition drafts (density axis).",
-            },
-            "cp_sb_motion_pick_": {
-                "outputsRoot": "DECISION_cp_sb_motion_pick_{sbId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_sb_motion_pick_{sbId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 motion drafts (motion register axis).",
-            },
-            "cp_sb_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_sb_runtime_pick_{sbId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_sb_runtime_pick_{sbId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 runtime drafts (pacing axis).",
-            },
 
             # ── Family release gate ───────────────────────────────────────────
             "cp_sb_gate_": {
@@ -997,7 +842,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/_polish/{polishId}/microanim.css",
                 "completion": {"requires": [
                     "files: microanim.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Decides WHAT microanimation each microanimation-typed "
@@ -1012,7 +856,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/_polish/{polishId}/pointer.js",
                 "completion": {"requires": [
                     "files: pointer.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Decides WHAT each pointer-tinted + scroll-driven site "
@@ -1026,7 +869,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/_polish/{polishId}/hover.css",
                 "completion": {"requires": [
                     "files: hover.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Decides WHAT each hover-surprise site becomes (scale-"
@@ -1041,7 +883,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: shader.html exists, non-empty",
                     "files: shader-mount.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Decides WHAT shader overlay effect (halftone-print, "
@@ -1058,7 +899,6 @@ KINDS = {
                     "files: composite.css exists",
                     "files: composite.js exists",
                     "files: integration-instructions.md exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Concatenates microanim.css + hover.css + shader-mount.css "
@@ -1071,13 +911,6 @@ KINDS = {
             },
 
             # ── Multi-draft pick checkpoint (shader effect only) ──────────────
-            "cp_polish_shader_pick_": {
-                "outputsRoot": "DECISION_cp_polish_shader_pick_{polishId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_polish_shader_pick_{polishId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 shader effect drafts (e.g. halftone vs paper-grain vs dither).",
-            },
 
             # ── Family release gate ───────────────────────────────────────────
             "cp_polish_gate_": {
@@ -1126,7 +959,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: storyboard.json exists, non-empty",
                     "files: storyboard.md exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "THE canonical scene-plan contract every downstream drawer "
@@ -1142,7 +974,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: concept/concept.json exists, non-empty",
                     "files: one concept/<sceneId>.png plate per storyboard scene, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "CONCEPT PLATES - the cheap-stills-before-expensive-video "
@@ -1168,7 +999,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: scenes.html exists, non-empty",
                     "files: scenes.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Commissions every storyboard asset via visual-orchestrator "
@@ -1191,7 +1021,6 @@ KINDS = {
                 "completion": {"requires": [
                     "files: motion.js exists, non-empty",
                     "files: motion.css exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "The scene engine: linear back-and-forth stepper, "
@@ -1207,7 +1036,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/motionscenes/{msId}/interactions.js",
                 "completion": {"requires": [
                     "files: interactions.js exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "The input layer: pointer-x/xy scrub (eased pursuit), "
@@ -1223,7 +1051,6 @@ KINDS = {
                 "outputsRoot": "source/{prototype}/motionscenes/{msId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
-                    "outputs.lensVerdict in {pass}",
                 ]},
                 "notes": (
                     "Composed runtime - wires scenes + motion + interactions, "
@@ -1236,34 +1063,6 @@ KINDS = {
             },
 
             # ── Multi-draft pick checkpoints ──────────────────────────────────
-            "cp_ms_storyboard_pick_": {
-                "outputsRoot": "DECISION_cp_ms_storyboard_pick_{msId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_ms_storyboard_pick_{msId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 storyboard drafts (scene-split axis).",
-            },
-            "cp_ms_concept_pick_": {
-                "outputsRoot": "DECISION_cp_ms_concept_pick_{msId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_ms_concept_pick_{msId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 concept-plate sets (layout axis), or approves/steers the single set at the mandatory plate-review gate.",
-            },
-            "cp_ms_motion_pick_": {
-                "outputsRoot": "DECISION_cp_ms_motion_pick_{msId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_ms_motion_pick_{msId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 motion drafts (transition-register axis).",
-            },
-            "cp_ms_runtime_pick_": {
-                "outputsRoot": "DECISION_cp_ms_runtime_pick_{msId}.json",
-                "completion": {"requires": [
-                    "files: DECISION_cp_ms_runtime_pick_{msId}.json exists with non-empty values",
-                ]},
-                "notes": "User picks 1 of 3 runtime drafts (pacing axis).",
-            },
 
             # ── Family release gate ───────────────────────────────────────────
             "cp_ms_gate_": {
