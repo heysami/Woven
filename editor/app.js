@@ -9512,10 +9512,32 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
    point of the panel is to review work after it's done. */
 function extractRunSubagents(events) {
   const resultById = new Map();
+  // Per-subagent activity: the ordered task_progress narration ("Reading
+  // workflow/workflow.json", "Editing source/foo.html") the SDK streams while a
+  // subagent is mid-tool-use, keyed by its parent Agent tool_use id. The live
+  // strip keeps only the LATEST line per subagent; here we keep the whole
+  // ordered history so the panel can show everything the subagent acted on.
+  const actionsById = new Map();
   for (const ev of events || []) {
+    if (ev?.event !== "agent") continue;
     const d = ev?.data;
-    if (ev?.event === "agent" && d?.type === "tool_result" && d.toolUseId) {
+    if (!d) continue;
+    if (d.type === "tool_result" && d.toolUseId) {
       resultById.set(d.toolUseId, d);
+      continue;
+    }
+    const isTP = (d.type === "system" && d.subtype === "task_progress")
+               || (d.type === "raw"    && d.subtype === "task_progress");
+    if (isTP) {
+      const id   = d.type === "system" ? d.toolUseId   : d.frame?.tool_use_id;
+      const desc = d.type === "system" ? d.description  : d.frame?.description;
+      if (id && desc) {
+        let list = actionsById.get(id);
+        if (!list) { list = []; actionsById.set(id, list); }
+        // The SDK re-emits the same line while a tool runs - collapse the
+        // consecutive duplicates so the timeline reads as distinct steps.
+        if (list[list.length - 1] !== desc) list.push(desc);
+      }
     }
   }
   const resultToText = (r) => {
@@ -9539,6 +9561,7 @@ function extractRunSubagents(events) {
       label: inp.description || "Subagent task",
       prompt: inp.prompt || "",
       result: resultToText(result),
+      actions: actionsById.get(d.id) || [],
       done: !!result,
       error: !!(result && (result.isError || result.is_error)),
     });
@@ -9772,6 +9795,17 @@ function SubagentPanel({ agent, runTitle }) {
           <div className="th-tasks-agent-sec">
             <div className="th-tasks-agent-sec-h">Prompt</div>
             <pre className="th-tasks-agent-pre th-subagent-pre">${a.prompt}</pre>
+          </div>`}
+        ${a.actions && a.actions.length > 0 && html`
+          <div className="th-tasks-agent-sec">
+            <div className="th-tasks-agent-sec-h">Activity · ${a.actions.length} step${a.actions.length === 1 ? "" : "s"}</div>
+            <ol className="th-subagent-actions">
+              ${a.actions.map((act, i) => html`
+                <li className="th-subagent-action" key=${i}>
+                  <span className="th-subagent-action-dot" aria-hidden="true"/>
+                  <span className="th-subagent-action-text">${act}</span>
+                </li>`)}
+            </ol>
           </div>`}
         ${a.result
           ? html`

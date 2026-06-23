@@ -4252,6 +4252,47 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
    than the rail list's 320px cap. */
 .th-subagent-pre { max-height: none; }
 
+/* Activity timeline - the ordered task_progress narration of every step the
+   subagent took (read this file, edited that one), between prompt and result. */
+.th-subagent-actions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.th-subagent-action {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0 4px 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.th-subagent-action-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+/* Connect the dots into a vertical rail. */
+.th-subagent-action:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--border);
+}
+.th-subagent-action-text { min-width: 0; overflow-wrap: anywhere; }
+
 /* Live & shares panel (third rail entry). */
 .th-live-section { padding: 4px 4px 12px; }
 .th-live-section + .th-live-section { border-top: 1px solid var(--border); padding-top: 12px; }
