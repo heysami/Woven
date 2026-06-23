@@ -328,12 +328,13 @@
       // microphone (e.g. their headset) and camera, with a live mic meter.
       await enumerate();
       try {
-        const at = mic.getAudioTracks && mic.getAudioTracks()[0];
+        const ms = micStreamRef.current, cs = camStreamRef.current;
+        const at = ms && ms.getAudioTracks && ms.getAudioTracks()[0];
         if (at && at.getSettings) setMicId(at.getSettings().deviceId || "");
-        const vt = cam.getVideoTracks && cam.getVideoTracks()[0];
+        const vt = cs && cs.getVideoTracks && cs.getVideoTracks()[0];
         if (vt && vt.getSettings) setCamId(vt.getSettings().deviceId || "");
       } catch {}
-      startMeter(mic);
+      startMeter(micStreamRef.current);
       setPhase("devices");
     }, [enumerate, startMeter]);
 
