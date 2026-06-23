@@ -64313,6 +64313,8 @@ const LOGIC_NODE_DEFS = {
       pitch: { label: "pitch", dtype: "number" },
       band:  { label: "band", dtype: "number" },
       beat:  { label: "beat", dtype: "event" },
+      spectrum: { label: "spectrum", dtype: "channel" },
+      bands: { label: "bands", dtype: "channel" },
     },
     accepts: {
       asset: { label: "Audio asset (source=asset)", dtype: "string", tags: ["asset", "audio"] },

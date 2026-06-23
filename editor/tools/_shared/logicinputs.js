@@ -215,6 +215,21 @@ export const LogicInputs = {
       let bsum = 0, bcount = 0;
       for (let i = lo; i < hi; i++) { bsum += freqBuf[i]; bcount++; }
       audio.band = bcount ? clamp((bsum / bcount) / 255, 0, 1) : 0;
+      // Full spectrum (64 bins) + 16 log-spaced band energies, normalized 0..1,
+      // exposed as channels. Buffers are reused across frames (no per-frame alloc).
+      const SB = 64, LB = 16;
+      if (!audio.spectrum) audio.spectrum = new Float32Array(SB);
+      for (let k = 0; k < SB; k++) {
+        const a0 = Math.floor(k * N / SB), a1 = Math.max(a0 + 1, Math.floor((k + 1) * N / SB));
+        let s = 0; for (let i = a0; i < a1; i++) s += freqBuf[i];
+        audio.spectrum[k] = (s / (a1 - a0)) / 255;
+      }
+      if (!audio.bands) audio.bands = new Float32Array(LB);
+      for (let k = 0; k < LB; k++) {
+        const f0 = Math.floor(N * Math.pow(k / LB, 2)), f1 = Math.max(f0 + 1, Math.floor(N * Math.pow((k + 1) / LB, 2)));
+        let s = 0; for (let i = f0; i < f1; i++) s += freqBuf[i];
+        audio.bands[k] = (s / (f1 - f0)) / 255;
+      }
       // Autocorrelation pitch estimate (Hz) from the time-domain buffer.
       audio.pitch = audioCtx ? autoCorrelate(timeBuf, audioCtx.sampleRate) : 0;
       // Beat = a sharp rise in level above the running floor.
@@ -274,7 +289,7 @@ export const LogicInputs = {
           accumX: scroll.accumX, accumY: scroll.accumY, velocity: scroll.velocity,
         },
         gyro: { alpha: gyro.alpha, beta: gyro.beta, gamma: gyro.gamma, tilt: { x: gyro.tilt.x, y: gyro.tilt.y }, ready: gyro.ready },
-        audio: { level: audio.level, pitch: audio.pitch, band: audio.band, raw: audio.raw, beat: audio.beat },
+        audio: { level: audio.level, pitch: audio.pitch, band: audio.band, raw: audio.raw, beat: audio.beat, spectrum: audio.spectrum, bands: audio.bands },
         dt: dt, time: (now - startTime) / 1000,
       };
       // Per-frame edge flags reset AFTER the snapshot is read (engine reads the raw

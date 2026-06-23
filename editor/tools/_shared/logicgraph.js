@@ -318,6 +318,8 @@ export const LogicGraph = {
       return {
         level: finiteNumber(a.level, 0), pitch: finiteNumber(a.pitch, 0),
         band: finiteNumber(a.band, 0), beat: beat,
+        spectrum: { data: a.spectrum || new Float32Array(0), rate: 0 },
+        bands: { data: a.bands || new Float32Array(0), rate: 0 },
       };
     },
 
