@@ -196,6 +196,9 @@
     const rrwebStopRef = useRef(null);
     const cursorBufRef = useRef([]);
     const gazeBufRef = useRef([]);
+    const gazeRecvRef = useRef(0);    // diag: total gaze callbacks during the test
+    const gazeValidRef = useRef(0);   // diag: callbacks with a finite x/y point
+    const [gazeStats, setGazeStats] = useState(null);
     const rrwebBufRef = useRef([]);
     const flushTimerRef = useRef(null);
     const lastCursorRef = useRef(0);
@@ -470,13 +473,13 @@
       // 4. gaze - webgazer listener (already running from calibration).
       try {
         webgazer.setGazeListener((data) => {
-          if (!data) return;
-          const conf = (data.eyeFeatures && typeof data.eyeFeatures === "object")
-            ? null : null;   // webgazer exposes no normalized conf; keep slot for the reviewer
+          gazeRecvRef.current++;                    // diag: webgazer is firing at all
+          if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
+          gazeValidRef.current++;
           gazeBufRef.current.push({
             t: Date.now() - t0Ref.current,
             x: Math.round(data.x), y: Math.round(data.y),
-            conf,
+            conf: null,   // webgazer exposes no normalized conf; slot kept for the reviewer
           });
           if (gazeBufRef.current.length >= GAZE_FLUSH_EVENTS) flushGaze();
         });
@@ -615,6 +618,11 @@
       try { webgazer.clearGazeListener(); } catch {}
       try { webgazer.pause(); } catch {}
       try { if (cleanupCursorRef.current) cleanupCursorRef.current(); } catch {}
+
+      // Gaze diagnostics (shown on the done screen) so we can see, without a
+      // webcam on our side, whether webgazer fired during the test at all.
+      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current });
+      try { console.log("[ut] gaze: callbacks=" + gazeRecvRef.current + " validPoints=" + gazeValidRef.current); } catch {}
 
       // Flush remaining buffers, then wait for every stream tail to drain.
       flushRrweb(); flushCursor(); flushGaze();
@@ -819,6 +827,7 @@
           <div className="ut-done-mark"><${Icon.Check} size=${28}/></div>
           <h1>Thank you</h1>
           <p>Your session has been recorded and uploaded. You can close this tab now.</p>
+          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured${gazeStats.recv ? " (" + gazeStats.recv + " callbacks)" : ""}.${gazeStats.valid === 0 ? " Gaze tracking produced no usable points during the test." : ""}</p>`}
         </div>
       </div>`;
     }

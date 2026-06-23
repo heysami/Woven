@@ -250,3 +250,4 @@ p { margin: 0 0 12px; }
 .ut-gaze-status.is-ok { color: var(--ut-accent-text); }
 .ut-gaze-status svg { width: 14px; height: 14px; }
 .ut-gaze-status.is-warn { color: var(--ut-danger); }
+.ut-gaze-diag { margin-top: 14px; font-family: var(--ut-mono); font-size: 12px; color: var(--ut-muted); line-height: 1.5; }
