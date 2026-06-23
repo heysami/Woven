@@ -83,8 +83,11 @@
 export const FX_TYPES = [
   // distortion
   'chromatic-aberration', 'directional-blur', 'displacement', 'displace-by', 'slice',
+  'transform', 'lens-distort',
   // pixel
   'pixelate', 'dither', 'posterize', 'pixel-sort',
+  // color / filter
+  'color', 'tonemap', 'convolve',
   // artistic
   'ascii', 'crt', 'halftone', 'ink', 'edge-detect',
   // generative
@@ -101,6 +104,11 @@ export const FX_LABELS = {
   'directional-blur': 'Directional blur',
   'displacement': 'Displacement',
   'displace-by': 'Displace by layer',
+  'transform': 'Transform',
+  'lens-distort': 'Lens distort',
+  'color': 'Color grade',
+  'tonemap': 'Tone map',
+  'convolve': 'Convolve',
   'slice': 'Slice',
   'pixelate': 'Pixelate',
   'dither': 'Dither',
@@ -160,6 +168,29 @@ float fxNoise(vec2 p) {
   float d = fxHash(i + vec2(1.0, 1.0));
   vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+// fractal brownian motion (4 octaves of value noise)
+float fxFbm(vec2 p) {
+  float v = 0.0, amp = 0.5;
+  for (int i = 0; i < 4; i++) { v += amp * fxNoise(p); p *= 2.0; amp *= 0.5; }
+  return v;
+}
+// RGB<->HSV (hue in 0..1) and ACES filmic tonemap - shared by color/tonemap effects.
+vec3 fxRgb2Hsv(vec3 c) {
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+vec3 fxHsv2Rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+vec3 fxAces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 `;
 
@@ -240,6 +271,11 @@ vec4 fxMain() {
   else if (uMode == 2) r = a.rgb * b.rgb;                       // multiply
   else if (uMode == 3) r = 1.0 - (1.0 - a.rgb) * (1.0 - b.rgb); // screen
   else if (uMode == 4) r = abs(a.rgb - b.rgb);                  // difference
+  else if (uMode == 5) r = a.rgb - b.rgb;                       // subtract
+  else if (uMode == 6) r = min(a.rgb, b.rgb);                   // darken
+  else if (uMode == 7) r = max(a.rgb, b.rgb);                   // lighten
+  else if (uMode == 8) r = mix(2.0 * a.rgb * b.rgb, 1.0 - 2.0 * (1.0 - a.rgb) * (1.0 - b.rgb), step(0.5, a.rgb)); // overlay
+  else if (uMode == 9) r = a.rgb + b.rgb - 2.0 * a.rgb * b.rgb; // exclusion
   else                 r = mix(a.rgb, b.rgb, b.a);              // over
   return vec4(r, max(a.a, b.a));
 }`,
@@ -273,6 +309,100 @@ vec4 fxMain() {
   float l = clamp(fxLuma(c.rgb), 0.0, 1.0);
   vec3 mapped = texture(uLut, vec2(l, 0.5)).rgb;
   return vec4(mapped, c.a);
+}`,
+  },
+
+  // ---- transform / color / filter super-nodes (TOP vocabulary) -----------
+  // 2D UV transform: translate / rotate / zoom, with clamp|tile|mirror wrap.
+  'transform': {
+    uniforms: {
+      uTx: { k: '1f', from: 'tx', def: 0.0 }, uTy: { k: '1f', from: 'ty', def: 0.0 },
+      uRot: { k: '1f', from: 'rot', def: 0.0 }, uScale: { k: '1f', from: 'scale', def: 1.0 },
+      uWrap: { k: '1i', from: 'wrap', def: 0 },
+    },
+    decls: 'uniform float uTx; uniform float uTy; uniform float uRot; uniform float uScale; uniform int uWrap;',
+    body: `
+vec4 fxMain() {
+  vec2 uv = vUv - 0.5;
+  float c = cos(uRot), s = sin(uRot);
+  uv = mat2(c, -s, s, c) * uv;
+  uv /= max(uScale, 1e-4);
+  uv += 0.5 - vec2(uTx, uTy);
+  if (uWrap == 1) uv = fract(uv);
+  else if (uWrap == 2) uv = abs(fract(uv * 0.5) * 2.0 - 1.0);
+  else uv = clamp(uv, 0.0, 1.0);
+  return texture(uTex, uv);
+}`,
+  },
+
+  // Color grade: brightness / contrast / gamma / saturation / hue / invert.
+  'color': {
+    uniforms: {
+      uBright: { k: '1f', from: 'brightness', def: 0.0 }, uContrast: { k: '1f', from: 'contrast', def: 1.0 },
+      uGamma: { k: '1f', from: 'gamma', def: 1.0 }, uSat: { k: '1f', from: 'saturation', def: 1.0 },
+      uHue: { k: '1f', from: 'hue', def: 0.0 }, uInvert: { k: '1f', from: 'invert', def: 0.0, bool: true },
+    },
+    decls: 'uniform float uBright; uniform float uContrast; uniform float uGamma; uniform float uSat; uniform float uHue; uniform float uInvert;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  vec3 rgb = c.rgb;
+  if (uInvert > 0.5) rgb = 1.0 - rgb;
+  rgb = (rgb - 0.5) * max(uContrast, 0.0) + 0.5 + uBright;
+  rgb = pow(clamp(rgb, 0.0, 1.0), vec3(1.0 / max(uGamma, 1e-3)));
+  vec3 hsv = fxRgb2Hsv(rgb);
+  hsv.x = fract(hsv.x + uHue);
+  hsv.y = clamp(hsv.y * uSat, 0.0, 1.0);
+  return vec4(fxHsv2Rgb(hsv), c.a);
+}`,
+  },
+
+  // 3x3 convolution: edge (laplacian) / box-blur / sharpen, mixed by amount.
+  'convolve': {
+    uniforms: { uMode: { k: '1i', from: 'mode', def: 0 }, uAmount: { k: '1f', from: 'amount', def: 1.0 } },
+    decls: 'uniform int uMode; uniform float uAmount;',
+    body: `
+vec4 fxMain() {
+  vec2 t = 1.0 / uResolution;
+  float ce, ed, co, norm;
+  if (uMode == 1) { ce = -4.0; ed = 1.0; co = 0.0; norm = 1.0; }
+  else if (uMode == 2) { ce = 1.0; ed = 1.0; co = 1.0; norm = 9.0; }
+  else { ce = 5.0; ed = -1.0; co = 0.0; norm = 1.0; }
+  vec3 sum = texture(uTex, vUv).rgb * ce
+    + (texture(uTex, vUv + vec2(t.x, 0.0)).rgb + texture(uTex, vUv - vec2(t.x, 0.0)).rgb
+     + texture(uTex, vUv + vec2(0.0, t.y)).rgb + texture(uTex, vUv - vec2(0.0, t.y)).rgb) * ed
+    + (texture(uTex, vUv + t).rgb + texture(uTex, vUv - t).rgb
+     + texture(uTex, vUv + vec2(t.x, -t.y)).rgb + texture(uTex, vUv + vec2(-t.x, t.y)).rgb) * co;
+  sum /= norm;
+  vec4 c = texture(uTex, vUv);
+  return vec4(mix(c.rgb, sum, clamp(uAmount, 0.0, 1.0)), c.a);
+}`,
+  },
+
+  // HDR->LDR tone map: ACES (default) or Reinhard, with exposure.
+  'tonemap': {
+    uniforms: { uMode: { k: '1i', from: 'mode', def: 0 }, uExposure: { k: '1f', from: 'exposure', def: 1.0 } },
+    decls: 'uniform int uMode; uniform float uExposure;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  vec3 x = c.rgb * max(uExposure, 0.0);
+  vec3 r = (uMode == 1) ? x / (1.0 + x) : fxAces(x);
+  return vec4(r, c.a);
+}`,
+  },
+
+  // Radial lens distortion: barrel (amount>0) / pincushion (amount<0).
+  'lens-distort': {
+    uniforms: { uK: { k: '1f', from: 'amount', def: 0.2 } },
+    decls: 'uniform float uK;',
+    body: `
+vec4 fxMain() {
+  vec2 uv = vUv - 0.5;
+  uv *= 1.0 + uK * dot(uv, uv);
+  uv += 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
+  return texture(uTex, uv);
 }`,
   },
 
