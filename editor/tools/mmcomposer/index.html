@@ -919,9 +919,9 @@ function buildWiredRuntimeLayers(){
     } else if(assetK && assetK.text!=null){
       content={kind:'text',text:assetK.text||assetK.label||'WIRED',color:assetK.color||'#ffffff'};
     } else if(assetK){
-      content={kind:'shape',shape:'rect',color:assetK.color||'#b388ff'};
+      content={kind:'placeholder',note:'loading',label:(assetK.label||assetK.id||'')};
     } else {
-      content={kind:'generator',color:'#b388ff'};
+      content={kind:'placeholder',note:'no content',label:'wire an asset / camera, or go Live'};
     }
     const posSpec = wiredChildSpec(posK);
     const trigSpec = wiredChildSpec(trigK);
@@ -3335,6 +3335,19 @@ function drawContent(ctx, L, inst, W, H, baseScale){
     ctx.strokeStyle=c.color||'#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.03);
     for(let i=1;i<=4;i++){ ctx.beginPath();
       ctx.arc(0,0, sz*0.12*i*(0.8+0.2*Math.sin(Input.clock*2+i)),0,Math.PI*2); ctx.stroke(); }
+  } else if(c.kind==='placeholder'){
+    // Unresolved wired layer (no asset/camera resolved yet). A clear "nothing
+    // here yet" frame - deliberately NOT procedural art - so it never reads as a
+    // finished effect (this replaced the old purple pulsing-rings fallback that
+    // users mistook for a broken default).
+    ctx.fillStyle='rgba(40,44,52,0.45)'; ctx.fillRect(-boxW/2,-boxH/2,boxW,boxH);
+    ctx.strokeStyle='#6b7280'; ctx.lineWidth=Math.max(1,sz*0.01); ctx.setLineDash([sz*0.06,sz*0.04]);
+    ctx.strokeRect(-boxW/2+2,-boxH/2+2,boxW-4,boxH-4); ctx.setLineDash([]);
+    ctx.fillStyle='#9aa4b2'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=`${Math.max(9,sz*0.1)}px ${getMono()}`;
+    ctx.fillText(c.note||'no content', 0, -sz*0.06);
+    if(c.label){ ctx.fillStyle='#6b7480'; ctx.font=`${Math.max(8,sz*0.075)}px ${getMono()}`;
+      ctx.fillText(String(c.label).slice(0,40), 0, sz*0.07); }
   } else { // shape
     ctx.fillStyle=c.color||'#6ee7ff';
     if(c.shape==='circle'){ ctx.beginPath(); ctx.ellipse(0,0,boxW/2,boxH/2,0,0,Math.PI*2); ctx.fill(); }
@@ -5199,6 +5212,7 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(sz*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else if(c.kind==='typemotion'){drawTM(c,IN.clock);}
     else if(c.kind==='generator'){lctx.strokeStyle=c.color||'#6ee7ff';lctx.lineWidth=Math.max(1,sz*0.03);for(let i=1;i<=4;i++){lctx.beginPath();lctx.arc(0,0,sz*0.12*i*(0.8+0.2*Math.sin(IN.clock*2+i)),0,Math.PI*2);lctx.stroke();}}
+    else if(c.kind==='placeholder'){lctx.fillStyle='rgba(40,44,52,0.45)';lctx.fillRect(-bw/2,-bh/2,bw,bh);lctx.strokeStyle='#6b7280';lctx.lineWidth=Math.max(1,sz*0.01);lctx.setLineDash([sz*0.06,sz*0.04]);lctx.strokeRect(-bw/2+2,-bh/2+2,bw-4,bh-4);lctx.setLineDash([]);lctx.fillStyle='#9aa4b2';lctx.textAlign='center';lctx.textBaseline='middle';lctx.font=Math.max(9,sz*0.1)+'px monospace';lctx.fillText(c.note||'no content',0,-sz*0.06);if(c.label){lctx.fillStyle='#6b7480';lctx.font=Math.max(8,sz*0.075)+'px monospace';lctx.fillText(String(c.label).slice(0,40),0,sz*0.07);}}
     else{lctx.fillStyle=c.color||'#6ee7ff';if(c.shape==='circle'){lctx.beginPath();lctx.ellipse(0,0,bw/2,bh/2,0,0,Math.PI*2);lctx.fill();}else if(c.shape==='tri'){lctx.beginPath();lctx.moveTo(0,-bh/2);lctx.lineTo(bw/2,bh/2);lctx.lineTo(-bw/2,bh/2);lctx.closePath();lctx.fill();}else lctx.fillRect(-bw/2,-bh/2,bw,bh);}
     lctx.restore();}
   /* WebGL effects (same shaders as editor) - EFF/FH/VS injected as args */
