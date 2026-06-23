@@ -208,12 +208,15 @@ p { margin: 0 0 12px; }
   padding: 9px 16px; font-size: 13px; box-shadow: var(--ut-shadow);
 }
 
-/* webgazer needs its <video> to keep RENDERING frames or it produces ZERO gaze
-   predictions - so move the whole container OFF-SCREEN (still decoding); never
-   display:none / visibility:hidden it. The cosmetic overlays can be fully hidden. */
+/* webgazer needs its <video> to keep DECODING frames or it produces ZERO gaze.
+   display:none, visibility:hidden, AND fully off-screen all stop frame decoding
+   in modern browsers - so keep the container ON-SCREEN (in the viewport) but
+   1px + near-transparent: invisible to the testee, still decoding for webgazer. */
 #webgazerVideoContainer {
-  position: fixed !important; left: -10000px !important; top: 0 !important;
-  opacity: 0 !important; pointer-events: none !important; z-index: -1 !important;
+  position: fixed !important; right: 0 !important; bottom: 0 !important;
+  width: 1px !important; height: 1px !important; overflow: hidden !important;
+  opacity: 0.02 !important; pointer-events: none !important;
+  z-index: 2147483000 !important;
 }
 #webgazerFaceOverlay, #webgazerFaceFeedbackBox, #webgazerGazeDot {
   display: none !important;
@@ -246,3 +249,4 @@ p { margin: 0 0 12px; }
 .ut-gaze-status { font-size: 12px; color: var(--ut-muted); display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
 .ut-gaze-status.is-ok { color: var(--ut-accent-text); }
 .ut-gaze-status svg { width: 14px; height: 14px; }
+.ut-gaze-status.is-warn { color: var(--ut-danger); }

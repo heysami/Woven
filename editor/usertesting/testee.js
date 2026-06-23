@@ -356,6 +356,8 @@
     const [pointHits, setPointHits] = useState(() => calibPoints.map(() => 0));
     const webgazerReadyRef = useRef(false);
     const [gazeReady, setGazeReady] = useState(false);
+    const [gazeTimedOut, setGazeTimedOut] = useState(false);
+    const gazeTimeoutRef = useRef(0);
 
     const startWebgazer = useCallback(async () => {
       if (webgazerReadyRef.current) return;
@@ -375,9 +377,9 @@
         // Free the permission-check camera stream so webgazer can claim the device.
         try { (camStreamRef.current || {}).getTracks?.().forEach((t) => t.stop()); camStreamRef.current = null; } catch {}
         // Keep the video preview ON (rendering): webgazer extracts eye features
-        // from the live <video>, and a display:none video yields ZERO gaze. The
-        // container is moved OFF-SCREEN by testee.css so it stays invisible while
-        // still decoding frames. Only the cosmetic overlays are turned off.
+        // from the live <video>. A display:none OR fully off-screen video stops
+        // decoding frames -> ZERO gaze, so testee.css keeps the container ON-SCREEN
+        // but 1px + near-transparent. Only the cosmetic overlays are turned off.
         webgazer.showVideoPreview(true);
         webgazer.showPredictionPoints(false);
         webgazer.showFaceOverlay(false);
@@ -391,7 +393,17 @@
         }
         try { webgazer.showVideoPreview(true); } catch {}
         webgazerReadyRef.current = true;
-        setGazeReady(true);
+        // Flip the indicator only on the FIRST REAL gaze prediction - begin()
+        // succeeding does NOT mean frames/face are being read. This validation
+        // listener is replaced by the recording listener in start().
+        try {
+          webgazer.setGazeListener((data) => {
+            if (data && Number.isFinite(data.x) && Number.isFinite(data.y)) setGazeReady(true);
+          });
+        } catch {}
+        // Don't block forever if gaze never locks on (poor light / odd camera).
+        try { clearTimeout(gazeTimeoutRef.current); } catch {}
+        gazeTimeoutRef.current = setTimeout(() => setGazeTimedOut(true), 9000);
       } catch (e) {
         setPermErr("Could not start gaze tracking. Make sure the camera is not in "
           + "use by another app, then reload.");
@@ -790,9 +802,10 @@
               aria-label=${"Calibration point " + (i + 1)}></button>
           `)}
           <div className="ut-calib-foot">
-            ${!gazeReady && !permErr && html`<span className="ut-gaze-status">Starting gaze tracking…</span>`}
             ${gazeReady && html`<span className="ut-gaze-status is-ok"><${Icon.Check}/> Gaze tracking active</span>`}
-            <button className="ut-btn ut-btn-primary" disabled=${!calibDone || !gazeReady} onClick=${start}>
+            ${!gazeReady && !gazeTimedOut && !permErr && html`<span className="ut-gaze-status">Starting gaze tracking…</span>`}
+            ${!gazeReady && gazeTimedOut && html`<span className="ut-gaze-status is-warn">Gaze did not lock on. Check lighting/camera - you can still continue.</span>`}
+            <button className="ut-btn ut-btn-primary" disabled=${!calibDone || (!gazeReady && !gazeTimedOut)} onClick=${start}>
               Start the test</button>
           </div>
         </div>
