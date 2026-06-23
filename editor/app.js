@@ -721,6 +721,7 @@ const Icon = {
   // forward nav. Single chevron at the canonical 1.5pt stroke, matching the
   // rest of this icon set so the bar reads as one family.
   Home:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 7.5L8 3l5.5 4.5M4 6.7V13h8V6.7M6.5 13V9.5h3V13"/></svg>`,
+  Pin:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M9.5 2.5l4 4M10 6l-5 1.5L3 9l4 4 1.5-2L10 6M6.5 9.5L3.5 12.5"/></svg>`,
   Back:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M10 4L6 8l4 4"/></svg>`,
   Forward:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4l4 4-4 4"/></svg>`,
   // v3.9 - device-preview presets for the prototype node bar. Same line family.
@@ -50595,6 +50596,26 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     } catch {}
   }, [node.lockedState]);
 
+  // Snap the iframe back to the prototype's root entry page (its "home"),
+  // independent of any locked screen. .replace() so it doesn't pollute the
+  // Back history with the orphaned intermediate.
+  const goHome = useCallback(() => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    try { win.location.replace(apiUrl(`/source/${encodeURIComponent(branch)}/`)); } catch {}
+  }, [branch]);
+
+  // Un-pin - clear the locked/exposed state so the node returns to its
+  // non-locked (un-tinted) initial appearance, and snap the iframe back to
+  // the prototype root. This is the inverse of Expose/Manage→Apply, which
+  // is the only thing that sets lockedState; without it the node was stuck
+  // in the green data-locked state with no way back. Exposed asset cards are
+  // left in place (un-pinning is about the screen lock, not the assets).
+  const unpin = useCallback(() => {
+    goHome();
+    onChange && onChange({ lockedState: null });
+  }, [goHome, onChange]);
+
   const w = node.w || 720;
   const h = node.h || 480;
   const locked = !!node.lockedState;
@@ -50664,6 +50685,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onClick=${(e) => { e.stopPropagation(); goForward(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Forward}/><//>
+        <${HoverTip}
+          className="workflow-node-action workflow-node-action-nav"
+          tip="Home - reload this prototype's start page (source/${branch}/)."
+          ariaLabel="Prototype home"
+          onClick=${(e) => { e.stopPropagation(); goHome(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Home}/><//>
         <span className="workflow-node-device-toggle" onMouseDown=${(e) => e.stopPropagation()}>
           ${PROTO_DEVICE_PRESETS.map(d => {
             const isActive = activeDevice === d.id;
@@ -50689,10 +50717,14 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         </span>
         <span className="workflow-node-label">source/${branch}/</span>
         ${locked && html`
-          <span
-            className="workflow-node-lock"
-            title=${"Locked to " + node.lockedState.pathname + (node.lockedState.hash || "")}
-          >📌</span>
+          <${HoverTip}
+            className="workflow-node-action workflow-node-lock workflow-node-action-unpin"
+            tip=${"Pinned to " + node.lockedState.pathname + (node.lockedState.hash || "")
+              + " - click to un-pin and return to the prototype start (clears the locked/green state)."}
+            ariaLabel="Un-pin prototype"
+            onClick=${(e) => { e.stopPropagation(); unpin(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Pin}/><//>
         `}
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}

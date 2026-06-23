@@ -8453,10 +8453,12 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 /* Phase 3.5c - lock pin in the header, shown when a prototype is bound to a
    specific screen via Expose. Tooltip carries the pinned URL. */
 .workflow-node-lock {
-  font-size: 11px;
   margin-left: 2px;
-  filter: saturate(0.6);
-  cursor: help;
+}
+/* Locked → the un-pin control carries the accent (green here) so it reads as
+   the active state the user can click to clear. */
+.workflow-node-proto[data-locked="true"] .workflow-node-action-unpin {
+  color: var(--accent);
 }
 .workflow-node-proto[data-locked="true"] .workflow-node-bar {
   background: color-mix(in oklch, var(--accent-soft) 60%, var(--surface-2));
