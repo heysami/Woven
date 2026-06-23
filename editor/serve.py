@@ -5703,7 +5703,12 @@ class RunState:
                  "_node_completion_fired",
                  # Project-relative paths this run has written (Write/Edit/
                  # MultiEdit/NotebookEdit). Drives the canvas worker badge.
-                 "touched_paths")
+                 "touched_paths",
+                 # v3.15 - daemon-side build-chain. Ordered node ids to
+                 # auto-dispatch after THIS node completes cleanly (set from
+                 # the /run `chain` query param). See __init__ for the full
+                 # rationale.
+                 "chain_rest")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
