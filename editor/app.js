@@ -620,6 +620,9 @@ const Icon = {
   Refresh:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 8a6 6 0 0110-4.5M14 3v3h-3M14 8a6 6 0 01-10 4.5M2 13v-3h3"/></svg>`,
   Globe:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-1.7 1.7-2.6 3.8-2.6 6S6.3 12.3 8 14M8 2c1.7 1.7 2.6 3.8 2.6 6S9.7 12.3 8 14"/></svg>`,
   Scissors: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4.5" r="1.8"/><circle cx="4" cy="11.5" r="1.8"/><path d="M5.5 5.7L13 13M5.5 10.3L13 3"/></svg>`,
+  // Crop: the classic two-bracket crop-marks mark (top-left + bottom-right
+  // L brackets crossing the frame). Used by the asset card's in-place crop.
+  Crop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4.5 1.5V11a1.5 1.5 0 0 0 1.5 1.5H14"/><path d="M11.5 14.5V5a1.5 1.5 0 0 0-1.5-1.5H2"/></svg>`,
   External: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M7 3.5H4.5a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V9"/><path d="M9.5 2.5h4v4M13.5 2.5L8 8"/></svg>`,
   Plus:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 3v10M3 8h10"/></svg>`,
   Minus:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8h10"/></svg>`,
@@ -51185,6 +51188,7 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
       onClick=${onClick}
       onMouseDown=${onMouseDown}
       aria-label=${ariaLabel}
+      style=${style}
       onMouseEnter=${place}
       onMouseLeave=${clear}
       onFocus=${place}
@@ -51831,7 +51835,6 @@ function WorkflowAssetModelChip({ node, allNodes, allEdges, onChange }) {
 function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
-  const swatchRef = useRef(null);
   // Parse the current value into hex + alpha components for the controls.
   // Any string the user typed by hand passes through unchanged via `text`.
   const parsed = useMemo(() => {
@@ -51871,7 +51874,7 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   const openPopover = (e) => {
     if (e.altKey) { e.preventDefault(); e.stopPropagation(); onChange(null); return; }
     e.stopPropagation();
-    const r = swatchRef.current && swatchRef.current.getBoundingClientRect();
+    const r = e.currentTarget && e.currentTarget.getBoundingClientRect();
     if (r) setRect({ top: r.bottom + 6, left: r.left });
     setOpen(true);
   };
@@ -51892,20 +51895,17 @@ function WorkflowAssetBgColorPicker({ nodeId, value, onChange }) {
   }, [open]);
   return html`
     <${React.Fragment}>
-      <button
-        ref=${swatchRef}
+      <${HoverTip}
         className="workflow-node-asset-bg"
-        type="button"
-        data-node-id=${nodeId}
-        title=${value
+        tip=${value
           ? `Background ${value} - click to edit, Alt+click to clear`
-          : "Set background color · Alt+click to clear"}
-        aria-label="Asset background color"
+          : "Set background color · click to pick, Alt+click to clear"}
+        ariaLabel="Asset background color"
         onMouseDown=${(e) => e.stopPropagation()}
         onClick=${openPopover}
         style=${value ? { background: value } : undefined}>
         <span className="workflow-node-asset-bg-icon">${value ? "■" : "▢"}</span>
-      </button>
+      <//>
       ${open && rect && createPortal(html`
         <div
           className="workflow-asset-bg-popover"
@@ -51977,6 +51977,172 @@ function assetImageHasTransparentBg(img) {
     }
     return border > 0 && clear / border >= 0.9;
   } catch { return false; }
+}
+
+// In-place crop overlay for a raster image asset. Drag the box, then Apply -
+// the cropped region is drawn at the image's NATURAL resolution and written
+// back to the SAME file path via /__write_binary, so every prototype / node
+// that references that path picks up the cropped bytes on the th:asset-refresh
+// bump (no HTML rewrite needed - path + extension + kind are unchanged). The
+// write goes through the daemon's history bracket, so a bad crop is undoable.
+function WorkflowAssetCropModal({ src, path, label, onClose }) {
+  const [natural, setNatural] = useState(null); // { w, h } of the source file
+  const [rect, setRect] = useState({ x: 0.08, y: 0.08, w: 0.84, h: 0.84 }); // normalised 0..1
+  const [busy, setBusy] = useState(false);
+  const imgRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const loadImage = (s) => new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("could not load the image"));
+    im.src = s;
+  });
+
+  // Probe the natural pixel size so we can report output dims + crop at full res.
+  useEffect(() => {
+    let cancelled = false;
+    loadImage(src)
+      .then(im => { if (!cancelled) setNatural({ w: im.naturalWidth, h: im.naturalHeight }); })
+      .catch(() => { if (!cancelled) setNatural({ w: 0, h: 0 }); });
+    return () => { cancelled = true; };
+  }, [src]);
+
+  // Esc closes (unless mid-write).
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
+
+  const clampRect = (r) => {
+    const MIN = 0.02;
+    let w = Math.max(MIN, Math.min(1, r.w));
+    let h = Math.max(MIN, Math.min(1, r.h));
+    let x = Math.max(0, Math.min(1 - w, r.x));
+    let y = Math.max(0, Math.min(1 - h, r.y));
+    return { x, y, w, h };
+  };
+
+  // dirs is "move" or any combination of n/s/e/w (corner = two letters).
+  const onHandleDown = (dirs) => (e) => {
+    if (busy) return;
+    e.preventDefault(); e.stopPropagation();
+    const imgEl = imgRef.current;
+    if (!imgEl) return;
+    const ir = imgEl.getBoundingClientRect();
+    dragRef.current = { px: e.clientX, py: e.clientY, rect: { ...rect }, ir, dirs };
+    const onMove = (ev) => {
+      const d = dragRef.current; if (!d || !d.ir.width || !d.ir.height) return;
+      const dx = (ev.clientX - d.px) / d.ir.width;
+      const dy = (ev.clientY - d.py) / d.ir.height;
+      let { x, y, w, h } = d.rect;
+      if (d.dirs === "move") {
+        x = d.rect.x + dx; y = d.rect.y + dy;
+      } else {
+        if (d.dirs.includes("w")) { x = d.rect.x + dx; w = d.rect.w - dx; }
+        if (d.dirs.includes("e")) { w = d.rect.w + dx; }
+        if (d.dirs.includes("n")) { y = d.rect.y + dy; h = d.rect.h - dy; }
+        if (d.dirs.includes("s")) { h = d.rect.h + dy; }
+        // Keep a dragged-past-itself edge from inverting the box.
+        if (w < 0.02) { if (d.dirs.includes("w")) x = d.rect.x + d.rect.w - 0.02; w = 0.02; }
+        if (h < 0.02) { if (d.dirs.includes("n")) y = d.rect.y + d.rect.h - 0.02; h = 0.02; }
+      }
+      setRect(clampRect({ x, y, w, h }));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const outW = natural && natural.w ? Math.max(1, Math.round(rect.w * natural.w)) : 0;
+  const outH = natural && natural.h ? Math.max(1, Math.round(rect.h * natural.h)) : 0;
+  const isFull = rect.x <= 0.001 && rect.y <= 0.001 && rect.w >= 0.999 && rect.h >= 0.999;
+
+  const applyCrop = async () => {
+    if (!natural || !natural.w) { onClose(); return; }
+    setBusy(true);
+    try {
+      const sx = Math.round(rect.x * natural.w);
+      const sy = Math.round(rect.y * natural.h);
+      const sw = Math.max(1, Math.round(rect.w * natural.w));
+      const sh = Math.max(1, Math.round(rect.h * natural.h));
+      const full = await loadImage(src); // decode at natural res, not the scaled preview
+      const canvas = document.createElement("canvas");
+      canvas.width = sw; canvas.height = sh;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+      const ext = (path.split(".").pop() || "").toLowerCase();
+      const mime = (ext === "jpg" || ext === "jpeg") ? "image/jpeg"
+        : ext === "webp" ? "image/webp" : "image/png";
+      const dataUrl = canvas.toDataURL(mime, 0.92); // throws on a tainted canvas
+      const res = await fetch(apiUrl("/__write_binary"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, dataUrl }),
+      });
+      if (!res.ok) throw new Error("write failed (HTTP " + res.status + ")");
+      // Bump every node + iframe pointing at this path to the cropped bytes.
+      window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
+      onClose();
+    } catch (err) {
+      setBusy(false);
+      uiAlert("Crop failed: " + (err && err.message ? err.message : String(err)), { title: "Crop" });
+    }
+  };
+
+  const HANDLES = [
+    ["nw", 0, 0, "nwse-resize"], ["n", 50, 0, "ns-resize"], ["ne", 100, 0, "nesw-resize"],
+    ["e", 100, 50, "ew-resize"], ["se", 100, 100, "nwse-resize"], ["s", 50, 100, "ns-resize"],
+    ["sw", 0, 100, "nesw-resize"], ["w", 0, 50, "ew-resize"],
+  ];
+
+  return createPortal(html`
+    <div className="asset-crop-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div className="asset-crop-modal" onMouseDown=${(e) => e.stopPropagation()}>
+        <header className="asset-crop-head">
+          <span className="asset-crop-title">Crop</span>
+          <span className="asset-crop-label" title=${path}>${label}</span>
+          <span className="asset-crop-dims">${outW && outH ? outW + " × " + outH + " px" : "…"}</span>
+          <button className="asset-crop-x" onClick=${() => { if (!busy) onClose(); }} title="Close (Esc)" aria-label="Close">×</button>
+        </header>
+        <div className="asset-crop-stage">
+          <figure className="asset-crop-figure">
+            <img ref=${imgRef} className="asset-crop-img" src=${src} alt=${label} draggable=${false}/>
+            <div className="asset-crop-overlay">
+              <div
+                className="asset-crop-box"
+                style=${{ left: rect.x * 100 + "%", top: rect.y * 100 + "%", width: rect.w * 100 + "%", height: rect.h * 100 + "%" }}
+                onPointerDown=${onHandleDown("move")}
+              >
+                ${HANDLES.map(([dir, lx, ly, cur]) => html`
+                  <span
+                    key=${dir}
+                    className="asset-crop-handle"
+                    style=${{ left: lx + "%", top: ly + "%", cursor: cur }}
+                    onPointerDown=${onHandleDown(dir)}
+                  />
+                `)}
+              </div>
+            </div>
+          </figure>
+        </div>
+        <footer className="asset-crop-foot">
+          <span className="asset-crop-hint">Drag the box or its handles. Apply overwrites this file in place; downstream uses update automatically.</span>
+          <span className="asset-crop-foot-spacer"/>
+          <button className="asset-crop-reset" disabled=${busy} onClick=${() => setRect({ x: 0, y: 0, w: 1, h: 1 })}>Reset</button>
+          <button className="asset-crop-cancel" disabled=${busy} onClick=${onClose}>Cancel</button>
+          <button className="asset-crop-apply" disabled=${busy || isFull || !natural || !natural.w} onClick=${applyCrop}>
+            ${busy ? "Cropping…" : "Apply crop"}
+          </button>
+        </footer>
+      </div>
+    </div>
+  `, document.body);
 }
 
 function WorkflowAssetNode({ node, zoom, orphaned, selected, bulkChecked, onBulkToggle, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible }) {
@@ -52379,6 +52545,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, bulkChecked, onBulk
   // Reset on any source change so a re-Run re-detects from scratch.
   const [bgTransparent, setBgTransparent] = useState(false);
   useEffect(() => { setBgTransparent(false); }, [node.path, bust, node.src]);
+  // In-place crop overlay - opened from the asset bar's crop button (raster
+  // images only). On apply it overwrites the SAME file path, so any prototype
+  // or downstream node referencing that path picks up the cropped bytes on the
+  // th:asset-refresh bump. See WorkflowAssetCropModal.
+  const [cropOpen, setCropOpen] = useState(false);
   // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
   // overflow probe, then write the device class + natural aspect back to
   // node.size so the adaptive sizing block downstream picks the right
@@ -53351,6 +53522,15 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, bulkChecked, onBulk
             onMouseDown=${(e) => e.stopPropagation()}
           >📜<//>
         `}
+        ${kind === "image" && isFileRef && !isInlinePath && html`
+          <${HoverTip}
+            className="workflow-node-action workflow-node-action-crop"
+            tip="Crop - drag a box over the image and apply. Overwrites this file in place, so any prototype or node that uses this path picks up the cropped version (undo via history)."
+            ariaLabel="Crop image"
+            onClick=${(e) => { e.stopPropagation(); setCropOpen(true); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Crop}/><//>
+        `}
         <${HoverTip}
           className="workflow-node-action workflow-node-action-export"
           tip="Export - bundle this asset into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate."
@@ -53555,6 +53735,12 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, bulkChecked, onBulk
         onRefine=${assetDsRef ? refineDsOnAsset : null}
         refining=${refining}
         refineStage=${refineStage}
+      />`}
+      ${cropOpen && html`<${WorkflowAssetCropModal}
+        src=${fileSrc}
+        path=${path}
+        label=${basename}
+        onClose=${() => setCropOpen(false)}
       />`}
       ${pickerOpen && html`<${WorkflowVersionPicker}
         node=${node}
