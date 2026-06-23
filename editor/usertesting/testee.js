@@ -470,7 +470,11 @@
             buf.push(ev);
             if (buf.length >= RRWEB_FLUSH_EVENTS) flushRrweb();
           },
-          recordCanvas: true,
+          // recordCanvas monkeypatches canvas/WebGL APIs globally; that breaks
+          // webgazer's TF.js WebGL face tracker (estimateFaces throws once
+          // recording starts -> ZERO gaze). Gaze + DOM/cursor/audio replay
+          // matter more for UX testing than canvas pixel capture, so leave it off.
+          recordCanvas: false,
           blockClass: "ut-norecord",
           ignoreClass: "ut-norecord",
         });
@@ -498,7 +502,9 @@
           try {
             const a = arguments;
             if (typeof a[0] === "string" && a[0].indexOf("pupil features") >= 0) {
-              gd.err = String((a[1] && a[1].message) || a[1] || a[0]).slice(0, 120);
+              const e = a[1];
+              const frame = (e && e.stack ? String(e.stack).split("\n").find((l) => /\.js/.test(l)) : "") || "";
+              gd.err = (String((e && e.message) || e || a[0]) + " @ " + frame.trim()).slice(0, 180);
             }
           } catch {}
           return origLog.apply(console, arguments);
@@ -544,7 +550,10 @@
                 const faces = await model.estimateFaces({ input: v, returnTensors: false, flipHorizontal: false, predictIrises: false });
                 gd.faceMax = Math.max(gd.faceMax, (faces && faces.length) || 0);
               }
-            } catch (e) { gazeDiagRef.current.err = String((e && e.message) || e).slice(0, 120); }
+            } catch (e) {
+              const frame = (e && e.stack ? String(e.stack).split("\n").find((l) => /\.js/.test(l)) : "") || "";
+              gazeDiagRef.current.err = (String((e && e.message) || e) + " @ " + frame.trim()).slice(0, 180);
+            }
           }
           let p = null;
           try { p = await Promise.resolve(webgazer.getCurrentPrediction()); } catch {}
