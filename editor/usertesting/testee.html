@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- Woven user-testing TESTEE recorder - the page a study participant sees at
+     /t/<token>/. Served by the user-testing GATE (resolves the token via
+     editor/usertesting.py::resolve_token), never by the main daemon. Hosts the
+     prototype in a same-origin iframe and records the full session (rrweb DOM,
+     cursor, microphone audio, webgazer gaze) before uploading + finalizing.
+     Mirrors editor/share/viewer.html: React 18 + ReactDOM + htm UMD, no build
+     step, no JSX, no Babel. The recording libraries are vendored locally under
+     vendor/ - never loaded from a CDN at runtime. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <title>User testing · Woven</title>
+  <!-- Woven brand type - Space Grotesk (UI) + Space Mono (paths/code). -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="testee.css"/>
+  <!-- React stack (mirrors viewer.html). -->
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+  <!-- Vendored recording libs - exposed as window.rrweb (rrweb.record) and
+       window.webgazer. Loaded synchronously before testee.js so the runtime
+       can reference both globals at module init. -->
+  <script src="vendor/rrweb.min.js"></script>
+  <script src="vendor/webgazer.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="testee.js"></script>
+</body>
+</html>

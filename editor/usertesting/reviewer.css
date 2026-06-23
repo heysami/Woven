@@ -1,0 +1,243 @@
+/* Woven user-testing REVIEWER REPLAY - researcher-facing replay surface for
+   ONE recorded session. Served by the user-testing gate at /r/<token>/.
+
+   Design follows Woven's editor tokens (warm cream neutrals, the
+   teenage.engineering GREEN signature accent, Space Grotesk + Space Mono) so
+   the replay reads as the same product the prototype was built in. Mirrors
+   editor/share/viewer.css. The gaze heat trail uses a warm-red so it never
+   collides with the green accent of the marker chrome. */
+
+:root {
+  --rv-bg:           oklch(98.6% 0.003 70);   /* warm cream - editor --bg */
+  --rv-panel:        oklch(100% 0 0);
+  --rv-ink:          oklch(22% 0.008 60);     /* warm near-black */
+  --rv-muted:        oklch(47% 0.008 60);
+  --rv-faint:        oklch(64% 0.007 60);
+  --rv-line:         oklch(90% 0.005 70);
+  --rv-line-strong:  oklch(83% 0.006 70);
+  --rv-accent:       oklch(56% 0.14 159);     /* TE green */
+  --rv-accent-soft:  oklch(95% 0.038 162);
+  --rv-accent-text:  oklch(45% 0.125 162);
+  --rv-accent-strong:oklch(48% 0.145 160);
+  --rv-start:        oklch(63% 0.16 150);     /* task start - green */
+  --rv-end:          oklch(57% 0.20 22);      /* task end - red */
+  --rv-flow:         oklch(60% 0.13 250);     /* flow markers - blue */
+  --rv-gaze:         225, 74, 42;             /* gaze trail rgb (warm red) */
+  --rv-radius:       10px;
+  --rv-shadow:       0 10px 30px rgba(40,34,26,.14), 0 2px 8px rgba(40,34,26,.08);
+  --rv-font:         "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+  --rv-mono:         "Space Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 13px/1.45 var(--rv-font);
+  color: var(--rv-ink);
+  background: var(--rv-bg);
+  overflow: hidden;
+}
+#root { height: 100%; }
+button { font: inherit; cursor: pointer; }
+
+.rv-app { display: flex; flex-direction: column; height: 100%; }
+.rv-boot, .rv-empty { color: var(--rv-muted); text-align: center; padding: 28px 16px; }
+.rv-empty b { display: block; margin-bottom: 4px; color: var(--rv-ink); }
+
+/* ── Top bar ───────────────────────────────────────────────────────────── */
+.rv-topbar {
+  display: flex; align-items: center; gap: 10px;
+  height: 46px; padding: 0 12px;
+  background: var(--rv-panel); border-bottom: 1px solid var(--rv-line); flex: none;
+}
+.rv-brand { display: flex; align-items: center; gap: 7px; font-weight: 650; letter-spacing: .01em; }
+.rv-brand svg { display: block; }
+.rv-brand-sub { color: var(--rv-muted); font-weight: 450; }
+.rv-topbar-spacer { flex: 1; }
+.rv-participant { font-weight: 600; color: var(--rv-ink); }
+.rv-status-chip {
+  font-size: 10.5px; font-weight: 650; border-radius: 999px; padding: 2px 9px;
+  background: var(--rv-accent-soft); color: var(--rv-accent-text); text-transform: capitalize;
+}
+
+/* ── Main split ────────────────────────────────────────────────────────── */
+.rv-main { display: flex; flex: 1; min-height: 0; }
+.rv-stage-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* The replay stage - rrweb-player mounts inside; overlay canvas sits on top. */
+.rv-stage {
+  position: relative; flex: 1; min-height: 0;
+  background: oklch(95% 0.004 70); overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.rv-player-host { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+/* rrweb-player's own wrapper - let it size to the stage; we hide its built-in
+   controller (showController:false) but neutralise stray margins just in case. */
+.rv-player-host .rr-player { margin: 0; box-shadow: var(--rv-shadow); }
+.rv-player-host .rr-controller { display: none; }
+
+.rv-overlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 20;
+}
+.rv-gaze-label {
+  position: absolute; left: 10px; bottom: 10px; z-index: 21;
+  font-family: var(--rv-mono); font-size: 10px; color: var(--rv-muted);
+  background: rgba(255,255,255,.8); border: 1px solid var(--rv-line);
+  border-radius: 999px; padding: 2px 8px; pointer-events: none;
+}
+.rv-empty-stage {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 22;
+}
+
+.rv-banner {
+  background: oklch(96% 0.05 70); color: var(--rv-ink);
+  border-bottom: 1px solid var(--rv-line); padding: 6px 12px;
+  font-size: 12px; text-align: center;
+}
+
+/* ── Transport + scrubber ──────────────────────────────────────────────── */
+.rv-transport {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; background: var(--rv-panel);
+  border-top: 1px solid var(--rv-line); flex: none;
+}
+.rv-play {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--rv-accent); background: var(--rv-accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.rv-play:hover { background: var(--rv-accent-strong); border-color: var(--rv-accent-strong); }
+.rv-time {
+  font-family: var(--rv-mono); font-size: 12px; color: var(--rv-ink);
+  white-space: nowrap; min-width: 110px;
+}
+.rv-time-sep { color: var(--rv-faint); }
+
+.rv-scrub {
+  position: relative; flex: 1; height: 22px; cursor: pointer;
+  display: flex; align-items: center;
+}
+.rv-scrub-track {
+  position: absolute; left: 0; right: 0; height: 5px; border-radius: 999px;
+  background: var(--rv-line-strong);
+}
+.rv-scrub-fill {
+  position: absolute; left: 0; height: 5px; border-radius: 999px;
+  background: var(--rv-accent);
+}
+.rv-scrub-head {
+  position: absolute; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--rv-panel); border: 2px solid var(--rv-accent);
+  transform: translateX(-50%); box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+/* Marker ticks ride the rail; flagged colours match the marker tools below. */
+.rv-tick {
+  position: absolute; top: 1px; width: 2px; height: 20px;
+  transform: translateX(-1px); border-radius: 1px;
+}
+.rv-tick-start { background: var(--rv-start); }
+.rv-tick-end { background: var(--rv-end); }
+.rv-tick-flow-in, .rv-tick-flow-out { background: var(--rv-flow); height: 14px; top: 4px; opacity: .85; }
+.rv-tick-flow-out { opacity: .55; }
+
+/* ── Marker tools ──────────────────────────────────────────────────────── */
+.rv-markers {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 10px 14px 12px; background: var(--rv-panel);
+  border-top: 1px solid var(--rv-line); flex: none;
+  max-height: 38vh; overflow-y: auto;
+}
+.rv-marker-group {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+}
+.rv-marker-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-weight: 650; font-size: 12px; min-width: 64px; color: var(--rv-ink);
+}
+.rv-flow-name {
+  color: var(--rv-flow); min-width: 90px; max-width: 160px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rv-mbtn {
+  border: 1px solid var(--rv-line); background: var(--rv-panel); color: var(--rv-ink);
+  border-radius: 7px; padding: 4px 10px; font-size: 12px;
+}
+.rv-mbtn:hover { background: var(--rv-bg); border-color: var(--rv-line-strong); }
+.rv-marker-val {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--rv-mono); font-size: 11.5px; color: var(--rv-muted);
+  min-width: 58px;
+}
+.rv-clear {
+  border: none; background: none; color: var(--rv-faint);
+  font-size: 14px; line-height: 1; padding: 0 2px; cursor: pointer;
+}
+.rv-clear:hover { color: var(--rv-end); }
+.rv-duration {
+  font-family: var(--rv-mono); font-size: 11.5px; font-weight: 700;
+  color: var(--rv-accent-text); background: var(--rv-accent-soft);
+  border-radius: 999px; padding: 2px 9px;
+}
+.rv-marker-save { display: flex; align-items: center; gap: 10px; margin-top: 3px; }
+.rv-saved { color: var(--rv-accent-text); font-size: 11.5px; font-weight: 600; }
+
+.rv-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--rv-line); border-radius: 8px;
+  background: var(--rv-panel); color: var(--rv-ink); padding: 6px 12px;
+}
+.rv-btn:hover { background: var(--rv-bg); }
+.rv-btn-primary { background: var(--rv-accent); border-color: var(--rv-accent); color: #fff; }
+.rv-btn-primary:hover { background: var(--rv-accent-strong); border-color: var(--rv-accent-strong); }
+.rv-btn-primary:disabled { opacity: .5; cursor: default; }
+
+/* ── Side panel: answers + rating ──────────────────────────────────────── */
+.rv-side {
+  width: 320px; flex: none; display: flex; flex-direction: column;
+  background: var(--rv-panel); border-left: 1px solid var(--rv-line); min-height: 0;
+}
+.rv-side-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; border-bottom: 1px solid var(--rv-line); flex: none;
+}
+.rv-side-title { font-weight: 600; font-size: 13.5px; letter-spacing: -.01em; }
+.rv-proto {
+  margin-left: auto; font-family: var(--rv-mono); font-size: 10.5px;
+  color: var(--rv-muted); max-width: 150px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rv-side-body { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+
+.rv-rating {
+  border: 1px solid var(--rv-line); border-radius: var(--rv-radius);
+  padding: 12px; margin-bottom: 12px; background: var(--rv-bg);
+}
+.rv-rating-label { color: var(--rv-muted); font-size: 12px; margin-bottom: 5px; }
+.rv-rating-val { display: flex; align-items: baseline; gap: 4px; }
+.rv-rating-num { font-size: 26px; font-weight: 700; color: var(--rv-accent-text); }
+.rv-rating-scale { color: var(--rv-faint); font-size: 13px; }
+
+.rv-answer {
+  border: 1px solid var(--rv-line); border-radius: var(--rv-radius);
+  padding: 10px 11px; margin-bottom: 8px; background: var(--rv-panel);
+}
+.rv-q-prompt {
+  font-weight: 600; font-size: 12.5px; margin-bottom: 5px;
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+}
+.rv-q-at {
+  font-family: var(--rv-mono); font-size: 9.5px; font-weight: 400;
+  color: var(--rv-muted); background: var(--rv-bg);
+  border: 1px solid var(--rv-line); border-radius: 999px; padding: 1px 6px;
+}
+.rv-q-value { white-space: pre-wrap; word-break: break-word; color: var(--rv-ink); }
+.rv-no-answer { color: var(--rv-faint); font-style: italic; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.rv-toast {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  z-index: 200; background: var(--rv-ink); color: #fff;
+  border-radius: 999px; padding: 8px 16px; font-size: 12.5px;
+  box-shadow: var(--rv-shadow);
+}

@@ -1086,6 +1086,49 @@ def register_live(gate):
     global _LIVE
     _LIVE = gate
 
+# User Testing - same late-bound delegation as live (usertesting_gate.py imports
+# shares without a cycle). serve.py calls register_usertesting(GATE) at boot; the
+# gate delegates /t/<token>/* (testee recorder) and /r/<token>/* (reviewer
+# replay) to it. None -> user testing disabled (gate still serves share routes).
+_UT = None
+
+def register_usertesting(gate):
+    global _UT
+    _UT = gate
+
+
+def gate_serve_project_file(handler, project_root, prototype, sub):
+    """Serve ONE whitelisted prototype / design-system file for `sub` shaped
+    like '/p/source/<slug>/...', '/source/...', or '/design-systems/...'. Same
+    realpath-contained, extension-whitelisted logic the share viewer block uses
+    (do_GET ~/p/ branch), factored out so the user-testing gate reuses it
+    verbatim. Returns True once it has sent a response (hit or 404); False if
+    `sub` is not a project-file route at all."""
+    if not (sub.startswith("/p/") or sub.startswith("/source/") or sub.startswith("/design-systems/")):
+        return False
+    raw = sub[len("/p/"):] if sub.startswith("/p/") else sub.lstrip("/")
+    rel = urllib.parse.unquote(raw).split("?")[0].split("#")[0].strip("/")
+    if not rel or ".." in rel.split("/") or rel.startswith("."):
+        handler._send_json(404, {"error": "not found"}); return True
+    slug = prototype or ""
+    allowed_prefixes = (f"source/{slug}/", "design-systems/")
+    if not any(rel == p.rstrip("/") or rel.startswith(p) for p in allowed_prefixes):
+        handler._send_json(404, {"error": "not found"}); return True
+    abs_path = os.path.realpath(os.path.join(project_root, rel))
+    rp = os.path.realpath(project_root)
+    if not (abs_path == rp or abs_path.startswith(rp + os.sep)):
+        handler._send_json(404, {"error": "not found"}); return True
+    if os.path.isdir(abs_path):
+        abs_path = os.path.join(abs_path, "index.html")
+    base = os.path.basename(abs_path)
+    ext  = os.path.splitext(base)[1].lower()
+    if base.startswith(".") or ext not in _GATE_SERVE_EXTS:
+        handler._send_json(404, {"error": "not found"}); return True
+    if not os.path.isfile(abs_path):
+        handler._send_json(404, {"error": "not found"}); return True
+    is_media = ext not in (".html", ".htm", ".css", ".js", ".mjs", ".json")
+    handler._send_file(abs_path, cache=is_media); return True
+
 # File extensions the gate will serve out of a project. Everything a
 # build-less htm+React prototype legitimately uses; notably NO .py and no
 # dotfiles (filtered separately).
@@ -1221,6 +1264,14 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             tok = self._live_cookie()
             if tok and _LIVE.handle_rooted(self, tok, parsed.path, parsed.query):
                 return
+        # User Testing - /t/<token>/ (testee recorder) and /r/<token>/ (reviewer
+        # replay) ride the same gate/tunnel; delegated wholesale to the
+        # usertesting gate, which resolves its own token registry.
+        if _UT is not None:
+            mut = re.match(r"^/([tr])/([a-f0-9]{32})(/.*)?$", parsed.path)
+            if mut and _UT.handle_get(self, mut.group(1), mut.group(2),
+                                      mut.group(3) if mut.group(3) is not None else ""):
+                return
         rec, sub = self._route()
         if rec is None:
             return
@@ -1311,6 +1362,13 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         if _LIVE is not None and not parsed.path.startswith("/s/"):
             tok = self._live_cookie()
             if tok and _LIVE.handle_rooted_post(self, tok, parsed.path):
+                return
+        # User Testing POST - /t/<token>/api/* (recording upload) and
+        # /r/<token>/api/markers. Delegated before the /s/ route.
+        if _UT is not None:
+            mut = re.match(r"^/([tr])/([a-f0-9]{32})(/.*)?$", parsed.path)
+            if mut and _UT.handle_post(self, mut.group(1), mut.group(2),
+                                       mut.group(3) if mut.group(3) is not None else ""):
                 return
         rec, sub = self._route()
         if rec is None:

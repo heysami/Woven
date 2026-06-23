@@ -1,0 +1,217 @@
+/* Woven user-testing TESTEE recorder chrome. Self-contained: the prototype
+   renders inside the iframe with its own styles; everything here is recorder
+   chrome (consent, permissions, calibration overlay, the recording panel,
+   thank-you). Tokens mirror Woven's editor (warm cream neutrals, the
+   teenage.engineering GREEN accent, Space Grotesk + Space Mono), matching
+   editor/share/viewer.css so the testee reads the same product. */
+
+:root {
+  --ut-bg:          oklch(98.6% 0.003 70);
+  --ut-panel:       oklch(100% 0 0);
+  --ut-ink:         oklch(22% 0.008 60);
+  --ut-muted:       oklch(47% 0.008 60);
+  --ut-faint:       oklch(64% 0.007 60);
+  --ut-line:        oklch(90% 0.005 70);
+  --ut-line-strong: oklch(83% 0.006 70);
+  --ut-accent:      oklch(56% 0.14 159);
+  --ut-accent-soft: oklch(95% 0.038 162);
+  --ut-accent-text: oklch(45% 0.125 162);
+  --ut-danger:      oklch(57% 0.20 22);
+  --ut-rec:         oklch(57% 0.20 22);
+  --ut-radius:      12px;
+  --ut-shadow:      0 12px 38px rgba(40,34,26,.16), 0 2px 10px rgba(40,34,26,.08);
+  --ut-font:        "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+  --ut-mono:        "Space Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 14px/1.5 var(--ut-font);
+  color: var(--ut-ink);
+  background: var(--ut-bg);
+  overflow: hidden;
+}
+#root { height: 100%; }
+button { font: inherit; cursor: pointer; }
+h1 { font-size: 24px; font-weight: 650; margin: 0 0 10px; letter-spacing: .005em; }
+h2 { font-size: 19px; font-weight: 650; margin: 0 0 8px; }
+p { margin: 0 0 12px; }
+
+/* ── Centered card shell (consent / permissions / done / errors) ──────────── */
+.ut-shell {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; padding: 24px;
+}
+.ut-card {
+  background: var(--ut-panel);
+  border: 1px solid var(--ut-line);
+  border-radius: var(--ut-radius);
+  box-shadow: var(--ut-shadow);
+  width: 100%; max-width: 520px;
+  padding: 28px 30px;
+}
+.ut-card.ut-center { text-align: center; }
+.ut-muted { color: var(--ut-muted); }
+.ut-eyebrow {
+  font-family: var(--ut-mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ut-accent-text); margin-bottom: 8px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────*/
+.ut-actions { display: flex; gap: 10px; margin-top: 18px; }
+.ut-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid var(--ut-line-strong); border-radius: 9px;
+  background: var(--ut-panel); color: var(--ut-ink);
+  padding: 9px 16px; font-weight: 550;
+}
+.ut-btn:hover { background: var(--ut-bg); }
+.ut-btn-primary {
+  background: var(--ut-accent); border-color: var(--ut-accent); color: #fff;
+}
+.ut-btn-primary:hover { filter: brightness(1.05); background: var(--ut-accent); }
+.ut-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── Consent list ──────────────────────────────────────────────────────────*/
+.ut-consent-list { list-style: none; margin: 16px 0; padding: 0; display: grid; gap: 12px; }
+.ut-consent-list li { display: flex; gap: 12px; align-items: flex-start; }
+.ut-ci {
+  flex: none; width: 32px; height: 32px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--ut-accent-soft); color: var(--ut-accent-text);
+}
+.ut-consent-list b { display: block; font-weight: 600; }
+.ut-consent-list span { color: var(--ut-muted); font-size: 13px; }
+
+/* ── Permission rows ───────────────────────────────────────────────────────*/
+.ut-perm-list { display: grid; gap: 10px; margin: 16px 0; }
+.ut-perm-row {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--ut-line); border-radius: 10px; padding: 12px 14px;
+}
+.ut-perm-label { flex: 1; font-weight: 550; }
+.ut-perm-state { font-size: 12px; color: var(--ut-muted); display: inline-flex; align-items: center; gap: 5px; }
+.ut-perm-row.is-granted { border-color: var(--ut-accent); background: var(--ut-accent-soft); }
+.ut-perm-row.is-granted .ut-perm-state { color: var(--ut-accent-text); }
+.ut-perm-row.is-denied { border-color: var(--ut-danger); }
+.ut-perm-row.is-denied .ut-perm-state { color: var(--ut-danger); }
+
+.ut-error {
+  margin-top: 12px; padding: 10px 12px; border-radius: 9px;
+  background: color-mix(in oklch, var(--ut-danger) 12%, white);
+  border: 1px solid color-mix(in oklch, var(--ut-danger) 35%, white);
+  color: var(--ut-danger); font-size: 13px;
+}
+
+/* ── Calibration overlay ───────────────────────────────────────────────────*/
+.ut-calib-overlay {
+  position: fixed; inset: 0;
+  background: var(--ut-bg);
+}
+.ut-calib-head {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  max-width: 420px; text-align: center; z-index: 2;
+  background: var(--ut-panel); border: 1px solid var(--ut-line);
+  border-radius: var(--ut-radius); box-shadow: var(--ut-shadow); padding: 22px 26px;
+}
+.ut-calib-dot {
+  position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+  border-radius: 50%; border: 2px solid #fff;
+  background: var(--ut-accent); box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  padding: 0; z-index: 3;
+}
+.ut-calib-dot.is-done { background: var(--ut-ink); }
+.ut-calib-foot {
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 3;
+}
+
+/* ── Done mark ─────────────────────────────────────────────────────────────*/
+.ut-done-mark {
+  width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ut-accent-soft); color: var(--ut-accent-text);
+}
+
+/* ── Recording stage (tasks phase) ─────────────────────────────────────────*/
+.ut-stage { position: relative; height: 100%; }
+.ut-frame {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  border: 0; background: #fff;
+}
+
+/* The recorder panel floats over the prototype, bottom-right, and is excluded
+   from the rrweb capture (ut-norecord) so the replay shows only the prototype.*/
+.ut-panel {
+  position: fixed; right: 18px; bottom: 18px; z-index: 10;
+  width: 340px; max-height: calc(100% - 36px); display: flex; flex-direction: column;
+  background: var(--ut-panel); border: 1px solid var(--ut-line-strong);
+  border-radius: var(--ut-radius); box-shadow: var(--ut-shadow); overflow: hidden;
+}
+.ut-panel-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; border-bottom: 1px solid var(--ut-line);
+}
+.ut-rec-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--ut-rec);
+  box-shadow: 0 0 0 0 color-mix(in oklch, var(--ut-rec) 60%, transparent);
+  animation: ut-pulse 1.6s infinite;
+}
+@keyframes ut-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ut-rec) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px color-mix(in oklch, var(--ut-rec) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ut-rec) 0%, transparent); }
+}
+.ut-rec-label { font-weight: 600; font-size: 13px; }
+.ut-step-count { margin-left: auto; font-family: var(--ut-mono); font-size: 11px; color: var(--ut-muted); }
+
+.ut-panel-body { padding: 14px; overflow-y: auto; }
+.ut-panel-foot { padding: 12px 14px; border-top: 1px solid var(--ut-line); }
+.ut-panel-foot .ut-btn { width: 100%; justify-content: center; }
+
+.ut-task-name { font-weight: 650; font-size: 15px; margin-bottom: 8px; }
+.ut-task-list { margin: 0 0 10px; padding-left: 18px; display: grid; gap: 6px; }
+.ut-task-list li { line-height: 1.45; }
+
+/* ── Questions ─────────────────────────────────────────────────────────────*/
+.ut-q-prompt { font-weight: 600; margin-bottom: 10px; }
+.ut-input {
+  width: 100%; border: 1px solid var(--ut-line-strong); border-radius: 9px;
+  padding: 9px 11px; font: inherit; color: var(--ut-ink); background: var(--ut-panel);
+}
+.ut-input:focus { outline: 2px solid var(--ut-accent-soft); border-color: var(--ut-accent); }
+.ut-textarea { min-height: 90px; resize: vertical; }
+
+.ut-choice-row { display: flex; gap: 8px; }
+.ut-choice-col { display: grid; gap: 8px; }
+.ut-choice {
+  border: 1px solid var(--ut-line-strong); border-radius: 9px;
+  background: var(--ut-panel); color: var(--ut-ink); padding: 9px 14px;
+  text-align: left; flex: 1; font-weight: 500;
+}
+.ut-choice:hover { background: var(--ut-bg); }
+.ut-choice.is-active { background: var(--ut-accent); border-color: var(--ut-accent); color: #fff; }
+
+.ut-scale { display: flex; gap: 6px; flex-wrap: wrap; }
+.ut-scale-btn {
+  min-width: 40px; height: 40px; border-radius: 9px;
+  border: 1px solid var(--ut-line-strong); background: var(--ut-panel);
+  color: var(--ut-ink); font-weight: 600;
+}
+.ut-scale-btn:hover { background: var(--ut-bg); }
+.ut-scale-btn.is-active { background: var(--ut-accent); border-color: var(--ut-accent); color: #fff; }
+
+/* ── Banner (transient errors during recording) ────────────────────────────*/
+.ut-banner {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20;
+  background: var(--ut-ink); color: #fff; border-radius: 9px;
+  padding: 9px 16px; font-size: 13px; box-shadow: var(--ut-shadow);
+}
+
+/* webgazer injects a fixed video container - keep it hidden as a safety net
+   even if the JS toggles fail (gaze video must never show during the test). */
+#webgazerVideoContainer, #webgazerVideoFeed, #webgazerFaceOverlay,
+#webgazerFaceFeedbackBox, #webgazerGazeDot {
+  display: none !important; visibility: hidden !important;
+  opacity: 0 !important; pointer-events: none !important;
+}

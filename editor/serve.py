@@ -53,6 +53,8 @@ from prompts import node_agent_preambles as _node_preambles  # v2.1 - per-node a
 import exports as _exports  # per-asset export bundles (README + serve.* + files)
 import shares as _shares    # share mode - cloudflare quick tunnels + review comments
 import live as _live        # live session - host-authoritative multiplayer over the gate
+import usertesting as _ut          # user testing mode - session recording registry + artifacts
+import usertesting_gate as _ut_gate  # user testing gate delegate (/t/ testee, /r/ reviewer)
 import git_ops as _gitops    # git/GitHub backbone - deliberate commit/publish + fork/PR
 
 
@@ -236,6 +238,71 @@ def _media_config_save(cfg):
     with open(MEDIA_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     try: os.chmod(MEDIA_CONFIG_PATH, 0o600)
+    except Exception: pass
+
+
+# ── User Testing capability flag + local whisper.cpp provisioning ────────────
+# User Testing is an OPT-IN capability (off by default). Enabling it provisions
+# a local whisper.cpp binary (brew) + a small GGML model, so a testee's voice
+# can be transcribed for free, offline. The flag persists next to media-config.
+USER_TESTING_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "user-testing.json")
+WHISPER_DIR        = os.environ.get("WOVEN_WHISPER_DIR") or os.path.join(MEDIA_CONFIG_DIR, "whisper")
+WHISPER_MODEL_PATH = os.environ.get("WOVEN_WHISPER_MODEL") or os.path.join(WHISPER_DIR, "ggml-small.bin")
+# Official whisper.cpp model mirror (HuggingFace, served over TLS). We trust the
+# host + a magic/size sanity check on first download, then PIN the computed
+# sha256 in user-testing.json so later loads verify against it (known-URL +
+# checksum posture; we never fetch an arbitrary executable - the binary comes
+# from Homebrew).
+WHISPER_MODEL_URL  = ("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+                      "ggml-small.bin")
+
+
+def _whisper_find_bin():
+    for name in ("whisper-cli", "whisper-cpp", "main"):
+        p = shutil.which(name)
+        if p:
+            return p
+        for cand in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}", f"/usr/bin/{name}"):
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return cand
+    return None
+
+
+def _whisper_status():
+    """{binary, model, ready} - is local transcription provisioned?"""
+    has_bin = bool(_whisper_find_bin())
+    has_model = os.path.isfile(WHISPER_MODEL_PATH) and os.path.getsize(WHISPER_MODEL_PATH) > 100 * 1024 * 1024
+    return {"binary": has_bin, "model": bool(has_model), "ready": bool(has_bin and has_model)}
+
+
+def _user_testing_config_load():
+    if not os.path.isfile(USER_TESTING_CONFIG_PATH):
+        return {"enabled": False, "enabledAt": "", "modelSha256": ""}
+    try:
+        with open(USER_TESTING_CONFIG_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f) or {}
+    except Exception:
+        return {"enabled": False, "enabledAt": "", "modelSha256": ""}
+    if not isinstance(d, dict):
+        return {"enabled": False, "enabledAt": "", "modelSha256": ""}
+    d.setdefault("enabled", False)
+    d.setdefault("enabledAt", "")
+    d.setdefault("modelSha256", "")
+    return d
+
+
+def _user_testing_config_save(cfg):
+    try:
+        os.makedirs(MEDIA_CONFIG_DIR, exist_ok=True)
+        try: os.chmod(MEDIA_CONFIG_DIR, 0o700)
+        except Exception: pass
+    except Exception:
+        pass
+    tmp = USER_TESTING_CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, USER_TESTING_CONFIG_PATH)
+    try: os.chmod(USER_TESTING_CONFIG_PATH, 0o600)
     except Exception: pass
 
 
@@ -4091,6 +4158,387 @@ def _broadcast_share_comments_changed(project_id: str, prototype: str) -> None:
         except Exception: pass
 
 
+def _broadcast_usertesting_changed(project_id, session_id):
+    """User Testing - notify SSE subscribers that the usertesting registry or a
+    participant's status mutated (a testee finished through the gate, or the
+    editor ran a session/cohort/participant op). The User Testing panel
+    refetches on this event."""
+    if not project_id: return
+    try:
+        root = resolve_project_root({"project": project_id})
+        project_id = os.path.basename(root.rstrip("/"))
+    except Exception:
+        pass
+    with WORKFLOW_WAITERS_LOCK:
+        waiters = list(WORKFLOW_WAITERS.get(project_id) or [])
+    for w in waiters:
+        try: w.push("usertesting-changed", {"sessionId": session_id or ""})
+        except Exception: pass
+
+
+def _ut_transcribe_async(session, participant_id):
+    """Finalize hook (registered with the user-testing gate). Runs the
+    participant's audio.webm through transcription off the request thread.
+    Body is implemented by WS6 (local whisper.cpp default, cloud fallback);
+    this guarded shim keeps boot safe before that lands."""
+    try:
+        fn = globals().get("_ut_transcribe_participant")
+        if callable(fn):
+            fn(session, participant_id)
+    except Exception as e:
+        print(f"[usertesting] transcription failed for {participant_id}: {e}", flush=True)
+
+
+# ── WS6 - transcription (local whisper.cpp default, OpenAI whisper-1 fallback) ─
+
+def _ut_whisper_local(binp, ffmpeg, audio_path):
+    """Decode webm -> 16kHz mono wav (ffmpeg) -> whisper-cli -oj. Returns the
+    transcript dict, or None to let the caller fall back."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        wav = os.path.join(td, "audio.wav")
+        subprocess.run([ffmpeg, "-y", "-i", audio_path, "-ar", "16000",
+                        "-ac", "1", wav], capture_output=True, timeout=600, check=False)
+        if not os.path.isfile(wav):
+            return None
+        prefix = os.path.join(td, "out")
+        r = subprocess.run([binp, "-m", WHISPER_MODEL_PATH, "-f", wav,
+                            "-oj", "-of", prefix, "-nt"],
+                           capture_output=True, timeout=1800, check=False)
+        jp = prefix + ".json"
+        if not os.path.isfile(jp):
+            txt = (r.stdout or b"").decode("utf-8", "replace").strip()
+            return {"segments": [], "full": txt, "engine": "whisper.cpp/small"}
+        with open(jp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        segs, full = [], []
+        for s in (data.get("transcription") or []):
+            off = s.get("offsets") or {}
+            text = (s.get("text") or "").strip()
+            segs.append({"t0": off.get("from"), "t1": off.get("to"), "text": text})
+            if text:
+                full.append(text)
+        return {"segments": segs, "full": " ".join(full), "engine": "whisper.cpp/small"}
+
+
+def _ut_whisper_cloud(api_key, audio_path):
+    """OpenAI whisper-1 (verbose_json for segment times). Returns transcript
+    dict or None."""
+    boundary = "----woven" + os.urandom(8).hex()
+    with open(audio_path, "rb") as f:
+        audio_bytes = f.read()
+
+    def _field(name, value):
+        return ("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n"
+                % (boundary, name, value)).encode("utf-8")
+
+    body = _field("model", "whisper-1") + _field("response_format", "verbose_json")
+    body += ("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.webm\"\r\n"
+             "Content-Type: audio/webm\r\n\r\n" % boundary).encode("utf-8")
+    body += audio_bytes + b"\r\n" + ("--%s--\r\n" % boundary).encode("utf-8")
+    req = urllib.request.Request("https://api.openai.com/v1/audio/transcriptions",
+                                 data=body, method="POST")
+    req.add_header("Authorization", "Bearer %s" % api_key)
+    req.add_header("Content-Type", "multipart/form-data; boundary=%s" % boundary)
+    with urllib.request.urlopen(req, timeout=600) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    segs = [{"t0": int((s.get("start") or 0) * 1000),
+             "t1": int((s.get("end") or 0) * 1000),
+             "text": (s.get("text") or "").strip()} for s in (data.get("segments") or [])]
+    return {"segments": segs, "full": data.get("text") or "", "engine": "openai/whisper-1"}
+
+
+def _ut_transcribe_participant(session, participant_id):
+    """Transcribe a participant's audio.webm to transcript.json. Local
+    whisper.cpp by default (free, offline), OpenAI whisper-1 fallback. No-op if
+    there is no audio. Always writes a transcript.json (engine 'none' if no
+    engine is available) so the reviewer/insights step has a stable shape."""
+    audio = _ut.stream_path(session, participant_id, _ut.STREAM_AUDIO)
+    if not audio or not os.path.isfile(audio):
+        return
+    binp = _whisper_find_bin()
+    ffmpeg = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    have_ffmpeg = os.path.isfile(ffmpeg) or bool(shutil.which("ffmpeg"))
+    if binp and _whisper_status()["model"] and have_ffmpeg:
+        try:
+            res = _ut_whisper_local(binp, ffmpeg if os.path.isfile(ffmpeg) else "ffmpeg", audio)
+            if res is not None:
+                _ut.sidecar_write(session, participant_id, "transcript", res)
+                return
+        except Exception as e:
+            print(f"[usertesting] local whisper failed: {e}", flush=True)
+    key = _resolve_provider_key("openai")
+    if key:
+        try:
+            res = _ut_whisper_cloud(key, audio)
+            if res is not None:
+                _ut.sidecar_write(session, participant_id, "transcript", res)
+                return
+        except Exception as e:
+            print(f"[usertesting] cloud whisper failed: {e}", flush=True)
+    _ut.sidecar_write(session, participant_id, "transcript", {
+        "segments": [], "full": "", "engine": "none",
+        "note": "no transcription engine (enable user testing to provision whisper, or add an OpenAI key)",
+    })
+
+
+def _ut_transcribe_endpoint(self, qs):
+    """POST /__transcribe body {sessionId, participantId} - (re)transcribe one
+    participant off the request thread."""
+    try:
+        body = self._read_json_body(max_bytes=64 * 1024)
+    except ValueError as e:
+        return self._reply(400, {"error": str(e)})
+    sid = (body.get("sessionId") or "").strip()
+    pid = (body.get("participantId") or "").strip()
+    session = _ut.session_get(sid)
+    if session is None:
+        return self._reply(404, {"error": "unknown session"})
+    threading.Thread(target=_ut_transcribe_participant, args=(session, pid),
+                     daemon=True, name=f"ut-transcribe-{pid}").start()
+    return self._reply(200, {"ok": True, "kicked": True})
+
+
+# ── WS5 - insights: roll selected participants into a canvas sticky table ─────
+
+def _ut_llm_text(prompt, system=None, max_tokens=2000):
+    """Single-shot LLM call for the insights backend. Prefers Anthropic, falls
+    back to OpenAI, using whatever provider key is configured."""
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    key = _resolve_provider_key("anthropic")
+    if key:
+        return _anthropic_chat(key, messages, model="claude-sonnet-4-6",
+                               options={"max_tokens": max_tokens})
+    key = _resolve_provider_key("openai")
+    if key:
+        return _openai_chat(key, messages, model="gpt-4o-mini",
+                            options={"max_tokens": max_tokens})
+    raise RuntimeError("no LLM provider key configured (set one in Settings)")
+
+
+def _ut_parse_json(raw):
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        s = s.strip("`")
+        nl = s.find("\n")
+        if nl != -1 and s[:nl].strip().lower() in ("json", ""):
+            s = s[nl + 1:]
+    a, b = s.find("{"), s.rfind("}")
+    if a != -1 and b != -1 and b > a:
+        s = s[a:b + 1]
+    return json.loads(s)
+
+
+def _ut_event_summary(session, pid):
+    """Compact behavioural signal for the prompt: clicks, rage-clicks, volume."""
+    cur = _ut.read_jsonl(session, pid, _ut.STREAM_CURSOR)
+    downs = sorted(c.get("t") for c in cur
+                   if c.get("type") == "down" and isinstance(c.get("t"), (int, float)))
+    rage, i = 0, 0
+    while i < len(downs):
+        j = i
+        while j < len(downs) and downs[j] - downs[i] <= 800:
+            j += 1
+        if j - i >= 3:
+            rage += 1; i = j
+        else:
+            i += 1
+    return {"clicks": len(downs), "rageClicks": rage,
+            "rrwebEvents": len(_ut.read_jsonl(session, pid, _ut.STREAM_RRWEB)),
+            "cursorSamples": len(cur)}
+
+
+def _ut_flow_durations(session, pid):
+    """Task + per-flow durations (ms) from the reviewer's markers."""
+    m = _ut.sidecar_read(session, pid, "markers", {}) or {}
+    out = {}
+    if m.get("startAt") is not None and m.get("endAt") is not None:
+        out["task"] = m["endAt"] - m["startAt"]
+    for fl in (m.get("flows") or []):
+        if fl.get("startAt") is not None and fl.get("endAt") is not None:
+            out[fl.get("id")] = fl["endAt"] - fl["startAt"]
+    return out
+
+
+def _ut_insights_to_wb(session, columns, rows, cells):
+    """Build the wb table + one sticky per insight cell (pre-minted table id so
+    the stickies bind via cell.tableId in a single atomic add)."""
+    HEADER_H, ROW_H, COL_W, LABEL_W = 40.0, 150.0, 230.0, 170.0
+    col_widths = [LABEL_W] + [COL_W] * len(columns)
+    row_heights = [HEADER_H] + [ROW_H] * len(rows)
+    table_id = "w%x%s" % (int(time.time() * 1000), os.urandom(3).hex())
+    items = [{
+        "id": table_id, "type": "table", "x": 160.0, "y": 160.0,
+        "w": float(sum(col_widths)), "h": float(sum(row_heights)),
+        "cols": col_widths, "rows": row_heights, "merges": [],
+        "title": session.get("label") or "User testing insights",
+        "fill": "white", "lineColor": "gray",
+    }]
+
+    def _label(r, c, text, w, h):
+        return {"type": "sticky", "x": 0.0, "y": 0.0, "w": float(w), "h": float(h),
+                "text": str(text), "color": "gray", "bold": True,
+                "cell": {"tableId": table_id, "r": r, "c": c, "ox": 6, "oy": 6}}
+
+    for ci, name in enumerate(columns):
+        items.append(_label(0, ci + 1, name, COL_W - 12, HEADER_H - 8))
+    for ri, name in enumerate(rows):
+        items.append(_label(ri + 1, 0, name, LABEL_W - 12, ROW_H - 12))
+
+    colidx = {str(n): i for i, n in enumerate(columns)}
+    rowidx = {str(n): i for i, n in enumerate(rows)}
+    sent_color = {"positive": "green", "neutral": "yellow", "negative": "pink"}
+    for cell in (cells or []):
+        rn, cn = str(cell.get("row")), str(cell.get("col"))
+        if rn not in rowidx or cn not in colidx:
+            continue
+        notes = cell.get("notes") or []
+        if not notes:
+            continue
+        color = sent_color.get(str(notes[0].get("sentiment") or "neutral").lower(), "yellow")
+        text = "\n".join("- " + str(n.get("text") or "") for n in notes[:3])
+        items.append({
+            "type": "sticky", "x": 0.0, "y": 0.0,
+            "w": COL_W - 24, "h": ROW_H - 24, "text": text, "color": color,
+            "cell": {"tableId": table_id, "r": rowidx[rn] + 1,
+                     "c": colidx[cn] + 1, "ox": 10, "oy": 10},
+        })
+    return items, table_id
+
+
+def _wb_add_items(project_root, items):
+    """Programmatic wb add: assign ids/z, sanitize, append, save atomically,
+    broadcast. Mirrors _workflow_wb_op's add path under the same workflow lock."""
+    project_id = os.path.basename(project_root.rstrip("/"))
+    lk = _workflow_lock(project_id)
+    if not lk.acquire(timeout=5.0):
+        raise RuntimeError("workflow locked (another write in progress)")
+    try:
+        wf_dir = os.path.join(project_root, "workflow")
+        os.makedirs(wf_dir, exist_ok=True)
+        path = os.path.join(wf_dir, "workflow.json")
+        workflow = {}
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                workflow = json.load(f) or {}
+        if not isinstance(workflow, dict):
+            workflow = {}
+        workflow.setdefault("nodes", [])
+        workflow.setdefault("edges", [])
+        wb = workflow.get("wb")
+        if not isinstance(wb, list):
+            wb = []
+        existing = {it.get("id") for it in wb if isinstance(it, dict)}
+        max_z = 0.0
+        for it in wb:
+            if isinstance(it, dict) and isinstance(it.get("z"), (int, float)) and it["z"] > max_z:
+                max_z = it["z"]
+        added = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            if not it.get("id"):
+                it = dict(it)
+                it["id"] = "w%x%s" % (int(time.time() * 1000), os.urandom(3).hex())
+            cleaned = _sanitize_wb_items([it])
+            if not cleaned:
+                continue
+            entry = cleaned[0]
+            if entry["id"] in existing:
+                continue
+            if "z" not in entry:
+                max_z += 1
+                entry["z"] = float(max_z)
+            wb.append(entry)
+            existing.add(entry["id"])
+            added.append(entry["id"])
+        workflow["wb"] = wb
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(workflow, f, indent=2)
+        os.replace(tmp, path)
+    finally:
+        lk.release()
+    _broadcast_workflow_change(project_id)
+    return added
+
+
+def _ut_build_insights(session, bundle, project_root):
+    flows = (session.get("config") or {}).get("flows") or []
+    flow_names = [f.get("name") or f.get("id") for f in flows] or ["Overall"]
+    system = ("You are a UX research analyst. Extract concise, specific, "
+              "actionable insights from user testing sessions. Respond with "
+              "STRICT JSON only - no prose, no code fences.")
+    prompt = (
+        "Study: " + (session.get("label") or "") + "\n"
+        "Columns (use these flow names): " + json.dumps(flow_names) + "\n"
+        "Participants (rows):\n" + json.dumps(bundle, ensure_ascii=False)[:24000] + "\n\n"
+        "Return JSON of shape:\n"
+        '{ "columns": ["<flow>", ...], "rows": ["<participant>", ...], '
+        '"cells": [ { "row": "<participant>", "col": "<flow>", "notes": '
+        '[ { "text": "<insight <=140 chars>", "sentiment": "positive|neutral|negative" } ] } ] }\n'
+        "Columns must be the given flow names; rows must be the participant names. "
+        "1-3 notes per cell, grounded in the transcript/answers/behaviour."
+    )
+    raw = _ut_llm_text(prompt, system=system, max_tokens=3000)
+    data = _ut_parse_json(raw)
+    columns = [str(c) for c in (data.get("columns") or flow_names)]
+    rows = [str(r) for r in (data.get("rows") or [b["participant"] for b in bundle])]
+    items, table_id = _ut_insights_to_wb(session, columns, rows, data.get("cells") or [])
+    added = _wb_add_items(project_root, items)
+    return {"tableId": table_id, "added": len(added), "columns": columns, "rows": rows}
+
+
+def _ut_process_participants(self, qs):
+    """POST /__usertesting/process body {sessionId, participantIds} - gather the
+    selected participants' transcript/answers/markers/behaviour, ask the LLM for
+    insights, and drop a sticky-note table onto the canvas."""
+    try:
+        project_root = resolve_project_root(qs)
+    except ValueError as e:
+        return self._reply(400, {"error": str(e)})
+    try:
+        body = self._read_json_body(max_bytes=256 * 1024)
+    except ValueError as e:
+        return self._reply(400, {"error": str(e)})
+    sid = (body.get("sessionId") or "").strip()
+    pids = body.get("participantIds") or []
+    session = _ut.session_get(sid)
+    if session is None:
+        return self._reply(404, {"error": "unknown session"})
+    qmap = {q.get("id"): q for q in ((session.get("config") or {}).get("questions") or [])}
+    bundle = []
+    for pid in pids:
+        _s, _coh, p = _ut.participant_find(sid, pid)
+        if p is None:
+            continue
+        transcript = _ut.sidecar_read(session, pid, "transcript", {}) or {}
+        answers = _ut.sidecar_read(session, pid, "answers", {}) or {}
+        bundle.append({
+            "participant": p.get("name") or pid,
+            "status":      p.get("status"),
+            "transcript":  (transcript.get("full") or "")[:8000],
+            "answers":     [{"q": (qmap.get(a.get("questionId")) or {}).get("prompt")
+                             or a.get("questionId"), "a": a.get("value")}
+                            for a in (answers.get("answers") or [])],
+            "rating":      answers.get("rating"),
+            "behaviour":   _ut_event_summary(session, pid),
+            "durationsMs": _ut_flow_durations(session, pid),
+        })
+    if not bundle:
+        return self._reply(400, {"error": "no participants with data"})
+    try:
+        result = _ut_build_insights(session, bundle, project_root)
+    except Exception as e:
+        return self._reply(500, {"error": f"insights failed: {e}"})
+    for pid in pids:
+        _ut.participant_update(sid, pid, {"status": "processed"})
+    return self._reply(200, {"ok": True, **result})
+
+
 # ── Live session callbacks (see editor/live.py) ──────────────────────────────
 # live.py never touches workflow.json directly; it calls these so every guest
 # write goes through the SAME per-project lock + broadcast path the editor uses.
@@ -7193,6 +7641,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._attachment_upload(qs)
             if parsed.path == "/__workflow/wb":
                 return self._workflow_wb_op(qs)
+            if parsed.path == "/__usertesting":
+                return self._usertesting_op(qs)
+            if parsed.path == "/__usertesting/process":
+                return self._usertesting_process(qs)
+            if parsed.path == "/__transcribe":
+                return self._transcribe_op(qs)
+            if parsed.path == "/__user_testing_config":
+                return self._user_testing_config_post()
             if parsed.path == "/__tasks/archive":
                 return self._tasks_archive(qs)
             if parsed.path == "/__write_text":
@@ -7536,6 +7992,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._export_check_name(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__shares":
             return self._shares_list()
+        if url_path == "/__usertesting":
+            return self._usertesting_list(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__user_testing_config":
+            return self._user_testing_config_get()
         if url_path == "/__git/status":
             return self._git_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/log":
@@ -13273,6 +13733,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         "glslang":     {"kind": "binary", "bin": "glslangValidator", "brew": "glslang"},
         "shader-verify": {"kind": "npm", "npm": ["playwright", "pngjs"], "browser": "chromium",
                           "probe": "playwright"},
+        # User Testing transcription. Binary via Homebrew (whisper-cli), then a
+        # small GGML model downloaded from the official mirror. Custom branch in
+        # _local_install handles the model step (whisper.cpp ships no model).
+        "whisper-cpp": {"kind": "whisper", "bin": "whisper-cli", "brew": "whisper-cpp"},
     }
 
     # Class-level memo of POSITIVE probe results, keyed by package id. Probing
@@ -13674,6 +14138,227 @@ class H(http.server.SimpleHTTPRequestHandler):
             # Stable-URL (woven) mode is offered when a broker URL is baked in.
             "woven":       {"available": bool(_shares.WOVEN_BROKER_URL),
                             "baseUrl":   _shares.woven_base_url()},
+        })
+
+    # ════════════════════════════════════════════════════════════════════
+    # User Testing mode - session recording + review + insights.
+    # Registry/artifacts live in editor/usertesting.py; the visitor-facing
+    # surface is the gate (editor/usertesting_gate.py) over the same tunnels.
+    # These handlers are the EDITOR-facing CRUD on the main daemon port.
+    # ════════════════════════════════════════════════════════════════════
+
+    # GET /__usertesting?project=<id> - all study sessions for the project,
+    # with publish (cloudflared / woven) status so the panel can build links.
+    def _usertesting_list(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        project_id = os.path.basename(project_root.rstrip("/"))
+        sessions = [_ut.session_summary(s) for s in _ut.sessions_list(project_id)]
+        cf = _shares.find_cloudflared()
+        # Public base for building /t/ and /r/ links. Stable (woven) base is
+        # install-wide and survives restarts - the recommended default for
+        # testing. Otherwise fall back to a running quick tunnel for the same
+        # prototype (its URL rotates on restart). publishBase is the simple
+        # case; tunnelsByPrototype covers quick mode per prototype.
+        publish_base = (_shares.woven_base_url() or "").rstrip("/")
+        tunnels_by_proto = {}
+        try:
+            for s in _shares.shares_summary_all():
+                if s.get("project") != project_id:
+                    continue
+                su = s.get("shareUrl") or ""
+                if su and "/s/" in su:
+                    tunnels_by_proto[s.get("prototype")] = su.split("/s/")[0]
+        except Exception:
+            pass
+        if not publish_base and len(set(tunnels_by_proto.values())) == 1:
+            publish_base = next(iter(tunnels_by_proto.values()))
+        return self._reply(200, {
+            "sessions":    sessions,
+            "cloudflared": {"found": bool(cf), "path": cf or ""},
+            "woven":       {"available": bool(_shares.WOVEN_BROKER_URL),
+                            "baseUrl":   _shares.woven_base_url()},
+            "gatePort":    _shares.GATE_PORT,
+            "publishBase": publish_base,
+            "tunnelsByPrototype": tunnels_by_proto,
+        })
+
+    # POST /__usertesting  body {op, ...} - one op-dispatched mutation endpoint
+    # for sessions / cohorts / participants (mirrors the wb op endpoint shape).
+    def _usertesting_op(self, qs):
+        try:
+            body = self._read_json_body(max_bytes=512 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        op  = (body.get("op") or "").strip()
+        sid = (body.get("sessionId") or "").strip()
+        if op == "create":
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+            project_id = os.path.basename(project_root.rstrip("/"))
+            proto = (body.get("prototype") or "").strip()
+            if not proto:
+                return self._reply(400, {"error": "prototype required"})
+            rec = _ut.session_create(project_id, proto, body.get("label"), body.get("config"))
+            return self._reply(200, {"ok": True, "session": _ut.session_summary(rec)})
+        if not _ut.SESSION_ID_OK.match(sid):
+            return self._reply(400, {"error": "valid sessionId required"})
+        result = None
+        if op == "session-update":
+            patch = {k: body[k] for k in ("label", "config", "prototype") if k in body}
+            result = _ut.session_update(sid, patch)
+        elif op == "session-delete":
+            result = _ut.session_delete(sid)
+        elif op == "cohort-add":
+            result = _ut.cohort_add(sid, body.get("name"))
+        elif op == "cohort-update":
+            result = _ut.cohort_update(sid, body.get("cohortId"), {"name": body.get("name")})
+        elif op == "cohort-delete":
+            result = _ut.cohort_delete(sid, body.get("cohortId"))
+        elif op == "participant-add":
+            result = _ut.participant_add(sid, body.get("cohortId"),
+                                         body.get("name"), body.get("email"))
+        elif op == "participant-update":
+            result = _ut.participant_update(sid, body.get("participantId"),
+                                            body.get("patch") or {})
+        elif op == "participant-delete":
+            result = _ut.participant_delete(sid, body.get("participantId"))
+        else:
+            return self._reply(400, {"error": f"unknown op: {op}"})
+        if result is None or result is False:
+            return self._reply(404, {"error": "not found or no-op"})
+        fresh = _ut.session_get(sid)
+        return self._reply(200, {"ok": True,
+                                 "session": _ut.session_summary(fresh) if fresh else None})
+
+    # POST /__usertesting/process - roll selected participants into a canvas
+    # insights table (WS5 fills the body in).
+    def _usertesting_process(self, qs):
+        fn = globals().get("_ut_process_participants")
+        if not callable(fn):
+            return self._reply(501, {"error": "insights processing not yet wired (WS5)"})
+        return fn(self, qs)
+
+    # POST /__transcribe - (re)transcribe a participant's audio (WS6 fills in).
+    def _transcribe_op(self, qs):
+        fn = globals().get("_ut_transcribe_endpoint")
+        if not callable(fn):
+            return self._reply(501, {"error": "transcription endpoint not yet wired (WS6)"})
+        return fn(self, qs)
+
+    # GET /__user_testing_config - capability flag + whisper provisioning state.
+    def _user_testing_config_get(self):
+        cfg = _user_testing_config_load()
+        return self._reply(200, {
+            "enabled":   bool(cfg.get("enabled")),
+            "enabledAt": cfg.get("enabledAt") or "",
+            "whisper":   _whisper_status(),
+        })
+
+    # POST /__user_testing_config  body {enabled} - flip the opt-in flag.
+    def _user_testing_config_post(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > 64 * 1024:
+            return self._reply(400, {"error": "empty or oversized body"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        cfg = _user_testing_config_load()
+        if "enabled" in body:
+            en = bool(body.get("enabled"))
+            cfg["enabled"] = en
+            if en and not cfg.get("enabledAt"):
+                cfg["enabledAt"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+        _user_testing_config_save(cfg)
+        return self._reply(200, {"ok": True, "config": {
+            "enabled":   bool(cfg.get("enabled")),
+            "enabledAt": cfg.get("enabledAt") or "",
+            "whisper":   _whisper_status(),
+        }})
+
+    def _install_whisper(self, spec):
+        """Provision local whisper.cpp on demand: brew install the binary, then
+        download the small GGML model (whisper.cpp ships none) with a size
+        sanity check and pin its sha256 in user-testing.json. Synchronous like
+        the other local installers; the UI shows a spinner. Triggered ONLY when
+        the user opts into User Testing - never at boot."""
+        import hashlib
+        out_lines = []
+        binp = _whisper_find_bin()
+        if not binp:
+            brew = self._find_local_binary("brew")
+            if not brew:
+                return self._reply(502, {"ok": False, "package": "whisper-cpp",
+                    "error": ("Homebrew not found - install whisper-cpp manually "
+                              "(brew install whisper-cpp) or install Homebrew "
+                              "(https://brew.sh), then retry.")})
+            try:
+                r = subprocess.run([brew, "install", spec["brew"]],
+                                   capture_output=True, timeout=900, check=False)
+                out_lines.append((r.stdout or b"").decode("utf-8", "replace")[-2000:])
+                out_lines.append((r.stderr or b"").decode("utf-8", "replace")[-2000:])
+            except subprocess.TimeoutExpired:
+                return self._reply(504, {"ok": False, "package": "whisper-cpp",
+                                         "error": "brew install timed out after 15 minutes"})
+            except Exception as e:
+                return self._reply(500, {"ok": False, "package": "whisper-cpp",
+                                         "error": f"brew spawn failed: {e}"})
+            binp = _whisper_find_bin()
+        if not binp:
+            return self._reply(502, {"ok": False, "package": "whisper-cpp",
+                "error": "whisper-cli not found after brew install",
+                "stdout": "\n".join(out_lines)[-3000:]})
+        if not _whisper_status()["model"]:
+            try:
+                os.makedirs(WHISPER_DIR, exist_ok=True)
+                tmp = WHISPER_MODEL_PATH + ".part"
+                req = urllib.request.Request(WHISPER_MODEL_URL,
+                                             headers={"User-Agent": "Woven/usertesting"})
+                total = 0
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    with open(tmp, "wb") as f:
+                        while True:
+                            chunk = resp.read(256 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk); total += len(chunk)
+                if total < 100 * 1024 * 1024:
+                    try: os.remove(tmp)
+                    except OSError: pass
+                    return self._reply(502, {"ok": False, "package": "whisper-cpp",
+                        "error": f"model download too small ({total} bytes) - aborted"})
+                os.replace(tmp, WHISPER_MODEL_PATH)
+            except Exception as e:
+                return self._reply(502, {"ok": False, "package": "whisper-cpp",
+                                         "error": f"model download failed: {e}"})
+        sha = ""
+        try:
+            h = hashlib.sha256()
+            with open(WHISPER_MODEL_PATH, "rb") as f:
+                for blk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(blk)
+            sha = h.hexdigest()
+            cfg = _user_testing_config_load(); cfg["modelSha256"] = sha
+            _user_testing_config_save(cfg)
+        except Exception:
+            pass
+        type(self)._LOCAL_STATUS_CACHE["whisper-cpp"] = {"package": "whisper-cpp", "installed": True}
+        final = _whisper_status()
+        return self._reply(200 if final["ready"] else 502, {
+            "ok":         final["ready"],
+            "package":    "whisper-cpp",
+            "path":       binp,
+            "modelPath":  WHISPER_MODEL_PATH,
+            "modelSha256": sha,
+            "whisper":    final,
+            "stdout":     "\n".join(out_lines)[-3000:],
         })
 
     # POST /__live/<id>/(start|stop|kick|role)
@@ -16394,6 +17079,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         if pkg not in self._LOCAL_PACKAGES:
             return self._reply(400, {"error": f"unknown local package: {pkg}", "known": list(self._LOCAL_PACKAGES.keys())})
         spec = self._LOCAL_PACKAGES[pkg]
+        # User Testing whisper.cpp: brew binary + a model file download.
+        if spec.get("kind") == "whisper":
+            return self._install_whisper(spec)
         # Binary packages install via Homebrew (`brew install <formula>`).
         # No Homebrew → clean error with the manual path; we never sudo or
         # download arbitrary binaries ourselves.
@@ -21092,6 +21780,14 @@ if __name__ == "__main__":
             daemon_port=PORT,
         )
         _shares.register_live(_live.GATE)
+        # User Testing - same gate, delegated /t/<token>/* + /r/<token>/* routes.
+        _ut.init(
+            WORKSPACE_DIR, INSTALL_ROOT,
+            lambda pid: resolve_project_root({"project": pid}),
+            on_changed=_broadcast_usertesting_changed,
+        )
+        _ut_gate.register_on_finalize(_ut_transcribe_async)
+        _shares.register_usertesting(_ut_gate.GATE)
         threading.Thread(target=_shares.restore_active_tunnels, daemon=True,
                          name="share-tunnel-restore").start()
         # Backfill preview thumbnails for any existing shares that lack one
