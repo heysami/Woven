@@ -37716,6 +37716,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               }
             }
           }
+          // Whiteboard text items (sticky notes / textboxes / text labels) live
+          // in data.wb, not in nodes - walk them with the same center-in-rect
+          // containment so their text flows out of the section too.
+          const sx0 = up.x, sy0 = up.y, sx1 = up.x + (up.w || 880), sy1 = up.y + (up.h || 560);
+          for (const it of (data.wb || [])) {
+            if (!it || (it.type !== "sticky" && it.type !== "textbox" && it.type !== "text")) continue;
+            const icx = (it.x || 0) + (it.w || 0) / 2, icy = (it.y || 0) + (it.h || 0) / 2;
+            if (!(icx >= sx0 && icx <= sx1 && icy >= sy0 && icy <= sy1)) continue;
+            if ((it.text || "").trim()) parts.push(it.text.trim());
+          }
           if (parts.length) {
             promptTexts.push("Section '" + (up.title || "Section") + "' contents:\n" + parts.join("\n\n"));
           }

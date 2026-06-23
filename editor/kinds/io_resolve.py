@@ -226,6 +226,21 @@ def _r_section(up, prov, ctx):
         line = _section_line(cn, ctx)
         if line:
             parts.append(line)
+    # Whiteboard text items (sticky notes / textboxes / text labels) live in a
+    # separate top-level `wb: []` array, not in `nodes`. Walk them with the same
+    # center-in-rect containment so their text flows out of the section too.
+    for it in (wf.get("wb") or []):
+        if not it or it.get("type") not in ("sticky", "textbox", "text"):
+            continue
+        cx = float(it.get("x") or 0) + float(it.get("w") or 0) / 2
+        cy = float(it.get("y") or 0) + float(it.get("h") or 0) / 2
+        if not (sx0 <= cx <= sx1 and sy0 <= cy <= sy1):
+            continue
+        itxt = it.get("text")
+        itxt = itxt.strip() if isinstance(itxt, str) else ""
+        if itxt:
+            label = {"sticky": "sticky note", "textbox": "text box"}.get(it.get("type"), "text")
+            parts.append(f"- {label}:\n{itxt}")
     if not parts:
         return None
     return (f"### {_label(up)} (section - combined contents of every node inside)\n"
