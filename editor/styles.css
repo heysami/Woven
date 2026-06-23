@@ -14369,6 +14369,33 @@ a.ds-badge:hover, button.ds-badge:hover {
 
 /* Phase 4a - Settings dialog body (uses the existing .workflow-modal shell). */
 .workflow-settings-modal { width: min(640px, 92vw); }
+/* Settings tab bar - sits between the modal head and body. Active tab merges
+   into the body by matching the modal background (var(--surface)). */
+.workflow-settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.workflow-settings-tab {
+  appearance: none;
+  padding: 7px 13px 9px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12.5px/1.2 inherit;
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+}
+.workflow-settings-tab:hover { color: var(--text); background: var(--accent-soft); }
+.workflow-settings-tab[data-active="true"] {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
 .workflow-settings-body {
   padding: 14px 18px;
   display: flex;

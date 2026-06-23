@@ -71121,6 +71121,10 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
    row. Non-integrated ("soon") roadmap providers are filtered out. */
 function WorkflowSettingsDialog({ onClose }) {
   const [config, setConfig] = useState(null);
+  // Three-tab split: API keys / things to install / chat send key. Each tab
+  // owns the header subtitle so the file-path caption only shows where it
+  // applies (the BYOK config). Defaults to the API-keys tab.
+  const [tab, setTab] = useState("api");
   const reload = useCallback(async () => {
     try {
       const r = await fetch(apiUrl("/__media_config"));
@@ -71146,38 +71150,103 @@ function WorkflowSettingsDialog({ onClose }) {
     .filter(pid => providers[pid].integrated)
     .sort((a, b) => (providers[a].label || a).localeCompare(providers[b].label || b));
 
+  const TABS = [
+    { id: "api", label: "API keys" },
+    { id: "install", label: "Things to install" },
+    { id: "sendkey", label: "Send key" },
+  ];
+  const subByTab = {
+    api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
+    install: "Local tools the daemon installs on demand · no API key needed",
+    sendkey: "Chat composer · saved in this browser, applies live",
+  };
+
   return createPortal(html`
     <div className="workflow-modal-backdrop" onMouseDown=${onClose}>
       <div className="workflow-modal workflow-settings-modal" onMouseDown=${(e) => e.stopPropagation()}>
         <div className="workflow-modal-head">
           <div>
-            <div className="workflow-modal-title">Settings · API keys</div>
-            <div className="workflow-modal-sub">~/.test-harness/media-config.json · mode 0600 · per-user, not per-project</div>
+            <div className="workflow-modal-title">Settings</div>
+            <div className="workflow-modal-sub">${subByTab[tab]}</div>
           </div>
           <button className="workflow-modal-close" onClick=${onClose}>×</button>
         </div>
-        <div className="workflow-settings-body">
-          <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
-          ${providerIds.map(pid => html`
-            <${WorkflowProviderSection}
-              key=${pid}
-              provider=${providers[pid]}
-              status=${(config && config.providers && config.providers[pid]) || {}}
-              onChanged=${reload}
-            />
+        <div className="workflow-settings-tabs" role="tablist">
+          ${TABS.map(t => html`
+            <button
+              key=${t.id}
+              type="button"
+              role="tab"
+              className="workflow-settings-tab"
+              data-active=${tab === t.id}
+              aria-selected=${tab === t.id}
+              onClick=${() => setTab(t.id)}
+            >${t.label}</button>
           `)}
-          <${WorkflowLocalSkillsSection}/>
+        </div>
+        <div className="workflow-settings-body">
+          ${tab === "api" ? html`
+            <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
+            ${providerIds.map(pid => html`
+              <${WorkflowProviderSection}
+                key=${pid}
+                provider=${providers[pid]}
+                status=${(config && config.providers && config.providers[pid]) || {}}
+                onChanged=${reload}
+              />
+            `)}
+          ` : tab === "install" ? html`
+            ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
+          ` : html`
+            <${WorkflowSendKeySection}/>
+          `}
         </div>
       </div>
     </div>
   `, document.body);
 }
 
+/* The chat send-key preference, surfaced in the Settings dialog's "Send key"
+   tab. Mirrors OnboardingSendKeyPref (same storage + th:chat-send-pref-changed
+   broadcast) but wrapped in a .workflow-settings-section card instead of the
+   onboarding's top-bordered block. */
+function WorkflowSendKeySection() {
+  const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
+  useEffect(() => {
+    const on = () => setSendOnEnter(loadSendOnEnter());
+    window.addEventListener("th:chat-send-pref-changed", on);
+    return () => window.removeEventListener("th:chat-send-pref-changed", on);
+  }, []);
+  const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
+  return html`
+    <div className="workflow-settings-section">
+      <div className="onboarding-sendkey-head">
+        <span className="onboarding-sendkey-title">Chat send key</span>
+        <span className="onboarding-sendkey-desc">How you send a message to the agent from the chat box.</span>
+      </div>
+      <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Chat send key">
+        <button type="button" role="radio" aria-checked=${!sendOnEnter}
+          className="onboarding-sendkey-opt" data-active=${!sendOnEnter}
+          onClick=${() => pick(false)}>
+          <span className="onboarding-sendkey-keys">⌘/Ctrl + ↵</span>
+          <span className="onboarding-sendkey-sub">Enter = new line</span>
+        </button>
+        <button type="button" role="radio" aria-checked=${sendOnEnter}
+          className="onboarding-sendkey-opt" data-active=${sendOnEnter}
+          onClick=${() => pick(true)}>
+          <span className="onboarding-sendkey-keys">↵ Enter</span>
+          <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 /* Phase 4c - Local skills catalog. Single source of truth for Python
    packages the daemon can install on demand. Shared between the Settings
-   dialog (`WorkflowLocalSkillsSection`) and the projects-landing onboarding
-   card (`OnboardingLocalToolsSection`) so a new tool added here lights up
-   in both surfaces without further wiring. */
+   dialog's "Things to install" tab (renders WorkflowLocalPackageRow per entry)
+   and the projects-landing onboarding card (`OnboardingLocalToolsSection`) so
+   a new tool added here lights up in both surfaces without further wiring. */
 const LOCAL_PACKAGES = [
   {
     id: "rembg",
@@ -71230,13 +71299,6 @@ const LOCAL_PACKAGES = [
     required: false,
   },
 ];
-
-function WorkflowLocalSkillsSection() {
-  return html`
-    <div className="workflow-settings-section-group-head">Local skills · no API key</div>
-    ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
-  `;
-}
 
 /* Standalone Exports dialog - used to live inside WorkflowSettingsDialog
    as a section; promoted to its own modal so it can be context-aware
