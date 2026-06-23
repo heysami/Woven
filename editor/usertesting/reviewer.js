@@ -258,11 +258,19 @@
     const rafRef = useRef(0);               // playhead rAF handle (driven by us)
     const scaleRef = useRef(1);             // current wrapper CSS scale (fit)
     const fitRef = useRef(null);            // recompute-fit fn (set after build)
+    // Wall-clock anchors. The rrweb DOM stream can be SHORTER than the session
+    // (the page goes static, or it ends early) - if we used the replayer's own
+    // clock as master it would freeze the whole transport at the last DOM event.
+    // So the playhead is a wall clock spanning the full session; the replayer
+    // just holds its last frame past its own end.
+    const anchorWallRef = useRef(0);        // performance.now() at last play/seek
+    const anchorMsRef = useRef(0);          // playhead (sinceT0) at that anchor
 
     const showToast = (m) => { setToast(m); setTimeout(() => setToast(null), 4000); };
 
     const cfg = useMemo(() => normConfig(meta && meta.config), [meta]);
     const durationMs = (meta && meta.meta && meta.meta.durationMs) || 0;
+    const durationMsRef = useRef(0); durationMsRef.current = durationMs;
     const recCfg = cfg.recording;
 
     // ── Boot: meta first, then the three streams in parallel.
@@ -373,8 +381,13 @@
       setReplayerReady(true);
       setTimeout(fit, 0);
 
-      // Reset transport when the replay reaches the end.
-      const onFinish = () => { stopRaf(); setPlaying(false); playingRef.current = false; pauseAudio(); };
+      // The DOM stream can end before the session does, so the replayer firing
+      // "finish" does NOT mean the session is over - hold the last frame and let
+      // the wall clock keep the playhead + audio running to the real end. Only
+      // hard-stop here if we have no known session duration to fall back on.
+      const onFinish = () => {
+        if (!durationMsRef.current) { stopRaf(); setPlaying(false); playingRef.current = false; pauseAudio(); }
+      };
       try { replayer.on("finish", onFinish); } catch {}
 
       return () => {
@@ -388,25 +401,32 @@
       };
     }, [rrwebEvents]);
 
-    // ── Playhead rAF loop. rrweb.Replayer has no per-frame time event, so while
-    // playing we poll getCurrentTime() (ms from replay start) and advance the
-    // ms-since-t0 playhead + audio sync. Started by play, stopped by pause/finish.
+    // ── Playhead rAF loop. The playhead is a WALL CLOCK (anchor + real elapsed),
+    // NOT the replayer's clock - so it spans the full session even after the DOM
+    // stream ends. Advances ms-since-t0 + audio sync; stops at durationMs.
     const stopRaf = useCallback(() => {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
     }, []);
     const startRaf = useCallback(() => {
       stopRaf();
       const tick = () => {
-        const r = replayerRef.current;
-        if (!r) { rafRef.current = 0; return; }
-        let curMs = 0;
-        try { curMs = r.getCurrentTime() || 0; } catch {}
-        setPlayMs(curMs + rrwebStartRef.current - t0Ref.current);
-        syncAudio(curMs);
+        if (!playingRef.current) { rafRef.current = 0; return; }
+        // Wall clock: playhead = anchor + real elapsed. Independent of the rrweb
+        // replayer's clock (which caps at the last DOM event), so the transport
+        // runs the FULL session even when the DOM goes static partway through.
+        const sinceT0 = anchorMsRef.current + (performance.now() - anchorWallRef.current);
+        const dur = durationMsRef.current || 0;
+        if (dur && sinceT0 >= dur) {
+          setPlayMs(dur);
+          stopRaf(); setPlaying(false); playingRef.current = false; pauseAudio();
+          return;
+        }
+        setPlayMs(sinceT0);
+        syncAudio(sinceT0ToReplayer(sinceT0));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
-    }, [stopRaf]);
+    }, [stopRaf, pauseAudio]);
 
     // ── Audio control - slaved to the rrweb player (the master clock).
     const playAudio = useCallback(() => {
@@ -444,6 +464,10 @@
       } else {
         const fromMs = sinceT0ToReplayer(playMsRef.current);
         try { r.play(fromMs); } catch {}
+        anchorWallRef.current = performance.now();
+        anchorMsRef.current = playMsRef.current;
+        const a = audioRef.current;
+        if (a && a.src && isFinite(a.duration)) { try { a.currentTime = Math.max(0, Math.min(a.duration, playMsRef.current / 1000)); } catch {} }
         setPlaying(true); playingRef.current = true; playAudio(); startRaf();
       }
     }, [playAudio, pauseAudio, startRaf, stopRaf]);
@@ -457,6 +481,8 @@
       try { r.pause(replayerMs); } catch {}
       if (wasPlaying) { try { r.play(replayerMs); } catch {} }
       setPlayMs(sinceT0);
+      anchorWallRef.current = performance.now();
+      anchorMsRef.current = sinceT0;
       syncAudio(replayerMs);
       const a = audioRef.current;
       if (a && a.src && isFinite(a.duration)) {
