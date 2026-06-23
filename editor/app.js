@@ -24481,6 +24481,38 @@ function workflowPortFlavor(node, side) {
   return null;
 }
 
+// ── Prompt asset badges ─────────────────────────────────────────────────────
+// An asset wired into a prompt's `in` port attaches itself as an inline
+// [filename] reference badge inside the prompt text. The SAME [filename] token
+// can be typed by hand; it renders as a badge (and travels downstream as the
+// skill's reference image) ONLY when it matches an asset actually wired into the
+// prompt. One rule drives both the badge rendering and the Run-time resolution,
+// so what the user sees in the node is exactly what ships to the model.
+function workflowAssetFileName(node) {
+  if (!node) return "";
+  const p = typeof node.path === "string" ? node.path : "";
+  const base = p ? p.split("/").pop() : "";
+  return base || (typeof node.title === "string" && node.title.trim()) || node.id || "asset";
+}
+function workflowPromptBadgeTokens(text) {
+  if (typeof text !== "string" || !text) return [];
+  const out = []; const re = /\[([^\[\]\r\n]+)\]/g; let m;
+  while ((m = re.exec(text))) out.push(m[1]);
+  return out;
+}
+function workflowPromptAttachedAssets(promptId, nodes, edges) {
+  const out = [];
+  for (const e of (edges || [])) {
+    const t = workflowParseEdgeRef(e.to);
+    if (!t || t.node !== promptId || t.port !== "in") continue;
+    const f = workflowParseEdgeRef(e.from);
+    if (!f) continue;
+    const up = (nodes || []).find(n => n.id === f.node);
+    if (up && up.kind === "asset") out.push(up);
+  }
+  return out;
+}
+
 function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
   const a = workflowPortFlavor(fromNode, fromPort);
   const b = workflowPortFlavor(toNode,   toPort);
@@ -24494,6 +24526,9 @@ function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
   const fromDt = workflowPortDtype(fromNode, fromPort, "provides");
   const toDt   = workflowPortDtype(toNode,   toPort,   "accepts");
   if (fromDt && toDt && !workflowDtypesCompatible(fromDt, toDt)) return false;
+  // An asset (or asset-like capture) may wire INTO a prompt's `in` port to
+  // attach itself as an inline [filename] reference badge in the prompt text.
+  if (a === "asset" && toNode && toNode.kind === "prompt" && toPort === "in") return true;
   if (a == null || b == null) return true;   // wildcard at either end
   return a === b;
 }
@@ -25212,7 +25247,7 @@ const WORKFLOW_CONNECT_DEFS = {
   "prompt": {
     label: "Prompt",
     provides: { out: { label: "Text", tags: ["text", "runnable", "blendable"] } },
-    accepts:  { in:  { label: "Generate text with", tags: ["text-gen"] } },
+    accepts:  { in:  { label: "Generate text with, or attach an asset as a badge", tags: ["text-gen", "asset"] } },
   },
   "folder": {
     label: "Folder",
@@ -37602,6 +37637,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const promptTexts = [];
       let assetInputPath = null;
       let assetInputDataUri = null;
+      let badgeAssetNode = null;
       for (const e of edges) {
         const t = workflowParseEdgeRef(e.to);
         if (!t || t.node !== skillId || t.port !== "in") continue;
@@ -37609,7 +37645,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (!f) continue;
         const up = nodeById[f.node];
         if (!up) continue;
-        if (up.kind === "prompt") promptTexts.push(up.text || "");
+        if (up.kind === "prompt") {
+          promptTexts.push(up.text || "");
+          // First inline [filename] badge that matches an asset wired into this
+          // prompt becomes the downstream reference image (text + image).
+          if (!badgeAssetNode) {
+            const toks = workflowPromptBadgeTokens(up.text || "");
+            if (toks.length) {
+              const attached = workflowPromptAttachedAssets(up.id, nodes, edges);
+              for (const tk of toks) {
+                const hit = attached.find(an => workflowAssetFileName(an) === tk);
+                if (hit) { badgeAssetNode = hit; break; }
+              }
+            }
+          }
+        }
         else if (up.kind === "browser" && /^https?:\/\//i.test(up.url || "")) {
           // v3.9 - web-browser node: pull the page's readable text through
           // the daemon's extractor and feed it as prompt context.
@@ -37738,6 +37788,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 + (e && e.message ? e.message : String(e)) });
               return;
             }
+          }
+        }
+      }
+      // A prompt's inline [filename] badge supplies an OPTIONAL reference image,
+      // even to skills that only declare a prompt input (generate-image promotes
+      // to image-edit). A directly-wired asset takes priority; the badge fills in
+      // otherwise. Only for image-producing skills, so text ops are unaffected.
+      if (!assetInputPath && !assetInputDataUri && badgeAssetNode && (wantsAsset || outputKind === "image")) {
+        const bp = typeof badgeAssetNode.path === "string" ? badgeAssetNode.path : "";
+        if (bp.startsWith("source/")) {
+          assetInputPath = bp;
+        } else if (bp.startsWith("inline:svg/") && typeof badgeAssetNode.src === "string" && badgeAssetNode.src.startsWith("<svg")) {
+          try {
+            assetInputDataUri = await workflowRasterizeSvgToPng(badgeAssetNode.src);
+          } catch (e) {
+            update(skillId, { status: "error", error:
+              "Couldn't rasterize the badged SVG into a PNG for the image model. "
+              + (e && e.message ? e.message : String(e)) });
+            return;
           }
         }
       }
@@ -37881,7 +37950,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         try {
           const body = { skill: skillSpec.id, provider, model, options };
           if (wantsPrompt) body.prompt = prompt;
-          if (wantsAsset) {
+          // Send the asset for any image-producing skill that resolved one -
+          // not just skills declaring an `asset` input - so a prompt's inline
+          // badge reaches generate-image (text + reference image -> edit). The
+          // daemon returns a clean 400 if the chosen model can't take an image.
+          if ((wantsAsset || outputKind === "image") && (assetInputPath || assetInputDataUri)) {
             if (assetInputPath)    body.input_path = assetInputPath;
             else if (assetInputDataUri) body.input_data_uri = assetInputDataUri;
           }
@@ -38553,6 +38626,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           nextNodes = nextNodes.map(n =>
             n.id === toNode.id ? { ...n, assetKind: "html", path: newPath || n.path } : n
           );
+        }
+        // Asset → prompt: attach the asset as an inline [filename] badge in the
+        // prompt's text so it both shows on the node and travels downstream as a
+        // reference image. Skip if a matching token is already present.
+        if (fromNode && fromNode.kind === "asset" && toNode && toNode.kind === "prompt"
+            && fromParts.port === "out" && toParts.port === "in") {
+          const fname = workflowAssetFileName(fromNode);
+          const token = "[" + fname + "]";
+          const cur = typeof toNode.text === "string" ? toNode.text : "";
+          if (fname && cur.indexOf(token) === -1) {
+            const sep = !cur ? "" : (cur.endsWith("\n") || cur.endsWith(" ")) ? "" : " ";
+            nextNodes = nextNodes.map(n =>
+              n.id === toNode.id ? { ...n, text: cur + sep + token } : n
+            );
+          }
         }
       }
       return { ...d, edges: nextEdges, nodes: nextNodes };
@@ -41273,6 +41361,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                attachedAssetNames=${new Set(workflowPromptAttachedAssets(n.id, data.nodes || [], data.edges || []).map(workflowAssetFileName))}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -55090,9 +55179,40 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
    the library's Prompts section. Edit text inline via the textarea. The
    first non-empty line, truncated, becomes the header title. Edges from
    this node's "out" feed text into downstream skill nodes (Phase 4). */
-function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge }) {
+// Render prompt text with [filename] tokens shown as inline badge pills, but
+// ONLY for tokens that match an asset wired into the prompt (passed in `names`).
+// Read-only view - a real <textarea> takes over while the user is editing.
+function workflowRenderPromptBadges(text, names) {
+  const set = names instanceof Set ? names : new Set(names || []);
+  const t = typeof text === "string" ? text : "";
+  const re = /\[([^\[\]\r\n]+)\]/g;
+  const parts = []; let last = 0, m, k = 0;
+  while ((m = re.exec(t))) {
+    if (m.index > last) parts.push(t.slice(last, m.index));
+    if (set.has(m[1])) {
+      parts.push(html`<span key=${"pb" + (k++)} className="workflow-prompt-badge" title=${m[1]}>${m[1]}</span>`);
+    } else {
+      parts.push(m[0]);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < t.length) parts.push(t.slice(last));
+  return parts;
+}
+
+function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, attachedAssetNames }) {
   const [dragging, setDragging] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const taRef = useRef(null);
+  useEffect(() => {
+    if (editing && taRef.current) {
+      const el = taRef.current;
+      el.focus();
+      const len = el.value.length;
+      try { el.setSelectionRange(len, len); } catch {}
+    }
+  }, [editing]);
   const onResizeDown = useCallback((e) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -55219,13 +55339,23 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
             The agent stopped with a follow-up question. <strong>Open the agent's chat</strong> to see what it needs, then reply - the generation will pick back up.
           </div>
         </div>
+      ` : (!editing && text.trim()) ? html`
+        <div
+          className="workflow-node-prompt-render"
+          title="Click to edit"
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); setEditing(true); }}
+        >${workflowRenderPromptBadges(text, attachedAssetNames)}</div>
       ` : html`
         <textarea
+          ref=${taRef}
           className="workflow-node-prompt-text"
           value=${text}
           placeholder="Describe what to generate…"
           onInput=${(e) => onChange({ text: e.target.value })}
           onMouseDown=${(e) => e.stopPropagation()}
+          onFocus=${() => setEditing(true)}
+          onBlur=${() => setEditing(false)}
         />
       `}
       <div

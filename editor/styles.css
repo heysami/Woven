@@ -11584,6 +11584,37 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-prompt-text::placeholder { color: var(--text-faint); }
 
+/* Read-only badge view - shown when the prompt has text and is NOT being
+   edited. Matches the textarea's box metrics so swapping in/out doesn't shift
+   the content. Click anywhere to swap back to the editable textarea. */
+.workflow-node-prompt-render {
+  padding: 10px 12px 18px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  cursor: text;
+}
+/* Inline [filename] reference badge inside a prompt's rendered text. */
+.workflow-prompt-badge {
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin: 0 1px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
 /* Phase 4c - "save" button on prompt node header. Persists to a .md file
    under <project>/workflow/prompts/<slug>.md and surfaces as a Library
    item the user can drag back later. */
