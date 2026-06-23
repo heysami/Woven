@@ -7463,7 +7463,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if url_path == "/__kinds/reconcile":
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
-            return self._capabilities()
+            return self._capabilities(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__logic_guide":
             return self._logic_guide(urllib.parse.parse_qs(parsed.query))
         # Visual-QA endpoints. Let an agent verify a node's interactive piece
@@ -8846,7 +8846,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         # answer "I don't have <X>" for features that ARE integrated.
         try:
             from kinds.capabilities import capabilities_preamble
-            sys_prompt += "\n\n" + capabilities_preamble()
+            # v3.14 - a per-node spawn is a LEAF task by design (see the comment
+            # at the top of this fn: "no orchestrator preamble - the per-node
+            # preamble is the entire system prompt"). Orchestrators dispatch via
+            # the Task tool, never this path. So the leaf gets the SLIM tier
+            # (~69% less preamble, ~25K fewer tokens) unless the node id itself
+            # names an orchestrator. project_root is now threaded so the full
+            # tier (orchestrator node) also respects the disable list.
+            _tier = "full" if "orchestrator" in (node_id or "").lower() else "slim"
+            sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
         except Exception:
             pass
         sys_prompt += "\n\n" + system_prompt
@@ -17063,7 +17071,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"reconcile failed: {e}"})
 
-    def _capabilities(self):
+    def _capabilities(self, qs=None):
         """v2.50 - canonical 'what does this app support' catalog. Aggregates
         image-gen providers (from media-models.js), subagent drawers (from
         .claude/agents/*.md), HTTP endpoints, and node kinds (from
@@ -17071,7 +17079,33 @@ class H(http.server.SimpleHTTPRequestHandler):
         system preamble so agents never have to guess what's integrated.
 
         Fixes the 'user asks about Quiver AI, agent says we don't have it'
-        class of bug - the catalog is authoritative."""
+        class of bug - the catalog is authoritative.
+
+        v3.14 - `?section=orchestrators` returns the routing-only doc as plain
+        markdown (mental-model + plan-gate + enabled orchestrator hard-rules).
+        This is the escalation path a LEAF agent (slim-tier preamble) fetches
+        when it hits a routing trigger - see LEAF_ROUTER_STUB in capabilities.py.
+        `?project=<id>` scopes it to that project's orchestrator disable list."""
+        section = _qs_get(qs or {}, "section")
+        if section == "orchestrators":
+            try:
+                from kinds.capabilities import orchestrator_routing_text
+                # Resolve the same disable-state target the registry uses, so the
+                # fetched routing honours per-project (or workspace) disables.
+                try:
+                    project_root = self._orchestrators_disable_target(qs or {})
+                except Exception:
+                    project_root = None
+                text = orchestrator_routing_text(project_root)
+                body = text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except Exception as e:
+                return self._reply(500, {"error": f"routing section load failed: {e}"})
         try:
             from kinds.capabilities import get_capabilities
             return self._reply(200, get_capabilities())

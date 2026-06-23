@@ -448,6 +448,55 @@ def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
     return text
 
 
+# ── v3.14 Leaf tier ── slim preamble for per-node drawer / lens spawns ──────
+# A LEAF agent (a drawer building one slot, a lens judging one artifact) is
+# dispatched per-node and is already PAST the routing decision - it never
+# dispatches a sibling orchestrator. So the 21K of orchestrator-routing prose
+# is dead weight for it. `tier="slim"` strips all routing and appends the stub
+# below. The two framing sections (mental-model + plan-gate) are routing too,
+# so they go with the 12 hard-rule blocks; App-capabilities + verify gates stay.
+_ROUTING_FRAME_HEADERS = [
+    "## THE MENTAL MODEL FOR THE ORCHESTRATOR FAMILY",
+    "## Orchestrator plan gate",
+]
+
+
+def _strip_sections_by_header(text: str, headers: list) -> str:
+    """Remove each `## <header>` section (header line through the line before
+    the next `## ` heading, or EOF). Same cut shape as the orchestrator strip,
+    generalised to arbitrary `## ` headers. Header not found → no-op."""
+    for marker in headers:
+        start = text.find(marker)
+        if start == -1:
+            continue
+        nxt = text.find("\n## ", start + len(marker))
+        end = nxt + 1 if nxt != -1 else len(text)
+        text = text[:start].rstrip() + ("\n\n" if end < len(text) else "\n") + text[end:].lstrip("\n")
+    return text
+
+
+# The router stub that REPLACES the stripped routing in the slim preamble. The
+# design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
+# go read), so the stub says so - and gates escalation on a closed checklist
+# (binary triggers an agent can't rationalise past) plus a live fetch path so
+# the full rules are retrievable on demand, never stale.
+LEAF_ROUTER_STUB = """
+
+## You are a LEAF agent - you build/judge ONE thing, you do NOT route
+
+The orchestrator-routing rules (which family builds an image / sim / game / narrative / etc., and the mandatory plan-gate) are deliberately NOT in this preamble. You were dispatched for ONE already-classified job - a single slot to author, or a single artifact to score. Your correct default is to DO that job now. Do not go looking for routing rules you almost certainly do not need.
+
+You need the full routing rules ONLY IF, mid-task, you are about to do one of these. Apply the test literally - it is a closed checklist, not a judgement call:
+  - make a `Task(...)` call to any `*-orchestrator` (dispatch a sibling pipeline)
+  - DECIDE which medium / family a NEW slot should be (raster vs vector vs sim vs game vs narrative vs ...)
+  - scaffold a NEW slot the host HTML does not already contain
+
+If NONE of those apply -> you do not need the routing rules. Stop looking, build/judge your one thing.
+If ANY apply -> STOP and fetch them first (do not reconstruct them from memory):
+  `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
+returns the authoritative `full`-tier routing blocks (mental-model + plan-gate + every enabled orchestrator hard-rule). Treat what it returns as binding."""
+
+
 def _wired_provider_ids() -> set:
     """Return the set of provider ids that have at least one wired dispatch
     entry in the daemon. Providers in the catalog but NOT in any dispatch
@@ -575,11 +624,20 @@ def _local_tool_availability() -> dict:
     return out
 
 
-def capabilities_preamble(project_root: Optional[str] = None) -> str:
+def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full") -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes - not the full catalog - so the agent
     knows what EXISTS without burning 3KB of tokens. For details the agent
     can `curl /__capabilities`.
+
+    v3.14 - `tier` controls how much routing the spawn carries:
+      - "full"  (default): dispatch-capable spawns - main chat loop + orchestrators.
+        Carries every orchestrator hard-rule (they route, they need them).
+      - "slim": LEAF spawns - per-node drawers / lenses. Drops the ~21K of
+        orchestrator-routing (12 hard-rule blocks + mental-model + plan-gate)
+        and appends LEAF_ROUTER_STUB, which proceeds-by-default and gates
+        escalation on a closed checklist + a `?section=orchestrators` fetch.
+        App-capabilities + verify gates are kept (a leaf needs those).
 
     v3.3 - `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
@@ -1065,7 +1123,7 @@ The agent writes these tags into the HTML in step 3 (before any orchestrator dis
 
 A visual-orchestrator dispatch is fast (~10s for the enumeration + one drawer per slot). A sim / im / nx orchestrator dispatch is heavier (research + 6-7 drawers per slot + lens trio per drawer). If the brief implies 8 nx slots, expect 8 × ~7 drawers × ~3-5 lens iterations - significant. Surface budget concerns to the user explicitly (*"the brief implies N narrative scenes; shall I build all N or pick the M most important first?"*) rather than silently scoping down. The museum project bug was Claude silently scoping from "eight paintings" to "one front door + seven static cards." The orchestrator-plan gate below is where this cost surfaces by default - the per-option plan lines carry the slot counts, so the user approves the budget along with the roster.
 
-## Orchestrator plan gate - MANDATORY stop-and-ask BEFORE any orchestrator dispatch (v1.0 hard rule)
+## Orchestrator plan gate - MANDATORY stop-and-ask BEFORE any orchestrator dispatch
 
 Which orchestrator passes run is a taste + budget decision, and it belongs to the user - the same discipline as the /prototype Step -1 direction pick. **Before dispatching ANY orchestrator (including motion-studio's `mode=brainstorm`), surface your proposed roster as a multi-select decision card and WAIT for the user's reply.** A silently-dispatched chain is a hard-rule violation even when every predicate clearly matches.
 
@@ -1099,7 +1157,7 @@ Which orchestrator passes run is a taste + budget decision, and it belongs to th
 
 **What this gate does NOT change:** the per-family hard rules below still decide the proposal content and the dispatch order; orchestrator manifests still self-gate; one-dispatch-per-family still holds; Step-8 QA still runs. The gate adds exactly one thing - the user sees the plan, with reasoning, and edits it BEFORE the first Task call fires.
 
-## Image creation: dispatch visual-orchestrator FIRST, narrate after (v3.2 hard rule)
+## Image creation: dispatch visual-orchestrator FIRST, narrate after
 
 When the user's message mentions ANY visual content - an image, illustration, mascot, character, photo, icon, vector mark, logo, shader, particle effect, 3D scene, lottie animation, or video - your **FIRST action is a Task call to `visual-orchestrator`**. Not your second action. Not after offering style options. Not after planning prose. The Task call IS the start of your response. (One exception, and only one: the § "Orchestrator plan gate" above - if the roster hasn't been approved yet this turn-chain, the gate card comes first; once approved, this rule applies verbatim.)
 
@@ -1143,7 +1201,7 @@ Also: when the orchestrator returns, verify `workflow/visual-plan.json.qa` exist
 
 **Emulating visual-orchestrator from your own knowledge is the bug.** Dispatch the real thing - and trust its QA output: when it logs `qa.blocked[]`, that's a real "I tried twice and it still doesn't fit" - relay that to the user, don't silently override.
 
-## Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator (v1.0 hard rule)
+## Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator
 
 GATED - fires only when BOTH gates pass; check them before dispatching:
 
@@ -1175,7 +1233,7 @@ It picks styles from the photography library index and commits one `pe_photo_<sl
 | User names a photographer / photo style | `Task(photography-orchestrator, …)` with `explicitStylePicks` filled |
 | No raster-photo slots, or no image-gen skill | Skip - visual-orchestrator proceeds with default prompts |
 
-## Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator (v1.0 hard rule)
+## Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator
 
 The illustration sibling of the photography rule above - same two gates, illustrative register instead:
 
@@ -1195,7 +1253,7 @@ It commits one `pe_illust_<slotId>` enrichment node per illustrative slot; visua
 - ❌ Dispatch it AFTER visual-orchestrator - too late, the drawers already fired.
 - ❌ Pick illustration styles yourself in chat - the library decision tree owns the pick.
 
-## Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator (v1.0 hard rule)
+## Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator
 
 GATED post-pass - fires only when visual-orchestrator's per-medium dispatch has COMPLETED, AND the committed aesthetic is editorial-loud / typography-driven (recipe-editorial-magazine, recipe-swiss-grid-with-twist, recipe-y2k-memphis-loud, aesthetic-y2k-memphis-loud, aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-web-brutalism, aesthetic-wacky-pomo, aesthetic-corporate-grunge, aesthetic-anti-design, aesthetic-constructivism, aesthetic-de-stijl, style-oversized-neo-grotesque), OR the user explicitly asks for creative composition ("make the photos bleed into the type" / "cut the asset into letters" / "editorial spread feel" / "the images should mask through text").
 
@@ -1212,7 +1270,7 @@ It walks source, identifies promotion-eligible flat `<img>` slots (text-as-mask,
 - ❌ Hand-write SVG masks / clip-paths in chat to fake the promotion - the promoter drawer owns the structural rewrite.
 - ❌ Dispatch it before visual-orchestrator finishes - it promotes committed assets, not placeholders.
 
-## Material fidelity: dispatch material-orchestrator AFTER visual + creative-visual, BEFORE polish (v1.0 hard rule)
+## Material fidelity: dispatch material-orchestrator AFTER visual + creative-visual, BEFORE polish
 
 GATED late pass - fires only when visual-orchestrator (and creative-visual-orchestrator, if it ran) has committed, AND the committed prototype style/aesthetic is material-bearing per `docs/research/material-library.md` §7 decision tree (style-glassmorphism, style-liquid-glass, style-claymorphism, style-neumorphism, style-holographic, style-skeuomorphism, style-neubrutalism, style-material-m3, style-aurorism, style-raster-cutout, aesthetic-frutiger-*, aesthetic-vaporwave, aesthetic-cyberpunk, aesthetic-cassette-futurism, aesthetic-dark-academia, aesthetic-pixel-*, …), OR the user names a material property ("make the glass feel real" / "add reactive light" / "the clay needs depth on press" / "VHS distortion on the hero" / "make it feel like riso").
 
@@ -1229,7 +1287,7 @@ It assigns materials per element from the material library index, surfaces a dec
 - ❌ Dispatch it for non-material aesthetics with no user request - it returns `runStatus: error` by design.
 - ❌ Run it after polish - polish's composites assume material is already in place.
 
-## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST (v3.8 hard rule)
+## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST
 
 When the user's brief matches **ANY of the four families below**, your **FIRST action is a Task call to `simulation-orchestrator`**. Not your second action. Not after asking. Not after offering options. Not after writing the app inline. The Task call IS the start of your response.
 
@@ -1347,17 +1405,7 @@ If the brief is about LOOKING AT or MOVING THROUGH something stateful, positione
 
 ### THE STRUCTURE - exactly visual-orchestrator's shape
 
-**You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
-
-Visual-orchestrator doesn't write HTML. When the agent in chat wants an image on a page, the agent writes `<img src="images/hero.png">` into the HTML. Then the agent dispatches visual-orchestrator. visual-orchestrator writes the *bytes* at `source/<prototype>/images/hero.png`. The `<img>` tag the agent already wrote now resolves. The orchestrator never touches the HTML.
-
-Same here. When you want a sim on a page, **you write the HTML and the iframe slot yourself** - including the `<iframe src="simulations/<simId>/runtime.html">` pointing at the path the orchestrator will produce. Then you dispatch simulation-orchestrator. The orchestrator writes `source/<prototype>/simulations/<simId>/runtime.html` and its sibling files. The `<iframe>` tag you already wrote now resolves. **The orchestrator does not touch your HTML.**
-
-Two distinct jobs:
-
-| Your job (agent in chat) | Orchestrator's job |
-|---|---|
-| Write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a sim should live, write one `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" style="..." title="<simId>" loading="lazy"></iframe>`. Use distinct `simId`s for each (e.g. `fleet-map`, `queue-depth`, `agent-gossip`). Then dispatch simulation-orchestrator ONCE. | Walk every `*.html` under `source/<prototype>/`, find every iframe whose class includes `sim-mount` (or whose `data-sim` is set). For each, read the `simId` + paradigm hint + entity scale. Per slot: pick paradigm + render strategy, write `source/<prototype>/simulations/<simId>/research.md`, scaffold the per-slot drawer set (entities / scene / loop / controls / overlay / runtime / container), dispatch the drawers. Do NOT touch any HTML. |
+Standard slot-fill contract (see §"THE MENTAL MODEL" + §"What the agent writes in its HTML to enable enumeration" above - which already gives every family's iframe tag): YOU write the page HTML + the `<iframe class="sim-mount" data-sim="<simId>" ... src="simulations/<simId>/runtime.html">` slot; simulation-orchestrator writes ONLY the files under `source/<prototype>/simulations/<simId>/` (research / entities / scene / loop / controls / overlay / runtime / container) and never touches your HTML. Use distinct `simId`s per slot. Dispatch ONCE; it enumerates every sim slot and fans out per-slot drawers.
 
 Dispatch template - ONE call, orchestrator enumerates all sim slots:
 
@@ -1394,7 +1442,7 @@ The visual-orchestrator pattern is: **app exists, orchestrator fills a slot.** S
 
 **Emulating simulation-orchestrator from your own knowledge - or shipping a sim without the surrounding app - is the bug.** Dispatch the real thing into a real slot.
 
-## Interactive piece: dispatch interactive-media-orchestrator FIRST (v3.6 hard rule)
+## Interactive piece: dispatch interactive-media-orchestrator FIRST
 
 **Carve-out (v3.7): this hard rule is for the PROTOTYPE surface only.** If the user asked for the piece as **app nodes / canvas nodes / the logic graph / mm-composer / the composer** (see the "Surface check FIRST" above the routing table), this rule does NOT fire - dispatch `app-node-orchestrator` instead and skip the rest of this section. The carve-out exists because "use app nodes" is a surface request, not a capability request: the same inputs / mapping / outputs are built from the canvas logic-graph primitives rather than baked into a runtime.html. Everything below applies only when no app-node surface was named.
 
@@ -1403,24 +1451,7 @@ When the user's message implies **a piece they DRIVE with their body or device**
 ```
 ### THE STRUCTURE - exactly visual-orchestrator's shape
 
-Same separation as the simulation block above. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
-
-**One interactive-media-orchestrator dispatch per project, not per slot.** Same as visual-orchestrator / simulation-orchestrator. A portfolio of three TouchDesigner-style pieces is ONE im-orchestrator dispatch that enumerates the three im-mount iframes and fans out the per-slot drawer set for each.
-
-You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where an interactive piece should live, you write one `<iframe>` slot - including the critical `allow=` attribute that lets `getUserMedia()` reach the iframe's APIs. Use distinct `imId`s.
-
-```html
-<iframe class="im-mount"
-        data-im="<imId>"
-        data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>"
-        src="interactives/<imId>/runtime.html"
-        style="width:100%; height:100%; border:0;"
-        allow="microphone; camera; gyroscope; accelerometer; midi"
-        title="<imId>"
-        loading="lazy"></iframe>
-```
-
-Then dispatch the orchestrator ONCE. It walks the HTML, enumerates every im-mount slot, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
+Standard slot-fill contract (§"THE MENTAL MODEL" + §"What the agent writes in its HTML" above): YOU write the page HTML + the `<iframe class="im-mount" ...>` slot - which MUST carry the `allow="microphone; camera; gyroscope; accelerometer; midi"` attribute so `getUserMedia()` reaches the iframe (the full tag is in §"What the agent writes"); interactive-media-orchestrator writes ONLY `source/<prototype>/interactives/<imId>/` (research / input(s) / mapping / output(s) / runtime / container) and never touches your HTML. Use distinct `imId`s. Dispatch ONCE; it enumerates every im slot and fans out per-slot drawers.
 
 ```
 Task(subagent_type: "interactive-media-orchestrator",
@@ -1443,50 +1474,19 @@ Task(subagent_type: "interactive-media-orchestrator",
 | Anything body/device-driven generative - TouchDesigner-style, voice-reactive, music-reactive, camera-driven, gestural, "piece where I do X with my voice/body" | Scaffold app shell (with im-placeholder slot) → `Task(interactive-media-orchestrator, …)` for the slot |
 | "show me a chart of X" (ad-hoc, no interaction) | NOT a orchestrator. Render inline or via visual-orchestrator. |
 
-### Distinguishing the orchestrator family (v3.3):
+### Distinguishing the orchestrator family
 
-| User wants | Dispatch |
-|---|---|
-| An IMAGE / icon / illustration / decorative ambient motion | `visual-orchestrator` |
-| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-orchestrator` |
-| A piece the user DRIVES with body/device for generative response | `interactive-media-orchestrator` |
-| An immersive walk-into-this-PLACE piece (poetic, emotional, scripted depth) | `narrative-experience-orchestrator` |
-| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-orchestrator` |
-| An aesthetic that CSS CANNOT REACH - lives in the imagery itself | `scrapbook-experience-orchestrator` |
-| A cinematic PRESENTATION - full-bleed video/imagery + UI as linear scenes, no features | `motion-studio-orchestrator` (brainstorm BEFORE the shell) |
-
-A "warehouse dashboard" with a static stock chart → visual-orchestrator (chart is an image).
-A "warehouse dashboard" where bins fill/empty over time → **simulation-orchestrator**.
-A "voice-painter on the warehouse data" → **interactive-media-orchestrator**.
-A "memorial that the user walks into and feels held" → **narrative-experience-orchestrator**.
-A "throw paper planes for points" / "feed Pip, watch it grow" → **game-experience-orchestrator** (objective + feedback loop).
-A "1995 GeoCities portfolio" / "chrome-lettered vaporwave hero" → **scrapbook-experience-orchestrator** (CSS cannot reach this aesthetic).
-An "Apple-style product page where the phone rises in as you scroll" / "hero where the figure follows your mouse" → **motion-studio-orchestrator** (cinematic presentation; linear scenes; brainstorm-first).
+Routing is the §"THE MENTAL MODEL" predicate table above - same seven families, same tests (image → visual; live system → sim; body/device-driven → interactive-media; walk-into-a-place → narrative; objective + feedback → game; CSS-can't-reach aesthetic → scrapbook; cinematic linear-scene presentation → motion-studio). The worked examples (warehouse static chart vs live bins vs voice-painter; memorial; paper-planes-for-points; GeoCities hero; scroll-rise product page) live there too.
 
 The narrative-experience family is the POETIC cousin of simulation: same pipeline shape, but emotional register replaces intuition register; scripted spine replaces deterministic loop; camera-as-narrator replaces free controls; soundscape is first-class; concept-lens scores against felt-state successFeel ("the user feels the room remembers them") not intuition successFeel ("a stranger can identify the system in 5 seconds"). Use it when the brief is artistic - museum microsites, exhibition extensions, character portraits at depth, memorials, immersive editorial.
 
-## Immersive narrative: dispatch narrative-experience-orchestrator FIRST (v3.6 hard rule)
+## Immersive narrative: dispatch narrative-experience-orchestrator FIRST
 
 When the user's message implies **a piece someone walks into and leaves changed** - a museum microsite, an exhibition extension, a memorial, a character portrait at depth, an editorial scrollytelling piece, a walkable 3D reconstruction of a room or garden or studio, anything where the user's role is *witness* and the felt-state is the point - your **FIRST action is a Task call to `narrative-experience-orchestrator`**.
 
 ### THE STRUCTURE - exactly visual-orchestrator's shape
 
-Same separation. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
-
-**One narrative-experience-orchestrator dispatch per project, not per slot.** Same as visual-orchestrator. The museum project's PRD is the canonical example - *"every painting in the show is treated as a place"* means **one nxId per painting**, one runtime per painting - but they're all enumerated and built by ONE narrative-experience-orchestrator dispatch walking the HTML. Not one dispatch per painting (eight orchestrator calls would be wrong). One orchestrator call that fans out to eight per-slot drawer sets.
-
-You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place the user walks into, write one nx-mount iframe with a distinct `nxId`:
-
-```html
-<iframe class="nx-mount"
-        data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>"
-        src="narratives/<nxId>/runtime.html"
-        style="width:100%; height:100%; border:0;"
-        title="<nxId>"
-        loading="lazy"></iframe>
-```
-
-Then dispatch the orchestrator ONCE. It walks every `*.html`, enumerates the nx slots, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
+Standard slot-fill contract (§"THE MENTAL MODEL" + §"What the agent writes in its HTML" above): YOU write the page HTML + the `<iframe class="nx-mount" data-nx="<nxId>" ... src="narratives/<nxId>/runtime.html">` slot (full tag in §"What the agent writes"); narrative-experience-orchestrator writes ONLY `source/<prototype>/narratives/<nxId>/` and never touches your HTML. **One dispatch per project, not per slot** - the museum PRD (*"every painting is a place"*) is ONE dispatch that fans out to one nxId per painting, NOT eight orchestrator calls. Use distinct `nxId`s. Dispatch ONCE; it enumerates every nx slot and fans out per-slot drawers.
 
 ```
 Task(subagent_type: "narrative-experience-orchestrator",
@@ -1552,27 +1552,9 @@ Task(subagent_type: "narrative-experience-orchestrator",
 | "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-orchestrator, …)` |
 | "WebGL space the user can wander" | `Task(narrative-experience-orchestrator, …)` |
 
-### Distinguishing from siblings (v3.3):
+### Distinguishing from siblings
 
-| User wants | Dispatch |
-|---|---|
-| An IMAGE / icon / illustration / decorative ambient motion | `visual-orchestrator` |
-| A spatial/temporal SYSTEM visualised intuitively (functional, readable) | `simulation-orchestrator` |
-| A piece the user DRIVES with body/device for generative response (input → mapping → output) | `interactive-media-orchestrator` |
-| An immersive walk-into-this-PLACE piece (poetic, emotional; ANY medium from scrollytelling to walkable 3D WebGL) | `narrative-experience-orchestrator` |
-| Interactive scene with a CHASED OBJECTIVE + visible feedback loop | `game-experience-orchestrator` |
-| An aesthetic that CSS CANNOT REACH - lives in the imagery itself | `scrapbook-experience-orchestrator` |
-| A cinematic PRESENTATION - full-bleed video/imagery + UI as linear scenes, no features | `motion-studio-orchestrator` (brainstorm BEFORE the shell) |
-
-A "warehouse dashboard" with a static stock chart → visual-orchestrator.
-A "warehouse dashboard" where bins fill/empty over time → simulation-orchestrator.
-A "voice-painter on the warehouse data" → interactive-media-orchestrator.
-A "memorial the user walks into and feels held" → **narrative-experience-orchestrator**.
-A "walkable 3D reconstruction of a Vermeer studio" → **narrative-experience-orchestrator** (the walkability serves felt-presence, not a generative input→output mapping).
-A "scrollytelling article about Vermeer" → **narrative-experience-orchestrator** (2.5D end of the same spectrum).
-A "throw paper planes through a pastel office, collect coffee mugs for points, fly as far as possible" → **game-experience-orchestrator**.
-A "swipe to bake a cake; score the better the swirls" → **game-experience-orchestrator**.
-A "soft-body cloth toy with no objective - just drag and watch it react" → `interactive-media-orchestrator` (no objective = not a game).
+Routing is the §"THE MENTAL MODEL" predicate table above. Narrative-specific edge calls (the ones that actually trip people up): a walkable 3D Vermeer studio → narrative (walkability serves felt-presence, NOT a generative input→output mapping); a scrollytelling Vermeer article → narrative (2.5D end of the same spectrum); a soft-body cloth toy with no objective → interactive-media (no objective = not a game); paper-planes-for-points / swipe-to-bake-for-score → game. Deeper tie-breakers in §"When TWO orchestrators feel plausible" below.
 
 ### When TWO orchestrators feel plausible:
 
@@ -1584,7 +1566,7 @@ A "soft-body cloth toy with no objective - just drag and watch it react" → `in
 - **Immersive scene vs cinematic presentation** → if the user has freedom of attention inside a PLACE (linger, look around, discover), it's `narrative-experience-orchestrator`. If the piece is an authored PRESENTATION - linear scenes the visitor steps through back and forth, full-bleed asset + UI choreography, no free navigation - it's `motion-studio-orchestrator`. A score on top of either → game.
 - **One animated hero asset vs a choreographed section** → a single `motion` (Hyperframes) or `video` slot inside an otherwise-normal page is `visual-orchestrator`'s lane. The moment UI placement depends on the asset's composition, the asset reacts to scroll/pointer, or the section splits into scenes - `motion-studio-orchestrator`.
 
-## Game-like immersive piece: dispatch game-experience-orchestrator FIRST (v3.3 hard rule)
+## Game-like immersive piece: dispatch game-experience-orchestrator FIRST
 
 When the user's brief is a **living world with an objective** - anything where the user PLAYS toward a goal inside a full-bleed scene with physics + particle feedback + drag/touch/multi-touch agency - your **FIRST action is a Task call to `game-experience-orchestrator`**. Not your second action. Not after asking. Not after offering options. The Task call IS the start of your response.
 
@@ -1602,28 +1584,7 @@ Illustrative examples (not a vocabulary list - match the predicate, not these wo
 
 ### THE STRUCTURE - exactly visual-orchestrator's shape
 
-Same separation as sim / interactive / narrative. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
-
-**One game-experience-orchestrator dispatch per project, not per slot.** A portfolio of three playable demos is ONE orchestrator dispatch that enumerates the three game-mount iframes and fans out the per-slot drawer set for each.
-
-You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a game should live, you write one `<iframe>` slot - including the critical `allow=` attribute for `gyroscope` / `accelerometer` on mobile-tilt games. Use distinct `gameId`s.
-
-```html
-<iframe class="game-mount"
-        data-game="<gameId>"
-        data-paradigm-hint="2d-side"
-        data-objective="fly as far as possible; collect mugs for +score; hit walls = end"
-        data-inputs="pointer,touch,multi-touch"
-        data-juice="juicy"
-        data-success-feel="every throw feels weighty and the world rewards it"
-        src="games/<gameId>/runtime.html"
-        style="width:100%; height:100%; border:0;"
-        allow="gyroscope; accelerometer"
-        title="<gameId>"
-        loading="lazy"></iframe>
-```
-
-Then dispatch the orchestrator ONCE. It walks the HTML, enumerates every game-mount slot, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
+Standard slot-fill contract (§"THE MENTAL MODEL" + §"What the agent writes in its HTML" above): YOU write the page HTML + the `<iframe class="game-mount" data-game="<gameId>" ... src="games/<gameId>/runtime.html">` slot - carrying `allow="gyroscope; accelerometer"` for mobile-tilt games (full tag in §"What the agent writes"); game-experience-orchestrator writes ONLY `source/<prototype>/games/<gameId>/` and never touches your HTML. Use distinct `gameId`s. Dispatch ONCE; it enumerates every game slot and fans out per-slot drawers.
 
 ```
 Task(subagent_type: "game-experience-orchestrator",
@@ -1663,7 +1624,7 @@ The game-experience pattern is: **app exists, orchestrator fills a slot.** Same 
 
 **Emulating game-experience-orchestrator from your own knowledge - or shipping a game without the surrounding app - is the bug.** Dispatch the real thing into a real slot.
 
-## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST (v3.3 hard rule)
+## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST
 
 When the user's brief is a **raster-heavy collage piece anchored to a named internet-aesthetic core** - anything where the AESTHETIC LIVES IN THE IMAGERY and CSS alone cannot reach it - your **FIRST action is a Task call to `scrapbook-experience-orchestrator`**. Not your second action. Not after asking. Not after offering CSS approximations. The Task call IS the start of your response.
 
@@ -1681,26 +1642,7 @@ If the brief is a CSS-renderable style (Bauhaus, Swiss grid, brutalist, terminal
 
 ### THE STRUCTURE - exactly visual-orchestrator's shape (with heavy visual-orchestrator co-dispatch)
 
-Same separation as sim / im / nx / game. **You write the HTML. The orchestrator writes the slot's content. Don't mix them.**
-
-**One scrapbook-experience-orchestrator dispatch per project, not per slot.**
-
-You write `source/<prototype>/index.html` (and any styles / app.js / sibling pages). For EACH place where a scrapbook should live, you write one `<iframe>` slot. Use distinct `sbId`s.
-
-```html
-<iframe class="scrapbook-mount"
-        data-scrapbook="<sbId>"
-        data-core="vaporwave"
-        data-density="dense"
-        data-motion="drifting-ambient"
-        data-success-feel="finding someone's secret Tumblr from 2008"
-        src="scrapbooks/<sbId>/runtime.html"
-        style="width:100%; height:100%; border:0;"
-        title="<sbId>"
-        loading="lazy"></iframe>
-```
-
-Then dispatch the orchestrator ONCE. It walks the HTML, enumerates every scrapbook-mount slot, and fans out per-slot drawer sets. **The orchestrator does not touch your HTML.**
+Standard slot-fill contract (§"THE MENTAL MODEL" + §"What the agent writes in its HTML" above): YOU write the page HTML + the `<iframe class="scrapbook-mount" data-scrapbook="<sbId>" ... src="scrapbooks/<sbId>/runtime.html">` slot (full tag in §"What the agent writes"); scrapbook-experience-orchestrator writes ONLY `source/<prototype>/scrapbooks/<sbId>/` and never touches your HTML - and co-dispatches visual-orchestrator per inventory entry (the heaviest co-dispatch of any family). Use distinct `sbId`s. Dispatch ONCE; it enumerates every scrapbook slot and fans out per-slot drawers.
 
 ```
 Task(subagent_type: "scrapbook-experience-orchestrator",
@@ -1752,7 +1694,7 @@ The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster
 
 **Emulating scrapbook-experience-orchestrator from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
 
-## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST - brainstorm BEFORE the shell (v1.0 hard rule)
+## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST - brainstorm BEFORE the shell
 
 When the user's brief is a **presentation-first piece where full-bleed generated video (or motion raster) and UI are tightly choreographed** - an Apple-product-page-style section (product rises in as you scroll, rotates from back to front scrubbed by scroll), a motionsites-style hero (figure tracks your mouse; headline sits in the asset's generated quiet zone), a moooi-style layered faux-3D parallax, a video-led brand page - your **FIRST action is a Task call to `motion-studio-orchestrator` with `mode=brainstorm`**. BEFORE you write any HTML. BEFORE you plan the app shell. This is the ONE family whose planning pass precedes the scaffold.
 
@@ -1803,7 +1745,7 @@ Read the hand-off envelope. Apply `hostPageGuidance` to the host page - for `bin
 
 **Emulating motion-studio-orchestrator with a hand-rolled video hero is the bug.** Dispatch the real thing - brainstorm first, build second.
 
-## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA) (v3.7 - now gated, was v3.3 hard rule)
+## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA)
 
 This is the ONE orchestrator that runs at the END of the pipeline, not the beginning. Every other orchestrator is a first-action dispatch. This one is the LAST build-phase action before Step-8 QA. But polish is **not unconditional** - it auto-fires only when the project's genre asks for it AND no design system is committed. On DS-bound or restrained-register prototypes, polish would fight the deliberate design language; the right move is to skip it (and tell the user it was skipped).
 
@@ -1914,8 +1856,36 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # is None - see the import-failure fallback above).
     if enabled_orchestrators is not None:
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
+    # v3.14 - LEAF tier: drop ALL routing (every orchestrator block + the
+    # mental-model + plan-gate framing) and hand back the slim preamble + the
+    # router stub. A leaf is past the routing decision; it never dispatches a
+    # sibling. Returns BEFORE the dynamic hard-rule append (that's routing too).
+    if tier == "slim":
+        _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
+        _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
+        return _preamble + LEAF_ROUTER_STUB
     # v3.12 - append manifest-carried hard rules for orchestrators added after
     # ship time (not covered by the static prose above). Appended AFTER the
     # strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
     return _preamble
+
+
+def orchestrator_routing_text(project_root: Optional[str] = None) -> str:
+    """v3.14 - the routing-only doc a LEAF fetches on demand via
+    `/__capabilities?section=orchestrators` (the escalation path named in
+    LEAF_ROUTER_STUB). It is the contiguous routing region of the full-tier
+    preamble - mental-model + plan-gate + every ENABLED orchestrator hard-rule
+    (the project's disable list is honoured because we slice the full preamble
+    AFTER its disabled-orchestrator strip). Dynamic manifest hard-rules are
+    appended too, so a leaf gets exactly what the dispatch-capable spawns see."""
+    full = capabilities_preamble(project_root, tier="full")
+    start = full.find("## THE MENTAL MODEL FOR THE ORCHESTRATOR FAMILY")
+    if start == -1:
+        return full  # framing changed - hand back everything rather than guess
+    end_anchor = full.find("END-OF-WORK GATE")
+    end = full.rfind("\n## ", start, end_anchor) + 1 if end_anchor != -1 else -1
+    region = full[start:end] if end > 0 else full[start:]
+    header = ("# Orchestrator routing rules (full tier, fetched on demand)\n"
+              "# You are a leaf that hit a routing trigger. These are authoritative.\n\n")
+    return header + region.rstrip() + "\n"
