@@ -539,7 +539,13 @@
         const eAt = eE != null ? Math.round(eE - t0) : null;
         return { id: f.id, startAt: sAt, endAt: eAt, startAuto: sAt, endAuto: eAt };
       });
-      try { r.pause(Math.max(0, sinceT0ToReplayer(restoreMs))); } catch {}
+      // Restore the playhead - and keep playing if we were (Re-detect can be
+      // clicked mid-playback; otherwise the replay would freeze while the UI
+      // still showed "playing").
+      try {
+        const back = Math.max(0, sinceT0ToReplayer(restoreMs));
+        if (playingRef.current) r.play(back); else r.pause(back);
+      } catch {}
       setMarkers((m) => {
         const prev = new Map((m.flows || []).map((f) => [f.id, f]));
         const merged = outFlows.map((f) => {

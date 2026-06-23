@@ -182,7 +182,6 @@
     const [phase, setPhase] = useState("loading");
     const [permState, setPermState] = useState({ mic: "idle", cam: "idle" });
     const [permErr, setPermErr] = useState(null);
-    const [calibCount, setCalibCount] = useState(0);
     const [stepIndex, setStepIndex] = useState(0);   // index into the task/question script
     const [answers, setAnswers] = useState({});      // questionId -> value
     const [rating, setRating] = useState(null);
@@ -279,9 +278,11 @@
     const enumerate = useCallback(async () => {
       try {
         const devs = await navigator.mediaDevices.enumerateDevices();
-        setAudioDevices(devs.filter((d) => d.kind === "audioinput"));
-        setVideoDevices(devs.filter((d) => d.kind === "videoinput"));
-      } catch {}
+        const ai = devs.filter((d) => d.kind === "audioinput");
+        const vi = devs.filter((d) => d.kind === "videoinput");
+        setAudioDevices(ai); setVideoDevices(vi);
+        return { ai, vi };
+      } catch { return { ai: [], vi: [] }; }
     }, []);
     const pickMic = useCallback(async (id) => {
       setMicId(id);
@@ -326,13 +327,17 @@
       }
       // Permission granted unlocks device labels - let the testee pick the right
       // microphone (e.g. their headset) and camera, with a live mic meter.
-      await enumerate();
+      const { ai, vi } = await enumerate();
       try {
         const ms = micStreamRef.current, cs = camStreamRef.current;
         const at = ms && ms.getAudioTracks && ms.getAudioTracks()[0];
-        if (at && at.getSettings) setMicId(at.getSettings().deviceId || "");
+        let mId = (at && at.getSettings && at.getSettings().deviceId) || "";
+        if (!ai.some((d) => d.deviceId === mId)) mId = (ai[0] && ai[0].deviceId) || "";
+        setMicId(mId);
         const vt = cs && cs.getVideoTracks && cs.getVideoTracks()[0];
-        if (vt && vt.getSettings) setCamId(vt.getSettings().deviceId || "");
+        let cId = (vt && vt.getSettings && vt.getSettings().deviceId) || "";
+        if (!vi.some((d) => d.deviceId === cId)) cId = (vi[0] && vi[0].deviceId) || "";
+        setCamId(cId);
       } catch {}
       startMeter(micStreamRef.current);
       setPhase("devices");
@@ -386,11 +391,10 @@
       setPointHits((prev) => {
         const next = prev.slice();
         next[i] = Math.min(CLICKS_PER_POINT, next[i] + 1);
-        const total = next.reduce((a, b) => a + b, 0);
-        setCalibCount(total);
         return next;
       });
     };
+    const calibCount = pointHits.reduce((a, b) => a + b, 0);
     const calibDone = pointHits.every((h) => h >= CLICKS_PER_POINT);
 
     // ── Start recording ───────────────────────────────────────────────────────
