@@ -4286,11 +4286,12 @@ function PrototypeView() {
   const active = D.frames.find(f => f.id === activeId) || first;
   const iframeRef = useRef(null);
   const [nonce, setNonce] = useState(0);
-  // Display scale for the stage frame. 1 = native. The first-time prototype
-  // auto-switch (spawnFromComposer) sets a one-shot flag so that very first
-  // view opens at 75%; every later visit is native. Consumed in a layout
-  // effect (before paint, no 100%->75% flash) so it fires exactly once.
-  const [protoScale, setProtoScale] = useState(1);
+  // Display scale for the stage frame. 1 = native. The prototype view opens at
+  // 75% by default on first mount so the whole stage is comfortably in view; the
+  // user can zoom back to native from there. (_pendingFirstProtoZoom, set by the
+  // spawnFromComposer auto-switch, is now redundant with this default but kept as
+  // a harmless one-shot in case the default ever changes back to native.)
+  const [protoScale, setProtoScale] = useState(0.75);
   useLayoutEffect(() => {
     if (_pendingFirstProtoZoom) {
       _pendingFirstProtoZoom = false;
@@ -7505,6 +7506,34 @@ function markAutoProtoFired() {
     const list = Array.isArray(seen) ? seen : [];
     if (!list.includes(proj)) list.push(proj);
     localStorage.setItem(AUTO_PROTO_KEY, JSON.stringify(list));
+  } catch { /* storage unavailable - best effort */ }
+}
+// Per-project view-mode memory. The editor's toolbar tabs (Canvas / Prototype /
+// User flow / IA / Design system / Entities / State machine / Timeline / Grid)
+// live in App's `view` state, which used to always boot to "canvas". Instead we
+// remember the last tab the user was on *per project* in localStorage, so
+// project A reopens on Prototype while project B reopens on Canvas. Keyed by the
+// same activeProjectId() used everywhere else; value is validated on read so a
+// stale/renamed view never breaks the boot.
+const PROJECT_VIEW_KEY = "th:projectView:v1";
+const KNOWN_VIEWS = ["canvas", "prototype", "flow", "ia", "ds", "entities", "stateMachine", "timeline", "grid"];
+function loadProjectView() {
+  const proj = activeProjectId();
+  if (!proj) return "canvas";
+  try {
+    const map = JSON.parse(localStorage.getItem(PROJECT_VIEW_KEY) || "{}");
+    const v = map && map[proj];
+    return KNOWN_VIEWS.includes(v) ? v : "canvas";
+  } catch { return "canvas"; }
+}
+function saveProjectView(view) {
+  const proj = activeProjectId();
+  if (!proj || !KNOWN_VIEWS.includes(view)) return;
+  try {
+    const map = JSON.parse(localStorage.getItem(PROJECT_VIEW_KEY) || "{}");
+    const next = (map && typeof map === "object") ? map : {};
+    next[proj] = view;
+    localStorage.setItem(PROJECT_VIEW_KEY, JSON.stringify(next));
   } catch { /* storage unavailable - best effort */ }
 }
 // Intent sniff: does the message read as "create/build a prototype"? Kept
@@ -74309,7 +74338,12 @@ function App() {
   const _embedQs = (() => { try { return new URLSearchParams(location.search); } catch { return new URLSearchParams(); } })();
   const embedMode = _embedQs.get("embed") === "1";
   const embedView = _embedQs.get("view") || "canvas";
-  const [view, setView] = useState(embedMode ? embedView : "canvas");
+  // Non-embed: restore the last view this project was on (per-project memory),
+  // falling back to "canvas". Embed mode stays locked to ?view= as before.
+  const [view, setView] = useState(embedMode ? embedView : loadProjectView());
+  // Persist the view per project so the next open lands on the same tab. Skipped
+  // in embed mode (locked to ?view=, not user-driven).
+  useEffect(() => { if (!embedMode) saveProjectView(view); }, [embedMode, view]);
   const [tool, setTool] = useState(null);   // 'select' | 'rearrange' | 'comment' | 'text' | 'draw' | null
   const [edits, setEdits] = useState([]);
   // Layout edits - separate channel from `edits`. Frame rearrangements update
