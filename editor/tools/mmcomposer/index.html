@@ -189,7 +189,7 @@ function loadMod(key){
    shader-lab effects with the SAME param contract - no collapsing, no aliases.
    EFFECT_SPECS is plain JSON ({type:{label,frag,uniforms[]}}) so it also bakes
    into the standalone player verbatim. */
-import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue } from '../_shared/fx.js';
+import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue, FX_HISTORY_DEPTH } from '../_shared/fx.js';
 import { Sources } from '../_shared/sources.js';
 import { LogicGraph } from '../_shared/logicgraph.js';
 const EFFECT_SPECS = fxProgramSpecs();
@@ -3113,7 +3113,43 @@ class GLFx {
   // Run effect stack on the contents of a 2D source canvas → onto this.cv.
   // resolveInput(layerId)->canvas|null lets multi-input effects sample other
   // layers' buffers (the composer passes a lookup into the PASS-A rendered map).
-  apply(srcCanvas, stack, w, h, time, intensityOverride, resolveInput){
+  // frame-history ring: a per-layer TEXTURE_2D_ARRAY of recent SOURCE frames.
+  // History effects (row-delay / echo / optical-flow) sample it via uHistory.
+  _needsHist(eff){ const s=EFFECT_SPECS[eff&&eff.type]; return !!(s&&s.history); }
+  _ensureRing(id,w,h){
+    const gl=this.gl; this._rings=this._rings||{};
+    let r=this._rings[id]; if(r && r.w===w && r.h===h) return r;
+    if(r&&r.tex) gl.deleteTexture(r.tex);
+    const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY,t);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY,0,gl.RGBA,w,h,FX_HISTORY_DEPTH,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY,null);
+    if(!this._ringFb) this._ringFb=gl.createFramebuffer();
+    r={tex:t,w,h,depth:FX_HISTORY_DEPTH,head:0}; this._rings[id]=r; return r;
+  }
+  _pushRing(id,srcTex,w,h){
+    const gl=this.gl; const r=this._ensureRing(id,w,h); if(!r) return null;
+    r.head=(r.head+1)%r.depth;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,this._ringFb);
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,r.tex,0,r.head);
+    gl.viewport(0,0,w,h);
+    const pr=this._copyProg||(this._copyProg=this.compile(EFFECT_COPY_FRAG));
+    if(pr){
+      gl.useProgram(pr); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,srcTex);
+      gl.uniform1i(gl.getUniformLocation(pr,'uTex'),0);
+      gl.uniform1f(gl.getUniformLocation(pr,'uIntensity'),1);
+      gl.uniform2f(gl.getUniformLocation(pr,'uResolution'),w,h);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    return r;
+  }
+  apply(srcCanvas, stack, w, h, time, intensityOverride, resolveInput, layerId){
     const gl=this.gl; if(!gl) return;
     this._resolveInput = resolveInput || null;
     this.ensureFbos(w,h);
@@ -3131,6 +3167,9 @@ class GLFx {
     // 'fluid' + 'face-morph' are CPU layer-buffer effects (handled before this
     // chain in PASS B), never GL passes.
     const passes=stack.filter(e=>e&&e.type&&e.type!=='fluid'&&e.type!=='face-morph'&&e.type!=='custom-stateful');
+    // frame-history ring: if any pass reads uHistory, push this layer's source
+    // frame into its per-layer ring once, then bind it per history pass in blit().
+    this._ring = (layerId!=null && passes.some(e=>this._needsHist(e))) ? this._pushRing(layerId, this.srcTex, w, h) : null;
     if(!passes.length){ // straight copy to screen
       this.blit(this.srcTex,w,h,{type:'__copy'},time,1,null); return;
     }
@@ -3185,6 +3224,18 @@ class GLFx {
         unit++;
       }
       gl.activeTexture(gl.TEXTURE0);
+    }
+    // frame-history: bind the per-layer ring as uHistory (sampler2DArray, unit 1)
+    // for history effects; signal "no ring" with uHistDepth=0 so shaders degrade.
+    if(this._needsHist(eff) && this._ring && this._ring.tex){
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this._ring.tex);
+      const hl=gl.getUniformLocation(pr,'uHistory'); if(hl!=null) gl.uniform1i(hl,1);
+      const dl=gl.getUniformLocation(pr,'uHistDepth'); if(dl!=null) gl.uniform1i(dl,this._ring.depth);
+      const hh=gl.getUniformLocation(pr,'uHistHead'); if(hh!=null) gl.uniform1i(hh,this._ring.head);
+      gl.activeTexture(gl.TEXTURE0);
+    } else {
+      const dl=gl.getUniformLocation(pr,'uHistDepth'); if(dl!=null) gl.uniform1i(dl,0);
     }
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
@@ -3979,7 +4030,7 @@ const Engine = {
       ctx.globalCompositeOperation = (L._wired && L._blend) ? L._blend : 'source-over';
       if(hasFx){
         const eInt = ov.effIntensity!=null?ov.effIntensity:null;
-        this.fx.apply(this.layerBuf, L.effects.stack, W, H, time, eInt, (id)=> (rendered[id]?rendered[id].cv:null));
+        this.fx.apply(this.layerBuf, L.effects.stack, W, H, time, eInt, (id)=> (rendered[id]?rendered[id].cv:null), L.id);
         ctx.drawImage(this.cgl,0,0,W,H);
       } else {
         ctx.drawImage(this.layerBuf,0,0);
@@ -5515,15 +5566,32 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
   function ensure(w,h){if(_w===w&&_h===h&&fbos.length)return;_w=w;_h=h;fbos.forEach(f=>gl.deleteFramebuffer(f));texs.forEach(t=>gl.deleteTexture(t));fbos=[];texs=[];for(let i=0;i<2;i++){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);texs.push(t);fbos.push(fb);}gl.bindFramebuffer(gl.FRAMEBUFFER,null);}
   // multi-input: per-id aux texture cache + resolver, mirror of the editor GLFx.
   let _fxResolve=null; const _auxTexCache={};
+  // frame-history ring (baked twin of GLFx): per-layer TEXTURE_2D_ARRAY of recent
+  // source frames, sampled by history effects via uHistory.
+  const FX_HDEPTH=61; const _ringsB={}; let _ringFbB=null; let _ringB=null;
+  function needsHistB(e){ const s=SPECS[e&&e.type]; return !!(s&&s.history); }
+  function ensureRingB(id,w,h){ let r=_ringsB[id]; if(r&&r.w===w&&r.h===h)return r; if(r&&r.tex)gl.deleteTexture(r.tex);
+    const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY,t);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY,0,gl.RGBA,w,h,FX_HDEPTH,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY,null); if(!_ringFbB)_ringFbB=gl.createFramebuffer();
+    r={tex:t,w,h,depth:FX_HDEPTH,head:0}; _ringsB[id]=r; return r; }
+  function pushRingB(id,sT,w,h){ const r=ensureRingB(id,w,h); if(!r)return null; r.head=(r.head+1)%r.depth;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,_ringFbB); gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,r.tex,0,r.head); gl.viewport(0,0,w,h);
+    const p=progs.__copy||(progs.__copy=comp(SPECS.__copy.frag));
+    if(p){ gl.useProgram(p); gl.bindBuffer(gl.ARRAY_BUFFER,quad); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sT); gl.uniform1i(gl.getUniformLocation(p,'uTex'),0); gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),1); gl.uniform2f(gl.getUniformLocation(p,'uResolution'),w,h); gl.drawArrays(gl.TRIANGLES,0,3); }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null); return r; }
   function auxTexBaked(id,canvas){ if(!canvas)return null; let tx=_auxTexCache[id]; if(!tx){tx=gl.createTexture();_auxTexCache[id]=tx;} gl.bindTexture(gl.TEXTURE_2D,tx); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,canvas); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return tx; }
-  function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(SPECS.__copy.frag));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'uTex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uResolution'),w,h);const pr=e.params||{},us=(SPECS[e.type]&&SPECS[e.type].uniforms)||[];for(let j=0;j<us.length;j++){const u=us[j],ul=gl.getUniformLocation(p,u.name);if(ul==null)continue;const val=uval(u,pr);if(u.k==='1i')gl.uniform1i(ul,val|0);else gl.uniform1f(ul,val);}const _im=(SPECS[e.type]&&SPECS[e.type].inputs)||(Array.isArray(e.inputPorts)?e.inputPorts:[]);if(_im.length&&e.inputs&&_fxResolve){let _u=1;for(let k=0;k<_im.length;k++){const sid=e.inputs[_im[k].name],cv=sid?_fxResolve(sid):null;if(!cv)continue;gl.activeTexture(gl.TEXTURE0+_u);const tx=auxTexBaked(sid,cv);if(!tx)continue;const loc=gl.getUniformLocation(p,_im[k].name);if(loc!=null)gl.uniform1i(loc,_u);_u++;}gl.activeTexture(gl.TEXTURE0);}gl.drawArrays(gl.TRIANGLES,0,3);}
-  function applyFx(stack,time,iOv,resolve){ applyFxFrom(lb,stack,time,iOv,resolve); }
+  function blit(inT,w,h,e,time,inten,tfb){let p;if(e.type==='__copy')p=progs.__copy||(progs.__copy=comp(SPECS.__copy.frag));else p=progOf(e);if(!p)return;gl.bindFramebuffer(gl.FRAMEBUFFER,tfb);gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(p);gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,inT);gl.uniform1i(gl.getUniformLocation(p,'uTex'),0);gl.uniform1f(gl.getUniformLocation(p,'uTime'),time);gl.uniform1f(gl.getUniformLocation(p,'uIntensity'),inten);gl.uniform2f(gl.getUniformLocation(p,'uResolution'),w,h);const pr=e.params||{},us=(SPECS[e.type]&&SPECS[e.type].uniforms)||[];for(let j=0;j<us.length;j++){const u=us[j],ul=gl.getUniformLocation(p,u.name);if(ul==null)continue;const val=uval(u,pr);if(u.k==='1i')gl.uniform1i(ul,val|0);else gl.uniform1f(ul,val);}const _im=(SPECS[e.type]&&SPECS[e.type].inputs)||(Array.isArray(e.inputPorts)?e.inputPorts:[]);if(_im.length&&e.inputs&&_fxResolve){let _u=1;for(let k=0;k<_im.length;k++){const sid=e.inputs[_im[k].name],cv=sid?_fxResolve(sid):null;if(!cv)continue;gl.activeTexture(gl.TEXTURE0+_u);const tx=auxTexBaked(sid,cv);if(!tx)continue;const loc=gl.getUniformLocation(p,_im[k].name);if(loc!=null)gl.uniform1i(loc,_u);_u++;}gl.activeTexture(gl.TEXTURE0);}if(needsHistB(e)&&_ringB&&_ringB.tex){gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D_ARRAY,_ringB.tex);const hl=gl.getUniformLocation(p,'uHistory');if(hl!=null)gl.uniform1i(hl,1);const dl=gl.getUniformLocation(p,'uHistDepth');if(dl!=null)gl.uniform1i(dl,_ringB.depth);const hh=gl.getUniformLocation(p,'uHistHead');if(hh!=null)gl.uniform1i(hh,_ringB.head);gl.activeTexture(gl.TEXTURE0);}else{const dl=gl.getUniformLocation(p,'uHistDepth');if(dl!=null)gl.uniform1i(dl,0);}gl.drawArrays(gl.TRIANGLES,0,3);}
+  function applyFx(stack,time,iOv,resolve,layerId){ applyFxFrom(lb,stack,time,iOv,resolve,layerId); }
   function maskCh(dctx,maskCv,src,dst){src=src||'lum';dst=dst||'alpha';const base=dctx.getImageData(0,0,W,H),md=maskCv.getContext('2d').getImageData(0,0,W,H),bd=base.data,mdd=md.data;
     for(let i=0;i<bd.length;i+=4){let mv;switch(src){case'alpha':mv=mdd[i+3]/255;break;case'r':mv=mdd[i]/255;break;case'g':mv=mdd[i+1]/255;break;case'b':mv=mdd[i+2]/255;break;default:{const ma=mdd[i+3]/255;mv=((0.2126*mdd[i]+0.7152*mdd[i+1]+0.0722*mdd[i+2])/255)*ma;}}
       switch(dst){case'r':bd[i]*=mv;break;case'g':bd[i+1]*=mv;break;case'b':bd[i+2]*=mv;break;case'rgb':bd[i]*=mv;bd[i+1]*=mv;bd[i+2]*=mv;break;default:bd[i+3]*=mv;}}
     dctx.putImageData(base,0,0);}
   const BUFS={};
-  function applyFxFrom(srcC,stack,time,iOv,resolve){_fxResolve=resolve||null;ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy'&&e.type!=='fluid'&&e.type!=='face-morph'&&e.type!=='custom-stateful');if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
+  function applyFxFrom(srcC,stack,time,iOv,resolve,layerId){_fxResolve=resolve||null;ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy'&&e.type!=='fluid'&&e.type!=='face-morph'&&e.type!=='custom-stateful');_ringB=(layerId!=null&&ps.some(needsHistB))?pushRingB(layerId,srcTex,W,H):null;if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
   function applyTop(time){ if(!GLOK||!TOP.length)return; applyFxFrom(c2d,TOP,time,null); ctx.save(); ctx.globalCompositeOperation='copy'; ctx.drawImage(cgl,0,0,W,H); ctx.restore(); }
@@ -5664,7 +5732,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       const op=(o.opacity!=null?o.opacity:1)*baseOp;
       const blend=(L._wired&&L._blend)?L._blend:'source-over';
       ctx.save();ctx.globalAlpha=op;ctx.globalCompositeOperation=blend;
-      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null,(id)=>(rendered[id]?rendered[id].cv:null));ctx.drawImage(cgl,0,0,W,H);}
+      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null,(id)=>(rendered[id]?rendered[id].cv:null),L.id);ctx.drawImage(cgl,0,0,W,H);}
       else{ctx.drawImage(lb,0,0);}
       ctx.restore();}
     applyTop(IN.clock);

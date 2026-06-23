@@ -94,6 +94,8 @@ export const FX_TYPES = [
   'particle-grid', 'pattern',
   // multi-input (read a SECOND layer: displace/composite/key/grade)
   'blend', 'matte', 'lookup',
+  // frame-history (read the per-layer ring of recent frames)
+  'row-delay', 'cache-select', 'optical-flow',
   // escape hatch
   'custom',
 ];
@@ -124,8 +126,20 @@ export const FX_LABELS = {
   'blend': 'Blend layers',
   'matte': 'Matte (key by layer)',
   'lookup': 'Color lookup (LUT)',
+  'row-delay': 'Row delay (rolling shutter)',
+  'cache-select': 'Echo (frame delay)',
+  'optical-flow': 'Optical flow',
   'custom': 'Custom shader',
 };
+
+// Effects that read a per-layer FRAME-HISTORY RING (a TEXTURE_2D_ARRAY of recent
+// source frames) via `uniform sampler2DArray uHistory` + uHistDepth + uHistHead.
+// The host (GLFx + the baked slimPlayer) allocates one ring per layer, pushes the
+// layer's source frame each tick, and binds it for these types. Depth = max
+// supported delay (60 frames) + 1 live slice. Baked into EFFECT_SPECS via the
+// `history` flag in fxProgramSpecs() so the standalone twin needs no import.
+export const FX_HISTORY_TYPES = new Set(['row-delay', 'cache-select', 'optical-flow']);
+export const FX_HISTORY_DEPTH = 61;
 
 // ---------------------------------------------------------------------------
 // Shared GLSL
@@ -403,6 +417,61 @@ vec4 fxMain() {
   uv += 0.5;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
   return texture(uTex, uv);
+}`,
+  },
+
+  // ---- frame-history effects (read the per-layer ring via uHistory) -------
+  // Rolling shutter: each row (or column) shows the source from N frames ago,
+  // shaped by a curve. The flagship history effect.
+  'row-delay': {
+    uniforms: { uMaxDelay: { k: '1f', from: 'maxDelay', def: 16 }, uCurve: { k: '1f', from: 'curve', def: 1.0 }, uVertical: { k: '1i', from: 'vertical', def: 0, bool: true } },
+    decls: 'precision highp sampler2DArray;\nuniform sampler2DArray uHistory; uniform int uHistDepth; uniform int uHistHead; uniform float uMaxDelay; uniform float uCurve; uniform int uVertical;',
+    body: `
+vec4 fxMain() {
+  if (uHistDepth <= 0) return texture(uTex, vUv);
+  float ramp = (uVertical == 1) ? vUv.x : (1.0 - vUv.y);
+  ramp = clamp(ramp, 0.0, 1.0);
+  int age = int(floor(pow(ramp, max(uCurve, 0.0001)) * uMaxDelay + 0.5));
+  age = max(0, min(age, uHistDepth - 1));
+  int slice = ((uHistHead - age) % uHistDepth + uHistDepth) % uHistDepth;
+  return texture(uHistory, vec3(vUv, float(slice)));
+}`,
+  },
+
+  // Echo: show the whole frame from `delay` frames ago (ghost / trail when
+  // stacked or combined with a layer feedback).
+  'cache-select': {
+    uniforms: { uDelay: { k: '1f', from: 'delay', def: 8.0 } },
+    decls: 'precision highp sampler2DArray;\nuniform sampler2DArray uHistory; uniform int uHistDepth; uniform int uHistHead; uniform float uDelay;',
+    body: `
+vec4 fxMain() {
+  if (uHistDepth <= 0) return texture(uTex, vUv);
+  int off = max(0, min(int(floor(uDelay + 0.5)), uHistDepth - 1));
+  int slice = ((uHistHead - off) % uHistDepth + uHistDepth) % uHistDepth;
+  return texture(uHistory, vec3(vUv, float(slice)));
+}`,
+  },
+
+  // Optical flow: per-pixel motion between the current and previous ring frame,
+  // encoded as RG centered at 0.5 so a downstream displace-by consumes it.
+  'optical-flow': {
+    uniforms: { uScale: { k: '1f', from: 'scale', def: 10.0 } },
+    decls: 'precision highp sampler2DArray;\nuniform sampler2DArray uHistory; uniform int uHistDepth; uniform int uHistHead; uniform float uScale;',
+    body: `
+vec4 fxMain() {
+  if (uHistDepth <= 0) return vec4(0.5, 0.5, 0.0, 1.0);
+  int cur = uHistHead;
+  int prev = ((uHistHead - 1) % uHistDepth + uHistDepth) % uHistDepth;
+  vec2 t = 1.0 / uResolution;
+  float c = fxLuma(texture(uHistory, vec3(vUv, float(cur))).rgb);
+  float p = fxLuma(texture(uHistory, vec3(vUv, float(prev))).rgb);
+  float gx = fxLuma(texture(uHistory, vec3(vUv + vec2(t.x, 0.0), float(cur))).rgb)
+           - fxLuma(texture(uHistory, vec3(vUv - vec2(t.x, 0.0), float(cur))).rgb);
+  float gy = fxLuma(texture(uHistory, vec3(vUv + vec2(0.0, t.y), float(cur))).rgb)
+           - fxLuma(texture(uHistory, vec3(vUv - vec2(0.0, t.y), float(cur))).rgb);
+  float mag2 = gx * gx + gy * gy + 1e-4;
+  vec2 flow = -(c - p) * vec2(gx, gy) / mag2 * uScale;
+  return vec4(clamp(flow, -1.0, 1.0) * 0.5 + 0.5, 0.0, 1.0);
 }`,
   },
 
@@ -961,6 +1030,9 @@ export function fxProgramSpecs() {
       // host binds each wired layer buffer to the named sampler; empty for the
       // single-input effects. Plain JSON so it survives the bake into the twin.
       inputs: def.inputs || [],
+      // True if this effect reads the per-layer frame-history ring (uHistory).
+      // The host allocates/pushes the ring + binds uHistory/uHistDepth/uHistHead.
+      history: FX_HISTORY_TYPES.has(type),
     };
   }
   return out;
