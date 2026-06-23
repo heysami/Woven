@@ -325,6 +325,7 @@
           mouseTail: false,        // we draw our own cursor overlay
           skipInactive: false,
           speed: 1,
+          UNSAFE_replayCanvas: true,   // replay the canvas image-snapshots (games/polish layers)
         });
       } catch (e) {
         setStreamErr("The DOM replay could not be initialised.");

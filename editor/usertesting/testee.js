@@ -458,12 +458,19 @@
             buf.push(ev);
             if (buf.length >= RRWEB_FLUSH_EVENTS) flushRrweb();
           },
-          // recordCanvas monkeypatches canvas/WebGL APIs globally; that breaks
-          // webgazer's TF.js WebGL face tracker (estimateFaces throws once
-          // recording starts -> ZERO gaze). Gaze + DOM/cursor/audio replay
-          // matter more for UX testing than canvas pixel capture, so leave it off.
-          recordCanvas: false,
+          // Capture canvas content (games, shader/polish layers) as periodic
+          // IMAGE snapshots, NOT command recording. rrweb's command mode
+          // (sampling.canvas "all", the DEFAULT when recordCanvas is just true)
+          // wraps the WebGL context methods, which breaks webgazer's TF.js
+          // tracker -> estimateFaces throws -> ZERO gaze. The NUMERIC
+          // sampling.canvas path uses toDataURL snapshots and leaves the GL
+          // context untouched, so canvas replay AND gaze both work.
+          recordCanvas: true,
+          sampling: { canvas: 2 },
+          dataURLOptions: { type: "image/jpeg", quality: 0.6 },
+          // Never snapshot webgazer's webcam canvases (privacy + size).
           blockClass: "ut-norecord",
+          blockSelector: "[id^='webgazer']",
           ignoreClass: "ut-norecord",
         });
       } catch (e) { showBanner("Screen recording could not start."); }
