@@ -200,6 +200,9 @@
     const gazeValidRef = useRef(0);   // valid gaze points captured (via polling)
     const gazePollRef = useRef(0);    // getCurrentPrediction() poll interval id
     const gazePollNRef = useRef(0);   // diag: poll attempts
+    // diag: webgazer's hidden <video> liveness during the test. If it freezes,
+    // getEyePatches() reads a stale/black frame and every prediction is null.
+    const gazeVidRef = useRef({ exists: false, rs: 0, vw: 0, paused: true, advanced: 0, lastCt: -1 });
     const [gazeStats, setGazeStats] = useState(null);
     const rrwebBufRef = useRef([]);
     const flushTimerRef = useRef(null);
@@ -485,6 +488,20 @@
       try {
         gazePollRef.current = setInterval(async () => {
           gazePollNRef.current++;
+          // Keep webgazer's hidden video alive + observe it. A tiny/occluded
+          // <video> gets paused by the browser, which freezes getEyePatches ->
+          // null predictions. play() self-heals; the counters tell us if the
+          // video (vs the face tracker) is the failing layer.
+          try {
+            const v = document.getElementById("webgazerVideoFeed");
+            const g = gazeVidRef.current;
+            if (v) {
+              const ct = v.currentTime || 0;
+              g.exists = true; g.rs = v.readyState; g.vw = v.videoWidth; g.paused = v.paused;
+              if (ct !== g.lastCt) { g.advanced++; g.lastCt = ct; }
+              if (v.paused) { try { await v.play(); } catch {} }
+            }
+          } catch {}
           let p = null;
           try { p = await Promise.resolve(webgazer.getCurrentPrediction()); } catch {}
           if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
@@ -630,8 +647,8 @@
 
       // Gaze diagnostics (shown on the done screen) so we can see, without a
       // webcam on our side, whether webgazer fired during the test at all.
-      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current, polls: gazePollNRef.current });
-      try { console.log("[ut] gaze: listenerCb=" + gazeRecvRef.current + " polls=" + gazePollNRef.current + " validPoints=" + gazeValidRef.current); } catch {}
+      setGazeStats({ recv: gazeRecvRef.current, valid: gazeValidRef.current, polls: gazePollNRef.current, vid: { ...gazeVidRef.current } });
+      try { console.log("[ut] gaze: listenerCb=" + gazeRecvRef.current + " polls=" + gazePollNRef.current + " validPoints=" + gazeValidRef.current + " video=" + JSON.stringify(gazeVidRef.current)); } catch {}
 
       // Flush remaining buffers, then wait for every stream tail to drain.
       flushRrweb(); flushCursor(); flushGaze();
@@ -836,7 +853,7 @@
           <div className="ut-done-mark"><${Icon.Check} size=${28}/></div>
           <h1>Thank you</h1>
           <p>Your session has been recorded and uploaded. You can close this tab now.</p>
-          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured (listener ${gazeStats.recv} cb, polled ${gazeStats.polls}x).${gazeStats.valid === 0 ? " No usable gaze points during the test." : ""}</p>`}
+          ${gazeStats && html`<p className="ut-gaze-diag">Gaze: ${gazeStats.valid} points captured (listener ${gazeStats.recv} cb, polled ${gazeStats.polls}x).${gazeStats.vid ? ` Video: exists=${String(gazeStats.vid.exists)} rs=${gazeStats.vid.rs} ${gazeStats.vid.vw}px paused=${String(gazeStats.vid.paused)} frames=${gazeStats.vid.advanced}/${gazeStats.polls}.` : ""}${gazeStats.valid === 0 ? " No usable gaze points during the test." : ""}</p>`}
         </div>
       </div>`;
     }
