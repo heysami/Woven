@@ -2239,6 +2239,95 @@ def _list_local_fonts(project_root):
     return out
 
 
+def _prune_baked_ds(ds_dir, style_id):
+    """Strip template scaffolding the baked DS doesn't use, so it ships only
+    its own look instead of all 9 starter overlays + build tools.
+
+    Bake seeds a DS by copytree-ing the whole bundled template (every style
+    overlay under themes/, plus tools/ build scripts) and only WIRES the one
+    chosen style into the pages. The rest is dead weight in the seeded folder
+    and every downstream export. This removes it:
+      • tools/                - build-time generators (gen-*.py + __pycache__),
+                                referenced by nothing at runtime.
+      • themes/_*.demo.html   - dev demos.
+      • themes/<other>.{css,js}- every overlay except the baked style's. A
+                                JS-backed default style (themes/<id>.js exists)
+                                stays SCOPED, so its css+js are kept; a CSS-only
+                                style is already folded into styles.css, so even
+                                its own scoped overlay is redundant and dropped.
+    Then all.css is rewritten to @import only the surviving overlay (if any),
+    and dead <script src="themes/<removed>.js"> tags (gallery.html hardcodes
+    glassmorphism's) are stripped from every HTML page.
+
+    The editor's style gallery/customizer previews styles from the bundled
+    /__default_ds/ master, never this baked copy, so style-switching in the
+    customizer is unaffected.
+    """
+    shutil.rmtree(os.path.join(ds_dir, "tools"), ignore_errors=True)
+    themes_dir = os.path.join(ds_dir, "themes")
+    if not os.path.isdir(themes_dir):
+        return
+    # Only a JS-backed default style needs its overlay kept under themes/.
+    keep = set()
+    if style_id and os.path.isfile(os.path.join(themes_dir, style_id + ".js")):
+        keep = {style_id + ".css", style_id + ".js"}
+    removed_js = set()
+    for fn in os.listdir(themes_dir):
+        fp = os.path.join(themes_dir, fn)
+        if not os.path.isfile(fp) or fn in keep:
+            continue
+        try:
+            os.remove(fp)
+            if fn.endswith(".js"):
+                removed_js.add(fn)
+        except Exception:
+            pass
+    try:
+        if not os.listdir(themes_dir):
+            os.rmdir(themes_dir)
+    except Exception:
+        pass
+    # Rewrite all.css: drop every themes/ @import, re-add the kept one (last,
+    # so the cascade order base → components → theme still holds).
+    all_path = os.path.join(ds_dir, "all.css")
+    try:
+        with open(all_path, "r", encoding="utf-8") as f:
+            all_css = f.read()
+        all_css = re.sub(r'^[ \t]*@import url\("themes/[^"]+"\);[ \t]*\r?\n',
+                         "", all_css, flags=re.M)
+        kept_css = next((fn for fn in keep if fn.endswith(".css")), "")
+        if kept_css:
+            all_css = all_css.rstrip() + '\n@import url("themes/' + kept_css + '");\n'
+        with open(all_path, "w", encoding="utf-8") as f:
+            f.write(all_css)
+    except Exception:
+        pass
+    # Strip <script> tags pointing at a removed runtime (gallery.html etc).
+    if removed_js:
+        for root, _dirs, files in os.walk(ds_dir):
+            for fn in files:
+                if not fn.lower().endswith(".html"):
+                    continue
+                fp = os.path.join(root, fn)
+                try:
+                    with open(fp, "r", encoding="utf-8") as f:
+                        t = f.read()
+                except Exception:
+                    continue
+                orig = t
+                for js in removed_js:
+                    t = re.sub(
+                        r'[ \t]*<script[^>]*\bsrc="[^"]*themes/'
+                        + re.escape(js) + r'"[^>]*>\s*</script>[ \t]*\r?\n?',
+                        "", t)
+                if t != orig:
+                    try:
+                        with open(fp, "w", encoding="utf-8") as f:
+                            f.write(t)
+                    except Exception:
+                        pass
+
+
 def _resolve_style_contract(ds_dir, meta):
     """Resolve a DS's baked `defaultStyle` into a complete, machine-readable
     build recipe - so any agent inheriting the DS is AWARE the active style is
@@ -19311,6 +19400,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                             f.write(styles_css)
                     except Exception:
                         pass
+
+        # 2d) Prune the template scaffolding this bake doesn't use - the 8
+        #     unselected style overlays + the tools/ build scripts - so the
+        #     baked DS ships only its own look. Runs AFTER the style is wired
+        #     (so the kept overlay's @import + runtime survive) and BEFORE the
+        #     version hash below (so it covers the now-pruned gallery.html).
+        _prune_baked_ds(ds_dir, default_style)
 
         # 3) meta.json - stamp a content version + label; never carry a
         #    project name. Version = sha256(styles + gallery)[:12], matching
