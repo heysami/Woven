@@ -180,6 +180,8 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__upload_font",        "purpose": "Add a font to the local library (?name=<family>&ds=<id>, raw .woff2/.ttf/.otf body)"},
         {"method": "POST", "path": "/__delete_font",        "purpose": "Remove a font from the local library (?ds=<id>&slug=<slug>)"},
         {"method": "POST", "path": "/__decision/<id>",      "purpose": "Persist a checkpoint pick (DECISION_<id>.json)"},
+        {"method": "POST", "path": "/__exa/search",         "purpose": "Exa (exa.ai) web search - PAID + METERED. Body {query, numResults?, type?, category?, contents?}. NEVER auto-run: only on explicit user request, and offer-first if you reach for it mid-task. See the 'Exa web search' capability rule"},
+        {"method": "POST", "path": "/__assistant/tester",   "purpose": "Run ONE 'simple agent' subagent (bare preamble, per-node model) for a Testing-assistant persona row. Body {model, system, prompt, useBrowser?}. With useBrowser it gets the chrome MCP to open + screenshot + click an asset by sight. Returns {ok, text}"},
     ]
 
 
@@ -948,6 +950,18 @@ How to use one:
 ## Never use em dashes (v3.13 hard rule)
 
 Do NOT use the em dash character (Unicode U+2014) anywhere you write, ever. Not in prototype copy, design-system content, chart legends, labels, headings, UI strings, alt text, code comments, commit messages, or chat replies. This applies to everything you author or edit: source/ pages, design-systems/ content, docs, JSON, code. Use a comma, a colon, parentheses, a period, or a plain spaced hyphen ("-"), whichever reads best in context. The en dash (U+2013) is banned in prose for the same reason; a plain hyphen "-" is the only dash to use. When you edit existing content that already contains an em dash, replace it as part of the edit.
+
+## Exa web search - available, but PAID and never auto-run (hard rule)
+
+The app can search the live web through Exa (exa.ai) via `POST /__exa/search` (the daemon holds the key; the editor's Research assistant node is the primary surface). Exa can:
+- **Search** (`type`: `instant` / `fast` / `auto` / `deep` / `deep-reasoning`) - web retrieval with a speed-vs-depth tradeoff.
+- **Contents** - return each hit's clean page `text`, `highlights` (token-efficient relevant extracts), and an AI `summary` in the same call.
+- **Answer** - a grounded answer with citations.
+- **Find similar** - more pages like a given URL.
+- **Structured output** (`output_schema`) - extract typed JSON from results.
+- **Category search** - company / people / research-paper / news / financial indexes.
+
+**Exa is metered and costs real money, so it is NEVER auto-run.** Only call `/__exa/search` when (a) the user explicitly asked for web research / external data, OR (b) Exa is clearly the best tool for the step - and in case (b) you MUST offer first and wait for the user's go-ahead before spending a call. Pressing Run on the Research assistant node counts as explicit user intent. Do not silently reach for Exa to "double-check" or "enrich" something the user did not ask to research.
 
 ## A DS build policy is a directive, not a permission (v3.13 hard rule)
 

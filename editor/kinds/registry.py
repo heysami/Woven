@@ -1250,31 +1250,73 @@ KINDS = {
         "notes": "Display wrapper. Refresh on file change via SSE asset-changed (D1). Versioned: every upstream-producer run snapshots the asset's files into workflow/runs/, with an auto-locked composition capturing sub-asset pins.",
     },
 
-    # ── iterator-refiner ──────────────────────────────────────────────────
-    "iterator-refiner": {
-        "title":        "Iterator - refiner (2-agent interview loop)",
-        "category":     "iterator",
+    # ── assistant-interview (replaces the old iterator-refiner) ────────────
+    "assistant-interview": {
+        "title":        "Interviewing assistant (interviews the real user)",
+        "category":     "assistant",
         "inputs": {
-            "goal":               {"type": "markdown", "userEditable": True},
-            "focus":              {"type": "markdown", "userEditable": True},
-            "pushPast":           {"type": "array",    "userEditable": True},
-            "maxTurns":           {"type": "number",   "default": 8, "userEditable": True},
-            "interviewerAgentId": {"type": "text", "userEditable": False},
-            "intervieweeAgentId": {"type": "text", "userEditable": False},
-            "outputPromptId":     {"type": "text", "userEditable": False},
+            "goal":         {"type": "markdown", "userEditable": True},
+            "focus":        {"type": "markdown", "userEditable": True},
+            "pushPast":     {"type": "array",    "userEditable": True},
+            "model":        {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "messages":     {"type": "array",    "userEditable": False},
+            "systemPrompt": {"type": "text",     "userEditable": False},
         },
         "outputs":      {},
         "outputsRoot":  None,
         "consumeFrom":  None,
-        "dispatch":     "client-iterator",   # browser-side loop
+        "dispatch":     "client-iterator",   # browser-side loop, real-user turns
         "fanOut":       None,
         "visibility":   {"transcript": True, "chatPanel": False, "perChildKill": False},
-        "extendsGraph": True,
-        "graphExtensionScope": "5 children: 2 prompts + 2 agents wired in a loop",
         "runStatusFlow": ["queued", "running", "done", "error"],
-        "completion":   {"requires": ["outputPromptId.text non-empty", "[STOP] observed OR maxTurns reached"]},
         "pauseAfter":   False,
-        "notes": "Already correct. Two isolated agent sessions converse via [STOP]. No change.",
+        "notes": "One agent interviews the REAL user in a chat loop on the node until [STOP], then writes the refined prompt to a wired/auto-spawned prompt node.",
+    },
+
+    # ── assistant-research (Exa web search → result table + visuals) ───────
+    "assistant-research": {
+        "title":        "Research assistant (Exa web search)",
+        "category":     "assistant",
+        "inputs": {
+            "goal":       {"type": "markdown", "userEditable": True},
+            "criteria":   {"type": "markdown", "userEditable": True},
+            "model":      {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "numResults": {"type": "number",   "default": 8, "userEditable": True},
+            "category":   {"type": "text",     "userEditable": True},
+            "tableId":    {"type": "text",     "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "client-iterator",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "runStatusFlow": ["queued", "running", "done", "error"],
+        "pauseAfter":   False,
+        "notes": "PAID Exa search (never auto-run). Filters results to the user's criteria, builds a canvas grid table, and drops palette/typography/asset/folder nodes as visuals.",
+    },
+
+    # ── assistant-testing (persona testers → per-row feedback table) ───────
+    "assistant-testing": {
+        "title":        "Testing assistant (persona testers)",
+        "category":     "assistant",
+        "inputs": {
+            "task":           {"type": "markdown", "userEditable": True},
+            "model":          {"type": "text",     "default": "claude-haiku-4-5", "userEditable": True},
+            "personaTypes":   {"type": "number",   "default": 3, "userEditable": True},
+            "testersPerType": {"type": "number",   "default": 2, "userEditable": True},
+            "maxTesters":     {"type": "number",   "default": 12, "userEditable": True},
+            "tableId":        {"type": "text",     "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "client-iterator",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "runStatusFlow": ["queued", "running", "done", "error"],
+        "pauseAfter":   False,
+        "notes": "Generates persona TYPES then variant testers per type (shared background, varied personality), builds a feedback table, and runs ONE real 'simple agent' subagent per row via /__assistant/tester (bare preamble, per-node model). Non-text assets are opened + screenshotted + clicked by sight (chrome MCP). A clarification loop (max 3 passes) answers question-heavy testers and re-runs them.",
     },
 
     # ── iterator-remix ────────────────────────────────────────────────────
@@ -3434,9 +3476,17 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Blended output", "tags": ["asset-gen"]}],
         "accepts":  [{"port": "input-*", "label": "Blend input", "tags": ["blendable"], "ingest": "context"}],
     },
-    "iterator-refiner": {
+    "assistant-interview": {
         "provides": [{"port": "out", "label": "Refined prompt", "tags": ["text-gen"]}],
-        "accepts":  [{"port": "in", "label": "Prompt to refine", "tags": ["text"], "ingest": "context"}],
+        "accepts":  [{"port": "in", "label": "Seed prompt / context", "tags": ["text", "section"], "ingest": "context"}],
+    },
+    "assistant-research": {
+        "provides": [{"port": "out", "label": "Research table", "tags": ["section"]}],
+        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+    },
+    "assistant-testing": {
+        "provides": [{"port": "out", "label": "Tester feedback table", "tags": ["section"]}],
+        "accepts":  [{"port": "in", "label": "What to test", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
     },
     "composer": {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],

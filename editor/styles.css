@@ -12719,6 +12719,40 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-refiner-pushadd:hover { border-color: var(--accent); color: var(--accent-text); }
 
+/* Assistant family (research / testing / interviewing). */
+.workflow-node-assistant-row { display: flex; gap: 6px; }
+.workflow-node-assistant-row .workflow-node-iter-field { flex: 1 1 0; min-width: 0; }
+.workflow-node-assistant-num input,
+.workflow-node-assistant-cat select,
+.workflow-node-assistant-model {
+  border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 11.5px; color: var(--text);
+  border-radius: 3px; padding: 4px 6px; outline: none; width: 100%;
+}
+.workflow-node-assistant-model:focus,
+.workflow-node-assistant-num input:focus,
+.workflow-node-assistant-cat select:focus { border-color: var(--accent); }
+.workflow-node-assistant-note { color: var(--text-faint); font-size: 10.5px; margin-top: 6px; }
+.workflow-node-assistant-chat {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 280px; overflow-y: auto; padding: 4px 2px;
+}
+.workflow-node-assistant-msg {
+  font-size: 11.5px; line-height: 1.4; color: var(--text);
+  border-radius: 8px; padding: 6px 9px; max-width: 88%;
+  white-space: pre-wrap; word-break: break-word;
+}
+.workflow-node-assistant-msg-assistant { align-self: flex-start; background: var(--surface-2); }
+.workflow-node-assistant-msg-user { align-self: flex-end; background: var(--accent-soft); color: var(--accent-text); }
+.workflow-node-assistant-reply { display: flex; gap: 6px; align-items: flex-end; width: 100%; }
+.workflow-node-assistant-reply textarea {
+  flex: 1 1 auto; min-width: 0; resize: none;
+  border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 11.5px; color: var(--text);
+  border-radius: 4px; padding: 5px 7px; outline: none;
+}
+.workflow-node-assistant-reply textarea:focus { border-color: var(--accent); }
+
 /* Phase 7 - Color palette direction node. */
 .workflow-node-palette {
   display: grid;

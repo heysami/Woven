@@ -22789,7 +22789,9 @@ function _modelWasDeprecated(raw) {
 // boot before /__kinds/registry returns). Adding a new editable field
 // requires editing editor/kinds/registry.py - single source of truth.
 const _LEGACY_EDITABLE_FIELDS = {
-  "iterator-refiner": ["goal", "focus", "pushPast", "maxTurns"],
+  "assistant-interview": ["goal", "focus", "pushPast", "model"],
+  "assistant-research":  ["goal", "criteria", "model", "numResults", "category"],
+  "assistant-testing":   ["task", "model", "personaTypes", "testersPerType", "maxTesters"],
   "iterator-remix":   ["variants"],
   "design-system":    ["spec"],
 };
@@ -24287,7 +24289,9 @@ function workflowPortPosition(node, side, ctx) {
     }
     if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
   }
-  if (node.kind === "iterator-refiner") {
+  // Assistant family (interview / research / testing): single LEFT `in`,
+  // single RIGHT `out`, both at body mid-height.
+  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing") {
     const bodyTop = 32;
     const bodyH = Math.max(0, h - bodyTop);
     if (side === "in")  return { x: node.x,     y: node.y + bodyTop + bodyH * 0.5 };
@@ -24349,6 +24353,61 @@ function workflowParseEdgeRef(ref) {
   const i = ref.lastIndexOf(".");
   if (i < 0) return null;
   return { node: ref.slice(0, i), port: ref.slice(i + 1) };
+}
+
+// ── Assistant-node shared helpers ─────────────────────────────────────────
+// Pull the first JSON array/object out of a model reply (tolerant of code
+// fences + prose). Returns the parsed value, or null on failure.
+function _assistantExtractJson(text) {
+  if (typeof text !== "string") return null;
+  const s = text.replace(/```json/gi, "").replace(/```/g, "");
+  const a = s.indexOf("["), b = s.lastIndexOf("]");
+  const c = s.indexOf("{"), d = s.lastIndexOf("}");
+  let cand = null;
+  if (a >= 0 && b > a) cand = s.slice(a, b + 1);
+  else if (c >= 0 && d > c) cand = s.slice(c, d + 1);
+  if (!cand) return null;
+  try { return JSON.parse(cand); } catch (e) { return null; }
+}
+// Flatten resolveUpstreamInputs() entries into plain text the assistant LLM can
+// read (walks section/layer children too).
+function _assistantCollectText(entries) {
+  const out = [];
+  const walk = (arr) => {
+    for (const e of (arr || [])) {
+      if (!e) continue;
+      if (typeof e.text === "string" && e.text.trim()) out.push(e.text.trim());
+      if (Array.isArray(e.children)) walk(e.children);
+    }
+  };
+  walk(entries);
+  return out.join("\n\n");
+}
+// Collect asset references (image/html/etc) from upstream entries.
+function _assistantCollectAssets(entries) {
+  const out = [];
+  const walk = (arr) => {
+    for (const e of (arr || [])) {
+      if (!e) continue;
+      if ((e.type === "asset" || e.kind === "asset") && (e.url || e.path)) {
+        out.push({ url: e.url || null, path: e.path || null,
+                   label: e.label || "", assetKind: e.assetKind || null });
+      }
+      if (Array.isArray(e.children)) walk(e.children);
+    }
+  };
+  walk(entries);
+  return out;
+}
+// Collect folder scopes from upstream entries.
+function _assistantCollectFolders(entries) {
+  const out = [];
+  for (const e of (entries || [])) {
+    if (e && (e.type === "folder" || e.kind === "folder")) {
+      out.push({ path: e.path || e.url || "", label: e.label || "" });
+    }
+  }
+  return out;
 }
 
 // Layer-anchored ports encode a target layer row in the port segment:
@@ -25158,8 +25217,12 @@ const WORKFLOW_NODE_FACTORY = {
       model: p.model || "gpt-image-2",
     };
   },
-  "iterator-refiner": (p) => ({
-    kind: "iterator-refiner", w: 420, h: 480,
+  // ── Assistant family (agent-backed research / testing / interviewing) ────
+  // assistant-interview REPLACES the old iterator-refiner: instead of two
+  // simulated agents talking, one agent interviews the REAL user in a chat
+  // loop on the node, reusing the refiner's goal/focus/push-past construct.
+  "assistant-interview": (p) => ({
+    kind: "assistant-interview", w: 440, h: 560,
     goal:  p.goal  || "",
     focus: p.focus || "",
     pushPast: p.pushPast || [
@@ -25167,6 +25230,30 @@ const WORKFLOW_NODE_FACTORY = {
       { from: "", to: "" },
       { from: "", to: "" },
     ],
+    model: p.model || "claude-opus-4-8",
+    messages: p.messages || [],   // [{role:"assistant"|"user", text}]
+  }),
+  // Research assistant: web research via Exa, distilled into a result table
+  // plus visual-illustration nodes. Exa is PAID - only runs on the Run button.
+  "assistant-research": (p) => ({
+    kind: "assistant-research", w: 420, h: 460,
+    goal:     p.goal     || "",   // what to research
+    criteria: p.criteria || "",   // quality criteria a good result must meet
+    model:    p.model    || "claude-opus-4-8",
+    numResults: p.numResults || 8,
+    category: p.category || "",   // "" | company | people | research paper | news | financial report
+    tableId:  p.tableId  || null, // the generated result table node id (for re-run)
+  }),
+  // Testing assistant: synthesises persona testers into a table, then runs one
+  // real subagent per row (model picked on the node) to gather honest feedback.
+  "assistant-testing": (p) => ({
+    kind: "assistant-testing", w: 440, h: 500,
+    task:  p.task  || "",   // what to test / goal for the testers
+    model: p.model || "claude-haiku-4-5",   // cheap default - one run per tester
+    personaTypes:   p.personaTypes   || 3,  // distinct background archetypes
+    testersPerType: p.testersPerType || 2,  // variant testers per type (vary personality)
+    maxTesters: p.maxTesters || 12,         // hard cap on total rows
+    tableId: p.tableId || null,
   }),
   "composer": (p) => ({
     kind: "composer", w: 900, h: 600,
@@ -25468,14 +25555,26 @@ const WORKFLOW_CONNECT_DEFS = {
     // weighs text + asset inputs together.
     accepts:  { "input-*": { label: "Blend input", tags: ["asset", "blendable"] } },
   },
-  "iterator-refiner": {
-    label: "Refiner",
-    // text-gen ONLY (a runtime producer), not the static "text" tag - a
-    // refiner has no fixed text until it runs, so offering it into static-text
-    // inputs (agent / skill-llm / formatted-text) wired a no-op. It still
-    // feeds prompt.in via text-gen.
+  // ── Assistant family ────────────────────────────────────────────────────
+  "assistant-interview": {
+    label: "Interviewing assistant",
+    // text-gen ONLY (a runtime producer) - no fixed text until the interview
+    // finishes; feeds prompt.in via text-gen, same as the old refiner did.
     provides: { out: { label: "Refined prompt", tags: ["text-gen"] } },
-    accepts:  { in:  { label: "Prompt to refine", tags: ["text"] } },
+    accepts:  { in:  { label: "Seed prompt / context", tags: ["text", "section"] } },
+  },
+  "assistant-research": {
+    label: "Research assistant",
+    // Out is the generated result table (a "section" contents bundle).
+    provides: { out: { label: "Research table", tags: ["section"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+  },
+  "assistant-testing": {
+    label: "Testing assistant",
+    provides: { out: { label: "Tester feedback table", tags: ["section"] } },
+    accepts:  { in:  { label: "What to test (prompt / asset / folder / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
   "composer": {
     label: "Composer",
@@ -31419,6 +31518,105 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return { ...d, wb: nextWb, nodes: nextNodes };
     });
     setTableSel(null);
+  }, [setData]);
+
+  // ── Shared result-table helpers (used by the assistant nodes) ─────────────
+  // Build a real canvas grid `table` node and fill every cell with a cell-bound
+  // text item. headers = column titles (row 0, bold); rows = array of string
+  // arrays (one per body row). Returns the new table node id. Commits node +
+  // header items + body items in ONE setData so the reconcile sees them whole.
+  const workflowBuildResultTable = useCallback(({ title, headers, rows, x, y, colWidths, rowH }) => {
+    const cols = (Array.isArray(colWidths) && colWidths.length === headers.length)
+      ? colWidths.map(w => Math.max(WB_TABLE_MIN_COL, Math.round(w)))
+      : headers.map(() => 220);
+    const headerH = 34;
+    const bodyRowH = Math.max(WB_TABLE_MIN_ROW, Math.round(rowH || 72));
+    const rowHeights = [headerH, ...rows.map(() => bodyRowH)];
+    const tableId = workflowNewNodeId();
+    const tx = Math.round(x || 0), ty = Math.round(y || 0);
+    const body = workflowMakeNodeOfKind("table", { cols, rows: rowHeights, title: title || "Results" });
+    const tableNode = { id: tableId, ...body, x: tx, y: ty };
+    const items = [];
+    const addCellText = (r, c, text, bold) => {
+      const rect = wbTableCellRect(tableNode, r, c);
+      const it = wbMakeItem("text", {
+        text: String(text == null ? "" : text),
+        x: rect.x + 6, y: rect.y + 6,
+        w: Math.max(40, (cols[c] || 200) - 12),
+        fontSize: "sm", bold: !!bold, align: "left", color: "ink",
+      });
+      it.cell = { tableId, r, c, ox: 6, oy: 6 };
+      items.push(it);
+    };
+    headers.forEach((h, c) => addCellText(0, c, h, true));
+    rows.forEach((row, ri) => {
+      headers.forEach((_, c) => addCellText(ri + 1, c, (row && row[c] != null) ? row[c] : ""));
+    });
+    setData(d => ({
+      ...d,
+      nodes: [...(d.nodes || []), tableNode],
+      wb: [...(Array.isArray(d.wb) ? d.wb : []), ...items],
+    }));
+    return tableId;
+  }, [setData]);
+
+  // Replace the text of the cell-bound text item at (r,c) of a table, or create
+  // one if the cell is empty. Used to fill in tester replies as runs complete.
+  const workflowSetCellText = useCallback((tableId, r, c, text) => {
+    setData(d => {
+      const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
+      if (!t) return d;
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      let found = false;
+      const next = list.map(it => {
+        if (it && it.cell && it.cell.tableId === tableId && it.cell.r === r && it.cell.c === c && it.type === "text") {
+          found = true;
+          return { ...it, text: String(text == null ? "" : text) };
+        }
+        return it;
+      });
+      if (found) return { ...d, wb: next };
+      const cols = wbTableCols(t);
+      const rect = wbTableCellRect(t, r, c);
+      const it = wbMakeItem("text", {
+        text: String(text == null ? "" : text),
+        x: rect.x + 6, y: rect.y + 6,
+        w: Math.max(40, (cols[c] || 200) - 12),
+        fontSize: "sm", align: "left", color: "ink",
+      });
+      it.cell = { tableId, r, c, ox: 6, oy: 6 };
+      return { ...d, wb: [...next, it] };
+    });
+  }, [setData]);
+
+  // Drop a real reusable node (color-palette / typography / asset / folder) into
+  // a table cell, cell-bound so the reconcile keeps it pinned. Returns the id.
+  const workflowAddCellNode = useCallback((tableId, r, c, kind, payload) => {
+    let newId = null;
+    setData(d => {
+      const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
+      if (!t) return d;
+      const body = workflowMakeNodeOfKind(kind, payload || {});
+      if (!body) return d;
+      newId = workflowNewNodeId();
+      const rect = wbTableCellRect(t, r, c);
+      const node = { id: newId, ...body, x: rect.x + 6, y: rect.y + 6,
+                     cell: { tableId, r, c, ox: 6, oy: 6 } };
+      return { ...d, nodes: [...(d.nodes || []), node] };
+    });
+    return newId;
+  }, [setData]);
+
+  // Strip every cell-bound item/node from a table (for re-run). The table node
+  // itself is kept. wb text items are removed; bound nodes are unbound.
+  const workflowClearTableCells = useCallback((tableId) => {
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      const nextWb = list.filter(it => !(it && it.cell && it.cell.tableId === tableId));
+      const nextNodes = (d.nodes || []).map(n =>
+        (n && n.cell && n.cell.tableId === tableId) ? wbStripCell(n) : n);
+      return { ...d, wb: nextWb, nodes: nextNodes };
+    });
   }, [setData]);
 
   // Whiteboard keyboard: tool hotkeys + the Esc ladder. Mounted only in
@@ -37371,233 +37569,355 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // turn appends to the agent nodes' on-canvas `conversation` field so the
   // user can open chat and inspect; the final synthesised prompt lands in
   // the "Refined prompt" output node.
-  const setupRefiner = useCallback(async (refinerId) => {
-    const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    // phase drives the button label: "spawning" → "interview" → "answer"
-    // → "done"/"error". turn/maxTurns let the UI show "3 / 8" progress.
-    update(refinerId, { status: "loading", error: null, phase: "spawning", turn: 0, maxTurns: 0 });
-    try {
-      const rep = (data.nodes || []).find(n => n.id === refinerId);
-      if (!rep) throw new Error("Refiner node not found");
-      const goal  = (rep.goal  || "").trim() || "[USER INPUT GOAL OR LIST OF CRITERIA AND ITS THRESHOLD OF QUALITY]";
-      const focus = (rep.focus || "").trim() || "[USER INPUT FOCUS OF ASPECT OF PROMPT]";
-      const pushPast = (rep.pushPast || []).filter(p => (p.from || "").trim() && (p.to || "").trim());
-      const pushLines = pushPast.length
-        ? pushPast.map(p => `Push past ${p.from} to ${p.to}.`).join(" ")
-        : "Push past [AVERAGE OUTPUT SAMPLE QUALITY 1] to [DESIRED OUTPUT SAMPLE QUALITY 1]. Push past [AVERAGE OUTPUT SAMPLE QUALITY 2] to [DESIRED OUTPUT SAMPLE QUALITY 2]. Push past [AVERAGE OUTPUT SAMPLE QUALITY 3] to [DESIRED OUTPUT SAMPLE QUALITY 3].";
-
-      // Read seed prompt from anything wired to refiner.in (most likely a
-      // prompt text node). v2.10b - if the upstream prompt is wired but
-      // empty, REFUSE to run instead of producing nonsense from the
-      // "(none wired)" placeholder. Previous behavior silently fell through
-      // when the seed input wasn't populated by the orchestrator, producing
-      // an interview about thin air. Two valid states now: (1) something
-      // wired and non-empty → run; (2) nothing wired at all → run with the
-      // placeholder seed (legacy library-drop behavior). Empty-wired upstream
-      // is the bug case we guard.
-      let seedPrompt = "";
-      let upstreamWired = false;
-      for (const e of (data.edges || [])) {
-        const t = workflowParseEdgeRef(e.to);
-        if (t && t.node === refinerId && t.port === "in") {
-          const f = workflowParseEdgeRef(e.from);
-          const up = (data.nodes || []).find(nn => nn.id === f.node);
-          if (up?.kind === "prompt") {
-            upstreamWired = true;
-            seedPrompt = up.text || "";
-            break;
-          }
-        }
-      }
-      if (upstreamWired && !seedPrompt.trim()) {
-        update(refinerId, {
-          status: "error",
-          error: "Empty seed - the upstream prompt node is wired but its text is empty. Populate it (orchestrator should do this; or open the upstream node and type the brief manually) before clicking Setup loop. Otherwise the refiner would produce an interview about nothing.",
+  // Shared LLM caller for the assistant nodes - one /__llm_run round-trip with
+  // retry-on-transient-failure backoff. Resolves the provider from the chosen
+  // text model (so the per-node model dropdown actually routes to the right
+  // backend). Returns the reply text.
+  const assistantLlm = useCallback(async (messages, opts = {}) => {
+    const model = _resolveLiveModel(opts.model) || "claude-opus-4-8";
+    const tm = (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
+    const provider = opts.provider || (tm.find(m => m.id === model) || {}).provider || "anthropic";
+    const maxTokens = opts.maxTokens || 2000;
+    const delays = [0, 1000, 2000, 5000, 10000];
+    let lastErr = null;
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      if (delays[attempt] > 0) await new Promise(r => setTimeout(r, delays[attempt]));
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), opts.timeoutMs || 600000);
+      try {
+        const r = await fetch(apiUrl("/__llm_run"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ skill: "llm", provider, model, messages, options: { max_tokens: maxTokens } }),
+          signal: ctl.signal,
         });
-        return;
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+        clearTimeout(t);
+        return j.text || "";
+      } catch (e) {
+        clearTimeout(t);
+        if (e?.name === "AbortError") throw new Error("LLM call timed out. If you have not added an API key in Settings, calls route through the slow CLI fallback.");
+        lastErr = e;
+        const msg = String(e?.message || e);
+        const transient = e instanceof TypeError || /Failed to fetch|HTTP 5\d\d|network|reset|abort/i.test(msg);
+        if (!transient) throw e;
       }
+    }
+    throw new Error("LLM call failed after retries: " + String(lastErr?.message || lastErr));
+  }, []);
 
-      const interviewerSystem =
-        `You are the INTERVIEWER. Interview the interviewee relentlessly about every aspect of the prompt below until we reach: ${goal}. ` +
-        `Walk down each branch of the ${focus} tree, resolving dependencies between decisions one-by-one. ` +
-        `For each question, provide your recommended answer (so the interviewee has a starting reference).\n\n` +
-        `Ask ONE question per turn. Be specific. Quote the interviewee's prior answer when refining.\n\n` +
-        pushLines + `\n\n` +
-        `STOPPING RULE: when the last three interviewee answers each satisfy the goal/threshold, emit exactly the token [STOP] on its own line, then on the next line print the FINAL REFINED PROMPT - a single coherent rewrite of the original prompt that bakes in every decision reached. No further questions after [STOP].\n\n` +
-        `PROMPT TO REFINE:\n${seedPrompt || "(none wired - ask the interviewee what they're trying to build, then proceed)"}`;
-      const intervieweeSystem =
-        `You are the INTERVIEWEE. Answer the interviewer's questions one at a time, in isolation from the interviewer's reasoning. ` +
-        `Goal / threshold: ${goal}. ` +
-        `Focus: ${focus}. ` +
-        `Be specific. Push past surface niceties; commit to concrete tradeoffs. If a question is ambiguous, name the ambiguity and pick the interpretation that best satisfies the goal. ` +
-        `Each answer is ≤ 4 sentences, declarative, decisive.`;
+  // Drop the table currently owned by an assistant node (its node + every
+  // cell-bound item/node) so a re-run rebuilds cleanly.
+  const _assistantDropTable = useCallback((oldId) => {
+    if (!oldId) return;
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).filter(n => n.id !== oldId && !(n.cell && n.cell.tableId === oldId)),
+      wb: (Array.isArray(d.wb) ? d.wb : []).filter(it => !(it.cell && it.cell.tableId === oldId)),
+    }));
+  }, [setData]);
 
-      // v2.10d - if there's ALREADY a prompt node wired downstream of the
-      // refiner (refinerId.out → <something>.in where <something>.kind ===
-      // "prompt"), reuse THAT node as the output sink instead of spawning a
-      // duplicate. This avoids the "two refined-prompt sinks" problem in
-      // the onboarding orchestration (where the output is pre-wired).
-      // For library-drop usage (no downstream wiring), the fallback spawns
-      // a new output node as before.
-      let existingOutId = null;
-      for (const e of (data.edges || [])) {
-        const f = workflowParseEdgeRef(e.from);
-        if (f?.node === refinerId && f.port === "out") {
-          const t = workflowParseEdgeRef(e.to);
-          if (t) {
-            const downstream = (data.nodes || []).find(n => n.id === t.node);
-            if (downstream?.kind === "prompt") { existingOutId = downstream.id; break; }
-          }
-        }
-      }
-      // Spawn the canvas-visible scaffolding (system prompts + agent cards +
-      // final result node) so the user can inspect the conversation in the
-      // chat dialog. The actual Q/A loop runs over /__llm_run below, not
-      // through the per-agent Run buttons.
-      const ts = Date.now().toString(36);
-      const erId  = "n-refiner-er-"  + ts;
-      const eeId  = "n-refiner-ee-"  + ts;
-      const erAg  = "n-refiner-erA-" + ts;
-      const eeAg  = "n-refiner-eeA-" + ts;
-      const outId = existingOutId || ("n-refiner-out-" + ts);
-      setData(d => ({
-        ...d,
-        nodes: [
-          ...(d.nodes || []),
-          { id: erId, kind: "prompt", x: Math.round(rep.x - 380), y: Math.round(rep.y),       w: 320, h: 220, title: "Interviewer system", text: interviewerSystem },
-          { id: eeId, kind: "prompt", x: Math.round(rep.x - 380), y: Math.round(rep.y + 260), w: 320, h: 220, title: "Interviewee system", text: intervieweeSystem },
-          { id: erAg, kind: "agent",  x: Math.round(rep.x + (rep.w || 420) + 60), y: Math.round(rep.y),       w: 360, h: 320, name: "Interviewer", conversation: [] },
-          { id: eeAg, kind: "agent",  x: Math.round(rep.x + (rep.w || 420) + 60), y: Math.round(rep.y + 360), w: 360, h: 320, name: "Interviewee", conversation: [] },
-          // Only spawn the output prompt when we're not reusing an existing one.
-          ...(existingOutId ? [] : [{ id: outId, kind: "prompt", x: Math.round(rep.x + (rep.w || 420) + 480), y: Math.round(rep.y), w: 320, h: 220, title: "Refined prompt", text: "" }]),
-        ],
-        edges: [
-          ...(d.edges || []),
-          { from: erId + ".out", to: erAg + ".system-in" },
-          { from: eeId + ".out", to: eeAg + ".system-in" },
-          { from: erAg + ".output", to: eeAg + ".input" },
-          { from: eeAg + ".output", to: erAg + ".input" },
-          { from: erAg + ".output", to: outId + ".in" },
-          // Only add the refinerId.out → outId.in edge if we're spawning a
-          // new outId; if reusing an existing one, the edge already exists.
-          ...(existingOutId ? [] : [{ from: refinerId + ".out", to: outId + ".in" }]),
-        ],
-      }));
-      // Persist the spawned ids on the Refiner so re-runs target the same
-      // nodes instead of spawning duplicates.
-      updateNode(refinerId, { interviewerAgentId: erAg, intervieweeAgentId: eeAg, outputPromptId: outId });
-
-      // ── Loop driver ────────────────────────────────────────────────
-      const MAX_TURNS = Math.max(1, Math.min(12, rep.maxTurns || 8));
-      const erHistory = [];   // {role:"user"|"assistant", content}
-      const eeHistory = [];
-      let finalPrompt = "";
-      // Kick off: interviewer makes the opening question without prior input.
-      erHistory.push({ role: "user", content: "Begin." });
-
-      // Per-call timeout so a stalled CLI fallback surfaces as a real error
-      // instead of an indefinite spinner. 10 min matches the daemon's CLI
-      // timeout - if the daemon is going to give up at that point anyway,
-      // the client should give up at the same moment with a clear message.
-      // v2.37 - retry-with-backoff on transient fetch failures. Browsers
-      // can drop fetches mid-flight (connection reset, request aborted,
-      // network change) and the daemon's CLI subprocess fallback sometimes
-      // takes 6+ seconds, during which a single dropped TCP connection
-      // surfaces as TypeError("Failed to fetch"). Previously this killed
-      // the whole interview loop on first failure. Now we retry up to
-      // 4 times with backoff (1s, 2s, 5s, 10s); each retry refreshes the
-      // refiner card UI so the user knows it's trying again, not stuck.
-      const callWithTimeout = async (body, label, timeoutMs = 600000) => {
-        const delays = [0, 1000, 2000, 5000, 10000];
-        let lastErr = null;
-        for (let attempt = 0; attempt < delays.length; attempt++) {
-          if (delays[attempt] > 0) {
-            update(refinerId, { status: "loading", error: null,
-              phase: "retrying (" + attempt + "/" + (delays.length - 1) + ")",
-              turn: 0, maxTurns: 0 });
-            await new Promise(r => setTimeout(r, delays[attempt]));
-          }
-          const ctl = new AbortController();
-          const t = setTimeout(() => ctl.abort(), timeoutMs);
-          try {
-            const r = await fetch(apiUrl("/__llm_run"), {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body), signal: ctl.signal,
-            });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(label + ": " + (j.error || ("HTTP " + r.status)));
-            clearTimeout(t);
-            return j.text || "";   // success - no more retries
-          } catch (e) {
-            clearTimeout(t);
-            if (e?.name === "AbortError") {
-              // Timeout = give up entirely (already waited 10 minutes).
-              throw new Error(label + ": timed out after " + Math.round(timeoutMs / 1000) + "s. " +
-                "If you haven't pasted an Anthropic API key, every LLM call routes through the slow Claude CLI fallback - open Settings (⚙) and add a key to fix this.");
+  // ── Assistant 3: Interviewing assistant (replaces the prompt refiner) ─────
+  // One agent interviews the REAL user in a chat loop on the node. setupInterview
+  // asks the opening question; submitInterviewAnswer feeds each human answer back
+  // and emits the next question, until the agent prints [STOP] + the refined
+  // prompt (written to a wired/auto-spawned prompt node).
+  const submitInterviewAnswer = useCallback(async (nodeId, answer) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const ans = String(answer || "").trim();
+    if (!ans) return;
+    const msgs = [...(node.messages || []), { role: "user", text: ans }];
+    updateNode(nodeId, { messages: msgs });
+    setRun({ status: "loading", phase: "thinking", error: null });
+    try {
+      const sys = node.systemPrompt || "";
+      const convo = [{ role: "user", content: "Begin." }];
+      for (const m of msgs) convo.push({ role: m.role === "assistant" ? "assistant" : "user", content: m.text });
+      const reply = await assistantLlm([{ role: "system", content: sys }, ...convo], { model: node.model, maxTokens: 4000 });
+      if (/\[STOP\]/i.test(reply)) {
+        const finalPrompt = reply.split(/\[STOP\]/i).slice(1).join("[STOP]").trim() || reply.trim();
+        setData(d => {
+          let outId = null;
+          for (const e of (d.edges || [])) {
+            const f = workflowParseEdgeRef(e.from);
+            if (f && f.node === nodeId && f.port === "out") {
+              const tt = workflowParseEdgeRef(e.to);
+              const ds = tt && (d.nodes || []).find(n => n.id === tt.node);
+              if (ds && ds.kind === "prompt") { outId = ds.id; break; }
             }
-            lastErr = e;
-            // Retry on TypeError (network), HTTP 5xx, and transient names.
-            const msg = String(e?.message || e);
-            const transient = e instanceof TypeError
-              || /Failed to fetch|HTTP 5\d\d|network|reset|abort/i.test(msg);
-            if (!transient) throw e;
-            // Loop to next attempt (or fall through to final throw)
           }
+          if (outId) {
+            return { ...d, nodes: (d.nodes || []).map(n => n.id === outId ? { ...n, text: finalPrompt } : n) };
+          }
+          const nd = (d.nodes || []).find(n => n.id === nodeId);
+          const newId = workflowNewNodeId();
+          const nx = nd ? Math.round(nd.x + (nd.w || 440) + 60) : 0;
+          const ny = nd ? Math.round(nd.y) : 0;
+          return {
+            ...d,
+            nodes: [...(d.nodes || []), { id: newId, kind: "prompt", x: nx, y: ny, w: 320, h: 240, title: "Refined prompt", text: finalPrompt }],
+            edges: [...(d.edges || []), { from: nodeId + ".out", to: newId + ".in" }],
+          };
+        });
+        updateNode(nodeId, { messages: [...msgs, { role: "assistant", text: "Done. The refined prompt is written to the output node." }] });
+        setRun({ status: "done", phase: "done", ranAt: Date.now() });
+      } else {
+        updateNode(nodeId, { messages: [...msgs, { role: "assistant", text: reply }] });
+        setRun({ status: "loading", phase: "awaiting", error: null });
+      }
+    } catch (e) {
+      setRun({ status: "error", error: String(e?.message || e) });
+    }
+  }, [data, setData, updateNode, assistantLlm]);
+
+  const setupInterview = useCallback(async (nodeId) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    setRun({ status: "loading", phase: "thinking", error: null });
+    try {
+      const goal  = (node.goal  || "").trim() || "a prompt good enough to build from with no further questions";
+      const focus = (node.focus || "").trim() || "every aspect of what the user wants";
+      const pushPast = (node.pushPast || []).filter(p => (p.from || "").trim() && (p.to || "").trim());
+      const pushLines = pushPast.length ? pushPast.map(p => `Push past ${p.from} to ${p.to}.`).join(" ") : "";
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const seed = _assistantCollectText(ups);
+      const sys =
+        `You are an expert interviewer refining a brief by interviewing the REAL human user (not a simulation, not a roleplay). ` +
+        `Interview them relentlessly, ONE question per turn, until you reach: ${goal}. ` +
+        `Walk every branch of ${focus}, resolving dependencies one at a time. For each question, give your own recommended answer so the user has a starting reference, then ask them to confirm or change it. Quote their prior answers when refining. Keep each turn short and concrete. ` +
+        (pushLines ? pushLines + " " : "") +
+        `STOPPING RULE: once the goal is satisfied, emit the token [STOP] on its own line, then on the next line print the FINAL REFINED PROMPT - a single coherent rewrite that bakes in every decision reached. No more questions after [STOP].` +
+        (seed ? `\n\nSTARTING CONTEXT / SEED:\n${seed}` : `\n\n(No seed wired - open by asking the user what they are trying to build.)`);
+      updateNode(nodeId, { systemPrompt: sys, messages: [] });
+      const first = await assistantLlm([{ role: "system", content: sys }, { role: "user", content: "Begin." }], { model: node.model, maxTokens: 1500 });
+      updateNode(nodeId, { messages: [{ role: "assistant", text: first }] });
+      setRun({ status: "loading", phase: "awaiting", error: null });
+    } catch (e) {
+      setRun({ status: "error", error: String(e?.message || e) });
+    }
+  }, [data, updateNode, assistantLlm]);
+
+  // ── Assistant 1: Research assistant (Exa search → result table + visuals) ─
+  const setupResearch = useCallback(async (nodeId) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const query = (node.goal || "").trim();
+    if (!query) { setRun({ status: "error", error: "Enter what to research first." }); return; }
+    setRun({ status: "loading", phase: "searching", error: null });
+    try {
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ctx = _assistantCollectText(ups);
+      const folders = _assistantCollectFolders(ups);
+      // Exa is paid - pressing Run is the explicit consent the cost rule needs.
+      const er = await fetch(apiUrl("/__exa/search"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: ctx ? (query + "\n\nContext:\n" + ctx).slice(0, 800) : query,
+          numResults: node.numResults || 8, type: "auto",
+          category: node.category || undefined,
+        }),
+      });
+      const ej = await er.json().catch(() => ({}));
+      if (!er.ok || !ej.ok) throw new Error(ej.error || ("Exa search failed (HTTP " + er.status + "). Add an Exa key in Settings."));
+      const results = ej.results || [];
+      if (!results.length) { setRun({ status: "error", error: "Exa returned no results." }); return; }
+
+      // Criteria pass: keep only results that meet the user's quality bar.
+      setRun({ status: "loading", phase: "filtering" });
+      const criteria = (node.criteria || "").trim() || "relevant, specific, and trustworthy";
+      const filtText = await assistantLlm([{ role: "user", content:
+        `Filter web search results against the user's quality criteria.\n\nRESEARCH GOAL:\n${query}\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\nRESULTS (JSON):\n` +
+        JSON.stringify(results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || (x.highlights || [])[0] || "", text: (x.text || "").slice(0, 500) }))) +
+        `\n\nReturn ONLY a JSON array of the results that PASS, best first, each {"i":<index>,"title":"...","url":"...","summary":"<=2 sentences","why":"why it meets the criteria"}. Drop low-quality results. No prose.` }],
+        { model: node.model, maxTokens: 3000 });
+      let kept = _assistantExtractJson(filtText);
+      if (!Array.isArray(kept) || !kept.length) {
+        kept = results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || "", why: "" }));
+      }
+
+      // Visual-illustration pass: pick the best visual per kept result.
+      setRun({ status: "loading", phase: "illustrating" });
+      const vmText = await assistantLlm([{ role: "user", content:
+        `For each kept research result, choose the single best VISUAL to illustrate it.\nOptions: "image" (use an image URL present in the result, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link" (default).\nResults:\n` +
+        JSON.stringify(kept.map(k => ({ i: k.i, title: k.title, url: k.url, summary: k.summary }))) +
+        `\nAvailable image urls per index: ` + JSON.stringify(results.map((x, i) => ({ i, image: x.image || "" }))) +
+        `\nReturn ONLY a JSON array [{"i":<index>,"visual":"image|color|font|link","value":"<url|hex|font name|>"}]. No prose.` }],
+        { model: node.model, maxTokens: 1500 });
+      const visuals = _assistantExtractJson(vmText);
+      const visById = {};
+      for (const v of (Array.isArray(visuals) ? visuals : [])) if (v && typeof v.i === "number") visById[v.i] = v;
+
+      // Build the result table (fresh each run).
+      setRun({ status: "loading", phase: "building table" });
+      if (node.tableId) _assistantDropTable(node.tableId);
+      const headers = ["Result", "Source", "Summary", "Why it qualifies", "Visual"];
+      const rows = kept.map(k => [k.title || "", k.url || "", k.summary || "", k.why || "", ""]);
+      const tx = Math.round(node.x + (node.w || 420) + 80), ty = Math.round(node.y);
+      const tableId = workflowBuildResultTable({
+        title: "Research: " + query.slice(0, 40), headers, rows, x: tx, y: ty,
+        colWidths: [220, 200, 320, 260, 340], rowH: 190,
+      });
+      updateNode(nodeId, { tableId });
+
+      // Drop a real reusable node into the Visual column per result.
+      kept.forEach((k, ri) => {
+        const v = visById[k.i] || { visual: "link", value: k.url };
+        const r = ri + 1, c = 4;
+        const val = (v.value || "").trim();
+        if (v.visual === "color" && /^#?[0-9a-fA-F]{3,8}$/.test(val.replace("#", ""))) {
+          const hex = val.startsWith("#") ? val : "#" + val;
+          workflowAddCellNode(tableId, r, c, "color-palette", { name: (k.title || "Color").slice(0, 24), swatches: [{ name: "--accent", value: hex }] });
+        } else if (v.visual === "font" && val) {
+          workflowAddCellNode(tableId, r, c, "typography", { name: val, fontFamily: val });
+        } else if (v.visual === "image" && val) {
+          workflowAddCellNode(tableId, r, c, "asset", { assetKind: "image", path: val });
+        } else {
+          workflowSetCellText(tableId, r, c, k.url || "(link)");
         }
-        throw new Error(label + " failed after " + delays.length + " attempts: " + String(lastErr?.message || lastErr));
+      });
+
+      // If the research drew on local folders, drop a folder node so the user
+      // can see where the gathered files live.
+      if (folders.length) {
+        setData(d => {
+          const nd = (d.nodes || []).find(n => n.id === nodeId);
+          if (!nd) return d;
+          const newId = workflowNewNodeId();
+          const fbody = workflowMakeNodeOfKind("folder", { path: folders[0].path, title: folders[0].label || "Gathered files" });
+          if (!fbody) return d;
+          return { ...d, nodes: [...(d.nodes || []), { id: newId, ...fbody, x: tx, y: ty + 40 + rows.length * 190 + 40 }] };
+        });
+      }
+      setRun({ status: "done", phase: "done", ranAt: Date.now() });
+    } catch (e) {
+      setRun({ status: "error", error: String(e?.message || e) });
+    }
+  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowSetCellText, _assistantDropTable]);
+
+  // ── Assistant 2: Testing assistant (persona testers → per-row feedback) ───
+  // Each tester row runs as a REAL "simple agent" subagent via
+  // POST /__assistant/tester (bare preamble + per-node model). When a non-text
+  // asset is wired, the subagent gets the chrome MCP and opens / screenshots /
+  // clicks it by sight. A clarification loop (max 3 passes) answers question-
+  // heavy testers from the material and re-runs them.
+  const setupTesting = useCallback(async (nodeId) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const task = (node.task || "").trim();
+    if (!task) { setRun({ status: "error", error: "Describe what to test first." }); return; }
+    setRun({ status: "loading", phase: "personas", error: null });
+    try {
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ctx = _assistantCollectText(ups);
+      const assets = _assistantCollectAssets(ups);
+      const types = Math.max(1, Math.min(8, node.personaTypes || 3));
+      const per = Math.max(1, Math.min(8, node.testersPerType || 2));
+      const cap = Math.max(1, node.maxTesters || 12);
+      const pText = await assistantLlm([{ role: "user", content:
+        `Generate ${types} DISTINCT user persona TYPES for testing the task below, then ${per} individual testers per type who SHARE their type's background / preference / expectation but VARY in personality and name. Total testers must be <= ${cap}.\n\nTASK / GOAL:\n${task}\n` +
+        (ctx ? "\nCONTEXT:\n" + ctx.slice(0, 1200) : "") +
+        `\n\nReturn ONLY a JSON array of testers: [{"name","type","background","personality","preference","task"}], where "task" is the specific thing to ask this tester to do (can repeat across testers). No prose.` }],
+        { model: "claude-opus-4-8", maxTokens: 3000 });
+      let testers = _assistantExtractJson(pText);
+      if (!Array.isArray(testers) || !testers.length) throw new Error("Could not generate personas.");
+      testers = testers.slice(0, cap);
+
+      if (node.tableId) _assistantDropTable(node.tableId);
+      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Reply", "Idea"];
+      const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", ""]);
+      const tx = Math.round(node.x + (node.w || 440) + 80), ty = Math.round(node.y);
+      const tableId = workflowBuildResultTable({
+        title: "Testers: " + task.slice(0, 30), headers, rows, x: tx, y: ty,
+        colWidths: [140, 120, 200, 180, 160, 220, 300, 260], rowH: 120,
+      });
+      updateNode(nodeId, { tableId });
+
+      // Resolve any wired assets to absolute http(s) URLs the browser subagent
+      // can navigate to (the daemon-served origin). data:/blob: inlines drop out.
+      const browseUrls = assets
+        .map(a => { const u = a.url || (a.path ? apiUrl("/" + a.path) : ""); if (!u) return ""; try { return new URL(u, location.href).href; } catch (e) { return u; } })
+        .filter(u => /^https?:/i.test(u));
+      const useBrowser = browseUrls.length > 0;
+      const interactive = assets.some(a => (a.assetKind || "") === "html") || browseUrls.some(u => /\.html?($|\?)/i.test(u));
+
+      // Parse a tester's reply into reply / idea / questions[].
+      const parseTester = (txt) => {
+        const t1 = (txt.match(/REPLY:\s*([\s\S]*?)(?:\n\s*IDEA:|\n\s*QUESTIONS:|$)/i) || [])[1];
+        const t2 = (txt.match(/IDEA:\s*([\s\S]*?)(?:\n\s*QUESTIONS:|$)/i) || [])[1];
+        const t3 = (txt.match(/QUESTIONS:\s*([\s\S]*)$/i) || [])[1];
+        const reply = (t1 || txt || "").trim();
+        const idea = (t2 || "").trim();
+        const qraw = (t3 || "").trim();
+        const questions = (!qraw || /^(none|n\/a|-)$/i.test(qraw)) ? []
+          : qraw.split(/[;\n]+/).map(s => s.replace(/^[-*\d.\s]+/, "").trim()).filter(Boolean).filter(s => !/^none$/i.test(s));
+        return { reply, idea, questions };
       };
 
-      for (let turn = 0; turn < MAX_TURNS; turn++) {
-        // Interviewer turn
-        update(refinerId, { status: "loading", error: null, phase: "interview", turn: turn + 1, maxTurns: MAX_TURNS });
-        const erText = await callWithTimeout({
-          skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
-          messages: [{ role: "system", content: interviewerSystem }, ...erHistory],
-          // v2.29a - bumped from 1500 to 4000. The final [STOP] payload is a
-          // full 6-section markdown brief (~1500 tokens minimum); 1500 was
-          // truncating it visibly mid-section. Per-turn questions are usually
-          // <300 tokens so the higher cap costs nothing on early turns.
-          options: { max_tokens: 4000 },
-        }, "Interviewer (turn " + (turn + 1) + ")");
-        erHistory.push({ role: "assistant", content: erText });
-        // Mirror onto the interviewer agent's on-canvas conversation
-        updateNode(erAg, { conversation: erHistory.slice() });
+      // One REAL Claude Code (or Codex) subagent per tester via /__assistant/tester.
+      const runTester = async (t, extraNote) => {
+        const system = `You ARE this user persona; stay fully in character and never break it. Background: ${t.background}. Personality: ${t.personality}. Preference: ${t.preference}. Give honest, persona-coloured feedback. Where you are genuinely unsure, ASK questions rather than guessing.`;
+        const browseBlock = useBrowser
+          ? `\n\nOpen this and JUDGE IT WITH YOUR OWN EYES: ${browseUrls.join(", ")}. Take a screenshot FIRST so you see it as a real user would. ${interactive ? "If it is interactive, decide what to do from the SCREENSHOT (what you can actually see on screen), then click there - do NOT read the HTML source to find controls." : ""} React strictly as your persona would.`
+          : (ctx ? `\n\nMaterial to evaluate:\n${ctx.slice(0, 2000)}` : "");
+        const prompt = `Your task: ${t.task || task}.${browseBlock}${extraNote || ""}\n\nRespond in EXACTLY this format:\nREPLY: <your honest reaction as this persona, 2-5 sentences>\nIDEA: <one concrete suggestion>\nQUESTIONS: <semicolon-separated things you are unsure about, or "none">`;
+        const r = await fetch(apiUrl("/__assistant/tester"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: node.model, system, prompt, useBrowser, timeout: useBrowser ? 1200 : 600 }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error(j.error || ("tester run failed (HTTP " + r.status + ")"));
+        return j.text || "";
+      };
 
-        // Check for stop signal
-        if (/^\s*\[STOP\]/m.test(erText) || erText.includes("\n[STOP]")) {
-          finalPrompt = erText.split(/\[STOP\]/i).slice(1).join("[STOP]").trim();
-          break;
+      // Pass 1: run every tester sequentially (each is its own subagent).
+      const state = testers.map(t => ({ t, reply: "", idea: "", questions: [] }));
+      for (let i = 0; i < state.length; i++) {
+        setRun({ status: "loading", phase: "tester " + (i + 1) + "/" + state.length + (useBrowser ? " (browsing)" : "") });
+        try {
+          const p = parseTester(await runTester(state[i].t));
+          Object.assign(state[i], p);
+        } catch (e) {
+          state[i].reply = "(run failed: " + String(e?.message || e) + ")";
         }
-
-        // Feed interviewer's question into interviewee
-        eeHistory.push({ role: "user", content: erText });
-
-        // Interviewee turn
-        update(refinerId, { status: "loading", error: null, phase: "answer", turn: turn + 1, maxTurns: MAX_TURNS });
-        const eeText = await callWithTimeout({
-          skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
-          messages: [{ role: "system", content: intervieweeSystem }, ...eeHistory],
-          options: { max_tokens: 800 },
-        }, "Interviewee (turn " + (turn + 1) + ")");
-        eeHistory.push({ role: "assistant", content: eeText });
-        updateNode(eeAg, { conversation: eeHistory.slice() });
-
-        // Feed interviewee's answer back into the interviewer
-        erHistory.push({ role: "user", content: eeText });
+        workflowSetCellText(tableId, i + 1, 6, state[i].reply);
+        workflowSetCellText(tableId, i + 1, 7, state[i].idea);
       }
 
-      // If we exited the loop without [STOP], synthesise a final from the
-      // accumulated answers as a safety net so the output node isn't blank.
-      if (!finalPrompt) {
-        finalPrompt = "(max turns reached without [STOP])\n\nLast interviewer message:\n" +
-          (erHistory[erHistory.length - 1]?.content || "");
+      // Clarification passes (max 3 total). For testers that asked a lot of
+      // questions, answer them from the material, then re-run that tester.
+      const QTHRESH = 2;
+      for (let pass = 2; pass <= 3; pass++) {
+        const needy = state.map((s, i) => ({ s, i })).filter(x => x.s.questions.length >= QTHRESH);
+        if (!needy.length) break;
+        setRun({ status: "loading", phase: "clarifying (pass " + pass + ", " + needy.length + ")" });
+        for (const { s, i } of needy) {
+          let answers = "";
+          try {
+            answers = await assistantLlm([{ role: "user", content:
+              `A tester evaluating this task asked questions. Answer them concisely and factually from the material so they can continue.\n\nTASK:\n${task}\n` +
+              (ctx ? "\nMATERIAL:\n" + ctx.slice(0, 1500) : "") +
+              `\n\nQUESTIONS:\n${s.questions.join("\n")}\n\nReturn one plain answer per question.` }],
+              { model: node.model, maxTokens: 800 });
+          } catch (e) { answers = "(could not resolve)"; }
+          try {
+            const p = parseTester(await runTester(s.t,
+              `\n\nEarlier you asked:\n${s.questions.join("\n")}\nHere are answers:\n${answers}\nGiven these, give your UPDATED reply in the same REPLY / IDEA / QUESTIONS format.`));
+            Object.assign(s, p);
+            workflowSetCellText(tableId, i + 1, 6, s.reply);
+            workflowSetCellText(tableId, i + 1, 7, s.idea);
+          } catch (e) { /* keep prior reply */ }
+        }
       }
-      updateNode(outId, { text: finalPrompt });
-      update(refinerId, { status: "done", error: null, ranAt: Date.now(), turnsCompleted: Math.floor(erHistory.length / 2) });
+      setRun({ status: "done", phase: "done", ranAt: Date.now() });
     } catch (e) {
-      update(refinerId, { status: "error", error: String(e?.message || e) });
+      setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, setData, updateNode]);
+  }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowSetCellText, _assistantDropTable]);
 
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
@@ -41912,8 +42232,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onRun=${runBlend}
               />
             `)}
-            ${(data.nodes || []).filter(n => n.kind === "iterator-refiner").map(n => html`
-              <${WorkflowRefinerNode}
+            ${(data.nodes || []).filter(n => n.kind === "assistant-interview").map(n => html`
+              <${WorkflowInterviewNode}
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
@@ -41925,7 +42245,40 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
-                onSetup=${setupRefiner}
+                onSetup=${setupInterview}
+                onSubmit=${submitInterviewAnswer}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "assistant-research").map(n => html`
+              <${WorkflowResearchNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                runState=${runStates[n.id]}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSetup=${setupResearch}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "assistant-testing").map(n => html`
+              <${WorkflowTestingNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                runState=${runStates[n.id]}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSetup=${setupTesting}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "skill").map(n => html`
@@ -43478,12 +43831,34 @@ function WorkflowLibrary({ tab = "nodes" }) {
                draggable=${true}
                onDragStart=${(e) => {
                  e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "iterator-refiner" }));
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-interview" }));
                }}
-               title="Drag onto canvas - spawns interviewer + interviewee agents that loop Q/A until your criteria are met.">
+               title="Drag onto canvas - an agent interviews YOU in a chat loop until your prompt meets the goal, then writes the refined prompt.">
             <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
-            <span className="workflow-library-item-label">Prompt refiner</span>
-            <span className="workflow-library-item-id">2-agent loop</span>
+            <span className="workflow-library-item-label">Interviewing assistant</span>
+            <span className="workflow-library-item-id">interviews you</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-research" }));
+               }}
+               title="Drag onto canvas - web research via Exa (paid), filtered to your criteria, distilled into a table with visuals.">
+            <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
+            <span className="workflow-library-item-label">Research assistant</span>
+            <span className="workflow-library-item-id">Exa search</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-testing" }));
+               }}
+               title="Drag onto canvas - synthesises persona testers into a table and gathers each one's honest feedback.">
+            <span className="workflow-library-item-glyph"><${Icon.Spark}/></span>
+            <span className="workflow-library-item-label">Testing assistant</span>
+            <span className="workflow-library-item-id">persona testers</span>
           </div>
         </div>
       </div>
@@ -67824,102 +68199,258 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   `;
 }
 
-function WorkflowRefinerNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+// Per-node model picker for the assistant family. Populated from
+// window.TH_MEDIA.textModels (the catalog the daemon also reads), grouped by
+// provider so the user can pick a cheap model for testers vs a strong one for
+// research / interviewing.
+function AssistantModelSelect({ value, onChange, title }) {
+  const models = ((window.TH_MEDIA && window.TH_MEDIA.textModels) || [])
+    .filter(m => m && m.integrated !== false && !m.cliOnly);
+  const groups = {};
+  for (const m of models) { (groups[m.provider] = groups[m.provider] || []).push(m); }
+  return html`
+    <label className="workflow-node-iter-field workflow-node-assistant-modelrow"
+           onMouseDown=${(e) => e.stopPropagation()}
+           title=${title || "Model this assistant runs on"}>
+      <span className="workflow-node-iter-field-label">Model</span>
+      <select className="workflow-node-assistant-model" value=${value || ""}
+              onChange=${(e) => onChange(e.target.value)}>
+        ${!models.length && html`<option value="">(no models)</option>`}
+        ${Object.keys(groups).map(prov => html`
+          <optgroup key=${prov} label=${prov}>
+            ${groups[prov].map(m => html`<option key=${m.id} value=${m.id}>${m.label || m.id}</option>`)}
+          </optgroup>`)}
+      </select>
+    </label>`;
+}
+
+// ── Assistant 3: Interviewing assistant (real-user interview loop) ─────────
+function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, onSubmit, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  // Floor h so the ✦ Setup loop action row can never fall below the body's
-  // scroll line. The onboarding scaffold used to seed iterator-refiner with
-  // h=200 (no per-kind entry in _OB_SIZE) which made the Setup button
-  // invisible on a freshly-created project. Belt-and-suspenders: scaffold
-  // default is now 520 (see _OB_SIZE), the renderer floors at 480, and the
-  // CSS pins the action row sticky-bottom inside the scroll viewport.
-  const w = Math.max(360, node.w || 420), h = Math.max(480, node.h || 480);
-  const setting = runState?.status === "loading";
+  const [draft, setDraft] = useState("");
+  const w = Math.max(380, node.w || 440), h = Math.max(520, node.h || 560);
+  const busy = runState?.status === "loading";
+  const phase = runState?.phase;
+  const messages = node.messages || [];
   const pushPast = node.pushPast || [];
+  const started = messages.length > 0;
+  const send = () => { const v = draft.trim(); if (!v) return; setDraft(""); onSubmit && onSubmit(node.id, v); };
   return html`
-    <div className="workflow-node workflow-node-iter workflow-node-refiner"
+    <div className="workflow-node workflow-node-iter workflow-node-refiner workflow-node-assistant"
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Loop}/></span>
-        <span className="workflow-node-iter-title">Refiner · interviewer + interviewee</span>
+        <span className="workflow-node-iter-title">Interviewing assistant</span>
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip}
-          className="workflow-node-close"
-          tip="Remove this Refiner node from the canvas (does not affect any agent it has spawned)."
-          ariaLabel="Remove Refiner"
+        <${HoverTip} className="workflow-node-close"
+          tip="Remove this interviewing assistant from the canvas."
+          ariaLabel="Remove interviewing assistant"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        >×<//>
+          onMouseDown=${(e) => e.stopPropagation()}>×<//>
+      </div>
+      <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
+        ${!started && html`
+          <label className="workflow-node-iter-field">
+            <span className="workflow-node-iter-field-label">Goal / criteria + thresholds</span>
+            <textarea rows=${3}
+              placeholder="e.g. Reach 9/10 clarity, specificity, and voice before stopping."
+              value=${node.goal || ""} onInput=${(e) => onChange({ goal: e.target.value })}/>
+          </label>
+          <label className="workflow-node-iter-field">
+            <span className="workflow-node-iter-field-label">Focus aspect</span>
+            <textarea rows=${2}
+              placeholder="e.g. visual direction · audience · density · voice · constraints"
+              value=${node.focus || ""} onInput=${(e) => onChange({ focus: e.target.value })}/>
+          </label>
+          <div className="workflow-node-iter-field">
+            <span className="workflow-node-iter-field-label">Push past <em>X</em> to <em>Y</em></span>
+            ${pushPast.map((p, i) => html`
+              <div key=${i} className="workflow-node-refiner-pushrow">
+                <input className="workflow-node-refiner-from" value=${p.from || ""} placeholder="average"
+                  onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], from: e.target.value }; onChange({ pushPast: next }); }}/>
+                <span className="workflow-node-refiner-arrow">→</span>
+                <input className="workflow-node-refiner-to" value=${p.to || ""} placeholder="desired"
+                  onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], to: e.target.value }; onChange({ pushPast: next }); }}/>
+                <button className="workflow-node-refiner-pushdel" title="Remove this row"
+                  onClick=${() => onChange({ pushPast: pushPast.filter((_, j) => j !== i) })}>×</button>
+              </div>`)}
+            <button className="workflow-node-refiner-pushadd"
+              onClick=${() => onChange({ pushPast: [...pushPast, { from: "", to: "" }] })}>+ Add push pair</button>
+          </div>
+          <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}/>
+        `}
+        ${started && html`
+          <div className="workflow-node-assistant-chat">
+            ${messages.map((m, i) => html`
+              <div key=${i} className=${"workflow-node-assistant-msg workflow-node-assistant-msg-" + (m.role === "user" ? "user" : "assistant")}>${m.text}</div>`)}
+            ${busy && html`<div className="workflow-node-assistant-msg workflow-node-assistant-msg-assistant"><span className="workflow-node-skill-spinner"/> thinking…</div>`}
+          </div>
+        `}
+        <div className="workflow-node-iter-actions">
+          ${!started && html`
+            <button className="workflow-node-skill-run" disabled=${busy}
+                    title="Start the interview - the assistant asks you the first question."
+                    onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+              ${busy ? html`<span className="workflow-node-skill-spinner"/>starting…` : html`<${Icon.Spark}/> Start interview`}
+            </button>`}
+          ${started && runState?.status !== "done" && html`
+            <div className="workflow-node-assistant-reply">
+              <textarea rows=${2} placeholder="Type your answer…" value=${draft}
+                disabled=${busy}
+                onInput=${(e) => setDraft(e.target.value)}
+                onKeyDown=${(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}/>
+              <button className="workflow-node-skill-run" disabled=${busy || !draft.trim()}
+                onClick=${(e) => { e.stopPropagation(); send(); }}>${busy ? "…" : "Send"}</button>
+            </div>`}
+          ${runState?.status === "done" && html`<span className="workflow-node-iter-done">interview complete</span>`}
+          ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+        </div>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Optional seed / context to refine." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="Final refined prompt - written here when the interview reaches its goal."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+// ── Assistant 1: Research assistant ───────────────────────────────────────
+function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const w = Math.max(360, node.w || 420), h = Math.max(440, node.h || 460);
+  const busy = runState?.status === "loading";
+  return html`
+    <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+      <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-iter-glyph"><${Icon.Search}/></span>
+        <span className="workflow-node-iter-title">Research assistant</span>
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip} className="workflow-node-close" tip="Remove this research assistant."
+          ariaLabel="Remove research assistant"
+          onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
         <label className="workflow-node-iter-field">
-          <span className="workflow-node-iter-field-label">Goal / criteria + thresholds</span>
-          <textarea rows=${3}
-            placeholder="e.g. Reach 9/10 clarity, 9/10 specificity, 8/10 voice. Stop when interviewee's last 3 answers each satisfy ≥ threshold per criterion."
-            value=${node.goal || ""}
-            onInput=${(e) => onChange({ goal: e.target.value })}/>
+          <span className="workflow-node-iter-field-label">What to research</span>
+          <textarea rows=${2} placeholder="e.g. best practices for onboarding flows in fintech apps"
+            value=${node.goal || ""} onInput=${(e) => onChange({ goal: e.target.value })}/>
         </label>
         <label className="workflow-node-iter-field">
-          <span className="workflow-node-iter-field-label">Focus aspect of the prompt</span>
-          <textarea rows=${2}
-            placeholder="e.g. visual direction · audience · density · voice · constraints"
-            value=${node.focus || ""}
-            onInput=${(e) => onChange({ focus: e.target.value })}/>
+          <span className="workflow-node-iter-field-label">Quality criteria a good result must meet</span>
+          <textarea rows=${2} placeholder="e.g. from 2023+, primary sources, names concrete metrics"
+            value=${node.criteria || ""} onInput=${(e) => onChange({ criteria: e.target.value })}/>
         </label>
-        <div className="workflow-node-iter-field">
-          <span className="workflow-node-iter-field-label">Push past <em>X</em> to <em>Y</em></span>
-          ${pushPast.map((p, i) => html`
-            <div key=${i} className="workflow-node-refiner-pushrow">
-              <input className="workflow-node-refiner-from"
-                value=${p.from || ""} placeholder="average e.g. surface niceties"
-                onInput=${(e) => {
-                  const next = pushPast.slice(); next[i] = { ...next[i], from: e.target.value };
-                  onChange({ pushPast: next });
-                }}/>
-              <span className="workflow-node-refiner-arrow">→</span>
-              <input className="workflow-node-refiner-to"
-                value=${p.to || ""} placeholder="desired e.g. precise tradeoffs"
-                onInput=${(e) => {
-                  const next = pushPast.slice(); next[i] = { ...next[i], to: e.target.value };
-                  onChange({ pushPast: next });
-                }}/>
-              <button className="workflow-node-refiner-pushdel" title="Remove this row"
-                onClick=${() => onChange({ pushPast: pushPast.filter((_, j) => j !== i) })}>×</button>
-            </div>
-          `)}
-          <button className="workflow-node-refiner-pushadd"
-            onClick=${() => onChange({ pushPast: [...pushPast, { from: "", to: "" }] })}>+ Add push pair</button>
+        <div className="workflow-node-assistant-row">
+          <label className="workflow-node-iter-field workflow-node-assistant-num">
+            <span className="workflow-node-iter-field-label">Results</span>
+            <input type="number" min="1" max="25" value=${node.numResults || 8}
+              onInput=${(e) => onChange({ numResults: Math.max(1, Math.min(25, parseInt(e.target.value, 10) || 8)) })}/>
+          </label>
+          <label className="workflow-node-iter-field workflow-node-assistant-cat">
+            <span className="workflow-node-iter-field-label">Category</span>
+            <select value=${node.category || ""} onChange=${(e) => onChange({ category: e.target.value })}>
+              <option value="">any</option>
+              <option value="company">company</option>
+              <option value="research paper">research paper</option>
+              <option value="news">news</option>
+              <option value="people">people</option>
+              <option value="financial report">financial report</option>
+            </select>
+          </label>
         </div>
+        <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}/>
         <div className="workflow-node-iter-actions">
-          <button className="workflow-node-skill-run" disabled=${setting}
-                  title="Spawn interviewer + interviewee agent nodes, wire them in a feedback loop, and seed each with its prompt template."
-                  onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${setting ? html`<span className="workflow-node-skill-spinner"/>${
-              (() => {
-                const phase = runState?.phase;
-                const turn  = runState?.turn  || 0;
-                const max   = runState?.maxTurns || 0;
-                if (phase === "interview" && max) return `turn ${turn}/${max} · asking…`;
-                if (phase === "answer"    && max) return `turn ${turn}/${max} · answering…`;
-                if (phase === "spawning") return "spawning agents…";
-                return "running…";
-              })()
-            }` : html`<${Icon.Spark}/> Setup loop`}
+          <button className="workflow-node-skill-run" disabled=${busy}
+            title="Run an Exa web search (paid), filter against your criteria, and build a result table with visuals."
+            onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+            ${busy ? html`<span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}` : html`<${Icon.Spark}/> Research (Exa)`}
           </button>
+          ${runState?.status === "done" && html`<span className="workflow-node-iter-done">table built</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
-          ${runState?.status === "done" && html`<span className="workflow-node-iter-done">spawned</span>`}
         </div>
+        <div className="workflow-node-assistant-note">Exa is paid - it only runs when you click Research.</div>
       </div>
-      <div className="workflow-port-zone workflow-port-zone-in"
-           data-port-node=${node.id} data-port-side="in"
-           title="Connect a prompt node - this is the prompt to refine."
-           onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
       </div>
-      <div className="workflow-port-zone workflow-port-zone-out"
-           data-port-node=${node.id} data-port-side="out"
-           title="Final refined prompt - appears in the receiving downstream node when the loop reaches threshold."
-           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="The generated research table." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+    </div>
+  `;
+}
+
+// ── Assistant 2: Testing assistant ────────────────────────────────────────
+function WorkflowTestingNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const w = Math.max(380, node.w || 440), h = Math.max(460, node.h || 500);
+  const busy = runState?.status === "loading";
+  const total = Math.min(node.maxTesters || 12, (node.personaTypes || 3) * (node.testersPerType || 2));
+  return html`
+    <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+      <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-iter-glyph"><${Icon.Users || Icon.User || Icon.Spark}/></span>
+        <span className="workflow-node-iter-title">Testing assistant</span>
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip} className="workflow-node-close" tip="Remove this testing assistant."
+          ariaLabel="Remove testing assistant"
+          onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
+      </div>
+      <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
+        <label className="workflow-node-iter-field">
+          <span className="workflow-node-iter-field-label">What to test (task / goal)</span>
+          <textarea rows=${3} placeholder="e.g. Does the signup flow feel trustworthy? What stops you from finishing?"
+            value=${node.task || ""} onInput=${(e) => onChange({ task: e.target.value })}/>
+        </label>
+        <div className="workflow-node-assistant-row">
+          <label className="workflow-node-iter-field workflow-node-assistant-num">
+            <span className="workflow-node-iter-field-label">Persona types</span>
+            <input type="number" min="1" max="8" value=${node.personaTypes || 3}
+              onInput=${(e) => onChange({ personaTypes: Math.max(1, Math.min(8, parseInt(e.target.value, 10) || 3)) })}/>
+          </label>
+          <label className="workflow-node-iter-field workflow-node-assistant-num">
+            <span className="workflow-node-iter-field-label">Testers / type</span>
+            <input type="number" min="1" max="8" value=${node.testersPerType || 2}
+              onInput=${(e) => onChange({ testersPerType: Math.max(1, Math.min(8, parseInt(e.target.value, 10) || 2)) })}/>
+          </label>
+          <label className="workflow-node-iter-field workflow-node-assistant-num">
+            <span className="workflow-node-iter-field-label">Max testers</span>
+            <input type="number" min="1" max="40" value=${node.maxTesters || 12}
+              onInput=${(e) => onChange({ maxTesters: Math.max(1, Math.min(40, parseInt(e.target.value, 10) || 12)) })}/>
+          </label>
+        </div>
+        <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
+          title="Model each tester runs on - pick a cheap one to minimise tokens."/>
+        <div className="workflow-node-iter-actions">
+          <button className="workflow-node-skill-run" disabled=${busy}
+            title="Generate persona testers into a table, then gather each one's feedback."
+            onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+            ${busy ? html`<span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}` : html`<${Icon.Spark}/> Run testers (~${total})`}
+          </button>
+          ${runState?.status === "done" && html`<span className="workflow-node-iter-done">feedback in</span>`}
+          ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+        </div>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="What to test: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="The tester feedback table." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
@@ -73543,10 +74074,9 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
     return (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
   })();
 
-  // v2.10 - `prompt-refiner` (my v2.7 kind) was deleted. The existing
-  // `iterator-refiner` (2-agent loop) library node is the correct tool for
-  // brief refinement uses that kind, rendered by its
-  // own WorkflowRefinerNode component (no skill-node fallback needed).
+  // Brief refinement is handled by the `assistant-interview` node (an agent
+  // interviews the real user), rendered by WorkflowInterviewNode - not a skill
+  // node. The old `iterator-refiner` 2-agent loop was removed.
 
   // v2.4 - skill=llm gets a dedicated rendering with a prompt editor + the
   // preview drawer. The text-models skill registry isn't always populated

@@ -323,6 +323,10 @@ _PROVIDER_ENV_KEYS = {
     "imagerouter": "TH_IMAGEROUTER_API_KEY",
     "quiver":      "TH_QUIVER_API_KEY",
     "higgsfield":  "TH_HIGGSFIELD_API_KEY",
+    # Exa (exa.ai) web search API. Paid, metered - see _exa_search + the
+    # "never auto-run, offer first" cost rule in capabilities.py. Reached by the
+    # editor via the daemon /__exa/search endpoint so the key stays server-side.
+    "exa":         "TH_EXA_API_KEY",
     # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
     # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) -
     # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be
@@ -896,6 +900,57 @@ def _meshy_extract_any_glb(payload):
             if isinstance(v, str) and v:
                 return v
     raise RuntimeError("meshy: no glb url in rig/animation payload")
+
+
+# Exa (exa.ai) web search. Paid, metered API - callers must respect the
+# "never auto-run, offer first" rule (see capabilities.py). Single POST to
+# /search; `contents` asks the same call to return page text/highlights/summary
+# so one round-trip yields both the hits and their readable bodies.
+# Docs: https://exa.ai/docs/reference/search  Auth: header `x-api-key: <key>`.
+def _exa_search(api_key, query, *, num_results=10, search_type="auto",
+                category=None, contents=True, include_domains=None, timeout=45):
+    """One HTTP call to api.exa.ai/search. Returns the parsed JSON
+    ({results:[{title,url,text,highlights,summary,image,author,publishedDate}]})."""
+    body = {"query": str(query or "").strip(),
+            "type": search_type or "auto",
+            "numResults": max(1, min(int(num_results or 10), 25))}
+    if category:
+        body["category"] = category
+    if include_domains:
+        body["includeDomains"] = list(include_domains)
+    if contents:
+        body["contents"] = {"text": True, "highlights": True, "summary": True}
+    req = urllib.request.Request(
+        "https://api.exa.ai/search", method="POST",
+        headers={"x-api-key": api_key, "Content-Type": "application/json"},
+        data=json.dumps(body).encode("utf-8"),
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _exa_normalize_results(payload):
+    """Flatten an Exa /search payload into a stable list of result dicts the
+    front end can drop straight into a table - tolerant of missing fields."""
+    out = []
+    results = payload.get("results") if isinstance(payload, dict) else None
+    for r in (results or []):
+        if not isinstance(r, dict):
+            continue
+        hl = r.get("highlights")
+        if isinstance(hl, list):
+            hl = [h for h in hl if isinstance(h, str)]
+        out.append({
+            "title": r.get("title") or r.get("url") or "",
+            "url": r.get("url") or "",
+            "text": r.get("text") or "",
+            "highlights": hl or [],
+            "summary": r.get("summary") or "",
+            "image": r.get("image") or "",
+            "author": r.get("author") or "",
+            "publishedDate": r.get("publishedDate") or "",
+        })
+    return out
 
 
 def _meshy_animate(api_key, mesh_task_id, opts):
@@ -1852,6 +1907,49 @@ def _codex_cli_complete(messages, model=None, timeout=600):
         msg = (result.stderr or f"exit {result.returncode}").strip()[:600]
         raise RuntimeError(msg)
     return (result.stdout or "").rstrip("\n")
+
+
+def _assistant_tester_complete(system, prompt, model=None, use_browser=False, timeout=600):
+    """One-shot "simple agent" for the Testing assistant - a REAL Claude Code (or
+    Codex) subagent that receives ONLY the persona system prompt + task, with NO
+    Woven capabilities preamble (the bloat exists for orchestrators; a persona
+    tester does not need it). When use_browser is set and Claude is available,
+    the chrome MCP is wired in and permissions are bypassed so the agent can
+    OPEN the asset, take a screenshot to simulate real eyes, and click by what it
+    sees. Returns the agent's final text. Picks the CLI from the chosen model's
+    provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI)."""
+    prov = "openai" if re.match(r"^(gpt|o\d|codex)", (model or "").lower()) else "anthropic"
+    if prov == "anthropic":
+        bin_path = detect_agent_bin("claude")
+        if not bin_path:
+            raise FileNotFoundError("claude")
+        args = [bin_path, "--print", "--output-format", "text",
+                "--no-session-persistence", "--disable-slash-commands"]
+        if system and system.strip():
+            args.extend(["--append-system-prompt", system.strip()])
+        if model:
+            args.extend(["--model", model])
+        # Browser/vision: wire the chrome MCP + bypass permissions so tool calls
+        # (navigate / screenshot / click) run unattended. No --add-dir: the
+        # tester reads the asset over its served URL and needs no write scope.
+        if use_browser:
+            mcp = _mcp_config_spawn_args()
+            if mcp:
+                args.extend(mcp)
+                args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
+        args.append(prompt or "Proceed.")
+        _cli_env = _guest_cli_env("claude")
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
+                                stdin=subprocess.DEVNULL, env=_cli_env)
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
+        return (result.stdout or "").rstrip("\n")
+    # Codex path - text-only (no chrome MCP); still a real subagent run.
+    msgs = []
+    if system and system.strip():
+        msgs.append({"role": "system", "content": system})
+    msgs.append({"role": "user", "content": prompt or "Proceed."})
+    return _codex_cli_complete(msgs, model=model, timeout=timeout)
 
 
 def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
@@ -3076,7 +3174,9 @@ _OB_SIZE = {
     "skill":             {"w": 340, "h": 220},
     "agent":             {"w": 360, "h": 280},
     "ds-brainstorm":     {"w": 320, "h": 360},
-    "iterator-refiner":  {"w": 420, "h": 520},
+    "assistant-interview": {"w": 440, "h": 560},
+    "assistant-research":  {"w": 420, "h": 460},
+    "assistant-testing":   {"w": 440, "h": 500},
     "iterator-remix":    {"w": 360, "h": 420},
     "iterator-repeater": {"w": 360, "h": 400},
     "iterator-blend":    {"w": 380, "h": 440},
@@ -7792,6 +7892,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._asset_generate(qs)
             if parsed.path == "/__llm_run":
                 return self._llm_run(qs)
+            if parsed.path == "/__exa/search":
+                return self._exa_search_run(qs)
+            if parsed.path == "/__assistant/tester":
+                return self._assistant_tester_run(qs)
             if parsed.path == "/__dispatch_planner":
                 return self._dispatch_planner(qs)
             if parsed.path == "/__attachment":
@@ -9152,7 +9256,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                             return v in (None, "", [], {})
                         nkind = disk_n.get("kind")
                         kind_fields = {
-                            "iterator-refiner": ("goal", "focus", "pushPast", "maxTurns"),
+                            "assistant-interview": ("goal", "focus", "pushPast", "model"),
+                            "assistant-research":  ("goal", "criteria", "model", "numResults", "category"),
+                            "assistant-testing":   ("task", "model", "personaTypes", "testersPerType", "maxTesters"),
                             "iterator-remix":   ("variants",),
                             "design-system":    ("spec",),
                         }.get(nkind, ())
@@ -9722,11 +9828,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # skill kind, so the data flow is unchanged.
                 node["output"] = text
 
-            # v2.10 - `prompt-refiner` (my v2.7 kind) was removed. The
-            # existing `iterator-refiner` library node owns brief refinement;
-            # it's driven client-side via setupRefiner (not /run-dispatchable
-            # from the daemon yet). Orchestrator handles it as a user-action
-            # checkpoint and reads the spawned output node after completion.
+            # Brief refinement is owned by the `assistant-interview` node (an
+            # agent interviews the real user). It is driven client-side via
+            # setupInterview / submitInterviewAnswer (not /run-dispatchable from
+            # the daemon), so there is no server branch for it here. The old
+            # `iterator-refiner` 2-agent loop was removed.
 
             elif kind == "agent":
                 # v2.1 - focused per-node subprocess dispatch. The per-node
@@ -10030,22 +10136,35 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if cleaned:
                     node["variants"] = cleaned
                     changed["variants"] = len(cleaned)
-            # v2.18a - iterator-refiner field whitelist. Lets the orchestrator
-            # customize the interviewer prompt to the specific project (mentioning
-            # the actual app domain / audience / emotion) instead of leaving the
-            # scaffolder's generic templates that say "thin intake of App /
-            # Audience / Emotion." setupRefiner reads these on click-time to
-            # build the interviewer + interviewee prompts, so they MUST be
-            # project-specific by the time the user clicks "✦ Setup loop".
-            if node.get("kind") == "iterator-refiner":
-                if "goal" in body and isinstance(body["goal"], str) and body["goal"].strip():
-                    node["goal"] = body["goal"]
-                    changed["goal"] = body["goal"][:120] + ("…" if len(body["goal"]) > 120 else "")
-                if "focus" in body and isinstance(body["focus"], str) and body["focus"].strip():
-                    node["focus"] = body["focus"]
-                    changed["focus"] = body["focus"][:120] + ("…" if len(body["focus"]) > 120 else "")
-                if "pushPast" in body and isinstance(body["pushPast"], list):
-                    # Each entry must be {from, to} with string values.
+            # Assistant-node field whitelists. Lets an orchestrator customise an
+            # assistant node to the specific project (its goal/criteria/task)
+            # before the user clicks Run; the client drivers read these at
+            # click-time. Text fields, then numbers, then the pushPast array.
+            akind = node.get("kind")
+            if akind in ("assistant-interview", "assistant-research", "assistant-testing"):
+                _str_fields = {
+                    "assistant-interview": ("goal", "focus", "model"),
+                    "assistant-research":  ("goal", "criteria", "model", "category"),
+                    "assistant-testing":   ("task", "model"),
+                }.get(akind, ())
+                for f in _str_fields:
+                    if f in body and isinstance(body[f], str) and body[f].strip():
+                        node[f] = body[f]
+                        changed[f] = body[f][:120] + ("…" if len(body[f]) > 120 else "")
+                _num_fields = {
+                    "assistant-research":  (("numResults", 1, 25),),
+                    "assistant-testing":   (("personaTypes", 1, 8), ("testersPerType", 1, 8), ("maxTesters", 1, 40)),
+                }.get(akind, ())
+                for (f, lo, hi) in _num_fields:
+                    if f in body:
+                        try:
+                            v = int(body[f])
+                            if lo <= v <= hi:
+                                node[f] = v
+                                changed[f] = v
+                        except (TypeError, ValueError):
+                            pass
+                if akind == "assistant-interview" and "pushPast" in body and isinstance(body["pushPast"], list):
                     cleaned_pp = []
                     for entry in body["pushPast"][:10]:
                         if not isinstance(entry, dict): continue
@@ -10056,18 +10175,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if cleaned_pp:
                         node["pushPast"] = cleaned_pp
                         changed["pushPast"] = len(cleaned_pp)
-                if "maxTurns" in body:
-                    try:
-                        mt = int(body["maxTurns"])
-                        if 1 <= mt <= 20:
-                            node["maxTurns"] = mt
-                            changed["maxTurns"] = mt
-                    except (TypeError, ValueError):
-                        pass
             if not changed:
                 return self._reply(400, {"error": "no recognised fields in body",
                                           "accepted": ["runStatus", "text", "runError", "output", "spec", "variants",
-                                                       "goal", "focus", "pushPast", "maxTurns (iterator-refiner only)"]})
+                                                       "goal", "focus", "criteria", "task", "pushPast", "model",
+                                                       "numResults", "personaTypes", "testersPerType", "maxTesters"]})
             try:
                 with _history_bracket(project_root, ["workflow/workflow.json"],
                                        kind="workflow-op",
@@ -11130,9 +11242,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "provider": node.get("provider") or "anthropic",
                 "model":    node.get("model")    or "claude-opus-4-7",
             })
-        # v2.10 - `prompt-refiner` removed; iterator-refiner has no /preview
-        # path (it's client-driven and its output is a separately spawned
-        # prompt node, not a daemon-composable string).
+        # The assistant-* nodes are client-driven (their output is a spawned
+        # table / prompt node, not a daemon-composable string), so they have no
+        # /preview path here.
         return self._reply(200, {
             "ok": True, "nodeId": node_id, "kind": kind,
             "upstream": upstream_text,
@@ -12211,6 +12323,22 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except urllib.error.HTTPError as e:
                     ok = e.code != 401
                     if not ok: detail = {"status": e.code, "hint": "fal rejected the key"}
+            elif provider == "exa":
+                # Smallest valid call: 1 result, no contents. 200 → key works,
+                # 401 → bad key.
+                try:
+                    req = urllib.request.Request(
+                        "https://api.exa.ai/search", method="POST",
+                        headers={"x-api-key": api_key, "Content-Type": "application/json"},
+                        data=json.dumps({"query": "exa api key test", "numResults": 1,
+                                         "type": "fast"}).encode("utf-8"),
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read())
+                    ok = isinstance(data, dict) and "results" in data
+                except urllib.error.HTTPError as e:
+                    ok = e.code not in (401, 403)
+                    if not ok: detail = {"status": e.code, "hint": "exa rejected the key"}
             else:
                 # No specific test for other providers yet - saving the key counts.
                 ok = True
@@ -12227,6 +12355,81 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not ok:
             return self._reply(502, {"ok": False, "detail": detail})
         return self._reply(200, {"ok": True})
+
+    def _exa_search_run(self, qs):
+        """POST /__exa/search  Body: { query, numResults?, type?, category?,
+        contents?, includeDomains? }. Runs an Exa web search server-side so the
+        key never reaches the browser, returns { ok, results:[...] }.
+        COST NOTE: Exa is paid + metered. This endpoint only fires on an
+        explicit caller request (the Research assistant's Run button, or an
+        agent the user confirmed). Never wire it to run automatically."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return self._reply(400, {"error": "payload missing or too large"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        query = (body.get("query") or "").strip() if isinstance(body, dict) else ""
+        if not query:
+            return self._reply(400, {"error": "query required"})
+        api_key = _resolve_provider_key("exa")
+        if not api_key:
+            return self._reply(502, {"error": "no exa api key configured"})
+        try:
+            payload = _exa_search(
+                api_key, query,
+                num_results=body.get("numResults") or 10,
+                search_type=body.get("type") or "auto",
+                category=body.get("category") or None,
+                contents=body.get("contents", True),
+                include_domains=body.get("includeDomains") or None,
+            )
+        except urllib.error.HTTPError as e:
+            try: detail = json.loads(e.read().decode("utf-8", "replace"))
+            except Exception: detail = {"status": e.code}
+            return self._reply(502, {"ok": False, "error": "exa request failed", "detail": detail})
+        except Exception as e:
+            return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "results": _exa_normalize_results(payload),
+                                 "raw": payload if isinstance(payload, dict) else None})
+
+    def _assistant_tester_run(self, qs):
+        """POST /__assistant/tester  Body: { model, system, prompt, useBrowser? }.
+        Runs ONE real "simple agent" subagent (no Woven preamble) for a single
+        persona tester and returns { ok, text }. With useBrowser it gets the
+        chrome MCP so it can open + screenshot + click the asset by sight. The
+        Testing assistant calls this once per table row (sequentially), so the
+        per-project run cap is not a concern."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return self._reply(400, {"error": "payload missing or too large"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        prompt = (body.get("prompt") or "").strip() if isinstance(body, dict) else ""
+        if not prompt:
+            return self._reply(400, {"error": "prompt required"})
+        try:
+            timeout = int(body.get("timeout") or 600)
+        except (TypeError, ValueError):
+            timeout = 600
+        timeout = max(30, min(timeout, 1800))
+        try:
+            text = _assistant_tester_complete(
+                body.get("system") or "", prompt,
+                model=body.get("model") or None,
+                use_browser=bool(body.get("useBrowser")),
+                timeout=timeout,
+            )
+        except FileNotFoundError as e:
+            return self._reply(502, {"ok": False, "error": f"agent CLI not found: {e}. Install/auth the claude or codex CLI."})
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {"ok": False, "error": "tester agent timed out"})
+        except Exception as e:
+            return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "text": text})
 
     def _asset_generate(self, qs):
         """Phase 4b dispatcher. Body shape:
