@@ -32322,36 +32322,67 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // edges layer never renders dangling lines into nothing.
   const removeNode = useCallback((nid) => {
     setData(d => {
-      const target = (d.nodes || []).find(n => n.id === nid);
+      const allNodes = d.nodes || [];
+      const target = allNodes.find(n => n.id === nid);
       if (!target) return d;
       const removedIds = new Set([nid]);
+      const removedWbIds = new Set();
       const extra = {};
-      let nodes = (d.nodes || []).filter(n => n.id !== nid);
+      const wbAll = Array.isArray(d.wb) ? d.wb : [];
+
+      // Deleting a table or section also deletes its CONTENT (the user's
+      // explicit ask). A TABLE owns its cells: wb text items + cell-hosted
+      // nodes bound via `.cell.tableId`. A SECTION owns everything whose
+      // CENTER sits inside its frame - the SAME membership rule its connector
+      // bundle and group-drag already use (workflowSectionContainedNodes) -
+      // plus the wb annotation items inside the rect. (Sections don't nest, so
+      // a contained section/table node is left alone, per that helper.)
+      if (target.kind === "table") {
+        for (const n of allNodes) if (n && n.cell && n.cell.tableId === nid) removedIds.add(n.id);
+        for (const it of wbAll) if (it && it.cell && it.cell.tableId === nid) removedWbIds.add(it.id);
+      } else if (target.kind === "section") {
+        for (const cn of workflowSectionContainedNodes(target, allNodes)) removedIds.add(cn.id);
+        const x0 = target.x, y0 = target.y;
+        const x1 = x0 + (target.w || 880), y1 = y0 + (target.h || 560);
+        for (const it of wbAll) {
+          if (!it) continue;
+          const cx = (it.x || 0) + (it.w || 0) / 2;
+          const cy = (it.y || 0) + (it.h || 0) / 2;
+          if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) removedWbIds.add(it.id);
+        }
+      }
+
+      // Cascade: any removed node's bound assets go too (covers a contained
+      // prototype's exposed assets, not just a directly-deleted one).
+      for (const n of allNodes) {
+        if (n && n.kind === "asset" && n.boundTo?.node && removedIds.has(n.boundTo.node)) removedIds.add(n.id);
+      }
+      // Deleting a prototype must STICK. Unlike every other node kind, the
+      // reconciler auto-mounts a Prototype node for any source/<slug>/ folder
+      // that holds build artifacts (ORPHAN_PROTOTYPE_FOLDER) - so a plain
+      // delete re-appears on the next reconcile tick. Record the user's intent
+      // in a project-level dismissal list the reconciler consults before
+      // auto-mounting. The folder on disk is left untouched; the prototype
+      // simply stops showing on the canvas. To bring it back, remove the slug
+      // from data.dismissedPrototypeSlugs (or delete + rebuild source/<slug>/).
+      // Applied to EVERY removed prototype (incl. one swept up inside a section).
+      let dismissed = Array.isArray(d.dismissedPrototypeSlugs) ? d.dismissedPrototypeSlugs.slice() : null;
+      for (const id of removedIds) {
+        const n = allNodes.find(x => x.id === id);
+        if (!n || n.kind !== "prototype") continue;
+        const slug = (typeof prototypeSlugForNode === "function"
+          ? prototypeSlugForNode(n) : (n.prototype || n.branch || "")) || "";
+        if (!slug) continue;
+        dismissed = dismissed || [];
+        if (!dismissed.includes(slug)) dismissed.push(slug);
+      }
+      if (dismissed) extra.dismissedPrototypeSlugs = dismissed;
+
+      let nodes = allNodes.filter(n => !removedIds.has(n.id));
       if (target.kind === "asset" && target.boundTo?.node) {
         nodes = nodes.map(n => n.id === target.boundTo.node && Array.isArray(n.exposedAssets)
           ? { ...n, exposedAssets: n.exposedAssets.filter(p => p !== target.path) }
           : n);
-      } else if (target.kind === "prototype") {
-        for (const n of (d.nodes || [])) {
-          if (n.kind === "asset" && n.boundTo?.node === nid) removedIds.add(n.id);
-        }
-        nodes = nodes.filter(n => !(n.kind === "asset" && n.boundTo?.node === nid));
-        // Deleting a prototype must STICK. Unlike every other node kind, the
-        // reconciler auto-mounts a Prototype node for any source/<slug>/ folder
-        // that holds build artifacts (ORPHAN_PROTOTYPE_FOLDER) - so a plain
-        // delete re-appears on the next reconcile tick. Record the user's
-        // intent in a project-level dismissal list the reconciler consults
-        // before auto-mounting. The folder on disk is left untouched; the
-        // prototype simply stops showing on the canvas. To bring it back,
-        // remove the slug from data.dismissedPrototypeSlugs (or delete + rebuild
-        // the source/<slug>/ folder).
-        const slug = (typeof prototypeSlugForNode === "function"
-          ? prototypeSlugForNode(target)
-          : (target.prototype || target.branch || "")) || "";
-        if (slug) {
-          const prev = Array.isArray(d.dismissedPrototypeSlugs) ? d.dismissedPrototypeSlugs : [];
-          if (!prev.includes(slug)) extra.dismissedPrototypeSlugs = [...prev, slug];
-        }
       }
       const edges = (d.edges || []).filter(e => {
         const f = workflowParseEdgeRef(e.from);
@@ -32359,13 +32390,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return f && t && !removedIds.has(f.node) && !removedIds.has(t.node);
       });
       // Record every id we just dropped - including the cascade through
-      // bound-asset/prototype removals - so the daemon merge respects
-      // the deletion. The ref lives in WorkflowCanvas and is read by
-      // its debounced save effect.
+      // table/section content + bound-asset/prototype removals - so the daemon
+      // merge respects the deletion. The refs live in WorkflowCanvas and are
+      // read by its debounced save effect (deletedIds + deletedWbIds payload).
       if (deletedIdsRef && deletedIdsRef.current) {
         for (const id of removedIds) deletedIdsRef.current.add(id);
       }
-      return { ...d, nodes, edges, ...extra };
+      let wb = wbAll;
+      if (removedWbIds.size) {
+        wb = wbAll.filter(it => !(it && removedWbIds.has(it.id)));
+        if (deletedWbIdsRef && deletedWbIdsRef.current) {
+          for (const id of removedWbIds) deletedWbIdsRef.current.add(id);
+        }
+      }
+      return { ...d, nodes, edges, wb, ...extra };
     });
   }, [setData]);
 
