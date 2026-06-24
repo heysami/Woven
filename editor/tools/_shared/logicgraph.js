@@ -322,6 +322,27 @@ export const LogicGraph = {
         bands: { data: a.bands || new Float32Array(0), rate: 0 },
       };
     },
+    'input-gamepad'(node, read, frame) {
+      const g = frame.gamepad || {};
+      return {
+        leftStick: vec2(finiteNumber(g.x, 0), finiteNumber(g.y, 0)),
+        rightStick: vec2(finiteNumber(g.rx, 0), finiteNumber(g.ry, 0)),
+        x: finiteNumber(g.x, 0), y: finiteNumber(g.y, 0),
+        a: !!g.a, b: !!g.b, connected: !!g.connected,
+      };
+    },
+    'input-accel'(node, read, frame) {
+      const a = frame.accel || {};
+      return { x: finiteNumber(a.x, 0), y: finiteNumber(a.y, 0), z: finiteNumber(a.z, 0), ready: !!a.ready };
+    },
+    'input-midi'(node, read, frame) {
+      const m = frame.midi || {};
+      return {
+        note: finiteNumber(m.note, 0), velocity: finiteNumber(m.velocity, 0),
+        cc: finiteNumber(m.cc, 0), ccValue: finiteNumber(m.ccValue, 0),
+        gate: !!m.gate, ready: !!m.ready,
+      };
+    },
 
     'input-camera'(node, read, frame, ctx, state) {
       return { stream: String(node.id), ready: !!(frame.streams && frame.streams[node.id]) };

@@ -9,6 +9,9 @@ SOURCES (no inputs):
 - `input-scroll` [space, clampMin, clampMax] - (o) deltaY(number) deltaX(number) accumY(number) accumX(number) velocity(number)
 - `input-gyro` [smoothing] - (o) alpha(number) beta(number) gamma(number) tilt(vector2) ready(boolean)
 - `input-audio` [source, band, fftSize, smoothing] - (i) asset(string) - (o) level(number) pitch(number) band(number) beat(event) spectrum(channel) bands(channel). spectrum = 64-bin FFT, bands = 16 log-spaced energies; both channels - sample/reduce with chan-sample/chan-analyze for audio-reactive params.
+- `input-gamepad` [] - (o) leftStick(vector2) rightStick(vector2) x(number) y(number) a(boolean) b(boolean) connected(boolean). First connected gamepad; no permission.
+- `input-accel` [] - (o) x(number) y(number) z(number) ready(boolean). Device motion / accelerometer; permission-gated (mobile).
+- `input-midi` [] - (o) note(number) velocity(number) cc(number) ccValue(number) gate(boolean) ready(boolean). WebMIDI controller; permission-gated; velocity/ccValue normalized 0..1.
 - `input-camera` [facing, resolution] - (o) stream(string) ready(boolean) layer(layer). The composer CAN render the live webcam: wire the `layer` output into a composer `in` and the feed becomes a real layer (content.kind camera), with the per-layer effect stack + feedback applying on top. The `stream` output feeds vision-detect / vision-ocr. (The Camera chip in the composer toolbar toggles the webcam on/off and adds the feed layer too.)
 - `input-video` [loop, autoplay] - (i) asset(string) - (o) stream(string) t(number) playing(boolean)
 

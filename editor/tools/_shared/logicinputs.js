@@ -187,6 +187,28 @@ export const LogicInputs = {
       gyro.ready = true;
     };
 
+    // ── gamepad / accel / midi state (input devices) ─────────────────────────
+    const gamepad = { x: 0, y: 0, rx: 0, ry: 0, a: false, b: false, connected: false };
+    const accel = { x: 0, y: 0, z: 0, ready: false };
+    let accelListening = false;
+    const onMotion = (e) => {
+      const a = e.accelerationIncludingGravity || e.acceleration || {};
+      const k = 0.3;
+      accel.x = accel.x * k + num(a.x, 0) * (1 - k);
+      accel.y = accel.y * k + num(a.y, 0) * (1 - k);
+      accel.z = accel.z * k + num(a.z, 0) * (1 - k);
+      accel.ready = true;
+    };
+    const midi = { note: 0, velocity: 0, cc: 0, ccValue: 0, gate: false, ready: false };
+    let midiAccess = null;
+    const onMidi = (e) => {
+      const d = e.data; if (!d || d.length < 2) return;
+      const status = d[0] & 0xf0;
+      if (status === 0x90 && d[2] > 0) { midi.note = d[1]; midi.velocity = d[2] / 127; midi.gate = true; }
+      else if (status === 0x80 || (status === 0x90 && d[2] === 0)) { if (d[1] === midi.note) midi.gate = false; }
+      else if (status === 0xb0) { midi.cc = d[1]; midi.ccValue = (d[2] || 0) / 127; }
+    };
+
     // ── audio state (lazy, permission-gated) ─────────────────────────────────
     const audio = { level: 0, pitch: 0, band: 0, raw: 0, beat: false };
     const audioCfg = {
@@ -268,6 +290,14 @@ export const LogicInputs = {
       const dt = Math.max(0, (now - lastTime) / 1000);
       lastTime = now;
       if (analyser) sampleAudio();
+      // Poll the first connected gamepad (no permission needed).
+      const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : null;
+      const gp = pads && (pads[0] || pads[1] || pads[2] || pads[3]);
+      if (gp) { const ax = gp.axes || [], bt = gp.buttons || [];
+        gamepad.connected = true;
+        gamepad.x = num(ax[0], 0); gamepad.y = num(ax[1], 0); gamepad.rx = num(ax[2], 0); gamepad.ry = num(ax[3], 0);
+        gamepad.a = !!(bt[0] && bt[0].pressed); gamepad.b = !!(bt[1] && bt[1].pressed);
+      } else { gamepad.connected = false; }
       const snap = {
         pointer: {
           x: pointer.x, y: pointer.y, isDown: pointer.isDown, clicked: pointer.clicked,
@@ -289,6 +319,9 @@ export const LogicInputs = {
           accumX: scroll.accumX, accumY: scroll.accumY, velocity: scroll.velocity,
         },
         gyro: { alpha: gyro.alpha, beta: gyro.beta, gamma: gyro.gamma, tilt: { x: gyro.tilt.x, y: gyro.tilt.y }, ready: gyro.ready },
+        gamepad: { x: gamepad.x, y: gamepad.y, rx: gamepad.rx, ry: gamepad.ry, a: gamepad.a, b: gamepad.b, connected: gamepad.connected },
+        accel: { x: accel.x, y: accel.y, z: accel.z, ready: accel.ready },
+        midi: { note: midi.note, velocity: midi.velocity, cc: midi.cc, ccValue: midi.ccValue, gate: midi.gate, ready: midi.ready },
         audio: { level: audio.level, pitch: audio.pitch, band: audio.band, raw: audio.raw, beat: audio.beat, spectrum: audio.spectrum, bands: audio.bands },
         dt: dt, time: (now - startTime) / 1000,
       };
@@ -303,6 +336,8 @@ export const LogicInputs = {
     const requestSensor = (kind) => {
       if (kind === 'gyro') return requestGyro();
       if (kind === 'audio' || kind === 'mic') return requestAudio();
+      if (kind === 'accel' || kind === 'motion') return requestAccel();
+      if (kind === 'midi') return requestMidi();
       return Promise.resolve(false);
     };
 
@@ -360,6 +395,31 @@ export const LogicInputs = {
       }).catch(() => false);
     }
 
+    function requestAccel() {
+      if (accelListening) return Promise.resolve(true);
+      const start = () => { window.addEventListener('devicemotion', onMotion, true); accelListening = true; };
+      const needsPerm = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
+      if (!needsPerm) {
+        return LogicPermission.requestGesture({ title: 'Use device motion', body: 'This piece reacts to how you move your device.', allowLabel: 'Enable motion' }, () => { start(); return true; }).then((v) => !!v);
+      }
+      return LogicPermission.requestGesture({ title: 'Use device motion', body: 'This piece reacts to how you move your device. Your browser will ask next.', allowLabel: 'Enable motion' },
+        () => DeviceMotionEvent.requestPermission()).then((res) => { if (res === 'granted') { start(); return true; } return false; }).catch(() => false);
+    }
+
+    function requestMidi() {
+      if (midiAccess) return Promise.resolve(true);
+      return LogicPermission.requestGesture({ title: 'Use MIDI', body: 'This piece reacts to a connected MIDI controller.', allowLabel: 'Enable MIDI' }, () => {
+        if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) throw new Error('no WebMIDI');
+        return navigator.requestMIDIAccess();
+      }).then((acc) => {
+        if (!acc || acc === true) return false;
+        midiAccess = acc;
+        const bind = () => { acc.inputs.forEach((inp) => { inp.onmidimessage = onMidi; }); };
+        bind(); acc.onstatechange = bind; midi.ready = true;
+        return true;
+      }).catch(() => false);
+    }
+
     const dispose = () => {
       if (disposed) return; disposed = true;
       surface.removeEventListener('pointermove', onPointerMove, passive);
@@ -377,6 +437,8 @@ export const LogicInputs = {
       window.removeEventListener('resize', recomputeRect, passive);
       window.removeEventListener('scroll', recomputeRect, passive);
       if (gyroListening) { window.removeEventListener('deviceorientation', onOrientation, true); gyroListening = false; }
+      if (accelListening) { window.removeEventListener('devicemotion', onMotion, true); accelListening = false; }
+      if (midiAccess) { try { midiAccess.inputs.forEach((inp) => { inp.onmidimessage = null; }); } catch (e) {} midiAccess = null; }
       if (micStream) { try { micStream.getTracks().forEach((t) => t.stop()); } catch (e) {} micStream = null; }
       if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
       analyser = null; freqBuf = null; timeBuf = null;

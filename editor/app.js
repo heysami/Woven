@@ -64320,6 +64320,40 @@ const LOGIC_NODE_DEFS = {
       asset: { label: "Audio asset (source=asset)", dtype: "string", tags: ["asset", "audio"] },
     },
   },
+  "input-gamepad": {
+    glyph: "⊞", label: "Gamepad", section: "Sources", w: 220, h: 300,
+    desc: "Gamepad sticks + buttons (no permission)",
+    controls: {},
+    provides: {
+      leftStick: { label: "leftStick", dtype: "vector2" },
+      rightStick: { label: "rightStick", dtype: "vector2" },
+      x: { label: "x", dtype: "number" }, y: { label: "y", dtype: "number" },
+      a: { label: "a", dtype: "boolean" }, b: { label: "b", dtype: "boolean" },
+      connected: { label: "connected", dtype: "boolean" },
+    },
+    accepts: {},
+  },
+  "input-accel": {
+    glyph: "⊕", label: "Accel", section: "Sources", w: 220, h: 240,
+    desc: "Device motion / accelerometer (permission-gated)",
+    controls: {},
+    provides: {
+      x: { label: "x", dtype: "number" }, y: { label: "y", dtype: "number" },
+      z: { label: "z", dtype: "number" }, ready: { label: "ready", dtype: "boolean" },
+    },
+    accepts: {},
+  },
+  "input-midi": {
+    glyph: "⊟", label: "MIDI", section: "Sources", w: 220, h: 300,
+    desc: "WebMIDI controller: note / velocity / CC (permission-gated)",
+    controls: {},
+    provides: {
+      note: { label: "note", dtype: "number" }, velocity: { label: "velocity", dtype: "number" },
+      cc: { label: "cc", dtype: "number" }, ccValue: { label: "ccValue", dtype: "number" },
+      gate: { label: "gate", dtype: "boolean" }, ready: { label: "ready", dtype: "boolean" },
+    },
+    accepts: {},
+  },
   "input-camera": {
     glyph: "⊙", label: "Camera", section: "Sources", w: 220, h: 240,
     desc: "Live webcam stream handle",

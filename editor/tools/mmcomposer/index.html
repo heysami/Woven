@@ -357,7 +357,7 @@ const LogicBridge = {
   _collectSensors(proj){
     if(!proj||!Array.isArray(proj.nodes)) return [];
     const s=new Set();
-    for(const n of proj.nodes){ if(!n)continue; if(n.kind==='input-gyro')s.add('gyro'); if(n.kind==='input-audio')s.add('audio'); }
+    for(const n of proj.nodes){ if(!n)continue; if(n.kind==='input-gyro')s.add('gyro'); if(n.kind==='input-audio')s.add('audio'); if(n.kind==='input-accel')s.add('accel'); if(n.kind==='input-midi')s.add('midi'); }
     return Array.from(s);
   },
   // Trigger the permission overlay for each needed sensor ONCE (the overlay
@@ -5036,7 +5036,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     // and every landmark stays {0,0} - hand/face detection never turns on).
     LB.streamDetectors=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-detect').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};if(!e||!e.from)return null;const src=(LOGIC.nodes||[]).find(x=>x&&x.id===e.from.node);return {handle:e.from.node,srcKind:(src&&src.kind)||'input-camera',detector:p.detector||'face',target:p.target||'present'};}).filter(Boolean);
     LB.streamOcr=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='vision-ocr').map(n=>{const e=(LOGIC.edges||[]).find(ed=>ed&&ed.to&&ed.to.node===n.id&&ed.to.port==='stream');const p=n.params||{};if(!e||!e.from)return null;const src=(LOGIC.nodes||[]).find(x=>x&&x.id===e.from.node);return {handle:e.from.node,srcKind:(src&&src.kind)||'input-camera',query:p.query!=null?String(p.query):'',interval:p.interval||500};}).filter(Boolean);
-    LB.sensors=Array.from(new Set((LOGIC.nodes||[]).map(n=>n&&n.kind==='input-gyro'?'gyro':(n&&n.kind==='input-audio'?'audio':null)).filter(Boolean)));
+    LB.sensors=Array.from(new Set((LOGIC.nodes||[]).map(n=>{ if(!n)return null; const k=n.kind; return k==='input-gyro'?'gyro':k==='input-audio'?'audio':k==='input-accel'?'accel':k==='input-midi'?'midi':null; }).filter(Boolean)));
     LB.paletteNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='palette'&&n.params&&n.params._imageUrl).map(n=>({id:n.id,url:n.params._imageUrl,count:Math.max(2,Math.min(8,(n.params.count|0)||5)),quality:Math.max(1,Math.min(16,(n.params.quality|0)||4))}));
     LB.audioNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='audio-out').map(n=>n.id);
     import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
