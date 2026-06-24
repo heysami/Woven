@@ -1909,14 +1909,19 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
-def _assistant_tester_complete(system, prompt, model=None, use_browser=False, timeout=600):
-    """One-shot "simple agent" for the Testing assistant - a REAL Claude Code (or
-    Codex) subagent that receives ONLY the persona system prompt + task, with NO
-    Woven capabilities preamble (the bloat exists for orchestrators; a persona
-    tester does not need it). When use_browser is set and Claude is available,
-    the chrome MCP is wired in and permissions are bypassed so the agent can
-    OPEN the asset, take a screenshot to simulate real eyes, and click by what it
-    sees. Returns the agent's final text. Picks the CLI from the chosen model's
+def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600):
+    """One-shot "simple agent" for the assistant nodes - a REAL Claude Code (or
+    Codex) subagent that receives ONLY the given system prompt + task, with NO
+    Woven capabilities preamble (that bloat is for orchestrators).
+    `tools` selects the extra capability granted (permissions bypassed so the
+    tool calls run unattended):
+      - "none"    : plain text completion.
+      - "browser" : wire the chrome MCP so the agent can open / screenshot /
+                    click an asset by sight (Testing assistant).
+      - "web"     : enable Claude Code's built-in WebSearch + WebFetch so the
+                    agent can research the live web (Research assistant) - NO
+                    paid Exa key needed.
+    Returns the agent's final text. Picks the CLI from the chosen model's
     provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI)."""
     prov = "openai" if re.match(r"^(gpt|o\d|codex)", (model or "").lower()) else "anthropic"
     if prov == "anthropic":
@@ -1929,14 +1934,16 @@ def _assistant_tester_complete(system, prompt, model=None, use_browser=False, ti
             args.extend(["--append-system-prompt", system.strip()])
         if model:
             args.extend(["--model", model])
-        # Browser/vision: wire the chrome MCP + bypass permissions so tool calls
-        # (navigate / screenshot / click) run unattended. No --add-dir: the
-        # tester reads the asset over its served URL and needs no write scope.
-        if use_browser:
+        if tools == "browser":
+            # No --add-dir: the agent reads the asset over its served URL.
             mcp = _mcp_config_spawn_args()
             if mcp:
                 args.extend(mcp)
                 args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
+        elif tools == "web":
+            # Claude Code ships WebSearch + WebFetch built in; bypassing
+            # permissions lets them run headless without a prompt.
+            args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
         args.append(prompt or "Proceed.")
         _cli_env = _guest_cli_env("claude")
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
@@ -1944,7 +1951,8 @@ def _assistant_tester_complete(system, prompt, model=None, use_browser=False, ti
         if result.returncode != 0:
             raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
         return (result.stdout or "").rstrip("\n")
-    # Codex path - text-only (no chrome MCP); still a real subagent run.
+    # Codex path - codex exec runs with network (danger-full-access), so a web
+    # research prompt can still fetch pages; no chrome MCP for browser mode.
     msgs = []
     if system and system.strip():
         msgs.append({"role": "system", "content": system})
@@ -7896,6 +7904,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._exa_search_run(qs)
             if parsed.path == "/__assistant/tester":
                 return self._assistant_tester_run(qs)
+            if parsed.path == "/__assistant/research":
+                return self._assistant_research_run(qs)
             if parsed.path == "/__dispatch_planner":
                 return self._dispatch_planner(qs)
             if parsed.path == "/__attachment":
@@ -10144,7 +10154,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if akind in ("assistant-interview", "assistant-research", "assistant-testing"):
                 _str_fields = {
                     "assistant-interview": ("goal", "focus", "model"),
-                    "assistant-research":  ("goal", "criteria", "model", "category"),
+                    "assistant-research":  ("goal", "criteria", "model", "searchVia", "category"),
                     "assistant-testing":   ("task", "model"),
                 }.get(akind, ())
                 for f in _str_fields:
@@ -12417,16 +12427,51 @@ class H(http.server.SimpleHTTPRequestHandler):
             timeout = 600
         timeout = max(30, min(timeout, 1800))
         try:
-            text = _assistant_tester_complete(
+            text = _assistant_agent_complete(
                 body.get("system") or "", prompt,
                 model=body.get("model") or None,
-                use_browser=bool(body.get("useBrowser")),
+                tools=("browser" if bool(body.get("useBrowser")) else "none"),
                 timeout=timeout,
             )
         except FileNotFoundError as e:
             return self._reply(502, {"ok": False, "error": f"agent CLI not found: {e}. Install/auth the claude or codex CLI."})
         except subprocess.TimeoutExpired:
             return self._reply(504, {"ok": False, "error": "tester agent timed out"})
+        except Exception as e:
+            return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "text": text})
+
+    def _assistant_research_run(self, qs):
+        """POST /__assistant/research  Body: { model, system, prompt }.
+        Runs ONE real agent with WebSearch/WebFetch enabled (NO paid Exa key) so
+        the Research assistant can research the live web via the user's own agent
+        CLI. Returns { ok, text } - the caller parses the agent's JSON results."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return self._reply(400, {"error": "payload missing or too large"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        prompt = (body.get("prompt") or "").strip() if isinstance(body, dict) else ""
+        if not prompt:
+            return self._reply(400, {"error": "prompt required"})
+        try:
+            timeout = int(body.get("timeout") or 900)
+        except (TypeError, ValueError):
+            timeout = 900
+        timeout = max(60, min(timeout, 1800))
+        try:
+            text = _assistant_agent_complete(
+                body.get("system") or "", prompt,
+                model=body.get("model") or None,
+                tools="web",
+                timeout=timeout,
+            )
+        except FileNotFoundError as e:
+            return self._reply(502, {"ok": False, "error": f"agent CLI not found: {e}. Install/auth the claude or codex CLI."})
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {"ok": False, "error": "research agent timed out"})
         except Exception as e:
             return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         return self._reply(200, {"ok": True, "text": text})

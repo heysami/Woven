@@ -22790,7 +22790,7 @@ function _modelWasDeprecated(raw) {
 // requires editing editor/kinds/registry.py - single source of truth.
 const _LEGACY_EDITABLE_FIELDS = {
   "assistant-interview": ["goal", "focus", "pushPast", "model"],
-  "assistant-research":  ["goal", "criteria", "model", "numResults", "category"],
+  "assistant-research":  ["goal", "criteria", "model", "searchVia", "numResults", "category"],
   "assistant-testing":   ["task", "model", "personaTypes", "testersPerType", "maxTesters"],
   "iterator-remix":   ["variants"],
   "design-system":    ["spec"],
@@ -25251,12 +25251,13 @@ const WORKFLOW_NODE_FACTORY = {
   // Research assistant: web research via Exa, distilled into a result table
   // plus visual-illustration nodes. Exa is PAID - only runs on the Run button.
   "assistant-research": (p) => ({
-    kind: "assistant-research", w: 420, h: 460,
+    kind: "assistant-research", w: 420, h: 480,
     goal:     p.goal     || "",   // what to research
     criteria: p.criteria || "",   // quality criteria a good result must meet
     model:    p.model    || "claude-opus-4-8",
+    searchVia: p.searchVia || "agent",  // "agent" (free web tools) | "exa" (paid)
     numResults: p.numResults || 8,
-    category: p.category || "",   // "" | company | people | research paper | news | financial report
+    category: p.category || "",   // exa only: "" | company | people | research paper | news | financial report
     tableId:  p.tableId  || null, // the generated result table node id (for re-run)
   }),
   // Testing assistant: synthesises persona testers into a table, then runs one
@@ -37709,44 +37710,69 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       const ctx = _assistantCollectText(ups);
       const folders = _assistantCollectFolders(ups);
-      // Exa is paid - pressing Run is the explicit consent the cost rule needs.
-      const er = await fetch(apiUrl("/__exa/search"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: ctx ? (query + "\n\nContext:\n" + ctx).slice(0, 800) : query,
-          numResults: node.numResults || 8, type: "auto",
-          category: node.category || undefined,
-        }),
-      });
-      const ej = await er.json().catch(() => ({}));
-      if (!er.ok || !ej.ok) throw new Error(ej.error || ("Exa search failed (HTTP " + er.status + "). Add an Exa key in Settings."));
-      const results = ej.results || [];
-      if (!results.length) { setRun({ status: "error", error: "Exa returned no results." }); return; }
-
-      // Criteria pass: keep only results that meet the user's quality bar.
-      setRun({ status: "loading", phase: "filtering" });
       const criteria = (node.criteria || "").trim() || "relevant, specific, and trustworthy";
-      const filtText = await assistantLlm([{ role: "user", content:
-        `Filter web search results against the user's quality criteria.\n\nRESEARCH GOAL:\n${query}\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\nRESULTS (JSON):\n` +
-        JSON.stringify(results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || (x.highlights || [])[0] || "", text: (x.text || "").slice(0, 500) }))) +
-        `\n\nReturn ONLY a JSON array of the results that PASS, best first, each {"i":<index>,"title":"...","url":"...","summary":"<=2 sentences","why":"why it meets the criteria"}. Drop low-quality results. No prose.` }],
-        { model: node.model, maxTokens: 3000 });
-      let kept = _assistantExtractJson(filtText);
-      if (!Array.isArray(kept) || !kept.length) {
-        kept = results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || "", why: "" }));
-      }
+      const via = node.searchVia || "agent";
+      let kept = [], visById = {};
 
-      // Visual-illustration pass: pick the best visual per kept result.
-      setRun({ status: "loading", phase: "illustrating" });
-      const vmText = await assistantLlm([{ role: "user", content:
-        `For each kept research result, choose the single best VISUAL to illustrate it.\nOptions: "image" (use an image URL present in the result, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link" (default).\nResults:\n` +
-        JSON.stringify(kept.map(k => ({ i: k.i, title: k.title, url: k.url, summary: k.summary }))) +
-        `\nAvailable image urls per index: ` + JSON.stringify(results.map((x, i) => ({ i, image: x.image || "" }))) +
-        `\nReturn ONLY a JSON array [{"i":<index>,"visual":"image|color|font|link","value":"<url|hex|font name|>"}]. No prose.` }],
-        { model: node.model, maxTokens: 1500 });
-      const visuals = _assistantExtractJson(vmText);
-      const visById = {};
-      for (const v of (Array.isArray(visuals) ? visuals : [])) if (v && typeof v.i === "number") visById[v.i] = v;
+      if (via === "exa") {
+        // Exa is paid - pressing Run is the explicit consent the cost rule needs.
+        const er = await fetch(apiUrl("/__exa/search"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: ctx ? (query + "\n\nContext:\n" + ctx).slice(0, 800) : query,
+            numResults: node.numResults || 8, type: "auto",
+            category: node.category || undefined,
+          }),
+        });
+        const ej = await er.json().catch(() => ({}));
+        if (!er.ok || !ej.ok) throw new Error(ej.error || ("Exa search failed (HTTP " + er.status + "). Add an Exa key in Settings, or switch Search via to Agent."));
+        const results = ej.results || [];
+        if (!results.length) { setRun({ status: "error", error: "Exa returned no results." }); return; }
+
+        // Criteria pass: keep only results that meet the user's quality bar.
+        setRun({ status: "loading", phase: "filtering" });
+        const filtText = await assistantLlm([{ role: "user", content:
+          `Filter web search results against the user's quality criteria.\n\nRESEARCH GOAL:\n${query}\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\nRESULTS (JSON):\n` +
+          JSON.stringify(results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || (x.highlights || [])[0] || "", text: (x.text || "").slice(0, 500) }))) +
+          `\n\nReturn ONLY a JSON array of the results that PASS, best first, each {"i":<index>,"title":"...","url":"...","summary":"<=2 sentences","why":"why it meets the criteria"}. Drop low-quality results. No prose.` }],
+          { model: node.model, maxTokens: 3000 });
+        kept = _assistantExtractJson(filtText);
+        if (!Array.isArray(kept) || !kept.length) {
+          kept = results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || "", why: "" }));
+        }
+
+        // Visual-illustration pass: pick the best visual per kept result.
+        setRun({ status: "loading", phase: "illustrating" });
+        const vmText = await assistantLlm([{ role: "user", content:
+          `For each kept research result, choose the single best VISUAL to illustrate it.\nOptions: "image" (use an image URL present in the result, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link" (default).\nResults:\n` +
+          JSON.stringify(kept.map(k => ({ i: k.i, title: k.title, url: k.url, summary: k.summary }))) +
+          `\nAvailable image urls per index: ` + JSON.stringify(results.map((x, i) => ({ i, image: x.image || "" }))) +
+          `\nReturn ONLY a JSON array [{"i":<index>,"visual":"image|color|font|link","value":"<url|hex|font name|>"}]. No prose.` }],
+          { model: node.model, maxTokens: 1500 });
+        const visuals = _assistantExtractJson(vmText);
+        for (const v of (Array.isArray(visuals) ? visuals : [])) if (v && typeof v.i === "number") visById[v.i] = v;
+      } else {
+        // Agent web search (default, no paid key): one real agent run with
+        // built-in WebSearch/WebFetch does the search + criteria filter + visual
+        // pick in a single pass, returning the final JSON.
+        setRun({ status: "loading", phase: "researching (agent web)" });
+        const sys = "You are a web research assistant. Use your WebSearch and WebFetch tools to research the question, then return ONLY results that meet the stated quality criteria. Prefer primary sources. Output strictly JSON, no prose.";
+        const prompt =
+          `RESEARCH GOAL:\n${query}\n` + (ctx ? `\nCONTEXT:\n${ctx.slice(0, 1500)}` : "") +
+          `\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\n` +
+          `Find up to ${node.numResults || 8} high-quality results via web search. For each, also choose the single best VISUAL to illustrate it: "image" (a real image URL from the page, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link".\n\n` +
+          `Return ONLY a JSON array, best first, each: {"title","url","summary (<=2 sentences)","why (why it meets the criteria)","visual":"image|color|font|link","value":"<url|hex|font name|>"}.`;
+        const rr = await fetch(apiUrl("/__assistant/research"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: node.model, system: sys, prompt }),
+        });
+        const rj = await rr.json().catch(() => ({}));
+        if (!rr.ok || !rj.ok) throw new Error(rj.error || ("agent research failed (HTTP " + rr.status + ")"));
+        const arr = _assistantExtractJson(rj.text);
+        if (!Array.isArray(arr) || !arr.length) throw new Error("Agent returned no parseable results - try again, or switch Search via to Exa.");
+        kept = arr.map((x, i) => ({ i, title: x.title || x.url || "", url: x.url || "", summary: x.summary || "", why: x.why || "" }));
+        arr.forEach((x, i) => { visById[i] = { i, visual: x.visual || "link", value: x.value || x.url || "" }; });
+      }
 
       // Build the result table (fresh each run).
       setRun({ status: "loading", phase: "building table" });
@@ -68346,34 +68372,44 @@ function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange
             value=${node.criteria || ""} onInput=${(e) => onChange({ criteria: e.target.value })}/>
         </label>
         <div className="workflow-node-assistant-row">
+          <label className="workflow-node-iter-field workflow-node-assistant-cat">
+            <span className="workflow-node-iter-field-label">Search via</span>
+            <select value=${node.searchVia || "agent"} onChange=${(e) => onChange({ searchVia: e.target.value })}>
+              <option value="agent">Agent (web, free)</option>
+              <option value="exa">Exa (paid)</option>
+            </select>
+          </label>
           <label className="workflow-node-iter-field workflow-node-assistant-num">
             <span className="workflow-node-iter-field-label">Results</span>
             <input type="number" min="1" max="25" value=${node.numResults || 8}
               onInput=${(e) => onChange({ numResults: Math.max(1, Math.min(25, parseInt(e.target.value, 10) || 8)) })}/>
           </label>
-          <label className="workflow-node-iter-field workflow-node-assistant-cat">
-            <span className="workflow-node-iter-field-label">Category</span>
-            <select value=${node.category || ""} onChange=${(e) => onChange({ category: e.target.value })}>
-              <option value="">any</option>
-              <option value="company">company</option>
-              <option value="research paper">research paper</option>
-              <option value="news">news</option>
-              <option value="people">people</option>
-              <option value="financial report">financial report</option>
-            </select>
-          </label>
+          ${(node.searchVia || "agent") === "exa" && html`
+            <label className="workflow-node-iter-field workflow-node-assistant-cat">
+              <span className="workflow-node-iter-field-label">Category</span>
+              <select value=${node.category || ""} onChange=${(e) => onChange({ category: e.target.value })}>
+                <option value="">any</option>
+                <option value="company">company</option>
+                <option value="research paper">research paper</option>
+                <option value="news">news</option>
+                <option value="people">people</option>
+                <option value="financial report">financial report</option>
+              </select>
+            </label>`}
         </div>
         <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}/>
         <div className="workflow-node-iter-actions">
           <button className="workflow-node-skill-run" disabled=${busy}
-            title="Run an Exa web search (paid), filter against your criteria, and build a result table with visuals."
+            title="Research the web, filter against your criteria, and build a result table with visuals."
             onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${busy ? html`<span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}` : html`<${Icon.Spark}/> Research (Exa)`}
+            ${busy ? html`<span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}` : html`<${Icon.Spark}/> ${(node.searchVia || "agent") === "exa" ? "Research (Exa)" : "Research (Agent)"}`}
           </button>
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">table built</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
         </div>
-        <div className="workflow-node-assistant-note">Exa is paid - it only runs when you click Research.</div>
+        <div className="workflow-node-assistant-note">${(node.searchVia || "agent") === "exa"
+          ? "Exa is paid - it only runs when you click Research."
+          : "Agent mode uses your Claude CLI's built-in web search - no extra key."}</div>
       </div>
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>

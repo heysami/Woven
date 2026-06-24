@@ -182,6 +182,7 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__decision/<id>",      "purpose": "Persist a checkpoint pick (DECISION_<id>.json)"},
         {"method": "POST", "path": "/__exa/search",         "purpose": "Exa (exa.ai) web search - PAID + METERED. Body {query, numResults?, type?, category?, contents?}. NEVER auto-run: only on explicit user request, and offer-first if you reach for it mid-task. See the 'Exa web search' capability rule"},
         {"method": "POST", "path": "/__assistant/tester",   "purpose": "Run ONE 'simple agent' subagent (bare preamble, per-node model) for a Testing-assistant persona row. Body {model, system, prompt, useBrowser?}. With useBrowser it gets the chrome MCP to open + screenshot + click an asset by sight. Returns {ok, text}"},
+        {"method": "POST", "path": "/__assistant/research",  "purpose": "Run ONE 'simple agent' subagent with Claude Code's built-in WebSearch + WebFetch enabled (NO paid Exa key) for the Research assistant's agent mode. Body {model, system, prompt}. Returns {ok, text}"},
     ]
 
 
@@ -953,7 +954,7 @@ Do NOT use the em dash character (Unicode U+2014) anywhere you write, ever. Not 
 
 ## Exa web search - available, but PAID and never auto-run (hard rule)
 
-The app can search the live web through Exa (exa.ai) via `POST /__exa/search` (the daemon holds the key; the editor's Research assistant node is the primary surface). Exa can:
+The app can research the live web two ways. The DEFAULT, no-extra-key path is an **agent with WebSearch/WebFetch** (`POST /__assistant/research`, which runs the user's own Claude Code CLI with its built-in web tools) - use this for general web research. The optional, higher-recall path is **Exa** (exa.ai) via `POST /__exa/search` (the daemon holds the key). Reach for Exa only when the user explicitly wants it or when its category indexes / recall clearly beat a plain agent search. Exa can:
 - **Search** (`type`: `instant` / `fast` / `auto` / `deep` / `deep-reasoning`) - web retrieval with a speed-vs-depth tradeoff.
 - **Contents** - return each hit's clean page `text`, `highlights` (token-efficient relevant extracts), and an AI `summary` in the same call.
 - **Answer** - a grounded answer with citations.

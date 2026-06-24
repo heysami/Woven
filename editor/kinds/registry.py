@@ -1281,6 +1281,7 @@ KINDS = {
             "goal":       {"type": "markdown", "userEditable": True},
             "criteria":   {"type": "markdown", "userEditable": True},
             "model":      {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "searchVia":  {"type": "text",     "default": "agent", "userEditable": True},
             "numResults": {"type": "number",   "default": 8, "userEditable": True},
             "category":   {"type": "text",     "userEditable": True},
             "tableId":    {"type": "text",     "userEditable": False},
@@ -1293,7 +1294,7 @@ KINDS = {
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "runStatusFlow": ["queued", "running", "done", "error"],
         "pauseAfter":   False,
-        "notes": "PAID Exa search (never auto-run). Filters results to the user's criteria, builds a canvas grid table, and drops palette/typography/asset/folder nodes as visuals.",
+        "notes": "Two search modes (searchVia): 'agent' (DEFAULT, free) runs a real agent with WebSearch/WebFetch via /__assistant/research; 'exa' uses the PAID Exa API (never auto-run). Either way it filters results to the user's criteria, builds a canvas grid table, and drops palette/typography/asset/folder nodes as visuals.",
     },
 
     # ── assistant-testing (persona testers → per-row feedback table) ───────
