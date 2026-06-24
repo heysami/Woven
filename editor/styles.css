@@ -12676,9 +12676,16 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Multi-port positioning override - by default port zones in styles.css
    center vertically. Iterator dynamic ports set their own top via inline
    style; clear the default centering for these. */
+/* Iterator fan-in/out ports (Blend inputs, Repeater/Remix outputs) tile their
+   edge: each zone is positioned + sized inline as a full vertical SLICE (top +
+   height per index) so it inherits the base width:50% half-card and the slices
+   abut with no dead gaps. Hovering anywhere in a slice during an edge drag snaps
+   to that port - the same easy drop target every single-port node already has.
+   (Previously pinned to 18x18, so only the tiny dot was a drop target and the
+   space between dots snapped to nothing / the wrong port.) */
 .workflow-port-zone-iter-out,
 .workflow-port-zone-iter-in {
-  height: 18px; width: 18px;
+  width: 50%;
 }
 
 /* Blend slot layout */

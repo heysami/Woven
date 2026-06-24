@@ -25448,17 +25448,27 @@ const WORKFLOW_CONNECT_DEFS = {
   "iterator-repeater": {
     label: "Repeater",
     provides: {},
-    accepts:  { in: { label: "Runnable to repeat", tags: ["runnable"] } },
+    // A Repeater re-runs a generator N times for N variants. "runnable" covers
+    // prompts / skills / ds-brainstorm; "asset-gen" widens it to ANY asset
+    // generator (e.g. a Blend's output, an image skill) so every generator is
+    // offered, not just the ones that also happen to carry "runnable".
+    accepts:  { in: { label: "Generator to repeat", tags: ["runnable", "asset-gen"] } },
   },
   "iterator-remix": {
     label: "Remix",
     provides: {},
-    accepts:  { in: { label: "Source to remix", tags: ["remixable"] } },
+    // Remix rasterises + re-imagines a source asset. Accept ANY asset (not just
+    // the curated "remixable" subset), so html / formatted-text / vector / 3d /
+    // composer / app-node outputs are all offered, not only image-like cards.
+    accepts:  { in: { label: "Source to remix", tags: ["asset", "remixable"] } },
   },
   "iterator-blend": {
     label: "Blend",
     provides: { out: { label: "Blended output", tags: ["asset-gen"] } },
-    accepts:  { "input-*": { label: "Blend input", tags: ["blendable"] } },
+    // Accept ANY asset as a blend input (was "blendable"-only). "blendable" is
+    // kept so a Prompt (text criteria, no "asset" tag) still wires in - blend
+    // weighs text + asset inputs together.
+    accepts:  { "input-*": { label: "Blend input", tags: ["asset", "blendable"] } },
   },
   "iterator-refiner": {
     label: "Refiner",
@@ -67532,7 +67542,7 @@ function WorkflowRepeaterNode({ node, zoom, onMove, onResize, onRemove, onChange
       ${variants.map((_, i) => html`
         <div key=${i} className="workflow-port-zone workflow-port-zone-out workflow-port-zone-iter-out"
              data-port-node=${node.id} data-port-side=${"output-" + (i + 1)}
-             style=${{ top: ((((h - 32) / n) * (i + 0.5)) + 32) + "px" }}
+             style=${{ top: (32 + (h - 32) * i / n) + "px", height: ((h - 32) / n) + "px", bottom: "auto" }}
              title=${"Output #" + (i + 1)}
              onMouseDown=${(e) => onStartEdge && onStartEdge("output-" + (i + 1), e)}>
           <div className="workflow-port-dot"/>
@@ -67665,7 +67675,7 @@ function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, o
       ${variants.map((_, i) => html`
         <div key=${i} className="workflow-port-zone workflow-port-zone-out workflow-port-zone-iter-out"
              data-port-node=${node.id} data-port-side=${"output-" + (i + 1)}
-             style=${{ top: ((((h - 32) / n) * (i + 0.5)) + 32) + "px" }}
+             style=${{ top: (32 + (h - 32) * i / n) + "px", height: ((h - 32) / n) + "px", bottom: "auto" }}
              onMouseDown=${(e) => onStartEdge && onStartEdge("output-" + (i + 1), e)}>
           <div className="workflow-port-dot"/>
         </div>
@@ -67771,7 +67781,7 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
       ${slots.map((_, i) => html`
         <div key=${i} className="workflow-port-zone workflow-port-zone-in workflow-port-zone-iter-in"
              data-port-node=${node.id} data-port-side=${"input-" + (i + 1)}
-             style=${{ top: ((((h - 32) / n) * (i + 0.5)) + 32) + "px" }}
+             style=${{ top: (32 + (h - 32) * i / n) + "px", height: ((h - 32) / n) + "px", bottom: "auto" }}
              title=${"Blend input #" + (i + 1)}
              onMouseDown=${(e) => onStartEdge && onStartEdge("input-" + (i + 1), e)}>
           <div className="workflow-port-dot"/>
