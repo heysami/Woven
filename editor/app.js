@@ -18078,12 +18078,12 @@ function DsTemplateModal({ projectId, dsId, dsLabel, onClose, onApplied }) {
    dsAssignRoles). The picks are a random spread across both pools - NOT
    style-matched. The style overlays consume --primary-/--secondary-/--tertiary-
    (they derive their surfaces from the scheme), so the colour flows in; --font /
-   --text- / --space- ride :root and land on top. Tech-minimalism deliberately
-   keeps its theme palette (its graphite + safety-orange IS its identity, and it
-   renders dark) and varies only font + density; Neobrutalism owns its own
-   editorial type scale, so it varies colour + font + spacing only. typeTouched /
-   spacingTouched gate the scale emission, so both are set wherever a scale is
-   tuned. */
+   --text- / --space- ride :root and land on top. Tech-minimalism renders dark
+   and its theme derives the hot-signal accent from the scheme, so its Jewel
+   Tones palette tints the dark accent (light ramp -> buildDsDarkCss derives the
+   dark roles); Neobrutalism owns its own editorial type scale, so it varies
+   colour + font + spacing only. typeTouched / spacingTouched gate the scale
+   emission, so both are set wherever a scale is tuned. */
 const DS_STYLE_SAMPLES = [
   { id: "default", name: "Default", styleId: "", dark: false,
     note: "The system as shipped - restrained institutional product UI on the base light tokens." },
@@ -18114,7 +18114,7 @@ const DS_STYLE_SAMPLES = [
       spacingBasePx: 17, spacingRatio: 1.55, spacingTouched: true } },
   { id: "techminimalism", name: "Tech-minimalism", styleId: "techminimalism", dark: true,
     note: "Frutiger-DORFic / Teenage Engineering in its graphite-dark register: concrete ground, a single safety-orange signal, mono micro-labels and hairlines.",
-    tune: { fontKey: "jetbrains-mono", roundness: 0.12,
+    tune: { paletteName: "Jewel Tones", fontKey: "jetbrains-mono", roundness: 0.12,
       baseFontPx: 14, typeRatio: 1.125, typeTouched: true,
       spacingBasePx: 12, spacingRatio: 1.40, spacingTouched: true } },
   { id: "neobrutalism", name: "Neobrutalism", styleId: "neobrutalism", dark: false,
