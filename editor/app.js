@@ -41821,6 +41821,44 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                           summary.inputs.push({ kind: "asset", label: secName + " · formatted text", path: cn.bakedPath, assetKind: "html" });
                         }
                       }
+                    } else if (up.kind === "table") {
+                      // A table (research / tester result grid, or a hand-built
+                      // grid) carries its content as cell-bound wb TEXT items
+                      // (it.cell.tableId) plus any cell-hosted typed nodes
+                      // (palette / type / asset). Serialise the grid to a TSV
+                      // block + expand the typed cells, exactly like the section
+                      // branch above, and LABEL it as the Table node so the agent
+                      // connects the user's "the table" to this input. (Previously
+                      // a wired table had NO branch here and was silently dropped,
+                      // so the agent never saw what the user was pointing at.)
+                      const tblName = up.title || "Table";
+                      const wbItems = Array.isArray(data.wb) ? data.wb : [];
+                      const cells = wbItems.filter(it => it && it.cell && it.cell.tableId === up.id && it.type === "text" && (it.text || "").trim());
+                      if (cells.length) {
+                        const maxC = cells.reduce((m, it) => Math.max(m, (it.cell.c || 0)), 0);
+                        const byRow = {};
+                        for (const it of cells) {
+                          const r = it.cell.r || 0;
+                          (byRow[r] = byRow[r] || {})[it.cell.c || 0] = (it.text || "").trim().replace(/\s+/g, " ");
+                        }
+                        const rowKeys = Object.keys(byRow).map(Number).sort((a, b) => a - b);
+                        const lines = rowKeys.map(r => {
+                          const row = byRow[r], out = [];
+                          for (let c = 0; c <= maxC; c++) out.push(row[c] != null ? row[c] : "");
+                          return out.join("\t");
+                        });
+                        summary.inputs.push({ kind: "text", label: tblName + " (table · " + rowKeys.length + " rows)", text: lines.join("\n") });
+                      }
+                      for (const cn of (data.nodes || [])) {
+                        if (!cn || !cn.cell || cn.cell.tableId !== up.id) continue;
+                        if (cn.kind === "color-palette") {
+                          summary.inputs.push({ kind: "color-palette", label: tblName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
+                        } else if (cn.kind === "typography") {
+                          summary.inputs.push({ kind: "typography", label: tblName + " · " + (cn.name || "type scale"), fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
+                        } else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) {
+                          summary.inputs.push({ kind: "asset", label: tblName + " · " + (cn.path.split("/").pop() || "asset"), path: cn.path, assetKind: cn.assetKind });
+                        }
+                      }
                     } else if (up.kind === "browser" && (up.url || "").trim()) {
                       // Web-browser node wired in → hand the agent the URL; it
                       // can WebFetch the page itself. (Was offered by the ⊕ menu
@@ -75654,6 +75692,23 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push("WHEN TO SKIP DELEGATION: simple SVG icons (≤20 primitives, symbolic, UI affordance) can be inline-authored without the orchestrator. CSS gradients/patterns same. The orchestrator is for non-trivial visuals - multi-figure illustrations, raster imagery, shaders, etc.");
     parts.push("");
     parts.push("Litmus test: \"can a competent designer redraw this slot in 30 seconds with a vector tool?\" YES → inline OK. NO → delegate.");
+    parts.push("");
+  }
+  // No deliverable wired (no file/typed output target, no folder/single-file
+  // destination) - this is the free chat-over-canvas case (the chat path never
+  // passes wiredOutputs/outputMode). Tell the agent that when the user asks it
+  // to PROCESS canvas content (not build a prototype/asset), the result belongs
+  // BACK ON THE CANVAS as nodes, not buried in an inline chat reply.
+  const _hasOutputTarget = fileTargets.length > 0 || targets.length > 0
+    || (wiredFileOut && String(wiredFileOut).trim())
+    || ((outputMode === "single-file" || outputMode === "folder") && outputPath);
+  if (!_hasOutputTarget) {
+    parts.push("=== Where your result goes (no output target wired) ===");
+    parts.push("Nothing downstream is wired to you, so YOU decide where the result lands:");
+    parts.push("  - If the user just asked a QUESTION or wants a conversational reply, answer inline in chat as normal.");
+    parts.push("  - But if they asked you to PROCESS / transform / generate / organise / split / expand the canvas content wired above (e.g. \"give me 3 sections\", \"turn this into a table\", \"summarise each row as a card\", \"rewrite these as headings\") - and they are NOT asking you to build or update a prototype or a rendered asset - then write the RESULT BACK ONTO THE CANVAS as node(s); do NOT just describe it inline. The wired inputs labelled \"Section · …\" / \"Table · …\" ARE live canvas nodes the user is pointing at.");
+    parts.push("    How: POST $TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID with JSON {\"addNodes\":[…],\"addEdges\":[…]}. Use `prompt` nodes for loose text/headings (wrap several in a `section` node to group them, e.g. one section per requested item), a `table` node + cell text items for tabular results, `color-palette` / `typography` for those. Field shapes per kind: GET $TH_DAEMON_URL/__kinds/registry.");
+    parts.push("    First GET $TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID to find the source node's id + x/y, then place new nodes beside it (offset x by roughly +460 so they don't overlap). Finish with a ONE-line chat note saying what you dropped on the canvas.");
     parts.push("");
   }
   if (userText && userText.trim()) {
