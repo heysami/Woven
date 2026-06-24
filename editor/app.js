@@ -64813,6 +64813,23 @@ const LOGIC_NODE_DEFS = {
     },
     accepts: {},
   },
+  "control-panel": {
+    glyph: "▥", label: "Control panel", section: "Control", w: 240, h: 380,
+    desc: "Live sliders + toggle to drive params",
+    controls: {
+      a: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      b: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      c: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      d: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      toggle: { type: "select", value: "off", options: ["off", "on"] },
+    },
+    provides: {
+      a: { label: "a", dtype: "number" }, b: { label: "b", dtype: "number" },
+      c: { label: "c", dtype: "number" }, d: { label: "d", dtype: "number" },
+      on: { label: "on", dtype: "boolean" },
+    },
+    accepts: {},
+  },
   // ── 2.75 Physics (generic force field for the composer's unified world) ──
   // The `force` node is a SINK that injects a GENERIC force into the mm-composer's
   // ONE shared Matter world (see editor/tools/_shared/PHYSICS_WORLD_DESIGN.md). It

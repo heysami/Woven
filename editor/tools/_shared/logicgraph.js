@@ -830,6 +830,17 @@ export const LogicGraph = {
       const num = Number(s.last);
       return { message: s.last, value: Number.isFinite(num) ? num : 0, connected: !!s.open, updated: updated };
     },
+    // Control panel: live sliders + a toggle exposed as outputs, wired onto any
+    // params (the missing TD-style control surface). Pure - the values ARE the
+    // node controls.
+    'control-panel'(node) {
+      const p = node.params || {};
+      return {
+        a: finiteNumber(p.a, 0), b: finiteNumber(p.b, 0),
+        c: finiteNumber(p.c, 0), d: finiteNumber(p.d, 0),
+        on: p.toggle === 'on',
+      };
+    },
 
     // ---- 2.7 output sink ------------------------------------------------------
     'output-binding'(node, read) {
