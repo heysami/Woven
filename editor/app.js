@@ -68559,31 +68559,31 @@ function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChang
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
         <label className="workflow-node-iter-field">
-          <span className="workflow-node-iter-field-label">Goal / criteria + thresholds</span>
+          <span className="workflow-node-iter-field-label">When is the brief good enough to stop?</span>
           <textarea rows=${3}
-            placeholder="e.g. Reach 9/10 clarity, specificity, and voice before stopping."
+            placeholder="e.g. Specific enough to build from with no more guessing - clear on who it's for, the look, and the must-haves."
             value=${node.goal || ""} onInput=${(e) => onChange({ goal: e.target.value })}/>
         </label>
         <label className="workflow-node-iter-field">
-          <span className="workflow-node-iter-field-label">Focus aspect</span>
+          <span className="workflow-node-iter-field-label">What should the interview dig into?</span>
           <textarea rows=${2}
-            placeholder="e.g. visual direction · audience · density · voice · constraints"
+            placeholder="e.g. who it's for · the vibe · key features · what to avoid"
             value=${node.focus || ""} onInput=${(e) => onChange({ focus: e.target.value })}/>
         </label>
         <div className="workflow-node-iter-field">
-          <span className="workflow-node-iter-field-label">Push past <em>X</em> to <em>Y</em></span>
+          <span className="workflow-node-iter-field-label">Push my answers from vague to specific</span>
           ${pushPast.map((p, i) => html`
             <div key=${i} className="workflow-node-refiner-pushrow">
-              <input className="workflow-node-refiner-from" value=${p.from || ""} placeholder="average"
+              <input className="workflow-node-refiner-from" value=${p.from || ""} placeholder="vague, e.g. make it modern"
                 onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], from: e.target.value }; onChange({ pushPast: next }); }}/>
               <span className="workflow-node-refiner-arrow">→</span>
-              <input className="workflow-node-refiner-to" value=${p.to || ""} placeholder="desired"
+              <input className="workflow-node-refiner-to" value=${p.to || ""} placeholder="specific, e.g. Swiss grid, mono type"
                 onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], to: e.target.value }; onChange({ pushPast: next }); }}/>
               <button className="workflow-node-refiner-pushdel" title="Remove this row"
                 onClick=${() => onChange({ pushPast: pushPast.filter((_, j) => j !== i) })}>×</button>
             </div>`)}
           <button className="workflow-node-refiner-pushadd"
-            onClick=${() => onChange({ pushPast: [...pushPast, { from: "", to: "" }] })}>+ Add push pair</button>
+            onClick=${() => onChange({ pushPast: [...pushPast, { from: "", to: "" }] })}>+ Add another</button>
         </div>
         <div className="workflow-node-iter-actions">
           <button className="workflow-node-skill-run"
