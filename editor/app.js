@@ -18109,7 +18109,7 @@ const DS_STYLE_SAMPLES = [
       spacingBasePx: 15, spacingRatio: 1.45, spacingTouched: true } },
   { id: "neumorphism", name: "Neumorphism", styleId: "neumorphism", dark: false,
     note: "Soft UI: one base colour with extruded dual shadows for raised and pressed states, fully monochrome.",
-    tune: { paletteName: "Onyx", fontKey: "poppins", roundness: 1,
+    tune: { paletteName: "Midnight Steel", fontKey: "poppins", roundness: 1,
       baseFontPx: 16, typeRatio: 1.25, typeTouched: true,
       spacingBasePx: 17, spacingRatio: 1.55, spacingTouched: true } },
   { id: "techminimalism", name: "Tech-minimalism", styleId: "techminimalism", dark: true,
