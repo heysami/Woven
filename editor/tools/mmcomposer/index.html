@@ -4390,7 +4390,7 @@ function renderInspector(){
   /* CONTENT accordion */
   body.appendChild(accordion('Content',(b)=>{
     b.appendChild(fSelect('Kind',L.content.kind,
-      [['shape','Shape'],['text','Text'],['asset','Wired asset'],['generator','Generator'],['particles','Particles'],['scene3d','3D']],
+      [['shape','Shape'],['text','Text'],['camera','Live camera'],['asset','Wired asset'],['generator','Generator'],['particles','Particles'],['scene3d','3D']],
       v=>{ L.content.kind=v; renderInspector(); }));
     if(L.content.kind==='shape'){
       b.appendChild(fSelect('Shape',L.content.shape||'rect',[['rect','Rect'],['circle','Circle'],['tri','Triangle']],v=>L.content.shape=v));
@@ -4398,6 +4398,8 @@ function renderInspector(){
     } else if(L.content.kind==='text'){
       b.appendChild(fText('Text',L.content.text,v=>L.content.text=v));
       b.appendChild(fColor('Color',L.content.color||'#ffffff',v=>L.content.color=v));
+    } else if(L.content.kind==='camera'){
+      b.appendChild(html('<p class="hint">Live webcam (auto-enables; use the Cam permission chip if blocked). Mirrored, cover-fit.</p>'));
     } else if(L.content.kind==='asset'){
       b.appendChild(fSelect('Asset',L.content.assetId||'',assetOpts(['image','video']),v=>L.content.assetId=v));
       b.appendChild(html('<p class="hint">Wired images & video render as instance content.</p>'));
