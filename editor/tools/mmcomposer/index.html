@@ -192,6 +192,16 @@ function loadMod(key){
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue, FX_HISTORY_DEPTH } from '../_shared/fx.js';
 import { createPOPEngine } from '../_shared/pop.js';
 import { createScene3D } from '../_shared/scene3d.js';
+// Baked-export parity: the standalone player is .toString()'d, so it can't
+// reference these module imports - it needs the engine SOURCE inlined as globals.
+// Fetch it once at load (single source of truth, so the export can never drift
+// from the live engine); bake() embeds it. `export` is stripped so the source
+// runs as a plain script that defines window.createPOPEngine / createScene3D.
+let POP_ENGINE_SRC = '', SCENE3D_ENGINE_SRC = '';
+try {
+  fetch(new URL('../_shared/pop.js', import.meta.url)).then(r => r.ok ? r.text() : '').then(t => { POP_ENGINE_SRC = String(t).replace(/\bexport\s+/g, ''); }).catch(() => {});
+  fetch(new URL('../_shared/scene3d.js', import.meta.url)).then(r => r.ok ? r.text() : '').then(t => { SCENE3D_ENGINE_SRC = String(t).replace(/\bexport\s+/g, ''); }).catch(() => {});
+} catch (_e) {}
 import { Sources } from '../_shared/sources.js';
 import { LogicGraph } from '../_shared/logicgraph.js';
 const EFFECT_SPECS = fxProgramSpecs();
@@ -4914,11 +4924,20 @@ function bake(){
   // W2C: bake the logic-graph projection so the published piece reacts to real
   // input (the slim player loads logicgraph.js + W2D capture, contract §5.5).
   const logic=(WIRED.logic && typeof WIRED.logic==='object')?WIRED.logic:null;
+  // Inline the particle / 3D engine source as a plain script (defining the
+  // createPOPEngine / createScene3D globals the slimPlayer's hosts call) so a
+  // baked composition with particles/scene3d layers renders standalone. Empty if
+  // the source hasn't loaded yet - those layers then simply don't render (no crash).
+  const engines = (POP_ENGINE_SRC && SCENE3D_ENGINE_SRC)
+    ? ('<scr' + 'ipt>' + POP_ENGINE_SRC + '\n' + SCENE3D_ENGINE_SRC +
+       '\ntry{window.createPOPEngine=createPOPEngine;window.createScene3D=createScene3D;}catch(e){}</scr' + 'ipt>')
+    : '';
   return BAKED_TEMPLATE
     .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
     .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';')
     .replace('/*__TOPFX__*/','window.__MM_TOPFX__='+JSON.stringify(topFx)+';')
-    .replace('/*__LOGIC__*/','window.__MM_LOGIC__='+JSON.stringify(logic)+';');
+    .replace('/*__LOGIC__*/','window.__MM_LOGIC__='+JSON.stringify(logic)+';')
+    .replace('/*__ENGINES__*/', engines);
 }
 /* Serialize one effect for the baked player. Custom effects carry a precompiled
    fragment (`_frag`); built-ins carry just type/params/intensity and resolve
@@ -4947,6 +4966,7 @@ const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
 /*__ASSETS__*/
 /*__TOPFX__*/
 /*__LOGIC__*/
+/*__ENGINES__*/
 ${'/* ===== slim player ===== */'}
 (${slimPlayer.toString()})(window.__MM_CFG__, window.__MM_ASSETS__||[],
   ${JSON.stringify(Object.assign({__copy:{frag:EFFECT_COPY_FRAG,uniforms:[]}}, EFFECT_SPECS))}, ${JSON.stringify(FX_VERT)},
@@ -5617,12 +5637,32 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     else if(c.kind==='text'){lctx.fillStyle=c.color||'#fff';lctx.font='700 '+(Math.min(W,H)*0.4)+'px sans-serif';lctx.textAlign='center';lctx.textBaseline='middle';lctx.fillText(c.text||'TEXT',0,0);}
     else{lctx.fillStyle=c.color||'#6ee7ff';lctx.fillRect(-W/2,-H/2,W,H);}
     lctx.restore();}
+  // particle / 3D hosts (baked twin of PopHost / Scene3DHost). Call the engine
+  // globals embedded by bake(); inert if those engines aren't present.
+  const PopHostB={ _e:undefined, _cv:{},
+    eng(){ if(this._e===undefined){ try{ this._e=(typeof createPOPEngine==='function')?createPOPEngine():null; }catch(_e){ this._e=null; } } return this._e; },
+    _n(v,d){ const n=Number(v); return Number.isFinite(n)?n:d; },
+    _rgb(h){ h=String(h||'#8cd8ff').replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16)||0; return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255]; },
+    tick(id,c,W2,H2,dt,time){ const e=this.eng(); if(!e||!e.available||!e.available())return; const rgb=this._rgb(c.color);
+      const out=e.step(id,{w:W2,h:H2,count:(c.count|0)||12000,dt,time,pointer:{x:IN.px,y:IN.py,down:IN.down},params:{size:this._n(c.size,3),noise:this._n(c.noise,0.4),gravityY:this._n(c.gravityY,0),attract:this._n(c.attract,0.5),drag:this._n(c.drag,0.1),life:this._n(c.life,3),blend:c.blend||'add',r:rgb[0],g:rgb[1],b:rgb[2]}}); if(!out)return;
+      let cv=this._cv[id]; if(!cv){cv=this._cv[id]=document.createElement('canvas');} if(cv.width!==W2||cv.height!==H2){cv.width=W2;cv.height=H2;} const cx=cv.getContext('2d'); cx.clearRect(0,0,W2,H2); try{cx.drawImage(out,0,0,W2,H2);}catch(_e){} },
+    canvas(id){ return this._cv[id]||null; },
+    prune(live){ const e=this.eng(); for(const id in this._cv){ if(!live.has(id)){ delete this._cv[id]; if(e&&e.disposeInstance)e.disposeInstance(id); } } } };
+  const Scene3DHostB={ _e:undefined, _cv:{},
+    eng(){ if(this._e===undefined){ try{ this._e=(typeof createScene3D==='function')?createScene3D():null; }catch(_e){ this._e=null; } } return this._e; },
+    tick(id,c,W2,H2,time){ const e=this.eng(); if(!e||!e.available||!e.available())return;
+      const out=e.step({w:W2,h:H2,count:(c.count|0)||6000,time,pointer:{x:IN.px,y:IN.py,down:IN.down},params:{shape:c.shape||'sphere',size:PopHostB._n(c.size,3),spin:PopHostB._n(c.spin,0.3),color:c.color||'#9ad0ff',blend:c.blend||'add'}}); if(!out)return;
+      let cv=this._cv[id]; if(!cv){cv=this._cv[id]=document.createElement('canvas');} if(cv.width!==W2||cv.height!==H2){cv.width=W2;cv.height=H2;} const cx=cv.getContext('2d'); cx.clearRect(0,0,W2,H2); try{cx.drawImage(out,0,0,W2,H2);}catch(_e){} },
+    canvas(id){ return this._cv[id]||null; },
+    prune(live){ for(const id in this._cv){ if(!live.has(id))delete this._cv[id]; } } };
   function drawC(L,inst,sMul){const c=L.content,cx=inst.x*W,cy=inst.y*H,sz=Math.min(W,H)*(inst.scale||1)*sMul,bw=inst.w?inst.w*W:sz,bh=inst.h?inst.h*H:sz;
     if(inst._shard){const cell=inst._shard,poly=cell.poly;lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
       lctx.beginPath();lctx.moveTo(poly[0][0]-cell.cx,poly[0][1]-cell.cy);for(let i=1;i<poly.length;i++)lctx.lineTo(poly[i][0]-cell.cx,poly[i][1]-cell.cy);lctx.closePath();lctx.clip();
       lctx.translate(-cell.cx,-cell.cy);drawShatterC(L);lctx.restore();return;}
     lctx.save();lctx.translate(cx,cy);lctx.rotate(inst.rot||0);
     if(c.kind==='polyshape'){drawPoly(c);lctx.restore();return;}
+    if(c.kind==='particles'){const pc=PopHostB.canvas(L.id);if(pc){lctx.setTransform(1,0,0,1,0,0);try{lctx.drawImage(pc,0,0,W,H);}catch(_e){}lctx.restore();return;}lctx.restore();return;}
+    if(c.kind==='scene3d'){const s3=Scene3DHostB.canvas(L.id);if(s3){lctx.setTransform(1,0,0,1,0,0);try{lctx.drawImage(s3,0,0,W,H);}catch(_e){}lctx.restore();return;}lctx.restore();return;}
     if(c.kind==='asset'){const m=AC.meta(c.assetId);if(m&&m.kind==='video'){const v=video(c.assetId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}}else if(m&&m.kind==='html'){const rec=htmlRaster(c.assetId);if(rec&&rec.ready&&rec.canvas){const ar=rec.canvas.width/rec.canvas.height||1;drawM(rec.canvas,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}else{const im=image(c.assetId);if(im&&im._r){const ar=im.width/im.height||1;drawM(im,ar,bw,bh,inst.fit,inst.alignX,inst.alignY,inst.tile);}else{lctx.fillStyle='#333';lctx.fillRect(-bw/2,-bh/2,bw,bh);}}}
     else if(c.kind==='camera'){const v=IN.cam.on?IN.cam.video:null;if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;lctx.save();lctx.scale(-1,1);drawM(v,ar,bw,bh,'cover','center','center',false);lctx.restore();}}
     else if(c.kind==='videostream'){const v=vstream(c.nodeId);if(v&&v.readyState>=2){const ar=v.videoWidth/v.videoHeight||1;drawM(v,ar,bw,bh,'cover','center','center',false);}}
@@ -5785,6 +5825,8 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     // PASS A - draw each needed layer into lb, copy to its own buffer (positions resolve once)
     const rendered={};
     for(const L of CFG.layers){if(L.visible===false&&!maskRefs.has(L.id))continue;
+      if(L.content&&L.content.kind==='particles'){PopHostB.tick(L.id,L.content,W,H,dt,IN.clock);}
+      if(L.content&&L.content.kind==='scene3d'){Scene3DHostB.tick(L.id,L.content,W,H,IN.clock);}
       if(L.content&&L.content.kind==='sketch'){SH.ensure(L.content.sketchId,L.content.code,L.content.controls);SH.tick(L.content.sketchId,W,H,SH.frame(dt),scVals(L.content),scContent(L.content));}
       const o=ov[L.id]||{};const ins=positions(L,dt);const sm=o.scale!=null?o.scale:1,pf=o.position;
       lctx.clearRect(0,0,W,H);for(const it of ins){let t=it;if(pf)t={x:pf[0],y:pf[1],scale:it.scale,rot:it.rot};drawC(L,t,sm);}
@@ -5794,7 +5836,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       if(fb>0){b.cx.save();b.cx.globalCompositeOperation='destination-out';b.cx.globalAlpha=1-fb;b.cx.fillStyle='#000';b.cx.fillRect(0,0,W,H);b.cx.restore();}
       else{b.cx.clearRect(0,0,W,H);}
       b.cx.drawImage(lb,0,0);rendered[L.id]=b;}
-    const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}SH.prune(live);
+    const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}SH.prune(live);PopHostB.prune(live);Scene3DHostB.prune(live);
     // free fluid buffers (GPU + CPU) for layers / fluid effects that went away
     const fluLive=new Set(CFG.layers.filter(L=>layerFluid(L)).map(L=>L.id));for(const id of Array.from(_gpuFluIds)){if(!fluLive.has(id))disposeFlu(id);}for(const id in FLU){if(!fluLive.has(id))disposeFlu(id);}
     // PASS B - composite visible layers in z-order, applying channel masks
