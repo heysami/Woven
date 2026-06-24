@@ -68424,7 +68424,7 @@ function WorkflowRepeaterNode({ node, zoom, onMove, onResize, onRemove, onChange
         <div className="workflow-node-iter-actions">
           <button className="workflow-node-skill-run" disabled=${running}
                   onClick=${(e) => { e.stopPropagation(); onRun && onRun(node.id); }}>
-            ${running ? html`<span className="workflow-node-skill-spinner"/>running…` : html`<${Icon.Play}/> Run ${n}×`}
+            ${running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>running…<//>` : html`<${React.Fragment}><${Icon.Play}/> Run ${n}×<//>`}
           </button>
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">done</span>`}
@@ -68557,7 +68557,7 @@ function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         <div className="workflow-node-iter-actions">
           <button className="workflow-node-skill-run" disabled=${running}
                   onClick=${(e) => { e.stopPropagation(); onRun && onRun(node.id); }}>
-            ${running ? html`<span className="workflow-node-skill-spinner"/>running…` : html`<${Icon.Play}/> Run ${n}×`}
+            ${running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>running…<//>` : html`<${React.Fragment}><${Icon.Play}/> Run ${n}×<//>`}
           </button>
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">done</span>`}
@@ -68669,7 +68669,7 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         <div className="workflow-node-iter-actions">
           <button className="workflow-node-skill-run" disabled=${running}
                   onClick=${(e) => { e.stopPropagation(); onRun && onRun(node.id); }}>
-            ${running ? html`<span className="workflow-node-skill-spinner"/>running…` : html`<${Icon.Play}/> Blend`}
+            ${running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>running…<//>` : html`<${React.Fragment}><${Icon.Play}/> Blend<//>`}
           </button>
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">done</span>`}
@@ -68876,7 +68876,7 @@ function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange
           <button className="workflow-node-skill-run" disabled=${busy}
             title="Research the web, filter against your criteria, and build a result table with visuals."
             onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${busy ? html`<span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}` : html`<${Icon.Spark}/> ${(node.searchVia || "agent") === "exa" ? "Research (Exa)" : "Research (Agent)"}`}
+            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>` : html`<${React.Fragment}><${Icon.Spark}/> ${(node.searchVia || "agent") === "exa" ? "Research (Exa)" : "Research (Agent)"}<//>`}
           </button>
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">table built</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
@@ -68942,7 +68942,7 @@ function WorkflowTestingNode({ node, zoom, onMove, onResize, onRemove, onChange,
           <button className="workflow-node-skill-run" disabled=${busy}
             title="Generate persona testers into a table, then gather each one's feedback."
             onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${busy ? html`<span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}` : html`<${Icon.Spark}/> Run testers (~${total})`}
+            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>` : html`<${React.Fragment}><${Icon.Spark}/> Run testers (~${total})<//>`}
           </button>
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">feedback in</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
