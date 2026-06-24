@@ -43849,6 +43849,44 @@ function WorkflowLibrary({ tab = "nodes" }) {
         </div>
       </div>
       <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Assistant nodes</div>
+        <div className="workflow-library-list">
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-research" }));
+               }}
+               title="Drag onto canvas - web research (free agent web search, or paid Exa), filtered to your criteria, distilled into a table with visuals.">
+            <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
+            <span className="workflow-library-item-label">Research assistant</span>
+            <span className="workflow-library-item-id">web research</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-testing" }));
+               }}
+               title="Drag onto canvas - synthesises persona testers into a table and gathers each one's honest feedback.">
+            <span className="workflow-library-item-glyph"><${Icon.Spark}/></span>
+            <span className="workflow-library-item-label">Testing assistant</span>
+            <span className="workflow-library-item-id">persona testers</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-interview" }));
+               }}
+               title="Drag onto canvas - an agent interviews YOU in a chat loop until your prompt meets the goal, then writes the refined prompt.">
+            <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
+            <span className="workflow-library-item-label">Interviewing assistant</span>
+            <span className="workflow-library-item-id">interviews you</span>
+          </div>
+        </div>
+      </div>
+      <div className="workflow-library-section">
         <div className="workflow-library-section-head">Asset generators</div>
         <div className="workflow-library-list">
           ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
@@ -43918,39 +43956,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Blend}/></span>
             <span className="workflow-library-item-label">Blend</span>
             <span className="workflow-library-item-id">N inputs</span>
-          </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-interview" }));
-               }}
-               title="Drag onto canvas - an agent interviews YOU in a chat loop until your prompt meets the goal, then writes the refined prompt.">
-            <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
-            <span className="workflow-library-item-label">Interviewing assistant</span>
-            <span className="workflow-library-item-id">interviews you</span>
-          </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-research" }));
-               }}
-               title="Drag onto canvas - web research via Exa (paid), filtered to your criteria, distilled into a table with visuals.">
-            <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
-            <span className="workflow-library-item-label">Research assistant</span>
-            <span className="workflow-library-item-id">Exa search</span>
-          </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-testing" }));
-               }}
-               title="Drag onto canvas - synthesises persona testers into a table and gathers each one's honest feedback.">
-            <span className="workflow-library-item-glyph"><${Icon.Spark}/></span>
-            <span className="workflow-library-item-label">Testing assistant</span>
-            <span className="workflow-library-item-id">persona testers</span>
           </div>
         </div>
       </div>
