@@ -54432,21 +54432,19 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   const _htmlVP = (_size.deviceClass === "mobile")  ? { w: 390,  h: 844 }
                 : (_size.deviceClass === "desktop") ? { w: 1440, h: 900 }
                 : { w: 1280, h: 800 };
-  const htmlScaleWrapRef = useRef(null);
-  useEffect(() => {
-    if (htmlFit !== "scale" || kind !== "html") return;
-    const wrap = htmlScaleWrapRef.current;
-    if (!wrap) return;
-    const vw = _htmlVP.w;
-    const update = () => {
-      const ww = wrap.getBoundingClientRect().width;
-      if (ww > 0) wrap.style.setProperty("--asset-thumb-scale", String(ww / vw));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(wrap);
-    return () => ro.disconnect();
-  }, [htmlFit, kind, _htmlVP.w]);
+  // Scale-to-fit factor for the fixed-viewport iframe. Derived from the node's
+  // LAYOUT dimensions (w × h, the same units the node `style` uses), NOT from
+  // getBoundingClientRect - the node lives inside the workflow-canvas
+  // transform: scale(zoom), so a screen-pixel measurement already includes the
+  // zoom; multiplying the iframe by screenW/vw and then letting the canvas
+  // transform zoom it AGAIN double-counts the zoom, shrinking the iframe to
+  // zoom× its wrap and leaving empty space on the right + bottom when zoomed
+  // out. Computing the factor in layout units (exactly like WorkflowProtoNode)
+  // keeps iframe and wrap in the same coordinate space so the canvas zoom
+  // applies once, uniformly. `cover` (Math.max) guarantees the box is filled
+  // even when a freely-resized node's aspect drifts from the viewport aspect;
+  // overflow on the off-axis is clipped by the wrap rather than left blank.
+  const _htmlScale = Math.max(w / _htmlVP.w, h / _htmlVP.h);
   // Defensive normalize: an absolute filesystem path that happens to live
   // inside the project tree (e.g. picked via the OS-native folder picker
   // before the daemon learned to convert it) → strip everything up to and
@@ -54736,7 +54734,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         <div className="workflow-node-asset-empty-hint">connect a Pathway-B skill → Run</div>
       </div>
     ` : (htmlFit === "scale" ? html`
-      <div ref=${htmlScaleWrapRef} className="workflow-node-asset-iframe-scale">
+      <div className="workflow-node-asset-iframe-scale">
         <iframe
           ref=${htmlIframeRef}
           key=${"asset-iframe-" + bust + "-" + (node.activeVersionId || "live")}
@@ -54752,7 +54750,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           style=${{
             width:  _htmlVP.w + "px",
             height: _htmlVP.h + "px",
-            transform: "scale(var(--asset-thumb-scale, 1))",
+            transform: "scale(" + _htmlScale + ")",
             transformOrigin: "top left",
           }}
         />
