@@ -16981,6 +16981,20 @@ function dsAssignRoles(colors) {
   };
 }
 
+/* Resolve a palette NAME (from either of the two sets the tuning UI ships - the
+   6 role-defined DS_ROLE_PALETTES or the 20 Coolors DS_PALETTES) into role
+   settings {primary,secondary,tertiary,neutral}. Role palettes carry the roles
+   directly; Coolors strips go through dsAssignRoles exactly like the customizer.
+   Used by the Template-DS-Samples gallery so each sample's scheme is drawn from
+   the shipped palettes, not ad-hoc hexes. Returns null for an unknown name. */
+function dsSamplePaletteRoles(name) {
+  const role = DS_ROLE_PALETTES.find(p => p.name === name);
+  if (role) return { primary: role.primary, secondary: role.secondary, tertiary: role.tertiary, neutral: role.neutral };
+  const cool = DS_PALETTES.find(p => p.name === name);
+  if (cool) return dsAssignRoles(cool.colors);
+  return null;
+}
+
 /* ── Dark-mode role derivation ──
    Dark mode can't just reuse the light ramp steps: a vivid primary needs a
    saturated fill + white text, but a light/pastel/warm primary needs a LIGHT
@@ -18052,49 +18066,50 @@ function DsTemplateModal({ projectId, dsId, dsLabel, onClose, onApplied }) {
    `js` flags the styles that ship a runtime (themes/<id>.js) the thumbnail
    must inject to render the real thing. Keep in sync with DS_PREVIEW_STYLES /
    default-design-system/meta.json. */
-/* Each sample now rides its OWN tokens, not the shared defaults - a distinct
-   colour scheme + body font + type scale + space scale chosen to REINFORCE its
-   UI style (so every row reads differently, yet each tuning matches the style's
-   character). `tune` is a partial customizer-settings patch over
-   dsDefaultSettings(); DefaultLibraryLanding folds it through
-   buildDsCustomization the same way the live customizer does. The style overlays
-   consume --primary-/--secondary-/--tertiary- (they derive their surfaces from
-   the scheme), so the colour flows in; --font / --text- / --space- ride :root
-   and land on top. Tech-minimalism deliberately keeps its theme palette (its
-   graphite + safety-orange IS its identity, and it renders dark) and varies only
-   font + density; Neobrutalism owns its own editorial type scale, so it varies
-   colour + font + spacing only. typeTouched / spacingTouched gate the scale
-   emission, so both are set wherever a scale is tuned. */
+/* Each sample now rides its OWN tokens, not the shared defaults - a colour
+   scheme drawn from the palettes the tuning UI already ships, plus a distinct
+   body font + type scale + space scale (so every row reads differently). `tune`
+   is a partial customizer-settings patch over dsDefaultSettings();
+   DefaultLibraryLanding folds it through buildDsCustomization the same way the
+   live customizer does. The COLOUR is referenced by `paletteName` - a name from
+   EITHER shipped set (the 6 role-defined DS_ROLE_PALETTES or the 20 Coolors
+   DS_PALETTES), resolved to {primary,secondary,tertiary,neutral} by
+   dsSamplePaletteRoles exactly like the picker (Coolors strips go through
+   dsAssignRoles). The picks are a random spread across both pools - NOT
+   style-matched. The style overlays consume --primary-/--secondary-/--tertiary-
+   (they derive their surfaces from the scheme), so the colour flows in; --font /
+   --text- / --space- ride :root and land on top. Tech-minimalism deliberately
+   keeps its theme palette (its graphite + safety-orange IS its identity, and it
+   renders dark) and varies only font + density; Neobrutalism owns its own
+   editorial type scale, so it varies colour + font + spacing only. typeTouched /
+   spacingTouched gate the scale emission, so both are set wherever a scale is
+   tuned. */
 const DS_STYLE_SAMPLES = [
   { id: "default", name: "Default", styleId: "", dark: false,
     note: "The system as shipped - restrained institutional product UI on the base light tokens." },
   { id: "minimal", name: "Minimal", styleId: "minimal", dark: false,
     note: "Light, white nav with a primary-only palette and flat hairline elevation - airy and quiet.",
-    tune: { primary: "#345CC4", neutral: "#8C9199", fontKey: "inter", roundness: 0.5,
+    tune: { paletteName: "Indigo & Tangerine", fontKey: "inter", roundness: 0.5,
       baseFontPx: 16, typeRatio: 1.20, typeTouched: true,
       spacingBasePx: 18, spacingRatio: 1.60, spacingTouched: true } },
   { id: "pastel", name: "Pastel", styleId: "pastel", dark: false,
     note: "Soft pastel palette and nav, no bold fills or gradients - gentle and approachable.",
-    tune: { primary: "#9785E0", secondary: "#F0A6C6", tertiary: "#A9C8E8", neutral: "#9C95AC",
-      fontKey: "dm-sans", roundness: 1,
+    tune: { paletteName: "Pastel Rainbow", fontKey: "dm-sans", roundness: 1,
       baseFontPx: 16, typeRatio: 1.333, typeTouched: true,
       spacingBasePx: 16, spacingRatio: 1.50, spacingTouched: true } },
   { id: "glassmorphism", name: "Glassmorphism", styleId: "glassmorphism", dark: false, js: true,
     note: "iOS liquid-glass: translucent backdrop-blur surfaces with a live dispersion-prism edge accent.",
-    tune: { primary: "#0A84FF", secondary: "#5E5CE6", tertiary: "#64D2FF", neutral: "#8E9196",
-      fontKey: "manrope", roundness: 1,
+    tune: { paletteName: "Ocean Depth", fontKey: "manrope", roundness: 1,
       baseFontPx: 16, typeRatio: 1.414, typeTouched: true,
       spacingBasePx: 16, spacingRatio: 1.45, spacingTouched: true } },
   { id: "rams", name: "Rams", styleId: "rams", dark: false,
     note: "Dieter Rams / Braun skeuomorphism: warm-grey device face, hairline bevels, controls that depress on press.",
-    tune: { primary: "#E3A21A", secondary: "#C0411E", tertiary: "#9A9488", neutral: "#8C867A",
-      fontKey: "work-sans", roundness: 0.3,
+    tune: { paletteName: "Marine Gold", fontKey: "work-sans", roundness: 0.3,
       baseFontPx: 15, typeRatio: 1.067, typeTouched: true,
       spacingBasePx: 15, spacingRatio: 1.45, spacingTouched: true } },
   { id: "neumorphism", name: "Neumorphism", styleId: "neumorphism", dark: false,
     note: "Soft UI: one base colour with extruded dual shadows for raised and pressed states, fully monochrome.",
-    tune: { primary: "#5C6BC0", secondary: "#7E8AAE", tertiary: "#9AA3BC", neutral: "#9094A6",
-      fontKey: "poppins", roundness: 1,
+    tune: { paletteName: "Violet & Amber", fontKey: "poppins", roundness: 1,
       baseFontPx: 16, typeRatio: 1.25, typeTouched: true,
       spacingBasePx: 17, spacingRatio: 1.55, spacingTouched: true } },
   { id: "techminimalism", name: "Tech-minimalism", styleId: "techminimalism", dark: true,
@@ -18104,25 +18119,25 @@ const DS_STYLE_SAMPLES = [
       spacingBasePx: 12, spacingRatio: 1.40, spacingTouched: true } },
   { id: "neobrutalism", name: "Neobrutalism", styleId: "neobrutalism", dark: false,
     note: "Monochrome editorial: cream paper, ink borders, zero radius, hard zero-blur offset shadows.",
-    tune: { primary: "#2D2DF0", fontKey: "space-grotesk", roundness: 0,
+    tune: { paletteName: "Onyx", fontKey: "space-grotesk", roundness: 0,
       spacingBasePx: 18, spacingRatio: 1.50, spacingTouched: true } },
   { id: "analog", name: "Analog", styleId: "analog", dark: false, js: true,
     note: "Ink-on-paper halftone: light surfaces with a live per-element halftone gradient on nav, filled cards and buttons.",
-    tune: { primary: "#26201A", secondary: "#A24B22", tertiary: "#7E7466", neutral: "#8F887A",
+    tune: { paletteName: "Olive Grove",
       fontKey: "source-serif-4", twoFonts: true, headingFontKey: "fraunces", roundness: 0.2,
       baseFontPx: 17, typeRatio: 1.50, typeTouched: true,
       spacingBasePx: 16, spacingRatio: 1.50, spacingTouched: true } },
   { id: "claymorphism", name: "Claymorphism", styleId: "claymorphism", dark: false,
     note: "Soft-UI foam: chunky radii and puffy dual drop-and-inset clay shadows.",
-    tune: { primary: "#7B61FF", secondary: "#FF8FA3", tertiary: "#4FD1C5", neutral: "#9A93A8",
-      fontKey: "figtree", roundness: 1,
+    tune: { paletteName: "Forest & Magenta", fontKey: "figtree", roundness: 1,
       baseFontPx: 16, typeRatio: 1.618, typeTouched: true,
       spacingBasePx: 18, spacingRatio: 1.60, spacingTouched: true } },
 ];
 
 // Human-readable chips describing one style sample - scheme + runtime, plus the
-// per-sample tuning (body font, and a swatch of the accent) so the row label
-// reflects that each sample now rides its own tokens.
+// per-sample tuning (body font, and the named palette with a swatch of its
+// resolved accent) so the row label reflects that each sample now rides its own
+// tokens, drawn from the shipped palettes.
 function dsStyleSampleChips(p) {
   const chips = [{ k: "scheme", v: p.dark ? "Dark" : "Light" }];
   if (p.js) chips.push({ k: "runtime", v: "Live canvas" });
@@ -18131,7 +18146,10 @@ function dsStyleSampleChips(p) {
     const f = DS_FONT_CATALOG.find(x => x.key === t.fontKey);
     if (f) chips.push({ k: "font", v: f.name });
   }
-  if (t && t.primary) chips.push({ k: "accent", v: t.primary, swatch: t.primary });
+  if (t && t.paletteName) {
+    const roles = dsSamplePaletteRoles(t.paletteName);
+    chips.push({ k: "accent", v: t.paletteName, swatch: roles && roles.primary });
+  }
   return chips;
 }
 
@@ -18258,8 +18276,12 @@ function DefaultLibraryLanding() {
     const base = dsDefaultSettings();
     const m = {};
     for (const p of DS_STYLE_SAMPLES) {
-      m[p.id] = p.tune ? buildDsCustomization({ ...base, ...p.tune })
-                       : buildDsCustomization(base);
+      if (!p.tune) { m[p.id] = buildDsCustomization(base); continue; }
+      // Resolve the named palette (role set or Coolors) into role colours, the
+      // same way the customizer's picker does, then fold it + the rest of the
+      // tune over the defaults.
+      const roles = p.tune.paletteName ? dsSamplePaletteRoles(p.tune.paletteName) : null;
+      m[p.id] = buildDsCustomization({ ...base, ...p.tune, ...(roles || {}) });
     }
     return m;
   }, []);
