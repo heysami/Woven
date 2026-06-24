@@ -24809,6 +24809,28 @@ function wbFontPx(v, fallback = 18) {
   return WB_FONT_SIZES[v] || fallback;
 }
 
+// Measure the rendered height of wrapped text at a given pixel width, so result
+// tables can auto-size their rows to the content (no clipping / overflow).
+// Uses one reused offscreen element; matches the wb text item's font metrics.
+let _wbMeasureEl = null;
+function _measureWrappedTextHeight(text, widthPx, fontPx = WB_FONT_SIZES.sm) {
+  if (typeof document === "undefined") return Math.round(fontPx * 1.4);
+  if (!_wbMeasureEl) {
+    _wbMeasureEl = document.createElement("div");
+    const s = _wbMeasureEl.style;
+    s.position = "absolute"; s.visibility = "hidden"; s.left = "-99999px"; s.top = "0";
+    s.whiteSpace = "pre-wrap"; s.wordBreak = "break-word"; s.boxSizing = "content-box";
+    try { s.fontFamily = getComputedStyle(document.body).fontFamily || "sans-serif"; } catch (e) { s.fontFamily = "sans-serif"; }
+    document.body.appendChild(_wbMeasureEl);
+  }
+  const s = _wbMeasureEl.style;
+  s.width = Math.max(20, Math.round(widthPx)) + "px";
+  s.fontSize = fontPx + "px";
+  s.lineHeight = "1.4";
+  _wbMeasureEl.textContent = (text == null ? "" : String(text)) || " ";
+  return _wbMeasureEl.scrollHeight;
+}
+
 // type → (payload) => item body (no id / z - the caller assigns those).
 // Single source of truth for the tool gestures, paste, drop, AND the
 // agent-facing preamble docs - keep them in lockstep.
@@ -31546,8 +31568,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       ? colWidths.map(w => Math.max(WB_TABLE_MIN_COL, Math.round(w)))
       : headers.map(() => 220);
     const headerH = 34;
-    const bodyRowH = Math.max(WB_TABLE_MIN_ROW, Math.round(rowH || 72));
-    const rowHeights = [headerH, ...rows.map(() => bodyRowH)];
+    const minRowH = Math.max(WB_TABLE_MIN_ROW, Math.round(rowH || 44));
+    // Auto-size each row to its tallest cell's wrapped text (capped), so content
+    // never overflows. Empty cells (filled later) just take the min height and
+    // grow on workflowSetCellText / workflowAddCellNode.
+    const measureRow = (row) => {
+      let h = minRowH;
+      headers.forEach((_, c) => {
+        const txt = (row && row[c] != null) ? row[c] : "";
+        if (!txt) return;
+        const ch = _measureWrappedTextHeight(txt, (cols[c] || 200) - 12) + 14;
+        if (ch > h) h = ch;
+      });
+      return Math.min(h, 900);
+    };
+    const rowHeights = [headerH, ...rows.map(measureRow)];
     const tableId = workflowNewNodeId();
     const tx = Math.round(x || 0), ty = Math.round(y || 0);
     const body = workflowMakeNodeOfKind("table", { cols, rows: rowHeights, title: title || "Results" });
@@ -31583,30 +31618,39 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
       if (!t) return d;
       const list = Array.isArray(d.wb) ? d.wb : [];
+      const str = String(text == null ? "" : text);
+      const cols = wbTableCols(t);
+      // Grow the row to fit the new text (auto-resize, no overflow).
+      let nt = t;
+      const needH = Math.min(900, _measureWrappedTextHeight(str, (cols[c] || 200) - 12) + 14);
+      const rows = wbTableRows(t).slice();
+      if ((rows[r] || 0) < needH) { rows[r] = needH; nt = wbTableSync({ ...t, rows }); }
       let found = false;
-      const next = list.map(it => {
+      let next = list.map(it => {
         if (it && it.cell && it.cell.tableId === tableId && it.cell.r === r && it.cell.c === c && it.type === "text") {
           found = true;
-          return { ...it, text: String(text == null ? "" : text) };
+          return { ...it, text: str };
         }
         return it;
       });
-      if (found) return { ...d, wb: next };
-      const cols = wbTableCols(t);
-      const rect = wbTableCellRect(t, r, c);
-      const it = wbMakeItem("text", {
-        text: String(text == null ? "" : text),
-        x: rect.x + 6, y: rect.y + 6,
-        w: Math.max(40, (cols[c] || 200) - 12),
-        fontSize: "sm", align: "left", color: "ink",
-      });
-      it.cell = { tableId, r, c, ox: 6, oy: 6 };
-      return { ...d, wb: [...next, it] };
+      if (!found) {
+        const rect = wbTableCellRect(nt, r, c);
+        const it = wbMakeItem("text", {
+          text: str, x: rect.x + 6, y: rect.y + 6,
+          w: Math.max(40, (cols[c] || 200) - 12),
+          fontSize: "sm", align: "left", color: "ink",
+        });
+        it.cell = { tableId, r, c, ox: 6, oy: 6 };
+        next = [...next, it];
+      }
+      const nextNodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(n => n.id === tableId ? nt : n);
+      return { ...d, wb: next, nodes: nextNodes };
     });
   }, [setData]);
 
   // Drop a real reusable node (color-palette / typography / asset / folder) into
-  // a table cell, cell-bound so the reconcile keeps it pinned. Returns the id.
+  // a table cell, cell-bound so the reconcile keeps it pinned. Grows the cell
+  // (row height + column width) to fit the node. Returns the id.
   const workflowAddCellNode = useCallback((tableId, r, c, kind, payload) => {
     let newId = null;
     setData(d => {
@@ -31615,10 +31659,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const body = workflowMakeNodeOfKind(kind, payload || {});
       if (!body) return d;
       newId = workflowNewNodeId();
-      const rect = wbTableCellRect(t, r, c);
-      const node = { id: newId, ...body, x: rect.x + 6, y: rect.y + 6,
-                     cell: { tableId, r, c, ox: 6, oy: 6 } };
-      return { ...d, nodes: [...(d.nodes || []), node] };
+      // Grow the cell to fit the node (+ padding) before pinning it.
+      const cols = wbTableCols(t).slice(), rows = wbTableRows(t).slice();
+      const needW = (body.w || 220) + 16, needH = (body.h || 170) + 16;
+      let grew = false;
+      if ((cols[c] || 0) < needW) { cols[c] = needW; grew = true; }
+      if ((rows[r] || 0) < needH) { rows[r] = needH; grew = true; }
+      const nt = grew ? wbTableSync({ ...t, cols, rows }) : t;
+      const rect = wbTableCellRect(nt, r, c);
+      const node = { id: newId, ...body, x: rect.x + 8, y: rect.y + 8,
+                     cell: { tableId, r, c, ox: 8, oy: 8 } };
+      const nextNodes = (grew ? (d.nodes || []).map(n => n.id === tableId ? nt : n) : (d.nodes || [])).concat([node]);
+      return { ...d, nodes: nextNodes };
     });
     return newId;
   }, [setData]);
@@ -37838,13 +37890,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       const ctx = _assistantCollectText(ups);
       const assets = _assistantCollectAssets(ups);
+      // Resolve wired assets to absolute http(s) URLs a browser subagent could
+      // navigate to. data:/blob: inlines drop out.
+      const browseUrls = assets
+        .map(a => { const u = a.url || (a.path ? apiUrl("/" + a.path) : ""); if (!u) return ""; try { return new URL(u, location.href).href; } catch (e) { return u; } })
+        .filter(u => /^https?:/i.test(u));
+      const useBrowser = browseUrls.length > 0;
+      const interactive = assets.some(a => (a.assetKind || "") === "html") || browseUrls.some(u => /\.html?($|\?)/i.test(u));
+      // SCOPE STRICTLY to what is actually wired in. Do NOT assume an app exists.
+      // With only a prompt/idea linked there is no app/prototype/repo to open -
+      // testers must react to the idea as written, not hunt for or invent one.
+      const materialKind = useBrowser ? "asset" : (ctx ? "idea" : "none");
+      const scopeNote = materialKind === "asset"
+        ? "The user linked a real artifact to evaluate (opened in a browser below)."
+        : materialKind === "idea"
+          ? "The user linked ONLY a text idea/brief (below). There is NO built app, prototype, website, screens, UI, repository, or files - nothing to open, click, or run. Evaluate the IDEA exactly as written. Do NOT assume, invent, or go looking for any app or files, and do NOT ask for a link or for it to be built - react to the concept itself."
+          : "The user linked nothing but the task text. Evaluate the task/idea as stated; there is no app or asset to open.";
+
       const types = Math.max(1, Math.min(8, node.personaTypes || 3));
       const per = Math.max(1, Math.min(8, node.testersPerType || 2));
       const cap = Math.max(1, node.maxTesters || 12);
       const pText = await assistantLlm([{ role: "user", content:
-        `Generate ${types} DISTINCT user persona TYPES for testing the task below, then ${per} individual testers per type who SHARE their type's background / preference / expectation but VARY in personality and name. Total testers must be <= ${cap}.\n\nTASK / GOAL:\n${task}\n` +
-        (ctx ? "\nCONTEXT:\n" + ctx.slice(0, 1200) : "") +
-        `\n\nReturn ONLY a JSON array of testers: [{"name","type","background","personality","preference","task"}], where "task" is the specific thing to ask this tester to do (can repeat across testers). No prose.` }],
+        `Generate ${types} DISTINCT user persona TYPES for evaluating the task below, then ${per} individual testers per type who SHARE their type's background / preference / expectation but VARY in personality and name. Total testers must be <= ${cap}.\n\n` +
+        `WHAT IS BEING EVALUATED: ${scopeNote}\n\nTASK / GOAL:\n${task}\n` +
+        (ctx ? "\nLINKED MATERIAL:\n" + ctx.slice(0, 1200) : "") +
+        `\n\nEach tester's "task" must be framed as reacting to ${materialKind === "asset" ? "the linked asset" : "this idea (not a finished app)"} - never assume features or screens that were not provided. Return ONLY a JSON array of testers: [{"name","type","background","personality","preference","task"}]. No prose.` }],
         { model: "claude-opus-4-8", maxTokens: 3000 });
       let testers = _assistantExtractJson(pText);
       if (!Array.isArray(testers) || !testers.length) throw new Error("Could not generate personas.");
@@ -37856,17 +37926,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const tx = Math.round(node.x + (node.w || 440) + 80), ty = Math.round(node.y);
       const tableId = workflowBuildResultTable({
         title: "Testers: " + task.slice(0, 30), headers, rows, x: tx, y: ty,
-        colWidths: [140, 120, 200, 180, 160, 220, 300, 260], rowH: 120,
+        colWidths: [140, 120, 200, 180, 160, 220, 300, 260],
       });
       updateNode(nodeId, { tableId });
-
-      // Resolve any wired assets to absolute http(s) URLs the browser subagent
-      // can navigate to (the daemon-served origin). data:/blob: inlines drop out.
-      const browseUrls = assets
-        .map(a => { const u = a.url || (a.path ? apiUrl("/" + a.path) : ""); if (!u) return ""; try { return new URL(u, location.href).href; } catch (e) { return u; } })
-        .filter(u => /^https?:/i.test(u));
-      const useBrowser = browseUrls.length > 0;
-      const interactive = assets.some(a => (a.assetKind || "") === "html") || browseUrls.some(u => /\.html?($|\?)/i.test(u));
 
       // Parse a tester's reply into reply / idea / questions[].
       const parseTester = (txt) => {
@@ -37881,20 +37943,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return { reply, idea, questions };
       };
 
-      // One REAL Claude Code (or Codex) subagent per tester via /__assistant/tester.
+      // Run ONE tester. Asset wired -> a REAL browser subagent (opens + screenshots
+      // + clicks by sight). Idea-only -> a pure persona LLM completion (NO tools,
+      // so it can't go hunting a repo/app that doesn't exist).
+      const FORMAT = `\n\nRespond in EXACTLY this format:\nREPLY: <your honest reaction as this persona, 2-5 sentences>\nIDEA: <one concrete suggestion>\nQUESTIONS: <semicolon-separated things you are genuinely unsure about, or "none">`;
       const runTester = async (t, extraNote) => {
-        const system = `You ARE this user persona; stay fully in character and never break it. Background: ${t.background}. Personality: ${t.personality}. Preference: ${t.preference}. Give honest, persona-coloured feedback. Where you are genuinely unsure, ASK questions rather than guessing.`;
-        const browseBlock = useBrowser
-          ? `\n\nOpen this and JUDGE IT WITH YOUR OWN EYES: ${browseUrls.join(", ")}. Take a screenshot FIRST so you see it as a real user would. ${interactive ? "If it is interactive, decide what to do from the SCREENSHOT (what you can actually see on screen), then click there - do NOT read the HTML source to find controls." : ""} React strictly as your persona would.`
-          : (ctx ? `\n\nMaterial to evaluate:\n${ctx.slice(0, 2000)}` : "");
-        const prompt = `Your task: ${t.task || task}.${browseBlock}${extraNote || ""}\n\nRespond in EXACTLY this format:\nREPLY: <your honest reaction as this persona, 2-5 sentences>\nIDEA: <one concrete suggestion>\nQUESTIONS: <semicolon-separated things you are unsure about, or "none">`;
-        const r = await fetch(apiUrl("/__assistant/tester"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: node.model, system, prompt, useBrowser, timeout: useBrowser ? 1200 : 600 }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok) throw new Error(j.error || ("tester run failed (HTTP " + r.status + ")"));
-        return j.text || "";
+        const system = `You ARE this user persona; stay fully in character and never break it. Background: ${t.background}. Personality: ${t.personality}. Preference: ${t.preference}. Give honest, persona-coloured feedback. Where you are genuinely unsure, ASK questions rather than guessing. ${scopeNote}`;
+        if (useBrowser) {
+          const browseBlock = `\n\nOpen this and JUDGE IT WITH YOUR OWN EYES: ${browseUrls.join(", ")}. Take a screenshot FIRST so you see it as a real user would. ${interactive ? "If it is interactive, decide what to do from the SCREENSHOT (what you can actually see on screen), then click there - do NOT read the HTML source to find controls." : ""} React strictly as your persona would.`;
+          const prompt = `Your task: ${t.task || task}.${browseBlock}${extraNote || ""}${FORMAT}`;
+          const r = await fetch(apiUrl("/__assistant/tester"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: node.model, system, prompt, useBrowser: true, timeout: 1200 }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || !j.ok) throw new Error(j.error || ("tester run failed (HTTP " + r.status + ")"));
+          return j.text || "";
+        }
+        // Idea / text-only: pure persona reaction, no tools.
+        const ideaBlock = ctx ? `\n\nTHE IDEA / BRIEF (this is ALL that exists - there is no app to open or run):\n${ctx.slice(0, 2000)}` : "";
+        const prompt = `Your task: ${t.task || task}.${ideaBlock}${extraNote || ""}\n\nReact to the idea itself as this persona - do not pretend to use an app.${FORMAT}`;
+        return await assistantLlm([{ role: "system", content: system }, { role: "user", content: prompt }], { model: node.model, maxTokens: 700 });
       };
 
       // Pass 1: run every tester sequentially (each is its own subagent).
