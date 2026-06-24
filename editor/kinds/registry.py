@@ -1270,7 +1270,7 @@ KINDS = {
         "visibility":   {"transcript": True, "chatPanel": False, "perChildKill": False},
         "runStatusFlow": ["queued", "running", "done", "error"],
         "pauseAfter":   False,
-        "notes": "One agent interviews the REAL user in a chat loop on the node until [STOP], then writes the refined prompt to a wired/auto-spawned prompt node.",
+        "notes": "One agent interviews the REAL user via the standard streaming agent chat (WorkflowAgentChatDialog); the node's goal/focus/pushPast become the interviewer system prompt. On [STOP] the user saves the final refined prompt into a wired/auto-spawned prompt node.",
     },
 
     # ── assistant-research (Exa web search → result table + visuals) ───────

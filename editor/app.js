@@ -24399,6 +24399,21 @@ function _assistantCollectAssets(entries) {
   walk(entries);
   return out;
 }
+// Build the interviewer system prompt for the Interviewing assistant from its
+// node fields + any wired seed text. Used as the wiredSystem for the agent chat.
+function _interviewerSystemPrompt(node, seedText) {
+  const goal  = (node.goal  || "").trim() || "a prompt good enough to build from with no further questions";
+  const focus = (node.focus || "").trim() || "every aspect of what the user wants";
+  const pushPast = (node.pushPast || []).filter(p => (p.from || "").trim() && (p.to || "").trim());
+  const pushLines = pushPast.length ? pushPast.map(p => `Push past ${p.from} to ${p.to}.`).join(" ") : "";
+  return `You are an expert interviewer refining a brief by interviewing the REAL human user you are chatting with (not a simulation, not a roleplay - the person typing to you). ` +
+    `Interview them relentlessly, ONE question per turn, until you reach: ${goal}. ` +
+    `Walk every branch of ${focus}, resolving dependencies one at a time. For each question, give your own recommended answer so the user has a starting reference, then ask them to confirm or change it. Quote their prior answers when refining. Keep each turn short and concrete. Do NOT use any tools or write files - this is a conversation only. ` +
+    (pushLines ? pushLines + " " : "") +
+    `STOPPING RULE: once the goal is satisfied, emit the token [STOP] on its own line, then on the next line print the FINAL REFINED PROMPT - a single coherent rewrite that bakes in every decision reached. No more questions after [STOP].` +
+    (seedText ? `\n\nSTARTING CONTEXT / SEED:\n${seedText}` : `\n\n(No seed wired - open by asking the user what they are trying to build.)`);
+}
+
 // Collect folder scopes from upstream entries.
 function _assistantCollectFolders(entries) {
   const out = [];
@@ -37618,87 +37633,69 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [setData]);
 
   // ── Assistant 3: Interviewing assistant (replaces the prompt refiner) ─────
-  // One agent interviews the REAL user in a chat loop on the node. setupInterview
-  // asks the opening question; submitInterviewAnswer feeds each human answer back
-  // and emits the next question, until the agent prints [STOP] + the refined
-  // prompt (written to a wired/auto-spawned prompt node).
-  const submitInterviewAnswer = useCallback(async (nodeId, answer) => {
+  // The interview runs as a REAL streaming agent run via the standard agent
+  // chat (WorkflowAgentChatDialog) - same infra every agent node uses, so it
+  // streams, supports stop/resume, and never hangs on the slow one-shot path.
+  // The node's fields become the interviewer system prompt (see the renderer).
+  // saveInterviewRefined pulls the agent's final message from the run transcript
+  // (the text after [STOP]) and writes it to the wired/auto-spawned output node.
+  const saveInterviewRefined = useCallback(async (nodeId) => {
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     const node = (data.nodes || []).find(n => n.id === nodeId);
     if (!node) return;
-    const ans = String(answer || "").trim();
-    if (!ans) return;
-    const msgs = [...(node.messages || []), { role: "user", text: ans }];
-    updateNode(nodeId, { messages: msgs });
-    setRun({ status: "loading", phase: "thinking", error: null });
+    const runId = node.runId || node.lastRunId;
+    if (!runId) { setRun({ status: "error", error: "Start the interview chat first." }); return; }
+    setRun({ status: "loading", phase: "saving" });
     try {
-      const sys = node.systemPrompt || "";
-      const convo = [{ role: "user", content: "Begin." }];
-      for (const m of msgs) convo.push({ role: m.role === "assistant" ? "assistant" : "user", content: m.text });
-      const reply = await assistantLlm([{ role: "system", content: sys }, ...convo], { model: node.model, maxTokens: 4000 });
-      if (/\[STOP\]/i.test(reply)) {
-        const finalPrompt = reply.split(/\[STOP\]/i).slice(1).join("[STOP]").trim() || reply.trim();
-        setData(d => {
-          let outId = null;
-          for (const e of (d.edges || [])) {
-            const f = workflowParseEdgeRef(e.from);
-            if (f && f.node === nodeId && f.port === "out") {
-              const tt = workflowParseEdgeRef(e.to);
-              const ds = tt && (d.nodes || []).find(n => n.id === tt.node);
-              if (ds && ds.kind === "prompt") { outId = ds.id; break; }
-            }
-          }
-          if (outId) {
-            return { ...d, nodes: (d.nodes || []).map(n => n.id === outId ? { ...n, text: finalPrompt } : n) };
-          }
-          const nd = (d.nodes || []).find(n => n.id === nodeId);
-          const newId = workflowNewNodeId();
-          const nx = nd ? Math.round(nd.x + (nd.w || 440) + 60) : 0;
-          const ny = nd ? Math.round(nd.y) : 0;
-          return {
-            ...d,
-            nodes: [...(d.nodes || []), { id: newId, kind: "prompt", x: nx, y: ny, w: 320, h: 240, title: "Refined prompt", text: finalPrompt }],
-            edges: [...(d.edges || []), { from: nodeId + ".out", to: newId + ".in" }],
-          };
-        });
-        updateNode(nodeId, { messages: [...msgs, { role: "assistant", text: "Done. The refined prompt is written to the output node." }] });
-        setRun({ status: "done", phase: "done", ranAt: Date.now() });
-      } else {
-        updateNode(nodeId, { messages: [...msgs, { role: "assistant", text: reply }] });
-        setRun({ status: "loading", phase: "awaiting", error: null });
+      const r = await fetch(apiUrl(`/__chat?runId=${encodeURIComponent(runId)}`));
+      const j = r.ok ? await r.json() : { events: [] };
+      const rows = Array.isArray(j.events) ? j.events : [];
+      const rowText = (row) => {
+        const t = row && row.type, d = (row && row.data) || {};
+        if (t === "text_delta") return d.delta || "";
+        if (t === "assistant") {
+          const parts = (d.message && d.message.content) || [];
+          return parts.filter(p => p && p.type === "text").map(p => p.text || "").join("");
+        }
+        return "";
+      };
+      let allText = "", lastResult = "";
+      for (const row of rows) {
+        allText += rowText(row);
+        if (row && row.type === "result") lastResult = row.data?.result || row.data?.text || "";
       }
+      let finalText = (lastResult && lastResult.trim()) ? lastResult.trim() : allText.trim();
+      if (/\[STOP\]/i.test(allText)) {
+        const after = allText.split(/\[STOP\]/i).pop().trim();
+        if (after) finalText = after;
+      }
+      if (!finalText) throw new Error("No agent message found yet - chat with the interviewer first.");
+      setData(d => {
+        let outId = null;
+        for (const e of (d.edges || [])) {
+          const f = workflowParseEdgeRef(e.from);
+          if (f && f.node === nodeId && f.port === "out") {
+            const tt = workflowParseEdgeRef(e.to);
+            const ds = tt && (d.nodes || []).find(n => n.id === tt.node);
+            if (ds && ds.kind === "prompt") { outId = ds.id; break; }
+          }
+        }
+        if (outId) return { ...d, nodes: (d.nodes || []).map(n => n.id === outId ? { ...n, text: finalText } : n) };
+        const nd = (d.nodes || []).find(n => n.id === nodeId);
+        const newId = workflowNewNodeId();
+        const nx = nd ? Math.round(nd.x + (nd.w || 440) + 60) : 0;
+        const ny = nd ? Math.round(nd.y) : 0;
+        return {
+          ...d,
+          nodes: [...(d.nodes || []), { id: newId, kind: "prompt", x: nx, y: ny, w: 320, h: 240, title: "Refined prompt", text: finalText }],
+          edges: [...(d.edges || []), { from: nodeId + ".out", to: newId + ".in" }],
+        };
+      });
+      setRun({ status: "done", phase: "saved", ranAt: Date.now() });
     } catch (e) {
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, setData, updateNode, assistantLlm]);
-
-  const setupInterview = useCallback(async (nodeId) => {
-    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
-    const node = (data.nodes || []).find(n => n.id === nodeId);
-    if (!node) return;
-    setRun({ status: "loading", phase: "thinking", error: null });
-    try {
-      const goal  = (node.goal  || "").trim() || "a prompt good enough to build from with no further questions";
-      const focus = (node.focus || "").trim() || "every aspect of what the user wants";
-      const pushPast = (node.pushPast || []).filter(p => (p.from || "").trim() && (p.to || "").trim());
-      const pushLines = pushPast.length ? pushPast.map(p => `Push past ${p.from} to ${p.to}.`).join(" ") : "";
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
-      const seed = _assistantCollectText(ups);
-      const sys =
-        `You are an expert interviewer refining a brief by interviewing the REAL human user (not a simulation, not a roleplay). ` +
-        `Interview them relentlessly, ONE question per turn, until you reach: ${goal}. ` +
-        `Walk every branch of ${focus}, resolving dependencies one at a time. For each question, give your own recommended answer so the user has a starting reference, then ask them to confirm or change it. Quote their prior answers when refining. Keep each turn short and concrete. ` +
-        (pushLines ? pushLines + " " : "") +
-        `STOPPING RULE: once the goal is satisfied, emit the token [STOP] on its own line, then on the next line print the FINAL REFINED PROMPT - a single coherent rewrite that bakes in every decision reached. No more questions after [STOP].` +
-        (seed ? `\n\nSTARTING CONTEXT / SEED:\n${seed}` : `\n\n(No seed wired - open by asking the user what they are trying to build.)`);
-      updateNode(nodeId, { systemPrompt: sys, messages: [] });
-      const first = await assistantLlm([{ role: "system", content: sys }, { role: "user", content: "Begin." }], { model: node.model, maxTokens: 1500 });
-      updateNode(nodeId, { messages: [{ role: "assistant", text: first }] });
-      setRun({ status: "loading", phase: "awaiting", error: null });
-    } catch (e) {
-      setRun({ status: "error", error: String(e?.message || e) });
-    }
-  }, [data, updateNode, assistantLlm]);
+  }, [data, setData]);
 
   // ── Assistant 1: Research assistant (Exa search → result table + visuals) ─
   const setupResearch = useCallback(async (nodeId) => {
@@ -42238,6 +42235,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 runState=${runStates[n.id]}
+                seedText=${_assistantCollectText(resolveUpstreamInputs(n, data.nodes, data.edges))}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
@@ -42245,8 +42243,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
-                onSetup=${setupInterview}
-                onSubmit=${submitInterviewAnswer}
+                onSaveRefined=${saveInterviewRefined}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "assistant-research").map(n => html`
@@ -68224,18 +68221,21 @@ function AssistantModelSelect({ value, onChange, title }) {
     </label>`;
 }
 
-// ── Assistant 3: Interviewing assistant (real-user interview loop) ─────────
-function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, onSubmit, runState }) {
+// ── Assistant 3: Interviewing assistant (real streaming agent-run chat) ────
+// The interview IS a normal agent run: the node's goal/focus/push-past become
+// the interviewer system prompt, and the standard WorkflowAgentChatDialog drives
+// the back-and-forth (streaming, stop/resume) - the same chat every agent node
+// uses. saveInterviewRefined (onSaveRefined) captures the agent's final message
+// into the wired/auto-spawned output prompt node.
+function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSaveRefined, seedText, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const [draft, setDraft] = useState("");
-  const w = Math.max(380, node.w || 440), h = Math.max(520, node.h || 560);
+  const [chatOpen, setChatOpen] = useState(false);
+  const w = Math.max(360, node.w || 440), h = Math.max(420, node.h || 480);
   const busy = runState?.status === "loading";
-  const phase = runState?.phase;
-  const messages = node.messages || [];
   const pushPast = node.pushPast || [];
-  const started = messages.length > 0;
-  const send = () => { const v = draft.trim(); if (!v) return; setDraft(""); onSubmit && onSubmit(node.id, v); };
+  const hasRun = !!(node.runId || node.lastRunId);
+  const interviewerSystem = _interviewerSystemPrompt(node, seedText || "");
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-refiner workflow-node-assistant"
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
@@ -68250,60 +68250,46 @@ function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChang
           onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
-        ${!started && html`
-          <label className="workflow-node-iter-field">
-            <span className="workflow-node-iter-field-label">Goal / criteria + thresholds</span>
-            <textarea rows=${3}
-              placeholder="e.g. Reach 9/10 clarity, specificity, and voice before stopping."
-              value=${node.goal || ""} onInput=${(e) => onChange({ goal: e.target.value })}/>
-          </label>
-          <label className="workflow-node-iter-field">
-            <span className="workflow-node-iter-field-label">Focus aspect</span>
-            <textarea rows=${2}
-              placeholder="e.g. visual direction · audience · density · voice · constraints"
-              value=${node.focus || ""} onInput=${(e) => onChange({ focus: e.target.value })}/>
-          </label>
-          <div className="workflow-node-iter-field">
-            <span className="workflow-node-iter-field-label">Push past <em>X</em> to <em>Y</em></span>
-            ${pushPast.map((p, i) => html`
-              <div key=${i} className="workflow-node-refiner-pushrow">
-                <input className="workflow-node-refiner-from" value=${p.from || ""} placeholder="average"
-                  onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], from: e.target.value }; onChange({ pushPast: next }); }}/>
-                <span className="workflow-node-refiner-arrow">→</span>
-                <input className="workflow-node-refiner-to" value=${p.to || ""} placeholder="desired"
-                  onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], to: e.target.value }; onChange({ pushPast: next }); }}/>
-                <button className="workflow-node-refiner-pushdel" title="Remove this row"
-                  onClick=${() => onChange({ pushPast: pushPast.filter((_, j) => j !== i) })}>×</button>
-              </div>`)}
-            <button className="workflow-node-refiner-pushadd"
-              onClick=${() => onChange({ pushPast: [...pushPast, { from: "", to: "" }] })}>+ Add push pair</button>
-          </div>
-          <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}/>
-        `}
-        ${started && html`
-          <div className="workflow-node-assistant-chat">
-            ${messages.map((m, i) => html`
-              <div key=${i} className=${"workflow-node-assistant-msg workflow-node-assistant-msg-" + (m.role === "user" ? "user" : "assistant")}>${m.text}</div>`)}
-            ${busy && html`<div className="workflow-node-assistant-msg workflow-node-assistant-msg-assistant"><span className="workflow-node-skill-spinner"/> thinking…</div>`}
-          </div>
-        `}
+        <label className="workflow-node-iter-field">
+          <span className="workflow-node-iter-field-label">Goal / criteria + thresholds</span>
+          <textarea rows=${3}
+            placeholder="e.g. Reach 9/10 clarity, specificity, and voice before stopping."
+            value=${node.goal || ""} onInput=${(e) => onChange({ goal: e.target.value })}/>
+        </label>
+        <label className="workflow-node-iter-field">
+          <span className="workflow-node-iter-field-label">Focus aspect</span>
+          <textarea rows=${2}
+            placeholder="e.g. visual direction · audience · density · voice · constraints"
+            value=${node.focus || ""} onInput=${(e) => onChange({ focus: e.target.value })}/>
+        </label>
+        <div className="workflow-node-iter-field">
+          <span className="workflow-node-iter-field-label">Push past <em>X</em> to <em>Y</em></span>
+          ${pushPast.map((p, i) => html`
+            <div key=${i} className="workflow-node-refiner-pushrow">
+              <input className="workflow-node-refiner-from" value=${p.from || ""} placeholder="average"
+                onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], from: e.target.value }; onChange({ pushPast: next }); }}/>
+              <span className="workflow-node-refiner-arrow">→</span>
+              <input className="workflow-node-refiner-to" value=${p.to || ""} placeholder="desired"
+                onInput=${(e) => { const next = pushPast.slice(); next[i] = { ...next[i], to: e.target.value }; onChange({ pushPast: next }); }}/>
+              <button className="workflow-node-refiner-pushdel" title="Remove this row"
+                onClick=${() => onChange({ pushPast: pushPast.filter((_, j) => j !== i) })}>×</button>
+            </div>`)}
+          <button className="workflow-node-refiner-pushadd"
+            onClick=${() => onChange({ pushPast: [...pushPast, { from: "", to: "" }] })}>+ Add push pair</button>
+        </div>
         <div className="workflow-node-iter-actions">
-          ${!started && html`
-            <button className="workflow-node-skill-run" disabled=${busy}
-                    title="Start the interview - the assistant asks you the first question."
-                    onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-              ${busy ? html`<span className="workflow-node-skill-spinner"/>starting…` : html`<${Icon.Spark}/> Start interview`}
+          <button className="workflow-node-skill-run"
+                  title="Open the interview chat - a real streaming agent interviews you until [STOP]."
+                  onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}>
+            <${Icon.Comment}/> ${hasRun ? "Open interview chat" : "Start interview"}
+          </button>
+          ${hasRun && html`
+            <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                    title="Pull the interviewer's final refined prompt into the output node."
+                    onClick=${(e) => { e.stopPropagation(); onSaveRefined && onSaveRefined(node.id); }}>
+              ${busy ? "saving…" : "↧ Save refined prompt → output"}
             </button>`}
-          ${started && runState?.status !== "done" && html`
-            <div className="workflow-node-assistant-reply">
-              <textarea rows=${2} placeholder="Type your answer…" value=${draft}
-                disabled=${busy}
-                onInput=${(e) => setDraft(e.target.value)}
-                onKeyDown=${(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}/>
-              <button className="workflow-node-skill-run" disabled=${busy || !draft.trim()}
-                onClick=${(e) => { e.stopPropagation(); send(); }}>${busy ? "…" : "Send"}</button>
-            </div>`}
-          ${runState?.status === "done" && html`<span className="workflow-node-iter-done">interview complete</span>`}
+          ${runState?.status === "done" && runState?.phase === "saved" && html`<span className="workflow-node-iter-done">saved to output</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
         </div>
       </div>
@@ -68312,11 +68298,21 @@ function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChang
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
-           title="Final refined prompt - written here when the interview reaches its goal."
-           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+           title="Final refined prompt - saved here from the interview." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      ${chatOpen && html`<${WorkflowAgentChatDialog}
+        node=${node}
+        wiredSystem=${interviewerSystem}
+        wiredInputs=${[]}
+        wiredReadRoot=${""}
+        wiredReferenceFolder=${""}
+        wiredWriteRoot=${""}
+        wiredFileOut=${""}
+        onClose=${() => setChatOpen(false)}
+        onChange=${onChange}
+      />`}
     </div>
   `;
 }
