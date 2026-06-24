@@ -18,7 +18,12 @@ A orchestrator is a top-level orchestrating agent that:
 - Is the right entry point for a particular kind of user request
   (image, simulation, interactive piece, future: 3D scene, document, etc.)
 
-Fourteen ship today: `visual-orchestrator`, `simulation-orchestrator`,
+Fifteen ship today: `art-director-orchestrator` (the only PRE-build
+orchestrator - generates a north-star key visual and writes
+`workflow/art-direction-contract.json` BEFORE source is written, so the build
+chrome and the generated imagery derive from one source; offered only when an
+image-gen model is wired, fails closed otherwise),
+`visual-orchestrator`, `simulation-orchestrator`,
 `interactive-media-orchestrator`, `narrative-experience-orchestrator`,
 `game-experience-orchestrator`, `scrapbook-experience-orchestrator`,
 `interactive-polish-orchestrator`, `motion-studio-orchestrator`,

@@ -75,7 +75,14 @@ sensoryTargets:      "<verbatim from creative-brief.json>"
 antiPatterns:        ["<verbatim>"]
 explicitMaterialAssignments: {<selector>: "<materialId>", ...} # OR empty if no user requests
 reactiveBudget:      "subtle | rich | theatrical"              # how much input-driven reactivity (default = subtle)
+artContract:         "<workflow/art-direction-contract.json, OR null>"  # present when art-director-orchestrator ran pre-build
 === END ENVELOPE ===
+# When artContract is non-null: artContract.crossSurfaceContract.materialDirective
+# is the committed material logic for UI SURFACES (not just imagery) and
+# extracted.materialRead.reactiveBudget overrides the default reactiveBudget.
+# Apply that directive so the chrome's material register matches the imagery's
+# - this is the literal mechanism that makes "the glass/iridescence/paper feels
+# like one world" true across chrome AND generated art. If null, behave as before.
 ```
 
 `reactiveBudget`:

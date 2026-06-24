@@ -145,10 +145,10 @@ For each slot you're about to scaffold:
 1. **Compute the slot's `slotId`** the same way photography/illustration orchestrators did (file path + position).
 2. **Look up `pe_photo_<slotId>` or `pe_illust_<slotId>`** in the enrichment map.
 3. **If an enrichment exists for this slot**, use its `outputs.promptForRasterPhoto` / `outputs.promptForRasterForeground` as the prompt node's text VERBATIM. Don't re-prompt - the library decision-tree already picked the right style. Also pull `outputs.negativePrompt` into a sibling `negativePrompt` field on the skill node so the image generator honours both.
-4. **If no enrichment exists for this slot**, scaffold the prompt node as you always did (Step 0 + Step 4 below). Default un-enriched prompts ship cleanly.
-5. **Record the enrichment-source** in the prompt node's metadata: `{"enrichmentSource": "pe_photo_<slotId>", "styleId": "<library styleId>"}` so the QA pass in Step 8 can reference what was picked.
+4. **If no enrichment exists for this slot**, scaffold the prompt node as you always did (Step 0 + Step 4 below). Default un-enriched prompts ship cleanly. **BUT first check for `workflow/art-direction-contract.json`** (committed by art-director-orchestrator pre-build): if it exists, fold `crossSurfaceContract.imageryRegister` + `crossSurfaceContract.sharedPaletteHexes` + `extracted.lightModel` into the default prompt, so even un-enriched slots match the world the chrome was built from. This is the floor that keeps generated imagery from drifting off the chrome's register - the contract governs every slot, the pe_* enrichments refine the ones that have them.
+5. **Record the enrichment-source** in the prompt node's metadata: `{"enrichmentSource": "pe_photo_<slotId>" | "art-contract", "styleId": "<library styleId>"}` so the QA pass in Step 8 can reference what was picked.
 
-Slots WITHOUT enrichments still get the Step 0 style cue. Slots WITH enrichments inherit the style cue PLUS the library entry's specific keywords + film stock + lens + lighting hints - the enrichment is additive, never replacement.
+Slots WITHOUT enrichments still get the Step 0 style cue (plus the art-direction contract's shared palette + register when one exists). Slots WITH enrichments inherit the style cue PLUS the library entry's specific keywords + film stock + lens + lighting hints - the enrichment is additive, never replacement.
 
 **This step is INFORMATIONAL.** If neither orchestrator ran (because no image-gen model wired, or because the project's aesthetic didn't trigger them), the enrichment map is empty and you proceed as you always have. Photography + illustration are degrade-gracefully - visual-orchestrator never depends on them being present.
 

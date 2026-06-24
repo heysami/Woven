@@ -63,8 +63,11 @@ imageGenSkills:      ["raster-foreground-imagen", "raster-foreground-flux", ...]
 explicitStylePicks:  {<slotId>: "<library styleId>", ...}                # OR empty
 sensoryTargets:      "<verbatim from creative-brief.json>"
 antiPatterns:        ["<verbatim>"]
+artContract:         "<workflow/art-direction-contract.json, OR null>"   # present when art-director-orchestrator ran pre-build
 === END ENVELOPE ===
 ```
+
+**When `artContract` is non-null** it is authoritative over the bare aesthetic-slug default: every composed prompt MUST hit `artContract.crossSurfaceContract.imageryRegister` and pull palette from `crossSurfaceContract.sharedPaletteHexes`, so the illustrations land in the same world as the chrome the build derived from the same contract. The decision-tree lookup below still selects the library styleId, but bias toward the candidate matching the contract's register and bake the shared palette + material read into `colorHint` / `materialHint`. If `artContract` is null, behave exactly as before.
 
 If `imageGenSkills` is empty → `runStatus: error` per §1 abort rule.
 

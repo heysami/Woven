@@ -1,0 +1,43 @@
+{
+  "id": "art-director-orchestrator",
+  "label": "Art Director",
+  "tagline": "Generates one north-star key visual, then builds the whole app from its design DNA",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "runsBeforeBuild": true,
+  "subagentName": "art-director-orchestrator",
+  "playbookPath": ".claude/agents/art-director-orchestrator.md",
+  "description": "The ONLY orchestrator that runs BEFORE /prototype writes source - every other orchestrator fills slots in an already-styled UI; this one anchors the styling itself. Generates a real raster NORTH-STAR PLATE (or a 2-3 candidate set diverging on the brief's unresolved tension axis) showing the intended total visual world - UI chrome AND imagery composed together as one finished frame - then VISUALLY INSPECTS the pixels and composes workflow/art-direction-contract.json. The contract splits into `extracted` (palette + colour-use RATIOS + value structure + light model + material read + composition logic - read off the pixels) and `authored` (typography construction/rhythm/scale + component style + motion character + spacing - DECIDED to harmonise with the plate, because a raster cannot encode a type scale or an easing curve). A `crossSurfaceContract` block is the single source of truth the illustration/photography/visual/material orchestrators all read so imagery and chrome cohere instead of being two independent readings of a text string - the exact failure (radiant Pixar imagery on a timid cream UI) this orchestrator was built to prevent. `bindingRules` enforce principle-not-pixels: the build inherits the plate's colour ratios, value structure, composition logic, type rhythm and material logic, and explicitly must NOT replicate its literal subject, layout, or copy - the plate is a source, not a target, and the app has many screens. HARD-GATED on raster image generation: if no image-gen model is wired the orchestrator fails closed and the build falls back to today's text-only committed aesthetic - it never synthesises a contract from prose. Surfaces the plate(s) for human approve/pick/steer/reject BEFORE the build spends any tokens, making a polarising direction a visible steerable choice. Generalises motion-studio's ms-concept-frames-author (per-scene design plate -> concept.json) to the whole-app visual direction. Cold-isolated per project.",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Pre-build art-direction pass (BEFORE /prototype scaffolds source)",
+      "rule": "After the prototype-direction decision is committed and BEFORE /prototype builds source (before step-stack / step-tokens), chat-Claude dispatches art-director-orchestrator IF an image-generation model is wired into the project. It is the FIRST item in the orchestrator-plan roster and the only one flagged runsBeforeBuild - if approved it runs before scaffolding and its contract is threaded into the /prototype build envelope; the build then reads workflow/art-direction-contract.json as the authoritative design source, outranking the generic recipe/aesthetic template. Also fires on explicit user request ('set the art direction first', 'generate a key visual and build from it', 'make the UI match the imagery's vibe', 'nail the whole look in one image first'). HARD requirement: a raster image-gen skill must be wired - if none, returns runStatus:error and the build proceeds from the text-only committed aesthetic exactly as today. Skippable: untick at the orchestrator-plan gate for the fast text-only path.",
+      "ruleSource": "editor/kinds/capabilities.py - 'Pre-build art direction: dispatch art-director-orchestrator BEFORE step-stack when an image-gen model is wired'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [],
+    "collaborators": [
+      "visual-orchestrator"
+    ],
+    "lenses": []
+  },
+  "skills": [
+    "generate-image"
+  ],
+  "nodeKinds": {
+    "container": [
+      "art-direction"
+    ],
+    "agent_overrides": [
+      "ad_plate_*",
+      "ad_contract_*"
+    ]
+  },
+  "documents": {
+    "designDoc": ".claude/agents/art-director-orchestrator.md",
+    "calibration": null
+  }
+}

@@ -74,12 +74,14 @@ The user can always override the seeded proposal in their reply - buildPolicy se
 **Composing the proposal:**
 
 1. Candidates come from the locked axes + the Phase E chain: `photography-orchestrator`, `illustration-orchestrator`, `creative-visual-orchestrator`, `visual-orchestrator`, `material-orchestrator`, `interactive-polish-orchestrator` - plus any experience-family orchestrator the brief's predicates match (`simulation` / `interactive-media` / `narrative-experience` / `game-experience` / `scrapbook-experience` / `motion-studio`; see the capabilities preamble's predicate table). When the DS declares `buildPolicy.orchestrators`, that list IS the candidate set (pre-ticked); other orchestrators appear unticked.
+   - **`art-director-orchestrator` is the one PRE-build candidate.** When an image-gen model is wired, pre-tick it FIRST in the roster: it generates a north-star key visual (UI chrome + imagery composed as one frame), inspects the pixels, and writes `workflow/art-direction-contract.json` - the single design source the Phase C build AND every Phase E asset orchestrator read, so the chrome and the generated imagery cohere instead of drifting into two looks. It is the structural fix for "radiant generated art on a timid template UI". With NO image-gen model it is unavailable - omit it from the roster (it fails closed; the build runs from the text-only committed aesthetic exactly as today). It does NOT enumerate slots and is NOT part of the Phase E post-build chain - it runs in Phase A.7, before source is written.
 2. Each option's label is a one-line PLAN, not a category name: which pages / sections / slots it will fill, with what, and WHY the locked direction earns it ("photography-orchestrator - hero + 3 feature photos in Y2K-halftone register; acid-design is raster-heavy"). Rough volume where it drives cost ("≈ 14 slots"). The user must be able to veto from the label alone.
 3. Pre-tick recommended orchestrators with the bare `checked` attribute. List plausible-but-not-recommended candidates UNchecked with a plan line saying what opting in would add - proposing an orchestrator as N/A-by-default is a valid shape. `visual-orchestrator` is pre-ticked whenever the source will carry any visual slot (it almost always will). Always include a `none` option last.
 4. Emit at the end of the turn:
 
 ```
 <decision-request id="orchestrator-plan" multiSelect="true" minPicks="1" prompt="Direction locked. Here's the orchestrator plan I propose - untick anything you don't want, tick anything extra, then Send. I'll build with exactly that roster.">
+  <option value="art-director-orchestrator" checked>art-director-orchestrator - PRE-BUILD: generate one north-star key visual (chrome + imagery in one frame), then build the whole UI from its palette/ratios/composition/material DNA so the generated art and the chrome read as one world (only offered because an image-gen model is wired)</option>
   <option value="photography-orchestrator" checked>photography-orchestrator - hero + 3 feature photos, Y2K-halftone register; acid-design is raster-heavy</option>
   <option value="illustration-orchestrator" checked>illustration-orchestrator - 6 sticker-style spot illustrations on the pricing + about sections; distorted-chrome rave register</option>
   <option value="creative-visual-orchestrator" checked>creative-visual-orchestrator - promotes the hero img into asset-cut-into-letters; acid-design is editorial-loud, this is its signature move</option>
@@ -90,9 +92,26 @@ The user can always override the seeded proposal in their reply - buildPolicy se
 </decision-request>
 ```
 
-**Reply handling:** picked set (minus `none`) = the APPROVED roster. `none` → Phase E becomes a no-op and the Phase F report says the build is CSS/SVG-only. A prose reply ("skip material, add motion-studio") is just as valid - apply the edits and continue without re-asking. If an experience-family orchestrator with a pre-build phase was approved (`motion-studio-orchestrator` `mode=brainstorm`), its brainstorm dispatch runs BEFORE Phase C so the returned slot tags land in the source write. Approval covers this build pass; a later "regenerate" ask re-fires the gate.
+**Reply handling:** picked set (minus `none`) = the APPROVED roster. `none` → Phase E becomes a no-op and the Phase F report says the build is CSS/SVG-only. A prose reply ("skip material, add motion-studio") is just as valid - apply the edits and continue without re-asking. If `art-director-orchestrator` was approved, it runs in **Phase A.7 (below), before Phase B/C** - its `art-direction-contract.json` must exist before source is written, because the build derives its tokens/composition/type/motion from it. If an experience-family orchestrator with a pre-build phase was approved (`motion-studio-orchestrator` `mode=brainstorm`), its brainstorm dispatch likewise runs BEFORE Phase C so the returned slot tags land in the source write. Approval covers this build pass; a later "regenerate" ask re-fires the gate.
 
 **The approved roster is a filter, not a forced march:** Phase E dispatches ONLY approved orchestrators, and each still self-gates via its manifest (an approved photography-orchestrator with zero photo slots returns a clean no-op). Unapproved orchestrators are skipped even when their manifest gate would fire.
+
+## Phase A.7 - Pre-build art direction (run ONLY when `art-director-orchestrator` was approved at A.5)
+
+This is the one orchestrator that runs **before** source is written. Dispatch it immediately after the A.5 reply, before Phase B:
+
+```
+Task(subagent_type: "art-director-orchestrator",
+     description: "Generate north-star plate + art-direction contract",
+     prompt: "<envelope: committedDirection, committedAesthetic slug or null, brief, styleCue, successFeel, sensoryTargets, antiPatterns, the brief's unresolved tensionAxis if any, imageGenSkills from GET /__capabilities, dsRef if a DS is locked>")
+```
+
+It generates the north-star plate(s), surfaces them for the user's approve/pick/steer/reject (its own §12.5 gate - this is a real stop-and-ask; honour it before proceeding), and on approval commits `workflow/art-direction-contract.json`. **Block on its hand-off before Phase B/C** - the contract is an input to Phase B.5 and Phase C.
+
+Failure / skip handling (do not stall the build):
+- It returns `runStatus: error` "no image-gen model" → it should never have been pre-ticked; proceed to Phase B with no contract (text-only aesthetic, as today).
+- The user rejects at the art-director gate → proceed with no contract; note it in Phase F.
+- A contract exists → Phase B.5 and Phase C treat it as authoritative per the precedence below.
 
 ## Phase B - Read the detail files for genre vocabulary
 
@@ -113,9 +132,12 @@ This is the rule whose absence caused the recurring failure: **the picked aesthe
 When `<axes>` committed an aesthetic that is not `(none)`, that aesthetic is the **authoritative cultural register for the build**. It outranks the style's and the recipe's *native* aesthetic. Precedence, top to bottom:
 
 1. **Phase A locks** (palette hexes, font families) - immutable, win every conflict.
-2. **Committed aesthetic** - owns decoration vocabulary, ornament, texture, era cues, motion personality, type *personality* (within the locked families), and palette *mood* (within the locked hexes). When the style's native register and the committed aesthetic disagree about how a surface should feel, the aesthetic wins.
-3. **Style** - owns surface/depth grammar, density, shape language, optical inheritance: the chassis the aesthetic is dressed onto, not the look itself.
-4. **Shell** - owns layout skeleton only.
+2. **Art-direction contract** (`workflow/art-direction-contract.json`, when Phase A.7 produced one) - authoritative for everything the picks didn't pin: colour-use *ratios* (`extracted.palette[].ratio`), value structure, composition logic, material directive, type rhythm/scale, component style, motion character. It does NOT override Phase A's locked hexes/families - it fills and governs the dimensions *between* the locks. When the contract and the committed aesthetic disagree on how a surface should feel, the contract wins (it was derived from a generated frame the user approved; the aesthetic slug is the more abstract input). Honour `bindingRules`: inherit the plate's DNA, never replicate its literal subject/layout/copy.
+3. **Committed aesthetic** - owns decoration vocabulary, ornament, texture, era cues, motion personality, type *personality* (within the locked families), and palette *mood* (within the locked hexes). When the style's native register and the committed aesthetic disagree about how a surface should feel, the aesthetic wins.
+4. **Style** - owns surface/depth grammar, density, shape language, optical inheritance: the chassis the aesthetic is dressed onto, not the look itself.
+5. **Shell** - owns layout skeleton only.
+
+(With no contract - no image-gen model, or the user skipped art direction - this collapses to the original four-rung ranking and the build behaves exactly as before.)
 
 A recipe's own `Aesthetic:` line (often `(none)`) does NOT override a separately-committed aesthetic. If the picked option paired `aesthetic-vaporwave` with `style-dense-mono-dark`, the build is "a dense data terminal rendered in vaporwave" - magenta/cyan gradients, chrome bezels, Floral-Shoppe melancholy on the dense chassis - NOT a stock Bloomberg terminal with the aesthetic quietly discarded.
 
@@ -133,7 +155,7 @@ The forbidden outcome in every case is shipping the style's native look with the
 
 Standard source-write per `docs/agents/subagents/1-source.md`:
 
-- Token block at the TOP of `styles.css` carries Phase A's locked palette + font vars + the genre-commit comment, in that order.
+- Token block at the TOP of `styles.css` carries Phase A's locked palette + font vars + the genre-commit comment, in that order. **When `workflow/art-direction-contract.json` exists**, the surface/accent/ground token scale, the colour-use proportions across the UI, the type scale (`authored.typography.modularScale` / `displayToBodyRatio` / `lineHeight`), the spacing rhythm, the component treatment (`authored.componentStyle`), and the motion budget (`authored.motionCharacter`) all derive from the contract - not from the style detail file's defaults. The locked hexes/families still win where they conflict (precedence rung 1); the contract governs the ratios and rhythm between them. Do NOT reproduce the plate's literal composition - inherit its principles per `bindingRules`.
 - `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">` in every page's `<head>` for the picked Google Fonts families.
 - Pages link the DS stylesheet first (if a DS is present), then optional prototype overlay.
 - Every visual slot is annotated for Subagent 1.V - `img-placeholder` with `data-asset-intent` for static imagery, `motion-placeholder` with `data-motion` for decorative loops (see PROTOTYPE.md → Slot annotations).

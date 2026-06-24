@@ -91,7 +91,15 @@ imageGenSkills:      ["raster-photo-imagen", "raster-photo-flux", ...]   # the w
 explicitStylePicks:  {<slotId>: "<library styleId>", ...}                 # OR empty if no explicit picks
 sensoryTargets:      "<verbatim from workflow/creative-brief.json>"
 antiPatterns:        ["<verbatim>"]
+artContract:         "<workflow/art-direction-contract.json, OR null>"   # present when art-director-orchestrator ran pre-build
 === END ENVELOPE ===
+# When artContract is non-null: every composed photo prompt MUST hit
+# artContract.crossSurfaceContract.imageryRegister and pull palette/lighting
+# from crossSurfaceContract.sharedPaletteHexes + extracted.lightModel, so the
+# photography reads as one world with the chrome the build derived from the
+# same contract. Bias the library style pick toward the contract's register;
+# bake the shared palette + light model into lightingHint / moodHint.
+# If null, behave exactly as before.
 ```
 
 If `imageGenSkills` is empty → `runStatus: error` per §1 abort rule.

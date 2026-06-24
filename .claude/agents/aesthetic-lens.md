@@ -39,6 +39,7 @@ artefactPath:   "source/main/simulations/tanker-globe/runtime.html"   # the ASSE
 artefactPaths:  ["...", ...]                 # sibling files (output-shader.html, output-audio.html, ...) if you need to read source
 runtimeUrl:     "http://.../..."             # LIVE render URL of the running assembled piece (from GET /__qa/resolve?node=<container> or the /__qa/run target) - screenshot THIS to judge the composed frame
 creativeBrief:  "<verbatim contents of workflow/creative-brief.json>"
+artContract:    "<verbatim contents of workflow/art-direction-contract.json, OR null>"   # present when art-director-orchestrator ran pre-build
 slotIntent:     "<one-line from PRD slot table>"
 reportPath:     "source/main/QUALITY_REPORT.json"
 referenceUrls:  ["https://...","https://..."]   # from creativeBrief.references - visual precedent
@@ -88,6 +89,7 @@ The assembled runtime composes every asset into ONE frame, so inter-asset cohere
 | Check | Severity | How to verify |
 |---|---|---|
 | **Assets read as one composition** | block | Do the visual layers (scene, shaders, particles, overlay, type) share a palette, a light logic, a texture register? A watercolour scene under neon-flat particles = incoherent composite = block. Screenshot the running runtime and judge the frame as a whole. |
+| **Chrome and imagery cohere with the art-direction contract** | block (only when `artContract` is non-null) | When a north-star contract exists, the UI chrome (surfaces, type, components, spacing) and the generated imagery must read as ONE world per `artContract.crossSurfaceContract`. Screenshot the running runtime and check: does the chrome's palette draw from `crossSurfaceContract.sharedPaletteHexes`? Does the material register on UI surfaces match `extracted.materialRead.uiSurfaces` (not just the imagery)? Are the colour-use proportions roughly those in `extracted.palette[].ratio`? **The exact failure this catches: lush/radiant generated imagery sitting on a timid, off-register chrome that ignored the contract** - if the imagery and the chrome look like two different apps, block, even when each in isolation is on-brief. (Do NOT penalise the chrome for failing to *replicate* the plate - only for failing to share its DNA per `bindingRules`.) |
 | **Audio is of-a-piece with the visual** | warn (when the runtime has audio) | When audio is present, does it feel like the same world as the visuals - same warmth/coolness, same era, same restraint? A warm-watercolour frame with a harsh digital synth = mismatch = warn. |
 | **No asset fights the focal hierarchy** | warn | No single asset (a loud overlay, an over-bright particle field) hijacks attention away from the brief's intended focal point of the composed frame. |
 

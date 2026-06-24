@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Art director orchestrator - a north-star key visual on an easel">
+  <!-- easel legs -->
+  <path d="M52 96L60 44M108 96L100 44M58 78h44"/>
+  <path d="M64 94l6 14M96 94l-6 14"/>
+  <!-- the north-star plate (the generated key visual) -->
+  <rect x="54" y="30" width="52" height="44" rx="5" fill="#fff"/>
+  <!-- ground band (dominant colour) -->
+  <path d="M54 60h52" stroke="oklch(72% 0.13 60)" stroke-width="2.4"/>
+  <!-- the single luminous focal star -->
+  <path d="M80 40l3.2 7.6L91 50l-7.8 2.4L80 60l-3.2-7.6L69 50l7.8-2.4z" fill="oklch(85% 0.12 95)" stroke="oklch(72% 0.13 60)" stroke-width="1.6"/>
+  <!-- little face on the easel knob -->
+  <circle cx="76" cy="86" r="2.2" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="84" cy="86" r="2.2" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M77 91q3 2.5 6 0"/>
+  <!-- palette dabs (the extracted ratios) -->
+  <circle cx="120" cy="74" r="3" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <circle cx="130" cy="80" r="3" fill="oklch(85% 0.12 95)" stroke="none"/>
+  <circle cx="122" cy="86" r="3" fill="oklch(60% 0.14 250)" stroke="none"/>
+  <!-- spark -->
+  <path d="M122 34v8M118 38h8" stroke-width="2.5" stroke="oklch(72% 0.13 60)"/>
+</svg>
