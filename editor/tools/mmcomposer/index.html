@@ -190,6 +190,7 @@ function loadMod(key){
    EFFECT_SPECS is plain JSON ({type:{label,frag,uniforms[]}}) so it also bakes
    into the standalone player verbatim. */
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue, FX_HISTORY_DEPTH } from '../_shared/fx.js';
+import { createPOPEngine } from '../_shared/pop.js';
 import { Sources } from '../_shared/sources.js';
 import { LogicGraph } from '../_shared/logicgraph.js';
 const EFFECT_SPECS = fxProgramSpecs();
@@ -3533,6 +3534,30 @@ function sketchContentSources(c){
   }
   return out;
 }
+// POP particle host: drives the shared GPU particle engine (pop.js) once per
+// `particles` layer each frame and exposes the rendered canvas, mirroring how
+// SketchHost hands a canvas to drawContent. One engine, per-layer instance state.
+const PopHost = {
+  _engine: undefined, _cv: {},
+  _n(v, d){ const n = Number(v); return Number.isFinite(n) ? n : d; },
+  engine(){ if(this._engine === undefined){ try { this._engine = createPOPEngine(); } catch(_e){ this._engine = null; } } return this._engine; },
+  _rgb(hex){ hex = String(hex || '#8cd8ff').replace('#',''); if(hex.length === 3) hex = hex.split('').map(c=>c+c).join(''); const n = parseInt(hex, 16) || 0; return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; },
+  tick(id, c, W, H, dt, time){
+    const e = this.engine(); if(!e || !e.available || !e.available()) return;
+    const rgb = this._rgb(c.color);
+    const out = e.step(id, { w: W, h: H, count: (c.count | 0) || 4096, dt, time,
+      pointer: { x: Input.px, y: Input.py, down: Input.down },
+      params: { size: this._n(c.size, 2), noise: this._n(c.noise, 0.4), gravityY: this._n(c.gravityY, 0),
+        attract: this._n(c.attract, 0.5), drag: this._n(c.drag, 0.1), life: this._n(c.life, 3),
+        blend: c.blend || 'add', r: rgb[0], g: rgb[1], b: rgb[2] } });
+    if(!out) return;
+    let cv = this._cv[id]; if(!cv){ cv = this._cv[id] = document.createElement('canvas'); }
+    if(cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+    const cx = cv.getContext('2d'); cx.clearRect(0, 0, W, H); try { cx.drawImage(out, 0, 0, W, H); } catch(_e){}
+  },
+  canvas(id){ return this._cv[id] || null; },
+  prune(live){ const e = this.engine(); for(const id in this._cv){ if(!live.has(id)){ delete this._cv[id]; if(e && e.disposeInstance) e.disposeInstance(id); } } },
+};
 function drawContent(ctx, L, inst, W, H, baseScale){
   const c=L.content;
   const cx=inst.x*W, cy=inst.y*H;
@@ -3620,6 +3645,11 @@ function drawContent(ctx, L, inst, W, H, baseScale){
       ctx.fillStyle='#caa'; ctx.font=`${Math.max(8,sz*0.06)}px ${getMono()}`;
       ctx.fillText(String(err).slice(0,48), 0, sz*0.06); }
     // else: warming up (first frame) - draw nothing this tick.
+  } else if(c.kind==='particles'){
+    // GPU particle layer: blit the full-stage canvas the POP engine rendered for
+    // this layer (drop the per-instance transform, like sketch). Nothing until ready.
+    const pc=PopHost.canvas(L.id);
+    if(pc){ ctx.setTransform(1,0,0,1,0,0); try{ ctx.drawImage(pc,0,0,W,H); }catch(_e){} ctx.restore(); return; }
   } else if(c.kind==='generator'){
     // procedural: animated rings
     ctx.strokeStyle=c.color||'#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.03);
@@ -3955,6 +3985,7 @@ const Engine = {
       // Sketch layer: drive its sandboxed code host BEFORE drawContent so the
       // blit reads this tick's freshest frame (inputs from the stage; control
       // values resolved from the schema + any wired param: binding).
+      if(L.content && L.content.kind==='particles'){ PopHost.tick(L.id, L.content, W, H, dt, time); }
       if(L.content && L.content.kind==='sketch'){
         SketchHost.ensure(L.content.sketchId, L.content.code, L.content.controls);
         SketchHost.tick(L.content.sketchId, W, H, SketchHost.frame(dt), sketchControlVals(L.content), sketchContentSources(L.content));
@@ -3987,6 +4018,7 @@ const Engine = {
     const live=new Set(layers.map(L=>L.id));
     for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
     SketchHost.prune(live);   // tear down iframes for sketch layers that went away
+    PopHost.prune(live);      // free GPU particle buffers for layers that went away
     // free GPU/CPU fluid buffers for layers (or fluid effects) that went away.
     const fluidLive=new Set(layers.filter(L=>layerHasFluid(L)).map(L=>L.id));
     for(const id of Array.from(_gpuFluidIds)){ if(!fluidLive.has(id)) disposeFluid(id); }
@@ -4333,7 +4365,7 @@ function renderInspector(){
   /* CONTENT accordion */
   body.appendChild(accordion('Content',(b)=>{
     b.appendChild(fSelect('Kind',L.content.kind,
-      [['shape','Shape'],['text','Text'],['asset','Wired asset'],['generator','Generator']],
+      [['shape','Shape'],['text','Text'],['asset','Wired asset'],['generator','Generator'],['particles','Particles']],
       v=>{ L.content.kind=v; renderInspector(); }));
     if(L.content.kind==='shape'){
       b.appendChild(fSelect('Shape',L.content.shape||'rect',[['rect','Rect'],['circle','Circle'],['tri','Triangle']],v=>L.content.shape=v));
@@ -4344,6 +4376,16 @@ function renderInspector(){
     } else if(L.content.kind==='asset'){
       b.appendChild(fSelect('Asset',L.content.assetId||'',assetOpts(['image','video']),v=>L.content.assetId=v));
       b.appendChild(html('<p class="hint">Wired images & video render as instance content.</p>'));
+    } else if(L.content.kind==='particles'){
+      b.appendChild(fSlider('Count',L.content.count||4096,256,65536,256,v=>L.content.count=v));
+      b.appendChild(fSlider('Size',L.content.size!=null?L.content.size:2,1,12,0.5,v=>L.content.size=v));
+      b.appendChild(fSlider('Noise',L.content.noise!=null?L.content.noise:0.4,0,2,0.01,v=>L.content.noise=v));
+      b.appendChild(fSlider('Gravity',L.content.gravityY||0,-1,1,0.01,v=>L.content.gravityY=v));
+      b.appendChild(fSlider('Attract',L.content.attract!=null?L.content.attract:0.5,0,4,0.01,v=>L.content.attract=v));
+      b.appendChild(fSlider('Life',L.content.life||3,0.2,10,0.1,v=>L.content.life=v));
+      b.appendChild(fColor('Color',L.content.color||'#8cd8ff',v=>L.content.color=v));
+      b.appendChild(fSelect('Blend',L.content.blend||'add',[['add','Additive'],['alpha','Alpha']],v=>L.content.blend=v));
+      b.appendChild(html('<p class="hint">GPU particles: move the pointer to attract, hold to emit from the cursor. Keep positioning on Single.</p>'));
     } else {
       b.appendChild(fColor('Color',L.content.color||'#6ee7ff',v=>L.content.color=v));
       b.appendChild(html('<p class="hint">Procedural animated rings generator.</p>'));
