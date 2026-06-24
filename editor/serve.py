@@ -8171,6 +8171,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._share_comments_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comment_shot":
             return self._share_comment_shot_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__share_comment_attachment":
+            return self._share_comment_attachment_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_housekeeping":
             return self._share_housekeeping_get()
         if url_path == "/__ls_dirs":
@@ -15350,6 +15352,38 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
         # Immutable per ?v=shotAt - a screenshot never changes once captured.
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
+
+    # GET /__share_comment_attachment?project=<id>&comment=<c-id>&attach=<a-id>
+    # Serves one reviewer-attached image (share/comment-attach/<c-id>/<a-id>.<ext>,
+    # path owned by shares.py). Distinct from the auto screenshot above. 404 when
+    # the attachment is unknown or its file is gone (UI just omits the thumbnail).
+    def _share_comment_attachment_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        cid = (_qs_get(qs, "comment") or "").strip()
+        aid = (_qs_get(qs, "attach") or "").strip()
+        path, ext = _shares.comment_attach_lookup(project_root, cid, aid)
+        if not path:
+            return self._reply(404, {"error": "no attachment"})
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return self._reply(500, {"error": f"read failed: {e}"})
+        ctype = {
+            "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+            "gif": "image/gif", "webp": "image/webp",
+        }.get((ext or "").lower(), "application/octet-stream")
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        # Immutable - an attachment never changes once uploaded.
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         self.end_headers()
         with contextlib.suppress(Exception):

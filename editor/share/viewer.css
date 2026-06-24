@@ -128,6 +128,45 @@ button { font: inherit; cursor: pointer; }
 }
 .sv-composer textarea:focus, .sv-reply-input:focus { border-color: var(--sv-accent); }
 .sv-composer-row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+
+/* Composer tool row - Draw toggle, Clear, Attach. */
+.sv-composer-tools { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.sv-tool-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--sv-line); border-radius: 7px;
+  background: var(--sv-panel); color: var(--sv-muted);
+  padding: 4px 9px; font-size: 11.5px; cursor: pointer;
+}
+.sv-tool-btn:hover { color: var(--sv-ink); background: var(--sv-bg); }
+.sv-tool-btn.is-active {
+  background: var(--sv-accent); border-color: var(--sv-accent); color: #fff;
+}
+/* Pending attachment thumbnails inside the composer (pre-upload). */
+.sv-attach-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.sv-attach-thumb {
+  position: relative; width: 54px; height: 54px;
+  border: 1px solid var(--sv-line); border-radius: 6px; overflow: hidden;
+}
+.sv-attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sv-attach-x {
+  position: absolute; top: 1px; right: 1px;
+  width: 16px; height: 16px; line-height: 14px; padding: 0;
+  border: none; border-radius: 50%; background: rgba(20,20,24,.72); color: #fff;
+  font-size: 12px; display: flex; align-items: center; justify-content: center;
+}
+.sv-attach-x:hover { background: var(--sv-danger); }
+
+/* ── Annotation draw layer ───────────────────────────────────────────── */
+.sv-draw-layer {
+  position: absolute; inset: 0; z-index: 36;
+  width: 100%; height: 100%; cursor: crosshair; touch-action: none;
+}
+.sv-draw-hint {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+  z-index: 37; background: rgba(28,28,30,.92); color: #fff;
+  border-radius: 999px; padding: 6px 14px; font-size: 12px;
+  pointer-events: none; white-space: nowrap;
+}
 .sv-btn-primary {
   background: var(--sv-accent); border-color: var(--sv-accent); color: #fff;
 }
@@ -193,6 +232,15 @@ button { font: inherit; cursor: pointer; }
 .sv-comment-shot:hover { border-color: var(--sv-accent); }
 .sv-comment-shot img { display: block; width: 100%; height: auto; }
 .sv-comment-missing { color: var(--sv-warn); font-size: 11px; margin-top: 4px; }
+/* Reviewer image attachments - a small thumbnail strip, distinct from the
+   auto screenshot above. */
+.sv-comment-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.sv-attach-item {
+  display: block; width: 62px; height: 62px; line-height: 0;
+  border: 1px solid var(--sv-line); border-radius: 6px; overflow: hidden;
+}
+.sv-attach-item:hover { border-color: var(--sv-accent); }
+.sv-attach-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .sv-status-chip {
   font-size: 10px; font-weight: 650; border-radius: 999px; padding: 1px 7px;

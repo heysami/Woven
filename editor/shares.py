@@ -77,6 +77,7 @@ _COMMENTS_LOCK = threading.Lock()
 TOKEN_OK     = re.compile(r"^[a-f0-9]{24,64}$")
 SHARE_ID_OK  = re.compile(r"^shr-[a-f0-9]{8,16}$")
 COMMENT_ID_OK = re.compile(r"^[cr]-[a-f0-9]{8,16}$")
+ATTACH_ID_OK = re.compile(r"^a-[a-f0-9]{8,16}$")
 EMAIL_OK     = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _TUNNEL_URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
@@ -852,6 +853,9 @@ def comment_add(project_root, prototype, *, page, anchor, pin, text, author):
         "replies":   [],
         "shot":      "",     # filename of the page screenshot, set by comment_set_shot
         "shotAt":    "",
+        # Reviewer-attached images, distinct from the auto screenshot. Each is
+        # {id, name, ext, addedAt}; bytes live at share/comment-attach/<cid>/<id>.<ext>.
+        "attachments": [],
     }
     with _COMMENTS_LOCK:
         data = comments_load(project_root)
@@ -930,6 +934,14 @@ def comment_delete(project_root, comment_id):
             os.remove(p)
     except OSError:
         pass
+    # And the reviewer image attachments (a whole per-comment directory).
+    try:
+        import shutil
+        d = _comment_attach_dir(project_root, comment_id)
+        if os.path.isdir(d):
+            shutil.rmtree(d, ignore_errors=True)
+    except OSError:
+        pass
     return True
 
 
@@ -996,6 +1008,123 @@ def comment_set_shot(project_root, comment_id, data_url):
         c["shotAt"] = _now_iso()
         _comments_save(project_root, data)
     return c
+
+
+# ── Reviewer image attachments ──────────────────────────────────────────
+# Separate from the auto screenshot: a reviewer can attach one or more images
+# to a comment (a reference mock, a photo, a screenshot from elsewhere). They
+# land in share/comment-attach/<comment-id>/<attach-id>.<ext> and are listed in
+# the comment's `attachments` array as {id, name, ext, addedAt}. Keyed on
+# comment+attach id so the file is resolvable from the record alone.
+
+_ATTACH_MAX_BYTES = 12 * 1024 * 1024
+_ATTACH_MAX_COUNT = 8
+# ext → (allowed, header sniff). Mirrors the formats a browser <input
+# type=file accept=image/*> can hand us as a data URL.
+_ATTACH_TYPES = {
+    "jpg":  b"\xff\xd8",
+    "jpeg": b"\xff\xd8",
+    "png":  b"\x89PNG\r\n\x1a\n",
+    "gif":  b"GIF8",
+    "webp": b"RIFF",          # RIFF....WEBP - we check the WEBP tag below too
+}
+
+
+def _comment_attach_dir(project_root, comment_id):
+    return os.path.join(project_root, "share", "comment-attach", comment_id)
+
+
+def comment_attach_abspath(project_root, comment_id, attach_id, ext):
+    """Absolute path one attachment would live at. None for a malformed id or
+    a disallowed extension - guards path traversal + filetype."""
+    if not COMMENT_ID_OK.match(comment_id or ""):
+        return None
+    if not ATTACH_ID_OK.match(attach_id or ""):
+        return None
+    ext = (ext or "").lower().lstrip(".")
+    if ext not in _ATTACH_TYPES:
+        return None
+    return os.path.join(_comment_attach_dir(project_root, comment_id),
+                        attach_id + "." + ext)
+
+
+def comment_attach_lookup(project_root, comment_id, attach_id):
+    """Resolve an existing attachment to (abspath, ext) from the stored record,
+    or (None, None) if the comment/attachment is unknown or the file is gone."""
+    for c in comments_load(project_root).get("comments", []):
+        if c.get("id") != comment_id:
+            continue
+        for a in c.get("attachments", []) or []:
+            if a.get("id") == attach_id:
+                path = comment_attach_abspath(project_root, comment_id,
+                                              attach_id, a.get("ext"))
+                if path and os.path.isfile(path):
+                    return path, a.get("ext")
+                return None, None
+    return None, None
+
+
+def comment_add_attachment(project_root, comment_id, data_url, name):
+    """Decode a `data:image/...;base64,…` URL and store it as one image
+    attachment on the comment. Returns the attachment record, or raises
+    ValueError on a malformed / oversized / non-image payload, an unknown
+    comment id, or when the per-comment attachment cap is reached."""
+    if not isinstance(data_url, str) or "," not in data_url:
+        raise ValueError("attachment must be a data URL")
+    head, _comma, b64 = data_url.partition(",")
+    if "base64" not in head:
+        raise ValueError("attachment must be base64-encoded")
+    # Derive the extension from the data-URL mime, falling back to png.
+    mime = head[5:].split(";")[0].strip().lower()  # strip leading "data:"
+    ext = {
+        "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png",
+        "image/gif": "gif", "image/webp": "webp",
+    }.get(mime)
+    if ext is None:
+        raise ValueError("attachment must be a JPEG, PNG, GIF or WebP image")
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise ValueError("attachment is not valid base64")
+    if not raw:
+        raise ValueError("attachment is empty")
+    if len(raw) > _ATTACH_MAX_BYTES:
+        raise ValueError("attachment is too large")
+    # Sniff a real image header so we never persist arbitrary bytes.
+    magic = _ATTACH_TYPES[ext]
+    ok = raw.startswith(magic)
+    if ext == "webp":
+        ok = raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    if not ok:
+        raise ValueError("attachment does not match its declared image type")
+    attach_id = "a-" + secrets.token_hex(5)
+    rec = {
+        "id":      attach_id,
+        "name":    _clip(name, 200).strip() or ("image." + ext),
+        "ext":     ext,
+        "addedAt": _now_iso(),
+    }
+    with _COMMENTS_LOCK:
+        data = comments_load(project_root)
+        c = _find_comment(data, comment_id)
+        if c is None:
+            raise ValueError(f"unknown comment: {comment_id}")
+        atts = c.setdefault("attachments", [])
+        if not isinstance(atts, list):
+            atts = c["attachments"] = []
+        if len(atts) >= _ATTACH_MAX_COUNT:
+            raise ValueError("too many attachments on this comment")
+        out = comment_attach_abspath(project_root, comment_id, attach_id, ext)
+        if out is None:
+            raise ValueError("could not store attachment")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        tmp = out + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, out)
+        atts.append(rec)
+        _comments_save(project_root, data)
+    return rec
 
 
 def comment_image_stats(project_root):
@@ -1314,6 +1443,15 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if not path or not os.path.isfile(path):
                 return self._send_json(404, {"error": "no screenshot"})
             return self._send_file(path, cache=True)
+        ma = re.match(r"^/api/comments/(c-[a-f0-9]+)/attach/(a-[a-f0-9]+)$", sub)
+        if ma:
+            root = self._project_root(rec)
+            if root is None:
+                return self._send_json(500, {"error": "project unavailable"})
+            path, _ext = comment_attach_lookup(root, ma.group(1), ma.group(2))
+            if not path:
+                return self._send_json(404, {"error": "no attachment"})
+            return self._send_file(path, cache=True)
         # Whitelisted project files. /p/ is the share viewer's prefix; the live
         # editor's prototype iframes load /source/… and /design-systems/…
         # directly (resolved relative to /s/<tok>/live/) - serve both through
@@ -1393,6 +1531,21 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._send_json(400, {"error": str(e)})
             return self._send_json(200, {"ok": True})
+        # Image attachment upload - also a base64 image, so handle it before the
+        # generic 64KB JSON read.
+        ma = re.match(r"^/api/comments/(c-[a-f0-9]+)/attach$", sub)
+        if ma:
+            try:
+                att_body = self._read_json_body(max_bytes=20 * 1024 * 1024)
+            except ValueError as e:
+                return self._send_json(400, {"error": str(e)})
+            try:
+                rec_att = comment_add_attachment(
+                    root, ma.group(1), att_body.get("data"), att_body.get("name"))
+            except ValueError as e:
+                return self._send_json(400, {"error": str(e)})
+            _notify_comments_changed(rec.get("project"), rec.get("prototype"))
+            return self._send_json(200, {"ok": True, "attachment": rec_att})
         try:
             body = self._read_json_body()
         except ValueError as e:

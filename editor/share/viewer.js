@@ -38,6 +38,23 @@
       <path d="M2.5 7L8 2.5L13.5 7"/><path d="M4 6.5V13h8V6.5"/><path d="M6.5 13V9.5h3V13"/>
     </svg>`;
 
+  // Pencil glyph - toggles the freehand annotation layer over the screenshot.
+  const PencilIcon = ({ size = 13 }) => html`
+    <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" style=${{ display: "block" }}>
+      <path d="M11.5 2.5l2 2L6 12l-2.7.7L4 10z"/><path d="M10 4l2 2"/>
+    </svg>`;
+
+  // Image glyph - the "attach images" affordance on the composer.
+  const ImageIcon = ({ size = 13 }) => html`
+    <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" style=${{ display: "block" }}>
+      <rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/>
+      <path d="M3 11l3-3 2.5 2.5L11 7l2 2"/>
+    </svg>`;
+
   // ── URL plumbing ──────────────────────────────────────────────────────
   // location.pathname is /s/<token>/ (gate 301s the slash-less form).
   const BASE = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
@@ -133,6 +150,83 @@
       return canvas.toDataURL("image/jpeg", 0.82);
     } catch { return null; }
   };
+
+  // Bake freehand annotation strokes INTO the screenshot raster so the reviewer's
+  // drawing and the UI ship as one image. Strokes are in stage/iframe-viewport
+  // CSS px (top-left origin); the screenshot is the same viewport at html2canvas
+  // `scale`, so the px→shot factor is shotWidth / viewportWidth. No strokes →
+  // the clean shot passes through unchanged. Best-effort: any failure returns
+  // the original shot so the comment still carries an image.
+  const compositeAnnotation = async (shotDataUrl, strokes, frame) => {
+    if (!shotDataUrl || !strokes || !strokes.length) return shotDataUrl;
+    try {
+      const win = frame && frame.contentWindow;
+      const vw = Math.max(1, (win && win.innerWidth) || 1);
+      const img = new Image();
+      img.src = shotDataUrl;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const k = canvas.width / vw;            // stage CSS px → screenshot px
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = Math.max(2, 3 * k);
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const s of strokes) {
+        const pts = (s && s.points) || [];
+        if (pts.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x * k, pts[0].y * k);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * k, pts[i].y * k);
+        ctx.stroke();
+      }
+      return canvas.toDataURL("image/jpeg", 0.82);
+    } catch { return shotDataUrl; }
+  };
+
+  // ── Freehand annotation overlay ───────────────────────────────────────
+  // Sits over the prototype stage while a comment draft is open and "Draw" is
+  // armed. Captures strokes in stage-local CSS px (origin = stage top-left,
+  // which equals the iframe viewport, so the points map 1:1 into the
+  // screenshot). The live stroke is local state for a smooth trail; completed
+  // strokes are lifted to the parent via onAddStroke for compositing at submit.
+  function DrawOverlay({ strokes, onAddStroke }) {
+    const ref = useRef(null);
+    const rectRef = useRef(null);
+    const [cur, setCur] = useState(null);
+    const ptOf = (ev) => {
+      const r = rectRef.current;
+      const src = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+      return { x: Math.round(src.clientX - r.left), y: Math.round(src.clientY - r.top) };
+    };
+    const start = (ev) => {
+      ev.preventDefault();
+      // Cache the rect at stroke start - never per pointermove (layout thrash).
+      rectRef.current = ref.current.getBoundingClientRect();
+      setCur([ptOf(ev)]);
+    };
+    const move = (ev) => {
+      if (!cur) return;
+      ev.preventDefault();
+      setCur((p) => (p ? [...p, ptOf(ev)] : p));
+    };
+    const end = () => {
+      setCur((p) => { if (p && p.length > 1) onAddStroke({ points: p }); return null; });
+    };
+    const toPoints = (pts) => pts.map((p) => p.x + "," + p.y).join(" ");
+    const line = (pts, key) => html`<polyline key=${key} points=${toPoints(pts)}
+      fill="none" stroke="#ef4444" stroke-width="3"
+      stroke-linecap="round" stroke-linejoin="round"/>`;
+    return html`
+      <svg ref=${ref} className="sv-draw-layer"
+        onMouseDown=${start} onMouseMove=${move} onMouseUp=${end} onMouseLeave=${end}
+        onTouchStart=${start} onTouchMove=${move} onTouchEnd=${end}>
+        ${strokes.map((s, i) => line(s.points, i))}
+        ${cur && cur.length > 1 && line(cur, "cur")}
+      </svg>`;
+  }
 
   // Inject (once per document) the hover/flash styles used by comment mode.
   const ensureDocStyles = (doc) => {
@@ -265,6 +359,19 @@
             <img src=${api("comments/" + c.id + "/shot")} alt="Page at comment time" loading="lazy"/>
           </a>
         `}
+        ${(c.attachments || []).length > 0 && html`
+          <div className="sv-comment-attachments">
+            ${c.attachments.map((a) => html`
+              <a className="sv-attach-item" key=${a.id}
+                href=${api("comments/" + c.id + "/attach/" + a.id)}
+                target="_blank" rel="noopener" title=${a.name || "Attached image"}
+                onClick=${(e) => e.stopPropagation()}>
+                <img src=${api("comments/" + c.id + "/attach/" + a.id)}
+                  alt=${a.name || "Attached image"} loading="lazy"/>
+              </a>
+            `)}
+          </div>
+        `}
         ${(c.replies || []).length > 0 && html`
           <div className="sv-replies">
             ${c.replies.map((r) => html`
@@ -314,6 +421,9 @@
     const [page, setPage] = useState("index.html");
     const [error, setError] = useState(null);
     const [posting, setPosting] = useState(false);
+    const [drawing, setDrawing] = useState(false);    // annotation layer armed
+    const [strokes, setStrokes] = useState([]);       // committed annotation strokes
+    const [attachments, setAttachments] = useState([]); // [{name, dataUrl}] pending upload
 
     const iframeRef = useRef(null);
     const commentModeRef = useRef(false); commentModeRef.current = commentMode;
@@ -322,6 +432,27 @@
     const cleanupArmRef = useRef(null);
 
     const showError = (msg) => { setError(msg); setTimeout(() => setError(null), 5000); };
+
+    // Closing a draft (cancel / Esc / submit / reset) drops any annotation
+    // strokes + pending attachments so the next comment starts clean.
+    useEffect(() => {
+      if (!draft) { setStrokes([]); setAttachments([]); setDrawing(false); }
+    }, [draft]);
+
+    // Read picked image files into data URLs held on the draft until submit.
+    const MAX_ATTACH = 8, MAX_ATTACH_BYTES = 12 * 1024 * 1024;
+    const onPickFiles = (e) => {
+      const files = Array.from((e.target && e.target.files) || []);
+      if (e.target) e.target.value = "";   // allow re-picking the same file
+      for (const f of files) {
+        if (!/^image\//.test(f.type || "")) continue;
+        if (f.size > MAX_ATTACH_BYTES) { showError("Image too large (max 12MB): " + f.name); continue; }
+        const reader = new FileReader();
+        reader.onload = () => setAttachments((list) =>
+          list.length >= MAX_ATTACH ? list : [...list, { name: f.name, dataUrl: String(reader.result) }]);
+        reader.readAsDataURL(f);
+      }
+    };
 
     // Boot: meta + comments. Meta failure = revoked/unknown share.
     useEffect(() => {
@@ -543,7 +674,10 @@
         // exactly what the reviewer is looking at, with the pinned element
         // boxed. The composer/pins live in THIS document (not the iframe), so
         // they don't bleed into the shot.
-        const shot = await captureShot(iframeRef.current, d.anchor);
+        const shotRaw = await captureShot(iframeRef.current, d.anchor);
+        // Bake any freehand strokes into the screenshot so the drawing + UI
+        // ship as one raster (no strokes → the clean shot passes through).
+        const shot = await compositeAnnotation(shotRaw, strokes, iframeRef.current);
         const r = await fetch(api("comments"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ page: d.page, anchor: d.anchor, pin: d.pin, text, author: identity }),
@@ -560,6 +694,19 @@
               body: JSON.stringify({ shot }),
             });
           } catch {}
+        }
+        // Upload reviewer image attachments as distinct items. Best-effort and
+        // sequential - the comment already exists, so a failure just drops one
+        // image rather than the whole comment.
+        if (cid && attachments.length) {
+          for (const a of attachments) {
+            try {
+              await fetch(api("comments/" + cid + "/attach"), {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ data: a.dataUrl, name: a.name }),
+              });
+            } catch {}
+          }
         }
         setDraft(null); setDraftText("");
         refetchComments();
@@ -678,6 +825,13 @@
                 }}
               >${p.draft ? "+" : ""}</button>
             `)}
+            ${draft && drawing && html`
+              <${DrawOverlay} strokes=${strokes}
+                onAddStroke=${(s) => setStrokes((a) => [...a, s])}/>
+            `}
+            ${draft && drawing && html`
+              <div className="sv-draw-hint">Draw on the screen - your marks bake into the screenshot</div>
+            `}
             ${draft && html`
               <div className="sv-composer" style=${composerStyle}>
                 <div className="sv-composer-target" title=${draft.anchor.selector}>
@@ -693,6 +847,30 @@
                     if (e.key === "Escape") { setDraft(null); }
                   }}
                 ></textarea>
+                <div className="sv-composer-tools">
+                  <button className=${"sv-tool-btn" + (drawing ? " is-active" : "")}
+                    title="Draw on the prototype - strokes bake into the screenshot"
+                    onClick=${() => setDrawing((d) => !d)}><${PencilIcon}/> Draw</button>
+                  ${strokes.length > 0 && html`
+                    <button className="sv-tool-btn" title="Clear the drawing"
+                      onClick=${() => setStrokes([])}>Clear</button>`}
+                  <label className="sv-tool-btn" title="Attach images to this comment">
+                    <${ImageIcon}/> Attach
+                    <input type="file" accept="image/*" multiple
+                      style=${{ display: "none" }} onChange=${onPickFiles}/>
+                  </label>
+                </div>
+                ${attachments.length > 0 && html`
+                  <div className="sv-attach-thumbs">
+                    ${attachments.map((a, i) => html`
+                      <div className="sv-attach-thumb" key=${i} title=${a.name}>
+                        <img src=${a.dataUrl} alt=${a.name}/>
+                        <button className="sv-attach-x" title="Remove"
+                          onClick=${() => setAttachments((list) => list.filter((_, j) => j !== i))}>×</button>
+                      </div>
+                    `)}
+                  </div>
+                `}
                 <div className="sv-composer-row">
                   <button className="sv-btn" onClick=${() => setDraft(null)}>Cancel</button>
                   <button className="sv-btn sv-btn-primary" disabled=${!draftText.trim() || posting}

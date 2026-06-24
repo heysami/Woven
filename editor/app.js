@@ -10287,6 +10287,19 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
                       onError=${(e) => { const a = e.target.closest(".th-comment-shot"); if (a) a.style.display = "none"; }}/>
                   </a>
                 `}
+                ${(c.attachments || []).length > 0 && !liveMode && html`
+                  <div style=${{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                    ${c.attachments.map(a => html`
+                      <a key=${a.id} className="th-comment-attach" href=${apiUrl("/__share_comment_attachment?comment=" + encodeURIComponent(c.id) + "&attach=" + encodeURIComponent(a.id))}
+                        target="_blank" rel="noopener" title=${"Reviewer attachment: " + (a.name || "image")}
+                        style=${{ display: "block", width: "62px", height: "62px", lineHeight: 0, border: "1px solid var(--th-line, #2a2a30)", borderRadius: "6px", overflow: "hidden" }}>
+                        <img src=${apiUrl("/__share_comment_attachment?comment=" + encodeURIComponent(c.id) + "&attach=" + encodeURIComponent(a.id))}
+                          alt=${a.name || "Attachment"} loading="lazy" style=${{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+                          onError=${(e) => { const a2 = e.target.closest(".th-comment-attach"); if (a2) a2.style.display = "none"; }}/>
+                      </a>
+                    `)}
+                  </div>
+                `}
                 ${(c.replies || []).map(r => html`
                   <div className="th-comment-reply" key=${r.id}>
                     <span className="th-comment-reply-author">${authorName(r.author)}</span>
@@ -38704,6 +38717,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     e.stopPropagation();
     e.preventDefault();
     setNodeDragging(true); // reuse the iframe-pointer-events-off latch
+    // ...but setNodeDragging is a render-tick behind, so also flip the DOM
+    // attribute SYNCHRONOUSLY. Without this, a wire-drag that immediately
+    // sweeps over a same-origin node iframe (a selected html asset / browser /
+    // app-node tool) in the ~16ms before React flushes lets the iframe capture
+    // the pointer; the window mousemove/mouseup then go dead and the wire never
+    // lands - the canonical "can't connect an html asset into Blend" symptom.
+    setCanvasDraggingSync(true);
     setSelectedEdge(null);
     const fromNode = (data.nodes || []).find(n => n.id === fromNodeId);
     if (!fromNode) return;
@@ -38779,6 +38799,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
     const onUp = (ev) => {
       setNodeDragging(false);
+      setCanvasDraggingSync(false);
       const target = findCompatiblePort(ev.clientX, ev.clientY);
       if (target) {
         // Normalize so `from` is always the source (right-side / output) and
@@ -49347,6 +49368,15 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
             + (c.anchor.text ? `  text: "${c.anchor.text.slice(0, 80)}"` : ""));
         }
         lines.push(`  Request: ${c.text}`);
+        if (c.shot) {
+          lines.push("  (A screenshot of the page at comment time is attached to this comment"
+            + ", possibly with the reviewer's freehand annotations drawn on it.)");
+        }
+        const nAtt = (c.attachments || []).length;
+        if (nAtt) {
+          lines.push(`  (The reviewer attached ${nAtt} reference image${nAtt > 1 ? "s" : ""}`
+            + `: ${c.attachments.map(a => a.name || "image").join(", ")}.)`);
+        }
         (c.replies || []).forEach(r => {
           lines.push(`  ↳ ${(r.author && r.author.name) || "Anonymous"}: ${r.text}`);
         });
@@ -49512,6 +49542,20 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                     alt="Page at comment time" loading="lazy" style=${{ display: "block", width: "100%", height: "auto" }}
                     onError=${(e) => { const a = e.target.closest(".workflow-comment-card-shot"); if (a) a.style.display = "none"; }}/>
                 </a>
+              `}
+              ${(c.attachments || []).length > 0 && html`
+                <div onClick=${(e) => e.stopPropagation()}
+                  style=${{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                  ${c.attachments.map(a => html`
+                    <a key=${a.id} className="workflow-comment-card-attach" href=${apiUrl("/__share_comment_attachment?comment=" + encodeURIComponent(c.id) + "&attach=" + encodeURIComponent(a.id))}
+                      target="_blank" rel="noopener" title=${"Reviewer attachment: " + (a.name || "image")}
+                      style=${{ display: "block", width: "62px", height: "62px", lineHeight: 0, border: "1px solid var(--th-line, #2a2a30)", borderRadius: "6px", overflow: "hidden" }}>
+                      <img src=${apiUrl("/__share_comment_attachment?comment=" + encodeURIComponent(c.id) + "&attach=" + encodeURIComponent(a.id))}
+                        alt=${a.name || "Attachment"} loading="lazy" style=${{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+                        onError=${(e) => { const a2 = e.target.closest(".workflow-comment-card-attach"); if (a2) a2.style.display = "none"; }}/>
+                    </a>
+                  `)}
+                </div>
               `}
               ${(c.replies || []).map(r => html`
                 <div key=${r.id} className="workflow-comment-card-reply">
