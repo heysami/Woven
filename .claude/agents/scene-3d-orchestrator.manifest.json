@@ -4,6 +4,7 @@
   "tagline": "The shared WebGL render layer - splits a 3D scene per subsystem (each rendered standalone) and emits a drivable scene",
   "version": "v1.0",
   "defaultEnabled": true,
+  "directionImpact": "owns-surface",
   "subagentName": "scene-3d-orchestrator",
   "playbookPath": ".claude/agents/scene-3d-orchestrator.md",
 

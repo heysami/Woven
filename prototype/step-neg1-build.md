@@ -96,6 +96,10 @@ The user can always override the seeded proposal in their reply - buildPolicy se
 
 **The approved roster is a filter, not a forced march:** Phase E dispatches ONLY approved orchestrators, and each still self-gates via its manifest (an approved photography-orchestrator with zero photo slots returns a clean no-op). Unapproved orchestrators are skipped even when their manifest gate would fire.
 
+**`owns-surface` picks are a DIRECTION decision, not a slot tick (reconciliation rule).** Some candidates are tagged `directionImpact: "owns-surface"` in their manifest (game-experience / simulation / motion-studio / interactive-media / narrative-experience / scrapbook-experience / scene-3d). Each embeds a self-contained runtime that owns a whole surface with its OWN feel - adding one is choosing to make the app part-X, not adding a slot. So when the user ticks an owns-surface orchestrator that you did NOT pre-recommend (the realistic "good idea, add a game" case), do NOT silently accept it as a peer. Reconcile, two parts:
+  1. **Bind it to the art-direction contract.** If `art-director-orchestrator` is also in the roster (or you can add it - image-gen wired), the surface inherits the app's DNA via `surfaceContracts[<containerId>]` (Phase A.7 composes it into the plate, Phase E's owns-surface dispatch reads it). If art-director is NOT in the roster, say plainly that the surface will be built from its own independent research and may not match the chrome - and offer to add art-director so they cohere. This is the explicit fix for the "two halves stitched together" failure.
+  2. **Name the completeness asymmetry.** An owns-surface orchestrator ships a fully-wired runtime, while the surrounding prototype is a clickable mock by design (placeholder handlers, demo data). So the game/sim/scene will be the ONLY fully-interactive surface unless the app's primary loop is also wired. Surface this in one line at the gate ("the feed game will be fully playable; the rest of the app stays a clickable demo unless you want me to wire the core loop too") so the user chooses the fidelity balance instead of discovering it after.
+
 ## Phase A.7 - Pre-build art direction (run ONLY when `art-director-orchestrator` was approved at A.5)
 
 This is the one orchestrator that runs **before** source is written. Dispatch it immediately after the A.5 reply, before Phase B:
@@ -103,8 +107,10 @@ This is the one orchestrator that runs **before** source is written. Dispatch it
 ```
 Task(subagent_type: "art-director-orchestrator",
      description: "Generate north-star plate + art-direction contract",
-     prompt: "<envelope: committedDirection, committedAesthetic slug or null, brief, styleCue, successFeel, sensoryTargets, antiPatterns, the brief's unresolved tensionAxis if any, imageGenSkills from GET /__capabilities, dsRef if a DS is locked>")
+     prompt: "<envelope: committedDirection, committedAesthetic slug or null, brief, styleCue, successFeel, sensoryTargets, antiPatterns, the brief's unresolved tensionAxis if any, imageGenSkills from GET /__capabilities, dsRef if a DS is locked, mode='create', AND approvedOwnsSurface=[every orchestrator in the A.5-approved roster whose manifest directionImpact=='owns-surface' - game-experience / simulation / motion-studio / interactive-media / narrative-experience / scrapbook-experience / scene-3d - each as {id, containerId, oneLine}]>")
 ```
+
+**Pass `approvedOwnsSurface` from the A.5 roster.** This is what makes the choice precede the contract: art-director composes each approved owns-surface region INTO the north-star plate and writes a binding `surfaceContracts[<containerId>]` sub-brief for it, so when that orchestrator builds in Phase E its register is a translation of the app's DNA, not an independent pick. With the roster known here, no contract revision is needed for THIS build (revision is only for owns-surface added in a later turn - see Phase E's late-add note).
 
 It generates the north-star plate(s), surfaces them for the user's approve/pick/steer/reject (its own §12.5 gate - this is a real stop-and-ask; honour it before proceeding), and on approval commits `workflow/art-direction-contract.json`. **Block on its hand-off before Phase B/C** - the contract is an input to Phase B.5 and Phase C.
 
@@ -181,6 +187,10 @@ After source is written and render-verified, the agent MUST walk the orchestrato
 6. **`interactive-polish-orchestrator`** - fires when (a) a DS is present AND (b) the genre is in the restrained-register allow-list per its gate. Adds microanimations, pointer-driven effects, scroll-driven reveals, hover surprises, shader overlays.
 
 For each APPROVED orchestrator, the agent **does NOT pre-evaluate the trigger** - that's the orchestrator's own job per its manifest. The agent dispatches with the standard envelope (project slug, sourceRoot, projectRoot, genre commit line); the orchestrator reads its manifest's gate against the source and either runs or returns `runStatus:error` if its conditions don't match. The agent moves to the next approved orchestrator regardless.
+
+**`owns-surface` orchestrators (game-experience / simulation / motion-studio / interactive-media / narrative-experience / scrapbook-experience / scene-3d) dispatch in Phase E too, AND must be handed the contract.** When `workflow/art-direction-contract.json` exists, include `contractPath` (and the surface's own `surfaceContracts[<containerId>]` key) in their dispatch envelope. Their research step reads it and commits a register that is a TRANSLATION of the app's DNA (palette from the surface contract, motion bounded by it) - never an independent pick. That is the mechanism that keeps the playable/cinematic surface from forking into a second look.
+
+**Late-add reconciliation (a different turn, not this build):** when a *later* "add a game / add a motion scene" ask approves an owns-surface orchestrator and a contract ALREADY exists from the first build, re-fire **Phase A.7 with `mode="revise"`** FIRST (art-director reads the prior contract, composes the new surface into the existing world, bumps `contractVersion`, and may emit `revisionNotes` for any chrome token to re-touch) - THEN dispatch the new owns-surface orchestrator against the revised contract. Do not dispatch the new surface against a contract that never anticipated it; that is exactly how the two halves diverged.
 
 The acid-design studio case would propose steps 1, 2, 3, 4 pre-ticked (and likely offer 6 unticked) at the Phase A.5 gate - that's the orchestrator routing that worked before Step -1 was added, now run with the user's sign-off instead of silently.
 

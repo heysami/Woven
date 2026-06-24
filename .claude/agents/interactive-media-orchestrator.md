@@ -59,6 +59,17 @@ dsRef:             { id, version }
 
 If `successFeel` is vague / generic, emit `<decision-request>` asking for concrete prose. Do NOT proceed.
 
+## Art-direction contract - reconcile, don't fork (read when present)
+
+Before the research step commits any aesthetic / mapping / interaction register, check for `workflow/art-direction-contract.json` (committed pre-build by `art-director-orchestrator`, also passed as `contractPath` in your envelope when it exists). **When it exists it is binding** - the committed register MUST be a *translation* of it, never an independent pick (an independent pick is exactly what makes an embedded surface read as a second app stitched onto the first):
+
+- If the contract has a `surfaceContracts["interactive-media"]` entry, that is THIS surface's brief: draw the palette from its `inheritPaletteHexes`, apply its `materialDirective`, and bound the motion/output register by its `motionBound` (the surface MAY be more kinetic than the chrome, but derived from the same DNA, not divorced from it). Honour its `registerNote` + `compositionNote`.
+- If there is no per-surface entry, fall back to `crossSurfaceContract` (`sharedPaletteHexes` + `materialDirective` + `imageryRegister`).
+- Honour `bindingRules`: inherit the contract's DNA, never replicate the plate's literal subject/layout/copy.
+- Thread `contractPath` into every research + builder envelope dispatched downstream, so the whole surface inherits it.
+
+If no contract exists (no image-gen model, or art direction was skipped), behave exactly as before - the research commits the register independently.
+
 ## 1.2 Iframe ↔ host pointer + scroll contract (load-bearing)
 
 The IM iframe is the most varied - input modalities span voice / camera / mic / gyro / midi / gamepad / mouse / multi-touch, and pointer-velocity-driven shader pieces own ALL pointer events. Inside the iframe the runtime sets `touch-action: none; overscroll-behavior: none; user-select: none` on the canvas when pointer is a declared input. **This creates a recurring conflict** with the host page:

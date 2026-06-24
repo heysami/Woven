@@ -4,6 +4,7 @@
   "tagline": "Intuitive visualisation of real-world physical or temporal systems",
   "version": "v3.5",
   "defaultEnabled": true,
+  "directionImpact": "owns-surface",
   "subagentName": "simulation-orchestrator",
   "playbookPath": ".claude/agents/simulation-orchestrator.md",
   "description": "Researches the right representation paradigm for a domain (2d-spatial-map / 2d-isometric / 3d-environment / iconographic-anim / text-art / hybrid), commits a buildTier (simple|standard|full), and scaffolds a tier-sized builder set (entities / scene / loop / controls / overlay / runtime) + container, then HANDS BACK. The build-driver (workflow-mode chat) dispatches the builders in dependency order with NO per-drawer lens; the runtime/composer builder assembles runtime.html LAST; a SINGLE final QA+lens gate (integration QA + the craft/aesthetic/concept trio ONCE) judges the assembled runtime, not fragments. 2d-isometric for stacked / axonometric briefs (SimCity, Habbo, Theme Hospital canon); text-art for TUI / ASCII / htop-style monitors where the terminal aesthetic IS the medium. Cold-isolated per simId; never self-drives the build (permission-wall guard).",

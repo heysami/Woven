@@ -52,10 +52,15 @@ antiPatterns:        ["<verbatim>"]
 tensionAxis:         "<the unresolved choice in the brief, if any - e.g. 'how loud is the chrome vs the glow'>"  | null
 imageGenSkills:      ["raster-photo-imagen", "raster-foreground-flux", ...]   # MUST be non-empty
 dsRef:               { id, version } | null    # if a design system is already committed, honour its tokens
+mode:                "create" | "revise"       # revise = a contract already exists and an owns-surface was added (§6.5)
+priorContractPath:   "workflow/art-direction-contract.json" | null   # set when mode=revise
+approvedOwnsSurface: [{ id: "game-experience-orchestrator", containerId: "game-experience", oneLine: "feed-and-light-up playable care surface" }, ...]  | []
 === END ENVELOPE ===
 ```
 
 If `imageGenSkills` is empty → abort per §1.
+
+**`approvedOwnsSurface` is load-bearing.** It lists the direction-changing orchestrators (`directionImpact: "owns-surface"` in their manifest - game / sim / motion-studio / interactive-media / narrative / scrapbook / scene-3d) the user approved at the orchestrator-plan gate, which runs BEFORE you. Each will build a self-contained runtime that owns a whole surface with its own register. **You must anticipate them**: compose those surfaces INTO the north-star plate (§2) and write a binding sub-contract for each (§3 `surfaceContracts`), so the surface inherits the app's DNA instead of forking off with its own independently-researched look. This is the fix for "two halves stitched together". If `approvedOwnsSurface` is empty, the app has no owns-surface region and you proceed normally.
 
 ## 2. Phase A - generate the north-star plate(s)
 
@@ -74,7 +79,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ad_plate_<projectId>_<n>/run?p
 # poll until bytes exist; one retry with a correction on failure; no plate after retry → runError (cannot inspect blind)
 ```
 
-**Plate brief** merges, in order: (1) the product surface drawn as a real screen - representative chrome (a header, primary content, one primary action, nav hinted) at true scale; (2) the hero imagery in its actual relationship to that chrome; (3) the brief's `styleCue` + `sensoryTargets` as the visual register; (4) composition law - "one composed frame, edge to edge, no device mockup frame, no browser chrome, real words not lorem"; (5) negatives - no watermark, no stock-dashboard UI, no collage, no letterbox.
+**Plate brief** merges, in order: (1) the product surface drawn as a real screen - representative chrome (a header, primary content, one primary action, nav hinted) at true scale; (2) the hero imagery in its actual relationship to that chrome; (3) **for each entry in `approvedOwnsSurface`, compose that surface INTO the frame** in its real relationship to the chrome (e.g. a playable game panel sitting inside the home screen, a cinematic scene bleeding behind the nav) - so the plate shows the owns-surface region and the chrome as ONE composition, not the chrome alone; (4) the brief's `styleCue` + `sensoryTargets` as the visual register; (5) composition law - "one composed frame, edge to edge, no device mockup frame, no browser chrome, real words not lorem"; (6) negatives - no watermark, no stock-dashboard UI, no collage, no letterbox.
 
 Plates live under `workflow/artdirection/` - they are **planning artefacts, never shipped.** The runtime references none of them. (Contrast `ms-concept-frames`, whose plates double as i2v references; yours do not.)
 
@@ -151,6 +156,21 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
     "antiPatterns": ["<verbatim from brief + any the plate review surfaced>"]
   },
 
+  "surfaceContracts": {
+    // ONE entry per approvedOwnsSurface member, keyed by its containerId. This is the
+    // binding brief the owns-surface orchestrator (game / sim / motion / etc.) reads
+    // in its research step so its register is a TRANSLATION of the app's DNA, not an
+    // independent pick - the reconciliation that stops the "two halves" fork.
+    "game-experience": {
+      "inheritPaletteHexes": ["#0e1620", "#7ad9c4", "#241a12"],   // subset the surface draws from
+      "materialDirective": "<how the surface's material reads, consistent with the chrome>",
+      "motionBound": "<the surface MAY be more kinetic than the chrome, but bounded by this - e.g. 'gentle spring, soft bloom; no hard arcade snap'>",
+      "registerNote": "<one line: the surface's feel as a translation of the contract, e.g. 'a calm bioluminescent care surface, not a juicy arcade game'>",
+      "compositionNote": "<how it sits in the frame: full-bleed | inset panel | behind-chrome>"
+    }
+    // ... one per approvedOwnsSurface entry
+  },
+
   "bindingRules": {
     "inheritFromPlate": ["colour ratios", "value structure", "composition logic", "material logic", "type rhythm", "motion character"],
     "doNotReplicate": ["the plate's literal subject", "its exact layout / coordinates", "its specific copy", "any single-screen framing - the app has many screens"],
@@ -215,10 +235,22 @@ This orchestrator's value is entirely in what reads it. The hand-off envelope te
     "capabilities.py: add a pre-build hard-rule - if art-director is in the approved roster, dispatch it BEFORE step-stack; thread contractPath into the /prototype build envelope",
     "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template",
     "illustration/photography/visual/material orchestrators: read crossSurfaceContract.sharedPaletteHexes + imageryRegister + materialDirective when the contract exists",
-    "aesthetic-lens: when a contract exists, score cross-register coherence (chrome vs imagery) against it, not only per-slot conformance"
+    "owns-surface orchestrators (game/sim/motion-studio/interactive-media/narrative/scrapbook/scene-3d): their research step reads surfaceContracts[<theirContainerId>] (falling back to crossSurfaceContract) and commits a register that is a TRANSLATION of it, never an independent pick",
+    "aesthetic-lens: when a contract exists, score cross-register coherence (chrome vs imagery vs owns-surface) against it, not only per-slot conformance"
   ]
 }
 ```
+
+## 6.5 Revise mode - a late-added owns-surface (the realistic "add a game to my finished app")
+
+When `mode == "revise"`, a contract already exists and the user has just approved an owns-surface orchestrator that the original contract did NOT anticipate (it wasn't in the first build's roster). Do NOT fork - reconcile:
+
+1. Read `priorContractPath`. Treat its `extracted` + `authored` + `crossSurfaceContract` as **the established law** - you are extending it, not re-deriving it. The chrome already shipped against it; gratuitous churn re-breaks the app.
+2. Generate ONE new plate that places the **new** surface into the EXISTING world (reuse the established palette/material/type - the plate's job here is to prove the new surface can live in the current frame, not to redesign).
+3. Inspect it, then emit the contract with `contractVersion` bumped (+1) and a new/updated `surfaceContracts["<newContainerId>"]` entry. Keep `extracted`/`authored` stable unless the new surface genuinely forces a small, named change - and if it does, record it in a `revisionNotes` array ("raised glow accent ratio 0.10→0.15 so the game surface and the chrome share a focal energy") so the caller knows what shifted and can re-touch the chrome.
+4. Surface the revised plate at the §4 gate as usual (approve/steer). On approval, the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
+
+This is why the contract is **versioned, not write-once**: as soon as an owns-surface can be added after the build (and it always can), reconciliation requires a living contract.
 
 ## 7. The reconciliation lens (downstream, not yours to run)
 

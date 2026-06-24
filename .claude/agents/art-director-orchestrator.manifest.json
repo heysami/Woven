@@ -4,6 +4,7 @@
   "tagline": "Generates one north-star key visual, then builds the whole app from its design DNA",
   "version": "v1.0",
   "defaultEnabled": true,
+  "directionImpact": "sets-direction",
   "runsBeforeBuild": true,
   "subagentName": "art-director-orchestrator",
   "playbookPath": ".claude/agents/art-director-orchestrator.md",

@@ -4,6 +4,7 @@
   "tagline": "Thin hero-slot alias over scene-3d-orchestrator - translates a 3d-hero slot into a self-driven scene-3d brief",
   "version": "v2.0",
   "defaultEnabled": true,
+  "directionImpact": "owns-surface",
   "subagentName": "hero-3d-orchestrator",
   "playbookPath": ".claude/agents/hero-3d-orchestrator.md",
 

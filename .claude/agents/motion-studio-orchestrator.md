@@ -97,6 +97,17 @@ The §1.2 contract from simulation-orchestrator.md applies verbatim (bounded ifr
 
 (For host-scroll slots the host wrapper is taller than the viewport - e.g. `height: <sceneCount+1>00vh` with the iframe `position: sticky; top: 0; height: 100vh` inside it. That wrapper pattern is in `hostPageGuidance.exampleHTML`.)
 
+## Art-direction contract - reconcile, don't fork (read when present)
+
+Before the research step commits any aesthetic / transition / pacing register, check for `workflow/art-direction-contract.json` (committed pre-build by `art-director-orchestrator`, also passed as `contractPath` in your envelope when it exists). **When it exists it is binding** - the committed register MUST be a *translation* of it, never an independent pick (an independent pick is exactly what makes an embedded surface read as a second app stitched onto the first):
+
+- If the contract has a `surfaceContracts["motion-studio"]` entry, that is THIS surface's brief: draw the palette from its `inheritPaletteHexes`, apply its `materialDirective`, and bound the motion/transition/pacing register by its `motionBound` (the surface MAY be more cinematic than the chrome, but derived from the same DNA, not divorced from it). Honour its `registerNote` + `compositionNote`.
+- If there is no per-surface entry, fall back to `crossSurfaceContract` (`sharedPaletteHexes` + `materialDirective` + `imageryRegister`).
+- Honour `bindingRules`: inherit the contract's DNA, never replicate the plate's literal subject/layout/copy.
+- Thread `contractPath` into every research + builder envelope dispatched downstream, so the whole surface inherits it.
+
+If no contract exists (no image-gen model, or art direction was skipped), behave exactly as before - the research commits the register independently.
+
 ## 2. Phase A - Research (ONE researcher per slot)
 
 Per slot, scaffold + dispatch `ms_research_<msId>` (subagent `ms-research-technique`) and poll until done - same single-researcher shape as simulation (no fleet, no synthesiser):

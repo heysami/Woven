@@ -128,6 +128,17 @@ The runtime drawer's text envelope (which you scaffold in §4) MUST instruct the
 
 The runtime drawer's scaffolded `text` field (set in §4) MUST include these six rules verbatim. The hand-off envelope (§5.2) includes a `hostPageGuidance` block the chat caller applies to the host HTML.
 
+## Art-direction contract - reconcile, don't fork (read when present)
+
+Before the research step commits any aesthetic / juice / pacing / interaction register, check for `workflow/art-direction-contract.json` (committed pre-build by `art-director-orchestrator`, also passed as `contractPath` in your envelope when it exists). **When it exists it is binding** - the committed register MUST be a *translation* of it, never an independent pick (an independent pick is exactly what makes an embedded surface read as a second app stitched onto the first):
+
+- If the contract has a `surfaceContracts["simulation"]` entry, that is THIS surface's brief: draw the palette from its `inheritPaletteHexes`, apply its `materialDirective`, and bound the motion/juice/pacing register by its `motionBound` (the surface MAY be more kinetic than the chrome, but derived from the same DNA, not divorced from it). Honour its `registerNote` + `compositionNote`.
+- If there is no per-surface entry, fall back to `crossSurfaceContract` (`sharedPaletteHexes` + `materialDirective` + `imageryRegister`).
+- Honour `bindingRules`: inherit the contract's DNA, never replicate the plate's literal subject/layout/copy.
+- Thread `contractPath` into every research + builder envelope dispatched downstream, so the whole surface inherits it.
+
+If no contract exists (no image-gen model, or art direction was skipped), behave exactly as before - the research commits the register independently.
+
 ## 2. Phase A - Research (ONE researcher: tech stack)
 
 The research pass is **a single dispatch**. There is no fleet, no synthesiser. The tech-stack researcher (`sim-research-technique`) picks the paradigm + render strategy + tick rate + interaction primitive in one pass and writes `research.md` directly. Earlier versions ran 4 cold-isolated angle researchers (precedent, technique, mental-model, constraint) + a synthesiser; the user cut all of that down to "just the tech stack" because the other angles were essay-shaped padding that didn't change the pick.

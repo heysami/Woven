@@ -82,6 +82,17 @@ If `successFeel` is vague/generic, emit `<decision-request>` for concrete prose.
 - **Rule D - bound the slot height** (`100vh` or fixed px, never unbounded-parent `100%`).
 - **Rule E - host-driven scenes do NOT run their own simulation rAF.** They expose `step(state, alpha)` + handles; the caller drives. They MAY still run ambient render-only motion (idle drift) gated off when the host says it owns motion.
 
+## Art-direction contract - reconcile, don't fork (read when present)
+
+Before the research step commits any material / lighting / motion register, check for `workflow/art-direction-contract.json` (committed pre-build by `art-director-orchestrator`, also passed as `contractPath` in your envelope when it exists). **When it exists it is binding** - the committed register MUST be a *translation* of it, never an independent pick (an independent pick is exactly what makes an embedded surface read as a second app stitched onto the first):
+
+- If the contract has a `surfaceContracts["scene-3d"]` entry, that is THIS surface's brief: draw the palette from its `inheritPaletteHexes`, map its `materialDirective` onto the scene's materials/tone-mapping, and bound the motion/ambient register by its `motionBound` (the scene MAY be richer than the chrome, but derived from the same DNA, not divorced from it). Honour its `registerNote` + `compositionNote`.
+- If there is no per-surface entry, fall back to `crossSurfaceContract` (`sharedPaletteHexes` + `materialDirective` + `imageryRegister`).
+- Honour `bindingRules`: inherit the contract's DNA, never replicate the plate's literal subject/layout/copy.
+- Thread `contractPath` into every research + subsystem envelope dispatched downstream, so the whole scene inherits it.
+
+If no contract exists (no image-gen model, or art direction was skipped), behave exactly as before - the research commits the register independently.
+
 ## 2. Phase A - Research (ONE researcher: tech stack + subsystem decomposition)
 
 Single dispatch - `s3d-research-technique` commits the whole stack AND the subsystem decomposition in one pass, writing `research.md`. `Task` may be unavailable inside this subagent; use the workflow-node dispatch pattern and poll.

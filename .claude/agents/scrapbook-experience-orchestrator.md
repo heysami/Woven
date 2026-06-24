@@ -110,6 +110,18 @@ If `successFeel` is vague ("user enjoys it" / "looks cool") → emit `<decision-
 
 If `coreAesthetic` is `any`, the research drawer decides. If it's specific, research validates and may push back; user steers via §3 interrupt.
 
+## Art-direction contract - reconcile, don't fork (read when present)
+
+Before the research step commits any core-aesthetic / motion / interaction register or the image inventory, check for `workflow/art-direction-contract.json` (committed pre-build by `art-director-orchestrator`, also passed as `contractPath` in your envelope when it exists). **When it exists it is binding** - the committed register MUST be a *translation* of it, never an independent pick (an independent pick is exactly what makes an embedded surface read as a second app stitched onto the first):
+
+- If the contract has a `surfaceContracts["scrapbook-experience"]` entry, that is THIS surface's brief: draw the palette from its `inheritPaletteHexes`, apply its `materialDirective`, and bound the motion register by its `motionBound`. Honour its `registerNote` + `compositionNote`.
+- If there is no per-surface entry, fall back to `crossSurfaceContract` (`sharedPaletteHexes` + `materialDirective` + `imageryRegister`).
+- Honour `bindingRules`: inherit the contract's DNA, never replicate the plate's literal subject/layout/copy.
+- Thread `contractPath` into every research + builder envelope dispatched downstream, so the whole surface inherits it.
+- Because this surface's look lives in generated raster, the `inheritPaletteHexes` + `imageryRegister` are especially load-bearing here: every image-inventory entry must be prompted in the contract's register so the collage reads as the same world as the chrome.
+
+If no contract exists (no image-gen model, or art direction was skipped), behave exactly as before - the research commits the register independently.
+
 ## 2. Phase A - Research (ONE researcher: tech stack + aesthetic synthesis + IMAGE INVENTORY)
 
 The research pass is **a single dispatch**. There is no fleet. `scrapbook-research-technique` picks the core aesthetic + composition idiom + density target + motion register + interaction primitive + **the IMAGE INVENTORY** (every raster asset the composition will need: subject, transparency requirement, aspect, role) in one pass and writes `research.md` directly.
