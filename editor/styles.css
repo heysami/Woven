@@ -1079,6 +1079,8 @@ button {
   background: color-mix(in srgb, var(--text, #1a1a1a) 4%, transparent);
 }
 .deflib-chip-scheme { border-color: color-mix(in srgb, var(--accent, #2c5fff) 35%, transparent); color: var(--accent, #2c5fff); background: color-mix(in srgb, var(--accent, #2c5fff) 8%, transparent); }
+.deflib-chip-accent { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; text-transform: uppercase; }
+.deflib-chip-dot { display: inline-block; width: 9px; height: 9px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.18); flex: none; }
 .deflib-row-note { font: 400 12.5px/1.5 var(--font-sans, system-ui, sans-serif); color: var(--text, #1a1a1a); opacity: 0.62; max-width: 92ch; }
 .deflib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 2px; }
 .deflib-cell { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
