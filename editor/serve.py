@@ -4213,7 +4213,7 @@ def _broadcast_workflow_change(project_id: str) -> None:
 # NOT node kinds, so they skip the kind registry / runStatus / reconciler
 # machinery entirely). Shared by the editor's POST /__workflow save and
 # the agent-facing POST /__workflow/wb ops endpoint.
-_WB_ITEM_TYPES = ("text", "textbox", "sticky", "ink", "shape", "arrow", "image", "table")
+_WB_ITEM_TYPES = ("text", "textbox", "sticky", "sticker", "ink", "shape", "arrow", "image", "table")
 
 def _sanitize_wb_items(items):
     """Permissive structural sanitize, mirroring the node sanitize in
