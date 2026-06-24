@@ -12753,6 +12753,17 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-assistant-reply textarea:focus { border-color: var(--accent); }
 
+/* Whiteboard emoji sticker (FigJam-style stamp) + the tool's emoji palette. */
+.workflow-wb-sticker { cursor: default; pointer-events: auto; }
+.workflow-wb-emoji-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.workflow-wb-emoji-btn {
+  border: 1px solid transparent; background: var(--surface-2, rgba(0,0,0,0.04));
+  border-radius: 6px; padding: 3px 0; font-size: 18px; line-height: 1;
+  cursor: pointer; text-align: center;
+}
+.workflow-wb-emoji-btn:hover { border-color: var(--border); }
+.workflow-wb-emoji-btn.is-active { border-color: var(--accent); background: var(--accent-soft); }
+
 /* Phase 7 - Color palette direction node. */
 .workflow-node-palette {
   display: grid;

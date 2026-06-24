@@ -24858,6 +24858,12 @@ const WORKFLOW_WB_FACTORY = {
     points: Array.isArray(p.points) ? p.points : [],
     color: p.color || "ink", size: p.size ?? 3,
   }),
+  // FigJam-style emoji stamp. Content (not a UI icon): a big emoji the user
+  // places to react / annotate. Square; the glyph scales with the box.
+  "sticker": (p = {}) => ({
+    type: "sticker", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 72, h: p.h ?? 72,
+    emoji: p.emoji || "⭐", rotation: p.rotation ?? 0,
+  }),
   "shape": (p = {}) => ({
     type: "shape", shape: "rect", x: p.x ?? 0, y: p.y ?? 0,
     w: p.w ?? 200, h: p.h ?? 120,
@@ -29845,8 +29851,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     try { localStorage.setItem("th-workflow-wb-mode", wbMode ? "1" : "0"); } catch {}
   }, [wbMode]);
-  const [wbTool, setWbTool] = useState("select");   // select|text|textbox|sticky|pen|shape|arrow
+  const [wbTool, setWbTool] = useState("select");   // select|text|textbox|sticky|sticker|pen|shape|arrow
   const wbToolRef = useRef("select"); wbToolRef.current = wbTool;
+  // Current emoji for the sticker tool (FigJam-style stamp). Click an emoji in
+  // the tools palette to arm it; the next canvas click drops that sticker.
+  const [wbStickerEmoji, setWbStickerEmoji] = useState("⭐");
+  const wbStickerEmojiRef = useRef("⭐"); wbStickerEmojiRef.current = wbStickerEmoji;
   const [selectedWbIds, setSelectedWbIds] = useState(() => new Set());
   const selectedWbIdsRef = useRef(selectedWbIds); selectedWbIdsRef.current = selectedWbIds;
   const [editingWbId, setEditingWbId] = useState(null);
@@ -30798,7 +30808,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // One-shot tools revert to select after a commit; pen + sticky stay armed
   // (the "make many" tools).
   const wbAfterCommit = useCallback((tool) => {
-    if (tool === "pen" || tool === "sticky") return;
+    if (tool === "pen" || tool === "sticky" || tool === "sticker") return;
     setWbTool("select");
   }, []);
 
@@ -31063,6 +31073,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       setSelectedWbIds(new Set([item.id]));
       setEditingWbId(item.id);
       // Bind it to a table cell if it was dropped on a table.
+      if (wbReassignBindingsRef.current) wbReassignBindingsRef.current(new Set([item.id]), new Set());
+      wbAfterCommit(tool);
+      return;
+    }
+
+    // ── sticker - click-to-place a big emoji stamp (no edit mode) ──
+    if (tool === "sticker") {
+      e.preventDefault();
+      const item = wbMakeItem("sticker", { x: wp.x - 36, y: wp.y - 36, emoji: wbStickerEmojiRef.current || "⭐" });
+      addWbItem(item);
+      setSelectedWbIds(new Set([item.id]));
       if (wbReassignBindingsRef.current) wbReassignBindingsRef.current(new Set([item.id]), new Set());
       wbAfterCommit(tool);
       return;
@@ -31718,7 +31739,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (isEditingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const map = { v: "select", t: "text", b: "textbox", s: "sticky", p: "pen", r: "shape", g: "table", f: "section", l: "arrow", i: "eyedropper" };
+      const map = { v: "select", t: "text", b: "textbox", s: "sticky", e: "sticker", p: "pen", r: "shape", g: "table", f: "section", l: "arrow", i: "eyedropper" };
       const tool = map[(e.key || "").toLowerCase()];
       if (tool) { setWbTool(tool); e.preventDefault(); }
     };
@@ -40967,6 +40988,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             <${WorkflowWhiteboardTools}
               tool=${wbTool}
               onTool=${setWbTool}
+              stickerEmoji=${wbStickerEmoji}
+              onStickerEmoji=${(em) => { setWbStickerEmoji(em); if (selectedWbIds.size) patchWbItems(selectedWbIds, { emoji: em }); }}
               selection=${wbItems.filter(it => selectedWbIds.has(it.id))}
               onPatchSelection=${(patch) => patchWbItems(selectedWbIds, patch)}
               pickedColor=${wbPickedColor}
@@ -43868,7 +43891,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                  e.dataTransfer.effectAllowed = "copy";
                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-research" }));
                }}
-               title="Drag onto canvas - web research (free agent web search, or paid Exa), filtered to your criteria, distilled into a table with visuals.">
+               title="Drag onto canvas - web research filtered to your criteria, distilled into a table with visuals.">
             <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
             <span className="workflow-library-item-label">Research assistant</span>
             <span className="workflow-library-item-id">web research</span>
@@ -68461,8 +68484,8 @@ function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange
           <label className="workflow-node-iter-field workflow-node-assistant-cat">
             <span className="workflow-node-iter-field-label">Search via</span>
             <select value=${node.searchVia || "agent"} onChange=${(e) => onChange({ searchVia: e.target.value })}>
-              <option value="agent">Agent (web, free)</option>
-              <option value="exa">Exa (paid)</option>
+              <option value="agent">Agent (web)</option>
+              <option value="exa">Exa</option>
             </select>
           </label>
           <label className="workflow-node-iter-field workflow-node-assistant-num">
@@ -68493,9 +68516,6 @@ function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">table built</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
         </div>
-        <div className="workflow-node-assistant-note">${(node.searchVia || "agent") === "exa"
-          ? "Exa is paid - it only runs when you click Research."
-          : "Agent mode uses your Claude CLI's built-in web search - no extra key."}</div>
       </div>
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
@@ -72254,6 +72274,17 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
         })}
       </div>`;
   }
+  if (item.type === "sticker") {
+    const sz = Math.max(12, Math.min(item.w || 72, item.h || 72) * 0.8);
+    return html`
+      <div className="workflow-wb-item workflow-wb-sticker" data-wb-id=${item.id} data-selected=${sel}
+        style=${{
+          left: item.x + "px", top: item.y + "px",
+          width: (item.w || 72) + "px", height: (item.h || 72) + "px", zIndex: z,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: sz + "px", lineHeight: 1, userSelect: "none", ...rotStyle,
+        }}>${item.emoji || "⭐"}</div>`;
+  }
   if (item.type === "ink") {
     return html`
       <svg className="workflow-wb-item workflow-wb-ink" data-wb-id=${item.id} data-selected=${sel}
@@ -72676,6 +72707,7 @@ const WB_TOOL_DEFS = [
   { id: "text",    label: "Text",        hotkey: "T" },
   { id: "textbox", label: "Text box",    hotkey: "B" },
   { id: "sticky",  label: "Sticky note", hotkey: "S" },
+  { id: "sticker", label: "Sticker",     hotkey: "E" },
   { id: "pen",     label: "Pen",         hotkey: "P" },
   { id: "shape",   label: "Box",         hotkey: "R" },
   { id: "table",   label: "Table",       hotkey: "G" },
@@ -72689,6 +72721,7 @@ const WB_TOOL_GLYPHS = {
   text:    html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M3 3 H13 V5.4 H11.2 V4.8 H9 V12.2 H10.4 V14 H5.6 V12.2 H7 V4.8 H4.8 V5.4 H3 Z" fill="currentColor"/></svg>`,
   textbox: html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.4" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M5.4 6 H10.6 M8 6 V11" stroke="currentColor" strokeWidth="1.4" fill="none"/></svg>`,
   sticky:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5 H13.5 V9.5 L9.5 13.5 H2.5 Z" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M9.5 13.5 V9.5 H13.5" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
+  sticker: html`<svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5"/><circle cx="6" cy="6.6" r="0.9" fill="currentColor"/><circle cx="10" cy="6.6" r="0.9" fill="currentColor"/><path d="M5.4 9.6 A3 3 0 0 0 10.6 9.6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>`,
   pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>`,
   shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
   table:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="2.8" width="12" height="10.4" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M2 6.6 H14 M2 9.8 H14 M6.4 2.8 V13.2 M10 2.8 V13.2" stroke="currentColor" strokeWidth="1.2" fill="none"/></svg>`,
@@ -72697,7 +72730,8 @@ const WB_TOOL_GLYPHS = {
   eyedropper: html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M9.6 3.1 12.9 6.4 M11.2 4.7 13.4 2.5 A1.4 1.4 0 0 0 11.4 0.5 L9.6 2.7 Z M10.4 5.5 4.6 11.3 A1.6 1.6 0 0 0 4.2 12 L3.6 13.8 A0.5 0.5 0 0 0 4.2 14.4 L6 13.8 A1.6 1.6 0 0 0 6.7 13.4 L12.5 7.6 Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>`,
 };
 
-function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt, eyedropFmt, onEyedropFmt, onEyedrop, lastEyedrop }) {
+const WB_STICKER_EMOJIS = ["⭐","✅","👍","👎","🔥","💡","🤔","😍","😐","🎯","❤️","⚠️","🚀","💯","❓","🙌","👀","🧠","📌","🏆"];
+function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt, eyedropFmt, onEyedropFmt, onEyedrop, lastEyedrop }) {
   // Contextual format controls. Which rows show follows the RELEVANT TYPES:
   // the selection’s item types when something is selected, else the armed
   // tool’s type. Every control writes the sticky defaults (next created
@@ -72793,6 +72827,22 @@ function WorkflowWhiteboardTools({ tool, onTool, selection, onPatchSelection, pi
           </button>
         `)}
       </div>
+      ${(tool === "sticker" || types.has("sticker")) && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Emoji</div>
+          <div className="workflow-wb-emoji-grid">
+            ${WB_STICKER_EMOJIS.map(em => html`
+              <button key=${em} type="button"
+                className=${"workflow-wb-emoji-btn" + (stickerEmoji === em ? " is-active" : "")}
+                title=${em}
+                onClick=${() => onStickerEmoji && onStickerEmoji(em)}>${em}</button>
+            `)}
+          </div>
+          <div className="workflow-wb-tools-hint" style=${{ marginTop: 0 }}>
+            Pick an emoji, then click the canvas to stamp it.
+          </div>
+        </div>
+      `}
       ${tool === "eyedropper" && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Copy as</div>

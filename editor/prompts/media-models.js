@@ -153,7 +153,7 @@
     exa: {
       id: "exa",
       label: "Exa",
-      hint: "Web search (exa.ai) for the Research assistant - PAID + metered, never auto-runs",
+      hint: "Web search (exa.ai) for the Research assistant",
       envKey: "TH_EXA_API_KEY",
       docsUrl: "https://dashboard.exa.ai/api-keys",
       integrated: true,
