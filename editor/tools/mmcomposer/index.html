@@ -191,6 +191,7 @@ function loadMod(key){
    into the standalone player verbatim. */
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue, FX_HISTORY_DEPTH } from '../_shared/fx.js';
 import { createPOPEngine } from '../_shared/pop.js';
+import { createScene3D } from '../_shared/scene3d.js';
 import { Sources } from '../_shared/sources.js';
 import { LogicGraph } from '../_shared/logicgraph.js';
 const EFFECT_SPECS = fxProgramSpecs();
@@ -3558,6 +3559,24 @@ const PopHost = {
   canvas(id){ return this._cv[id] || null; },
   prune(live){ const e = this.engine(); for(const id in this._cv){ if(!live.has(id)){ delete this._cv[id]; if(e && e.disposeInstance) e.disposeInstance(id); } } },
 };
+// 3D layer host: drives the self-contained scene3d engine per `scene3d` layer
+// and hands its canvas to drawContent - the "3D becomes a TOP layer" bridge.
+const Scene3DHost = {
+  _engine: undefined, _cv: {},
+  engine(){ if(this._engine === undefined){ try { this._engine = createScene3D(); } catch(_e){ this._engine = null; } } return this._engine; },
+  tick(id, c, W, H, time){
+    const e = this.engine(); if(!e || !e.available || !e.available()) return;
+    const out = e.step({ w: W, h: H, count: (c.count | 0) || 6000, time,
+      pointer: { x: Input.px, y: Input.py, down: Input.down },
+      params: { shape: c.shape || 'sphere', size: PopHost._n(c.size, 3), spin: PopHost._n(c.spin, 0.3), color: c.color || '#9ad0ff', blend: c.blend || 'add' } });
+    if(!out) return;
+    let cv = this._cv[id]; if(!cv){ cv = this._cv[id] = document.createElement('canvas'); }
+    if(cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+    const cx = cv.getContext('2d'); cx.clearRect(0, 0, W, H); try { cx.drawImage(out, 0, 0, W, H); } catch(_e){}
+  },
+  canvas(id){ return this._cv[id] || null; },
+  prune(live){ for(const id in this._cv){ if(!live.has(id)) delete this._cv[id]; } },
+};
 function drawContent(ctx, L, inst, W, H, baseScale){
   const c=L.content;
   const cx=inst.x*W, cy=inst.y*H;
@@ -3650,6 +3669,10 @@ function drawContent(ctx, L, inst, W, H, baseScale){
     // this layer (drop the per-instance transform, like sketch). Nothing until ready.
     const pc=PopHost.canvas(L.id);
     if(pc){ ctx.setTransform(1,0,0,1,0,0); try{ ctx.drawImage(pc,0,0,W,H); }catch(_e){} ctx.restore(); return; }
+  } else if(c.kind==='scene3d'){
+    // 3D point-cloud layer: full-stage blit of the scene3d canvas (like sketch).
+    const s3=Scene3DHost.canvas(L.id);
+    if(s3){ ctx.setTransform(1,0,0,1,0,0); try{ ctx.drawImage(s3,0,0,W,H); }catch(_e){} ctx.restore(); return; }
   } else if(c.kind==='generator'){
     // procedural: animated rings
     ctx.strokeStyle=c.color||'#6ee7ff'; ctx.lineWidth=Math.max(1,sz*0.03);
@@ -3986,6 +4009,7 @@ const Engine = {
       // blit reads this tick's freshest frame (inputs from the stage; control
       // values resolved from the schema + any wired param: binding).
       if(L.content && L.content.kind==='particles'){ PopHost.tick(L.id, L.content, W, H, dt, time); }
+      if(L.content && L.content.kind==='scene3d'){ Scene3DHost.tick(L.id, L.content, W, H, time); }
       if(L.content && L.content.kind==='sketch'){
         SketchHost.ensure(L.content.sketchId, L.content.code, L.content.controls);
         SketchHost.tick(L.content.sketchId, W, H, SketchHost.frame(dt), sketchControlVals(L.content), sketchContentSources(L.content));
@@ -4019,6 +4043,7 @@ const Engine = {
     for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
     SketchHost.prune(live);   // tear down iframes for sketch layers that went away
     PopHost.prune(live);      // free GPU particle buffers for layers that went away
+    Scene3DHost.prune(live);  // free 3D layer canvases for layers that went away
     // free GPU/CPU fluid buffers for layers (or fluid effects) that went away.
     const fluidLive=new Set(layers.filter(L=>layerHasFluid(L)).map(L=>L.id));
     for(const id of Array.from(_gpuFluidIds)){ if(!fluidLive.has(id)) disposeFluid(id); }
@@ -4365,7 +4390,7 @@ function renderInspector(){
   /* CONTENT accordion */
   body.appendChild(accordion('Content',(b)=>{
     b.appendChild(fSelect('Kind',L.content.kind,
-      [['shape','Shape'],['text','Text'],['asset','Wired asset'],['generator','Generator'],['particles','Particles']],
+      [['shape','Shape'],['text','Text'],['asset','Wired asset'],['generator','Generator'],['particles','Particles'],['scene3d','3D']],
       v=>{ L.content.kind=v; renderInspector(); }));
     if(L.content.kind==='shape'){
       b.appendChild(fSelect('Shape',L.content.shape||'rect',[['rect','Rect'],['circle','Circle'],['tri','Triangle']],v=>L.content.shape=v));
@@ -4386,6 +4411,14 @@ function renderInspector(){
       b.appendChild(fColor('Color',L.content.color||'#8cd8ff',v=>L.content.color=v));
       b.appendChild(fSelect('Blend',L.content.blend||'add',[['add','Additive'],['alpha','Alpha']],v=>L.content.blend=v));
       b.appendChild(html('<p class="hint">GPU particles: move the pointer to attract, hold to emit from the cursor. Keep positioning on Single.</p>'));
+    } else if(L.content.kind==='scene3d'){
+      b.appendChild(fSelect('Shape',L.content.shape||'sphere',[['sphere','Sphere'],['torus','Torus'],['wave','Wave']],v=>L.content.shape=v));
+      b.appendChild(fSlider('Points',L.content.count||6000,256,100000,256,v=>L.content.count=v));
+      b.appendChild(fSlider('Point size',L.content.size!=null?L.content.size:3,1,12,0.5,v=>L.content.size=v));
+      b.appendChild(fSlider('Spin',L.content.spin!=null?L.content.spin:0.3,0,2,0.01,v=>L.content.spin=v));
+      b.appendChild(fColor('Color',L.content.color||'#9ad0ff',v=>L.content.color=v));
+      b.appendChild(fSelect('Blend',L.content.blend||'add',[['add','Additive'],['alpha','Alpha']],v=>L.content.blend=v));
+      b.appendChild(html('<p class="hint">3D point-cloud surface; orbit with the pointer. A 3D layer that flows through the 2D effect stack. Keep positioning on Single.</p>'));
     } else {
       b.appendChild(fColor('Color',L.content.color||'#6ee7ff',v=>L.content.color=v));
       b.appendChild(html('<p class="hint">Procedural animated rings generator.</p>'));
