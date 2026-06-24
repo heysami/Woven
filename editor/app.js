@@ -37758,6 +37758,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const query = (node.goal || "").trim();
     if (!query) { setRun({ status: "error", error: "Enter what to research first." }); return; }
     setRun({ status: "loading", phase: "searching", error: null });
+    // Float the working badge (orange diamond) on this node while it runs.
+    updateNode(nodeId, { runStatus: "running" });
     try {
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       const ctx = _assistantCollectText(ups);
@@ -37837,6 +37839,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         colWidths: [220, 200, 320, 260, 340], rowH: 190,
       });
       updateNode(nodeId, { tableId });
+      updateNode(tableId, { runStatus: "running" });   // diamond floats on the table too
 
       // Drop a real reusable node into the Visual column per result.
       kept.forEach((k, ri) => {
@@ -37867,8 +37870,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           return { ...d, nodes: [...(d.nodes || []), { id: newId, ...fbody, x: tx, y: ty + 40 + rows.length * 190 + 40 }] };
         });
       }
+      updateNode(nodeId, { runStatus: "done" });
+      if (node.tableId || tableId) updateNode(tableId, { runStatus: "done" });
       setRun({ status: "done", phase: "done", ranAt: Date.now() });
     } catch (e) {
+      updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
   }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowSetCellText, _assistantDropTable]);
@@ -37886,6 +37892,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const task = (node.task || "").trim();
     if (!task) { setRun({ status: "error", error: "Describe what to test first." }); return; }
     setRun({ status: "loading", phase: "personas", error: null });
+    updateNode(nodeId, { runStatus: "running" });   // float the working badge
     try {
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       const ctx = _assistantCollectText(ups);
@@ -37929,6 +37936,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         colWidths: [140, 120, 200, 180, 160, 220, 300, 260],
       });
       updateNode(nodeId, { tableId });
+      updateNode(tableId, { runStatus: "running" });   // diamond floats on the table while it fills
 
       // Parse a tester's reply into reply / idea / questions[].
       const parseTester = (txt) => {
@@ -38005,8 +38013,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           } catch (e) { /* keep prior reply */ }
         }
       }
+      updateNode(nodeId, { runStatus: "done" });
+      updateNode(tableId, { runStatus: "done" });
       setRun({ status: "done", phase: "done", ranAt: Date.now() });
     } catch (e) {
+      updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
   }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowSetCellText, _assistantDropTable]);
@@ -68410,6 +68421,7 @@ function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChang
         wiredReferenceFolder=${""}
         wiredWriteRoot=${""}
         wiredFileOut=${""}
+        autoStartPrompt=${"Begin the interview now. Greet me in one short line, then ask your FIRST question (with your recommended answer)."}
         onClose=${() => setChatOpen(false)}
         onChange=${onChange}
       />`}
@@ -75618,7 +75630,7 @@ const AGENT_OUTPUT_GUIDANCE = {
    editor view uses: POST /__run spawns the subprocess, ChatDrawer subscribes
    to /__stream as SSE. Filesystem tools (Read/Edit/Write/Bash) are the
    agent's real capability - no separate "tool dispatch" needed. */
-function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot, wiredReferenceFolder, wiredWriteRoot, wiredFileOut, onClose, onChange }) {
+function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot, wiredReferenceFolder, wiredWriteRoot, wiredFileOut, onClose, onChange, autoStartPrompt }) {
   // Branch is encoded in the wired read-root path: "source/<branch>/". If no
   // read-root is wired, fall back to "main" so the agent at least has a cwd.
   const branch = (() => {
@@ -75735,6 +75747,20 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     onChange && onChange({ runId: run.runId, lastRunId: run.runId });
     return run;
   };
+
+  // Auto-start: when opened with an autoStartPrompt and NO existing run (the
+  // Interviewing assistant's first open), spawn the run immediately so the agent
+  // asks its first question - instead of showing an empty new-chat shell.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (!autoStartPrompt) return;
+    if (node.runId || node.lastRunId) return;   // already has a run - just reattach
+    if (!chatRun?.isNew) return;
+    autoStartedRef.current = true;
+    spawnFromComposer(autoStartPrompt).catch(() => { autoStartedRef.current = false; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // After each turn ends, refresh any visible prototype iframes - the agent
   // may have written into the prototype's source/.
