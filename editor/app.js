@@ -24252,7 +24252,13 @@ function workflowPortPosition(node, side, ctx) {
     }
   }
   if (node.kind === "agent") {
-    const frac = WORKFLOW_AGENT_PORT_FRAC[side];
+    let frac = WORKFLOW_AGENT_PORT_FRAC[side];
+    // Standard agent node: system prompt on TOP, input in the MIDDLE (swapped
+    // from the default). The prototype-generator preset keeps input on top.
+    if (node.preset !== "prototype-generator") {
+      if (side === "input" || side === "prompt-in") frac = 3 / 6;
+      else if (side === "system-in") frac = 1 / 6;
+    }
     if (frac != null) {
       const bodyTop = 32;
       const bodyH = Math.max(0, h - bodyTop);
@@ -74983,8 +74989,8 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
     { side: "reference-folder", label: "ref",   title: "Connect a Folder node → its path becomes an additional read scope for the agent (moodboard, brand kit, screenshots, reference designs - anything that informs the build). Separate from the DS port below." },
     { side: "folder-read",      label: "ds",    title: "Connect a Design system node's source-read port → the agent reads design-systems/<dsId>/ as the token + primitive vocabulary for the prototype. DS only - for arbitrary folders use the ref port above. If nothing wired, falls back to design-systems/main/ by default." },
   ] : [
-    { side: "input",       label: "input",  title: "Connect one or more text nodes → each becomes a labeled input section in the agent's prompt. Multiple inputs allowed." },
     { side: "system-in",   label: "system", title: "Connect a text node → this is the agent's system prompt / instructions" },
+    { side: "input",       label: "input",  title: "Connect one or more text nodes → each becomes a labeled input section in the agent's prompt. Multiple inputs allowed." },
     { side: "folder-read", label: "read-only folder access",   title: "Connect a prototype's source-read port OR a DS library's source-read port → agent operates in that folder (source/<branch>/ or design-systems/<dsId>/)" },
   ];
   const PORTS_RIGHT = isPrototypePreset ? [
@@ -75385,7 +75391,11 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         // edges from a totally different y, so the user grabbed "input"
         // and got "ds" connected and vice versa. Pinning by side name
         // closes the gap.
-        const SIDE_TO_LEFT_SLOT  = { "input": "l1", "prompt-in": "l1", "system-in": "l2", "reference-folder": "l2", "folder-read": "l3" };
+        // Standard agent: system prompt on top (l1), input in the middle (l2).
+        // The prototype-generator preset keeps input on top.
+        const SIDE_TO_LEFT_SLOT  = isPrototypePreset
+          ? { "input": "l1", "prompt-in": "l1", "reference-folder": "l2", "folder-read": "l3" }
+          : { "system-in": "l1", "input": "l2", "prompt-in": "l2", "folder-read": "l3" };
         const SIDE_TO_RIGHT_SLOT = { "folder-write": "r1", "output": "r2", "file-out": "r2", "output-1": "r2", "output-2": "r2", "output-3": "r2" };
         const lefts = PORTS_LEFT.map((p, i) => {
           const slot = SIDE_TO_LEFT_SLOT[p.side] || ("l" + (i + 1));
