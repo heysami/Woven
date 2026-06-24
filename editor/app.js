@@ -65646,17 +65646,12 @@ export function stepRope(rope, anchor, values) {
     z: ((f * 2.11) % 1 - 0.5) * values.boundsZ
   };
 }`),
-    _positionTemplate("surface", "Surface", "surface", {
-      meshId: { type: "text", value: "" },
-      density: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
-      offset: { type: "number", value: 0, min: -100, max: 100, step: 0.1 }
-    }, ["meshId: values.meshId", "density: values.density", "offset: values.offset"], `export function projectToSurface(point, normal, values) {
-  return {
-    x: point.x + normal.x * values.offset,
-    y: point.y + normal.y * values.offset,
-    z: point.z + normal.z * values.offset
-  };
-}`)
+    // Face 3D: maps instances onto face landmarks (camera) or a procedural face
+    // mask. Mirrors the composer mode (the `surface` template was vestigial - no
+    // such composer mode existed - and was dropped).
+    _positionTemplate("face-3d", "Face 3D", "face-3d", {
+      size: { type: "number", value: 1, min: 0.1, max: 3, step: 0.05 }
+    }, ["size: values.size"])
   ],
   "trigger": [
     _triggerTemplate("none", "No trigger", "none", {}, [], "", []),

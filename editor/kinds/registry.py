@@ -1745,7 +1745,7 @@ KINDS = {
         "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []},
         "pauseAfter":   False,
-        "notes": "User-driven layered interactive surface. Each layer = {positioning · trigger · effects}: grid/instance/physics/drawn/rope/camera-feed positioning, mouse/timeline/audio/camera triggers that cross-affect layers, and GPU/shader effects (shader-lab taxonomy). Bakes interactive source/<branch>/mm-<id>.html. Agent edits source/<branch>/mm-<id>.json.",
+        "notes": "User-driven layered interactive surface. Each layer = {content · positioning · trigger · effects}. CONTENT kind is one of shape|text|asset|generator|particles|scene3d: `particles` is a GPU point system (params count,size,noise,gravityY,attract,life,color,blend; the pointer attracts, holding emits from the cursor); `scene3d` is a 3D point-cloud surface (params shape:sphere|torus|wave, count,size,spin,color,blend; pointer orbits). Both render full-stage and flow through the effect/mask/blend stack - keep positioning on `single`. POSITIONING: grid/instance/physics/drawn/rope/camera-feed/grid-3d/scatter-3d/face-3d. TRIGGERS: mouse/timeline/audio/camera, cross-affect layers. EFFECTS: GPU/shader (shader-lab taxonomy) incl. transform/color/tonemap/convolve/lens-distort, multi-input blend/matte/displace-by/lookup (pick the 2nd layer), and frame-history row-delay/cache-select/optical-flow. Bakes interactive source/<branch>/mm-<id>.html. Agent edits source/<branch>/mm-<id>.json.",
     },
     "gaussian-splat-3d": {
         "title":        "Splat Lab",
