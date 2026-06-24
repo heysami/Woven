@@ -24414,6 +24414,17 @@ function _interviewerSystemPrompt(node, seedText) {
     (seedText ? `\n\nSTARTING CONTEXT / SEED:\n${seedText}` : `\n\n(No seed wired - open by asking the user what they are trying to build.)`);
 }
 
+// Normalise an assistant verdict word into { key, emoji, color, label }.
+// color is a wb colour token; emoji is the big sticker stamp.
+function _assistantVerdict(v) {
+  const s = String(v == null ? "" : v).toLowerCase().trim();
+  if (/recommend/.test(s)) return { key: "recommended", emoji: "✅", color: "green",  label: "Recommended" };
+  if (/\bgood\b|great|strong|yes/.test(s)) return { key: "good", emoji: "👍", color: "green",  label: "Good" };
+  if (/possib|maybe|could|potential|might/.test(s)) return { key: "possible", emoji: "💡", color: "blue", label: "Possibly good" };
+  if (/bad|poor|weak|no\b|avoid|reject/.test(s)) return { key: "bad", emoji: "👎", color: "pink", label: "Bad" };
+  return { key: "nothing", emoji: "😐", color: "gray", label: "Nothing notable" };
+}
+
 // Collect folder scopes from upstream entries.
 function _assistantCollectFolders(entries) {
   const out = [];
@@ -31696,6 +31707,50 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return newId;
   }, [setData]);
 
+  // Drop a formatted textbox (commentary) into a cell, coloured by token, sized
+  // to the cell and growing the row to fit. Used for assistant verdict notes.
+  const workflowAddCellBox = useCallback((tableId, r, c, text, colorToken) => {
+    setData(d => {
+      const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
+      if (!t) return d;
+      const cols = wbTableCols(t).slice(), rows = wbTableRows(t).slice();
+      const w = Math.max(80, (cols[c] || 220) - 12);
+      const needH = Math.min(700, _measureWrappedTextHeight(String(text || ""), w - 14) + 24);
+      let nt = t;
+      if ((rows[r] || 0) < needH + 12) { rows[r] = needH + 12; nt = wbTableSync({ ...t, cols, rows }); }
+      const rect = wbTableCellRect(nt, r, c);
+      const it = wbMakeItem("textbox", {
+        text: String(text == null ? "" : text), x: rect.x + 6, y: rect.y + 6,
+        w, h: needH, color: colorToken || "blue", align: "left", fontSize: "sm",
+      });
+      it.cell = { tableId, r, c, ox: 6, oy: 6 };
+      const nodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(n => n.id === tableId ? nt : n);
+      return { ...d, wb: [...(Array.isArray(d.wb) ? d.wb : []), it], nodes };
+    });
+  }, [setData]);
+
+  // Drop a big emoji sticker (the verdict stamp) into a cell, centred, growing
+  // the cell to fit.
+  const workflowAddCellSticker = useCallback((tableId, r, c, emoji, size) => {
+    const sz = Math.max(28, Math.round(size || 48));
+    setData(d => {
+      const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
+      if (!t) return d;
+      const cols = wbTableCols(t).slice(), rows = wbTableRows(t).slice();
+      const need = sz + 16;
+      let grew = false;
+      if ((cols[c] || 0) < need) { cols[c] = need; grew = true; }
+      if ((rows[r] || 0) < need) { rows[r] = need; grew = true; }
+      const nt = grew ? wbTableSync({ ...t, cols, rows }) : t;
+      const rect = wbTableCellRect(nt, r, c);
+      const ox = Math.max(0, Math.round((rect.w - sz) / 2)), oy = Math.max(0, Math.round((rect.h - sz) / 2));
+      const it = wbMakeItem("sticker", { emoji: emoji || "⭐", x: rect.x + ox, y: rect.y + oy, w: sz, h: sz });
+      it.cell = { tableId, r, c, ox, oy };
+      const nodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(n => n.id === tableId ? nt : n);
+      return { ...d, wb: [...(Array.isArray(d.wb) ? d.wb : []), it], nodes };
+    });
+  }, [setData]);
+
   // Strip every cell-bound item/node from a table (for re-run). The table node
   // itself is kept. wb text items are removed; bound nodes are unbound.
   const workflowClearTableCells = useCallback((tableId) => {
@@ -37809,8 +37864,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const filtText = await assistantLlm([{ role: "user", content:
           `Filter web search results against the user's quality criteria.\n\nRESEARCH GOAL:\n${query}\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\nRESULTS (JSON):\n` +
           JSON.stringify(results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || (x.highlights || [])[0] || "", text: (x.text || "").slice(0, 500) }))) +
-          `\n\nReturn ONLY a JSON array of the results that PASS, best first, each {"i":<index>,"title":"...","url":"...","summary":"<=2 sentences","why":"why it meets the criteria"}. Drop low-quality results. No prose.` }],
-          { model: node.model, maxTokens: 3000 });
+          `\n\nReturn ONLY a JSON array of the results that PASS, best first, each {"i":<index>,"title":"...","url":"...","summary":"<=2 sentences","why":"why it meets the criteria","verdict":"recommended|good|possible|bad|nothing","comment":"<one-line assessment for the user>"}. Drop low-quality results. No prose.` }],
+          { model: node.model, maxTokens: 3500 });
         kept = _assistantExtractJson(filtText);
         if (!Array.isArray(kept) || !kept.length) {
           kept = results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || "", why: "" }));
@@ -37836,7 +37891,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           `RESEARCH GOAL:\n${query}\n` + (ctx ? `\nCONTEXT:\n${ctx.slice(0, 1500)}` : "") +
           `\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\n` +
           `Find up to ${node.numResults || 8} high-quality results via web search. For each, also choose the single best VISUAL to illustrate it: "image" (a real image URL from the page, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link".\n\n` +
-          `Return ONLY a JSON array, best first, each: {"title","url","summary (<=2 sentences)","why (why it meets the criteria)","visual":"image|color|font|link","value":"<url|hex|font name|>"}.`;
+          `Also give a VERDICT for the user on each result: "recommended" | "good" | "possible" | "bad" | "nothing", plus a one-line "comment".\n\n` +
+          `Return ONLY a JSON array, best first, each: {"title","url","summary (<=2 sentences)","why (why it meets the criteria)","visual":"image|color|font|link","value":"<url|hex|font name|>","verdict":"recommended|good|possible|bad|nothing","comment":"<one-line assessment>"}.`;
         const rr = await fetch(apiUrl("/__assistant/research"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model: node.model, system: sys, prompt }),
@@ -37845,39 +37901,65 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (!rr.ok || !rj.ok) throw new Error(rj.error || ("agent research failed (HTTP " + rr.status + ")"));
         const arr = _assistantExtractJson(rj.text);
         if (!Array.isArray(arr) || !arr.length) throw new Error("Agent returned no parseable results - try again, or switch Search via to Exa.");
-        kept = arr.map((x, i) => ({ i, title: x.title || x.url || "", url: x.url || "", summary: x.summary || "", why: x.why || "" }));
+        kept = arr.map((x, i) => ({ i, title: x.title || x.url || "", url: x.url || "", summary: x.summary || "", why: x.why || "", verdict: x.verdict || "", comment: x.comment || "" }));
         arr.forEach((x, i) => { visById[i] = { i, visual: x.visual || "link", value: x.value || x.url || "" }; });
       }
 
       // Build the result table (fresh each run).
       setRun({ status: "loading", phase: "building table" });
       if (node.tableId) _assistantDropTable(node.tableId);
-      const headers = ["Result", "Source", "Summary", "Why it qualifies", "Visual"];
-      const rows = kept.map(k => [k.title || "", k.url || "", k.summary || "", k.why || "", ""]);
+      const headers = ["Result", "Source", "Summary", "Why it qualifies", "Visual", "Verdict", "Assistant"];
+      const colWidths = [220, 200, 320, 240, 300, 90, 300];
+      const rows = kept.map(k => [k.title || "", k.url || "", k.summary || "", k.why || "", "", "", ""]);
       const tx = Math.round(node.x + (node.w || 420) + 80), ty = Math.round(node.y);
       const tableId = workflowBuildResultTable({
         title: "Research: " + query.slice(0, 40), headers, rows, x: tx, y: ty,
-        colWidths: [220, 200, 320, 260, 340], rowH: 190,
+        colWidths, rowH: 190,
       });
       updateNode(nodeId, { tableId });
       updateNode(tableId, { runStatus: "running" });   // diamond floats on the table too
 
-      // Drop a real reusable node into the Visual column per result.
+      // Per result: Visual node (col 4), Verdict emoji sticker (col 5),
+      // Assistant commentary box (col 6). Image URLs ALSO open as browser nodes.
+      const browserUrls = [];
       kept.forEach((k, ri) => {
         const v = visById[k.i] || { visual: "link", value: k.url };
-        const r = ri + 1, c = 4;
+        const r = ri + 1;
         const val = (v.value || "").trim();
         if (v.visual === "color" && /^#?[0-9a-fA-F]{3,8}$/.test(val.replace("#", ""))) {
           const hex = val.startsWith("#") ? val : "#" + val;
-          workflowAddCellNode(tableId, r, c, "color-palette", { name: (k.title || "Color").slice(0, 24), swatches: [{ name: "--accent", value: hex }] });
+          workflowAddCellNode(tableId, r, 4, "color-palette", { name: (k.title || "Color").slice(0, 24), swatches: [{ name: "--accent", value: hex }] });
         } else if (v.visual === "font" && val) {
-          workflowAddCellNode(tableId, r, c, "typography", { name: val, fontFamily: val });
-        } else if (v.visual === "image" && val) {
-          workflowAddCellNode(tableId, r, c, "asset", { assetKind: "image", path: val });
+          workflowAddCellNode(tableId, r, 4, "typography", { name: val, fontFamily: val });
+        } else if (v.visual === "image" && /^https?:/i.test(val)) {
+          workflowAddCellNode(tableId, r, 4, "asset", { assetKind: "image", path: val });
+          browserUrls.push(val);
         } else {
-          workflowSetCellText(tableId, r, c, k.url || "(link)");
+          workflowSetCellText(tableId, r, 4, k.url || "(link)");
+          if (/^https?:/i.test(k.url || "")) browserUrls.push(k.url);
         }
+        // Verdict sticker + commentary box.
+        const vd = _assistantVerdict(k.verdict || (k.why ? "good" : "nothing"));
+        workflowAddCellSticker(tableId, r, 5, vd.emoji, 44);
+        workflowAddCellBox(tableId, r, 6, (k.comment || k.why || vd.label), vd.color);
       });
+
+      // Open returned URLs as live browser nodes, stacked to the right of the
+      // table so they don't bloat the cells.
+      if (browserUrls.length) {
+        const tableW = colWidths.reduce((a, b) => a + b, 0);
+        const seen = new Set();
+        const urls = browserUrls.filter(u => { if (seen.has(u)) return false; seen.add(u); return true; }).slice(0, 12);
+        setData(d => {
+          const nodes = [...(d.nodes || [])];
+          urls.forEach((u, idx) => {
+            const body = workflowMakeNodeOfKind("browser", { url: u });
+            if (!body) return;
+            nodes.push({ id: workflowNewNodeId(), ...body, x: tx + tableW + 80, y: ty + idx * ((body.h || 540) + 40) });
+          });
+          return { ...d, nodes };
+        });
+      }
 
       // If the research drew on local folders, drop a folder node so the user
       // can see where the gathered files live.
@@ -37898,7 +37980,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowSetCellText, _assistantDropTable]);
+  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAddCellBox, workflowAddCellSticker, workflowSetCellText, _assistantDropTable]);
 
   // ── Assistant 2: Testing assistant (persona testers → per-row feedback) ───
   // Each tester row runs as a REAL "simple agent" subagent via
@@ -37949,12 +38031,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       testers = testers.slice(0, cap);
 
       if (node.tableId) _assistantDropTable(node.tableId);
-      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Reply", "Idea"];
-      const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", ""]);
+      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Reply", "Idea", "Verdict", "Assistant"];
+      const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", "", "", ""]);
       const tx = Math.round(node.x + (node.w || 440) + 80), ty = Math.round(node.y);
       const tableId = workflowBuildResultTable({
         title: "Testers: " + task.slice(0, 30), headers, rows, x: tx, y: ty,
-        colWidths: [140, 120, 200, 180, 160, 220, 300, 260],
+        colWidths: [140, 120, 200, 180, 160, 220, 300, 260, 90, 300],
       });
       updateNode(nodeId, { tableId });
       updateNode(tableId, { runStatus: "running" });   // diamond floats on the table while it fills
@@ -38034,6 +38116,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           } catch (e) { /* keep prior reply */ }
         }
       }
+
+      // Judging pass: the assistant reads every tester's reply and gives a
+      // per-tester verdict + one-line commentary, rendered as a big emoji
+      // sticker (Verdict) + a coloured commentary box (Assistant).
+      setRun({ status: "loading", phase: "judging" });
+      let verdicts = [];
+      try {
+        const jText = await assistantLlm([{ role: "user", content:
+          `For each tester below, judge - from THEIR reply - how that persona feels about the idea, as a verdict for the user.\n\nTASK / GOAL:\n${task}\n\nTESTERS (JSON):\n` +
+          JSON.stringify(state.map((s, i) => ({ i, name: s.t.name || ("Tester " + (i + 1)), reply: (s.reply || "").slice(0, 600) }))) +
+          `\n\nReturn ONLY a JSON array aligned by index: [{"i":<index>,"verdict":"recommended|good|possible|bad|nothing","comment":"<one-line takeaway for the user>"}]. No prose.` }],
+          { model: node.model, maxTokens: 1500 });
+        const arr = _assistantExtractJson(jText);
+        if (Array.isArray(arr)) for (const v of arr) if (v && typeof v.i === "number") verdicts[v.i] = v;
+      } catch (e) { /* verdicts optional */ }
+      for (let i = 0; i < state.length; i++) {
+        const v = verdicts[i] || {};
+        const vd = _assistantVerdict(v.verdict || "");
+        workflowAddCellSticker(tableId, i + 1, 8, vd.emoji, 44);
+        workflowAddCellBox(tableId, i + 1, 9, (v.comment || vd.label), vd.color);
+      }
+
       updateNode(nodeId, { runStatus: "done" });
       updateNode(tableId, { runStatus: "done" });
       setRun({ status: "done", phase: "done", ranAt: Date.now() });
@@ -38041,7 +38145,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowSetCellText, _assistantDropTable]);
+  }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellBox, workflowAddCellSticker, workflowSetCellText, _assistantDropTable]);
 
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
