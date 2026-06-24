@@ -806,6 +806,30 @@ export const LogicGraph = {
       const num = Number(v);
       return { value: Number.isFinite(num) ? num : 0, text: v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)) };
     },
+    // Live WebSocket: open on first eval, reconnect when the url changes, expose
+    // the latest message + a connected flag + an `updated` pulse. Self-contained
+    // in node state (the socket closes on url change; a deleted node's socket is
+    // GC-pressured but a centralized conductor would manage that more strictly).
+    'dat-websocket'(node, read, frame, ctx, state) {
+      const s = state[node.id] || (state[node.id] = { ws: null, url: '', open: false, last: '', ver: 0, emit: 0 });
+      const url = String((node.params && node.params.url) || '').trim();
+      if (url !== s.url) {
+        if (s.ws) { try { s.ws.close(); } catch (_e) {} s.ws = null; s.open = false; }
+        s.url = url;
+        if (url && typeof WebSocket === 'function') {
+          try {
+            const ws = new WebSocket(url); s.ws = ws;
+            ws.onopen = () => { s.open = true; };
+            ws.onclose = () => { s.open = false; };
+            ws.onerror = () => { s.open = false; };
+            ws.onmessage = (e) => { s.last = (typeof e.data === 'string') ? e.data : ''; s.ver++; };
+          } catch (_e) { s.ws = null; }
+        }
+      }
+      let updated = false; if (s.ver !== s.emit) { updated = true; s.emit = s.ver; }
+      const num = Number(s.last);
+      return { message: s.last, value: Number.isFinite(num) ? num : 0, connected: !!s.open, updated: updated };
+    },
 
     // ---- 2.7 output sink ------------------------------------------------------
     'output-binding'(node, read) {

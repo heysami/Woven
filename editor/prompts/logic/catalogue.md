@@ -61,6 +61,7 @@ CHOP SIGNAL (generators, time-domain operators, and the `channel` dtype - a Floa
 DATA (async web data; the fetch is fire-and-forget in node state, never blocks the engine; cross-origin needs a CORS endpoint or the /__web_proxy):
 - `dat-fetch` [url, method: GET|POST, pollMs] - (o) text(string) value(number) ok(boolean) updated(event). Poll a URL; pollMs=0 fetches once; `updated` pulses on each new response. Wire `text` into op-json-path to pull a field.
 - `op-json-path` [path: e.g. data.items[0].price] - (i) text(string) - (o) value(number) text(string). Parse a JSON string and extract one value by dotted path.
+- `dat-websocket` [url] - (o) message(string) value(number) connected(boolean) updated(event). Live WebSocket; latest message + `updated` pulse; reconnects on url change. Wire `message` into op-json-path to pull a field.
 
 PHYSICS (drives the composer's ONE shared physics world; full force model in the `runtime` section):
 - `force` [type: attract|repel|vortex|drag|wind, radius, strength, falloff] - (i) pos(vector2) - (o) none. A GENERIC force field injected into the mm-composer's single shared Matter world. EVERY physics object (position modes `physics`/gravity, `shatter`, `rope`, `rope-ink`, `boids`) lives in that ONE world, so they collide with each other AND react to wired forces. The force is NEVER hardcoded to the mouse: wire ANY vector2 into `pos` (input-pointer.pos, input-touch.pos, vision-detect.indexTip, an op-vector output, ...). `force` has no output - just place it and wire its `pos`; the composer enumerates it.

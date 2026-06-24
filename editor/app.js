@@ -64801,6 +64801,18 @@ const LOGIC_NODE_DEFS = {
     provides: { value: { label: "value", dtype: "number" }, text: { label: "text", dtype: "string" } },
     accepts: { text: { label: "text", dtype: "string" } },
   },
+  "dat-websocket": {
+    glyph: "⇌", label: "WebSocket", section: "Data", w: 240, h: 280,
+    desc: "Live WebSocket: latest message + connected flag",
+    controls: { url: { type: "text", value: "" } },
+    provides: {
+      message: { label: "message", dtype: "string" },
+      value: { label: "value", dtype: "number" },
+      connected: { label: "connected", dtype: "boolean" },
+      updated: { label: "updated", dtype: "event" },
+    },
+    accepts: {},
+  },
   // ── 2.75 Physics (generic force field for the composer's unified world) ──
   // The `force` node is a SINK that injects a GENERIC force into the mm-composer's
   // ONE shared Matter world (see editor/tools/_shared/PHYSICS_WORLD_DESIGN.md). It
