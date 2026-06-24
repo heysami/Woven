@@ -150,6 +150,15 @@
       // "KEY_ID:KEY_SECRET" string; the renderer sends it after `Key `.
       testable: false, // no free test endpoint; first real Run validates the key
     },
+    exa: {
+      id: "exa",
+      label: "Exa",
+      hint: "Web search (exa.ai) for the Research assistant - PAID + metered, never auto-runs",
+      envKey: "TH_EXA_API_KEY",
+      docsUrl: "https://dashboard.exa.ai/api-keys",
+      integrated: true,
+      testable: true, // /search with numResults:1 validates the key
+    },
   };
 
   // v3.4.7 (June 2026) - Catalog refreshed against current provider APIs.
