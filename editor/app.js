@@ -24935,6 +24935,23 @@ function wbMakeItem(type, payload) {
   return { id: wbNewId(), ...make(payload || {}) };
 }
 
+// The interconvertible TEXT CARRIERS. Three are whiteboard items (plain text,
+// a bordered text box, a sticky note); the fourth is a real `prompt` node.
+// They all carry the same essential payload - a string of text - so the canvas
+// lets the user flip a selection between any of them via the floating convert
+// chip (WorkflowConvertBar). `surface` tells the converter which world the
+// target lives in: "wb" (top-level d.wb array) or "node" (d.nodes).
+const WORKFLOW_WB_TEXTLIKE = new Set(["text", "textbox", "sticky"]);
+const WORKFLOW_TEXT_CONVERT_TARGETS = [
+  { key: "text",    surface: "wb",   label: "Text" },
+  { key: "textbox", surface: "wb",   label: "Text box" },
+  { key: "sticky",  surface: "wb",   label: "Sticky note" },
+  { key: "prompt",  surface: "node", label: "Prompt node" },
+];
+// Is this item/node one of the convertible text carriers?
+function workflowIsTextCarrierWb(it) { return !!(it && WORKFLOW_WB_TEXTLIKE.has(it.type)); }
+function workflowIsTextCarrierNode(n) { return !!(n && n.kind === "prompt"); }
+
 // World-space AABB for any wb item. Arrows derive from endpoints; everything
 // else stores x/y/w/h directly (text caches its measured h on edit commit so
 // this never has to touch the DOM).
@@ -29320,6 +29337,71 @@ function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
   `, document.body);
 }
 
+// Floating "convert" chip for a selection of text carriers (plain text / text
+// box / sticky note / prompt node). Portaled to body, rAF-tracks the world-space
+// `.workflow-convert-anchor` element's screen rect (same glue-through-pan/zoom
+// trick as WorkflowGroupAlignBar). Sits just BELOW the selection so it never
+// fights the align bar (which lives above). Click → a small menu of the four
+// target kinds; pick one and every convertible item in the selection becomes
+// that kind. `count` drives the label; `hasNodeEdges` warns that converting a
+// wired prompt node to a whiteboard item drops its connections.
+function WorkflowConvertBar({ count, hasNodeEdges, onConvert }) {
+  const [rect, setRect] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let raf = 0, last = null;
+    const tick = () => {
+      const el = document.querySelector(".workflow-convert-anchor");
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height };
+          setRect(last);
+        }
+      } else if (last) { last = null; setRect(null); }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  // Close the menu whenever the selection (and thus the anchor) goes away.
+  useEffect(() => { if (!rect) setOpen(false); }, [rect]);
+  if (!rect) return null;
+  const BARW = 132;
+  let left = rect.left + rect.width / 2 - BARW / 2;
+  let top = rect.top + rect.height + 8;
+  const canvasEl = document.querySelector(".workflow-canvas-wrap");
+  if (canvasEl) {
+    const c = canvasEl.getBoundingClientRect();
+    left = Math.max(c.left + 8, Math.min(left, c.right - BARW - 8));
+    // If the selection hugs the bottom edge, flip the chip ABOVE it.
+    if (top > c.bottom - 40) top = rect.top - 40;
+  }
+  return createPortal(html`
+    <div className="workflow-convert-bar"
+      style=${{ position: "fixed", top: top + "px", left: left + "px", zIndex: 45 }}
+      onMouseDown=${(e) => e.stopPropagation()}>
+      <button className="workflow-convert-chip"
+        title=${"Convert " + count + " selected item" + (count === 1 ? "" : "s") + " to another text kind"}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); setOpen(o => !o); }}>
+        <${Icon.Loop}/> Convert to ▾
+      </button>
+      ${open && html`
+        <div className="workflow-convert-menu" onMouseDown=${(e) => e.stopPropagation()}>
+          ${WORKFLOW_TEXT_CONVERT_TARGETS.map(t => html`
+            <button key=${t.key} className="workflow-convert-item"
+              onMouseDown=${(e) => e.stopPropagation()}
+              onClick=${(e) => { e.stopPropagation(); setOpen(false); onConvert(t); }}>
+              ${t.label}
+            </button>`)}
+          ${hasNodeEdges ? html`<div className="workflow-convert-note">Converting a wired prompt node to a whiteboard item drops its connections.</div>` : null}
+        </div>`}
+    </div>
+  `, document.body);
+}
+
 /* v3.8 - Connector-spawn chrome. When EXACTLY ONE node is selected and its
    kind has a WORKFLOW_CONNECT_DEFS entry, render a floating ⊕ button at the
    vertical middle of each side that has menu content (left = upstream
@@ -29896,6 +29978,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const wbItems = data.wb || [];
   const wbItemsRef = useRef(wbItems); wbItemsRef.current = wbItems;
   const dataNodesRef = useRef([]); dataNodesRef.current = data.nodes || [];
+  // The convertible TEXT-CARRIER subset of the current selection (wb text /
+  // text box / sticky note + prompt nodes), its union bbox (world px, for the
+  // floating convert chip's anchor), and whether any selected prompt node has
+  // wired edges (so the chip can warn that wb conversion drops them).
+  const convertSel = useMemo(() => {
+    const its = wbItems.filter(it => selectedWbIds.has(it.id) && workflowIsTextCarrierWb(it));
+    const nds = (data.nodes || []).filter(n => selectedNodeIds.has(n.id) && workflowIsTextCarrierNode(n));
+    const total = its.length + nds.length;
+    if (!total) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const it of its) { const b = wbItemBBox(it); minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h); }
+    for (const n of nds) { const x = n.x || 0, y = n.y || 0, w = n.w || 280, h = n.h || 200; minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h); }
+    const nodeIds = new Set(nds.map(n => n.id));
+    const hasNodeEdges = nodeIds.size > 0 && (data.edges || []).some(e => {
+      const f = workflowParseEdgeRef(e.from), t = workflowParseEdgeRef(e.to);
+      return (f && nodeIds.has(f.node)) || (t && nodeIds.has(t.node));
+    });
+    return { count: total, hasNodeEdges, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } };
+  }, [wbItems, data.nodes, data.edges, selectedWbIds, selectedNodeIds]);
   const toggleWbMode = useCallback((on) => {
     setWbMode(prev => {
       const next = typeof on === "boolean" ? on : !prev;
@@ -29969,6 +30070,82 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }),
     }));
   }, [setData]);
+  // Convert every selected TEXT CARRIER (wb text / text box / sticky note +
+  // prompt nodes) to one target kind, in a single transaction so undo + the
+  // debounced save cover it. wb→wb is an in-place type swap that PRESERVES the
+  // id, z, geometry, and text styling; crossing the wb↔node boundary mints a
+  // fresh item on the other side (different id namespaces), tombstones the old,
+  // and drops a converted prompt node's edges (whiteboard items have no ports).
+  const convertTextSelectionTo = useCallback((target) => {
+    if (!target) return;
+    const wbSel = selectedWbIdsRef.current || new Set();
+    const nodeSel = selectedNodeIdsRef.current || new Set();
+    const wbList = wbItemsRef.current || [];
+    const nodeList = dataNodesRef.current || [];
+    const eligWbIds = new Set(wbList.filter(it => wbSel.has(it.id) && workflowIsTextCarrierWb(it)).map(it => it.id));
+    const eligNodes = nodeList.filter(n => nodeSel.has(n.id) && workflowIsTextCarrierNode(n));
+    if (!eligWbIds.size && !eligNodes.length) return;
+    const textOf = (s) => String((s && (s.text || s.title)) || "");
+    let zc = wbMaxZ(wbList);
+    const removedNodeIds = new Set();
+    const removedWbIds = new Set();
+    const addedNodes = [];
+    const addedWb = [];
+    const wbTypeSwaps = {};   // id → new in-place body (keeps id/z/cell)
+    const nextWbSel = new Set();
+    const nextNodeSel = new Set();
+
+    // wb text-carrier sources.
+    for (const it of wbList) {
+      if (!eligWbIds.has(it.id)) continue;
+      if (target.surface === "wb") {
+        if (it.type === target.key) { nextWbSel.add(it.id); continue; }
+        const body = WORKFLOW_WB_FACTORY[target.key]({
+          x: it.x, y: it.y, w: it.w, text: textOf(it),
+          fontSize: it.fontSize, bold: it.bold, italic: it.italic,
+          align: it.align, rotation: it.rotation, color: it.color,
+        });
+        wbTypeSwaps[it.id] = { ...body, id: it.id, z: it.z, ...(it.cell ? { cell: it.cell } : {}) };
+        nextWbSel.add(it.id);
+        continue;
+      }
+      // target is the prompt NODE: drop the wb item, mint a node in its place.
+      removedWbIds.add(it.id);
+      const nid = workflowNewNodeId();
+      const t = textOf(it);
+      addedNodes.push({ id: nid, ...workflowMakeNodeOfKind("prompt", { text: t, title: (t.split("\n")[0] || "").slice(0, 40) }), x: it.x || 0, y: it.y || 0 });
+      nextNodeSel.add(nid);
+    }
+    // prompt-node sources.
+    for (const n of eligNodes) {
+      if (target.surface === "node") { nextNodeSel.add(n.id); continue; }
+      removedNodeIds.add(n.id);
+      const wid = wbNewId();
+      const body = WORKFLOW_WB_FACTORY[target.key]({ x: n.x, y: n.y, text: textOf(n) });
+      addedWb.push({ id: wid, ...body, z: ++zc });
+      nextWbSel.add(wid);
+    }
+    if (deletedIdsRef && deletedIdsRef.current) for (const id of removedNodeIds) deletedIdsRef.current.add(id);
+    if (deletedWbIdsRef && deletedWbIdsRef.current) for (const id of removedWbIds) deletedWbIdsRef.current.add(id);
+
+    setData(d => {
+      const wb = (Array.isArray(d.wb) ? d.wb : [])
+        .filter(it => !removedWbIds.has(it.id))
+        .map(it => wbTypeSwaps[it.id] || it)
+        .concat(addedWb);
+      const nodes = (d.nodes || []).filter(n => !removedNodeIds.has(n.id)).concat(addedNodes);
+      const edges = removedNodeIds.size
+        ? (d.edges || []).filter(e => {
+            const f = workflowParseEdgeRef(e.from), t = workflowParseEdgeRef(e.to);
+            return f && t && !removedNodeIds.has(f.node) && !removedNodeIds.has(t.node);
+          })
+        : d.edges;
+      return { ...d, wb, nodes, edges };
+    });
+    // Re-point the selection at the converted items so the chip stays put.
+    setSelectedWbIds(nextWbSel);
+    setSelectedNodeIds(nextNodeSel);
+  }, [setData, deletedIdsRef, deletedWbIdsRef]);
   // Node analog - parametrized (moveSelectedNodes reads the selection from
   // its closure; the unified gestures need an explicit id set).
   const shiftNodes = useCallback((ids, dx, dy) => {
@@ -42672,6 +42849,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   }}/>
               `;
             })()}
+            ${convertSel && html`
+              <div className="workflow-convert-anchor" aria-hidden="true"
+                style=${{
+                  position: "absolute", pointerEvents: "none",
+                  left: convertSel.bbox.x + "px", top: convertSel.bbox.y + "px",
+                  width: convertSel.bbox.w + "px", height: convertSel.bbox.h + "px",
+                }}/>
+            `}
           </div>
           ${empty && !chatActive && !wbMode && html`
             <${WorkflowEmptyComposer}
@@ -42771,6 +42956,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       />`}
       ${(selectedNodeIds.size + selectedWbIds.size) > 1 && html`
         <${WorkflowGroupAlignBar} onAlign=${alignSelection} onSaveGroup=${saveSelectionAsGroup}/>
+      `}
+      ${convertSel && html`
+        <${WorkflowConvertBar}
+          count=${convertSel.count}
+          hasNodeEdges=${convertSel.hasNodeEdges}
+          onConvert=${convertTextSelectionTo}/>
       `}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
       ${connectorNode && connectorMenus && html`<${WorkflowConnectorSpawn}
