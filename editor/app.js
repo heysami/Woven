@@ -18089,7 +18089,7 @@ const DS_STYLE_SAMPLES = [
     note: "The system as shipped - restrained institutional product UI on the base light tokens." },
   { id: "minimal", name: "Minimal", styleId: "minimal", dark: false,
     note: "Light, white nav with a primary-only palette and flat hairline elevation - airy and quiet.",
-    tune: { paletteName: "Crimson & Sky", fontKey: "inter", roundness: 0.5,
+    tune: { paletteName: "Onyx", fontKey: "inter", roundness: 0.5,
       baseFontPx: 16, typeRatio: 1.20, typeTouched: true,
       spacingBasePx: 18, spacingRatio: 1.60, spacingTouched: true } },
   { id: "pastel", name: "Pastel", styleId: "pastel", dark: false,
