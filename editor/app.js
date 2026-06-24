@@ -18129,7 +18129,7 @@ const DS_STYLE_SAMPLES = [
       spacingBasePx: 16, spacingRatio: 1.50, spacingTouched: true } },
   { id: "claymorphism", name: "Claymorphism", styleId: "claymorphism", dark: false,
     note: "Soft-UI foam: chunky radii and puffy dual drop-and-inset clay shadows.",
-    tune: { paletteName: "Slate Red", fontKey: "figtree", roundness: 1,
+    tune: { paletteName: "Coral Blush", fontKey: "figtree", roundness: 1,
       baseFontPx: 16, typeRatio: 1.618, typeTouched: true,
       spacingBasePx: 18, spacingRatio: 1.60, spacingTouched: true } },
 ];
