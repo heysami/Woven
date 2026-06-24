@@ -64743,6 +64743,30 @@ const LOGIC_NODE_DEFS = {
     provides: { value: { label: "value", dtype: "number" } },
     accepts: { channel: { label: "channel", dtype: "channel" } },
   },
+  // ── 2.68 DAT web/data ──────────────────────────────────────────────────────
+  "dat-fetch": {
+    glyph: "⇄", label: "Fetch", section: "Data", w: 240, h: 320,
+    desc: "Poll a URL (CORS) and cache the response",
+    controls: {
+      url: { type: "text", value: "" },
+      method: { type: "select", value: "GET", options: ["GET", "POST"] },
+      pollMs: { type: "number", value: 0, min: 0, max: 600000, step: 100 },
+    },
+    provides: {
+      text: { label: "text", dtype: "string" },
+      value: { label: "value", dtype: "number" },
+      ok: { label: "ok", dtype: "boolean" },
+      updated: { label: "updated", dtype: "event" },
+    },
+    accepts: {},
+  },
+  "op-json-path": {
+    glyph: "{}", label: "JSON path", section: "Data", w: 220, h: 240,
+    desc: "Extract a value from a JSON string by dotted path (a.b[0].c)",
+    controls: { path: { type: "text", value: "" } },
+    provides: { value: { label: "value", dtype: "number" }, text: { label: "text", dtype: "string" } },
+    accepts: { text: { label: "text", dtype: "string" } },
+  },
   // ── 2.75 Physics (generic force field for the composer's unified world) ──
   // The `force` node is a SINK that injects a GENERIC force into the mm-composer's
   // ONE shared Matter world (see editor/tools/_shared/PHYSICS_WORLD_DESIGN.md). It

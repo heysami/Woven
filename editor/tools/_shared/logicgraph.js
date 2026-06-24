@@ -742,6 +742,50 @@ export const LogicGraph = {
       return { value: finiteNumber(r, 0) };
     },
 
+    // ---- 2.68 DAT web/data ----------------------------------------------------
+    // Poll a URL. The async lives in node state: a fire-and-forget fetch (never
+    // awaited - the engine stays synchronous) writes the result back into state,
+    // and each frame returns the last cached response + an `updated` pulse when a
+    // new one lands. pollMs=0 fetches once. Cross-origin needs a CORS endpoint
+    // (or route through the editor's /__web_proxy).
+    'dat-fetch'(node, read, frame, ctx, state) {
+      const s = state[node.id] || (state[node.id] = { text: '', value: 0, ok: false, ver: 0, emit: 0, last: -1, busy: false, url: '' });
+      const p = node.params || {};
+      const url = String(p.url || '').trim();
+      const pollMs = Math.max(0, finiteNumber(p.pollMs, 0));
+      const now = finiteNumber(frame.time, 0) * 1000;
+      const due = url && (s.url !== url || s.last < 0 || (pollMs > 0 && now - s.last >= pollMs));
+      if (due && !s.busy && typeof fetch === 'function') {
+        s.busy = true; s.last = now; s.url = url;
+        fetch(url, { method: (p.method || 'GET') })
+          .then((r) => { s.ok = !!r.ok; return r.text(); })
+          .then((t) => { s.text = String(t); const n = Number(t); s.value = Number.isFinite(n) ? n : 0; s.ver++; s.busy = false; })
+          .catch(() => { s.ok = false; s.busy = false; });
+      }
+      let updated = false;
+      if (s.ver !== s.emit) { updated = true; s.emit = s.ver; }
+      return { text: s.text, value: finiteNumber(s.value, 0), ok: !!s.ok, updated: updated };
+    },
+    // Extract a value from a JSON string by a dotted path (supports a[0] indices).
+    'op-json-path'(node, read) {
+      const raw = read(node.id, 'text', '');
+      const txt = (typeof raw === 'string') ? raw : (raw == null ? '' : String(raw));
+      const path = String((node.params && node.params.path) || '').trim();
+      let v;
+      try {
+        let obj = txt ? JSON.parse(txt) : null;
+        if (path) for (const key of path.split('.')) {
+          if (obj == null) break;
+          const m = key.match(/^(.+?)\[(\d+)\]$/);
+          if (m) { obj = obj[m[1]]; if (obj != null) obj = obj[+m[2]]; }
+          else obj = obj[key];
+        }
+        v = obj;
+      } catch (_e) { v = undefined; }
+      const num = Number(v);
+      return { value: Number.isFinite(num) ? num : 0, text: v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)) };
+    },
+
     // ---- 2.7 output sink ------------------------------------------------------
     'output-binding'(node, read) {
       return { value: asNumber(read(node.id, 'value', 0)) };
