@@ -7267,6 +7267,27 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-marquee="true"] .workflow-node[data-selected="true"] .workflow-node-iframe {
   pointer-events: none !important;
 }
+/* The html-asset card iframe (.workflow-node-asset-iframe) and the web-browser
+   node iframe (.workflow-browser-iframe) are same-origin and flip to
+   pointer-events:auto when their node is selected, but they were NOT named in
+   the gesture fall-through list above (which only covered .workflow-node-iframe
+   + .workflow-driven-frame). So a wire-drag / pan / marquee that crossed or
+   ended on a SELECTED html asset or browser node silently died - the iframe
+   swallowed the mousemove/mouseup stream and the gesture "stuck on" (this is
+   exactly why an html asset could not be wired into a Blend / any node). Mirror
+   the same five gesture states for them so the gesture always crosses cleanly. */
+.workflow-canvas-wrap[data-space="true"] .workflow-node-asset-iframe,
+.workflow-canvas-wrap[data-panning="true"] .workflow-node-asset-iframe,
+.workflow-canvas-wrap[data-node-dragging="true"] .workflow-node-asset-iframe,
+.workflow-canvas-wrap[data-wb-dragging="true"] .workflow-node-asset-iframe,
+.workflow-canvas-wrap[data-marquee="true"] .workflow-node-asset-iframe,
+.workflow-canvas-wrap[data-space="true"] .workflow-browser-iframe,
+.workflow-canvas-wrap[data-panning="true"] .workflow-browser-iframe,
+.workflow-canvas-wrap[data-node-dragging="true"] .workflow-browser-iframe,
+.workflow-canvas-wrap[data-wb-dragging="true"] .workflow-browser-iframe,
+.workflow-canvas-wrap[data-marquee="true"] .workflow-browser-iframe {
+  pointer-events: none !important;
+}
 /* Driven-view tool editors (the app-node family + the Tool/Spline 3D node)
    get the SAME drift-through behaviour as prototype iframes: until the node is
    selected, the editor iframe is pointer-events:none so the mouse can pan /
