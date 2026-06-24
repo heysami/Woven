@@ -91,7 +91,9 @@ const POP_FRAG_SEED_POS = POP_SIM_HEADER + `
 void main(){
   vec2 pos = vec2(popHash(vUv + uSeed), popHash(vUv.yx + uSeed + 0.7));
   float life = uDrag; // reuse uDrag uniform slot to carry mean life at seed time
-  o = vec4(pos, popHash(vUv + 3.1) * life, life);
+  // Seed ages only into the first third of life so the whole cloud starts BRIGHT
+  // (vLife stays 0.7..1), not half-faded - otherwise the default reads as empty.
+  o = vec4(pos, popHash(vUv + 3.1) * life * 0.3, life);
 }`;
 
 const POP_FRAG_SEED_VEL = `#version 300 es

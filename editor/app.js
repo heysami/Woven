@@ -65101,6 +65101,57 @@ const SPEC_SOURCE_TEMPLATES = {
       scale: { type: "number", value: 12, min: 1, max: 64, step: 1 },
       mix: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 }
     }, ["scale: values.scale", "mix: values.mix"]),
+    // --- transform / color / filter (single-pass TOP vocabulary) ---
+    _effectTemplate("transform", "Transform", "transform", {
+      tx: { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      ty: { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      rot: { type: "number", value: 0, min: -180, max: 180, step: 1 },
+      scale: { type: "number", value: 1, min: 0.1, max: 4, step: 0.01 },
+      wrap: { type: "number", value: 0, min: 0, max: 2, step: 1 }
+    }, ["tx: values.tx", "ty: values.ty", "rot: values.rot * Math.PI / 180", "scale: values.scale", "wrap: values.wrap"]),
+    _effectTemplate("color", "Color grade", "color", {
+      brightness: { type: "number", value: 0, min: -1, max: 1, step: 0.01 },
+      contrast: { type: "number", value: 1, min: 0, max: 2, step: 0.01 },
+      gamma: { type: "number", value: 1, min: 0.1, max: 4, step: 0.01 },
+      saturation: { type: "number", value: 1, min: 0, max: 2, step: 0.01 },
+      hue: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      invert: { type: "boolean", value: false }
+    }, ["brightness: values.brightness", "contrast: values.contrast", "gamma: values.gamma", "saturation: values.saturation", "hue: values.hue", "invert: values.invert"]),
+    _effectTemplate("tonemap", "Tone map", "tonemap", {
+      mode: { type: "number", value: 0, min: 0, max: 1, step: 1 },
+      exposure: { type: "number", value: 1, min: 0, max: 4, step: 0.05 }
+    }, ["mode: values.mode", "exposure: values.exposure"]),
+    _effectTemplate("convolve", "Convolve", "convolve", {
+      mode: { type: "number", value: 0, min: 0, max: 2, step: 1 },
+      amount: { type: "number", value: 1, min: 0, max: 1, step: 0.01 }
+    }, ["mode: values.mode", "amount: values.amount"]),
+    _effectTemplate("lens-distort", "Lens distort", "lens-distort", {
+      amount: { type: "number", value: 0.2, min: -1, max: 1, step: 0.01 }
+    }, ["amount: values.amount"]),
+    // --- multi-input (read a SECOND layer; pick it in the composer inspector) ---
+    _effectTemplate("displace-by", "Displace by layer", "displace-by", {
+      amount: { type: "number", value: 0.05, min: 0, max: 0.5, step: 0.005 }
+    }, ["amount: values.amount"]),
+    _effectTemplate("blend", "Blend layers", "blend", {
+      mode: { type: "number", value: 0, min: 0, max: 9, step: 1 }
+    }, ["mode: values.mode"]),
+    _effectTemplate("matte", "Matte (key by layer)", "matte", {
+      channel: { type: "number", value: 0, min: 0, max: 4, step: 1 },
+      invert: { type: "boolean", value: false }
+    }, ["channel: values.channel", "invert: values.invert"]),
+    _effectTemplate("lookup", "Color lookup (LUT)", "lookup", {}, []),
+    // --- frame-history (per-layer ring of recent frames) ---
+    _effectTemplate("row-delay", "Row delay (rolling shutter)", "row-delay", {
+      maxDelay: { type: "number", value: 16, min: 0, max: 60, step: 1 },
+      curve: { type: "number", value: 1, min: 0.1, max: 8, step: 0.1 },
+      vertical: { type: "boolean", value: false }
+    }, ["maxDelay: values.maxDelay", "curve: values.curve", "vertical: values.vertical"]),
+    _effectTemplate("cache-select", "Echo (frame delay)", "cache-select", {
+      delay: { type: "number", value: 8, min: 0, max: 60, step: 1 }
+    }, ["delay: values.delay"]),
+    _effectTemplate("optical-flow", "Optical flow", "optical-flow", {
+      scale: { type: "number", value: 10, min: 0, max: 50, step: 0.5 }
+    }, ["scale: values.scale"]),
     // fluid: real-time Stam stable-fluids. Runs as a per-layer GPU stateful effect
     // in the composer (chain.stepStateful in fx.js: persistent velocity/pressure/
     // dye buffers, multi-pass solver), falling back to a CPU sim when WebGL2/float

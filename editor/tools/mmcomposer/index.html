@@ -3546,9 +3546,9 @@ const PopHost = {
   tick(id, c, W, H, dt, time){
     const e = this.engine(); if(!e || !e.available || !e.available()) return;
     const rgb = this._rgb(c.color);
-    const out = e.step(id, { w: W, h: H, count: (c.count | 0) || 4096, dt, time,
+    const out = e.step(id, { w: W, h: H, count: (c.count | 0) || 12000, dt, time,
       pointer: { x: Input.px, y: Input.py, down: Input.down },
-      params: { size: this._n(c.size, 2), noise: this._n(c.noise, 0.4), gravityY: this._n(c.gravityY, 0),
+      params: { size: this._n(c.size, 3), noise: this._n(c.noise, 0.4), gravityY: this._n(c.gravityY, 0),
         attract: this._n(c.attract, 0.5), drag: this._n(c.drag, 0.1), life: this._n(c.life, 3),
         blend: c.blend || 'add', r: rgb[0], g: rgb[1], b: rgb[2] } });
     if(!out) return;
@@ -4402,8 +4402,8 @@ function renderInspector(){
       b.appendChild(fSelect('Asset',L.content.assetId||'',assetOpts(['image','video']),v=>L.content.assetId=v));
       b.appendChild(html('<p class="hint">Wired images & video render as instance content.</p>'));
     } else if(L.content.kind==='particles'){
-      b.appendChild(fSlider('Count',L.content.count||4096,256,65536,256,v=>L.content.count=v));
-      b.appendChild(fSlider('Size',L.content.size!=null?L.content.size:2,1,12,0.5,v=>L.content.size=v));
+      b.appendChild(fSlider('Count',L.content.count||12000,256,65536,256,v=>L.content.count=v));
+      b.appendChild(fSlider('Size',L.content.size!=null?L.content.size:3,1,12,0.5,v=>L.content.size=v));
       b.appendChild(fSlider('Noise',L.content.noise!=null?L.content.noise:0.4,0,2,0.01,v=>L.content.noise=v));
       b.appendChild(fSlider('Gravity',L.content.gravityY||0,-1,1,0.01,v=>L.content.gravityY=v));
       b.appendChild(fSlider('Attract',L.content.attract!=null?L.content.attract:0.5,0,4,0.01,v=>L.content.attract=v));
