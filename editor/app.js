@@ -24312,27 +24312,25 @@ function workflowPortPosition(node, side, ctx) {
   }
   // number-generator pixel-map image input - LEFT edge, near the top.
   if (side === "pixmap") return { x: node.x, y: node.y + 24 };
-  // Auto-exposed numeric param ports on spec nodes - LEFT edge, spaced by the
-  // control's index among numeric controls (same ordering as the rendered rail).
-  if (typeof side === "string" && side.startsWith("param:")) {
-    const keys = _specParamKeys(node);
-    const bodyTop = 30;   // spec-node bar height
-    const bodyH = Math.max(0, h - bodyTop);
-    const total = Math.max(1, keys.length);
-    const i = keys.indexOf(side.slice(6));
-    const idx = i < 0 ? 0 : i;
-    return { x: node.x, y: node.y + bodyTop + bodyH * (idx + 0.5) / total };
-  }
-  // Logic Graph (W2C): read-back OUTPUT ports - RIGHT edge, mirroring the
-  // param INPUT ports' vertical positions so the two rails align across the node.
-  if (typeof side === "string" && side.startsWith("paramout:")) {
-    const keys = _specReadbackKeys(node);
-    const bodyTop = 30;
-    const bodyH = Math.max(0, h - bodyTop);
-    const total = Math.max(1, keys.length);
-    const i = keys.indexOf(side.slice("paramout:".length));
-    const idx = i < 0 ? 0 : i;
-    return { x: node.x + w, y: node.y + bodyTop + bodyH * (idx + 0.5) / total };
+  // Spec-layout nodes (position / effect / trigger / number-generator / sketch /
+  // layer): the main in/out tiles ONE edge together with its param: / paramout:
+  // ports, every port owning an equal slice. The shared _specEdgePortSides list
+  // keeps these snap points identical to the rendered drop bands + wire ends.
+  // Non-spec "in"/"out" (asset / prompt / agent / iterators / …) match neither
+  // list and fall through to the centred default below.
+  {
+    const onLeft  = side === "in"  || (typeof side === "string" && side.startsWith("param:"));
+    const onRight = side === "out" || (typeof side === "string" && side.startsWith("paramout:"));
+    if (onLeft || onRight) {
+      const list = _specEdgePortSides(node, onLeft ? "in" : "out");
+      const idx = list.indexOf(side);
+      if (idx >= 0) {
+        const bodyTop = 30;   // spec-node bar height
+        const bodyH = Math.max(0, h - bodyTop);
+        const y = node.y + bodyTop + bodyH * (idx + 0.5) / list.length;
+        return { x: onLeft ? node.x : node.x + w, y };
+      }
+    }
   }
   // Default in/out - left/right edge at vertical centre. When the node is
   // SELECTED with floating panels, push the endpoints out to the panels' OUTER
@@ -66063,6 +66061,27 @@ function _specReadbackKeys(node) {
   return [];
 }
 
+// Ordered ports on ONE edge of a spec-layout node (position / effect / trigger /
+// number-generator / sketch / layer), top→bottom. The main in/out is tiled
+// TOGETHER with the param / read-back ports so every port owns an equal vertical
+// slice - the main port stops being a full-height zone that the param strips
+// would overlap. Shared by the renderer's drop-slice bands AND
+// workflowPortPosition's snap points so the two always agree. The number-gen
+// pixel-map input keeps its own fixed spot at the top and is excluded here.
+const _SPEC_LAYOUT_KINDS = new Set(["position", "effect", "trigger", "number-generator", "sketch", "layer"]);
+function _specEdgePortSides(node, edge) {
+  if (!node || !_SPEC_LAYOUT_KINDS.has(node.kind)) return [];
+  if (edge === "in") {
+    const list = [];
+    if (node.kind === "layer") list.push("in");   // only the layer node has a main content input
+    for (const k of _specParamKeys(node)) list.push("param:" + k);
+    return list;
+  }
+  const list = ["out"];
+  for (const k of _specReadbackKeys(node)) list.push("paramout:" + k);
+  return list;
+}
+
 // Richer than _specParamKeys: the tunable numeric controls of a spec node with
 // their current value + range. Drives the custom-app setting builder's "param
 // surface" handed to the agent (WS-D) and any binding UI. Returns
@@ -67020,64 +67039,73 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           ${renderTimelinePanel()}
         `}
       </div>
-      ${!isLogic && hasIn && html`<div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
-        title="Wire an asset (content) + optional Position / Trigger / Effect into this layer."
-        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("in", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">content</span></div>`}
-      ${!isLogic && paramKeys.map((key, i) => {
-        const total = Math.max(1, paramKeys.length);
-        const topPx = 30 + (h - 30) * (i + 0.5) / total;
-        const bound = boundParams.has(key);
-        return html`<div key=${"pp-" + key}
-          className=${"workflow-port-zone workflow-port-zone-in workflow-port-zone-param" + (bound ? " is-bound" : "")}
-          data-port-node=${node.id} data-port-side=${"param:" + key}
-          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
-          title=${(bound ? "Driven by a wired Number - param: " : "Bind a Number into param: ") + key}
-          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("param:" + key, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">${key}</span></div>`;
-      })}
       ${!isLogic && node.kind === "number-generator" && (spec.sub === "pixel-map") && html`<div
         className="workflow-port-zone workflow-port-zone-in workflow-port-zone-pixmap" data-port-node=${node.id} data-port-side="pixmap"
         style=${{ top: "15px", bottom: "auto", height: "18px" }}
         title="Wire an image asset here - sampled by the pixel-map sub-type."
         onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("pixmap", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">pixel map</span></div>`}
-      ${!isLogic && html`<div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
-        title=${"Wire this " + cfg.label + " into a host editor."}
-        onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("out", e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${(cfg.label || "out").toLowerCase()}</span></div>`}
-      ${!isLogic && readbackKeys.map((key, i) => {
-        const total = Math.max(1, readbackKeys.length);
-        const topPx = 30 + (h - 30) * (i + 0.5) / total;
-        return html`<div key=${"pro-" + key}
-          className=${"workflow-port-zone workflow-port-zone-out workflow-port-zone-paramout workflow-dtype-number"}
-          data-port-node=${node.id} data-port-side=${"paramout:" + key} data-dtype="number"
-          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
-          title=${"Read-back: this " + cfg.label.toLowerCase() + "'s current " + key + " value, fed back into a Logic graph."}
-          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge("paramout:" + key, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${key}</span></div>`;
-      })}
-      ${isLogic && logicRows.accepts.map((port, i) => {
-        const total = Math.max(1, logicRows.accepts.length);
-        const topPx = 30 + (h - 30) * (i + 0.5) / total;
-        const ps = (logicDef.accepts || {})[port] || {};
-        return html`<div key=${"la-" + port}
-          className=${"workflow-port-zone workflow-port-zone-in" + workflowDtypeClass(ps.dtype)}
-          data-port-node=${node.id} data-port-side=${port} data-dtype=${ps.dtype || null}
-          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
-          title=${(ps.label || port) + (ps.dtype ? " : " + ps.dtype : "")}
-          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge(port, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-left">${port}</span></div>`;
-      })}
-      ${isLogic && logicRows.provides.map((port, i) => {
-        const total = Math.max(1, logicRows.provides.length);
-        const topPx = 30 + (h - 30) * (i + 0.5) / total;
-        const ps = (logicDef.provides || {})[port] || {};
-        // W3E live preview: when Live is on this port's current value shows next
-        // to the label, and an "active" dot pulses (driven by th:logic-ports).
-        const hasLive = livePorts && Object.prototype.hasOwnProperty.call(livePorts, port);
-        const liveStr = hasLive ? fmtPortValue(livePorts[port]) : null;
-        return html`<div key=${"lp-" + port}
-          className=${"workflow-port-zone workflow-port-zone-out" + workflowDtypeClass(ps.dtype) + (hasLive ? " is-live" : "")}
-          data-port-node=${node.id} data-port-side=${port} data-dtype=${ps.dtype || null}
-          style=${{ top: (topPx - 9) + "px", bottom: "auto", height: "18px" }}
-          title=${(ps.label || port) + (ps.dtype ? " : " + ps.dtype : "") + (liveStr != null ? " = " + liveStr : "")}
-          onMouseDown=${(e) => { e.stopPropagation(); onStartEdge(port, e); }}><div className="workflow-port-dot"/><span className="workflow-port-label workflow-port-label-right">${port}</span>${liveStr != null && html`<span className="workflow-port-live-value">${liveStr}</span>`}</div>`;
-      })}
+      ${(() => {
+        // Build the ordered LEFT + RIGHT port lists, then render each as a full
+        // vertical SLICE of its edge (top + height per index) so hovering
+        // anywhere in a port's band snaps to it - the same easy drop target the
+        // iterators got. The main in/out is tiled in WITH the param / read-back /
+        // logic ports (it used to be a full-height zone the strips overlapped),
+        // and the slice geometry matches workflowPortPosition / _specEdgePortSides
+        // exactly so dots, wire ends and drop bands all agree. (pixmap above
+        // keeps its own fixed top-of-node spot.)
+        const renderEdge = (ports, sideCls, labelCls) => ports.map((p, i) => {
+          const total = Math.max(1, ports.length);
+          const top = 30 + (h - 30) * i / total;
+          const height = (h - 30) / total;
+          return html`<div key=${p.key}
+            className=${"workflow-port-zone " + sideCls + (p.cls ? " " + p.cls : "")}
+            data-port-node=${node.id} data-port-side=${p.side} data-dtype=${p.dtype || null}
+            style=${{ top: top + "px", bottom: "auto", height: height + "px" }}
+            title=${p.title}
+            onMouseDown=${(e) => { e.stopPropagation(); onStartEdge(p.side, e); }}>
+            <div className="workflow-port-dot"/>
+            <span className=${"workflow-port-label " + labelCls}>${p.label}</span>
+            ${p.liveStr != null ? html`<span className="workflow-port-live-value">${p.liveStr}</span>` : ""}</div>`;
+        });
+        let leftPorts = [], rightPorts = [];
+        if (isLogic) {
+          leftPorts = logicRows.accepts.map(port => {
+            const ps = (logicDef.accepts || {})[port] || {};
+            return { side: port, key: "la-" + port, label: port, dtype: ps.dtype || null,
+              cls: (workflowDtypeClass(ps.dtype) || "").trim(),
+              title: (ps.label || port) + (ps.dtype ? " : " + ps.dtype : "") };
+          });
+          rightPorts = logicRows.provides.map(port => {
+            const ps = (logicDef.provides || {})[port] || {};
+            const hasLive = livePorts && Object.prototype.hasOwnProperty.call(livePorts, port);
+            const liveStr = hasLive ? fmtPortValue(livePorts[port]) : null;
+            return { side: port, key: "lp-" + port, label: port, dtype: ps.dtype || null,
+              cls: ((workflowDtypeClass(ps.dtype) || "") + (hasLive ? " is-live" : "")).trim(),
+              title: (ps.label || port) + (ps.dtype ? " : " + ps.dtype : "") + (liveStr != null ? " = " + liveStr : ""),
+              liveStr };
+          });
+        } else {
+          if (hasIn) leftPorts.push({ side: "in", key: "in", label: "content", cls: "",
+            title: "Wire an asset (content) + optional Position / Trigger / Effect into this layer." });
+          for (const key of paramKeys) {
+            const bound = boundParams.has(key);
+            leftPorts.push({ side: "param:" + key, key: "pp-" + key, label: key,
+              cls: "workflow-port-zone-param" + (bound ? " is-bound" : ""),
+              title: (bound ? "Driven by a wired Number - param: " : "Bind a Number into param: ") + key });
+          }
+          rightPorts.push({ side: "out", key: "out", label: (cfg.label || "out").toLowerCase(), cls: "",
+            title: "Wire this " + cfg.label + " into a host editor." });
+          for (const key of readbackKeys) {
+            rightPorts.push({ side: "paramout:" + key, key: "pro-" + key, label: key, dtype: "number",
+              cls: "workflow-port-zone-paramout workflow-dtype-number",
+              title: "Read-back: this " + cfg.label.toLowerCase() + "'s current " + key + " value, fed back into a Logic graph." });
+          }
+        }
+        return [
+          ...renderEdge(leftPorts, "workflow-port-zone-in", "workflow-port-label-left"),
+          ...renderEdge(rightPorts, "workflow-port-zone-out", "workflow-port-label-right"),
+        ];
+      })()}
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
     </div>
   `;
