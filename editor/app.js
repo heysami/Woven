@@ -31696,6 +31696,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!t) return d;
       const body = workflowMakeNodeOfKind(kind, payload || {});
       if (!body) return d;
+      // Optional in-cell size override (e.g. a browser node defaults to 720x540,
+      // too big for a cell). cellW/cellH are not node fields.
+      if (payload && payload.cellW) body.w = payload.cellW;
+      if (payload && payload.cellH) body.h = payload.cellH;
       newId = workflowNewNodeId();
       // Grow the cell to fit the node (+ padding) before pinning it.
       const cols = wbTableCols(t).slice(), rows = wbTableRows(t).slice();
@@ -37963,9 +37967,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       updateNode(nodeId, { tableId });
       updateNode(tableId, { runStatus: "running" });   // diamond floats on the table too
 
-      // Per result: Visual node (col 4), Verdict emoji sticker (col 5),
-      // Assistant commentary box (col 6). Image URLs ALSO open as browser nodes.
-      const browserUrls = [];
+      // Per result: Visual node IN the cell (col 4), Verdict emoji sticker
+      // (col 5), Assistant commentary box (col 6). A returned image/page URL
+      // becomes a live BROWSER node right inside the Visual cell (the asset node
+      // can't render remote URLs - the browser node actually shows the page).
       kept.forEach((k, ri) => {
         const v = visById[k.i] || { visual: "link", value: k.url };
         const r = ri + 1;
@@ -37976,34 +37981,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         } else if (v.visual === "font" && val) {
           workflowAddCellNode(tableId, r, 4, "typography", { name: val, fontFamily: val });
         } else if (v.visual === "image" && /^https?:/i.test(val)) {
-          workflowAddCellNode(tableId, r, 4, "asset", { assetKind: "image", path: val });
-          browserUrls.push(val);
+          workflowAddCellNode(tableId, r, 4, "browser", { url: val, cellW: 300, cellH: 220 });
+        } else if (/^https?:/i.test(val)) {
+          workflowAddCellNode(tableId, r, 4, "browser", { url: val, cellW: 300, cellH: 220 });
         } else {
           workflowSetCellText(tableId, r, 4, k.url || "(link)");
-          if (/^https?:/i.test(k.url || "")) browserUrls.push(k.url);
         }
         // Verdict sticker + commentary box.
         const vd = _assistantVerdict(k.verdict || (k.why ? "good" : "nothing"));
         workflowAddCellSticker(tableId, r, 5, vd.emoji, 44);
         workflowAddCellBox(tableId, r, 6, (k.comment || k.why || vd.label), vd.color);
       });
-
-      // Open returned URLs as live browser nodes, stacked to the right of the
-      // table so they don't bloat the cells.
-      if (browserUrls.length) {
-        const tableW = colWidths.reduce((a, b) => a + b, 0);
-        const seen = new Set();
-        const urls = browserUrls.filter(u => { if (seen.has(u)) return false; seen.add(u); return true; }).slice(0, 12);
-        setData(d => {
-          const nodes = [...(d.nodes || [])];
-          urls.forEach((u, idx) => {
-            const body = workflowMakeNodeOfKind("browser", { url: u });
-            if (!body) return;
-            nodes.push({ id: workflowNewNodeId(), ...body, x: tx + tableW + 80, y: ty + idx * ((body.h || 540) + 40) });
-          });
-          return { ...d, nodes };
-        });
-      }
 
       // If the research drew on local folders, drop a folder node so the user
       // can see where the gathered files live.
@@ -76094,6 +76082,31 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     </div>
   ` : null;
 
+  // The drawer's left-edge resize handle drives --workflow-chat-width (the same
+  // root var .chat-drawer reads). Previously this dialog passed NO onResizeStart,
+  // so the handle was dead on first open (it only "worked" later once the main
+  // workflow chat had set the var). Wire it directly so resize works immediately.
+  const startChatDrawerResize = useCallback((e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const root = document.documentElement;
+    const startX = e.clientX;
+    const startW = parseInt(getComputedStyle(root).getPropertyValue("--workflow-chat-width"), 10) || 644;
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    const onMove = (ev) => {
+      const w = Math.max(360, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
+      root.style.setProperty("--workflow-chat-width", w + "px");
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      try { localStorage.setItem("th-workflow-chat-width", String(parseInt(getComputedStyle(root).getPropertyValue("--workflow-chat-width"), 10) || 644)); } catch {}
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
   return createPortal(html`<${ChatDrawer}
     run=${chatRun}
     onClose=${onClose}
@@ -76103,6 +76116,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     permissionMode=${permissionMode}
     onPermissionModeChange=${setPermissionMode}
     onStartNewChat=${spawnFromComposer}
+    onResizeStart=${startChatDrawerResize}
     preamble=${preamble}
     variant="dock"
   />`, document.body);
