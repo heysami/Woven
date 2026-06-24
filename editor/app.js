@@ -38455,7 +38455,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         try {
           const body = { skill: skillSpec.id, provider, model, output: outputPath, aspect, options };
           if (wantsPrompt) body.prompt = prompt;
-          if (wantsAsset) {
+          // Send the resolved asset for any image-producing skill - not just
+          // skills declaring an `asset` input - so a prompt's inline [filename]
+          // badge reaches generate-image as a reference image (text + image ->
+          // edit). Must match the badge-resolution gate above; otherwise the
+          // resolved assetInputPath is silently dropped here and the model runs
+          // pure text-to-image. The daemon returns a clean 400 if the chosen
+          // model can't take an image.
+          if ((wantsAsset || outputKind === "image") && (assetInputPath || assetInputDataUri)) {
             if (assetInputPath)    body.input_path = assetInputPath;
             else if (assetInputDataUri) body.input_data_uri = assetInputDataUri;
           }
