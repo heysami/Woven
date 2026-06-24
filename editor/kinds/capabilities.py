@@ -780,9 +780,25 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # v3.3 - cap bumped from 30 to 60 to fit the simulation + interactive-media
     # orchestrator families (14 sim + 11 im + 3 lenses + the pre-existing visual
     # family + housekeeping = ~42 today, leaving headroom).
-    subagent_lines = "\n".join(
-        f"  • {sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
-    )
+    # v3.15 - The subagent catalogue is the single largest line-item in the
+    # preamble (94 drawers × 140-char desc ≈ 4K tokens) and it ships to EVERY
+    # spawn. A leaf agent does NOT route (it builds/judges one thing), so the
+    # full descriptions are dead weight on the highest-volume agent type. Slim
+    # tier therefore carries names only (so it still knows what EXISTS, e.g. for
+    # the occasional co-dispatch) and points at /__capabilities for the
+    # descriptions. Full tier (orchestrators + main chat - the agents that
+    # actually pick a drawer) keeps the descriptions.
+    if tier == "slim":
+        _names = ", ".join(sa["name"] for sa in caps["subagents"][:100])
+        subagent_lines = (
+            f"  {_names}\n"
+            "  (names only - you are a leaf and rarely dispatch; for the one-line purpose of any drawer "
+            "before a co-dispatch, GET $TH_DAEMON_URL/__capabilities?project=$TH_PROJECT_ID)"
+        )
+    else:
+        subagent_lines = "\n".join(
+            f"  • {sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
+        )
     endpoint_lines = "\n".join(
         f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
     )
@@ -1493,14 +1509,7 @@ Task(subagent_type: "simulation-orchestrator",
 
 ### Why this is non-negotiable
 
-The visual-orchestrator pattern is: **app exists, orchestrator fills a slot.** Same here. The sim is content for a slot, not an artefact on its own. Reasons:
-
-- The editor's source view defaults to `source/<prototype>/index.html`. No index.html = user can't open it (the fly bug).
-- The app shell is the user's natural entry point. Even a one-line "I want the globe" expectation is "I want to open something that shows me the globe" - which is a page, not a folder of runtime files.
-- Adding chrome later (a title, a legend, controls in a side panel) is trivial when the shell exists. Retrofitting a shell around a standalone runtime that imports its own modules + has its own viewport sizing is invasive.
-- Cross-asset coherence (visual-orchestrator styling the sidebar icons, narrative-orchestrator adding a callout next to the sim) requires the shell to exist as a single HTML page they share.
-
-**Emulating simulation-orchestrator from your own knowledge - or shipping a sim without the surrounding app - is the bug.** Dispatch the real thing into a real slot.
+Slot-fill applies (see §"THE MENTAL MODEL"): the sim is content for a slot, not a standalone artefact. Sim-specific reasons: the editor's source view defaults to `source/<prototype>/index.html`, so no index.html = the user can't open it (the fly bug); adding chrome later (title, legend, side-panel controls) is trivial with a shell but retrofitting one around a standalone runtime (own modules + own viewport sizing) is invasive; cross-asset coherence (visual-orchestrator styling sidebar icons, a narrative callout beside the sim) needs the shared host page. Shipping a sim without the surrounding app is the bug.
 
 ## Interactive piece: dispatch interactive-media-orchestrator FIRST
 
@@ -1554,37 +1563,11 @@ Task(subagent_type: "narrative-experience-orchestrator",
      prompt: "prototype=<prototype>, projectRoot=<absolute>. Walk every *.html under source/<prototype>/ and find every <iframe class~='nx-mount'> (or every iframe whose data-nx is set). For EACH: read nxId from data-nx, paradigm hint from data-paradigm-hint, aesthetic register from data-aesthetic. Per slot: pick paradigm (2d-illustrative / 3d-environment / iconographic-anim / hybrid) + aesthetic + emotional + pacing registers. Write source/<prototype>/narratives/<nxId>/research.md. Scaffold + build the per-slot drawer set (research, spine, scene, ambient, reveal, overlay, runtime) + container. User's overall intent: <verbatim>. For each slot, ask user for the concrete felt-state successFeel via decision-request - NOT 'user understands X', a feeling like 'they leave quieter', 'the room remembers them'. Return hand-off envelope with slot list + per-slot drawer node ids.")
 ```
 
-### Do NOT do any of these:
-
-- ❌ **Skipping the app shell.** Same trap as the fly bug.
-- ❌ "Let me first generate the hero image…" → The narrative orchestrator needs visual surfaces but composes them into the piece's dramaturgy. Dispatch the narrative orchestrator first; its drawers call visual-orchestrator for raster assets in-flight with the brief's styleCue propagated.
-- ❌ Treating this as simulation-orchestrator because it has a 3D scene → Simulation gives understanding of a system. Narrative gives presence in a place. Functional vs. dramaturgical.
-- ❌ Treating this as interactive-media because there's interactivity → Interactive is body-as-creative-material. Narrative's interactivity is the act of attention.
-- ❌ Accepting "the user understands Vermeer better" as a successFeel → Concept-lens needs felt-state. Push back via decision-request.
-- ❌ Building a static HTML page mockup → that's a snapshot, not a runnable composed piece.
-
-### Decision rule:
-
-| User said… | Your first move |
-|---|---|
-| "let me walk INTO <thing>" / "sit inside <place>" / "feel the world of X" | `Task(narrative-experience-orchestrator, …)` |
-| "museum microsite" / "memorial" / "portrait at depth" / "exhibition extension" | `Task(narrative-experience-orchestrator, …)` |
-| "scrollytelling" / "immersive narrative" / "snow-fall-style article" | `Task(narrative-experience-orchestrator, …)` |
-| "walkable 3D <place>" / "explore <space> freely" / "first-person walkthrough of <place>" | `Task(narrative-experience-orchestrator, …)` |
-| "architectural reconstruction the user moves through" / "free-roam exhibition" | `Task(narrative-experience-orchestrator, …)` |
-| "build a site that has this immersive piece inside it" | First `/prototype` (nx-placeholder slot) → then `Task(narrative-experience-orchestrator, …)` |
-
 The orchestrator picks one of four paradigms (mirrors simulation's structure): `2d-illustrative` (scrollytelling), `3d-environment` (anywhere from a scripted flythrough to a fully walkable room - same paradigm covers all; the degree of inhabitation is decided downstream by the scene drawer's multi-draft + the user's pick), `iconographic-anim` (a held sequence of tableaux), or `hybrid`. The user asking for "walk through Vermeer's studio" and the user asking for "scroll through Vermeer's studio" both land here - the research fleet decides which vessel the felt-experience inhabits.
 
 **The script is the heart, even in walkable pieces.** A fully free-roam room still has authored light, authored sound-anchors, authored artifacts placed where the curator chose them. Freedom of movement is breathing room WITHIN the dramaturgy, not the absence of authorship. If the user describes "let them just explore" without any sense of the felt-state they should land in, push back via decision-request asking what the user should FEEL after 60 seconds inside - that prose is what concept-lens scores against.
 
-**Collaborates with `visual-orchestrator`** for every raster image the piece relies on - painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-orchestrator for each asset; the brief's styleCue propagates so every plate reads as the same piece.
-
-```
-Task(subagent_type: "narrative-experience-orchestrator",
-     description: "Plan + build immersive narrative experience",
-     prompt: "The user wants: <one-line description, e.g. 'walk into Vermeer's studio at depth, the light shifts as the user lingers'>. Run your intake - ask for a concrete felt-state successFeel via <decision-request> (NOT 'the user understands X' - needs to be a feeling: 'the room remembers them', 'they leave changed', etc.), synthesise an nxId, run the 5-researcher fleet + synthesiser, scaffold the multi-trio in workflow/workflow.json, dispatch the 7 component drawers (spine/scene/camera/ambient/reveal/overlay/runtime) + 3-lens trio per iteration, multi-draft at scene + camera + ambient + runtime cruxes via iterator-remix, run §8.5 cross-drawer coherence before final container commit.")
-```
+**Collaborates with `visual-orchestrator`** for every raster image the piece relies on - painterly plates, hero illustrations, character portraits, artifact close-ups, texture maps for 3D surfaces, decorative marks. The scene + overlay drawers dispatch visual-orchestrator for each asset; the brief's styleCue propagates so every plate reads as the same piece. The orchestrator runs its own intake (synthesise an nxId, the 5-researcher fleet + synthesiser, multi-draft at the scene / camera / ambient / runtime cruxes via iterator-remix, §8.5 cross-drawer coherence before container commit) - you just dispatch it once per the template above.
 
 ### Do NOT do any of these:
 
@@ -1611,6 +1594,7 @@ Task(subagent_type: "narrative-experience-orchestrator",
 | "architectural reconstruction the user moves through" | `Task(narrative-experience-orchestrator, …)` |
 | "free-roam <place / room / garden / exhibition>" | `Task(narrative-experience-orchestrator, …)` |
 | "WebGL space the user can wander" | `Task(narrative-experience-orchestrator, …)` |
+| "build a site that HAS this immersive piece inside it" | First `/prototype` (scaffold the host page with an nx-placeholder slot) → THEN `Task(narrative-experience-orchestrator, …)` |
 
 ### Distinguishing from siblings
 
@@ -1675,14 +1659,7 @@ Task(subagent_type: "game-experience-orchestrator",
 
 ### Why this is non-negotiable
 
-The game-experience pattern is: **app exists, orchestrator fills a slot.** Same shape as the other four. Reasons:
-
-- The world is full-bleed. It needs an iframe slot to occupy edge-to-edge without the host app's chrome.
-- The two-gate permission UX (audio + gyro) needs a canvas-side disclosure BEFORE the iframe loads - `boundTo.permissionGate: ["audio","gyro"]` on the asset node renders that.
-- Physics + particle systems + audio context all have heavy boot costs that benefit from iframe isolation.
-- Adding chrome later (a title, a leaderboard, a share button in the host shell) is trivial when the shell exists. Retrofitting a shell around a standalone runtime is invasive.
-
-**Emulating game-experience-orchestrator from your own knowledge - or shipping a game without the surrounding app - is the bug.** Dispatch the real thing into a real slot.
+Slot-fill applies (see §"THE MENTAL MODEL") - plus game-specific reasons: the world is full-bleed (needs the iframe to occupy edge-to-edge without host chrome); the two-gate permission UX (audio + gyro) needs a canvas-side disclosure BEFORE the iframe loads (`boundTo.permissionGate: ["audio","gyro"]` on the asset node renders it); physics + particle + audio-context boot costs benefit from iframe isolation; adding chrome later (title, leaderboard, share button) is trivial with a shell, retrofitting one is invasive. Shipping a game without the surrounding app is the bug.
 
 ## Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST
 
@@ -1745,14 +1722,7 @@ Let the user pick before you dispatch. This is the most-important per-slot cost 
 
 ### Why this is non-negotiable
 
-The scrapbook pattern is: **named aesthetic + image-heavy composition + N raster assets in a layered z-stack with motion + interaction**. The orchestrator is purpose-built to plan the inventory, co-dispatch visual-orchestrator per entry, compose them, animate them, and interact with them. Reasons:
-
-- CSS gradients cannot produce chrome lettering at quality. Vaporwave fails without raster handlettering.
-- CSS textures cannot produce film-grain, scratched paper, washi tape, scanned linen, polaroid edges. Each is a raster.
-- Transparent GIFs are not reliably generated by current image-generation skills. PNG sequences (one visual-orchestrator dispatch per frame) substitute. The orchestrator orchestrates the frame-by-frame commission + sprite-sheet animation.
-- Handcrafted typography (the signature of scrapbook) is raster - commissioned per word as a visual-orchestrator.
-
-**Emulating scrapbook-experience-orchestrator from your own CSS knowledge is the bug.** Dispatch the real thing; let it commission the rasters; let it compose them.
+Slot-fill applies, with the scrapbook twist: a named aesthetic + image-heavy composition = N raster assets in a layered z-stack with motion + interaction. Why CSS can't substitute: CSS gradients can't produce chrome lettering at quality (vaporwave fails without raster handlettering); CSS textures can't produce film-grain / scratched paper / washi tape / scanned linen / polaroid edges (each is a raster); transparent GIFs aren't reliably generated, so PNG sequences (one visual-orchestrator dispatch per frame) substitute for sprite-sheet animation; handcrafted typography (scrapbook's signature) is raster, commissioned per word. Emulating it from your own CSS knowledge is the bug - let the orchestrator commission + compose the rasters.
 
 ## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST - brainstorm BEFORE the shell
 
