@@ -45913,6 +45913,120 @@ function PickedTextField({ label, value, inherited, placeholder, rows, className
         />`;
 }
 
+/* Box-model field for the 1-or-4-value CSS shorthands (border-radius,
+   border-width, padding, margin). A single cramped text box hides the
+   numbers when the value is NON-uniform ("12px 12px 0 0"), so this
+   field detects that case and SPLITS into four per-side inputs - each
+   number fully visible - while uniform values keep a single input. A
+   toggle lets the user force either view. Bails to a plain single field
+   for shorthands it can't safely take apart (var()/calc()/slash
+   elliptical radii). Sides are always stored in CSS shorthand order
+   [top/TL, right/TR, bottom/BR, left/BL] so expand + collapse are the
+   same math for padding (T R B L) and radius (corners). */
+function PickedBoxField({ label, value, inherited, placeholder, corners, onChange }) {
+  const sideLabels = corners ? ["⌜", "⌝", "⌟", "⌞"] : ["T", "R", "B", "L"];
+  const sideTitles = corners
+    ? ["Top-left", "Top-right", "Bottom-right", "Bottom-left"]
+    : ["Top", "Right", "Bottom", "Left"];
+  const val = (value || "").trim();
+  const inh = (inherited || "").trim();
+  // Can't safely split functional / elliptical shorthands - keep them
+  // in one box so we never corrupt the value.
+  const unsplittable = (s) => /var\(|calc\(|env\(|min\(|max\(|clamp\(|\//.test(s);
+  const canSplit = !unsplittable(val) && !unsplittable(inh);
+  const tokenize = (s) => s.split(/\s+/).filter(Boolean);
+  const expand4 = (toks) => {
+    if (toks.length === 0) return ["", "", "", ""];
+    if (toks.length === 1) return [toks[0], toks[0], toks[0], toks[0]];
+    if (toks.length === 2) return [toks[0], toks[1], toks[0], toks[1]];
+    if (toks.length === 3) return [toks[0], toks[1], toks[2], toks[1]];
+    return [toks[0], toks[1], toks[2], toks[3]];
+  };
+  const collapse4 = ([t, r, b, l]) => {
+    if (t === r && r === b && b === l) return t;
+    if (t === b && l === r) return t + " " + r;
+    if (l === r) return t + " " + r + " " + b;
+    return t + " " + r + " " + b + " " + l;
+  };
+  const inlineExp  = expand4(tokenize(val));
+  const inheritExp = expand4(tokenize(inh));
+  const effToks    = tokenize(val).length ? tokenize(val) : tokenize(inh);
+  const nonUniform = effToks.length > 1 && !effToks.every((t) => t === effToks[0]);
+
+  // Auto-split when the effective value is non-uniform; re-evaluate when
+  // a different element is picked (value/inherited change).
+  const [split, setSplit]  = useState(canSplit && nonUniform);
+  const [single, setSingle] = useState(val);
+  const [sides, setSides]   = useState(inlineExp);
+  useEffect(() => {
+    setSplit(canSplit && nonUniform);
+    setSingle(val);
+    setSides(expand4(tokenize(val)));
+  }, [value, inherited]);
+
+  const commitSingle = () => {
+    const next = single.trim();
+    if (next !== val) onChange(next);
+  };
+  const commitSides = (nextSides) => {
+    // All four cleared -> unset the property (drop back to inheritance).
+    if (nextSides.every((d) => d.trim() === "")) { if (val) onChange(""); return; }
+    // Fill empty sides from the current effective per-side value so the
+    // rendered box doesn't jump when the user only edits one side.
+    const resolved = nextSides.map((d, i) => {
+      const t = d.trim();
+      if (t) return t;
+      const e = (inheritExp[i] || "").trim();
+      return e || "0";
+    });
+    const next = collapse4(resolved);
+    if (next !== val) onChange(next);
+  };
+  const setSide = (i, v) => setSides((s) => s.map((x, j) => (j === i ? v : x)));
+
+  const toggle = html`
+    <button type="button" className="zoom-inspector-box-toggle"
+      title=${split ? "Combine into one value" : "Split into 4 sides"}
+      onClick=${() => setSplit((s) => !s)}>${split ? "▭" : "⊞"}</button>`;
+
+  if (split && canSplit) {
+    return html`
+      <div className="zoom-inspector-boxfield is-split">
+        <div className="zoom-inspector-box-grid">
+          ${[0, 1, 2, 3].map((i) => html`
+            <label key=${i} className="zoom-inspector-box-cell" title=${sideTitles[i] + " · " + label}>
+              <span className="zoom-inspector-box-side" aria-hidden="true">${sideLabels[i]}</span>
+              <input
+                className="zoom-inspector-box-input"
+                type="text"
+                value=${sides[i]}
+                placeholder=${inheritExp[i] || ""}
+                onChange=${(e) => setSide(i, e.target.value)}
+                onBlur=${() => commitSides(sides)}
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+            </label>
+          `)}
+        </div>
+        ${toggle}
+      </div>`;
+  }
+
+  const ph = inh || placeholder || "";
+  return html`
+    <div className="zoom-inspector-boxfield">
+      <input
+        className="zoom-inspector-input"
+        type="text"
+        value=${single}
+        placeholder=${ph}
+        title=${label}
+        onChange=${(e) => setSingle(e.target.value)}
+        onBlur=${commitSingle}
+        onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}/>
+      ${canSplit && toggle}
+    </div>`;
+}
+
 function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, onNavigate, cssVars, tree }) {
   if (!picked) return null;
   const lay = picked.parent && picked.parent.layout;
@@ -45934,13 +46048,41 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
   const alignSelf   = styles.alignSelf   || "auto";
 
   const setSize = (axis, mode, fixed) => {
-    const k = axis === "w" ? "width" : "height";
+    const k        = axis === "w" ? "width"      : "height";
     const fixedKey = axis === "w" ? "widthFixed" : "heightFixed";
     const modeKey  = axis === "w" ? "widthMode"  : "heightMode";
     const next = { ...styles, [modeKey]: mode };
-    if (mode === "fill")  next[k] = "100%";
-    else if (mode === "hug")   next[k] = "auto";
-    else if (mode === "fixed") { next[k] = fixed + "px"; next[fixedKey] = fixed; }
+
+    // Naive width:100% / width:auto writes silently fail in common layouts:
+    // inline boxes ignore width/height entirely; a plain block (or a flex
+    // CROSS-axis / grid child) treats width:auto as "stretch" - the opposite
+    // of hug - while the real "fill" lever for a flex item on its MAIN axis
+    // is flex-grow, not width:100%. Branch on the parent's layout + the
+    // element's own display and emit the property that actually lands.
+    const flexMain  = isFlex && (axis === "w" ? isRow : !isRow); // along the flex axis
+    const flexCross = isFlex && !flexMain;                       // flex cross axis (align-self)
+    const gridSelfKey = axis === "w" ? "justifySelf" : "alignSelf";
+
+    // Inline boxes ignore width/height - promote so the dimension can apply.
+    if (mode !== "fixed" && selfLay?.display === "inline") next.display = "inline-block";
+
+    if (mode === "fixed") {
+      next[k] = `${fixed}px`;
+      next[fixedKey] = fixed;
+      // A fixed flex item must not be grown/shrunk away from its size.
+      if (flexMain) { next.flexGrow = "0"; next.flexShrink = "0"; }
+    } else if (mode === "fill") {
+      if (flexMain)       { next.flexGrow = "1"; next[k] = "auto"; }
+      else if (flexCross) { next.alignSelf = "stretch"; next[k] = "auto"; }
+      else if (isGrid)    { next[gridSelfKey] = "stretch"; next[k] = "auto"; }
+      else                { next[k] = "100%"; }
+    } else if (mode === "hug") {
+      const hugVal = axis === "w" ? "fit-content" : "auto"; // height:auto already hugs
+      if (flexMain)       { next.flexGrow = "0"; next.flexShrink = "0"; next[k] = hugVal; }
+      else if (flexCross) { next.alignSelf = "start"; next[k] = hugVal; }
+      else if (isGrid)    { next[gridSelfKey] = "start"; next[k] = hugVal; }
+      else                { next[k] = hugVal; }
+    }
     onStyle(next);
   };
   const setAlign = (axis, value) => {
@@ -46084,6 +46226,19 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
     `}
 
     <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Spacing</div>
+      <div className="zoom-inspector-row">
+        <span className="zoom-inspector-axis">P</span>
+        <${PickedBoxField}
+          label="Padding"
+          value=${styleVal("padding")}
+          inherited=${inheritedVal("padding")}
+          placeholder="e.g. 8px or 8px 12px"
+          onChange=${(v) => set1("padding", v)}/>
+      </div>
+    </div>
+
+    <div className="zoom-inspector-section">
       <div className="zoom-inspector-label">Fill</div>
       <${PickedColorField}
         label="Background"
@@ -46103,9 +46258,8 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
         onChange=${(v) => set1("borderColor", v)}/>
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">W</span>
-        <${PickedTextField}
+        <${PickedBoxField}
           label="Border width"
-          className="zoom-inspector-input-narrow"
           value=${styleVal("borderWidth")}
           inherited=${inheritedVal("borderWidth")}
           placeholder="e.g. 1px"
@@ -46124,8 +46278,9 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
     <div className="zoom-inspector-section">
       <div className="zoom-inspector-label">Radius</div>
       <div className="zoom-inspector-row">
-        <${PickedTextField}
+        <${PickedBoxField}
           label="Border radius"
+          corners=${true}
           value=${styleVal("borderRadius")}
           inherited=${inheritedVal("borderRadius")}
           placeholder="e.g. 8px or 8px 12px"
@@ -47252,6 +47407,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       ["borderWidth",   "border-width"],
       ["borderStyle",   "border-style"],
       ["borderRadius",  "border-radius"],
+      ["padding",       "padding"],
       ["color",         "color"],
       ["fontFamily",    "font-family"],
       ["fontSize",      "font-size"],
@@ -48290,6 +48446,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
             borderWidth:  cs.borderWidth     || "",
             borderStyle:  cs.borderStyle     || "",
             borderRadius: cs.borderRadius    || "",
+            padding:      cs.padding         || "",
             color:        cs.color           || "",
             fontFamily:   cs.fontFamily      || "",
             fontSize:     cs.fontSize        || "",
@@ -51199,6 +51356,7 @@ function WorkflowPickedInspectorDock({
         borderWidth:  readInline("borderWidth")  || "",
         borderStyle:  readInline("borderStyle")  || "",
         borderRadius: readInline("borderRadius") || "",
+        padding:      readInline("padding")      || "",
         color:        readInline("color")        || "",
         fontFamily:   readInline("fontFamily")   || "",
         fontSize:     readInline("fontSize")     || "",
@@ -51236,6 +51394,7 @@ function WorkflowPickedInspectorDock({
           borderWidth:  cs.borderWidth     || "",
           borderStyle:  cs.borderStyle     || "",
           borderRadius: cs.borderRadius    || "",
+          padding:      cs.padding         || "",
           color:        cs.color           || "",
           fontFamily:   cs.fontFamily      || "",
           fontSize:     cs.fontSize        || "",
@@ -51294,6 +51453,7 @@ function WorkflowPickedInspectorDock({
       ["borderWidth",   "border-width"],
       ["borderStyle",   "border-style"],
       ["borderRadius",  "border-radius"],
+      ["padding",       "padding"],
       ["color",         "color"],
       ["fontFamily",    "font-family"],
       ["fontSize",      "font-size"],
