@@ -7411,6 +7411,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke {
   pointer-events: none;
 }
+/* In build mode the wb layer is click-through, but the ONE item being
+   edited inline (double-click, any tool) must catch pointer events so the
+   caret + typing work. Scoped to the editing item only. */
+.workflow-wb-layer .workflow-wb-item[data-editing="true"],
+.workflow-wb-layer .workflow-wb-item[data-editing="true"] * {
+  pointer-events: auto;
+}
 .workflow-wb-layer {
   position: absolute;
   inset: 0;

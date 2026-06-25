@@ -41488,6 +41488,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onNode: !!nodeEl,
             });
           }}
+          onDoubleClick=${(e) => {
+            // Double-click a whiteboard text item → edit it inline, NO
+            // MATTER the mode or active tool. Geometric hit (the wb layer
+            // is pointer-events:none in build mode, so the DOM target is
+            // the canvas/node beneath, not the item). A node under the
+            // cursor keeps priority - let its own dbl-click run. The only
+            // text-bearing wb types are text / textbox / sticky.
+            if (e.target.closest && e.target.closest("[data-node-id], input, textarea, select, [contenteditable=\"true\"]")) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const wx = (e.clientX - r.left - pan.x) / zoom;
+            const wy = (e.clientY - r.top  - pan.y) / zoom;
+            const hitId = wbHitTest(wbItemsRef.current, wx, wy, zoom);
+            if (!hitId) return;
+            const it = (wbItemsRef.current || []).find(i => i.id === hitId);
+            if (!it || (it.type !== "text" && it.type !== "textbox" && it.type !== "sticky")) return;
+            e.preventDefault(); e.stopPropagation();
+            setSelectedWbIds(new Set([hitId]));
+            setEditingWbId(hitId);
+          }}
           onMouseDownCapture=${(e) => {
             // SINGLE SOURCE OF TRUTH for node selection on the workflow
             // canvas. Capture-phase runs BEFORE child onMouseDown handlers,
@@ -41549,6 +41568,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
+            }
+            // Build mode: a wb text item can be edited inline (double-click,
+            // any tool). Its contentEditable commits on blur - but a click on
+            // empty canvas calls preventDefault below (marquee), which SKIPS
+            // the focus shift so blur never fires and the edit gets stuck.
+            // Commit it here on any mousedown outside the open editor.
+            if (editingWbIdRef.current
+                && !(e.target.closest && e.target.closest('[data-wb-id="' + editingWbIdRef.current + '"]'))) {
+              commitWbEditingNowRef.current && commitWbEditingNowRef.current();
             }
             // v3.4.39 - A code panel docked to a host node carries
             // `data-host-node-id` (not `data-node-id`). Without this
@@ -72720,7 +72748,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
   if (item.type === "text") {
     const fs = wbFontPx(item.fontSize, WB_FONT_SIZES.md);
     return html`
-      <div className="workflow-wb-item workflow-wb-text" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-text" data-wb-id=${item.id} data-selected=${sel} data-editing=${editing ? "true" : "false"}
         style=${{ left: item.x + "px", top: item.y + "px", width: item.w + "px", zIndex: z, ...rotStyle }}>
         ${textBody("", {
           fontSize: fs + "px",
@@ -72744,7 +72772,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
                   : wbColorCSS(item.stroke || item.color);
     const fillPct = Math.round(Math.max(0, Math.min(1, item.fillOpacity ?? 0.16)) * 100);
     return html`
-      <div className="workflow-wb-item workflow-wb-textbox" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-textbox" data-wb-id=${item.id} data-selected=${sel} data-editing=${editing ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
@@ -72766,7 +72794,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
   }
   if (item.type === "sticky") {
     return html`
-      <div className="workflow-wb-item workflow-wb-sticky" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-sticky" data-wb-id=${item.id} data-selected=${sel} data-editing=${editing ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
