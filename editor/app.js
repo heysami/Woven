@@ -41866,7 +41866,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // the canvas/node beneath, not the item). A node under the
             // cursor keeps priority - let its own dbl-click run. The only
             // text-bearing wb types are text / textbox / sticky.
-            if (e.target.closest && e.target.closest("[data-node-id], input, textarea, select, [contenteditable=\"true\"]")) return;
+            if (e.target.closest && e.target.closest("[data-node-id], input, textarea, select, [contenteditable]")) return;
             const r = e.currentTarget.getBoundingClientRect();
             const wx = (e.clientX - r.left - pan.x) / zoom;
             const wy = (e.clientY - r.top  - pan.y) / zoom;
@@ -42016,7 +42016,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // user can't position the cursor (or even focus the field). Same
             // hazard for any clickable form control rendered atop the canvas.
             if (e.target.closest && e.target.closest(
-              ".workflow-empty-composer, input, textarea, select, [contenteditable=\"true\"], button"
+              ".workflow-empty-composer, input, textarea, select, [contenteditable], button"
             )) return;
             const wp = screenToWorld(e.clientX, e.clientY);
             // Build-mode whiteboard grab - wb items stay selectable +
