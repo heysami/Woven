@@ -25484,6 +25484,10 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "mm-composer", w: 960, h: 640,
     doc: p.doc || null,
   }),
+  "hyperframes": (p) => ({
+    kind: "hyperframes", w: 960, h: 640,
+    doc: p.doc || null,
+  }),
   "gaussian-splat-3d": (p) => ({
     kind: "gaussian-splat-3d", w: 820, h: 560,
     scene: p.scene || null,
@@ -25829,6 +25833,12 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
     accepts:  { in:   { label: "Layer content", tags: ["asset", "layer"] },
                 edit: { label: "Edit composition", tags: ["text-gen", "asset-gen"] } },
+  },
+  "hyperframes": {
+    label: "Hyperframes motion",
+    provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
+    accepts:  { in:   { label: "Clip asset", tags: ["asset", "layer"] },
+                edit: { label: "Edit Hyperframes", tags: ["text-gen", "asset-gen"] } },
   },
   "gaussian-splat-3d": {
     label: "Splat Lab",
@@ -44672,6 +44682,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
             draggable=${true}
             onDragStart=${(e) => {
               e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "hyperframes" }));
+            }}
+            title="Drag onto canvas - Hyperframes motion editor. Build timed HTML motion graphics with text, shapes, and wired assets. Bakes a deterministic GSAP timeline .html for Hyperframes rendering."
+          >
+            <span className="workflow-library-item-glyph">Hf</span>
+            <span className="workflow-library-item-label">Hyperframes</span>
+            <span className="workflow-library-item-id">motion timeline</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
               e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "font-editor" }));
             }}
             title="Drag onto canvas - font creator. Pick a base font, edit individual glyphs as vector outlines, or borrow glyphs from other fonts. Bakes a real .otf you can @font-face. Wire an Agent in to edit glyphs."
@@ -58004,7 +58027,7 @@ function useUpstreamInputs(node, allNodes, allEdges, opts) {
 const WORKFLOW_BAKED_EDITABLE_KINDS = new Set([
   "formatted-text", "composer", "vector-editor", "spline-3d",
   "font-editor", "image-editor", "pixel-editor", "voxel-3d",
-  "synth", "music", "material-lab", "mm-composer", "gaussian-splat-3d",
+  "synth", "music", "material-lab", "mm-composer", "hyperframes", "gaussian-splat-3d",
 ]);
 // The captured OUTPUT node inside a custom-app's embedded subgraph. The
 // custom-app's downstream contribution delegates to whatever that node
@@ -63770,8 +63793,8 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onDeselect, onMo
 }
 
 /* ── App-node family: generic driven-view tool node ────────────────────────
-   One component drives all eight new app-node kinds (font / image / pixel /
-   voxel / synth / music / material-lab / mm-composer). Same DRIVEN-VIEW
+   One component drives the iframe app-node kinds (font / image / pixel /
+   voxel / synth / music / material-lab / mm-composer / hyperframes). Same DRIVEN-VIEW
    contract as spline-3d: the iframe holds NO persistence; it announces
    `<prefix>:ready`, the node pushes `<prefix>:init {state, imports?}`, the
    iframe emits `<prefix>:state {state, baked?}` on edit, and the node is the
@@ -63852,6 +63875,15 @@ const APP_NODE_TOOLS = {
     canonicalIsBaked: false, imports: true,
     inTitle: "Wire asset / synth / music nodes as layer content, or an Agent to edit.",
     outTitle: "Pipe the interactive composition .html into a prototype.",
+  },
+  "hyperframes": {
+    glyph: "Hf", label: "Hyperframes", tool: "/editor/tools/hyperframes/index.html",
+    prefix: "hyperframes", stateField: "doc",
+    canonical: (b, id) => `source/${b}/hyperframes-${id}.json`,
+    baked:     (b, id) => `source/${b}/hyperframes-${id}.html`,
+    canonicalIsBaked: false, imports: false,
+    inTitle: "Wire image / video / SVG / HTML assets as motion clips, or an Agent to edit.",
+    outTitle: "Pipe the baked Hyperframes .html into a prototype or renderer.",
   },
   "gaussian-splat-3d": {
     glyph: "✦", label: "Splat Lab", tool: "/editor/tools/gaussiansplat3d/index.html",

@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Hyperframes</title>
+  <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+  <link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
+  <script src="/editor/tools/_shared/tooltip.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: var(--wv-bg);
+      --panel: var(--wv-surface);
+      --panel-2: var(--wv-surface-2);
+      --panel-3: var(--wv-surface-3);
+      --line: var(--wv-border);
+      --line-strong: var(--wv-border-strong);
+      --text: var(--wv-text);
+      --muted: var(--wv-text-muted);
+      --faint: var(--wv-text-faint);
+      --accent: var(--wv-accent);
+      --accent-soft: var(--wv-accent-soft);
+      --accent-text: var(--wv-accent-text);
+      --danger: var(--wv-danger);
+      --danger-soft: var(--wv-danger-soft);
+      --viewport: var(--wv-viewport);
+      --viewport-2: var(--wv-viewport-2);
+      --sans: var(--wv-font-sans);
+      --mono: var(--wv-font-mono);
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select, textarea {
+      font: inherit;
+      color: inherit;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: var(--wv-radius);
+      padding: 6px 9px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--line-strong); background: var(--panel-3); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--wv-text-on-accent); }
+    button.primary:hover { background: var(--wv-accent-strong); border-color: var(--wv-accent-strong); }
+    button.danger { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: var(--wv-radius);
+      padding: 6px 7px;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    textarea { min-height: 66px; resize: vertical; }
+    label { display: grid; gap: 4px; color: var(--muted); }
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 220px minmax(320px, 1fr) 280px;
+      grid-template-rows: 38px 1fr;
+    }
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      z-index: 4;
+    }
+    .brand {
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-right: 8px;
+      font-size: 12px;
+    }
+    .topbar .spacer { flex: 1; }
+    .pill {
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      white-space: nowrap;
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+    .panel {
+      min-height: 0;
+      overflow: auto;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+    }
+    .panel.right {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+    }
+    body.sa-dock:not(.detached-panels) [data-float-panel] { display: flex !important; }
+    body.sa-dock:not(.detached-panels) .panel[data-float-panel] { display: block !important; }
+    body.sa-dock:not(.detached-panels) #coreCanvas {
+      position: relative !important;
+      inset: auto !important;
+      width: auto !important;
+      height: auto !important;
+      margin: 0 !important;
+    }
+    .section {
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section h2 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .stack { display: grid; gap: 8px; }
+    .clip-list { display: grid; gap: 6px; }
+    .clip-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--wv-radius);
+      background: var(--panel-2);
+      cursor: pointer;
+    }
+    .clip-row.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-text);
+    }
+    .clip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .clip-meta { color: var(--muted); font-size: 11px; }
+    .stage-wrap {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(255,255,255,.045) 1px, transparent 1px),
+        var(--viewport);
+      background-size: 28px 28px;
+      position: relative;
+    }
+    .stage-shell {
+      position: relative;
+      transform-origin: center;
+      box-shadow: 0 24px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.12);
+    }
+    #stage {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .hf-clip {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      transform-origin: center;
+      will-change: transform, opacity;
+    }
+    .hf-clip img,
+    .hf-clip video,
+    .hf-clip iframe {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border: 0;
+      display: block;
+    }
+    .hf-clip .missing {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      color: #9aa7bc;
+      border: 1px dashed rgba(255,255,255,.28);
+      background: rgba(255,255,255,.06);
+    }
+    .timeline {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      height: 48px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(8,11,16,.74);
+      backdrop-filter: blur(8px);
+      border-radius: 8px;
+      padding: 8px;
+      display: grid;
+      gap: 5px;
+      pointer-events: none;
+    }
+    .track {
+      height: 7px;
+      position: relative;
+      background: rgba(255,255,255,.08);
+      border-radius: 999px;
+    }
+    .segment {
+      position: absolute;
+      top: 0;
+      height: 7px;
+      min-width: 4px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--wv-hot));
+    }
+    .playhead {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      width: 2px;
+      background: #fff;
+      border-radius: 2px;
+    }
+    .empty {
+      color: var(--muted);
+      padding: 10px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar" id="topbar" data-float-panel="top">
+      <div class="brand">Hyperframes</div>
+      <button id="playBtn" class="primary">Play</button>
+      <button id="restartBtn">Restart</button>
+      <button id="addTextBtn">Text</button>
+      <button id="addShapeBtn">Shape</button>
+      <button id="addAssetBtn">Asset</button>
+      <div class="spacer"></div>
+      <span class="pill" id="statusPill">ready</span>
+    </div>
+
+    <aside class="panel" id="leftPanel" data-float-panel="left">
+      <div class="section stack">
+        <h2>Composition</h2>
+        <div class="row">
+          <label>Width <input id="docW" type="number" min="160" step="10"></label>
+          <label>Height <input id="docH" type="number" min="160" step="10"></label>
+        </div>
+        <div class="row">
+          <label>Duration <input id="docDuration" type="number" min="0.5" step="0.1"></label>
+          <label>FPS <input id="docFps" type="number" min="1" step="1"></label>
+        </div>
+        <label>Background <input id="docBg" type="text"></label>
+      </div>
+      <div class="section">
+        <h2>Clips</h2>
+        <div id="clipList" class="clip-list"></div>
+      </div>
+    </aside>
+
+    <main class="stage-wrap" id="coreCanvas">
+      <div class="stage-shell" id="stageShell">
+        <div id="stage"></div>
+      </div>
+      <div class="timeline">
+        <div class="track" id="track"></div>
+      </div>
+    </main>
+
+    <aside class="panel right" id="rightPanel" data-float-panel="right">
+      <div class="section stack" id="inspector"></div>
+    </aside>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    var params = new URLSearchParams(location.search);
+    var NODE_ID = params.get("nodeId") || "";
+    var PREFIX = "hyperframes";
+    var doc = null;
+    var selectedId = null;
+    var contentAssets = [];
+    var timeline = null;
+    var playing = false;
+    var saveTimer = 0;
+    var playStart = 0;
+
+    var els = {
+      play: document.getElementById("playBtn"),
+      restart: document.getElementById("restartBtn"),
+      addText: document.getElementById("addTextBtn"),
+      addShape: document.getElementById("addShapeBtn"),
+      addAsset: document.getElementById("addAssetBtn"),
+      status: document.getElementById("statusPill"),
+      list: document.getElementById("clipList"),
+      inspector: document.getElementById("inspector"),
+      stage: document.getElementById("stage"),
+      shell: document.getElementById("stageShell"),
+      wrap: document.getElementById("coreCanvas"),
+      track: document.getElementById("track"),
+      topbar: document.getElementById("topbar"),
+      leftPanel: document.getElementById("leftPanel"),
+      rightPanel: document.getElementById("rightPanel"),
+      docW: document.getElementById("docW"),
+      docH: document.getElementById("docH"),
+      docDuration: document.getElementById("docDuration"),
+      docFps: document.getElementById("docFps"),
+      docBg: document.getElementById("docBg")
+    };
+
+    function uid(prefix) {
+      return (prefix || "c") + Math.random().toString(36).slice(2, 8);
+    }
+
+    function num(v, fallback) {
+      var n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function clamp(v, lo, hi) {
+      return Math.max(lo, Math.min(hi, v));
+    }
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function css(s) {
+      return String(s == null ? "" : s).replace(/[<>"']/g, "");
+    }
+
+    function jsData(value) {
+      return JSON.stringify(value).replace(/</g, "\\u003c");
+    }
+
+    function defaultDoc() {
+      var id = "hf-" + (NODE_ID || "composition");
+      return {
+        v: 1,
+        compositionId: id,
+        width: 1280,
+        height: 720,
+        duration: 5.5,
+        fps: 30,
+        background: "#080b12",
+        clips: [
+          {
+            id: "title",
+            kind: "text",
+            text: "Hyperframes",
+            start: 0.15,
+            duration: 2.1,
+            x: 110,
+            y: 210,
+            w: 760,
+            h: 120,
+            rotation: 0,
+            opacity: 1,
+            color: "#f8fbff",
+            fill: "transparent",
+            radius: 0,
+            fontSize: 84,
+            fontWeight: 800,
+            ease: "power3.out",
+            from: { x: -90, y: 0, opacity: 0, scale: 0.92, rotation: 0 },
+            to: { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 }
+          },
+          {
+            id: "accent",
+            kind: "shape",
+            shape: "rect",
+            start: 0.45,
+            duration: 2.8,
+            x: 116,
+            y: 355,
+            w: 440,
+            h: 18,
+            rotation: 0,
+            opacity: 1,
+            fill: "#7cc7ff",
+            color: "#ffffff",
+            radius: 99,
+            ease: "expo.out",
+            from: { x: 0, y: 0, opacity: 0, scale: 0.08, rotation: 0 },
+            to: { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 }
+          }
+        ]
+      };
+    }
+
+    function normalizeClip(c, i) {
+      c = c || {};
+      var kind = c.kind || "text";
+      return {
+        id: String(c.id || uid("clip")),
+        kind: kind,
+        shape: c.shape || "rect",
+        assetId: c.assetId || "",
+        text: c.text == null ? (kind === "text" ? "Text clip" : "") : String(c.text),
+        start: Math.max(0, num(c.start, i * 0.25)),
+        duration: Math.max(0.1, num(c.duration, 2)),
+        x: num(c.x, 100 + i * 40),
+        y: num(c.y, 120 + i * 36),
+        w: Math.max(12, num(c.w, kind === "text" ? 520 : 260)),
+        h: Math.max(12, num(c.h, kind === "text" ? 100 : 180)),
+        rotation: num(c.rotation, 0),
+        opacity: clamp(num(c.opacity, 1), 0, 1),
+        fill: c.fill == null ? (kind === "shape" ? "#7cc7ff" : "transparent") : String(c.fill),
+        color: c.color == null ? "#ffffff" : String(c.color),
+        radius: Math.max(0, num(c.radius, kind === "shape" ? 18 : 0)),
+        fontSize: Math.max(8, num(c.fontSize, 64)),
+        fontWeight: Math.max(100, num(c.fontWeight, 700)),
+        ease: c.ease || "power3.out",
+        from: normalizePose(c.from, { x: 0, y: 40, opacity: 0, scale: 0.96, rotation: 0 }),
+        to: normalizePose(c.to, { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 })
+      };
+    }
+
+    function normalizePose(p, fallback) {
+      p = p || {};
+      return {
+        x: num(p.x, fallback.x),
+        y: num(p.y, fallback.y),
+        opacity: clamp(num(p.opacity, fallback.opacity), 0, 1),
+        scale: Math.max(0.01, num(p.scale, fallback.scale)),
+        rotation: num(p.rotation, fallback.rotation)
+      };
+    }
+
+    function normalizeDoc(value) {
+      var base = defaultDoc();
+      var d = value && typeof value === "object" ? value : base;
+      var seenIds = {};
+      var out = {
+        v: 1,
+        compositionId: String(d.compositionId || base.compositionId),
+        width: Math.max(160, num(d.width, base.width)),
+        height: Math.max(160, num(d.height, base.height)),
+        duration: Math.max(0.5, num(d.duration, base.duration)),
+        fps: Math.max(1, num(d.fps, base.fps)),
+        background: String(d.background || base.background),
+        clips: (Array.isArray(d.clips) && d.clips.length ? d.clips : base.clips).map(function (c, i) {
+          var clip = normalizeClip(c, i);
+          var baseId = clip.id || uid("clip");
+          if (seenIds[baseId]) {
+            seenIds[baseId] += 1;
+            clip.id = baseId + "-" + seenIds[baseId];
+          } else {
+            seenIds[baseId] = 1;
+          }
+          return clip;
+        })
+      };
+      if (!out.clips.some(function (c) { return c.id === selectedId; })) {
+        selectedId = out.clips[0] ? out.clips[0].id : null;
+      }
+      return out;
+    }
+
+    function selectedClip() {
+      return doc && doc.clips.find(function (c) { return c.id === selectedId; });
+    }
+
+    function assetById(id) {
+      return contentAssets.find(function (a) { return a.id === id; }) || null;
+    }
+
+    function clipLabel(c) {
+      if (!c) return "Clip";
+      if (c.kind === "asset") {
+        var a = assetById(c.assetId);
+        return a ? (a.label || a.id) : "Asset clip";
+      }
+      return c.text || (c.kind === "shape" ? "Shape" : "Clip");
+    }
+
+    function poseToGsap(p, baseRotation) {
+      return {
+        x: p.x,
+        y: p.y,
+        opacity: p.opacity,
+        scale: p.scale,
+        rotation: (baseRotation || 0) + (p.rotation || 0)
+      };
+    }
+
+    function clipStyle(c) {
+      var style = [
+        "left:" + c.x + "px",
+        "top:" + c.y + "px",
+        "width:" + c.w + "px",
+        "height:" + c.h + "px",
+        "opacity:" + c.opacity,
+        "border-radius:" + c.radius + "px",
+        "color:" + css(c.color),
+        "background:" + css(c.fill),
+        "font-size:" + c.fontSize + "px",
+        "font-weight:" + c.fontWeight,
+        "line-height:1.02",
+        "text-align:center"
+      ];
+      if (c.kind === "shape" && c.shape === "circle") style.push("border-radius:999px");
+      return style.join(";");
+    }
+
+    function renderClipContent(c) {
+      if (c.kind === "text") return esc(c.text);
+      if (c.kind === "shape") return "";
+      var a = assetById(c.assetId);
+      if (!a || !a.url) return '<div class="missing">wire an asset</div>';
+      var kind = (a.kind || "").toLowerCase();
+      var url = esc(a.url);
+      if (kind === "video") return '<video src="' + url + '" muted playsinline loop></video>';
+      if (kind === "html") return '<iframe src="' + url + '" sandbox="allow-scripts allow-same-origin"></iframe>';
+      return '<img src="' + url + '" alt="">';
+    }
+
+    function renderStage() {
+      if (!doc) return;
+      els.stage.style.width = doc.width + "px";
+      els.stage.style.height = doc.height + "px";
+      els.stage.style.background = doc.background;
+      els.stage.setAttribute("data-composition-id", doc.compositionId);
+      els.stage.setAttribute("data-width", String(doc.width));
+      els.stage.setAttribute("data-height", String(doc.height));
+      els.stage.setAttribute("data-duration", String(doc.duration));
+      els.stage.innerHTML = doc.clips.map(function (c) {
+        return '<div id="' + esc(c.id) + '" class="hf-clip clip" data-start="' + esc(c.start) +
+          '" data-duration="' + esc(c.duration) + '" style="' + esc(clipStyle(c)) + '">' +
+          renderClipContent(c) + '</div>';
+      }).join("");
+      fitStage();
+      buildPreviewTimeline();
+      renderTimeline();
+    }
+
+    function fitStage() {
+      if (!doc) return;
+      var pad = 40;
+      var r = els.wrap.getBoundingClientRect();
+      var scale = Math.min((r.width - pad) / doc.width, (r.height - pad) / doc.height);
+      scale = Math.max(0.05, Math.min(1, scale));
+      els.shell.style.width = doc.width + "px";
+      els.shell.style.height = doc.height + "px";
+      els.shell.style.transform = "scale(" + scale + ")";
+    }
+
+    function buildPreviewTimeline() {
+      if (timeline && timeline.kill) timeline.kill();
+      timeline = null;
+      if (!window.gsap || !doc) return;
+      timeline = gsap.timeline({ paused: true });
+      doc.clips.forEach(function (c) {
+        var el = document.getElementById(c.id);
+        if (!el) return;
+        var from = poseToGsap(c.from, c.rotation);
+        var to = poseToGsap(c.to, c.rotation);
+        to.duration = c.duration;
+        to.ease = c.ease || "power3.out";
+        timeline.fromTo(el, from, to, c.start);
+      });
+      timeline.to({}, { duration: 0 }, doc.duration);
+      if (playing) timeline.play(0);
+    }
+
+    function renderTimeline() {
+      if (!doc) return;
+      var duration = Math.max(0.1, doc.duration);
+      els.track.innerHTML = doc.clips.map(function (c) {
+        var left = clamp(c.start / duration * 100, 0, 100);
+        var width = clamp(c.duration / duration * 100, 1, 100 - left);
+        return '<div class="segment" style="left:' + left + '%;width:' + width + '%"></div>';
+      }).join("") + '<div class="playhead" id="playhead" style="left:0%"></div>';
+    }
+
+    function tickPlayhead() {
+      var ph = document.getElementById("playhead");
+      if (!ph || !playing || !doc) return;
+      var elapsed = ((performance.now() - playStart) / 1000) % Math.max(0.1, doc.duration);
+      ph.style.left = (elapsed / doc.duration * 100) + "%";
+      requestAnimationFrame(tickPlayhead);
+    }
+
+    function renderList() {
+      if (!doc) return;
+      els.list.innerHTML = doc.clips.map(function (c) {
+        return '<div class="clip-row ' + (c.id === selectedId ? "active" : "") + '" data-id="' + esc(c.id) + '">' +
+          '<div><div class="clip-title">' + esc(clipLabel(c)) + '</div>' +
+          '<div class="clip-meta">' + esc(c.kind) + " | " + c.start.toFixed(1) + "s / " + c.duration.toFixed(1) + "s</div></div>" +
+          '<div class="clip-meta">#</div></div>';
+      }).join("");
+      Array.prototype.forEach.call(els.list.querySelectorAll(".clip-row"), function (row) {
+        row.addEventListener("click", function () {
+          selectedId = row.getAttribute("data-id");
+          renderAll(false);
+        });
+      });
+    }
+
+    function assetOptions(selected) {
+      if (!contentAssets.length) return '<option value="">No wired assets</option>';
+      return contentAssets.map(function (a) {
+        return '<option value="' + esc(a.id) + '"' + (a.id === selected ? " selected" : "") + '>' +
+          esc(a.label || a.id) + " (" + esc(a.kind || "asset") + ")</option>";
+      }).join("");
+    }
+
+    function renderInspector() {
+      var c = selectedClip();
+      if (!c) {
+        els.inspector.innerHTML = '<div class="empty">Add a clip to start.</div>';
+        return;
+      }
+      els.inspector.innerHTML = [
+        '<h2>Clip</h2>',
+        '<label>Kind <select data-field="kind"><option value="text">Text</option><option value="shape">Shape</option><option value="asset">Asset</option></select></label>',
+        c.kind === "text" ? '<label>Text <textarea data-field="text">' + esc(c.text) + '</textarea></label>' : "",
+        c.kind === "shape" ? '<label>Shape <select data-field="shape"><option value="rect">Rect</option><option value="circle">Circle</option></select></label>' : "",
+        c.kind === "asset" ? '<label>Asset <select data-field="assetId">' + assetOptions(c.assetId) + '</select></label>' : "",
+        '<div class="row"><label>Start <input data-field="start" type="number" step="0.1" value="' + esc(c.start) + '"></label><label>Duration <input data-field="duration" type="number" step="0.1" value="' + esc(c.duration) + '"></label></div>',
+        '<div class="row"><label>X <input data-field="x" type="number" step="1" value="' + esc(c.x) + '"></label><label>Y <input data-field="y" type="number" step="1" value="' + esc(c.y) + '"></label></div>',
+        '<div class="row"><label>W <input data-field="w" type="number" step="1" value="' + esc(c.w) + '"></label><label>H <input data-field="h" type="number" step="1" value="' + esc(c.h) + '"></label></div>',
+        '<div class="row"><label>Fill <input data-field="fill" type="text" value="' + esc(c.fill) + '"></label><label>Text color <input data-field="color" type="text" value="' + esc(c.color) + '"></label></div>',
+        '<div class="row3"><label>Radius <input data-field="radius" type="number" step="1" value="' + esc(c.radius) + '"></label><label>Font <input data-field="fontSize" type="number" step="1" value="' + esc(c.fontSize) + '"></label><label>Weight <input data-field="fontWeight" type="number" step="100" value="' + esc(c.fontWeight) + '"></label></div>',
+        '<h2>From</h2>',
+        '<div class="row3"><label>X <input data-pose="from" data-field="x" type="number" step="1" value="' + esc(c.from.x) + '"></label><label>Y <input data-pose="from" data-field="y" type="number" step="1" value="' + esc(c.from.y) + '"></label><label>Opacity <input data-pose="from" data-field="opacity" type="number" step="0.05" value="' + esc(c.from.opacity) + '"></label></div>',
+        '<div class="row"><label>Scale <input data-pose="from" data-field="scale" type="number" step="0.05" value="' + esc(c.from.scale) + '"></label><label>Rotate <input data-pose="from" data-field="rotation" type="number" step="1" value="' + esc(c.from.rotation) + '"></label></div>',
+        '<h2>To</h2>',
+        '<div class="row3"><label>X <input data-pose="to" data-field="x" type="number" step="1" value="' + esc(c.to.x) + '"></label><label>Y <input data-pose="to" data-field="y" type="number" step="1" value="' + esc(c.to.y) + '"></label><label>Opacity <input data-pose="to" data-field="opacity" type="number" step="0.05" value="' + esc(c.to.opacity) + '"></label></div>',
+        '<div class="row"><label>Scale <input data-pose="to" data-field="scale" type="number" step="0.05" value="' + esc(c.to.scale) + '"></label><label>Rotate <input data-pose="to" data-field="rotation" type="number" step="1" value="' + esc(c.to.rotation) + '"></label></div>',
+        '<label>Ease <select data-field="ease"><option>power1.out</option><option>power2.out</option><option>power3.out</option><option>expo.out</option><option>back.out(1.7)</option><option>linear</option></select></label>',
+        '<button id="deleteClip" class="danger">Delete clip</button>'
+      ].join("");
+      setSelectValue("kind", c.kind);
+      setSelectValue("shape", c.shape);
+      setSelectValue("ease", c.ease);
+      Array.prototype.forEach.call(els.inspector.querySelectorAll("input,select,textarea"), function (input) {
+        input.addEventListener("input", updateSelectedFromInput);
+        input.addEventListener("change", updateSelectedFromInput);
+      });
+      var del = document.getElementById("deleteClip");
+      if (del) del.addEventListener("click", deleteSelectedClip);
+    }
+
+    function setSelectValue(field, value) {
+      var el = els.inspector.querySelector('[data-field="' + field + '"]');
+      if (el) el.value = value;
+    }
+
+    function updateSelectedFromInput(ev) {
+      var c = selectedClip();
+      if (!c) return;
+      var input = ev.currentTarget;
+      var field = input.getAttribute("data-field");
+      var pose = input.getAttribute("data-pose");
+      var value = input.value;
+      var numeric = ["start", "duration", "x", "y", "w", "h", "radius", "fontSize", "fontWeight", "opacity", "scale", "rotation"].indexOf(field) >= 0;
+      if (pose) {
+        c[pose][field] = numeric ? num(value, c[pose][field]) : value;
+      } else {
+        c[field] = numeric ? num(value, c[field]) : value;
+      }
+      doc = normalizeDoc(doc);
+      renderAll(true);
+    }
+
+    function renderCompositionControls() {
+      els.docW.value = doc.width;
+      els.docH.value = doc.height;
+      els.docDuration.value = doc.duration;
+      els.docFps.value = doc.fps;
+      els.docBg.value = doc.background;
+    }
+
+    function updateDocField() {
+      doc.width = num(els.docW.value, doc.width);
+      doc.height = num(els.docH.value, doc.height);
+      doc.duration = num(els.docDuration.value, doc.duration);
+      doc.fps = num(els.docFps.value, doc.fps);
+      doc.background = els.docBg.value || doc.background;
+      doc = normalizeDoc(doc);
+      renderAll(true);
+    }
+
+    function renderAll(shouldPersist) {
+      renderCompositionControls();
+      renderList();
+      renderInspector();
+      renderStage();
+      if (shouldPersist) schedulePersist();
+    }
+
+    function schedulePersist() {
+      clearTimeout(saveTimer);
+      els.status.textContent = "saving";
+      saveTimer = setTimeout(function () {
+        var baked = bakeHtml();
+        parent.postMessage({ type: PREFIX + ":state", nodeId: NODE_ID, state: doc, baked: { text: baked } }, "*");
+        els.status.textContent = "saved";
+      }, 250);
+    }
+
+    function sendBakedOnly() {
+      if (!doc) return;
+      parent.postMessage({ type: PREFIX + ":baked", nodeId: NODE_ID, baked: { text: bakeHtml() } }, "*");
+    }
+
+    function setBodyPanelVars(panelL, panelR, panelT, panelB) {
+      document.body.style.setProperty("--panel-l", panelL + "px");
+      document.body.style.setProperty("--panel-r", panelR + "px");
+      document.body.style.setProperty("--panel-t", panelT + "px");
+      document.body.style.setProperty("--panel-b", panelB + "px");
+    }
+
+    function reportPanels() {
+      var detached = document.body.classList.contains("detached-panels");
+      var gap = 8;
+      var panelL = detached && els.leftPanel ? els.leftPanel.offsetWidth + gap : 0;
+      var panelR = detached && els.rightPanel ? els.rightPanel.offsetWidth + gap : 0;
+      var panelT = detached && els.topbar ? els.topbar.offsetHeight + gap : 0;
+      var panelB = 0;
+      setBodyPanelVars(panelL, panelR, panelT, panelB);
+      try {
+        parent.postMessage({ type: PREFIX + ":panels", nodeId: NODE_ID, panelL: panelL, panelR: panelR, panelT: panelT, panelB: panelB }, "*");
+      } catch (_e) {}
+      fitStage();
+    }
+
+    function setSelected(selected) {
+      document.body.classList.toggle("detached-panels", !!selected);
+      reportPanels();
+      setTimeout(reportPanels, 0);
+    }
+
+    function addClip(kind) {
+      var asset = contentAssets[0] || null;
+      var c = normalizeClip({
+        id: uid("clip"),
+        kind: kind,
+        assetId: kind === "asset" && asset ? asset.id : "",
+        text: kind === "text" ? "New motion" : "",
+        shape: "rect",
+        start: Math.min(Math.max(0, doc.duration - 2), doc.clips.length * 0.25),
+        duration: 2,
+        x: 120 + doc.clips.length * 34,
+        y: 120 + doc.clips.length * 30,
+        w: kind === "text" ? 520 : 280,
+        h: kind === "text" ? 100 : 180
+      }, doc.clips.length);
+      doc.clips.push(c);
+      selectedId = c.id;
+      renderAll(true);
+    }
+
+    function deleteSelectedClip() {
+      if (!selectedId) return;
+      doc.clips = doc.clips.filter(function (c) { return c.id !== selectedId; });
+      selectedId = doc.clips[0] ? doc.clips[0].id : null;
+      renderAll(true);
+    }
+
+    function togglePlay() {
+      if (!timeline) buildPreviewTimeline();
+      if (!timeline) return;
+      playing = !playing;
+      els.play.textContent = playing ? "Pause" : "Play";
+      if (playing) {
+        playStart = performance.now();
+        timeline.repeat(-1).play(0);
+        requestAnimationFrame(tickPlayhead);
+      } else {
+        timeline.pause();
+      }
+    }
+
+    function restart() {
+      playStart = performance.now();
+      if (timeline) timeline.play(0);
+      playing = true;
+      els.play.textContent = "Pause";
+      requestAnimationFrame(tickPlayhead);
+    }
+
+    function bakeHtml() {
+      var d = normalizeDoc(doc);
+      var assets = contentAssets.map(function (a) {
+        return { id: a.id, url: a.url, kind: a.kind, label: a.label };
+      });
+      var clipsMarkup = d.clips.map(function (c) {
+        return '<div id="' + esc(c.id) + '" class="clip" data-start="' + esc(c.start) +
+          '" data-duration="' + esc(c.duration) + '" style="' + esc(clipStyle(c)) + '">' +
+          renderClipContent(c) + '</div>';
+      }).join("");
+      return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<title>' + esc(d.compositionId) + '</title>' +
+        '<style>' +
+        'html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Inter,ui-sans-serif,system-ui,sans-serif}' +
+        'body{display:grid;place-items:center}' +
+        '#stage{position:relative;overflow:hidden;isolation:isolate;transform-origin:center;background:' + css(d.background) + ';width:' + d.width + 'px;height:' + d.height + 'px}' +
+        '.clip{position:absolute;display:grid;place-items:center;overflow:hidden;transform-origin:center;will-change:transform,opacity}' +
+        '.clip img,.clip video,.clip iframe{width:100%;height:100%;object-fit:cover;border:0;display:block}' +
+        '.missing{width:100%;height:100%;display:grid;place-items:center;color:#9aa7bc;border:1px dashed rgba(255,255,255,.28);background:rgba(255,255,255,.06)}' +
+        '</style></head><body>' +
+        '<div id="stage" data-composition-id="' + esc(d.compositionId) + '" data-width="' + esc(d.width) + '" data-height="' + esc(d.height) + '" data-duration="' + esc(d.duration) + '">' +
+        clipsMarkup + '</div>' +
+        '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\\/script>' +
+        '<script>window.__HYPERFRAMES_DOC__=' + jsData(d) + ';window.__HYPERFRAMES_ASSETS__=' + jsData(assets) + ';' +
+        '(function(){var doc=window.__HYPERFRAMES_DOC__;var stage=document.getElementById("stage");' +
+        'function fit(){var s=Math.max(.01,Math.min(innerWidth/doc.width,innerHeight/doc.height));stage.style.transform="scale("+s+")";}' +
+        'addEventListener("resize",fit);fit();' +
+        'var tl=window.gsap?gsap.timeline({paused:true}):null;' +
+        'if(tl){doc.clips.forEach(function(c){var el=document.getElementById(c.id);if(!el)return;var fr=c.from||{},to=c.to||{};' +
+        'tl.fromTo(el,{x:fr.x||0,y:fr.y||0,opacity:fr.opacity==null?0:fr.opacity,scale:fr.scale||1,rotation:(c.rotation||0)+(fr.rotation||0)},' +
+        '{x:to.x||0,y:to.y||0,opacity:to.opacity==null?1:to.opacity,scale:to.scale||1,rotation:(c.rotation||0)+(to.rotation||0),duration:c.duration||1,ease:c.ease||"power3.out"},c.start||0);});' +
+        'tl.to({},{duration:0},doc.duration||5);window.__timelines=window.__timelines||{};window.__timelines[doc.compositionId]=tl;' +
+        'if(!window.__hyperframesRender){if(matchMedia("(prefers-reduced-motion: reduce)").matches){tl.progress(1);}else{tl.repeat(-1).play(0);}}}' +
+        '})();<\\/script></body></html>';
+    }
+
+    function initFromHost(state, content) {
+      contentAssets = Array.isArray(content) ? content : contentAssets;
+      doc = normalizeDoc(state || doc || defaultDoc());
+      renderAll(!state);
+      sendBakedOnly();
+    }
+
+    window.addEventListener("message", function (ev) {
+      var d = ev.data || {};
+      if (d.nodeId && d.nodeId !== NODE_ID) return;
+      if (d.type === PREFIX + ":init") {
+        initFromHost(d.state, d.content || []);
+      } else if (d.type === PREFIX + ":set-state") {
+        doc = normalizeDoc(d.state || defaultDoc());
+        renderAll(false);
+        sendBakedOnly();
+      } else if (d.type === PREFIX + ":content") {
+        contentAssets = Array.isArray(d.content) ? d.content : [];
+        renderAll(false);
+        sendBakedOnly();
+      } else if (d.type === PREFIX + ":select") {
+        setSelected(!!d.selected);
+      } else if (d.type === PREFIX + ":rasterize-request") {
+        parent.postMessage({ type: PREFIX + ":rasterized", nodeId: NODE_ID, err: "rasterize not supported" }, "*");
+      }
+    });
+
+    [els.docW, els.docH, els.docDuration, els.docFps, els.docBg].forEach(function (el) {
+      el.addEventListener("input", updateDocField);
+      el.addEventListener("change", updateDocField);
+    });
+    els.play.addEventListener("click", togglePlay);
+    els.restart.addEventListener("click", restart);
+    els.addText.addEventListener("click", function () { addClip("text"); });
+    els.addShape.addEventListener("click", function () { addClip("shape"); });
+    els.addAsset.addEventListener("click", function () { addClip("asset"); });
+    window.addEventListener("resize", function () { fitStage(); reportPanels(); });
+    document.addEventListener("mousedown", function (ev) {
+      if (!document.body.classList.contains("detached-panels")) return;
+      var t = ev.target;
+      if (t && t.closest && (t.closest("#coreCanvas") || t.closest("[data-float-panel]"))) return;
+      try { parent.postMessage({ type: PREFIX + ":deselect", nodeId: NODE_ID }, "*"); } catch (_e) {}
+    });
+
+    if (!NODE_ID) document.body.classList.add("sa-dock");
+    doc = normalizeDoc(defaultDoc());
+    renderAll(false);
+    reportPanels();
+    parent.postMessage({ type: PREFIX + ":ready", nodeId: NODE_ID }, "*");
+  })();
+  </script>
+</body>
+</html>

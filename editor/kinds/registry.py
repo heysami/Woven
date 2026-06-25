@@ -1790,6 +1790,24 @@ KINDS = {
         "pauseAfter":   False,
         "notes": "User-driven layered interactive surface. Each layer = {content · positioning · trigger · effects}. CONTENT kind is one of shape|text|camera|asset|generator|particles|scene3d (camera = the built-in live webcam, auto-enabled): `particles` is a GPU point system (params count,size,noise,gravityY,attract,life,color,blend; the pointer attracts, holding emits from the cursor); `scene3d` is a 3D point-cloud surface (params shape:sphere|torus|wave, count,size,spin,color,blend; pointer orbits). Both render full-stage and flow through the effect/mask/blend stack - keep positioning on `single`. POSITIONING: grid/instance/physics/drawn/rope/camera-feed/grid-3d/scatter-3d/face-3d. TRIGGERS: mouse/timeline/audio/camera, cross-affect layers. EFFECTS: GPU/shader (shader-lab taxonomy) incl. transform/color/tonemap/convolve/lens-distort, multi-input blend/matte/displace-by/lookup (pick the 2nd layer), and frame-history row-delay/cache-select/optical-flow. Bakes interactive source/<branch>/mm-<id>.html. Agent edits source/<branch>/mm-<id>.json.",
     },
+    "hyperframes": {
+        "title":        "Hyperframes motion",
+        "category":     "container",
+        "inputs": {
+            "doc":       {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "User-driven Hyperframes motion editor for kinetic type, logo stings, explainers, and asset-based motion graphics. Autosaves source/<branch>/hyperframes-<id>.json and bakes a deterministic GSAP timeline HTML file. Agent edits the JSON.",
+    },
     "gaussian-splat-3d": {
         "title":        "Splat Lab",
         "category":     "container",
@@ -3037,6 +3055,31 @@ _MM_AUTHORING = (
     "halftone{cell,angle}, ink{threshold,levels}, edge-detect{}, particle-grid{cell,drift}, pattern{scale,mix}; "
     "angles in radians."
 )
+_HYPERFRAMES_AUTHORING = (
+    "This is a HYPERFRAMES motion editor - a timed HTML composition that bakes to a "
+    "deterministic GSAP timeline. Author the canonical JSON; the tool renders it live "
+    "and bakes `source/{branch}/hyperframes-{id}.html`. Asset clips MUST reference "
+    "nodes wired into the Hyperframes node; do not invent assetIds.\n"
+    "  Write the canonical file `source/{branch}/hyperframes-{id}.json` (read it first; "
+    "re-imported live). Schema:\n"
+    "      {\"v\":1,\"compositionId\":\"hf-main\",\"width\":1280,\"height\":720,"
+    "\"duration\":6,\"fps\":30,\"background\":\"#080b12\",\n"
+    "       \"clips\":[{\"id\":\"title\",\"kind\":\"text|shape|asset\",\"assetId\":\"<wired node>\","
+    "\"text\":\"...\",\"shape\":\"rect|circle\",\"start\":0,\"duration\":2.4,"
+    "\"x\":120,\"y\":140,\"w\":720,\"h\":160,\"rotation\":0,\"opacity\":1,"
+    "\"fill\":\"#ffffff\",\"color\":\"#0b0d12\",\"radius\":24,\"fontSize\":72,"
+    "\"fontWeight\":700,\"ease\":\"power3.out\",\n"
+    "         \"from\":{\"x\":-80,\"y\":0,\"opacity\":0,\"scale\":0.94},"
+    "\"to\":{\"x\":0,\"y\":0,\"opacity\":1,\"scale\":1}}]}\n"
+    "  Clip `id` values MUST be unique within the composition. The baked HTML MUST follow "
+    "the Hyperframes model: one `#stage`, child `.clip` "
+    "elements with `data-start` and `data-duration`, and `window.__timelines[compositionId]` "
+    "as a PAUSED GSAP timeline. It should autoplay only when not rendered by "
+    "Hyperframes (`!window.__hyperframesRender`) and respect prefers-reduced-motion. "
+    "Use this for narrative motion graphics, kinetic type, logo stings, UI explainers, "
+    "and asset-based animated compositions. If real video footage is required, use a "
+    "video asset instead."
+)
 
 # ── Composable spec-node authoring (Layer / Position / Trigger / Effect) ──────
 # These four are source-code-first providers. The editable sidecar is a small
@@ -3628,6 +3671,16 @@ KIND_IO = {
             {"port": "edit", "label": "Edit composition", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/mm-{id}.json",
               "authoring": _MM_AUTHORING},
+        ],
+    },
+    "hyperframes": {
+        "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
+        "accepts":  [
+            {"port": "in", "label": "Clip asset", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "edit", "label": "Edit Hyperframes", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/hyperframes-{id}.json",
+              "authoring": _HYPERFRAMES_AUTHORING},
         ],
     },
     "gaussian-splat-3d": {

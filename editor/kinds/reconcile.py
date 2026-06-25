@@ -760,13 +760,13 @@ _PROTOTYPE_FOLDER_SKIP_NAMES = {
 # write. Cheap, shallow-ish scan (root + one nested level).
 # App-node editor tools bake their OWN deliverable into source/<slug>/ as
 # `<prefix>-<nodeId>.html` - mm-composer (`mm-*.html`), material-lab
-# (`material-*.html`), gaussian-splat-3d (`gsplat-*.html`). Those are app-node
+# (`material-*.html`), Hyperframes (`hyperframes-*.html`), gaussian-splat-3d (`gsplat-*.html`). Those are app-node
 # outputs, NOT prototype pages. A folder holding only app-node bakes is an
 # app-node build, and must NOT mount an eager "building" Prototype node - it
 # would hang forever, since no index.html ever lands (the orphan-prototype-folder
 # bug a user hit: an mm-composer build spawned a permanently-"Building…" node).
 # If a new .html-baking app-node tool is added, list its prefix here.
-_APP_NODE_HTML_PREFIXES = ("mm-", "material-", "gsplat-")
+_APP_NODE_HTML_PREFIXES = ("mm-", "material-", "hyperframes-", "gsplat-")
 
 
 def _folder_has_prototype_artifacts(folder_path):

@@ -96,7 +96,13 @@ def test_layer_specs_flow_through_layer_except_no_layer_position_hosts():
     therefore need placement as host-level context. Effects and triggers should
     not bypass the layer node.
     """
-    direct_position_hosts = {"layer", "pixel-editor", "spline-3d", "voxel-3d"}
+    direct_position_hosts = {
+        "layer",
+        "pixel-editor",
+        "spline-3d",
+        "voxel-3d",
+        "gaussian-splat-3d",
+    }
     direct_effect_hosts = {"layer"}
     direct_trigger_hosts = {"layer"}
 
