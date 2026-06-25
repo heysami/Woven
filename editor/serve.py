@@ -7962,6 +7962,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._tasks_archive(qs)
             if parsed.path == "/__write_text":
                 return self._write_text(qs)
+            if parsed.path == "/__asset_param_set":
+                return self._asset_param_set(qs)
             if parsed.path == "/__write_binary":
                 return self._write_binary(qs)
             if parsed.path == "/__html_save":
@@ -8222,6 +8224,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._web_text(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__file_stat":
             return self._file_stat(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__asset_params":
+            return self._asset_params(urllib.parse.parse_qs(parsed.query))
         # v2.50 - D3/D5 endpoints: registry as JSON + on-demand drift scan.
         if url_path == "/__kinds/registry":
             return self._kinds_registry()
@@ -20238,6 +20242,139 @@ class H(http.server.SimpleHTTPRequestHandler):
             })
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+
+    # ── Auto-exposed asset controls (introspect, don't declare) ───────────
+    # The host reads what an asset's SOURCE actually contains and surfaces the
+    # tunable numbers/colors a user would want to adjust - no per-generator
+    # contract required. kinds/asset_params.py is the brain (picks meaningful
+    # literals, excludes per-frame-driven values + GLSL string contents).
+
+    def _asset_param_files(self, node, project_root):
+        """Resolve the source file(s) to scan for a node, newest-relevant first."""
+        import glob as _glob
+        kind = node.get("kind")
+        rels = []
+
+        def add_glob(pattern):
+            for ab in sorted(_glob.glob(os.path.join(project_root, pattern))):
+                rels.append(os.path.relpath(ab, project_root).replace(os.sep, "/"))
+
+        if kind == "scene-3d":
+            sid = node.get("sceneId") or (node.get("inputs") or {}).get("sceneId") or ""
+            if sid:
+                add_glob("source/*/scene3d/%s/runtime.html" % sid)
+                add_glob("source/*/scene3d/%s/subsystems/*.js" % sid)
+                add_glob("source/*/scene3d/%s/interaction.js" % sid)
+        elif kind == "asset":
+            p = node.get("path")
+            if p:
+                rels.append(p)
+        else:
+            folder = {
+                "simulation": "simulations", "interactive-media": "interactives",
+                "narrative-experience": "narratives", "game-experience": "games",
+                "scrapbook-experience": "scrapbooks", "interactive-polish": "polish",
+            }.get(kind)
+            id_key = {
+                "simulation": "simId", "interactive-media": "imId",
+                "narrative-experience": "nxId", "game-experience": "gameId",
+                "scrapbook-experience": "sbId", "interactive-polish": "polishId",
+            }.get(kind)
+            aid = node.get(id_key) if id_key else None
+            if folder and aid:
+                add_glob("source/*/%s/%s/*.js" % (folder, aid))
+                add_glob("source/*/%s/%s/*.html" % (folder, aid))
+
+        out, seen = [], set()
+        for r in rels:
+            if r in seen:
+                continue
+            seen.add(r)
+            base = r.rsplit("/", 1)[-1]
+            if base.startswith("_poster") or base.startswith("_standalone") or base.startswith("_scratch"):
+                continue  # scratch / poster artefacts aren't the live runtime
+            out.append(r)
+        return out
+
+    def _asset_params(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        from kinds import asset_params as ap
+        node_id = (_qs_get(qs, "node") or "").strip()
+        explicit = (_qs_get(qs, "path") or "").strip()
+        if explicit:
+            rels = [explicit]
+        elif node_id:
+            wf = _live_read_workflow(project_root) or {}
+            node = next((n for n in (wf.get("nodes") or []) if n.get("id") == node_id), None)
+            if not node:
+                return self._reply(404, {"error": "node not found"})
+            rels = self._asset_param_files(node, project_root)
+        else:
+            return self._reply(400, {"error": "missing node or path"})
+        pairs = []
+        for rel in rels:
+            if not re.search(r"\.(js|mjs|html)$", rel):
+                continue
+            try:
+                ab = _safe_join(project_root, rel)
+            except Exception:
+                continue
+            if not os.path.isfile(ab):
+                continue
+            try:
+                with open(ab, encoding="utf-8") as f:
+                    pairs.append((rel, f.read()))
+            except Exception:
+                continue
+        try:
+            params = ap.scan_files(pairs)
+        except Exception as e:
+            return self._reply(500, {"error": "scan failed: %s" % e})
+        return self._reply(200, {"params": params, "files": [p[0] for p in pairs]})
+
+    def _asset_param_set(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=256 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        from kinds import asset_params as ap
+        rel = (body.get("file") or "").strip()
+        name = (body.get("name") or "").strip()
+        value = body.get("value")
+        if not rel.startswith("source/"):
+            return self._reply(400, {"error": "file must start with source/"})
+        if not name:
+            return self._reply(400, {"error": "missing name"})
+        try:
+            abs_path = _safe_join(project_root, rel)
+        except Exception as e:
+            return self._reply(400, {"error": "path resolution failed: %s" % e})
+        if not os.path.isfile(abs_path):
+            return self._reply(404, {"error": "file not found"})
+        with open(abs_path, encoding="utf-8") as f:
+            text = f.read()
+        # Re-scan to find the param's CURRENT span - drift-proof across edits.
+        target = next((p for p in ap.scan_source(text, "") if p["name"] == name), None)
+        if not target:
+            return self._reply(404, {"error": "param %s not found" % name})
+        new_text = ap.rewrite_literal(text, target["span"], value, target["type"])
+        if new_text == text:
+            return self._reply(200, {"ok": True, "unchanged": True})
+        try:
+            with _history_bracket(project_root, [rel], kind="ui-edit",
+                                  label="Tune %s in %s" % (name, rel), source="editor"):
+                with open(abs_path, "w", encoding="utf-8") as f:
+                    f.write(new_text)
+        except OSError as e:
+            return self._reply(500, {"error": "write failed: %s" % e})
+        return self._reply(200, {"ok": True, "name": name, "value": value, "type": target["type"]})
 
     # ── Agent daemon routes (Phase 1) ─────────────────────────────────────
 

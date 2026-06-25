@@ -27893,9 +27893,14 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
    properties for common knobs (color / speed / duration / easing / width / scale).
    ─────────────────────────────────────────────────────────────────────────── */
 
-// The live asset iframe element for a node (null until it mounts + loads).
+// The live runtime iframe for a node (null until it mounts + loads). Matches a
+// plain asset card (data-asset-id) OR a container runtime - scene-3d / sim /
+// interactive / game / … (data-container-id) - so the controls panel attaches to
+// every node that renders generated HTML, not just standalone asset nodes.
 function assetControlsIframe(nodeId) {
-  return document.querySelector('iframe[data-asset-id="' + nodeId + '"]');
+  return document.querySelector(
+    'iframe[data-asset-id="' + nodeId + '"], iframe[data-container-id="' + nodeId + '"]'
+  );
 }
 
 // Common-variable fallback catalog. A CSS var name is tested top-to-bottom; the
@@ -28012,6 +28017,97 @@ function applyAssetControl(nodeId, entry, value) {
   }
 }
 
+// ── Layer 2/3: daemon source-scan params + live binding ───────────────────────
+// The daemon (/__asset_params) reads the asset's SOURCE and returns the tunable
+// numbers/colors a user would adjust - the universal "always something to expose"
+// path that needs no per-generator contract. Each param carries {file, name} so a
+// change can be written back to source (/__asset_param_set). Where the value is
+// ALSO reachable on the running same-origin runtime, we bind it live for a smooth
+// drag; otherwise the source rewrite + an iframe reload applies it.
+
+// Fetch the daemon's source-derived param schema for a node. Returns [] on any
+// failure (daemon down / older build / no source) so the panel falls back cleanly.
+async function assetFetchDaemonParams(nodeId) {
+  try {
+    const pid = (typeof window !== "undefined" && window.__TH_PROJECT) || "";
+    const url = apiUrl("/__asset_params?project=" + encodeURIComponent(pid) + "&node=" + encodeURIComponent(nodeId));
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j.params || []).map((p) => ({
+      key: p.id, name: p.name, label: p.label, group: p.group, type: p.type,
+      value: p.value, default: p.value, min: p.min, max: p.max, step: p.step,
+      options: p.options, file: p.file, __daemon: true,
+    }));
+  } catch (e) { return []; }
+}
+
+// Find a uniform-like { value } object named `name` anywhere in a __scene3d
+// handles tree (handles.<name> or any nested handles.*.uniforms.<name>).
+function _findUniform(handles, name, depth) {
+  depth = depth || 0;
+  if (!handles || typeof handles !== "object" || depth > 5) return null;
+  const um = handles.uniforms;
+  if (um && um[name] && typeof um[name] === "object" && "value" in um[name]) return um[name];
+  for (const k in handles) {
+    let v;
+    try { v = handles[k]; } catch (e) { continue; }
+    if (!v || typeof v !== "object") continue;
+    if (k === name && "value" in v) return v;
+    const sub = _findUniform(v, name, depth + 1);
+    if (sub) return sub;
+  }
+  return null;
+}
+
+// Resolve a live setter for a daemon param on the running runtime, or null when
+// the value isn't reachable live (then we fall back to source-rewrite + reload).
+// Deliberately conservative: only the unambiguous cases (CSS var, scalar
+// __scene3d uniform by exact name). Colors / material props go via reload.
+function resolveLiveSetter(cw, doc, entry) {
+  if (entry.key && entry.key.indexOf("--") === 0) {
+    return (v) => { try { doc.documentElement.style.setProperty(entry.key, entry.type === "color" ? v : (v + (entry.unit || ""))); } catch (e) {} };
+  }
+  if (entry.type === "color") return null;
+  const name = entry.name || entry.key;
+  try {
+    const s3d = cw && cw.__scene3d;
+    if (s3d && s3d.handles) {
+      const uni = _findUniform(s3d.handles, name);
+      if (uni && typeof uni.value === "number") return (v) => { try { uni.value = +v; } catch (e) {} };
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Apply a daemon param live if reachable; returns true when it bound live.
+function applyDaemonControlLive(nodeId, entry, value) {
+  const ifr = assetControlsIframe(nodeId);
+  if (!ifr) return false;
+  let cw = null, doc = null;
+  try { cw = ifr.contentWindow; doc = ifr.contentDocument; } catch (e) { return false; }
+  const live = resolveLiveSetter(cw, doc, entry);
+  if (live) { live(value); return true; }
+  return false;
+}
+
+// Persist a daemon param to SOURCE (the durable state). When `reload`, refresh the
+// iframe so a non-live-bindable value (a baked literal) takes effect.
+async function writeDaemonControlSource(nodeId, entry, value, reload) {
+  try {
+    const pid = (typeof window !== "undefined" && window.__TH_PROJECT) || "";
+    await fetch(apiUrl("/__asset_param_set?project=" + encodeURIComponent(pid)), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: entry.file, name: entry.name, value: value }),
+    });
+  } catch (e) { return; }
+  if (reload) {
+    const ifr = assetControlsIframe(nodeId);
+    if (ifr) { try { ifr.contentWindow.location.reload(); } catch (e) { try { ifr.src = ifr.src; } catch (_) {} } }
+  }
+}
+
 // Replay persisted node.controls into a freshly-loaded asset so user tweaks
 // survive reload / re-bake. Called from the asset iframe's onLoad.
 function replayAssetControls(nodeId, controls) {
@@ -28059,32 +28155,54 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const valsRef = useRef(vals); valsRef.current = vals;
   const controlsRef = useRef(node.controls); controlsRef.current = node.controls;
   const persistRef = useRef(0);
+  const srcRef = useRef(0);   // debounce for daemon source-rewrite POSTs
 
   // Query the asset for its schema once selected. The iframe may still be
   // loading, so retry a handful of times until it reports knobs (or gives up).
   useEffect(() => {
     if (!selected) { setSchema([]); setVals({}); setSource("none"); return; }
-    let alive = true, tries = 0, timer = 0;
+    let alive = true, tries = 0, timer = 0, daemonTried = false;
+    const seedFrom = (sch, src) => {
+      const persisted = controlsRef.current || {};
+      const seed = {};
+      for (const e of sch) seed[e.key] = (e.key in persisted) ? persisted[e.key] : e.value;
+      setSource(src); setSchema(sch); setVals(seed);
+    };
+    // The daemon source-scan is the PRIMARY auto-expose path (works on any asset,
+    // no contract needed). A hand-authored contract still wins when present; the
+    // CSS-var fallback is the last resort if the daemon yields nothing.
+    const tryDaemon = () => {
+      if (daemonTried) return; daemonTried = true;
+      assetFetchDaemonParams(nodeId).then((dp) => {
+        if (alive && dp && dp.length) seedFrom(dp, "daemon");
+      });
+    };
     const poll = () => {
       if (!alive) return;
       const info = readAssetControlsSchema(nodeId);
-      if (info && info.schema && info.schema.length) {
-        const persisted = controlsRef.current || {};
-        const seed = {};
-        for (const e of info.schema) seed[e.key] = (e.key in persisted) ? persisted[e.key] : e.value;
-        setSource(info.source); setSchema(info.schema); setVals(seed);
-        return;
-      }
+      if (info && info.source === "contract" && info.schema.length) { seedFrom(info.schema, "contract"); return; }
+      // no contract -> kick the daemon once; show any CSS fallback provisionally.
+      tryDaemon();
+      if (info && info.schema && info.schema.length) { seedFrom(info.schema, info.source); return; }
       if (tries++ < 10) timer = setTimeout(poll, 250);
     };
     poll();
-    const onRefresh = (ev) => { const d = ev && ev.detail; if (!d || !d.nodeId || d.nodeId === nodeId) { tries = 0; poll(); } };
+    const onRefresh = (ev) => { const d = ev && ev.detail; if (!d || !d.nodeId || d.nodeId === nodeId) { tries = 0; daemonTried = false; poll(); } };
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => { alive = false; clearTimeout(timer); window.removeEventListener("th:asset-refresh", onRefresh); };
   }, [nodeId, selected]);
 
   const onKnob = (entry, value) => {
     setVals((v) => ({ ...v, [entry.key]: value }));
+    if (entry.__daemon) {
+      // Source is the durable state for daemon params: apply live for a smooth
+      // drag where bindable, and debounce-write the source (reloading the iframe
+      // only when the value couldn't be bound live).
+      const liveOk = applyDaemonControlLive(nodeId, entry, value);
+      clearTimeout(srcRef.current);
+      srcRef.current = setTimeout(() => writeDaemonControlSource(nodeId, entry, value, !liveOk), 350);
+      return;
+    }
     applyAssetControl(nodeId, entry, value);
     clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {
@@ -28093,9 +28211,17 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   };
   const resetAll = () => {
     const next = {};
-    for (const e of schema) { next[e.key] = e.default; applyAssetControl(nodeId, e, e.default); }
+    for (const e of schema) {
+      next[e.key] = e.default;
+      if (e.__daemon) {
+        const liveOk = applyDaemonControlLive(nodeId, e, e.default);
+        writeDaemonControlSource(nodeId, e, e.default, !liveOk);
+      } else {
+        applyAssetControl(nodeId, e, e.default);
+      }
+    }
     setVals(next);
-    onChange && onChange({ controls: next });
+    if (schema.some((e) => !e.__daemon)) onChange && onChange({ controls: next });
   };
 
   if (!selected || !rect || !schema.length) return null;
@@ -28146,6 +28272,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     <div className="wac-head">
       <span className="wac-title">Controls</span>
       ${source === "fallback" ? html`<span className="wac-source" title="Inferred from CSS variables">auto</span>` : null}
+      ${source === "daemon" ? html`<span className="wac-source" title="Read from the asset source">source</span>` : null}
       <button className="wac-mini" title="Reset all" onClick=${resetAll}>reset</button>
       <button className="wac-mini wac-collapse" title=${collapsed ? "Expand" : "Collapse"} onClick=${() => setCollapsed((c) => !c)}>${collapsed ? "+" : "–"}</button>
     </div>
@@ -42335,6 +42462,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "scene-3d").map(n => html`
+              <${WorkflowSimOrInteractiveNode}
+                key=${n.id}
+                node=${n}
+                family="scene-3d"
+                zoom=${zoom}
+                lodVisible=${lodVisibleFor(n)}
+                orphaned=${!!orphanMap[n.id]}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "asset").map(n => html`
               <${WorkflowAssetNode}
                 key=${n.id}
@@ -52115,6 +52261,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
                 : family === "game"        ? node.gameId
                 : family === "scrapbook"   ? node.sbId
                 : family === "polish"      ? node.polishId
+                : family === "scene-3d"    ? (node.sceneId || (node.inputs && node.inputs.sceneId))
                 : null;
   const folder  = family === "simulation" ? "simulations"
                 : family === "interactive" ? "interactives"
@@ -52122,6 +52269,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
                 : family === "game"        ? "games"
                 : family === "scrapbook"   ? "scrapbooks"
                 : family === "polish"      ? "polish"
+                : family === "scene-3d"    ? "scene3d"
                 : "";
   const familyLabel = family === "simulation" ? "sim"
                     : family === "interactive" ? "im"
@@ -52129,6 +52277,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
                     : family === "game"        ? "game"
                     : family === "scrapbook"   ? "sb"
                     : family === "polish"      ? "polish"
+                    : family === "scene-3d"    ? "3d"
                     : family;
 
   // Build iframe src targeting the runtime.html the orchestrator committed.
@@ -52345,6 +52494,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
 
       <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
       <${WorkflowNodeStagePill} nodeId=${node.id}/>
+      ${selected && html`<${WorkflowAssetControlsPanel} node=${node} selected=${selected} onChange=${onChange}/>`}
     </div>
   `;
 }
