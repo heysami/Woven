@@ -50,12 +50,33 @@ import json
 import os
 import sys
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 KEEP_IMAGES = int(os.environ.get("EVICT_KEEP_IMAGES", "2"))
-UPSTREAM_HOST = os.environ.get("EVICT_UPSTREAM_HOST", "api.anthropic.com")
 LISTEN_PORT = int(os.environ.get("EVICT_PROXY_PORT", "8787"))
 UPSTREAM_TIMEOUT = 600  # long turns stream for minutes; don't kill mid-response
+
+
+def _parse_upstream(url):
+    """Parse a base URL (or bare host) into (scheme, host, port). The proxy
+    FORWARDS here - it's whatever ANTHROPIC_BASE_URL pointed at before we
+    inserted ourselves (the default API, or a real gateway), so chaining works
+    in every case instead of us having to skip when a base URL is already set."""
+    if not url:
+        url = "https://api.anthropic.com"
+    if "://" not in url:
+        url = "https://" + url
+    u = urllib.parse.urlsplit(url)
+    scheme = u.scheme or "https"
+    host = u.hostname or "api.anthropic.com"
+    port = u.port or (443 if scheme == "https" else 80)
+    return (scheme, host, port)
+
+
+# Upstream the proxy forwards to. Defaults to the real API; start_in_background()
+# overrides it with the caller's actual ANTHROPIC_BASE_URL so a gateway chains.
+UPSTREAM = _parse_upstream(os.environ.get("EVICT_UPSTREAM"))
 
 # BYTE-CONSTANT — never put a counter/timestamp/id in here or the cache thrashes.
 STUB_TEXT = "[screenshot evicted to conserve context; re-capture if needed]"
@@ -178,7 +199,11 @@ class Handler(BaseHTTPRequestHandler):
             up_headers["Content-Length"] = str(len(body))
             up_headers["Accept-Encoding"] = "identity"  # avoid gzip relay complexity
 
-            conn = http.client.HTTPSConnection(UPSTREAM_HOST, timeout=UPSTREAM_TIMEOUT)
+            scheme, uhost, uport = UPSTREAM
+            if scheme == "https":
+                conn = http.client.HTTPSConnection(uhost, uport, timeout=UPSTREAM_TIMEOUT)
+            else:
+                conn = http.client.HTTPConnection(uhost, uport, timeout=UPSTREAM_TIMEOUT)
             conn.request(self.command, self.path, body=body or None, headers=up_headers)
             resp = conn.getresponse()
 
@@ -214,16 +239,21 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _proxy
 
 
-def start_in_background():
+def start_in_background(upstream=None):
     """Start the proxy on an ephemeral localhost port in a daemon thread.
 
-    Called once from serve.py at boot. Returns the base URL to put in the
-    spawned CLI's env (ANTHROPIC_BASE_URL). The thread is a daemon thread, so
-    it dies with the daemon — nothing for the user to launch or supervise.
-    Returns None on failure (caller then just doesn't set ANTHROPIC_BASE_URL,
-    so spawns fall back to talking to the API directly — fail-open).
+    Called once from serve.py. `upstream` is the real ANTHROPIC_BASE_URL the CLI
+    would otherwise hit (the default API, or a gateway); the proxy forwards
+    there, so we can always route through it instead of skipping when a base URL
+    is already set. Returns the proxy's base URL to set as the child's
+    ANTHROPIC_BASE_URL. The thread is a daemon thread, so it dies with the daemon
+    - nothing for the user to launch or supervise. Returns None on failure
+    (caller then leaves ANTHROPIC_BASE_URL as-is - fail-open).
     """
+    global UPSTREAM
     try:
+        if upstream:
+            UPSTREAM = _parse_upstream(upstream)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)  # 0 => free port
         port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True,
@@ -236,9 +266,10 @@ def start_in_background():
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", LISTEN_PORT), Handler)
     sys.stderr.write(
-        "anthropic-evict-proxy on http://127.0.0.1:%d -> https://%s "
+        "anthropic-evict-proxy on http://127.0.0.1:%d -> %s://%s:%d "
         "(keep last %d image%s)\n"
-        % (LISTEN_PORT, UPSTREAM_HOST, KEEP_IMAGES, "" if KEEP_IMAGES == 1 else "s")
+        % (LISTEN_PORT, UPSTREAM[0], UPSTREAM[1], UPSTREAM[2], KEEP_IMAGES,
+           "" if KEEP_IMAGES == 1 else "s")
     )
     sys.stderr.flush()
     try:

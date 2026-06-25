@@ -7581,14 +7581,16 @@ _EVICT_BASE_URL = None          # None = not yet tried; "" = tried+failed; url =
 _EVICT_LOCK = threading.Lock()
 
 
-def _evict_base_url():
+def _evict_base_url(upstream=None):
+    # `upstream` = the real ANTHROPIC_BASE_URL the spawn would otherwise hit; the
+    # proxy forwards there (default API or a gateway), captured on first start.
     global _EVICT_BASE_URL
     if _EVICT_BASE_URL is None:
         with _EVICT_LOCK:
             if _EVICT_BASE_URL is None:
                 try:
                     import anthropic_evict_proxy
-                    _EVICT_BASE_URL = anthropic_evict_proxy.start_in_background() or ""
+                    _EVICT_BASE_URL = anthropic_evict_proxy.start_in_background(upstream) or ""
                 except Exception:
                     _EVICT_BASE_URL = ""
     return _EVICT_BASE_URL or None
@@ -7629,11 +7631,13 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     })
     # Route Claude's API calls through the in-process screenshot-eviction proxy
     # (keeps the last N browser screenshots, stubs older ones so they aren't
-    # re-read every turn). claude only (the proxy is Anthropic-only). Skipped if
-    # the user set their own ANTHROPIC_BASE_URL (their gateway). Fail-open: the
-    # helper returns None when the proxy didn't start, leaving the env untouched.
-    if agent_id == "claude" and not env.get("ANTHROPIC_BASE_URL"):
-        _evict_url = _evict_base_url()
+    # re-read every turn). claude only (the proxy is Anthropic-only). The proxy
+    # FORWARDS to whatever ANTHROPIC_BASE_URL already pointed at - the default
+    # API or a real gateway - so we ALWAYS route through it (chain, never skip;
+    # an existing base URL of https://api.anthropic.com must not bypass us).
+    # Fail-open: the helper returns None if the proxy didn't start.
+    if agent_id == "claude":
+        _evict_url = _evict_base_url(env.get("ANTHROPIC_BASE_URL"))
         if _evict_url:
             env["ANTHROPIC_BASE_URL"] = _evict_url
     # v3.1 - Skill isolation. The earlier approach of overriding
