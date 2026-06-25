@@ -5979,7 +5979,10 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
       // A fixed flex item must not be grown/shrunk away from its size.
       if (flexMain) { next.flexGrow = "0"; next.flexShrink = "0"; }
     } else if (mode === "fill") {
-      if (flexMain)       { next.flexGrow = "1"; next[k] = "auto"; }
+      // Clear a stylesheet max-* that would silently cap the fill - an inline
+      // value beats any non-!important rule, so Fill actually reaches 100%.
+      next[axis === "w" ? "maxWidth" : "maxHeight"] = "none";
+      if (flexMain)       { next.flexGrow = "1"; next[axis === "w" ? "minWidth" : "minHeight"] = "0"; next[k] = "auto"; }
       else if (flexCross) { next.alignSelf = "stretch"; next[k] = "auto"; }
       else if (isGrid)    { next[gridSelfKey] = "stretch"; next[k] = "auto"; }
       else                { next[k] = "100%"; }
@@ -46443,7 +46446,10 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
       // A fixed flex item must not be grown/shrunk away from its size.
       if (flexMain) { next.flexGrow = "0"; next.flexShrink = "0"; }
     } else if (mode === "fill") {
-      if (flexMain)       { next.flexGrow = "1"; next[k] = "auto"; }
+      // Clear a stylesheet max-* that would silently cap the fill - an inline
+      // value beats any non-!important rule, so Fill actually reaches 100%.
+      next[axis === "w" ? "maxWidth" : "maxHeight"] = "none";
+      if (flexMain)       { next.flexGrow = "1"; next[axis === "w" ? "minWidth" : "minHeight"] = "0"; next[k] = "auto"; }
       else if (flexCross) { next.alignSelf = "stretch"; next[k] = "auto"; }
       else if (isGrid)    { next[gridSelfKey] = "stretch"; next[k] = "auto"; }
       else                { next[k] = "100%"; }
