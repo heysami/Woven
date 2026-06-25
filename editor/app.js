@@ -74953,6 +74953,57 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
 /* Phase 4b - Settings dialog. One section per integrated provider, driven by
    window.TH_MEDIA.providers. Each renders an interactive Save / Test / Clear
    row. Non-integrated ("soon") roadmap providers are filtered out. */
+/* Send-to-Figma setup, surfaced as its own Settings tab so the one-time Figma
+   plugin install is discoverable. The feature itself lives on each
+   prototype/asset node (the Figma glyph next to Export); this tab just explains
+   how to wire up the Woven Bridge plugin once. See editor/tools/figma-bridge. */
+function WorkflowFigmaSection() {
+  const daemonOrigin = (typeof location !== "undefined" && location.origin) || "http://127.0.0.1:5731";
+  const projectId = (typeof activeProjectId === "function" && activeProjectId()) || "default";
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">Send to Figma</span>
+        <span className="workflow-settings-skills">rebuilds a rendered page as editable Figma layers</span>
+      </div>
+      <div className="workflow-settings-hint">
+        Figma's API cannot create design content, so this works through a small local plugin:
+        the editor walks the rendered page into a scene and the Woven Bridge plugin (in Figma
+        Desktop) rebuilds it as real frames, text, and images. Nothing leaves your machine.
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>One-time setup</strong>
+        <ol>
+          <li>In Figma Desktop: <code>Plugins → Development → Import plugin from manifest…</code>
+            and pick <code>editor/tools/figma-bridge/manifest.json</code>.</li>
+          <li>Run it: <code>Plugins → Development → Woven Bridge</code>.</li>
+          <li>In the plugin window, set the daemon URL to <code>${daemonOrigin}</code> and the
+            project id to <code>${projectId}</code>, then click <strong>Connect</strong>
+            (the dot turns green). Leave the plugin window open while you work.</li>
+        </ol>
+        <span className="workflow-settings-localhint">
+          The URL must be listed in the plugin's <code>manifest.networkAccess.allowedDomains</code>
+          (default <code>127.0.0.1:5731</code> and <code>localhost:5731</code>); on a custom port,
+          add it there or keep the daemon on 5731.
+        </span>
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>Each time</strong>
+        <ol>
+          <li>Open the prototype or HTML asset on the canvas (it is read live, so it must be rendered).</li>
+          <li>Click the Figma button (next to Export) on that node, then Send.</li>
+          <li>It builds on the current Figma page and zooms to it.</li>
+        </ol>
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>Notes.</strong> v1 uses absolute positioning (no auto-layout yet); canvas, SVG, and
+        video come over as plain frames. Full details + the scene format are in
+        <code>editor/tools/figma-bridge/README.md</code> and <code>SCENE.md</code>.
+      </div>
+    </div>
+  `;
+}
+
 function WorkflowSettingsDialog({ onClose }) {
   const [config, setConfig] = useState(null);
   // Three-tab split: API keys / things to install / chat send key. Each tab
@@ -74987,11 +75038,13 @@ function WorkflowSettingsDialog({ onClose }) {
   const TABS = [
     { id: "api", label: "API keys" },
     { id: "install", label: "Things to install" },
+    { id: "figma", label: "Send to Figma" },
     { id: "sendkey", label: "Send key" },
   ];
   const subByTab = {
     api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
     install: "Local tools the daemon installs on demand · no API key needed",
+    figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     sendkey: "Chat composer · saved in this browser, applies live",
   };
 
@@ -75032,6 +75085,8 @@ function WorkflowSettingsDialog({ onClose }) {
           ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>
+          ` : tab === "figma" ? html`
+            <${WorkflowFigmaSection}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}
