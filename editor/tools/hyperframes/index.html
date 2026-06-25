@@ -208,37 +208,122 @@
       left: 14px;
       right: 14px;
       bottom: 14px;
-      height: 48px;
+      height: 118px;
       border: 1px solid rgba(255,255,255,.14);
       background: rgba(8,11,16,.74);
       backdrop-filter: blur(8px);
       border-radius: 8px;
-      padding: 8px;
+      padding: 8px 10px;
       display: grid;
-      gap: 5px;
-      pointer-events: none;
+      grid-template-rows: auto 18px 1fr;
+      gap: 6px;
+      pointer-events: auto;
+      z-index: 3;
+      box-shadow: 0 10px 26px rgba(0,0,0,.26);
+    }
+    .timeline-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: rgba(255,255,255,.82);
+      font: 10px/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .time-readout {
+      color: rgba(255,255,255,.64);
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .ruler {
+      position: relative;
+      height: 18px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      cursor: ew-resize;
+      margin-left: 118px;
+    }
+    .tick {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: rgba(255,255,255,.16);
+    }
+    .tick-label {
+      position: absolute;
+      top: 4px;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,.54);
+      font: 9px/1 var(--mono);
+      white-space: nowrap;
     }
     .track {
-      height: 7px;
+      min-height: 0;
       position: relative;
-      background: rgba(255,255,255,.08);
+      display: grid;
+      gap: 4px;
+      overflow: auto;
+      padding-right: 2px;
+      cursor: ew-resize;
+    }
+    .track-row {
+      position: relative;
+      height: 18px;
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+    .track-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: rgba(255,255,255,.58);
+      font: 10px/1 var(--mono);
+    }
+    .lane {
+      position: relative;
+      height: 10px;
       border-radius: 999px;
+      background: rgba(255,255,255,.08);
     }
     .segment {
       position: absolute;
       top: 0;
-      height: 7px;
+      height: 10px;
       min-width: 4px;
       border-radius: 999px;
       background: linear-gradient(90deg, var(--accent), var(--wv-hot));
+      border: 1px solid rgba(255,255,255,.2);
+      cursor: pointer;
+    }
+    .segment.active {
+      box-shadow: 0 0 0 2px rgba(255,255,255,.38);
     }
     .playhead {
       position: absolute;
-      top: 4px;
-      bottom: 4px;
+      top: 29px;
+      bottom: 8px;
       width: 2px;
       background: #fff;
       border-radius: 2px;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 0 14px rgba(255,255,255,.45);
+      pointer-events: none;
+      z-index: 4;
+    }
+    .playhead::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -7px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #fff;
+      transform: translateX(-50%);
+      box-shadow: 0 0 0 1px rgba(0,0,0,.38);
     }
     .empty {
       color: var(--muted);
@@ -285,8 +370,14 @@
       <div class="stage-shell" id="stageShell">
         <div id="stage"></div>
       </div>
-      <div class="timeline">
+      <div class="timeline" id="timelineControl">
+        <div class="timeline-head">
+          <span>Timeline</span>
+          <span class="time-readout"><span id="timeReadout">0.00s</span> / <span id="durationReadout">0.00s</span></span>
+        </div>
+        <div class="ruler" id="ruler"></div>
         <div class="track" id="track"></div>
+        <div class="playhead" id="playhead" style="left:0%"></div>
       </div>
     </main>
 
@@ -309,6 +400,8 @@
     var playing = false;
     var saveTimer = 0;
     var playStart = 0;
+    var currentTime = 0;
+    var scrubbing = false;
 
     var els = {
       play: document.getElementById("playBtn"),
@@ -322,7 +415,11 @@
       stage: document.getElementById("stage"),
       shell: document.getElementById("stageShell"),
       wrap: document.getElementById("coreCanvas"),
+      timelineControl: document.getElementById("timelineControl"),
+      ruler: document.getElementById("ruler"),
       track: document.getElementById("track"),
+      timeReadout: document.getElementById("timeReadout"),
+      durationReadout: document.getElementById("durationReadout"),
       topbar: document.getElementById("topbar"),
       leftPanel: document.getElementById("leftPanel"),
       rightPanel: document.getElementById("rightPanel"),
@@ -589,24 +686,84 @@
         timeline.fromTo(el, from, to, c.start);
       });
       timeline.to({}, { duration: 0 }, doc.duration);
-      if (playing) timeline.play(0);
+      currentTime = clamp(currentTime, 0, Math.max(0.1, doc.duration));
+      timeline.time(currentTime, false);
+      if (playing) {
+        playStart = performance.now() - currentTime * 1000;
+        timeline.repeat(-1).play(currentTime);
+      }
     }
 
     function renderTimeline() {
       if (!doc) return;
       var duration = Math.max(0.1, doc.duration);
+      currentTime = clamp(currentTime, 0, duration);
+      var tickCount = duration <= 4 ? 5 : duration <= 8 ? 6 : 8;
+      var ticks = [];
+      for (var i = 0; i < tickCount; i++) {
+        var pct = tickCount === 1 ? 0 : i / (tickCount - 1) * 100;
+        var t = pct / 100 * duration;
+        ticks.push('<span class="tick" style="left:' + pct + '%"></span><span class="tick-label" style="left:' + pct + '%">' + t.toFixed(t < 10 ? 1 : 0) + 's</span>');
+      }
+      els.ruler.innerHTML = ticks.join("");
+      els.durationReadout.textContent = duration.toFixed(2) + "s";
       els.track.innerHTML = doc.clips.map(function (c) {
         var left = clamp(c.start / duration * 100, 0, 100);
         var width = clamp(c.duration / duration * 100, 1, 100 - left);
-        return '<div class="segment" style="left:' + left + '%;width:' + width + '%"></div>';
-      }).join("") + '<div class="playhead" id="playhead" style="left:0%"></div>';
+        return '<div class="track-row" data-id="' + esc(c.id) + '">' +
+          '<div class="track-label">' + esc(clipLabel(c)) + '</div>' +
+          '<div class="lane"><div class="segment ' + (c.id === selectedId ? "active" : "") + '" data-id="' + esc(c.id) + '" title="' + esc(clipLabel(c)) + '" style="left:' + left + '%;width:' + width + '%"></div></div>' +
+          '</div>';
+      }).join("");
+      syncTimelineUi();
+    }
+
+    function timelineRangeRect() {
+      var lane = els.track.querySelector(".lane");
+      return (lane || els.ruler).getBoundingClientRect();
+    }
+
+    function setTimelineTime(time, play) {
+      if (!doc) return;
+      currentTime = clamp(num(time, currentTime), 0, Math.max(0.1, doc.duration));
+      if (timeline) {
+        timeline.pause();
+        timeline.time(currentTime, false);
+      }
+      if (play) {
+        playing = true;
+        els.play.textContent = "Pause";
+        playStart = performance.now() - currentTime * 1000;
+        if (timeline) timeline.repeat(-1).play(currentTime);
+        requestAnimationFrame(tickPlayhead);
+      }
+      syncTimelineUi();
+    }
+
+    function syncTimelineUi() {
+      if (!doc) return;
+      var ph = els.timelineControl.querySelector("#playhead");
+      var duration = Math.max(0.1, doc.duration);
+      var pct = clamp(currentTime / duration * 100, 0, 100);
+      if (ph) {
+        var host = els.timelineControl.getBoundingClientRect();
+        var range = timelineRangeRect();
+        ph.style.left = (range.left - host.left + range.width * pct / 100) + "px";
+      }
+      els.timeReadout.textContent = currentTime.toFixed(2) + "s";
+    }
+
+    function seekFromPointer(ev) {
+      if (!doc) return;
+      var rect = timelineRangeRect();
+      var x = clamp(ev.clientX - rect.left, 0, rect.width || 1);
+      setTimelineTime(x / Math.max(1, rect.width) * Math.max(0.1, doc.duration), false);
     }
 
     function tickPlayhead() {
-      var ph = document.getElementById("playhead");
-      if (!ph || !playing || !doc) return;
-      var elapsed = ((performance.now() - playStart) / 1000) % Math.max(0.1, doc.duration);
-      ph.style.left = (elapsed / doc.duration * 100) + "%";
+      if (!playing || !doc) return;
+      currentTime = ((performance.now() - playStart) / 1000) % Math.max(0.1, doc.duration);
+      syncTimelineUi();
       requestAnimationFrame(tickPlayhead);
     }
 
@@ -621,6 +778,15 @@
       Array.prototype.forEach.call(els.list.querySelectorAll(".clip-row"), function (row) {
         row.addEventListener("click", function () {
           selectedId = row.getAttribute("data-id");
+          renderAll(false);
+        });
+      });
+      Array.prototype.forEach.call(els.track.querySelectorAll(".segment"), function (seg) {
+        seg.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          selectedId = seg.getAttribute("data-id");
+          var c = selectedClip();
+          if (c) setTimelineTime(c.start, false);
           renderAll(false);
         });
       });
@@ -794,18 +960,21 @@
       playing = !playing;
       els.play.textContent = playing ? "Pause" : "Play";
       if (playing) {
-        playStart = performance.now();
-        timeline.repeat(-1).play(0);
+        playStart = performance.now() - currentTime * 1000;
+        timeline.repeat(-1).play(currentTime);
         requestAnimationFrame(tickPlayhead);
       } else {
+        currentTime = timeline.time() % Math.max(0.1, doc.duration);
         timeline.pause();
+        syncTimelineUi();
       }
     }
 
     function restart() {
-      playStart = performance.now();
-      if (timeline) timeline.play(0);
+      setTimelineTime(0, false);
       playing = true;
+      playStart = performance.now();
+      if (timeline) timeline.repeat(-1).play(0);
       els.play.textContent = "Pause";
       requestAnimationFrame(tickPlayhead);
     }
@@ -882,6 +1051,25 @@
     els.addText.addEventListener("click", function () { addClip("text"); });
     els.addShape.addEventListener("click", function () { addClip("shape"); });
     els.addAsset.addEventListener("click", function () { addClip("asset"); });
+    els.timelineControl.addEventListener("pointerdown", function (ev) {
+      if (ev.target && ev.target.closest && ev.target.closest(".segment")) return;
+      scrubbing = true;
+      playing = false;
+      els.play.textContent = "Play";
+      seekFromPointer(ev);
+      try { els.timelineControl.setPointerCapture(ev.pointerId); } catch (_e) {}
+    });
+    els.timelineControl.addEventListener("pointermove", function (ev) {
+      if (!scrubbing) return;
+      seekFromPointer(ev);
+    });
+    els.timelineControl.addEventListener("pointerup", function (ev) {
+      scrubbing = false;
+      try { els.timelineControl.releasePointerCapture(ev.pointerId); } catch (_e) {}
+    });
+    els.timelineControl.addEventListener("pointercancel", function () {
+      scrubbing = false;
+    });
     window.addEventListener("resize", function () { fitStage(); reportPanels(); });
     document.addEventListener("mousedown", function (ev) {
       if (!document.body.classList.contains("detached-panels")) return;
