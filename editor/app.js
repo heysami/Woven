@@ -5855,8 +5855,13 @@ function applyEditToFrame(edit) {
     // Inspector-driven inline style overrides. The LLM materializes these into
     // source CSS (right CSS for the layout - flex vs grid changes the property).
     Object.entries(edit.styles || {}).forEach(([k, v]) => {
-      if (v == null || v === "") { try { el.style.removeProperty(k); } catch {} }
-      else                       { try { el.style.setProperty(k, v); } catch {} }
+      // The inspector stores camelCase keys (flexGrow, alignSelf, …) but CSSOM
+      // setProperty needs kebab-case, else multi-word props silently no-op.
+      // widthMode/heightMode/*Fixed are inspector bookkeeping, not CSS - skip.
+      if (k.endsWith("Mode") || k.endsWith("Fixed")) return;
+      const prop = k.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+      if (v == null || v === "") { try { el.style.removeProperty(prop); } catch {} }
+      else                       { try { el.style.setProperty(prop, v); } catch {} }
     });
     return true;
   }
@@ -5950,13 +5955,41 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   const alignSelf   = styles.alignSelf   || "auto";
 
   const setSize = (axis, mode, fixed) => {
-    const k = axis === "w" ? "width" : "height";
+    const k        = axis === "w" ? "width"      : "height";
     const fixedKey = axis === "w" ? "widthFixed" : "heightFixed";
     const modeKey  = axis === "w" ? "widthMode"  : "heightMode";
     const next = { ...styles, [modeKey]: mode };
-    if (mode === "fill")  { next[k] = "100%"; }
-    else if (mode === "hug")   { next[k] = "auto"; }
-    else if (mode === "fixed") { next[k] = `${fixed}px`; next[fixedKey] = fixed; }
+
+    // Naive width:100% / width:auto writes silently fail in common layouts:
+    // inline boxes ignore width/height entirely; a plain block (or a flex
+    // CROSS-axis / grid child) treats width:auto as "stretch" - the opposite
+    // of hug - while the real "fill" lever for a flex item on its MAIN axis
+    // is flex-grow, not width:100%. Branch on the parent's layout + the
+    // element's own display and emit the property that actually lands.
+    const flexMain  = isFlex && (axis === "w" ? isRow : !isRow); // along the flex axis
+    const flexCross = isFlex && !flexMain;                       // flex cross axis (align-self)
+    const gridSelfKey = axis === "w" ? "justifySelf" : "alignSelf";
+
+    // Inline boxes ignore width/height - promote so the dimension can apply.
+    if (mode !== "fixed" && selfLay?.display === "inline") next.display = "inline-block";
+
+    if (mode === "fixed") {
+      next[k] = `${fixed}px`;
+      next[fixedKey] = fixed;
+      // A fixed flex item must not be grown/shrunk away from its size.
+      if (flexMain) { next.flexGrow = "0"; next.flexShrink = "0"; }
+    } else if (mode === "fill") {
+      if (flexMain)       { next.flexGrow = "1"; next[k] = "auto"; }
+      else if (flexCross) { next.alignSelf = "stretch"; next[k] = "auto"; }
+      else if (isGrid)    { next[gridSelfKey] = "stretch"; next[k] = "auto"; }
+      else                { next[k] = "100%"; }
+    } else if (mode === "hug") {
+      const hugVal = axis === "w" ? "fit-content" : "auto"; // height:auto already hugs
+      if (flexMain)       { next.flexGrow = "0"; next.flexShrink = "0"; next[k] = hugVal; }
+      else if (flexCross) { next.alignSelf = "start"; next[k] = hugVal; }
+      else if (isGrid)    { next[gridSelfKey] = "start"; next[k] = hugVal; }
+      else                { next[k] = hugVal; }
+    }
     onStyle(next);
   };
   const setAlign = (axis, value) => {
@@ -27303,7 +27336,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     // ops shifted the indexes.
     '  if(op.type==="style"&&op.styles){',
     '    var st=resolveTarget(op);',
-    '    if(st){for(var k in op.styles){try{st.style.setProperty(k,op.styles[k]);}catch(_){}}}',
+    '    if(st){for(var k in op.styles){if(/(Mode|Fixed)$/.test(k))continue;var p=k.replace(/[A-Z]/g,function(m){return "-"+m.toLowerCase();});try{st.style.setProperty(p,op.styles[k]);}catch(_){}}}',
     '    return;',
     '  }',
     '  if(op.type==="text"){',
