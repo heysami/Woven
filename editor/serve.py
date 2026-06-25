@@ -4207,6 +4207,48 @@ def _broadcast_workflow_change(project_id: str) -> None:
     try: _live.notify_project_changed(project_id, "workflow-changed", {})
     except Exception: pass
 
+# ── Woven -> Figma bridge relay ──────────────────────────────────────────
+# A tiny in-memory relay between the editor and the Woven Figma plugin running
+# in Figma Desktop. The editor converts a rendered prototype DOM into a "scene"
+# JSON and POSTs it to /__figma_send; the plugin long-polls /__figma_poll to
+# pick the next job up, builds real Figma nodes from it, and POSTs progress to
+# /__figma_status (which the editor reads back via /__figma_job). All state is
+# per-project and clears on daemon restart - a dropped job just means re-send.
+_FIGMA_LOCK = threading.Lock()
+_FIGMA_QUEUES: dict = {}      # project_id -> list[job]   (FIFO of pending jobs)
+_FIGMA_WAITERS: dict = {}     # project_id -> set[threading.Event]
+_FIGMA_STATUS: dict = {}      # job_id -> {state, message, figmaUrl, at}
+_FIGMA_MAX_JOBS = 16          # pending-backlog cap per project
+_FIGMA_STATUS_TTL = 1800      # seconds to retain a finished job's status
+
+def _figma_enqueue(project_id: str, job: dict) -> None:
+    """Append a job and wake every plugin currently long-polling this project."""
+    with _FIGMA_LOCK:
+        q = _FIGMA_QUEUES.setdefault(project_id, [])
+        while len(q) >= _FIGMA_MAX_JOBS:
+            q.pop(0)
+        q.append(job)
+        _FIGMA_STATUS[job["jobId"]] = {"state": "queued", "message": "", "figmaUrl": "", "at": time.time()}
+        waiters = list(_FIGMA_WAITERS.get(project_id) or ())
+    for w in waiters:
+        try: w.set()
+        except Exception: pass
+
+def _figma_prune_status() -> None:
+    """Drop finished-job status entries older than the TTL. Caller holds lock."""
+    now = time.time()
+    dead = [jid for jid, s in _FIGMA_STATUS.items()
+            if s.get("state") in ("done", "error") and (now - s.get("at", now)) > _FIGMA_STATUS_TTL]
+    for jid in dead:
+        _FIGMA_STATUS.pop(jid, None)
+
+def _figma_pid(qs) -> str:
+    pid = ""
+    if isinstance(qs, dict):
+        v = qs.get("project")
+        pid = (v[0] if isinstance(v, list) and v else (v or "")).strip()
+    return pid or "default"
+
 # ── Whiteboard (`wb`) item sanitizer ─────────────────────────────────────
 # The workflow canvas's whiteboard layer stores its items in a top-level
 # `wb: []` array in workflow.json (siblings of nodes/edges - deliberately
@@ -7904,6 +7946,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             # routes here are deleted so the do_POST table reads cleanly.
             if parsed.path == "/__layout":
                 return self._layout_save(qs)
+            if parsed.path == "/__figma_send":
+                return self._figma_send(qs)
+            if parsed.path == "/__figma_poll":
+                return self._figma_poll(qs)
+            if parsed.path == "/__figma_status":
+                return self._figma_status(qs)
+            if parsed.path == "/__figma_job":
+                return self._figma_job(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
             if parsed.path == "/__workflow/nodes/add":
@@ -14467,6 +14517,111 @@ class H(http.server.SimpleHTTPRequestHandler):
             "project":      pid,
             "exportFolder": stored,
             "status":       _export_folder_status(stored) if stored else None,
+        })
+
+    # ── Woven -> Figma bridge endpoints ──────────────────────────────────
+    # POST /__figma_send?project=<id>  body {scene:{...}, name?, nodeId?}
+    # Editor pushes a converted scene; we queue it for the plugin to pick up.
+    def _figma_send(self, qs):
+        try:
+            resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = _figma_pid(qs)
+        try:
+            # Generous local cap: a scene's inlined base64 rasters (the browser
+            # walker caps decoded image bytes at ~40MB, ~53MB once base64-encoded).
+            body = self._read_json_body(max_bytes=128 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        scene = body.get("scene")
+        if not isinstance(scene, dict) or not isinstance(scene.get("root"), dict):
+            return self._reply(400, {"error": "missing or invalid scene (expected {root:{...}})"})
+        job_id = "fig_" + _new_request_id()
+        job = {
+            "jobId": job_id,
+            "scene": scene,
+            "name": (body.get("name") or scene.get("name") or "Woven export"),
+            "nodeId": (body.get("nodeId") or ""),
+            "at": time.time(),
+        }
+        _figma_enqueue(pid, job)
+        return self._reply(200, {"ok": True, "jobId": job_id, "queued": True})
+
+    # POST /__figma_poll?project=<id>
+    # The plugin's long-poll: returns the next queued job, or {job:null} after
+    # ~25s so the plugin can re-poll without tripping proxy idle timeouts.
+    def _figma_poll(self, qs):
+        try:
+            resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = _figma_pid(qs)
+        with _FIGMA_LOCK:
+            q = _FIGMA_QUEUES.get(pid) or []
+            if q:
+                job = q.pop(0)
+                _FIGMA_STATUS[job["jobId"]] = {"state": "delivered", "message": "", "figmaUrl": "", "at": time.time()}
+                return self._reply(200, {"ok": True, "job": job})
+            waker = threading.Event()
+            _FIGMA_WAITERS.setdefault(pid, set()).add(waker)
+        waker.wait(timeout=25)
+        with _FIGMA_LOCK:
+            s = _FIGMA_WAITERS.get(pid)
+            if s:
+                s.discard(waker)
+            q = _FIGMA_QUEUES.get(pid) or []
+            if q:
+                job = q.pop(0)
+                _FIGMA_STATUS[job["jobId"]] = {"state": "delivered", "message": "", "figmaUrl": "", "at": time.time()}
+                return self._reply(200, {"ok": True, "job": job})
+        return self._reply(200, {"ok": True, "job": None})
+
+    # POST /__figma_status?project=<id>  body {jobId, state, message?, figmaUrl?}
+    # The plugin reports build progress / completion / failure for a job.
+    def _figma_status(self, qs):
+        try:
+            resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=64 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        job_id = (body.get("jobId") or "").strip()
+        if not job_id:
+            return self._reply(400, {"error": "missing jobId"})
+        with _FIGMA_LOCK:
+            _FIGMA_STATUS[job_id] = {
+                "state":    (body.get("state") or "info").strip(),
+                "message":  str(body.get("message") or "")[:500],
+                "figmaUrl": str(body.get("figmaUrl") or "")[:500],
+                "at":       time.time(),
+            }
+            _figma_prune_status()
+        return self._reply(200, {"ok": True})
+
+    # POST /__figma_job?project=<id>  body {jobId}
+    # Editor reads a job's latest status to drive the send modal.
+    def _figma_job(self, qs):
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        job_id = (body.get("jobId") or "").strip() if isinstance(body, dict) else ""
+        if not job_id:
+            return self._reply(400, {"error": "missing jobId"})
+        with _FIGMA_LOCK:
+            s = _FIGMA_STATUS.get(job_id)
+        if not s:
+            return self._reply(200, {"ok": True, "jobId": job_id, "state": "unknown"})
+        return self._reply(200, {
+            "ok": True, "jobId": job_id,
+            "state": s.get("state"), "message": s.get("message"), "figmaUrl": s.get("figmaUrl"),
         })
 
     # POST /__export_asset?project=<id>  body {nodeId:string}

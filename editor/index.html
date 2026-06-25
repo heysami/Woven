@@ -122,6 +122,9 @@
        on the landing canvas without bundler ceremony. Safe everywhere: a
        guard inside the file makes it a no-op if loaded twice. -->
   <script src="landing-shaders.js"></script>
+  <!-- Woven -> Figma bridge: pure DOM-to-scene walker (window.WovenFigma).
+       Loaded before app.js, which owns the UI + daemon glue. -->
+  <script src="figma-bridge.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -670,6 +670,9 @@ const Icon = {
   // full box. Per-node Export buttons use this (the share glyph took over
   // the box-with-up-arrow read).
   Download: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2.5v7M4.5 6.5L8 9.5l3.5-3"/><path d="M3 13h10"/></svg>`,
+  // Figma mark (monochrome, currentColor fill). Used by the per-node "Send to
+  // Figma" action - the export-to-Figma sibling of Download.
+  Figma: () => html`<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M15.852 8.981h-4.588V0h4.588c2.476 0 4.49 2.014 4.49 4.49s-2.014 4.491-4.49 4.491zM12.735 7.51h3.117c1.665 0 3.019-1.355 3.019-3.019s-1.354-3.019-3.019-3.019h-3.117V7.51zm0 1.471H8.148c-2.476 0-4.49-2.015-4.49-4.491S5.672 0 8.148 0h4.588v8.981zm-4.587-7.51c-1.665 0-3.019 1.355-3.019 3.019s1.354 3.02 3.019 3.02h3.117V1.471H8.148zm4.587 15.019H8.148c-2.476 0-4.49-2.014-4.49-4.49s2.014-4.491 4.49-4.491h4.588v8.981zM8.148 8.981c-1.665 0-3.019 1.355-3.019 3.02s1.354 3.019 3.019 3.019h3.117V8.981H8.148zM8.172 24c-2.489 0-4.515-2.014-4.515-4.49s2.014-4.491 4.49-4.491h4.588v4.491c0 2.476-2.014 4.49-4.49 4.49h-.073zm-.024-7.51c-1.665 0-3.019 1.355-3.019 3.02s1.354 3.019 3.019 3.019h.073c1.665 0 3.019-1.355 3.019-3.019V16.49H8.148zm7.704-1.471c-2.476 0-4.49-2.014-4.49-4.49s2.014-4.491 4.49-4.491 4.49 2.015 4.49 4.491-2.014 4.49-4.49 4.49zm0-7.51c-1.665 0-3.019 1.355-3.019 3.02s1.354 3.019 3.019 3.019 3.019-1.355 3.019-3.019-1.354-3.02-3.019-3.02z"/></svg>`,
   // FolderUp: a big folder with a small upload arrow tucked into the
   // bottom-right corner - the per-project "export folder destination" mark
   // for the toolbar Exports button.
@@ -29583,6 +29586,164 @@ function ExportPromptHost() {
   />`;
 }
 
+/* ── Send to Figma ─────────────────────────────────────────────────────
+   The "export, but to Figma" sibling of runExportForNode. Instead of writing
+   a bundle to disk, it walks the node's rendered (same-origin) iframe DOM into
+   a scene (figma-bridge.js / window.WovenFigma) and POSTs it to the daemon
+   relay; the Woven Bridge plugin in Figma Desktop picks it up and rebuilds it
+   as editable layers. Requires the prototype/asset to be open on the canvas
+   (we read the live rendered document) and the plugin to be connected. */
+function runSendToFigmaForNode(nodeId, nodeLabel) {
+  try {
+    window.dispatchEvent(new CustomEvent("th:figma-send", {
+      detail: { nodeId, nodeLabel: nodeLabel || "" },
+    }));
+  } catch (e) {
+    uiAlert(`Send to Figma failed: ${e.message || e}`);
+  }
+}
+
+function findRenderedNodeIframe(nodeId) {
+  const esc = (window.CSS && CSS.escape) ? CSS.escape(nodeId) : nodeId;
+  return document.querySelector(
+    `iframe[data-prototype-id="${esc}"], iframe[data-asset-id="${esc}"], .frame[data-frame-id="${esc}"] iframe`
+  );
+}
+
+function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
+  const [phase, setPhase] = useState("idle");   // idle|working|done|error
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState(null);
+  const busy = phase === "working";
+
+  const setStep = (s) => setStatus(s);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const pollJob = async (jobId) => {
+    const deadline = Date.now() + 120000;   // 2 min ceiling
+    const friendly = {
+      queued: "Waiting for Woven Bridge. Open the plugin in Figma and click Connect...",
+      delivered: "Plugin picked it up...",
+      building: "Building layers in Figma...",
+    };
+    let last = "";
+    while (Date.now() < deadline) {
+      await sleep(1000);
+      let j = {};
+      try {
+        const r = await fetch(apiUrl("/__figma_job"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        j = await r.json().catch(() => ({}));
+      } catch { continue; }
+      const st = j.state || "";
+      if (st && st !== last) { last = st; setStep(j.message || friendly[st] || st); }
+      if (st === "done") return { ok: true, message: j.message || "Built in Figma." };
+      if (st === "error") return { ok: false, message: j.message || "Build failed in Figma." };
+    }
+    return { ok: false, message: "Timed out. Is the Woven Bridge plugin open and connected in Figma?" };
+  };
+
+  const handleSend = async () => {
+    setPhase("working");
+    setError(null);
+    try {
+      if (!window.WovenFigma || !window.WovenFigma.domToScene) {
+        throw new Error("figma-bridge.js did not load.");
+      }
+      const iframe = findRenderedNodeIframe(nodeId);
+      if (!iframe) {
+        throw new Error("Open this prototype/asset on the canvas first - Send to Figma reads the live rendered page.");
+      }
+      let doc;
+      try { doc = iframe.contentDocument; } catch { doc = null; }
+      const rootEl = doc && doc.body;
+      if (!rootEl) {
+        throw new Error("Could not read the rendered page (cross-origin or still loading).");
+      }
+      setStep("Converting page...");
+      const scene = await window.WovenFigma.domToScene(rootEl, { name: nodeLabel || nodeId || "Woven export" });
+      setStep("Sending to the daemon...");
+      const r = await fetch(apiUrl("/__figma_send"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodeId, name: scene.name, scene }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.jobId) {
+        throw new Error(j.error || `Daemon rejected the scene (HTTP ${r.status}).`);
+      }
+      setStep("Waiting for Woven Bridge. Open the plugin in Figma and click Connect...");
+      const result = await pollJob(j.jobId);
+      if (result.ok) { setPhase("done"); setStep(result.message); }
+      else { setPhase("error"); setError(result.message); }
+    } catch (e) {
+      setPhase("error");
+      setError(e.message || String(e));
+    }
+  };
+
+  return html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div className="modal modal-narrow" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div>
+            <div className="modal-eyebrow">Send to Figma</div>
+            <div className="modal-title">${nodeLabel || nodeId}</div>
+          </div>
+          <button className="modal-x" onClick=${onClose} aria-label="Close">×</button>
+        </div>
+        <div className="modal-body">
+          <p className="modal-hint" style=${{ marginTop: 0 }}>
+            Rebuilds this page as editable Figma layers. Needs the <strong>Woven Bridge</strong>
+            plugin running and connected in Figma Desktop
+            (editor/tools/figma-bridge - see its README).
+          </p>
+          ${(phase === "working" || phase === "done") && status && html`
+            <div className="export-name-warn" data-overridden=${true}>${status}</div>
+          `}
+          ${error && html`<div className="export-name-error">${error}</div>`}
+          ${phase === "done" && html`<div className="export-name-warn" data-overridden=${true}><strong>Done.</strong></div>`}
+        </div>
+        <div className="modal-foot">
+          <button className="tbtn" onClick=${onClose} disabled=${busy}>
+            ${phase === "done" ? "Close" : "Cancel"}
+          </button>
+          ${phase !== "done" && html`
+            <button
+              className="tbtn tbtn-primary"
+              onClick=${handleSend}
+              disabled=${busy}
+              data-disabled=${busy}
+            >${busy ? "Sending…" : (phase === "error" ? "Retry" : "Send to Figma")}</button>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function FigmaSendPromptHost() {
+  const [target, setTarget] = useState(null);
+  useEffect(() => {
+    const onPrompt = (ev) => {
+      const d = ev.detail || {};
+      if (!d.nodeId) return;
+      setTarget({ nodeId: d.nodeId, nodeLabel: d.nodeLabel || "" });
+    };
+    window.addEventListener("th:figma-send", onPrompt);
+    return () => window.removeEventListener("th:figma-send", onPrompt);
+  }, []);
+  if (!target) return null;
+  return html`<${FigmaSendModal}
+    nodeId=${target.nodeId}
+    nodeLabel=${target.nodeLabel}
+    onClose=${() => setTarget(null)}
+  />`;
+}
+
 /* Portaled row of action chips that float above the node, aligned to the
    left of the pick-element badge (rect.right - 32 - 6). Used by prototype
    and asset nodes to surface Show-code / Zoom outside the title bar so the
@@ -52442,6 +52603,13 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Download}/><//>
         <${HoverTip}
+          className="workflow-node-action workflow-node-action-figma"
+          tip="Send to Figma - rebuild this rendered page as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
+          ariaLabel="Send to Figma"
+          onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title || (familyLabel + ":" + (assetId || ""))); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Figma}/><//>
+        <${HoverTip}
           className="workflow-node-close"
           tip="Remove this container from the canvas (does not delete files on disk)."
           ariaLabel="Remove from canvas"
@@ -53813,6 +53981,13 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Download}/><//>
+        <${HoverTip}
+          className="workflow-node-action workflow-node-action-figma"
+          tip="Send to Figma - rebuild this rendered prototype as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
+          ariaLabel="Send to Figma"
+          onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Figma}/><//>
         <${HoverTip}
           className="workflow-node-close"
           tip="Remove this prototype instance from the canvas (does not delete files on disk)."
@@ -56703,6 +56878,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Download}/><//>
+        <${HoverTip}
+          className="workflow-node-action workflow-node-action-figma"
+          tip="Send to Figma - rebuild this rendered asset as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Works for HTML assets; reads the live canvas render, so keep it open."
+          ariaLabel="Send to Figma"
+          onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Figma}/><//>
         <${HoverTip}
           className="workflow-node-close"
           tip="Remove this asset card from the canvas (does not delete files on disk)."
@@ -79126,6 +79308,7 @@ function Root() {
   if (hasProject && view === "prototype") return html`<${React.Fragment}>
     <${PrototypeDoor}/>
     <${ExportPromptHost}/>
+    <${FigmaSendPromptHost}/>
   <//>`;
   // key on the project id so a client-side switch to a different project's
   // workflow remounts the canvas with fresh internal state (data, history,
@@ -79134,6 +79317,7 @@ function Root() {
     <${WorkflowCanvas} key=${"wf:" + (project || "")}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
+    <${FigmaSendPromptHost}/>
   <//>`;
   // User Testing - its own top-level page (like the workflow canvas), so the
   // heavy canvas unmounts entirely while you manage sessions / review
@@ -79149,6 +79333,7 @@ function Root() {
     return html`<${React.Fragment}>
       <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT}/>
       <${ExportPromptHost}/>
+    <${FigmaSendPromptHost}/>
     <//>`;
   }
   // Otherwise the regular editor for the active project (or single-mode legacy).
@@ -79156,6 +79341,7 @@ function Root() {
     <${App}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
+    <${FigmaSendPromptHost}/>
   <//>`;
 }
 

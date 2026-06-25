@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 12px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+    margin: 0; padding: 12px; color: #1a1a1a; background: #fff;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8e8; background: #1e1e1e; } }
+  h1 { font-size: 13px; margin: 0 0 2px; letter-spacing: .2px; }
+  .sub { font-size: 11px; opacity: .65; margin: 0 0 12px; }
+  label { display: block; font-size: 11px; opacity: .8; margin: 8px 0 3px; }
+  input {
+    width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit;
+    border: 1px solid rgba(128,128,128,.4); border-radius: 6px;
+    background: transparent; color: inherit;
+  }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  button {
+    font: inherit; font-weight: 600; padding: 7px 12px; border-radius: 6px;
+    border: 0; cursor: pointer; background: #0d99ff; color: #fff;
+  }
+  button.secondary { background: rgba(128,128,128,.18); color: inherit; }
+  button:disabled { opacity: .5; cursor: default; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c33; display: inline-block; }
+  .dot.on { background: #2ca24c; }
+  .state { font-size: 11px; opacity: .8; }
+  #log {
+    margin-top: 12px; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(128,128,128,.1); border-radius: 6px; padding: 8px;
+    height: 150px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .log-err { color: #e5484d; }
+  .log-ok { color: #2ca24c; }
+</style>
+</head>
+<body>
+  <h1>Woven Bridge</h1>
+  <p class="sub">Receives designs sent from the Woven editor and builds them here as editable layers.</p>
+
+  <label for="base">Woven daemon URL</label>
+  <input id="base" placeholder="http://127.0.0.1:5731" />
+  <label for="project">Project id</label>
+  <input id="project" placeholder="default" />
+
+  <div class="row">
+    <button id="toggle">Connect</button>
+    <span class="dot" id="dot"></span>
+    <span class="state" id="state">Disconnected</span>
+  </div>
+
+  <div id="log"></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var connected = false;
+  var busy = false;
+  var pendingResolve = null;
+
+  var LS = {
+    base: "wovenFigma.base",
+    project: "wovenFigma.project"
+  };
+  try {
+    $("base").value = localStorage.getItem(LS.base) || "http://127.0.0.1:5731";
+    $("project").value = localStorage.getItem(LS.project) || "default";
+  } catch (e) {
+    $("base").value = "http://127.0.0.1:5731";
+    $("project").value = "default";
+  }
+
+  function log(msg, cls) {
+    var el = document.createElement("div");
+    if (cls) el.className = cls;
+    var d = new Date();
+    var t = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+    el.textContent = t + "  " + msg;
+    var box = $("log");
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function baseUrl() { return ($("base").value || "").trim().replace(/\/+$/, ""); }
+  function projectId() { return ($("project").value || "default").trim() || "default"; }
+  function apiUrl(path) { return baseUrl() + path + "?project=" + encodeURIComponent(projectId()); }
+
+  function setConnected(on) {
+    connected = on;
+    $("dot").className = on ? "dot on" : "dot";
+    $("state").textContent = on ? "Listening for designs" : "Disconnected";
+    $("toggle").textContent = on ? "Disconnect" : "Connect";
+    $("base").disabled = on;
+    $("project").disabled = on;
+  }
+
+  // Relay a status from the plugin sandbox back to the daemon (so the editor
+  // modal can show progress / completion).
+  function postStatus(jobId, state, message) {
+    if (!jobId) return;
+    fetch(apiUrl("/__figma_status"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: jobId, state: state, message: message || "" })
+    }).catch(function () {});
+  }
+
+  // Messages coming back from code.js (the plugin sandbox).
+  window.onmessage = function (e) {
+    var m = e.data && e.data.pluginMessage;
+    if (!m || m.type !== "status") return;
+    var cls = m.state === "error" ? "log-err" : m.state === "done" ? "log-ok" : "";
+    log(m.message || m.state, cls);
+    postStatus(m.jobId, m.state, m.message);
+    if (m.state === "done" || m.state === "error") {
+      busy = false;
+      if (pendingResolve) { var r = pendingResolve; pendingResolve = null; r(); }
+    }
+  };
+
+  function dispatchBuild(job) {
+    return new Promise(function (resolve) {
+      busy = true;
+      pendingResolve = resolve;
+      parent.postMessage({ pluginMessage: { type: "build", job: job } }, "*");
+      // Safety net: if the sandbox never reports back, release after 60s.
+      setTimeout(function () {
+        if (pendingResolve === resolve) { pendingResolve = null; busy = false; resolve(); }
+      }, 60000);
+    });
+  }
+
+  async function pollOnce() {
+    var r = await fetch(apiUrl("/__figma_poll"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    if (!r.ok) throw new Error("poll HTTP " + r.status);
+    var j = await r.json();
+    return j && j.job ? j.job : null;
+  }
+
+  async function loop() {
+    while (connected) {
+      try {
+        var job = await pollOnce();
+        if (!connected) break;
+        if (job) {
+          log("Received '" + (job.name || job.jobId) + "'");
+          await dispatchBuild(job);
+        }
+      } catch (err) {
+        if (!connected) break;
+        log("Daemon unreachable (" + (err.message || err) + "). Retrying...", "log-err");
+        await new Promise(function (res) { setTimeout(res, 2500); });
+      }
+    }
+  }
+
+  $("toggle").onclick = function () {
+    if (connected) { setConnected(false); return; }
+    try {
+      localStorage.setItem(LS.base, baseUrl());
+      localStorage.setItem(LS.project, projectId());
+    } catch (e) {}
+    if (!baseUrl()) { log("Enter the daemon URL first.", "log-err"); return; }
+    setConnected(true);
+    log("Connecting to " + baseUrl() + " (project " + projectId() + ")");
+    loop();
+  };
+})();
+</script>
+</body>
+</html>
