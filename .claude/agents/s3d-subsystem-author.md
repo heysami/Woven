@@ -34,7 +34,7 @@ export function build(THREE, ctx) {
 }
 ```
 
-Division of labor is strict: **you own this effect's geometry + material + its own sim** (cloth step, water uniforms, particle GPGPU ping-pong, instanced sway). You do NOT own the camera, the lights, the env, the post chain, or pointer input - the runtime owns those and passes `ctx`. `handles` is your public surface: anything the interaction layer animates or a host-driven caller drives must be reachable there.
+Division of labor is strict: **you own this effect's geometry + material + its own sim** (cloth step, water uniforms, particle GPGPU ping-pong, instanced sway). You do NOT own the camera, the lights, the env, the post chain, or pointer input - the runtime owns those and passes `ctx`. `handles` is your public surface: anything the interaction layer animates or a host-driven caller drives must be reachable there. Make `handles` rich enough for the runtime composer to expose user-facing controls (per `docs/agents/asset-controls-contract.md`): a **color/tint** handle for your primary material and a **speed/intensity** handle for your sim are the two the Controls panel most often wires - surface them even if your standalone scene doesn't animate them itself.
 
 ## 2. STANDALONE RENDER GATE (the reason this drawer exists)
 

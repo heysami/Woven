@@ -33,6 +33,7 @@ window.__scene3d = {
 };
 ```
 9. **§1.2 contract**: canvas `pointer-events: none` (unless research committed clickable subjects), all listeners passive, slot height bounded, `prefers-reduced-motion` → freeze ambient + parallax at the rest frame (composition intact, motion zero).
+10. **Asset controls contract** (so the editor shows a live Controls panel on this scene): include `<script src="/editor/tools/_shared/asset-controls.js"></script>` in `<head>`, then register 3-6 scene-level knobs guarded by `if (window.__wovenControls)`. Drive each `apply(v)` through the merged `handles` you already expose (and the shared renderer/env): typical knobs are **ambient/orbit speed** (a time-scale handle or your ambient rAF multiplier), a **key material/subject color** (the lead subsystem's color handle), **camera distance/zoom** (`camera.position` along its look axis, or an orbit-radius handle), and **light/exposure intensity** (`renderer.toneMappingExposure` or a key-light handle). Follow `docs/agents/asset-controls-contract.md` exactly. Keep it to the knobs a designer would reach for - do not expose every per-subsystem handle.
 
 ## 2. §12.1 internal refinement (before commit)
 
