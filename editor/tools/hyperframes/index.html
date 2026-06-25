@@ -101,6 +101,11 @@
       font-family: var(--mono);
       font-size: 10px;
     }
+    .driver-pill {
+      color: var(--accent-text);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
     .panel {
       min-height: 0;
       overflow: auto;
@@ -344,6 +349,7 @@
       <button id="addShapeBtn">Shape</button>
       <button id="addAssetBtn">Asset</button>
       <div class="spacer"></div>
+      <span class="pill driver-pill" id="driverPill" hidden></span>
       <span class="pill" id="statusPill">ready</span>
     </div>
 
@@ -396,6 +402,7 @@
     var doc = null;
     var selectedId = null;
     var contentAssets = [];
+    var timelineSources = [];
     var timeline = null;
     var playing = false;
     var saveTimer = 0;
@@ -410,6 +417,7 @@
       addShape: document.getElementById("addShapeBtn"),
       addAsset: document.getElementById("addAssetBtn"),
       status: document.getElementById("statusPill"),
+      driver: document.getElementById("driverPill"),
       list: document.getElementById("clipList"),
       inspector: document.getElementById("inspector"),
       stage: document.getElementById("stage"),
@@ -583,6 +591,66 @@
       return out;
     }
 
+    function normalizeTimelineSources(value) {
+      if (!Array.isArray(value)) return [];
+      return value.filter(function (s) {
+        return s && (s.kind === "timeline" || (s.spec && s.spec.kind === "timeline"));
+      }).map(function (s) {
+        return {
+          id: String(s.id || ""),
+          kind: s.kind || "timeline",
+          label: String(s.label || s.id || "Timeline"),
+          spec: s.spec && typeof s.spec === "object" ? s.spec : {},
+          tracks: s.tracks && typeof s.tracks === "object" ? s.tracks : {},
+          toPort: s.toPort || "in"
+        };
+      });
+    }
+
+    function setTimelineSources(numbers, timelines) {
+      var source = Array.isArray(timelines) && timelines.length ? timelines : numbers;
+      timelineSources = normalizeTimelineSources(source);
+      renderDriverPill();
+    }
+
+    function activeDriver() {
+      return timelineSources[0] || null;
+    }
+
+    function activeDuration() {
+      var driver = activeDriver();
+      var spec = driver && driver.spec || {};
+      return Math.max(0.1, num(spec.duration, doc ? doc.duration : 1));
+    }
+
+    function docDuration() {
+      return Math.max(0.1, doc ? doc.duration : 1);
+    }
+
+    function docTimeFor(displayTime) {
+      return clamp(num(displayTime, 0), 0, activeDuration()) / activeDuration() * docDuration();
+    }
+
+    function displayTimeForDoc(time) {
+      return clamp(num(time, 0), 0, docDuration()) / docDuration() * activeDuration();
+    }
+
+    function timingScale() {
+      return activeDuration() / docDuration();
+    }
+
+    function renderDriverPill() {
+      if (!els.driver) return;
+      var driver = activeDriver();
+      if (!driver) {
+        els.driver.hidden = true;
+        els.driver.textContent = "";
+        return;
+      }
+      els.driver.hidden = false;
+      els.driver.textContent = "Timeline: " + driver.label + " | " + activeDuration().toFixed(2) + "s";
+    }
+
     function selectedClip() {
       return doc && doc.clips.find(function (c) { return c.id === selectedId; });
     }
@@ -649,7 +717,7 @@
       els.stage.setAttribute("data-composition-id", doc.compositionId);
       els.stage.setAttribute("data-width", String(doc.width));
       els.stage.setAttribute("data-height", String(doc.height));
-      els.stage.setAttribute("data-duration", String(doc.duration));
+      els.stage.setAttribute("data-duration", String(activeDuration()));
       els.stage.innerHTML = doc.clips.map(function (c) {
         return '<div id="' + esc(c.id) + '" class="hf-clip clip" data-start="' + esc(c.start) +
           '" data-duration="' + esc(c.duration) + '" style="' + esc(clipStyle(c)) + '">' +
@@ -686,17 +754,18 @@
         timeline.fromTo(el, from, to, c.start);
       });
       timeline.to({}, { duration: 0 }, doc.duration);
-      currentTime = clamp(currentTime, 0, Math.max(0.1, doc.duration));
-      timeline.time(currentTime, false);
+      currentTime = clamp(currentTime, 0, activeDuration());
+      timeline.pause();
+      timeline.time(docTimeFor(currentTime), false);
       if (playing) {
         playStart = performance.now() - currentTime * 1000;
-        timeline.repeat(-1).play(currentTime);
+        requestAnimationFrame(tickPlayhead);
       }
     }
 
     function renderTimeline() {
       if (!doc) return;
-      var duration = Math.max(0.1, doc.duration);
+      var duration = activeDuration();
       currentTime = clamp(currentTime, 0, duration);
       var tickCount = duration <= 4 ? 5 : duration <= 8 ? 6 : 8;
       var ticks = [];
@@ -708,8 +777,8 @@
       els.ruler.innerHTML = ticks.join("");
       els.durationReadout.textContent = duration.toFixed(2) + "s";
       els.track.innerHTML = doc.clips.map(function (c) {
-        var left = clamp(c.start / duration * 100, 0, 100);
-        var width = clamp(c.duration / duration * 100, 1, 100 - left);
+        var left = clamp(displayTimeForDoc(c.start) / duration * 100, 0, 100);
+        var width = clamp(c.duration * timingScale() / duration * 100, 1, 100 - left);
         return '<div class="track-row" data-id="' + esc(c.id) + '">' +
           '<div class="track-label">' + esc(clipLabel(c)) + '</div>' +
           '<div class="lane"><div class="segment ' + (c.id === selectedId ? "active" : "") + '" data-id="' + esc(c.id) + '" title="' + esc(clipLabel(c)) + '" style="left:' + left + '%;width:' + width + '%"></div></div>' +
@@ -725,16 +794,15 @@
 
     function setTimelineTime(time, play) {
       if (!doc) return;
-      currentTime = clamp(num(time, currentTime), 0, Math.max(0.1, doc.duration));
+      currentTime = clamp(num(time, currentTime), 0, activeDuration());
       if (timeline) {
         timeline.pause();
-        timeline.time(currentTime, false);
+        timeline.time(docTimeFor(currentTime), false);
       }
       if (play) {
         playing = true;
         els.play.textContent = "Pause";
         playStart = performance.now() - currentTime * 1000;
-        if (timeline) timeline.repeat(-1).play(currentTime);
         requestAnimationFrame(tickPlayhead);
       }
       syncTimelineUi();
@@ -743,7 +811,7 @@
     function syncTimelineUi() {
       if (!doc) return;
       var ph = els.timelineControl.querySelector("#playhead");
-      var duration = Math.max(0.1, doc.duration);
+      var duration = activeDuration();
       var pct = clamp(currentTime / duration * 100, 0, 100);
       if (ph) {
         var host = els.timelineControl.getBoundingClientRect();
@@ -757,12 +825,16 @@
       if (!doc) return;
       var rect = timelineRangeRect();
       var x = clamp(ev.clientX - rect.left, 0, rect.width || 1);
-      setTimelineTime(x / Math.max(1, rect.width) * Math.max(0.1, doc.duration), false);
+      setTimelineTime(x / Math.max(1, rect.width) * activeDuration(), false);
     }
 
     function tickPlayhead() {
       if (!playing || !doc) return;
-      currentTime = ((performance.now() - playStart) / 1000) % Math.max(0.1, doc.duration);
+      currentTime = ((performance.now() - playStart) / 1000) % activeDuration();
+      if (timeline) {
+        timeline.pause();
+        timeline.time(docTimeFor(currentTime), false);
+      }
       syncTimelineUi();
       requestAnimationFrame(tickPlayhead);
     }
@@ -786,7 +858,7 @@
           ev.stopPropagation();
           selectedId = seg.getAttribute("data-id");
           var c = selectedClip();
-          if (c) setTimelineTime(c.start, false);
+          if (c) setTimelineTime(displayTimeForDoc(c.start), false);
           renderAll(false);
         });
       });
@@ -879,9 +951,10 @@
 
     function renderAll(shouldPersist) {
       renderCompositionControls();
+      renderDriverPill();
+      renderStage();
       renderList();
       renderInspector();
-      renderStage();
       if (shouldPersist) schedulePersist();
     }
 
@@ -961,10 +1034,10 @@
       els.play.textContent = playing ? "Pause" : "Play";
       if (playing) {
         playStart = performance.now() - currentTime * 1000;
-        timeline.repeat(-1).play(currentTime);
+        timeline.pause();
+        timeline.time(docTimeFor(currentTime), false);
         requestAnimationFrame(tickPlayhead);
       } else {
-        currentTime = timeline.time() % Math.max(0.1, doc.duration);
         timeline.pause();
         syncTimelineUi();
       }
@@ -974,19 +1047,24 @@
       setTimelineTime(0, false);
       playing = true;
       playStart = performance.now();
-      if (timeline) timeline.repeat(-1).play(0);
+      if (timeline) {
+        timeline.pause();
+        timeline.time(0, false);
+      }
       els.play.textContent = "Pause";
       requestAnimationFrame(tickPlayhead);
     }
 
     function bakeHtml() {
       var d = normalizeDoc(doc);
+      var renderDuration = activeDuration();
+      var scale = timingScale();
       var assets = contentAssets.map(function (a) {
         return { id: a.id, url: a.url, kind: a.kind, label: a.label };
       });
       var clipsMarkup = d.clips.map(function (c) {
-        return '<div id="' + esc(c.id) + '" class="clip" data-start="' + esc(c.start) +
-          '" data-duration="' + esc(c.duration) + '" style="' + esc(clipStyle(c)) + '">' +
+        return '<div id="' + esc(c.id) + '" class="clip" data-start="' + esc(c.start * scale) +
+          '" data-duration="' + esc(c.duration * scale) + '" style="' + esc(clipStyle(c)) + '">' +
           renderClipContent(c) + '</div>';
       }).join("");
       return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -999,24 +1077,26 @@
         '.clip img,.clip video,.clip iframe{width:100%;height:100%;object-fit:cover;border:0;display:block}' +
         '.missing{width:100%;height:100%;display:grid;place-items:center;color:#9aa7bc;border:1px dashed rgba(255,255,255,.28);background:rgba(255,255,255,.06)}' +
         '</style></head><body>' +
-        '<div id="stage" data-composition-id="' + esc(d.compositionId) + '" data-width="' + esc(d.width) + '" data-height="' + esc(d.height) + '" data-duration="' + esc(d.duration) + '">' +
+        '<div id="stage" data-composition-id="' + esc(d.compositionId) + '" data-width="' + esc(d.width) + '" data-height="' + esc(d.height) + '" data-duration="' + esc(renderDuration) + '">' +
         clipsMarkup + '</div>' +
         '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\\/script>' +
-        '<script>window.__HYPERFRAMES_DOC__=' + jsData(d) + ';window.__HYPERFRAMES_ASSETS__=' + jsData(assets) + ';' +
+        '<script>window.__HYPERFRAMES_DOC__=' + jsData(d) + ';window.__HYPERFRAMES_ASSETS__=' + jsData(assets) + ';window.__HYPERFRAMES_TIMING__=' + jsData({ duration: renderDuration, scale: scale }) + ';' +
         '(function(){var doc=window.__HYPERFRAMES_DOC__;var stage=document.getElementById("stage");' +
+        'var timing=window.__HYPERFRAMES_TIMING__||{};var scale=Number(timing.scale)||1;var renderDuration=Number(timing.duration)||doc.duration||5;' +
         'function fit(){var s=Math.max(.01,Math.min(innerWidth/doc.width,innerHeight/doc.height));stage.style.transform="scale("+s+")";}' +
         'addEventListener("resize",fit);fit();' +
         'var tl=window.gsap?gsap.timeline({paused:true}):null;' +
         'if(tl){doc.clips.forEach(function(c){var el=document.getElementById(c.id);if(!el)return;var fr=c.from||{},to=c.to||{};' +
         'tl.fromTo(el,{x:fr.x||0,y:fr.y||0,opacity:fr.opacity==null?0:fr.opacity,scale:fr.scale||1,rotation:(c.rotation||0)+(fr.rotation||0)},' +
-        '{x:to.x||0,y:to.y||0,opacity:to.opacity==null?1:to.opacity,scale:to.scale||1,rotation:(c.rotation||0)+(to.rotation||0),duration:c.duration||1,ease:c.ease||"power3.out"},c.start||0);});' +
-        'tl.to({},{duration:0},doc.duration||5);window.__timelines=window.__timelines||{};window.__timelines[doc.compositionId]=tl;' +
+        '{x:to.x||0,y:to.y||0,opacity:to.opacity==null?1:to.opacity,scale:to.scale||1,rotation:(c.rotation||0)+(to.rotation||0),duration:(c.duration||1)*scale,ease:c.ease||"power3.out"},(c.start||0)*scale);});' +
+        'tl.to({},{duration:0},renderDuration);window.__timelines=window.__timelines||{};window.__timelines[doc.compositionId]=tl;' +
         'if(!window.__hyperframesRender){if(matchMedia("(prefers-reduced-motion: reduce)").matches){tl.progress(1);}else{tl.repeat(-1).play(0);}}}' +
         '})();<\\/script></body></html>';
     }
 
-    function initFromHost(state, content) {
+    function initFromHost(state, content, numbers, timelines) {
       contentAssets = Array.isArray(content) ? content : contentAssets;
+      setTimelineSources(numbers || [], timelines || []);
       doc = normalizeDoc(state || doc || defaultDoc());
       renderAll(!state);
       sendBakedOnly();
@@ -1026,13 +1106,14 @@
       var d = ev.data || {};
       if (d.nodeId && d.nodeId !== NODE_ID) return;
       if (d.type === PREFIX + ":init") {
-        initFromHost(d.state, d.content || []);
+        initFromHost(d.state, d.content || [], d.numbers || [], d.timelines || []);
       } else if (d.type === PREFIX + ":set-state") {
         doc = normalizeDoc(d.state || defaultDoc());
         renderAll(false);
         sendBakedOnly();
       } else if (d.type === PREFIX + ":content") {
         contentAssets = Array.isArray(d.content) ? d.content : [];
+        setTimelineSources(d.numbers || [], d.timelines || []);
         renderAll(false);
         sendBakedOnly();
       } else if (d.type === PREFIX + ":select") {

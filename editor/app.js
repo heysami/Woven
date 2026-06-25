@@ -25837,7 +25837,7 @@ const WORKFLOW_CONNECT_DEFS = {
   "hyperframes": {
     label: "Hyperframes motion",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
-    accepts:  { in:   { label: "Clip asset", tags: ["asset", "layer"] },
+    accepts:  { in:   { label: "Clip asset / timeline", tags: ["asset", "layer", "number"] },
                 edit: { label: "Edit Hyperframes", tags: ["text-gen", "asset-gen"] } },
   },
   "gaussian-splat-3d": {
@@ -57956,6 +57956,10 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
         out.push({ ...base, type: flavor, label, spec: up.spec || {} });
         continue;
       }
+      if (flavor === "number") {
+        out.push({ ...base, type: "number", label, spec: up.spec || {}, tracks: up.tracks || {} });
+        continue;
+      }
       if (flavor === "layer") {
         const depth = opts._depth || 0;
         let children = [];
@@ -63882,7 +63886,7 @@ const APP_NODE_TOOLS = {
     canonical: (b, id) => `source/${b}/hyperframes-${id}.json`,
     baked:     (b, id) => `source/${b}/hyperframes-${id}.html`,
     canonicalIsBaked: false, imports: false,
-    inTitle: "Wire image / video / SVG / HTML assets as motion clips, or an Agent to edit.",
+    inTitle: "Wire image / video / SVG / HTML assets as motion clips, a Timeline to drive timing, or an Agent to edit.",
     outTitle: "Pipe the baked Hyperframes .html into a prototype or renderer.",
   },
   "gaussian-splat-3d": {
@@ -64310,6 +64314,13 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     // from the render-type / extension.
     .map(i => ({ id: i.fromId, url: i.url, kind: _appNodeMediumKind(i), label: i.label })),
     [inputs]);
+  const numberSources = useMemo(() => inputs
+    .filter(i => i.type === "number")
+    .map(i => ({ id: i.fromId, kind: i.kind, label: i.label, spec: i.spec || {}, tracks: i.tracks || {}, toPort: i.toPort || "in" })),
+    [inputs]);
+  const timelineSources = useMemo(() => numberSources
+    .filter(i => i.kind === "timeline" || (i.spec && i.spec.kind === "timeline")),
+    [numberSources]);
   const importUrls = useMemo(() => {
     if (!cfg.imports) return [];
     const wired = inputs.filter(i => i.type === "glb-import").map(i => i.url);
@@ -64338,6 +64349,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     };
   }, [inputs, allNodes, allEdges]);
   const contentKey = JSON.stringify(contentAssets);
+  const numberKey = JSON.stringify(numberSources);
   const importKey = importUrls.join("|");
   const specKey = JSON.stringify(specs);
 
@@ -64352,6 +64364,8 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   const readyRef = useRef(false);
   const stateRef = useRef(node[cfg.stateField]); stateRef.current = node[cfg.stateField];
   const contentRef = useRef(contentAssets); contentRef.current = contentAssets;
+  const numbersRef = useRef(numberSources); numbersRef.current = numberSources;
+  const timelinesRef = useRef(timelineSources); timelinesRef.current = timelineSources;
   const importsRef = useRef(importUrls); importsRef.current = importUrls;
   const specsRef = useRef(specs); specsRef.current = specs;
   const lastWrittenRef = useRef("");
@@ -64471,6 +64485,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     readyRef.current = true;
     postToIframe({ type: cfg.prefix + ":init", state: stateRef.current || null,
                    content: contentRef.current, imports: importsRef.current,
+                   numbers: numbersRef.current, timelines: timelinesRef.current,
                    effects: specsRef.current.effects, positions: specsRef.current.positions,
                    triggers: specsRef.current.triggers, layers: specsRef.current.layers,
                    logic: specsRef.current.logic, branch });
@@ -64565,9 +64580,10 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   // Reactive content/imports/specs push.
   useEffect(() => {
     if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls,
+      numbers: numberSources, timelines: timelineSources,
       effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers, logic: specs.logic });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentKey, importKey, specKey, cfg.prefix, postToIframe]);
+  }, [contentKey, numberKey, importKey, specKey, cfg.prefix, postToIframe]);
 
   // Agent edited the canonical file → re-import live (ignore our own echo).
   useEffect(() => {

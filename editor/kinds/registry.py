@@ -3059,7 +3059,9 @@ _HYPERFRAMES_AUTHORING = (
     "This is a HYPERFRAMES motion editor - a timed HTML composition that bakes to a "
     "deterministic GSAP timeline. Author the canonical JSON; the tool renders it live "
     "and bakes `source/{branch}/hyperframes-{id}.html`. Asset clips MUST reference "
-    "nodes wired into the Hyperframes node; do not invent assetIds.\n"
+    "nodes wired into the Hyperframes node; do not invent assetIds. A Timeline node "
+    "wired into the left input drives the master preview playhead and baked timing "
+    "duration; clip editing still writes the canonical JSON directly.\n"
     "  Write the canonical file `source/{branch}/hyperframes-{id}.json` (read it first; "
     "re-imported live). Schema:\n"
     "      {\"v\":1,\"compositionId\":\"hf-main\",\"width\":1280,\"height\":720,"
@@ -3677,7 +3679,7 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
-            {"port": "in", "label": "Clip asset", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "in", "label": "Clip asset / timeline", "tags": ["asset", "layer", "number"], "ingest": "context"},
             {"port": "edit", "label": "Edit Hyperframes", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/hyperframes-{id}.json",
               "authoring": _HYPERFRAMES_AUTHORING},
