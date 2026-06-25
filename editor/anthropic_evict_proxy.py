@@ -13,7 +13,9 @@ WHAT
 ----
 Sit between the CLI and api.anthropic.com (the CLI is pointed here via
 ANTHROPIC_BASE_URL). On every /v1/messages request we keep the last
-EVICT_KEEP_IMAGES image blocks and replace older ones with a tiny text stub.
+EVICT_KEEP_IMAGES TOOL-RESULT image blocks (browser screenshots / tool outputs)
+and replace older ones with a tiny text stub. USER-UPLOADED images (top-level
+image blocks in a message) are NEVER touched, however many the user sends.
 Responses (including SSE streams) pass through untouched.
 
 TWO TRAPS THIS HANDLES
@@ -72,28 +74,30 @@ _DROP_RESP = {
 
 
 def _evict_images(payload: dict, keep_last: int) -> int:
-    """Replace all but the last `keep_last` image blocks with a text stub.
+    """Replace all but the last `keep_last` TOOL-RESULT image blocks with a stub.
 
-    Deterministic + order-preserving so the rewritten prefix is byte-stable
-    across the CLI's repeated full-history sends. Returns count evicted.
+    Only images inside tool_results (screenshots / tool outputs) are eligible;
+    user-uploaded image blocks in a message are left alone. Deterministic +
+    order-preserving so the rewritten prefix is byte-stable across the CLI's
+    repeated full-history sends. Returns count evicted.
     """
     images = []  # list of (container_list, index) in positional order
 
     def scan(content):
+        # ONLY tool_result images (browser screenshots / tool outputs) are
+        # evictable. A top-level `image` block in a message is a USER UPLOAD -
+        # deliberate input the agent needs - and is NEVER touched, no matter how
+        # many the user sends.
         if not isinstance(content, list):
             return
-        for i, block in enumerate(content):
-            if not isinstance(block, dict):
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
                 continue
-            t = block.get("type")
-            if t == "image":
-                images.append((content, i))
-            elif t == "tool_result":
-                tc = block.get("content")
-                if isinstance(tc, list):
-                    for j, sub in enumerate(tc):
-                        if isinstance(sub, dict) and sub.get("type") == "image":
-                            images.append((tc, j))
+            tc = block.get("content")
+            if isinstance(tc, list):
+                for j, sub in enumerate(tc):
+                    if isinstance(sub, dict) and sub.get("type") == "image":
+                        images.append((tc, j))
 
     msgs = payload.get("messages")
     if not isinstance(msgs, list):
