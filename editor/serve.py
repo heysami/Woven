@@ -7569,6 +7569,31 @@ def _ensure_sanitised_codex_home():
     return sanitised
 
 
+# ── Screenshot-eviction proxy ────────────────────────────────────────────────
+# Browser-MCP screenshots are image blocks the CLI keeps in history and re-sends
+# every turn, so one shot in a long thread is re-read dozens of times (one
+# demo-inhouse thread: 154M cache-read tokens, ~$77; worst was ~$411). The
+# in-process proxy (editor/anthropic_evict_proxy.py) keeps the last N screenshots
+# and stubs the rest. Started lazily on the first claude spawn so importing
+# serve.py for tests doesn't bind a port. Fail-open at every layer: if it can't
+# start, returns None and the CLI talks to api.anthropic.com directly.
+_EVICT_BASE_URL = None          # None = not yet tried; "" = tried+failed; url = up
+_EVICT_LOCK = threading.Lock()
+
+
+def _evict_base_url():
+    global _EVICT_BASE_URL
+    if _EVICT_BASE_URL is None:
+        with _EVICT_LOCK:
+            if _EVICT_BASE_URL is None:
+                try:
+                    import anthropic_evict_proxy
+                    _EVICT_BASE_URL = anthropic_evict_proxy.start_in_background() or ""
+                except Exception:
+                    _EVICT_BASE_URL = ""
+    return _EVICT_BASE_URL or None
+
+
 def _build_child_env(agent_id: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
     env = dict(os.environ)
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
@@ -7602,6 +7627,15 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
         "TH_PROJECT_ROOT": project_root or DEFAULT_PROJECT_ROOT,
         "TH_PROTOCOL_ROOT": INSTALL_ROOT,
     })
+    # Route Claude's API calls through the in-process screenshot-eviction proxy
+    # (keeps the last N browser screenshots, stubs older ones so they aren't
+    # re-read every turn). claude only (the proxy is Anthropic-only). Skipped if
+    # the user set their own ANTHROPIC_BASE_URL (their gateway). Fail-open: the
+    # helper returns None when the proxy didn't start, leaving the env untouched.
+    if agent_id == "claude" and not env.get("ANTHROPIC_BASE_URL"):
+        _evict_url = _evict_base_url()
+        if _evict_url:
+            env["ANTHROPIC_BASE_URL"] = _evict_url
     # v3.1 - Skill isolation. The earlier approach of overriding
     # CLAUDE_CONFIG_DIR broke macOS Keychain auth (different userID
     # generated → Keychain tokens unreachable). The correct mechanism is
