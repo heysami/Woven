@@ -142,6 +142,7 @@ If the slot isn't already declared with the right data attribute, emit a diff:
 - [ ] Loops bounded by compile-time constants (no `while(true)`).
 - [ ] Final `gl_FragColor.a` is `1.0` unless the slot explicitly composites (rare).
 - [ ] Shader is written to `slot.outputPath`. If the slot wasn't declared with `data-shader`, I emitted a diff.
+- [ ] Adjustable controls exposed via the asset-controls shim (tint/accent color, speed, scale, intensity - 3-6 knobs), per `../asset-controls-contract.md`. Each `apply(v)` writes the matching uniform.
 
 ## Don't
 

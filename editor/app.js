@@ -27879,6 +27879,344 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   `, document.body);
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Auto-exposed asset controls — a floating RIGHT panel of live knobs and a LEFT
+   panel of consumed inputs, shown on a selected HTML asset (shader / motion / 3D).
+
+   Asset iframes are same-origin in the editor (sandbox allow-same-origin), so the
+   host reads the in-asset registry (window.__wovenControls, installed by
+   tools/_shared/asset-controls.js) DIRECTLY and writes knobs via its .set().
+   Assets that never included the shim fall back to scanning :root custom
+   properties for common knobs (color / speed / duration / easing / width / scale).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+// The live asset iframe element for a node (null until it mounts + loads).
+function assetControlsIframe(nodeId) {
+  return document.querySelector('iframe[data-asset-id="' + nodeId + '"]');
+}
+
+// Common-variable fallback catalog. A CSS var name is tested top-to-bottom; the
+// FIRST hit decides the control type + grouping, so specific rules come first.
+const ASSET_CONTROL_FALLBACK = [
+  { re: /(?:^|[-_])(?:bg|background)(?:[-_]?colou?r)?$/i, type: "color", group: "Color" },
+  { re: /colou?r|tint|accent|hue|fill|swatch|stroke(?![-_]?width)/i, type: "color", group: "Color" },
+  { re: /opacity|alpha/i, type: "range", group: "Color", min: 0, max: 1, step: 0.01 },
+  { re: /ease|easing/i, type: "easing", group: "Timing" },
+  { re: /speed|rate|velocity|fps/i, type: "range", group: "Motion", min: 0, max: 4, step: 0.01 },
+  { re: /duration|delay|interval|period|(?:^|[-_])time(?:[-_]|$)/i, type: "range", group: "Timing", min: 0, max: 10, step: 0.05 },
+  { re: /stroke[-_]?width|thickness|weight|line[-_]?width/i, type: "range", group: "Geometry", min: 0, max: 40, step: 0.5 },
+  { re: /scale|zoom/i, type: "range", group: "Geometry", min: 0, max: 4, step: 0.01 },
+  { re: /gap|spacing|margin|pad(?:ding)?/i, type: "range", group: "Geometry", min: 0, max: 200, step: 1 },
+  { re: /count|amount|qty|density|particles?|num(?:ber)?/i, type: "range", group: "Geometry", min: 0, max: 200, step: 1 },
+  { re: /radius|round|corner/i, type: "range", group: "Geometry", min: 0, max: 100, step: 1 },
+  { re: /angle|rotat|deg|tilt/i, type: "range", group: "Geometry", min: -180, max: 180, step: 1 },
+  { re: /width(?:[-_]?start|[-_]?end)?|height|size/i, type: "range", group: "Geometry", min: 0, max: 100, step: 0.5 },
+];
+
+const ASSET_EASING_OPTIONS = ["linear", "ease", "ease-in", "ease-out", "ease-in-out", "cubic-bezier(.4,0,.2,1)", "steps(4)"];
+
+function _assetVarPretty(name) {
+  return String(name).replace(/^--/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+}
+// Split a CSS value into numeric magnitude + unit so a range fallback can edit
+// the number and reattach the unit on write ("1.5s" → {n:1.5, unit:"s"}).
+function _assetSplitUnit(raw) {
+  const m = /^\s*(-?\d*\.?\d+)\s*([a-z%]*)\s*$/i.exec(String(raw == null ? "" : raw));
+  return m ? { n: parseFloat(m[1]), unit: m[2] || "" } : null;
+}
+
+// Scan a same-origin asset document's :root / html / body rules for custom props
+// that match the fallback catalog. Returns schema entries tagged __fallback.
+function assetAutodetectControls(doc) {
+  const seen = new Map(); // name → raw value (last declaration wins)
+  const scan = (rules) => {
+    if (!rules) return;
+    for (const r of rules) {
+      if (r.cssRules && !r.selectorText) { scan(r.cssRules); continue; } // @media / @supports
+      if (!r.selectorText) continue;
+      if (!/(^|,)\s*(?::root|html|body)\s*(,|$)/.test(r.selectorText)) continue;
+      const st = r.style; if (!st) continue;
+      for (let i = 0; i < st.length; i++) {
+        const p = st[i];
+        if (p && p.slice(0, 2) === "--") seen.set(p, (st.getPropertyValue(p) || "").trim());
+      }
+    }
+  };
+  let sheets = [];
+  try { sheets = Array.from(doc.styleSheets || []); } catch (e) { sheets = []; }
+  for (const sh of sheets) { let rules; try { rules = sh.cssRules; } catch (e) { rules = null; } scan(rules); }
+  const rootStyle = doc.documentElement && doc.documentElement.style;
+  const out = [];
+  for (const [name, raw] of seen) {
+    let meta = null;
+    for (const f of ASSET_CONTROL_FALLBACK) { if (f.re.test(name)) { meta = f; break; } }
+    if (!meta) continue;
+    let live = raw; // an inline :root override beats the stylesheet default.
+    try { const ov = rootStyle && rootStyle.getPropertyValue(name).trim(); if (ov) live = ov; } catch (e) {}
+    const entry = { key: name, label: _assetVarPretty(name), type: meta.type, group: meta.group,
+                    min: meta.min, max: meta.max, step: meta.step, __fallback: true };
+    if (meta.type === "range") {
+      const su = _assetSplitUnit(live);
+      entry.unit = su ? su.unit : "";
+      entry.value = su ? su.n : (meta.min || 0);
+    } else if (meta.type === "easing") {
+      entry.options = ASSET_EASING_OPTIONS; entry.value = live || "ease";
+    } else { entry.value = live || "#000000"; }
+    entry.default = entry.value;
+    out.push(entry);
+  }
+  return out;
+}
+
+// Read the control schema for a node's asset: explicit contract first, else the
+// CSS-var fallback. Returns { source, schema } or null when the iframe isn't ready.
+function readAssetControlsSchema(nodeId) {
+  const ifr = assetControlsIframe(nodeId);
+  if (!ifr) return null;
+  let cw = null, doc = null;
+  try { cw = ifr.contentWindow; doc = ifr.contentDocument; } catch (e) { return { source: "blocked", schema: [] }; }
+  if (!cw || !doc) return null;
+  try {
+    const reg = cw.__wovenControls;
+    if (reg && typeof reg.schema === "function") {
+      const s = reg.schema();
+      if (s && s.length) return { source: "contract", schema: s };
+    }
+  } catch (e) {}
+  try {
+    const s = assetAutodetectControls(doc);
+    if (s && s.length) return { source: "fallback", schema: s };
+  } catch (e) {}
+  return { source: "none", schema: [] };
+}
+
+// Push one knob into the live asset. Contract knobs go through .set(); fallback
+// knobs write the CSS var (reattaching its unit). postMessage is the cross-origin
+// safety net (export / share previews served from another origin).
+function applyAssetControl(nodeId, entry, value) {
+  const ifr = assetControlsIframe(nodeId);
+  if (!ifr) return;
+  let cw = null, doc = null;
+  try { cw = ifr.contentWindow; doc = ifr.contentDocument; } catch (e) { cw = null; doc = null; }
+  if (entry && entry.__fallback) {
+    const v = entry.type === "range" ? (value + (entry.unit || "")) : value;
+    try { doc && doc.documentElement.style.setProperty(entry.key, v); } catch (e) {}
+    try { cw && cw.postMessage({ type: "th-controls-set", key: entry.key, value: v }, "*"); } catch (e) {}
+  } else {
+    let ok = false;
+    try { if (cw && cw.__wovenControls) { cw.__wovenControls.set(entry.key, value); ok = true; } } catch (e) {}
+    if (!ok) { try { cw && cw.postMessage({ type: "th-controls-set", key: entry.key, value }, "*"); } catch (e) {} }
+  }
+}
+
+// Replay persisted node.controls into a freshly-loaded asset so user tweaks
+// survive reload / re-bake. Called from the asset iframe's onLoad.
+function replayAssetControls(nodeId, controls) {
+  if (!controls || typeof controls !== "object") return;
+  const info = readAssetControlsSchema(nodeId);
+  if (!info || !info.schema || !info.schema.length) return;
+  const byKey = {}; for (const e of info.schema) byKey[e.key] = e;
+  for (const k in controls) { const e = byKey[k]; if (e) applyAssetControl(nodeId, e, controls[k]); }
+}
+
+// Shared rect tracker for the floating asset panels - rAF-follows the node box
+// through pan / zoom (same pattern as WorkflowAssetActionBar's inline loop).
+function useTrackedNodeRect(nodeId, active) {
+  const [rect, setRect] = useState(null);
+  useEffect(() => {
+    if (!active) { setRect(null); return; }
+    let raf = 0, last = null;
+    const tick = () => {
+      const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
+          setRect(last);
+        }
+      } else if (last) { last = null; setRect(null); }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [nodeId, active]);
+  return rect;
+}
+
+/* The floating RIGHT control panel. Queries the selected asset's schema (contract
+   or fallback), renders grouped knobs, pushes every change live into the iframe,
+   and debounce-persists the whole set to node.controls so it survives reload. */
+function WorkflowAssetControlsPanel({ node, selected, onChange }) {
+  const nodeId = node.id;
+  const rect = useTrackedNodeRect(nodeId, selected);
+  const [schema, setSchema] = useState([]);
+  const [source, setSource] = useState("none");
+  const [vals, setVals] = useState({});
+  const [collapsed, setCollapsed] = useState(false);
+  const valsRef = useRef(vals); valsRef.current = vals;
+  const controlsRef = useRef(node.controls); controlsRef.current = node.controls;
+  const persistRef = useRef(0);
+
+  // Query the asset for its schema once selected. The iframe may still be
+  // loading, so retry a handful of times until it reports knobs (or gives up).
+  useEffect(() => {
+    if (!selected) { setSchema([]); setVals({}); setSource("none"); return; }
+    let alive = true, tries = 0, timer = 0;
+    const poll = () => {
+      if (!alive) return;
+      const info = readAssetControlsSchema(nodeId);
+      if (info && info.schema && info.schema.length) {
+        const persisted = controlsRef.current || {};
+        const seed = {};
+        for (const e of info.schema) seed[e.key] = (e.key in persisted) ? persisted[e.key] : e.value;
+        setSource(info.source); setSchema(info.schema); setVals(seed);
+        return;
+      }
+      if (tries++ < 10) timer = setTimeout(poll, 250);
+    };
+    poll();
+    const onRefresh = (ev) => { const d = ev && ev.detail; if (!d || !d.nodeId || d.nodeId === nodeId) { tries = 0; poll(); } };
+    window.addEventListener("th:asset-refresh", onRefresh);
+    return () => { alive = false; clearTimeout(timer); window.removeEventListener("th:asset-refresh", onRefresh); };
+  }, [nodeId, selected]);
+
+  const onKnob = (entry, value) => {
+    setVals((v) => ({ ...v, [entry.key]: value }));
+    applyAssetControl(nodeId, entry, value);
+    clearTimeout(persistRef.current);
+    persistRef.current = setTimeout(() => {
+      onChange && onChange({ controls: { ...valsRef.current } });
+    }, 220);
+  };
+  const resetAll = () => {
+    const next = {};
+    for (const e of schema) { next[e.key] = e.default; applyAssetControl(nodeId, e, e.default); }
+    setVals(next);
+    onChange && onChange({ controls: next });
+  };
+
+  if (!selected || !rect || !schema.length) return null;
+  const PANEL_W = 236, GAP = 12;
+  const left = rect.right + GAP;
+  if (shouldHideNodeChrome(rect, left, left + PANEL_W, 0)) return null;
+
+  const groups = []; const gi = {};
+  for (const e of schema) {
+    const g = e.group || "Controls";
+    if (!(g in gi)) { gi[g] = groups.length; groups.push({ name: g, items: [] }); }
+    groups[gi[g]].items.push(e);
+  }
+  const renderKnob = (e) => {
+    const v = vals[e.key];
+    if (e.type === "color") {
+      return html`<div className="wac-row" key=${e.key}>
+        <label className="wac-label" title=${e.hint || ""}>${e.label}</label>
+        <input className="wac-color" type="color" value=${v || "#000000"} onInput=${(ev) => onKnob(e, ev.target.value)}/>
+      </div>`;
+    }
+    if (e.type === "toggle") {
+      return html`<div className="wac-row" key=${e.key}>
+        <label className="wac-label">${e.label}</label>
+        <input className="wac-toggle" type="checkbox" checked=${!!v} onChange=${(ev) => onKnob(e, ev.target.checked)}/>
+      </div>`;
+    }
+    if (e.type === "select" || e.type === "easing") {
+      const opts = e.options || ASSET_EASING_OPTIONS;
+      return html`<div className="wac-row" key=${e.key}>
+        <label className="wac-label">${e.label}</label>
+        <select className="wac-select" value=${v} onChange=${(ev) => onKnob(e, ev.target.value)}>
+          ${opts.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}
+        </select>
+      </div>`;
+    }
+    const min = e.min != null ? e.min : 0, max = e.max != null ? e.max : 1, step = e.step != null ? e.step : 0.01;
+    const shown = typeof v === "number" ? (+v).toFixed(step < 1 ? 2 : 0) : v;
+    return html`<div className="wac-row wac-row-range" key=${e.key}>
+      <label className="wac-label">${e.label}<span className="wac-val">${shown}</span></label>
+      <input className="wac-range" type="range" min=${min} max=${max} step=${step} value=${v == null ? min : v}
+        onInput=${(ev) => onKnob(e, parseFloat(ev.target.value))}/>
+    </div>`;
+  };
+  const panel = html`<div className="workflow-asset-controls-panel" data-node-id=${nodeId}
+      style=${{ position: "fixed", top: rect.top + "px", left: left + "px", width: PANEL_W + "px", zIndex: 41 }}
+      onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
+    <div className="wac-head">
+      <span className="wac-title">Controls</span>
+      ${source === "fallback" ? html`<span className="wac-source" title="Inferred from CSS variables">auto</span>` : null}
+      <button className="wac-mini" title="Reset all" onClick=${resetAll}>reset</button>
+      <button className="wac-mini wac-collapse" title=${collapsed ? "Expand" : "Collapse"} onClick=${() => setCollapsed((c) => !c)}>${collapsed ? "+" : "–"}</button>
+    </div>
+    ${collapsed ? null : html`<div className="wac-body">
+      ${groups.map((g) => html`<div className="wac-group" key=${g.name}>
+        ${groups.length > 1 ? html`<div className="wac-group-name">${g.name}</div>` : null}
+        ${g.items.map(renderKnob)}
+      </div>`)}
+    </div>`}
+  </div>`;
+  return createPortal(panel, document.body);
+}
+
+/* The floating LEFT inputs panel. Lists the typed assets this node consumes
+   (text / image / palette / section …) via resolveUpstreamInputs. Text inputs are
+   inline-editable and write back to the upstream prompt node (re-running it). */
+function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges }) {
+  const nodeId = node.id;
+  const rect = useTrackedNodeRect(nodeId, selected);
+  const inputs = useMemo(() => {
+    try { return resolveUpstreamInputs(node, allNodes, allEdges) || []; } catch (e) { return []; }
+  }, [node, allNodes, allEdges]);
+  const [drafts, setDrafts] = useState({});
+  if (!selected || !rect || !inputs.length) return null;
+  const PANEL_W = 224, GAP = 12;
+  const left = rect.left - PANEL_W - GAP;
+  if (shouldHideNodeChrome(rect, left, left + PANEL_W, 0)) return null;
+
+  const saveText = (inp) => {
+    const txt = (inp.fromId in drafts) ? drafts[inp.fromId] : (inp.text || "");
+    window.dispatchEvent(new CustomEvent("th:asset-refine-prompt", { detail: { promptNodeId: inp.fromId, newText: txt } }));
+  };
+  const renderInput = (inp, i) => {
+    const key = (inp.fromId || inp.type || "in") + "-" + i;
+    if (inp.type === "text") {
+      const cur = (inp.fromId in drafts) ? drafts[inp.fromId] : (inp.text || "");
+      const dirty = cur !== (inp.text || "");
+      return html`<div className="wai-item wai-text" key=${key}>
+        <div className="wai-label">${inp.label}</div>
+        <textarea className="wai-textarea" rows="3" value=${cur}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onInput=${(e) => { const val = e.target.value; setDrafts((d) => ({ ...d, [inp.fromId]: val })); }}/>
+        ${dirty ? html`<button className="wai-save" onClick=${() => saveText(inp)}>Update prompt + re-run</button>` : null}
+      </div>`;
+    }
+    if (inp.type === "asset" || inp.type === "glb-import") {
+      const isImg = (inp.assetKind || "") === "image" || /\.(png|jpe?g|webp|gif|svg|avif)(\?|$)/i.test(inp.url || "");
+      return html`<div className="wai-item wai-asset" key=${key}>
+        <div className="wai-label">${inp.label}</div>
+        ${inp.url && isImg
+          ? html`<img className="wai-thumb" src=${inp.url} alt=${inp.label} draggable=${false}/>`
+          : html`<div className="wai-chip">${inp.assetKind || inp.type}</div>`}
+      </div>`;
+    }
+    if (inp.type === "palette") {
+      return html`<div className="wai-item" key=${key}>
+        <div className="wai-label">${inp.label}</div>
+        <div className="wai-swatches">${(inp.swatches || []).slice(0, 8).map((s, j) => html`<span className="wai-swatch" key=${j} style=${{ background: s }}></span>`)}</div>
+      </div>`;
+    }
+    return html`<div className="wai-item" key=${key}>
+      <div className="wai-label">${inp.label}</div>
+      <div className="wai-chip">${inp.type}</div>
+    </div>`;
+  };
+  const panel = html`<div className="workflow-asset-inputs-panel" data-node-id=${nodeId}
+      style=${{ position: "fixed", top: rect.top + "px", left: Math.max(8, left) + "px", width: PANEL_W + "px", zIndex: 41 }}
+      onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
+    <div className="wai-head"><span className="wai-title">Inputs</span></div>
+    <div className="wai-body">${inputs.map(renderInput)}</div>
+  </div>`;
+  return createPortal(panel, document.body);
+}
+
 /* v3.3 - AssetActionPopover: the dropdown panel rendered by both
    WorkflowAssetActionBar (selected asset node) and
    WorkflowPickedElementActionBar (picked sub-element). UI is identical;
@@ -55239,6 +55577,17 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       const warmKey = String(node.activeVersionId || node.path || node.id || "");
       workflowScheduleCardWarm(ifr, warmKey);
     } catch {}
+    // Replay persisted control tweaks into the freshly-loaded asset so the user's
+    // last color/speed/timing edits survive reload / re-Run. Retried a couple of
+    // times because some assets register their __wovenControls on a later tick.
+    try {
+      const ctrls = node.controls;
+      if (ctrls && Object.keys(ctrls).length) {
+        replayAssetControls(node.id, ctrls);
+        setTimeout(() => replayAssetControls(node.id, ctrls), 200);
+        setTimeout(() => replayAssetControls(node.id, ctrls), 600);
+      }
+    } catch {}
     // Standard reference sizes - match the iPhone-14 / 1440x900 design
     // breakpoints designers reach for. Mobile aspect is height-over-width
     // (a tall card); desktop aspect is width-over-height.
@@ -55296,7 +55645,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         // path. Leave existing scale alone if the user explicitly picked one.
       },
     });
-  }, [onChange, node.size]);
+  }, [onChange, node.size, node.controls]);
 
   // v3.5.2 - Per-iframe back/forward with pushState patching + DOM snapshots.
   // Same shape as the prototype node version (see WorkflowPrototypeNode for
@@ -56443,6 +56792,8 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ]}
       />`}
       ${selected && !hasPickedChild && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
+      ${selected && !hasPickedChild && kind === "html" && html`<${WorkflowAssetControlsPanel} node=${node} selected=${selected} onChange=${onChange}/>`}
+      ${selected && !hasPickedChild && kind === "html" && html`<${WorkflowAssetInputsPanel} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
 }

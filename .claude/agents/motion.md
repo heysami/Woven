@@ -42,6 +42,16 @@ Your `.html` file MUST follow the Hyperframes composition model (https://hyperfr
 - For a clean loop: visual state at `TL.progress(1)` matches `TL.progress(0)`. Use `yoyo: true` only when the brief calls for ping-pong.
 - Every clip's `data-start` + `data-duration` must agree with the GSAP tween that controls it (the renderer treats `data-*` as ground truth for when an element is on-screen).
 
+## Expose adjustable controls
+
+Install the asset-controls shim and register the knobs a designer would reach for -
+total **duration**, **easing**, **start delay**, and a brand **color** if the piece
+has a dominant fill. Each `apply(v)` must retime the paused timeline and re-seek so
+the change is visible immediately (e.g. `apply: v => { TL.timeScale(BASE_DUR / v); }`
+for duration, or set a CSS var the clips read for color). The editor renders these as
+a live Controls panel on the asset node. Follow `docs/agents/asset-controls-contract.md`
+exactly. Keep it to 3-6 knobs; don't expose every tween.
+
 ## Performance & A11y
 
 - Respect `prefers-reduced-motion`: skip autoplay (`TL.progress(0).pause()`) when set.

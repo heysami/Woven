@@ -19,3 +19,5 @@ You are Subagent 1.V.shader.
 - A node entry in `workflow/workflow.json` if tracked
 
 **Style**: respect DS tokens for color - read the active DS's CSS variables and use those as the shader's uniform colors. Avoid full-screen heavy effects unless explicitly called for; lean toward subtle/ambient.
+
+**Expose adjustable controls**: install the asset-controls shim and register 3-6 knobs (primary tint/accent color, animation speed, scale/zoom, intensity) so the editor shows a live Controls panel on the asset - each `apply(v)` writes the matching uniform read by your render loop. Follow `docs/agents/asset-controls-contract.md` exactly.

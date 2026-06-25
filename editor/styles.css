@@ -5763,6 +5763,152 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .workflow-asset-action-btn:active { transform: translateY(1px); }
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Auto-exposed asset controls — floating RIGHT (knobs) + LEFT (consumed inputs)
+   panels on a selected HTML asset node. Body-portaled, fixed-positioned by JS.
+   z-index 41 sits just above the asset action bar (40), below the chat-drawer (60).
+   ─────────────────────────────────────────────────────────────────────────── */
+.workflow-asset-controls-panel,
+.workflow-asset-inputs-panel {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 70vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.wac-head, .wai-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.wac-title, .wai-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: 1 1 auto;
+}
+.wac-source {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+.wac-mini {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.wac-mini:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-3); }
+.wac-collapse { padding: 2px 7px; font-weight: 700; }
+
+.wac-body, .wai-body {
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wac-group { display: flex; flex-direction: column; gap: 7px; }
+.wac-group-name {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.wac-row { display: flex; align-items: center; gap: 8px; }
+.wac-label {
+  font-size: 11.5px;
+  color: var(--text);
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.wac-val {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.wac-row-range { flex-direction: column; align-items: stretch; gap: 3px; }
+.wac-range { width: 100%; accent-color: var(--accent); height: 16px; }
+.wac-color {
+  width: 30px; height: 22px; flex: 0 0 auto;
+  padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: none; cursor: pointer;
+}
+.wac-select {
+  flex: 0 0 auto; max-width: 130px;
+  font-size: 11px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 2px 4px; cursor: pointer;
+}
+.wac-toggle { accent-color: var(--accent); width: 15px; height: 15px; }
+
+/* Left inputs panel */
+.wai-item { display: flex; flex-direction: column; gap: 4px; }
+.wai-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wai-textarea {
+  font: inherit; font-size: 11px; line-height: 1.4;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 5px 6px; resize: vertical; width: 100%;
+}
+.wai-textarea:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.wai-save {
+  align-self: flex-start;
+  font-size: 10.5px; font-weight: 600;
+  color: #fff; background: var(--accent);
+  border: none; border-radius: var(--radius-sm);
+  padding: 4px 9px; cursor: pointer;
+}
+.wai-save:hover { background: var(--accent-strong); }
+.wai-thumb {
+  width: 100%; max-height: 120px; object-fit: cover;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-3); display: block;
+}
+.wai-chip {
+  align-self: flex-start;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--text-muted);
+  background: var(--surface-3); border-radius: var(--radius-sm);
+  padding: 2px 7px;
+}
+.wai-swatches { display: flex; gap: 3px; flex-wrap: wrap; }
+.wai-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--border); }
+
 /* Popover panel hanging off the action bar. Wide enough for the Remix
    form (variant inputs) but compact enough for the 1-line refine input.
    max-height + scroll so it doesn't overflow the viewport on small canvases. */
