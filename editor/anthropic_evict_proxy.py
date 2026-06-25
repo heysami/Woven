@@ -74,42 +74,64 @@ _DROP_RESP = {
 
 
 def _evict_images(payload: dict, keep_last: int) -> int:
-    """Replace all but the last `keep_last` TOOL-RESULT image blocks with a stub.
+    """Evict already-READ images; keep just-arrived and recent ones.
 
-    Only images inside tool_results (screenshots / tool outputs) are eligible;
-    user-uploaded image blocks in a message are left alone. Deterministic +
-    order-preserving so the rewritten prefix is byte-stable across the CLI's
-    repeated full-history sends. Returns count evicted.
+    Same rule for uploads and screenshots - the axis is read-state, not source.
+    An image is KEPT if either: (1) it's in the request's LAST message - it just
+    arrived and the agent is about to read it for the first time, so a fresh
+    batch of N uploads/screenshots survives this turn; or (2) it's among the last
+    `keep_last` images overall (a small recency buffer). Every older image -
+    upload or tool_result screenshot - has been read in a prior turn and is
+    replaced with a text stub.
+
+    Deterministic + order-preserving, so the CLI's repeated full-history sends
+    rewrite to a byte-stable prefix and don't thrash the prompt cache. Returns
+    count evicted.
     """
-    images = []  # list of (container_list, index) in positional order
+    msgs = payload.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        return 0
+    last = len(msgs) - 1
 
-    def scan(content):
-        # ONLY tool_result images (browser screenshots / tool outputs) are
-        # evictable. A top-level `image` block in a message is a USER UPLOAD -
-        # deliberate input the agent needs - and is NEVER touched, no matter how
-        # many the user sends.
+    images = []        # (container_list, index) in positional order
+    protected = set()  # (id(container), index) for images in the LAST message
+
+    def scan(content, is_last):
         if not isinstance(content, list):
             return
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool_result":
+        for i, block in enumerate(content):
+            if not isinstance(block, dict):
                 continue
-            tc = block.get("content")
-            if isinstance(tc, list):
-                for j, sub in enumerate(tc):
-                    if isinstance(sub, dict) and sub.get("type") == "image":
-                        images.append((tc, j))
+            t = block.get("type")
+            if t == "image":  # user upload or inline image
+                images.append((content, i))
+                if is_last:
+                    protected.add((id(content), i))
+            elif t == "tool_result":  # browser screenshot / tool output
+                tc = block.get("content")
+                if isinstance(tc, list):
+                    for j, sub in enumerate(tc):
+                        if isinstance(sub, dict) and sub.get("type") == "image":
+                            images.append((tc, j))
+                            if is_last:
+                                protected.add((id(tc), j))
 
-    msgs = payload.get("messages")
-    if not isinstance(msgs, list):
-        return 0
-    for msg in msgs:
+    for mi, msg in enumerate(msgs):
         if isinstance(msg, dict):
-            scan(msg.get("content"))
+            scan(msg.get("content"), mi == last)
 
-    evict = images if keep_last <= 0 else images[:-keep_last]
-    for container, idx in evict:
-        container[idx] = {"type": "text", "text": STUB_TEXT}
-    return len(evict)
+    keep = set(protected)  # never evict unread (just-arrived) images
+    if keep_last > 0:
+        for c, i in images[-keep_last:]:
+            keep.add((id(c), i))
+
+    n = 0
+    for c, i in images:
+        if (id(c), i) in keep:
+            continue
+        c[i] = {"type": "text", "text": STUB_TEXT}
+        n += 1
+    return n
 
 
 def _rewrite_body(raw: bytes, content_encoding: str):
