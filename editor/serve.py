@@ -7956,6 +7956,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._figma_job(qs)
             if parsed.path == "/__figma_map":
                 return self._figma_map(qs)
+            if parsed.path == "/__figma_tidy":
+                return self._figma_tidy(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
             if parsed.path == "/__workflow/nodes/add":
@@ -14692,6 +14694,78 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 rules = []
         return self._reply(200, {"ok": True, "rules": rules})
+
+    # POST /__figma_tidy?project=<id>  body {dsRef?, pngB64, nodes:[...], components:[...]}
+    # The "agent tidies the Figma design" step: the plugin sends a screenshot of
+    # what it built + the node tree + the available Figma components; we save the
+    # PNG and run the Claude CLI (keyless, vision via an @image reference) to emit
+    # a SMALL list of operations (auto-layout / instance / rename / resize /
+    # delete) that the plugin then applies to the live nodes. No HTML, no chunked
+    # scene generation - the agent looks at the real Figma result and edits it.
+    def _figma_tidy(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=48 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        png_b64 = body.get("pngB64") or ""
+        nodes = body.get("nodes")
+        components = body.get("components") or []
+        if not png_b64 or not isinstance(nodes, (list, dict)):
+            return self._reply(400, {"error": "missing pngB64 or nodes"})
+        import base64
+        try:
+            raw = base64.b64decode(png_b64)
+        except Exception:
+            return self._reply(400, {"error": "invalid pngB64"})
+        shot_dir = os.path.join(project_root, ".woven-figma")
+        try:
+            os.makedirs(shot_dir, exist_ok=True)
+            shot_path = os.path.join(shot_dir, "tidy-shot.png")
+            with open(shot_path, "wb") as f:
+                f.write(raw)
+        except OSError as e:
+            return self._reply(500, {"error": f"could not save screenshot: {e}"})
+
+        comp_names = [c.get("name", "") for c in components if isinstance(c, dict) and c.get("name")][:200]
+        comp_list = ", ".join(comp_names) or "(none available)"
+        prompt = (
+            "You are tidying a Figma design that was auto-imported from a web page - it is "
+            "structurally messy. Look at the screenshot at @" + shot_path + " and the node tree "
+            "below, then return ONLY a JSON object {\"operations\":[...]} - a SHORT list of edits "
+            "that make it cleaner and more like a hand-built Figma file.\n\n"
+            "Operation types (id = a Figma node id from the tree):\n"
+            '  {"op":"autolayout","id":"..","mode":"VERTICAL"|"HORIZONTAL","gap":N,"padding":[t,r,b,l],"primaryAlign":"MIN"|"CENTER"|"MAX"|"SPACE_BETWEEN","counterAlign":"MIN"|"CENTER"|"MAX"}\n'
+            '  {"op":"instance","id":"..","component":"<exact name from the list>","props":{"Prop":"Value"}}  // replace the node with a design-system component instance\n'
+            '  {"op":"rename","id":"..","name":".."}\n'
+            '  {"op":"resize","id":"..","w":N,"h":N}\n'
+            '  {"op":"delete","id":".."}\n\n'
+            "Guidance: convert container frames to auto-layout that matches the visual rows/columns "
+            "you see; replace obvious buttons / cards / inputs / nav items with the matching component "
+            "when one exists; delete invisible or empty junk; never delete text. Use ONLY these "
+            "component names for instance ops: " + comp_list + ".\n\n"
+            "NODE TREE:\n" + json.dumps(nodes)[:120000] + "\n\n"
+            "Reply with ONLY the JSON object, no prose, no markdown fences."
+        )
+        try:
+            text = _claude_cli_complete([{"role": "user", "content": prompt}], model="claude-sonnet-4-6", timeout=300)
+        except Exception as e:
+            return self._reply(502, {"error": f"agent run failed: {e}"})
+        ops = []
+        try:
+            a = text.index("{")
+            b = text.rindex("}")
+            obj = json.loads(text[a:b + 1])
+            if isinstance(obj, dict) and isinstance(obj.get("operations"), list):
+                ops = obj["operations"]
+        except Exception:
+            ops = []
+        return self._reply(200, {"ok": True, "operations": ops, "count": len(ops)})
 
     # POST /__export_asset?project=<id>  body {nodeId:string}
     # Bundles the named asset/prototype/container node into the project's

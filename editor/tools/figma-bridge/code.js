@@ -20,7 +20,131 @@ figma.ui.onmessage = function (msg) {
   if (msg.type === "getComponents") { sendComponentsState(msg.dsRef, msg.names); return; }
   if (msg.type === "bindComponent") { bindComponent(msg.dsRef, msg.component); return; }
   if (msg.type === "unbindComponent") { unbindComponent(msg.dsRef, msg.component); return; }
+  if (msg.type === "tidyStart") { startTidy(msg.dsRef); return; }
+  if (msg.type === "applyOps") { applyOps(msg.operations || []); return; }
 };
+
+// ---- tidy: export the built design for the agent, then apply its edits ----
+
+var _tidyComps = [];   // available components captured at export time (name->key/id)
+
+function tidyNodeSummary(node, out, cap) {
+  if (out.length >= cap) return;
+  var e = {
+    id: node.id, type: node.type, name: node.name,
+    x: Math.round(node.x || 0), y: Math.round(node.y || 0),
+    w: Math.round(node.width || 0), h: Math.round(node.height || 0)
+  };
+  if (node.type === "TEXT") { try { e.text = (node.characters || "").slice(0, 80); } catch (e2) {} }
+  out.push(e);
+  if ("children" in node) for (var i = 0; i < node.children.length; i++) tidyNodeSummary(node.children[i], out, cap);
+}
+
+function tidyAvailableComponents(cap) {
+  var out = [];
+  try {
+    var comps = figma.root.findAllWithCriteria({ types: ["COMPONENT", "COMPONENT_SET"] });
+    for (var i = 0; i < comps.length && out.length < cap; i++) {
+      var c = comps[i];
+      if (c.type === "COMPONENT" && c.parent && c.parent.type === "COMPONENT_SET") continue; // prefer the set
+      out.push({ name: c.name, key: c.key || "", id: c.id, kind: c.type === "COMPONENT_SET" ? "SET" : "COMPONENT" });
+    }
+  } catch (e) {}
+  return out;
+}
+
+function startTidy(dsRef) {
+  var sel = figma.currentPage.selection;
+  var target = (sel && sel[0]) ||
+    (figma.currentPage.children.length ? figma.currentPage.children[figma.currentPage.children.length - 1] : null);
+  if (!target) { figma.ui.postMessage({ type: "tidyError", message: "Select the frame to tidy (or build one first)." }); return; }
+  figma.ui.postMessage({ type: "tidyProgress", message: "Exporting '" + target.name + "'..." });
+  target.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } }).then(function (bytes) {
+    var nodes = []; tidyNodeSummary(target, nodes, 500);
+    _tidyComps = tidyAvailableComponents(200);
+    figma.ui.postMessage({ type: "tidyData", dsRef: dsRef, pngBytes: bytes, nodes: nodes, components: _tidyComps });
+  }, function (e) {
+    figma.ui.postMessage({ type: "tidyError", message: "Export failed: " + ((e && e.message) || e) });
+  });
+}
+
+function tidyApplyAutoLayout(frame, o) {
+  if (frame.type !== "FRAME" && frame.type !== "COMPONENT" && frame.type !== "INSTANCE") return;
+  try { frame.layoutMode = (o.mode === "HORIZONTAL") ? "HORIZONTAL" : "VERTICAL"; } catch (e) { return; }
+  try { frame.itemSpacing = Math.max(0, o.gap || 0); } catch (e) {}
+  if (Array.isArray(o.padding)) {
+    try {
+      frame.paddingTop = o.padding[0] || 0; frame.paddingRight = o.padding[1] || 0;
+      frame.paddingBottom = o.padding[2] || 0; frame.paddingLeft = o.padding[3] || 0;
+    } catch (e) {}
+  }
+  try { frame.primaryAxisAlignItems = o.primaryAlign || "MIN"; } catch (e) {}
+  try { frame.counterAxisAlignItems = o.counterAlign || "MIN"; } catch (e) {}
+}
+
+function tidySwapForComponent(n, o) {
+  var name = o.component;
+  if (!name) return Promise.resolve(false);
+  var match = null;
+  for (var i = 0; i < _tidyComps.length; i++) {
+    if (_tidyComps[i].name === name) { match = _tidyComps[i]; break; }
+  }
+  if (!match) for (var k = 0; k < _tidyComps.length; k++) {
+    if (_tidyComps[k].name.toLowerCase() === String(name).toLowerCase()) { match = _tidyComps[k]; break; }
+  }
+  if (!match) return Promise.resolve(false);
+  var resolve;
+  if (match.kind === "SET" && match.key) resolve = figma.importComponentSetByKeyAsync(match.key);
+  else if (match.key) resolve = figma.importComponentByKeyAsync(match.key);
+  else resolve = Promise.reject();
+  return resolve.then(null, function () {
+    return match.id && figma.getNodeByIdAsync ? figma.getNodeByIdAsync(match.id) : null;
+  }).then(function (comp) {
+    if (!comp || (comp.type !== "COMPONENT" && comp.type !== "COMPONENT_SET")) return false;
+    var inst;
+    try {
+      if (comp.type === "COMPONENT_SET") { var def = comp.defaultVariant || comp.children[0]; inst = def ? def.createInstance() : null; }
+      else inst = comp.createInstance();
+    } catch (e) { return false; }
+    if (!inst) return false;
+    if (o.props) applyComponentProps(inst, o.props);
+    var parent = n.parent;
+    try { inst.x = n.x; inst.y = n.y; inst.resize(Math.max(0.01, n.width), Math.max(0.01, n.height)); } catch (e) {}
+    try {
+      if (parent) { var idx = parent.children.indexOf(n); parent.insertChild(idx < 0 ? parent.children.length : idx, inst); }
+      else figma.currentPage.appendChild(inst);
+    } catch (e) { try { figma.currentPage.appendChild(inst); } catch (e2) {} }
+    try { n.remove(); } catch (e) {}
+    return true;
+  }, function () { return false; });
+}
+
+function applyOps(ops) {
+  if (!Array.isArray(ops) || !ops.length) { figma.ui.postMessage({ type: "tidyDone", message: "No changes suggested." }); return; }
+  var applied = 0, failed = 0, idx = 0;
+  function step() {
+    if (idx >= ops.length) {
+      figma.ui.postMessage({ type: "tidyDone", message: "Applied " + applied + " edit(s)" + (failed ? (", " + failed + " skipped") : "") + "." });
+      return;
+    }
+    var o = ops[idx++];
+    var p = (o && o.id) ? figma.getNodeByIdAsync(o.id) : Promise.resolve(null);
+    p.then(function (n) {
+      try {
+        if (o.op === "delete") { if (n) { n.remove(); applied++; } else failed++; return; }
+        if (!n) { failed++; return; }
+        if (o.op === "rename") { n.name = o.name || n.name; applied++; }
+        else if (o.op === "resize") { if ("resize" in n) { n.resize(Math.max(0.01, o.w || n.width), Math.max(0.01, o.h || n.height)); applied++; } else failed++; }
+        else if (o.op === "autolayout") { tidyApplyAutoLayout(n, o); applied++; }
+        else if (o.op === "instance") {
+          return tidySwapForComponent(n, o).then(function (ok) { if (ok) applied++; else failed++; });
+        }
+        else failed++;
+      } catch (e) { failed++; }
+    }, function () { failed++; }).then(step, step);
+  }
+  step();
+}
 
 function report(jobId, state, message) {
   figma.ui.postMessage({ type: "status", jobId: jobId, state: state, message: message || "" });

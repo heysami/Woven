@@ -57,6 +57,12 @@
     <div id="compList"></div>
   </div>
 
+  <div id="tidy" style="margin-top:14px; border-top:1px solid rgba(128,128,128,.25); padding-top:10px;">
+    <div style="font-size:12px; font-weight:600;">Tidy with agent</div>
+    <p class="sub" style="margin:4px 0 8px;">Select a built frame in Figma, then let an agent look at it and clean it up - fix auto-layout and swap in your components.</p>
+    <button id="tidyBtn" class="secondary">Tidy current frame</button>
+  </div>
+
   <div id="log"></div>
 
 <script>
@@ -159,10 +165,41 @@
     });
   }
 
+  // ---- tidy with agent ----
+  function bytesToBase64(bytes) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { var s = String(fr.result || ""); var i = s.indexOf(","); res(i >= 0 ? s.slice(i + 1) : s); };
+      fr.onerror = function () { rej(fr.error); };
+      fr.readAsDataURL(new Blob([bytes], { type: "image/png" }));
+    });
+  }
+  $("tidyBtn").onclick = function () {
+    log("Tidying current frame with the agent...");
+    parent.postMessage({ pluginMessage: { type: "tidyStart", dsRef: currentDsRef } }, "*");
+  };
+
   // Messages coming back from code.js (the plugin sandbox).
   window.onmessage = function (e) {
     var m = e.data && e.data.pluginMessage;
     if (!m) return;
+    if (m.type === "tidyData") {
+      log("Screenshot captured (" + (m.nodes ? m.nodes.length : 0) + " nodes, " + (m.components ? m.components.length : 0) + " components); asking the agent...");
+      bytesToBase64(m.pngBytes).then(function (b64) {
+        return fetch(apiUrl("/__figma_tidy"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dsRef: m.dsRef, pngB64: b64, nodes: m.nodes, components: m.components })
+        });
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || !j.ok) { log("Tidy failed: " + ((j && j.error) || "unknown"), "log-err"); return; }
+        log("Agent returned " + (j.count || 0) + " edit(s); applying...");
+        parent.postMessage({ pluginMessage: { type: "applyOps", operations: j.operations || [] } }, "*");
+      }).catch(function (err) { log("Tidy request failed: " + (err.message || err), "log-err"); });
+      return;
+    }
+    if (m.type === "tidyProgress") { log(m.message); return; }
+    if (m.type === "tidyError") { log(m.message, "log-err"); return; }
+    if (m.type === "tidyDone") { log(m.message, "log-ok"); return; }
     if (m.type === "componentsState") {
       if (m.dsRef != null) currentDsRef = m.dsRef;
       bindingsMap = m.bindings || {};

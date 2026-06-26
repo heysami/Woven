@@ -29828,7 +29828,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
   const [phase, setPhase] = useState("idle");   // idle|working|done|error
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
-  const [agentMode, setAgentMode] = useState(true);
+  const [agentMode, setAgentMode] = useState(false);
   const controllersRef = useRef(new Set());   // in-flight LLM aborts (Cancel aborts these)
   const busy = phase === "working";
 
@@ -29942,9 +29942,10 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
           <label className="export-override-row" style=${{ marginTop: 4 }}>
             <input type="checkbox" checked=${agentMode} disabled=${busy}
               onChange=${(e) => setAgentMode(e.target.checked)} />
-            <span>Author with agent <span className="modal-hint">(an LLM re-authors the
-              capture into a clean, auto-layout, component-aware scene; needs Claude Code
-              or an API key)</span></span>
+            <span>Pre-author from HTML <span className="modal-hint">(an LLM cleans the
+              capture before sending. Usually leave OFF: send the raw capture, then run
+              <strong>Tidy with agent</strong> on the built frame in the Woven Bridge
+              plugin - it looks at the real Figma result and fixes layout + components)</span></span>
           </label>
           ${(phase === "working" || phase === "done") && status && html`
             <div className="export-name-warn" data-overridden=${true}>${status}</div>
