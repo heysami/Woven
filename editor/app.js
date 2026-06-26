@@ -29657,12 +29657,11 @@ function ExportPromptHost() {
 }
 
 /* ── Send to Figma ─────────────────────────────────────────────────────
-   The "export, but to Figma" sibling of runExportForNode. Instead of writing
-   a bundle to disk, it walks the node's rendered (same-origin) iframe DOM into
-   a scene (figma-bridge.js / window.WovenFigma) and POSTs it to the daemon
-   relay; the Woven Bridge plugin in Figma Desktop picks it up and rebuilds it
-   as editable layers. Requires the prototype/asset to be open on the canvas
-   (we read the live rendered document) and the plugin to be connected. */
+   The "export, but to Figma" sibling of runExportForNode. Opens FigmaSendModal,
+   which takes the prototype's live rendered URL and POSTs it to /__figma_cli_run;
+   the daemon drives figma-cli (editor/tools/figma-cli) to rebuild it in Figma
+   (recreate-url --verify). Requires the prototype open on the canvas (so we have
+   its URL) and figma-cli connected to Figma (Safe Mode plugin). No terminal. */
 function runSendToFigmaForNode(nodeId, nodeLabel) {
   try {
     window.dispatchEvent(new CustomEvent("th:figma-send", {
@@ -29680,192 +29679,12 @@ function findRenderedNodeIframe(nodeId) {
   );
 }
 
-// Parse the agent's reply into a scene OR a single node: tolerate ```json
-// fences and surrounding prose by taking the outermost { ... }.
-function parseFigmaSceneJson(text) {
-  if (!text) return null;
-  let t = String(text).trim().replace(/^```[a-zA-Z]*\s*/, "").replace(/\s*```$/, "").trim();
-  const a = t.indexOf("{"), b = t.lastIndexOf("}");
-  if (a < 0 || b <= a) return null;
-  try { const o = JSON.parse(t.slice(a, b + 1)); if (o && (o.root || o.type)) return o; } catch {}
-  return null;
-}
-
-function figmaSchemaBlock() {
-  return [
-'node = { type:"FRAME"|"TEXT"|"IMAGE", name, x, y, width, height, opacity?, clipsContent?,',
-'  fills?:[Paint], strokes?:[Paint], strokeWeight?, cornerRadius?, effects?:[Effect],',
-'  layout?:{ mode:"HORIZONTAL"|"VERTICAL", gap, padding:{top,right,bottom,left}, primaryAlign:"MIN"|"CENTER"|"MAX"|"SPACE_BETWEEN", counterAlign:"MIN"|"CENTER"|"MAX", wrap },',
-'  absolute?, component?, componentProps?, children?:[node],',
-'  // TEXT adds: characters, fontSize, fontFamily, fontStyle, letterSpacing, lineHeight, textAlign, textColor, textDecoration',
-'  // IMAGE adds: image:{ref:"@imgN", mime} }',
-'Paint = {type:"SOLID",color:{r,g,b},opacity?} | {type:"GRADIENT_LINEAR",angle,stops} | {type:"IMAGE",scaleMode,image:{ref,mime}}'
-  ].join("\n");
-}
-
-function figmaAuthoringRules(compNames) {
-  return [
-"RULES:",
-"- Keep the measured width/height (and x/y) from the input; do NOT invent sizes. Children keep their measured sizes inside an auto-layout.",
-"- Convert containers to auto-layout (`layout`) wherever children form a row or column; derive gap/padding from the spacing you see. Prefer auto-layout heavily.",
-"- MERGE redundant wrapper frames (a frame that only holds one child) and DROP empty / invisible junk. Flatten needless nesting.",
-"- Preserve every TEXT node's `characters` EXACTLY; keep fonts, sizes and colors.",
-"- KEEP image refs (the {ref:\"@imgN\"} objects) verbatim; never invent or drop a ref.",
-"- COMPONENTS: when a subtree clearly is one of these design-system components, set node.component to that EXACT name (+ componentProps for its variant). Available names: " + (compNames.length ? compNames.join(", ") : "(none)") + ". Never use a name outside this list.",
-"- Reuse the design tokens/colors below when a captured color matches one (keep the same rgb)."
-  ].join("\n");
-}
-
-// One prompt builder for both a whole scene and a single section node (nodeMode).
-function buildFigmaAuthoringPrompt({ scene, node, designMd, tokensCss, compNames }) {
-  const md = designMd ? designMd.slice(0, 5000) : "";
-  const nodeMode = !!node;
-  return [
-    nodeMode
-      ? "You clean up ONE node subtree from a captured UI into a clean, semantic Figma node. The input has REAL measured geometry, colors and text."
-      : "You convert a captured UI into a CLEAN Figma scene. The input is faithful but messy, with REAL measured geometry, colors and text.",
-    "",
-    nodeMode
-      ? "OUTPUT: reply with ONLY one JSON node object (same node schema). No prose, no markdown fences."
-      : "OUTPUT: reply with ONLY one JSON scene object { ..., root: node }. No prose, no markdown fences.",
-    "",
-    "SCHEMA:", figmaSchemaBlock(), "",
-    figmaAuthoringRules(compNames), "",
-    "DESIGN SYSTEM (DESIGN.md excerpt):", md || "(none)", "",
-    "TOKENS (:root css):", tokensCss || "(none)", "",
-    (nodeMode ? "INPUT NODE (clean this up):" : "INPUT SCENE (clean this up):"),
-    JSON.stringify(nodeMode ? node : scene)
-  ].join("\n");
-}
-
-async function figmaMapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let idx = 0;
-  async function worker() { while (idx < items.length) { const i = idx++; out[i] = await fn(items[i], i); } }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length || 1) }, worker));
-  return out;
-}
-
-// Hybrid author step. Strips images, fetches the design system, then has the
-// agent re-author the capture. A whole page is too big for one CLI call (minutes
-// + truncation), so it authors each top-level SECTION in parallel - small
-// prompts, live progress, and a failed section keeps its raw capture.
-// `controllers` is a Set the modal's Cancel aborts.
-async function authorSceneWithAgent(raw, dsRef, setStep, controllers) {
-  if (!window.WovenFigma.stripImagesForAgent) return raw;
-  setStep("Reading design system...");
-  let designMd = "", tokensCss = "";
-  try {
-    const dr = await fetch(apiUrl("/__design_system?id=" + encodeURIComponent(dsRef || "")));
-    const dj = await dr.json().catch(() => ({}));
-    designMd = (dj && dj.trio && dj.trio.designMd) || "";
-    const css = (dj && dj.trio && dj.trio.stylesCss) || "";
-    const m = css.match(/:root\s*\{[\s\S]*?\}/);
-    tokensCss = m ? m[0].slice(0, 3000) : "";
-  } catch {}
-  const compNames = (raw.components || []).slice();
-  const { scene: stripped, map } = window.WovenFigma.stripImagesForAgent(raw);
-
-  const callLLM = async (prompt, maxTokens) => {
-    const ctrl = new AbortController();
-    if (controllers) controllers.add(ctrl);
-    const to = setTimeout(() => ctrl.abort(), 200000);   // 200s per call
-    try {
-      const r = await fetch(apiUrl("/__llm_run"), {
-        method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
-        body: JSON.stringify({
-          skill: "llm", provider: "anthropic", model: "claude-sonnet-4-6",
-          prompt: prompt, messages: [{ role: "user", content: prompt }],
-          options: { max_tokens: maxTokens || 8000, temperature: 0.2 },
-        }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.ok === false) throw new Error((j && j.error) || ("agent HTTP " + r.status));
-      return j.text || "";
-    } finally { clearTimeout(to); if (controllers) controllers.delete(ctrl); }
-  };
-
-  // Unwrap single-child wrappers to find the real sections to author.
-  let host = stripped.root;
-  while (host.children && host.children.length === 1 && host.children[0] && host.children[0].children) {
-    host = host.children[0];
-  }
-  const sections = host.children || [];
-
-  // Few or too-many sections: one whole-scene pass (with a retry).
-  if (sections.length < 2 || sections.length > 16) {
-    setStep("Authoring the layout with the agent (a full page can take a minute)...");
-    const prompt = buildFigmaAuthoringPrompt({ scene: stripped, designMd, tokensCss, compNames });
-    let cleaned = parseFigmaSceneJson(await callLLM(prompt, 16000));
-    if (!cleaned) cleaned = parseFigmaSceneJson(await callLLM(prompt + "\n\nReply with ONLY the JSON scene object.", 16000));
-    if (!cleaned) throw new Error("The agent did not return a valid scene. Turn off 'Author with agent' to send the direct capture.");
-    const out = cleaned.root ? cleaned : { ...stripped, root: (cleaned.type ? cleaned : stripped.root) };
-    out.dsRef = raw.dsRef || dsRef || null; out.name = out.name || raw.name;
-    return window.WovenFigma.restoreImages(out, map);
-  }
-
-  // Chunked: author each section in parallel (cap 3); keep the raw section on failure.
-  let done = 0;
-  const total = sections.length;
-  setStep("Authoring " + total + " sections with the agent...");
-  const cleanedSections = await figmaMapLimit(sections, 3, async (sec) => {
-    let node = null;
-    try {
-      const parsed = parseFigmaSceneJson(await callLLM(buildFigmaAuthoringPrompt({ node: sec, designMd, tokensCss, compNames }), 8000));
-      node = parsed ? (parsed.root || (parsed.type ? parsed : null)) : null;
-    } catch (e) { /* keep raw section */ }
-    done++;
-    setStep("Authoring sections with the agent... (" + done + "/" + total + ")");
-    return node || sec;
-  });
-  host.children = cleanedSections;
-  stripped.dsRef = raw.dsRef || dsRef || null;
-  stripped.name = stripped.name || raw.name;
-  return window.WovenFigma.restoreImages(stripped, map);
-}
-
 function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
   const [phase, setPhase] = useState("idle");   // idle|working|done|error
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
-  const [agentMode, setAgentMode] = useState(false);
-  const controllersRef = useRef(new Set());   // in-flight LLM aborts (Cancel aborts these)
   const busy = phase === "working";
-
-  const cancel = () => {
-    try { controllersRef.current.forEach((c) => c.abort()); controllersRef.current.clear(); } catch {}
-    onClose();
-  };
-
   const setStep = (s) => setStatus(s);
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  const pollJob = async (jobId) => {
-    const deadline = Date.now() + 120000;   // 2 min ceiling
-    const friendly = {
-      queued: "Waiting for Woven Bridge. Open the plugin in Figma and click Connect...",
-      delivered: "Plugin picked it up...",
-      building: "Building layers in Figma...",
-    };
-    let last = "";
-    while (Date.now() < deadline) {
-      await sleep(1000);
-      let j = {};
-      try {
-        const r = await fetch(apiUrl("/__figma_job"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId }),
-        });
-        j = await r.json().catch(() => ({}));
-      } catch { continue; }
-      const st = j.state || "";
-      if (st && st !== last) { last = st; setStep(j.message || friendly[st] || st); }
-      if (st === "done") return { ok: true, message: j.message || "Built in Figma." };
-      if (st === "error") return { ok: false, message: j.message || "Build failed in Figma." };
-    }
-    return { ok: false, message: "Timed out. Is the Woven Bridge plugin open and connected in Figma?" };
-  };
 
   const handleSend = async () => {
     setPhase("working");
@@ -29920,7 +29739,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
           ${error && html`<div className="export-name-error" style=${{ whiteSpace: "pre-wrap" }}>${error}</div>`}
         </div>
         <div className="modal-foot">
-          <button className="tbtn" onClick=${busy ? cancel : onClose}>
+          <button className="tbtn" onClick=${onClose}>
             ${phase === "done" ? "Close" : "Cancel"}
           </button>
           ${phase !== "done" && html`
@@ -52816,7 +52635,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
         ><${Icon.Download}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this rendered page as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
+          tip="Send to Figma - rebuild this in Figma using figma-cli (the daemon runs it). Keep it open on the canvas; needs Figma Desktop open + figma-cli connected."
           ariaLabel="Send to Figma"
           onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title || (familyLabel + ":" + (assetId || ""))); }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -54195,7 +54014,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         ><${Icon.Download}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this rendered prototype as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
+          tip="Send to Figma - rebuild this prototype in Figma using figma-cli (the daemon runs it). Keep it open on the canvas; needs Figma Desktop open + figma-cli connected."
           ariaLabel="Send to Figma"
           onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -57102,7 +56921,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ><${Icon.Download}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this rendered asset as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Works for HTML assets; reads the live canvas render, so keep it open."
+          tip="Send to Figma - rebuild this asset in Figma using figma-cli (the daemon runs it). Works for HTML assets; keep it open on the canvas; needs Figma Desktop open + figma-cli connected."
           ariaLabel="Send to Figma"
           onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -75175,159 +74994,6 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
 /* Phase 4b - Settings dialog. One section per integrated provider, driven by
    window.TH_MEDIA.providers. Each renders an interactive Save / Test / Clear
    row. Non-integrated ("soon") roadmap providers are filtered out. */
-/* Send-to-Figma setup, surfaced as its own Settings tab so the one-time Figma
-   plugin install is discoverable. The feature itself lives on each
-   prototype/asset node (the Figma glyph next to Export); this tab just explains
-   how to wire up the Woven Bridge plugin once. See editor/tools/figma-bridge. */
-/* Variant maps round-trip as "k=v, k=v" in the rules editor but as an object in
-   the stored JSON and the scene. */
-function figmaVariantsToStr(v) {
-  if (!v || typeof v !== "object") return "";
-  return Object.keys(v).map(function (k) { return k + "=" + v[k]; }).join(", ");
-}
-function figmaStrToVariants(s) {
-  const o = {};
-  (s || "").split(",").forEach((p) => {
-    const i = p.indexOf("=");
-    if (i > 0) { const k = p.slice(0, i).trim(); const val = p.slice(i + 1).trim(); if (k) o[k] = val; }
-  });
-  return Object.keys(o).length ? o : undefined;
-}
-
-/* The selector-rule half of the component mapping: "elements matching this CSS
-   selector are a <Component>" (+ optional variants). Tags DS components in the
-   export so the plugin can swap them for bound Figma library instances. Stored
-   per design system via /__figma_map. The name->Figma-key binding is done on the
-   plugin side (Figma component keys are file-local). Elements that already carry
-   a data-component attribute are detected automatically and need no rule. */
-function FigmaComponentRules() {
-  const dsRef = (D.meta && D.meta.dsRef) || "";
-  const [rules, setRules] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [err, setErr] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(apiUrl("/__figma_map"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ op: "get", dsRef }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!cancelled && Array.isArray(j.rules)) {
-          setRules(j.rules.map((x) => ({ selector: x.selector || "", component: x.component || "", variants: figmaVariantsToStr(x.variants) })));
-        }
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [dsRef]);
-
-  const update = (i, k, v) => { setSaved(false); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r))); };
-  const addRow = () => { setSaved(false); setRules((rs) => rs.concat([{ selector: "", component: "", variants: "" }])); };
-  const removeRow = (i) => { setSaved(false); setRules((rs) => rs.filter((_, j) => j !== i)); };
-
-  const save = async () => {
-    setBusy(true); setErr(null); setSaved(false);
-    const payload = rules
-      .filter((r) => r.selector.trim() && r.component.trim())
-      .map((r) => ({ selector: r.selector.trim(), component: r.component.trim(), variants: figmaStrToVariants(r.variants) }));
-    try {
-      const r = await fetch(apiUrl("/__figma_map"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "set", dsRef, rules: payload }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
-      setSaved(true);
-    } catch (e) { setErr(e.message || String(e)); }
-    setBusy(false);
-  };
-
-  const rowStyle = { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: "6px", alignItems: "center", marginTop: "6px" };
-  return html`
-    <div className="workflow-settings-section">
-      <div className="workflow-settings-section-head">
-        <span className="workflow-settings-provider">Component mapping</span>
-        <span className="workflow-settings-skills">${dsRef ? ("design system: " + dsRef) : "no design system on this project"}</span>
-      </div>
-      <div className="workflow-settings-hint">
-        Tell the export which elements are design-system components, by CSS selector.
-        A tagged element becomes a Figma library instance (you pick <em>which</em> Figma
-        component in the plugin's binding panel). Elements that already carry a
-        <code>data-component</code> attribute are detected automatically, no rule needed.
-      </div>
-      <div style=${{ ...rowStyle, opacity: 0.7, fontSize: "11px", marginTop: "10px" }}>
-        <span>CSS selector</span><span>Component</span><span>Variants (k=v)</span><span></span>
-      </div>
-      ${rules.map((r, i) => html`
-        <div style=${rowStyle} key=${i}>
-          <input className="modal-input" placeholder=".btn.is-primary" value=${r.selector}
-            spellCheck=${false} onInput=${(e) => update(i, "selector", e.target.value)} />
-          <input className="modal-input" placeholder="Button" value=${r.component}
-            spellCheck=${false} onInput=${(e) => update(i, "component", e.target.value)} />
-          <input className="modal-input" placeholder="Variant=primary" value=${r.variants}
-            spellCheck=${false} onInput=${(e) => update(i, "variants", e.target.value)} />
-          <button className="tbtn" title="Remove rule" onClick=${() => removeRow(i)}>×</button>
-        </div>
-      `)}
-      <div className="workflow-settings-row" style=${{ marginTop: "10px" }}>
-        <button className="tbtn" onClick=${addRow}>Add rule</button>
-        <button className="tbtn tbtn-primary" onClick=${save} disabled=${busy}>${busy ? "Saving…" : "Save rules"}</button>
-        ${saved && html`<span className="workflow-settings-msg workflow-settings-msg-ok">Saved.</span>`}
-        ${err && html`<span className="workflow-settings-msg workflow-settings-msg-fail">${err}</span>`}
-      </div>
-    </div>
-  `;
-}
-
-function WorkflowFigmaSection() {
-  const daemonOrigin = (typeof location !== "undefined" && location.origin) || "http://127.0.0.1:5731";
-  const projectId = (typeof activeProjectId === "function" && activeProjectId()) || "default";
-  return html`
-    <div className="workflow-settings-section">
-      <div className="workflow-settings-section-head">
-        <span className="workflow-settings-provider">Send to Figma</span>
-        <span className="workflow-settings-skills">rebuilds a rendered page as editable Figma layers</span>
-      </div>
-      <div className="workflow-settings-hint">
-        Figma's API cannot create design content, so this works through a small local plugin:
-        the editor walks the rendered page into a scene and the Woven Bridge plugin (in Figma
-        Desktop) rebuilds it as real frames, text, and images. Nothing leaves your machine.
-      </div>
-      <div className="workflow-settings-hint">
-        <strong>One-time setup</strong>
-        <ol>
-          <li>In Figma Desktop: <code>Plugins → Development → Import plugin from manifest…</code>
-            and pick <code>editor/tools/figma-bridge/manifest.json</code>.</li>
-          <li>Run it: <code>Plugins → Development → Woven Bridge</code>.</li>
-          <li>In the plugin window, set the daemon URL to <code>${daemonOrigin}</code> and the
-            project id to <code>${projectId}</code>, then click <strong>Connect</strong>
-            (the dot turns green). Leave the plugin window open while you work.</li>
-        </ol>
-        <span className="workflow-settings-localhint">
-          Any local daemon URL works; the plugin's manifest allows all origins because Figma
-          rejects a port in its allowlist. Just match what your editor is running on.
-        </span>
-      </div>
-      <div className="workflow-settings-hint">
-        <strong>Each time</strong>
-        <ol>
-          <li>Open the prototype or HTML asset on the canvas (it is read live, so it must be rendered).</li>
-          <li>Click the Figma button (next to Export) on that node, then Send.</li>
-          <li>It builds on the current Figma page and zooms to it.</li>
-        </ol>
-      </div>
-      <div className="workflow-settings-hint">
-        <strong>Notes.</strong> v1 uses absolute positioning (no auto-layout yet); canvas, SVG, and
-        video come over as plain frames. Full details + the scene format are in
-        <code>editor/tools/figma-bridge/README.md</code> and <code>SCENE.md</code>.
-      </div>
-    </div>
-  `;
-}
-
 function WorkflowSettingsDialog({ onClose }) {
   const [config, setConfig] = useState(null);
   // Three-tab split: API keys / things to install / chat send key. Each tab
@@ -75362,13 +75028,11 @@ function WorkflowSettingsDialog({ onClose }) {
   const TABS = [
     { id: "api", label: "API keys" },
     { id: "install", label: "Things to install" },
-    { id: "figma", label: "Send to Figma" },
     { id: "sendkey", label: "Send key" },
   ];
   const subByTab = {
     api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
     install: "Local tools the daemon installs on demand · no API key needed",
-    figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     sendkey: "Chat composer · saved in this browser, applies live",
   };
 
@@ -75409,9 +75073,6 @@ function WorkflowSettingsDialog({ onClose }) {
           ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>
-          ` : tab === "figma" ? html`
-            <${WorkflowFigmaSection}/>
-            <${FigmaComponentRules}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}
