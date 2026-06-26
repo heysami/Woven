@@ -494,6 +494,23 @@
     };
   }
 
+  // A child with margin-left:auto (and its successors) sits at the row's end.
+  // Figma auto-layout has no per-child auto margin, so insert a FILL spacer
+  // before it - the spacer eats the free space and pushes the rest to the end.
+  function injectAutoMarginSpacers(node) {
+    if (!node.children) return;
+    var out = [];
+    for (var i = 0; i < node.children.length; i++) {
+      var c = node.children[i];
+      if (c._marginAuto && out.length) {
+        out.push({ type: "FRAME", name: "spacer", x: c.x, y: c.y, width: 1, height: 1,
+          fills: [], strokes: [], effects: [], children: [], _grow: true });
+      }
+      out.push(c);
+    }
+    node.children = out;
+  }
+
   // Count distinct position bands along an axis (cluster within tol px) - tells
   // us how many rows / columns the children actually occupy.
   function countBands(kids, axis, tol) {
@@ -561,7 +578,7 @@
     var flex = readFlexLayout(cs);
     if (flex) {
       node.layout = flex;
-      if (node.children) sortByOrder(node.children);
+      if (node.children) { sortByOrder(node.children); injectAutoMarginSpacers(node); }
     } else if (node.children && node.children.length >= 2) {
       var isGrid = disp.indexOf("grid") >= 0;
       if (!isGrid) inferStackLayout(cs, node);   // sets layout if a clean stack
@@ -607,6 +624,8 @@
         if (c.hug) c.sizing = { h: "HUG", v: "HUG" };
         else c.sizing = { h: (vertical && !parentHug) ? "FILL" : "HUG", v: "HUG" };
       }
+      // flex-grow child (and injected spacers) FILL the main axis.
+      if (c._grow) { if (vertical) c.sizing.v = "FILL"; else c.sizing.h = "FILL"; }
     }
   }
 
@@ -811,6 +830,14 @@
     // Layout hints for the parent's auto-layout decision.
     var ord = parseInt(cs.order, 10);
     if (ord) node._order = ord;
+    // flex-grow > 0 -> the child should FILL the main axis (e.g. a search input
+    // with flex:1). Captured here; assignChildSizing applies it.
+    if (parseFloat(cs.flexGrow) > 0) node._grow = true;
+    // margin-left:auto pushes a child (and its successors) to the row's end.
+    // getComputedStyle resolves auto to px, so read the AUTHORED inline value.
+    if (el.style && (el.style.marginLeft === "auto" || el.style.marginInlineStart === "auto")) {
+      node._marginAuto = true;
+    }
     // NB: CSS position:absolute/fixed children are NOT pinned out of flow - we
     // never use Figma's ignore-auto-layout. They participate in the parent's
     // auto-layout like every other child (mandate: no absolute positioning).
@@ -1003,6 +1030,8 @@
     if (node._tableRows) delete node._tableRows;
     if (node._tableCells) delete node._tableCells;
     if (node._gridWrap) delete node._gridWrap;
+    if (node._grow) delete node._grow;
+    if (node._marginAuto) delete node._marginAuto;
     if (node.fills) {
       node.fills = node.fills.filter(function (f) { return !f._drop; });
       if (!node.fills.length) delete node.fills;
