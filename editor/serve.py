@@ -14555,10 +14555,42 @@ class H(http.server.SimpleHTTPRequestHandler):
                               "     Pick: " + manifest + "\n"
                               "  2. Plugins -> Development -> FigCli   (run it, leave it open)\n"
                               "Then click Retry.")})
-        rc, out, err = run(["recreate-url", url, "--name", name], 300)
-        ok = (rc == 0)
-        return self._reply(200, {"ok": ok, "stage": "recreate", "output": (out + err)[-4000:],
-            "error": None if ok else "figma-cli recreate-url failed (see output)."})
+        # Drive figma-cli with an AGENT (headless Claude Code), not the bare
+        # recreate-url importer: the importer dumps a flat pile of nodes, the
+        # agent rebuilds it cleanly (auto-layout, grouping, real components +
+        # instances) like a designer. The agent runs figma-cli via bash.
+        claude_bin = detect_agent_bin("claude")
+        if not claude_bin:
+            return self._reply(200, {"ok": False, "stage": "agent",
+                "error": "Claude Code ('claude') was not found - it drives figma-cli for the rebuild."})
+        figma_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "figma-cli")
+        prompt = (
+            "You are driving figma-cli, which is connected to Figma (Safe Mode). The command "
+            "reference is in CLAUDE.md and REFERENCE.md in this directory - read them first.\n\n"
+            "GOAL: rebuild this web page as a CLEAN, well-structured Figma design named '" + name + "':\n"
+            "  " + url + "\n\n"
+            "Approach:\n"
+            "1. Run: figma-cli recreate-url \"" + url + "\" --name \"" + name + "\"  (gets the structure in)\n"
+            "2. Then INSPECT what was created (figma-cli canvas info / find) and IMPROVE it like a "
+            "designer: proper auto-layout on the main containers, group related elements, fix obvious "
+            "spacing, and convert any repeated element (buttons, cards, list rows) into a component + "
+            "instances (node to-component / instantiate).\n"
+            "3. Keep it efficient - a few targeted improvements, not endless iteration.\n\n"
+            "Reply with a short bullet summary of exactly what you changed."
+        )
+        try:
+            r = subprocess.run([claude_bin, "--print", "--permission-mode", "bypassPermissions", prompt],
+                               capture_output=True, text=True, timeout=900,
+                               stdin=subprocess.DEVNULL, cwd=figma_dir, env=cli_env)
+            out = ((r.stdout or "") + (r.stderr or "")).strip()
+            ok = (r.returncode == 0)
+        except subprocess.TimeoutExpired:
+            return self._reply(200, {"ok": False, "stage": "agent",
+                "error": "The agent timed out (15 min). It may have partially built the design - check Figma."})
+        except Exception as e:
+            return self._reply(200, {"ok": False, "stage": "agent", "error": str(e)})
+        return self._reply(200, {"ok": ok, "stage": "agent", "output": out[-4000:],
+            "error": None if ok else "agent run failed (see output)."})
 
     # POST /__export_asset?project=<id>  body {nodeId:string}
     # Bundles the named asset/prototype/container node into the project's
