@@ -27101,16 +27101,20 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
     50% / 18px 18px;
   overflow: auto;
 }
-.asset-crop-figure {
+/* The canvas is the FULL coordinate space (image grown by SPAN); JS sizes it in
+   px so it always fits. The image is absolutely positioned to the centred
+   [0,1] slice via inline style; the surrounding margin shows the stage
+   checkerboard through, reading as "empty canvas to be added". */
+.asset-crop-canvas {
   position: relative;
-  display: inline-block;
-  margin: 0;
-  line-height: 0;
+  flex: 0 0 auto;
 }
 .asset-crop-img {
+  position: absolute;
   display: block;
-  max-width: 78vw;
-  max-height: 64vh;
+  /* dashed marker so the ORIGINAL bounds stay legible against the new margin */
+  outline: 1px dashed rgba(255, 255, 255, 0.55);
+  outline-offset: -1px;
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -27165,6 +27169,41 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-weight: 600;
 }
 .asset-crop-apply:disabled { opacity: 0.5; }
+/* "expand" pill in the header when the frame is pulled past the image edges */
+.asset-crop-tag {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+/* outpaint guidance row, only mounted while expanding */
+.asset-crop-fillbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+.asset-crop-fill-note { color: var(--text-faint); font-size: 12px; flex: 0 1 auto; }
+.asset-crop-fill-note b { color: var(--text); font-weight: 600; }
+.asset-crop-fill-prompt {
+  flex: 1 1 auto;
+  min-width: 160px;
+  font: inherit;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.asset-crop-fill-prompt:focus { outline: none; border-color: var(--accent); }
+.asset-crop-fill-prompt:disabled { opacity: 0.5; }
 
 /* Visual Assets multi-select (bulk delete moved here off the canvas nodes).
    Checkbox is absolutely positioned so it never disturbs the card grid / list
