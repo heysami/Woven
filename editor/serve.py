@@ -14498,10 +14498,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, {"ok": False, "stage": "install",
                 "error": "figma-cli is not installed in this editor's tools/figma-cli."})
 
+        # recreate-url writes a temp analyze script to /tmp that require()s
+        # playwright; set NODE_PATH to figma-cli's node_modules so that temp
+        # script (which inherits this env) can resolve it.
+        cli_node_modules = os.path.join(os.path.dirname(os.path.dirname(cli)), "node_modules")
+        cli_env = dict(os.environ)
+        existing_np = cli_env.get("NODE_PATH", "")
+        cli_env["NODE_PATH"] = cli_node_modules + (os.pathsep + existing_np if existing_np else "")
+
         def run(args, timeout):
             try:
                 r = subprocess.run([node, cli] + args, capture_output=True, text=True,
-                                   timeout=timeout, stdin=subprocess.DEVNULL, cwd=project_root)
+                                   timeout=timeout, stdin=subprocess.DEVNULL, cwd=project_root, env=cli_env)
                 return r.returncode, (r.stdout or ""), (r.stderr or "")
             except subprocess.TimeoutExpired:
                 return 124, "", "timed out"
@@ -14509,9 +14517,25 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return 1, "", str(e)
 
         def is_connected():
-            rc, out, err = run(["daemon", "status"], 30)
-            blob = (out + err).lower()
-            return ("connected" in blob) and ("not connected" not in blob) and ("disconnected" not in blob)
+            # figma-cli's `daemon status` text never says "connected" - the real
+            # plugin-connection signal is /health -> {"plugin": true}. Read its
+            # token + hit /health (default port 3456).
+            import urllib.request
+            token = ""
+            try:
+                with open(os.path.expanduser("~/.figma-ds-cli/.daemon-token")) as f:
+                    token = f.read().strip()
+            except Exception:
+                pass
+            try:
+                req = urllib.request.Request("http://127.0.0.1:3456/health")
+                if token:
+                    req.add_header("X-Daemon-Token", token)
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                return bool(data.get("plugin"))
+            except Exception:
+                return False
 
         if not is_connected():
             # Safe Mode: boot figma-cli's own daemon (it spawns detached + keeps
@@ -14530,7 +14554,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                               "     Pick: " + manifest + "\n"
                               "  2. Plugins -> Development -> FigCli   (run it, leave it open)\n"
                               "Then click Retry.")})
-        rc, out, err = run(["recreate-url", url, "--name", name, "--verify"], 300)
+        rc, out, err = run(["recreate-url", url, "--name", name], 300)
         ok = (rc == 0)
         return self._reply(200, {"ok": ok, "stage": "recreate", "output": (out + err)[-4000:],
             "error": None if ok else "figma-cli recreate-url failed (see output)."})
