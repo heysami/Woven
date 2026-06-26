@@ -29680,58 +29680,78 @@ function findRenderedNodeIframe(nodeId) {
   );
 }
 
-// Parse the agent's reply into a scene object: tolerate ```json fences and
-// surrounding prose by taking the outermost { ... }.
+// Parse the agent's reply into a scene OR a single node: tolerate ```json
+// fences and surrounding prose by taking the outermost { ... }.
 function parseFigmaSceneJson(text) {
   if (!text) return null;
   let t = String(text).trim().replace(/^```[a-zA-Z]*\s*/, "").replace(/\s*```$/, "").trim();
   const a = t.indexOf("{"), b = t.lastIndexOf("}");
   if (a < 0 || b <= a) return null;
-  try { const o = JSON.parse(t.slice(a, b + 1)); if (o && o.root) return o; } catch {}
+  try { const o = JSON.parse(t.slice(a, b + 1)); if (o && (o.root || o.type)) return o; } catch {}
   return null;
 }
 
-// The hybrid grounding prompt: a faithful-but-messy captured scene + the design
-// system, asked to be re-authored into a clean, auto-layout, component-aware scene.
-function buildFigmaAuthoringPrompt({ scene, designMd, tokensCss, compNames }) {
-  const md = designMd ? designMd.slice(0, 6000) : "";
+function figmaSchemaBlock() {
   return [
-"You convert a captured UI into a CLEAN Figma scene (\"scene JSON\"). The input is a faithful but messy capture with REAL measured geometry, colors and text. Re-author it into a clean, semantic scene a designer would build by hand.",
-"",
-"OUTPUT: reply with ONLY one JSON object (the scene). No prose, no markdown fences.",
-"",
-"SCHEMA (same shape in and out):",
-'scene = { version, name, width, height, dsRef, components:[names], root: node }',
 'node = { type:"FRAME"|"TEXT"|"IMAGE", name, x, y, width, height, opacity?, clipsContent?,',
 '  fills?:[Paint], strokes?:[Paint], strokeWeight?, cornerRadius?, effects?:[Effect],',
 '  layout?:{ mode:"HORIZONTAL"|"VERTICAL", gap, padding:{top,right,bottom,left}, primaryAlign:"MIN"|"CENTER"|"MAX"|"SPACE_BETWEEN", counterAlign:"MIN"|"CENTER"|"MAX", wrap },',
 '  absolute?, component?, componentProps?, children?:[node],',
 '  // TEXT adds: characters, fontSize, fontFamily, fontStyle, letterSpacing, lineHeight, textAlign, textColor, textDecoration',
 '  // IMAGE adds: image:{ref:"@imgN", mime} }',
-'Paint = {type:"SOLID",color:{r,g,b},opacity?} | {type:"GRADIENT_LINEAR",angle,stops} | {type:"IMAGE",scaleMode,image:{ref,mime}}',
-"",
+'Paint = {type:"SOLID",color:{r,g,b},opacity?} | {type:"GRADIENT_LINEAR",angle,stops} | {type:"IMAGE",scaleMode,image:{ref,mime}}'
+  ].join("\n");
+}
+
+function figmaAuthoringRules(compNames) {
+  return [
 "RULES:",
 "- Keep the measured width/height (and x/y) from the input; do NOT invent sizes. Children keep their measured sizes inside an auto-layout.",
 "- Convert containers to auto-layout (`layout`) wherever children form a row or column; derive gap/padding from the spacing you see. Prefer auto-layout heavily.",
 "- MERGE redundant wrapper frames (a frame that only holds one child) and DROP empty / invisible junk. Flatten needless nesting.",
 "- Preserve every TEXT node's `characters` EXACTLY; keep fonts, sizes and colors.",
 "- KEEP image refs (the {ref:\"@imgN\"} objects) verbatim; never invent or drop a ref.",
-"- COMPONENTS: when a subtree clearly is one of these design-system components, set node.component to that EXACT name (+ componentProps for its variant). Available names: " + (compNames.length ? compNames.join(", ") : "(none)") + ". Never use a name outside this list. A tagged node keeps its box; the plugin swaps in the real Figma component.",
-"- Reuse the design tokens/colors below when a captured color matches one (keep the same rgb).",
-"",
-"DESIGN SYSTEM (DESIGN.md excerpt):",
-md || "(none)",
-"",
-"TOKENS (:root css):",
-tokensCss || "(none)",
-"",
-"INPUT SCENE (clean this up):",
-JSON.stringify(scene)
+"- COMPONENTS: when a subtree clearly is one of these design-system components, set node.component to that EXACT name (+ componentProps for its variant). Available names: " + (compNames.length ? compNames.join(", ") : "(none)") + ". Never use a name outside this list.",
+"- Reuse the design tokens/colors below when a captured color matches one (keep the same rgb)."
   ].join("\n");
 }
 
-// Hybrid author step: strip images -> gather DS -> LLM re-authors -> restore images.
-async function authorSceneWithAgent(raw, dsRef, setStep) {
+// One prompt builder for both a whole scene and a single section node (nodeMode).
+function buildFigmaAuthoringPrompt({ scene, node, designMd, tokensCss, compNames }) {
+  const md = designMd ? designMd.slice(0, 5000) : "";
+  const nodeMode = !!node;
+  return [
+    nodeMode
+      ? "You clean up ONE node subtree from a captured UI into a clean, semantic Figma node. The input has REAL measured geometry, colors and text."
+      : "You convert a captured UI into a CLEAN Figma scene. The input is faithful but messy, with REAL measured geometry, colors and text.",
+    "",
+    nodeMode
+      ? "OUTPUT: reply with ONLY one JSON node object (same node schema). No prose, no markdown fences."
+      : "OUTPUT: reply with ONLY one JSON scene object { ..., root: node }. No prose, no markdown fences.",
+    "",
+    "SCHEMA:", figmaSchemaBlock(), "",
+    figmaAuthoringRules(compNames), "",
+    "DESIGN SYSTEM (DESIGN.md excerpt):", md || "(none)", "",
+    "TOKENS (:root css):", tokensCss || "(none)", "",
+    (nodeMode ? "INPUT NODE (clean this up):" : "INPUT SCENE (clean this up):"),
+    JSON.stringify(nodeMode ? node : scene)
+  ].join("\n");
+}
+
+async function figmaMapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let idx = 0;
+  async function worker() { while (idx < items.length) { const i = idx++; out[i] = await fn(items[i], i); } }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length || 1) }, worker));
+  return out;
+}
+
+// Hybrid author step. Strips images, fetches the design system, then has the
+// agent re-author the capture. A whole page is too big for one CLI call (minutes
+// + truncation), so it authors each top-level SECTION in parallel - small
+// prompts, live progress, and a failed section keeps its raw capture.
+// `controllers` is a Set the modal's Cancel aborts.
+async function authorSceneWithAgent(raw, dsRef, setStep, controllers) {
   if (!window.WovenFigma.stripImagesForAgent) return raw;
   setStep("Reading design system...");
   let designMd = "", tokensCss = "";
@@ -29745,31 +29765,63 @@ async function authorSceneWithAgent(raw, dsRef, setStep) {
   } catch {}
   const compNames = (raw.components || []).slice();
   const { scene: stripped, map } = window.WovenFigma.stripImagesForAgent(raw);
-  const prompt = buildFigmaAuthoringPrompt({ scene: stripped, designMd, tokensCss, compNames });
 
-  const call = async (p) => {
-    const r = await fetch(apiUrl("/__llm_run"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        skill: "llm", provider: "anthropic", model: "claude-sonnet-4-6",
-        prompt: p, messages: [{ role: "user", content: p }],
-        options: { max_tokens: 16000, temperature: 0.2 },
-      }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.ok === false) throw new Error((j && j.error) || ("agent HTTP " + r.status));
-    return j.text || "";
+  const callLLM = async (prompt, maxTokens) => {
+    const ctrl = new AbortController();
+    if (controllers) controllers.add(ctrl);
+    const to = setTimeout(() => ctrl.abort(), 200000);   // 200s per call
+    try {
+      const r = await fetch(apiUrl("/__llm_run"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+        body: JSON.stringify({
+          skill: "llm", provider: "anthropic", model: "claude-sonnet-4-6",
+          prompt: prompt, messages: [{ role: "user", content: prompt }],
+          options: { max_tokens: maxTokens || 8000, temperature: 0.2 },
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) throw new Error((j && j.error) || ("agent HTTP " + r.status));
+      return j.text || "";
+    } finally { clearTimeout(to); if (controllers) controllers.delete(ctrl); }
   };
 
-  setStep("Authoring a clean layout with the agent...");
-  let cleaned = parseFigmaSceneJson(await call(prompt));
-  if (!cleaned) {
-    cleaned = parseFigmaSceneJson(await call(prompt + "\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON scene object."));
+  // Unwrap single-child wrappers to find the real sections to author.
+  let host = stripped.root;
+  while (host.children && host.children.length === 1 && host.children[0] && host.children[0].children) {
+    host = host.children[0];
   }
-  if (!cleaned) throw new Error("The agent did not return a valid scene. Turn off 'Author with agent' to send the direct capture.");
-  cleaned.dsRef = raw.dsRef || dsRef || null;
-  if (!cleaned.name) cleaned.name = raw.name;
-  return window.WovenFigma.restoreImages(cleaned, map);
+  const sections = host.children || [];
+
+  // Few or too-many sections: one whole-scene pass (with a retry).
+  if (sections.length < 2 || sections.length > 16) {
+    setStep("Authoring the layout with the agent (a full page can take a minute)...");
+    const prompt = buildFigmaAuthoringPrompt({ scene: stripped, designMd, tokensCss, compNames });
+    let cleaned = parseFigmaSceneJson(await callLLM(prompt, 16000));
+    if (!cleaned) cleaned = parseFigmaSceneJson(await callLLM(prompt + "\n\nReply with ONLY the JSON scene object.", 16000));
+    if (!cleaned) throw new Error("The agent did not return a valid scene. Turn off 'Author with agent' to send the direct capture.");
+    const out = cleaned.root ? cleaned : { ...stripped, root: (cleaned.type ? cleaned : stripped.root) };
+    out.dsRef = raw.dsRef || dsRef || null; out.name = out.name || raw.name;
+    return window.WovenFigma.restoreImages(out, map);
+  }
+
+  // Chunked: author each section in parallel (cap 3); keep the raw section on failure.
+  let done = 0;
+  const total = sections.length;
+  setStep("Authoring " + total + " sections with the agent...");
+  const cleanedSections = await figmaMapLimit(sections, 3, async (sec) => {
+    let node = null;
+    try {
+      const parsed = parseFigmaSceneJson(await callLLM(buildFigmaAuthoringPrompt({ node: sec, designMd, tokensCss, compNames }), 8000));
+      node = parsed ? (parsed.root || (parsed.type ? parsed : null)) : null;
+    } catch (e) { /* keep raw section */ }
+    done++;
+    setStep("Authoring sections with the agent... (" + done + "/" + total + ")");
+    return node || sec;
+  });
+  host.children = cleanedSections;
+  stripped.dsRef = raw.dsRef || dsRef || null;
+  stripped.name = stripped.name || raw.name;
+  return window.WovenFigma.restoreImages(stripped, map);
 }
 
 function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
@@ -29777,7 +29829,13 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
   const [agentMode, setAgentMode] = useState(true);
+  const controllersRef = useRef(new Set());   // in-flight LLM aborts (Cancel aborts these)
   const busy = phase === "working";
+
+  const cancel = () => {
+    try { controllersRef.current.forEach((c) => c.abort()); controllersRef.current.clear(); } catch {}
+    onClose();
+  };
 
   const setStep = (s) => setStatus(s);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29844,7 +29902,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
       });
       // Hybrid: an agent re-authors the captured scene into a clean, semantic,
       // auto-layout one. Toggle off to send the raw geometry capture directly.
-      const scene = agentMode ? await authorSceneWithAgent(raw, dsRef, setStep) : raw;
+      const scene = agentMode ? await authorSceneWithAgent(raw, dsRef, setStep, controllersRef.current) : raw;
       setStep("Sending to the daemon...");
       const r = await fetch(apiUrl("/__figma_send"), {
         method: "POST",
@@ -29895,7 +29953,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
           ${phase === "done" && html`<div className="export-name-warn" data-overridden=${true}><strong>Done.</strong></div>`}
         </div>
         <div className="modal-foot">
-          <button className="tbtn" onClick=${onClose} disabled=${busy}>
+          <button className="tbtn" onClick=${busy ? cancel : onClose}>
             ${phase === "done" ? "Close" : "Cancel"}
           </button>
           ${phase !== "done" && html`
