@@ -143,8 +143,16 @@ function applyBox(node, n) {
   if (n.strokes) {
     try {
       node.strokes = toPaints(n.strokes);
-      if (typeof n.strokeWeight === "number") node.strokeWeight = Math.max(0, n.strokeWeight);
-      node.strokeAlign = "INSIDE";
+      node.strokeAlign = "INSIDE";   // CSS borders sit inside the box
+      if (n.strokeWeights) {
+        // Non-uniform border (e.g. a left-only accent): set each side.
+        try { node.strokeTopWeight = Math.max(0, n.strokeWeights.top || 0); } catch (e) {}
+        try { node.strokeRightWeight = Math.max(0, n.strokeWeights.right || 0); } catch (e) {}
+        try { node.strokeBottomWeight = Math.max(0, n.strokeWeights.bottom || 0); } catch (e) {}
+        try { node.strokeLeftWeight = Math.max(0, n.strokeWeights.left || 0); } catch (e) {}
+      } else if (typeof n.strokeWeight === "number") {
+        node.strokeWeight = Math.max(0, n.strokeWeight);
+      }
     } catch (e) {}
   }
   if (n.cornerRadius != null) applyCorner(node, n.cornerRadius);

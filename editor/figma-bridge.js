@@ -253,15 +253,26 @@
   }
 
   function readStroke(cs) {
-    var widths = [px(cs.borderTopWidth), px(cs.borderRightWidth), px(cs.borderBottomWidth), px(cs.borderLeftWidth)];
-    var maxW = Math.max.apply(null, widths);
+    // Per-side widths; a side with style:none contributes nothing (so a
+    // border-left:3px accent stays a LEFT-only stroke, not a 4-side box).
+    var top = cs.borderTopStyle === "none" ? 0 : px(cs.borderTopWidth);
+    var right = cs.borderRightStyle === "none" ? 0 : px(cs.borderRightWidth);
+    var bottom = cs.borderBottomStyle === "none" ? 0 : px(cs.borderBottomWidth);
+    var left = cs.borderLeftStyle === "none" ? 0 : px(cs.borderLeftWidth);
+    var maxW = Math.max(top, right, bottom, left);
     if (maxW <= 0) return null;
-    if (cs.borderTopStyle === "none" && cs.borderRightStyle === "none" &&
-        cs.borderBottomStyle === "none" && cs.borderLeftStyle === "none") return null;
-    var col = parseColor(cs.borderTopColor) || parseColor(cs.borderLeftColor);
+    // Colour from the widest bordered side (a left accent's colour is on the left).
+    var side = top >= maxW ? "Top" : right >= maxW ? "Right" : bottom >= maxW ? "Bottom" : "Left";
+    var col = parseColor(cs["border" + side + "Color"]) ||
+              parseColor(cs.borderTopColor) || parseColor(cs.borderLeftColor);
     var paint = solidPaint(col);
     if (!paint) return null;
-    return { paint: paint, weight: round(maxW) };
+    var uniform = (top === right && right === bottom && bottom === left);
+    if (uniform) return { paint: paint, weight: round(maxW) };
+    return {
+      paint: paint, weight: round(maxW),
+      sides: { top: round(top), right: round(right), bottom: round(bottom), left: round(left) }
+    };
   }
 
   // Best-effort parse of the first box-shadow layer -> Figma effect.
@@ -811,7 +822,11 @@
     }
 
     var stroke = readStroke(cs);
-    if (stroke) { node.strokes.push(stroke.paint); node.strokeWeight = stroke.weight; }
+    if (stroke) {
+      node.strokes.push(stroke.paint);
+      node.strokeWeight = stroke.weight;
+      if (stroke.sides) node.strokeWeights = stroke.sides;
+    }
 
     var corner = readCorner(cs);
     if (corner) node.cornerRadius = corner;
