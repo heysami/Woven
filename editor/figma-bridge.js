@@ -492,6 +492,25 @@
   function decideLayout(cs, node) {
     if (node.type !== "FRAME") return;
     var disp = cs.display || "";
+
+    // HTML tables -> nested auto-layout that keeps columns aligned: the table /
+    // row-group stacks rows (rows FILL width); a row lays cells horizontally
+    // (cells keep their measured column width + FILL the row height). A <td>/<th>
+    // (table-cell) falls through to the normal path so its padding + text apply.
+    if (disp === "table" || disp === "inline-table" || disp === "table-row-group" ||
+        disp === "table-header-group" || disp === "table-footer-group") {
+      node.layout = { mode: "VERTICAL", gap: 0, crossGap: 0, padding: readPadding(cs),
+        primaryAlign: "MIN", counterAlign: "MIN", wrap: false };
+      node.hug = false; node._tableRows = true;
+      return;
+    }
+    if (disp === "table-row") {
+      node.layout = { mode: "HORIZONTAL", gap: 0, crossGap: 0, padding: readPadding(cs),
+        primaryAlign: "MIN", counterAlign: "MIN", wrap: false };
+      node.hug = false; node._tableCells = true;
+      return;
+    }
+
     var inline = disp.indexOf("inline") >= 0;
     node.hug = inline;
 
@@ -520,6 +539,10 @@
     for (var i = 0; i < node.children.length; i++) {
       var c = node.children[i];
       if (c.absolute) continue;
+      // Tables: rows FILL the table width; cells keep their measured column
+      // width (so columns line up across rows) and FILL the row height.
+      if (node._tableRows) { c.sizing = { h: "FILL", v: "HUG" }; continue; }
+      if (node._tableCells) { c.sizing = { h: "FIXED", v: "FILL" }; continue; }
       if (c.type === "TEXT") {
         c.sizing = { h: (parentHug || !vertical) ? "HUG" : "FILL", v: "HUG" };
       } else if (c.type === "IMAGE") {
@@ -901,7 +924,9 @@
   }
 
   function stripDroppedFills(node) {
-    if (node._order != null) delete node._order;   // temp field, not part of the scene
+    if (node._order != null) delete node._order;   // temp fields, not part of the scene
+    if (node._tableRows) delete node._tableRows;
+    if (node._tableCells) delete node._tableCells;
     if (node.fills) {
       node.fills = node.fills.filter(function (f) { return !f._drop; });
       if (!node.fills.length) delete node.fills;
