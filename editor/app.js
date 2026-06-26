@@ -29910,8 +29910,9 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
             page, builds it as auto-layout, and verifies the result. The daemon runs it for you.
           </p>
           <p className="modal-hint" style=${{ marginTop: 6 }}>
-            One-time: open <strong>Figma Desktop</strong> so figma-cli can connect to it. If this
-            is the first run and it can't connect, restart Figma once, then try again.
+            One-time: in <strong>Figma Desktop</strong>, import + run the <strong>figma-cli</strong>
+            plugin (Plugins -> Development). If it isn't connected yet, the result below shows the
+            exact file to import - do that once, leave it open, and click again. No terminal.
           </p>
           ${(phase === "working" || phase === "done") && status && html`
             <div className="export-name-warn" data-overridden=${true} style=${{ whiteSpace: "pre-wrap" }}>${status}</div>

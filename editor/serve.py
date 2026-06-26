@@ -14739,13 +14739,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             return ("connected" in blob) and ("not connected" not in blob) and ("disconnected" not in blob)
 
         if not is_connected():
-            # Best-effort auto-connect (Yolo) so the user needn't run anything.
-            _rc, o2, e2 = run(["connect"], 90)
+            # Safe Mode: connect through figma-cli's plugin. NOT Yolo - Yolo patches
+            # Figma.app and macOS gates that behind an "App Management" permission
+            # (System Settings), which is exactly the friction we avoid.
+            _rc, o2, e2 = run(["connect", "--safe"], 90)
             if not is_connected():
+                manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        "tools", "figma-cli", "plugin", "manifest.json")
                 return self._reply(200, {"ok": False, "stage": "connect",
-                    "error": ("Could not connect figma-cli to Figma. Open Figma Desktop - if it was "
-                              "already open, restart it so the connection takes effect - then try again."),
-                    "output": (o2 + e2)[-1500:]})
+                    "manifestPath": manifest,
+                    "error": ("figma-cli needs its plugin running in Figma (one time, no terminal):\n"
+                              "  1. Figma Desktop -> Menu -> Plugins -> Development -> Import plugin from manifest...\n"
+                              "  2. Pick this file:\n       " + manifest + "\n"
+                              "  3. Menu -> Plugins -> Development -> figma-cli  (run it, leave the window open)\n"
+                              "Then click Send to Figma again."),
+                    "output": (o2 + e2)[-1200:]})
         rc, out, err = run(["recreate-url", url, "--name", name, "--verify"], 300)
         ok = (rc == 0)
         return self._reply(200, {"ok": ok, "stage": "recreate", "output": (out + err)[-4000:],
