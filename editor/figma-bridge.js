@@ -713,7 +713,15 @@
       return { name: "Input", field: true };
     }
     if (tag === "A") {
-      // A link styled like a button (padding + a fill or border) -> Button.
+      // A link styled like a button -> Button, but ONLY if it reads like a small
+      // inline/row control. A vertical card link (display:flex flex-direction:
+      // column, or block/grid) is NOT a button - classifying it as one forces a
+      // horizontal hug layout that runs the card's content sideways.
+      var disp = cs.display || "";
+      var column = (cs.flexDirection || "").indexOf("column") === 0;
+      var buttonish = disp === "inline-flex" || disp === "inline-block" || disp === "inline" ||
+                      (disp === "flex" && !column);
+      if (!buttonish) return null;
       var pad = px(cs.paddingTop) + px(cs.paddingBottom) + px(cs.paddingLeft) + px(cs.paddingRight);
       var bg = parseColor(cs.backgroundColor);
       var boxed = (bg && bg.a > 0) || !!readStroke(cs);
