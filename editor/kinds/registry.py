@@ -3198,7 +3198,11 @@ ASSET_KIND_AUTHORING = {
     "shader": (
         "This is a SHADER asset - a GLSL fragment shader rendered to a <canvas>, NOT an "
         "HTML/CSS effect. Do NOT produce a div with `backdrop-filter`/gradients/box-shadow. "
-        "Deliverable: a self-contained `.html` (or the file at the target path) whose visible "
+        "Deliverable: a self-contained, RUNNABLE `.html` document written to the target path "
+        "(inline the GLSL + the `<canvas>` + the JS runtime in ONE file) - NOT a bare `.glsl`/"
+        "`.js`. The editor embeds the asset in an `<iframe>`, so a bare code file renders as a "
+        "blank glyph and can't be seen or live-tuned; an .html renders the scene and exposes "
+        "controls. Its visible "
         "output is a full-bleed WebGL/WebGL2 canvas driven by a fragment shader - `precision "
         "highp float;`, `uniform float u_time;`, `uniform vec2 u_resolution;` (+ `u_mouse` if "
         "interactive), animated in a rAF loop. The look must be MATH in the shader, not DOM. "
@@ -3222,7 +3226,11 @@ ASSET_KIND_AUTHORING = {
     ),
     "3d": (
         "This is a 3D asset - an interactive WebGL scene (Three.js or raw WebGL), NOT a flat "
-        "image or CSS pseudo-3D. Deliverable: a self-contained `.html`/JS module that builds a "
+        "image or CSS pseudo-3D. Deliverable: a self-contained, RUNNABLE `.html` written to the "
+        "target path (inline the JS module + a `<canvas>` + the rAF bootstrap in ONE file) - NOT "
+        "a bare `.js` module. The editor embeds the asset in an `<iframe>`, so a bare module "
+        "renders as a blank glyph (nothing auto-runs) and can't be seen or live-tuned; an .html "
+        "renders the scene and exposes controls. It builds a "
         "scene (geometry + materials + lights + camera + rAF render loop), resizes to its "
         "container, and respects prefers-reduced-motion. Do NOT substitute a static PNG or a "
         "CSS transform; if a real 3D scene is overkill for the brief, say so.\n"

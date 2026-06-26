@@ -28155,6 +28155,8 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const [source, setSource] = useState("none");
   const [vals, setVals] = useState({});
   const [collapsed, setCollapsed] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState({}); // per-section, default all open
+  const [busy, setBusy] = useState(false);                    // frozen while a slow (>100ms) update is in flight
   const valsRef = useRef(vals); valsRef.current = vals;
   const controlsRef = useRef(node.controls); controlsRef.current = node.controls;
   const persistRef = useRef(0);
@@ -28195,15 +28197,31 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     return () => { alive = false; clearTimeout(timer); window.removeEventListener("th:asset-refresh", onRefresh); };
   }, [nodeId, selected]);
 
+  // A slow (reload-path) update: write the source + reload the iframe, and FREEZE
+  // the panel while it re-renders - but only if it's still going after 100ms, so a
+  // fast update never flashes the overlay.
+  const runSlowUpdate = (entry, value) => {
+    const ifr = assetControlsIframe(nodeId);
+    let settled = false;
+    const showTimer = setTimeout(() => { if (!settled) setBusy(true); }, 100);
+    const finish = () => { if (settled) return; settled = true; clearTimeout(showTimer); clearTimeout(safety); setBusy(false); };
+    const safety = setTimeout(finish, 5000);
+    if (ifr) { try { ifr.addEventListener("load", finish, { once: true }); } catch (e) {} }
+    writeDaemonControlSource(nodeId, entry, value, true);
+  };
+
   const onKnob = (entry, value) => {
     setVals((v) => ({ ...v, [entry.key]: value }));
     if (entry.__daemon) {
       // Source is the durable state for daemon params: apply live for a smooth
       // drag where bindable, and debounce-write the source (reloading the iframe
-      // only when the value couldn't be bound live).
+      // only when the value couldn't be bound live - that path freezes the panel).
       const liveOk = applyDaemonControlLive(nodeId, entry, value);
       clearTimeout(srcRef.current);
-      srcRef.current = setTimeout(() => writeDaemonControlSource(nodeId, entry, value, !liveOk), 350);
+      srcRef.current = setTimeout(() => {
+        if (liveOk) writeDaemonControlSource(nodeId, entry, value, false);
+        else runSlowUpdate(entry, value);
+      }, 350);
       return;
     }
     applyAssetControl(nodeId, entry, value);
@@ -28298,25 +28316,32 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     }
     return null;
   };
-  const panel = html`<div className="workflow-asset-controls-panel" data-node-id=${nodeId}
+  const toggleGroup = (name) => setCollapsedGroups((m) => ({ ...m, [name]: !m[name] }));
+  // Each section: a separator + a clickable header (caret) that collapses it.
+  // Default open; busy/frozen state is handled by the panel-level .is-busy class.
+  const renderGroup = (name, items, renderer, key) => {
+    const isCol = !!collapsedGroups[name];
+    return html`<div className="wac-group" key=${key}>
+      <button className="wac-group-head" onClick=${() => toggleGroup(name)} aria-expanded=${!isCol}>
+        <span className="wac-caret">${isCol ? "▸" : "▾"}</span><span className="wac-group-name">${name}</span>
+      </button>
+      ${isCol ? null : items.map(renderer)}
+    </div>`;
+  };
+  const panel = html`<div className=${"workflow-asset-controls-panel" + (busy ? " is-busy" : "")} data-node-id=${nodeId}
       style=${{ position: "fixed", top: rect.top + "px", left: left + "px", width: PANEL_W + "px", zIndex: 41 }}
       onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
     <div className="wac-head">
       <span className="wac-title">Controls</span>
-      ${source === "fallback" ? html`<span className="wac-source" title="Inferred from CSS variables">auto</span>` : null}
-      ${source === "daemon" ? html`<span className="wac-source" title="Read from the asset source">source</span>` : null}
+      ${busy ? html`<span className="wac-busy" title="Updating the asset…">updating…</span>` : null}
+      ${(!busy && source === "fallback") ? html`<span className="wac-source" title="Inferred from CSS variables">auto</span>` : null}
+      ${(!busy && source === "daemon") ? html`<span className="wac-source" title="Read from the asset source">source</span>` : null}
       <button className="wac-mini" title="Reset all" onClick=${resetAll}>reset</button>
       <button className="wac-mini wac-collapse" title=${collapsed ? "Expand" : "Collapse"} onClick=${() => setCollapsed((c) => !c)}>${collapsed ? "+" : "–"}</button>
     </div>
     ${collapsed ? null : html`<div className="wac-body">
-      ${native.length ? html`<div className="wac-group" key="__native">
-        ${schema.length ? html`<div className="wac-group-name">Asset</div>` : null}
-        ${native.map(renderNative)}
-      </div>` : null}
-      ${groups.map((g) => html`<div className="wac-group" key=${g.name}>
-        ${(groups.length > 1 || native.length) ? html`<div className="wac-group-name">${g.name}</div>` : null}
-        ${g.items.map(renderKnob)}
-      </div>`)}
+      ${native.length ? renderGroup("Asset", native, renderNative, "__native") : null}
+      ${groups.map((g) => renderGroup(g.name, g.items, renderKnob, g.name))}
     </div>`}
   </div>`;
   return createPortal(panel, document.body);
@@ -28329,7 +28354,19 @@ function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges }) {
   const nodeId = node.id;
   const rect = useTrackedNodeRect(nodeId, selected);
   const inputs = useMemo(() => {
-    try { return resolveUpstreamInputs(node, allNodes, allEdges) || []; } catch (e) { return []; }
+    let list = [];
+    try { list = resolveUpstreamInputs(node, allNodes, allEdges) || []; } catch (e) { list = []; }
+    // Drop EMPTY inputs - an upstream skill/prompt node with no text and no
+    // asset is just a wiring artifact, not content the user consumes. Hiding
+    // these keeps the panel (and its appearance) meaningful; an all-empty set
+    // hides the panel entirely.
+    return list.filter((inp) => {
+      if (inp.type === "text") return !!(inp.text && inp.text.trim());
+      if (inp.type === "asset" || inp.type === "glb-import") return !!inp.url;
+      if (inp.type === "palette") return !!(inp.swatches && inp.swatches.length);
+      if (inp.type === "unbaked") return false;
+      return true; // web / section / typography / number / etc. carry their own content
+    });
   }, [node, allNodes, allEdges]);
   const [drafts, setDrafts] = useState({});
   if (!selected || !rect || !inputs.length) return null;
@@ -56649,10 +56686,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onError=${() => setThumbState("missing")}
       />
     `;
-  } else if (kind === "html") {
+  } else if (kind === "html" || (isFileRef && /\.html?($|\?)/i.test(path))) {
     // Pathway-B output (shader/viz/threejs/etc.) - render the agent-written
-    // file as a sandboxed iframe so the user sees the live scene. The
-    // cache-bust query is already on fileSrc; the iframe reloads on bust++.
+    // file as a sandboxed iframe so the user sees the live scene. Also fires
+    // for ANY asset whose file is .html even when its assetKind is shader/3d/
+    // particle/etc. (they wrote a self-contained .html), so those render +
+    // get live controls instead of a glyph placeholder. The cache-bust query
+    // is already on fileSrc; the iframe reloads on bust++.
     bodyContent = thumbState === "missing" ? html`
       <div className="workflow-node-asset-empty">
         <div className="workflow-node-asset-empty-icon">◳</div>
