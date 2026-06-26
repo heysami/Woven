@@ -84,7 +84,13 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function baseUrl() { return ($("base").value || "").trim().replace(/\/+$/, ""); }
+  function baseUrl() {
+    var raw = ($("base").value || "").trim().replace(/\/+$/, "");
+    // Without a scheme, fetch parses "localhost:5747" as protocol "localhost:"
+    // and throws "Failed to fetch". Default bare host:port to http://.
+    if (raw && !/^https?:\/\//i.test(raw)) raw = "http://" + raw;
+    return raw;
+  }
   function projectId() { return ($("project").value || "default").trim() || "default"; }
   function apiUrl(path) { return baseUrl() + path + "?project=" + encodeURIComponent(projectId()); }
 
