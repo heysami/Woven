@@ -30362,6 +30362,22 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
             }
           });
         }
+        // v3.6 - the floating asset CONTROLS (right) + INPUTS (left) panels are
+        // body-portaled, not children of the node el, so the detached-frame
+        // widening above never sees them. Without this the ⊕ spawn buttons
+        // (rect.right + gap, z40) sit UNDER the controls panel (rect.right + gap,
+        // z41) and likewise on the left. Extend to the panels' outer edges so
+        // the buttons shift to sit BESIDE the panels instead of being covered.
+        document.querySelectorAll(
+          '.workflow-asset-controls-panel[data-node-id="' + nodeId + '"], '
+          + '.workflow-asset-inputs-panel[data-node-id="' + nodeId + '"]'
+        ).forEach(p => {
+          const pr = p.getBoundingClientRect();
+          if (pr.width > 0 && pr.height > 0) {
+            if (pr.left < left) left = pr.left;
+            if (pr.right > right) right = pr.right;
+          }
+        });
         if (!last || last.top !== r.top || last.left !== left
             || last.right !== right || last.height !== r.height) {
           last = { top: r.top, left: left, width: right - left, height: r.height,
