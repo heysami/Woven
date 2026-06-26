@@ -747,7 +747,7 @@
       (node.effects && node.effects.length) || node.type === "IMAGE";
   }
 
-  function walk(el, parentRect, win, pending) {
+  function walk(el, parentRect, win, pending, keepSelf) {
     var tag = el.tagName;
     if (!tag || SKIP_TAGS[tag]) return null;
     var rect = el.getBoundingClientRect();
@@ -822,9 +822,13 @@
     // element's own direct text (most leaves have text and no element kids).
     var elementKids = [];
     if (!isSvg) for (var i = 0; i < el.children.length; i++) elementKids.push(el.children[i]);
+    // A grid container's direct children are its columns/cells: keep them even
+    // when empty so the column structure (e.g. a div-header + <a>-row "table")
+    // stays aligned instead of collapsing to just the filled cells.
+    var gridKids = (cs.display || "").indexOf("grid") >= 0;
     if (elementKids.length) {
       for (var k = 0; k < elementKids.length; k++) {
-        var child = walk(elementKids[k], rect, win, pending);
+        var child = walk(elementKids[k], rect, win, pending, gridKids);
         if (child) node.children.push(child);
       }
     }
@@ -872,8 +876,9 @@
     // inline frames hug; block frames fill the column).
     assignChildSizing(node);
 
-    // Prune empty decorationless containers (never prune a tagged component).
-    if (node.type === "FRAME" && !node.component && !hasOwnPaint(node) && !node.children.length && !node.clipsContent) return null;
+    // Prune empty decorationless containers (never prune a tagged component, and
+    // never prune a grid cell - keepSelf - since it holds a column position).
+    if (node.type === "FRAME" && !node.component && !hasOwnPaint(node) && !node.children.length && !node.clipsContent && !keepSelf) return null;
     if (!node.fills.length) delete node.fills;
     if (!node.strokes.length) delete node.strokes;
     if (!node.effects.length) delete node.effects;
