@@ -228,6 +228,32 @@ function buildImage(n) {
   return r;
 }
 
+// Turn the scene's layout hint into a Figma auto-layout frame. Returns true
+// when auto-layout was applied (so the caller flows children instead of
+// positioning them by x/y).
+function applyAutoLayout(frame, n) {
+  var L = n.layout;
+  if (!L || (L.mode !== "HORIZONTAL" && L.mode !== "VERTICAL")) return false;
+  try { frame.layoutMode = L.mode; } catch (e) { return false; }
+  try { frame.itemSpacing = Math.max(0, L.gap || 0); } catch (e) {}
+  if (L.padding) {
+    try {
+      frame.paddingTop = L.padding.top || 0; frame.paddingRight = L.padding.right || 0;
+      frame.paddingBottom = L.padding.bottom || 0; frame.paddingLeft = L.padding.left || 0;
+    } catch (e) {}
+  }
+  try { frame.primaryAxisAlignItems = L.primaryAlign || "MIN"; } catch (e) {}
+  try { frame.counterAxisAlignItems = L.counterAlign || "MIN"; } catch (e) {}
+  if (L.wrap && L.mode === "HORIZONTAL") {
+    try { frame.layoutWrap = "WRAP"; } catch (e) {}
+    if (L.crossGap) { try { frame.counterAxisSpacing = L.crossGap; } catch (e) {} }
+  }
+  // Keep the frame's rendered size rather than hugging its contents.
+  try { frame.primaryAxisSizingMode = "FIXED"; } catch (e) {}
+  try { frame.counterAxisSizingMode = "FIXED"; } catch (e) {}
+  return true;
+}
+
 function buildFrame(n) {
   var f = figma.createFrame();
   var s = size(n);
@@ -235,16 +261,34 @@ function buildFrame(n) {
   f.name = n.name || "frame";
   f.fills = []; // transparent unless the scene says otherwise
   applyBox(f, n);
+
+  var kids = [];
   if (Array.isArray(n.children)) {
     for (var i = 0; i < n.children.length; i++) {
-      var child = buildNode(n.children[i]);
-      if (child) {
-        f.appendChild(child);
-        // Scene child x/y are relative to this parent; set after append.
-        try { child.x = n.children[i].x || 0; child.y = n.children[i].y || 0; } catch (e) {}
-      }
+      var built = buildNode(n.children[i]);
+      if (built) { f.appendChild(built); kids.push({ built: built, src: n.children[i] }); }
     }
   }
+
+  var auto = applyAutoLayout(f, n);
+  for (var k = 0; k < kids.length; k++) {
+    var node = kids[k].built, src = kids[k].src;
+    if (auto) {
+      if (src.absolute) {
+        // Out of the auto-layout flow: position it absolutely like CSS.
+        try { node.layoutPositioning = "ABSOLUTE"; node.x = src.x || 0; node.y = src.y || 0; } catch (e) {}
+      } else {
+        // Preserve each child's measured size inside the auto-layout.
+        try { node.layoutSizingHorizontal = "FIXED"; } catch (e) {}
+        try { node.layoutSizingVertical = "FIXED"; } catch (e) {}
+      }
+    } else {
+      // Absolute frame: scene child x/y are relative to this parent.
+      try { node.x = src.x || 0; node.y = src.y || 0; } catch (e) {}
+    }
+  }
+  // Enabling auto-layout can hug the frame as children are added; restore size.
+  if (auto) { try { f.resize(s.w, s.h); } catch (e) {} }
   return f;
 }
 

@@ -39,7 +39,7 @@
 (function () {
   "use strict";
 
-  var SCENE_VERSION = 1;
+  var SCENE_VERSION = 2;
   // Total inlined-image budget. Past this we stop inlining and emit a flat
   // fill instead, so a heavy page cannot produce a multi-hundred-MB POST.
   var IMAGE_BUDGET_BYTES = 40 * 1024 * 1024;
@@ -323,6 +323,140 @@
     };
   }
 
+  // ---- layout inference -------------------------------------------------
+  // CSS flexbox maps precisely to Figma auto-layout. Plain block containers go
+  // through a guarded heuristic: a clean, evenly-spaced, non-overlapping stack
+  // becomes auto-layout; anything irregular stays absolute so we never invent
+  // a layout that mangles the rendered design.
+
+  function median(arr) {
+    if (!arr.length) return 0;
+    var s = arr.slice().sort(function (a, b) { return a - b; });
+    var m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  function mapJustify(jc) {
+    jc = (jc || "").toLowerCase();
+    if (jc.indexOf("space-between") >= 0 || jc.indexOf("space-around") >= 0 || jc.indexOf("space-evenly") >= 0) return "SPACE_BETWEEN";
+    if (jc.indexOf("center") >= 0) return "CENTER";
+    if (jc.indexOf("end") >= 0 || jc.indexOf("right") >= 0) return "MAX";
+    return "MIN";
+  }
+
+  function mapAlign(ai) {
+    ai = (ai || "").toLowerCase();
+    if (ai.indexOf("center") >= 0) return "CENTER";
+    if (ai.indexOf("baseline") >= 0) return "BASELINE";
+    if (ai.indexOf("end") >= 0) return "MAX";
+    return "MIN"; // flex-start / stretch / normal
+  }
+
+  function readPadding(cs) {
+    return {
+      top: round(px(cs.paddingTop)), right: round(px(cs.paddingRight)),
+      bottom: round(px(cs.paddingBottom)), left: round(px(cs.paddingLeft))
+    };
+  }
+
+  function readFlexLayout(cs) {
+    var disp = (cs.display || "");
+    if (disp !== "flex" && disp !== "inline-flex") return null;
+    var dir = (cs.flexDirection || "row");
+    var vertical = dir.indexOf("column") === 0;
+    var gv = function (v) { return (!v || v === "normal") ? 0 : px(v); };
+    var colGap = gv(cs.columnGap), rowGap = gv(cs.rowGap);
+    return {
+      mode: vertical ? "VERTICAL" : "HORIZONTAL",
+      gap: round(vertical ? rowGap : colGap),
+      crossGap: round(vertical ? colGap : rowGap),
+      padding: readPadding(cs),
+      primaryAlign: mapJustify(cs.justifyContent),
+      counterAlign: mapAlign(cs.alignItems),
+      wrap: (cs.flexWrap || "nowrap").indexOf("wrap") === 0
+    };
+  }
+
+  function sortByOrder(children) {
+    // CSS `order` re-sequences flex items; stable-sort by it (default 0).
+    children.forEach(function (c, i) { c.__i = i; });
+    children.sort(function (a, b) {
+      var d = (a._order || 0) - (b._order || 0);
+      return d !== 0 ? d : a.__i - b.__i;
+    });
+    children.forEach(function (c) { delete c.__i; });
+  }
+
+  // Infer counter-axis alignment for a stack from where its in-flow children
+  // sit in the content box (catches centered headings, right-aligned rows).
+  function inferCounterAlign(node, mode) {
+    var pad = node.layout.padding;
+    var horizontal = mode === "VERTICAL";   // counter axis is the other one
+    var inner = horizontal ? (node.width - pad.left - pad.right) : (node.height - pad.top - pad.bottom);
+    if (inner <= 0) return "MIN";
+    var ctr = 0, max = 0, total = 0;
+    (node.children || []).forEach(function (c) {
+      if (c.absolute) return;
+      total++;
+      var start = horizontal ? (c.x - pad.left) : (c.y - pad.top);
+      var sz = horizontal ? c.width : c.height;
+      var endSpace = inner - start - sz;
+      if (Math.abs(start - endSpace) <= 3) ctr++;
+      else if (endSpace <= 3 && start > 3) max++;
+    });
+    if (!total) return "MIN";
+    if (ctr / total >= 0.6) return "CENTER";
+    if (max / total >= 0.6) return "MAX";
+    return "MIN";
+  }
+
+  function inferStackLayout(cs, node) {
+    var all = node.children || [];
+    var flow = all.filter(function (c) { return !c.absolute; });
+    var abs = all.filter(function (c) { return c.absolute; });
+    if (flow.length < 2) return;
+
+    function tryAxis(axis) {                 // "y" (vertical) | "x" (horizontal)
+      var sizeKey = axis === "y" ? "height" : "width";
+      var sorted = flow.slice().sort(function (a, b) { return a[axis] - b[axis]; });
+      var gaps = [];
+      for (var i = 1; i < sorted.length; i++) {
+        var g = sorted[i][axis] - (sorted[i - 1][axis] + sorted[i - 1][sizeKey]);
+        if (g < -3) return null;             // overlap -> not a clean stack
+        gaps.push(g);
+      }
+      var med = median(gaps), maxDev = 0;
+      gaps.forEach(function (g) { maxDev = Math.max(maxDev, Math.abs(g - med)); });
+      if (maxDev > Math.max(12, med * 0.6)) return null;   // gaps too irregular
+      return { sorted: sorted, gap: Math.max(0, med) };
+    }
+
+    var v = tryAxis("y");
+    var h = v ? null : tryAxis("x");         // prefer vertical (block default)
+    var pick = v || h;
+    if (!pick) return;
+    var mode = v ? "VERTICAL" : "HORIZONTAL";
+
+    node.layout = {
+      mode: mode, gap: round(pick.gap), crossGap: 0,
+      padding: readPadding(cs), primaryAlign: "MIN", counterAlign: "MIN", wrap: false
+    };
+    node.children = pick.sorted.concat(abs);
+    node.layout.counterAlign = inferCounterAlign(node, mode);
+  }
+
+  function decideLayout(cs, node) {
+    if (!node.children || node.children.length < 2) return;
+    var flex = readFlexLayout(cs);
+    if (flex) {
+      node.layout = flex;
+      sortByOrder(node.children);
+      return;
+    }
+    if ((cs.display || "").indexOf("grid") >= 0) return;   // grid: no Figma equiv yet, keep absolute
+    inferStackLayout(cs, node);
+  }
+
   // ---- node walk --------------------------------------------------------
 
   var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, LINK: 1, META: 1, HEAD: 1, TITLE: 1, BR: 1 };
@@ -365,6 +499,10 @@
     var op = parseFloat(cs.opacity);
     if (isFinite(op) && op < 1) node.opacity = round(op);
     if (cs.overflow === "hidden" || cs.overflowX === "hidden" || cs.overflowY === "hidden") node.clipsContent = true;
+    // Layout hints for the parent's auto-layout decision.
+    var ord = parseInt(cs.order, 10);
+    if (ord) node._order = ord;
+    if (cs.position === "absolute" || cs.position === "fixed") node.absolute = true;
 
     // Background: gradient takes precedence over color; an image overlays as a
     // deferred IMAGE paint (resolved after the synchronous walk).
@@ -411,6 +549,8 @@
       if (t) node.children.push(t);
     }
 
+    decideLayout(cs, node);
+
     // Prune empty decorationless containers.
     if (node.type === "FRAME" && !hasOwnPaint(node) && !node.children.length && !node.clipsContent) return null;
     if (!node.fills.length) delete node.fills;
@@ -452,6 +592,7 @@
       var n = walk(kids[j], rootRect, win, pending);
       if (n) root.children.push(n);
     }
+    decideLayout(win.getComputedStyle(rootEl), root);
 
     // Resolve all deferred image fills concurrently.
     return Promise.all(pending.map(function (job) {
@@ -484,6 +625,7 @@
   }
 
   function stripDroppedFills(node) {
+    if (node._order != null) delete node._order;   // temp field, not part of the scene
     if (node.fills) {
       node.fills = node.fills.filter(function (f) { return !f._drop; });
       if (!node.fills.length) delete node.fills;
