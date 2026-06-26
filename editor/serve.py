@@ -7958,6 +7958,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._figma_map(qs)
             if parsed.path == "/__figma_tidy":
                 return self._figma_tidy(qs)
+            if parsed.path == "/__figma_cli_run":
+                return self._figma_cli_run(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
             if parsed.path == "/__workflow/nodes/add":
@@ -14694,6 +14696,60 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 rules = []
         return self._reply(200, {"ok": True, "rules": rules})
+
+    # POST /__figma_cli_run?project=<id>  body {url, name?}
+    # The NO-TERMINAL path: the editor passes a prototype's live URL and the
+    # daemon drives the vendored figma-cli (editor/tools/figma-cli) on the user's
+    # behalf - checks the Figma connection (auto-connects via Yolo if needed),
+    # then `recreate-url <url> --verify`. Returns figma-cli's output for the
+    # editor modal. The user clicks a button; they never open a terminal.
+    def _figma_cli_run(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=64 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        url = (body.get("url") or "").strip()
+        name = (body.get("name") or "Woven").strip()[:80] or "Woven"
+        if not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?/", url):
+            return self._reply(400, {"error": "url must be a local prototype URL (http://localhost:.../source/...)"})
+        import shutil
+        node = shutil.which("node") or "/usr/local/bin/node"
+        cli = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "figma-cli", "src", "index.js")
+        if not os.path.isfile(cli):
+            return self._reply(200, {"ok": False, "stage": "install",
+                "error": "figma-cli is not installed in this editor's tools/figma-cli."})
+
+        def run(args, timeout):
+            try:
+                r = subprocess.run([node, cli] + args, capture_output=True, text=True,
+                                   timeout=timeout, stdin=subprocess.DEVNULL, cwd=project_root)
+                return r.returncode, (r.stdout or ""), (r.stderr or "")
+            except subprocess.TimeoutExpired:
+                return 124, "", "timed out"
+            except Exception as e:
+                return 1, "", str(e)
+
+        def is_connected():
+            rc, out, err = run(["daemon", "status"], 30)
+            blob = (out + err).lower()
+            return ("connected" in blob) and ("not connected" not in blob) and ("disconnected" not in blob)
+
+        if not is_connected():
+            # Best-effort auto-connect (Yolo) so the user needn't run anything.
+            _rc, o2, e2 = run(["connect"], 90)
+            if not is_connected():
+                return self._reply(200, {"ok": False, "stage": "connect",
+                    "error": ("Could not connect figma-cli to Figma. Open Figma Desktop - if it was "
+                              "already open, restart it so the connection takes effect - then try again."),
+                    "output": (o2 + e2)[-1500:]})
+        rc, out, err = run(["recreate-url", url, "--name", name, "--verify"], 300)
+        ok = (rc == 0)
+        return self._reply(200, {"ok": ok, "stage": "recreate", "output": (out + err)[-4000:],
+            "error": None if ok else "figma-cli recreate-url failed (see output)."})
 
     # POST /__figma_tidy?project=<id>  body {dsRef?, pngB64, nodes:[...], components:[...]}
     # The "agent tidies the Figma design" step: the plugin sends a screenshot of

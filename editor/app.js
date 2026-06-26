@@ -29871,52 +29871,23 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
     setPhase("working");
     setError(null);
     try {
-      if (!window.WovenFigma || !window.WovenFigma.domToScene) {
-        throw new Error("figma-bridge.js did not load.");
-      }
+      // figma-cli rebuilds the prototype from its LIVE URL (the rendered iframe's
+      // src). The daemon drives figma-cli - the user never touches a terminal.
       const iframe = findRenderedNodeIframe(nodeId);
-      if (!iframe) {
-        throw new Error("Open this prototype/asset on the canvas first - Send to Figma reads the live rendered page.");
+      const url = iframe && iframe.src;
+      if (!url) {
+        throw new Error("Open this prototype on the canvas first - figma-cli rebuilds it from its live URL.");
       }
-      let doc;
-      try { doc = iframe.contentDocument; } catch { doc = null; }
-      const rootEl = doc && doc.body;
-      if (!rootEl) {
-        throw new Error("Could not read the rendered page (cross-origin or still loading).");
-      }
-      setStep("Converting page...");
-      // Load the design-system component rules so flex/block subtrees that match
-      // them are tagged for the plugin to swap into bound Figma instances.
-      const dsRef = (D.meta && D.meta.dsRef) || "";
-      let componentRules = [];
-      try {
-        const rr = await fetch(apiUrl("/__figma_map"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ op: "get", dsRef }),
-        });
-        const rj = await rr.json().catch(() => ({}));
-        if (rj && Array.isArray(rj.rules)) componentRules = rj.rules;
-      } catch {}
-      const raw = await window.WovenFigma.domToScene(rootEl, {
-        name: nodeLabel || nodeId || "Woven export", componentRules, dsRef,
-      });
-      // Hybrid: an agent re-authors the captured scene into a clean, semantic,
-      // auto-layout one. Toggle off to send the raw geometry capture directly.
-      const scene = agentMode ? await authorSceneWithAgent(raw, dsRef, setStep, controllersRef.current) : raw;
-      setStep("Sending to the daemon...");
-      const r = await fetch(apiUrl("/__figma_send"), {
+      setStep("Building in Figma with figma-cli. This can take a minute (it looks at the page, builds it, and verifies)...");
+      const r = await fetch(apiUrl("/__figma_cli_run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodeId, name: scene.name, scene }),
+        body: JSON.stringify({ url, name: nodeLabel || nodeId || "Woven" }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.jobId) {
-        throw new Error(j.error || `Daemon rejected the scene (HTTP ${r.status}).`);
-      }
-      setStep("Waiting for Woven Bridge. Open the plugin in Figma and click Connect...");
-      const result = await pollJob(j.jobId);
-      if (result.ok) { setPhase("done"); setStep(result.message); }
-      else { setPhase("error"); setError(result.message); }
+      const tail = j.output ? ("\n\n" + String(j.output).slice(-800)) : "";
+      if (j.ok) { setPhase("done"); setStep("Built in Figma." + tail); }
+      else { setPhase("error"); setError((j.error || `failed (HTTP ${r.status})`) + tail); }
     } catch (e) {
       setPhase("error");
       setError(e.message || String(e));
@@ -29935,23 +29906,17 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         </div>
         <div className="modal-body">
           <p className="modal-hint" style=${{ marginTop: 0 }}>
-            Rebuilds this page as editable Figma layers. Needs the <strong>Woven Bridge</strong>
-            plugin running and connected in Figma Desktop
-            (editor/tools/figma-bridge - see its README).
+            Rebuilds this prototype in Figma using <strong>figma-cli</strong> - it looks at the
+            page, builds it as auto-layout, and verifies the result. The daemon runs it for you.
           </p>
-          <label className="export-override-row" style=${{ marginTop: 4 }}>
-            <input type="checkbox" checked=${agentMode} disabled=${busy}
-              onChange=${(e) => setAgentMode(e.target.checked)} />
-            <span>Pre-author from HTML <span className="modal-hint">(an LLM cleans the
-              capture before sending. Usually leave OFF: send the raw capture, then run
-              <strong>Tidy with agent</strong> on the built frame in the Woven Bridge
-              plugin - it looks at the real Figma result and fixes layout + components)</span></span>
-          </label>
+          <p className="modal-hint" style=${{ marginTop: 6 }}>
+            One-time: open <strong>Figma Desktop</strong> so figma-cli can connect to it. If this
+            is the first run and it can't connect, restart Figma once, then try again.
+          </p>
           ${(phase === "working" || phase === "done") && status && html`
-            <div className="export-name-warn" data-overridden=${true}>${status}</div>
+            <div className="export-name-warn" data-overridden=${true} style=${{ whiteSpace: "pre-wrap" }}>${status}</div>
           `}
-          ${error && html`<div className="export-name-error">${error}</div>`}
-          ${phase === "done" && html`<div className="export-name-warn" data-overridden=${true}><strong>Done.</strong></div>`}
+          ${error && html`<div className="export-name-error" style=${{ whiteSpace: "pre-wrap" }}>${error}</div>`}
         </div>
         <div className="modal-foot">
           <button className="tbtn" onClick=${busy ? cancel : onClose}>
