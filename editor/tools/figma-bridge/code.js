@@ -354,7 +354,20 @@ function buildText(n) {
   if (n.textDecoration && n.textDecoration !== "NONE") {
     try { t.textDecoration = n.textDecoration; } catch (e) {}
   }
-  try { t.textAutoResize = "NONE"; var s = size(n); t.resize(s.w, s.h); } catch (e) {}
+  // Size per the converter's hint. HUG width -> auto width+height (labels,
+  // button text). Otherwise fixed width + auto HEIGHT, so the box hugs the
+  // glyphs vertically (no tall box with top-aligned text) and the parent
+  // auto-layout can vertically center it.
+  try {
+    var sz = n.sizing || {};
+    if (sz.h === "HUG") {
+      t.textAutoResize = "WIDTH_AND_HEIGHT";
+    } else {
+      t.textAutoResize = "HEIGHT";
+      var s = size(n);
+      t.resize(s.w, Math.max(1, t.height));
+    }
+  } catch (e) {}
   t.name = n.name || "text";
   return t;
 }
@@ -422,9 +435,15 @@ function buildFrame(n) {
         // Out of the auto-layout flow: position it absolutely like CSS.
         try { node.layoutPositioning = "ABSOLUTE"; node.x = src.x || 0; node.y = src.y || 0; } catch (e) {}
       } else {
-        // Preserve each child's measured size inside the auto-layout.
-        try { node.layoutSizingHorizontal = "FIXED"; } catch (e) {}
-        try { node.layoutSizingVertical = "FIXED"; } catch (e) {}
+        // Honor the converter's per-child sizing (text hugs height / fills the
+        // column width); default to FIXED (keep the measured box) for frames.
+        var sz = src.sizing || {};
+        try { node.layoutSizingHorizontal = sz.h || "FIXED"; } catch (e) {
+          try { node.layoutSizingHorizontal = "FIXED"; } catch (e2) {}
+        }
+        try { node.layoutSizingVertical = sz.v || "FIXED"; } catch (e) {
+          try { node.layoutSizingVertical = "FIXED"; } catch (e2) {}
+        }
       }
     } else {
       // Absolute frame: scene child x/y are relative to this parent.

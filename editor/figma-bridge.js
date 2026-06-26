@@ -114,8 +114,14 @@
       canvas.width = cw; canvas.height = ch;
       var ctx = canvas.getContext("2d");
       ctx.drawImage(imgEl, 0, 0, cw, ch);
-      // JPEG for opaque photos keeps the payload small; PNG would bloat it.
-      return canvas.toDataURL("image/jpeg", 0.86);
+      // PNG when the image has transparency (logos/icons - JPEG would fill the
+      // transparent areas BLACK), JPEG for fully-opaque photos to keep size down.
+      var alpha = false;
+      try {
+        var d = ctx.getImageData(0, 0, cw, ch).data;
+        for (var i = 3; i < d.length; i += 40) { if (d[i] < 250) { alpha = true; break; } }
+      } catch (e) { alpha = true; }   // tainted canvas -> assume alpha (PNG is safe)
+      return alpha ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.86);
     } catch (e) {
       return null;
     }
@@ -134,8 +140,10 @@
         }
       }
       if (!url) return resolve(null);
-      // Already a data URL: split and budget it.
-      if (/^data:/i.test(url)) {
+      // A raster data URL: split + budget directly. SVG data URLs fall through
+      // to the Image path below so they get RASTERIZED to PNG (Figma's
+      // createImage cannot take svg+xml).
+      if (/^data:/i.test(url) && !/^data:image\/svg/i.test(url)) {
         var sd = splitDataUrl(url);
         if (sd && (_imageBytesUsed + sd.bytes) <= IMAGE_BUDGET_BYTES) {
           _imageBytesUsed += sd.bytes;
@@ -169,6 +177,23 @@
       };
       img.src = url;
     });
+  }
+
+  // Serialize an inline <svg> to a data URL so it can be rasterized to PNG.
+  // Sets explicit width/height + resolves `currentColor` to the computed color
+  // (icons commonly stroke/fill with currentColor set via CSS).
+  function svgToDataUrl(el, cs, rect) {
+    try {
+      var clone = el.cloneNode(true);
+      clone.setAttribute("width", Math.max(1, Math.round(rect.width)));
+      clone.setAttribute("height", Math.max(1, Math.round(rect.height)));
+      if (cs && cs.color) clone.setAttribute("color", cs.color);   // currentColor resolves to this
+      if (!clone.getAttribute("xmlns")) clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      var xml = new XMLSerializer().serializeToString(clone);
+      return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(xml)));
+    } catch (e) {
+      return null;
+    }
   }
 
   // ---- style extraction -------------------------------------------------
@@ -459,6 +484,22 @@
     inferStackLayout(cs, node);
   }
 
+  // Per-child sizing inside an auto-layout (the plugin maps these to Figma
+  // layoutSizing + textAutoResize). Without this the plugin pins every child to
+  // its measured box, so text becomes a tall box with top-aligned glyphs.
+  function assignChildSizing(node) {
+    if (!node.layout || !node.children) return;
+    var vertical = node.layout.mode === "VERTICAL";
+    for (var i = 0; i < node.children.length; i++) {
+      var c = node.children[i];
+      if (c.absolute) continue;
+      if (c.type === "TEXT") {
+        c.sizing = { h: vertical ? "FILL" : "HUG", v: "HUG" };
+      }
+      // frames / images: leave unset -> plugin keeps the measured size (FIXED)
+    }
+  }
+
   // ---- component identity (hybrid) --------------------------------------
   // A node can be tagged as a design-system component so the plugin swaps it
   // for a bound Figma library instance. Identity is hybrid: an explicit
@@ -683,6 +724,14 @@
       node.image = null;
       pending.push({ url: el.currentSrc || el.src, el: el, node: node });
     }
+    // Inline <svg> (icons): rasterize the whole element to a PNG image fill -
+    // do NOT recurse into its <path>/<g> children (they have no own box).
+    var isSvg = (tag === "svg" || tag === "SVG");
+    if (isSvg) {
+      node.type = "IMAGE";
+      node.image = null;
+      pending.push({ url: svgToDataUrl(el, cs, rect), el: null, node: node });
+    }
 
     // Interactive design-system component? (button / input / select / ...)
     var ic = interactiveComponent(el, tag, cs);
@@ -690,14 +739,14 @@
     // Children: recurse element children, then attach a TEXT child for the
     // element's own direct text (most leaves have text and no element kids).
     var elementKids = [];
-    for (var i = 0; i < el.children.length; i++) elementKids.push(el.children[i]);
+    if (!isSvg) for (var i = 0; i < el.children.length; i++) elementKids.push(el.children[i]);
     if (elementKids.length) {
       for (var k = 0; k < elementKids.length; k++) {
         var child = walk(elementKids[k], rect, win, pending);
         if (child) node.children.push(child);
       }
     }
-    if (tag !== "IMG") {
+    if (tag !== "IMG" && !isSvg) {
       var t = makeTextChild(el, cs, rect, rect);
       if (t) node.children.push(t);
     }
@@ -736,6 +785,11 @@
         wrap: false
       };
     }
+
+    // Once a layout is decided, size children properly: text HUGS its own
+    // height (so it isn't a tall box with top-aligned text), and FILLs the
+    // width in a column / HUGS in a row. Frames keep their measured size.
+    assignChildSizing(node);
 
     // Prune empty decorationless containers (never prune a tagged component).
     if (node.type === "FRAME" && !node.component && !hasOwnPaint(node) && !node.children.length && !node.clipsContent) return null;
