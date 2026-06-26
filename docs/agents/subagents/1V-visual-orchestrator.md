@@ -242,11 +242,24 @@ Edges:
 { "from": "p_<id>.out", "to": "s_<id>.in" }
 { "from": "s_<id>.out", "to": "r_<id>.in" }
 { "from": "r_<id>.out", "to": "a_<id>.in" }
+
+// v3.6 - character-consistency link (see Step 3.5). Anchor OUTPUT into the
+// dependent skill node's `ref` port - a typed reference edge, not the pipeline:
+{ "from": "a_<anchorId>.out", "to": "s_<depId>.ref", "kind": "reference" }
 ```
 
 **Auto-layout heuristic** for `x` / `y`: anchor on the asset node's position if it already exists (from Expose flow). Place prompt at `(asset.x − 720, asset.y)`, skill at `(asset.x − 360, asset.y)`, post (if any) at `(asset.x − 180, asset.y)`. If no asset node exists yet, stack new assets in a column at `x = 200`, `y = 200 + i * 340`.
 
 **Idempotency.** If a node with the target id already exists, update its `params` / `boundTo` / `path` in place; don't duplicate. If an edge with the same `(from, to)` exists, skip the append.
+
+### Step 3.5 (v3.6) - Character-consistency grouping, linking, and dispatch order
+
+When the SAME character / mascot / specific subject recurs across >= 2 `keep` slots, generating each independently drifts the identity (same style, different face). Lock it to one anchor. Runs after classification, before dispatch. Considers only `raster-foreground` / `raster-photo` assets (the only media `generate-image` can give a reference image).
+
+1. **Group by IDENTITY, not style.** Cluster assets depicting one recurring named character / subject. Clusters of size 1 are not groups (no link, dispatched in parallel as before). Style coherence is already handled by the style cue + the illustration library's "one entry per page" rule; this is about same face / body / outfit.
+2. **Pick the anchor** - the fullest, most front-facing view (hero register / largest bbox / earliest in DOM). The rest are `dependents`.
+3. **Link each dependent.** On `s_<depId>`: force `params.provider = "openai"`, `params.model = "gpt-image-1"` (img2img only works on gpt-image; the daemon 400s any other model carrying an input image - `editor/serve.py`), set `params.input_path = "<anchor outputPath>"`, add the typed `reference` edge (see Edges), and append the character-consistency clause to `p_<depId>.text` (template: `docs/research/imagegen-playbook.md` "character consistency"). Pass a `reference: { referenceAssetId, referenceImagePath, identityNote }` block to the dependent's drawer at dispatch. Anchors stay normal trios.
+4. **Record in `visual-plan.json`:** a `characterGroups[]` array (`{ characterId, anchorAssetId, dependentAssetIds[], identityNote }`) and a `dispatchOrder` (`wave1` = anchors + unlinked, `wave2` = dependents). No groups → `wave1` = all assets, `wave2` = []  (today's behaviour).
 
 ### Step 4 - Update slot markup (minimum-surface)
 
@@ -259,9 +272,11 @@ For each kept asset, edit `slot.file` to make the slot machine-readable for the 
 
 Edits are minimal: one attribute per slot. No restructuring.
 
-### Step 5 - Dispatch 1.V.\* per asset (parallel)
+### Step 5 - Dispatch 1.V.\* per asset (parallel, or in waves when linked)
 
 Spawn every per-asset drawer in **one Agent block with multiple tool calls** - same parallelism pattern as the top-level orchestrator (see [`../orchestrator.md`](../orchestrator.md) §Step 2).
+
+**(v3.6) Honour `dispatchOrder`.** If `visual-plan.json` carries `characterGroups`, do NOT fan out flat. Dispatch `wave1` (anchors + unlinked) first; wait for them to return AND verify each anchor PNG exists at its `outputPath`; only then dispatch `wave2` (dependents), each carrying its `reference` block. A dependent run before its anchor's file exists 404s on the reference `input_path`. No groups → `wave2` empty → single parallel fan-out.
 
 Envelope handed to each 1.V.\*:
 
@@ -275,6 +290,7 @@ genre:          "Editorial - magazine / longform"
 projectVoice:   "measured, narrative, varied sentence length"
 nodeIds:        { prompt, skill, post, asset }
 brief:          "Hand-drawn pencil sketch of a café floor plan, top-down view, …"
+reference:      { referenceAssetId, referenceImagePath, identityNote }  // v3.6, dependents only - omit otherwise
 codeContext:    <50 lines around slot.line from slot.file>
 === END ENVELOPE ===
 

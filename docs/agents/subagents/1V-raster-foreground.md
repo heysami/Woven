@@ -13,9 +13,12 @@ See [`1V-visual-orchestrator.md`](1V-visual-orchestrator.md) §Step 5. Verbatim 
 ```
 pipeline=["prompt","image-gen","rembg"]
 nodeIds: { prompt, skill, post, asset }   ← post is the rembg node
+reference: { referenceAssetId, referenceImagePath, identityNote }   // v3.6, dependents only - omit otherwise
 ```
 
 You may read: `slot.file`, `PROTOTYPE.md` §9 + genre row, this playbook.
+
+**(v3.6) Reference / character link.** When the envelope carries a `reference` block, this slot was linked by the orchestrator to an ANCHOR asset so its character identity stays consistent. Then: write a character-consistency EDIT prompt (name the reference as Image 1; preserve face / proportions / outfit / palette / personality; change only the scene/pose/action to the slot intent - template `docs/research/imagegen-playbook.md` "character consistency"), POST `generate-image` with `provider:"openai"`, `model:"gpt-image-1"`, AND `input_path:"<referenceImagePath>"` (img2img only works on gpt-image; the daemon 400s otherwise), and return those three plus `input_path` in `params` so a canvas re-Run reproduces the link. The rembg/chroma-key cutout still applies to the edited result.
 
 ## Output
 

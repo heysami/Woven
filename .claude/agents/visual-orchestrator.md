@@ -82,6 +82,12 @@ Edges:
 { "from": "p_<id>.out", "to": "s_<id>.in" }
 { "from": "s_<id>.out", "to": "r_<id>.in" }
 { "from": "r_<id>.out", "to": "a_<id>.in" }
+
+// v3.6 - character-consistency link (see "Step 4.5"). When a DEPENDENT asset
+// must match an ANCHOR asset's character identity, wire the anchor's OUTPUT
+// into the dependent skill node's `ref` port. This is a TYPED reference edge,
+// NOT the prompt pipeline - keep it distinct from the `.in` feed:
+{ "from": "a_<anchorId>.out", "to": "s_<depId>.ref", "kind": "reference" }
 ```
 
 **Auto-layout heuristic** for `x` / `y`: anchor on the asset node's position if it already exists (from an Expose flow). Place prompt at `(asset.x − 720, asset.y)`, skill at `(asset.x − 360, asset.y)`, post (if any) at `(asset.x − 180, asset.y)`. If no asset node exists yet, stack new asset trios in a column at `x = 200`, `y = 200 + i * 340`.
@@ -215,6 +221,41 @@ The key rule: **the vibe is a constraint on every visual choice**, not just on t
 6. **Write visual-plan.json** - every kept asset's id, medium, pipeline, slot, nodeIds, intent. This file is the dispatch manifest the parent agent uses to fan out drawers (see "DISPATCH" below).
 7. **Return** a short summary to the parent: how many slots, how many kept, dispatch manifest at `workflow/visual-plan.json`.
 
+## Step 4.5 (v3.6) - Character-consistency grouping, linking, and dispatch order
+
+Some projects reuse the SAME character / mascot / specific subject identity across more than one slot - a brand mascot in the hero AND in an empty-state, a recurring illustrated guide on three onboarding cards, the same product unit shot from two angles. Generated independently, those slots come back in the SAME described style but with DIFFERENT faces / proportions / outfits - the identity drifts. This step links them so the identity is locked to one anchor.
+
+Run this AFTER classification (Steps 2-3) and BEFORE you write the dispatch manifest (Step 6). It only considers `keep` assets whose medium is `raster-foreground` or `raster-photo` - those are the only media that go through `generate-image`, the only skill the daemon can hand a reference image.
+
+1. **Group by identity.** Read the assets' intents + surrounding code. Cluster assets that depict ONE recurring named character / mascot / specific subject. A cluster of size 1 is NOT a group - leave it alone (no link, no ordering; dispatched in parallel exactly as before). Only clusters of size >= 2 become a `characterGroup`. Do NOT group by mere style ("all watercolor") - the Step 0 style cue + the illustration library's "one entry per page" rule already enforce shared STYLE. This step is about shared IDENTITY (same face, same body, same outfit), which style alone never gives you.
+
+2. **Pick the anchor.** Within each group, designate ONE asset as the `anchor` - the canonical, fullest, most front-facing view of the character (heuristic: hero register / largest bbox / earliest full-body or face view in the DOM). The rest are `dependents`.
+
+3. **Link each dependent to its anchor.** On the dependent's skill node `s_<depId>`:
+   - FORCE `params.provider = "openai"` and `params.model = "gpt-image-1"`. Image-to-image only works on the OpenAI gpt-image family; the daemon 400s any other provider/model that carries an input image (`editor/serve.py`). Linked dependents therefore OVERRIDE the project's default image model. Non-linked assets keep the project model unchanged.
+   - Set `params.input_path = "<anchor outputPath>"` (e.g. `source/<branch>/images/<anchorAssetId>.png`). This is the reference image the daemon promotes to its `/v1/images/edits` endpoint so the anchor actually influences the dependent.
+   - Wire the typed reference edge `{ "from": "a_<anchorId>.out", "to": "s_<depId>.ref", "kind": "reference" }` (see Edges above).
+   - Append the character-consistency clause to the dependent prompt node text, after its `ASSET:` line (template: `docs/research/imagegen-playbook.md` "character consistency"):
+     ```
+     CHARACTER: use the reference image (Image 1) as the character anchor; preserve facial features, proportions, outfit, colour palette, and personality; same style as the anchor; change only the scene/pose/action to: <this slot's intent>.
+     ```
+   - Pass the `reference` block to the dependent's drawer at dispatch: `reference: { referenceAssetId, referenceImagePath: "<anchor outputPath>", identityNote }`.
+   - The anchor node is a normal trio - unchanged.
+
+4. **Record groups + dispatch order in `visual-plan.json`:**
+   ```jsonc
+   "characterGroups": [
+     { "characterId": "<slug>", "anchorAssetId": "<id>", "dependentAssetIds": ["<id>", ...],
+       "identityNote": "one line: who the character is" }
+   ],
+   "dispatchOrder": {
+     // The parent MUST honour these waves instead of one flat parallel fan-out.
+     "wave1": ["<every anchor assetId>", "<every UNLINKED assetId>"],
+     "wave2": ["<every dependent assetId>"]   // dispatched ONLY after its wave1 anchor PNG exists on disk
+   }
+   ```
+   With no groups, omit `characterGroups` and emit `dispatchOrder.wave1 = [all assetIds]`, `wave2 = []` - i.e. today's all-parallel behaviour, unchanged.
+
 ## Step 8 (v3.2) - QA pass: verify each asset in context, fix or regenerate
 
 **This is the missing piece a user just hit:** drawers generate assets, the assets land at `outputPath`, the HTML references them - and that's where the pipeline ended. There was no check that the asset actually FITS the slot, READS as the committed style, or makes the page LOOK right. Result: a watercolor hero next to a wrong-aspect raster icon next to a Tabler chevron. Visual-orchestrator's job isn't done until each asset has been verified IN-CONTEXT and any mismatches resolved.
@@ -287,6 +328,8 @@ This file is the auditable trail of what you checked, what you fixed, and what y
 Claude Code disallows `Task`-from-subagent in many configurations. So **you do not dispatch the per-medium drawers yourself**. Your job ends at step 7 above.
 
 Instead, the parent agent that spawned you reads `workflow/visual-plan.json` AFTER you return, then fans out the per-medium subagents (`raster-foreground`, `raster-photo`, `vector-icon`, `vector-mark`, `shader`, `particle-2d`, `particle-gl`, `lottie`, `3d`, `video`, `motion`) - one `Task` call per asset, in parallel.
+
+**(v3.6) Honour `dispatchOrder` - character-linked dependents are NOT flat-parallel.** If `visual-plan.json` carries `characterGroups`, the fan-out runs in WAVES: dispatch `dispatchOrder.wave1` (anchors + every unlinked asset) in parallel FIRST; wait for those drawers to return AND verify each anchor's PNG exists at its `outputPath`; only THEN dispatch `dispatchOrder.wave2` (the dependents), in parallel among themselves, each carrying its `reference` block. A dependent dispatched before its anchor's file exists will 404 on the reference `input_path` - the wave gate is exactly what prevents that. When there are no groups, `wave2` is empty and this collapses to the single parallel fan-out above.
 
 If you find that you CAN successfully invoke Task with a `subagent_type` set to one of those drawers (try once with one asset), great - do it for all assets. If the first attempt fails or returns an error indicating subagent-from-subagent isn't allowed, abandon dispatch and return the manifest to the parent. **Do NOT spend more than one round-trip trying.** Trying every asset and failing each time wastes minutes.
 

@@ -11,8 +11,11 @@ The orchestrator hands you a single envelope (see [`1V-visual-orchestrator.md`](
 ```
 assetId, medium="raster-photo", pipeline=["prompt","image-gen"],
 slot: { file, line, selector, outputPath, writeBack },
-genre, projectVoice, nodeIds, brief, codeContext
+genre, projectVoice, nodeIds, brief, codeContext,
+reference: { referenceAssetId, referenceImagePath, identityNote }   // v3.6, dependents only - omit otherwise
 ```
+
+**(v3.6) Reference / character link.** When the envelope carries a `reference` block, this slot was linked by the orchestrator to an ANCHOR asset (the same subject re-shot in another scene). Then: write a consistency EDIT prompt (name the reference as Image 1; preserve subject identity / geometry; change only scene / framing / lighting / weather - templates `docs/research/imagegen-playbook.md` "character consistency" / "lighting-weather"), POST `generate-image` with `provider:"openai"`, `model:"gpt-image-1"`, AND `input_path:"<referenceImagePath>"` (img2img only works on gpt-image; the daemon 400s otherwise), and return those plus `input_path` in `params` so a canvas re-Run reproduces the link.
 
 You may read:
 - `slot.file` (only)
