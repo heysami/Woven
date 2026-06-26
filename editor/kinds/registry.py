@@ -1420,7 +1420,7 @@ KINDS = {
         "runStatusFlow": ["queued", "running", "done", "error"],
         "completion":   {"requires": ["files: outputsRoot non-empty"]},
         "pauseAfter":   False,
-        "notes": "Single blended output from N weighted inputs. Not a fan-out.",
+        "notes": "Single blended output from N weighted inputs. Not a fan-out. Each entry in `slots` is {weight, criteria}: weight (0-10) sets how much that input dominates overall character; criteria is a HARD RETAIN directive (what must survive into the blend intact) that OUTRANKS weight - a low-weight input's criteria still wins for that specific detail. Leave criteria empty to blend that input freely.",
     },
 
     # ── color-palette ─────────────────────────────────────────────────────
