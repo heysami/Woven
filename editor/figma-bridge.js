@@ -494,6 +494,56 @@
     return null;
   }
 
+  // ---- Woven design-system components (by class) ------------------------
+  // The default-design-system uses BEM classes: a base (.btn/.tag/.card/...)
+  // + variant modifiers (.btn--primary, .tag--light). We map the base class to
+  // a component name and the modifier(s) to Variant/Size props, so DS-built
+  // prototypes come into Figma tagged + ready to map onto the real Figma
+  // library components (most are already auto-layout via their inline-flex CSS).
+
+  var WOVEN_DS_BASE = {
+    btn: "Button", "btn-split": "Button", "btn-group": "ButtonGroup", "check-btn": "Button",
+    link: "Link", tag: "Tag", badge: "Badge", status: "Status",
+    avatar: "Avatar", "avatar-stack": "AvatarStack",
+    input: "Input", select: "Select", textarea: "Textarea",
+    "input-icon": "Input", "input-affix": "Input",
+    checkbox: "Checkbox", radio: "Radio", switch: "Switch", chip: "Chip",
+    progress: "Progress", tooltip: "Tooltip",
+    field: "Field", segmented: "Segmented", tabs: "Tabs", tab: "Tab",
+    breadcrumbs: "Breadcrumbs", alert: "Alert", toast: "Toast", menu: "Menu",
+    pagination: "Pagination",
+    card: "Card", "section-card": "SectionCard", list: "List", feed: "Feed",
+    timeline: "Timeline", table: "Table", modal: "Modal", slideout: "Slideout",
+    "blank-slate": "EmptyState", separator: "Divider", "separator-v": "Divider",
+    kpi: "KPI", kv: "KeyValue"
+  };
+  var WOVEN_SIZE_MODS = { l: 1, s: 1, m: 1, sm: 1, xs: 1, lg: 1 };
+
+  function detectWovenComponent(el) {
+    if (!el.classList || !el.classList.length) return null;
+    var classes = [];
+    for (var i = 0; i < el.classList.length; i++) classes.push(el.classList[i]);
+    var base = null;
+    for (var b = 0; b < classes.length; b++) {
+      var c = classes[b];
+      if (c.indexOf("--") >= 0) continue;       // skip modifier classes
+      if (WOVEN_DS_BASE[c]) { base = c; break; }
+    }
+    if (!base) return null;
+    var props = {};
+    var prefix = base + "--";
+    for (var m = 0; m < classes.length; m++) {
+      var cm = classes[m];
+      if (cm.indexOf(prefix) === 0) {
+        var mod = cm.slice(prefix.length);
+        if (!mod) continue;
+        if (WOVEN_SIZE_MODS[mod]) props.Size = mod;
+        else props.Variant = mod;               // last appearance modifier wins
+      }
+    }
+    return { name: WOVEN_DS_BASE[base], props: props };
+  }
+
   // ---- interactive components (button / input / select / ...) -----------
   // Identified by tag (Woven prototypes use inline-styled <button>/<input>,
   // not consistent classes). These should become real auto-layout Figma
@@ -659,7 +709,9 @@
 
     decideLayout(cs, node);
 
-    var comp = detectComponent(el);
+    // Identity priority: explicit data-component / user rule -> Woven DS class
+    // -> tag-based interactive fallback (inline-styled buttons/inputs).
+    var comp = detectComponent(el) || detectWovenComponent(el);
     if (comp && comp.name) {
       node.component = comp.name;
       if (comp.props && Object.keys(comp.props).length) node.componentProps = comp.props;
