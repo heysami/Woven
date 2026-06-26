@@ -38578,36 +38578,43 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const inputBlocks = [];
       slotContents.forEach((c, i) => {
         const w = slots[i].weight ?? 1;
-        const crit = slots[i].criteria || "(no criteria specified)";
+        // The criteria is the user's RETAIN directive for this input - what
+        // must survive into the blend. Frame it as a hard instruction when
+        // present (not a passive label), so the model treats it as a
+        // constraint rather than a note about why the input is nice.
+        const critRaw = (slots[i].criteria || "").trim();
+        const head = critRaw
+          ? `### Input ${i + 1} · weight ${w}\nMUST RETAIN from this input (honor exactly): ${critRaw}`
+          : `### Input ${i + 1} · weight ${w} · no retain directive (blend freely)`;
         if (!c) {
           inputBlocks.push(`### Input ${i + 1} - UNWIRED (ignore)`);
           return;
         }
         if (c.kind === "text") {
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             "```\n" + (c.text || "") + "\n```"
           );
         } else if (c.kind === "html") {
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             `HTML source '${c.label}':\n` +
             "```html\n" + (c.text || "") + "\n```"
           );
         } else if (c.kind === "palette") {
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             `Palette '${c.label}': ${(c.swatches || []).map(s => `${s.name}=${s.value}`).join(", ")}`
           );
         } else if (c.kind === "typography") {
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             `Typography '${c.label}': sans=${c.fontFamily || ""}, mono=${c.monoFamily || ""}, ` +
             `levels=${(c.levels || []).map(lv => `${lv.name} ${lv.size}/${lv.weight}`).join(", ")}`
           );
         } else if (c.kind === "image-described") {
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             `Image reference '${c.label}' - described:\n` +
             "```\n" + (c.description || "") + "\n```"
           );
@@ -38615,12 +38622,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           // Legacy passthrough (shouldn't fire under the new flow, but
           // kept for graceful handling of unexpected upstream kinds).
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             `Image reference: ${c.label}`
           );
         } else {
           inputBlocks.push(
-            `### Input ${i + 1} · weight ${w} · criteria: ${crit}\n` +
+            head + "\n" +
             (c.text || c.kind)
           );
         }
@@ -38639,7 +38646,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // gate refuses that framing AND tells it inputs are FULL (so it
       // stops apologising for truncation that no longer exists).
       const systemInstruction =
-        "You are a content blender. You receive N inputs, each with a numeric weight (heavier weights dominate) and a 'criteria' note describing what's liked about that input. Produce ONE blended output that combines them.\n\n" +
+        "You are a content blender. You receive N inputs, each with a numeric weight (heavier weights dominate) and an optional 'MUST RETAIN' directive naming what the user wants preserved from that input. Produce ONE blended output that combines them.\n\n" +
         "ABSOLUTE RULES:\n" +
         "1. Output ONLY the blended content. Nothing else.\n" +
         "2. NO preamble (no 'Here's the blend', 'I'll blend…', 'Based on the inputs…').\n" +
@@ -38647,7 +38654,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         "4. NO notes about truncation - the inputs are complete; treat them as full.\n" +
         "5. NO trailing summary, no 'I hope this helps', no offer to revise.\n" +
         "6. Match the SHAPE of the inputs (markdown → markdown, code → code, prose → prose, a list → a list).\n" +
-        "7. Heavier-weight inputs dominate tone, structure, vocabulary, and detail level.\n\n" +
+        "7. Heavier-weight inputs dominate tone, structure, vocabulary, and detail level.\n" +
+        "8. A 'MUST RETAIN' directive is a HARD CONSTRAINT, not a hint: the named element MUST appear, intact and recognizable, in the output - even when it comes from a lighter-weight input. Retain directives OUTRANK weight. Weight decides how much of an input's overall character carries through; a retain directive decides what specifically is non-negotiable. Never average a retain directive away.\n" +
+        "9. If two retain directives conflict, satisfy both as far as possible and let the heavier weight break the tie - but drop neither silently.\n\n" +
         "If asked to 'blend' two paragraphs, you produce one paragraph. If asked to blend two markdown documents, you produce one markdown document. The reader will see ONLY your output - they cannot see this instruction or the input list, so don't reference them.";
       // Dispatch. Output card is spawned ONLY after the API call succeeds -
       // otherwise the user sees an empty asset/prompt while generation is
@@ -38680,13 +38689,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         //      model isn't anchored to any single source - weights actually
         //      reflect in the output)
         const imageSys =
-          "You synthesise ONE concrete image-generation prompt from N inputs. Each input has a weight (heavier weights dominate the result) and a 'criteria' note (what's liked about that input). Image references arrive as text descriptions - fold their visual qualities into the new prompt according to their weights.\n\n" +
+          "You synthesise ONE concrete image-generation prompt from N inputs. Each input has a weight (heavier weights dominate the result) and an optional 'MUST RETAIN' directive naming a visual quality the user wants preserved from that input. Image references arrive as text descriptions - fold their visual qualities into the new prompt according to their weights.\n\n" +
           "OUTPUT: ONE concrete imaging prompt as a single dense paragraph (50-100 words). Output ONLY the prompt - no preamble, no quotes, no commentary, no notes about weights or your process.\n\n" +
           "RULES:\n" +
           "1. Heavier weights dominate tone, palette, composition, subject choice.\n" +
           "2. Pull EVERY input into the prompt - none should be ignored.\n" +
-          "3. The output is a NEW image - not a description of any one input.\n" +
-          "4. Be specific: subject, composition, palette, style, light, mood.";
+          "3. A 'MUST RETAIN' directive is a HARD CONSTRAINT, not a hint: name that exact quality explicitly in the synthesised prompt, even when it comes from a lighter-weight input. Retain directives OUTRANK weight - weight shapes overall character, a retain directive fixes one non-negotiable detail. Never average a retain directive away.\n" +
+          "4. The output is a NEW image - not a description of any one input.\n" +
+          "5. Be specific: subject, composition, palette, style, light, mood.";
         try {
           const llmR = await fetch(apiUrl("/__llm_run"), {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -69862,7 +69872,7 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
                 }}/>
               <input className="workflow-node-iter-variant-input"
                 value=${s.criteria || ""}
-                placeholder="what's liked here…"
+                placeholder="must retain from this input…"
                 onInput=${(e) => {
                   const ns = slots.slice();
                   ns[i] = { ...ns[i], criteria: e.target.value };
