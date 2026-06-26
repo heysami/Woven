@@ -14475,9 +14475,10 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__figma_cli_run?project=<id>  body {url, name?}
     # The NO-TERMINAL path: the editor passes a prototype's live URL and the
     # daemon drives the vendored figma-cli (editor/tools/figma-cli) on the user's
-    # behalf - checks the Figma connection (auto-connects via Yolo if needed),
-    # then `recreate-url <url> --verify`. Returns figma-cli's output for the
-    # editor modal. The user clicks a button; they never open a terminal.
+    # behalf - checks the Figma connection via /health (Safe Mode, boots the
+    # daemon if needed), then `recreate-url <url> --name <name>` (which loads the
+    # page via Playwright). Returns figma-cli's output for the editor modal. The
+    # user clicks a button; they never open a terminal.
     def _figma_cli_run(self, qs):
         try:
             project_root = resolve_project_root(qs)

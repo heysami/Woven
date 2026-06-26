@@ -29660,7 +29660,7 @@ function ExportPromptHost() {
    The "export, but to Figma" sibling of runExportForNode. Opens FigmaSendModal,
    which takes the prototype's live rendered URL and POSTs it to /__figma_cli_run;
    the daemon drives figma-cli (editor/tools/figma-cli) to rebuild it in Figma
-   (recreate-url --verify). Requires the prototype open on the canvas (so we have
+   (recreate-url). Requires the prototype open on the canvas (so we have
    its URL) and figma-cli connected to Figma (Safe Mode plugin). No terminal. */
 function runSendToFigmaForNode(nodeId, nodeLabel) {
   try {
@@ -29697,7 +29697,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
       if (!url) {
         throw new Error("Open this prototype on the canvas first - figma-cli rebuilds it from its live URL.");
       }
-      setStep("Building in Figma with figma-cli. This can take a minute (it looks at the page, builds it, and verifies)...");
+      setStep("Building in Figma with figma-cli. This can take a minute (it loads the page and rebuilds it as auto-layout)...");
       const r = await fetch(apiUrl("/__figma_cli_run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -29726,7 +29726,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         <div className="modal-body">
           <p className="modal-hint" style=${{ marginTop: 0 }}>
             Rebuilds this prototype in Figma using <strong>figma-cli</strong> - it looks at the
-            page, builds it as auto-layout, and verifies the result. The daemon runs it for you.
+            page (via Playwright) and rebuilds it as auto-layout. The daemon runs it for you.
           </p>
           <p className="modal-hint" style=${{ marginTop: 6 }}>
             One-time: in <strong>Figma Desktop</strong>, import + run the <strong>figma-cli</strong>

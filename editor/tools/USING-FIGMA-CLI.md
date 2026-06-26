@@ -9,13 +9,15 @@
 
 This is the way to get a Woven prototype into Figma as a clean, auto-layout,
 component-using design. It uses [figma-cli](https://github.com/silships/figma-cli)
-(MIT) - an agent-driven CLI that looks at your design, builds it with `render`,
-and verifies itself by re-screenshotting (`--verify`). It is a separate tool with
-its **own** Figma plugin (not the Woven Bridge plugin in this folder).
+(MIT) - an agent-driven CLI. It can import a live page (`recreate-url`, via
+Playwright) and build with a JSX DSL (`render`, which can self-verify by
+re-screenshotting with `--verify`). It has its **own** Figma plugin ("FigCli"),
+used in Safe Mode.
 
-Why this and not the Woven Bridge plugin: a mechanical DOM->Figma walk can't make
-the semantic decisions ("this is a Button, instance it; this is an auto-layout
-column") that make a Figma file clean. figma-cli's agent makes them and verifies
+Why an agent CLI and not a mechanical converter: a mechanical DOM->Figma walk
+can't make the semantic decisions ("this is a Button, instance it; this is an
+auto-layout column") that make a Figma file clean. figma-cli's agent makes them
+and verifies
 the result. Woven's only job is to serve the prototype at a URL figma-cli can read.
 
 ---
@@ -56,9 +58,8 @@ figma-cli drives **Figma Desktop** locally (no API key). Two modes:
 
 1. In **Figma Desktop**: `Menu -> Plugins -> Development -> Import plugin from
    manifest...` and pick:
-   `editor/tools/figma-cli/plugin/manifest.json`
-   (this is **figma-cli's** plugin, not Woven Bridge).
-2. Run it: `Menu -> Plugins -> Development -> figma-cli` (keep the window open).
+   `editor/tools/figma-cli/plugin/manifest.json`  (the plugin is named **FigCli**)
+2. Run it: `Menu -> Plugins -> Development -> FigCli` (keep the window open).
 3. In a terminal: `figma-cli connect --safe`
 4. Check: `figma-cli daemon status` -> should show connected.
 
@@ -78,11 +79,13 @@ straight from the URL. Example (this project, screen `main2`, daemon on :5747):
 
 ```bash
 figma-cli recreate-url "http://localhost:5747/source/main2/index.html?project=demo-inhouse" \
-  --name "main2" --verify
+  --name "main2"
 ```
 
-- `recreate-url` is the agentic loop: it reads the live page, builds it with
-  auto-layout, and `--verify` screenshots the result so it can self-correct.
+- `recreate-url` loads the live page via Playwright and rebuilds it in Figma with
+  auto-layout. (It needs Playwright + a chromium browser installed in figma-cli;
+  the daemon sets `NODE_PATH` so its temp analyze script can find Playwright.)
+- `--verify` is for `render`/`render-batch`, NOT `recreate-url`.
 - For a phone frame: add `-w 375 -h 812`.
 
 **Finding the URL for any screen:** it's `http://<daemon-host:port>/source/<branch>/<entry>?project=<projectId>`
@@ -105,7 +108,7 @@ figma-cli is built to be driven by Claude Code in natural language (its `CLAUDE.
 is a "user says -> command" table). With it connected, you can just tell Claude
 Code: *"use figma-cli to recreate http://localhost:5747/source/main2/index.html?project=demo-inhouse
 in Figma, then tidy the auto-layout and instance any repeated components."* The
-agent will run `recreate-url`, `--verify`, `instantiate`, `set autolayout`, etc.
+agent will run `recreate-url`, `instantiate`, `set autolayout`, `render --verify`, etc.
 
 ---
 
@@ -121,9 +124,9 @@ Full command list: `editor/tools/figma-cli/REFERENCE.md` and `CLAUDE.md`.
 
 ---
 
-## Relationship to the Woven Bridge plugin (this folder)
+## History
 
-The Woven Bridge plugin + the editor's "Send to Figma" / "Tidy with agent" were an
-earlier, mechanical attempt (DOM capture -> nodes). figma-cli supersedes them for
-producing **clean** output. Woven Bridge still works as a raw transport if you want
-it, but for real design-system-quality Figma, use figma-cli per this guide.
+An earlier "Woven Bridge" plugin + a DOM-capture "Send to Figma" / "Tidy with
+agent" path were removed - a mechanical DOM->Figma walk couldn't produce clean
+output. figma-cli (this guide) replaced them. The editor's **Send to Figma**
+button now drives figma-cli via the daemon.
