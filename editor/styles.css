@@ -5868,6 +5868,8 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-radius: var(--radius-sm); padding: 2px 4px; cursor: pointer;
 }
 .wac-toggle { accent-color: var(--accent); width: 15px; height: 15px; }
+.wac-bgpick { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.wac-bgpick-hint { font-size: 10px; color: var(--text-faint); }
 
 /* Left inputs panel */
 .wai-item { display: flex; flex-direction: column; gap: 4px; }

@@ -28227,7 +28227,16 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     if (schema.some((e) => !e.__daemon)) onChange && onChange({ controls: next });
   };
 
-  if (!selected || !rect || !schema.length) return null;
+  // Native per-asset actions (the originally-requested move: surface the
+  // transparent-bg / crop affordances inside this panel) for the raster kinds
+  // that have no code to introspect. These write node fields directly via
+  // onChange (or fire an event the asset node handles, e.g. crop).
+  const akind = node.assetKind || "image";
+  const native = [];
+  if (akind === "image" || akind === "svg" || akind === "video") native.push({ nkey: "bg", kind: "bgcolor", label: "Background" });
+  if (akind === "image") native.push({ nkey: "crop", kind: "button", label: "Crop" });
+
+  if (!selected || !rect || (!schema.length && !native.length)) return null;
   const PANEL_W = 236, GAP = 12;
   const left = rect.right + GAP;
   if (shouldHideNodeChrome(rect, left, left + PANEL_W, 0)) return null;
@@ -28269,6 +28278,26 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
         onInput=${(ev) => onKnob(e, parseFloat(ev.target.value))}/>
     </div>`;
   };
+  const renderNative = (e) => {
+    if (e.kind === "bgcolor") {
+      return html`<div className="wac-row" key=${e.nkey}>
+        <label className="wac-label">${e.label}</label>
+        <div className="wac-bgpick">
+          <${WorkflowAssetBgColorPicker} nodeId=${nodeId} value=${node.bgColor || null} onChange=${(v) => onChange && onChange({ bgColor: v })}/>
+          ${node.bgColor
+            ? html`<button className="wac-mini" title="Clear to transparent" onClick=${() => onChange && onChange({ bgColor: null })}>clear</button>`
+            : html`<span className="wac-bgpick-hint">transparent</span>`}
+        </div>
+      </div>`;
+    }
+    if (e.kind === "button") {
+      return html`<div className="wac-row" key=${e.nkey}>
+        <label className="wac-label">${e.label}</label>
+        <button className="wac-mini" onClick=${() => window.dispatchEvent(new CustomEvent("th:asset-open-crop", { detail: { nodeId } }))}>Open</button>
+      </div>`;
+    }
+    return null;
+  };
   const panel = html`<div className="workflow-asset-controls-panel" data-node-id=${nodeId}
       style=${{ position: "fixed", top: rect.top + "px", left: left + "px", width: PANEL_W + "px", zIndex: 41 }}
       onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
@@ -28280,8 +28309,12 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       <button className="wac-mini wac-collapse" title=${collapsed ? "Expand" : "Collapse"} onClick=${() => setCollapsed((c) => !c)}>${collapsed ? "+" : "–"}</button>
     </div>
     ${collapsed ? null : html`<div className="wac-body">
+      ${native.length ? html`<div className="wac-group" key="__native">
+        ${schema.length ? html`<div className="wac-group-name">Asset</div>` : null}
+        ${native.map(renderNative)}
+      </div>` : null}
       ${groups.map((g) => html`<div className="wac-group" key=${g.name}>
-        ${groups.length > 1 ? html`<div className="wac-group-name">${g.name}</div>` : null}
+        ${(groups.length > 1 || native.length) ? html`<div className="wac-group-name">${g.name}</div>` : null}
         ${g.items.map(renderKnob)}
       </div>`)}
     </div>`}
@@ -55888,6 +55921,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // or downstream node referencing that path picks up the cropped bytes on the
   // th:asset-refresh bump. See WorkflowAssetCropModal.
   const [cropOpen, setCropOpen] = useState(false);
+  // The controls panel (portaled outside this node) opens crop via an event,
+  // since it can't reach this node-local state directly.
+  useEffect(() => {
+    const onOpenCrop = (ev) => { if (ev && ev.detail && ev.detail.nodeId === node.id) setCropOpen(true); };
+    window.addEventListener("th:asset-open-crop", onOpenCrop);
+    return () => window.removeEventListener("th:asset-open-crop", onOpenCrop);
+  }, [node.id]);
   // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
   // overflow probe, then write the device class + natural aspect back to
   // node.size so the adaptive sizing block downstream picks the right
@@ -57130,8 +57170,8 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ]}
       />`}
       ${selected && !hasPickedChild && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
-      ${selected && !hasPickedChild && kind === "html" && html`<${WorkflowAssetControlsPanel} node=${node} selected=${selected} onChange=${onChange}/>`}
-      ${selected && !hasPickedChild && kind === "html" && html`<${WorkflowAssetInputsPanel} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
+      ${selected && !hasPickedChild && kind !== "html" && kind !== "html-set" && html`<${WorkflowAssetControlsPanel} node=${node} selected=${selected} onChange=${onChange}/>`}
+      ${selected && !hasPickedChild && kind !== "html" && kind !== "html-set" && html`<${WorkflowAssetInputsPanel} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
     </div>
   `;
 }
