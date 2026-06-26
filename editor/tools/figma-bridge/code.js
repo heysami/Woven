@@ -405,9 +405,12 @@ function applyAutoLayout(frame, n) {
     try { frame.layoutWrap = "WRAP"; } catch (e) {}
     if (L.crossGap) { try { frame.counterAxisSpacing = L.crossGap; } catch (e) {} }
   }
-  // Keep the frame's rendered size rather than hugging its contents.
-  try { frame.primaryAxisSizingMode = "FIXED"; } catch (e) {}
-  try { frame.counterAxisSizingMode = "FIXED"; } catch (e) {}
+  // Inline components (buttons/tags/chips/inline spans) HUG their content
+  // (real hug, both axes AUTO); everything else keeps a fixed size here and the
+  // parent's layoutSizing (FILL/HUG/FIXED) refines it after append.
+  var hugMode = n.hug ? "AUTO" : "FIXED";
+  try { frame.primaryAxisSizingMode = hugMode; } catch (e) {}
+  try { frame.counterAxisSizingMode = hugMode; } catch (e) {}
   return true;
 }
 
@@ -450,8 +453,10 @@ function buildFrame(n) {
       try { node.x = src.x || 0; node.y = src.y || 0; } catch (e) {}
     }
   }
-  // Enabling auto-layout can hug the frame as children are added; restore size.
-  if (auto) { try { f.resize(s.w, s.h); } catch (e) {} }
+  // Restore the measured size for FIXED frames (enabling auto-layout can hug
+  // them as children are added). HUG frames must NOT be resized - they size to
+  // their content. The parent's layoutSizing refines non-root frames after this.
+  if (auto && !n.hug) { try { f.resize(s.w, s.h); } catch (e) {} }
   return f;
 }
 

@@ -472,31 +472,62 @@
     node.layout.counterAlign = inferCounterAlign(node, mode);
   }
 
+  function baseAutoLayout(cs, inline) {
+    return {
+      mode: inline ? "HORIZONTAL" : "VERTICAL",
+      gap: 0, crossGap: 0,
+      padding: readPadding(cs),
+      primaryAlign: "MIN",
+      counterAlign: inline ? "CENTER" : "MIN",
+      wrap: false
+    };
+  }
+
+  // EVERY frame gets an auto-layout (mandate: no plain absolute frames). Flex ->
+  // exact; clean stack -> inferred; otherwise a base auto-layout. For a grid or a
+  // messy multi-child frame whose children would reflow, the children are pinned
+  // ABSOLUTE so the visual is preserved while the frame still carries a layout.
+  // node.hug marks inline-level boxes (buttons/tags/chips/inline spans) that
+  // should genuinely hug their content (real hug, not fixed-width-looks-hugged).
   function decideLayout(cs, node) {
-    if (!node.children || node.children.length < 2) return;
+    if (node.type !== "FRAME") return;
+    var disp = cs.display || "";
+    var inline = disp.indexOf("inline") >= 0;
+    node.hug = inline;
+
     var flex = readFlexLayout(cs);
     if (flex) {
       node.layout = flex;
-      sortByOrder(node.children);
-      return;
+      if (node.children) sortByOrder(node.children);
+    } else if (node.children && node.children.length >= 2) {
+      if (disp.indexOf("grid") < 0) inferStackLayout(cs, node);   // sets layout if clean stack
+      if (!node.layout) {
+        node.layout = baseAutoLayout(cs, inline);
+        for (var i = 0; i < node.children.length; i++) node.children[i].absolute = true;
+      }
+    } else {
+      node.layout = baseAutoLayout(cs, inline);   // 0-1 children
     }
-    if ((cs.display || "").indexOf("grid") >= 0) return;   // grid: no Figma equiv yet, keep absolute
-    inferStackLayout(cs, node);
   }
 
-  // Per-child sizing inside an auto-layout (the plugin maps these to Figma
-  // layoutSizing + textAutoResize). Without this the plugin pins every child to
-  // its measured box, so text becomes a tall box with top-aligned glyphs.
+  // Per-child sizing inside an auto-layout (plugin -> Figma layoutSizing +
+  // textAutoResize). Text hugs its height; a frame hugs when inline (real hug)
+  // else fills the column width; images keep their measured box.
   function assignChildSizing(node) {
     if (!node.layout || !node.children) return;
     var vertical = node.layout.mode === "VERTICAL";
+    var parentHug = !!node.hug;
     for (var i = 0; i < node.children.length; i++) {
       var c = node.children[i];
       if (c.absolute) continue;
       if (c.type === "TEXT") {
-        c.sizing = { h: vertical ? "FILL" : "HUG", v: "HUG" };
+        c.sizing = { h: (parentHug || !vertical) ? "HUG" : "FILL", v: "HUG" };
+      } else if (c.type === "IMAGE") {
+        c.sizing = { h: "FIXED", v: "FIXED" };
+      } else {
+        if (c.hug) c.sizing = { h: "HUG", v: "HUG" };
+        else c.sizing = { h: (vertical && !parentHug) ? "FILL" : "HUG", v: "HUG" };
       }
-      // frames / images: leave unset -> plugin keeps the measured size (FIXED)
     }
   }
 
@@ -772,23 +803,22 @@
       _componentNames[ic.name] = true;
     }
 
-    // Buttons / fields become real auto-layout (padded, content-centered) even
-    // when they aren't CSS flex or have a single child.
-    if (ic && !node.layout) {
+    // Buttons / fields: refine the (already-assigned) auto-layout to horizontal,
+    // content-centered, and set hug - a button HUGS its label (real hug); a form
+    // field FILLs its container width.
+    if (ic) {
+      if (!node.layout) node.layout = baseAutoLayout(cs, true);
       var cg = (cs.columnGap && cs.columnGap !== "normal") ? px(cs.columnGap) : 0;
-      node.layout = {
-        mode: "HORIZONTAL",
-        gap: round(cg) || (ic.field ? 0 : 8),
-        padding: readPadding(cs),
-        primaryAlign: ic.field ? "MIN" : "CENTER",
-        counterAlign: "CENTER",
-        wrap: false
-      };
+      node.layout.mode = "HORIZONTAL";
+      node.layout.gap = round(cg) || (ic.field ? 0 : 8);
+      node.layout.padding = readPadding(cs);
+      node.layout.counterAlign = "CENTER";
+      node.layout.primaryAlign = ic.field ? "MIN" : "CENTER";
+      node.hug = ic.field ? false : true;
     }
 
-    // Once a layout is decided, size children properly: text HUGS its own
-    // height (so it isn't a tall box with top-aligned text), and FILLs the
-    // width in a column / HUGS in a row. Frames keep their measured size.
+    // Size children inside the auto-layout (text hugs height / fills column;
+    // inline frames hug; block frames fill the column).
     assignChildSizing(node);
 
     // Prune empty decorationless containers (never prune a tagged component).
@@ -835,6 +865,8 @@
       if (n) root.children.push(n);
     }
     decideLayout(win.getComputedStyle(rootEl), root);
+    root.hug = false;                 // the page frame is fixed-size, never hug
+    assignChildSizing(root);
 
     // Resolve all deferred image fills concurrently.
     return Promise.all(pending.map(function (job) {
