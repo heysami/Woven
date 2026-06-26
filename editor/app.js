@@ -9369,14 +9369,14 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
     return () => window.removeEventListener("keydown", onKey);
   }, [active]);
 
-  // Let the top-bar Go Live button (and any future caller) open a rail panel
-  // by name via a CustomEvent, without lifting this state up.
+  // Let any caller open a rail panel by name via a CustomEvent, without lifting
+  // this state up.
   useEffect(() => {
     const onOpen = (e) => {
       const which = e?.detail?.panel;
       // Overlays (pickers) toggle the rail's own active panel; tiling kinds
       // (tasks / comments / git) open a dock window via the App-level callback.
-      if (which === "runs" || which === "live") setActive(which);
+      if (which === "runs") setActive(which);
       else if (which === "tasks" || which === "comments" || which === "git") onOpenWindow && onOpenWindow(which);
     };
     window.addEventListener("th:open-rail-panel", onOpen);
@@ -9503,17 +9503,6 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
       <//>
       <${HoverTip}
         placement="left"
-        className=${"th-right-rail-btn" + (active === "live" ? " is-active" : "")}
-        ariaLabel="Open live & shares"
-        tip="Live & shares - multiplayer session + this project's shared prototypes"
-        onClick=${() => setActive(a => a === "live" ? null : "live")}
-      >
-        <span className="th-right-rail-icon-wrap">
-          <${Icon.Globe}/>
-        </span>
-      <//>
-      <${HoverTip}
-        placement="left"
         className=${"th-right-rail-btn" + (openKinds?.includes("comments") ? " is-active" : "")}
         ariaLabel="Open comments"
         tip="Comments - reviewer & live-guest feedback across the project (not AI build comments)"
@@ -9547,11 +9536,6 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
       <//>
     </nav>
     ${panel}
-    ${active === "live" && html`<${LiveSharesPanel}
-      railTop=${railTop}
-      panelRef=${panelRef}
-      onClose=${() => setActive(null)}
-    />`}
   <//>`;
 }
 
@@ -9875,208 +9859,29 @@ function SubagentPanel({ agent, runTitle }) {
   `;
 }
 
-/* LiveSharesPanel - third right-rail panel, scoped to the ACTIVE project. Two
-   sections:
-     1. Multiplayer - the project's live co-editing session (Go Live / End,
-        participants, live link, Commit / Publish). This is the "go live"
-        surface lifted out of the landing Shares tab (its wrong home). A live
-        session is project-level: it rides ANY of the project's share tunnels
-        for transport, but co-editing covers the whole project canvas.
-     2. Shared prototypes - the project's published Cloudflare tunnels, so you
-        can see + open what's currently shared without leaving the editor.
-   Read-only over existing endpoints (/__shares, /__live/<id>/…) - no daemon
-   change required. */
-function LiveSharesPanel({ railTop, panelRef, onClose }) {
-  const [data, setData] = useState(null);   // { shares, cloudflared }
-  const [busy, setBusy] = useState({});
-  const [err, setErr] = useState(null);
-  const [copiedId, setCopiedId] = useState(null);
-  // A live session dies with the daemon - if /__shares stops answering, don't
-  // keep reporting a stale "Live" state.
-  const [reachable, setReachable] = useState(true);
-  const proj = activeProjectId();
-  // Live-session GUESTS get a read-only view: they can see the live session +
-  // shared prototypes and copy the links, but cannot start/stop sessions or
-  // tunnels, end the session, or change roles. The host keeps full controls.
-  const isGuest = typeof window !== "undefined" && !!window.__thLiveActive;
-
-  const reload = useCallback(() => {
-    fetch("/__shares")
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
-      .then(j => { setReachable(true); setData(j); })
-      .catch(() => setReachable(false));
-  }, []);
-  useEffect(() => {
-    reload();
-    const t = setInterval(reload, 4000);
-    return () => clearInterval(t);
-  }, [reload]);
-
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
-  const liveOp = async (id, action, body) => {
-    setBusy(b => ({ ...b, [id]: true }));
-    try {
-      const r = await fetch(`/__live/${id}/${action}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `${action} failed`);
-      reload();
-    } catch (e) { flashErr(String(e.message || e)); }
-    finally { setBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
-  };
-  const tunnelOp = async (id, action, body) => {
-    setBusy(b => ({ ...b, [id]: true }));
-    try {
-      const r = await fetch(`/__share/${id}/${action}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `${action} failed`);
-      reload();
-    } catch (e) { flashErr(String(e.message || e)); }
-    finally { setBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
-  };
-  const copy = async (key, text) => {
-    try { await navigator.clipboard.writeText(text); } catch {}
-    setCopiedId(key);
-    setTimeout(() => setCopiedId(p => (p === key ? null : p)), 1600);
-  };
-
-  const allShares = (data && data.shares) || [];
-  const shares = allShares.filter(s => !proj || s.project === proj);
-  const cfMissing = !!(data && data.cloudflared && !data.cloudflared.found);
-  // Stable-URL (woven) mode is offered only when the broker is configured.
-  const wovenAvail = !!(data && data.woven && data.woven.available);
-  // A session is only live when its tunnel is up (see findLiveShare); 0-people
-  // sessions read as "waiting", not loud green.
-  const session = findLiveShare(shares, reachable);
-  const people = (session && session.live && session.live.participants) || [];
-  const isLive = !!session && people.length > 0;
-  // Pick a tunnel to host a NEW session: prefer one already running, else any.
-  const startShare = session
-    || shares.find(s => s.status === "running" || s.status === "starting")
-    || shares[0] || null;
-  const STATUS_META = {
-    running: { dot: "ok", label: "Running" }, starting: { dot: "warn", label: "Starting…" },
-    stopped: { dot: "idle", label: "Stopped" }, exited: { dot: "err", label: "Tunnel dropped" },
-    error: { dot: "err", label: "Error" }, "no-cloudflared": { dot: "err", label: "cloudflared missing" },
-  };
-
-  // Shared link row - truncated URL + copy/open as aligned icon buttons.
-  const linkRow = (key, url) => html`
-    <div className="th-live-link">
-      <code title=${url}>${url}</code>
-      <button className="th-icon-btn" title=${copiedId === key ? "Copied ✓" : "Copy link"} onClick=${() => copy(key, url)}>
-        <${copiedId === key ? Icon.Check : Icon.Copy}/>
-      </button>
-      <button className="th-icon-btn" title="Open in a new tab" onClick=${() => window.open(url, "_blank")}>
-        <${Icon.External}/>
-      </button>
-    </div>
-  `;
-
-  return createPortal(html`
-    <div
-      className="th-rail-panel th-live-panel"
-      ref=${panelRef}
-      style=${railTop != null ? { top: railTop + "px" } : null}>
-      <div className="runs-panel-head">
-        <span>Live & shares</span>
-        <button className="th-icon-btn" onClick=${reload} title="Refresh"><${Icon.Refresh}/></button>
-      </div>
-      <div className="th-rail-panel-body">
-        ${err && html`<div className="shares-error-banner">${err}</div>`}
-
-        <div className="th-live-section">
-          <div className="th-live-section-head">Multiplayer</div>
-          ${session ? (() => {
-            const liveUrl = (session.shareUrl || "") + "live/";
-            const isBusy = !!busy[session.id];
-            return html`
-              <div className=${"th-live-status" + (isLive ? " is-live" : "")}>
-                <span className="th-live-dot"/>
-                ${isLive ? html`Live · ${people.length} ${people.length === 1 ? "person" : "people"}` : "Live · waiting for people"}
-              </div>
-              ${people.length > 0 && html`
-                <div className="th-live-people">
-                  ${people.map(p => html`<span key=${p.guestId}
-                    title=${isGuest ? (p.name + " · " + p.role) : (p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)"))}
-                    onClick=${isGuest ? undefined : () => liveOp(session.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
-                    className="th-live-avatar"
-                    style=${{ background: p.color }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
-                </div>
-              `}
-              ${session.shareUrl && linkRow("live", liveUrl)}
-              ${!isGuest && html`
-                <div className="th-live-actions">
-                  <button className="th-live-end" disabled=${isBusy}
-                    title="End the live session - guests are disconnected; the tunnel keeps running for comments"
-                    onClick=${async () => { if (await uiConfirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
-                    <${Icon.Stop}/> End session
-                  </button>
-                </div>
-              `}
-            `;
-          })() : html`
-            <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
-            ${!isGuest && (startShare ? html`
-              <button className="go-live-cta"
-                disabled=${cfMissing || !!busy[startShare.id]}
-                title=${cfMissing ? "Install cloudflared first" : "Start a project live session - guests co-edit in real time, all runs use your agent"}
-                onClick=${() => liveOp(startShare.id, "start")}><${Icon.Globe}/> Go Live</button>
-              <div className="th-live-hint">Guests co-edit the project in real time · all runs use your agent.</div>
-            ` : html`
-              <div className="th-live-hint">Share a prototype below first - a live session needs a published tunnel to host on.</div>
-            `)}
-          `}
-        </div>
-
-        <div className="th-live-section">
-          <div className="th-live-section-head">Shared prototypes${shares.length ? " · " + shares.length : ""}</div>
-          ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local skills) to publish links.</div>`}
-          ${shares.length === 0 && html`
-            <div className="runs-empty">No shared prototypes in this project yet. Select a prototype node on the canvas and hit Share to publish one.</div>
-          `}
-          ${shares.map(s => {
-            const st = STATUS_META[s.status] || STATUS_META.stopped;
-            const isBusy = !!busy[s.id];
-            const running = s.status === "running" || s.status === "starting";
-            return html`
-              <div className="th-share-row" key=${s.id}>
-                <div className="th-share-row-top">
-                  <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
-                  <span className="th-share-row-label" title=${"source/" + s.prototype + "/ · " + st.label}>${s.label}</span>
-                  ${!isGuest && html`
-                    <button className=${"th-icon-btn" + (running ? " is-danger" : " is-primary")} disabled=${isBusy || (cfMissing && !running)}
-                      title=${running ? "Stop the tunnel - the public URL goes dark" : (cfMissing ? "Install cloudflared first" : "Start the tunnel")}
-                      onClick=${() => tunnelOp(s.id, running ? "stop" : "start")}>
-                      <${running ? Icon.Stop : Icon.Play}/>
-                    </button>
-                  `}
-                </div>
-                ${!isGuest && wovenAvail && html`
-                  <div className="th-share-mode" title=${s.mode === "woven"
-                      ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
-                      : "Randomised link - a random trycloudflare.com URL that changes on every restart"}>
-                    <button className=${"th-mode-opt" + (s.mode === "woven" ? " is-on" : "")}
-                      disabled=${isBusy || s.mode === "woven"}
-                      onClick=${() => s.mode !== "woven" && tunnelOp(s.id, "update", { mode: "woven" })}>Stable</button>
-                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
-                      disabled=${isBusy || s.mode !== "woven"}
-                      onClick=${() => s.mode === "woven" && tunnelOp(s.id, "update", { mode: "quick" })}>Randomised URL</button>
-                  </div>
-                `}
-                ${s.shareUrl && linkRow(s.id, s.shareUrl)}
-              </div>
-            `;
-          })}
-        </div>
-      </div>
-    </div>
-  `, document.body);
+/* ShareModeToggle - the per-share link-mode control. Two independent-looking
+   switches (Stable link / Randomised URL) instead of a hard either/or segmented
+   pick. Backed by ONE tunnel, so exactly one mode is active at a time: turning
+   the inactive switch on activates that mode (the other then reads off). The
+   Stable switch only appears when the Woven broker is configured. */
+function ShareModeToggle({ mode, wovenAvail, busy, onPick }) {
+  const isStable = mode === "woven";
+  const sw = (on, label, tip, target) => html`
+    <button type="button" className=${"share-switch" + (on ? " is-on" : "")}
+      role="switch" aria-checked=${on ? "true" : "false"}
+      disabled=${busy || on}
+      title=${tip}
+      onClick=${() => { if (!on) onPick(target); }}>
+      <span className="share-switch-track"><span className="share-switch-knob"/></span>
+      <span className="share-switch-label">${label}</span>
+    </button>`;
+  return html`
+    <div className="share-mode-switches">
+      ${wovenAvail && sw(isStable, "Stable link",
+        "Stable link - a permanent getwoven.design URL that survives daemon restarts", "woven")}
+      ${sw(!isStable, "Randomised URL",
+        "Randomised link - a random trycloudflare.com URL that changes on every restart", "quick")}
+    </div>`;
 }
 
 /* isProjectLive - a session counts as live only when the daemon is reachable,
@@ -10089,73 +9894,348 @@ function findLiveShare(shares, reachable) {
     && (s.status === "running" || s.status === "starting")) || null;
 }
 
-/* GoLiveButton - top-bar ICON button mirroring the project's multiplayer state.
-   Green when a session has people in it; click opens the Live & shares rail
-   panel (and, when idle with a hostable tunnel, starts the session first).
-   Project-scoped (not per-prototype). */
-function GoLiveButton() {
-  const [shares, setShares] = useState([]);
-  const [cfMissing, setCfMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [reachable, setReachable] = useState(true);
-  const proj = activeProjectId();
-  const reload = useCallback(() => {
-    fetch("/__shares")
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error("unreachable"))))
-      .then(j => {
-        setReachable(true);
-        setShares((j.shares || []).filter(s => !proj || s.project === proj));
-        setCfMissing(!!(j.cloudflared && !j.cloudflared.found));
-      })
-      .catch(() => setReachable(false));
-  }, [proj]);
-  useEffect(() => {
-    reload();
-    const t = setInterval(reload, 4000);
-    return () => clearInterval(t);
-  }, [reload]);
+/* shareSlugForNode - the source/<slug>/ root a node would publish under, or
+   null if it isn't a tunnel-shareable thing. Prototype nodes carry the slug
+   directly; html assets are shareable only when their file lives under source/. */
+function shareSlugForNode(node) {
+  if (!node) return null;
+  if (node.kind === "prototype") return prototypeSlugForNode(node);
+  if (node.kind === "asset" && (node.assetKind === "html" || node.assetKind === "html-set")) {
+    const p = node.path || node.sourceEntry || "";
+    let m = /^source\/(.+)\/[^/]+$/.exec(p);
+    if (m) return m[1];
+    m = /^source\/([^/]+)\/?$/.exec(p);
+    if (m) return m[1];
+  }
+  return null;
+}
 
+const SHARE_STATUS_META = {
+  running: { dot: "ok", label: "Running" }, starting: { dot: "warn", label: "Starting…" },
+  stopped: { dot: "idle", label: "Stopped" }, exited: { dot: "err", label: "Tunnel dropped" },
+  error: { dot: "err", label: "Error" }, "no-cloudflared": { dot: "err", label: "cloudflared missing" },
+};
+
+/* ShareMenuButton - the single top-bar SHARE surface (replaces the old Go Live
+   button + Live & shares rail panel). A green-dotted button that opens a tabbed
+   dropdown:
+     • Project        - the project's multiplayer live co-editing session. This
+                        is the ONLY thing that reads as "multiplayer"; plain
+                        prototype share links live under the next tab so a static
+                        share never presents as a live session.
+     • Prototype / HTML - every prototype + html asset, each with sharing (stable
+                        + randomised), user testing (when the capability is on),
+                        export to folder, and send to Figma.
+     • Visual Assets  - every non-html asset, with export to folder + send to
+                        Figma.
+   Reads /__shares (live + tunnel state) and /__workflow (the node list); acts
+   over the existing /__live, /__share, /__share/create, export + figma events. */
+function ShareMenuButton() {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState("project");
+  const [data, setData] = useState(null);    // /__shares: { shares, cloudflared, woven }
+  const [nodes, setNodes] = useState([]);    // /__workflow nodes
+  const [reachable, setReachable] = useState(true);
+  const [busy, setBusy] = useState({});
+  const [err, setErr] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [pos, setPos] = useState(null);      // anchored dropdown position
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const proj = activeProjectId();
+  const cap = useUserTestingCapability();
+  const utEnabled = !!(cap && cap.config && cap.config.enabled);
+  // A live-session GUEST gets a read-only view: they can see state + copy links
+  // but cannot start/stop sessions, end them, or change roles.
+  const isGuest = typeof window !== "undefined" && !!window.__thLiveActive;
+
+  const reloadShares = useCallback(() => {
+    fetch(apiUrl("/__shares"))
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("unreachable"))))
+      .then(j => { setReachable(true); setData(j); })
+      .catch(() => setReachable(false));
+  }, []);
+  const reloadNodes = useCallback(() => {
+    fetch(apiUrl("/__workflow"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setNodes(Array.isArray(j.nodes) ? j.nodes : []); })
+      .catch(() => {});
+  }, []);
+
+  // Lightweight always-on poll so the button's live indicator stays current.
+  useEffect(() => {
+    reloadShares();
+    const t = setInterval(reloadShares, 4000);
+    return () => clearInterval(t);
+  }, [reloadShares]);
+  // The node list only matters while the dropdown is open.
+  useEffect(() => {
+    if (!open) return;
+    reloadNodes();
+    const t = setInterval(reloadNodes, 6000);
+    return () => clearInterval(t);
+  }, [open, reloadNodes]);
+
+  // Close on outside click / Esc.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
+  const setB = (k, v) => setBusy(b => { const n = { ...b }; if (v) n[k] = true; else delete n[k]; return n; });
+  const liveOp = async (id, action, body) => {
+    setB(id, true);
+    try {
+      const r = await fetch(`/__live/${id}/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      reloadShares();
+    } catch (e) { flashErr(String(e.message || e)); } finally { setB(id, false); }
+  };
+  const tunnelOp = async (id, action, body) => {
+    setB(id, true);
+    try {
+      const r = await fetch(`/__share/${id}/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${action} failed`);
+      reloadShares();
+    } catch (e) { flashErr(String(e.message || e)); } finally { setB(id, false); }
+  };
+  const shareCreate = async (slug) => {
+    const k = "create:" + slug;
+    setB(k, true);
+    try {
+      const r = await fetch(apiUrl("/__share/create"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prototype: slug }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "share failed");
+      if (j.tunnelError) flashErr(j.tunnelError);
+      reloadShares();
+    } catch (e) { flashErr(String(e.message || e)); } finally { setB(k, false); }
+  };
+  const copy = async (key, text) => {
+    try { await navigator.clipboard.writeText(text); } catch {}
+    setCopiedId(key);
+    setTimeout(() => setCopiedId(p => (p === key ? null : p)), 1600);
+  };
+
+  const allShares = (data && data.shares) || [];
+  const shares = allShares.filter(s => !proj || s.project === proj);
+  const cfMissing = !!(data && data.cloudflared && !data.cloudflared.found);
+  const wovenAvail = !!(data && data.woven && data.woven.available);
   const session = findLiveShare(shares, reachable);
   const people = (session && session.live && session.live.participants) || [];
-  // "Live" reads as green only with at least one participant - a host-only,
-  // nobody-joined session is not what the user means by live.
   const isLive = !!session && people.length > 0;
   const startShare = session
     || shares.find(s => s.status === "running" || s.status === "starting")
     || shares[0] || null;
-  const openPanel = () => {
-    try { window.dispatchEvent(new CustomEvent("th:open-rail-panel", { detail: { panel: "live" } })); } catch {}
-  };
-  const onClick = async () => {
-    // A session already exists (even if empty) → just open the panel to manage.
-    if (session || !startShare || cfMissing) { openPanel(); return; }
-    setBusy(true);
+
+  const protoNodes = nodes.filter(n =>
+    n.kind === "prototype" || (n.kind === "asset" && (n.assetKind === "html" || n.assetKind === "html-set")));
+  const VISUAL_SKIP = new Set(["html", "html-set", "text"]);
+  const assetNodes = nodes.filter(n => n.kind === "asset" && !VISUAL_SKIP.has(n.assetKind));
+  const labelOf = (n) => n.label || n.title || shareSlugForNode(n) || n.id;
+  const shareForSlug = (slug) => shares.find(s => s.prototype === slug) || null;
+
+  const openUserTesting = (slug) => {
     try {
-      await fetch(`/__live/${startShare.id}/start`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-      });
+      const u = new URL(location.href);
+      u.searchParams.set("view", "usertesting");
+      u.searchParams.set("utproto", slug || "");
+      setOpen(false);
+      thNavigate(u.toString());
     } catch {}
-    setBusy(false);
-    reload();
-    openPanel();
   };
+
+  const toggle = () => {
+    setOpen(o => {
+      const nx = !o;
+      if (nx && btnRef.current) {
+        const r = btnRef.current.getBoundingClientRect();
+        setPos({ top: Math.round(r.bottom + 6), right: Math.round(window.innerWidth - r.right) });
+      }
+      return nx;
+    });
+  };
+
+  const linkRow = (key, url) => html`
+    <div className="th-live-link">
+      <code title=${url}>${url}</code>
+      <button className="th-icon-btn" title=${copiedId === key ? "Copied ✓" : "Copy link"} onClick=${() => copy(key, url)}>
+        <${copiedId === key ? Icon.Check : Icon.Copy}/>
+      </button>
+      <button className="th-icon-btn" title="Open in a new tab" onClick=${() => window.open(url, "_blank")}>
+        <${Icon.External}/>
+      </button>
+    </div>`;
+
+  // Per-share controls (status + start/stop + dual mode toggle + link), shared
+  // by every prototype row that has a share.
+  const shareControls = (s) => {
+    const st = SHARE_STATUS_META[s.status] || SHARE_STATUS_META.stopped;
+    const isBusy = !!busy[s.id];
+    const running = s.status === "running" || s.status === "starting";
+    return html`
+      <div className="share-controls">
+        <div className="share-controls-row">
+          <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
+          <span className="share-controls-status">${st.label}</span>
+          ${s.urlChanged && html`<span className="shares-url-changed" title="The randomised tunnel URL changed since last copy - resend the link">⚠ URL changed</span>`}
+          <span style=${{ flex: 1 }}></span>
+          <button className=${"th-icon-btn" + (running ? " is-danger" : " is-primary")} disabled=${isBusy || (cfMissing && !running)}
+            title=${running ? "Stop the tunnel - the public URL goes dark" : (cfMissing ? "Install cloudflared first" : "Start the tunnel")}
+            onClick=${() => tunnelOp(s.id, running ? "stop" : "start")}>
+            <${running ? Icon.Stop : Icon.Play}/>
+          </button>
+        </div>
+        <${ShareModeToggle} mode=${s.mode} wovenAvail=${wovenAvail} busy=${isBusy}
+          onPick=${(mode) => tunnelOp(s.id, "update", { mode })}/>
+        ${s.shareUrl ? linkRow(s.id, s.shareUrl) : html`<div className="th-live-hint">Start the tunnel to get a link.</div>`}
+      </div>`;
+  };
+
+  const exportBtn = (n) => html`
+    <button className="share-act-btn" title="Export this to a folder"
+      onClick=${() => { setOpen(false); runExportForNode(n.id, labelOf(n)); }}>
+      <${Icon.Folder}/> Export
+    </button>`;
+  const figmaBtn = (n) => html`
+    <button className="share-act-btn" title="Send to Figma - the prototype/asset must be open on the canvas"
+      onClick=${() => { setOpen(false); runSendToFigmaForNode(n.id, labelOf(n)); }}>
+      <${Icon.Figma}/> Figma
+    </button>`;
+
   const tip = isLive
-    ? `Live · ${people.length} ${people.length === 1 ? "person" : "people"} - open Live & shares`
-    : session
-      ? "Live session open · waiting for people - open Live & shares"
-      : (startShare ? "Go Live - start a project multiplayer session"
-                    : "Go Live - share a prototype first to host a session");
+    ? `Live · ${people.length} ${people.length === 1 ? "person" : "people"} - open Share`
+    : "Share - publish, go live, export & send to Figma";
+
+  const menu = open && pos && createPortal(html`
+    <div ref=${menuRef} className="share-menu" style=${{ top: pos.top + "px", right: pos.right + "px" }}>
+      <div className="share-menu-tabs">
+        ${[["project", "Project"], ["protos", "Prototype / HTML"], ["assets", "Visual Assets"]].map(([t, lab]) => html`
+          <button key=${t} className="share-menu-tab" data-active=${tab === t ? "true" : "false"} onClick=${() => setTab(t)}>${lab}</button>`)}
+        <span style=${{ flex: 1 }}></span>
+        <button className="th-icon-btn" title="Refresh" onClick=${() => { reloadShares(); reloadNodes(); }}><${Icon.Refresh}/></button>
+      </div>
+      ${err && html`<div className="shares-error-banner">${err}</div>`}
+      ${!reachable && html`<div className="th-live-hint">Daemon unreachable - sharing is offline.</div>`}
+      <div className="share-menu-body">
+        ${tab === "project" && html`
+          <div className="share-menu-section">
+            <div className="th-live-hint">Multiplayer live co-editing for the whole project. Guests co-edit in real time; all runs use your agent.</div>
+            ${session ? (() => {
+              const liveUrl = (session.shareUrl || "") + "live/";
+              const isBusy = !!busy[session.id];
+              return html`
+                <div className=${"th-live-status" + (isLive ? " is-live" : "")}>
+                  <span className="th-live-dot"/>
+                  ${isLive ? html`Live · ${people.length} ${people.length === 1 ? "person" : "people"}` : "Live · waiting for people"}
+                </div>
+                ${people.length > 0 && html`
+                  <div className="th-live-people">
+                    ${people.map(p => html`<span key=${p.guestId}
+                      title=${isGuest ? (p.name + " · " + p.role) : (p.name + " · " + p.role + (p.role === "viewer" ? " (click → editor)" : " (click → viewer)"))}
+                      onClick=${isGuest ? undefined : () => liveOp(session.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
+                      className="th-live-avatar" style=${{ background: p.color }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
+                  </div>`}
+                ${session.shareUrl && linkRow("live", liveUrl)}
+                ${!isGuest && html`
+                  <div className="th-live-actions">
+                    <button className="th-live-end" disabled=${isBusy}
+                      title="End the live session - guests are disconnected; the tunnel keeps running for comments"
+                      onClick=${async () => { if (await uiConfirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
+                      <${Icon.Stop}/> End session
+                    </button>
+                  </div>`}`;
+            })() : html`
+              <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
+              ${!isGuest && (startShare ? html`
+                <button className="go-live-cta" disabled=${cfMissing || !!busy[startShare.id]}
+                  title=${cfMissing ? "Install cloudflared first" : "Start a project live session"}
+                  onClick=${() => liveOp(startShare.id, "start")}><${Icon.Globe}/> Go Live</button>
+              ` : html`
+                <div className="th-live-hint">Share a prototype first (Prototype / HTML tab) - a live session needs a published tunnel to host on.</div>
+              `)}
+            `}
+          </div>
+        `}
+        ${tab === "protos" && html`
+          <div className="share-menu-section">
+            ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local skills) to publish links.</div>`}
+            ${protoNodes.length === 0 && html`<div className="runs-empty">No prototypes or HTML assets in this project yet.</div>`}
+            ${protoNodes.map(n => {
+              const slug = shareSlugForNode(n);
+              const s = slug ? shareForSlug(slug) : null;
+              const creating = slug ? !!busy["create:" + slug] : false;
+              return html`
+                <div className="share-item" key=${n.id}>
+                  <div className="share-item-head">
+                    <span className="share-item-glyph"><${n.kind === "prototype" ? Icon.Globe : Icon.Image}/></span>
+                    <span className="share-item-label" title=${slug ? "source/" + slug + "/" : labelOf(n)}>${labelOf(n)}</span>
+                  </div>
+                  ${slug ? (s ? shareControls(s) : html`
+                    <button className="share-create-cta" disabled=${creating || cfMissing}
+                      title=${cfMissing ? "cloudflared not installed" : "Publish this through a Cloudflare tunnel"}
+                      onClick=${() => shareCreate(slug)}>
+                      <${Icon.Globe}/> ${creating ? "Publishing…" : "Share via tunnel"}
+                    </button>`) : html`<div className="th-live-hint">Not under source/ - can't publish a link; export or send to Figma instead.</div>`}
+                  <div className="share-item-actions">
+                    ${utEnabled && slug && html`<button className="share-act-btn" title="Open user testing for this prototype"
+                      onClick=${() => openUserTesting(slug)}><${Icon.Eye}/> User testing</button>`}
+                    ${exportBtn(n)}
+                    ${figmaBtn(n)}
+                  </div>
+                </div>`;
+            })}
+          </div>
+        `}
+        ${tab === "assets" && html`
+          <div className="share-menu-section">
+            ${assetNodes.length === 0 && html`<div className="runs-empty">No visual assets in this project yet.</div>`}
+            ${assetNodes.map(n => html`
+              <div className="share-item" key=${n.id}>
+                <div className="share-item-head">
+                  <span className="share-item-glyph"><${Icon.Image}/></span>
+                  <span className="share-item-label" title=${labelOf(n)}>${labelOf(n)}</span>
+                </div>
+                <div className="share-item-actions">
+                  ${exportBtn(n)}
+                  ${figmaBtn(n)}
+                </div>
+              </div>`)}
+          </div>
+        `}
+      </div>
+    </div>
+  `, document.body);
+
   return html`
-    <button
-      type="button"
-      className=${"go-live-btn" + (isLive ? " is-live" : "")}
-      aria-label=${isLive ? `Live, ${people.length} people` : "Go Live"}
-      title=${tip}
-      onClick=${onClick}
-    >
-      <span className=${"go-live-dot" + (isLive ? " is-live" : "")}/>
-      <span className="go-live-label">${isLive ? `Live · ${people.length}` : "Go Live"}</span>
-    </button>
+    <${React.Fragment}>
+      <button
+        ref=${btnRef}
+        type="button"
+        className=${"go-live-btn share-menu-btn" + (isLive ? " is-live" : "")}
+        aria-haspopup="true"
+        aria-expanded=${open ? "true" : "false"}
+        title=${tip}
+        onClick=${toggle}
+      >
+        <span className=${"go-live-dot" + (isLive ? " is-live" : "")}/>
+        <span className="go-live-label">${isLive ? `Share · Live ${people.length}` : "Share"}</span>
+      </button>
+      ${menu}
+    <//>
   `;
 }
 
@@ -21367,9 +21447,9 @@ function SharesLanding({ onCountChange }) {
     if (s.urlChanged) op(s.id, "ack_url");
   };
   // Live-session / Go-Live management moved OUT of this landing tab into the
-  // editor's right-rail "Live & shares" panel (LiveSharesPanel) - its old home
-  // here was the wrong location. This tab now only manages the tunnels +
-  // links + comments for shared prototypes.
+  // top-bar Share menu (ShareMenuButton → Project tab) - its old home here was
+  // the wrong location. This tab now only manages the tunnels + links +
+  // comments for shared prototypes.
 
   const shares = (data && data.shares) || [];
   const cfMissing = data && data.cloudflared && !data.cloudflared.found;
@@ -21479,18 +21559,8 @@ function SharesLanding({ onCountChange }) {
                 <${Icon.Comment}/> ${cc.open || 0}<span className="shares-row-comments-total">/${cc.total || 0}</span>
               </div>
               <div className="shares-row-actions">
-                ${wovenAvail && html`
-                  <div className="th-share-mode" title=${s.mode === "woven"
-                      ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
-                      : "Randomised link - a random trycloudflare.com URL that changes on every restart"}>
-                    <button className=${"th-mode-opt" + (s.mode === "woven" ? " is-on" : "")}
-                      disabled=${isBusy || s.mode === "woven"}
-                      onClick=${() => s.mode !== "woven" && op(s.id, "update", { mode: "woven" })}>Stable</button>
-                    <button className=${"th-mode-opt" + (s.mode !== "woven" ? " is-on" : "")}
-                      disabled=${isBusy || s.mode !== "woven"}
-                      onClick=${() => s.mode === "woven" && op(s.id, "update", { mode: "quick" })}>Randomised URL</button>
-                  </div>
-                `}
+                <${ShareModeToggle} mode=${s.mode} wovenAvail=${wovenAvail} busy=${isBusy}
+                  onPick=${(mode) => op(s.id, "update", { mode })}/>
                 ${s.status === "running" || s.status === "starting"
                   ? html`<button className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "stop")} title="Stop the tunnel - the public URL goes dark">Stop</button>`
@@ -42065,7 +42135,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           tip=${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}
           onClick=${() => { if (zoom !== 1) setZoom(1); }}
         >${Math.round(zoom * 100)}%<//>
-        <${GoLiveButton}/>
+        <${ShareMenuButton}/>
       </div>
       ${fullscreen && html`
         <button
@@ -51423,18 +51493,8 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
               ? html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("stop")}>Stop</button>`
               : html`<button className="shares-btn shares-btn-primary" disabled=${shareBusy || !cloudflared} onClick=${() => shareOp("start")}>Start</button>`}
           </div>
-          ${wovenAvail && html`
-            <div key="mode" className="th-share-mode" title=${share.mode === "woven"
-                ? "Stable link - a permanent getwoven.design URL that survives daemon restarts"
-                : "Randomised link - a random trycloudflare.com URL that changes on every restart"}>
-              <button className=${"th-mode-opt" + (share.mode === "woven" ? " is-on" : "")}
-                disabled=${shareBusy || share.mode === "woven"}
-                onClick=${() => share.mode !== "woven" && shareOp("update", { mode: "woven" })}>Stable</button>
-              <button className=${"th-mode-opt" + (share.mode !== "woven" ? " is-on" : "")}
-                disabled=${shareBusy || share.mode !== "woven"}
-                onClick=${() => share.mode === "woven" && shareOp("update", { mode: "quick" })}>Randomised URL</button>
-            </div>
-          `}
+          <${ShareModeToggle} key="mode" mode=${share.mode} wovenAvail=${wovenAvail} busy=${shareBusy}
+            onPick=${(mode) => shareOp("update", { mode })}/>
           ${share.shareUrl && html`
             <div key="surl" className="workflow-comments-share-url">
               <code title=${share.shareUrl}>${share.shareUrl}</code>
@@ -78439,7 +78499,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
             <${Icon.Send}/> ${runActive ? "Running…" : "Submit"}
           </button>
         </div>
-        <${GoLiveButton}/>
+        <${ShareMenuButton}/>
       </div>
     </div>
   `;

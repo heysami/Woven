@@ -1641,7 +1641,13 @@ def share_summary(rec):
     out["shareUrl"] = (url.rstrip("/") + "/s/" + rec.get("token", "") + "/") if url else ""
     out["localUrl"] = (f"http://127.0.0.1:{GATE_PORT}/s/{rec.get('token','')}/"
                        if GATE_PORT else "")
-    out["urlChanged"] = bool(rec.get("prevUrl")) and rec.get("prevUrl") != rec.get("lastUrl")
+    # URL-change detection only makes sense for the randomised (quick) tunnel,
+    # whose *.trycloudflare.com URL is reassigned on every restart. The stable
+    # (woven) link is a fixed getwoven.design URL that never changes, so it must
+    # never raise the "URL changed - resend the link" flag.
+    out["urlChanged"] = (share_mode(rec) != "woven"
+                         and bool(rec.get("prevUrl"))
+                         and rec.get("prevUrl") != rec.get("lastUrl"))
     out["hasThumbnail"] = False
     out["thumbnailV"] = 0
     try:
