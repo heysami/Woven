@@ -29697,7 +29697,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
       if (!url) {
         throw new Error("Open this prototype on the canvas first - figma-cli rebuilds it from its live URL.");
       }
-      setStep("An agent is rebuilding this in Figma with figma-cli - importing the page, then restructuring it into clean auto-layout + components. This takes a few minutes...");
+      setStep("Building in Figma with figma-cli. This can take a minute (it loads the page and rebuilds it as auto-layout)...");
       const r = await fetch(apiUrl("/__figma_cli_run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -29725,9 +29725,8 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         </div>
         <div className="modal-body">
           <p className="modal-hint" style=${{ marginTop: 0 }}>
-            An <strong>agent</strong> rebuilds this prototype in Figma using figma-cli - it imports the
-            page, then restructures it into clean auto-layout and instances repeated components. Takes a
-            few minutes; the daemon runs it for you.
+            Rebuilds this prototype in Figma using <strong>figma-cli</strong> - it looks at the
+            page (via Playwright) and rebuilds it as auto-layout. The daemon runs it for you.
           </p>
           <p className="modal-hint" style=${{ marginTop: 6 }}>
             One-time: in <strong>Figma Desktop</strong>, import + run the <strong>figma-cli</strong>
