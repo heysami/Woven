@@ -498,7 +498,10 @@
   // Figma auto-layout has no per-child auto margin, so insert a FILL spacer
   // before it - the spacer eats the free space and pushes the rest to the end.
   function injectAutoMarginSpacers(node) {
-    if (!node.children) return;
+    // Only a ROW: margin-left:auto pushes along the main axis horizontally. In a
+    // column it's a cross-axis margin (centering), NOT a vertical push - injecting
+    // a FILL spacer there would balloon the column with empty vertical space.
+    if (!node.children || !node.layout || node.layout.mode !== "HORIZONTAL") return;
     var out = [];
     for (var i = 0; i < node.children.length; i++) {
       var c = node.children[i];
@@ -945,9 +948,10 @@
     // inline frames hug; block frames fill the column).
     assignChildSizing(node);
 
-    // Prune empty decorationless containers (never prune a tagged component, and
-    // never prune a grid cell - keepSelf - since it holds a column position).
-    if (node.type === "FRAME" && !node.component && !hasOwnPaint(node) && !node.children.length && !node.clipsContent && !keepSelf) return null;
+    // Prune empty decorationless containers (never prune a tagged component, a
+    // grid cell - keepSelf - which holds a column position, or a flex-grow
+    // spacer like a header's <div style="flex:1"/> that right-aligns siblings).
+    if (node.type === "FRAME" && !node.component && !hasOwnPaint(node) && !node.children.length && !node.clipsContent && !keepSelf && !node._grow) return null;
     if (!node.fills.length) delete node.fills;
     if (!node.strokes.length) delete node.strokes;
     if (!node.effects.length) delete node.effects;
