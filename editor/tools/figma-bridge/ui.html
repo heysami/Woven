@@ -12,11 +12,13 @@
   h1 { font-size: 13px; margin: 0 0 2px; letter-spacing: .2px; }
   .sub { font-size: 11px; opacity: .65; margin: 0 0 12px; }
   label { display: block; font-size: 11px; opacity: .8; margin: 8px 0 3px; }
-  input {
+  input, select {
     width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit;
     border: 1px solid rgba(128,128,128,.4); border-radius: 6px;
     background: transparent; color: inherit;
   }
+  select { appearance: auto; }
+  a { color: #0d99ff; text-decoration: none; }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
   button {
     font: inherit; font-weight: 600; padding: 7px 12px; border-radius: 6px;
@@ -40,10 +42,23 @@
   <h1>Woven Bridge</h1>
   <p class="sub">Receives designs sent from the Woven editor and builds them here as editable layers.</p>
 
-  <label for="base">Woven daemon URL</label>
-  <input id="base" placeholder="http://127.0.0.1:5731" />
-  <label for="project">Project id</label>
-  <input id="project" placeholder="default" />
+  <label for="daemon">Woven daemon</label>
+  <div class="row" style="margin-top:3px;">
+    <select id="daemon" style="flex:1;"></select>
+    <button id="rescan" class="secondary" style="padding:6px 10px;">Rescan</button>
+  </div>
+  <label for="project">Project</label>
+  <select id="project"></select>
+
+  <div style="margin-top:8px;">
+    <a href="#" id="advToggle" style="font-size:11px; opacity:.75;">Advanced: enter a URL manually</a>
+    <div id="adv" style="display:none; margin-top:6px;">
+      <div class="row" style="margin-top:0;">
+        <input id="base" placeholder="http://127.0.0.1:5731" style="flex:1;" />
+        <button id="useUrl" class="secondary" style="padding:6px 10px;">Use</button>
+      </div>
+    </div>
+  </div>
 
   <div class="row">
     <button id="toggle">Connect</button>
@@ -68,16 +83,100 @@
   var pendingResolve = null;
   var currentDsRef = "default", currentComponents = [], bindingsMap = {};
 
-  var LS = {
-    base: "wovenFigma.base",
-    project: "wovenFigma.project"
-  };
-  try {
-    $("base").value = localStorage.getItem(LS.base) || "http://127.0.0.1:5731";
-    $("project").value = localStorage.getItem(LS.project) || "default";
-  } catch (e) {
-    $("base").value = "http://127.0.0.1:5731";
-    $("project").value = "default";
+  var LS = { base: "wovenFigma.base", project: "wovenFigma.project" };
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  // Localhost ports a Woven daemon is likely on: default 5731, a few daemons
+  // running side by side, the Claude-preview range, and common dev ports.
+  var CANDIDATE_PORTS = [5731, 5732, 5733, 5734, 5735, 5747, 5748, 5749, 5750, 3000, 4000, 5173, 8000, 8080];
+  var daemons = [];   // [{ base, projects: [{id,label}] }]
+
+  function normUrl(raw) {
+    raw = (raw || "").trim().replace(/\/+$/, "");
+    if (raw && !/^https?:\/\//i.test(raw)) raw = "http://" + raw;
+    return raw;
+  }
+
+  // A daemon answers GET /__projects with { projects: [...] }; that JSON shape
+  // is our "this is Woven" signal AND the project list for the dropdown.
+  async function probe(base) {
+    try {
+      var ctrl = new AbortController();
+      var to = setTimeout(function () { ctrl.abort(); }, 700);
+      var r = await fetch(base + "/__projects", { signal: ctrl.signal });
+      clearTimeout(to);
+      if (!r.ok) return null;
+      var j = await r.json();
+      if (j && Array.isArray(j.projects)) return { base: base, projects: j.projects };
+    } catch (e) {}
+    return null;
+  }
+
+  function fillProjects(projects) {
+    var sel = $("project");
+    sel.innerHTML = "";
+    if (!projects || !projects.length) {
+      var o = document.createElement("option");
+      o.value = "default"; o.textContent = "(default)";
+      sel.appendChild(o);
+      return;
+    }
+    projects.forEach(function (p) {
+      var o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = (p.label && p.label !== p.id) ? (p.label + "  (" + p.id + ")") : (p.label || p.id);
+      sel.appendChild(o);
+    });
+    var lastP = lsGet(LS.project);
+    if (lastP && projects.some(function (p) { return p.id === lastP; })) sel.value = lastP;
+  }
+
+  function currentDaemon() {
+    var b = $("daemon").value;
+    for (var i = 0; i < daemons.length; i++) if (daemons[i].base === b) return daemons[i];
+    return null;
+  }
+  function onDaemonChange() {
+    var d = currentDaemon();
+    fillProjects(d ? d.projects : []);
+  }
+
+  function fillDaemons() {
+    var sel = $("daemon");
+    sel.innerHTML = "";
+    if (!daemons.length) {
+      var o = document.createElement("option");
+      o.value = ""; o.textContent = "No Woven daemon found";
+      sel.appendChild(o);
+      $("toggle").disabled = true;
+      fillProjects([]);
+      return;
+    }
+    daemons.forEach(function (d) {
+      var o = document.createElement("option");
+      var n = d.projects.length;
+      o.value = d.base;
+      o.textContent = d.base.replace(/^https?:\/\//, "") + " · " + n + " project" + (n === 1 ? "" : "s");
+      sel.appendChild(o);
+    });
+    $("toggle").disabled = false;
+    var lastB = lsGet(LS.base);
+    if (lastB && daemons.some(function (d) { return d.base === lastB; })) sel.value = lastB;
+    onDaemonChange();
+  }
+
+  async function scan() {
+    if (connected) return;
+    $("rescan").disabled = true;
+    log("Scanning localhost for Woven daemons...");
+    var bases = CANDIDATE_PORTS.map(function (p) { return "http://127.0.0.1:" + p; });
+    var found = (await Promise.all(bases.map(probe))).filter(Boolean);
+    daemons = found;
+    fillDaemons();
+    $("rescan").disabled = false;
+    if (found.length) log("Found " + found.length + " daemon" + (found.length === 1 ? "" : "s") + ".", "log-ok");
+    else log("None found. Start Woven, then Rescan - or use Advanced.", "log-err");
   }
 
   function log(msg, cls) {
@@ -91,13 +190,7 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function baseUrl() {
-    var raw = ($("base").value || "").trim().replace(/\/+$/, "");
-    // Without a scheme, fetch parses "localhost:5747" as protocol "localhost:"
-    // and throws "Failed to fetch". Default bare host:port to http://.
-    if (raw && !/^https?:\/\//i.test(raw)) raw = "http://" + raw;
-    return raw;
-  }
+  function baseUrl() { return ($("daemon").value || "").trim(); }
   function projectId() { return ($("project").value || "default").trim() || "default"; }
   function apiUrl(path) { return baseUrl() + path + "?project=" + encodeURIComponent(projectId()); }
 
@@ -106,8 +199,11 @@
     $("dot").className = on ? "dot on" : "dot";
     $("state").textContent = on ? "Listening for designs" : "Disconnected";
     $("toggle").textContent = on ? "Disconnect" : "Connect";
-    $("base").disabled = on;
+    $("daemon").disabled = on;
     $("project").disabled = on;
+    $("rescan").disabled = on;
+    $("base").disabled = on;
+    $("useUrl").disabled = on;
   }
 
   // Relay a status from the plugin sandbox back to the daemon (so the editor
@@ -232,17 +328,40 @@
     }
   }
 
+  $("daemon").onchange = onDaemonChange;
+  $("rescan").onclick = function () { scan(); };
+  $("advToggle").onclick = function (e) {
+    e.preventDefault();
+    var a = $("adv");
+    a.style.display = a.style.display === "none" ? "block" : "none";
+  };
+  // Manual URL: probe it; if it's Woven, add it to the dropdown and select it.
+  $("useUrl").onclick = async function () {
+    var base = normUrl($("base").value);
+    if (!base) { log("Enter a URL first.", "log-err"); return; }
+    $("useUrl").disabled = true;
+    log("Checking " + base + " ...");
+    var d = await probe(base);
+    $("useUrl").disabled = false;
+    if (!d) { log("No Woven daemon at " + base + ".", "log-err"); return; }
+    if (!daemons.some(function (x) { return x.base === d.base; })) daemons.push(d);
+    fillDaemons();
+    $("daemon").value = d.base;
+    onDaemonChange();
+    log("Added " + d.base + " (" + d.projects.length + " projects).", "log-ok");
+  };
+
   $("toggle").onclick = function () {
     if (connected) { setConnected(false); return; }
-    try {
-      localStorage.setItem(LS.base, baseUrl());
-      localStorage.setItem(LS.project, projectId());
-    } catch (e) {}
-    if (!baseUrl()) { log("Enter the daemon URL first.", "log-err"); return; }
+    if (!baseUrl()) { log("No daemon selected. Rescan or use Advanced.", "log-err"); return; }
+    lsSet(LS.base, baseUrl());
+    lsSet(LS.project, projectId());
     setConnected(true);
     log("Connecting to " + baseUrl() + " (project " + projectId() + ")");
     loop();
   };
+
+  scan();   // auto-discover on open
 })();
 </script>
 </body>

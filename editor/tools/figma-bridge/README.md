@@ -40,9 +40,12 @@ See `SCENE.md` for the scene JSON contract.
 1. In Figma Desktop: `Menu -> Plugins -> Development -> Import plugin from
    manifest...` and pick this folder's `manifest.json`.
 2. Run it: `Menu -> Plugins -> Development -> Woven Bridge`.
-3. In the plugin window, confirm the daemon URL (default `http://127.0.0.1:5731`)
-   and the project id (the `?project=` of your editor URL; `default` in
-   single-project mode), then click **Connect**. The dot turns green.
+3. The plugin auto-scans localhost for running Woven daemons on open. Pick your
+   daemon from the **Woven daemon** dropdown and your project from the
+   **Project** dropdown (both populate from `GET /__projects`), then click
+   **Connect**. The dot turns green. Hit **Rescan** if you started Woven after
+   opening the plugin; use **Advanced** to enter a URL by hand for a port the
+   scan misses.
 4. Leave the plugin window open while you work.
 
 The manifest uses `"allowedDomains": ["*"]`. Figma rejects a port in
