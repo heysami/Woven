@@ -1,7 +1,14 @@
 # Woven -> Figma via figma-cli (the agentic path)
 
-This is the **recommended** way to get a Woven prototype into Figma as a clean,
-auto-layout, component-using design. It uses [figma-cli](https://github.com/silships/figma-cli)
+> **End users do NOT use a terminal.** In the editor, open a prototype and click
+> **Send to Figma** - the daemon runs figma-cli for you (`/__figma_cli_run`) and
+> shows progress in the modal. The only manual step is having **Figma Desktop
+> open** so figma-cli can connect to it (restart Figma once on the very first
+> run if it can't connect). Everything below is **maintainer/agent reference**
+> for how the install + integration work - not steps to hand to a user.
+
+This is the way to get a Woven prototype into Figma as a clean, auto-layout,
+component-using design. It uses [figma-cli](https://github.com/silships/figma-cli)
 (MIT) - an agent-driven CLI that looks at your design, builds it with `render`,
 and verifies itself by re-screenshotting (`--verify`). It is a separate tool with
 its **own** Figma plugin (not the Woven Bridge plugin in this folder).
