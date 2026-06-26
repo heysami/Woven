@@ -45,9 +45,11 @@ See `SCENE.md` for the scene JSON contract.
    single-project mode), then click **Connect**. The dot turns green.
 4. Leave the plugin window open while you work.
 
-If your daemon runs on a non-default port, either change the URL in the plugin
-window AND add that origin to `manifest.networkAccess.allowedDomains` (Figma only
-permits requests to listed origins), or keep the daemon on 5731.
+The manifest uses `"allowedDomains": ["*"]`. Figma rejects a port in
+`allowedDomains` entries (e.g. `http://127.0.0.1:5731` fails validation as "not a
+valid URL"), so the wildcard is what lets the plugin reach the daemon on any
+local port. Just set the URL in the plugin window to match your editor; all
+traffic stays on your machine.
 
 ## Use
 

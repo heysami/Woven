@@ -74982,9 +74982,8 @@ function WorkflowFigmaSection() {
             (the dot turns green). Leave the plugin window open while you work.</li>
         </ol>
         <span className="workflow-settings-localhint">
-          The URL must be listed in the plugin's <code>manifest.networkAccess.allowedDomains</code>
-          (default <code>127.0.0.1:5731</code> and <code>localhost:5731</code>); on a custom port,
-          add it there or keep the daemon on 5731.
+          Any local daemon URL works; the plugin's manifest allows all origins because Figma
+          rejects a port in its allowlist. Just match what your editor is running on.
         </span>
       </div>
       <div className="workflow-settings-hint">

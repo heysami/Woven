@@ -6,10 +6,7 @@
   "ui": "ui.html",
   "editorType": ["figma"],
   "networkAccess": {
-    "allowedDomains": [
-      "http://localhost:5731",
-      "http://127.0.0.1:5731"
-    ],
-    "reasoning": "Long-polls the local Woven daemon to receive design hand-offs from the Woven editor. No data leaves your machine."
+    "allowedDomains": ["*"],
+    "reasoning": "Long-polls the local Woven daemon (localhost, any port) to receive design hand-offs from the Woven editor. Figma's allowedDomains cannot contain a port, so this dev bridge uses the wildcard; all requests stay on your machine."
   }
 }
