@@ -51,6 +51,12 @@
     <span class="state" id="state">Disconnected</span>
   </div>
 
+  <div id="components" style="display:none; margin-top:14px; border-top:1px solid rgba(128,128,128,.25); padding-top:10px;">
+    <div style="font-size:12px; font-weight:600;">Component mapping <span id="compDs" class="state"></span></div>
+    <p class="sub" style="margin:4px 0 8px;">For each Woven component below, select the matching component in your Figma library on the canvas, then Bind. Re-send from Woven to rebuild it as instances.</p>
+    <div id="compList"></div>
+  </div>
+
   <div id="log"></div>
 
 <script>
@@ -60,6 +66,7 @@
   var connected = false;
   var busy = false;
   var pendingResolve = null;
+  var currentDsRef = "default", currentComponents = [], bindingsMap = {};
 
   var LS = {
     base: "wovenFigma.base",
@@ -114,10 +121,61 @@
     }).catch(function () {});
   }
 
+  // ---- component mapping panel ----
+  function send(type, extra) {
+    var msg = { type: type, dsRef: currentDsRef };
+    if (extra) for (var k in extra) msg[k] = extra[k];
+    parent.postMessage({ pluginMessage: msg }, "*");
+  }
+  function refreshComponents() { send("getComponents", { names: currentComponents }); }
+  function renderComponents() {
+    var box = $("compList");
+    box.innerHTML = "";
+    if (!currentComponents.length) { $("components").style.display = "none"; return; }
+    $("components").style.display = "block";
+    $("compDs").textContent = currentDsRef ? ("· " + currentDsRef) : "";
+    currentComponents.forEach(function (name) {
+      var b = bindingsMap[name];
+      var row = document.createElement("div");
+      row.style.cssText = "display:flex; align-items:center; gap:8px; margin-top:6px;";
+      var nm = document.createElement("span");
+      nm.textContent = name; nm.style.cssText = "flex:1; font-weight:600; word-break:break-word;";
+      var st = document.createElement("span");
+      st.style.cssText = "font-size:11px; " + (b ? "color:#2ca24c;" : "color:#c33;");
+      st.textContent = b ? ("→ " + (b.name || "bound")) : "not bound";
+      var bind = document.createElement("button");
+      bind.className = "secondary"; bind.style.cssText = "padding:4px 8px; font-size:11px;";
+      bind.textContent = b ? "Rebind" : "Bind";
+      bind.onclick = function () { send("bindComponent", { component: name }); };
+      row.appendChild(nm); row.appendChild(st); row.appendChild(bind);
+      if (b) {
+        var unb = document.createElement("button");
+        unb.className = "secondary"; unb.style.cssText = "padding:4px 8px; font-size:11px;";
+        unb.title = "Unbind"; unb.textContent = "×";
+        unb.onclick = function () { send("unbindComponent", { component: name }); };
+        row.appendChild(unb);
+      }
+      box.appendChild(row);
+    });
+  }
+
   // Messages coming back from code.js (the plugin sandbox).
   window.onmessage = function (e) {
     var m = e.data && e.data.pluginMessage;
-    if (!m || m.type !== "status") return;
+    if (!m) return;
+    if (m.type === "componentsState") {
+      if (m.dsRef != null) currentDsRef = m.dsRef;
+      bindingsMap = m.bindings || {};
+      if ((!currentComponents || !currentComponents.length) && Array.isArray(m.names)) currentComponents = m.names;
+      renderComponents();
+      return;
+    }
+    if (m.type === "boundResult") {
+      if (m.ok) log("Bound " + m.component + " → " + (m.figmaName || ""), "log-ok");
+      else log(m.error || ("Bind failed: " + m.component), "log-err");
+      return;
+    }
+    if (m.type !== "status") return;
     var cls = m.state === "error" ? "log-err" : m.state === "done" ? "log-ok" : "";
     log(m.message || m.state, cls);
     postStatus(m.jobId, m.state, m.message);
@@ -157,6 +215,13 @@
         if (!connected) break;
         if (job) {
           log("Received '" + (job.name || job.jobId) + "'");
+          var sc = job.scene || {};
+          if (Array.isArray(sc.components) && sc.components.length) {
+            currentDsRef = sc.dsRef || "default";
+            currentComponents = sc.components;
+            renderComponents();
+            refreshComponents();   // pull current bindings from the sandbox
+          }
           await dispatchBuild(job);
         }
       } catch (err) {

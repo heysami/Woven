@@ -29734,7 +29734,21 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         throw new Error("Could not read the rendered page (cross-origin or still loading).");
       }
       setStep("Converting page...");
-      const scene = await window.WovenFigma.domToScene(rootEl, { name: nodeLabel || nodeId || "Woven export" });
+      // Load the design-system component rules so flex/block subtrees that match
+      // them are tagged for the plugin to swap into bound Figma instances.
+      const dsRef = (D.meta && D.meta.dsRef) || "";
+      let componentRules = [];
+      try {
+        const rr = await fetch(apiUrl("/__figma_map"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "get", dsRef }),
+        });
+        const rj = await rr.json().catch(() => ({}));
+        if (rj && Array.isArray(rj.rules)) componentRules = rj.rules;
+      } catch {}
+      const scene = await window.WovenFigma.domToScene(rootEl, {
+        name: nodeLabel || nodeId || "Woven export", componentRules, dsRef,
+      });
       setStep("Sending to the daemon...");
       const r = await fetch(apiUrl("/__figma_send"), {
         method: "POST",
@@ -75037,6 +75051,109 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
    plugin install is discoverable. The feature itself lives on each
    prototype/asset node (the Figma glyph next to Export); this tab just explains
    how to wire up the Woven Bridge plugin once. See editor/tools/figma-bridge. */
+/* Variant maps round-trip as "k=v, k=v" in the rules editor but as an object in
+   the stored JSON and the scene. */
+function figmaVariantsToStr(v) {
+  if (!v || typeof v !== "object") return "";
+  return Object.keys(v).map(function (k) { return k + "=" + v[k]; }).join(", ");
+}
+function figmaStrToVariants(s) {
+  const o = {};
+  (s || "").split(",").forEach((p) => {
+    const i = p.indexOf("=");
+    if (i > 0) { const k = p.slice(0, i).trim(); const val = p.slice(i + 1).trim(); if (k) o[k] = val; }
+  });
+  return Object.keys(o).length ? o : undefined;
+}
+
+/* The selector-rule half of the component mapping: "elements matching this CSS
+   selector are a <Component>" (+ optional variants). Tags DS components in the
+   export so the plugin can swap them for bound Figma library instances. Stored
+   per design system via /__figma_map. The name->Figma-key binding is done on the
+   plugin side (Figma component keys are file-local). Elements that already carry
+   a data-component attribute are detected automatically and need no rule. */
+function FigmaComponentRules() {
+  const dsRef = (D.meta && D.meta.dsRef) || "";
+  const [rules, setRules] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__figma_map"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "get", dsRef }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!cancelled && Array.isArray(j.rules)) {
+          setRules(j.rules.map((x) => ({ selector: x.selector || "", component: x.component || "", variants: figmaVariantsToStr(x.variants) })));
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [dsRef]);
+
+  const update = (i, k, v) => { setSaved(false); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r))); };
+  const addRow = () => { setSaved(false); setRules((rs) => rs.concat([{ selector: "", component: "", variants: "" }])); };
+  const removeRow = (i) => { setSaved(false); setRules((rs) => rs.filter((_, j) => j !== i)); };
+
+  const save = async () => {
+    setBusy(true); setErr(null); setSaved(false);
+    const payload = rules
+      .filter((r) => r.selector.trim() && r.component.trim())
+      .map((r) => ({ selector: r.selector.trim(), component: r.component.trim(), variants: figmaStrToVariants(r.variants) }));
+    try {
+      const r = await fetch(apiUrl("/__figma_map"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "set", dsRef, rules: payload }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      setSaved(true);
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy(false);
+  };
+
+  const rowStyle = { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: "6px", alignItems: "center", marginTop: "6px" };
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">Component mapping</span>
+        <span className="workflow-settings-skills">${dsRef ? ("design system: " + dsRef) : "no design system on this project"}</span>
+      </div>
+      <div className="workflow-settings-hint">
+        Tell the export which elements are design-system components, by CSS selector.
+        A tagged element becomes a Figma library instance (you pick <em>which</em> Figma
+        component in the plugin's binding panel). Elements that already carry a
+        <code>data-component</code> attribute are detected automatically, no rule needed.
+      </div>
+      <div style=${{ ...rowStyle, opacity: 0.7, fontSize: "11px", marginTop: "10px" }}>
+        <span>CSS selector</span><span>Component</span><span>Variants (k=v)</span><span></span>
+      </div>
+      ${rules.map((r, i) => html`
+        <div style=${rowStyle} key=${i}>
+          <input className="modal-input" placeholder=".btn.is-primary" value=${r.selector}
+            spellCheck=${false} onInput=${(e) => update(i, "selector", e.target.value)} />
+          <input className="modal-input" placeholder="Button" value=${r.component}
+            spellCheck=${false} onInput=${(e) => update(i, "component", e.target.value)} />
+          <input className="modal-input" placeholder="Variant=primary" value=${r.variants}
+            spellCheck=${false} onInput=${(e) => update(i, "variants", e.target.value)} />
+          <button className="tbtn" title="Remove rule" onClick=${() => removeRow(i)}>×</button>
+        </div>
+      `)}
+      <div className="workflow-settings-row" style=${{ marginTop: "10px" }}>
+        <button className="tbtn" onClick=${addRow}>Add rule</button>
+        <button className="tbtn tbtn-primary" onClick=${save} disabled=${busy}>${busy ? "Saving…" : "Save rules"}</button>
+        ${saved && html`<span className="workflow-settings-msg workflow-settings-msg-ok">Saved.</span>`}
+        ${err && html`<span className="workflow-settings-msg workflow-settings-msg-fail">${err}</span>`}
+      </div>
+    </div>
+  `;
+}
+
 function WorkflowFigmaSection() {
   const daemonOrigin = (typeof location !== "undefined" && location.origin) || "http://127.0.0.1:5731";
   const projectId = (typeof activeProjectId === "function" && activeProjectId()) || "default";
@@ -75166,6 +75283,7 @@ function WorkflowSettingsDialog({ onClose }) {
             <${WorkflowUserTestingSettingsRow}/>
           ` : tab === "figma" ? html`
             <${WorkflowFigmaSection}/>
+            <${FigmaComponentRules}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}

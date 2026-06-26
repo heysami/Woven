@@ -6,11 +6,13 @@ both sides in sync when extending the schema.
 
 ```jsonc
 {
-  "version": 1,
+  "version": 3,
   "name": "Landing page",     // names the top frame in Figma
   "width": 1280,
   "height": 3200,
   "imageBytes": 1234567,      // diagnostic: total inlined raster size
+  "dsRef": "default",         // project design system; keys the plugin bindings
+  "components": ["Button", "Card"],  // distinct component names tagged in this scene
   "root": { /* node */ }
 }
 ```
@@ -61,6 +63,11 @@ both sides in sync when extending the schema.
   "absolute": true,          // CSS position:absolute/fixed; under an auto-layout
                              // parent it is taken out of flow and kept at x/y
 
+  // optional: when present AND the plugin has a binding for this name, the node
+  // is built as a Figma library INSTANCE (children ignored) instead of a frame.
+  "component": "Button",
+  "componentProps": { "Variant": "primary", "Size": "md" },  // best-effort variants
+
   "children": [ node, ... ]
 }
 ```
@@ -90,6 +97,27 @@ children becomes a VERTICAL (or HORIZONTAL) auto-layout; anything with
 overlapping or irregularly-spaced children stays absolute (`layout` omitted), so
 the converter never invents a layout that mangles the design. CSS grid stays
 absolute for now (no Figma equivalent yet).
+
+## Component mapping (design system)
+
+A node becomes a real Figma library instance when two halves line up, joined by a
+component NAME:
+
+1. **Identity (editor side)** - which DOM subtree is a component. Hybrid: an
+   explicit `data-component` (+ `data-variant` / `data-prop-*`) attribute wins;
+   otherwise the user's selector rules (`selector -> component + variants`,
+   stored per design system via `/__figma_map`) are matched. The converter tags
+   the node with `component` + `componentProps` and lists names in
+   `scene.components`.
+2. **Binding (plugin side)** - which Figma component each name is. Stored in the
+   plugin's `clientStorage`, keyed by `scene.dsRef`, because Figma component keys
+   are library/file-local. The user binds by selecting the component on canvas.
+
+At build, the plugin imports every bound component up front
+(`importComponentByKeyAsync` / `importComponentSetByKeyAsync`, falling back to a
+local node id), then `createInstance()` per tagged node, applies variant props
+best-effort (`setProperties`), and resizes. Unbound names fall back to the
+primitive frame build, so an unmapped scene still renders.
 
 ## Limitations (intentional)
 

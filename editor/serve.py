@@ -7954,6 +7954,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._figma_status(qs)
             if parsed.path == "/__figma_job":
                 return self._figma_job(qs)
+            if parsed.path == "/__figma_map":
+                return self._figma_map(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
             if parsed.path == "/__workflow/nodes/add":
@@ -14623,6 +14625,73 @@ class H(http.server.SimpleHTTPRequestHandler):
             "ok": True, "jobId": job_id,
             "state": s.get("state"), "message": s.get("message"), "figmaUrl": s.get("figmaUrl"),
         })
+
+    # POST /__figma_map?project=<id>  body {op:"get"|"set", dsRef?, rules?}
+    # Persists the Send-to-Figma selector rules (selector -> component +
+    # variants) that tag DS components in the export. Stored per design system
+    # at design-systems/<dsRef>/figma-map.json (else project-root figma-map.json)
+    # so the mapping travels with the project. The name->Figma-key binding lives
+    # on the plugin side (Figma keys are file-local); these are just the rules.
+    def _figma_map(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        ds_ref = (body.get("dsRef") or "").strip()
+        safe_ds = ds_ref if re.match(r"^[A-Za-z0-9._-]+$", ds_ref) else ""
+        if safe_ds:
+            path = os.path.join(project_root, "design-systems", safe_ds, "figma-map.json")
+        else:
+            path = os.path.join(project_root, "figma-map.json")
+        op = (body.get("op") or "get").strip()
+        if op == "set":
+            rules = body.get("rules")
+            if not isinstance(rules, list):
+                return self._reply(400, {"error": "rules must be a list"})
+            clean = []
+            for r in rules[:500]:
+                if not isinstance(r, dict):
+                    continue
+                sel = (r.get("selector") or "").strip()
+                comp = (r.get("component") or "").strip()
+                if not sel or not comp:
+                    continue
+                entry = {"selector": sel[:300], "component": comp[:100]}
+                var = r.get("variants")
+                if isinstance(var, dict):
+                    vv = {}
+                    for k, val in list(var.items())[:20]:
+                        if isinstance(k, str) and isinstance(val, (str, int, float, bool)):
+                            vv[k[:50]] = str(val)[:100]
+                    if vv:
+                        entry["variants"] = vv
+                clean.append(entry)
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                staging = path + ".staging"
+                with open(staging, "w", encoding="utf-8") as f:
+                    json.dump({"rules": clean}, f, indent=2)
+                os.replace(staging, path)
+            except OSError as e:
+                return self._reply(500, {"error": f"write failed: {e}"})
+            return self._reply(200, {"ok": True, "count": len(clean), "path": os.path.relpath(path, project_root)})
+        # op == "get"
+        rules = []
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if isinstance(d, dict) and isinstance(d.get("rules"), list):
+                    rules = d["rules"]
+            except Exception:
+                rules = []
+        return self._reply(200, {"ok": True, "rules": rules})
 
     # POST /__export_asset?project=<id>  body {nodeId:string}
     # Bundles the named asset/prototype/container node into the project's

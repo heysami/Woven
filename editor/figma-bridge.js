@@ -30,16 +30,18 @@
  *     children: node[]
  *   }
  *
- * Coordinates are absolute-position (each node carries x/y inside its parent).
- * CSS transforms are baked into position by getBoundingClientRect, so rotation
- * is flattened in v1 (the node lands where it visually renders, un-rotated).
- * Auto-layout is intentionally NOT emitted yet; the schema leaves room for a
- * later `layout` field without breaking the plugin.
+ * Coordinates are absolute-position (each node carries x/y inside its parent),
+ * unless the node has a `layout` (Figma auto-layout, inferred from CSS flex or a
+ * clean block stack). CSS transforms are baked into position by
+ * getBoundingClientRect, so rotation is flattened (the node lands where it
+ * visually renders, un-rotated). A node may also carry `component` +
+ * `componentProps` so the plugin swaps it for a bound Figma library instance
+ * instead of rebuilding it from primitives.
  */
 (function () {
   "use strict";
 
-  var SCENE_VERSION = 2;
+  var SCENE_VERSION = 3;
   // Total inlined-image budget. Past this we stop inlining and emit a flat
   // fill instead, so a heavy page cannot produce a multi-hundred-MB POST.
   var IMAGE_BUDGET_BYTES = 40 * 1024 * 1024;
@@ -457,6 +459,41 @@
     inferStackLayout(cs, node);
   }
 
+  // ---- component identity (hybrid) --------------------------------------
+  // A node can be tagged as a design-system component so the plugin swaps it
+  // for a bound Figma library instance. Identity is hybrid: an explicit
+  // data-component / data-variant / data-prop-* attribute wins; otherwise the
+  // user's selector rules (selector -> component + variants) are matched.
+
+  var _componentRules = [];   // [{ selector, component, variants }]
+  var _componentNames = {};   // set of names seen this run -> scene.components
+
+  function detectComponent(el) {
+    if (!el || el.nodeType !== 1) return null;
+    var name = (el.getAttribute && (el.getAttribute("data-component") || el.getAttribute("data-figma-component"))) || "";
+    if (name) {
+      var props = {};
+      var v = el.getAttribute("data-variant");
+      if (v) props.Variant = v;
+      var attrs = el.attributes || [];
+      for (var i = 0; i < attrs.length; i++) {
+        var a = attrs[i];
+        if (a.name.indexOf("data-prop-") === 0) props[a.name.slice(10)] = a.value;
+      }
+      return { name: name.trim(), props: props };
+    }
+    for (var r = 0; r < _componentRules.length; r++) {
+      var rule = _componentRules[r];
+      if (!rule || !rule.selector || !rule.component) continue;
+      try {
+        if (el.matches(rule.selector)) {
+          return { name: String(rule.component).trim(), props: (rule.variants && typeof rule.variants === "object") ? rule.variants : {} };
+        }
+      } catch (e) { /* invalid selector - skip */ }
+    }
+    return null;
+  }
+
   // ---- node walk --------------------------------------------------------
 
   var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, LINK: 1, META: 1, HEAD: 1, TITLE: 1, BR: 1 };
@@ -551,8 +588,15 @@
 
     decideLayout(cs, node);
 
-    // Prune empty decorationless containers.
-    if (node.type === "FRAME" && !hasOwnPaint(node) && !node.children.length && !node.clipsContent) return null;
+    var comp = detectComponent(el);
+    if (comp && comp.name) {
+      node.component = comp.name;
+      if (comp.props && Object.keys(comp.props).length) node.componentProps = comp.props;
+      _componentNames[comp.name] = true;
+    }
+
+    // Prune empty decorationless containers (never prune a tagged component).
+    if (node.type === "FRAME" && !node.component && !hasOwnPaint(node) && !node.children.length && !node.clipsContent) return null;
     if (!node.fills.length) delete node.fills;
     if (!node.strokes.length) delete node.strokes;
     if (!node.effects.length) delete node.effects;
@@ -568,6 +612,8 @@
   function domToScene(rootEl, opts) {
     opts = opts || {};
     _imageBytesUsed = 0;
+    _componentRules = Array.isArray(opts.componentRules) ? opts.componentRules : [];
+    _componentNames = {};
     var win = (rootEl.ownerDocument && rootEl.ownerDocument.defaultView) || window;
     var rootRect = rootEl.getBoundingClientRect();
     var pending = [];
@@ -619,6 +665,8 @@
         width: root.width,
         height: root.height,
         imageBytes: _imageBytesUsed,
+        dsRef: opts.dsRef || null,
+        components: Object.keys(_componentNames),
         root: root
       };
     });

@@ -15,8 +15,11 @@
 figma.showUI(__html__, { width: 340, height: 460, title: "Woven Bridge" });
 
 figma.ui.onmessage = function (msg) {
-  if (!msg || msg.type !== "build" || !msg.job) return;
-  buildJob(msg.job);
+  if (!msg) return;
+  if (msg.type === "build" && msg.job) { buildJob(msg.job); return; }
+  if (msg.type === "getComponents") { sendComponentsState(msg.dsRef, msg.names); return; }
+  if (msg.type === "bindComponent") { bindComponent(msg.dsRef, msg.component); return; }
+  if (msg.type === "unbindComponent") { unbindComponent(msg.dsRef, msg.component); return; }
 };
 
 function report(jobId, state, message) {
@@ -188,6 +191,147 @@ function resolveFont(node) {
   return _fontMap[node.fontFamily + "\n" + node.fontStyle] || FALLBACK;
 }
 
+// ---- component mapping (Woven component -> Figma library instance) ------
+// Bindings (componentName -> Figma component/set key) live in clientStorage,
+// keyed by the project's design system, since Figma keys are file/library-local.
+// The editor only authors the selector RULES that tag nodes; binding happens
+// here, where the user can select the real Figma component.
+
+var _compCache = {};   // componentName -> { node, kind } resolved for this build
+
+function bindingsKey(dsRef) { return "woven.bindings." + (dsRef || "default"); }
+
+function getBindings(dsRef) {
+  return figma.clientStorage.getAsync(bindingsKey(dsRef)).then(function (v) { return v || {}; }, function () { return {}; });
+}
+function setBindings(dsRef, map) {
+  return figma.clientStorage.setAsync(bindingsKey(dsRef), map).then(function () {}, function () {});
+}
+
+// Resolve the current canvas selection to a bindable component/set + its key.
+function resolveSelectionComponent() {
+  var sel = figma.currentPage.selection;
+  if (!sel || !sel.length) return null;
+  var n = sel[0];
+  if (n.type === "INSTANCE") { n = n.mainComponent; if (!n) return null; }
+  if (n.type === "COMPONENT") {
+    if (n.parent && n.parent.type === "COMPONENT_SET") {
+      return { key: n.parent.key || "", id: n.parent.id, kind: "SET", name: n.parent.name };
+    }
+    return { key: n.key || "", id: n.id, kind: "COMPONENT", name: n.name };
+  }
+  if (n.type === "COMPONENT_SET") return { key: n.key || "", id: n.id, kind: "SET", name: n.name };
+  return null;
+}
+
+function sendComponentsState(dsRef, names) {
+  getBindings(dsRef).then(function (map) {
+    figma.ui.postMessage({ type: "componentsState", dsRef: dsRef, names: names || [], bindings: map });
+  });
+}
+
+function bindComponent(dsRef, component) {
+  var resolved = resolveSelectionComponent();
+  if (!resolved) {
+    figma.ui.postMessage({ type: "boundResult", component: component, ok: false,
+      error: "Select a component, component set, or instance on the canvas, then Bind." });
+    return;
+  }
+  getBindings(dsRef).then(function (map) {
+    map[component] = resolved;
+    setBindings(dsRef, map).then(function () {
+      figma.ui.postMessage({ type: "boundResult", component: component, ok: true, figmaName: resolved.name });
+      figma.ui.postMessage({ type: "componentsState", dsRef: dsRef, names: Object.keys(map), bindings: map });
+    });
+  });
+}
+
+function unbindComponent(dsRef, component) {
+  getBindings(dsRef).then(function (map) {
+    delete map[component];
+    setBindings(dsRef, map).then(function () {
+      figma.ui.postMessage({ type: "componentsState", dsRef: dsRef, names: Object.keys(map), bindings: map });
+    });
+  });
+}
+
+// Import every bound component referenced by the scene up front (like fonts),
+// so the synchronous build can createInstance() without awaiting per node.
+function loadComponents(scene) {
+  _compCache = {};
+  var names = scene.components || [];
+  if (!names.length) return Promise.resolve();
+  return getBindings(scene.dsRef || "default").then(function (map) {
+    var chain = Promise.resolve();
+    names.forEach(function (name) {
+      var b = map[name];
+      if (!b || (!b.key && !b.id)) return;
+      chain = chain.then(function () {
+        var p;
+        if (b.kind === "SET" && b.key) p = figma.importComponentSetByKeyAsync(b.key);
+        else if (b.key) p = figma.importComponentByKeyAsync(b.key);
+        else p = Promise.reject();
+        return p.then(function (node) {
+          _compCache[name] = { node: node, kind: node.type === "COMPONENT_SET" ? "SET" : "COMPONENT" };
+        }, function () {
+          // Local/unpublished component: fall back to its node id in this file.
+          if (!b.id || !figma.getNodeByIdAsync) return;
+          return figma.getNodeByIdAsync(b.id).then(function (node) {
+            if (node && (node.type === "COMPONENT" || node.type === "COMPONENT_SET")) {
+              _compCache[name] = { node: node, kind: node.type === "COMPONENT_SET" ? "SET" : "COMPONENT" };
+            }
+          }, function () {});
+        });
+      });
+    });
+    return chain;
+  });
+}
+
+// Best-effort variant/property application: match provided prop names to the
+// instance's available properties (case-insensitive, ignoring the "#id" suffix
+// Figma adds to non-variant props). setProperties is all-or-nothing, so retry
+// per key and skip any that the component does not accept.
+function applyComponentProps(inst, props) {
+  var avail;
+  try { avail = inst.componentProperties || {}; } catch (e) { return; }
+  var keys = Object.keys(avail);
+  var toSet = {};
+  Object.keys(props).forEach(function (pk) {
+    var want = String(pk).toLowerCase();
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i].split("#")[0].toLowerCase() === want) { toSet[keys[i]] = props[pk]; break; }
+    }
+  });
+  if (!Object.keys(toSet).length) return;
+  try { inst.setProperties(toSet); }
+  catch (e) {
+    Object.keys(toSet).forEach(function (k) {
+      var one = {}; one[k] = toSet[k];
+      try { inst.setProperties(one); } catch (e2) {}
+    });
+  }
+}
+
+function buildInstance(n, cached) {
+  var inst = null;
+  try {
+    if (cached.kind === "SET") {
+      var def = cached.node.defaultVariant || (cached.node.children && cached.node.children[0]);
+      inst = def ? def.createInstance() : null;
+    } else {
+      inst = cached.node.createInstance();
+    }
+  } catch (e) { return null; }
+  if (!inst) return null;
+  inst.name = n.name || cached.node.name;
+  if (n.componentProps) applyComponentProps(inst, n.componentProps);
+  var s = size(n);
+  try { inst.resize(s.w, s.h); } catch (e) {}
+  if (typeof n.opacity === "number") { try { inst.opacity = clamp(n.opacity, 0, 1); } catch (e) {} }
+  return inst;
+}
+
 // ---- node construction --------------------------------------------------
 
 function size(n) {
@@ -296,6 +440,12 @@ var _count = 0;
 function buildNode(n) {
   if (!n || !n.type) return null;
   _count++;
+  // A tagged component with a resolved binding becomes a real library instance;
+  // otherwise fall through and build it from primitives.
+  if (n.component && _compCache[n.component]) {
+    var inst = buildInstance(n, _compCache[n.component]);
+    if (inst) return inst;
+  }
   if (n.type === "TEXT") return buildText(n);
   if (n.type === "IMAGE") return buildImage(n);
   return buildFrame(n);
@@ -309,6 +459,9 @@ function buildJob(job) {
   report(jobId, "building", "Loading fonts");
   _count = 0; _fontMap = {};
   loadFonts(root).then(function () {
+    report(jobId, "building", "Resolving components");
+    return loadComponents(scene);
+  }).then(function () {
     try {
       var frame = buildFrame(root);
       // Drop it just right of whatever is on the page, near the viewport.

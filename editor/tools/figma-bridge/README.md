@@ -55,3 +55,21 @@ traffic stays on your machine.
 
 In the Woven editor, click **Send to Figma** on any prototype or HTML asset node.
 The plugin builds it on the current Figma page and zooms to it.
+
+## Using your Figma design system (component mapping)
+
+By default everything is rebuilt from primitives (frames/text/images). To have
+Woven components come in as instances of YOUR Figma library components, set up a
+two-part mapping (joined by a component name):
+
+1. **Identity - editor:** Settings -> Send to Figma -> "Component mapping". Add
+   rules like `.btn.is-primary -> Button` (variants `Variant=primary`). These are
+   stored with the project's design system. Elements that already carry a
+   `data-component` attribute are detected automatically, no rule needed.
+2. **Binding - this plugin:** after a Send, each tagged component name appears in
+   the plugin's "Component mapping" list. Enable your design-system library in the
+   file, select the matching component (or component set, or an instance) on the
+   canvas, and click **Bind**. The binding is saved per design system in the
+   plugin's storage.
+3. **Re-send** from Woven. Bound components now build as library instances (with
+   variants applied best-effort); unbound ones still fall back to frames.
