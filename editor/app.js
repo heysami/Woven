@@ -55608,6 +55608,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Working…");
   const [fillPrompt, setFillPrompt] = useState(""); // optional outpaint guidance
+  const [, setVpTick] = useState(0); // bumped on window resize so the stage refits
   const canvasRef = useRef(null); // the full coordinate-space box (drag math reads its width)
   const dragRef = useRef(null);
 
@@ -55637,6 +55638,13 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
+
+  // Refit the stage when the window resizes (display size is viewport-relative).
+  useEffect(() => {
+    const onResize = () => setVpTick((t) => t + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Allow the frame out to ASSET_EXPAND_MAX past each edge (expansion), but
   // never let it invert or escape the coordinate space.
@@ -55790,9 +55798,17 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     ["sw", 0, 100, "nesw-resize"], ["w", 0, 50, "ew-resize"],
   ];
 
+  // Fit the FULL coordinate space (image grown by SPAN) into a viewport box, in
+  // px, so aspect-ratio + dual max constraints never fight. The image is then
+  // the centred [0,1] slice of that box.
+  const vpW = (typeof window !== "undefined" ? window.innerWidth : 1200);
+  const vpH = (typeof window !== "undefined" ? window.innerHeight : 800);
+  const fitScale = natural && natural.w
+    ? Math.min((vpW * 0.42) / (natural.w * SPAN), (vpH * 0.34) / (natural.h * SPAN))
+    : 0;
   const canvasStyle = natural && natural.w
-    ? { aspectRatio: natural.w + " / " + natural.h }
-    : { aspectRatio: "1 / 1" };
+    ? { width: Math.max(80, natural.w * SPAN * fitScale) + "px", height: Math.max(80, natural.h * SPAN * fitScale) + "px" }
+    : { width: "320px", height: "320px" };
   // The image sits centred, occupying the [0,1] slice of the coordinate space.
   const imgStyle = { left: toPct(0) + "%", top: toPct(0) + "%", width: (1 / SPAN) * 100 + "%", height: (1 / SPAN) * 100 + "%" };
   const boxStyle = { left: toPct(rect.x) + "%", top: toPct(rect.y) + "%", width: (rect.w / SPAN) * 100 + "%", height: (rect.h / SPAN) * 100 + "%" };

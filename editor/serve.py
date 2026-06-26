@@ -535,13 +535,21 @@ _OPENAI_DALLE2_SIZES = {
     "2:3":  "1024x1024", "9:16": "1024x1024",
 }
 
-def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, options):
+def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, options,
+                       mask_bytes=None, mask_mime="image/png"):
     """OpenAI /v1/images/edits - image-to-image via multipart/form-data.
 
     Used when a generate-image call also carries `input_path` / `input_data_uri`
     AND the model is in the gpt-image-1 family. Same response shape as
     /v1/images/generations (b64_json data array), but the model now
     consults the input image instead of generating purely from text.
+
+    When `mask_bytes` is supplied (a PNG the SAME size as the input image) the
+    edit is confined to the mask's TRANSPARENT pixels - opaque pixels are left
+    untouched. This is the outpaint path: the Crop/Expand modal sends the
+    original image padded onto a larger transparent canvas plus a mask that is
+    opaque over the original and transparent over the newly-added margin, so the
+    model fills only the new area and preserves the source.
 
     Hand-rolled multipart so we don't pull in `requests`/`httpx`."""
     import uuid
@@ -572,6 +580,10 @@ def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, 
         "image/webp": "webp",
     }.get((image_mime or "image/png").lower(), "png")
     add_file("image", f"input.{ext_for_mime}", image_bytes, image_mime or "image/png")
+    if mask_bytes:
+        # The mask MUST be a PNG (alpha channel carries the edit region). Edits
+        # only happen where the mask is transparent; opaque = preserved.
+        add_file("mask", "mask.png", mask_bytes, mask_mime or "image/png")
     parts.append(f"--{boundary}--\r\n".encode("utf-8"))
     body = b"".join(parts)
     req = urllib.request.Request(
@@ -12770,7 +12782,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                             return self._reply(400, {"error": "input_data_uri must be a base64 data URI"})
                         img_mime  = m.group(1)
                         img_bytes = base64.b64decode(m.group(2))
-                    bytes_ = _openai_edit_image(api_key, prompt, model, img_bytes, img_mime, aspect, options)
+                    # Optional outpaint mask (see Crop/Expand modal). A transparent
+                    # margin in the mask tells the model which pixels to fill.
+                    mask_bytes = None
+                    mask_mime  = "image/png"
+                    mask_raw = body.get("mask_data_uri")
+                    if isinstance(mask_raw, str) and mask_raw.startswith("data:"):
+                        mm = re.match(r"^data:([^;]+);base64,(.+)$", mask_raw, re.S)
+                        if not mm:
+                            return self._reply(400, {"error": "mask_data_uri must be a base64 data URI"})
+                        mask_mime  = mm.group(1)
+                        mask_bytes = base64.b64decode(mm.group(2))
+                    bytes_ = _openai_edit_image(api_key, prompt, model, img_bytes, img_mime, aspect, options,
+                                                mask_bytes=mask_bytes, mask_mime=mask_mime)
                 elif provider == "openai":
                     if use_codex_image_fallback:
                         # v3.5 - no API key + codex on PATH: run the agent.
