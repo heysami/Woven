@@ -29657,11 +29657,12 @@ function ExportPromptHost() {
 }
 
 /* ── Send to Figma ─────────────────────────────────────────────────────
-   The "export, but to Figma" sibling of runExportForNode. Opens FigmaSendModal,
-   which takes the prototype's live rendered URL and POSTs it to /__figma_cli_run;
-   the daemon drives figma-cli (editor/tools/figma-cli) to rebuild it in Figma
-   (recreate-url). Requires the prototype open on the canvas (so we have
-   its URL) and figma-cli connected to Figma (Safe Mode plugin). No terminal. */
+   The "export, but to Figma" sibling of runExportForNode. Instead of writing
+   a bundle to disk, it walks the node's rendered (same-origin) iframe DOM into
+   a scene (figma-bridge.js / window.WovenFigma) and POSTs it to the daemon
+   relay; the Woven Bridge plugin in Figma Desktop picks it up and rebuilds it
+   as editable layers. Requires the prototype/asset to be open on the canvas
+   (we read the live rendered document) and the plugin to be connected. */
 function runSendToFigmaForNode(nodeId, nodeLabel) {
   try {
     window.dispatchEvent(new CustomEvent("th:figma-send", {
@@ -29684,29 +29685,84 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
   const busy = phase === "working";
+
   const setStep = (s) => setStatus(s);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const pollJob = async (jobId) => {
+    const deadline = Date.now() + 120000;   // 2 min ceiling
+    const friendly = {
+      queued: "Waiting for Woven Bridge. Open the plugin in Figma and click Connect...",
+      delivered: "Plugin picked it up...",
+      building: "Building layers in Figma...",
+    };
+    let last = "";
+    while (Date.now() < deadline) {
+      await sleep(1000);
+      let j = {};
+      try {
+        const r = await fetch(apiUrl("/__figma_job"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        j = await r.json().catch(() => ({}));
+      } catch { continue; }
+      const st = j.state || "";
+      if (st && st !== last) { last = st; setStep(j.message || friendly[st] || st); }
+      if (st === "done") return { ok: true, message: j.message || "Built in Figma." };
+      if (st === "error") return { ok: false, message: j.message || "Build failed in Figma." };
+    }
+    return { ok: false, message: "Timed out. Is the Woven Bridge plugin open and connected in Figma?" };
+  };
 
   const handleSend = async () => {
     setPhase("working");
     setError(null);
     try {
-      // figma-cli rebuilds the prototype from its LIVE URL (the rendered iframe's
-      // src). The daemon drives figma-cli - the user never touches a terminal.
-      const iframe = findRenderedNodeIframe(nodeId);
-      const url = iframe && iframe.src;
-      if (!url) {
-        throw new Error("Open this prototype on the canvas first - figma-cli rebuilds it from its live URL.");
+      if (!window.WovenFigma || !window.WovenFigma.domToScene) {
+        throw new Error("figma-bridge.js did not load.");
       }
-      setStep("Building in Figma with figma-cli. This can take a minute (it loads the page and rebuilds it as auto-layout)...");
-      const r = await fetch(apiUrl("/__figma_cli_run"), {
+      const iframe = findRenderedNodeIframe(nodeId);
+      if (!iframe) {
+        throw new Error("Open this prototype/asset on the canvas first - Send to Figma reads the live rendered page.");
+      }
+      let doc;
+      try { doc = iframe.contentDocument; } catch { doc = null; }
+      const rootEl = doc && doc.body;
+      if (!rootEl) {
+        throw new Error("Could not read the rendered page (cross-origin or still loading).");
+      }
+      setStep("Converting page...");
+      // Load the design-system component rules so flex/block subtrees that match
+      // them are tagged for the plugin to swap into bound Figma instances.
+      const dsRef = (D.meta && D.meta.dsRef) || "";
+      let componentRules = [];
+      try {
+        const rr = await fetch(apiUrl("/__figma_map"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "get", dsRef }),
+        });
+        const rj = await rr.json().catch(() => ({}));
+        if (rj && Array.isArray(rj.rules)) componentRules = rj.rules;
+      } catch {}
+      const scene = await window.WovenFigma.domToScene(rootEl, {
+        name: nodeLabel || nodeId || "Woven export", componentRules, dsRef,
+      });
+      setStep("Sending to the daemon...");
+      const r = await fetch(apiUrl("/__figma_send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, name: nodeLabel || nodeId || "Woven" }),
+        body: JSON.stringify({ nodeId, name: scene.name, scene }),
       });
       const j = await r.json().catch(() => ({}));
-      const tail = j.output ? ("\n\n" + String(j.output).slice(-800)) : "";
-      if (j.ok) { setPhase("done"); setStep("Built in Figma." + tail); }
-      else { setPhase("error"); setError((j.error || `failed (HTTP ${r.status})`) + tail); }
+      if (!r.ok || !j.jobId) {
+        throw new Error(j.error || `Daemon rejected the scene (HTTP ${r.status}).`);
+      }
+      setStep("Waiting for Woven Bridge. Open the plugin in Figma and click Connect...");
+      const result = await pollJob(j.jobId);
+      if (result.ok) { setPhase("done"); setStep(result.message); }
+      else { setPhase("error"); setError(result.message); }
     } catch (e) {
       setPhase("error");
       setError(e.message || String(e));
@@ -29725,21 +29781,18 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         </div>
         <div className="modal-body">
           <p className="modal-hint" style=${{ marginTop: 0 }}>
-            Rebuilds this prototype in Figma using <strong>figma-cli</strong> - it looks at the
-            page (via Playwright) and rebuilds it as auto-layout. The daemon runs it for you.
-          </p>
-          <p className="modal-hint" style=${{ marginTop: 6 }}>
-            One-time: in <strong>Figma Desktop</strong>, import + run the <strong>figma-cli</strong>
-            plugin (Plugins -> Development). If it isn't connected yet, the result below shows the
-            exact file to import - do that once, leave it open, and click again. No terminal.
+            Rebuilds this page as editable Figma layers. Needs the <strong>Woven Bridge</strong>
+            plugin running and connected in Figma Desktop
+            (editor/tools/figma-bridge - see its README).
           </p>
           ${(phase === "working" || phase === "done") && status && html`
-            <div className="export-name-warn" data-overridden=${true} style=${{ whiteSpace: "pre-wrap" }}>${status}</div>
+            <div className="export-name-warn" data-overridden=${true}>${status}</div>
           `}
-          ${error && html`<div className="export-name-error" style=${{ whiteSpace: "pre-wrap" }}>${error}</div>`}
+          ${error && html`<div className="export-name-error">${error}</div>`}
+          ${phase === "done" && html`<div className="export-name-warn" data-overridden=${true}><strong>Done.</strong></div>`}
         </div>
         <div className="modal-foot">
-          <button className="tbtn" onClick=${onClose}>
+          <button className="tbtn" onClick=${onClose} disabled=${busy}>
             ${phase === "done" ? "Close" : "Cancel"}
           </button>
           ${phase !== "done" && html`
@@ -52635,7 +52688,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
         ><${Icon.Download}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this in Figma using figma-cli (the daemon runs it). Keep it open on the canvas; needs Figma Desktop open + figma-cli connected."
+          tip="Send to Figma - rebuild this rendered page as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
           ariaLabel="Send to Figma"
           onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title || (familyLabel + ":" + (assetId || ""))); }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -54014,7 +54067,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         ><${Icon.Download}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this prototype in Figma using figma-cli (the daemon runs it). Keep it open on the canvas; needs Figma Desktop open + figma-cli connected."
+          tip="Send to Figma - rebuild this rendered prototype as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
           ariaLabel="Send to Figma"
           onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -56921,7 +56974,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         ><${Icon.Download}/><//>
         <${HoverTip}
           className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this asset in Figma using figma-cli (the daemon runs it). Works for HTML assets; keep it open on the canvas; needs Figma Desktop open + figma-cli connected."
+          tip="Send to Figma - rebuild this rendered asset as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Works for HTML assets; reads the live canvas render, so keep it open."
           ariaLabel="Send to Figma"
           onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
           onMouseDown=${(e) => e.stopPropagation()}
@@ -74994,6 +75047,159 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
 /* Phase 4b - Settings dialog. One section per integrated provider, driven by
    window.TH_MEDIA.providers. Each renders an interactive Save / Test / Clear
    row. Non-integrated ("soon") roadmap providers are filtered out. */
+/* Send-to-Figma setup, surfaced as its own Settings tab so the one-time Figma
+   plugin install is discoverable. The feature itself lives on each
+   prototype/asset node (the Figma glyph next to Export); this tab just explains
+   how to wire up the Woven Bridge plugin once. See editor/tools/figma-bridge. */
+/* Variant maps round-trip as "k=v, k=v" in the rules editor but as an object in
+   the stored JSON and the scene. */
+function figmaVariantsToStr(v) {
+  if (!v || typeof v !== "object") return "";
+  return Object.keys(v).map(function (k) { return k + "=" + v[k]; }).join(", ");
+}
+function figmaStrToVariants(s) {
+  const o = {};
+  (s || "").split(",").forEach((p) => {
+    const i = p.indexOf("=");
+    if (i > 0) { const k = p.slice(0, i).trim(); const val = p.slice(i + 1).trim(); if (k) o[k] = val; }
+  });
+  return Object.keys(o).length ? o : undefined;
+}
+
+/* The selector-rule half of the component mapping: "elements matching this CSS
+   selector are a <Component>" (+ optional variants). Tags DS components in the
+   export so the plugin can swap them for bound Figma library instances. Stored
+   per design system via /__figma_map. The name->Figma-key binding is done on the
+   plugin side (Figma component keys are file-local). Elements that already carry
+   a data-component attribute are detected automatically and need no rule. */
+function FigmaComponentRules() {
+  const dsRef = (D.meta && D.meta.dsRef) || "";
+  const [rules, setRules] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__figma_map"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "get", dsRef }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!cancelled && Array.isArray(j.rules)) {
+          setRules(j.rules.map((x) => ({ selector: x.selector || "", component: x.component || "", variants: figmaVariantsToStr(x.variants) })));
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [dsRef]);
+
+  const update = (i, k, v) => { setSaved(false); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r))); };
+  const addRow = () => { setSaved(false); setRules((rs) => rs.concat([{ selector: "", component: "", variants: "" }])); };
+  const removeRow = (i) => { setSaved(false); setRules((rs) => rs.filter((_, j) => j !== i)); };
+
+  const save = async () => {
+    setBusy(true); setErr(null); setSaved(false);
+    const payload = rules
+      .filter((r) => r.selector.trim() && r.component.trim())
+      .map((r) => ({ selector: r.selector.trim(), component: r.component.trim(), variants: figmaStrToVariants(r.variants) }));
+    try {
+      const r = await fetch(apiUrl("/__figma_map"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "set", dsRef, rules: payload }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      setSaved(true);
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy(false);
+  };
+
+  const rowStyle = { display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr auto", gap: "6px", alignItems: "center", marginTop: "6px" };
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">Component mapping</span>
+        <span className="workflow-settings-skills">${dsRef ? ("design system: " + dsRef) : "no design system on this project"}</span>
+      </div>
+      <div className="workflow-settings-hint">
+        Tell the export which elements are design-system components, by CSS selector.
+        A tagged element becomes a Figma library instance (you pick <em>which</em> Figma
+        component in the plugin's binding panel). Elements that already carry a
+        <code>data-component</code> attribute are detected automatically, no rule needed.
+      </div>
+      <div style=${{ ...rowStyle, opacity: 0.7, fontSize: "11px", marginTop: "10px" }}>
+        <span>CSS selector</span><span>Component</span><span>Variants (k=v)</span><span></span>
+      </div>
+      ${rules.map((r, i) => html`
+        <div style=${rowStyle} key=${i}>
+          <input className="modal-input" placeholder=".btn.is-primary" value=${r.selector}
+            spellCheck=${false} onInput=${(e) => update(i, "selector", e.target.value)} />
+          <input className="modal-input" placeholder="Button" value=${r.component}
+            spellCheck=${false} onInput=${(e) => update(i, "component", e.target.value)} />
+          <input className="modal-input" placeholder="Variant=primary" value=${r.variants}
+            spellCheck=${false} onInput=${(e) => update(i, "variants", e.target.value)} />
+          <button className="tbtn" title="Remove rule" onClick=${() => removeRow(i)}>×</button>
+        </div>
+      `)}
+      <div className="workflow-settings-row" style=${{ marginTop: "10px" }}>
+        <button className="tbtn" onClick=${addRow}>Add rule</button>
+        <button className="tbtn tbtn-primary" onClick=${save} disabled=${busy}>${busy ? "Saving…" : "Save rules"}</button>
+        ${saved && html`<span className="workflow-settings-msg workflow-settings-msg-ok">Saved.</span>`}
+        ${err && html`<span className="workflow-settings-msg workflow-settings-msg-fail">${err}</span>`}
+      </div>
+    </div>
+  `;
+}
+
+function WorkflowFigmaSection() {
+  const daemonOrigin = (typeof location !== "undefined" && location.origin) || "http://127.0.0.1:5731";
+  const projectId = (typeof activeProjectId === "function" && activeProjectId()) || "default";
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">Send to Figma</span>
+        <span className="workflow-settings-skills">rebuilds a rendered page as editable Figma layers</span>
+      </div>
+      <div className="workflow-settings-hint">
+        Figma's API cannot create design content, so this works through a small local plugin:
+        the editor walks the rendered page into a scene and the Woven Bridge plugin (in Figma
+        Desktop) rebuilds it as real frames, text, and images. Nothing leaves your machine.
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>One-time setup</strong>
+        <ol>
+          <li>In Figma Desktop: <code>Plugins → Development → Import plugin from manifest…</code>
+            and pick <code>editor/tools/figma-bridge/manifest.json</code>.</li>
+          <li>Run it: <code>Plugins → Development → Woven Bridge</code>.</li>
+          <li>In the plugin window, set the daemon URL to <code>${daemonOrigin}</code> and the
+            project id to <code>${projectId}</code>, then click <strong>Connect</strong>
+            (the dot turns green). Leave the plugin window open while you work.</li>
+        </ol>
+        <span className="workflow-settings-localhint">
+          Any local daemon URL works; the plugin's manifest allows all origins because Figma
+          rejects a port in its allowlist. Just match what your editor is running on.
+        </span>
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>Each time</strong>
+        <ol>
+          <li>Open the prototype or HTML asset on the canvas (it is read live, so it must be rendered).</li>
+          <li>Click the Figma button (next to Export) on that node, then Send.</li>
+          <li>It builds on the current Figma page and zooms to it.</li>
+        </ol>
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>Notes.</strong> v1 uses absolute positioning (no auto-layout yet); canvas, SVG, and
+        video come over as plain frames. Full details + the scene format are in
+        <code>editor/tools/figma-bridge/README.md</code> and <code>SCENE.md</code>.
+      </div>
+    </div>
+  `;
+}
+
 function WorkflowSettingsDialog({ onClose }) {
   const [config, setConfig] = useState(null);
   // Three-tab split: API keys / things to install / chat send key. Each tab
@@ -75028,11 +75234,13 @@ function WorkflowSettingsDialog({ onClose }) {
   const TABS = [
     { id: "api", label: "API keys" },
     { id: "install", label: "Things to install" },
+    { id: "figma", label: "Send to Figma" },
     { id: "sendkey", label: "Send key" },
   ];
   const subByTab = {
     api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
     install: "Local tools the daemon installs on demand · no API key needed",
+    figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     sendkey: "Chat composer · saved in this browser, applies live",
   };
 
@@ -75073,6 +75281,9 @@ function WorkflowSettingsDialog({ onClose }) {
           ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>
+          ` : tab === "figma" ? html`
+            <${WorkflowFigmaSection}/>
+            <${FigmaComponentRules}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}

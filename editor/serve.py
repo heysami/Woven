@@ -4207,6 +4207,47 @@ def _broadcast_workflow_change(project_id: str) -> None:
     try: _live.notify_project_changed(project_id, "workflow-changed", {})
     except Exception: pass
 
+# ── Woven -> Figma bridge relay ──────────────────────────────────────────
+# A tiny in-memory relay between the editor and the Woven Figma plugin running
+# in Figma Desktop. The editor converts a rendered prototype DOM into a "scene"
+# JSON and POSTs it to /__figma_send; the plugin long-polls /__figma_poll to
+# pick the next job up, builds real Figma nodes from it, and POSTs progress to
+# /__figma_status (which the editor reads back via /__figma_job). All state is
+# per-project and clears on daemon restart - a dropped job just means re-send.
+_FIGMA_LOCK = threading.Lock()
+_FIGMA_QUEUES: dict = {}      # project_id -> list[job]   (FIFO of pending jobs)
+_FIGMA_WAITERS: dict = {}     # project_id -> set[threading.Event]
+_FIGMA_STATUS: dict = {}      # job_id -> {state, message, figmaUrl, at}
+_FIGMA_MAX_JOBS = 16          # pending-backlog cap per project
+_FIGMA_STATUS_TTL = 1800      # seconds to retain a finished job's status
+
+def _figma_enqueue(project_id: str, job: dict) -> None:
+    """Append a job and wake every plugin currently long-polling this project."""
+    with _FIGMA_LOCK:
+        q = _FIGMA_QUEUES.setdefault(project_id, [])
+        while len(q) >= _FIGMA_MAX_JOBS:
+            q.pop(0)
+        q.append(job)
+        _FIGMA_STATUS[job["jobId"]] = {"state": "queued", "message": "", "figmaUrl": "", "at": time.time()}
+        waiters = list(_FIGMA_WAITERS.get(project_id) or ())
+    for w in waiters:
+        try: w.set()
+        except Exception: pass
+
+def _figma_prune_status() -> None:
+    """Drop finished-job status entries older than the TTL. Caller holds lock."""
+    now = time.time()
+    dead = [jid for jid, s in _FIGMA_STATUS.items()
+            if s.get("state") in ("done", "error") and (now - s.get("at", now)) > _FIGMA_STATUS_TTL]
+    for jid in dead:
+        _FIGMA_STATUS.pop(jid, None)
+
+def _figma_pid(qs) -> str:
+    pid = ""
+    if isinstance(qs, dict):
+        v = qs.get("project")
+        pid = (v[0] if isinstance(v, list) and v else (v or "")).strip()
+    return pid or "default"
 
 # ── Whiteboard (`wb`) item sanitizer ─────────────────────────────────────
 # The workflow canvas's whiteboard layer stores its items in a top-level
@@ -7905,8 +7946,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             # routes here are deleted so the do_POST table reads cleanly.
             if parsed.path == "/__layout":
                 return self._layout_save(qs)
-            if parsed.path == "/__figma_cli_run":
-                return self._figma_cli_run(qs)
+            if parsed.path == "/__figma_send":
+                return self._figma_send(qs)
+            if parsed.path == "/__figma_poll":
+                return self._figma_poll(qs)
+            if parsed.path == "/__figma_status":
+                return self._figma_status(qs)
+            if parsed.path == "/__figma_job":
+                return self._figma_job(qs)
+            if parsed.path == "/__figma_map":
+                return self._figma_map(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
             if parsed.path == "/__workflow/nodes/add":
@@ -14472,93 +14521,177 @@ class H(http.server.SimpleHTTPRequestHandler):
             "status":       _export_folder_status(stored) if stored else None,
         })
 
-    # POST /__figma_cli_run?project=<id>  body {url, name?}
-    # The NO-TERMINAL path: the editor passes a prototype's live URL and the
-    # daemon drives the vendored figma-cli (editor/tools/figma-cli) on the user's
-    # behalf - checks the Figma connection via /health (Safe Mode, boots the
-    # daemon if needed), then `recreate-url <url> --name <name>` (which loads the
-    # page via Playwright). Returns figma-cli's output for the editor modal. The
-    # user clicks a button; they never open a terminal.
-    def _figma_cli_run(self, qs):
+    # ── Woven -> Figma bridge endpoints ──────────────────────────────────
+    # POST /__figma_send?project=<id>  body {scene:{...}, name?, nodeId?}
+    # Editor pushes a converted scene; we queue it for the plugin to pick up.
+    def _figma_send(self, qs):
         try:
-            project_root = resolve_project_root(qs)
+            resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = _figma_pid(qs)
+        try:
+            # Generous local cap: a scene's inlined base64 rasters (the browser
+            # walker caps decoded image bytes at ~40MB, ~53MB once base64-encoded).
+            body = self._read_json_body(max_bytes=128 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        scene = body.get("scene")
+        if not isinstance(scene, dict) or not isinstance(scene.get("root"), dict):
+            return self._reply(400, {"error": "missing or invalid scene (expected {root:{...}})"})
+        job_id = "fig_" + _new_request_id()
+        job = {
+            "jobId": job_id,
+            "scene": scene,
+            "name": (body.get("name") or scene.get("name") or "Woven export"),
+            "nodeId": (body.get("nodeId") or ""),
+            "at": time.time(),
+        }
+        _figma_enqueue(pid, job)
+        return self._reply(200, {"ok": True, "jobId": job_id, "queued": True})
+
+    # POST /__figma_poll?project=<id>
+    # The plugin's long-poll: returns the next queued job, or {job:null} after
+    # ~25s so the plugin can re-poll without tripping proxy idle timeouts.
+    def _figma_poll(self, qs):
+        try:
+            resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = _figma_pid(qs)
+        with _FIGMA_LOCK:
+            q = _FIGMA_QUEUES.get(pid) or []
+            if q:
+                job = q.pop(0)
+                _FIGMA_STATUS[job["jobId"]] = {"state": "delivered", "message": "", "figmaUrl": "", "at": time.time()}
+                return self._reply(200, {"ok": True, "job": job})
+            waker = threading.Event()
+            _FIGMA_WAITERS.setdefault(pid, set()).add(waker)
+        waker.wait(timeout=25)
+        with _FIGMA_LOCK:
+            s = _FIGMA_WAITERS.get(pid)
+            if s:
+                s.discard(waker)
+            q = _FIGMA_QUEUES.get(pid) or []
+            if q:
+                job = q.pop(0)
+                _FIGMA_STATUS[job["jobId"]] = {"state": "delivered", "message": "", "figmaUrl": "", "at": time.time()}
+                return self._reply(200, {"ok": True, "job": job})
+        return self._reply(200, {"ok": True, "job": None})
+
+    # POST /__figma_status?project=<id>  body {jobId, state, message?, figmaUrl?}
+    # The plugin reports build progress / completion / failure for a job.
+    def _figma_status(self, qs):
+        try:
+            resolve_project_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         try:
             body = self._read_json_body(max_bytes=64 * 1024)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        url = (body.get("url") or "").strip()
-        name = (body.get("name") or "Woven").strip()[:80] or "Woven"
-        if not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?/", url):
-            return self._reply(400, {"error": "url must be a local prototype URL (http://localhost:.../source/...)"})
-        import shutil
-        node = shutil.which("node") or "/usr/local/bin/node"
-        cli = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "figma-cli", "src", "index.js")
-        if not os.path.isfile(cli):
-            return self._reply(200, {"ok": False, "stage": "install",
-                "error": "figma-cli is not installed in this editor's tools/figma-cli."})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        job_id = (body.get("jobId") or "").strip()
+        if not job_id:
+            return self._reply(400, {"error": "missing jobId"})
+        with _FIGMA_LOCK:
+            _FIGMA_STATUS[job_id] = {
+                "state":    (body.get("state") or "info").strip(),
+                "message":  str(body.get("message") or "")[:500],
+                "figmaUrl": str(body.get("figmaUrl") or "")[:500],
+                "at":       time.time(),
+            }
+            _figma_prune_status()
+        return self._reply(200, {"ok": True})
 
-        # recreate-url writes a temp analyze script to /tmp that require()s
-        # playwright; set NODE_PATH to figma-cli's node_modules so that temp
-        # script (which inherits this env) can resolve it.
-        cli_node_modules = os.path.join(os.path.dirname(os.path.dirname(cli)), "node_modules")
-        cli_env = dict(os.environ)
-        existing_np = cli_env.get("NODE_PATH", "")
-        cli_env["NODE_PATH"] = cli_node_modules + (os.pathsep + existing_np if existing_np else "")
+    # POST /__figma_job?project=<id>  body {jobId}
+    # Editor reads a job's latest status to drive the send modal.
+    def _figma_job(self, qs):
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        job_id = (body.get("jobId") or "").strip() if isinstance(body, dict) else ""
+        if not job_id:
+            return self._reply(400, {"error": "missing jobId"})
+        with _FIGMA_LOCK:
+            s = _FIGMA_STATUS.get(job_id)
+        if not s:
+            return self._reply(200, {"ok": True, "jobId": job_id, "state": "unknown"})
+        return self._reply(200, {
+            "ok": True, "jobId": job_id,
+            "state": s.get("state"), "message": s.get("message"), "figmaUrl": s.get("figmaUrl"),
+        })
 
-        def run(args, timeout):
+    # POST /__figma_map?project=<id>  body {op:"get"|"set", dsRef?, rules?}
+    # Persists the Send-to-Figma selector rules (selector -> component +
+    # variants) that tag DS components in the export. Stored per design system
+    # at design-systems/<dsRef>/figma-map.json (else project-root figma-map.json)
+    # so the mapping travels with the project. The name->Figma-key binding lives
+    # on the plugin side (Figma keys are file-local); these are just the rules.
+    def _figma_map(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        ds_ref = (body.get("dsRef") or "").strip()
+        safe_ds = ds_ref if re.match(r"^[A-Za-z0-9._-]+$", ds_ref) else ""
+        if safe_ds:
+            path = os.path.join(project_root, "design-systems", safe_ds, "figma-map.json")
+        else:
+            path = os.path.join(project_root, "figma-map.json")
+        op = (body.get("op") or "get").strip()
+        if op == "set":
+            rules = body.get("rules")
+            if not isinstance(rules, list):
+                return self._reply(400, {"error": "rules must be a list"})
+            clean = []
+            for r in rules[:500]:
+                if not isinstance(r, dict):
+                    continue
+                sel = (r.get("selector") or "").strip()
+                comp = (r.get("component") or "").strip()
+                if not sel or not comp:
+                    continue
+                entry = {"selector": sel[:300], "component": comp[:100]}
+                var = r.get("variants")
+                if isinstance(var, dict):
+                    vv = {}
+                    for k, val in list(var.items())[:20]:
+                        if isinstance(k, str) and isinstance(val, (str, int, float, bool)):
+                            vv[k[:50]] = str(val)[:100]
+                    if vv:
+                        entry["variants"] = vv
+                clean.append(entry)
             try:
-                r = subprocess.run([node, cli] + args, capture_output=True, text=True,
-                                   timeout=timeout, stdin=subprocess.DEVNULL, cwd=project_root, env=cli_env)
-                return r.returncode, (r.stdout or ""), (r.stderr or "")
-            except subprocess.TimeoutExpired:
-                return 124, "", "timed out"
-            except Exception as e:
-                return 1, "", str(e)
-
-        def is_connected():
-            # figma-cli's `daemon status` text never says "connected" - the real
-            # plugin-connection signal is /health -> {"plugin": true}. Read its
-            # token + hit /health (default port 3456).
-            import urllib.request
-            token = ""
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                staging = path + ".staging"
+                with open(staging, "w", encoding="utf-8") as f:
+                    json.dump({"rules": clean}, f, indent=2)
+                os.replace(staging, path)
+            except OSError as e:
+                return self._reply(500, {"error": f"write failed: {e}"})
+            return self._reply(200, {"ok": True, "count": len(clean), "path": os.path.relpath(path, project_root)})
+        # op == "get"
+        rules = []
+        if os.path.isfile(path):
             try:
-                with open(os.path.expanduser("~/.figma-ds-cli/.daemon-token")) as f:
-                    token = f.read().strip()
+                with open(path, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if isinstance(d, dict) and isinstance(d.get("rules"), list):
+                    rules = d["rules"]
             except Exception:
-                pass
-            try:
-                req = urllib.request.Request("http://127.0.0.1:3456/health")
-                if token:
-                    req.add_header("X-Daemon-Token", token)
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                return bool(data.get("plugin"))
-            except Exception:
-                return False
-
-        if not is_connected():
-            # Safe Mode: boot figma-cli's own daemon (it spawns detached + keeps
-            # listening for its plugin). We do NOT wait its full 90s plugin-wait -
-            # just long enough to start it, then tell the user to run the plugin.
-            # (NOT Yolo: Yolo patches Figma.app and macOS gates that behind an
-            # "App Management" permission - the friction we're avoiding.)
-            run(["connect", "--safe"], 15)
-            if not is_connected():
-                manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                        "tools", "figma-cli", "plugin", "manifest.json")
-                return self._reply(200, {"ok": False, "stage": "connect",
-                    "manifestPath": manifest,
-                    "error": ("figma-cli needs its plugin (\"FigCli\") running in Figma - one time, no terminal:\n"
-                              "  1. Figma Desktop -> Plugins -> Development -> Import plugin from manifest...  (first time only)\n"
-                              "     Pick: " + manifest + "\n"
-                              "  2. Plugins -> Development -> FigCli   (run it, leave it open)\n"
-                              "Then click Retry.")})
-        rc, out, err = run(["recreate-url", url, "--name", name], 300)
-        ok = (rc == 0)
-        return self._reply(200, {"ok": ok, "stage": "recreate", "output": (out + err)[-4000:],
-            "error": None if ok else "figma-cli recreate-url failed (see output)."})
+                rules = []
+        return self._reply(200, {"ok": True, "rules": rules})
 
     # POST /__export_asset?project=<id>  body {nodeId:string}
     # Bundles the named asset/prototype/container node into the project's

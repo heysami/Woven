@@ -1,0 +1,12 @@
+{
+  "name": "Woven Bridge",
+  "id": "woven-figma-bridge",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["*"],
+    "reasoning": "Long-polls the local Woven daemon (localhost, any port) to receive design hand-offs from the Woven editor. Figma's allowedDomains cannot contain a port, so this dev bridge uses the wildcard; all requests stay on your machine."
+  }
+}
