@@ -32,7 +32,7 @@ You are Subagent 1.V.raster-foreground.
   "slotEditDiff": "<optional html mutation>" }
 ```
 
-When a `reference` block was passed (v3.6 character link), your returned `params` MUST also pin `"provider": "openai"`, `"model": "gpt-image-1"`, and `"input_path": "<referenceImagePath>"` so a later canvas re-Run reproduces the link instead of regenerating a from-scratch (identity-drifting) subject.
+When a `reference` block was passed (v3.6 character link), generate WITH the reference (POST `input_path` + a gpt-image model, below). The link is reproduced on a later canvas re-Run by the skill node's `refImagePath` + `refMode` fields - the orchestrator sets those (see visual-orchestrator "Step 4.5"), so you do NOT need to encode the reference into your returned `params`; just return the `promptText` (the character-consistency edit prompt) as usual.
 
 **Pipeline**:
 1. Compose the imaging prompt for the subject. Don't generate flat one-shot PNGs - describe foreground subject + lighting + perspective + style, then explicitly request a transparent background or a clean isolated subject for rembg cleanup.

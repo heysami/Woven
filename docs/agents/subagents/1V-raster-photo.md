@@ -15,7 +15,7 @@ genre, projectVoice, nodeIds, brief, codeContext,
 reference: { referenceAssetId, referenceImagePath, identityNote }   // v3.6, dependents only - omit otherwise
 ```
 
-**(v3.6) Reference / character link.** When the envelope carries a `reference` block, this slot was linked by the orchestrator to an ANCHOR asset (the same subject re-shot in another scene). Then: write a consistency EDIT prompt (name the reference as Image 1; preserve subject identity / geometry; change only scene / framing / lighting / weather - templates `docs/research/imagegen-playbook.md` "character consistency" / "lighting-weather"), POST `generate-image` with `provider:"openai"`, `model:"gpt-image-1"`, AND `input_path:"<referenceImagePath>"` (img2img only works on gpt-image; the daemon 400s otherwise), and return those plus `input_path` in `params` so a canvas re-Run reproduces the link.
+**(v3.6) Reference / character link.** When the envelope carries a `reference` block, this slot was linked by the orchestrator to an ANCHOR asset (the same subject re-shot in another scene). Then: write a consistency EDIT prompt (name the reference as Image 1; preserve subject identity / geometry; change only scene / framing / lighting / weather - templates `docs/research/imagegen-playbook.md` "character consistency" / "lighting-weather") and POST `generate-image` with `input_path:"<referenceImagePath>"` + a gpt-image model (img2img only works on gpt-image; the daemon 400s otherwise). The link is reproduced on a canvas re-Run by the node's `refImagePath`/`refMode` fields (the orchestrator sets them), so you need not encode the reference into your returned `params` - just return the `promptText`.
 
 You may read:
 - `slot.file` (only)

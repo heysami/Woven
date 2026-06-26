@@ -927,6 +927,11 @@ If rembg shows `✓ INSTALLED`, the raster-foreground pipeline (generate → bac
   • `image-to-glb` → a textured **mesh** `.glb` → feeds **Spline 3D** / **Voxel** / model-viewer.
 Both default to **fal** (hosted - `tripo3d/triposplat` for splat, `fal-ai/trellis` for mesh; needs a fal key, runs on fal's GPU) and also accept provider `sam3d` (a self-hosted SAM 3D Objects service, `services/sam3d-splat/`). So when a user says "make this image a 3D model / splat", chain generate-image → rembg → image-to-ply/-glb and wire the result into the matching 3D node - do NOT say it's unsupported.
 
+**Reference image (image-to-image) on `generate-image` - match a style or keep a subject.** A `generate-image` skill node can carry a REFERENCE IMAGE so the model edits FROM that image instead of generating purely from text. Two node fields drive it (these are also what the human "ref image" control beside the DS picker writes, so agent-set and user-set links are the same mechanism):
+  • `refImagePath` - a project image under `source/...` (e.g. an earlier generated asset, an upload) used as the reference.
+  • `refMode` - `"style"` (apply the reference's palette / texture / brushwork / lighting, keep YOUR prompt's subject), `"subject"` (preserve the reference's subject identity - face, proportions, outfit, colour - restyle per the prompt), or `"edit"` (raw image-to-image, no extra directive).
+The canvas Run reads these, injects the matching directive into the prompt, and auto-promotes to a gpt-image model - **image-to-image only works on the OpenAI gpt-image family**, so a text-only model carrying an input image gets a clean 400. The equivalent low-level call is POST `/__asset_generate` with `input_path` (or `input_data_uri`) + a gpt-image model. This is exactly how the visual-orchestrator locks ONE character across multiple slots: pick an anchor asset, set each dependent's `refImagePath` to the anchor's path with `refMode:"subject"`, and generate the anchor first.
+
 **Subagent drawers available** ({len(caps['subagents'])}, dispatch via the Task tool):
 {subagent_lines}
 

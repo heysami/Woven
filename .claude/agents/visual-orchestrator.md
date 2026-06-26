@@ -54,6 +54,10 @@ For each `keep` asset, append a node TRIO (or quartet for raster-foreground whic
 { "id": "s_<assetId>", "kind": "skill",
   "skill": "<generate-image | svg-gen | shader | threejs | canvas-gen | lottie-gen | video-gen | motion-gen | rembg>",
   "params": { /* aspect, model, transparent, … */ },
+  // generate-image only - OPTIONAL reference image (img2img). Set both to lock a
+  // style or a subject to an existing image; see "Step 4.5". Omit when none.
+  "refImagePath": "<source/… image to use as the reference>",
+  "refMode": "<style | subject | edit>",
   "code": "",                              // per-medium subagent fills this for Pathway B
   "x": <auto>, "y": <auto>, "w": 280, "h": 220 }
 
@@ -231,9 +235,10 @@ Run this AFTER classification (Steps 2-3) and BEFORE you write the dispatch mani
 
 2. **Pick the anchor.** Within each group, designate ONE asset as the `anchor` - the canonical, fullest, most front-facing view of the character (heuristic: hero register / largest bbox / earliest full-body or face view in the DOM). The rest are `dependents`.
 
-3. **Link each dependent to its anchor.** On the dependent's skill node `s_<depId>`:
-   - FORCE `params.provider = "openai"` and `params.model = "gpt-image-1"`. Image-to-image only works on the OpenAI gpt-image family; the daemon 400s any other provider/model that carries an input image (`editor/serve.py`). Linked dependents therefore OVERRIDE the project's default image model. Non-linked assets keep the project model unchanged.
-   - Set `params.input_path = "<anchor outputPath>"` (e.g. `source/<branch>/images/<anchorAssetId>.png`). This is the reference image the daemon promotes to its `/v1/images/edits` endpoint so the anchor actually influences the dependent.
+3. **Link each dependent to its anchor.** On the dependent's skill node `s_<depId>` set the SAME two reference fields the human "ref image" control writes (so agent-built and user-built links are one mechanism, the node shows the reference chip, and a manual canvas re-Run reproduces it):
+   - `refImagePath = "<anchor outputPath>"` (e.g. `source/<branch>/images/<anchorAssetId>.png`) - the reference image fed to the model.
+   - `refMode = "subject"` - keep the anchor's subject identity (face, proportions, outfit, colour) and recompose per the prompt. (Character consistency = the `subject` mode.)
+   - The canvas Run reads these, injects the consistency directive, and auto-promotes to a gpt-image model. **Image-to-image only works on the OpenAI gpt-image family**; the daemon 400s any other model carrying an input image (`editor/serve.py`), so the dependent effectively overrides the project image model. Non-linked assets keep the project model unchanged. (You do NOT need to also set `params.provider/model/input_path` - the `refImagePath`/`refMode` fields are canonical; the daemon promotes to its edit endpoint.)
    - Wire the typed reference edge `{ "from": "a_<anchorId>.out", "to": "s_<depId>.ref", "kind": "reference" }` (see Edges above).
    - Append the character-consistency clause to the dependent prompt node text, after its `ASSET:` line (template: `docs/research/imagegen-playbook.md` "character consistency"):
      ```

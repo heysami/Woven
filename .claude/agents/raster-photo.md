@@ -28,7 +28,7 @@ You are Subagent 1.V.raster-photo.
   "skillCode": null }
 ```
 
-When a `reference` block was passed (v3.6 character link), your returned `params` MUST also pin `"provider": "openai"`, `"model": "gpt-image-1"`, and `"input_path": "<referenceImagePath>"` so a later canvas re-Run reproduces the link rather than regenerating a drifting subject.
+When a `reference` block was passed (v3.6 character link), generate WITH the reference (POST `input_path` + a gpt-image model, below). The link is reproduced on a later canvas re-Run by the skill node's `refImagePath` + `refMode` fields, which the orchestrator sets (see visual-orchestrator "Step 4.5") - so you do NOT need to encode the reference into your returned `params`; just return the `promptText` as usual.
 
 **Pipeline**:
 1. Compose a photographic prompt - camera angle, lens, lighting, atmosphere, time of day, depth of field.
