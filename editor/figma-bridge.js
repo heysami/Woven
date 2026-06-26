@@ -494,6 +494,69 @@
     return null;
   }
 
+  // ---- interactive components (button / input / select / ...) -----------
+  // Identified by tag (Woven prototypes use inline-styled <button>/<input>,
+  // not consistent classes). These should become real auto-layout Figma
+  // components - padded, content-centered - not flat boxes. `field` marks the
+  // ones whose text lives in value/placeholder, not a DOM child.
+
+  function interactiveComponent(el, tag, cs) {
+    var role = (el.getAttribute && el.getAttribute("role")) || "";
+    if (tag === "BUTTON" || role === "button") return { name: "Button", field: false };
+    if (tag === "TEXTAREA") return { name: "Input", field: true };
+    if (tag === "SELECT") return { name: "Select", field: true };
+    if (tag === "INPUT") {
+      var t = (el.getAttribute("type") || "text").toLowerCase();
+      if (t === "button" || t === "submit" || t === "reset") return { name: "Button", field: false };
+      if (t === "checkbox" || t === "radio") return { name: "Checkbox", field: false };
+      return { name: "Input", field: true };
+    }
+    if (tag === "A") {
+      // A link styled like a button (padding + a fill or border) -> Button.
+      var pad = px(cs.paddingTop) + px(cs.paddingBottom) + px(cs.paddingLeft) + px(cs.paddingRight);
+      var bg = parseColor(cs.backgroundColor);
+      var boxed = (bg && bg.a > 0) || !!readStroke(cs);
+      if (pad >= 8 && boxed) return { name: "Button", field: false };
+    }
+    return null;
+  }
+
+  // Build a TEXT node for a form field from its value (or placeholder, muted).
+  function synthFieldText(el, cs, rect) {
+    var val = "", muted = false;
+    try {
+      if (el.tagName === "SELECT") {
+        var opt = el.options && el.options[el.selectedIndex];
+        val = (opt && opt.text) || "";
+      } else {
+        val = el.value || "";
+        if (!val) { val = (el.getAttribute && el.getAttribute("placeholder")) || ""; muted = true; }
+      }
+    } catch (e) {}
+    val = (val || "").replace(/\s+/g, " ").trim();
+    if (!val) return null;
+    var col = parseColor(cs.color) || { r: 0.4, g: 0.4, b: 0.4, a: 1 };
+    if (muted) col = { r: 0.56, g: 0.56, b: 0.58, a: 1 };   // approximate placeholder gray
+    var fontFamily = (cs.fontFamily || "Inter").split(",")[0].replace(/['"]/g, "").trim() || "Inter";
+    var ls = px(cs.letterSpacing);
+    return {
+      type: "TEXT",
+      name: val.slice(0, 40),
+      x: 0, y: 0,
+      width: round(Math.max(1, rect.width - px(cs.paddingLeft) - px(cs.paddingRight))),
+      height: round((px(cs.fontSize) || 14) * 1.4),
+      characters: val,
+      fontSize: round(px(cs.fontSize) || 14),
+      fontFamily: fontFamily,
+      fontStyle: fontStyleFromWeight(cs.fontWeight, /italic|oblique/i.test(cs.fontStyle)),
+      letterSpacing: isFinite(ls) ? round(ls) : 0,
+      lineHeight: "AUTO",
+      textAlign: textAlign(cs),
+      textColor: solidPaint(col) || { type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } },
+      textDecoration: "NONE"
+    };
+  }
+
   // ---- node walk --------------------------------------------------------
 
   var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, LINK: 1, META: 1, HEAD: 1, TITLE: 1, BR: 1 };
@@ -571,6 +634,9 @@
       pending.push({ url: el.currentSrc || el.src, el: el, node: node });
     }
 
+    // Interactive design-system component? (button / input / select / ...)
+    var ic = interactiveComponent(el, tag, cs);
+
     // Children: recurse element children, then attach a TEXT child for the
     // element's own direct text (most leaves have text and no element kids).
     var elementKids = [];
@@ -585,6 +651,11 @@
       var t = makeTextChild(el, cs, rect, rect);
       if (t) node.children.push(t);
     }
+    // Form fields carry no DOM child text - synthesize one from value/placeholder.
+    if (ic && ic.field && !node.children.length) {
+      var ft = synthFieldText(el, cs, rect);
+      if (ft) node.children.push(ft);
+    }
 
     decideLayout(cs, node);
 
@@ -593,6 +664,25 @@
       node.component = comp.name;
       if (comp.props && Object.keys(comp.props).length) node.componentProps = comp.props;
       _componentNames[comp.name] = true;
+    } else if (ic && ic.name) {
+      // Tag-based default: a bare <button>/<input> reads as Button/Input so it
+      // maps to the DS component (and names the layer) even without a rule.
+      node.component = ic.name;
+      _componentNames[ic.name] = true;
+    }
+
+    // Buttons / fields become real auto-layout (padded, content-centered) even
+    // when they aren't CSS flex or have a single child.
+    if (ic && !node.layout) {
+      var cg = (cs.columnGap && cs.columnGap !== "normal") ? px(cs.columnGap) : 0;
+      node.layout = {
+        mode: "HORIZONTAL",
+        gap: round(cg) || (ic.field ? 0 : 8),
+        padding: readPadding(cs),
+        primaryAlign: ic.field ? "MIN" : "CENTER",
+        counterAlign: "CENTER",
+        wrap: false
+      };
     }
 
     // Prune empty decorationless containers (never prune a tagged component).
