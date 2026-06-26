@@ -15,3 +15,6 @@ __pycache__/
 # Daemon-managed sanitised CODEX_HOME - built on first codex spawn from
 # the user's ~/.codex/ minus skills/. Contents are symlinks; never commit.
 .codex-home/
+
+# Vendored figma-cli (external MIT tool; install per editor/tools/figma-bridge/USING-FIGMA-CLI.md)
+editor/tools/figma-cli/
