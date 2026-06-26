@@ -483,18 +483,37 @@
     };
   }
 
-  // CSS grid -> a horizontal auto-layout that WRAPS (cards keep their measured
-  // size and reflow into rows). Keeps the grid in real auto-layout instead of
-  // pinning children to ignore-auto-layout.
-  function gridLayout(cs) {
+  // Count distinct position bands along an axis (cluster within tol px) - tells
+  // us how many rows / columns the children actually occupy.
+  function countBands(kids, axis, tol) {
+    var vals = [];
+    for (var i = 0; i < kids.length; i++) vals.push(kids[i][axis] || 0);
+    vals.sort(function (a, b) { return a - b; });
+    var bands = 0, last = -1e9;
+    for (var j = 0; j < vals.length; j++) {
+      if (vals[j] - last > tol) { bands++; last = vals[j]; }
+    }
+    return bands;
+  }
+
+  // CSS grid -> real auto-layout, with DIRECTION inferred from where the cells
+  // actually sit (getBoundingClientRect): one row -> HORIZONTAL no-wrap (a table
+  // header/row - must never wrap into a vertical pile); one column -> VERTICAL;
+  // a true 2D grid (rows AND cols) -> HORIZONTAL wrap (a card gallery).
+  function gridLayout(cs, node) {
     var gv = function (v) { return (!v || v === "normal") ? 0 : px(v); };
-    return {
-      mode: "HORIZONTAL",
-      gap: round(gv(cs.columnGap)), crossGap: round(gv(cs.rowGap)),
-      padding: readPadding(cs),
-      primaryAlign: "MIN", counterAlign: "MIN",
-      wrap: true
-    };
+    var colGap = round(gv(cs.columnGap)), rowGap = round(gv(cs.rowGap));
+    var pad = readPadding(cs);
+    var kids = (node.children || []).filter(function (c) { return !c.absolute; });
+    var rows = countBands(kids, "y", 8);
+    var cols = countBands(kids, "x", 8);
+    if (rows <= 1) {
+      return { mode: "HORIZONTAL", gap: colGap, crossGap: rowGap, padding: pad, primaryAlign: "MIN", counterAlign: "MIN", wrap: false };
+    }
+    if (cols <= 1) {
+      return { mode: "VERTICAL", gap: rowGap, crossGap: colGap, padding: pad, primaryAlign: "MIN", counterAlign: "MIN", wrap: false };
+    }
+    return { mode: "HORIZONTAL", gap: colGap, crossGap: rowGap, padding: pad, primaryAlign: "MIN", counterAlign: "MIN", wrap: true };
   }
 
   // EVERY frame gets an auto-layout (mandate: no plain absolute frames). Flex ->
@@ -541,7 +560,7 @@
         // horizontal wrap (cards keep their size and wrap); anything else gets a
         // base stack.
         if (isGrid) {
-          node.layout = gridLayout(cs);
+          node.layout = gridLayout(cs, node);
           node._gridWrap = true;
           sortByOrder(node.children);
         } else {
