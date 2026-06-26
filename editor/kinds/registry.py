@@ -1465,6 +1465,36 @@ KINDS = {
         "notes": "Read-only reference wired into design-system or prototype.",
     },
 
+    # ── animated-sprite ───────────────────────────────────────────────────
+    "animated-sprite": {
+        "title":        "Animated sprite",
+        "category":     "container",
+        "inputs": {
+            "name":       {"type": "text",   "userEditable": True},
+            "source":     {"type": "text",   "userEditable": False},
+            "animation":  {"type": "text",   "userEditable": True},
+            "frameCount": {"type": "number", "userEditable": True},
+            "fps":        {"type": "number", "userEditable": True},
+            "loop":       {"type": "bool",   "userEditable": True},
+            "frameWidth": {"type": "number", "userEditable": False},
+            "frameHeight":{"type": "number", "userEditable": False},
+            "sheet":      {"type": "text",   "userEditable": False},
+            "atlas":      {"type": "object", "userEditable": False},
+            "path":       {"type": "text",   "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "Raster image -> AI-redrawn frame cycle baked to a sprite-sheet PNG + atlas JSON. Wire a source image into `in`; wire an Agent into `edit` to generate frames.",
+    },
+
     # ── prototype ─────────────────────────────────────────────────────────
     "prototype": {
         "title":        "Prototype (live iframe)",
@@ -3412,6 +3442,39 @@ _TYPOGRAPHY_AUTHORING = (
     "Each level is {name, size(px), weight(100-900), lineHeight, mono?}. Order levels largest → smallest. Do "
     "NOT fabricate font URLs - names only."
 )
+_SPRITE_AUTHORING = (
+    "This is an ANIMATED-SPRITE node - it turns ONE source raster image into a short looping ANIMATION "
+    "baked as a sprite-sheet PNG plus a TexturePacker/Aseprite-compatible atlas JSON. NO video, NO movie file - "
+    "frame-based sprites only.\n"
+    "  The source image is the raster wired into this node's input port (its file path is in your context as the "
+    "upstream asset). If the canonical JSON already carries `source`, use that path.\n"
+    "  STEP 1 - generate frames. Produce `frameCount` frames of the requested `animation` (idle / walk / run / "
+    "attack / jump / turn / custom) by RE-DRAWING the subject in successive poses of the cycle, each a transparent "
+    "PNG the SAME pixel size, the subject in a CONSISTENT silhouette / palette / lighting across all frames "
+    "(commission them the same way the scrapbook PNG-sequence does - one render per pose; frame i must read as "
+    "'frame i of N' of the named cycle, looping seamlessly back to frame 0).\n"
+    "  STEP 2 - pack. Compose the frames left-to-right into ONE horizontal strip PNG (each cell = frameWidth x "
+    "frameHeight) and write it to `source/{branch}/sprites/animated-sprite-{id}.png` (use PIL or ImageMagick "
+    "montage; preserve alpha).\n"
+    "  STEP 3 - write the canonical file `source/{branch}/animated-sprite-{id}.json` (read it first if it exists; "
+    "re-imported live). Schema:\n"
+    "      {\"name\":\"Walk cycle\",\"source\":\"source/{branch}/images/<input>.png\",\n"
+    "       \"animation\":\"walk\",\"frameCount\":6,\"fps\":12,\"loop\":true,\n"
+    "       \"frameWidth\":256,\"frameHeight\":256,\"layout\":\"strip\",\n"
+    "       \"sheet\":\"source/{branch}/sprites/animated-sprite-{id}.png\",\n"
+    "       \"atlas\":{\n"
+    "         \"frames\":[{\"filename\":\"walk_0\",\"frame\":{\"x\":0,\"y\":0,\"w\":256,\"h\":256},\n"
+    "                    \"rotated\":false,\"trimmed\":false,\n"
+    "                    \"spriteSourceSize\":{\"x\":0,\"y\":0,\"w\":256,\"h\":256},\n"
+    "                    \"sourceSize\":{\"w\":256,\"h\":256},\"duration\":83}],\n"
+    "         \"meta\":{\"app\":\"woven-animated-sprite\",\"image\":\"animated-sprite-{id}.png\",\n"
+    "                 \"format\":\"RGBA8888\",\"size\":{\"w\":1536,\"h\":256},\"scale\":\"1\",\"fps\":12,\n"
+    "                 \"frameTags\":[{\"name\":\"walk\",\"from\":0,\"to\":5,\"direction\":\"forward\"}]}}}\n"
+    "  `atlas.frames` is a JSON-ARRAY (Phaser/PixiJS-native) - one entry per cell, in play order, each a `filename` "
+    "+ pixel `frame` rect on the sheet + `duration` in ms (1000/fps). `meta.size` is the whole sheet "
+    "(frameCount*frameWidth x frameHeight). Set `sheet` to the strip PNG path you wrote. Keep `frameCount`, `fps`, "
+    "`loop`, `frameWidth`, `frameHeight` consistent with the frames you packed. Do NOT invent extra top-level fields."
+)
 KIND_IO = {
     "prompt": {
         "provides": [{"port": "out", "label": "Text", "tags": ["text", "runnable", "blendable"],
@@ -3451,6 +3514,16 @@ KIND_IO = {
             {"port": "edit", "label": "Edit type scale", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/typography-{id}.json",
               "authoring": _TYPOGRAPHY_AUTHORING},
+        ],
+    },
+    "animated-sprite": {
+        "provides": [{"port": "out", "label": "Sprite sheet", "tags": ["asset", "sprite", "remixable", "blendable"],
+                       "resolve": "assetFile"}],
+        "accepts":  [
+            {"port": "in", "label": "Source image", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Generate frames", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/animated-sprite-{id}.json",
+              "authoring": _SPRITE_AUTHORING},
         ],
     },
     "design-system": {

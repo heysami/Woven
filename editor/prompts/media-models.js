@@ -316,6 +316,27 @@
       playbookPath: "docs/research/imagegen-playbook.md",
     },
     {
+      // Identity-preserving image-to-image. Takes a raster of ONE subject
+      // (character or object) on its `asset` input and re-renders the SAME
+      // subject under structured pose/rotation/expression/clothing changes the
+      // node's control panel assembles into the prompt. Always i2i, so the
+      // model list is filtered to i2i-capable models (gpt-image family) and the
+      // dispatcher feeds the subject image as input_path. No `prompt` input -
+      // the instruction is built on-node from the pose controls.
+      id: "pose-subject",
+      label: "Pose / restyle",
+      hint: "subject image → re-posed / re-styled image (keeps identity) · rotate axis, change pose / expression / clothes",
+      glyph: "⟳",
+      pathway: "A",
+      inputs: ["asset"],
+      output: "image",
+      hasModelDropdown: true,
+      modelsFilter: (m) => m.caps && m.caps.includes("i2i") && m.integrated,
+      defaultModel: "gpt-image-2",
+      hasAspect: true,
+      playbookPath: "docs/research/imagegen-playbook.md",
+    },
+    {
       id: "rembg",
       label: "Remove background",
       hint: "asset → image (local · pip install rembg · no API key)",

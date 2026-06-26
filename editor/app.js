@@ -25472,6 +25472,15 @@ const WORKFLOW_NODE_FACTORY = {
       { name: "Mono",     size: 12, weight: 500, lineHeight: 1.3,  sample: "ID-9F4C2 · 03:42:17", mono: true },
     ],
   }),
+  "animated-sprite": (p) => ({
+    kind: "animated-sprite", w: 300, h: 330,
+    name: p.name || "Animated sprite",
+    animation: p.animation || "idle",
+    frameCount: p.frameCount || 6,
+    fps: p.fps || 12,
+    loop: p.loop !== false,
+    source: p.source || "",
+  }),
   "iterator-repeater": (p) => {
     const n = Math.max(1, Math.min(8, p.n || 4));
     return {
@@ -25681,6 +25690,12 @@ const WORKFLOW_CONNECT_DEFS = {
     accepts:  { in:   { label: "Generate with", tags: ["typography-gen"] },
                 edit: { label: "Edit type scale", tags: ["text-gen", "asset-gen"] } },
   },
+  "animated-sprite": {
+    label: "Animated sprite",
+    provides: { out: { label: "Sprite sheet", tags: ["asset", "sprite", "blendable"] } },
+    accepts:  { in:   { label: "Source image", tags: ["asset"] },
+                edit: { label: "Generate frames", tags: ["text-gen", "asset-gen"] } },
+  },
   "design-system": {
     label: "Design system",
     provides: { out: { label: "DS reference", tags: ["design-system", "folder"] } },
@@ -25789,6 +25804,14 @@ const WORKFLOW_CONNECT_DEFS = {
         id: "skill-describe", label: "Describe image", payload: { skill: "describe" },
         provides: { out: { label: "Description", tags: ["text-gen"] } },
         accepts:  { in:  { label: "Image to describe", tags: ["asset", "section"] } },
+      },
+      // pose-subject (inputs:["asset"]) - "turn THIS image of a character /
+      // object into a posing node" in one click from an image's ⊕ menu. The
+      // spawned node wires the image into its `in` port as the subject.
+      {
+        id: "skill-pose", label: "Pose / restyle", payload: { skill: "pose-subject" },
+        provides: { out: { label: "Re-posed image", tags: ["asset-gen", "runnable"] } },
+        accepts:  { in:  { label: "Subject to re-pose", tags: ["asset", "section"] } },
       },
     ],
   },
@@ -39555,7 +39578,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       // v3.6 - an on-node reference image (the generate-image node's "ref image"
       // control) is the last-resort source, after a wired asset + a prompt badge.
-      if (!assetInputPath && !assetInputDataUri && skillSpec.id === "generate-image"
+      if (!assetInputPath && !assetInputDataUri
+          && (skillSpec.id === "generate-image" || skillSpec.id === "pose-subject")
           && typeof skillNode.refImagePath === "string" && skillNode.refImagePath.startsWith("source/")) {
         assetInputPath = skillNode.refImagePath;
       }
@@ -39577,7 +39601,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         });
         if (dsBlock) promptTexts.unshift(dsBlock);
       }
-      const prompt = wantsPrompt ? promptTexts.join("\n\n").trim() : null;
+      let prompt = wantsPrompt ? promptTexts.join("\n\n").trim() : null;
+      // pose-subject has no prompt input - its instruction is compiled from the
+      // node's structured pose controls (rotate / pose / expression / clothing).
+      if (skillSpec.id === "pose-subject") prompt = workflowPosePrompt(skillNode);
 
       // Walk outgoing edges to find output targets. Three categories of
       // image-output target:
@@ -40190,6 +40217,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             ? workflowRefModeDirective(skillNode.refMode) : "";
           const body = { skill: skillSpec.id, provider, model, output: outputPath, aspect, options };
           if (wantsPrompt) body.prompt = refDirective ? ((prompt ? prompt + "\n\n" : "") + refDirective) : prompt;
+          else if (skillSpec.id === "pose-subject" && prompt) body.prompt = prompt;
           // Send the resolved asset for any image-producing skill - not just
           // skills declaring an `asset` input - so a prompt's inline [filename]
           // badge reaches generate-image as a reference image (text + image ->
@@ -40203,7 +40231,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // img2img only works on i2i-capable models. When generate-image has
             // a reference image but the chosen model is text-only, auto-promote
             // to the default gpt-image model so it never silently 400s.
-            if (skillSpec.id === "generate-image" && !workflowModelHasI2I(model)) {
+            if ((skillSpec.id === "generate-image" || skillSpec.id === "pose-subject") && !workflowModelHasI2I(model)) {
               body.model = WORKFLOW_I2I_DEFAULT_MODEL;
               body.provider = "openai";
             }
@@ -43371,6 +43399,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "animated-sprite").map(n => html`
+              <${WorkflowAnimatedSpriteNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "composer").map(n => html`
               <${WorkflowComposerNode}
                 key=${n.id}
@@ -45717,6 +45761,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">❖</span>
             <span className="workflow-library-item-label">Interactive composer</span>
             <span className="workflow-library-item-id">layers · triggers · fx</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "animated-sprite" }));
+            }}
+            title="Drag onto canvas - animated sprite. Wire a raster image into the input port, then wire an Agent into the edit port to redraw it as a short looping frame cycle (idle / walk / run / attack / jump / turn). Bakes a sprite-sheet PNG + a TexturePacker/Aseprite-compatible atlas JSON, and previews the animation playing live. No video file."
+          >
+            <span className="workflow-library-item-glyph">◳</span>
+            <span className="workflow-library-item-label">Animated sprite</span>
+            <span className="workflow-library-item-id">image → sprite sheet</span>
           </div>
         </div>
         <div className="workflow-library-section-head">Building blocks</div>
@@ -55509,18 +55566,54 @@ function assetImageHasTransparentBg(img) {
   } catch { return false; }
 }
 
-// In-place crop overlay for a raster image asset. Drag the box, then Apply -
-// the cropped region is drawn at the image's NATURAL resolution and written
-// back to the SAME file path via /__write_binary, so every prototype / node
-// that references that path picks up the cropped bytes on the th:asset-refresh
+// How far past each edge the crop frame may be pulled to EXPAND the canvas:
+// 0.5 = up to +50% of the image's size on every side (so each axis can grow to
+// at most 2x). The whole coordinate space therefore spans [-0.5, 1.5] = 2.0 in
+// image units; the stage renders that full span scaled to fit, with the image
+// centred at native aspect and the surrounding margin shown as the checkerboard
+// "to be added" region. Bump this and the layout follows automatically.
+const ASSET_EXPAND_MAX = 0.5;
+
+// gpt-image edit/outpaint output buckets (the only sizes the endpoint returns).
+// We render the expanded canvas + mask straight into the nearest bucket so the
+// upload aspect matches the requested size exactly (no server-side reshaping).
+const ASSET_GPT_BUCKETS = [
+  [1024, 1024, "1:1"], [1536, 1024, "3:2"], [1024, 1536, "2:3"],
+];
+function assetPickBucket(w, h) {
+  const target = Math.log((w || 1) / (h || 1));
+  let best = ASSET_GPT_BUCKETS[0], bestD = Infinity;
+  for (const b of ASSET_GPT_BUCKETS) {
+    const d = Math.abs(Math.log(b[0] / b[1]) - target);
+    if (d < bestD) { bestD = d; best = b; }
+  }
+  return best;
+}
+
+// In-place crop / EXPAND overlay for a raster image asset. Drag the frame, then
+// Apply - the framed region is drawn at the image's NATURAL resolution and
+// written back to the SAME file path via /__write_binary, so every prototype /
+// node that references that path picks up the new bytes on the th:asset-refresh
 // bump (no HTML rewrite needed - path + extension + kind are unchanged). The
-// write goes through the daemon's history bracket, so a bad crop is undoable.
+// write goes through the daemon's history bracket, so a bad edit is undoable.
+//
+// The frame may also be pulled OUTWARD past the image edges (up to
+// ASSET_EXPAND_MAX per side) to grow the canvas. The newly-exposed margin is
+// transparent. "Add blank canvas" keeps it transparent; "Regenerate fill" sends
+// the padded image + an outpaint mask to the gpt-image edit endpoint so the
+// model fills only the new area and preserves the original.
 function WorkflowAssetCropModal({ src, path, label, onClose }) {
   const [natural, setNatural] = useState(null); // { w, h } of the source file
-  const [rect, setRect] = useState({ x: 0.08, y: 0.08, w: 0.84, h: 0.84 }); // normalised 0..1
+  const [rect, setRect] = useState({ x: 0.08, y: 0.08, w: 0.84, h: 0.84 }); // image units; may exceed 0..1 when expanding
   const [busy, setBusy] = useState(false);
-  const imgRef = useRef(null);
+  const [busyLabel, setBusyLabel] = useState("Working…");
+  const [fillPrompt, setFillPrompt] = useState(""); // optional outpaint guidance
+  const canvasRef = useRef(null); // the full coordinate-space box (drag math reads its width)
   const dragRef = useRef(null);
+
+  const E = ASSET_EXPAND_MAX;
+  const SPAN = 1 + 2 * E; // length of the [-E, 1+E] coordinate space, in image units
+  const toPct = (u) => ((u + E) / SPAN) * 100; // image-unit position -> stage %
 
   const loadImage = (s) => new Promise((resolve, reject) => {
     const im = new Image();
@@ -55529,7 +55622,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     im.src = s;
   });
 
-  // Probe the natural pixel size so we can report output dims + crop at full res.
+  // Probe the natural pixel size so we can report output dims + render at full res.
   useEffect(() => {
     let cancelled = false;
     loadImage(src)
@@ -55545,12 +55638,14 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
 
+  // Allow the frame out to ASSET_EXPAND_MAX past each edge (expansion), but
+  // never let it invert or escape the coordinate space.
   const clampRect = (r) => {
-    const MIN = 0.02;
-    let w = Math.max(MIN, Math.min(1, r.w));
-    let h = Math.max(MIN, Math.min(1, r.h));
-    let x = Math.max(0, Math.min(1 - w, r.x));
-    let y = Math.max(0, Math.min(1 - h, r.y));
+    const MIN = 0.02, LO = -E, HI = 1 + E;
+    let w = Math.max(MIN, Math.min(SPAN, r.w));
+    let h = Math.max(MIN, Math.min(SPAN, r.h));
+    let x = Math.max(LO, Math.min(HI - w, r.x));
+    let y = Math.max(LO, Math.min(HI - h, r.y));
     return { x, y, w, h };
   };
 
@@ -55558,14 +55653,16 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
   const onHandleDown = (dirs) => (e) => {
     if (busy) return;
     e.preventDefault(); e.stopPropagation();
-    const imgEl = imgRef.current;
-    if (!imgEl) return;
-    const ir = imgEl.getBoundingClientRect();
-    dragRef.current = { px: e.clientX, py: e.clientY, rect: { ...rect }, ir, dirs };
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const cr = cv.getBoundingClientRect();
+    dragRef.current = { px: e.clientX, py: e.clientY, rect: { ...rect }, cr, dirs };
     const onMove = (ev) => {
-      const d = dragRef.current; if (!d || !d.ir.width || !d.ir.height) return;
-      const dx = (ev.clientX - d.px) / d.ir.width;
-      const dy = (ev.clientY - d.py) / d.ir.height;
+      const d = dragRef.current; if (!d || !d.cr.width || !d.cr.height) return;
+      // The stage shows SPAN image-units across its full width/height, so a
+      // pixel delta scales by SPAN to land back in image units.
+      const dx = ((ev.clientX - d.px) / d.cr.width) * SPAN;
+      const dy = ((ev.clientY - d.py) / d.cr.height) * SPAN;
       let { x, y, w, h } = d.rect;
       if (d.dirs === "move") {
         x = d.rect.x + dx; y = d.rect.y + dy;
@@ -55592,23 +55689,30 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
   const outW = natural && natural.w ? Math.max(1, Math.round(rect.w * natural.w)) : 0;
   const outH = natural && natural.h ? Math.max(1, Math.round(rect.h * natural.h)) : 0;
   const isFull = rect.x <= 0.001 && rect.y <= 0.001 && rect.w >= 0.999 && rect.h >= 0.999;
+  // Any edge pulled past the image bounds = expansion (new canvas to fill).
+  const isExpanded = rect.x < -0.001 || rect.y < -0.001
+    || (rect.x + rect.w) > 1.001 || (rect.y + rect.h) > 1.001;
 
+  // Composite the framed region locally at native resolution. The original is
+  // placed at its offset; any expanded margin stays transparent (PNG) or is
+  // filled with white (JPEG/WebP, which have no alpha).
   const applyCrop = async () => {
     if (!natural || !natural.w) { onClose(); return; }
-    setBusy(true);
+    setBusy(true); setBusyLabel(isExpanded ? "Expanding…" : "Cropping…");
     try {
-      const sx = Math.round(rect.x * natural.w);
-      const sy = Math.round(rect.y * natural.h);
-      const sw = Math.max(1, Math.round(rect.w * natural.w));
-      const sh = Math.max(1, Math.round(rect.h * natural.h));
+      const ow = Math.max(1, Math.round(rect.w * natural.w));
+      const oh = Math.max(1, Math.round(rect.h * natural.h));
+      const dx = Math.round(-rect.x * natural.w);
+      const dy = Math.round(-rect.y * natural.h);
       const full = await loadImage(src); // decode at natural res, not the scaled preview
       const canvas = document.createElement("canvas");
-      canvas.width = sw; canvas.height = sh;
+      canvas.width = ow; canvas.height = oh;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
       const ext = (path.split(".").pop() || "").toLowerCase();
       const mime = (ext === "jpg" || ext === "jpeg") ? "image/jpeg"
         : ext === "webp" ? "image/webp" : "image/png";
+      if (mime !== "image/png" && isExpanded) { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, ow, oh); }
+      ctx.drawImage(full, dx, dy, natural.w, natural.h);
       const dataUrl = canvas.toDataURL(mime, 0.92); // throws on a tainted canvas
       const res = await fetch(apiUrl("/__write_binary"), {
         method: "POST",
@@ -55616,12 +55720,67 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
         body: JSON.stringify({ path, dataUrl }),
       });
       if (!res.ok) throw new Error("write failed (HTTP " + res.status + ")");
-      // Bump every node + iframe pointing at this path to the cropped bytes.
+      // Bump every node + iframe pointing at this path to the new bytes.
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
       onClose();
     } catch (err) {
       setBusy(false);
-      uiAlert("Crop failed: " + (err && err.message ? err.message : String(err)), { title: "Crop" });
+      uiAlert("Edit failed: " + (err && err.message ? err.message : String(err)), { title: "Crop" });
+    }
+  };
+
+  // Outpaint the expanded margin with gpt-image. Render the padded image + a
+  // mask (opaque over the original, transparent over the new margin) straight
+  // into the nearest gpt-image bucket, then hand both to /__asset_generate.
+  const expandRegenerate = async () => {
+    if (!natural || !natural.w || !isExpanded) return;
+    setBusy(true); setBusyLabel("Regenerating…");
+    try {
+      const ow = Math.max(1, Math.round(rect.w * natural.w));
+      const oh = Math.max(1, Math.round(rect.h * natural.h));
+      const [bw, bh, aspect] = assetPickBucket(ow, oh);
+      // Map output-space -> bucket. The original image lands scaled at this offset.
+      const sx = bw / ow, sy = bh / oh;
+      const ix = (-rect.x * natural.w) * sx;
+      const iy = (-rect.y * natural.h) * sy;
+      const iw = natural.w * sx;
+      const ih = natural.h * sy;
+      const full = await loadImage(src);
+
+      const img = document.createElement("canvas");
+      img.width = bw; img.height = bh;
+      const ictx = img.getContext("2d");
+      ictx.drawImage(full, ix, iy, iw, ih); // transparent everywhere else = the new area
+      const imageDataUri = img.toDataURL("image/png");
+
+      const mask = document.createElement("canvas");
+      mask.width = bw; mask.height = bh;
+      const mctx = mask.getContext("2d");
+      mctx.clearRect(0, 0, bw, bh);        // transparent = "fill this" (the new margin)
+      mctx.fillStyle = "#ffffff";
+      mctx.fillRect(ix, iy, iw, ih);       // opaque = "keep this" (the original)
+      const maskDataUri = mask.toDataURL("image/png");
+
+      const directive = (fillPrompt || "").trim()
+        || "Extend the scene naturally into the empty area, matching the existing subject, style, lighting, palette and perspective. Make the join seamless.";
+      const res = await fetch(apiUrl("/__asset_generate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skill: "generate-image", provider: "openai", model: "gpt-image-2",
+          medium: "raster-photo", output: path, aspect,
+          prompt: "Outpaint and extend this image to fill the transparent margin. " + directive,
+          input_data_uri: imageDataUri,
+          mask_data_uri: maskDataUri,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || ("HTTP " + res.status));
+      window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
+      onClose();
+    } catch (err) {
+      setBusy(false);
+      uiAlert("Regenerate failed: " + (err && err.message ? err.message : String(err)), { title: "Expand" });
     }
   };
 
@@ -55631,24 +55790,28 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     ["sw", 0, 100, "nesw-resize"], ["w", 0, 50, "ew-resize"],
   ];
 
+  const canvasStyle = natural && natural.w
+    ? { aspectRatio: natural.w + " / " + natural.h }
+    : { aspectRatio: "1 / 1" };
+  // The image sits centred, occupying the [0,1] slice of the coordinate space.
+  const imgStyle = { left: toPct(0) + "%", top: toPct(0) + "%", width: (1 / SPAN) * 100 + "%", height: (1 / SPAN) * 100 + "%" };
+  const boxStyle = { left: toPct(rect.x) + "%", top: toPct(rect.y) + "%", width: (rect.w / SPAN) * 100 + "%", height: (rect.h / SPAN) * 100 + "%" };
+
   return createPortal(html`
     <div className="asset-crop-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="asset-crop-modal" onMouseDown=${(e) => e.stopPropagation()}>
         <header className="asset-crop-head">
-          <span className="asset-crop-title">Crop</span>
+          <span className="asset-crop-title">Crop &amp; expand</span>
           <span className="asset-crop-label" title=${path}>${label}</span>
+          ${isExpanded ? html`<span className="asset-crop-tag">expand</span>` : ""}
           <span className="asset-crop-dims">${outW && outH ? outW + " × " + outH + " px" : "…"}</span>
           <button className="asset-crop-x" onClick=${() => { if (!busy) onClose(); }} title="Close (Esc)" aria-label="Close">×</button>
         </header>
         <div className="asset-crop-stage">
-          <figure className="asset-crop-figure">
-            <img ref=${imgRef} className="asset-crop-img" src=${src} alt=${label} draggable=${false}/>
+          <div ref=${canvasRef} className=${"asset-crop-canvas" + (isExpanded ? " is-expanded" : "")} style=${canvasStyle}>
+            <img className="asset-crop-img" src=${src} alt=${label} draggable=${false} style=${imgStyle}/>
             <div className="asset-crop-overlay">
-              <div
-                className="asset-crop-box"
-                style=${{ left: rect.x * 100 + "%", top: rect.y * 100 + "%", width: rect.w * 100 + "%", height: rect.h * 100 + "%" }}
-                onPointerDown=${onHandleDown("move")}
-              >
+              <div className="asset-crop-box" style=${boxStyle} onPointerDown=${onHandleDown("move")}>
                 ${HANDLES.map(([dir, lx, ly, cur]) => html`
                   <span
                     key=${dir}
@@ -55659,16 +55822,38 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
                 `)}
               </div>
             </div>
-          </figure>
+          </div>
         </div>
+        ${isExpanded ? html`
+          <div className="asset-crop-fillbar">
+            <span className="asset-crop-fill-note">New area is empty. <b>Regenerate fill</b> outpaints it with AI; <b>Add blank canvas</b> leaves it transparent.</span>
+            <input
+              className="asset-crop-fill-prompt"
+              type="text"
+              placeholder="Optional: guide the fill (e.g. extend the sky and horizon)"
+              value=${fillPrompt}
+              disabled=${busy}
+              onInput=${(e) => setFillPrompt(e.target.value)}
+            />
+          </div>
+        ` : ""}
         <footer className="asset-crop-foot">
-          <span className="asset-crop-hint">Drag the box or its handles. Apply overwrites this file in place; downstream uses update automatically.</span>
+          <span className="asset-crop-hint">Drag the frame to crop, or pull a handle past the edge to expand. Apply overwrites this file in place; downstream uses update automatically.</span>
           <span className="asset-crop-foot-spacer"/>
-          <button className="asset-crop-reset" disabled=${busy} onClick=${() => setRect({ x: 0, y: 0, w: 1, h: 1 })}>Reset</button>
+          <button className="asset-crop-reset" disabled=${busy} onClick=${() => { setRect({ x: 0, y: 0, w: 1, h: 1 }); setFillPrompt(""); }}>Reset</button>
           <button className="asset-crop-cancel" disabled=${busy} onClick=${onClose}>Cancel</button>
-          <button className="asset-crop-apply" disabled=${busy || isFull || !natural || !natural.w} onClick=${applyCrop}>
-            ${busy ? "Cropping…" : "Apply crop"}
-          </button>
+          ${isExpanded ? html`
+            <button className="asset-crop-blank" disabled=${busy || !natural || !natural.w} onClick=${applyCrop}>
+              ${busy && busyLabel === "Expanding…" ? busyLabel : "Add blank canvas"}
+            </button>
+            <button className="asset-crop-apply" disabled=${busy || !natural || !natural.w} onClick=${expandRegenerate}>
+              ${busy && busyLabel === "Regenerating…" ? busyLabel : "Regenerate fill"}
+            </button>
+          ` : html`
+            <button className="asset-crop-apply" disabled=${busy || isFull || !natural || !natural.w} onClick=${applyCrop}>
+              ${busy ? busyLabel : "Apply crop"}
+            </button>
+          `}
         </footer>
       </div>
     </div>
@@ -58354,6 +58539,167 @@ function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onCh
       <div className="workflow-port-zone workflow-port-zone-out"
            data-port-node=${node.id} data-port-side="out"
            title="Wire into a Design System node's input"
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
+    </div>
+  `;
+}
+
+// Inject the shared sprite-playback keyframes once. A horizontal strip of N
+// frames plays by translating background-position-x across the whole sheet
+// width in steps(N) - the canonical CSS sprite technique.
+function ensureSpriteKeyframes() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("woven-sprite-keyframes")) return;
+  const st = document.createElement("style");
+  st.id = "woven-sprite-keyframes";
+  st.textContent = "@keyframes wovenSpritePlay { to { background-position-x: var(--sprite-travel, 0px); } }";
+  document.head.appendChild(st);
+}
+
+const SPRITE_ANIMATIONS = ["idle", "walk", "run", "attack", "jump", "turn", "custom"];
+
+function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+  const w = node.w || 300;
+  const h = node.h || 330;
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  useEffect(() => { ensureSpriteKeyframes(); }, []);
+
+  // The source raster is whatever asset feeds the `in` port. Surface its path
+  // so the agent (and the pre-generation thumbnail) know what to animate.
+  const upstreamSource = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const to = (e.to || "");
+      if (to.split(".", 1)[0] !== node.id) continue;
+      if (!/\.in$/.test(to) && to !== node.id) continue;
+      const upId = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === upId);
+      if (up) return up.path || up.sheet || up.src || up.asset || "";
+    }
+    return "";
+  }, [allEdges, allNodes, node.id]);
+
+  useAgentEditTarget(node, allNodes, allEdges, {
+    path: (b, id) => `source/${b}/animated-sprite-${id}.json`,
+    serialize: (nd) => {
+      const out = {
+        name: nd.name || "Animated sprite",
+        source: nd.source || upstreamSource || "",
+        animation: nd.animation || "idle",
+        frameCount: Number(nd.frameCount) || 6,
+        fps: Number(nd.fps) || 12,
+        loop: nd.loop !== false,
+      };
+      if (nd.frameWidth)  out.frameWidth  = Number(nd.frameWidth);
+      if (nd.frameHeight) out.frameHeight = Number(nd.frameHeight);
+      if (nd.sheet)       out.sheet       = nd.sheet;
+      if (nd.atlas)       out.atlas       = nd.atlas;
+      return JSON.stringify(out, null, 2);
+    },
+    apply: (raw) => {
+      try {
+        const j = JSON.parse(raw);
+        if (!j || typeof j !== "object") return null;
+        const patch = {};
+        if (typeof j.name === "string")        patch.name = j.name;
+        if (typeof j.source === "string")      patch.source = j.source;
+        if (typeof j.animation === "string")   patch.animation = j.animation;
+        if (j.frameCount != null)              patch.frameCount = Number(j.frameCount) || 6;
+        if (j.fps != null)                     patch.fps = Number(j.fps) || 12;
+        if (typeof j.loop === "boolean")       patch.loop = j.loop;
+        if (j.frameWidth != null)              patch.frameWidth = Number(j.frameWidth) || 0;
+        if (j.frameHeight != null)             patch.frameHeight = Number(j.frameHeight) || 0;
+        if (typeof j.sheet === "string")       { patch.sheet = j.sheet; patch.path = j.sheet; patch.assetKind = "image"; }
+        if (j.atlas && typeof j.atlas === "object") patch.atlas = j.atlas;
+        return Object.keys(patch).length ? patch : null;
+      } catch (_e) { return null; }
+    },
+    onChange,
+  });
+
+  const frames = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
+  const frameCount = Math.max(1, Number(node.frameCount) || frames.length || 6);
+  const fps = Math.max(1, Number(node.fps) || 12);
+  const fw = Number(node.frameWidth) || (frames[0] && frames[0].frame && frames[0].frame.w) || 128;
+  const fh = Number(node.frameHeight) || (frames[0] && frames[0].frame && frames[0].frame.h) || 128;
+  const sourcePath = node.source || upstreamSource || "";
+  const sheetReady = !!(node.sheet && frames.length);
+
+  // Fit the preview to the body width, preserving the frame aspect.
+  const availW = w - 28;
+  const scale = Math.min(1, availW / fw, 150 / fh);
+  const dispW = Math.round(fw * scale);
+  const dispH = Math.round(fh * scale);
+  const previewStyle = sheetReady ? {
+    width: dispW + "px", height: dispH + "px",
+    backgroundImage: `url(${withProjectQuery("/" + node.sheet)})`,
+    backgroundRepeat: "no-repeat",
+    backgroundSize: `${dispW * frameCount}px ${dispH}px`,
+    backgroundPositionX: "0px",
+    imageRendering: "auto",
+    "--sprite-travel": `-${dispW * frameCount}px`,
+    animation: node.loop !== false
+      ? `wovenSpritePlay ${(frameCount / fps).toFixed(3)}s steps(${frameCount}) infinite`
+      : `wovenSpritePlay ${(frameCount / fps).toFixed(3)}s steps(${frameCount}) 1 forwards`,
+  } : null;
+
+  return html`
+    <div className="workflow-node workflow-node-sprite"
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span style=${{ fontSize: "13px", opacity: 0.8 }}>◳</span>
+        <input
+          value=${node.name || "Animated sprite"}
+          onInput=${(e) => onChange({ name: e.target.value })}
+          onMouseDown=${(e) => e.stopPropagation()}
+          title="Sprite name"
+          style=${{ flex: 1, minWidth: 0, background: "transparent", border: "none", color: "inherit", font: "inherit", outline: "none" }}
+        />
+        <span className="workflow-node-bar-spacer"/>
+        <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
+      </div>
+      <div className="workflow-node-sprite-body" onMouseDown=${(e) => e.stopPropagation()}
+           style=${{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px", overflow: "auto", height: "calc(100% - 30px)" }}>
+        <div style=${{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: dispH + 8 + "px", background: "repeating-conic-gradient(#0000000d 0% 25%, transparent 0% 50%) 50% / 16px 16px", borderRadius: "6px", overflow: "hidden" }}>
+          ${sheetReady
+            ? html`<div style=${previewStyle}/>`
+            : sourcePath
+              ? html`<img src=${withProjectQuery("/" + sourcePath)} alt="source" style=${{ maxWidth: availW + "px", maxHeight: "120px", objectFit: "contain", opacity: 0.85 }}/>`
+              : html`<div style=${{ fontSize: "11px", opacity: 0.55, textAlign: "center", padding: "12px" }}>Wire a raster image into the input port</div>`}
+        </div>
+        ${!sheetReady && sourcePath && html`<div style=${{ fontSize: "10.5px", opacity: 0.55, textAlign: "center" }}>Source ready · wire an Agent into the edit port to generate frames</div>`}
+        <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 8px", alignItems: "center", fontSize: "11.5px" }}>
+          <label style=${{ opacity: 0.7 }}>Animation</label>
+          <select value=${node.animation || "idle"} onChange=${(e) => onChange({ animation: e.target.value })}
+                  style=${{ font: "inherit", padding: "2px 4px" }}>
+            ${SPRITE_ANIMATIONS.map(a => html`<option key=${a} value=${a}>${a}</option>`)}
+          </select>
+          <label style=${{ opacity: 0.7 }}>Frames</label>
+          <input type="number" min="1" max="64" value=${node.frameCount || 6}
+                 onInput=${(e) => onChange({ frameCount: Math.max(1, Math.min(64, parseInt(e.target.value) || 1)) })}
+                 style=${{ font: "inherit", padding: "2px 4px", width: "70px" }}/>
+          <label style=${{ opacity: 0.7 }}>FPS</label>
+          <input type="number" min="1" max="60" value=${node.fps || 12}
+                 onInput=${(e) => onChange({ fps: Math.max(1, Math.min(60, parseInt(e.target.value) || 1)) })}
+                 style=${{ font: "inherit", padding: "2px 4px", width: "70px" }}/>
+          <label style=${{ opacity: 0.7 }}>Loop</label>
+          <input type="checkbox" checked=${node.loop !== false}
+                 onChange=${(e) => onChange({ loop: e.target.checked })}/>
+        </div>
+        ${sheetReady && html`<div style=${{ fontSize: "10px", opacity: 0.5 }}>${frames.length} frames · ${fw}×${fh} · sprite sheet + atlas</div>`}
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-in"
+           data-port-node=${node.id} data-port-side="in"
+           title="Wire a raster image (asset / image-editor / raster node). That image is the subject the frames are drawn from."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out"
+           data-port-node=${node.id} data-port-side="out"
+           title="Carries the baked sprite-sheet PNG (atlas JSON sits beside it) - wire into a section, prototype, or composer."
            onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
         <div className="workflow-port-dot"/>
       </div>
@@ -70956,6 +71302,7 @@ const SKILL_DS_ASPECTS = {
   "describe":       [],
   "rembg":          [],
   "upscale":        [],
+  "pose-subject":   [],   // identity-preserve i2i - DS scoping would fight the subject's own design
 };
 
 /* Iterator default aspect set, keyed by the iterator's effective output
@@ -71984,6 +72331,99 @@ function workflowRefModeDirective(mode) {
   return "";
 }
 
+// ── Pose / restyle node (skill: pose-subject) ──
+// Identity-preserving image-to-image. The node has no `prompt` input; instead a
+// structured control panel sets fields on the node, and workflowPosePrompt()
+// compiles them into the instruction the dispatcher sends alongside the subject
+// image (input_path). The leading/trailing directives lock identity so the model
+// re-renders the SAME subject, changing only what the controls specify.
+const WORKFLOW_POSE_TURN = [
+  { id: "",     label: "Turn: keep" },
+  { id: "45L",  label: "¾ left" },
+  { id: "90L",  label: "Profile left" },
+  { id: "135L", label: "Back-¾ left" },
+  { id: "180",  label: "Back (away)" },
+  { id: "45R",  label: "¾ right" },
+  { id: "90R",  label: "Profile right" },
+  { id: "135R", label: "Back-¾ right" },
+];
+const WORKFLOW_POSE_TURN_PHRASE = {
+  "45L":  "rotated 45 degrees to its left (three-quarter view of its left side)",
+  "90L":  "rotated to a full left profile (side view)",
+  "135L": "rotated 135 degrees away to its left (back three-quarter view)",
+  "180":  "rotated to face directly away from the camera (back view)",
+  "45R":  "rotated 45 degrees to its right (three-quarter view of its right side)",
+  "90R":  "rotated to a full right profile (side view)",
+  "135R": "rotated 135 degrees away to its right (back three-quarter view)",
+};
+const WORKFLOW_POSE_TILT = [
+  { id: "",     label: "Tilt: keep" },
+  { id: "up",   label: "From below" },
+  { id: "down", label: "From above" },
+];
+const WORKFLOW_POSE_ROLL = [
+  { id: "",      label: "Roll: keep" },
+  { id: "left",  label: "Lean left" },
+  { id: "right", label: "Lean right" },
+];
+const WORKFLOW_POSE_POSES = [
+  { id: "",            label: "Pose: keep" },
+  { id: "standing",    label: "Standing" },
+  { id: "sitting",     label: "Sitting" },
+  { id: "walking",     label: "Walking" },
+  { id: "running",     label: "Running / action" },
+  { id: "t-pose",      label: "T-pose (reference)" },
+  { id: "contrapposto",label: "Contrapposto" },
+  { id: "crouching",   label: "Crouching" },
+  { id: "custom",      label: "Custom…" },
+];
+const WORKFLOW_POSE_EXPRS = [
+  { id: "",         label: "Expression: keep" },
+  { id: "neutral",  label: "Neutral" },
+  { id: "smiling",  label: "Smiling" },
+  { id: "laughing", label: "Laughing" },
+  { id: "angry",    label: "Angry" },
+  { id: "surprised",label: "Surprised" },
+  { id: "sad",      label: "Sad" },
+  { id: "custom",   label: "Custom…" },
+];
+function workflowPosePrompt(node) {
+  const n = node || {};
+  const parts = [];
+  // Rotation - turn (yaw) / tilt (pitch) / roll, faithful to "rotate which axis".
+  const rot = [];
+  if (WORKFLOW_POSE_TURN_PHRASE[n.poseTurn]) rot.push(WORKFLOW_POSE_TURN_PHRASE[n.poseTurn]);
+  if (n.poseTilt === "up")   rot.push("viewed slightly from below (camera looking up)");
+  else if (n.poseTilt === "down") rot.push("viewed slightly from above (camera looking down)");
+  if (n.poseRoll === "left")  rot.push("leaning / rolled toward its left");
+  else if (n.poseRoll === "right") rot.push("leaning / rolled toward its right");
+  if (rot.length) parts.push("Re-orient the subject so it is " + rot.join(", and ") + ".");
+  // Pose.
+  const poseSel = (n.posePose && n.posePose !== "custom") ? n.posePose : "";
+  const poseTxt = (n.posePoseText || "").trim();
+  const poseBits = [poseSel, poseTxt].filter(Boolean).join(" - ");
+  if (poseBits) parts.push("Change the body pose to: " + poseBits + ".");
+  // Expression.
+  const exprSel = (n.poseExpr && n.poseExpr !== "custom") ? n.poseExpr : "";
+  const exprTxt = (n.poseExprText || "").trim();
+  const exprBits = [exprSel, exprTxt].filter(Boolean).join(" - ");
+  if (exprBits) parts.push("Change the facial expression to: " + exprBits + ".");
+  // Clothing.
+  const cloth = (n.poseCloth || "").trim();
+  if (n.poseClothKeep) parts.push("Keep the original outfit and clothing exactly as in the reference.");
+  else if (cloth) parts.push("Change the outfit / clothing to: " + cloth + ".");
+  // Free notes ("what's required").
+  const notes = (n.poseNotes || "").trim();
+  if (notes) parts.push(notes);
+  const head = "Re-render the EXACT SAME subject shown in the attached reference image, "
+    + "preserving its identity faithfully - the same face, proportions, distinctive features, "
+    + "colours, materials and design - changing ONLY what is specified below. Keep a clean, "
+    + "uncluttered background consistent with the reference.";
+  const body = parts.length ? parts.join(" ") : "Re-render the subject faithfully with no changes.";
+  const tail = "Do not invent a different character or object, and do not alter any feature that was not asked to change.";
+  return [head, body, tail].join("\n\n");
+}
+
 // True when an image model can consume an input image (image-to-image). Guards
 // the control + the auto-promote so an attached reference never silently 400s.
 function workflowModelHasI2I(modelId) {
@@ -72002,7 +72442,7 @@ function workflowRefImageName(path) {
 // On-node reference-image control. Rendered beside the DS picker for the
 // generate-image skill. Sources: (a) linked asset edge (read-only here),
 // (b) pick an existing canvas image, (c) upload a new file to /__upload.
-function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId }) {
+function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId, hideMode, label, placeholder }) {
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState("");
   const fileRef = useRef(null);
@@ -72068,15 +72508,15 @@ function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId 
           ${!isLinked && html`<button type="button" className="workflow-refimg-x" title="Clear reference image"
             onClick=${(e) => { e.stopPropagation(); onChange({ refImagePath: null }); }}>×</button>`}
         </span>
-        <select className="workflow-refimg-mode" value=${mode}
+        ${!hideMode && html`<select className="workflow-refimg-mode" value=${mode}
           title=${(WORKFLOW_REF_MODES.find(m => m.id === mode) || {}).hint || "How the model should use the reference image"}
           onChange=${(e) => onChange({ refMode: e.target.value })}
           onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
           ${WORKFLOW_REF_MODES.map(m => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}
-        </select>
+        </select>`}
       ` : html`
         <select className="workflow-refimg-existing" value="" disabled=${busy}
-          title="Use a reference image - match its style or keep its subject (image-to-image)."
+          title=${label || "Use a reference image - match its style or keep its subject (image-to-image)."}
           onChange=${(e) => {
             const v = e.target.value;
             e.target.value = "";
@@ -72084,7 +72524,7 @@ function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId 
             else if (v) setRef(v);
           }}
           onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
-          <option value="">${busy ? "Uploading…" : "＋ ref image"}</option>
+          <option value="">${busy ? "Uploading…" : (placeholder || "＋ ref image")}</option>
           ${choices.length > 0 && html`<optgroup label="Existing">
             ${choices.map(c => html`<option key=${c.id} value=${c.path}>${workflowRefImageName(c.path)}</option>`)}
           </optgroup>`}
@@ -72096,6 +72536,69 @@ function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId 
       `}
     </span>
   `;
+}
+
+// Control panel for the pose-subject skill node. Sets structured fields on the
+// node (poseTurn / poseTilt / poseRoll / posePose(+Text) / poseExpr(+Text) /
+// poseCloth(+Keep) / poseNotes) that workflowPosePrompt() compiles at dispatch.
+// The subject image attaches via the shared ref-image picker (wired asset edge,
+// pick-existing, or upload) - mode is hidden because pose-subject is always
+// identity-preserving i2i.
+function WorkflowPosePanel({ node, onChange, allNodes, allEdges, projectId }) {
+  const n = node || {};
+  const sel = (field, opts, title) => html`
+    <select className="workflow-pose-sel" value=${n[field] || ""} title=${title || ""}
+      onChange=${(e) => onChange({ [field]: e.target.value })}
+      onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
+      ${opts.map(o => html`<option key=${o.id} value=${o.id}>${o.label}</option>`)}
+    </select>`;
+  const txt = (field, ph) => html`
+    <input className="workflow-pose-txt" type="text" value=${n[field] || ""} placeholder=${ph}
+      onChange=${(e) => onChange({ [field]: e.target.value })}
+      onMouseDown=${(e) => e.stopPropagation()} onClick=${(e) => e.stopPropagation()} />`;
+  return html`
+    <div className="workflow-pose-panel" onMouseDown=${(e) => e.stopPropagation()}>
+      <div className="workflow-pose-subject">
+        <span className="workflow-pose-label">Subject</span>
+        <${WorkflowRefImagePicker}
+          node=${node} onChange=${onChange}
+          allNodes=${allNodes} allEdges=${allEdges} projectId=${projectId}
+          hideMode=${true}
+          label="The subject (character / object) to re-pose. Wire an image into the in-port, or pick / upload here."
+          placeholder="＋ subject image"
+        />
+      </div>
+      <div className="workflow-pose-row">
+        <span className="workflow-pose-label">Rotate</span>
+        ${sel("poseTurn", WORKFLOW_POSE_TURN, "Turn (yaw axis)")}
+        ${sel("poseTilt", WORKFLOW_POSE_TILT, "Tilt (pitch axis)")}
+        ${sel("poseRoll", WORKFLOW_POSE_ROLL, "Roll axis")}
+      </div>
+      <div className="workflow-pose-row">
+        <span className="workflow-pose-label">Pose</span>
+        ${sel("posePose", WORKFLOW_POSE_POSES, "Body pose")}
+        ${txt("posePoseText", n.posePose === "custom" ? "describe the pose" : "extra pose detail")}
+      </div>
+      <div className="workflow-pose-row">
+        <span className="workflow-pose-label">Face</span>
+        ${sel("poseExpr", WORKFLOW_POSE_EXPRS, "Facial expression (characters)")}
+        ${txt("poseExprText", n.poseExpr === "custom" ? "describe the expression" : "extra expression detail")}
+      </div>
+      <div className="workflow-pose-row">
+        <span className="workflow-pose-label">Wear</span>
+        ${txt("poseCloth", "change outfit / clothing")}
+        <label className="workflow-pose-keep" title="Lock the original outfit - ignore the clothing field">
+          <input type="checkbox" checked=${!!n.poseClothKeep}
+            onChange=${(e) => onChange({ poseClothKeep: e.target.checked })}
+            onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()} />
+          keep
+        </label>
+      </div>
+      <textarea className="workflow-pose-notes" value=${n.poseNotes || ""}
+        placeholder="Anything else required (background, lighting, props, framing…)"
+        onChange=${(e) => onChange({ poseNotes: e.target.value })}
+        onMouseDown=${(e) => e.stopPropagation()} onClick=${(e) => e.stopPropagation()} />
+    </div>`;
 }
 
 function WorkflowDsPicker({ value, onChange, label, compact, title }) {
@@ -76141,8 +76644,9 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   // the body's overflow:auto pushed it past the visible region. Floor
   // tall enough to fit the standard layout; manual resize can still go
   // bigger but not smaller than the content needs.
-  const w = Math.max(240, node.w || 280);
-  const h = Math.max(200, node.h || 220);
+  const _isPose = (node.skill || "generate-image") === "pose-subject";
+  const w = Math.max(_isPose ? 260 : 240, node.w || (_isPose ? 300 : 280));
+  const h = Math.max(_isPose ? 392 : 200, node.h || (_isPose ? 412 : 220));
   const status = (runState && runState.status) || "idle";
   const error  = runState && runState.error;
   const skillId = node.skill || "generate-image";
@@ -76371,6 +76875,15 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
             />
           `}
         </div>
+        ${skillId === "pose-subject" && html`
+          <${WorkflowPosePanel}
+            node=${node}
+            onChange=${onChange}
+            allNodes=${allNodes}
+            allEdges=${allEdges}
+            projectId=${projectId}
+          />
+        `}
         <div className="workflow-node-skill-inputs">
           ${wantsPrompt && html`<span className="workflow-node-skill-inputtag">prompt ←</span>`}
           ${wantsAsset  && html`<span className="workflow-node-skill-inputtag">asset ←</span>`}
