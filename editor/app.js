@@ -39537,6 +39537,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
         }
       }
+      // v3.6 - an on-node reference image (the generate-image node's "ref image"
+      // control) is the last-resort source, after a wired asset + a prompt badge.
+      if (!assetInputPath && !assetInputDataUri && skillSpec.id === "generate-image"
+          && typeof skillNode.refImagePath === "string" && skillNode.refImagePath.startsWith("source/")) {
+        assetInputPath = skillNode.refImagePath;
+      }
       if (wantsPrompt && promptTexts.length === 0) {
         update(skillId, { status: "error", error: "Connect a prompt node to this skill's input" }); break;
       }
@@ -40160,8 +40166,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       for (const target of outputTargets) {
         const outputPath = target.path;
         try {
+          const hasRefImg = (wantsAsset || outputKind === "image") && !!(assetInputPath || assetInputDataUri);
+          // v3.6 - reference-image MODE shapes the prompt when generate-image
+          // runs with an attached image: "match style" / "keep subject" append
+          // a directive; "edit"/unset stays raw img2img (today's behaviour).
+          const refDirective = (hasRefImg && skillSpec.id === "generate-image")
+            ? workflowRefModeDirective(skillNode.refMode) : "";
           const body = { skill: skillSpec.id, provider, model, output: outputPath, aspect, options };
-          if (wantsPrompt) body.prompt = prompt;
+          if (wantsPrompt) body.prompt = refDirective ? ((prompt ? prompt + "\n\n" : "") + refDirective) : prompt;
           // Send the resolved asset for any image-producing skill - not just
           // skills declaring an `asset` input - so a prompt's inline [filename]
           // badge reaches generate-image as a reference image (text + image ->
@@ -40169,9 +40181,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           // resolved assetInputPath is silently dropped here and the model runs
           // pure text-to-image. The daemon returns a clean 400 if the chosen
           // model can't take an image.
-          if ((wantsAsset || outputKind === "image") && (assetInputPath || assetInputDataUri)) {
+          if (hasRefImg) {
             if (assetInputPath)    body.input_path = assetInputPath;
             else if (assetInputDataUri) body.input_data_uri = assetInputDataUri;
+            // img2img only works on i2i-capable models. When generate-image has
+            // a reference image but the chosen model is text-only, auto-promote
+            // to the default gpt-image model so it never silently 400s.
+            if (skillSpec.id === "generate-image" && !workflowModelHasI2I(model)) {
+              body.model = WORKFLOW_I2I_DEFAULT_MODEL;
+              body.provider = "openai";
+            }
           }
           if (target.inlineReplace) body.inline_replace = target.inlineReplace;
           const r = await fetch(apiUrl("/__asset_generate"), {
@@ -43749,6 +43768,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onRun=${runSkill}
                 onAddOutputAsset=${addOutputAsset}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+                projectId=${activeProjectId()}
               />
             `)}
             <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} tetherHost=${agentTetherRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
@@ -71918,6 +71940,148 @@ function applyDsFixes(content, audit) {
   return { patched, fixes };
 }
 
+// v3.6 - reference-image modes for the generate-image skill node. Beside the DS
+// picker (which scopes a generation to a design system's tokens), a skill node
+// can now carry a reference IMAGE + a mode that shapes how the model uses it:
+// match its style, keep its subject, or raw edit. The reference can come from an
+// asset node wired into the skill's `in` port (linked), an existing canvas image,
+// or a freshly uploaded file. The img2img plumbing already exists end-to-end
+// (the daemon promotes generate-image to its edit endpoint when input_path is
+// set); this adds the on-node control + the style/subject intent the wired path
+// never carried.
+const WORKFLOW_REF_MODES = [
+  { id: "style",   label: "Match style",  hint: "Style transfer - take the reference's palette, texture, brushwork, line and lighting; keep the subject you described in the prompt." },
+  { id: "subject", label: "Keep subject", hint: "Identity preserve - keep the reference's subject (face, proportions, key features, outfit, colour); recompose / restyle per your prompt." },
+  { id: "edit",    label: "Edit",         hint: "Freeform image-to-image - hand the reference to the model with your prompt as-is, no extra style/identity directive." },
+];
+
+// Prompt directive injected for a reference mode. `edit`/unset adds nothing (raw
+// img2img). Wording mirrors docs/research/imagegen-playbook.md (style-transfer /
+// identity-preserve use cases) so the manual control and the agents agree.
+function workflowRefModeDirective(mode) {
+  if (mode === "style") {
+    return "STYLE REFERENCE: apply the visual style of the attached reference image - its palette, texture, brushwork, line quality and lighting - to the subject described above. Preserve the described subject and composition; do NOT copy the reference's subject matter.";
+  }
+  if (mode === "subject") {
+    return "SUBJECT REFERENCE: preserve the subject identity from the attached reference image - face, proportions, key features, outfit and colour palette - keeping it recognisably the same subject. Recompose / restyle only as the prompt above directs.";
+  }
+  return "";
+}
+
+// True when an image model can consume an input image (image-to-image). Guards
+// the control + the auto-promote so an attached reference never silently 400s.
+function workflowModelHasI2I(modelId) {
+  const list = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
+  const m = list.find(x => x.id === modelId);
+  return !!(m && Array.isArray(m.caps) && m.caps.includes("i2i"));
+}
+const WORKFLOW_I2I_DEFAULT_MODEL = "gpt-image-2";
+
+function workflowRefImageName(path) {
+  if (typeof path !== "string") return "";
+  const segs = path.split("/").filter(Boolean);
+  return segs.length ? segs[segs.length - 1] : path;
+}
+
+// On-node reference-image control. Rendered beside the DS picker for the
+// generate-image skill. Sources: (a) linked asset edge (read-only here),
+// (b) pick an existing canvas image, (c) upload a new file to /__upload.
+function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId }) {
+  const [busy, setBusy] = useState(false);
+  const [err,  setErr]  = useState("");
+  const fileRef = useRef(null);
+  const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p);
+
+  // Existing canvas images → "pick existing" choices.
+  const choices = (allNodes || []).filter(n =>
+    n && n.kind === "asset" && isImg(n.path) && n.path.startsWith("source/"));
+
+  // Linked reference = an image asset wired into this skill's `in` port.
+  let linkedPath = "";
+  for (const e of (allEdges || [])) {
+    const t = workflowParseEdgeRef(e.to);
+    if (!t || t.node !== node.id || t.port !== "in") continue;
+    const f = workflowParseEdgeRef(e.from);
+    if (!f) continue;
+    const up = (allNodes || []).find(n => n.id === f.node);
+    if (up && up.kind === "asset" && isImg(up.path)) { linkedPath = up.path; break; }
+  }
+
+  const refPath  = node.refImagePath || linkedPath || "";
+  const isLinked = !node.refImagePath && !!linkedPath;
+  const mode     = node.refMode || "edit";
+
+  const setRef = (path) => {
+    if (!path) return;
+    // Default a freshly-attached reference to "subject" - the most common
+    // intent ("keep this thing, put it in a new scene"). Wired-only refs keep
+    // "edit" (no directive) so existing canvases don't change behaviour.
+    onChange({ refImagePath: path, refMode: node.refMode || "subject" });
+    setErr("");
+  };
+
+  const onUpload = async (file) => {
+    if (!file) return;
+    setBusy(true); setErr("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const url = "/__upload" + (projectId ? "?project=" + encodeURIComponent(projectId) : "");
+      const r = await fetch(apiUrl(url), { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      // _upload_files returns a branch-relative path ("uploads/<name>"); the
+      // daemon's input_path must be project-relative under source/. Normalise to
+      // the "main" branch (the same branch runSkill writes/reads).
+      const f0 = Array.isArray(j.files) && j.files[0];
+      const rel = (f0 && f0.path) || j.path || "";
+      if (!rel) throw new Error("upload returned no path");
+      const full = rel.startsWith("source/") ? rel : ("source/main/" + rel.replace(/^\/+/, ""));
+      setRef(full);
+    } catch (e) {
+      setErr(e && e.message ? e.message : String(e));
+    } finally { setBusy(false); }
+  };
+
+  return html`
+    <span className="workflow-refimg" onMouseDown=${(e) => e.stopPropagation()}>
+      ${refPath ? html`
+        <span className="workflow-refimg-chip" title=${(isLinked ? "Linked reference image (wired asset): " : "Reference image: ") + refPath}>
+          <${Icon.Image}/>
+          <span className="workflow-refimg-name">${isLinked ? "linked" : workflowRefImageName(refPath)}</span>
+          ${!isLinked && html`<button type="button" className="workflow-refimg-x" title="Clear reference image"
+            onClick=${(e) => { e.stopPropagation(); onChange({ refImagePath: null }); }}>×</button>`}
+        </span>
+        <select className="workflow-refimg-mode" value=${mode}
+          title=${(WORKFLOW_REF_MODES.find(m => m.id === mode) || {}).hint || "How the model should use the reference image"}
+          onChange=${(e) => onChange({ refMode: e.target.value })}
+          onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
+          ${WORKFLOW_REF_MODES.map(m => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}
+        </select>
+      ` : html`
+        <select className="workflow-refimg-existing" value="" disabled=${busy}
+          title="Use a reference image - match its style or keep its subject (image-to-image)."
+          onChange=${(e) => {
+            const v = e.target.value;
+            e.target.value = "";
+            if (v === "__upload__") { fileRef.current && fileRef.current.click(); }
+            else if (v) setRef(v);
+          }}
+          onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
+          <option value="">${busy ? "Uploading…" : "＋ ref image"}</option>
+          ${choices.length > 0 && html`<optgroup label="Existing">
+            ${choices.map(c => html`<option key=${c.id} value=${c.path}>${workflowRefImageName(c.path)}</option>`)}
+          </optgroup>`}
+          <option value="__upload__">Upload new…</option>
+        </select>
+        <input ref=${fileRef} type="file" accept="image/*" style=${{ display: "none" }}
+          onChange=${(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; onUpload(f); }} />
+        ${err && html`<span className="workflow-refimg-err" title=${err}>!</span>`}
+      `}
+    </span>
+  `;
+}
+
 function WorkflowDsPicker({ value, onChange, label, compact, title }) {
   const list = listDesignSystems();
   const sel = value || "";
@@ -75904,7 +76068,7 @@ function LlmPromptPreviewSection({ node, onChange }) {
   `;
 }
 
-function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset }) {
+function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, allNodes, allEdges, projectId }) {
   const [dragging, setDragging] = useState(false);
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -76181,6 +76345,15 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
               />
             <//>`;
           })()}
+          ${skillId === "generate-image" && html`
+            <${WorkflowRefImagePicker}
+              node=${node}
+              onChange=${onChange}
+              allNodes=${allNodes}
+              allEdges=${allEdges}
+              projectId=${projectId}
+            />
+          `}
         </div>
         <div className="workflow-node-skill-inputs">
           ${wantsPrompt && html`<span className="workflow-node-skill-inputtag">prompt ←</span>`}

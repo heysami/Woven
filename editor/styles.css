@@ -23630,6 +23630,91 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   max-width: 110px;
 }
 
+/* v3.6 - reference-image control on the generate-image skill node. Sits beside
+   the DS picker; lets the user attach a reference image + pick how the model
+   uses it (match style / keep subject / edit). */
+.workflow-refimg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.workflow-refimg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 3px 4px 3px 6px;
+  font: 500 10.5px/1.2 var(--font-mono);
+  color: var(--text);
+  max-width: 96px;
+}
+.workflow-refimg-chip svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.workflow-refimg-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.workflow-refimg-x {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 1px;
+}
+.workflow-refimg-x:hover { color: var(--text); }
+.workflow-refimg-mode {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 18px 3px 6px;
+  font: 500 10.5px/1.2 var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+  outline: 0;
+  min-width: 64px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.workflow-refimg-mode:hover { border-color: var(--accent); }
+/* Empty-state picker - a native select (escapes node-body overflow) listing
+   existing canvas images + an "Upload new…" option. Styled like the mode
+   select but with a dashed border to read as "not set yet". */
+.workflow-refimg-existing {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 18px 3px 6px;
+  font: 500 10.5px/1.2 var(--font-mono);
+  color: var(--text-muted);
+  cursor: pointer;
+  outline: 0;
+  max-width: 130px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.workflow-refimg-existing:hover { border-color: var(--accent); color: var(--text); }
+.workflow-refimg-existing:disabled { opacity: 0.6; cursor: default; }
+.workflow-refimg-err {
+  font: 700 11px/1.2 var(--font-mono);
+  color: var(--danger, #c0392b);
+  cursor: help;
+}
+
 /* DS row inside iterator bodies (Blend / Remix / Repeater): a thin
    horizontal band between the kind/N row and the variant list. */
 .workflow-node-iter-dsrow {
