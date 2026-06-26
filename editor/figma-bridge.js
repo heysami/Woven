@@ -336,7 +336,15 @@
   }
 
   function makeTextChild(el, cs, rect, parentRect) {
-    var text = applyTextTransform(directText(el), (cs.textTransform || "").toLowerCase());
+    return makeTextNode(directText(el), el, cs, rect, parentRect);
+  }
+
+  // Build a TEXT node from a specific string (a single text run), styled from
+  // the containing element. Used to interleave text runs with element children
+  // in DOM order so "Retrieve Myinfo with <strong>singpass</strong>" keeps its
+  // order (collecting all elements first then the text reverses it).
+  function makeTextNode(rawText, el, cs, rect, parentRect) {
+    var text = applyTextTransform(rawText, (cs.textTransform || "").toLowerCase());
     if (!text) return null;
     var fontFamily = (cs.fontFamily || "Inter").split(",")[0].replace(/['"]/g, "").trim() || "Inter";
     var lh = cs.lineHeight;
@@ -610,6 +618,8 @@
     if (!node.layout || !node.children) return;
     var vertical = node.layout.mode === "VERTICAL";
     var parentHug = !!node.hug;
+    var pad = node.layout.padding || {};
+    var innerW = (node.width || 0) - ((pad.left || 0) + (pad.right || 0));
     for (var i = 0; i < node.children.length; i++) {
       var c = node.children[i];
       if (c.absolute) continue;
@@ -624,8 +634,21 @@
       } else if (c.type === "IMAGE") {
         c.sizing = { h: "FIXED", v: "FIXED" };
       } else {
-        if (c.hug) c.sizing = { h: "HUG", v: "HUG" };
-        else c.sizing = { h: (vertical && !parentHug) ? "FILL" : "HUG", v: "HUG" };
+        var childless = !c.children || !c.children.length;
+        if (c.hug) {
+          c.sizing = { h: "HUG", v: "HUG" };
+        } else if (childless) {
+          // A decorative sized box (connector line, dot, divider) keeps its
+          // measured size - never stretch it to fill the column into a bar.
+          c.sizing = { h: "FIXED", v: "FIXED" };
+        } else if (vertical && !parentHug) {
+          // Block child fills the column ONLY if it is already near-full-width;
+          // an intentionally narrower block keeps its measured width.
+          var nearFull = innerW > 0 && (c.width || 0) >= innerW * 0.85;
+          c.sizing = { h: nearFull ? "FILL" : "FIXED", v: "HUG" };
+        } else {
+          c.sizing = { h: "HUG", v: "HUG" };
+        }
       }
       // flex-grow child (and injected spacers) FILL the main axis.
       if (c._grow) { if (vertical) c.sizing.v = "FILL"; else c.sizing.h = "FILL"; }
@@ -892,21 +915,27 @@
 
     // Children: recurse element children, then attach a TEXT child for the
     // element's own direct text (most leaves have text and no element kids).
-    var elementKids = [];
-    if (!isSvg) for (var i = 0; i < el.children.length; i++) elementKids.push(el.children[i]);
     // A grid container's direct children are its columns/cells: keep them even
     // when empty so the column structure (e.g. a div-header + <a>-row "table")
     // stays aligned instead of collapsing to just the filled cells.
     var gridKids = (cs.display || "").indexOf("grid") >= 0;
-    if (elementKids.length) {
-      for (var k = 0; k < elementKids.length; k++) {
-        var child = walk(elementKids[k], rect, win, pending, gridKids);
-        if (child) node.children.push(child);
+    // Walk childNodes in DOM order, interleaving element children with the
+    // element's own text runs - so mixed content ("text <strong>x</strong>")
+    // keeps its order instead of all elements being pushed before the text.
+    if (!isSvg && tag !== "IMG") {
+      for (var i = 0; i < el.childNodes.length; i++) {
+        var cn = el.childNodes[i];
+        if (cn.nodeType === 1) {
+          var child = walk(cn, rect, win, pending, gridKids);
+          if (child) node.children.push(child);
+        } else if (cn.nodeType === 3) {
+          var run = (cn.nodeValue || "").replace(/\s+/g, " ");
+          if (run.trim()) {
+            var tn = makeTextNode(run, el, cs, rect, rect);
+            if (tn) node.children.push(tn);
+          }
+        }
       }
-    }
-    if (tag !== "IMG" && !isSvg) {
-      var t = makeTextChild(el, cs, rect, rect);
-      if (t) node.children.push(t);
     }
     // Form fields carry no DOM child text - synthesize one from value/placeholder.
     if (ic && ic.field && !node.children.length) {
