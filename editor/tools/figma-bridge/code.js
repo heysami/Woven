@@ -434,19 +434,16 @@ function buildFrame(n) {
   for (var k = 0; k < kids.length; k++) {
     var node = kids[k].built, src = kids[k].src;
     if (auto) {
-      if (src.absolute) {
-        // Out of the auto-layout flow: position it absolutely like CSS.
-        try { node.layoutPositioning = "ABSOLUTE"; node.x = src.x || 0; node.y = src.y || 0; } catch (e) {}
-      } else {
-        // Honor the converter's per-child sizing (text hugs height / fills the
-        // column width); default to FIXED (keep the measured box) for frames.
-        var sz = src.sizing || {};
-        try { node.layoutSizingHorizontal = sz.h || "FIXED"; } catch (e) {
-          try { node.layoutSizingHorizontal = "FIXED"; } catch (e2) {}
-        }
-        try { node.layoutSizingVertical = sz.v || "FIXED"; } catch (e) {
-          try { node.layoutSizingVertical = "FIXED"; } catch (e2) {}
-        }
+      // Every child flows in the auto-layout - we never set layoutPositioning
+      // ABSOLUTE (Figma's "ignore auto-layout"). Honor the converter's per-child
+      // sizing (text hugs height / fills the column width); default to FIXED
+      // (keep the measured box) for frames.
+      var sz = src.sizing || {};
+      try { node.layoutSizingHorizontal = sz.h || "FIXED"; } catch (e) {
+        try { node.layoutSizingHorizontal = "FIXED"; } catch (e2) {}
+      }
+      try { node.layoutSizingVertical = sz.v || "FIXED"; } catch (e) {
+        try { node.layoutSizingVertical = "FIXED"; } catch (e2) {}
       }
     } else {
       // Absolute frame: scene child x/y are relative to this parent.

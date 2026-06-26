@@ -483,6 +483,20 @@
     };
   }
 
+  // CSS grid -> a horizontal auto-layout that WRAPS (cards keep their measured
+  // size and reflow into rows). Keeps the grid in real auto-layout instead of
+  // pinning children to ignore-auto-layout.
+  function gridLayout(cs) {
+    var gv = function (v) { return (!v || v === "normal") ? 0 : px(v); };
+    return {
+      mode: "HORIZONTAL",
+      gap: round(gv(cs.columnGap)), crossGap: round(gv(cs.rowGap)),
+      padding: readPadding(cs),
+      primaryAlign: "MIN", counterAlign: "MIN",
+      wrap: true
+    };
+  }
+
   // EVERY frame gets an auto-layout (mandate: no plain absolute frames). Flex ->
   // exact; clean stack -> inferred; otherwise a base auto-layout. For a grid or a
   // messy multi-child frame whose children would reflow, the children are pinned
@@ -519,10 +533,20 @@
       node.layout = flex;
       if (node.children) sortByOrder(node.children);
     } else if (node.children && node.children.length >= 2) {
-      if (disp.indexOf("grid") < 0) inferStackLayout(cs, node);   // sets layout if clean stack
+      var isGrid = disp.indexOf("grid") >= 0;
+      if (!isGrid) inferStackLayout(cs, node);   // sets layout if a clean stack
       if (!node.layout) {
-        node.layout = baseAutoLayout(cs, inline);
-        for (var i = 0; i < node.children.length; i++) node.children[i].absolute = true;
+        // No clean stack (or a CSS grid): everything STILL flows in auto-layout -
+        // we never pin children to ignore-auto-layout. A grid becomes a
+        // horizontal wrap (cards keep their size and wrap); anything else gets a
+        // base stack.
+        if (isGrid) {
+          node.layout = gridLayout(cs);
+          node._gridWrap = true;
+          sortByOrder(node.children);
+        } else {
+          node.layout = baseAutoLayout(cs, inline);
+        }
       }
     } else {
       node.layout = baseAutoLayout(cs, inline);   // 0-1 children
@@ -543,6 +567,8 @@
       // width (so columns line up across rows) and FILL the row height.
       if (node._tableRows) { c.sizing = { h: "FILL", v: "HUG" }; continue; }
       if (node._tableCells) { c.sizing = { h: "FIXED", v: "FILL" }; continue; }
+      // Grid cards keep their measured box so they wrap instead of each filling a row.
+      if (node._gridWrap) { c.sizing = { h: "FIXED", v: "FIXED" }; continue; }
       if (c.type === "TEXT") {
         c.sizing = { h: (parentHug || !vertical) ? "HUG" : "FILL", v: "HUG" };
       } else if (c.type === "IMAGE") {
@@ -747,7 +773,9 @@
     // Layout hints for the parent's auto-layout decision.
     var ord = parseInt(cs.order, 10);
     if (ord) node._order = ord;
-    if (cs.position === "absolute" || cs.position === "fixed") node.absolute = true;
+    // NB: CSS position:absolute/fixed children are NOT pinned out of flow - we
+    // never use Figma's ignore-auto-layout. They participate in the parent's
+    // auto-layout like every other child (mandate: no absolute positioning).
 
     // Background: gradient takes precedence over color; an image overlays as a
     // deferred IMAGE paint (resolved after the synchronous walk).
@@ -927,6 +955,7 @@
     if (node._order != null) delete node._order;   // temp fields, not part of the scene
     if (node._tableRows) delete node._tableRows;
     if (node._tableCells) delete node._tableCells;
+    if (node._gridWrap) delete node._gridWrap;
     if (node.fills) {
       node.fills = node.fills.filter(function (f) { return !f._drop; });
       if (!node.fills.length) delete node.fills;
