@@ -681,9 +681,51 @@
     if (node.children) node.children.forEach(stripDroppedFills);
   }
 
+  // ---- agent grounding helpers ------------------------------------------
+  // The hybrid "author with agent" flow feeds the converter's scene to an LLM
+  // for semantic clean-up. Base64 rasters would blow the prompt, so swap each
+  // image for a short "@imgN" ref before the LLM call and re-inject after.
+
+  function stripImagesForAgent(scene) {
+    var map = {}, i = { n: 0 };
+    function swap(holder) {
+      if (holder && holder.image && holder.image.b64) {
+        var id = "@img" + (i.n++);
+        map[id] = { b64: holder.image.b64, mime: holder.image.mime };
+        holder.image = { ref: id, mime: holder.image.mime };
+      }
+    }
+    function visit(node) {
+      if (!node) return;
+      swap(node);                                   // IMAGE node
+      if (node.fills) node.fills.forEach(swap);     // image fills
+      if (node.children) node.children.forEach(visit);
+    }
+    if (scene && scene.root) visit(scene.root);
+    return { scene: scene, map: map };
+  }
+
+  function restoreImages(scene, map) {
+    function put(holder) {
+      if (holder && holder.image && holder.image.ref && map[holder.image.ref]) {
+        holder.image = { b64: map[holder.image.ref].b64, mime: map[holder.image.ref].mime };
+      }
+    }
+    function visit(node) {
+      if (!node) return;
+      put(node);
+      if (node.fills) node.fills.forEach(put);
+      if (node.children) node.children.forEach(visit);
+    }
+    if (scene && scene.root) visit(scene.root);
+    return scene;
+  }
+
   window.WovenFigma = {
     version: SCENE_VERSION,
     domToScene: domToScene,
+    stripImagesForAgent: stripImagesForAgent,
+    restoreImages: restoreImages,
     parseColor: parseColor // exported for tests
   };
 })();

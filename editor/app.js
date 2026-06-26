@@ -29680,10 +29680,103 @@ function findRenderedNodeIframe(nodeId) {
   );
 }
 
+// Parse the agent's reply into a scene object: tolerate ```json fences and
+// surrounding prose by taking the outermost { ... }.
+function parseFigmaSceneJson(text) {
+  if (!text) return null;
+  let t = String(text).trim().replace(/^```[a-zA-Z]*\s*/, "").replace(/\s*```$/, "").trim();
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  try { const o = JSON.parse(t.slice(a, b + 1)); if (o && o.root) return o; } catch {}
+  return null;
+}
+
+// The hybrid grounding prompt: a faithful-but-messy captured scene + the design
+// system, asked to be re-authored into a clean, auto-layout, component-aware scene.
+function buildFigmaAuthoringPrompt({ scene, designMd, tokensCss, compNames }) {
+  const md = designMd ? designMd.slice(0, 6000) : "";
+  return [
+"You convert a captured UI into a CLEAN Figma scene (\"scene JSON\"). The input is a faithful but messy capture with REAL measured geometry, colors and text. Re-author it into a clean, semantic scene a designer would build by hand.",
+"",
+"OUTPUT: reply with ONLY one JSON object (the scene). No prose, no markdown fences.",
+"",
+"SCHEMA (same shape in and out):",
+'scene = { version, name, width, height, dsRef, components:[names], root: node }',
+'node = { type:"FRAME"|"TEXT"|"IMAGE", name, x, y, width, height, opacity?, clipsContent?,',
+'  fills?:[Paint], strokes?:[Paint], strokeWeight?, cornerRadius?, effects?:[Effect],',
+'  layout?:{ mode:"HORIZONTAL"|"VERTICAL", gap, padding:{top,right,bottom,left}, primaryAlign:"MIN"|"CENTER"|"MAX"|"SPACE_BETWEEN", counterAlign:"MIN"|"CENTER"|"MAX", wrap },',
+'  absolute?, component?, componentProps?, children?:[node],',
+'  // TEXT adds: characters, fontSize, fontFamily, fontStyle, letterSpacing, lineHeight, textAlign, textColor, textDecoration',
+'  // IMAGE adds: image:{ref:"@imgN", mime} }',
+'Paint = {type:"SOLID",color:{r,g,b},opacity?} | {type:"GRADIENT_LINEAR",angle,stops} | {type:"IMAGE",scaleMode,image:{ref,mime}}',
+"",
+"RULES:",
+"- Keep the measured width/height (and x/y) from the input; do NOT invent sizes. Children keep their measured sizes inside an auto-layout.",
+"- Convert containers to auto-layout (`layout`) wherever children form a row or column; derive gap/padding from the spacing you see. Prefer auto-layout heavily.",
+"- MERGE redundant wrapper frames (a frame that only holds one child) and DROP empty / invisible junk. Flatten needless nesting.",
+"- Preserve every TEXT node's `characters` EXACTLY; keep fonts, sizes and colors.",
+"- KEEP image refs (the {ref:\"@imgN\"} objects) verbatim; never invent or drop a ref.",
+"- COMPONENTS: when a subtree clearly is one of these design-system components, set node.component to that EXACT name (+ componentProps for its variant). Available names: " + (compNames.length ? compNames.join(", ") : "(none)") + ". Never use a name outside this list. A tagged node keeps its box; the plugin swaps in the real Figma component.",
+"- Reuse the design tokens/colors below when a captured color matches one (keep the same rgb).",
+"",
+"DESIGN SYSTEM (DESIGN.md excerpt):",
+md || "(none)",
+"",
+"TOKENS (:root css):",
+tokensCss || "(none)",
+"",
+"INPUT SCENE (clean this up):",
+JSON.stringify(scene)
+  ].join("\n");
+}
+
+// Hybrid author step: strip images -> gather DS -> LLM re-authors -> restore images.
+async function authorSceneWithAgent(raw, dsRef, setStep) {
+  if (!window.WovenFigma.stripImagesForAgent) return raw;
+  setStep("Reading design system...");
+  let designMd = "", tokensCss = "";
+  try {
+    const dr = await fetch(apiUrl("/__design_system?id=" + encodeURIComponent(dsRef || "")));
+    const dj = await dr.json().catch(() => ({}));
+    designMd = (dj && dj.trio && dj.trio.designMd) || "";
+    const css = (dj && dj.trio && dj.trio.stylesCss) || "";
+    const m = css.match(/:root\s*\{[\s\S]*?\}/);
+    tokensCss = m ? m[0].slice(0, 3000) : "";
+  } catch {}
+  const compNames = (raw.components || []).slice();
+  const { scene: stripped, map } = window.WovenFigma.stripImagesForAgent(raw);
+  const prompt = buildFigmaAuthoringPrompt({ scene: stripped, designMd, tokensCss, compNames });
+
+  const call = async (p) => {
+    const r = await fetch(apiUrl("/__llm_run"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        skill: "llm", provider: "anthropic", model: "claude-sonnet-4-6",
+        prompt: p, messages: [{ role: "user", content: p }],
+        options: { max_tokens: 16000, temperature: 0.2 },
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error((j && j.error) || ("agent HTTP " + r.status));
+    return j.text || "";
+  };
+
+  setStep("Authoring a clean layout with the agent...");
+  let cleaned = parseFigmaSceneJson(await call(prompt));
+  if (!cleaned) {
+    cleaned = parseFigmaSceneJson(await call(prompt + "\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON scene object."));
+  }
+  if (!cleaned) throw new Error("The agent did not return a valid scene. Turn off 'Author with agent' to send the direct capture.");
+  cleaned.dsRef = raw.dsRef || dsRef || null;
+  if (!cleaned.name) cleaned.name = raw.name;
+  return window.WovenFigma.restoreImages(cleaned, map);
+}
+
 function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
   const [phase, setPhase] = useState("idle");   // idle|working|done|error
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
+  const [agentMode, setAgentMode] = useState(true);
   const busy = phase === "working";
 
   const setStep = (s) => setStatus(s);
@@ -29746,9 +29839,12 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         const rj = await rr.json().catch(() => ({}));
         if (rj && Array.isArray(rj.rules)) componentRules = rj.rules;
       } catch {}
-      const scene = await window.WovenFigma.domToScene(rootEl, {
+      const raw = await window.WovenFigma.domToScene(rootEl, {
         name: nodeLabel || nodeId || "Woven export", componentRules, dsRef,
       });
+      // Hybrid: an agent re-authors the captured scene into a clean, semantic,
+      // auto-layout one. Toggle off to send the raw geometry capture directly.
+      const scene = agentMode ? await authorSceneWithAgent(raw, dsRef, setStep) : raw;
       setStep("Sending to the daemon...");
       const r = await fetch(apiUrl("/__figma_send"), {
         method: "POST",
@@ -29785,6 +29881,13 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
             plugin running and connected in Figma Desktop
             (editor/tools/figma-bridge - see its README).
           </p>
+          <label className="export-override-row" style=${{ marginTop: 4 }}>
+            <input type="checkbox" checked=${agentMode} disabled=${busy}
+              onChange=${(e) => setAgentMode(e.target.checked)} />
+            <span>Author with agent <span className="modal-hint">(an LLM re-authors the
+              capture into a clean, auto-layout, component-aware scene; needs Claude Code
+              or an API key)</span></span>
+          </label>
           ${(phase === "working" || phase === "done") && status && html`
             <div className="export-name-warn" data-overridden=${true}>${status}</div>
           `}
