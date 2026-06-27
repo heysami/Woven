@@ -10264,12 +10264,11 @@ function ShareMenuButton() {
           <div className="share-menu-section">
             ${assetNodes.length === 0 && html`<div className="runs-empty">No visual assets in this project yet.</div>`}
             ${assetNodes.map(n => html`
-              <div className="share-item" key=${n.id}>
-                <div className="share-item-head">
-                  ${assetThumb(n)}
-                  <span className="share-item-label" title=${labelOf(n)}>${labelOf(n)}</span>
-                </div>
-                <div className="share-item-actions">
+              <div className="share-item" key=${n.id}
+                style=${{ flexDirection: "row", alignItems: "center", gap: "8px" }}>
+                ${assetThumb(n)}
+                <span className="share-item-label" title=${labelOf(n)}>${labelOf(n)}</span>
+                <div className="share-item-actions" style=${{ flexWrap: "nowrap", flex: "0 0 auto" }}>
                   ${exportBtn(n)}
                   ${figmaBtn(n)}
                 </div>
