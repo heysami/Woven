@@ -68223,6 +68223,133 @@ const SPEC_SOURCE_TEMPLATES = {
       scale: { type: "number", value: 12, min: 1, max: 64, step: 1 },
       mix: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 }
     }, ["scale: values.scale", "mix: values.mix"]),
+    // --- illustrative-shader SOURCES (procedural fills; generate their own field) ---
+    _effectTemplate("mesh-gradient", "Mesh gradient", "mesh-gradient", {
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      spread: { type: "number", value: 0.3, min: 0, max: 0.5, step: 0.01 },
+      speed: { type: "number", value: 0.2, min: 0, max: 2, step: 0.01 },
+      value: { type: "number", value: 0.9, min: 0, max: 1, step: 0.01 }
+    }, ["hue: values.hue", "spread: values.spread", "speed: values.speed", "value: values.value"]),
+    _effectTemplate("fractal-noise", "Fractal noise", "fractal-noise", {
+      scale: { type: "number", value: 3, min: 0.5, max: 16, step: 0.1 },
+      speed: { type: "number", value: 0.05, min: 0, max: 1, step: 0.01 },
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      saturation: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
+      contrast: { type: "number", value: 1, min: 0.2, max: 3, step: 0.05 }
+    }, ["scale: values.scale", "speed: values.speed", "hue: values.hue", "saturation: values.saturation", "contrast: values.contrast"]),
+    _effectTemplate("clouds", "Clouds", "clouds", {
+      cover: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
+      scale: { type: "number", value: 3, min: 0.5, max: 12, step: 0.1 },
+      speed: { type: "number", value: 0.02, min: 0, max: 0.5, step: 0.005 },
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 }
+    }, ["cover: values.cover", "scale: values.scale", "speed: values.speed", "hue: values.hue"]),
+    _effectTemplate("nebula", "Nebula", "nebula", {
+      hue: { type: "number", value: 0.72, min: 0, max: 1, step: 0.01 },
+      density: { type: "number", value: 1.5, min: 0.2, max: 4, step: 0.05 },
+      speed: { type: "number", value: 0.01, min: 0, max: 0.3, step: 0.005 },
+      stars: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 }
+    }, ["hue: values.hue", "density: values.density", "speed: values.speed", "stars: values.stars"]),
+    _effectTemplate("glowing-wave", "Glowing wave", "glowing-wave", {
+      hue: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 },
+      frequency: { type: "number", value: 8, min: 1, max: 40, step: 0.5 },
+      speed: { type: "number", value: 0.6, min: 0, max: 3, step: 0.01 },
+      glow: { type: "number", value: 2, min: 0.2, max: 6, step: 0.1 }
+    }, ["hue: values.hue", "frequency: values.frequency", "speed: values.speed", "glow: values.glow"]),
+    _effectTemplate("neuro-noise", "Neuro noise", "neuro-noise", {
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      folds: { type: "number", value: 3, min: 1, max: 8, step: 0.1 },
+      scale: { type: "number", value: 2, min: 0.5, max: 8, step: 0.1 },
+      speed: { type: "number", value: 0.02, min: 0, max: 0.3, step: 0.005 }
+    }, ["hue: values.hue", "folds: values.folds", "scale: values.scale", "speed: values.speed"]),
+    _effectTemplate("godrays", "Godrays", "godrays", {
+      hue: { type: "number", value: 0.12, min: 0, max: 1, step: 0.01 },
+      count: { type: "number", value: 14, min: 2, max: 60, step: 1 },
+      gain: { type: "number", value: 1, min: 0, max: 3, step: 0.05 },
+      originX: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
+      originY: { type: "number", value: 0.15, min: 0, max: 1, step: 0.01 }
+    }, ["hue: values.hue", "count: values.count", "gain: values.gain", "originX: values.originX", "originY: values.originY"]),
+    _effectTemplate("water-caustics", "Water caustics", "water-caustics", {
+      hue: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
+      scale: { type: "number", value: 6, min: 1, max: 20, step: 0.5 },
+      sharpness: { type: "number", value: 2, min: 0.5, max: 6, step: 0.1 },
+      speed: { type: "number", value: 0.3, min: 0, max: 2, step: 0.01 }
+    }, ["hue: values.hue", "scale: values.scale", "sharpness: values.sharpness", "speed: values.speed"]),
+    _effectTemplate("particle-web", "Particle web", "particle-web", {
+      count: { type: "number", value: 10, min: 2, max: 30, step: 1 },
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      speed: { type: "number", value: 0.3, min: 0, max: 2, step: 0.01 },
+      link: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 }
+    }, ["count: values.count", "hue: values.hue", "speed: values.speed", "link: values.link"]),
+    _effectTemplate("magnetic-field", "Magnetic field", "magnetic-field", {
+      scale: { type: "number", value: 3, min: 0.5, max: 10, step: 0.1 },
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      speed: { type: "number", value: 0.05, min: 0, max: 0.5, step: 0.005 },
+      density: { type: "number", value: 40, min: 5, max: 120, step: 1 }
+    }, ["scale: values.scale", "hue: values.hue", "speed: values.speed", "density: values.density"]),
+    _effectTemplate("metaball-merge", "Metaball merge", "metaball-merge", {
+      count: { type: "number", value: 5, min: 1, max: 8, step: 1 },
+      hue: { type: "number", value: 0.55, min: 0, max: 1, step: 0.01 },
+      speed: { type: "number", value: 0.4, min: 0, max: 2, step: 0.01 },
+      threshold: { type: "number", value: 1, min: 0.3, max: 2, step: 0.05 }
+    }, ["count: values.count", "hue: values.hue", "speed: values.speed", "threshold: values.threshold"]),
+    _effectTemplate("moire-interference", "Moire interference", "moire-interference", {
+      frequencyA: { type: "number", value: 40, min: 5, max: 120, step: 1 },
+      frequencyB: { type: "number", value: 42, min: 5, max: 120, step: 1 },
+      angle: { type: "number", value: 0.08, min: 0, max: 1.57, step: 0.01 },
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      speed: { type: "number", value: 0.02, min: 0, max: 0.3, step: 0.005 }
+    }, ["frequencyA: values.frequencyA", "frequencyB: values.frequencyB", "angle: values.angle", "hue: values.hue", "speed: values.speed"]),
+    _effectTemplate("concentric-patterns", "Concentric patterns", "concentric-patterns", {
+      frequency: { type: "number", value: 20, min: 2, max: 80, step: 1 },
+      hue: { type: "number", value: 0.05, min: 0, max: 1, step: 0.01 },
+      speed: { type: "number", value: 0.3, min: 0, max: 2, step: 0.01 },
+      shape: { type: "number", value: 0, min: 0, max: 1, step: 1 }
+    }, ["frequency: values.frequency", "hue: values.hue", "speed: values.speed", "shape: values.shape"]),
+    _effectTemplate("dither-waves", "Dither waves", "dither-waves", {
+      hue: { type: "number", value: 0.45, min: 0, max: 1, step: 0.01 },
+      frequency: { type: "number", value: 8, min: 1, max: 40, step: 0.5 },
+      speed: { type: "number", value: 0.6, min: 0, max: 3, step: 0.01 },
+      levels: { type: "number", value: 2, min: 2, max: 8, step: 1 }
+    }, ["hue: values.hue", "frequency: values.frequency", "speed: values.speed", "levels: values.levels"]),
+    // --- illustrative-shader FILTERS (transform the layer beneath) ---
+    _effectTemplate("gradient-map", "Gradient map", "gradient-map", {
+      hueLow: { type: "number", value: 0.66, min: 0, max: 1, step: 0.01 },
+      hueHigh: { type: "number", value: 0.12, min: 0, max: 1, step: 0.01 },
+      saturation: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 }
+    }, ["hueLow: values.hueLow", "hueHigh: values.hueHigh", "saturation: values.saturation"]),
+    _effectTemplate("color-outline", "Color outline", "color-outline", {
+      threshold: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
+      hue: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
+      thickness: { type: "number", value: 1, min: 0.5, max: 4, step: 0.1 }
+    }, ["threshold: values.threshold", "hue: values.hue", "thickness: values.thickness"]),
+    _effectTemplate("channel-mixer", "Channel mixer", "channel-mixer", {
+      mode: { type: "number", value: 1, min: 0, max: 3, step: 1 },
+      amount: { type: "number", value: 1, min: 0, max: 1, step: 0.01 }
+    }, ["mode: values.mode", "amount: values.amount"]),
+    _effectTemplate("hatching", "Hatching", "hatching", {
+      frequency: { type: "number", value: 140, min: 30, max: 400, step: 5 }
+    }, ["frequency: values.frequency"]),
+    _effectTemplate("pattern-refraction", "Pattern refraction", "pattern-refraction", {
+      frequency: { type: "number", value: 30, min: 4, max: 120, step: 1 },
+      strength: { type: "number", value: 0.02, min: 0, max: 0.1, step: 0.002 },
+      angle: { type: "number", value: 0, min: 0, max: 1.57, step: 0.01 },
+      speed: { type: "number", value: 0, min: 0, max: 2, step: 0.01 }
+    }, ["frequency: values.frequency", "strength: values.strength", "angle: values.angle", "speed: values.speed"]),
+    _effectTemplate("chromatic-metal", "Chromatic metal", "chromatic-metal", {
+      bands: { type: "number", value: 3, min: 1, max: 10, step: 0.1 },
+      aberration: { type: "number", value: 0.01, min: 0, max: 0.05, step: 0.001 }
+    }, ["bands: values.bands", "aberration: values.aberration"]),
+    _effectTemplate("bokeh-blur", "Bokeh blur", "bokeh-blur", {
+      radius: { type: "number", value: 0.012, min: 0, max: 0.06, step: 0.001 },
+      threshold: { type: "number", value: 0.7, min: 0, max: 1, step: 0.01 },
+      bloom: { type: "number", value: 2, min: 0, max: 6, step: 0.1 }
+    }, ["radius: values.radius", "threshold: values.threshold", "bloom: values.bloom"]),
+    _effectTemplate("riso-print", "Riso print", "riso-print", {
+      cell: { type: "number", value: 6, min: 2, max: 24, step: 1 },
+      hueA: { type: "number", value: 0.92, min: 0, max: 1, step: 0.01 },
+      hueB: { type: "number", value: 0.5, min: 0, max: 1, step: 0.01 },
+      registration: { type: "number", value: 0.004, min: 0, max: 0.02, step: 0.001 }
+    }, ["cell: values.cell", "hueA: values.hueA", "hueB: values.hueB", "registration: values.registration"]),
     // --- transform / color / filter (single-pass TOP vocabulary) ---
     _effectTemplate("transform", "Transform", "transform", {
       tx: { type: "number", value: 0, min: -1, max: 1, step: 0.01 },

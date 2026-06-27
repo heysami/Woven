@@ -31,6 +31,8 @@ Per-id `im_output_<imId>_shader` OR `im_output_<imId>_particle`:
 
 Same as `im-output-audio` §2 with `medium: "shader"` or `medium: "particle"`.
 
+**Shader catalogue:** before writing a fragment shader from scratch, consult `docs/research/shader-library.index.json` (primer `docs/research/shader-library.md`) - the curated, stackable Figma-shaders / paper-design register (mesh-gradient, neuro-noise, godrays, water-caustics, dither-waves, fluid-halftone, lens-distortion, riso-print, etc.). Match `creativeBrief.sensoryTargets.visual` against the index, read the chosen entry's `sourceFile` card for its `webgl` strategy + params, and drive its scalar uniforms (or your richer ones) from the mapping output vector. For STACKED output, render sources first then filters, with one `gradient-map`/`lens-distortion` unifier on top (see the library's §1 stacking model).
+
 ## 3. Hard craft requirements
 
 ### 3.1 WebGL2 with safe context creation (block)

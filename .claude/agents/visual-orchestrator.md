@@ -135,9 +135,9 @@ A drawer that produced an asset but didn't return a prompt is broken - re-dispat
 - `visualPlanPath` (default: `workflow/visual-plan.json` - you own this)
 - `genre` (read from `editor/branches/<branchSlug>.js` line-1 `// GENRE:` comment, or the active DS `meta.json.genre`)
 
-## Step 0a (v3.5) - Look for upstream art-direction enrichments (photography + illustration orchestrators)
+## Step 0a (v3.5) - Look for upstream art-direction enrichments (photography + illustration + shader orchestrators)
 
-**Before scaffolding any prompt nodes, walk `workflow/workflow.json` for `pe_photo_*` and `pe_illust_*` nodes** committed by photography-orchestrator / illustration-orchestrator. These are the FIRST-style art-direction passes that ran before you. Each enrichment node binds to a specific `slotId` and supplies a paste-ready prompt + negative-prompt + style hints sourced from `docs/research/photography-library.md` or `docs/research/illustration-library.md`.
+**Before scaffolding any prompt nodes, walk `workflow/workflow.json` for `pe_photo_*`, `pe_illust_*`, and `pe_shader_*` nodes** committed by photography-orchestrator / illustration-orchestrator / shader-orchestrator. These are the FIRST-style art-direction passes that ran before you. Each enrichment node binds to a specific `slotId` and supplies a paste-ready prompt + hints sourced from `docs/research/photography-library.md`, `docs/research/illustration-library.md`, or `docs/research/shader-library.md`.
 
 ```bash
 curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
@@ -145,16 +145,16 @@ curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
 import json, sys
 g = json.load(sys.stdin)
 enrichments = {n['slotId']: n for n in g.get('nodes',[])
-               if n.get('id','').startswith(('pe_photo_','pe_illust_'))}
+               if n.get('id','').startswith(('pe_photo_','pe_illust_','pe_shader_'))}
 print(json.dumps(enrichments))
 "
 ```
 
 For each slot you're about to scaffold:
 
-1. **Compute the slot's `slotId`** the same way photography/illustration orchestrators did (file path + position).
-2. **Look up `pe_photo_<slotId>` or `pe_illust_<slotId>`** in the enrichment map.
-3. **If an enrichment exists for this slot**, use its `outputs.promptForRasterPhoto` / `outputs.promptForRasterForeground` as the prompt node's text VERBATIM. Don't re-prompt - the library decision-tree already picked the right style. Also pull `outputs.negativePrompt` into a sibling `negativePrompt` field on the skill node so the image generator honours both.
+1. **Compute the slot's `slotId`** the same way photography/illustration/shader orchestrators did (file path + position).
+2. **Look up `pe_photo_<slotId>` / `pe_illust_<slotId>` / `pe_shader_<slotId>`** in the enrichment map.
+3. **If an enrichment exists for this slot**, use its `outputs.promptForRasterPhoto` / `outputs.promptForRasterForeground` as the prompt node's text VERBATIM. Don't re-prompt - the library decision-tree already picked the right style. Also pull `outputs.negativePrompt` into a sibling `negativePrompt` field on the skill node so the image generator honours both. **For a `pe_shader_<slotId>` on a `shader`-medium slot**, instead pass `outputs.promptForShader` (prototype) or `outputs.fxStack` (app-node composer) verbatim to the `shader` drawer, plus `shaderStack` + `paletteHint` / `registerHint` / `motionHint` - the library already picked the source -> filter -> unifier stack, so the drawer renders that stack rather than guessing.
 4. **If no enrichment exists for this slot**, scaffold the prompt node as you always did (Step 0 + Step 4 below). Default un-enriched prompts ship cleanly. **BUT first check for `workflow/art-direction-contract.json`** (committed by art-director-orchestrator pre-build): if it exists, fold `crossSurfaceContract.imageryRegister` + `crossSurfaceContract.sharedPaletteHexes` + `extracted.lightModel` into the default prompt, so even un-enriched slots match the world the chrome was built from. This is the floor that keeps generated imagery from drifting off the chrome's register - the contract governs every slot, the pe_* enrichments refine the ones that have them.
 5. **Record the enrichment-source** in the prompt node's metadata: `{"enrichmentSource": "pe_photo_<slotId>" | "art-contract", "styleId": "<library styleId>"}` so the QA pass in Step 8 can reference what was picked.
 

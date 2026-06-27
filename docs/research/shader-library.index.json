@@ -1,0 +1,1065 @@
+{
+  "version": "2.0",
+  "library": "shader",
+  "sourceDir": "design-library/",
+  "totalEntries": 32,
+  "decisionTree": {
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "bokeh-blur",
+      "alternatives": [
+        "godrays",
+        "gradient-map",
+        "luminance-particles",
+        "nebula"
+      ]
+    },
+    "recipe-bento-marketing": {
+      "default": "bokeh-blur",
+      "alternatives": [
+        "lens-distortion"
+      ]
+    },
+    "aesthetic-frutiger-aero": {
+      "default": "bokeh-blur",
+      "alternatives": [
+        "clouds",
+        "lens-distortion",
+        "mesh-gradient",
+        "metaball-merge",
+        "pattern-refraction",
+        "water-caustics"
+      ]
+    },
+    "recipe-aurora-marketing": {
+      "default": "bokeh-blur",
+      "alternatives": [
+        "mesh-gradient"
+      ]
+    },
+    "aesthetic-monochrome-pop-poster": {
+      "default": "channel-mixer",
+      "alternatives": [
+        "color-outline",
+        "dither",
+        "gradient-map",
+        "halftone"
+      ]
+    },
+    "aesthetic-cyberpunk": {
+      "default": "channel-mixer",
+      "alternatives": [
+        "chromatic-metal",
+        "dither-waves",
+        "glowing-wave",
+        "lens-distortion",
+        "particle-stretch",
+        "particle-web",
+        "pixelate",
+        "slice-shift"
+      ]
+    },
+    "recipe-editorial-magazine": {
+      "default": "channel-mixer",
+      "alternatives": [
+        "fluid-halftone",
+        "gradient-map",
+        "halftone",
+        "hatching",
+        "riso-print"
+      ]
+    },
+    "aesthetic-acid-graphics": {
+      "default": "channel-mixer",
+      "alternatives": [
+        "fluid-halftone",
+        "gradient-map",
+        "slice-shift"
+      ]
+    },
+    "aesthetic-y2k-futurism": {
+      "default": "chromatic-metal",
+      "alternatives": [
+        "dither-waves",
+        "metaball-merge",
+        "particle-stretch"
+      ]
+    },
+    "aesthetic-urbling": {
+      "default": "chromatic-metal",
+      "alternatives": []
+    },
+    "style-holographic": {
+      "default": "chromatic-metal",
+      "alternatives": []
+    },
+    "aesthetic-solarpunk": {
+      "default": "clouds",
+      "alternatives": [
+        "godrays",
+        "water-caustics"
+      ]
+    },
+    "aesthetic-coastal-grandmother": {
+      "default": "clouds",
+      "alternatives": [
+        "water-caustics"
+      ]
+    },
+    "aesthetic-dreamcore": {
+      "default": "clouds",
+      "alternatives": [
+        "organic-distortion"
+      ]
+    },
+    "aesthetic-acid-design": {
+      "default": "color-outline",
+      "alternatives": [
+        "concentric-patterns",
+        "moire-interference",
+        "organic-distortion"
+      ]
+    },
+    "aesthetic-neubrutalism": {
+      "default": "color-outline",
+      "alternatives": []
+    },
+    "aesthetic-y2k-memphis-loud": {
+      "default": "color-outline",
+      "alternatives": [
+        "concentric-patterns",
+        "fluid-halftone",
+        "halftone"
+      ]
+    },
+    "aesthetic-op-art": {
+      "default": "concentric-patterns",
+      "alternatives": [
+        "moire-interference"
+      ]
+    },
+    "aesthetic-vintage-carnival": {
+      "default": "concentric-patterns",
+      "alternatives": []
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "dither-waves",
+      "alternatives": [
+        "dither",
+        "glowing-wave"
+      ]
+    },
+    "style-terminal-mono": {
+      "default": "dither-waves",
+      "alternatives": []
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "dither-waves",
+      "alternatives": [
+        "fractal-noise",
+        "glowing-wave",
+        "neuro-noise",
+        "particle-web"
+      ]
+    },
+    "aesthetic-8-bit-generic": {
+      "default": "dither",
+      "alternatives": [
+        "pixelate"
+      ]
+    },
+    "style-pixel-bitmap": {
+      "default": "dither",
+      "alternatives": [
+        "pixelate"
+      ]
+    },
+    "aesthetic-vaporwave": {
+      "default": "fluid-halftone",
+      "alternatives": [
+        "organic-distortion",
+        "pixelate",
+        "slice-shift"
+      ]
+    },
+    "aesthetic-dark-botanical-maximalism": {
+      "default": "fractal-noise",
+      "alternatives": [
+        "neuro-noise"
+      ]
+    },
+    "aesthetic-cosmic-horizon": {
+      "default": "fractal-noise",
+      "alternatives": [
+        "glowing-wave",
+        "godrays",
+        "luminance-particles",
+        "magnetic-field",
+        "nebula"
+      ]
+    },
+    "aesthetic-cottagegoth": {
+      "default": "fractal-noise",
+      "alternatives": []
+    },
+    "aesthetic-bioluminescent-deep": {
+      "default": "godrays",
+      "alternatives": [
+        "luminance-particles",
+        "nebula",
+        "neuro-noise",
+        "water-caustics"
+      ]
+    },
+    "aesthetic-anti-design": {
+      "default": "halftone",
+      "alternatives": [
+        "riso-print"
+      ]
+    },
+    "aesthetic-dark-academia": {
+      "default": "hatching",
+      "alternatives": []
+    },
+    "style-doodle": {
+      "default": "hatching",
+      "alternatives": []
+    },
+    "recipe-newspaper-of-record": {
+      "default": "hatching",
+      "alternatives": []
+    },
+    "recipe-restrained-ai-marketing": {
+      "default": "lens-distortion",
+      "alternatives": [
+        "mesh-gradient",
+        "neuro-noise"
+      ]
+    },
+    "aesthetic-depin-hardware": {
+      "default": "magnetic-field",
+      "alternatives": []
+    },
+    "recipe-scientific-infra-marketing": {
+      "default": "magnetic-field",
+      "alternatives": []
+    },
+    "aesthetic-blueprint-hologram": {
+      "default": "magnetic-field",
+      "alternatives": []
+    },
+    "style-aurorism": {
+      "default": "mesh-gradient",
+      "alternatives": []
+    },
+    "aesthetic-positivity-kawaii": {
+      "default": "metaball-merge",
+      "alternatives": []
+    },
+    "style-claymorphism": {
+      "default": "metaball-merge",
+      "alternatives": []
+    },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "moire-interference",
+      "alternatives": [
+        "pattern-grid"
+      ]
+    },
+    "recipe-swiss-grid": {
+      "default": "moire-interference",
+      "alternatives": [
+        "pattern-grid"
+      ]
+    },
+    "aesthetic-defi-cosmic": {
+      "default": "nebula",
+      "alternatives": []
+    },
+    "aesthetic-surreal-dream-stage": {
+      "default": "organic-distortion",
+      "alternatives": [
+        "pattern-refraction"
+      ]
+    },
+    "style-bold-display": {
+      "default": "particle-stretch",
+      "alternatives": [
+        "slice-shift"
+      ]
+    },
+    "style-oversized-neo-grotesque": {
+      "default": "particle-stretch",
+      "alternatives": []
+    },
+    "aesthetic-crypto-degen": {
+      "default": "particle-web",
+      "alternatives": []
+    },
+    "recipe-devtools-marketing": {
+      "default": "particle-web",
+      "alternatives": []
+    },
+    "aesthetic-bauhaus": {
+      "default": "pattern-grid",
+      "alternatives": []
+    },
+    "aesthetic-constructivism": {
+      "default": "pattern-grid",
+      "alternatives": []
+    },
+    "style-liquid-glass": {
+      "default": "pattern-refraction",
+      "alternatives": []
+    },
+    "style-glassmorphism": {
+      "default": "pattern-refraction",
+      "alternatives": []
+    },
+    "recipe-readcv": {
+      "default": "riso-print",
+      "alternatives": []
+    },
+    "style-raster-cutout": {
+      "default": "riso-print",
+      "alternatives": []
+    }
+  },
+  "entries": {
+    "bokeh-blur": {
+      "name": "Bokeh Blur (depth-of-field highlight bloom)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "light",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Soft lens blur where the bright spots bloom into rounded bokeh discs - the Figma `Bokeh blur` effect, with controls for highlight density. Dreamy depth-of-field, festive light backdrops, premium product haze.",
+      "notForUseWhen": "crisp technical diagrams, dense tables",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "recipe-bento-marketing",
+        "aesthetic-frutiger-aero",
+        "recipe-aurora-marketing"
+      ],
+      "sourceFile": "design-library/shader-bokeh-blur.md"
+    },
+    "channel-mixer": {
+      "name": "Channel Mixer (false-color / duotone channel remap)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "color",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Rebuild each output channel as a weighted mix of the source's R/G/B - the Figma `Channel mixer` effect. Custom color treatments, false-color infrared looks, surgical duotones, thermal palettes. A 3x3 (or 3x4) matrix on the pixels beneath.",
+      "notForUseWhen": "brand photos needing true color",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "aesthetic-cyberpunk",
+        "recipe-editorial-magazine",
+        "aesthetic-acid-graphics"
+      ],
+      "sourceFile": "design-library/shader-channel-mixer.md"
+    },
+    "chromatic-metal": {
+      "name": "Chromatic Metal (inflated glossy metal + RGB separation)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "metal",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Give shapes and type a glossy, inflated liquid-metal finish with RGB channel separation at the highlights - the Figma `Chromatic metal` effect. Y2K chrome, bubble-text, iridescent fluid foil. Inflates the layer's alpha into a rounded body, then lights it like chrome.",
+      "notForUseWhen": "matte editorial, flat utilitarian UI",
+      "pairsPrototypes": [
+        "aesthetic-y2k-futurism",
+        "aesthetic-urbling",
+        "aesthetic-cyberpunk",
+        "style-holographic"
+      ],
+      "sourceFile": "design-library/shader-chromatic-metal.md"
+    },
+    "clouds": {
+      "name": "Clouds (procedural turbulent cloud texture)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "noise",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Soft, billowing procedural clouds with customizable colors and turbulence - the Figma `Clouds` fill. Frutiger-Aero skies, dream-soft backdrops, drifting fog. Domain-warped fbm shaped into puffs with a sky gradient behind.",
+      "notForUseWhen": "hard tech UI, dense dashboards",
+      "pairsPrototypes": [
+        "aesthetic-solarpunk",
+        "aesthetic-coastal-grandmother",
+        "aesthetic-frutiger-aero",
+        "aesthetic-dreamcore"
+      ],
+      "sourceFile": "design-library/shader-clouds.md"
+    },
+    "color-outline": {
+      "name": "Color Outline (stacked offset outlines + gradient edge line-art)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "screen",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "edge",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Detect the layer's edges and re-draw them as crisp colored contour lines - one outline, or a stack of concentric offset outlines in shifting hues (the Figma `Outlines` + `Colored edges` effects). Turns any image or shape into vibrant poster line-art.",
+      "notForUseWhen": "photoreal product, subtle luxury",
+      "pairsPrototypes": [
+        "aesthetic-acid-design",
+        "aesthetic-neubrutalism",
+        "aesthetic-monochrome-pop-poster",
+        "aesthetic-y2k-memphis-loud"
+      ],
+      "sourceFile": "design-library/shader-color-outline.md"
+    },
+    "concentric-patterns": {
+      "name": "Concentric Patterns (bold nested ring shapes)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "screen-pattern",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Bold concentric rings / nested shapes radiating from a center, customizable shape and spacing - the Figma `Concentric patterns` fill. Op-art targets, retro sunbursts, hypnotic rings that can pulse outward.",
+      "notForUseWhen": "minimal restrained SaaS, photoreal hero",
+      "pairsPrototypes": [
+        "aesthetic-op-art",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-vintage-carnival",
+        "aesthetic-acid-design"
+      ],
+      "sourceFile": "design-library/shader-concentric-patterns.md"
+    },
+    "dither-waves": {
+      "name": "Dither Waves (luminous wave bands, error-diffusion screen)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "screen",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "screen-pattern",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Smooth luminous sine-bands of light advected across the frame, then quantized through an ordered (Bayer) or error-diffusion (Floyd-Steinberg / Atkinson) dither so the gradient breaks into a living grid of 1-bit / 2-bit pixels. The Figma `Glowing wave` fill run through the `Dither` effect - retro-CRT light that never bands.",
+      "notForUseWhen": "flat clean SaaS, photographic hero",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-cassette-futurism",
+        "style-terminal-mono",
+        "recipe-ai-foundry-dark",
+        "aesthetic-y2k-futurism"
+      ],
+      "sourceFile": "design-library/shader-dither-waves.md"
+    },
+    "dither": {
+      "name": "Dither (Atkinson / Floyd-Steinberg / Bayer screen)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "screen-pattern",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Stylized dithering of the layer beneath using the classic algorithms - Atkinson, Floyd-Steinberg, ordered Bayer - quantizing it to 1-bit / 2-bit / a small palette. The Figma `Dither` effect: the standalone screen you drop on ANY layer (the filter twin of `dither-waves`).",
+      "notForUseWhen": "smooth premium gradients, photoreal hero",
+      "pairsPrototypes": [
+        "aesthetic-8-bit-generic",
+        "style-pixel-bitmap",
+        "aesthetic-cassette-futurism",
+        "aesthetic-monochrome-pop-poster"
+      ],
+      "sourceFile": "design-library/shader-dither.md"
+    },
+    "fluid-halftone": {
+      "name": "Fluid Halftone (advected ink re-screened as dots)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "multiply",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "halftone",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "A slow curl-noise fluid field (ink swirling in water) sampled through a rotated halftone dot grid, so the flowing density resolves into CMYK-style print dots that grow and shrink as the fluid moves. Print-press texture that is alive.",
+      "notForUseWhen": "minimal corporate, dense data UI",
+      "pairsPrototypes": [
+        "aesthetic-acid-graphics",
+        "aesthetic-y2k-memphis-loud",
+        "recipe-editorial-magazine",
+        "aesthetic-vaporwave"
+      ],
+      "sourceFile": "design-library/shader-fluid-halftone.md"
+    },
+    "fractal-noise": {
+      "name": "Fractal Noise (Perlin / Value / Voronoise procedural fill)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "overlay",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "noise",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "The raw procedural noise fill - Perlin, Value, or Voronoise fbm - the Figma `Fractal noise` fill and the substrate under half the effects in this library. Clouds, smoke, organic grain, and the displacement source other shaders sample.",
+      "notForUseWhen": "crisp flat UI, hard-edged poster",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "aesthetic-dark-botanical-maximalism",
+        "aesthetic-cosmic-horizon",
+        "aesthetic-cottagegoth"
+      ],
+      "sourceFile": "design-library/shader-fractal-noise.md"
+    },
+    "glowing-wave": {
+      "name": "Glowing Wave (luminous wave fill, on-canvas glow)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "screen",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "light",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Smooth bands of emitted light undulating across the frame with on-canvas controls for color, glow and motion - the Figma `Glowing wave` fill. The clean luminous source BEFORE any dither; feed it into `dither` for the retro-CRT variant.",
+      "notForUseWhen": "flat corporate, dense data tables",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "recipe-ai-foundry-dark",
+        "aesthetic-cassette-futurism",
+        "aesthetic-cosmic-horizon"
+      ],
+      "sourceFile": "design-library/shader-glowing-wave.md"
+    },
+    "godrays": {
+      "name": "Godrays (volumetric light shafts from a source)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "add",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "light",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Volumetric light shafts (crepuscular rays) streaming from one origin point through unseen haze - the radial bloom that makes a dark scene feel lit from within. paper-design's `godRays`: light as a material.",
+      "notForUseWhen": "flat utilitarian UI, bright airy brands",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-cosmic-horizon",
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-solarpunk"
+      ],
+      "sourceFile": "design-library/shader-godrays.md"
+    },
+    "gradient-map": {
+      "name": "Gradient Map (luminance remapped to a custom color ramp)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "color",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Throw away the layer's hue and remap its LUMINANCE to a custom gradient - shadows take one color, highlights another, midtones the stops between. The Figma `Gradient map` effect: the single most powerful one-move way to force any image onto a brand palette (duotone / tritone).",
+      "notForUseWhen": "brand photos that must keep true color",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "aesthetic-luxury-cinematic-dark",
+        "recipe-editorial-magazine",
+        "aesthetic-acid-graphics"
+      ],
+      "sourceFile": "design-library/shader-gradient-map.md"
+    },
+    "halftone": {
+      "name": "Halftone (vintage print / comic dot screen)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "multiply",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "halftone",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Re-screen the layer beneath as vintage print / comic-book halftone - a rotated grid of dots whose size tracks luminance, with controls for color separation and dot size. The Figma `Halftone` effect: the static filter twin of `fluid-halftone`.",
+      "notForUseWhen": "smooth gradient hero, photoreal product",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-anti-design",
+        "aesthetic-monochrome-pop-poster"
+      ],
+      "sourceFile": "design-library/shader-halftone.md"
+    },
+    "hatching": {
+      "name": "Hatching (cross-hatch line shading from luminance)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "multiply",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "edge",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Shade the layer beneath with engraving-style cross-hatching - darker tones get denser, more-crossed line layers, exactly like pen-and-ink or a banknote engraving. The Figma `Hatching` effect for text, shapes and images.",
+      "notForUseWhen": "glossy modern SaaS, vibrant pop",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "aesthetic-dark-academia",
+        "style-doodle",
+        "recipe-newspaper-of-record"
+      ],
+      "sourceFile": "design-library/shader-hatching.md"
+    },
+    "lens-distortion": {
+      "name": "Lens Distortion (barrel/pincushion + radial chromatic aberration)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "distortion",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Optical lens warp - barrel (bulge) or pincushion (pinch) - with the RGB channels split radially toward the corners, exactly like a real wide-angle or anamorphic lens. The frame gains glassy depth and a cinematic fringe at the edges.",
+      "notForUseWhen": "flat editorial type, accessibility-critical text",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "recipe-bento-marketing",
+        "recipe-restrained-ai-marketing",
+        "aesthetic-frutiger-aero"
+      ],
+      "sourceFile": "design-library/shader-lens-distortion.md"
+    },
+    "luminance-particles": {
+      "name": "Luminance Particles (image dissolves into glowing motes)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "add",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "particle",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "An image or text layer sampled into a particle field, where each particle's brightness, size and drift come from the underlying luminance - bright areas bloom into dense glowing motes, dark areas fall to dust. The picture re-assembles out of light.",
+      "notForUseWhen": "crisp product shots that must stay legible",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-cosmic-horizon",
+        "aesthetic-bioluminescent-deep"
+      ],
+      "sourceFile": "design-library/shader-luminance-particles.md"
+    },
+    "magnetic-field": {
+      "name": "Magnetic Field (curl flow-field streamlines)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "add",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "flow-field",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Thousands of short filaments tracing a curl-noise vector field, bending around invisible poles like iron filings over a magnet - slow, scientific, hypnotic. Field lines that flow and re-form as the poles drift.",
+      "notForUseWhen": "playful kids brands, dense text UI",
+      "pairsPrototypes": [
+        "aesthetic-depin-hardware",
+        "recipe-scientific-infra-marketing",
+        "aesthetic-blueprint-hologram",
+        "aesthetic-cosmic-horizon"
+      ],
+      "sourceFile": "design-library/shader-magnetic-field.md"
+    },
+    "mesh-gradient": {
+      "name": "Mesh Gradient (animated 16-point color mesh)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "gradient",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Smooth multi-point color mesh - up to 16 editable color stops bleeding into each other - gently drifting and warping. The Figma `Mesh gradient` fill and the animated WebGL sibling of the CSS-first `material-aurora-mesh`. The default premium SaaS backdrop.",
+      "notForUseWhen": "high-density data UI, brutalist flat",
+      "pairsPrototypes": [
+        "style-aurorism",
+        "recipe-aurora-marketing",
+        "aesthetic-frutiger-aero",
+        "recipe-restrained-ai-marketing"
+      ],
+      "sourceFile": "design-library/shader-mesh-gradient.md"
+    },
+    "metaball-merge": {
+      "name": "Metaball Merge (gooey blobs that fuse and split)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "field",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Soft blobs that bulge toward each other and merge into smooth gooey bridges as they meet, then split apart - the Figma `Gooey merge` / classic metaball field. Liquid, lava-lamp, Y2K-aqua motion.",
+      "notForUseWhen": "serious financial UI, dense data",
+      "pairsPrototypes": [
+        "aesthetic-frutiger-aero",
+        "aesthetic-positivity-kawaii",
+        "style-claymorphism",
+        "aesthetic-y2k-futurism"
+      ],
+      "sourceFile": "design-library/shader-metaball-merge.md"
+    },
+    "moire-interference": {
+      "name": "Moire Interference (beating line/dot fields + RGB separation)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "screen",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "screen-pattern",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Two or more fine line/dot fields overlaid at a slight angle so they beat into large moire interference patterns that swim as the angle drifts - the Figma `Moire` fill, with optional RGB channel separation for an optical, almost-3D shimmer.",
+      "notForUseWhen": "calm wellness brands, accessibility-first UI",
+      "pairsPrototypes": [
+        "aesthetic-op-art",
+        "aesthetic-acid-design",
+        "aesthetic-monochrome-tech-editorial",
+        "recipe-swiss-grid"
+      ],
+      "sourceFile": "design-library/shader-moire-interference.md"
+    },
+    "nebula": {
+      "name": "Nebula (deep-space colored gas + stars)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "screen",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "light",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Deep-space backgrounds - layered colored gas clouds glowing against black with a scatter of stars, customizable colors and density. The Figma `Nebula` fill. Cosmic, premium, infinite.",
+      "notForUseWhen": "bright airy brands, flat utilitarian UI",
+      "pairsPrototypes": [
+        "aesthetic-cosmic-horizon",
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-defi-cosmic"
+      ],
+      "sourceFile": "design-library/shader-nebula.md"
+    },
+    "neuro-noise": {
+      "name": "Neuro Noise (organic marbled / neural fold field)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "overlay",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "noise",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "Layered domain-warped fbm folded into organic ridges - the marbled, brain-coral, liquid-walnut texture that paper-design's `neuroNoise` made ubiquitous on AI landing pages. Slow, premium, alive, never repeating.",
+      "notForUseWhen": "hard-edged brutalist, flat poster",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "aesthetic-bioluminescent-deep",
+        "recipe-restrained-ai-marketing",
+        "aesthetic-dark-botanical-maximalism"
+      ],
+      "sourceFile": "design-library/shader-neuro-noise.md"
+    },
+    "organic-distortion": {
+      "name": "Organic Distortion (ripple / swirl / twist / bulge domain-warp)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "distortion",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Domain-warp the layer with flowing noise so it ripples, swirls, twists and bulges like a reflection on water or heat-haze on asphalt. The Figma `Warp` effect - a liquid that deforms anything beneath it without melting legibility (at low strength).",
+      "notForUseWhen": "precise data viz, technical diagrams",
+      "pairsPrototypes": [
+        "aesthetic-surreal-dream-stage",
+        "aesthetic-vaporwave",
+        "aesthetic-acid-design",
+        "aesthetic-dreamcore"
+      ],
+      "sourceFile": "design-library/shader-organic-distortion.md"
+    },
+    "particle-stretch": {
+      "name": "Particle Stretch (directional pixel-smear motion trails)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "distortion",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Stretch and smear the layer's pixels along a direction - like a long-exposure of something moving fast, or paint dragged with a squeegee. The Figma `Pixel stretch` effect: motion without motion blur's softness, a hard directional pull.",
+      "notForUseWhen": "calm restrained brands, dense tables",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-y2k-futurism",
+        "style-bold-display",
+        "style-oversized-neo-grotesque"
+      ],
+      "sourceFile": "design-library/shader-particle-stretch.md"
+    },
+    "particle-web": {
+      "name": "Particle Web (proximity-linked constellation field)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "screen",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "particle",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "A drifting field of points that draw connecting lines to their near neighbours, the web thickening where points cluster and snapping as they part - the canonical tech-hero 'network' backdrop, but as a real GPU/2D particle sim rather than a static SVG.",
+      "notForUseWhen": "warm editorial, hand-drawn / organic vibes",
+      "pairsPrototypes": [
+        "recipe-ai-foundry-dark",
+        "aesthetic-crypto-degen",
+        "recipe-devtools-marketing",
+        "aesthetic-cyberpunk"
+      ],
+      "sourceFile": "design-library/shader-particle-web.md"
+    },
+    "pattern-grid": {
+      "name": "Pattern Grid (geometric repeat fill)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "normal",
+      "animated": "no",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "screen-pattern",
+      "role": "background",
+      "roleAffinity": [
+        "background"
+      ],
+      "oneLine": "A tiled geometric pattern fill - dots, crosses, chevrons, custom shapes - with adjustable shape, size and spacing. The Figma `Pattern grid` fill. The quiet structural texture under Swiss / Bauhaus / blueprint layouts.",
+      "notForUseWhen": "organic hand-drawn vibes, photoreal",
+      "pairsPrototypes": [
+        "recipe-swiss-grid",
+        "aesthetic-bauhaus",
+        "aesthetic-monochrome-tech-editorial",
+        "aesthetic-constructivism"
+      ],
+      "sourceFile": "design-library/shader-pattern-grid.md"
+    },
+    "pattern-refraction": {
+      "name": "Pattern Refraction (light refracted through a ribbed pattern)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "distortion",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Refract the layer beneath through a repeating pattern - ribs, lenses, ripples - so it slices and bends into wave distortions, like looking through reeded glass or a lenticular sheet. The Figma `Pattern refraction` effect.",
+      "notForUseWhen": "flat editorial, accessibility-critical text",
+      "pairsPrototypes": [
+        "style-liquid-glass",
+        "style-glassmorphism",
+        "aesthetic-frutiger-aero",
+        "aesthetic-surreal-dream-stage"
+      ],
+      "sourceFile": "design-library/shader-pattern-refraction.md"
+    },
+    "pixelate": {
+      "name": "Pixelate (mosaic + tile-scatter)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "screen-pattern",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Quantize the layer beneath into chunky tiles - square mosaic, or scatter the tiles into displaced shapes for a shattering / censor / loading-in effect. The Figma `Pixelate` effect.",
+      "notForUseWhen": "high-detail product shots, fine type",
+      "pairsPrototypes": [
+        "aesthetic-8-bit-generic",
+        "aesthetic-vaporwave",
+        "aesthetic-cyberpunk",
+        "style-pixel-bitmap"
+      ],
+      "sourceFile": "design-library/shader-pixelate.md"
+    },
+    "riso-print": {
+      "name": "Riso Print (2-color screen re-print with grain + registration shift)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "multiply",
+      "animated": "no",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "halftone",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Re-screen the layer as a Risograph print: split it into 2-3 spot inks, screen each through a grain or halftone, then offset the channels a few pixels so the registration is charmingly wrong - colored fringes at every edge. The Figma gallery `Riso print` effect.",
+      "notForUseWhen": "glossy enterprise polish, photoreal hero",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "recipe-readcv",
+        "aesthetic-anti-design",
+        "style-raster-cutout"
+      ],
+      "sourceFile": "design-library/shader-riso-print.md"
+    },
+    "slice-shift": {
+      "name": "Slice Shift (angled bands sheared apart)",
+      "category": "image-effect",
+      "family": "filter",
+      "defaultBlend": "normal",
+      "animated": "yes",
+      "needsSource": "yes",
+      "stackable": "yes",
+      "subCategory": "distortion",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "Slice the layer beneath into angled bands and shift them apart along the slice axis - a clean shear / datamosh / venetian-blind displacement. The Figma `Slice shift` effect. Glitch with geometry instead of noise.",
+      "notForUseWhen": "calm restrained brands, precise diagrams",
+      "pairsPrototypes": [
+        "aesthetic-cyberpunk",
+        "aesthetic-acid-graphics",
+        "aesthetic-vaporwave",
+        "style-bold-display"
+      ],
+      "sourceFile": "design-library/shader-slice-shift.md"
+    },
+    "water-caustics": {
+      "name": "Water Caustics (shimmering refracted light net)",
+      "category": "generative-fill",
+      "family": "source",
+      "defaultBlend": "add",
+      "animated": "yes",
+      "needsSource": "no",
+      "stackable": "yes",
+      "subCategory": "light",
+      "role": "overlay",
+      "roleAffinity": [
+        "overlay"
+      ],
+      "oneLine": "The dancing net of bright veins that refracted sunlight casts on a pool floor - overlapping ridged noise cells that shimmer and drift. The Figma `Water caustics` fill: sunlight underwater.",
+      "notForUseWhen": "corporate dashboards, hard tech UI",
+      "pairsPrototypes": [
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-coastal-grandmother",
+        "aesthetic-solarpunk",
+        "aesthetic-frutiger-aero"
+      ],
+      "sourceFile": "design-library/shader-water-caustics.md"
+    }
+  }
+}

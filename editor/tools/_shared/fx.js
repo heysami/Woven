@@ -96,6 +96,13 @@ export const FX_TYPES = [
   'blend', 'matte', 'lookup',
   // frame-history (read the per-layer ring of recent frames)
   'row-delay', 'cache-select', 'optical-flow',
+  // illustrative-shader SOURCES (procedural generative fills; ignore uTex)
+  'mesh-gradient', 'fractal-noise', 'clouds', 'nebula', 'glowing-wave', 'neuro-noise',
+  'godrays', 'water-caustics', 'particle-web', 'magnetic-field', 'metaball-merge',
+  'moire-interference', 'concentric-patterns', 'dither-waves',
+  // illustrative-shader FILTERS (transform the layer beneath)
+  'gradient-map', 'color-outline', 'channel-mixer', 'hatching', 'pattern-refraction',
+  'chromatic-metal', 'bokeh-blur', 'riso-print',
   // escape hatch
   'custom',
 ];
@@ -129,6 +136,30 @@ export const FX_LABELS = {
   'row-delay': 'Row delay (rolling shutter)',
   'cache-select': 'Echo (frame delay)',
   'optical-flow': 'Optical flow',
+  // illustrative-shader sources
+  'mesh-gradient': 'Mesh gradient',
+  'fractal-noise': 'Fractal noise',
+  'clouds': 'Clouds',
+  'nebula': 'Nebula',
+  'glowing-wave': 'Glowing wave',
+  'neuro-noise': 'Neuro noise',
+  'godrays': 'Godrays',
+  'water-caustics': 'Water caustics',
+  'particle-web': 'Particle web',
+  'magnetic-field': 'Magnetic field',
+  'metaball-merge': 'Metaball merge',
+  'moire-interference': 'Moire interference',
+  'concentric-patterns': 'Concentric patterns',
+  'dither-waves': 'Dither waves',
+  // illustrative-shader filters
+  'gradient-map': 'Gradient map',
+  'color-outline': 'Color outline',
+  'channel-mixer': 'Channel mixer',
+  'hatching': 'Hatching',
+  'pattern-refraction': 'Pattern refraction',
+  'chromatic-metal': 'Chromatic metal',
+  'bokeh-blur': 'Bokeh blur',
+  'riso-print': 'Riso print',
   'custom': 'Custom shader',
 };
 
@@ -738,6 +769,362 @@ vec4 fxMain() {
   float pat = mix(stripes, grid, 0.5);
   vec3 col = mix(c.rgb, c.rgb * pat, uMix);
   return vec4(col, c.a);
+}`,
+  },
+
+  // ====================================================================
+  // ILLUSTRATIVE SHADERS - stackable Figma-shaders / paper-design register.
+  // SOURCES generate their own field (ignore uTex); FILTERS sample uTex.
+  // Colours are driven by scalar hue/sat/value uniforms (the chain is
+  // scalar-uniform); stack a `gradient-map` / `color` / `lookup` pass on top
+  // to rebrand. See docs/research/shader-library.md + design-library/shader-*.md.
+  // ====================================================================
+
+  // ---- sources ----------------------------------------------------------
+  'mesh-gradient': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.6 }, uSpread: { k: '1f', from: 'spread', def: 0.3 }, uSpeed: { k: '1f', from: 'speed', def: 0.2 }, uVal: { k: '1f', from: 'value', def: 0.9 } },
+    decls: 'uniform float uHue; uniform float uSpread; uniform float uSpeed; uniform float uVal;',
+    body: `
+vec4 fxMain() {
+  float t = uTime * uSpeed;
+  vec3 col = vec3(0.0); float tot = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    vec2 c = vec2(0.5) + 0.4 * vec2(sin(t + fi * 2.1), cos(t * 0.8 + fi * 1.7));
+    float w = smoothstep(0.75, 0.0, length(vUv - c));
+    col += fxHsv2Rgb(vec3(fract(uHue + fi * uSpread), 0.6, uVal)) * w;
+    tot += w;
+  }
+  col /= max(tot, 0.001);
+  col += (fxHash(vUv * 1000.0) - 0.5) * 0.02;
+  return vec4(col, 1.0);
+}`,
+  },
+
+  'fractal-noise': {
+    uniforms: { uScale: { k: '1f', from: 'scale', def: 3.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.05 }, uHue: { k: '1f', from: 'hue', def: 0.6 }, uSat: { k: '1f', from: 'saturation', def: 0.0 }, uContrast: { k: '1f', from: 'contrast', def: 1.0 } },
+    decls: 'uniform float uScale; uniform float uSpeed; uniform float uHue; uniform float uSat; uniform float uContrast;',
+    body: `
+vec4 fxMain() {
+  float n = fxFbm(vUv * uScale + uTime * uSpeed);
+  n = clamp((n - 0.5) * uContrast + 0.5, 0.0, 1.0);
+  return vec4(fxHsv2Rgb(vec3(uHue, uSat, n)), 1.0);
+}`,
+  },
+
+  'clouds': {
+    uniforms: { uCover: { k: '1f', from: 'cover', def: 0.5 }, uScale: { k: '1f', from: 'scale', def: 3.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.02 }, uHue: { k: '1f', from: 'hue', def: 0.6 } },
+    decls: 'uniform float uCover; uniform float uScale; uniform float uSpeed; uniform float uHue;',
+    body: `
+vec4 fxMain() {
+  float c = fxFbm(vUv * uScale + vec2(uTime * uSpeed, 0.0));
+  c = smoothstep(uCover - 0.18, uCover + 0.18, c);
+  vec3 sky = mix(fxHsv2Rgb(vec3(uHue, 0.45, 0.85)), fxHsv2Rgb(vec3(uHue, 0.12, 1.0)), vUv.y);
+  return vec4(mix(sky, vec3(1.0), c), 1.0);
+}`,
+  },
+
+  'nebula': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.72 }, uDensity: { k: '1f', from: 'density', def: 1.5 }, uSpeed: { k: '1f', from: 'speed', def: 0.01 }, uStars: { k: '1f', from: 'stars', def: 0.6 } },
+    decls: 'uniform float uHue; uniform float uDensity; uniform float uSpeed; uniform float uStars;',
+    body: `
+vec4 fxMain() {
+  float g = fxFbm(vUv * 3.0 + uTime * uSpeed);
+  vec3 gas = fxHsv2Rgb(vec3(fract(uHue + g * 0.2), 0.7, pow(g, max(uDensity, 0.1))));
+  vec2 sg = floor(vUv * uResolution / 2.0);
+  float s = step(0.996, fxHash(sg));
+  float tw = 0.5 + 0.5 * sin(uTime * 3.0 + fxHash(sg + 3.0) * 6.2831);
+  gas += vec3(s * tw * uStars);
+  return vec4(gas, 1.0);
+}`,
+  },
+
+  'glowing-wave': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.55 }, uFreq: { k: '1f', from: 'frequency', def: 8.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.6 }, uGlow: { k: '1f', from: 'glow', def: 2.0 } },
+    decls: 'uniform float uHue; uniform float uFreq; uniform float uSpeed; uniform float uGlow;',
+    body: `
+vec4 fxMain() {
+  float w = 0.5 + 0.5 * sin(vUv.y * uFreq + vUv.x * 1.5 + uTime * uSpeed);
+  float glow = pow(clamp(w, 0.0, 1.0), max(uGlow, 0.1));
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.8, 1.0)) * glow, 1.0);
+}`,
+  },
+
+  'neuro-noise': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.6 }, uFolds: { k: '1f', from: 'folds', def: 3.0 }, uScale: { k: '1f', from: 'scale', def: 2.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.02 } },
+    decls: 'uniform float uHue; uniform float uFolds; uniform float uScale; uniform float uSpeed;',
+    body: `
+vec4 fxMain() {
+  vec2 q = vUv * uScale;
+  for (int i = 0; i < 3; i++) q += 0.4 * vec2(fxFbm(q + uTime * uSpeed), fxFbm(q.yx + 3.1));
+  float n = fxFbm(q * 2.0);
+  float ridge = abs(2.0 * fract(n * uFolds) - 1.0);
+  vec3 col = mix(fxHsv2Rgb(vec3(uHue, 0.5, 0.22)), fxHsv2Rgb(vec3(fract(uHue + 0.08), 0.4, 0.85)), smoothstep(0.15, 0.85, ridge));
+  return vec4(col, 1.0);
+}`,
+  },
+
+  'godrays': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.12 }, uCount: { k: '1f', from: 'count', def: 14.0 }, uGain: { k: '1f', from: 'gain', def: 1.0 }, uOx: { k: '1f', from: 'originX', def: 0.5 }, uOy: { k: '1f', from: 'originY', def: 0.15 } },
+    decls: 'uniform float uHue; uniform float uCount; uniform float uGain; uniform float uOx; uniform float uOy;',
+    body: `
+vec4 fxMain() {
+  vec2 d = vUv - vec2(uOx, uOy);
+  float a = atan(d.y, d.x);
+  float rays = 0.5 + 0.5 * sin(a * uCount + uTime * 0.3);
+  rays *= fxFbm(vec2(a * 3.0, uTime * 0.1));
+  float fall = smoothstep(1.1, 0.0, length(d));
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.5, 1.0)) * rays * fall * uGain, 1.0);
+}`,
+  },
+
+  'water-caustics': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.5 }, uScale: { k: '1f', from: 'scale', def: 6.0 }, uSharp: { k: '1f', from: 'sharpness', def: 2.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.3 } },
+    decls: 'uniform float uHue; uniform float uScale; uniform float uSharp; uniform float uSpeed;',
+    body: `
+vec4 fxMain() {
+  vec2 p = vUv * uScale + vec2(sin(uTime * uSpeed), cos(uTime * uSpeed * 0.8));
+  float n = fxFbm(p);
+  float c = pow(1.0 - abs(2.0 * n - 1.0), max(uSharp, 0.1));
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.4, 1.0)) * c, 1.0);
+}`,
+  },
+
+  'particle-web': {
+    uniforms: { uCount: { k: '1f', from: 'count', def: 10.0 }, uHue: { k: '1f', from: 'hue', def: 0.6 }, uSpeed: { k: '1f', from: 'speed', def: 0.3 }, uLink: { k: '1f', from: 'link', def: 0.6 } },
+    decls: 'uniform float uCount; uniform float uHue; uniform float uSpeed; uniform float uLink;',
+    body: `
+vec4 fxMain() {
+  float n = max(uCount, 2.0);
+  vec2 ci = floor(vUv * n);
+  float glow = 0.0; float web = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 cc = ci + vec2(float(x), float(y));
+      vec2 jit = vec2(fxHash(cc), fxHash(cc + 7.0));
+      vec2 p = (cc + 0.3 + 0.4 * vec2(sin(uTime * uSpeed + jit.x * 6.2831), cos(uTime * uSpeed + jit.y * 6.2831))) / n;
+      float d = length(vUv - p);
+      glow += smoothstep(0.025, 0.0, d);
+      web += smoothstep(0.18 * uLink, 0.0, d);
+    }
+  }
+  float v = clamp(glow + web * 0.2, 0.0, 1.0);
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.55, 1.0)) * v, 1.0);
+}`,
+  },
+
+  'magnetic-field': {
+    uniforms: { uScale: { k: '1f', from: 'scale', def: 3.0 }, uHue: { k: '1f', from: 'hue', def: 0.6 }, uSpeed: { k: '1f', from: 'speed', def: 0.05 }, uDensity: { k: '1f', from: 'density', def: 40.0 } },
+    decls: 'uniform float uScale; uniform float uHue; uniform float uSpeed; uniform float uDensity;',
+    body: `
+vec4 fxMain() {
+  float ang = fxFbm(vUv * uScale + uTime * uSpeed) * 12.566;
+  vec2 dir = vec2(cos(ang), sin(ang));
+  float stream = sin(dot(vUv * uDensity, vec2(-dir.y, dir.x)));
+  float line = smoothstep(0.75, 1.0, abs(stream));
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.5, 1.0)) * line, 1.0);
+}`,
+  },
+
+  'metaball-merge': {
+    uniforms: { uCount: { k: '1f', from: 'count', def: 5.0 }, uHue: { k: '1f', from: 'hue', def: 0.55 }, uSpeed: { k: '1f', from: 'speed', def: 0.4 }, uThresh: { k: '1f', from: 'threshold', def: 1.0 } },
+    decls: 'uniform float uCount; uniform float uHue; uniform float uSpeed; uniform float uThresh;',
+    body: `
+vec4 fxMain() {
+  float field = 0.0;
+  for (int i = 0; i < 8; i++) {
+    if (float(i) >= uCount) break;
+    float fi = float(i);
+    vec2 c = vec2(0.5) + 0.35 * vec2(sin(uTime * uSpeed + fi * 2.0), cos(uTime * uSpeed * 0.9 + fi * 1.3));
+    field += 0.04 / max(length(vUv - c), 0.001);
+  }
+  float blob = smoothstep(uThresh - 0.12, uThresh + 0.12, field);
+  return vec4(mix(vec3(0.04), fxHsv2Rgb(vec3(uHue, 0.6, 1.0)), blob), 1.0);
+}`,
+  },
+
+  'moire-interference': {
+    uniforms: { uFreqA: { k: '1f', from: 'frequencyA', def: 40.0 }, uFreqB: { k: '1f', from: 'frequencyB', def: 42.0 }, uAngle: { k: '1f', from: 'angle', def: 0.08 }, uHue: { k: '1f', from: 'hue', def: 0.6 }, uSpeed: { k: '1f', from: 'speed', def: 0.02 } },
+    decls: 'uniform float uFreqA; uniform float uFreqB; uniform float uAngle; uniform float uHue; uniform float uSpeed;',
+    body: `
+vec4 fxMain() {
+  float a = sin(vUv.x * uFreqA);
+  float ang = uAngle + uTime * uSpeed;
+  float b = sin((cos(ang) * vUv.x + sin(ang) * vUv.y) * uFreqB);
+  float m = a * b;
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.3, 0.5 + 0.5 * m)), 1.0);
+}`,
+  },
+
+  'concentric-patterns': {
+    uniforms: { uFreq: { k: '1f', from: 'frequency', def: 20.0 }, uHue: { k: '1f', from: 'hue', def: 0.05 }, uSpeed: { k: '1f', from: 'speed', def: 0.3 }, uShape: { k: '1i', from: 'shape', def: 0 } },
+    decls: 'uniform float uFreq; uniform float uHue; uniform float uSpeed; uniform int uShape;',
+    body: `
+vec4 fxMain() {
+  vec2 d = vUv - 0.5;
+  float r = (uShape == 1) ? max(abs(d.x), abs(d.y)) : length(d);
+  float ring = step(0.5, fract(r * uFreq - uTime * uSpeed));
+  vec3 col = mix(fxHsv2Rgb(vec3(uHue, 0.6, 0.95)), fxHsv2Rgb(vec3(fract(uHue + 0.5), 0.6, 0.2)), ring);
+  return vec4(col, 1.0);
+}`,
+  },
+
+  'dither-waves': {
+    uniforms: { uHue: { k: '1f', from: 'hue', def: 0.45 }, uFreq: { k: '1f', from: 'frequency', def: 8.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.6 }, uLevels: { k: '1f', from: 'levels', def: 2.0 } },
+    decls: 'uniform float uHue; uniform float uFreq; uniform float uSpeed; uniform float uLevels;',
+    body: `
+const float bwm[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+vec4 fxMain() {
+  float w = 0.5 + 0.5 * sin(vUv.y * uFreq + vUv.x * 2.0 + uTime * uSpeed);
+  w *= smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
+  ivec2 ip = ivec2(mod(gl_FragCoord.xy, 4.0));
+  float th = (bwm[ip.y * 4 + ip.x] + 0.5) / 16.0 - 0.5;
+  float lv = max(uLevels, 2.0);
+  float q = clamp(floor(w * (lv - 1.0) + th + 0.5) / (lv - 1.0), 0.0, 1.0);
+  return vec4(fxHsv2Rgb(vec3(uHue, 0.8, 1.0)) * q, 1.0);
+}`,
+  },
+
+  // ---- filters ----------------------------------------------------------
+  'gradient-map': {
+    uniforms: { uHueLo: { k: '1f', from: 'hueLow', def: 0.66 }, uHueHi: { k: '1f', from: 'hueHigh', def: 0.12 }, uSat: { k: '1f', from: 'saturation', def: 0.6 } },
+    decls: 'uniform float uHueLo; uniform float uHueHi; uniform float uSat;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  float l = clamp(fxLuma(c.rgb), 0.0, 1.0);
+  float hue = mix(uHueLo, uHueHi, l);
+  return vec4(fxHsv2Rgb(vec3(hue, uSat, mix(0.12, 1.0, l))), c.a);
+}`,
+  },
+
+  'color-outline': {
+    uniforms: { uThresh: { k: '1f', from: 'threshold', def: 0.2 }, uHue: { k: '1f', from: 'hue', def: 0.6 }, uThick: { k: '1f', from: 'thickness', def: 1.0 } },
+    decls: 'uniform float uThresh; uniform float uHue; uniform float uThick;',
+    body: `
+vec4 fxMain() {
+  vec2 t = uThick / uResolution;
+  float l00 = fxLuma(texture(uTex, vUv + vec2(-t.x, -t.y)).rgb);
+  float l10 = fxLuma(texture(uTex, vUv + vec2(0.0, -t.y)).rgb);
+  float l20 = fxLuma(texture(uTex, vUv + vec2(t.x, -t.y)).rgb);
+  float l01 = fxLuma(texture(uTex, vUv + vec2(-t.x, 0.0)).rgb);
+  float l21 = fxLuma(texture(uTex, vUv + vec2(t.x, 0.0)).rgb);
+  float l02 = fxLuma(texture(uTex, vUv + vec2(-t.x, t.y)).rgb);
+  float l12 = fxLuma(texture(uTex, vUv + vec2(0.0, t.y)).rgb);
+  float l22 = fxLuma(texture(uTex, vUv + vec2(t.x, t.y)).rgb);
+  float gx = l00 + 2.0 * l01 + l02 - l20 - 2.0 * l21 - l22;
+  float gy = l00 + 2.0 * l10 + l20 - l02 - 2.0 * l12 - l22;
+  float e = clamp(length(vec2(gx, gy)), 0.0, 1.0);
+  float line = step(uThresh, e);
+  vec4 c = texture(uTex, vUv);
+  vec3 col = fxHsv2Rgb(vec3(fract(uHue + e * 0.5), 0.85, 1.0));
+  return vec4(mix(c.rgb, col, line), c.a);
+}`,
+  },
+
+  'channel-mixer': {
+    uniforms: { uMode: { k: '1i', from: 'mode', def: 1 }, uAmount: { k: '1f', from: 'amount', def: 1.0 } },
+    decls: 'uniform int uMode; uniform float uAmount;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  vec3 s = c.rgb; vec3 r;
+  float l = fxLuma(s);
+  if (uMode == 1) r = s.bgr;
+  else if (uMode == 2) r = fxHsv2Rgb(vec3(mix(0.66, 0.0, l), 0.9, 1.0));
+  else if (uMode == 3) r = l * vec3(1.12, 0.95, 0.72);
+  else r = s;
+  return vec4(mix(s, r, clamp(uAmount, 0.0, 1.0)), c.a);
+}`,
+  },
+
+  'hatching': {
+    uniforms: { uFreq: { k: '1f', from: 'frequency', def: 140.0 } },
+    decls: 'uniform float uFreq;',
+    body: `
+float fxHatch(vec2 uv, float a, float f) {
+  float v = abs(sin((uv.x * cos(a) + uv.y * sin(a)) * f));
+  return step(0.88, v);
+}
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  float l = fxLuma(c.rgb);
+  float h = 0.0;
+  if (l < 0.85) h = max(h, fxHatch(vUv, 0.0, uFreq));
+  if (l < 0.6)  h = max(h, fxHatch(vUv, 0.785, uFreq));
+  if (l < 0.4)  h = max(h, fxHatch(vUv, 1.5708, uFreq));
+  if (l < 0.2)  h = max(h, fxHatch(vUv, 2.356, uFreq));
+  return vec4(mix(vec3(0.96), vec3(0.05), h), c.a);
+}`,
+  },
+
+  'pattern-refraction': {
+    uniforms: { uFreq: { k: '1f', from: 'frequency', def: 30.0 }, uStrength: { k: '1f', from: 'strength', def: 0.02 }, uAngle: { k: '1f', from: 'angle', def: 0.0 }, uSpeed: { k: '1f', from: 'speed', def: 0.0 } },
+    decls: 'uniform float uFreq; uniform float uStrength; uniform float uAngle; uniform float uSpeed;',
+    body: `
+vec4 fxMain() {
+  vec2 dir = vec2(cos(uAngle), sin(uAngle));
+  float rib = sin((vUv.x * dir.x + vUv.y * dir.y) * uFreq + uTime * uSpeed);
+  vec2 off = dir * rib * uStrength;
+  return texture(uTex, vUv + off);
+}`,
+  },
+
+  'chromatic-metal': {
+    uniforms: { uBands: { k: '1f', from: 'bands', def: 3.0 }, uCA: { k: '1f', from: 'aberration', def: 0.01 } },
+    decls: 'uniform float uBands; uniform float uCA;',
+    body: `
+vec4 fxMain() {
+  vec4 c = texture(uTex, vUv);
+  float l = fxLuma(c.rgb);
+  float m = 0.5 + 0.5 * sin(l * 6.2831 * uBands + uTime * 0.5);
+  float r = fxLuma(texture(uTex, vUv + vec2(uCA, 0.0)).rgb);
+  float b = fxLuma(texture(uTex, vUv - vec2(uCA, 0.0)).rgb);
+  vec3 chrome = vec3(m) * vec3(0.85, 0.92, 1.0);
+  chrome.r *= 0.6 + 0.7 * r;
+  chrome.b *= 0.6 + 0.7 * b;
+  return vec4(chrome, c.a);
+}`,
+  },
+
+  'bokeh-blur': {
+    uniforms: { uRadius: { k: '1f', from: 'radius', def: 0.012 }, uThresh: { k: '1f', from: 'threshold', def: 0.7 }, uBloom: { k: '1f', from: 'bloom', def: 2.0 } },
+    decls: 'uniform float uRadius; uniform float uThresh; uniform float uBloom;',
+    body: `
+vec4 fxMain() {
+  vec3 acc = vec3(0.0); float w = 0.0;
+  const int N = 16;
+  for (int i = 0; i < N; i++) {
+    float a = float(i) / float(N) * 6.2831;
+    float rr = (mod(float(i), 2.0) == 0.0) ? 1.0 : 0.55;
+    vec3 s = texture(uTex, vUv + vec2(cos(a), sin(a)) * uRadius * rr).rgb;
+    float b = 1.0 + step(uThresh, fxLuma(s)) * uBloom;
+    acc += s * b; w += b;
+  }
+  return vec4(acc / w, texture(uTex, vUv).a);
+}`,
+  },
+
+  'riso-print': {
+    uniforms: { uCell: { k: '1f', from: 'cell', def: 6.0 }, uHueA: { k: '1f', from: 'hueA', def: 0.92 }, uHueB: { k: '1f', from: 'hueB', def: 0.5 }, uShift: { k: '1f', from: 'registration', def: 0.004 } },
+    decls: 'uniform float uCell; uniform float uHueA; uniform float uHueB; uniform float uShift;',
+    body: `
+float fxHtDot(vec2 uv, vec2 res, float cell, float ang, float cov) {
+  float ca = cos(ang), sa = sin(ang);
+  vec2 rp = mat2(ca, -sa, sa, ca) * (uv * res);
+  vec2 local = fract(rp / cell) - 0.5;
+  return smoothstep(cov * 0.72, cov * 0.72 - 0.12, length(local));
+}
+vec4 fxMain() {
+  float la = fxLuma(texture(uTex, vUv + uShift).rgb);
+  float lb = fxLuma(texture(uTex, vUv - uShift).rgb);
+  float cell = max(uCell, 2.0);
+  float da = fxHtDot(vUv, uResolution, cell, 0.26, 1.0 - la);
+  float db = fxHtDot(vUv, uResolution, cell, -0.26, 1.0 - lb);
+  vec3 col = vec3(0.96, 0.95, 0.92);
+  col *= mix(vec3(1.0), fxHsv2Rgb(vec3(uHueA, 0.7, 1.0)), da);
+  col *= mix(vec3(1.0), fxHsv2Rgb(vec3(uHueB, 0.7, 1.0)), db);
+  return vec4(col, 1.0);
 }`,
   },
 };

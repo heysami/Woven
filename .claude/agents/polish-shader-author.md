@@ -29,6 +29,8 @@ If `multiDraft.variant`, write to `_polish/<polishId>/_shader_remix/<variant>/sh
 
 ## 2. Shader effect catalogue
 
+**Consult the curated illustrative-shaders library FIRST.** `docs/research/shader-library.index.json` (primer `docs/research/shader-library.md`) is the canonical, stackable catalogue (dither-waves, fluid-halftone, riso-print, halftone, dither, chromatic-aberration, crt, neuro-noise, godrays, moire-interference, etc.) with a `decisionTree` keyed by prototype/aesthetic slug - look up `genre` / `styleCue` there to pick the overlay (and stack: a `source` under a `filter` under a `gradient-map` unifier) instead of guessing. Each entry's `sourceFile` card carries the `webgl` strategy to hand the shader skill. **22 of these are also LIVE fx-engine effects** (`editor/tools/_shared/fx.js`); if the overlay can be expressed as a built-in fx stack, prefer that over bespoke GLSL. The table below is the quick-reference subset.
+
 | Effect | Best for genre | Visual signature |
 |---|---|---|
 | **halftone-print** | editorial-magazine, newspaper, broadsheet, swiss-grid, restrained-product | dot-pattern simulating offset-print rasterisation |

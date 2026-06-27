@@ -1,0 +1,49 @@
+{
+  "id": "shader-orchestrator",
+  "label": "Illustrative shaders",
+  "tagline": "Curated stackable-shader art-direction for canvas / ambient / background slots",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "directionImpact": "fills-slots",
+  "subagentName": "shader-orchestrator",
+  "playbookPath": ".claude/agents/shader-orchestrator.md",
+  "description": "Picks a STACKABLE shader treatment (source -> filter -> unifier) for shader slots (canvas backgrounds, ambient hero fields, declared data-medium=shader, full-bleed generative fills) BEFORE visual-orchestrator's per-medium dispatch. Sibling of photography-orchestrator / illustration-orchestrator, but procedural - NOT gated on an image-gen model (zero API cost). Reads docs/research/shader-library.index.json (32 curated entries in the shaders.figma.com / paper-design register: 16 SOURCES - mesh-gradient / fractal-noise / clouds / nebula / glowing-wave / neuro-noise / godrays / water-caustics / particle-web / magnetic-field / metaball-merge / moire-interference / concentric-patterns / dither-waves; 16 FILTERS - gradient-map / channel-mixer / dither / halftone / hatching / color-outline / lens-distortion / organic-distortion / pattern-refraction / particle-stretch / pixelate / slice-shift / chromatic-metal / bokeh-blur / riso-print / luminance-particles). For each shader slot it picks a stack by consulting the index decisionTree against the committed aesthetic, writes a pe_shader_<slotId> enrichment node (promptForShader for the prototype shader skill, OR fxStack of live fx-engine effect ids for app-node composer surfaces, plus palette / register / motion hints), and visual-orchestrator reads these when dispatching the shader medium. OPTIONAL - fires when (a) a shader-register slot exists AND (b) the committed aesthetic wants a generative/animated register per the decision tree, OR on explicit user request (dither waves / neuro-noise / godrays / riso-print / fluid halftone / 'make it a shader'). Foreground subjects / photos / illustrations route to illustration / photography orchestrators, not here. Cold-isolated per project.",
+  "hardRule": {
+    "header": "Illustrative shaders: dispatch shader-orchestrator BEFORE visual-orchestrator",
+    "body": "The shader sibling of the photography / illustration art-direction rules - same BEFORE-visual-orchestrator timing, the stackable illustrative-shaders library instead, and NO image-gen gate (shaders are procedural).\n\n- **Gate A - shader slots exist.** At least one slot in the scaffolded source resolves to a procedural SHADER treatment: explicit `data-medium=\"shader\"`, a `<canvas>` with a background / ambient / hero-field role, a full-bleed `background-image` better expressed as math than a baked raster, or a declared `shader/*.js` path. Foreground subjects, photos, and illustrations are NOT shader slots (they route to illustration / photography).\n- **Gate B - aesthetic wants a generative register.** The committed aesthetic is in the shader library `decisionTree` (cyberpunk, recipe-ai-foundry-dark, cassette-futurism, vaporwave, acid-design / acid-graphics, cosmic-horizon, bioluminescent-deep, op-art, y2k-futurism, frutiger-aero, aurorism, depin-hardware, dark-botanical-maximalism, editorial-magazine for riso, monochrome-pop-poster, ...). Explicit requests naming an effect (\"dither waves\", \"neuro-noise hero\", \"godrays\", \"riso-print the page\", \"fluid halftone\", \"make it a shader\") always count.\n\nWhen BOTH gates pass (or on explicit request):\n\n```\nTask(subagent_type: \"shader-orchestrator\",\n     description: \"Pick a stackable shader treatment per shader slot\",\n     prompt: \"<envelope per shader-orchestrator.md §1.1 - projectId, branch, committedAesthetic, surface (prototype|app-node), explicitStylePicks, sensoryTargets, antiPatterns, artContract>\")\n```\n\nIt commits one `pe_shader_<slotId>` enrichment node per shader slot (a source -> filter -> unifier STACK, with `promptForShader` for the prototype `shader` skill, or `fxStack` of live fx-engine effect ids for app-node composer surfaces). visual-orchestrator Step 0a reads those nodes and hands the brief to the `shader` drawer verbatim. Runs alongside photography / illustration (different slots); all three are siblings, not alternatives. If the gates fail, it returns `runStatus: error` and visual-orchestrator proceeds with default media.\n\n- ❌ Hand-write a GLSL background in chat when the gates pass - the library decision tree owns the stack pick, the `shader` skill owns the GLSL.\n- ❌ Route a foreground subject / photo / illustration here - those are illustration / photography slots."
+  },
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Shader art-direction pass (BEFORE visual-orchestrator)",
+      "rule": "After source HTML is scaffolded, BEFORE visual-orchestrator's per-medium dispatch, dispatch shader-orchestrator IF a shader-register slot exists (canvas background / ambient hero field / data-medium=shader / full-bleed procedural fill / declared shader path) AND the committed aesthetic wants a generative register per the shader-library decisionTree, OR on explicit user request naming a shader effect. No image-gen gate (procedural). If conditions fail, returns runStatus:error and visual-orchestrator proceeds with default media.",
+      "ruleSource": ".claude/agents/shader-orchestrator.manifest.json - hardRule 'Illustrative shaders: dispatch shader-orchestrator BEFORE visual-orchestrator'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [
+      "shader-stack-enricher"
+    ],
+    "collaborators": [
+      "visual-orchestrator"
+    ],
+    "lenses": []
+  },
+  "skills": [
+    "shader"
+  ],
+  "nodeKinds": {
+    "container": [
+      "shader-enrichment"
+    ],
+    "agent_overrides": [
+      "pe_shader_*",
+      "shader_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/research/shader-library.md",
+    "calibration": null
+  }
+}

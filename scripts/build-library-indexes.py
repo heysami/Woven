@@ -44,6 +44,7 @@ LIBS = [
     {"prefix": "illust",   "name": "illustration", "id_key": "styleId",    "out": "docs/research/illustration-library.index.json"},
     {"prefix": "material", "name": "material",     "id_key": "materialId", "out": "docs/research/material-library.index.json"},
     {"prefix": "motion",   "name": "motion-scene", "id_key": "techniqueId", "out": "docs/research/motion-scene-library.index.json"},
+    {"prefix": "shader",   "name": "shader",       "id_key": "shaderId",    "out": "docs/research/shader-library.index.json"},
 ]
 
 
@@ -138,6 +139,10 @@ def build_index(lib):
             entry["family"] = fm["family"]
         if fm.get("surfaceFinish"):
             entry["surfaceFinish"] = fm["surfaceFinish"]
+        # shader-family stack metadata (the source/filter + blend + layer contract)
+        for k in ("defaultBlend", "animated", "needsSource", "stackable"):
+            if fm.get(k):
+                entry[k] = fm[k]
         if fm.get("era"):
             entry["era"] = fm["era"]
         if fm.get("subCategory"):
