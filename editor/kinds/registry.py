@@ -1483,6 +1483,8 @@ KINDS = {
             "rawSheet":   {"type": "text",   "userEditable": False},
             "grid":       {"type": "object", "userEditable": True},
             "sheetVer":   {"type": "number", "userEditable": False},
+            "bakedHtml":  {"type": "text",   "userEditable": False},
+            "bakedVer":   {"type": "number", "userEditable": False},
             "path":       {"type": "text",   "userEditable": False},
         },
         "outputs":      {},

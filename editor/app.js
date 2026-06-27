@@ -58764,6 +58764,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
   const [gen, setGen] = useState({ phase: "idle", step: 0, total: 0, error: "" });
   const genBusy = gen.phase === "running";
   const [editingName, setEditingName] = useState(false);
+  const [baking, setBaking] = useState(false);
 
   // Assets live under the wired prototype's branch, else "main".
   const branch = useMemo(() => {
@@ -58917,6 +58918,56 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     }, 350);
   }, [node.grid, node.rawSheet, onChange, repackFromRaw]);
 
+  // Bake a SELF-CONTAINED .html that plays the sheet via CSS steps() - the
+  // sprite-sheet PNG is inlined as base64 so the file is portable. Becomes the
+  // node's output asset (wire the out port -> a playing embed).
+  const bakeAnimation = useCallback(async () => {
+    if (!node.sheet) return;
+    const fr = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
+    if (!fr.length) return;
+    const n = fr.length;
+    const FW = Number(node.frameWidth) || (fr[0] && fr[0].frame && fr[0].frame.w) || 128;
+    const FH = Number(node.frameHeight) || (fr[0] && fr[0].frame && fr[0].frame.h) || 128;
+    const FPSv = Math.max(1, Number(node.fps) || 12);
+    const loop = node.loop !== false;
+    setBaking(true);
+    try {
+      const resp = await fetch(withProjectQuery("/" + node.sheet, "_n=" + Date.now()));
+      if (!resp.ok) throw new Error("could not read the sprite sheet");
+      const blob = await resp.blob();
+      const dataUri = await new Promise((res, rej) => {
+        const rd = new FileReader();
+        rd.onload = () => res(rd.result);
+        rd.onerror = () => rej(new Error("could not encode the sheet"));
+        rd.readAsDataURL(blob);
+      });
+      const dur = (n / FPSv).toFixed(3);
+      const anim = `wovenPlay ${dur}s steps(${n}) ${loop ? "infinite" : "1 forwards"}`;
+      const doc = `<!doctype html>
+<html><head><meta charset="utf-8"><title>${(node.name || "Animated sprite").replace(/[<&]/g, "")}</title>
+<style>
+  html,body{margin:0;width:100%;height:100%;background:transparent;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .sprite{width:${FW}px;height:${FH}px;max-width:100vw;max-height:100vh;
+    background:url('${dataUri}') no-repeat;background-size:${FW * n}px ${FH}px;
+    image-rendering:auto;animation:${anim}}
+  @keyframes wovenPlay{to{background-position-x:-${FW * n}px}}
+  @media (prefers-reduced-motion: reduce){.sprite{animation:none}}
+</style></head><body><div class="sprite"></div></body></html>`;
+      const outPath = `source/${branch}/animated-sprite-${node.id}.html`;
+      const wr = await fetch(apiUrl("/__write_text"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: outPath, text: doc }),
+      });
+      if (!wr.ok) { const t = await wr.text().catch(() => ""); throw new Error("write failed - " + t.slice(0, 120)); }
+      onChange({ bakedHtml: outPath, bakedVer: Date.now(), path: outPath, assetKind: "html" });
+      window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outPath] } }));
+    } catch (e) {
+      setGen({ phase: "error", step: 0, total: 0, error: "bake failed - " + ((e && e.message) || String(e)) });
+    } finally {
+      setBaking(false);
+    }
+  }, [node.sheet, node.id, node.name, node.loop, node.fps, node.frameWidth, node.frameHeight, node.atlas, branch, onChange]);
+
   const frames = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
   const frameCount = Math.max(1, Number(node.frameCount) || frames.length || 6);
   const fps = Math.max(1, Number(node.fps) || 12);
@@ -59022,6 +59073,16 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
                  onChange=${(e) => onChange({ loop: e.target.checked })}/>
         </div>
         ${sheetReady && html`<div style=${{ fontSize: "10px", opacity: 0.5 }}>${frames.length} frames · ${fw}×${fh} · sprite sheet + atlas</div>`}
+        ${sheetReady && html`
+          <button onClick=${(e) => { e.stopPropagation(); bakeAnimation(); }} disabled=${baking}
+            title="Write a self-contained .html that plays this loop (sheet inlined). Becomes the node's output asset - wire the out port into a prototype to embed the playing animation."
+            style=${{ font: "inherit", fontSize: "12px", padding: "6px 8px", borderRadius: "6px", border: "1px solid rgba(0,0,0,0.15)", background: baking ? "#eee" : "#fff", cursor: baking ? "default" : "pointer" }}>
+            ${baking ? "Baking…" : node.bakedHtml ? "Re-bake → HTML player" : "Bake → HTML player"}
+          </button>`}
+        ${node.bakedHtml && !baking && html`
+          <a href=${withProjectQuery("/" + node.bakedHtml, "_v=" + (node.bakedVer || 0))} target="_blank" rel="noopener"
+             onMouseDown=${(e) => e.stopPropagation()}
+             style=${{ fontSize: "10.5px", color: "#1a7f4b", textAlign: "center", textDecoration: "none" }}>✓ Baked · open ↗ &nbsp;(out port now carries this player)</a>`}
         ${node.rawSheet && html`
           <div style=${{ borderTop: "1px solid rgba(0,0,0,0.08)", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
             <div style=${{ fontSize: "10.5px", opacity: 0.6 }}>Frame slicing${slicing ? " · re-slicing…" : ""} - line the boxes up with the frames using the controls below</div>
