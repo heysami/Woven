@@ -58729,7 +58729,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       jump:   "a JUMP - crouch / anticipation, launch with the body stretched, apex, then landing squash",
       turn:   "the character TURNING to face a new direction, rotating around its vertical axis",
     })[anim] || `a smooth looping ${anim} animation`;
-    return `Redraw the character from the reference image as a SPRITE SHEET of ${cycle}. Lay out EXACTLY ${n} frames on a uniform ${cols}x${rows} grid (${cols} columns, ${rows} rows), read left-to-right then top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale in each cell. The ${n} frames must form ONE smooth, seamless loop (the last flows back into the first) with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the reference. FULLY TRANSPARENT background. No gridlines, no borders, no frame numbers, no text.`;
+    return `Redraw the character from the reference image as a SPRITE SHEET of ${cycle}. Lay out EXACTLY ${n} frames on a uniform ${cols}x${rows} grid (${cols} columns, ${rows} rows), read left-to-right then top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale in each cell. The ${n} frames must form ONE smooth, seamless loop (the last flows back into the first) with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the reference. Place the whole grid on a PLAIN, FLAT, SOLID light-grey background with NO scenery, NO shadows and NO gradients, clearly separated from the character so the background can be cleanly removed afterwards. No gridlines, no borders, no frame numbers, no text.`;
   }
 
   // Run on click - like every other asset generator: redraw each frame from
@@ -58753,27 +58753,38 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     const cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
     const aspect = cols > rows ? "3:2" : cols < rows ? "2:3" : "1:1";
-    setGen({ phase: "running", step: 0, total: 1, error: "" });
+    setGen({ phase: "running", step: 0, total: 3, error: "" });
+    const reportErr = (resp, body, fallback) => {
+      const d = body && body.detail;
+      const dmsg = d && ((d.error && (d.error.message || d.error)) || d.message || (typeof d === "string" ? d : JSON.stringify(d)));
+      return new Error([body && (body.error || body.hint), dmsg].filter(Boolean).join(" - ") || `${fallback} (HTTP ${resp.status})`);
+    };
     try {
       const rawOut = `source/${branch}/sprites/animated-sprite-${node.id}/__sheet_raw.png`;
+      const cutOut = `source/${branch}/sprites/animated-sprite-${node.id}/__sheet_cut.png`;
+      // 1) Generate the whole sheet on a PLAIN background (gpt-image won't emit
+      //    transparency for this org) ...
       const r = await fetch(apiUrl("/__asset_generate"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
           output: rawOut, aspect, input_path: src,
-          options: { background: "transparent" },
           prompt: subjectDirective + "\n\n" + spriteSheetPrompt(anim, n, cols, rows),
         }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.ok) {
-        const d = j && j.detail;
-        const dmsg = d && ((d.error && (d.error.message || d.error)) || d.message || (typeof d === "string" ? d : JSON.stringify(d)));
-        throw new Error([j && (j.error || j.hint), dmsg].filter(Boolean).join(" - ") || `sheet generation failed (HTTP ${r.status})`);
-      }
-      setGen({ phase: "running", step: 1, total: 1, error: "" });
-      // Slice the generated grid into one clean uniform horizontal strip.
-      const sheetImg = await loadImg(withProjectQuery("/" + rawOut, "_n=" + Date.now()));
+      if (!r.ok || !j.ok) throw reportErr(r, j, "sheet generation failed");
+      // 2) ... then knock the background out the normal Woven way: local rembg.
+      setGen({ phase: "running", step: 1, total: 3, error: "" });
+      const rb = await fetch(apiUrl("/__asset_generate"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skill: "rembg", provider: "local", model: "u2net", input_path: rawOut, output: cutOut }),
+      });
+      const rbj = await rb.json().catch(() => ({}));
+      if (!rb.ok || !rbj.ok) throw reportErr(rb, rbj, "background removal (rembg) failed - is the rembg package installed? (Settings > local packages)");
+      // 3) Slice the cut-out grid into one clean uniform horizontal strip.
+      setGen({ phase: "running", step: 2, total: 3, error: "" });
+      const sheetImg = await loadImg(withProjectQuery("/" + cutOut, "_n=" + Date.now()));
       const gw = sheetImg.naturalWidth || sheetImg.width, gh = sheetImg.naturalHeight || sheetImg.height;
       const cw = gw / cols, ch = gh / rows;
       const cnv = document.createElement("canvas");
@@ -58874,7 +58885,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
             onClick=${(e) => { e.stopPropagation(); runGenerate(); }} disabled=${genBusy}
             title="Redraw the source image into a frame cycle and bake a sprite sheet (i2i, subject-preserving)">
             ${genBusy
-              ? html`<span className="workflow-node-skill-spinner"/><span>${gen.step ? "Packing frames…" : "Generating sheet…"}</span>`
+              ? html`<span className="workflow-node-skill-spinner"/><span>${["Generating sheet…", "Removing background…", "Packing frames…"][gen.step] || "Working…"}</span>`
               : gen.phase === "done" ? "Regenerate ↺"
               : gen.phase === "error" ? "Retry"
               : html`<${React.Fragment}><${Icon.Play}/> Generate frames<//>`}
