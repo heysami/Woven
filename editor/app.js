@@ -58997,7 +58997,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
         ${sheetReady && html`<div style=${{ fontSize: "10px", opacity: 0.5 }}>${frames.length} frames · ${fw}×${fh} · sprite sheet + atlas</div>`}
         ${node.rawSheet && html`
           <div style=${{ borderTop: "1px solid rgba(0,0,0,0.08)", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
-            <div style=${{ fontSize: "10.5px", opacity: 0.6 }}>Frame slicing${slicing ? " · re-slicing…" : ""} - drag the boxes onto the frames if the AI grid is off</div>
+            <div style=${{ fontSize: "10.5px", opacity: 0.6 }}>Frame slicing${slicing ? " · re-slicing…" : ""} - line the boxes up with the frames using the controls below</div>
             <div style=${{ position: "relative", lineHeight: 0, borderRadius: "4px", overflow: "hidden", background: "repeating-conic-gradient(#0000000d 0% 25%, transparent 0% 50%) 50% / 14px 14px" }}>
               <img src=${withProjectQuery("/" + node.rawSheet, "_v=" + sheetVer)} alt="raw sheet" style=${{ width: "100%", display: "block" }}/>
               <svg viewBox="0 0 1 1" preserveAspectRatio="none" style=${{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
