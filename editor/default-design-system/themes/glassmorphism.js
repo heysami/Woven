@@ -29,8 +29,8 @@ var SURF=".topbar,.sidebar,.appbar,.tabbar,.phone__tabbar,.modal,.slideout,.draw
 /* OUR pill-POC presets, VERBATIM - light + dark (px values scaled by DPR where
    the shader expects px). The theme picks light/dark per the page's theme. */
 var PRESETS={
-  light:{bend:8, disp:4, frost:5.5,  bez:16, rad:24, tint:0.58, Lfloor:0.74, rim:0.22, caus:0.30, curve:1, veil:0.20, rimAngle:45},
-  dark :{bend:8, disp:4, frost:3.25, bez:16, rad:24, tint:0.45, Lfloor:0.19, rim:0.66, caus:0.00, curve:1, veil:0.22, rimAngle:45}
+  light:{bend:14, ior:2, disp:2, frost:3.75, bez:24, rad:24, tint:0.58, fresnel:0.10, Lfloor:0.17, rim:0.20, caus:0.00, curve:1.65, veil:0.20, rimAngle:50},
+  dark :{bend:11, ior:2, disp:4, frost:3.25, bez:18, rad:24, tint:0.45, fresnel:0.18, Lfloor:0.71, rim:0.66, caus:0.00, curve:1.40, veil:0.22, rimAngle:45}
 };
 /* The POC (tools/materiallab/_shader_pill_nav_poc.html) persists the user's tuned
    dials to localStorage['woven-lg-presets'] - and runs on the SAME origin as these
@@ -45,20 +45,14 @@ var VS="#version 300 es\n"+
 "in vec2 p; out vec2 uv; void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }";
 var FS="#version 300 es\n"+
 "precision highp float; in vec2 uv; out vec4 o;\n"+
-"uniform sampler2D uPage; uniform vec2 uPagePx,uCanvas,uCardTL; uniform float uScroll;\n"+
-"uniform float uBend,uDisp,uFrost,uBez,uRad,uTint,uLfloor,uRim,uCaus,uCurve,uVeil,uDark,uRimMouse,uRimAngle;\n"+
+"uniform sampler2D uPage,uPageBlur; uniform vec2 uPagePx,uCanvas,uCardTL; uniform float uScroll;\n"+
+"uniform float uBend,uIOR,uDisp,uFrost,uBez,uRad,uTint,uFresnel,uLfloor,uRim,uCaus,uCurve,uVeil,uDark,uRimMouse,uRimAngle;\n"+
 "uniform vec2 uMouse; uniform vec3 uTintColor;\n"+
 "float sd(vec2 p, vec2 b, float r){ vec2 q=abs(p)-b+r; return min(max(q.x,q.y),0.0)+length(max(q,0.0))-r; }\n"+
 "vec2 nrm(vec2 p, vec2 b, float r){ float e=1.0;\n"+
 "  return normalize(vec2(sd(p+vec2(e,0),b,r)-sd(p-vec2(e,0),b,r), sd(p+vec2(0,e),b,r)-sd(p-vec2(0,e),b,r))); }\n"+
-"vec3 frostSample(vec2 px, float lod){\n"+
-"  vec3 s=textureLod(uPage,px/uPagePx,lod).rgb;\n"+
-"  float rad=max(lod,0.0)*1.7; const float GA=2.39996323;\n"+
-"  for(int i=1;i<=16;i++){ float ang=GA*float(i);\n"+
-"    vec2 q=vec2(cos(ang),sin(ang))*rad*sqrt(float(i)/16.0);\n"+
-"    s+=textureLod(uPage,(px+q)/uPagePx,lod).rgb; }\n"+
-"  return s/17.0;\n"+
-"}\n"+
+// refraction offset (px) for one channel: circular-bevel slope + Snell through index `ior`
+"float refr(float thetaI, float sI, float ior){ float tt=asin(clamp(sI/ior,-1.0,1.0)); return uBend*tan(thetaI-tt); }\n"+
 "void main(){\n"+
 "  vec2 frag=vec2(uv.x*uCanvas.x,(1.0-uv.y)*uCanvas.y);\n"+
 "  vec2 p=frag-uCanvas*0.5;\n"+
@@ -67,24 +61,28 @@ var FS="#version 300 es\n"+
 "  float d=sd(p,b,r);\n"+
 "  if(d>0.5){ o=vec4(0.0); return; }\n"+
 "  vec2 n=nrm(p,b,r);\n"+
-"  float into=clamp(-d,0.0,uBez);\n"+
-"  float u=1.0-into/uBez;\n"+
-"  u=pow(clamp(u,0.0,1.0), uCurve);\n"+
-"  vec2 docPx=vec2(uCardTL.x+frag.x, uCardTL.y+frag.y+uScroll);\n"+
-"  float fold=sin(3.14159265*u), crunch=pow(u,3.0);\n"+
-"  float bend=fold*uBend + crunch*uBend*1.4;\n"+
+"  float dist=max(-d,0.0);\n"+
+"  float s=clamp(dist/max(uBez,1.0),0.0,1.0);\n"+          // 0 edge .. 1 past bevel (flat interior)
+"  float u=pow(1.0-s, uCurve);\n"+                          // 1 edge .. 0 interior (rim/veil/caustic falloff)
+"  float thetaI=acos(s); float sI=sin(thetaI);\n"+          // incidence from bevel slope (0 flat, ->90 edge)
 "  vec2 dir=-n;\n"+
-"  float lod=mix(uFrost*0.7, uFrost, smoothstep(0.0,1.0,u));\n"+
-"  float disp=(fold*0.5+crunch)*uDisp;\n"+
-"  vec3 col;\n"+
-"  col.r=frostSample(docPx+dir*(bend+disp),lod).r;\n"+
-"  col.g=frostSample(docPx+dir*(bend),      lod).g;\n"+
-"  col.b=frostSample(docPx+dir*(bend-disp),lod).b;\n"+
-"  vec3 veilCol = (uDark>0.5) ? vec3(0.04,0.05,0.07) : vec3(0.99,1.0,1.0);\n"+   // glass stays WHITE/neutral - not scheme-tinted (accents carry the colour)
-"  col=mix(col, veilCol, uVeil);\n"+
+"  vec2 docPx=vec2(uCardTL.x+frag.x, uCardTL.y+frag.y+uScroll);\n"+
+"  float frostMix=mix(1.0, 0.15, smoothstep(0.0,1.0,u));\n"+ // frost lives in the body, edge stays sharp
+"  float iorR=uIOR - uDisp*0.012; float iorB=uIOR + uDisp*0.012;\n"+ // per-channel IOR -> dispersion proportional to refraction
+"  vec2 pR=(docPx+dir*refr(thetaI,sI,iorR))/uPagePx;\n"+
+"  vec2 pG=(docPx+dir*refr(thetaI,sI,uIOR))/uPagePx;\n"+
+"  vec2 pB=(docPx+dir*refr(thetaI,sI,iorB))/uPagePx;\n"+
+"  vec3 col;\n"+                                            // sharp page vs true-Gaussian-blurred page, mixed by frostMix
+"  col.r=mix(texture(uPage,pR).r, texture(uPageBlur,pR).r, frostMix);\n"+
+"  col.g=mix(texture(uPage,pG).g, texture(uPageBlur,pG).g, frostMix);\n"+
+"  col.b=mix(texture(uPage,pB).b, texture(uPageBlur,pB).b, frostMix);\n"+
 "  float V=max(max(col.r,col.g),col.b);\n"+
-"  float Vn = (uDark>0.5) ? min(V, uLfloor) : mix(uLfloor, 1.0, V);\n"+
+"  float Vn = (uDark>0.5) ? min(V, uLfloor) : mix(uLfloor, 1.0, V);\n"+   // dark=ceiling, light=floor
 "  col*=Vn/max(V,1e-4);\n"+
+"  vec3 veilCol = (uDark>0.5) ? vec3(0.04,0.05,0.07) : vec3(0.99,1.0,1.0);\n"+   // veil AFTER lightness so it's an independent wash
+"  col=mix(col, veilCol, uVeil);\n"+
+"  float fres=pow(u,5.0); vec3 fcol=(uDark>0.5) ? vec3(0.55,0.65,0.85) : vec3(1.0);\n"+ // Fresnel edge reflectivity
+"  col+=fres*uFresnel*fcol;\n"+
 "  float lit;\n"+
 "  if(uRimMouse>0.5){\n"+
 "    float sig=max(uCanvas.x,uCanvas.y)*0.13;\n"+
@@ -103,7 +101,7 @@ var FS="#version 300 es\n"+
 
 var MAX_UNITS=14;                 // WebGL context budget (browsers cap ~16)
 var units=[], byEl=new WeakMap(); // one GL canvas per chrome element
-var pageCap=null, pageCapW=0, pageCapH=0, capturing=false, capTimer=0, mo=null, raf=0, mounted=false, mouse=[-9999,-9999];
+var pageCap=null, pageCapBlur=null, pageCapW=0, pageCapH=0, capScale=DPR, lastDark=false, capturing=false, capTimer=0, mo=null, raf=0, mounted=false, mouse=[-9999,-9999];
 
 function isOn(){ return document.documentElement.getAttribute("data-theme")==="glassmorphism"; }
 
@@ -135,14 +133,31 @@ function isDark(){ return gDark; }
 function sh(gl,t,src){ var oo=gl.createShader(t); gl.shaderSource(oo,src); gl.compileShader(oo);
   if(!gl.getShaderParameter(oo,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(oo)); return oo; }
 
-function uploadToUnit(u,cv){
-  var gl=u.gl; gl.bindTexture(gl.TEXTURE_2D,u.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+/* True Gaussian frost: blur the captured page ONCE with a 2D canvas filter (a real
+   Gaussian, not the old boxy mip), at half-res (it's blurred - detail is moot), and
+   upload it as uPageBlur. The shader mixes sharp uPage <-> this by frostMix. Blur
+   radius follows the active mode's `frost` (scaled to the capture's px space). */
+function makeBlur(cap){
+  var fr=(isDark()?PRESETS.dark.frost:PRESETS.light.frost)||0;
+  var px=Math.max(0.1, fr*capScale*0.5);
+  var bw=Math.max(1,Math.round(cap.width*0.5)), bh=Math.max(1,Math.round(cap.height*0.5));
+  var c=document.createElement("canvas"); c.width=bw; c.height=bh;
+  var ctx=c.getContext("2d"); ctx.filter="blur("+px+"px)"; ctx.drawImage(cap,0,0,bw,bh);
+  return c;
+}
+function uploadTex(gl,tex,src,mip){
+  gl.bindTexture(gl.TEXTURE_2D,tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);
+  if(mip){ gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR); }
+  else { gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); }
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+}
+function uploadToUnit(u){
+  if(!pageCap) return; var gl=u.gl;
+  uploadTex(gl,u.tex,pageCap,true);
+  if(pageCapBlur) uploadTex(gl,u.texBlur,pageCapBlur,false);
   u.texReady=true;
 }
 /* The rasterise rule needs html2canvas. The editor already loads html2canvas-pro
@@ -184,7 +199,9 @@ function capturePage(){
        reflows and the texture no longer lines up with on-screen positions. */
     window.html2canvas(document.body,{backgroundColor:bg,scale:sc,logging:false,useCORS:true,allowTaint:false,
       onclone:function(doc){ var h=doc.querySelectorAll(".lg-host"); for(var i=0;i<h.length;i++){ try{h[i].style.visibility="hidden";}catch(e){} } }})
-      .then(function(cv){ pageCap=cv; pageCapW=docW*DPR; pageCapH=docH*DPR; for(var i=0;i<units.length;i++){ try{uploadToUnit(units[i],cv);}catch(e){} } capturing=false; })
+      .then(function(cv){ pageCap=cv; pageCapW=docW*DPR; pageCapH=docH*DPR; capScale=sc; lastDark=isDark();
+        try{ pageCapBlur=makeBlur(cv); }catch(e){ pageCapBlur=cv; }
+        for(var i=0;i<units.length;i++){ try{uploadToUnit(units[i]);}catch(e){} } capturing=false; })
       .catch(function(){ capturing=false; });
   }catch(e){ capturing=false; }
 }
@@ -236,8 +253,8 @@ function makeUnit(el){
   buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
-  tex=gl.createTexture();
-  ["uPage","uPagePx","uCanvas","uCardTL","uScroll","uBend","uDisp","uFrost","uBez","uRad","uTint","uLfloor","uRim","uCaus","uCurve","uVeil","uDark","uRimMouse","uRimAngle","uMouse","uTintColor"]
+  tex=gl.createTexture(); var texBlur=gl.createTexture();
+  ["uPage","uPageBlur","uPagePx","uCanvas","uCardTL","uScroll","uBend","uIOR","uDisp","uFrost","uBez","uRad","uTint","uFresnel","uLfloor","uRim","uCaus","uCurve","uVeil","uDark","uRimMouse","uRimAngle","uMouse","uTintColor"]
     .forEach(function(k){ U[k]=gl.getUniformLocation(prog,k); });
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   /* the absolute canvas needs a positioned host - but only force it when the host is
@@ -254,8 +271,8 @@ function makeUnit(el){
     if(ch===canvas) continue;
     if(getComputedStyle(ch).position==="static") ch.style.position="relative"; }
   var rad=parseFloat(cs0.borderTopLeftRadius)||0;
-  var u={el:el,canvas:canvas,gl:gl,prog:prog,buf:buf,tex:tex,U:U,rad:rad,texReady:false,w:0,h:0};
-  if(pageCap){ try{uploadToUnit(u,pageCap);}catch(e){} }
+  var u={el:el,canvas:canvas,gl:gl,prog:prog,buf:buf,tex:tex,texBlur:texBlur,U:U,rad:rad,texReady:false,w:0,h:0};
+  if(pageCap){ try{uploadToUnit(u);}catch(e){} }
   byEl.set(el,u); units.push(u);
   return u;
 }
@@ -288,6 +305,7 @@ function renderUnit(u){
   gl.useProgram(u.prog);
   gl.bindBuffer(gl.ARRAY_BUFFER,u.buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,u.tex); gl.uniform1i(u.U.uPage,0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,u.texBlur); gl.uniform1i(u.U.uPageBlur,1);   // Gaussian-blurred page for frost
   gl.uniform2f(u.U.uPagePx, pageCapW, pageCapH);   // LOGICAL device size, not the (possibly down-scaled) texture px
   /* Pan the captured backdrop by the TOTAL scroll under this host: window scroll
      PLUS every scrollable ancestor (e.g. the mobile .phone__screen). The texture is
@@ -300,8 +318,8 @@ function renderUnit(u){
   gl.uniform2f(u.U.uCardTL, rc.left*DPR, rc.top*DPR);
   var dark=isDark()?1:0, P=dark?PRESETS.dark:PRESETS.light;
   var rad=u.rad>0.5 ? u.rad : P.rad;   // match the element's own corner radius
-  gl.uniform1f(u.U.uBend,P.bend*DPR); gl.uniform1f(u.U.uDisp,P.disp*DPR); gl.uniform1f(u.U.uFrost,P.frost);
-  gl.uniform1f(u.U.uBez,P.bez*DPR); gl.uniform1f(u.U.uRad,rad*DPR); gl.uniform1f(u.U.uTint,P.tint); gl.uniform1f(u.U.uLfloor,P.Lfloor);
+  gl.uniform1f(u.U.uBend,P.bend*DPR); gl.uniform1f(u.U.uIOR,P.ior); gl.uniform1f(u.U.uDisp,P.disp); gl.uniform1f(u.U.uFrost,P.frost);
+  gl.uniform1f(u.U.uBez,P.bez*DPR); gl.uniform1f(u.U.uRad,rad*DPR); gl.uniform1f(u.U.uTint,P.tint); gl.uniform1f(u.U.uFresnel,P.fresnel); gl.uniform1f(u.U.uLfloor,P.Lfloor);
   gl.uniform1f(u.U.uRim,P.rim); gl.uniform1f(u.U.uCaus,P.caus); gl.uniform1f(u.U.uCurve,P.curve); gl.uniform1f(u.U.uVeil,P.veil);
   gl.uniform1f(u.U.uDark,dark); gl.uniform1f(u.U.uRimMouse,0); gl.uniform1f(u.U.uRimAngle,P.rimAngle);
   gl.uniform2f(u.U.uMouse,(mouse[0]-rc.left)*DPR,(mouse[1]-rc.top)*DPR);
@@ -311,7 +329,12 @@ function renderUnit(u){
 var schemeTick=0;
 function frame(){
   raf=requestAnimationFrame(frame);
-  if((schemeTick++ % 12)===0) readScheme();   // pick up scheme / dark-mode changes (throttled)
+  if((schemeTick++ % 12)===0){ readScheme();   // pick up scheme / dark-mode changes (throttled)
+    /* frost radius differs per mode (light 3.75 vs dark 3.25) - re-blur on a flip */
+    if(pageCap && isDark()!==lastDark){ lastDark=isDark();
+      try{ pageCapBlur=makeBlur(pageCap); }catch(e){}
+      for(var u2=0;u2<units.length;u2++){ try{uploadToUnit(units[u2]);}catch(e){} } }
+  }
   for(var i=0;i<units.length;i++) renderUnit(units[i]);
 }
 
