@@ -58618,18 +58618,29 @@ function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onCh
   };
   const addSwatch = () => onChange({ swatches: [...swatches, { name: "--token", value: "oklch(50% 0.05 250)" }] });
   const removeSwatch = (i) => onChange({ swatches: swatches.filter((_, j) => j !== i) });
+  const [editingName, setEditingName] = useState(false);
   return html`
     <div className="workflow-node workflow-node-palette"
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-palette-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-palette-glyph">●</span>
-        <input
-          className="workflow-node-palette-name"
-          value=${node.name || "Palette"}
-          onInput=${(e) => onChange({ name: e.target.value })}
-          onMouseDown=${(e) => e.stopPropagation()}
-          title="Palette name"
-        />
+        ${editingName
+          ? html`<input
+              className="workflow-node-palette-name"
+              autoFocus
+              value=${node.name || "Palette"}
+              onInput=${(e) => onChange({ name: e.target.value })}
+              onBlur=${() => setEditingName(false)}
+              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setEditingName(false); } }}
+              onMouseDown=${(e) => e.stopPropagation()}
+              title="Palette name"
+            />`
+          : html`<span
+              className="workflow-node-palette-name"
+              onDoubleClick=${(e) => { e.stopPropagation(); setEditingName(true); }}
+              title="Double-click to rename"
+              style=${{ cursor: "grab", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", userSelect: "none" }}
+            >${node.name || "Palette"}</span>`}
         <span className="workflow-node-bar-spacer"/>
         <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
@@ -58746,6 +58757,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
 
   const [gen, setGen] = useState({ phase: "idle", step: 0, total: 0, error: "" });
   const genBusy = gen.phase === "running";
+  const [editingName, setEditingName] = useState(false);
 
   // Assets live under the wired prototype's branch, else "main".
   const branch = useMemo(() => {
@@ -58946,13 +58958,22 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
         <span style=${{ fontSize: "13px", opacity: 0.8 }}>◳</span>
-        <input
-          value=${node.name || "Animated sprite"}
-          onInput=${(e) => onChange({ name: e.target.value })}
-          onMouseDown=${(e) => e.stopPropagation()}
-          title="Sprite name"
-          style=${{ flex: 1, minWidth: 0, background: "transparent", border: "none", color: "inherit", font: "inherit", outline: "none" }}
-        />
+        ${editingName
+          ? html`<input
+              autoFocus
+              value=${node.name || "Animated sprite"}
+              onInput=${(e) => onChange({ name: e.target.value })}
+              onBlur=${() => setEditingName(false)}
+              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setEditingName(false); } }}
+              onMouseDown=${(e) => e.stopPropagation()}
+              title="Sprite name"
+              style=${{ flex: 1, minWidth: 0, background: "transparent", border: "none", borderBottom: "1px solid rgba(0,0,0,0.25)", color: "inherit", font: "inherit", outline: "none" }}
+            />`
+          : html`<span
+              onDoubleClick=${(e) => { e.stopPropagation(); setEditingName(true); }}
+              title="Double-click to rename"
+              style=${{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "grab", userSelect: "none" }}
+            >${node.name || "Animated sprite"}</span>`}
         <span className="workflow-node-bar-spacer"/>
         <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
@@ -59210,17 +59231,28 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
     next[i] = { ...next[i], ...patch };
     onChange({ levels: next });
   };
+  const [editingName, setEditingName] = useState(false);
   return html`
     <div className="workflow-node workflow-node-typo"
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-typo-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-typo-glyph">Aa</span>
-        <input
-          className="workflow-node-typo-name"
-          value=${node.name || "Type scale"}
-          onInput=${(e) => onChange({ name: e.target.value })}
-          onMouseDown=${(e) => e.stopPropagation()}
-        />
+        ${editingName
+          ? html`<input
+              className="workflow-node-typo-name"
+              autoFocus
+              value=${node.name || "Type scale"}
+              onInput=${(e) => onChange({ name: e.target.value })}
+              onBlur=${() => setEditingName(false)}
+              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setEditingName(false); } }}
+              onMouseDown=${(e) => e.stopPropagation()}
+            />`
+          : html`<span
+              className="workflow-node-typo-name"
+              onDoubleClick=${(e) => { e.stopPropagation(); setEditingName(true); }}
+              title="Double-click to rename"
+              style=${{ cursor: "grab", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", userSelect: "none" }}
+            >${node.name || "Type scale"}</span>`}
         <span className="workflow-node-bar-spacer"/>
         <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
