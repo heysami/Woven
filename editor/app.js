@@ -25456,7 +25456,14 @@ const WORKFLOW_NODE_FACTORY = {
     // stay compact (220×170) - same as the library drop.
     const { w, h } = (p.w && p.h) ? { w: p.w, h: p.h }
       : finalKind === "html" ? { w: 1920, h: 1440 } : { w: 220, h: 170 };
-    return { kind: "asset", w, h, assetKind: finalKind, path };
+    const out = { kind: "asset", w, h, assetKind: finalKind, path };
+    // Explicit custom geometry (e.g. the pose box) - mark it "custom" so the
+    // adaptive sizer keeps w/h verbatim instead of re-deriving from an aspect.
+    if (p.w && p.h) out.size = { scale: "custom" };
+    // "fill" makes a responsive small UI fill the card with no virtual-viewport
+    // letterbox (the default "scale" mode is for full-page design viewports).
+    if (p.htmlFit) out.htmlFit = p.htmlFit;
+    return out;
   },
   "agent": (p) => {
     const node = {
@@ -73328,7 +73335,7 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
     } catch (_e) { return; }
     if (onSpawnConnected && !hasPoseBox) {
       onSpawnConnected("right", {
-        kind: "asset", payload: { path: poseBoxPath, assetKind: "html", w: 340, h: 380, name: "Poses" },
+        kind: "asset", payload: { path: poseBoxPath, assetKind: "html", w: 320, h: 360, htmlFit: "fill", name: "Poses" },
         newPort: "in", anchorPort: "out",
       });
     }
