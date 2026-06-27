@@ -26,32 +26,21 @@ Bake this into every prompt, verbatim intent:
 - Square 1:1. Material + palette from the `styleCue`.
 - Negative: no text, no letters, no inner content, no background, no drop shadow, no perspective, no rounded-off blurred corners, no mid-edge ornaments.
 
-## Pipeline (per role)
-Use `${TH_DAEMON_URL}` + `${TH_PROJECT_ID}` as-is - both are set on every spawn; the `?project=` param is mandatory. Chain three calls per role to the SAME endpoint:
+## Pipeline (per role) - ONE call
+Use `${TH_DAEMON_URL}` + `${TH_PROJECT_ID}` as-is - both are set on every spawn; the `?project=` param is mandatory. The `slice9-frame` skill is a ONE-SHOT generator: the daemon appends the geometry contract to your prompt, generates, removes the background, and auto-detects the slice insets internally - so it's a single call per role (not a generate → rembg → normalize chain):
 
-1. **generate-image** → a temp raw frame:
-   ```bash
-   curl -sS -X POST "${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}" \
-     -H 'Content-Type: application/json' --data-binary @- <<JSON
-   { "skill": "generate-image", "provider": "openai", "model": "gpt-image-1",
-     "prompt": "<role-specific frame prompt obeying the geometry contract>", "aspect": "1:1",
-     "output": "source/${TH_BRANCH}/.workflow-tmp/${skinId}-<role>-raw.png" }
-   JSON
-   ```
-2. **rembg** → cut the background to transparency:
-   ```bash
-   { "skill": "rembg", "provider": "local", "model": "u2net",
-     "input_path": "source/${TH_BRANCH}/.workflow-tmp/${skinId}-<role>-raw.png",
-     "output": "source/${TH_BRANCH}/.workflow-tmp/${skinId}-<role>-cut.png" }
-   ```
-3. **slice9-normalize** → square + trim + AUTO-DETECT the slice insets, writing the final frame AND a `<role>.slice9.json` sidecar next to it:
-   ```bash
-   { "skill": "slice9-normalize", "provider": "local", "model": "auto",
-     "input_path": "source/${TH_BRANCH}/.workflow-tmp/${skinId}-<role>-cut.png",
-     "output": "<assetRoot>/slice9/${skinId}/<role>.png" }
-   ```
+```bash
+curl -sS -X POST "${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}" \
+  -H 'Content-Type: application/json' --data-binary @- <<JSON
+{ "skill": "slice9-frame", "provider": "openai", "model": "gpt-image-1",
+  "prompt": "<role-specific ornate frame description - material, palette, motif>", "aspect": "1:1",
+  "output": "<assetRoot>/slice9/${skinId}/<role>.png" }
+JSON
+```
 
-The `slice9-normalize` daemon step runs `editor/slice9_detect.py`; the sidecar holds `{ slice:[t,r,b,l], width, repeat, fill, corner, detected }`. If `detected` is `false`, the model failed the hollow-center contract for that role - regenerate with the transparency instruction made more emphatic (it is the single most common failure).
+You still own the prompt's STYLE (material, palette, corner motif from the `styleCue`); the daemon only appends the geometry contract (hollow, transparent center, identical corners, tileable edges), so you do NOT need to restate it. The daemon writes the final frame AND a `<role>.slice9.json` sidecar holding `{ slice:[t,r,b,l], width, repeat, fill, corner, detected }`. If `detected` is `false`, the model failed the hollow-center contract for that role - re-run with the transparency/empty-center demand made more emphatic in your style prompt (it is the single most common failure).
+
+(The lower-level `slice9-normalize` transform skill exists for hand-wired chains or re-slicing an external frame; for normal authoring use `slice9-frame` above.)
 
 ## Assemble the atlas
 Read every `<assetRoot>/slice9/${skinId}/<role>.slice9.json` and write `<assetRoot>/slice9/${skinId}/atlas.json` in the SAME shape the procedural skins emit (so it is a drop-in for the `slice9` theme):

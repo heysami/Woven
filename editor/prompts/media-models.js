@@ -350,10 +350,29 @@
       hasAspect: false,
     },
     {
-      // 9-slice frame finisher: square + trim a generated (rembg'd) frame and
-      // auto-detect its border-image-slice insets, writing a .slice9.json
-      // sidecar. The image-gen path for slice9 game-UI atlases (ornate frames -
-      // gold filigree, carved stone - that the procedural slice9-gen.py can't draw).
+      // ONE-SHOT ornate 9-slice frame: prompt in, finished frame out. The
+      // daemon appends the geometry contract (hollow frame, transparent
+      // center, tileable edges), generates, removes the background, and
+      // auto-detects the border-image-slice insets - so the user drives it
+      // from a SINGLE node, no chain to wire. For ornate frames (gold filigree,
+      // carved stone) that the procedural slice9-gen.py cannot draw.
+      id: "slice9-frame",
+      label: "Slice-9 frame",
+      hint: "prompt → 9-slice game-UI frame (generate + cut + auto-slice in one node)",
+      glyph: "▦",
+      pathway: "A",
+      inputs: ["prompt"],
+      output: "image",
+      hasModelDropdown: true,
+      modelsFilter: (m) => m.caps && m.caps.includes("t2i") && m.integrated,
+      defaultModel: "gpt-image-2",
+      hasAspect: true,
+    },
+    {
+      // ADVANCED finisher (the chain's last step): square + trim an already-
+      // generated frame and auto-detect its insets. Most users want slice9-frame
+      // above (one node); this exists for hand-wired prompt→generate→rembg→here
+      // pipelines or to re-slice an externally supplied frame.
       id: "slice9-normalize",
       label: "Slice-9 normalize",
       hint: "asset → 9-slice frame (local · square + auto-detect slice insets · writes .slice9.json · no API key)",

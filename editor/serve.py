@@ -1722,6 +1722,11 @@ def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_conte
 _GENERATE_DISPATCH = {
     ("generate-image", "openai"): "openai_image",
     ("generate-image", "fal"):    "fal_image",
+    # slice9-frame: ONE-SHOT ornate 9-slice frame. Prompt in -> the daemon
+    # appends the geometry contract, generates, rembg's, and auto-slices, all
+    # internally (_slice9_oneshot), so the user drives it from a single node.
+    ("slice9-frame",   "openai"): "slice9_oneshot",
+    ("slice9-frame",   "fal"):    "slice9_oneshot",
     # pose-subject is identity-preserving image-to-image: same renderer family
     # as generate-image (always an OpenAI gpt-image edit, since it ships a
     # subject image + a compiled pose prompt). The i2i branch in _asset_generate
@@ -1871,6 +1876,64 @@ def _local_slice9(input_abs_path, out_abs, options):
     except Exception:
         pass  # sidecar is best-effort; the PNG is the primary artifact
     return png_bytes
+
+
+# The geometry contract appended to the user's prompt so a SINGLE freeform
+# prompt still produces a valid 9-slice frame (hollow, transparent center,
+# identical corners, tileable edges) - the shape slice9_detect.py needs.
+SLICE9_FRAME_CONTRACT = (
+    "\n\nRENDER REQUIREMENTS (this is a UI border FRAME for 9-slice / "
+    "border-image): a single ornate rectangular border frame, centered, on a "
+    "FULLY TRANSPARENT background. Hollow frame - the four corners are "
+    "IDENTICAL; the straight edges between corners are uniform along their "
+    "length so they tile without a seam (no unique motif mid-edge). The CENTER "
+    "is completely empty and transparent: no fill, no panel, no text, no "
+    "content inside. Flat even lighting, orthographic front view, no cast "
+    "shadow, no perspective, crisp edges. Square 1:1 composition."
+)
+
+
+# One-shot ornate slice-9 frame: generate (user prompt + the geometry contract)
+# -> rembg (best-effort) -> normalise + auto-detect slice insets. Lets the user
+# drive the whole thing from ONE node with just a prompt. Returns the final PNG
+# bytes; the normalise step writes the atlas sidecar next to out_abs.
+def _slice9_oneshot(api_key, provider, model, prompt, aspect, options,
+                    out_abs, project_root, use_codex=False):
+    full = (prompt or "").strip() + SLICE9_FRAME_CONTRACT
+    if provider == "openai":
+        if use_codex:
+            raw = _codex_cli_generate_image(full, model, aspect, project_root, timeout=300)
+        else:
+            raw = _openai_generate_image(api_key, full, model, aspect, options)
+    elif provider == "fal":
+        raw = _fal_generate_image(api_key, full, model, aspect, options)
+    else:
+        raise RuntimeError(f"slice9-frame supports openai or fal image models (got {provider})")
+    os.makedirs(os.path.dirname(out_abs), exist_ok=True)
+    raw_path = out_abs + ".s9raw.png"
+    cut_path = out_abs + ".s9cut.png"
+    with open(raw_path, "wb") as f:
+        f.write(raw)
+    src_for_norm = raw_path
+    try:
+        cut = _local_rembg(raw_path, "u2net", options)
+        with open(cut_path, "wb") as f:
+            f.write(cut)
+        src_for_norm = cut_path
+    except Exception:
+        # rembg unavailable/failed - many models already honour "transparent
+        # background", and the detector's filled-frame fallback still yields a
+        # usable slice. The frame just won't be alpha-clean.
+        pass
+    try:
+        final = _local_slice9(src_for_norm, out_abs, options)
+    finally:
+        for p in (raw_path, cut_path):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    return final
 
 
 # ── SAM 3D Objects: image → Gaussian-splat (.ply) via an external GPU service ─
@@ -13073,7 +13136,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # promotes to the edit endpoint so the image actually
                 # influences the output. (Validated above.)
                 has_image_input = bool(input_abs or input_data_uri)
-                if has_image_input and provider == "openai":
+                if skill == "slice9-frame":
+                    # One-shot ornate frame from a single prompt - generate, cut,
+                    # and auto-slice all inside the daemon.
+                    try:
+                        _s9_out = _safe_join(project_root, output)
+                    except Exception as e:
+                        return self._reply(400, {"error": f"invalid output path: {e}"})
+                    bytes_ = _slice9_oneshot(api_key, provider, model, prompt, aspect,
+                                             options, _s9_out, project_root,
+                                             use_codex=use_codex_image_fallback)
+                elif has_image_input and provider == "openai":
                     if use_codex_image_fallback:
                         return self._reply(400, {
                             "error":
