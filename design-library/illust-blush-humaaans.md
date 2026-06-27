@@ -4,7 +4,7 @@ name: Humaaans
 category: Flat vector
 subCategory: noodle-people
 role: subject
-pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-corporate-memphis, recipe-linear-product-ui]
+pairsPrototypes: [recipe-bento-marketing, aesthetic-corporate-memphis, recipe-linear-product-ui]
 notForUseWhen: editorial, brutalism, anything emotive
 images:
   - src: illust-blush-humaaans.png
@@ -62,7 +62,6 @@ editorial, brutalism, anything emotive
 ## Pairs with (prototype slugs)
 
 - `recipe-bento-marketing`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-corporate-memphis`
 - `recipe-linear-product-ui`
 

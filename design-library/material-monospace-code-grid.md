@@ -5,7 +5,7 @@ family: digital
 category: digital-effect
 surfaceFinish: matte
 transparency: opaque
-pairsPrototypes: [recipe-devtools-marketing, recipe-terminal-on-web, recipe-ai-foundry-dark, style-terminal-mono, style-dense-mono-dark, recipe-restrained-ai-marketing]
+pairsPrototypes: [recipe-devtools-marketing, recipe-terminal-on-web, recipe-ai-foundry-dark, style-dense-mono-dark]
 images:
   - src: material-monospace-code-grid.png
     reason: Material fidelity sample.
@@ -77,9 +77,7 @@ webgl: |
 - `recipe-devtools-marketing`
 - `recipe-terminal-on-web`
 - `recipe-ai-foundry-dark`
-- `style-terminal-mono`
 - `style-dense-mono-dark`
-- `recipe-restrained-ai-marketing`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this material -->

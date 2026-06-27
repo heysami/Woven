@@ -6,7 +6,7 @@ subCategory: video
 role: background
 binding: wheel-step
 medium: video
-pairsPrototypes: [recipe-restrained-ai-marketing, recipe-aurora-marketing, recipe-warm-restraint, style-glassmorphism, aesthetic-frutiger-aero]
+pairsPrototypes: [recipe-aurora-marketing, recipe-warm-restraint, style-glassmorphism, aesthetic-frutiger-aero]
 notForUseWhen: Each scene needs a different layout (headline left on one, product grid on the next) - the technique's whole value is the unmoving chrome; if the UI must reflow per scene, use scene-stepper-wipe instead.
 images:
   - src: motion-background-swap-fixed-ui-ui.png
@@ -82,7 +82,6 @@ addEventListener('wheel', e => { e.preventDefault(); if (Math.abs(e.deltaY) > 10
 
 ## Pairs with (prototype slugs)
 
-- `recipe-restrained-ai-marketing`
 - `recipe-aurora-marketing`
 - `recipe-warm-restraint`
 - `style-glassmorphism`

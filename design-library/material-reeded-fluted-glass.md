@@ -5,7 +5,7 @@ family: digital
 category: glass
 surfaceFinish: glossy
 transparency: transparent-refractive
-pairsPrototypes: [style-liquid-glass, style-glassmorphism, recipe-restrained-ai-marketing, aesthetic-pastel-pop-fmcg, aesthetic-monochrome-pop-poster]
+pairsPrototypes: [style-liquid-glass, style-glassmorphism, aesthetic-pastel-pop-fmcg, aesthetic-monochrome-pop-poster]
 images:
   - src: material-reeded-fluted-glass.png
     reason: Material fidelity sample.
@@ -99,6 +99,5 @@ is fixed, the world moves behind it) - re-slicing reads as depth
 
 - `style-liquid-glass`
 - `style-glassmorphism`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-pastel-pop-fmcg`
 - `aesthetic-monochrome-pop-poster`

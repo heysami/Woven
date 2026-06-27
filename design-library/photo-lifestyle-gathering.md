@@ -3,7 +3,7 @@ styleId: lifestyle-gathering
 name: Golden-hour gathering
 category: lifestyle
 era: current
-pairsPrototypes: [aesthetic-pastoral-serene, recipe-warm-restraint, recipe-readcv, aesthetic-coastal-grandmother]
+pairsPrototypes: [aesthetic-pastoral-serene, recipe-warm-restraint, aesthetic-coastal-grandmother]
 notForUseWhen: Brief is solitary-focus, enterprise, or premium-exclusive - the register is communal warmth.
 images:
   - src: photo-lifestyle-gathering.png

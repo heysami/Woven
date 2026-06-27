@@ -78,7 +78,7 @@ floods with its own color at 15-20% opacity behind the content) - the zine
   silhouettes - generate/draw a unique outline per entry)
 - Geometrically perfect rounded-rect with a wobble filter (start from a
   hand-drawn path; filters only roughen, they can't add intent)
-- Thin strokes (under ~12px at rendered size it becomes outline-wireframe,
+- Thin strokes (under ~12px at rendered size it becomes a hairline outline,
   a different register - marker is THICK)
 - Drop shadows or gradients on the stroke (marker is flat pigment on paper)
 - Boil running on every frame simultaneously at high fps (one or two boiling

@@ -51,5 +51,5 @@ Space/satellite/geo products, global infrastructure and logistics platforms, cli
 ## Pairs well with
 
 - **Shells:** `shell-hero-stack` (canonical), `shell-scroll-journey-scene` (orbit-to-surface dive), `shell-top-bar-canvas` (telemetry product UI).
-- **Styles:** `style-restrained-hairline` (dark), `style-silk-chrome-flow` (aurora-silk family), `style-editorial-italic-accent`, terminal-mono chips for telemetry.
+- **Styles:** `style-restrained-hairline` (dark), `style-silk-chrome-flow` (aurora-silk family), `style-editorial-italic-accent`.
 - **Photo:** `orbital-space` (the load-bearing asset). **Sim pairing:** globe.gl / three-globe when the brief needs a LIVE orbital view - that's simulation-orchestrator territory, not a static hero.

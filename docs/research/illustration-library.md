@@ -82,10 +82,8 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | style-aurorism | aurorism-mesh-gradient (decoration) | spectrums-organic-blob, shapes-gallery-michalczyk | aurorism-mesh-gradient |
 | style-neubrutalism | thick-border-cartoon | typo-fella-anti-design | spectrums-vector-shape-circle |
 | style-doodle | handyarrows-doodles | doodle-ui-handdrawn, scribbbles-funky-vector, handyarrows-arrows | scribbbles-funky-vector |
-| style-outline-wireframe | outline-wireframe-illustration | wireframe-3d | spectrums-vector-shape-circle |
 | style-restrained-hairline | outline-wireframe-illustration | niemann-puzzle-conceptual | shapes-gallery-michalczyk |
 | style-serif-warm-paper | humanities-marginalia | gouache-storybook, hand-drawn-pencil-sketch | none |
-| style-terminal-mono | wireframe-3d | typo-weingart-deconstructed | none |
 | style-bold-display | typo-hand-lettered-editorial | shapes-gallery-michalczyk | shapes-gallery-michalczyk |
 | style-oversized-neo-grotesque | shapes-gallery-michalczyk (decoration) | typo-weingart-deconstructed | shapes-gallery-michalczyk |
 | style-pixel-bitmap | pixel-bitmap-illustration | voxel-magicavoxel | none |
@@ -95,7 +93,6 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | style-sf-pro-ios | drawkit-hands-3d | liquid-glass-3d | aurorism-mesh-gradient |
 | style-dense-mono-dark | wireframe-3d | typo-weingart-deconstructed | none |
 | style-cream-humanist | gouache-storybook | hand-drawn-pencil-sketch, beatrix-potter-watercolor | none |
-| style-agate-broadsheet | editorial-thick-brush | niemann-puzzle-conceptual | none |
 | style-skeuomorphism | skeuomorphic-detailed | drawkit-wooden-icons | none |
 | style-brutalist-raw | typo-fella-anti-design | typo-weingart-deconstructed, thick-border-cartoon | halftone-shape |
 
@@ -110,7 +107,6 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-solarpunk | drawkit-wooden-icons | blush-go-green, charley-harper-minimal-realism, ghibli-watercolor-bg | spectrums-organic-blob |
 | aesthetic-dreamcore | dreamcore-liminal | hilma-af-klint-symbolist, cyriak-bodyhorror | spectrums-organic-blob |
 | aesthetic-angelcore | hilma-af-klint-symbolist | typo-illuminated-drop-cap | aurorism-mesh-gradient |
-| aesthetic-fairycore | mary-blair-stylized | hilma-af-klint-symbolist, typo-art-nouveau-ornament, beatrix-potter-watercolor | spectrums-complex-flower |
 | aesthetic-y2k-futurism | typo-y2k-chrome-3d | vector-hands-up-eurodance, blush-transhumans | aurorism-mesh-gradient |
 | aesthetic-y2k-memphis-loud | blush-cool-kids | typo-y2k-chrome-3d, blush-power-moves, blush-tutto-ricco | spectrums-complex-flower |
 | aesthetic-y2k-myspace | typo-y2k-chrome-3d | vector-hands-up-eurodance | spectrums-complex-flower |
@@ -148,7 +144,6 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | aesthetic-vector-vector-musica | typo-vector-musica | raster-cutout-collage | halftone-shape |
 | aesthetic-vector-vectorbloom | typo-vectorheart-decorative | blush-fancy-plants, typo-art-nouveau-ornament | spectrums-complex-flower |
 | aesthetic-vector-vectordelia | mary-blair-stylized | typo-vectorheart-decorative | spectrums-complex-flower |
-| aesthetic-vector-hands-up | vector-hands-up-eurodance | typo-y2k-chrome-3d | aurorism-mesh-gradient |
 | aesthetic-avantropop | typo-y2k-chrome-3d | vector-hands-up-eurodance, blush-transhumans | halftone-shape |
 | aesthetic-urbling | typo-bubble-graffiti | typo-y2k-chrome-3d | halftone-shape |
 | aesthetic-rgb-gamer | voxel-magicavoxel | wireframe-3d, pixel-bitmap-illustration | aurorism-mesh-gradient |
@@ -182,8 +177,6 @@ For each major prototype.md style/aesthetic slug, the recommended illustration e
 | recipe-material-3 | corporate-memphis-noodle | blush-humaaans | spectrums-organic-blob |
 | recipe-neo-grotesque-portfolio | shapes-gallery-michalczyk (decoration) | typo-hand-lettered-editorial | shapes-gallery-michalczyk |
 | recipe-newspaper-of-record | editorial-thick-brush | niemann-puzzle-conceptual, humanities-marginalia | none |
-| recipe-readcv | doodle-ui-handdrawn | humanities-marginalia, hand-drawn-pencil-sketch, blush-open-peeps, handyarrows-doodles | handyarrows-doodles |
-| recipe-restrained-ai-marketing | drawkit-hands-3d | outline-wireframe-illustration, aurorism-mesh-gradient | aurorism-mesh-gradient |
 | recipe-scientific-infra-marketing | wireframe-3d | isometric-tech-saas | none |
 | recipe-swiss-grid | bauhaus-geometric | spectrums-vector-shape-circle | spectrums-vector-shape-circle |
 | recipe-terminal-on-web | wireframe-3d | typo-weingart-deconstructed | none |
@@ -269,16 +262,16 @@ Decoration entries don't depict a subject. They sit in the negative space betwee
 |---|---|---|---|
 | **Circles** (solid, dotted, segmented) | spectrums-vector-shape-circle, shapes-gallery-michalczyk | bullet marks, drop-cap halos, section anchors | bauhaus, swiss-modernist, de-stijl, constructivism |
 | **Organic blobs** | spectrums-organic-blob, aurorism-mesh-gradient | behind text as background mask, hero bg accent | frutiger-aero, frutiger-eco, aurorism, glassmorphism |
-| **Complex flowers / stars** | spectrums-complex-flower | headline halos, decorative section dividers | y2k-memphis-loud, curly-girly, vectorheart, fairycore |
-| **Doodle arrows** | handyarrows-arrows | pointing at headlines, marking flow direction, "click here" | doodle, corporate-memphis, readcv, bento-marketing |
-| **Hand-drawn underlines / brackets** | handyarrows-underlines | emphasizing words in headlines, grouping list items | doodle, readcv, y2k-memphis-loud, corporate-memphis |
-| **Sparkles / stars / hearts** (doodle) | handyarrows-doodles | scattered around headlines, between sections, bullet substitutes | positivity-kawaii, curly-girly, doodle, readcv |
+| **Complex flowers / stars** | spectrums-complex-flower | headline halos, decorative section dividers | y2k-memphis-loud, curly-girly, vectorheart |
+| **Doodle arrows** | handyarrows-arrows | pointing at headlines, marking flow direction, "click here" | doodle, corporate-memphis, bento-marketing |
+| **Hand-drawn underlines / brackets** | handyarrows-underlines | emphasizing words in headlines, grouping list items | doodle, y2k-memphis-loud, corporate-memphis |
+| **Sparkles / stars / hearts** (doodle) | handyarrows-doodles | scattered around headlines, between sections, bullet substitutes | positivity-kawaii, curly-girly, doodle |
 | **Squiggle lines** (loose abstract) | scribbbles-funky-vector | replacing solid divider lines, manual underlines | doodle, corporate-memphis, bento-marketing, positivity-kawaii |
-| **Infographic callouts** (circles, brackets, numbers) | handyarrows-infographic | annotating screenshots, wireframe markup | doodle, bento-marketing, readcv |
+| **Infographic callouts** (circles, brackets, numbers) | handyarrows-infographic | annotating screenshots, wireframe markup | doodle, bento-marketing |
 | **Halftone retro shape** | halftone-shape | editorial accents, indie poster bands | editorial-magazine, anti-design, y2k-memphis-loud |
 | **Sticker cutout** (puffy white halo) | sticker-cutout-puffy | scrapbook substrates, casual product pages | scrapbook-substrate, cluttercore, bento-marketing |
 | **Patterns** (tileable) | blush-patterns | background bands, section dividers, wallpaper accents | bauhaus, de-stijl, corporate-memphis, bento-marketing |
-| **Refined geometric/wave** | shapes-gallery-michalczyk | designer portfolios, editorial sites | neo-grotesque-portfolio, readcv, bold-display, bento-marketing |
+| **Refined geometric/wave** | shapes-gallery-michalczyk | designer portfolios, editorial sites | neo-grotesque-portfolio, bold-display, bento-marketing |
 
 ### 5.2 Placement-role taxonomy
 

@@ -95,4 +95,4 @@ Fifth tell: missing the triangle DNA. If no triangulated geometry appears in ico
 ## Pairs well with
 
 - **Shells:** `shell-canvas-floating` (the projected-hologram canonical use), `shell-three-column-app`, `shell-top-bar-canvas`, `shell-bento-grid`
-- **Styles:** `style-dense-mono-dark`, `style-terminal-mono`, `style-restrained-hairline`, `style-oversized-neo-grotesque`, `style-flat-design`
+- **Styles:** `style-dense-mono-dark`, `style-restrained-hairline`, `style-oversized-neo-grotesque`, `style-flat-design`

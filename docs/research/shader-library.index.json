@@ -137,20 +137,12 @@
         "moire-interference"
       ]
     },
-    "aesthetic-vintage-carnival": {
-      "default": "concentric-patterns",
-      "alternatives": []
-    },
     "aesthetic-cassette-futurism": {
       "default": "dither-waves",
       "alternatives": [
         "dither",
         "glowing-wave"
       ]
-    },
-    "style-terminal-mono": {
-      "default": "dither-waves",
-      "alternatives": []
     },
     "recipe-ai-foundry-dark": {
       "default": "dither-waves",
@@ -227,13 +219,6 @@
     "recipe-newspaper-of-record": {
       "default": "hatching",
       "alternatives": []
-    },
-    "recipe-restrained-ai-marketing": {
-      "default": "lens-distortion",
-      "alternatives": [
-        "mesh-gradient",
-        "neuro-noise"
-      ]
     },
     "aesthetic-depin-hardware": {
       "default": "magnetic-field",
@@ -313,10 +298,6 @@
     },
     "style-glassmorphism": {
       "default": "pattern-refraction",
-      "alternatives": []
-    },
-    "recipe-readcv": {
-      "default": "riso-print",
       "alternatives": []
     },
     "style-raster-cutout": {
@@ -458,7 +439,6 @@
       "pairsPrototypes": [
         "aesthetic-op-art",
         "aesthetic-y2k-memphis-loud",
-        "aesthetic-vintage-carnival",
         "aesthetic-acid-design"
       ],
       "sourceFile": "design-library/shader-concentric-patterns.md"
@@ -481,7 +461,6 @@
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
         "aesthetic-cassette-futurism",
-        "style-terminal-mono",
         "recipe-ai-foundry-dark",
         "aesthetic-y2k-futurism"
       ],
@@ -689,7 +668,6 @@
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
         "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing",
         "aesthetic-frutiger-aero"
       ],
       "sourceFile": "design-library/shader-lens-distortion.md"
@@ -757,8 +735,7 @@
       "pairsPrototypes": [
         "style-aurorism",
         "recipe-aurora-marketing",
-        "aesthetic-frutiger-aero",
-        "recipe-restrained-ai-marketing"
+        "aesthetic-frutiger-aero"
       ],
       "sourceFile": "design-library/shader-mesh-gradient.md"
     },
@@ -849,7 +826,6 @@
       "pairsPrototypes": [
         "recipe-ai-foundry-dark",
         "aesthetic-bioluminescent-deep",
-        "recipe-restrained-ai-marketing",
         "aesthetic-dark-botanical-maximalism"
       ],
       "sourceFile": "design-library/shader-neuro-noise.md"
@@ -1009,7 +985,6 @@
       "notForUseWhen": "glossy enterprise polish, photoreal hero",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "recipe-readcv",
         "aesthetic-anti-design",
         "style-raster-cutout"
       ],

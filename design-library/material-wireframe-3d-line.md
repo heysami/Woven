@@ -5,7 +5,7 @@ family: digital
 category: digital-effect
 surfaceFinish: matte (or glowing)
 transparency: transparent
-pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-atompunk, aesthetic-cassette-futurism, recipe-terminal-on-web, style-terminal-mono, recipe-scientific-infra-marketing]
+pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-atompunk, aesthetic-cassette-futurism, recipe-terminal-on-web, recipe-scientific-infra-marketing]
 images:
   - src: material-wireframe-3d-line.png
     reason: Material fidelity sample.
@@ -78,7 +78,6 @@ raster: not appropriate
 - `aesthetic-atompunk`
 - `aesthetic-cassette-futurism`
 - `recipe-terminal-on-web`
-- `style-terminal-mono`
 - `recipe-scientific-infra-marketing`
 
 <!-- image: sample-1.png -->

@@ -94,7 +94,7 @@ Specifying *some* of these doesn't satisfy the trigger - fire as soon as one cor
 **Trigger C - Direction ↔ audience/objective mismatch signal.** The brief specifies a direction or aesthetic, AND that pick may not fit the stated audience or objective. Red-flag combinations that fire this trigger:
 - Kids / family / consumer-wellness brief + brutalist / cyberpunk / dark-academia / dense-mono picks
 - Finance / enterprise / institutional brief + playful / illustrative / kawaii / Y2K-loud picks
-- Audience that skims (mainstream consumers) + dense-mono / agate-broadsheet / dashboard shells
+- Audience that skims (mainstream consumers) + dense-mono / dashboard shells
 - Audience with taste-rigor (designers, luxury buyers, editorial readers) + median-SaaS / corporate-memphis / generic-claymorphism picks
 - Read-deeply activity + bento-grid / dashboard / canvas-floating shells
 - Decide-one-thing activity + masonry / infinite-canvas / cluttercore picks
@@ -386,9 +386,7 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 **Restrained / flat / clean:**
 - **restrained-hairline** `[cool · low-decoration · 2018+]` - Linear/Vercel/Read.cv minimal chrome; OKLCH greys + single accent + hairline borders, no shadows beyond `0 1px`. → [`style-restrained-hairline.md`](./design-library/style-restrained-hairline.md)
 - **flat-design** `[cool · no-depth · 2013-17]` - iOS 7 / Windows 8 Metro pure flat; zero gradients/shadows, Helvetica Neue Light. → [`style-flat-design.md`](./design-library/style-flat-design.md)
-- **outline-wireframe** `[lo-fi · sketchy · timeless]` - outlined shapes, no fills, hairline strokes, on warm paper. → [`style-outline-wireframe.md`](./design-library/style-outline-wireframe.md)
 - **doodle-handdrawn** `[lo-fi/children · sketchy · timeless]` - Excalidraw-style sketchy outlines with hand-drawn icons. → [`style-doodle.md`](./design-library/style-doodle.md)
-- **kinetic-line-accents** `[corporate-swiss · animated strokes · 2025+]` - Swiss grid energized by stroke lines that draw on scroll; ONE accent hue confined to line work; the licensed way to animate a restrained register. → [`style-kinetic-line-accents.md`](./design-library/style-kinetic-line-accents.md)
 
 **Glass / refractive / transparent:**
 - **glassmorphism** `[cool · backdrop-blur · 2020+ · needs-substrate]` - frosted glass with `backdrop-filter` over saturated photographic substrate. → [`style-glassmorphism.md`](./design-library/style-glassmorphism.md)
@@ -402,12 +400,10 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 - **neumorphism** `[mono-tactile · soft-foam · 2019-21]` - monochromatic dual soft shadow simulating pressed/raised foam. → [`style-neumorphism.md`](./design-library/style-neumorphism.md)
 
 **Material / elevation:**
-- **material-elevation-m1m2** `[android · paper-stack · 2014-21]` - Roboto + saturated 500-tile app bar + elevation shadows. → [`style-material-m1m2.md`](./design-library/style-material-m1m2.md)
 - **material-dynamic-m3** `[android · dynamic-color · 2021+]` - Material 3 dynamic color seed + tinted surfaces. → [`style-material-m3.md`](./design-library/style-material-m3.md)
 
 **Density / data / system:**
 - **dense-mono-dark** `[cool-dense · dark · finance/dev]` - Bloomberg-style mono numerals, status pills, dark background, amber/cyan/green accents. → [`style-dense-mono-dark.md`](./design-library/style-dense-mono-dark.md)
-- **mono-box-drawing-terminal** `[dev-tool · monospace-only · 2024+]` - JetBrains Mono + box-drawing chars + ANSI accents. → [`style-terminal-mono.md`](./design-library/style-terminal-mono.md)
 - **sf-pro-system-ios** `[mobile · warm-system · iOS-grouped]` - SF Pro + iOS-grouped lists, the iOS native surface. → [`style-sf-pro-ios.md`](./design-library/style-sf-pro-ios.md)
 
 **Iridescent / experimental:**
@@ -421,7 +417,6 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 
 **Editorial / typographic:**
 - **serif-warm-paper-editorial** `[longform · narrative · warm-paper]` - serif body on warm paper with drop caps + dingbats. → [`style-serif-warm-paper.md`](./design-library/style-serif-warm-paper.md)
-- **agate-numeric-broadsheet** `[news/finance · dense · numeric-tables]` - optical-size serif + dedicated agate numeric face for market tables. → [`style-agate-broadsheet.md`](./design-library/style-agate-broadsheet.md)
 - **cream-humanist-serif** `[wellness/skincare · warm · adult-premium]` - cream + warm-grey humanist serif (Aesop/Headspace direction). → [`style-cream-humanist.md`](./design-library/style-cream-humanist.md)
 - **editorial-italic-accent** `[typography layer · one italic-serif word · 2025+]` - grotesque headline with EXACTLY ONE word swapped to italic serif (the feeling-payload); layers onto a host style; the most repeated move in the 2025-26 showcase corpus. → [`style-editorial-italic-accent.md`](./design-library/style-editorial-italic-accent.md)
 - **ransom-glyph-mix** `[exhibition/culture · per-character font mixing · glyph-level]` - headlines set character-by-character across 4-6 clashing faces (ultra-bold/outline/pixel/calligraphic/hand-drawn) over a hairline chassis; optional roulette settle. → [`style-ransom-glyph-mix.md`](./design-library/style-ransom-glyph-mix.md)
@@ -431,7 +426,6 @@ The visual style is how surfaces LOOK: depth grammar, decoration vocabulary, mat
 **Raster / pixel / collage:**
 - **raster-cutout-collage** `[scrapbook-shell · raster-images · any-aesthetic · needs-raster]` - PNG cutouts with paper-edge shadow + rotation + tape/staple decorations. → [`style-raster-cutout.md`](./design-library/style-raster-cutout.md)
 - **pixel-grid-bitmap** `[gaming · pixel-perfect · era-parameterized · needs-raster]` - pixel-perfect bitmap sprites; era determines palette + grid size. → [`style-pixel-bitmap.md`](./design-library/style-pixel-bitmap.md)
-- **pixel-dissolve** `[modern-SaaS detail · edge crumble · 2025+]` - surfaces/gradients dissolve into stepped pixel blocks at ONE or two edges per page; clean modern UI everywhere else. → [`style-pixel-dissolve.md`](./design-library/style-pixel-dissolve.md)
 
 **Raw / statement:**
 - **brutalist-raw-web** `[statement · edgy · 1990s-revival]` - raw markup, Times/Helvetica only, intentional ugliness, no shadows, underlined links. → [`style-brutalist-raw.md`](./design-library/style-brutalist-raw.md)
@@ -466,7 +460,6 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **vector-2000s-vectordelia** `[consumer-tech · vector-CGI · 2003-13]` - iPod Silhouette psychedelic vector. → [`aesthetic-vector-vectordelia.md`](./design-library/aesthetic-vector-vectordelia.md)
 - **vector-2000s-vectorbloom** `[brand-identity · vector-floral · 2005-12]` - Web 2.0 vector florals. → [`aesthetic-vector-vectorbloom.md`](./design-library/aesthetic-vector-vectorbloom.md)
 - **vector-2000s-vector-musica** `[Latin/anime-music · vector-CGI · 2010s]` - Latin American music marketing vector. → [`aesthetic-vector-vector-musica.md`](./design-library/aesthetic-vector-vector-musica.md)
-- **vector-2000s-hands-up** `[Eurodance · vector-hands · 2005-09]` - Cascada-era Eurodance vectors. → [`aesthetic-vector-hands-up.md`](./design-library/aesthetic-vector-hands-up.md)
 - **vector-2000s-neovectorheart** `[fashion/sport · editorial-vector · 2018+]` - Cory Schmitz/SERXPHIS modern. → [`aesthetic-vector-neovectorheart.md`](./design-library/aesthetic-vector-neovectorheart.md)
 - **avantropop** `[electropop · CMYK-polygon · 2007-12]` - Justice/Ed Banger electropop graphic. → [`aesthetic-avantropop.md`](./design-library/aesthetic-avantropop.md)
 - **acid-design-rave-flyer** `[club/music · neon-rave · 90s-revival]` - David Rudnick/Boiler Room flyers. → [`aesthetic-acid-design.md`](./design-library/aesthetic-acid-design.md)
@@ -494,7 +487,6 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 **Heritage / conceptual / poster registers:**
 - **neoclassical-remix** `[heritage-conceptual · antiquity + one anachronism · needs-raster]` - full-fidelity statue/painting + ONE modern intrusion, museum plaque captions; sincere, not vaporwave-ironic. → [`aesthetic-neoclassical-remix.md`](./design-library/aesthetic-neoclassical-remix.md)
 - **dark-botanical-maximalism** `[luxury-botanical · bloom-from-black · needs-raster]` - Golden-Age florals on near-black, serif display weaving BEHIND stems; opulence held together by darkness. → [`aesthetic-dark-botanical-maximalism.md`](./design-library/aesthetic-dark-botanical-maximalism.md)
-- **vintage-carnival** `[showman-letterpress · stacked wood-type · needs-raster]` - Hatch-Show-Print showbill stacks, woodcut art, ≤3 inks + paper, barker voice; the ONE register where many typefaces is the discipline. → [`aesthetic-vintage-carnival.md`](./design-library/aesthetic-vintage-carnival.md)
 - **blueprint-hologram** `[pre-launch tech · annotated wireframe projection]` - one glowing mesh hero + dimension lines/datum callouts in mono; drafting-table futurism, not neon noir. → [`aesthetic-blueprint-hologram.md`](./design-library/aesthetic-blueprint-hologram.md)
 - **pastel-pop-fmcg** `[DTC pantry · flat pastel per SKU · product-forward]` - flavor-colored flat grounds, oversized friendly display, scroll color-fade between SKUs; soft pop, not sticker-dense. → [`aesthetic-pastel-pop-fmcg.md`](./design-library/aesthetic-pastel-pop-fmcg.md)
 - **sculptural-minimal** `[gallery-plinth · one abstract object · needs-3D]` - vast white field + letterspaced caps + ONE sculptural form holding the optical center; the page is the plinth. → [`aesthetic-sculptural-minimal.md`](./design-library/aesthetic-sculptural-minimal.md)
@@ -534,7 +526,6 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **goblincore** `[forest-blog · mushrooms-mossy · forest-floor · 2019+]` - mushrooms, tarnished silver, mossy stones. → [`aesthetic-goblincore.md`](./design-library/aesthetic-goblincore.md)
 - **coastal-grandmother** `[lifestyle-blog · sand-dollar-linen · Nantucket-cool · 2022+]` - sand dollars, sea glass, hydrangea. → [`aesthetic-coastal-grandmother.md`](./design-library/aesthetic-coastal-grandmother.md)
 - **cluttercore** `[lifestyle-blog · keepsake-chaos · saturated-warm · 2020+]` - 30-50 keepsake cutouts on kraft. → [`aesthetic-cluttercore.md`](./design-library/aesthetic-cluttercore.md)
-- **fairycore** `[fantasy-blog · fairy-dewdrops · pastel-magical · 2019+]` - Cicely Mary Barker fairies, dew, gold leaf. → [`aesthetic-fairycore.md`](./design-library/aesthetic-fairycore.md)
 - **dreamcore** `[liminal-blog · liminal-VHS · off-register-pastel · 2019+]` - liminal spaces, VHS degradation, dim hallways. → [`aesthetic-dreamcore.md`](./design-library/aesthetic-dreamcore.md)
 - **cottagegoth** `[gothic-blog · nightshade-ravens · dark-floral · 2019+]` - black-rose, raven, apothecary, mourning. → [`aesthetic-cottagegoth.md`](./design-library/aesthetic-cottagegoth.md)
 - **angelcore** `[religious-blog · cherub-gilt · Marian-blue · 2019+]` - Renaissance cherubs, gilt fragments, Marian blue. → [`aesthetic-angelcore.md`](./design-library/aesthetic-angelcore.md)
@@ -547,7 +538,7 @@ When the brief matches a familiar shipped-product type, pick one of these recipe
 - **recipe-linear-product-ui** `[dev-tools · engineers · cool]` = three-column-app + restrained-hairline + (no aesthetic) + terse-technical voice → [`recipe-linear-product-ui.md`](./design-library/recipe-linear-product-ui.md)
 - **recipe-bloomberg-dashboard** `[finance/dev · dense · dark]` = canvas-floating-panels + dense-mono-dark + (no aesthetic) + nominal-finance voice → [`recipe-bloomberg-dashboard.md`](./design-library/recipe-bloomberg-dashboard.md)
 - **recipe-editorial-magazine** `[longform-reading · narrative · warm-paper]` = centered-narrow-column + serif-warm-paper-editorial + (no aesthetic) + measured-narrative voice → [`recipe-editorial-magazine.md`](./design-library/recipe-editorial-magazine.md)
-- **recipe-newspaper-of-record** `[news/finance · dense · numeric-tables]` = editorial-broken-grid + agate-numeric-broadsheet + (no aesthetic) + byline-factual voice → [`recipe-newspaper-of-record.md`](./design-library/recipe-newspaper-of-record.md)
+- **recipe-newspaper-of-record** `[news/finance · dense · numeric-tables]` = editorial-broken-grid + serif-warm-paper + (no aesthetic) + byline-factual voice → [`recipe-newspaper-of-record.md`](./design-library/recipe-newspaper-of-record.md)
 - **recipe-swiss-grid-modernist** `[cultural/design-studio · austere · grid-led]` = editorial-broken-grid + oversized-neo-grotesque + aesthetic-swiss-modernist → [`recipe-swiss-grid.md`](./design-library/recipe-swiss-grid.md)
 - **recipe-bento-marketing** `[marketing/product-page · bold-statement · low-density]` = bento-grid + bold-display-marketing + (no aesthetic) + Apple-product voice → [`recipe-bento-marketing.md`](./design-library/recipe-bento-marketing.md)
 - **recipe-brutalist-web** `[statement-site · edgy · raw-zine]` = editorial-broken-grid + brutalist-raw-web + aesthetic-web-brutalism-original → [`recipe-brutalist-web.md`](./design-library/recipe-brutalist-web.md)
@@ -555,9 +546,7 @@ When the brief matches a familiar shipped-product type, pick one of these recipe
 - **recipe-aurora-marketing** `[protocol/AI/infra-marketing · cool-atmospheric · dark]` = hero-stack + aurorism + (no aesthetic) + declarative product-truth voice → [`recipe-aurora-marketing.md`](./design-library/recipe-aurora-marketing.md)
 - **recipe-ai-foundry-dark** `[AI-compute/chip/foundry · dark · oversized-display]` = hero-stack + oversized-neo-grotesque on dark + (no aesthetic) + confident technical voice → [`recipe-ai-foundry-dark.md`](./design-library/recipe-ai-foundry-dark.md)
 - **recipe-devtools-marketing** `[dev-tools/API/infra-SaaS · dense · dark · spec-sheet]` = hero-stack + dense-mono-dark + (no aesthetic) + terse spec-sheet voice → [`recipe-devtools-marketing.md`](./design-library/recipe-devtools-marketing.md)
-- **recipe-restrained-ai-marketing** `[AI-SaaS/modern-tooling · cool-restrained]` = hero-stack + restrained-hairline + (no aesthetic) + restrained product-truth voice → [`recipe-restrained-ai-marketing.md`](./design-library/recipe-restrained-ai-marketing.md)
-- **recipe-scientific-infra-marketing** `[protocol-paper/HPC/research-tooling · paper-as-marketing]` = hero-stack + restrained-hairline + agate-broadsheet accents + (no aesthetic) + scientific-citation voice → [`recipe-scientific-infra-marketing.md`](./design-library/recipe-scientific-infra-marketing.md)
-- **recipe-readcv-portfolio** `[portfolio · restrained · personal]` = centered-narrow-column + restrained-hairline + (no aesthetic) → [`recipe-readcv.md`](./design-library/recipe-readcv.md)
+- **recipe-scientific-infra-marketing** `[protocol-paper/HPC/research-tooling · paper-as-marketing]` = hero-stack + restrained-hairline + (no aesthetic) + scientific-citation voice → [`recipe-scientific-infra-marketing.md`](./design-library/recipe-scientific-infra-marketing.md)
 - **recipe-neo-grotesque-portfolio** `[design-studio/fashion · oversized-type · monochrome]` = masonry-gallery + oversized-neo-grotesque + (no aesthetic) → [`recipe-neo-grotesque-portfolio.md`](./design-library/recipe-neo-grotesque-portfolio.md)
 - **recipe-ios-system** `[mobile-app · warm-system · iOS-grouped]` = mobile-app + sf-pro-system-ios + (no aesthetic) + iOS voice → [`recipe-ios-system.md`](./design-library/recipe-ios-system.md)
 - **recipe-material-3** `[mobile-app · warm-dynamic · paper-stack]` = mobile-app + material-dynamic-m3 + (no aesthetic) → [`recipe-material-3.md`](./design-library/recipe-material-3.md)

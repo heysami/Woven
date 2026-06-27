@@ -5,7 +5,7 @@ family: digital
 category: digital-effect
 surfaceFinish: matte
 transparency: opaque
-pairsPrototypes: [aesthetic-swiss-modernist, aesthetic-bauhaus, recipe-scientific-infra-marketing, style-outline-wireframe, recipe-newspaper-of-record, style-restrained-hairline]
+pairsPrototypes: [aesthetic-swiss-modernist, aesthetic-bauhaus, recipe-scientific-infra-marketing, recipe-newspaper-of-record, style-restrained-hairline]
 images:
   - src: material-plotter-pen-line.png
     reason: Material fidelity sample.
@@ -78,7 +78,6 @@ raster: avoid - plotter is inherently vector
 - `aesthetic-swiss-modernist`
 - `aesthetic-bauhaus`
 - `recipe-scientific-infra-marketing`
-- `style-outline-wireframe`
 - `recipe-newspaper-of-record`
 - `style-restrained-hairline`
 

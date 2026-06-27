@@ -12,7 +12,7 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 ## Picks
 
 - **Shell:** `editorial-broken-grid` - read `shell-editorial-broken-grid.md`
-- **Style:** `agate-broadsheet` - read `style-agate-broadsheet.md`
+- **Style:** `serif-warm-paper` - read `style-serif-warm-paper.md`
 - **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** third-person, byline-attributed, past-tense factual
 

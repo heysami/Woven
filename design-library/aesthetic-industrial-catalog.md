@@ -50,6 +50,6 @@ Robotics/automation companies, industrial hardware and energy, machine-tool and 
 ## Pairs well with
 
 - **Shells:** `shell-hero-stack`, `shell-two-column-app` (catalog browse), `shell-centered-column`.
-- **Styles:** `style-restrained-hairline`, `style-terminal-mono` for spec blocks, `style-kinetic-line-accents` (dimension lines that draw).
+- **Styles:** `style-restrained-hairline`
 - **Aesthetic kin:** `aesthetic-frutiger-dorfic` (moodier cousin), `aesthetic-monochrome-tech-editorial` (archival cousin), `aesthetic-blueprint-hologram` (pre-production cousin).
 - **Materials:** `brushed-aluminum`, `concrete`; illust `3d-technical-exploded-precision`.

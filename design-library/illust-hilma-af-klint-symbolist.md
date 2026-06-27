@@ -4,7 +4,7 @@ name: Hilma af Klint esoteric symbolism
 category: Surreal / esoteric
 subCategory: hilma-symbolist
 role: hero
-pairsPrototypes: [aesthetic-angelcore, aesthetic-dreamcore, aesthetic-fairycore, style-aurorism]
+pairsPrototypes: [aesthetic-angelcore, aesthetic-dreamcore, style-aurorism]
 notForUseWhen: tech, brutalism, neon
 images:
   - src: illust-hilma-af-klint-symbolist.png
@@ -61,7 +61,6 @@ tech, brutalism, neon
 
 - `aesthetic-angelcore`
 - `aesthetic-dreamcore`
-- `aesthetic-fairycore`
 - `style-aurorism`
 
 <!-- image: sample-1.png -->

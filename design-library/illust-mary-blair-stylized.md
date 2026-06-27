@@ -4,7 +4,7 @@ name: Mary Blair stylized mid-century
 category: Mid-century / vintage
 subCategory: mary-blair-stylized
 role: hero
-pairsPrototypes: [aesthetic-positivity-kawaii, recipe-editorial-magazine, aesthetic-fairycore]
+pairsPrototypes: [aesthetic-positivity-kawaii, recipe-editorial-magazine]
 notForUseWhen: B2B, brutalism, tech
 images:
   - src: illust-mary-blair-stylized.png
@@ -61,7 +61,6 @@ B2B, brutalism, tech
 
 - `aesthetic-positivity-kawaii`
 - `recipe-editorial-magazine`
-- `aesthetic-fairycore`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

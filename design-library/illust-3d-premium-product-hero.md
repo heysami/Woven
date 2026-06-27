@@ -4,7 +4,7 @@ name: Premium product hero 3D (Apple / Ledger-Stax-grade)
 category: 3D
 subCategory: render-cinematic
 role: subject
-pairsPrototypes: [recipe-restrained-ai-marketing, recipe-scientific-infra-marketing, recipe-bento-marketing, recipe-ios-system, style-restrained-hairline, aesthetic-depin-hardware]
+pairsPrototypes: [recipe-scientific-infra-marketing, recipe-bento-marketing, recipe-ios-system, style-restrained-hairline, aesthetic-depin-hardware]
 notForUseWhen: cottagecore, brutalism, kids brands, hand-made craft
 images:
   - src: illust-3d-premium-product-hero.png
@@ -74,7 +74,6 @@ cottagecore, brutalism, kids brands, hand-made craft, anything wanting environme
 
 ## Pairs with (prototype slugs)
 
-- `recipe-restrained-ai-marketing`
 - `recipe-scientific-infra-marketing`
 - `recipe-bento-marketing`
 - `recipe-ios-system`

@@ -76,4 +76,4 @@ Avoid for: consumer-friendly onboarding, anything cheerful, anything that needs 
 ## Pairs well with
 
 - **Shells:** `shell-terminal-frame` (the beige chassis IS the terminal frame), `shell-three-column-app` (operator console layout), `shell-top-bar-canvas` (dashboard with status strip), `shell-two-column-app` (records browser)
-- **Styles:** `style-terminal-mono` (closest match - pair with chassis treatment), `style-dense-mono-dark` (Bloomberg-leaning operator console variant), `style-pixel-bitmap` (Semiotic Standard icons and capacity bars)
+- **Styles:** `style-dense-mono-dark` (Bloomberg-leaning operator console variant), `style-pixel-bitmap` (Semiotic Standard icons and capacity bars)

@@ -4,7 +4,7 @@ name: Jean Jullien thick brush cartoon
 category: Children's book / storybook
 subCategory: jean-jullien-thick-line
 role: subject
-pairsPrototypes: [style-doodle, recipe-editorial-magazine, recipe-readcv]
+pairsPrototypes: [style-doodle, recipe-editorial-magazine]
 notForUseWhen: enterprise, photoreal
 images:
   - src: illust-jean-jullien-thick-line.png
@@ -60,7 +60,6 @@ enterprise, photoreal
 
 - `style-doodle`
 - `recipe-editorial-magazine`
-- `recipe-readcv`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

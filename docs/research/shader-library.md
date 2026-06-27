@@ -92,7 +92,7 @@ The machine `decisionTree` in the index maps each `pairsPrototypes` slug → a d
 
 - **Dark tech / AI / crypto** (`recipe-ai-foundry-dark`, `aesthetic-cyberpunk`, `aesthetic-crypto-degen`, `recipe-devtools-marketing`, `aesthetic-depin-hardware`, `recipe-scientific-infra-marketing`, `aesthetic-blueprint-hologram`) → `neuro-noise` / `particle-web` / `magnetic-field` / `dither-waves`, finished with `godrays`.
 - **Cinematic / cosmic / deep** (`aesthetic-luxury-cinematic-dark`, `aesthetic-cosmic-horizon`, `aesthetic-bioluminescent-deep`) → `godrays` + `luminance-particles` + `water-caustics` over `neuro-noise`.
-- **Print / editorial / zine** (`recipe-editorial-magazine`, `recipe-readcv`, `aesthetic-anti-design`, `style-raster-cutout`) → `riso-print` / `fluid-halftone`, optionally `gradient-map`.
+- **Print / editorial / zine** (`recipe-editorial-magazine`, `aesthetic-anti-design`, `style-raster-cutout`) → `riso-print` / `fluid-halftone`, optionally `gradient-map`.
 - **Loud / acid / poster / op-art** (`aesthetic-acid-design`, `aesthetic-acid-graphics`, `aesthetic-y2k-memphis-loud`, `aesthetic-op-art`, `aesthetic-monochrome-pop-poster`, `aesthetic-neubrutalism`) → `color-outline` / `moire-interference` / `gradient-map` / `organic-distortion`.
 - **Aqua / soft / playful** (`aesthetic-frutiger-aero`, `aesthetic-positivity-kawaii`, `style-claymorphism`, `aesthetic-y2k-futurism`) → `metaball-merge` (+ `lens-distortion` for liquid glass).
 - **Optical / motion** (`style-bold-display`, `style-oversized-neo-grotesque`) → `particle-stretch` on type; `lens-distortion` as the universal top pass.

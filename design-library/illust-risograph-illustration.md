@@ -4,7 +4,7 @@ name: Risograph 2-color illustration
 category: Hand-drawn / sketch
 subCategory: gouache
 role: spot-illustration
-pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-anti-design, style-raster-cutout]
+pairsPrototypes: [recipe-editorial-magazine, aesthetic-anti-design, style-raster-cutout]
 notForUseWhen: enterprise polish, photoreal
 images:
   - src: illust-risograph-illustration.png
@@ -60,7 +60,6 @@ enterprise polish, photoreal
 ## Pairs with (prototype slugs)
 
 - `recipe-editorial-magazine`
-- `recipe-readcv`
 - `aesthetic-anti-design`
 - `style-raster-cutout`
 

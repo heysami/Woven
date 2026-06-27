@@ -5,7 +5,7 @@ family: digital
 category: organic-emissive
 surfaceFinish: glossy
 transparency: translucent
-pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-fairycore, aesthetic-defi-cosmic, shell-scroll-journey-scene]
+pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-defi-cosmic, shell-scroll-journey-scene]
 images:
   - src: material-bioluminescent-membrane.png
     reason: Material fidelity sample.
@@ -71,5 +71,4 @@ video: dark-water loop; organism pulse reads even in 10s loops
 ## Pairs with (prototype slugs)
 
 - `aesthetic-bioluminescent-deep`
-- `aesthetic-fairycore`
 - `shell-scroll-journey-scene`

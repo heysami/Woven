@@ -4,7 +4,7 @@ name: Outline wireframe illustration
 category: Flat vector
 subCategory: hairline
 role: spot-illustration
-pairsPrototypes: [style-outline-wireframe, style-restrained-hairline, recipe-restrained-ai-marketing, recipe-linear-product-ui]
+pairsPrototypes: [style-restrained-hairline, recipe-linear-product-ui]
 notForUseWhen: cottagecore, brutalism, kids
 images:
   - src: illust-outline-wireframe-illustration.png
@@ -51,9 +51,7 @@ cottagecore, brutalism, kids
 
 ## Pairs with (prototype slugs)
 
-- `style-outline-wireframe`
 - `style-restrained-hairline`
-- `recipe-restrained-ai-marketing`
 - `recipe-linear-product-ui`
 
 <!-- image: sample-1.png -->

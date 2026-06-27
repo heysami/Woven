@@ -5,7 +5,7 @@ family: hybrid
 category: paper
 surfaceFinish: matte
 transparency: translucent (washes)
-pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-fairycore]
+pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother]
 images:
   - src: material-paper-with-watercolor.png
     reason: Material fidelity sample.
@@ -61,7 +61,6 @@ raster: scanned watercolor on watercolor paper
 
 - `aesthetic-cottagecore`
 - `aesthetic-coastal-grandmother`
-- `aesthetic-fairycore`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this material -->

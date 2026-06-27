@@ -68,4 +68,4 @@ Bad for: anything requiring colour hierarchy, photographic content, accessible b
 ## Pairs well with
 
 - Shells: `shell-mobile-app` (the native frame - a 160×144 LCD is essentially a tiny phone), `shell-terminal-frame` (the letterboxed-LCD-on-black reads as a terminal cousin), `shell-centered-column` (single LCD centred in dark page)
-- Styles: `style-pixel-bitmap` (the canonical render), `style-terminal-mono` (when the brief leans dialog/menu over sprite)
+- Styles: `style-pixel-bitmap` (the canonical render)

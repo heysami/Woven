@@ -37,4 +37,4 @@ Magazine features, art-directed editorial, photo essays, fashion editorials.
 
 ## Pairs well with
 
-Style: serif-warm-paper, agate-broadsheet, oversized-neo-grotesque, bold-display. Aesthetic: any (each spread can lean into a different cultural reference).
+Style: serif-warm-paper, oversized-neo-grotesque, bold-display. Aesthetic: any (each spread can lean into a different cultural reference).

@@ -63,4 +63,4 @@ Sepia and "retro warm filter" are the cardinal sins - this aesthetic is *cool* a
 ## Pairs well with
 
 - Shells: shell-mobile-app, shell-two-column-app, shell-three-column-app, shell-top-bar-canvas, shell-hero-stack, shell-canvas-floating
-- Styles: style-pixel-bitmap, style-terminal-mono (for HUD overlays), style-flat-design (sparingly, for menu chrome)
+- Styles: style-pixel-bitmap, style-flat-design (sparingly, for menu chrome)

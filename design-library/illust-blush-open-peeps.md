@@ -4,7 +4,7 @@ name: Open Peeps
 category: Hand-drawn / sketch
 subCategory: ink-line-brush
 role: subject
-pairsPrototypes: [style-doodle, recipe-readcv, recipe-editorial-magazine, aesthetic-cottagecore]
+pairsPrototypes: [style-doodle, recipe-editorial-magazine, aesthetic-cottagecore]
 notForUseWhen: cinematic 3D contexts, brutalism, dense data UI
 images:
   - src: illust-blush-open-peeps.png
@@ -62,7 +62,6 @@ cinematic 3D contexts, brutalism, dense data UI
 ## Pairs with (prototype slugs)
 
 - `style-doodle`
-- `recipe-readcv`
 - `recipe-editorial-magazine`
 - `aesthetic-cottagecore`
 

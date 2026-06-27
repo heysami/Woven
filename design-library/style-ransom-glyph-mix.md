@@ -81,5 +81,5 @@ collision, or curation of many voices.
 ## Pairs well with
 
 - Shells: `shell-centered-column`, `shell-editorial-broken-grid`, `shell-scroll-journey-scene`
-- Styles: `style-restrained-hairline` (the mandatory quiet chassis), `style-pixel-dissolve` (imagery treatment)
+- Styles: `style-restrained-hairline` (the mandatory quiet chassis)
 - Aesthetics: `aesthetic-monochrome-tech-editorial`, `aesthetic-zine-type-wall`, `aesthetic-japanese-poster-layout`

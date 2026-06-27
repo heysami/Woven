@@ -3,7 +3,7 @@ styleId: cos-lookbook
 name: COS lookbook clean editorial
 category: lookbook
 era: current
-pairsPrototypes: [recipe-editorial-magazine, recipe-restrained-ai-marketing, style-restrained-hairline, style-oversized-neo-grotesque]
+pairsPrototypes: [recipe-editorial-magazine, style-restrained-hairline, style-oversized-neo-grotesque]
 notForUseWhen: Loud or kinetic brand, fast e-comm with high SKU count.
 images:
   - src: photo-cos-lookbook.png
@@ -61,7 +61,6 @@ Loud or kinetic brand, fast e-comm with high SKU count.
 ## Pairs with (prototype slugs)
 
 - `recipe-editorial-magazine`
-- `recipe-restrained-ai-marketing`
 - `style-restrained-hairline`
 - `style-oversized-neo-grotesque`
 

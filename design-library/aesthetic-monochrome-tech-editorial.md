@@ -51,6 +51,6 @@ Aerospace/defense/robotics companies, industrial heritage brands, automotive and
 ## Pairs well with
 
 - **Shells:** `shell-editorial-broken-grid` (canonical), `shell-hero-stack`, `shell-horizontal-scroll-stage` (chapter dossiers).
-- **Styles:** `style-oversized-neo-grotesque`, `style-bold-display`, mono chips from `style-terminal-mono`, `style-kinetic-line-accents` (red rules variant).
+- **Styles:** `style-oversized-neo-grotesque`, `style-bold-display`
 - **Aesthetic kin:** `aesthetic-swiss-modernist` (typographic cousin), `aesthetic-cassette-futurism` (when the hardware goes retro-beige).
 - **Photo:** `magnum-monochrome`, `salgado-contrast`, plus new `orbital-space` / `motorsport-dramatic` in b/w grade.

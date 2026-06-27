@@ -149,10 +149,6 @@
         "vaporwave-still-life"
       ]
     },
-    "style-terminal-mono": {
-      "default": "ascii-art-portrait",
-      "alternatives": []
-    },
     "aesthetic-web-brutalism": {
       "default": "ascii-art-portrait",
       "alternatives": [
@@ -219,17 +215,6 @@
       "default": "blade-runner-2049-monochrome-sections",
       "alternatives": [
         "face-id-dot-projector"
-      ]
-    },
-    "recipe-restrained-ai-marketing": {
-      "default": "cereal-lifestyle",
-      "alternatives": [
-        "clean-tech-lifestyle",
-        "cos-lookbook",
-        "her-warm-pastel-future",
-        "high-key-beauty",
-        "tillmans-candid",
-        "warm-minimal-daylight"
       ]
     },
     "aesthetic-y2k-futurism": {
@@ -349,13 +334,6 @@
         "magic-glow"
       ]
     },
-    "aesthetic-fairycore": {
-      "default": "dreamy-haze",
-      "alternatives": [
-        "fantasy-glow",
-        "magic-glow"
-      ]
-    },
     "aesthetic-positivity-kawaii": {
       "default": "dreamy-haze",
       "alternatives": [
@@ -398,10 +376,6 @@
         "y2k-flash-glam",
         "y2k-halftone"
       ]
-    },
-    "aesthetic-vector-hands-up": {
-      "default": "eighties-cocaine-glam",
-      "alternatives": []
     },
     "shell-scroll-journey-scene": {
       "default": "elemental-ocean",
@@ -504,24 +478,9 @@
         "weingart-staged"
       ]
     },
-    "recipe-readcv": {
-      "default": "lifestyle-gathering",
-      "alternatives": [
-        "polaroid-scatter",
-        "shore-color",
-        "tillmans-candid"
-      ]
-    },
     "style-claymorphism": {
       "default": "magic-glow",
       "alternatives": []
-    },
-    "style-agate-broadsheet": {
-      "default": "magnum-monochrome",
-      "alternatives": [
-        "salgado-contrast",
-        "vivian-maier-square"
-      ]
     },
     "aesthetic-monochrome-tech-editorial": {
       "default": "motorsport-dramatic",
@@ -645,7 +604,6 @@
       "pairsPrototypes": [
         "recipe-terminal-on-web",
         "aesthetic-cassette-futurism",
-        "style-terminal-mono",
         "aesthetic-web-brutalism",
         "aesthetic-pixel-game-boy-mono",
         "recipe-devtools-marketing"
@@ -723,7 +681,6 @@
       "notForUseWhen": "Tech B2B, fast-paced consumer, anything kinetic.",
       "pairsPrototypes": [
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
         "style-restrained-hairline",
         "style-cream-humanist"
       ],
@@ -796,7 +753,6 @@
       "notForUseWhen": "Editorial mood, fast fashion, anything kinetic.",
       "pairsPrototypes": [
         "recipe-devtools-marketing",
-        "recipe-restrained-ai-marketing",
         "recipe-bento-marketing",
         "recipe-linear-product-ui"
       ],
@@ -814,7 +770,6 @@
       "notForUseWhen": "Loud or kinetic brand, fast e-comm with high SKU count.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "recipe-restrained-ai-marketing",
         "style-restrained-hairline",
         "style-oversized-neo-grotesque"
       ],
@@ -870,7 +825,6 @@
       "pairsPrototypes": [
         "aesthetic-dreamcore",
         "aesthetic-angelcore",
-        "aesthetic-fairycore",
         "aesthetic-positivity-kawaii"
       ],
       "sourceFile": "design-library/photo-dreamy-haze.md"
@@ -908,8 +862,7 @@
       "pairsPrototypes": [
         "aesthetic-urbling",
         "aesthetic-y2k-memphis-loud",
-        "recipe-editorial-magazine",
-        "aesthetic-vector-hands-up"
+        "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/photo-eighties-cocaine-glam.md"
     },
@@ -998,7 +951,6 @@
       "oneLine": "Volumetric god-rays cutting through atmosphere.",
       "notForUseWhen": "B2B, modern minimal, tech product.",
       "pairsPrototypes": [
-        "aesthetic-fairycore",
         "aesthetic-cottagegoth",
         "aesthetic-cottagecore",
         "aesthetic-solarpunk"
@@ -1166,7 +1118,6 @@
       "notForUseWhen": "cyberpunk, dystopian, dark-mode-only, brutalism",
       "pairsPrototypes": [
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
         "aesthetic-cottagecore",
         "style-cream-humanist",
         "recipe-bento-marketing"
@@ -1186,8 +1137,7 @@
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "style-glassmorphism",
-        "style-liquid-glass",
-        "recipe-restrained-ai-marketing"
+        "style-liquid-glass"
       ],
       "sourceFile": "design-library/photo-high-key-beauty.md"
     },
@@ -1242,7 +1192,6 @@
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "recipe-warm-restraint",
-        "recipe-readcv",
         "aesthetic-coastal-grandmother"
       ],
       "sourceFile": "design-library/photo-lifestyle-gathering.md"
@@ -1259,7 +1208,6 @@
       "notForUseWhen": "Documentary, gritty, B2B, hardware.",
       "pairsPrototypes": [
         "aesthetic-angelcore",
-        "aesthetic-fairycore",
         "style-holographic",
         "style-claymorphism"
       ],
@@ -1278,7 +1226,6 @@
       "notForUseWhen": "Product e-comm, anything aspirational-consumer.",
       "pairsPrototypes": [
         "recipe-newspaper-of-record",
-        "style-agate-broadsheet",
         "style-serif-warm-paper",
         "recipe-editorial-magazine"
       ],
@@ -1408,8 +1355,7 @@
       "pairsPrototypes": [
         "shell-scrapbook-substrate",
         "aesthetic-y2k-myspace",
-        "aesthetic-cottagecore",
-        "recipe-readcv"
+        "aesthetic-cottagecore"
       ],
       "sourceFile": "design-library/photo-polaroid-scatter.md"
     },
@@ -1445,7 +1391,6 @@
       "notForUseWhen": "Fashion, consumer product, anything cheerful.",
       "pairsPrototypes": [
         "recipe-newspaper-of-record",
-        "style-agate-broadsheet",
         "recipe-editorial-magazine",
         "style-serif-warm-paper"
       ],
@@ -1481,7 +1426,6 @@
       "notForUseWhen": "Conversion product, fashion, anything fast.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "recipe-readcv",
         "style-serif-warm-paper",
         "recipe-warm-restraint"
       ],
@@ -1555,9 +1499,7 @@
       "notForUseWhen": "Luxury, glamour, conversion-focused product pages, B2B.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "recipe-readcv",
-        "aesthetic-cottagecore",
-        "recipe-restrained-ai-marketing"
+        "aesthetic-cottagecore"
       ],
       "sourceFile": "design-library/photo-tillmans-candid.md"
     },
@@ -1592,7 +1534,6 @@
       "pairsPrototypes": [
         "recipe-newspaper-of-record",
         "style-serif-warm-paper",
-        "style-agate-broadsheet",
         "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/photo-vivian-maier-square.md"
@@ -1610,7 +1551,6 @@
       "notForUseWhen": "Tech fast-paced, edgy fashion, fast e-comm, loud kinetic brand",
       "pairsPrototypes": [
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
         "style-cream-humanist",
         "style-restrained-hairline",
         "aesthetic-cottagecore",

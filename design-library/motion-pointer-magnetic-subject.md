@@ -6,7 +6,7 @@ subCategory: raster-sequence
 role: hero
 binding: pointer-xy
 medium: raster-sequence
-pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-glassmorphism, aesthetic-cottagecore, aesthetic-fairycore]
+pairsPrototypes: [recipe-warm-restraint, style-glassmorphism, aesthetic-cottagecore]
 notForUseWhen: The brief wants overt acknowledgement (use mouse-scrub-look - this technique is deliberately subliminal), the subject is rigid with no plausible sway (architecture, typography), or the frames cannot be generated with consistent identity across the sequence.
 images:
   - src: motion-pointer-magnetic-subject-ui.png
@@ -92,10 +92,8 @@ addEventListener('pointermove', e => {
 ## Pairs with (prototype slugs)
 
 - `recipe-warm-restraint`
-- `recipe-restrained-ai-marketing`
 - `style-glassmorphism`
 - `aesthetic-cottagecore`
-- `aesthetic-fairycore`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference - subject mid-lean toward the cursor side, headline static in the opposite quiet zone -->

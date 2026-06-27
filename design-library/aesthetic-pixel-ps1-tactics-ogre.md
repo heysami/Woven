@@ -63,4 +63,4 @@ Tactical and strategy dashboards, lore-heavy character sheets, party / inventory
 ## Pairs well with
 
 - **Shells:** `shell-three-column-app` (party / map / detail), `shell-two-column-app` (codex), `shell-top-bar-canvas` (battle map + status footer), `shell-bento-grid` (character sheet panels), `shell-centered-column` (chapter-card narrative)
-- **Styles:** `style-pixel-bitmap` (the rendering substrate - `image-rendering: pixelated`, hard 1px shadows, no border-radius), `style-serif-warm-paper` (the parchment / Roman-serif chrome layer), `style-terminal-mono` (only as a contrasting in-world diegetic surface, sparingly)
+- **Styles:** `style-pixel-bitmap` (the rendering substrate - `image-rendering: pixelated`, hard 1px shadows, no border-radius), `style-serif-warm-paper` (the parchment / Roman-serif chrome layer)

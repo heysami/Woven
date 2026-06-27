@@ -4,7 +4,7 @@ name: Pixar Soul Great-Before pastel-abstract
 category: 3D
 subCategory: render-cinematic
 role: subject
-pairsPrototypes: [recipe-warm-restraint, style-aurorism, recipe-restrained-ai-marketing, style-claymorphism, aesthetic-coastal-grandmother]
+pairsPrototypes: [recipe-warm-restraint, style-aurorism, style-claymorphism, aesthetic-coastal-grandmother]
 notForUseWhen: brutalism, cyberpunk, gritty-documentary, kinetic-tech, dark themes
 images:
   - src: illust-pixar-soul-great-before-pastel.png
@@ -80,7 +80,6 @@ brutalism, cyberpunk, gritty-documentary, kinetic-tech, dark themes, anything wa
 
 - `recipe-warm-restraint`
 - `style-aurorism`
-- `recipe-restrained-ai-marketing`
 - `style-claymorphism`
 - `aesthetic-coastal-grandmother`
 

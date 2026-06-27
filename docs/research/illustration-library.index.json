@@ -273,22 +273,6 @@
         "typo-house-industries-revival"
       ]
     },
-    "recipe-restrained-ai-marketing": {
-      "default": "3d-premium-product-hero",
-      "alternatives": [
-        "aurorism-mesh-gradient",
-        "blush-cityscapes",
-        "blush-humaaans",
-        "blush-yuppies",
-        "corporate-memphis-noodle",
-        "drawkit-bubbly-tech-ui",
-        "drawkit-hands-3d",
-        "drawkit-jelly-3d",
-        "nature-meets-ui",
-        "outline-wireframe-illustration",
-        "pixar-soul-great-before-pastel"
-      ]
-    },
     "recipe-scientific-infra-marketing": {
       "default": "3d-premium-product-hero",
       "alternatives": [
@@ -497,19 +481,6 @@
         "particle-figure"
       ]
     },
-    "aesthetic-fairycore": {
-      "default": "bioluminescent-creature",
-      "alternatives": [
-        "enchanted-forest-glow",
-        "fluffy-plush-3d",
-        "ghibli-watercolor-bg",
-        "hilma-af-klint-symbolist",
-        "mary-blair-stylized",
-        "painterly-mythic-creature",
-        "pixar-coco-folk-vibrant",
-        "typo-art-nouveau-ornament"
-      ]
-    },
     "aesthetic-corporate-memphis": {
       "default": "blush-cityscapes",
       "alternatives": [
@@ -600,22 +571,6 @@
         "saul-bass-cutout"
       ]
     },
-    "recipe-readcv": {
-      "default": "blush-little-things",
-      "alternatives": [
-        "blush-open-peeps",
-        "doodle-ui-handdrawn",
-        "hand-drawn-pencil-sketch",
-        "handyarrows-illustration",
-        "humanities-marginalia",
-        "jean-jullien-thick-line",
-        "lofi-contemplative",
-        "risograph-illustration",
-        "shapes-gallery-michalczyk",
-        "stylized-3d-avatar",
-        "typo-hand-lettered-editorial"
-      ]
-    },
     "style-doodle": {
       "default": "blush-open-peeps",
       "alternatives": [
@@ -683,10 +638,6 @@
         "noir-comic-ink"
       ]
     },
-    "style-agate-broadsheet": {
-      "default": "editorial-thick-brush",
-      "alternatives": []
-    },
     "style-raster-cutout": {
       "default": "eric-carle-tissue-collage",
       "alternatives": [
@@ -742,10 +693,6 @@
     },
     "shell-horizontal-scroll-stage": {
       "default": "noir-comic-ink",
-      "alternatives": []
-    },
-    "style-outline-wireframe": {
-      "default": "outline-wireframe-illustration",
       "alternatives": []
     },
     "shell-infinite-canvas": {
@@ -1014,7 +961,6 @@
       "oneLine": "Apple-product-marketing-grade premium device hero render - the **Apple Vision Pro / Apple Watch Ultra / Ledger Stax / Framework laptop** treatment. Sleek minimal device on a plain backdrop (gradient or pure white/black) with dramatic single key-light, accurate hi-fidelity material rendering (brushed aluminum + curved glass + leather strap + e-ink screen + chamfered edges), studio product-photography vibe. Distinct from `illust-3d-tron-emissive-glow` (which adds glow accents) - this entry is WITHOUT glow; **premium materials + dramatic lighting** do the work. The \"luxury device speaks for itself\" register.",
       "notForUseWhen": "cottagecore, brutalism, kids brands, hand-made craft",
       "pairsPrototypes": [
-        "recipe-restrained-ai-marketing",
         "recipe-scientific-infra-marketing",
         "recipe-bento-marketing",
         "recipe-ios-system",
@@ -1136,7 +1082,6 @@
         "style-aurorism",
         "recipe-aurora-marketing",
         "recipe-ai-foundry-dark",
-        "recipe-restrained-ai-marketing",
         "style-holographic",
         "style-liquid-glass"
       ],
@@ -1190,8 +1135,7 @@
       "notForUseWhen": "Brief is warm-domestic, budget, or daylight - the creature lives in expensive darkness.",
       "pairsPrototypes": [
         "aesthetic-bioluminescent-deep",
-        "aesthetic-defi-cosmic",
-        "aesthetic-fairycore"
+        "aesthetic-defi-cosmic"
       ],
       "sourceFile": "design-library/illust-bioluminescent-creature.md"
     },
@@ -1207,7 +1151,6 @@
       "notForUseWhen": "brutalism, editorial",
       "pairsPrototypes": [
         "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing",
         "aesthetic-corporate-memphis"
       ],
       "sourceFile": "design-library/illust-blush-cityscapes.md"
@@ -1380,7 +1323,6 @@
       "notForUseWhen": "editorial, brutalism, anything emotive",
       "pairsPrototypes": [
         "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing",
         "aesthetic-corporate-memphis",
         "recipe-linear-product-ui"
       ],
@@ -1432,8 +1374,7 @@
       "notForUseWhen": "B2B technical",
       "pairsPrototypes": [
         "recipe-warm-restraint",
-        "aesthetic-cottagecore",
-        "recipe-readcv"
+        "aesthetic-cottagecore"
       ],
       "sourceFile": "design-library/illust-blush-little-things.md"
     },
@@ -1466,7 +1407,6 @@
       "notForUseWhen": "cinematic 3D contexts, brutalism, dense data UI",
       "pairsPrototypes": [
         "style-doodle",
-        "recipe-readcv",
         "recipe-editorial-magazine",
         "aesthetic-cottagecore"
       ],
@@ -1622,8 +1562,7 @@
       "notForUseWhen": "editorial, brutalism, youth-music",
       "pairsPrototypes": [
         "recipe-linear-product-ui",
-        "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing"
+        "recipe-bento-marketing"
       ],
       "sourceFile": "design-library/illust-blush-yuppies.md"
     },
@@ -1727,8 +1666,7 @@
       "notForUseWhen": "indie / editorial / brutalism - anywhere personality matters",
       "pairsPrototypes": [
         "aesthetic-corporate-memphis",
-        "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing"
+        "recipe-bento-marketing"
       ],
       "sourceFile": "design-library/illust-corporate-memphis-noodle.md"
     },
@@ -1761,8 +1699,7 @@
       "notForUseWhen": "photoreal, enterprise polish",
       "pairsPrototypes": [
         "style-doodle",
-        "recipe-devtools-marketing",
-        "recipe-readcv"
+        "recipe-devtools-marketing"
       ],
       "sourceFile": "design-library/illust-doodle-ui-handdrawn.md"
     },
@@ -1779,7 +1716,6 @@
       "pairsPrototypes": [
         "style-claymorphism",
         "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing",
         "style-neumorphism"
       ],
       "sourceFile": "design-library/illust-drawkit-bubbly-tech-ui.md"
@@ -1795,7 +1731,6 @@
       "oneLine": "anatomically simplified but realistically lit hand renders.",
       "notForUseWhen": "cartoon contexts, brutalism, dense data UI",
       "pairsPrototypes": [
-        "recipe-restrained-ai-marketing",
         "style-liquid-glass",
         "style-sf-pro-ios",
         "recipe-ios-system"
@@ -1832,7 +1767,6 @@
       "pairsPrototypes": [
         "style-claymorphism",
         "aesthetic-positivity-kawaii",
-        "recipe-restrained-ai-marketing",
         "style-skeuomorphism"
       ],
       "sourceFile": "design-library/illust-drawkit-jelly-3d.md"
@@ -1885,8 +1819,7 @@
       "notForUseWhen": "marketing, friendly, decorative",
       "pairsPrototypes": [
         "recipe-newspaper-of-record",
-        "recipe-editorial-magazine",
-        "style-agate-broadsheet"
+        "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-editorial-thick-brush.md"
     },
@@ -1901,7 +1834,6 @@
       "oneLine": "Twilight woodland lit from within - lanterns, fireflies, glowing flora - deep teal darkness held back by pools of warm magical light.",
       "notForUseWhen": "Brief is rational, corporate, or daylight-honest - the register is twilight wonder.",
       "pairsPrototypes": [
-        "aesthetic-fairycore",
         "aesthetic-bioluminescent-deep",
         "aesthetic-cottagegoth",
         "shell-scroll-journey-scene"
@@ -1938,8 +1870,7 @@
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
         "aesthetic-curly-girly",
-        "style-claymorphism",
-        "aesthetic-fairycore"
+        "style-claymorphism"
       ],
       "sourceFile": "design-library/illust-fluffy-plush-3d.md"
     },
@@ -1974,8 +1905,7 @@
         "aesthetic-cottagecore",
         "aesthetic-solarpunk",
         "aesthetic-coastal-grandmother",
-        "recipe-warm-restraint",
-        "aesthetic-fairycore"
+        "recipe-warm-restraint"
       ],
       "sourceFile": "design-library/illust-ghibli-watercolor-bg.md"
     },
@@ -2026,7 +1956,6 @@
       "notForUseWhen": "tech, brutalism, polished",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "recipe-readcv",
         "aesthetic-dark-academia",
         "recipe-warm-restraint"
       ],
@@ -2048,7 +1977,6 @@
         "aesthetic-positivity-kawaii",
         "aesthetic-curly-girly",
         "recipe-bento-marketing",
-        "recipe-readcv",
         "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-handyarrows-illustration.md"
@@ -2066,7 +1994,6 @@
       "pairsPrototypes": [
         "aesthetic-angelcore",
         "aesthetic-dreamcore",
-        "aesthetic-fairycore",
         "style-aurorism"
       ],
       "sourceFile": "design-library/illust-hilma-af-klint-symbolist.md"
@@ -2085,7 +2012,6 @@
         "aesthetic-dark-academia",
         "recipe-editorial-magazine",
         "recipe-newspaper-of-record",
-        "recipe-readcv",
         "style-serif-warm-paper"
       ],
       "sourceFile": "design-library/illust-humanities-marginalia.md"
@@ -2138,8 +2064,7 @@
       "notForUseWhen": "enterprise, photoreal",
       "pairsPrototypes": [
         "style-doodle",
-        "recipe-editorial-magazine",
-        "recipe-readcv"
+        "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-jean-jullien-thick-line.md"
     },
@@ -2207,7 +2132,6 @@
       "pairsPrototypes": [
         "aesthetic-pastoral-serene",
         "aesthetic-dreamcore",
-        "recipe-readcv",
         "aesthetic-dark-academia"
       ],
       "sourceFile": "design-library/illust-lofi-contemplative.md"
@@ -2241,8 +2165,7 @@
       "notForUseWhen": "B2B, brutalism, tech",
       "pairsPrototypes": [
         "aesthetic-positivity-kawaii",
-        "recipe-editorial-magazine",
-        "aesthetic-fairycore"
+        "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-mary-blair-stylized.md"
     },
@@ -2294,8 +2217,7 @@
       "pairsPrototypes": [
         "aesthetic-organic-overgrowth",
         "aesthetic-pastoral-serene",
-        "aesthetic-solarpunk",
-        "recipe-restrained-ai-marketing"
+        "aesthetic-solarpunk"
       ],
       "sourceFile": "design-library/illust-nature-meets-ui.md"
     },
@@ -2347,9 +2269,7 @@
       "oneLine": "1-2px line, no fill.",
       "notForUseWhen": "cottagecore, brutalism, kids",
       "pairsPrototypes": [
-        "style-outline-wireframe",
         "style-restrained-hairline",
-        "recipe-restrained-ai-marketing",
         "recipe-linear-product-ui"
       ],
       "sourceFile": "design-library/illust-outline-wireframe-illustration.md"
@@ -2386,8 +2306,7 @@
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "aesthetic-dark-academia",
-        "recipe-warm-restraint",
-        "aesthetic-fairycore"
+        "recipe-warm-restraint"
       ],
       "sourceFile": "design-library/illust-painterly-mythic-creature.md"
     },
@@ -2442,8 +2361,7 @@
         "aesthetic-cluttercore",
         "aesthetic-maximalism",
         "aesthetic-positivity-kawaii",
-        "recipe-editorial-magazine",
-        "aesthetic-fairycore"
+        "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-pixar-coco-folk-vibrant.md"
     },
@@ -2498,7 +2416,6 @@
       "pairsPrototypes": [
         "recipe-warm-restraint",
         "style-aurorism",
-        "recipe-restrained-ai-marketing",
         "style-claymorphism",
         "aesthetic-coastal-grandmother"
       ],
@@ -2590,7 +2507,6 @@
       "notForUseWhen": "enterprise polish, photoreal",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
-        "recipe-readcv",
         "aesthetic-anti-design",
         "style-raster-cutout"
       ],
@@ -2662,7 +2578,6 @@
       "notForUseWhen": "dense data UI, brutalism",
       "pairsPrototypes": [
         "recipe-neo-grotesque-portfolio",
-        "recipe-readcv",
         "style-bold-display",
         "recipe-bento-marketing"
       ],
@@ -2819,7 +2734,6 @@
       "oneLine": "A Pixar-grade stylized 3D character portrait of a REAL person - the designer/founder as their own hero asset.",
       "notForUseWhen": "Brief is corporate-formal, luxury, or anonymous-brand - a personal avatar centers an individual.",
       "pairsPrototypes": [
-        "recipe-readcv",
         "recipe-neo-grotesque-portfolio",
         "aesthetic-positivity-kawaii",
         "recipe-devtools-marketing"
@@ -2857,8 +2771,7 @@
       "pairsPrototypes": [
         "recipe-warm-restraint",
         "aesthetic-dark-academia",
-        "aesthetic-cottagecore",
-        "aesthetic-fairycore"
+        "aesthetic-cottagecore"
       ],
       "sourceFile": "design-library/illust-typo-art-nouveau-ornament.md"
     },
@@ -2945,8 +2858,7 @@
       "pairsPrototypes": [
         "recipe-editorial-magazine",
         "recipe-warm-restraint",
-        "style-serif-warm-paper",
-        "recipe-readcv"
+        "style-serif-warm-paper"
       ],
       "sourceFile": "design-library/illust-typo-hand-lettered-editorial.md"
     },

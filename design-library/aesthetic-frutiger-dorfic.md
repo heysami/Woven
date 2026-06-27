@@ -124,4 +124,4 @@ Other tells of cheap imitation:
 ## Pairs well with
 
 - **Shells:** `shell-top-bar-canvas`, `shell-canvas-floating`, `shell-three-column-app`, `shell-hero-stack`, `shell-bento-grid`, `shell-terminal-frame`
-- **Styles:** `style-oversized-neo-grotesque`, `style-dense-mono-dark`, `style-restrained-hairline`, `style-flat-design`, `style-terminal-mono`
+- **Styles:** `style-oversized-neo-grotesque`, `style-dense-mono-dark`, `style-restrained-hairline`, `style-flat-design`

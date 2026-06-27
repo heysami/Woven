@@ -68,4 +68,4 @@ Indie game landing pages, retro game stores, game-jam submission sites, pixel-ar
 ## Pairs well with
 
 - **Shells:** `shell-mobile-app` (phone-as-console), `shell-centered-column` (dialog-box stack), `shell-bento-grid` (inventory grid), `shell-hero-stack` (title screen + feature panels), `shell-terminal-frame` (BBS / save-room framing)
-- **Styles:** `style-pixel-bitmap` (the canonical pairing), `style-terminal-mono` (for dense readouts), `style-flat-design` (only when palette and grid stay strict), `style-outline-wireframe` (low-fi development sketch mode)
+- **Styles:** `style-pixel-bitmap` (the canonical pairing), `style-flat-design` (only when palette and grid stay strict)

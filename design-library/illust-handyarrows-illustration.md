@@ -4,7 +4,7 @@ name: HandyArrows - Single-hand illustration pack (Eren Can Arica)
 category: Hand-drawn / sketch
 subCategory: ink-line-brush
 role: decoration
-pairsPrototypes: [style-doodle, aesthetic-corporate-memphis, aesthetic-positivity-kawaii, aesthetic-curly-girly, recipe-bento-marketing, recipe-readcv, recipe-editorial-magazine]
+pairsPrototypes: [style-doodle, aesthetic-corporate-memphis, aesthetic-positivity-kawaii, aesthetic-curly-girly, recipe-bento-marketing, recipe-editorial-magazine]
 notForUseWhen: dense data UI, brutalism, corporate Fortune-500
 images:
   - src: illust-handyarrows-illustration.png
@@ -70,7 +70,6 @@ dense data UI, brutalism, corporate Fortune-500, minimalist restrained briefs
 - `aesthetic-positivity-kawaii`
 - `aesthetic-curly-girly`
 - `recipe-bento-marketing`
-- `recipe-readcv`
 - `recipe-editorial-magazine`
 
 <!-- image: sample-1.png -->

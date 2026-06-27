@@ -4,7 +4,7 @@ name: Yuppies
 category: Flat vector
 subCategory: corporate-memphis
 role: subject
-pairsPrototypes: [recipe-linear-product-ui, recipe-bento-marketing, recipe-restrained-ai-marketing]
+pairsPrototypes: [recipe-linear-product-ui, recipe-bento-marketing]
 notForUseWhen: editorial, brutalism, youth-music
 images:
   - src: illust-blush-yuppies.png
@@ -59,7 +59,6 @@ editorial, brutalism, youth-music
 
 - `recipe-linear-product-ui`
 - `recipe-bento-marketing`
-- `recipe-restrained-ai-marketing`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

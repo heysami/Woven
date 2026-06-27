@@ -4,7 +4,7 @@ name: Stylized 3D self-avatar
 category: 3D
 subCategory: character-avatar
 role: mascot
-pairsPrototypes: [recipe-readcv, recipe-neo-grotesque-portfolio, aesthetic-positivity-kawaii, recipe-devtools-marketing]
+pairsPrototypes: [recipe-neo-grotesque-portfolio, aesthetic-positivity-kawaii, recipe-devtools-marketing]
 notForUseWhen: Brief is corporate-formal, luxury, or anonymous-brand - a personal avatar centers an individual.
 images:
   - src: illust-stylized-3d-avatar.png
@@ -57,6 +57,5 @@ Corporate-formal brands, luxury registers, products deliberately avoiding indivi
 
 ## Pairs with (prototype slugs)
 
-- `recipe-readcv`
 - `recipe-neo-grotesque-portfolio`
 - `recipe-devtools-marketing`

@@ -60,4 +60,4 @@ Nostalgia games and retro-jams, 80s / early-90s pop-culture brands, score-driven
 ## Pairs well with
 
 - Shells: `shell-mobile-app` (NES screen proportions translate cleanly), `shell-bento-grid` (HUD-block reading), `shell-hero-stack` (title-screen cadence), `shell-terminal-frame` (CRT framing), `shell-centered-column` (single-stage focus)
-- Styles: `style-pixel-bitmap` (the canonical pairing - bitmap raster, integer scaling, stepped motion), `style-terminal-mono` (HUD-strip discipline if you want type without sprite raster)
+- Styles: `style-pixel-bitmap` (the canonical pairing - bitmap raster, integer scaling, stepped motion)

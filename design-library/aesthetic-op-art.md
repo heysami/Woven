@@ -66,4 +66,4 @@ Bad for: warm consumer products, anything that needs to feel cozy or human, dash
 ## Pairs well with
 
 - Shells: `shell-editorial-broken-grid`, `shell-centered-column`, `shell-hero-stack`, `shell-bento-grid`, `shell-masonry`, `shell-canvas-floating`
-- Styles: `style-oversized-neo-grotesque`, `style-restrained-hairline`, `style-brutalist-raw`, `style-terminal-mono`
+- Styles: `style-oversized-neo-grotesque`, `style-restrained-hairline`, `style-brutalist-raw`

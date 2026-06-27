@@ -73,4 +73,4 @@ Every word glowing instead of one focal phrase. Magenta AND cyan at full chroma 
 ## Pairs well with
 
 - **Shells:** shell-three-column-app, shell-top-bar-canvas, shell-terminal-frame, shell-canvas-floating, shell-two-column-app, shell-bento-grid
-- **Styles:** style-dense-mono-dark, style-terminal-mono, style-oversized-neo-grotesque, style-flat-design (dark variant), style-holographic (for the synthwave-leaning end)
+- **Styles:** style-dense-mono-dark, style-oversized-neo-grotesque, style-flat-design (dark variant), style-holographic (for the synthwave-leaning end)

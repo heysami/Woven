@@ -3,7 +3,7 @@ styleId: magic-glow
 name: Magic glow product or beauty
 category: beauty
 era: current
-pairsPrototypes: [aesthetic-angelcore, aesthetic-fairycore, style-holographic, style-claymorphism]
+pairsPrototypes: [aesthetic-angelcore, style-holographic, style-claymorphism]
 notForUseWhen: Documentary, gritty, B2B, hardware.
 images:
   - src: photo-magic-glow.png
@@ -61,7 +61,6 @@ Documentary, gritty, B2B, hardware.
 ## Pairs with (prototype slugs)
 
 - `aesthetic-angelcore`
-- `aesthetic-fairycore`
 - `style-holographic`
 - `style-claymorphism`
 

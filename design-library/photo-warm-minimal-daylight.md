@@ -3,7 +3,7 @@ styleId: warm-minimal-daylight
 name: Warm-minimal daylight (Kinfolk / quiet lookbook)
 category: lifestyle
 era: 2011-current
-pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-cream-humanist, style-restrained-hairline, aesthetic-cottagecore, aesthetic-coastal-grandmother]
+pairsPrototypes: [recipe-warm-restraint, style-cream-humanist, style-restrained-hairline, aesthetic-cottagecore, aesthetic-coastal-grandmother]
 notForUseWhen: Tech fast-paced, edgy fashion, fast e-comm, loud kinetic brand
 images:
   - src: photo-warm-minimal-daylight.png
@@ -71,7 +71,6 @@ Tech, fast e-comm, B2B, edgy fashion, loud kinetic brand
 ## Pairs with (prototype slugs)
 
 - `recipe-warm-restraint`
-- `recipe-restrained-ai-marketing`
 - `style-cream-humanist`
 - `style-restrained-hairline`
 - `aesthetic-cottagecore`

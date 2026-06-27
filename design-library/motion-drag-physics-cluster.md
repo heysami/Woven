@@ -6,7 +6,7 @@ subCategory: webgl-physics
 role: hero
 binding: pointer-drag
 medium: webgl (three.js + rapier/cannon-es) or 2D fallback (matter.js)
-pairsPrototypes: [recipe-restrained-ai-marketing, style-glassmorphism, recipe-bento-marketing, aesthetic-frutiger-aero, recipe-devtools-marketing]
+pairsPrototypes: [style-glassmorphism, recipe-bento-marketing, aesthetic-frutiger-aero, recipe-devtools-marketing]
 notForUseWhen: The hero must communicate a SPECIFIC product image (the toy abstracts it away), touch-scroll-critical mobile heroes (drag fights scroll), or pages with another physics/simulation surface already running.
 images:
   - src: motion-drag-physics-cluster-ui.png
@@ -113,7 +113,6 @@ if (held) {
 
 ## Pairs with (prototype slugs)
 
-- `recipe-restrained-ai-marketing`
 - `style-glassmorphism`
 - `recipe-bento-marketing`
 - `aesthetic-frutiger-aero`

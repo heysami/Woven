@@ -3,7 +3,7 @@ styleId: eighties-cocaine-glam
 name: 1980s cocaine-glam editorial
 category: glamour
 era: 1980s
-pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vector-hands-up]
+pairsPrototypes: [aesthetic-urbling, aesthetic-y2k-memphis-loud, recipe-editorial-magazine]
 notForUseWhen: Restrained luxury, minimal, anything wellness.
 images:
   - src: photo-eighties-cocaine-glam.png
@@ -63,7 +63,6 @@ Restrained luxury, minimal, anything wellness.
 - `aesthetic-urbling`
 - `aesthetic-y2k-memphis-loud`
 - `recipe-editorial-magazine`
-- `aesthetic-vector-hands-up`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

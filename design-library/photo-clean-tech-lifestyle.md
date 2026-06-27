@@ -3,7 +3,7 @@ styleId: clean-tech-lifestyle
 name: Clean tech-lifestyle hero
 category: lifestyle
 era: current
-pairsPrototypes: [recipe-devtools-marketing, recipe-restrained-ai-marketing, recipe-bento-marketing, recipe-linear-product-ui]
+pairsPrototypes: [recipe-devtools-marketing, recipe-bento-marketing, recipe-linear-product-ui]
 notForUseWhen: Editorial mood, fast fashion, anything kinetic.
 images:
   - src: photo-clean-tech-lifestyle.png
@@ -61,7 +61,6 @@ Editorial mood, fast fashion, anything kinetic.
 ## Pairs with (prototype slugs)
 
 - `recipe-devtools-marketing`
-- `recipe-restrained-ai-marketing`
 - `recipe-bento-marketing`
 - `recipe-linear-product-ui`
 

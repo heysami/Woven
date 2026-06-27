@@ -3,7 +3,7 @@ styleId: ascii-art-portrait
 name: ASCII-art portrait (text-as-image)
 category: archival
 era: 1990s-current revival
-pairsPrototypes: [recipe-terminal-on-web, aesthetic-cassette-futurism, style-terminal-mono, aesthetic-web-brutalism, aesthetic-pixel-game-boy-mono, recipe-devtools-marketing]
+pairsPrototypes: [recipe-terminal-on-web, aesthetic-cassette-futurism, aesthetic-web-brutalism, aesthetic-pixel-game-boy-mono, recipe-devtools-marketing]
 notForUseWhen: warm-lifestyle, premium-luxury, photoreal product
 images:
   - src: photo-ascii-art-portrait.png
@@ -68,7 +68,6 @@ warm-lifestyle, premium-luxury, photoreal product, anything wanting smooth moder
 
 - `recipe-terminal-on-web`
 - `aesthetic-cassette-futurism`
-- `style-terminal-mono`
 - `aesthetic-web-brutalism`
 - `aesthetic-pixel-game-boy-mono`
 - `recipe-devtools-marketing`

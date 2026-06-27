@@ -29,4 +29,4 @@ Workflow tools, mind maps, whiteboards (Miro, tldraw, Excalidraw), agent-graph e
 
 ## Pairs well with
 
-Style: restrained-hairline, outline-wireframe, doodle. Scene moments: node-graph (native mode).
+Style: restrained-hairline, doodle. Scene moments: node-graph (native mode).

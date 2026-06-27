@@ -3,7 +3,7 @@ styleId: cereal-lifestyle
 name: Cereal magazine slow-travel lifestyle
 category: lifestyle
 era: current
-pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, style-restrained-hairline, style-cream-humanist]
+pairsPrototypes: [recipe-warm-restraint, style-restrained-hairline, style-cream-humanist]
 notForUseWhen: Tech B2B, fast-paced consumer, anything kinetic.
 images:
   - src: photo-cereal-lifestyle.png
@@ -61,7 +61,6 @@ Tech B2B, fast-paced consumer, anything kinetic.
 ## Pairs with (prototype slugs)
 
 - `recipe-warm-restraint`
-- `recipe-restrained-ai-marketing`
 - `style-restrained-hairline`
 - `style-cream-humanist`
 

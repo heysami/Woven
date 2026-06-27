@@ -67,4 +67,4 @@ Treating RGB as the visual style instead of as the brand-accent payload on a cal
 ## Pairs well with
 
 - Shells: `shell-three-column-app`, `shell-two-column-app`, `shell-top-bar-canvas`, `shell-bento-grid`, `shell-canvas-floating`
-- Styles: `style-dense-mono-dark`, `style-terminal-mono`, `style-flat-design`, `style-neubrutalism` (only if the chamfer/border instinct is dialled way down)
+- Styles: `style-dense-mono-dark`, `style-flat-design`, `style-neubrutalism` (only if the chamfer/border instinct is dialled way down)

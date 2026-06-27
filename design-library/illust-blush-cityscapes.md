@@ -4,7 +4,7 @@ name: Cityscapes
 category: Flat vector
 subCategory: geometric-mid-century
 role: decoration
-pairsPrototypes: [recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-corporate-memphis]
+pairsPrototypes: [recipe-bento-marketing, aesthetic-corporate-memphis]
 notForUseWhen: brutalism, editorial
 images:
   - src: illust-blush-cityscapes.png
@@ -58,7 +58,6 @@ brutalism, editorial
 ## Pairs with (prototype slugs)
 
 - `recipe-bento-marketing`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-corporate-memphis`
 
 <!-- image: sample-1.png -->

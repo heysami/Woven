@@ -50,6 +50,6 @@ Product pre-launches and roadmaps, hardware/robotics/chip companies, real-estate
 ## Pairs well with
 
 - **Shells:** `shell-hero-stack`, `shell-scroll-journey-scene` (assembly sequence), `shell-top-bar-canvas`.
-- **Styles:** `style-terminal-mono` chips, `style-restrained-hairline` dark, `style-kinetic-line-accents` (the annotation lines ARE kinetic lines).
+- **Styles:** `style-restrained-hairline` dark
 - **Illust:** `wireframe-3d`, `3d-technical-exploded-precision`; material `wireframe-3d-line`, `cad-blueprint`.
 - **Aesthetic kin:** `aesthetic-cyberpunk` (noir cousin), `aesthetic-monochrome-tech-editorial` (archival opposite - printed past vs projected future).

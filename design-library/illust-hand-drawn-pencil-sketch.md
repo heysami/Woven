@@ -4,7 +4,7 @@ name: Pencil graphite sketch
 category: Hand-drawn / sketch
 subCategory: pencil-graphite
 role: spot-illustration
-pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-dark-academia, recipe-warm-restraint]
+pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, recipe-warm-restraint]
 notForUseWhen: tech, brutalism, polished
 images:
   - src: illust-hand-drawn-pencil-sketch.png
@@ -57,7 +57,6 @@ tech, brutalism, polished
 ## Pairs with (prototype slugs)
 
 - `recipe-editorial-magazine`
-- `recipe-readcv`
 - `aesthetic-dark-academia`
 - `recipe-warm-restraint`
 

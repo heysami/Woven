@@ -4,7 +4,7 @@ name: Enchanted forest glow
 category: 3D
 subCategory: magical-environment
 role: hero
-pairsPrototypes: [aesthetic-fairycore, aesthetic-bioluminescent-deep, aesthetic-cottagegoth, shell-scroll-journey-scene]
+pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-cottagegoth, shell-scroll-journey-scene]
 notForUseWhen: Brief is rational, corporate, or daylight-honest - the register is twilight wonder.
 images:
   - src: illust-enchanted-forest-glow.png
@@ -41,7 +41,7 @@ Twilight woodland lit from within - lanterns, fireflies, glowing flora - deep te
 
 **Illustrators**: Studio Ghibli forest interiors (*Mononoke*, *Totoro* dusk scenes), *Ori and the Blind Forest* environment art, classic Brian Froud fairy-wood lineage
 
-**Movements**: fairycore, cozy-fantasy game environments
+**Movements**: cozy-fantasy game environments
 
 ## Example prompt template
 
@@ -49,7 +49,7 @@ Twilight woodland lit from within - lanterns, fireflies, glowing flora - deep te
 
 ## When to use
 
-Fairycore/fantasy briefs, sleep and meditation products ("the wood holds you"), game and book promos, bioluminescent-deep terrestrial chapters, scroll-journeys that walk INTO the trees.
+Fantasy briefs, sleep and meditation products ("the wood holds you"), game and book promos, bioluminescent-deep terrestrial chapters, scroll-journeys that walk INTO the trees.
 
 ## When NOT to use
 
@@ -57,7 +57,6 @@ B2B clarity briefs, daylight wellness (use pastoral-serene), horror registers (t
 
 ## Pairs with (prototype slugs)
 
-- `aesthetic-fairycore`
 - `aesthetic-bioluminescent-deep`
 - `aesthetic-cottagegoth`
 - `shell-scroll-journey-scene`

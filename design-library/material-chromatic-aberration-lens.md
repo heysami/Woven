@@ -5,7 +5,7 @@ family: digital
 category: digital-effect
 surfaceFinish: glossy
 transparency: opaque
-pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cinematic, recipe-bento-marketing, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero, recipe-restrained-ai-marketing]
+pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cinematic, recipe-bento-marketing, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero]
 images:
   - src: material-chromatic-aberration-lens.png
     reason: Material fidelity sample.
@@ -81,7 +81,6 @@ raster: not appropriate
 - `recipe-bento-marketing`
 - `aesthetic-frutiger-aero`
 - `aesthetic-frutiger-dark-aero`
-- `recipe-restrained-ai-marketing`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this material -->

@@ -4,7 +4,7 @@ name: DrawKit Bubbly Tech / UI 3D
 category: 3D
 subCategory: plastic-glossy
 role: spot-illustration
-pairsPrototypes: [style-claymorphism, recipe-bento-marketing, recipe-restrained-ai-marketing, style-neumorphism]
+pairsPrototypes: [style-claymorphism, recipe-bento-marketing, style-neumorphism]
 notForUseWhen: dev-tools marketing wanting credibility, terminal-on-web
 images:
   - src: illust-drawkit-bubbly-tech-ui.png
@@ -63,7 +63,6 @@ dev-tools marketing wanting credibility, terminal-on-web
 
 - `style-claymorphism`
 - `recipe-bento-marketing`
-- `recipe-restrained-ai-marketing`
 - `style-neumorphism`
 
 <!-- image: sample-1.png -->

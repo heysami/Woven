@@ -4,7 +4,7 @@ name: Lo-fi contemplative scene
 category: Anime / manga
 subCategory: lofi-chill
 role: hero
-pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-dreamcore, recipe-readcv, aesthetic-dark-academia]
+pairsPrototypes: [aesthetic-pastoral-serene, aesthetic-dreamcore, aesthetic-dark-academia]
 notForUseWhen: Brief is energetic, corporate, or urgency-driven - the whole register is exhale.
 images:
   - src: illust-lofi-contemplative.png
@@ -59,4 +59,3 @@ Sales urgency, team-collaboration energy, enterprise dashboards, loud commerce.
 
 - `aesthetic-pastoral-serene`
 - `aesthetic-dreamcore`
-- `recipe-readcv`

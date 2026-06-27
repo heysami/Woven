@@ -71,4 +71,4 @@ Nuclear-history museums, space-agency archives, retro-gaming companion apps, mid
 ## Pairs well with
 
 - Shells: `shell-terminal-frame` (Pip-Boy), `shell-top-bar-canvas` (Tomorrowland chrome bar), `shell-centered-column` (NASA-Worm institutional), `shell-three-column-app` (RobCo terminal data layout), `shell-bento-grid` (Coca-Cola-atomic editorial)
-- Styles: `style-terminal-mono` (Pip-Boy CRT), `style-flat-design` (NASA-Worm hairline), `style-skeuomorphism` (Tomorrowland chrome bevel), `style-dense-mono-dark` (RobCo data screens), `style-oversized-neo-grotesque` (Eurostile display)
+- Styles: `style-flat-design` (NASA-Worm hairline), `style-skeuomorphism` (Tomorrowland chrome bevel), `style-dense-mono-dark` (RobCo data screens), `style-oversized-neo-grotesque` (Eurostile display)

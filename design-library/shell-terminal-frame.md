@@ -34,4 +34,4 @@ CLI marketing pages, dev-tool dashboards, deploy status, AI-coding-agent UIs.
 
 ## Pairs well with
 
-Style: terminal-mono (mandatory pairing). Aesthetic: cyberpunk for hacker tone; cassette-futurism for retro corporate.
+Style: dense-mono-dark (mandatory pairing). Aesthetic: cyberpunk for hacker tone; cassette-futurism for retro corporate.

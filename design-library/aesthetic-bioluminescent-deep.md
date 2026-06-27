@@ -52,5 +52,5 @@ Deep-tech and research ventures, biotech/longevity, ocean and climate science, m
 
 - **Shells:** `shell-scroll-journey-scene` (the dive, canonical), `shell-hero-stack`, `shell-canvas-floating` (organism field).
 - **Styles:** `style-restrained-hairline` dark, `style-editorial-italic-accent` (*alive* as the accent), fine mono for depth labels.
-- **Aesthetic kin:** `aesthetic-fairycore` (terrestrial-sweet cousin), `aesthetic-cyberpunk` (electric opposite - useful contrast check), `aesthetic-defi-cosmic` (mystic cousin).
+- **Aesthetic kin:** `aesthetic-cyberpunk` (electric opposite - useful contrast check), `aesthetic-defi-cosmic` (mystic cousin).
 - **Photo/Illust:** photo `surreal-tableau`; illustration `particle-figure` (creatures-from-particles live variant); particle-gl drawer for marine snow.

@@ -9,7 +9,7 @@ defaultBlend: normal
 animated: yes
 needsSource: no
 stackable: yes
-pairsPrototypes: [style-aurorism, recipe-aurora-marketing, aesthetic-frutiger-aero, recipe-restrained-ai-marketing]
+pairsPrototypes: [style-aurorism, recipe-aurora-marketing, aesthetic-frutiger-aero]
 notForUseWhen: high-density data UI, brutalist flat
 ---
 
@@ -59,4 +59,3 @@ css: layered radial-gradients in OKLCH + blur(80px) (the cheap static version).
 - `style-aurorism`
 - `recipe-aurora-marketing`
 - `aesthetic-frutiger-aero`
-- `recipe-restrained-ai-marketing`

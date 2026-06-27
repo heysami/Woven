@@ -3,7 +3,7 @@ styleId: her-warm-pastel-future
 name: Her warm-pastel near-future (van Hoytema)
 category: cinematic
 era: 2013 / near-future melancholy
-pairsPrototypes: [recipe-warm-restraint, recipe-restrained-ai-marketing, aesthetic-cottagecore, style-cream-humanist, recipe-bento-marketing]
+pairsPrototypes: [recipe-warm-restraint, aesthetic-cottagecore, style-cream-humanist, recipe-bento-marketing]
 notForUseWhen: cyberpunk, dystopian, dark-mode-only, brutalism
 images:
   - src: photo-her-warm-pastel-future.png
@@ -75,7 +75,6 @@ cyberpunk, dystopian, dark-mode-only, brutalism, anything where cool-blue or sha
 ## Pairs with (prototype slugs)
 
 - `recipe-warm-restraint`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-cottagecore`
 - `style-cream-humanist`
 - `recipe-bento-marketing`

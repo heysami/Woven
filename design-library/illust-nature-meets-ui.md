@@ -4,7 +4,7 @@ name: Nature-meets-UI interpenetration
 category: 3D
 subCategory: organic-tech-composite
 role: hero
-pairsPrototypes: [aesthetic-organic-overgrowth, aesthetic-pastoral-serene, aesthetic-solarpunk, recipe-restrained-ai-marketing]
+pairsPrototypes: [aesthetic-organic-overgrowth, aesthetic-pastoral-serene, aesthetic-solarpunk]
 notForUseWhen: Brief needs literal product screenshots untouched - this style ALTERS the interface with growth.
 images:
   - src: illust-nature-meets-ui.png

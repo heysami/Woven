@@ -6,8 +6,8 @@ subCategory: dom
 role: entrance | chrome
 binding: scroll-trigger
 medium: dom-svg
-pairsPrototypes: [style-doodle, style-outline-wireframe, style-kinetic-line-accents, aesthetic-cottagecore, aesthetic-craft-sketchbook, recipe-editorial-magazine]
-notForUseWhen: The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth - kinetic-line-accents is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).
+pairsPrototypes: [style-doodle, aesthetic-cottagecore, aesthetic-craft-sketchbook, recipe-editorial-magazine]
+notForUseWhen: The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth - a precise stroke-draw is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).
 images:
   - src: motion-svg-self-draw-ui.png
     reason: Motion technique UI mockup.
@@ -48,8 +48,8 @@ hand-drawn and the draw-on IS the page's entrance grammar.
   lettering 800-1200ms; full scene illustrations 1500-2500ms with stagger.
   Nothing on screen should still be drawing 3s after it entered.
 - The marks should be imperfect - wobble, pressure variation, overshoot at
-  terminals. A geometrically perfect path drawing itself is kinetic-line-accents
-  (its own entry), not this.
+  terminals. A geometrically perfect path drawing itself is a precise,
+  corporate stroke-draw register, not this.
 
 ## Interaction binding
 
@@ -92,7 +92,7 @@ document.querySelectorAll('.selfdraw').forEach(el => io.observe(el));
 
 ## When NOT to use
 
-- Precise/corporate registers (use `style-kinetic-line-accents` - same
+- Precise/corporate registers 
   mechanism, ruler instead of hand).
 - Pages with zero stroke-based art - retrofitting strokes onto filled logos
   reads as a loading glitch.
@@ -107,8 +107,6 @@ document.querySelectorAll('.selfdraw').forEach(el => io.observe(el));
 ## Pairs with (prototype slugs)
 
 - `style-doodle`
-- `style-outline-wireframe`
-- `style-kinetic-line-accents`
 - `aesthetic-craft-sketchbook`
 - `recipe-editorial-magazine`
 

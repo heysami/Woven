@@ -59,4 +59,4 @@ Visual novels and dating sims. Doujin RPG / SHMUP itch.io pages. Touhou-adjacent
 ## Pairs well with
 
 - **Shells:** `shell-centered-column` (the canonical 640×400 letterboxed stage), `shell-two-column-app` (portrait + dialogue strip), `shell-mobile-app` (modern doujin itch.io pages), `shell-terminal-frame` (occult / World of Horror register)
-- **Styles:** `style-pixel-bitmap` (mandatory - the hard-edge bitmap substrate this aesthetic lives on), `style-terminal-mono` (for system / CONFIG screens), `style-dense-mono-dark` (for stat-heavy SHMUP or RPG menus)
+- **Styles:** `style-pixel-bitmap` (mandatory - the hard-edge bitmap substrate this aesthetic lives on), `style-dense-mono-dark` (for stat-heavy SHMUP or RPG menus)

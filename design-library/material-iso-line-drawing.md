@@ -5,7 +5,7 @@ family: digital
 category: digital-effect
 surfaceFinish: matte
 transparency: opaque
-pairsPrototypes: [aesthetic-bauhaus, aesthetic-swiss-modernist, recipe-scientific-infra-marketing, style-outline-wireframe, aesthetic-atompunk, aesthetic-cassette-futurism]
+pairsPrototypes: [aesthetic-bauhaus, aesthetic-swiss-modernist, recipe-scientific-infra-marketing, aesthetic-atompunk, aesthetic-cassette-futurism]
 images:
   - src: material-iso-line-drawing.png
     reason: Material fidelity sample.
@@ -75,7 +75,6 @@ raster: not appropriate
 - `aesthetic-bauhaus`
 - `aesthetic-swiss-modernist`
 - `recipe-scientific-infra-marketing`
-- `style-outline-wireframe`
 - `aesthetic-atompunk`
 - `aesthetic-cassette-futurism`
 

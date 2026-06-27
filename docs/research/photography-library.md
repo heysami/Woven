@@ -102,7 +102,7 @@ How to use:
 
 - **Append verbatim** to every prompt's tail, after the named style and before the universal-negatives. The phrase is `color graded` - two words, lowercase, no hyphen, no modifier required.
 - **Pair with a grade direction when the style supplies one.** Many §2 entries declare a specific grade in `filmStockOrPostProcessing` (e.g. "teal-and-orange color grade", "cool muted color grade", "warm shadow tint", "cross-processed E6 in C-41"). When present, use BOTH the style's specific grade AND the universal `color graded` anchor - they reinforce.
-- **When the brief is restrained** (cream-humanist, restrained-AI-marketing, warm-restraint): use `subtly color graded` or `gently color graded` so the polish reads as quiet, not theatrical. The token still goes in - restrained briefs need polish too, just calibrated lower.
+- **When the brief is restrained** (cream-humanist, warm-restraint): use `subtly color graded` or `gently color graded` so the polish reads as quiet, not theatrical. The token still goes in - restrained briefs need polish too, just calibrated lower.
 - **When the brief is theatrical** (editorial-magazine, y2k-memphis-loud, vaporwave, cyberpunk): use `boldly color graded` or `aggressively color graded with [palette]` and name the palette anchor when known.
 
 Common pairings for quick reference:
@@ -148,7 +148,6 @@ When the source HTML has committed to a prototype.md aesthetic, the orchestrator
 |---|---|---|
 | recipe-editorial-magazine | helmut-newton-flash, tillmans-candid, sorrenti-grain, leibovitz-key-light, magnum-monochrome, shore-color, goldin-diary, weingart-staged, environmental-portrait, vivian-maier-square | The editorial magazine recipe is a catch-all for serious photography. Pick by topic warmth: Newton/Sorrenti for cool, Leibovitz/Tillmans for warm. |
 | recipe-bento-marketing | apple-clean-studio, high-key-beauty, leibovitz-key-light, clean-tech-lifestyle | Bento panels need product-clarity photography. Studio precision over candid. |
-| recipe-restrained-ai-marketing | clean-tech-lifestyle, apple-clean-studio, cereal-lifestyle, cos-lookbook, laundry-light-lookbook, tillmans-candid | Restrained AI marketing rejects gloss; prefers daylight, plaster walls, and quietly capable subjects. |
 | recipe-warm-restraint | aesop-apothecary, kinfolk-warm-minimal, cereal-lifestyle, sorrenti-grain (monochrome), shore-color, environmental-portrait, seventies-soft-grain | The luxury-apothecary recipe. Warm, slow, daylight, single subject, no flash. |
 | aesthetic-y2k-futurism | y2k-flash-glam, genz-flash-disposable, y2k-halftone, frutiger-aero-product, chrome-hearts-editorial, vaporwave-still-life | Y2K wants hard flash and chrome. Halftone for print-look. Frutiger-Aero for product. |
 | aesthetic-y2k-memphis-loud | y2k-halftone, y2k-flash-glam, surreal-still-life, eighties-cocaine-glam, skate-zine | Loud Memphis wants oversaturated single hues, hard flash, halftone graphics overlay. |
@@ -171,10 +170,9 @@ Additional implicit mappings:
 | recipe-brutalist-web | gilden-flash-street, skate-zine, y2k-halftone, circuit-bent-glitch |
 | aesthetic-cyberpunk | night-flash-noir, cinematic-street-anamorphic, circuit-bent-glitch, chrome-hearts-editorial |
 | aesthetic-corporate-grunge | y2k-halftone, skate-zine |
-| aesthetic-vector-hands-up / acid-design / acid-graphics | y2k-halftone, y2k-flash-glam, surreal-still-life |
-| aesthetic-angelcore / fairycore | dreamy-haze, fantasy-glow, magic-glow, seventies-soft-grain |
+| acid-design / acid-graphics | y2k-halftone, y2k-flash-glam, surreal-still-life |
+| aesthetic-angelcore | dreamy-haze, fantasy-glow, magic-glow, seventies-soft-grain |
 | recipe-devtools-marketing | clean-tech-lifestyle, leibovitz-key-light, apple-clean-studio, environmental-portrait |
-| recipe-readcv | tillmans-candid, shore-color, environmental-portrait, laundry-light-lookbook |
 
 ---
 

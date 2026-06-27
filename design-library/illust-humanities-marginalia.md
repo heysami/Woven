@@ -4,7 +4,7 @@ name: Humanities (medieval-marginalia revival)
 category: Hand-drawn / sketch
 subCategory: marginalia-quirky
 role: spot-illustration
-pairsPrototypes: [aesthetic-dark-academia, recipe-editorial-magazine, recipe-newspaper-of-record, recipe-readcv, style-serif-warm-paper]
+pairsPrototypes: [aesthetic-dark-academia, recipe-editorial-magazine, recipe-newspaper-of-record, style-serif-warm-paper]
 notForUseWhen: SaaS marketing, cute-friendly contexts, 3D contexts
 images:
   - src: illust-humanities-marginalia.png
@@ -65,7 +65,6 @@ SaaS marketing, cute-friendly contexts, 3D contexts
 - `aesthetic-dark-academia`
 - `recipe-editorial-magazine`
 - `recipe-newspaper-of-record`
-- `recipe-readcv`
 - `style-serif-warm-paper`
 
 <!-- image: sample-1.png -->

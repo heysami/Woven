@@ -3,7 +3,7 @@ styleId: tillmans-candid
 name: Wolfgang Tillmans degree-zero candid
 category: editorial-fashion
 era: 1990s-current
-pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-cottagecore, recipe-restrained-ai-marketing]
+pairsPrototypes: [recipe-editorial-magazine, aesthetic-cottagecore]
 notForUseWhen: Luxury, glamour, conversion-focused product pages, B2B.
 images:
   - src: photo-tillmans-candid.png
@@ -61,9 +61,7 @@ Luxury, glamour, conversion-focused product pages, B2B.
 ## Pairs with (prototype slugs)
 
 - `recipe-editorial-magazine`
-- `recipe-readcv`
 - `aesthetic-cottagecore`
-- `recipe-restrained-ai-marketing`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

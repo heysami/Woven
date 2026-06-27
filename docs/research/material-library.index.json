@@ -2,22 +2,17 @@
   "version": "2.0",
   "library": "material",
   "sourceDir": "design-library/",
-  "totalEntries": 92,
+  "totalEntries": 66,
   "decisionTree": {
     "aesthetic-cyberpunk": {
       "default": "anodized-chainmail",
       "alternatives": [
-        "ansi-art",
-        "barrel-pincushion-warp",
         "chromatic-aberration-lens",
         "chrome-mirror",
         "crt-phosphor",
         "datamosh-compression-smear",
         "film-grain-cinestill-800t",
-        "jpeg-block-corruption",
-        "motion-blur-streak",
         "nes-rom-corruption",
-        "oil-on-water",
         "rgb-channel-split",
         "schematic-pcb-trace",
         "signal-interference",
@@ -29,9 +24,7 @@
       "default": "anodized-chainmail",
       "alternatives": [
         "atmosphere-rim-glow",
-        "edge-lit-acrylic",
         "filament-strand-ribbon",
-        "liquid-chrome-silk",
         "monospace-code-grid",
         "volumetric-light-shaft"
       ]
@@ -43,7 +36,6 @@
     "style-dense-mono-dark": {
       "default": "anodized-chainmail",
       "alternatives": [
-        "edge-lit-acrylic",
         "monospace-code-grid",
         "signal-interference"
       ]
@@ -53,7 +45,7 @@
       "alternatives": []
     },
     "recipe-terminal-on-web": {
-      "default": "ansi-art",
+      "default": "ascii-art-surface",
       "alternatives": [
         "ascii-art-surface",
         "monospace-code-grid",
@@ -63,24 +55,13 @@
         "wireframe-3d-line"
       ]
     },
-    "style-terminal-mono": {
-      "default": "ansi-art",
-      "alternatives": [
-        "ascii-art-surface",
-        "monospace-code-grid",
-        "wireframe-3d-line"
-      ]
-    },
     "aesthetic-cassette-futurism": {
-      "default": "ansi-art",
+      "default": "brushed-aluminum",
       "alternatives": [
         "brushed-aluminum",
-        "concrete",
         "crt-phosphor",
-        "edge-lit-acrylic",
         "film-grain-cinestill-800t",
         "iso-line-drawing",
-        "motion-blur-streak",
         "schematic-pcb-trace",
         "signal-interference",
         "vhs-distortion",
@@ -89,7 +70,7 @@
       ]
     },
     "aesthetic-atompunk": {
-      "default": "ansi-art",
+      "default": "cad-blueprint",
       "alternatives": [
         "cad-blueprint",
         "crt-phosphor",
@@ -100,12 +81,10 @@
       ]
     },
     "aesthetic-corporate-grunge": {
-      "default": "ansi-art",
+      "default": "denim",
       "alternatives": [
-        "concrete",
         "denim",
         "dithered-1bit",
-        "dust-scratches",
         "film-grain-tri-x",
         "halftone-cmyk",
         "pencil-graphite",
@@ -120,7 +99,6 @@
     "aesthetic-web-brutalism": {
       "default": "ascii-art-surface",
       "alternatives": [
-        "concrete",
         "dithered-1bit",
         "photocopy-xerox"
       ]
@@ -130,7 +108,6 @@
       "alternatives": [
         "dispersion-prism-glass",
         "filament-strand-ribbon",
-        "liquid-chrome-silk",
         "volumetric-light-shaft"
       ]
     },
@@ -141,63 +118,36 @@
         "chrome-on-velvet",
         "dispersion-prism-glass",
         "filament-strand-ribbon",
-        "gold-leaf",
         "marble",
         "pebbled-leather",
         "silk"
       ]
     },
-    "style-aurorism": {
-      "default": "aurora-mesh",
-      "alternatives": [
-        "displacement-ripple",
-        "liquid-chrome-silk",
-        "oil-on-water"
-      ]
-    },
-    "recipe-aurora-marketing": {
-      "default": "aurora-mesh",
-      "alternatives": [
-        "barrel-pincushion-warp",
-        "displacement-ripple",
-        "heat-haze-shimmer",
-        "motion-blur-streak"
-      ]
-    },
     "aesthetic-frutiger-aero": {
-      "default": "aurora-mesh",
+      "default": "chromatic-aberration-lens",
       "alternatives": [
         "chromatic-aberration-lens",
-        "displacement-ripple",
         "frosted-glass",
         "glossy-plastic-aqua",
-        "heat-haze-shimmer",
-        "liquid-glass",
-        "motion-blur-streak"
+        "liquid-glass"
       ]
     },
     "aesthetic-frutiger-dark-aero": {
-      "default": "aurora-mesh",
+      "default": "chromatic-aberration-lens",
       "alternatives": [
         "chromatic-aberration-lens",
-        "edge-lit-acrylic",
         "frosted-glass",
         "liquid-glass"
       ]
     },
     "aesthetic-vaporwave": {
-      "default": "barrel-pincushion-warp",
+      "default": "crt-phosphor",
       "alternatives": [
         "crt-phosphor",
         "datamosh-compression-smear",
-        "dust-scratches",
         "film-grain-cinestill-800t",
         "film-grain-tri-x",
         "frosted-glass",
-        "heat-haze-shimmer",
-        "holographic-foil",
-        "jpeg-block-corruption",
-        "oil-on-water",
         "rgb-channel-split",
         "signal-interference",
         "silk",
@@ -207,45 +157,33 @@
       ]
     },
     "aesthetic-y2k-futurism": {
-      "default": "barrel-pincushion-warp",
+      "default": "chrome-mirror",
       "alternatives": [
-        "chrome-extruded-type",
         "chrome-mirror",
         "chrome-on-velvet",
         "datamosh-compression-smear",
         "frosted-glass",
         "glossy-plastic-aqua",
-        "holographic-foil",
-        "holographic-paper",
         "liquid-glass",
         "rgb-channel-split",
         "silk"
       ]
     },
     "aesthetic-cinematic": {
-      "default": "barrel-pincushion-warp",
+      "default": "chromatic-aberration-lens",
       "alternatives": [
-        "chromatic-aberration-lens",
-        "motion-blur-streak"
+        "chromatic-aberration-lens"
       ]
     },
     "recipe-bento-marketing": {
-      "default": "barrel-pincushion-warp",
+      "default": "chromatic-aberration-lens",
       "alternatives": [
-        "chromatic-aberration-lens",
-        "motion-blur-streak"
+        "chromatic-aberration-lens"
       ]
     },
     "aesthetic-bioluminescent-deep": {
       "default": "bioluminescent-membrane",
       "alternatives": []
-    },
-    "aesthetic-fairycore": {
-      "default": "bioluminescent-membrane",
-      "alternatives": [
-        "paper-with-watercolor",
-        "watercolor-wash"
-      ]
     },
     "shell-scroll-journey-scene": {
       "default": "bioluminescent-membrane",
@@ -257,7 +195,6 @@
     "aesthetic-dieselpunk": {
       "default": "brushed-aluminum",
       "alternatives": [
-        "copper-patina",
         "weathered-leather"
       ]
     },
@@ -265,7 +202,6 @@
       "default": "brushed-aluminum",
       "alternatives": [
         "cad-blueprint",
-        "copper-patina",
         "parchment",
         "weathered-leather",
         "wood-grain-walnut"
@@ -316,18 +252,11 @@
     "aesthetic-dark-academia": {
       "default": "charcoal-drawing",
       "alternatives": [
-        "copper-patina",
         "corduroy",
-        "dust-scratches",
         "felt",
         "film-grain-tri-x",
-        "foxing-stain",
-        "gold-leaf",
         "hand-architect-sketch",
-        "ink-bleed-on-paper",
         "ink-wash-sumi-e",
-        "legal-pad",
-        "letterpress-emboss",
         "linen-weave",
         "marble",
         "parchment",
@@ -335,7 +264,6 @@
         "pencil-graphite",
         "scanned-glass",
         "smooth-leather",
-        "uncoated-paper",
         "vellum-translucency",
         "volumetric-light-shaft",
         "weathered-leather",
@@ -345,17 +273,11 @@
     "aesthetic-cottagegoth": {
       "default": "charcoal-drawing",
       "alternatives": [
-        "dust-scratches",
         "felt",
-        "film-grain-portra-400",
         "film-grain-tri-x",
-        "foxing-stain",
-        "ink-bleed-on-paper",
         "ink-wash-sumi-e",
-        "kraft-paper",
         "photocopy-xerox",
         "scanned-glass",
-        "uncoated-paper",
         "vellum-translucency",
         "weathered-leather"
       ]
@@ -367,112 +289,71 @@
         "pencil-graphite"
       ]
     },
-    "recipe-restrained-ai-marketing": {
-      "default": "chromatic-aberration-lens",
-      "alternatives": [
-        "filament-strand-ribbon",
-        "monospace-code-grid",
-        "reeded-fluted-glass"
-      ]
-    },
     "aesthetic-luxury-cinematic-dark": {
-      "default": "chrome-extruded-type",
+      "default": "smoked-obsidian-glass",
       "alternatives": [
-        "liquid-chrome-silk",
         "smoked-obsidian-glass",
         "volumetric-light-shaft"
       ]
     },
     "aesthetic-urbling": {
-      "default": "chrome-extruded-type",
+      "default": "chrome-mirror",
       "alternatives": [
         "chrome-mirror",
-        "chrome-on-velvet",
-        "gold-leaf"
+        "chrome-on-velvet"
       ]
     },
-    "style-bold-display": {
-      "default": "chrome-extruded-type",
-      "alternatives": []
-    },
     "aesthetic-frutiger-chromecore": {
-      "default": "chrome-extruded-type",
+      "default": "chrome-mirror",
       "alternatives": [
         "chrome-mirror",
         "frosted-glass",
-        "glossy-plastic-aqua",
-        "holographic-foil"
+        "glossy-plastic-aqua"
       ]
     },
     "style-holographic": {
       "default": "chrome-mirror",
       "alternatives": [
         "chrome-on-velvet",
-        "dispersion-prism-glass",
-        "gold-leaf",
-        "holographic-foil",
-        "holographic-paper",
-        "oil-on-water"
+        "dispersion-prism-glass"
       ]
     },
     "recipe-editorial-magazine": {
-      "default": "coated-glossy-paper",
+      "default": "film-grain-cinestill-800t",
       "alternatives": [
-        "dust-scratches",
         "film-grain-cinestill-800t",
-        "film-grain-portra-400",
         "film-grain-tri-x",
         "hand-architect-sketch",
-        "holographic-paper",
-        "letterpress-emboss",
         "marble",
         "marker-stroke-frame",
         "scanned-glass"
       ]
     },
     "aesthetic-y2k-memphis-loud": {
-      "default": "coated-glossy-paper",
+      "default": "halftone-cmyk",
       "alternatives": [
         "halftone-cmyk",
         "marker-stroke-frame"
       ]
     },
     "aesthetic-coastal-grandmother": {
-      "default": "coated-glossy-paper",
+      "default": "corduroy",
       "alternatives": [
         "corduroy",
-        "film-grain-portra-400",
-        "heat-haze-shimmer",
         "linen-weave",
         "paper-with-watercolor",
-        "polaroid-instant",
         "silk",
         "watercolor-wash"
       ]
-    },
-    "recipe-brutalist-web": {
-      "default": "concrete",
-      "alternatives": []
-    },
-    "aesthetic-solarpunk": {
-      "default": "copper-patina",
-      "alternatives": []
     },
     "aesthetic-cottagecore": {
       "default": "corduroy",
       "alternatives": [
         "denim",
-        "film-grain-portra-400",
-        "foxing-stain",
         "hand-architect-sketch",
-        "ink-bleed-on-paper",
-        "kraft-paper",
-        "letterpress-emboss",
         "linen-weave",
         "paper-with-watercolor",
-        "polaroid-instant",
         "torn-edge",
-        "uncoated-paper",
         "vellum-translucency",
         "watercolor-wash",
         "wood-grain-walnut"
@@ -499,23 +380,16 @@
     "aesthetic-dreamcore": {
       "default": "datamosh-compression-smear",
       "alternatives": [
-        "displacement-ripple",
-        "heat-haze-shimmer",
-        "jpeg-block-corruption",
         "volumetric-cloud"
       ]
     },
     "aesthetic-weirdcore": {
       "default": "datamosh-compression-smear",
-      "alternatives": [
-        "jpeg-block-corruption"
-      ]
+      "alternatives": []
     },
     "aesthetic-y2k-myspace": {
       "default": "denim",
       "alternatives": [
-        "jpeg-block-corruption",
-        "polaroid-instant",
         "risograph-glass",
         "risograph",
         "torn-edge",
@@ -526,9 +400,7 @@
     "style-liquid-glass": {
       "default": "dispersion-prism-glass",
       "alternatives": [
-        "displacement-ripple",
         "frosted-glass",
-        "holographic-foil",
         "liquid-glass",
         "reeded-fluted-glass",
         "thin-glass-chip"
@@ -537,7 +409,6 @@
     "style-glassmorphism": {
       "default": "dispersion-prism-glass",
       "alternatives": [
-        "displacement-ripple",
         "frosted-glass",
         "liquid-glass",
         "reeded-fluted-glass",
@@ -550,10 +421,6 @@
         "pixel-bitmap"
       ]
     },
-    "aesthetic-depin-hardware": {
-      "default": "edge-lit-acrylic",
-      "alternatives": []
-    },
     "style-skeuomorphism (poker felt": {
       "default": "felt",
       "alternatives": []
@@ -564,16 +431,12 @@
     },
     "style-silk-chrome-flow": {
       "default": "filament-strand-ribbon",
-      "alternatives": [
-        "liquid-chrome-silk"
-      ]
+      "alternatives": []
     },
     "style-serif-warm-paper": {
-      "default": "foxing-stain",
+      "default": "hand-architect-sketch",
       "alternatives": [
         "hand-architect-sketch",
-        "letterpress-emboss",
-        "uncoated-paper",
         "vellum-translucency"
       ]
     },
@@ -596,17 +459,12 @@
     "style-raster-cutout": {
       "default": "halftone-cmyk",
       "alternatives": [
-        "ink-bleed-on-paper",
-        "polaroid-instant",
-        "torn-edge",
-        "uncoated-paper"
+        "torn-edge"
       ]
     },
     "recipe-newspaper-of-record": {
       "default": "halftone-cmyk",
       "alternatives": [
-        "kraft-paper",
-        "legal-pad",
         "plotter-pen-line"
       ]
     },
@@ -619,7 +477,7 @@
       "alternatives": []
     },
     "style-doodle": {
-      "default": "ink-bleed-on-paper",
+      "default": "marker-stroke-frame",
       "alternatives": [
         "marker-stroke-frame",
         "pencil-graphite",
@@ -628,24 +486,6 @@
     },
     "aesthetic-vaporwave (Japanese gloss element)": {
       "default": "ink-wash-sumi-e",
-      "alternatives": []
-    },
-    "style-outline-wireframe": {
-      "default": "iso-line-drawing",
-      "alternatives": [
-        "plotter-pen-line"
-      ]
-    },
-    "aesthetic-internetcore": {
-      "default": "jpeg-block-corruption",
-      "alternatives": []
-    },
-    "aesthetic-goblincore": {
-      "default": "kraft-paper",
-      "alternatives": []
-    },
-    "style-skeuomorphism (notes-as-legal-pad)": {
-      "default": "legal-pad",
       "alternatives": []
     },
     "style-skeuomorphism (iOS Game Center linen)": {
@@ -750,10 +590,6 @@
       "default": "pixel-bitmap",
       "alternatives": []
     },
-    "recipe-readcv": {
-      "default": "polaroid-instant",
-      "alternatives": []
-    },
     "aesthetic-monochrome-pop-poster": {
       "default": "reeded-fluted-glass",
       "alternatives": [
@@ -817,22 +653,6 @@
       ],
       "sourceFile": "design-library/material-anodized-chainmail.md"
     },
-    "ansi-art": {
-      "name": "ANSI Art (16-color extended-box character art)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "glossy (CRT phosphor inheritance)",
-      "oneLine": "A glossy (CRT phosphor inheritance) surface.",
-      "pairsPrototypes": [
-        "recipe-terminal-on-web",
-        "style-terminal-mono",
-        "aesthetic-cyberpunk",
-        "aesthetic-cassette-futurism",
-        "aesthetic-atompunk",
-        "aesthetic-corporate-grunge"
-      ],
-      "sourceFile": "design-library/material-ansi-art.md"
-    },
     "ascii-art-surface": {
       "name": "ASCII Art Surface (text-as-pixel)",
       "category": "digital-effect",
@@ -840,7 +660,6 @@
       "surfaceFinish": "matte",
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
-        "style-terminal-mono",
         "recipe-terminal-on-web",
         "aesthetic-web-brutalism"
       ],
@@ -859,36 +678,6 @@
       ],
       "sourceFile": "design-library/material-atmosphere-rim-glow.md"
     },
-    "aurora-mesh": {
-      "name": "Aurora Mesh Gradient (Stripe / Vercel / Linear)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface (translucent).",
-      "pairsPrototypes": [
-        "style-aurorism",
-        "recipe-aurora-marketing",
-        "aesthetic-frutiger-aero",
-        "aesthetic-frutiger-dark-aero"
-      ],
-      "sourceFile": "design-library/material-aurora-mesh.md"
-    },
-    "barrel-pincushion-warp": {
-      "name": "Barrel / Pincushion Lens Warp (wide-lens optical distortion)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface and deforms: yes - radial geometric distortion.",
-      "pairsPrototypes": [
-        "aesthetic-vaporwave",
-        "aesthetic-cyberpunk",
-        "aesthetic-y2k-futurism",
-        "aesthetic-cinematic",
-        "recipe-aurora-marketing",
-        "recipe-bento-marketing"
-      ],
-      "sourceFile": "design-library/material-barrel-pincushion-warp.md"
-    },
     "bioluminescent-membrane": {
       "name": "Bioluminescent membrane",
       "category": "organic-emissive",
@@ -897,7 +686,6 @@
       "oneLine": "A translucent organic tissue that reacts to light: inverted - it IS the light source; subsurface glow pulses slowly from within, falling off into true black with no ambient fill.",
       "pairsPrototypes": [
         "aesthetic-bioluminescent-deep",
-        "aesthetic-fairycore",
         "aesthetic-defi-cosmic",
         "shell-scroll-journey-scene"
       ],
@@ -969,25 +757,9 @@
         "aesthetic-cinematic",
         "recipe-bento-marketing",
         "aesthetic-frutiger-aero",
-        "aesthetic-frutiger-dark-aero",
-        "recipe-restrained-ai-marketing"
+        "aesthetic-frutiger-dark-aero"
       ],
       "sourceFile": "design-library/material-chromatic-aberration-lens.md"
-    },
-    "chrome-extruded-type": {
-      "name": "Chrome extruded type (typography as mirrored object)",
-      "category": "metal-typography",
-      "family": "digital",
-      "surfaceFinish": "metallic",
-      "oneLine": "Display typography built as a 3D object: extruded letterforms with mirror-chrome",
-      "pairsPrototypes": [
-        "aesthetic-luxury-cinematic-dark",
-        "aesthetic-urbling",
-        "style-bold-display",
-        "aesthetic-y2k-futurism",
-        "aesthetic-frutiger-chromecore"
-      ],
-      "sourceFile": "design-library/material-chrome-extruded-type.md"
     },
     "chrome-mirror": {
       "name": "Chrome Mirror (Y2K chromecore / cyber-sigil)",
@@ -1017,47 +789,6 @@
         "style-holographic"
       ],
       "sourceFile": "design-library/material-chrome-on-velvet.md"
-    },
-    "coated-glossy-paper": {
-      "name": "Coated Glossy Paper (magazine cover stock)",
-      "category": "paper",
-      "family": "analog",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface that reacts to light: yes - specular sheen and deforms: minimal.",
-      "pairsPrototypes": [
-        "recipe-editorial-magazine",
-        "aesthetic-y2k-memphis-loud",
-        "aesthetic-coastal-grandmother"
-      ],
-      "sourceFile": "design-library/material-coated-glossy-paper.md"
-    },
-    "concrete": {
-      "name": "Concrete (raw industrial)",
-      "category": "stone",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface.",
-      "pairsPrototypes": [
-        "aesthetic-web-brutalism",
-        "aesthetic-corporate-grunge",
-        "aesthetic-cassette-futurism",
-        "recipe-brutalist-web"
-      ],
-      "sourceFile": "design-library/material-concrete.md"
-    },
-    "copper-patina": {
-      "name": "Copper with Verdigris Patina",
-      "category": "metal",
-      "family": "digital",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface that reacts to light: yes - but the patina kills most specular.",
-      "pairsPrototypes": [
-        "aesthetic-steampunk",
-        "aesthetic-dieselpunk",
-        "aesthetic-solarpunk",
-        "aesthetic-dark-academia"
-      ],
-      "sourceFile": "design-library/material-copper-patina.md"
     },
     "corduroy": {
       "name": "Corduroy (ribbed pile fabric)",
@@ -1131,22 +862,6 @@
       ],
       "sourceFile": "design-library/material-dispersion-prism-glass.md"
     },
-    "displacement-ripple": {
-      "name": "Displacement Ripple (interactive pointer-driven warp)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface (translucent) that reacts to light: yes (the ripple bends light) and deforms: yes - local UV displacement.",
-      "pairsPrototypes": [
-        "style-liquid-glass",
-        "style-glassmorphism",
-        "style-aurorism",
-        "aesthetic-dreamcore",
-        "aesthetic-frutiger-aero",
-        "recipe-aurora-marketing"
-      ],
-      "sourceFile": "design-library/material-displacement-ripple.md"
-    },
     "dithered-1bit": {
       "name": "1-bit Dither (Obra Dinn / Game Boy threshold)",
       "category": "digital-effect",
@@ -1160,36 +875,6 @@
         "aesthetic-corporate-grunge"
       ],
       "sourceFile": "design-library/material-dithered-1bit.md"
-    },
-    "dust-scratches": {
-      "name": "Dust + Scratches (archival distress)",
-      "category": "digital-effect",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface (translucent).",
-      "pairsPrototypes": [
-        "aesthetic-vaporwave",
-        "aesthetic-cottagegoth",
-        "aesthetic-dark-academia",
-        "aesthetic-corporate-grunge",
-        "recipe-editorial-magazine"
-      ],
-      "sourceFile": "design-library/material-dust-scratches.md"
-    },
-    "edge-lit-acrylic": {
-      "name": "Edge-lit acrylic (frosted slab glowing from within)",
-      "category": "glass-emissive",
-      "family": "digital",
-      "surfaceFinish": "satin-frosted",
-      "oneLine": "A frosted acrylic card or slab that carries light INSIDE its volume - edges",
-      "pairsPrototypes": [
-        "aesthetic-depin-hardware",
-        "aesthetic-cassette-futurism",
-        "recipe-ai-foundry-dark",
-        "style-dense-mono-dark",
-        "aesthetic-frutiger-dark-aero"
-      ],
-      "sourceFile": "design-library/material-edge-lit-acrylic.md"
     },
     "felt": {
       "name": "Felt (matted wool, fuzzy)",
@@ -1214,7 +899,6 @@
       "pairsPrototypes": [
         "style-silk-chrome-flow",
         "aesthetic-cosmic-horizon",
-        "recipe-restrained-ai-marketing",
         "aesthetic-defi-cosmic",
         "recipe-ai-foundry-dark"
       ],
@@ -1234,20 +918,6 @@
       ],
       "sourceFile": "design-library/material-film-grain-cinestill-800t.md"
     },
-    "film-grain-portra-400": {
-      "name": "Film Grain - Portra 400 (colour, fine grain, warm)",
-      "category": "film",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface that reacts to light: yes - heavier in shadow.",
-      "pairsPrototypes": [
-        "aesthetic-coastal-grandmother",
-        "aesthetic-cottagecore",
-        "recipe-editorial-magazine",
-        "aesthetic-cottagegoth"
-      ],
-      "sourceFile": "design-library/material-film-grain-portra-400.md"
-    },
     "film-grain-tri-x": {
       "name": "Film Grain - Tri-X 400 (B&W, coarse grain)",
       "category": "film",
@@ -1262,20 +932,6 @@
         "aesthetic-cottagegoth"
       ],
       "sourceFile": "design-library/material-film-grain-tri-x.md"
-    },
-    "foxing-stain": {
-      "name": "Foxing / Tea Stain (paper aging)",
-      "category": "digital-effect",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface (translucent).",
-      "pairsPrototypes": [
-        "style-serif-warm-paper",
-        "aesthetic-dark-academia",
-        "aesthetic-cottagecore",
-        "aesthetic-cottagegoth"
-      ],
-      "sourceFile": "design-library/material-foxing-stain.md"
     },
     "frosted-glass": {
       "name": "Frosted Glass (canonical glassmorphism)",
@@ -1309,20 +965,6 @@
       ],
       "sourceFile": "design-library/material-glossy-plastic-aqua.md"
     },
-    "gold-leaf": {
-      "name": "Gold Leaf (rich warm metal)",
-      "category": "metal",
-      "family": "digital",
-      "surfaceFinish": "metallic",
-      "oneLine": "A metallic surface that reacts to light: yes - warm specular, slight wrinkle.",
-      "pairsPrototypes": [
-        "aesthetic-dark-academia",
-        "aesthetic-defi-cosmic",
-        "aesthetic-urbling",
-        "style-holographic"
-      ],
-      "sourceFile": "design-library/material-gold-leaf.md"
-    },
     "halftone-cmyk": {
       "name": "Halftone CMYK (newspaper / comic process)",
       "category": "print",
@@ -1354,64 +996,6 @@
       ],
       "sourceFile": "design-library/material-hand-architect-sketch.md"
     },
-    "heat-haze-shimmer": {
-      "name": "Heat Haze Shimmer (mirage / hot tarmac warp)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface (transparent) that reacts to light: yes and deforms: yes - low-amplitude noise displacement.",
-      "pairsPrototypes": [
-        "aesthetic-vaporwave",
-        "aesthetic-dreamcore",
-        "aesthetic-frutiger-aero",
-        "aesthetic-coastal-grandmother",
-        "recipe-aurora-marketing"
-      ],
-      "sourceFile": "design-library/material-heat-haze-shimmer.md"
-    },
-    "holographic-foil": {
-      "name": "Holographic Foil (Pokemon card / Apple Pay Cash)",
-      "category": "iridescent",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface that reacts to light: yes - full spectrum hue shift on angle.",
-      "pairsPrototypes": [
-        "style-holographic",
-        "aesthetic-frutiger-chromecore",
-        "aesthetic-y2k-futurism",
-        "aesthetic-vaporwave",
-        "style-liquid-glass"
-      ],
-      "sourceFile": "design-library/material-holographic-foil.md"
-    },
-    "holographic-paper": {
-      "name": "Holographic-Paper (iridescent foil on textured paper)",
-      "category": "iridescent",
-      "family": "hybrid",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface that reacts to light: yes - strong on foil, none on paper and deforms: yes - paper underneath.",
-      "pairsPrototypes": [
-        "style-holographic",
-        "aesthetic-y2k-futurism",
-        "recipe-editorial-magazine"
-      ],
-      "sourceFile": "design-library/material-holographic-paper.md"
-    },
-    "ink-bleed-on-paper": {
-      "name": "Ink Bleed (fountain pen / felt-tip on uncoated)",
-      "category": "ink",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface.",
-      "pairsPrototypes": [
-        "style-raster-cutout",
-        "style-doodle",
-        "aesthetic-cottagecore",
-        "aesthetic-cottagegoth",
-        "aesthetic-dark-academia"
-      ],
-      "sourceFile": "design-library/material-ink-bleed-on-paper.md"
-    },
     "ink-wash-sumi-e": {
       "name": "Ink Wash (sumi-e / brush-and-ink)",
       "category": "ink",
@@ -1436,68 +1020,10 @@
         "aesthetic-bauhaus",
         "aesthetic-swiss-modernist",
         "recipe-scientific-infra-marketing",
-        "style-outline-wireframe",
         "aesthetic-atompunk",
         "aesthetic-cassette-futurism"
       ],
       "sourceFile": "design-library/material-iso-line-drawing.md"
-    },
-    "jpeg-block-corruption": {
-      "name": "JPEG Block Corruption (8×8 macroblock aesthetic)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface.",
-      "pairsPrototypes": [
-        "aesthetic-vaporwave",
-        "aesthetic-y2k-myspace",
-        "aesthetic-internetcore",
-        "aesthetic-cyberpunk",
-        "aesthetic-weirdcore",
-        "aesthetic-dreamcore"
-      ],
-      "sourceFile": "design-library/material-jpeg-block-corruption.md"
-    },
-    "kraft-paper": {
-      "name": "Kraft Paper (brown unbleached cardstock)",
-      "category": "paper",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface and deforms: yes - wrinkles, tears.",
-      "pairsPrototypes": [
-        "aesthetic-cottagecore",
-        "aesthetic-cottagegoth",
-        "aesthetic-goblincore",
-        "recipe-newspaper-of-record"
-      ],
-      "sourceFile": "design-library/material-kraft-paper.md"
-    },
-    "legal-pad": {
-      "name": "Legal Pad (ruled yellow paper)",
-      "category": "paper",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface and deforms: yes - pages tear from spiral.",
-      "pairsPrototypes": [
-        "style-skeuomorphism (notes-as-legal-pad)",
-        "aesthetic-dark-academia",
-        "recipe-newspaper-of-record"
-      ],
-      "sourceFile": "design-library/material-legal-pad.md"
-    },
-    "letterpress-emboss": {
-      "name": "Letterpress / Emboss (raised-impression printing)",
-      "category": "print",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface that reacts to light: yes - directional shadow into the pressed area and deforms: yes - paper is permanently deformed.",
-      "pairsPrototypes": [
-        "style-serif-warm-paper",
-        "aesthetic-cottagecore",
-        "aesthetic-dark-academia",
-        "recipe-editorial-magazine"
-      ],
-      "sourceFile": "design-library/material-letterpress-emboss.md"
     },
     "linen-weave": {
       "name": "Linen Weave (Apple-linen / textbook substrate)",
@@ -1512,21 +1038,6 @@
         "aesthetic-dark-academia"
       ],
       "sourceFile": "design-library/material-linen-weave.md"
-    },
-    "liquid-chrome-silk": {
-      "name": "Liquid chrome silk",
-      "category": "metal-fabric",
-      "family": "hybrid",
-      "surfaceFinish": "glossy",
-      "oneLine": "A metallic-anisotropic surface that reacts to light: yes - specular streaks travel along fabric folds; hue drifts across an iridescent 2-3 stop family; and deforms: yes - slow continuous undulation like silk underwater.",
-      "pairsPrototypes": [
-        "style-silk-chrome-flow",
-        "aesthetic-luxury-cinematic-dark",
-        "aesthetic-cosmic-horizon",
-        "recipe-ai-foundry-dark",
-        "style-aurorism"
-      ],
-      "sourceFile": "design-library/material-liquid-chrome-silk.md"
     },
     "liquid-glass": {
       "name": "Liquid Glass (Apple WWDC25)",
@@ -1611,27 +1122,9 @@
         "recipe-devtools-marketing",
         "recipe-terminal-on-web",
         "recipe-ai-foundry-dark",
-        "style-terminal-mono",
-        "style-dense-mono-dark",
-        "recipe-restrained-ai-marketing"
+        "style-dense-mono-dark"
       ],
       "sourceFile": "design-library/material-monospace-code-grid.md"
-    },
-    "motion-blur-streak": {
-      "name": "Motion Blur Streak (directional motion artifact)",
-      "category": "digital-effect",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface (translucent) that reacts to light: yes and deforms: yes - directional smear along motion vector.",
-      "pairsPrototypes": [
-        "aesthetic-cyberpunk",
-        "aesthetic-cassette-futurism",
-        "aesthetic-cinematic",
-        "recipe-bento-marketing",
-        "recipe-aurora-marketing",
-        "aesthetic-frutiger-aero"
-      ],
-      "sourceFile": "design-library/material-motion-blur-streak.md"
     },
     "nes-rom-corruption": {
       "name": "NES ROM Corruption (palette-flipped sprites, garbled tile data)",
@@ -1647,20 +1140,6 @@
         "aesthetic-acid-graphics"
       ],
       "sourceFile": "design-library/material-nes-rom-corruption.md"
-    },
-    "oil-on-water": {
-      "name": "Oil-on-Water Iridescence (organic dichroic)",
-      "category": "iridescent",
-      "family": "digital",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface (translucent) that reacts to light: yes - chaotic hue swirls and deforms: yes - surface ripples.",
-      "pairsPrototypes": [
-        "style-aurorism",
-        "style-holographic",
-        "aesthetic-vaporwave",
-        "aesthetic-cyberpunk"
-      ],
-      "sourceFile": "design-library/material-oil-on-water.md"
     },
     "paper-construction": {
       "name": "Paper construction (die-cut strata / pop-up volume)",
@@ -1685,8 +1164,7 @@
       "oneLine": "A matte surface (translucent (washes)) and deforms: yes.",
       "pairsPrototypes": [
         "aesthetic-cottagecore",
-        "aesthetic-coastal-grandmother",
-        "aesthetic-fairycore"
+        "aesthetic-coastal-grandmother"
       ],
       "sourceFile": "design-library/material-paper-with-watercolor.md"
     },
@@ -1770,26 +1248,10 @@
         "aesthetic-swiss-modernist",
         "aesthetic-bauhaus",
         "recipe-scientific-infra-marketing",
-        "style-outline-wireframe",
         "recipe-newspaper-of-record",
         "style-restrained-hairline"
       ],
       "sourceFile": "design-library/material-plotter-pen-line.md"
-    },
-    "polaroid-instant": {
-      "name": "Polaroid / Instant Photo (square frame, faded chemistry)",
-      "category": "film",
-      "family": "analog",
-      "surfaceFinish": "glossy",
-      "oneLine": "A glossy surface that reacts to light: yes - reflective sheen and deforms: minimal.",
-      "pairsPrototypes": [
-        "style-raster-cutout",
-        "aesthetic-cottagecore",
-        "aesthetic-y2k-myspace",
-        "aesthetic-coastal-grandmother",
-        "recipe-readcv"
-      ],
-      "sourceFile": "design-library/material-polaroid-instant.md"
     },
     "reeded-fluted-glass": {
       "name": "Reeded / fluted glass (vertical-slat refraction)",
@@ -1800,7 +1262,6 @@
       "pairsPrototypes": [
         "style-liquid-glass",
         "style-glassmorphism",
-        "recipe-restrained-ai-marketing",
         "aesthetic-pastel-pop-fmcg",
         "aesthetic-monochrome-pop-poster"
       ],
@@ -1990,21 +1451,6 @@
       ],
       "sourceFile": "design-library/material-torn-edge.md"
     },
-    "uncoated-paper": {
-      "name": "Uncoated Paper (soft, porous, ink-absorbing)",
-      "category": "paper",
-      "family": "analog",
-      "surfaceFinish": "matte",
-      "oneLine": "A matte surface and deforms: yes - wrinkles, tears, dog-ears.",
-      "pairsPrototypes": [
-        "style-serif-warm-paper",
-        "aesthetic-cottagecore",
-        "aesthetic-dark-academia",
-        "aesthetic-cottagegoth",
-        "style-raster-cutout"
-      ],
-      "sourceFile": "design-library/material-uncoated-paper.md"
-    },
     "vellum-translucency": {
       "name": "Vellum / Tracing Paper Translucency",
       "category": "glass",
@@ -2086,7 +1532,6 @@
       "pairsPrototypes": [
         "aesthetic-cottagecore",
         "aesthetic-coastal-grandmother",
-        "aesthetic-fairycore",
         "style-doodle"
       ],
       "sourceFile": "design-library/material-watercolor-wash.md"
@@ -2118,7 +1563,6 @@
         "aesthetic-atompunk",
         "aesthetic-cassette-futurism",
         "recipe-terminal-on-web",
-        "style-terminal-mono",
         "recipe-scientific-infra-marketing"
       ],
       "sourceFile": "design-library/material-wireframe-3d-line.md"

@@ -12,7 +12,7 @@ A known-good `(shell + style + aesthetic + voice)` bundle. Read each axis pick's
 ## Picks
 
 - **Shell:** `terminal-frame` - read `shell-terminal-frame.md`
-- **Style:** `terminal-mono` - read `style-terminal-mono.md`
+- **Style:** `dense-mono-dark` - read `style-dense-mono-dark.md`
 - **Aesthetic:** *(none - adult-pro brief)*
 - **Voice:** terse, lowercased, exit-code-aware
 

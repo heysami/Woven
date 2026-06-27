@@ -93,4 +93,4 @@ Fifth tell: high-fantasy ornament. Hexagonal frame corners belong to Honkai Star
 ## Pairs well with
 
 - **Shells:** `shell-mobile-app` (in-game phone-UI variant), `shell-canvas-floating`, `shell-scrapbook-substrate` (mixtape-cover variant), `shell-editorial-broken-grid`, `shell-hero-stack`
-- **Styles:** `style-holographic`, `style-pixel-bitmap` (for the CRT moments), `style-terminal-mono`, `style-neubrutalism` (for the spray-paint tag sticker discipline)
+- **Styles:** `style-holographic`, `style-pixel-bitmap` (for the CRT moments), `style-neubrutalism` (for the spray-paint tag sticker discipline)

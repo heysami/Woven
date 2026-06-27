@@ -5,7 +5,7 @@ family: analog
 category: wash
 surfaceFinish: matte
 transparency: translucent (multiple washes)
-pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, aesthetic-fairycore, style-doodle]
+pairsPrototypes: [aesthetic-cottagecore, aesthetic-coastal-grandmother, style-doodle]
 images:
   - src: material-watercolor-wash.png
     reason: Material fidelity sample.
@@ -74,7 +74,6 @@ raster: scanned real watercolor wash as substrate
 
 - `aesthetic-cottagecore`
 - `aesthetic-coastal-grandmother`
-- `aesthetic-fairycore`
 - `style-doodle`
 
 <!-- image: sample-1.png -->

@@ -5,7 +5,7 @@ family: digital
 category: digital-effect
 surfaceFinish: matte
 transparency: opaque
-pairsPrototypes: [style-terminal-mono, recipe-terminal-on-web, aesthetic-web-brutalism]
+pairsPrototypes: [recipe-terminal-on-web, aesthetic-web-brutalism]
 images:
   - src: material-ascii-art-surface.png
     reason: Material fidelity sample.
@@ -67,7 +67,6 @@ raster: pre-rendered ASCII PNG for static content
 
 ## Pairs with (prototype slugs)
 
-- `style-terminal-mono`
 - `recipe-terminal-on-web`
 - `aesthetic-web-brutalism`
 

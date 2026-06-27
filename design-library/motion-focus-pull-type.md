@@ -6,7 +6,7 @@ subCategory: dom
 role: editorial | transition
 binding: scroll-progress (or hover)
 medium: dom-filter
-pairsPrototypes: [aesthetic-monochrome-tech-editorial, style-oversized-neo-grotesque, recipe-readcv, style-restrained-hairline, aesthetic-sculptural-minimal]
+pairsPrototypes: [aesthetic-monochrome-tech-editorial, style-oversized-neo-grotesque, style-restrained-hairline, aesthetic-sculptural-minimal]
 notForUseWhen: Long-form reading surfaces (blur on prose you intend people to read is hostile), low-end-device audiences (filter: blur on large type is paint-expensive), or pages where every section must be skimmable at speed.
 images:
   - src: motion-focus-pull-type-ui.png
@@ -103,6 +103,5 @@ const planes = [...document.querySelectorAll('[data-focus-plane]')];
 
 - `aesthetic-monochrome-tech-editorial`
 - `style-oversized-neo-grotesque`
-- `recipe-readcv`
 - `style-restrained-hairline`
 - `aesthetic-sculptural-minimal`

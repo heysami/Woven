@@ -4,7 +4,7 @@ name: Editorial thick-brush op-ed
 category: Editorial conceptual
 subCategory: editorial-thick-brush
 role: spot-illustration
-pairsPrototypes: [recipe-newspaper-of-record, recipe-editorial-magazine, style-agate-broadsheet]
+pairsPrototypes: [recipe-newspaper-of-record, recipe-editorial-magazine]
 notForUseWhen: marketing, friendly, decorative
 images:
   - src: illust-editorial-thick-brush.png
@@ -58,7 +58,6 @@ marketing, friendly, decorative
 
 - `recipe-newspaper-of-record`
 - `recipe-editorial-magazine`
-- `style-agate-broadsheet`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

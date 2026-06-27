@@ -58,4 +58,4 @@ Turn-based or grid-based apps where progression, inventory, stats and dialog mat
 ## Pairs well with
 
 - Shells: shell-mobile-app, shell-two-column-app, shell-three-column-app, shell-centered-column, shell-top-bar-canvas, shell-bento-grid
-- Styles: style-pixel-bitmap, style-terminal-mono, style-flat-design
+- Styles: style-pixel-bitmap, style-flat-design

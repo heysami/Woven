@@ -3,7 +3,7 @@ styleId: dreamy-haze
 name: Dreamy soft haze portrait
 category: conceptual
 era: current
-pairsPrototypes: [aesthetic-dreamcore, aesthetic-angelcore, aesthetic-fairycore, aesthetic-positivity-kawaii]
+pairsPrototypes: [aesthetic-dreamcore, aesthetic-angelcore, aesthetic-positivity-kawaii]
 notForUseWhen: Hardware product, B2B, anything needing clarity and detail.
 images:
   - src: photo-dreamy-haze.png
@@ -62,7 +62,6 @@ Hardware product, B2B, anything needing clarity and detail.
 
 - `aesthetic-dreamcore`
 - `aesthetic-angelcore`
-- `aesthetic-fairycore`
 - `aesthetic-positivity-kawaii`
 
 <!-- image: sample-1.png -->

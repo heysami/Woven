@@ -4,7 +4,7 @@ name: Corporate Memphis noodle-people
 category: Flat vector
 subCategory: corporate-memphis
 role: subject
-pairsPrototypes: [aesthetic-corporate-memphis, recipe-bento-marketing, recipe-restrained-ai-marketing]
+pairsPrototypes: [aesthetic-corporate-memphis, recipe-bento-marketing]
 notForUseWhen: indie / editorial / brutalism - anywhere personality matters
 images:
   - src: illust-corporate-memphis-noodle.png
@@ -64,7 +64,6 @@ indie / editorial / brutalism - anywhere personality matters
 
 - `aesthetic-corporate-memphis`
 - `recipe-bento-marketing`
-- `recipe-restrained-ai-marketing`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

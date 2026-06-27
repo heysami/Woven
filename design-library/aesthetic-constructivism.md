@@ -72,4 +72,4 @@ The AI tell is uniform 22-degree rotations on every diagonal, pure `#FF0000` ins
 ## Pairs well with
 
 - **Shells:** shell-editorial-broken-grid, shell-centered-column, shell-hero-stack, shell-bento-grid (with rotated tiles), shell-masonry
-- **Styles:** style-oversized-neo-grotesque, style-serif-warm-paper (for the paper substrate, not the type), style-brutalist-raw, style-restrained-hairline (as a quiet counterpoint), style-agate-broadsheet
+- **Styles:** style-oversized-neo-grotesque, style-serif-warm-paper (for the paper substrate, not the type), style-brutalist-raw, style-restrained-hairline (as a quiet counterpoint)

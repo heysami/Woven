@@ -9,7 +9,7 @@ defaultBlend: overlay
 animated: yes
 needsSource: no
 stackable: yes
-pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-bioluminescent-deep, recipe-restrained-ai-marketing, aesthetic-dark-botanical-maximalism]
+pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-bioluminescent-deep, aesthetic-dark-botanical-maximalism]
 notForUseWhen: hard-edged brutalist, flat poster
 ---
 
@@ -59,5 +59,4 @@ css/svg: feTurbulence(type=fractalNoise) is a static DOM cousin.
 
 - `recipe-ai-foundry-dark`
 - `aesthetic-bioluminescent-deep`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-dark-botanical-maximalism`

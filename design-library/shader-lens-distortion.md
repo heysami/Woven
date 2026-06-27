@@ -9,7 +9,7 @@ defaultBlend: normal
 animated: no
 needsSource: yes
 stackable: yes
-pairsPrototypes: [aesthetic-cyberpunk, recipe-bento-marketing, recipe-restrained-ai-marketing, aesthetic-frutiger-aero]
+pairsPrototypes: [aesthetic-cyberpunk, recipe-bento-marketing, aesthetic-frutiger-aero]
 notForUseWhen: flat editorial type, accessibility-critical text
 ---
 
@@ -65,5 +65,4 @@ css: filter: drop-shadow tricks only fake edge CA, no warp.
 
 - `aesthetic-cyberpunk`
 - `recipe-bento-marketing`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-frutiger-aero`

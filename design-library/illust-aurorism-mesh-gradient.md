@@ -4,7 +4,7 @@ name: Aurorism mesh gradient
 category: Abstract / decoration
 subCategory: aurorism-mesh
 role: decoration
-pairsPrototypes: [style-aurorism, recipe-aurora-marketing, recipe-ai-foundry-dark, recipe-restrained-ai-marketing, style-holographic, style-liquid-glass]
+pairsPrototypes: [style-aurorism, recipe-aurora-marketing, recipe-ai-foundry-dark, style-holographic, style-liquid-glass]
 notForUseWhen: brutalism, editorial, terminal
 images:
   - src: illust-aurorism-mesh-gradient.png
@@ -59,7 +59,6 @@ brutalism, editorial, terminal
 - `style-aurorism`
 - `recipe-aurora-marketing`
 - `recipe-ai-foundry-dark`
-- `recipe-restrained-ai-marketing`
 - `style-holographic`
 - `style-liquid-glass`
 

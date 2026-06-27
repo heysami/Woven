@@ -3,7 +3,7 @@ styleId: fantasy-glow
 name: Fantasy glow magical lighting
 category: conceptual
 era: current
-pairsPrototypes: [aesthetic-fairycore, aesthetic-cottagegoth, aesthetic-cottagecore, aesthetic-solarpunk]
+pairsPrototypes: [aesthetic-cottagegoth, aesthetic-cottagecore, aesthetic-solarpunk]
 notForUseWhen: B2B, modern minimal, tech product.
 images:
   - src: photo-fantasy-glow.png
@@ -60,7 +60,6 @@ B2B, modern minimal, tech product.
 
 ## Pairs with (prototype slugs)
 
-- `aesthetic-fairycore`
 - `aesthetic-cottagegoth`
 - `aesthetic-cottagecore`
 - `aesthetic-solarpunk`

@@ -6,7 +6,7 @@ subCategory: post-process
 role: hero | texture
 binding: time + optional pointer-xy
 medium: video-or-raster-through-webgl
-pairsPrototypes: [style-terminal-mono, style-pixel-bitmap, aesthetic-web-brutalism, style-brutalist-raw, aesthetic-corporate-grunge, style-pixel-dissolve]
+pairsPrototypes: [style-pixel-bitmap, aesthetic-web-brutalism, style-brutalist-raw, aesthetic-corporate-grunge]
 notForUseWhen: The media's fine detail IS the content (product close-ups, faces that must stay personable), the page already runs another fullscreen shader, or the register is luxe/minimal where lo-fi sampling reads as damage.
 images:
   - src: motion-stylize-shader-pass-ui.png
@@ -103,9 +103,7 @@ uniforms.uCellPx.value = mix(maxCell, minCell, proximity(cur));
 
 ## Pairs with (prototype slugs)
 
-- `style-terminal-mono`
 - `style-pixel-bitmap`
 - `aesthetic-web-brutalism`
 - `style-brutalist-raw`
 - `aesthetic-corporate-grunge`
-- `style-pixel-dissolve`

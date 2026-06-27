@@ -5,7 +5,7 @@ family: digital
 category: emissive-fiber
 surfaceFinish: glossy
 transparency: additive
-pairsPrototypes: [style-silk-chrome-flow, aesthetic-cosmic-horizon, recipe-restrained-ai-marketing, aesthetic-defi-cosmic, recipe-ai-foundry-dark]
+pairsPrototypes: [style-silk-chrome-flow, aesthetic-cosmic-horizon, aesthetic-defi-cosmic, recipe-ai-foundry-dark]
 images:
   - src: material-filament-strand-ribbon.png
     reason: Material fidelity sample.
@@ -99,6 +99,5 @@ ribbon breathes through the page
 
 - `style-silk-chrome-flow`
 - `aesthetic-cosmic-horizon`
-- `recipe-restrained-ai-marketing`
 - `aesthetic-defi-cosmic`
 - `recipe-ai-foundry-dark`

@@ -31,7 +31,7 @@
 
 - **What it is:** cluster of glossy blue tinted-glass cubes floating over an icy white-blue gradient; user drags cubes around, they spring and resettle. Corporate-AI landing copy on the left.
 - **Style:** glassmorphism taken to 3D; soft cool corporate.
-- **Aesthetic:** frutiger-adjacent soft AI marketing (restrained-ai-marketing posture with one playful toy).
+- **Aesthetic:** frutiger-adjacent soft AI marketing (restrained AI-marketing posture with one playful toy).
 - **Material:** tinted transmission glass cubes - coverable by `material-frosted-glass` + `material-dispersion-prism-glass`. The signature is the INTERACTION, not the surface.
 - **Library gap → NEW:** `motion-drag-physics-cluster`.
 

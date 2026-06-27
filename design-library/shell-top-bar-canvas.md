@@ -27,4 +27,4 @@ Document editors, image viewers, single-page tools.
 
 ## Pairs well with
 
-Style: restrained-hairline, terminal-mono, outline-wireframe.
+Style: restrained-hairline.

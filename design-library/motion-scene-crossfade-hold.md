@@ -6,7 +6,7 @@ subCategory: video
 role: transition
 binding: wheel-step
 medium: video
-pairsPrototypes: [recipe-aurora-marketing, recipe-warm-restraint, recipe-restrained-ai-marketing, style-aurorism, aesthetic-dreamcore]
+pairsPrototypes: [recipe-aurora-marketing, recipe-warm-restraint, style-aurorism, aesthetic-dreamcore]
 notForUseWhen: Scenes are hard-edged or graphic (UI screenshots, type-led boards) - a dissolve between crisp rectangles reads as a rendering bug; use scene-stepper-wipe. Also wrong when scenes must feel causally connected - crossfade says "elsewhere", not "therefore".
 images:
   - src: motion-scene-crossfade-hold-ui.png
@@ -87,7 +87,6 @@ addEventListener('wheel', e => { e.preventDefault(); if (Math.abs(e.deltaY) > 10
 
 - `recipe-aurora-marketing`
 - `recipe-warm-restraint`
-- `recipe-restrained-ai-marketing`
 - `style-aurorism`
 - `aesthetic-dreamcore`
 

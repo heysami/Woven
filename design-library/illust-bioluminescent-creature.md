@@ -4,7 +4,7 @@ name: Bioluminescent creature render
 category: 3D
 subCategory: organic-emissive
 role: subject
-pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-defi-cosmic, aesthetic-fairycore]
+pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-defi-cosmic]
 notForUseWhen: Brief is warm-domestic, budget, or daylight - the creature lives in expensive darkness.
 images:
   - src: illust-bioluminescent-creature.png
@@ -59,4 +59,3 @@ Friendly consumer mascots (use kawaii/plush registers), daylight brands, dense-i
 
 - `aesthetic-bioluminescent-deep`
 - `aesthetic-defi-cosmic`
-- `aesthetic-fairycore`

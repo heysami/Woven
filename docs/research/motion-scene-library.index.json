@@ -52,18 +52,6 @@
         "scroll-sequence-frames"
       ]
     },
-    "recipe-restrained-ai-marketing": {
-      "default": "background-swap-fixed-ui",
-      "alternatives": [
-        "drag-physics-cluster",
-        "mouse-scrub-orbit",
-        "pointer-magnetic-subject",
-        "quiet-zone-headline",
-        "scene-crossfade-hold",
-        "scroll-entrance-video",
-        "scroll-scrub-rotation"
-      ]
-    },
     "style-glassmorphism": {
       "default": "background-swap-fixed-ui",
       "alternatives": [
@@ -213,10 +201,6 @@
         "video-text-mask"
       ]
     },
-    "recipe-readcv": {
-      "default": "focus-pull-type",
-      "alternatives": []
-    },
     "style-restrained-hairline": {
       "default": "focus-pull-type",
       "alternatives": [
@@ -256,12 +240,6 @@
       "default": "idle-character-loop",
       "alternatives": [
         "mouse-scrub-look"
-      ]
-    },
-    "aesthetic-fairycore": {
-      "default": "idle-character-loop",
-      "alternatives": [
-        "pointer-magnetic-subject"
       ]
     },
     "aesthetic-cyberpunk": {
@@ -317,10 +295,6 @@
         "video-text-mask"
       ]
     },
-    "style-terminal-mono": {
-      "default": "stylize-shader-pass",
-      "alternatives": []
-    },
     "style-pixel-bitmap": {
       "default": "stylize-shader-pass",
       "alternatives": []
@@ -335,18 +309,6 @@
     },
     "aesthetic-corporate-grunge": {
       "default": "stylize-shader-pass",
-      "alternatives": []
-    },
-    "style-pixel-dissolve": {
-      "default": "stylize-shader-pass",
-      "alternatives": []
-    },
-    "style-outline-wireframe": {
-      "default": "svg-self-draw",
-      "alternatives": []
-    },
-    "style-kinetic-line-accents": {
-      "default": "svg-self-draw",
       "alternatives": []
     },
     "aesthetic-craft-sketchbook": {
@@ -401,7 +363,6 @@
       "oneLine": "The UI chrome - headline rail, nav dots, CTA - is laid out ONCE and never moves; each wheel-step swaps only the full-bleed background video behind it, so continuity lives in the stable interface while change lives entirely in the world.",
       "notForUseWhen": "Each scene needs a different layout (headline left on one, product grid on the next) - the technique's whole value is the unmoving chrome; if the UI must reflow per scene, use scene-stepper-wipe instead.",
       "pairsPrototypes": [
-        "recipe-restrained-ai-marketing",
         "recipe-aurora-marketing",
         "recipe-warm-restraint",
         "style-glassmorphism",
@@ -476,7 +437,6 @@
       "oneLine": "A loose cluster of 8-30 identical 3D primitives - glass cubes, spheres,",
       "notForUseWhen": "The hero must communicate a SPECIFIC product image (the toy abstracts it away), touch-scroll-critical mobile heroes (drag fights scroll), or pages with another physics/simulation surface already running.",
       "pairsPrototypes": [
-        "recipe-restrained-ai-marketing",
         "style-glassmorphism",
         "recipe-bento-marketing",
         "aesthetic-frutiger-aero",
@@ -497,7 +457,6 @@
       "pairsPrototypes": [
         "aesthetic-monochrome-tech-editorial",
         "style-oversized-neo-grotesque",
-        "recipe-readcv",
         "style-restrained-hairline",
         "aesthetic-sculptural-minimal"
       ],
@@ -553,7 +512,6 @@
         "recipe-y2k-memphis-loud",
         "recipe-neo-grotesque-portfolio",
         "aesthetic-y2k-futurism",
-        "aesthetic-fairycore",
         "aesthetic-cyberpunk"
       ],
       "sourceFile": "design-library/motion-idle-character-loop.md"
@@ -665,7 +623,6 @@
       "pairsPrototypes": [
         "recipe-bento-marketing",
         "recipe-devtools-marketing",
-        "recipe-restrained-ai-marketing",
         "style-bold-display",
         "aesthetic-cassette-futurism"
       ],
@@ -683,10 +640,8 @@
       "notForUseWhen": "The brief wants overt acknowledgement (use mouse-scrub-look - this technique is deliberately subliminal), the subject is rigid with no plausible sway (architecture, typography), or the frames cannot be generated with consistent identity across the sequence.",
       "pairsPrototypes": [
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
         "style-glassmorphism",
-        "aesthetic-cottagecore",
-        "aesthetic-fairycore"
+        "aesthetic-cottagecore"
       ],
       "sourceFile": "design-library/motion-pointer-magnetic-subject.md"
     },
@@ -740,7 +695,6 @@
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
         "aesthetic-solarpunk",
         "style-bold-display"
       ],
@@ -759,7 +713,6 @@
       "pairsPrototypes": [
         "recipe-aurora-marketing",
         "recipe-warm-restraint",
-        "recipe-restrained-ai-marketing",
         "style-aurorism",
         "aesthetic-dreamcore"
       ],
@@ -815,7 +768,6 @@
       "notForUseWhen": "The section is above the fold on load (there is no scroll-into moment to trigger), or the asset must stay interactive after arrival - this technique ends in a still hold frame.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing",
         "recipe-devtools-marketing",
         "recipe-scientific-infra-marketing"
       ],
@@ -908,7 +860,6 @@
       "notForUseWhen": "The subject looks the same from every angle (spheres, flat cards, gradients - rotation reveals nothing), or the page can't afford a pinned section (short utility pages, docs), or scroll must keep its native meaning throughout.",
       "pairsPrototypes": [
         "recipe-bento-marketing",
-        "recipe-restrained-ai-marketing",
         "recipe-devtools-marketing",
         "style-bold-display",
         "aesthetic-cassette-futurism"
@@ -982,12 +933,10 @@
       "oneLine": "A video or image is sampled as a texture and re-rendered every frame through a",
       "notForUseWhen": "The media's fine detail IS the content (product close-ups, faces that must stay personable), the page already runs another fullscreen shader, or the register is luxe/minimal where lo-fi sampling reads as damage.",
       "pairsPrototypes": [
-        "style-terminal-mono",
         "style-pixel-bitmap",
         "aesthetic-web-brutalism",
         "style-brutalist-raw",
-        "aesthetic-corporate-grunge",
-        "style-pixel-dissolve"
+        "aesthetic-corporate-grunge"
       ],
       "sourceFile": "design-library/motion-stylize-shader-pass.md"
     },
@@ -1022,8 +971,6 @@
       "notForUseWhen": "The page's graphics are raster or filled-vector with no stroke skeleton (nothing to draw), the register is cool/corporate-precise (a hand drawing itself reads as warmth - kinetic-line-accents is the licensed cold variant), or there are more than ~12 draw-on moments per page (the device dies by repetition).",
       "pairsPrototypes": [
         "style-doodle",
-        "style-outline-wireframe",
-        "style-kinetic-line-accents",
         "aesthetic-cottagecore",
         "aesthetic-craft-sketchbook",
         "recipe-editorial-magazine"

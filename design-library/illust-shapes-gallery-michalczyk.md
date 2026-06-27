@@ -4,7 +4,7 @@ name: Shapes.gallery - Monika Michalczyk shapes
 category: Abstract / decoration
 subCategory: geometric-primitive
 role: decoration
-pairsPrototypes: [recipe-neo-grotesque-portfolio, recipe-readcv, style-bold-display, recipe-bento-marketing]
+pairsPrototypes: [recipe-neo-grotesque-portfolio, style-bold-display, recipe-bento-marketing]
 notForUseWhen: dense data UI, brutalism
 images:
   - src: illust-shapes-gallery-michalczyk.png
@@ -52,7 +52,6 @@ dense data UI, brutalism
 ## Pairs with (prototype slugs)
 
 - `recipe-neo-grotesque-portfolio`
-- `recipe-readcv`
 - `style-bold-display`
 - `recipe-bento-marketing`
 

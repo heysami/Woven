@@ -3,7 +3,7 @@ styleId: magnum-monochrome
 name: Magnum monochrome documentary
 category: documentary
 era: 1950s-current
-pairsPrototypes: [recipe-newspaper-of-record, style-agate-broadsheet, style-serif-warm-paper, recipe-editorial-magazine]
+pairsPrototypes: [recipe-newspaper-of-record, style-serif-warm-paper, recipe-editorial-magazine]
 notForUseWhen: Product e-comm, anything aspirational-consumer.
 images:
   - src: photo-magnum-monochrome.png
@@ -61,7 +61,6 @@ Product e-comm, anything aspirational-consumer.
 ## Pairs with (prototype slugs)
 
 - `recipe-newspaper-of-record`
-- `style-agate-broadsheet`
 - `style-serif-warm-paper`
 - `recipe-editorial-magazine`
 

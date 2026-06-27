@@ -36,4 +36,4 @@ Aesthetic blogs, mood boards, fashion lookbooks, journal apps, fan catalogs.
 
 ## Pairs well with
 
-Style: raster-cutout (mandatory). Aesthetic: cottagecore, dark-academia, y2k-myspace, goblincore, coastal-grandmother, fairycore, dreamcore, cottagegoth, angelcore, cluttercore - pick ONE.
+Style: raster-cutout (mandatory). Aesthetic: cottagecore, dark-academia, y2k-myspace, goblincore, coastal-grandmother, dreamcore, cottagegoth, angelcore, cluttercore - pick ONE.

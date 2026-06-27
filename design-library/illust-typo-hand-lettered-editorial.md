@@ -4,7 +4,7 @@ name: Hand-lettered editorial (modern brush)
 category: Illustrative typography
 subCategory: hand-lettered-editorial
 role: typography
-pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, style-serif-warm-paper, recipe-readcv]
+pairsPrototypes: [recipe-editorial-magazine, recipe-warm-restraint, style-serif-warm-paper]
 notForUseWhen: brutalism, sans-only design system
 images:
   - src: illust-typo-hand-lettered-editorial.png
@@ -58,7 +58,6 @@ brutalism, sans-only design system
 - `recipe-editorial-magazine`
 - `recipe-warm-restraint`
 - `style-serif-warm-paper`
-- `recipe-readcv`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

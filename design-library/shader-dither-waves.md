@@ -9,7 +9,7 @@ defaultBlend: screen
 animated: yes
 needsSource: no
 stackable: yes
-pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, style-terminal-mono, recipe-ai-foundry-dark, aesthetic-y2k-futurism]
+pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, recipe-ai-foundry-dark, aesthetic-y2k-futurism]
 notForUseWhen: flat clean SaaS, photographic hero
 ---
 
@@ -63,6 +63,5 @@ css/svg: not appropriate - dithering needs per-pixel quantization.
 
 - `aesthetic-cyberpunk`
 - `aesthetic-cassette-futurism`
-- `style-terminal-mono`
 - `recipe-ai-foundry-dark`
 - `aesthetic-y2k-futurism`

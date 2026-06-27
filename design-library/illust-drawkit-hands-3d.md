@@ -4,7 +4,7 @@ name: DrawKit Hands Illustrations
 category: 3D
 subCategory: render-cinematic
 role: spot-illustration
-pairsPrototypes: [recipe-restrained-ai-marketing, style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
+pairsPrototypes: [style-liquid-glass, style-sf-pro-ios, recipe-ios-system]
 notForUseWhen: cartoon contexts, brutalism, dense data UI
 images:
   - src: illust-drawkit-hands-3d.png
@@ -61,7 +61,6 @@ cartoon contexts, brutalism, dense data UI
 
 ## Pairs with (prototype slugs)
 
-- `recipe-restrained-ai-marketing`
 - `style-liquid-glass`
 - `style-sf-pro-ios`
 - `recipe-ios-system`

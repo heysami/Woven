@@ -59,4 +59,4 @@ Raster required: photocopy textures, distressed Xerox grain, and 1990s magazine 
 ## Pairs well with
 
 - Shells: shell-editorial-broken-grid, shell-scrapbook-substrate, shell-masonry, shell-hero-stack, shell-centered-column
-- Styles: style-raster-cutout, style-serif-warm-paper, style-brutalist-raw, style-terminal-mono
+- Styles: style-raster-cutout, style-serif-warm-paper, style-brutalist-raw

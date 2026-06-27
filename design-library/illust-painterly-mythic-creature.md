@@ -4,7 +4,7 @@ name: Painterly mythic creature
 category: Hand-drawn / sketch
 subCategory: loose-painterly
 role: hero
-pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, recipe-warm-restraint, aesthetic-fairycore]
+pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, recipe-warm-restraint]
 notForUseWhen: Brief is technical, minimal, or photoreal - the creature is expressive brushwork, not asset-render.
 images:
   - src: illust-painterly-mythic-creature.png

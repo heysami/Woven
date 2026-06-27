@@ -3,7 +3,7 @@ styleId: vivian-maier-square
 name: Vivian Maier square street observational
 category: street
 era: 1950s-1970s archival
-pairsPrototypes: [recipe-newspaper-of-record, style-serif-warm-paper, style-agate-broadsheet, recipe-editorial-magazine]
+pairsPrototypes: [recipe-newspaper-of-record, style-serif-warm-paper, recipe-editorial-magazine]
 notForUseWhen: Anything contemporary-fashion, fast-paced, conversion-driven.
 images:
   - src: photo-vivian-maier-square.png
@@ -62,7 +62,6 @@ Anything contemporary-fashion, fast-paced, conversion-driven.
 
 - `recipe-newspaper-of-record`
 - `style-serif-warm-paper`
-- `style-agate-broadsheet`
 - `recipe-editorial-magazine`
 
 <!-- image: sample-1.png -->

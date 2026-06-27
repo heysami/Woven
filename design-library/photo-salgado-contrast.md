@@ -3,7 +3,7 @@ styleId: salgado-contrast
 name: Sebastião Salgado biblical contrast
 category: documentary
 era: 1980s-current
-pairsPrototypes: [recipe-newspaper-of-record, style-agate-broadsheet, recipe-editorial-magazine, style-serif-warm-paper]
+pairsPrototypes: [recipe-newspaper-of-record, recipe-editorial-magazine, style-serif-warm-paper]
 notForUseWhen: Fashion, consumer product, anything cheerful.
 images:
   - src: photo-salgado-contrast.png
@@ -61,7 +61,6 @@ Fashion, consumer product, anything cheerful.
 ## Pairs with (prototype slugs)
 
 - `recipe-newspaper-of-record`
-- `style-agate-broadsheet`
 - `recipe-editorial-magazine`
 - `style-serif-warm-paper`
 

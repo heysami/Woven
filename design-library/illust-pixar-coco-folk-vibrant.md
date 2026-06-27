@@ -4,7 +4,7 @@ name: Pixar Coco folk-vibrant Land of the Dead
 category: 3D
 subCategory: render-cinematic
 role: subject
-pairsPrototypes: [aesthetic-cluttercore, aesthetic-maximalism, aesthetic-positivity-kawaii, recipe-editorial-magazine, aesthetic-fairycore]
+pairsPrototypes: [aesthetic-cluttercore, aesthetic-maximalism, aesthetic-positivity-kawaii, recipe-editorial-magazine]
 notForUseWhen: restrained-editorial, brutalism, B2B-clean, cyberpunk
 images:
   - src: illust-pixar-coco-folk-vibrant.png
@@ -81,7 +81,6 @@ restrained-editorial, brutalism, B2B-clean, cyberpunk, anything wanting muted or
 - `aesthetic-maximalism`
 - `aesthetic-positivity-kawaii`
 - `recipe-editorial-magazine`
-- `aesthetic-fairycore`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

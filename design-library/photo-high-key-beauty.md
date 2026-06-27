@@ -3,7 +3,7 @@ styleId: high-key-beauty
 name: High-key beauty white seamless
 category: beauty
 era: current
-pairsPrototypes: [recipe-bento-marketing, style-glassmorphism, style-liquid-glass, recipe-restrained-ai-marketing]
+pairsPrototypes: [recipe-bento-marketing, style-glassmorphism, style-liquid-glass]
 notForUseWhen: Editorial mood, lifestyle, anything narrative.
 images:
   - src: photo-high-key-beauty.png
@@ -63,7 +63,6 @@ Editorial mood, lifestyle, anything narrative.
 - `recipe-bento-marketing`
 - `style-glassmorphism`
 - `style-liquid-glass`
-- `recipe-restrained-ai-marketing`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

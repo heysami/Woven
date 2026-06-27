@@ -4,7 +4,7 @@ name: The Little Things
 category: Flat vector
 subCategory: corporate-memphis
 role: subject
-pairsPrototypes: [recipe-warm-restraint, aesthetic-cottagecore, recipe-readcv]
+pairsPrototypes: [recipe-warm-restraint, aesthetic-cottagecore]
 notForUseWhen: B2B technical
 images:
   - src: illust-blush-little-things.png
@@ -57,7 +57,6 @@ B2B technical
 
 - `recipe-warm-restraint`
 - `aesthetic-cottagecore`
-- `recipe-readcv`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->

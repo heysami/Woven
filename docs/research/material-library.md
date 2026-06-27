@@ -320,7 +320,7 @@ The proximity reaction from §1.7 needs a SINGLE viewport-level handler, not one
 >
 > - **Column 1 - `Prototype slug`** - kebab-case slug from prototype.md (recipes, aesthetics, styles, shells). May be wrapped in backticks for visual distinction. Orchestrators match their `committedAesthetic` envelope field against this. Exact-match only; no fuzzy matching.
 > - **Column 2 - `Primary material(s)`** - comma-separated `materialId`s (kebab-case, match §2-§5 entries). Default pick is the FIRST entry; orchestrator may apply multiple primaries to different element roles on the page (e.g. card surface + decorative shape + image bg).
-> - **Column 3 - `Secondary material(s)`** - additional materials for layered application (e.g. paper PRIMARY + foxing-stain SECONDARY overlay). Used to compose effects.
+> - **Column 3 - `Secondary material(s)`** - additional materials for layered application (e.g. paper PRIMARY + halftone-cmyk SECONDARY overlay). Used to compose effects.
 > - Some rows include explicit "no material - flat is the brief" or "anti-pattern" callouts. Orchestrator MUST honour these - refuse to dispatch material fidelity for those slugs.
 >
 > The same schema is mirrored in `photography-library.md §3` and `illustration-library.md §3`.
@@ -329,80 +329,68 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 
 | Prototype slug | Primary material(s) | Secondary material(s) |
 |---|---|---|
-| `style-glassmorphism` | frosted-glass, thin-glass-chip | aurora-mesh (substrate), reeded-fluted-glass (hero panel) |
-| `style-liquid-glass` | liquid-glass, reeded-fluted-glass | aurora-mesh, oil-on-water (substrate) |
-| `style-claymorphism` | matte-clay | aurora-mesh (background) |
+| `style-glassmorphism` | frosted-glass, thin-glass-chip | reeded-fluted-glass (hero panel) |
+| `style-liquid-glass` | liquid-glass, reeded-fluted-glass |  |
+| `style-claymorphism` | matte-clay |  |
 | `style-neumorphism` | soft-ui-foam | (single-material genre) |
-| `style-holographic` | holographic-foil, oil-on-water | dust-scratches |
-| `style-skeuomorphism` | linen-weave, walnut-grain, pebbled-leather, smooth-leather, weathered-leather, felt, legal-pad, glossy-plastic-aqua | letterpress-emboss, brushed-aluminum |
-| `style-aurorism` | aurora-mesh | (single-material genre) |
+| `style-skeuomorphism` | linen-weave, walnut-grain, pebbled-leather, smooth-leather, weathered-leather, felt, glossy-plastic-aqua | brushed-aluminum |
 | `style-material-m3` | material-tonal-surface | (single-material genre) |
-| `style-raster-cutout` | uncoated-paper, kraft-paper, torn-edge, polaroid-instant, photocopy-xerox, ink-bleed-on-paper, dust-scratches | washi-tape (raster decoration) |
-| `style-serif-warm-paper` | uncoated-paper, letterpress-emboss | foxing-stain (optional) |
+| `style-raster-cutout` | torn-edge, photocopy-xerox | washi-tape (raster decoration) |
 | `style-neubrutalism` | (no material - flat) | (anti-pattern: don't apply material) |
 | `style-pixel-bitmap` | pixel-bitmap, crt-phosphor (overlay) | dithered-1bit |
-| `style-terminal-mono` | ascii-art-surface, crt-phosphor | dithered-1bit |
-| `style-doodle` | uncoated-paper, ink-bleed-on-paper, pencil-graphite | watercolor-wash, marker-stroke-frame |
-| `style-cream-humanist` | uncoated-paper, vellum-translucency | foxing-stain |
+| `style-doodle` | pencil-graphite | watercolor-wash, marker-stroke-frame |
+| `style-cream-humanist` | vellum-translucency |  |
 | `style-restrained-hairline` | (no material - restraint is the brief) | (single subtle paper grain at <2%) |
 | `style-oversized-neo-grotesque` | (no material on type) | film-grain-tri-x (optional), smoked-obsidian-glass (hero object OVER the type) |
-| `style-silk-chrome-flow` | liquid-chrome-silk, filament-strand-ribbon | (dark substrate mandatory) |
-| `style-bold-display` | aurora-mesh (optional) | film-grain-portra-400 (optional) |
+| `style-silk-chrome-flow` | filament-strand-ribbon | (dark substrate mandatory) |
 | `style-dense-mono-dark` | crt-phosphor (subtle), ascii-art-surface | (mostly material-less) |
 | `style-flat-design` | (no material - flat is the brief) | (anti-pattern: don't apply material) |
-| `style-brutalist-raw` | concrete | photocopy-xerox |
-| `style-outline-wireframe` | (no material) | (anti-pattern: don't apply material) |
-| `style-material-m1m2` | material-tonal-surface (legacy mode) | (single) |
 | `style-sf-pro-ios` | thin-glass-chip, frosted-glass | (Apple chrome materials) |
-| `style-agate-broadsheet` | uncoated-paper | halftone-cmyk (photos) |
-| `aesthetic-frutiger-aero` | glossy-plastic-aqua, frosted-glass | aurora-mesh, holographic-foil |
-| `aesthetic-frutiger-dark-aero` | glossy-plastic-aqua (dark), liquid-glass | aurora-mesh (dark) |
-| `aesthetic-frutiger-chromecore` | chrome-mirror, holographic-foil | aurora-mesh |
+| `aesthetic-frutiger-aero` | glossy-plastic-aqua, frosted-glass |  |
+| `aesthetic-frutiger-dark-aero` | glossy-plastic-aqua (dark), liquid-glass |  |
+| `aesthetic-frutiger-chromecore` | chrome-mirror |  |
 | `aesthetic-frutiger-eco` | matte-clay, soft-ui-foam | watercolor-wash |
 | `aesthetic-frutiger-bright-tertiaries` | glossy-plastic-aqua | matte-clay |
 | `aesthetic-frutiger-four-colors` | glossy-plastic-aqua (saturated CMYK) | (single) |
-| `aesthetic-frutiger-tranquil-serenity` | soft-ui-foam, vellum-translucency | aurora-mesh |
-| `aesthetic-frutiger-dorfic` | brushed-aluminum, concrete | film-grain-tri-x |
-| `aesthetic-y2k-futurism` | chrome-mirror, holographic-foil, glossy-plastic-aqua | liquid-glass |
-| `aesthetic-y2k-myspace` | photocopy-xerox, polaroid-instant, dust-scratches | torn-edge |
-| `aesthetic-y2k-memphis-loud` | coated-glossy-paper, halftone-cmyk | (single) |
-| `aesthetic-vaporwave` | marble, vhs-distortion, polaroid-instant, film-grain-cinestill-800t | dust-scratches |
+| `aesthetic-frutiger-tranquil-serenity` | soft-ui-foam, vellum-translucency |  |
+| `aesthetic-frutiger-dorfic` | brushed-aluminum | film-grain-tri-x |
+| `aesthetic-y2k-futurism` | chrome-mirror, glossy-plastic-aqua | liquid-glass |
+| `aesthetic-y2k-myspace` | photocopy-xerox | torn-edge |
+| `aesthetic-y2k-memphis-loud` | halftone-cmyk | (single) |
+| `aesthetic-vaporwave` | marble, vhs-distortion, film-grain-cinestill-800t |  |
 | `aesthetic-cyberpunk` | anodized-chainmail (full-bleed substrate), crt-phosphor, vhs-distortion, film-grain-cinestill-800t | chrome-mirror |
-| `aesthetic-cassette-futurism` | brushed-aluminum, crt-phosphor, vhs-distortion | film-grain-tri-x, edge-lit-acrylic (glowing hardware) |
+| `aesthetic-cassette-futurism` | brushed-aluminum, crt-phosphor, vhs-distortion | film-grain-tri-x |
 | `aesthetic-atompunk` | brushed-aluminum, crt-phosphor | (Frutiger-Aero-era plastics) |
-| `aesthetic-dieselpunk` | brushed-aluminum, weathered-leather, copper-patina | concrete |
-| `aesthetic-steampunk` | walnut-grain, copper-patina, gold-leaf, weathered-leather, parchment | brushed-aluminum |
-| `aesthetic-solarpunk` | aurora-mesh, watercolor-wash | uncoated-paper |
-| `aesthetic-cottagecore` | uncoated-paper, kraft-paper, linen-weave, watercolor-wash, polaroid-instant, paper-with-watercolor, ink-bleed-on-paper | foxing-stain, torn-edge |
-| `aesthetic-cottagegoth` | uncoated-paper, foxing-stain, ink-bleed-on-paper, photocopy-xerox, dust-scratches | charcoal-drawing |
-| `aesthetic-coastal-grandmother` | linen-weave, polaroid-instant, film-grain-portra-400 | uncoated-paper |
-| `aesthetic-dark-academia` | uncoated-paper, weathered-leather, walnut-grain, parchment, gold-leaf, marble, charcoal-drawing, pencil-graphite | foxing-stain, letterpress-emboss |
-| `aesthetic-fairycore` | watercolor-wash, paper-with-watercolor | (single) |
-| `aesthetic-goblincore` | kraft-paper, weathered-leather | (organic distress stack) |
-| `aesthetic-dreamcore` | film-grain-portra-400, dust-scratches | (single) |
-| `aesthetic-angelcore` | aurora-mesh, holographic-foil | film-grain-portra-400 |
+| `aesthetic-dieselpunk` | brushed-aluminum, weathered-leather |  |
+| `aesthetic-steampunk` | walnut-grain, weathered-leather, parchment | brushed-aluminum |
+| `aesthetic-solarpunk` | watercolor-wash |  |
+| `aesthetic-cottagecore` | linen-weave, watercolor-wash, paper-with-watercolor | torn-edge |
+| `aesthetic-cottagegoth` | photocopy-xerox | charcoal-drawing |
+| `aesthetic-coastal-grandmother` | linen-weave |  |
+| `aesthetic-dark-academia` | weathered-leather, walnut-grain, parchment, marble, charcoal-drawing, pencil-graphite |  |
+| `aesthetic-goblincore` | weathered-leather | (organic distress stack) |
 | `aesthetic-positivity-kawaii` | matte-clay, soft-ui-foam | (single) |
 | `aesthetic-curly-girly` | photocopy-xerox, halftone-cmyk | matte-clay |
-| `aesthetic-corporate-grunge` | photocopy-xerox, halftone-cmyk, dust-scratches, charcoal-drawing | torn-edge |
+| `aesthetic-corporate-grunge` | photocopy-xerox, halftone-cmyk, charcoal-drawing | torn-edge |
 | `aesthetic-corporate-memphis` | matte-clay, glossy-plastic-aqua | (single) |
-| `aesthetic-web-brutalism` | concrete, dithered-1bit | photocopy-xerox |
+| `aesthetic-web-brutalism` | dithered-1bit | photocopy-xerox |
 | `aesthetic-neubrutalism` | (no material - flat is the brief) | (anti-pattern) |
 | `aesthetic-acid-design` | risograph, halftone-cmyk, silkscreen | photocopy-xerox |
 | `aesthetic-acid-graphics` | risograph, photocopy-xerox, halftone-cmyk | (single) |
 | `aesthetic-avantropop` | risograph, halftone-cmyk | (single) |
-| `aesthetic-anti-design` | uncoated-paper, ink-wash-sumi-e | charcoal-drawing |
+| `aesthetic-anti-design` | ink-wash-sumi-e | charcoal-drawing |
 | `aesthetic-bauhaus` | silkscreen, halftone-cmyk | (constructed) |
 | `aesthetic-constructivism` | silkscreen, halftone-cmyk, photocopy-xerox | (single) |
 | `aesthetic-de-stijl` | (no material - flat) | (anti-pattern) |
 | `aesthetic-swiss-modernist` | (no material) | (single subtle uncoated paper at most) |
-| `aesthetic-defi-cosmic` | holographic-foil, gold-leaf, chrome-mirror, marble | aurora-mesh |
-| `aesthetic-depin-hardware` | brushed-aluminum, edge-lit-acrylic, concrete | crt-phosphor |
-| `aesthetic-crypto-degen` | chrome-mirror, holographic-foil | crt-phosphor |
-| `aesthetic-rgb-gamer` | crt-phosphor, holographic-foil | (single) |
+| `aesthetic-defi-cosmic` | chrome-mirror, marble |  |
+| `aesthetic-depin-hardware` | brushed-aluminum | crt-phosphor |
+| `aesthetic-crypto-degen` | chrome-mirror | crt-phosphor |
+| `aesthetic-rgb-gamer` | crt-phosphor | (single) |
 | `aesthetic-cluttercore` | (every analog material in the library) | (intentional pile) |
 | `aesthetic-maximalism` | (every material - considered abundance) | (curated pile) |
-| `aesthetic-urbling` | chrome-mirror, gold-leaf, chrome-on-velvet, chrome-extruded-type (masthead) | holographic-foil |
-| `aesthetic-luxury-cinematic-dark` | volumetric-light-shaft, chrome-extruded-type (one headline), smoked-obsidian-glass | film-grain-tri-x |
+| `aesthetic-urbling` | chrome-mirror, chrome-on-velvet |  |
+| `aesthetic-luxury-cinematic-dark` | volumetric-light-shaft, smoked-obsidian-glass | film-grain-tri-x |
 | `aesthetic-sculptural-minimal` | volumetric-light-shaft (dark variant) | (white variant: no material - the plinth is the brief) |
 | `aesthetic-monochrome-pop-poster` | smoked-obsidian-glass (object over type), reeded-fluted-glass | film grain at 3-5% |
 | `aesthetic-wacky-pomo` | glossy-plastic-aqua, halftone-cmyk | (Nickelodeon plastics) |
@@ -411,32 +399,28 @@ Mapping from prototype.md slugs to applicable materials. The orchestrator consul
 | `aesthetic-vector-*` | (no material - vector is the brief) | (anti-pattern) |
 | `aesthetic-op-art` | (no material) | (anti-pattern) |
 | `aesthetic-8-bit-generic` | pixel-bitmap | (single) |
-| `aesthetic-japanese-poster-layout` | (no material baseline - photo carries) | uncoated-paper at most; film-grain-portra-400 in photos |
+| `aesthetic-japanese-poster-layout` | (no material baseline - photo carries) |  |
 | `aesthetic-jp-recruit-pop` | (no material - flat pop is the brief) | (anti-pattern: pill/token system stays flat) |
-| `aesthetic-craft-sketchbook` | uncoated-paper, linen-weave, pencil-graphite | marker-stroke-frame, ink-bleed-on-paper; media multiplied into the paper substrate |
+| `aesthetic-craft-sketchbook` | linen-weave, pencil-graphite | marker-stroke-frame |
 | `aesthetic-zine-type-wall` | marker-stroke-frame | risograph / silkscreen on thumbnails; field stays flat ink |
-| `recipe-editorial-magazine` | uncoated-paper, coated-glossy-paper, halftone-cmyk, film-grain-portra-400 | letterpress-emboss, foxing-stain |
-| `recipe-newspaper-of-record` | uncoated-paper, halftone-cmyk | (newsprint substrate) |
-| `recipe-aurora-marketing` | aurora-mesh | (single) |
-| `recipe-restrained-ai-marketing` | (no material - restraint) | (subtle paper grain at most; reeded-fluted-glass or filament-strand-ribbon allowed as the ONE hero gesture) |
-| `recipe-scientific-infra-marketing` | (no material) | (subtle aurora-mesh) |
-| `recipe-bento-marketing` | (no material baseline) | aurora-mesh in hero |
-| `recipe-ai-foundry-dark` | aurora-mesh (dark), crt-phosphor (subtle) | anodized-chainmail / filament-strand-ribbon / edge-lit-acrylic / volumetric-light-shaft (ONE hero substrate, pick one) |
-| `recipe-devtools-marketing` | aurora-mesh | (single) |
+| `recipe-editorial-magazine` | halftone-cmyk |  |
+| `recipe-newspaper-of-record` | halftone-cmyk | (newsprint substrate) |
+| `recipe-scientific-infra-marketing` | (no material) | (none) |
+| `recipe-bento-marketing` | (no material baseline) |  |
+| `recipe-ai-foundry-dark` | crt-phosphor (subtle) | anodized-chainmail / filament-strand-ribbon / volumetric-light-shaft (ONE hero substrate, pick one) |
 | `recipe-bloomberg-dashboard` | (no material - dense) | (anti-pattern) |
-| `recipe-linear-product-ui` | (no material - product) | aurora-mesh in marketing hero only |
+| `recipe-linear-product-ui` | (no material - product) |  |
 | `recipe-ios-system` | thin-glass-chip, frosted-glass, liquid-glass | (Apple chrome) |
 | `recipe-material-3` | material-tonal-surface | (single) |
 | `recipe-terminal-on-web` | crt-phosphor, ascii-art-surface, dithered-1bit | (single) |
-| `recipe-brutalist-web` | concrete, photocopy-xerox | (single) |
+| `recipe-brutalist-web` | photocopy-xerox | (single) |
 | `recipe-swiss-grid` | (no material) | (subtle paper at most) |
 | `recipe-neo-grotesque-portfolio` | (no material) | film-grain-tri-x in photos |
-| `recipe-readcv` | polaroid-instant, uncoated-paper | torn-edge |
-| `recipe-warm-restraint` | uncoated-paper, vellum-translucency | (single) |
+| `recipe-warm-restraint` | vellum-translucency | (single) |
 | `recipe-brand-story-journey` | paper-construction | film grain at 3-5% over dark chapters |
 | `recipe-jp-corporate-recruit` | (no material - flat token system) | (anti-pattern) |
-| `recipe-y2k-memphis-loud` | coated-glossy-paper, halftone-cmyk | risograph |
-| `shell-scrapbook-substrate` | uncoated-paper, kraft-paper, polaroid-instant, torn-edge, dust-scratches | (the substrate is the material) |
+| `recipe-y2k-memphis-loud` | halftone-cmyk | risograph |
+| `shell-scrapbook-substrate` | torn-edge | (the substrate is the material) |
 | `shell-terminal-frame` | crt-phosphor, ascii-art-surface | (single) |
 | `shell-canvas-floating` | frosted-glass, liquid-glass | (over photographic plate) |
 

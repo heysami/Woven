@@ -98,6 +98,6 @@ the paper instead of multiplied into it.
 ## Pairs well with
 
 - **Shells:** `shell-hero-stack`, `shell-centered-column`, `shell-editorial-broken-grid`
-- **Styles:** `style-doodle` (nearest style host - calmed down), `style-outline-wireframe`, `style-serif-warm-paper` (body layer)
+- **Styles:** `style-doodle` (nearest style host - calmed down), `style-serif-warm-paper` (body layer)
 - **Motion:** `motion-svg-self-draw` (native), `motion-threshold-ritual` (counter ceremony)
 - **Materials:** `material-uncoated-paper`, `material-linen-weave`, `material-pencil-graphite`, `material-marker-stroke-frame`

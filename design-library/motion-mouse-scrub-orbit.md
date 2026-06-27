@@ -6,7 +6,7 @@ subCategory: video
 role: product
 binding: pointer-x
 medium: video
-pairsPrototypes: [recipe-bento-marketing, recipe-devtools-marketing, recipe-restrained-ai-marketing, style-bold-display, aesthetic-cassette-futurism]
+pairsPrototypes: [recipe-bento-marketing, recipe-devtools-marketing, style-bold-display, aesthetic-cassette-futurism]
 notForUseWhen: The subject has a face or front that should "look" at the visitor (use mouse-scrub-look), the object is flat or symmetric so rotation reads as nothing, or the section is touch-dominant with no gyro fallback budgeted.
 images:
   - src: motion-mouse-scrub-orbit-ui.png
@@ -88,7 +88,6 @@ addEventListener('pointermove', e => {
 
 - `recipe-bento-marketing`
 - `recipe-devtools-marketing`
-- `recipe-restrained-ai-marketing`
 - `style-bold-display`
 - `aesthetic-cassette-futurism`
 

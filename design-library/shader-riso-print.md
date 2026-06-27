@@ -9,7 +9,7 @@ defaultBlend: multiply
 animated: no
 needsSource: yes
 stackable: yes
-pairsPrototypes: [recipe-editorial-magazine, recipe-readcv, aesthetic-anti-design, style-raster-cutout]
+pairsPrototypes: [recipe-editorial-magazine, aesthetic-anti-design, style-raster-cutout]
 notForUseWhen: glossy enterprise polish, photoreal hero
 ---
 
@@ -59,6 +59,5 @@ css: mix-blend-mode: multiply on two tinted copies fakes the overlap, not the gr
 ## Pairs with (prototype slugs)
 
 - `recipe-editorial-magazine`
-- `recipe-readcv`
 - `aesthetic-anti-design`
 - `style-raster-cutout`

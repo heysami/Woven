@@ -83,4 +83,4 @@ The trashy AI tell is **scrapbook without cutouts** - a flat tan `#D2B48C` backg
 ## Pairs well with
 
 - Shells: `shell-scrapbook-substrate`, `shell-masonry`, `shell-editorial-broken-grid`, `shell-infinite-canvas`, `shell-canvas-floating`, `shell-centered-column`
-- Aesthetics: `aesthetic-y2k-myspace`, `aesthetic-cluttercore`, `aesthetic-cottagecore`, `aesthetic-cottagegoth`, `aesthetic-dark-academia`, `aesthetic-fairycore`, `aesthetic-goblincore`, `aesthetic-dreamcore`, `aesthetic-angelcore`, `aesthetic-coastal-grandmother`, `aesthetic-curly-girly`, `aesthetic-acid-graphics`
+- Aesthetics: `aesthetic-y2k-myspace`, `aesthetic-cluttercore`, `aesthetic-cottagecore`, `aesthetic-cottagegoth`, `aesthetic-dark-academia`, `aesthetic-goblincore`, `aesthetic-dreamcore`, `aesthetic-angelcore`, `aesthetic-coastal-grandmother`, `aesthetic-curly-girly`, `aesthetic-acid-graphics`

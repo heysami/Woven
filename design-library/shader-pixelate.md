@@ -33,7 +33,7 @@ webgl: |
   vec2 jit = u_scatter * (hash2(floor(uv*u_cells))-0.5); // optional scatter
   vec3 col = texture(u_src, cell + jit).rgb;
 engine: |
-  Figma effect: `Pixelate`. DOM material twin: material `pixel`. Reveal sibling: style `pixel-dissolve`.
+  Figma effect: `Pixelate`. DOM material twin: material `pixel`.
 css: image-rendering: pixelated on a downscaled copy (cheap mosaic, no scatter).
 ```
 

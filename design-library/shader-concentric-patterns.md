@@ -9,7 +9,7 @@ defaultBlend: normal
 animated: yes
 needsSource: no
 stackable: yes
-pairsPrototypes: [aesthetic-op-art, aesthetic-y2k-memphis-loud, aesthetic-vintage-carnival, aesthetic-acid-design]
+pairsPrototypes: [aesthetic-op-art, aesthetic-y2k-memphis-loud, aesthetic-acid-design]
 notForUseWhen: minimal restrained SaaS, photoreal hero
 ---
 
@@ -58,5 +58,4 @@ css: repeating-radial-gradient (cheap static rings).
 
 - `aesthetic-op-art`
 - `aesthetic-y2k-memphis-loud`
-- `aesthetic-vintage-carnival`
 - `aesthetic-acid-design`

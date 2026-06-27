@@ -67,4 +67,4 @@ Also fatal: drop-shadowed buttons, soft glows, lens flares, generic SVG noise ov
 ## Pairs well with
 
 - Shells: `shell-hero-stack` (single severe poster-frame), `shell-editorial-broken-grid` (asymmetric flyer-as-page), `shell-centered-column` (only when intentionally weaponised against the asymmetric default), `shell-scrapbook-substrate` (for archive / lineup montages)
-- Styles: `style-oversized-neo-grotesque` (compressed display + chrome gradient), `style-brutalist-raw` (the void / hairline / mono register), `style-holographic` (the chromed wordmark itself), `style-terminal-mono` (for the info-block / manifest body register)
+- Styles: `style-oversized-neo-grotesque` (compressed display + chrome gradient), `style-brutalist-raw` (the void / hairline / mono register), `style-holographic` (the chromed wordmark itself)

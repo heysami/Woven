@@ -4,7 +4,7 @@ name: Doodle UI hand-drawn (Excalidraw-style)
 category: Hand-drawn / sketch
 subCategory: scribble-marker
 role: spot-illustration
-pairsPrototypes: [style-doodle, recipe-devtools-marketing, recipe-readcv]
+pairsPrototypes: [style-doodle, recipe-devtools-marketing]
 notForUseWhen: photoreal, enterprise polish
 images:
   - src: illust-doodle-ui-handdrawn.png
@@ -58,7 +58,6 @@ photoreal, enterprise polish
 
 - `style-doodle`
 - `recipe-devtools-marketing`
-- `recipe-readcv`
 
 <!-- image: sample-1.png -->
 <!-- reason: representative reference shot of this style -->
