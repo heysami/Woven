@@ -273,4 +273,6 @@ Quote `successFeel` verbatim as the first comment in the file. Then per-event au
 - **You do not own the audio context.** The runtime composer creates it on user gesture; you receive it in `initAudio`.
 - **You do not skip the register table.** Hardcoded gains break the multi-draft pick.
 
+**Synthesised cues are the default, but you CAN use generated audio when the brief wants real recorded-quality sound.** The `audio-gen` skill (ElevenLabs, needs `TH_ELEVENLABS_API_KEY`) writes `.mp3` files to `source/<branch>/audio/`: `elevenlabs/sfx` for an impact / pickup / whoosh / UI tick (`options.duration_seconds`), `elevenlabs/music` for a loop or stinger, `elevenlabs/tts` for a character grunt or callout. Commission one via `POST /__asset_generate` (skill `audio-gen`, provider `elevenlabs`, the model id, `prompt`, `output: source/<branch>/audio/<name>.mp3`, `options`), then in `initAudio` `fetch` + `audioCtx.decodeAudioData` it into a buffer you trigger off the FeedbackEvent (route through `_audioBus.fx`). Keep the WebAudio synth path as the no-key fallback and for anything that must be parametric per-hit; generated clips are best for fixed, characterful one-shots. Same gesture-gating and gain-budget rules apply.
+
 End with: `"game_feedback_<gameId>: register=<X>, particles=<N peak>, audio=<gated>, multi-draft=<variant?> - commit pending lens trio."`

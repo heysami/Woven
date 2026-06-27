@@ -205,6 +205,44 @@ Never ship gray defaults because the generator is missing. Build a
 toned with the project palette. 20 lines of canvas2D beats an untextured
 hero. (`pixel-lowres` policies are often BETTER served procedurally.)
 
+### 2.3 Generated mesh - keep the baked PBR map set
+
+The §2.1 example above textures a hand-built primitive, so it assigns albedo
+ONLY. A mesh that came from `3d-gen` (Meshy 5 / fal Rodin / Hunyuan3D) is
+different: the `.glb` already ships a FULL PBR material - albedo + normal +
+roughness + metalness (and often AO) baked into the glTF. `GLTFLoader` wires
+all of those onto the model's `MeshStandardMaterial` for you. The mistake is
+re-flattening it:
+
+```js
+const gltf = await new GLTFLoader().loadAsync('./models/<name>.glb');
+scene.add(gltf.scene);
+// DON'T do this - it throws away normal/roughness/metalness and the mesh goes plastic:
+//   gltf.scene.traverse(o => { if (o.isMesh) o.material = new THREE.MeshBasicMaterial({color}); });
+// The loaded material is already PBR. Just make sure the scene has an env map
+// so metalness/roughness have something to reflect:
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+```
+
+If you author a material by hand to MATCH a generated mesh (e.g. you re-mesh
+but want the same surface), assign every map the generator produced, not just
+the colour:
+
+```js
+const mat = new THREE.MeshStandardMaterial({
+  map:          albedo,    // tex.colorSpace = THREE.SRGBColorSpace (albedo ONLY)
+  normalMap:    normal,    // stays linear - do NOT set SRGB on data maps
+  roughnessMap: rough,     // linear; scalar `roughness` multiplies it
+  metalnessMap: metal,     // linear; scalar `metalness` multiplies it
+  aoMap:        ao,        // needs a 2nd UV set (geometry.attributes.uv2)
+});
+```
+
+Rigged + animated character meshes (`meshy/text-to-3d-anim`,
+`meshy/image-to-3d-anim`) ship a skinned `.glb` with `gltf.animations` -
+drive them with `const mixer = new THREE.AnimationMixer(gltf.scene);
+mixer.clipAction(gltf.animations[0]).play();` and `mixer.update(dt)` each frame.
+
 ## 3. Advanced effects catalog
 
 Effects are budget-gated (§4) and style-gated - an effect ships only when the

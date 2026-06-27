@@ -1144,6 +1144,63 @@ def _fal_generate_video(api_key, prompt, model, aspect, options):
     return _download_bytes(video_url)
 
 
+def _elevenlabs_generate_audio(api_key, prompt, model, aspect, options):
+    """ElevenLabs audio generation. The `model` id selects the mode:
+         elevenlabs/tts   -> POST /v1/text-to-speech/{voice_id}  (voiceover / narration)
+         elevenlabs/sfx   -> POST /v1/sound-generation           (sound effect)
+         elevenlabs/music -> POST /v1/music                      (music track)
+    All three return the raw mp3 audio in the response BODY (not a JSON wrapper
+    with a url, the way fal does), so we POST and return resp.read() directly.
+    `aspect` is meaningless for audio. Per-mode knobs ride in `options`:
+      tts:   voice_id (default ElevenLabs premade "Rachel"), model_id
+             (default eleven_multilingual_v2), output_format, voice_settings,
+             language_code, seed.
+      sfx:   duration_seconds (<=22), prompt_influence, output_format, loop.
+      music: music_length_ms (default 30000), model_id, output_format.
+    Auth is the `xi-api-key` header (NOT Bearer). HTTPError bubbles up to the
+    /__asset_generate handler, which surfaces ElevenLabs' JSON error body as a
+    502 detail."""
+    opts = options if isinstance(options, dict) else {}
+    base = "https://api.elevenlabs.io"
+    mode = (model or "elevenlabs/tts").rsplit("/", 1)[-1].lower()
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }
+    if mode == "sfx":
+        url = f"{base}/v1/sound-generation"
+        body = {"text": prompt}
+        for k in ("duration_seconds", "prompt_influence", "output_format", "loop", "model_id"):
+            if opts.get(k) is not None:
+                body[k] = opts[k]
+        timeout = 180
+    elif mode == "music":
+        url = f"{base}/v1/music"
+        body = {"prompt": prompt, "music_length_ms": int(opts.get("music_length_ms") or 30000)}
+        for k in ("model_id", "output_format"):
+            if opts.get(k) is not None:
+                body[k] = opts[k]
+        timeout = 300
+    else:  # tts (default)
+        # ElevenLabs premade voice "Rachel" - a stable default; override with
+        # options.voice_id (any voice id from the user's ElevenLabs library).
+        voice_id = opts.get("voice_id") or "21m00Tcm4TlvDq8ikWAM"
+        out_fmt = opts.get("output_format") or "mp3_44100_128"
+        url = f"{base}/v1/text-to-speech/{voice_id}?output_format={out_fmt}"
+        body = {"text": prompt, "model_id": opts.get("model_id") or "eleven_multilingual_v2"}
+        for k in ("voice_settings", "language_code", "seed", "previous_text", "next_text"):
+            if opts.get(k) is not None:
+                body[k] = opts[k]
+        timeout = 180
+    req = urllib.request.Request(
+        url, method="POST",
+        headers=headers, data=json.dumps(body).encode("utf-8"),
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
 # ── Higgsfield (DoP image→video) ────────────────────────────────────────────
 # Higgsfield's public API (platform.higgsfield.ai). CONFIRMED from the official
 # SDK (github.com/higgsfield-ai/higgsfield-js):
@@ -1773,6 +1830,12 @@ _GENERATE_DISPATCH = {
     # the dispatch entry makes the skill discoverable and routes to a
     # real renderer instead of returning the generic "no renderer" 400.
     ("lottie-gen",     "fal"):    "fal_lottie",
+    # Audio generation via ElevenLabs. ONE skill, three modes selected by the
+    # model id (elevenlabs/tts | /sfx | /music). ElevenLabs returns raw mp3
+    # bytes in the response body (no JSON+url like fal), so the renderer just
+    # returns resp.read(). Requires TH_ELEVENLABS_API_KEY. Without this entry
+    # the audio-gen skill got `no renderer for skill='audio-gen'` 400s.
+    ("audio-gen",      "elevenlabs"): "elevenlabs_audio",
 }
 _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
@@ -13252,6 +13315,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 elif provider == "fal" and skill == "lottie-gen":
                     # v3.5 - Lottie generation. Bytes are raw .json.
                     bytes_ = _fal_generate_lottie(api_key, prompt, model, aspect, options)
+                elif provider == "elevenlabs" and skill == "audio-gen":
+                    # ElevenLabs audio. model id picks the mode (tts / sfx /
+                    # music); the renderer returns raw mp3 bytes. tts/sfx are
+                    # quick, music can take a couple of minutes (renderer sets
+                    # its own per-mode timeout).
+                    bytes_ = _elevenlabs_generate_audio(api_key, prompt, model, aspect, options)
                 elif provider == "fal":
                     bytes_ = _fal_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "quiver" and skill == "svg-gen":
@@ -17674,7 +17743,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
         if not old_src.startswith("source/") or not new_src.startswith("source/"):
             return self._reply(400, {"error": "old_src/new_src must start with source/"})
-        ALLOWED_KINDS = ("image", "svg", "video", "html", "lottie")
+        ALLOWED_KINDS = ("image", "svg", "video", "audio", "html", "lottie")
         if new_kind not in ALLOWED_KINDS:
             return self._reply(400, {"error": f"unsupported new_kind: {new_kind}",
                                       "allowed": list(ALLOWED_KINDS)})
@@ -17726,6 +17795,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return f'<img src="{new_url}"{preserved_str}>'
             if new_kind == "video":
                 return f'<video src="{new_url}" muted playsinline autoplay loop preload="auto"{preserved_str}></video>'
+            if new_kind == "audio":
+                return f'<audio src="{new_url}" controls preload="metadata"{preserved_str}></audio>'
             if new_kind == "html":
                 style_in_preserved = any(k == "style" for k, _ in preserved_pairs)
                 fallback_style = '' if style_in_preserved else ' style="width:100%;height:100%;border:0"'

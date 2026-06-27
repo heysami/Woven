@@ -122,7 +122,7 @@ poll_until_done s3d_research_<sceneId>
   "lensGates": ["craft","aesthetic"] // +concept iff role==lead
 }
 ```
-Decompose by **effect/content**, never by file-layer. Fabric → cloth verlet on `particle-gl` or a vertex-shader sim; water → `shader` (gerstner / FBM) or `particle-gl`; grass/vegetation → instanced `3d`; dense fields / smoke / fluid → `particle-gl`; the hero object → `3d` with its physical material. A one-object hero ⇒ a single `lead` subsystem.
+Decompose by **effect/content**, never by file-layer. Fabric → cloth verlet on `particle-gl` or a vertex-shader sim; water → `shader` (gerstner / FBM) or `particle-gl`; grass/vegetation → instanced `3d`; dense fields / smoke / fluid → `particle-gl`; the hero object → `3d` with its physical material. A one-object hero ⇒ a single `lead` subsystem. When the hero object is a real depictable thing (a sneaker, a bottle, a creature) rather than an abstract form, the `routeNote` may specify a **generated mesh** via `3d-gen` (Meshy 5 / fal Rodin / Hunyuan3D) - the `.glb` ships a full baked PBR map set the subsystem author keeps via `GLTFLoader` (do not re-flatten); rigged-character variants carry AnimationClips. See `3D_CAPABILITIES.md` §2.3.
 
 Commit `s3d_research_<sceneId>` directly (no lens gate on research itself).
 

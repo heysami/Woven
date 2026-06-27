@@ -283,12 +283,17 @@ By default every piece commits at least one `pngSequenceList[]` entry - the "key
 
 **PNG sequences - the GIF substitute:**
 
-We can't reliably generate transparent GIFs. The workaround: commission N still frames via visual-orchestrator, then play them back via CSS sprite-sheet animation OR JS frame-swap. Frame counts:
+We can't reliably generate transparent GIFs. There are two ways to substitute, and the choice hinges on whether the loop is a single COHERENT SUBJECT in motion:
+
+- **A redrawn-subject loop** (the chrome bust rotating, an eye blinking, a face twitching, a mascot waving) → use the dedicated **`animated-sprite` node**. It redraws the ONE subject pose-by-pose with subject-preserving i2i and packs a strip PNG + atlas JSON in a single node, so the subject holds its identity across frames. Commissioning N independent visual-orchestrator plates for this DRIFTS - the bust's proportions wander frame to frame. Set `loopKind: "animated-sprite"` on the `pngSequenceList[]` entry.
+- **A non-subject loop** (glitter migrating left-to-right, TV-static breathing, a marquee scroll - where each frame isn't "the same object moved") → commission N still frames via visual-orchestrator and play them back via CSS sprite-sheet animation OR JS frame-swap. Set `loopKind: "frames"`.
+
+Frame counts (both kinds):
 - 2-4 frames for blinking / pulsing / "this is alive" twitches (4 fps replays)
 - 6-8 frames for sweeping motion (glitter migration, marquee scroll, eye blink)
 - 12-24 frames for cinematic loops (used sparingly; cost matters)
 
-Commit each PNG sequence as a single entry in `pngSequenceList[]` with `frameCount`, `frameRate`, `loop` semantics, and the canonical `outputPaths[]`. The composition drawer co-dispatches visual-orchestrator N times (one per frame).
+Commit each PNG sequence as a single entry in `pngSequenceList[]` with `frameCount`, `frameRate`, `loop` semantics, `loopKind`, and the canonical `outputPaths[]` (or, for `animated-sprite`, the base-image path + node-output path). The composition drawer either scaffolds an `animated-sprite` node (`loopKind: "animated-sprite"`) or co-dispatches visual-orchestrator N times (`loopKind: "frames"`).
 
 ### 2.6 - TYPOGRAPHY STRATEGY
 

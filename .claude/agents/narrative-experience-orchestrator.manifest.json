@@ -44,7 +44,7 @@
       "concept-lens"
     ]
   },
-  "skills": [],
+  "skills": ["audio-gen"],
   "nodeKinds": {
     "container": [
       "narrative-experience"

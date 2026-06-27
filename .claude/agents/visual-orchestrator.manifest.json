@@ -33,6 +33,7 @@
   },
   "skills": [
     "generate-image",
+    "pose-subject",
     "rembg",
     "upscale",
     "shader",
@@ -40,6 +41,9 @@
     "html-page",
     "svg-gen",
     "threejs",
+    "3d-gen",
+    "image-to-glb",
+    "image-to-ply",
     "lottie-gen",
     "video-gen",
     "motion-gen",
@@ -48,6 +52,9 @@
   "nodeKinds": {
     "container": [],
     "agent_overrides": [],
+    "scaffolds": [
+      "animated-sprite"
+    ],
     "trios_scaffolded": [
       "p_<assetId>",
       "s_<assetId>",

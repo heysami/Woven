@@ -114,11 +114,11 @@
     elevenlabs: {
       id: "elevenlabs",
       label: "ElevenLabs",
-      hint: "TTS · voice clone · SFX",
+      hint: "TTS · sound effects · music (one key, all three)",
       envKey: "TH_ELEVENLABS_API_KEY",
       docsUrl: "https://elevenlabs.io/app/settings/api-keys",
-      integrated: false,
-      testable: false,
+      integrated: true,
+      testable: false, // no free test endpoint; first real Run validates the key
     },
     imagerouter: {
       id: "imagerouter",
@@ -295,6 +295,18 @@
     { id: "fal-ai/hyper3d/rodin", provider: "fal",   label: "Rodin (Hyper3D)",    hint: "fal · text/image → 3D (PBR)",                     caps: ["t23d", "i23d"], integrated: true },
     { id: "fal-ai/hunyuan3d-v2",  provider: "fal",   label: "Hunyuan3D v2",       hint: "fal · Tencent Hunyuan3D v2",                      caps: ["t23d", "i23d"], integrated: true },
     { id: "fal-ai/triposr",       provider: "fal",   label: "TripoSR",            hint: "fal · fast image → 3D",                           caps: ["i23d"],         integrated: true },
+  ];
+
+  // Audio generation models - ElevenLabs. The single `audio-gen` skill picks
+  // a MODE from this list via the model dropdown: tts (voiceover/narration),
+  // sfx (sound effect), music (track). All three return mp3 bytes; the daemon
+  // renderer (_elevenlabs_generate_audio) branches on the model id. Per-mode
+  // knobs (voice_id, duration_seconds, music_length_ms, ...) ride in the node
+  // `options`. Requires TH_ELEVENLABS_API_KEY.
+  const AUDIO_MODELS = [
+    { id: "elevenlabs/tts",   provider: "elevenlabs", label: "Voiceover (TTS)", hint: "ElevenLabs · text → narration .mp3 (eleven_multilingual_v2; voice via options.voice_id)", caps: ["tts"],   integrated: true, default: true },
+    { id: "elevenlabs/sfx",   provider: "elevenlabs", label: "Sound effect",    hint: "ElevenLabs · text → SFX .mp3 (≤22s; options.duration_seconds)",                            caps: ["sfx"],   integrated: true },
+    { id: "elevenlabs/music", provider: "elevenlabs", label: "Music (beta)",    hint: "ElevenLabs · prompt → music .mp3 (options.music_length_ms)",                               caps: ["music"], integrated: true },
   ];
 
   // Skill catalog - each entry is a draggable in the Library's Skills section
@@ -609,6 +621,28 @@
       hasAspect: false,
     },
     {
+      // ElevenLabs audio. ONE skill, three modes selected via the model
+      // dropdown (AUDIO_MODELS): elevenlabs/tts (voiceover), elevenlabs/sfx
+      // (sound effect), elevenlabs/music (track). Pathway A - the daemon
+      // renderer _elevenlabs_generate_audio POSTs to ElevenLabs and writes the
+      // returned mp3 bytes to source/<branch>/audio/. Per-mode knobs (voice_id,
+      // duration_seconds, music_length_ms, prompt_influence) ride in options.
+      id: "audio-gen",
+      label: "Audio",
+      hint: "prompt → .mp3 voiceover / SFX / music (requires an ElevenLabs API key)",
+      glyph: "♪",
+      pathway: "A",
+      defaultModel: "elevenlabs/tts",
+      provider: "elevenlabs",  // belt-and-suspenders: resolves even if AUDIO_MODELS isn't loaded yet
+      pathwayAFallback: { provider: "elevenlabs", model: "elevenlabs/tts", ext: "mp3" },
+      inputs: ["prompt"],
+      output: "audio",
+      hasModelDropdown: true,
+      modelKind: "audio",
+      modelsFilter: (m) => m.caps && (m.caps.includes("tts") || m.caps.includes("sfx") || m.caps.includes("music")) && m.integrated,
+      hasAspect: false,
+    },
+    {
       // v3.4.1 - Real video output. The previous "video-gen" definition
       // silently produced HTML motion pieces because no video API was
       // wired in; that was misleading - picking a skill called "Video"
@@ -771,5 +805,5 @@
     { value: "9:16", label: "9:16" },
   ];
 
-  window.TH_MEDIA = { providers: PROVIDERS, imageModels: IMAGE_MODELS, textModels: TEXT_MODELS, videoModels: VIDEO_MODELS, models3d: MODELS_3D, skills: SKILLS, aspects: ASPECTS };
+  window.TH_MEDIA = { providers: PROVIDERS, imageModels: IMAGE_MODELS, textModels: TEXT_MODELS, videoModels: VIDEO_MODELS, models3d: MODELS_3D, audioModels: AUDIO_MODELS, skills: SKILLS, aspects: ASPECTS };
 })();

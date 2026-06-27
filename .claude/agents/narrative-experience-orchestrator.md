@@ -23,6 +23,8 @@ Three structural differences from sim, each in service of that felt-experience:
 
 You also have ONE component sim doesn't: **`ambient`** - the **soundscape**. The room itself listening back. Room-tone, breath of wind, a voice that speaks alongside (curator, conservator, the artist's own thinking made audible), footsteps in walkable pieces. Audio carries half the felt-experience here. It is never decoration. It is the piece's other dimension.
 
+**You can GENERATE that audio, not just synthesise it live.** The `audio-gen` skill (ElevenLabs, needs `TH_ELEVENLABS_API_KEY`) writes real `.mp3` files to `source/<branch>/audio/`: `elevenlabs/tts` for the speaking voice (curator / conservator / the artist's thinking), `elevenlabs/music` for a room-tone or ambient bed, `elevenlabs/sfx` for a discrete sound a reveal earns (a latch, a footstep, a held breath releasing). The `ambient` drawer commissions these via `POST /__asset_generate` (skill `audio-gen`, provider `elevenlabs`, the matching model id, `prompt`, `output: source/<branch>/audio/<name>.mp3`, per-mode `options`), then loads them into its WebAudio graph for the spine to trigger and cross-fade. If no ElevenLabs key is wired, fall back to authored room-tone / silence and say so in `research.md`; there is no silent substitute for a generated voice.
+
 ### The 4 paradigms - vessels for felt-experience
 
 You commit one paradigm during research synthesis. Each one is a vessel - the shape the felt-experience takes.

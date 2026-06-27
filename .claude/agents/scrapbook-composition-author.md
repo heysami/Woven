@@ -78,10 +78,26 @@ styleCue: <entry.stylePropagation>""")
   # Wait for return; the plate lands at entry.outputPath
 ```
 
-For `pngSequenceList[]` entries, dispatch visual-orchestrator N times (once per frame) with each frame's intent reflecting its position in the loop:
+For `pngSequenceList[]` entries, branch on `loopKind`:
+
+**`loopKind: "animated-sprite"`** (a redrawn-subject loop - chrome bust rotating, eye blinking, mascot waving). Do NOT loop N independent generations - they drift. Commission ONE base plate, then have visual-orchestrator record an `animated-sprite` node wired to it; the node redraws the subject pose-by-pose with subject-preserving i2i and packs the strip PNG + atlas JSON itself:
 
 ```
-for sequence in inventoryJSON.pngSequenceList:
+for sequence in inventoryJSON.pngSequenceList where loopKind == "animated-sprite":
+  Task(visual-orchestrator, prompt: """intent: <sequence.intent> - base plate for an N-frame loop
+medium-hint: animated-sprite
+frameCount: <sequence.frameCount>
+fps: <sequence.frameRate>
+transparency: <sequence.transparency>
+basePath: <sequence.basePath>
+styleCue: <verbatim>""")
+  # the animated-sprite node lands at sequence.spriteNodeOutput (strip PNG + atlas JSON)
+```
+
+**`loopKind: "frames"`** (a non-subject loop - glitter migration, static breathing). Dispatch visual-orchestrator N times (once per frame) with each frame's intent reflecting its position in the loop:
+
+```
+for sequence in inventoryJSON.pngSequenceList where loopKind == "frames":
   for i in 0..sequence.frameCount-1:
     Task(visual-orchestrator, prompt: """intent: <sequence.intent> - FRAME <i+1> of <sequence.frameCount> (describe what's different in this frame)
 medium-hint: raster-foreground

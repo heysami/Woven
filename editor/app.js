@@ -7357,6 +7357,7 @@ const EXT_TO_ASSET_KIND = {
   html: "html", htm: "html",
   json: "lottie",
   mp4:  "video", webm: "video", mov: "video",
+  mp3:  "audio", wav: "audio", ogg: "audio", m4a: "audio", aac: "audio", flac: "audio",
   glb:  "3d", gltf: "3d", ply: "3d", splat: "3d", ksplat: "3d",
   css:  "text", js: "text", txt: "text", md: "text",
 };
@@ -7373,6 +7374,7 @@ const KIND_TO_EXT = {
   svg:    "svg",
   lottie: "json",
   video:  "mp4",
+  audio:  "mp3",
   "3d":   "glb",
 };
 function pickAssetSpawnDefaults(skillSpec, branch, stamp) {
@@ -7426,6 +7428,7 @@ function assetSubdirForKind(assetKind) {
     case "html":   return "_remix";   // html alts/remixes land beside the orchestrator's _remix/ subdir
     case "vector": return "vectors";
     case "video":  return "videos";
+    case "audio":  return "audio";
     case "lottie": return "lotties";
     case "3d":     return "models3d";
     case "text":   return "text";
@@ -7456,11 +7459,14 @@ function listModelsForCapability(cap) {
   if (cap === "image") return (M.imageModels || []).filter(m => m.integrated !== false);
   // v3.4.1 - Video catalog now has integrated rows (fal video models).
   if (cap === "video") return (M.videoModels || []).filter(m => m.integrated !== false);
+  // Audio catalog (ElevenLabs tts / sfx / music).
+  if (cap === "audio") return (M.audioModels || []).filter(m => m.integrated !== false);
   // Synthesized lists for capabilities the catalog doesn't enumerate yet.
   // We expose every provider that *plausibly* serves the capability so the
   // user can wire it up even if there's no integrated model row yet.
   const PROVIDERS_BY_CAP = {
     video: ["fal","runway","pika","luma","replicate"],
+    audio: ["elevenlabs"],
     svg:   ["quiver","openai","anthropic","fal","recraft"],
     "3d":  ["meshy","fal"],
     lottie:["lottiefiles","fal"],
@@ -39833,7 +39839,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             ? (window.TH_MEDIA && window.TH_MEDIA.videoModels) || []
             : (skillSpec.output === "3d"
                 ? (window.TH_MEDIA && window.TH_MEDIA.models3d) || []
-                : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || []));
+                : (skillSpec.output === "audio"
+                    ? (window.TH_MEDIA && window.TH_MEDIA.audioModels) || []
+                    : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [])));
       // v3.4.10 - dispatch the LIVE model (deprecated → current via the
       // _DEPRECATED_MODEL_MIGRATIONS map). The saved node.model is never
       // sent directly; the catalog is the source of truth.
@@ -55546,9 +55554,10 @@ function WorkflowAssetModelChip({ node, allNodes, allEdges, onChange }) {
     if (skillSpec.modelKind === "text") return (M.textModels || []).filter(m => m.integrated !== false);
     if (skillSpec.output === "video")   return (M.videoModels || []).filter(m => m.integrated !== false);
     if (skillSpec.output === "3d")      return (M.models3d || []).filter(m => m.integrated !== false);
+    if (skillSpec.output === "audio")   return (M.audioModels || []).filter(m => m.integrated !== false);
     if (skillSpec.output === "image")   return (M.imageModels || []).filter(m => m.integrated !== false);
     return [];
-  }, [skillSpec, M.textModels, M.imageModels, M.videoModels, M.models3d]);
+  }, [skillSpec, M.textModels, M.imageModels, M.videoModels, M.models3d, M.audioModels]);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -77829,6 +77838,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
     if (skillSpec.modelKind === "text") return (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
     if (skillSpec.output === "video") return (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
     if (skillSpec.output === "3d") return (window.TH_MEDIA && window.TH_MEDIA.models3d) || [];
+    if (skillSpec.output === "audio") return (window.TH_MEDIA && window.TH_MEDIA.audioModels) || [];
     return (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
   })();
 

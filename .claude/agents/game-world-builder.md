@@ -190,7 +190,9 @@ Task(subagent_type: "visual-orchestrator",
      prompt: "<one-line intent inheriting styleCue verbatim>. Output: source/<branch>/games/<gameId>/plates/<assetId>.png")
 ```
 
-For 3D surface textures, use the tileable contract from `editor/kinds/3D_CAPABILITIES.md §2.1` ("Seamless tileable texture … FLAT top-down, even diffuse lighting, no shadows, no vignette, exact square" → `source/<branch>/games/<gameId>/textures/<name>.png`). For Meshy hero meshes (when wired), commission the `meshy` skill the same way with output `models/<name>.glb`.
+**For an ANIMATED sprite cycle** (a character walk / idle / attack / blink loop - the same subject across frames, not a static plate), do NOT commission N separate plates and hope they match. Ask visual-orchestrator for a single base plate, then have it record an `animated-sprite` node (`medium: "animated-sprite"`) wired to that plate: the node redraws the subject pose-by-pose with subject-preserving i2i and packs a strip PNG + atlas JSON, so the frames hold identity. Load the resulting sheet + atlas in `world.html` and step frames in `onFrame`. Static plates / backgrounds / tiles stay the per-asset dispatch above.
+
+For 3D surface textures, use the tileable contract from `editor/kinds/3D_CAPABILITIES.md §2.1` ("Seamless tileable texture … FLAT top-down, even diffuse lighting, no shadows, no vignette, exact square" → `source/<branch>/games/<gameId>/textures/<name>.png`). For Meshy hero meshes (when wired), commission the `3d-gen` skill the same way with output `models/<name>.glb` - keep its baked PBR map set on load (`GLTFLoader`, do not re-flatten; §2.3), and for a rigged character variant (`meshy/*-anim`) drive `gltf.animations` with an `AnimationMixer`.
 
 Wait for each. If the dispatch fails, ship the world with procedural fallbacks and note in `// Known issues:`.
 
