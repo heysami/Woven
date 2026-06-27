@@ -10044,8 +10044,23 @@ function ShareMenuButton() {
   const people = (session && session.live && session.live.participants) || [];
   const isLive = !!session && people.length > 0;
 
-  const protoNodes = nodes.filter(n =>
+  const protoNodesRaw = nodes.filter(n =>
     n.kind === "prototype" || (n.kind === "asset" && (n.assetKind === "html" || n.assetKind === "html-set")));
+  // Several nodes can resolve to the SAME share slug (e.g. a prototype node and
+  // an html asset both rooted at source/main/) - collapse them to one row,
+  // preferring the real prototype node. Slug-less items stay distinct.
+  const protoNodes = (() => {
+    const ordered = [...protoNodesRaw].sort((a, b) =>
+      (a.kind === "prototype" ? 0 : 1) - (b.kind === "prototype" ? 0 : 1));
+    const seen = new Set();
+    const out = [];
+    for (const n of ordered) {
+      const slug = shareSlugForNode(n);
+      if (slug) { if (seen.has(slug)) continue; seen.add(slug); }
+      out.push(n);
+    }
+    return out;
+  })();
   const VISUAL_SKIP = new Set(["html", "html-set", "text"]);
   const assetNodes = nodes.filter(n => n.kind === "asset" && !VISUAL_SKIP.has(n.assetKind));
   const labelOf = (n) => n.label || n.title || shareSlugForNode(n) || n.id;
@@ -73151,14 +73166,20 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
   const pending = selectedIds.filter(id => !(frames[id] && frames[id].status === "done"));
   const doneCount = selectedIds.length - pending.length;
 
-  // Is a Pose viewer already wired to this generator's out? (Used to auto-link
-  // one on first Generate so results show in the viewer, not an inline gallery.)
-  const hasViewer = !!node.viewerLinked || (allEdges || []).some(e => {
+  // Is a Pose viewer ACTUALLY wired to this generator's out right now? Computed
+  // live from the edges (NOT a sticky node flag) so that if the viewer was
+  // deleted, generating / the Open-viewer button will create a fresh one.
+  const hasViewer = (allEdges || []).some(e => {
     const f = workflowParseEdgeRef(e.from); if (!f || f.node !== node.id) return false;
     const t = workflowParseEdgeRef(e.to); if (!t) return false;
     const dn = (allNodes || []).find(n => n.id === t.node);
     return dn && dn.kind === "pose-viewer";
   });
+  const ensureViewer = () => {
+    if (onSpawnConnected && !hasViewer) {
+      onSpawnConnected("right", { kind: "pose-viewer", newPort: "in", anchorPort: "out" });
+    }
+  };
 
   // Subject image: an on-node pick (refImagePath) wins, else a wired asset.
   const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p) && p.startsWith("source/");
@@ -73200,15 +73221,13 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
   const runGen = async (ids, force) => {
     if (busy) return;
     if (!subject) { setErr("Wire or pick a subject image into the node first."); return; }
+    setErr("");
+    // Make sure a Pose viewer exists to browse the set - BEFORE the early-return
+    // below, so even "Regenerate all" (or generating when all are already done)
+    // re-creates a viewer if it was deleted.
+    ensureViewer();
     const todo = ids.filter(id => force || !(frames[id] && frames[id].status === "done"));
     if (!todo.length) return;
-    setErr("");
-    // Auto-link a Pose viewer so the generated set is browsed there (the node no
-    // longer shows an inline gallery). One per generator - guarded by viewerLinked.
-    if (onSpawnConnected && !hasViewer) {
-      onSpawnConnected("right", { kind: "pose-viewer", newPort: "in", anchorPort: "out" });
-      onChange({ viewerLinked: true });
-    }
     const acc = { ...frames };
     const flush = (id, val) => { acc[id] = val; onChange({ poseFrames: { ...acc } }); };
     let done = 0;
@@ -73317,7 +73336,7 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
 
         <button className="wpose-genbtn" disabled=${!!busy || !selectedIds.length || !subject}
           title=${!subject ? "Wire or pick a subject image first" : !selectedIds.length ? "Tick at least one pose" : "Generate every selected pose that isn't done yet"}
-          onClick=${(e) => { e.stopPropagation(); runGen(selectedIds, false); }} onMouseDown=${(e) => e.stopPropagation()}>
+          onClick=${(e) => { e.stopPropagation(); runGen(selectedIds, pending.length === 0); }} onMouseDown=${(e) => e.stopPropagation()}>
           ${busy ? `Generating… ${busy.done}/${busy.total}`
             : pending.length ? `Generate ${pending.length} pose${pending.length > 1 ? "s" : ""}`
             : selectedIds.length ? "Regenerate all ↺" : "Generate set"}
@@ -73326,9 +73345,14 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
 
         <div className="wpose-status">
           ${selectedIds.length === 0
-            ? html`<span>Tick poses above, then <b>Generate set</b> - they open in a linked Pose viewer.</span>`
-            : html`<span>${doneCount}/${selectedIds.length} generated${doneCount ? html` · switch / regenerate in the linked viewer →` : ""}</span>`}
+            ? html`<span>Tick poses above, then <b>Generate set</b>.</span>`
+            : html`<span>${doneCount}/${selectedIds.length} generated.${doneCount ? " Browse / regenerate in the Pose viewer; each pose is also saved under Library → Assets." : ""}</span>`}
         </div>
+        ${doneCount && !hasViewer ? html`
+          <button className="wpose-openviewer" title="Create / re-create the linked Pose viewer to browse and switch poses"
+            onClick=${(e) => { e.stopPropagation(); ensureViewer(); }} onMouseDown=${(e) => e.stopPropagation()}>
+            ⊡ Open Pose viewer
+          </button>` : null}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in"
            data-port-node=${node.id} data-port-side="in"
