@@ -25481,6 +25481,10 @@ const WORKFLOW_NODE_FACTORY = {
     loop: p.loop !== false,
     source: p.source || "",
   }),
+  "pose-viewer": (p) => ({
+    kind: "pose-viewer", w: 300, h: 340,
+    viewPose: p.viewPose || "",
+  }),
   "iterator-repeater": (p) => {
     const n = Math.max(1, Math.min(8, p.n || 4));
     return {
@@ -25695,6 +25699,11 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Sprite sheet", tags: ["asset", "sprite", "blendable"] } },
     accepts:  { in:   { label: "Source image", tags: ["asset"] },
                 edit: { label: "Generate frames", tags: ["text-gen", "asset-gen"] } },
+  },
+  "pose-viewer": {
+    label: "Pose viewer",
+    provides: { out: { label: "Selected pose", tags: ["asset", "remixable", "blendable"] } },
+    accepts:  { in:  { label: "Pose set", tags: ["asset", "asset-gen", "runnable", "sprite"] } },
   },
   "design-system": {
     label: "Design system",
@@ -43449,6 +43458,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 allEdges=${data.edges || []}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "pose-viewer").map(n => html`
+              <${WorkflowPoseViewerNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "composer").map(n => html`
               <${WorkflowComposerNode}
                 key=${n.id}
@@ -45808,6 +45835,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">◳</span>
             <span className="workflow-library-item-label">Animated sprite</span>
             <span className="workflow-library-item-id">image → sprite sheet</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "pose-viewer" }));
+            }}
+            title="Drag onto canvas - pose viewer. Wire a Pose / restyle SET generator's output into the input port. Shows ONE selected pose large; click the node to reveal a floating side panel that switches between the generated poses instantly (or regenerates a single one). The output carries the currently-selected pose."
+          >
+            <span className="workflow-library-item-glyph">⊡</span>
+            <span className="workflow-library-item-label">Pose viewer</span>
+            <span className="workflow-library-item-id">pose set → one pose</span>
           </div>
         </div>
         <div className="workflow-library-section-head">Building blocks</div>
@@ -73039,6 +73079,168 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
            data-port-node=${node.id} data-port-side="out"
            title="Carries the currently-selected pose - wire into an asset, section, or composer."
            onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
+    </div>`;
+}
+
+// ── Pose viewer node ──
+// Presentation companion to WorkflowPoseSetNode. Wired FROM a pose-set
+// generator's output; it reads that upstream generator's poseFrames/poseSel
+// (read-only) and shows ONE selected pose large. On select it reveals a
+// floating right panel listing every generated pose - click to switch the
+// active pose instantly (and copy it onto wired downstream assets), or ↻ to
+// regenerate a single pose (writes back to the generator's frame file).
+function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+  const [busy, setBusy] = useState({});   // { [id]: true } while regenerating
+  const [err, setErr]   = useState("");
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const w = Math.max(220, node.w || 300);
+  const h = Math.max(240, node.h || 340);
+  const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p) && p.startsWith("source/");
+
+  // Upstream pose-set generator wired into `in`.
+  let gen = null;
+  for (const e of (allEdges || [])) {
+    const t = workflowParseEdgeRef(e.to); if (!t || t.node !== node.id || t.port !== "in") continue;
+    const f = workflowParseEdgeRef(e.from); if (!f) continue;
+    const up = (allNodes || []).find(n => n.id === f.node);
+    if (up && up.kind === "skill" && up.skill === "pose-subject") { gen = up; break; }
+  }
+  const genFrames = (gen && gen.poseFrames) || {};
+  const genSel    = (gen && gen.poseSel) || {};
+  const genCustom = (gen && Array.isArray(gen.poseCustom)) ? gen.poseCustom : [];
+
+  const selectedIds = [];
+  if (gen) {
+    for (const g of WORKFLOW_POSE_SET_GROUPS) for (const it of g.items) if (genSel[it.id]) selectedIds.push(it.id);
+    for (const c of genCustom) if (genSel[c.id]) selectedIds.push(c.id);
+  }
+  const doneIds = selectedIds.filter(id => genFrames[id] && genFrames[id].status === "done");
+  const active  = (node.viewPose && doneIds.includes(node.viewPose)) ? node.viewPose : (doneIds[0] || "");
+  const activeFrame = active ? genFrames[active] : null;
+  const viewBump = node.viewBump || {};
+  const bust = (p, v) => { const u = withProjectQuery("/" + p); return u + (u.includes("?") ? "&" : "?") + "_v=" + (v || 0); };
+
+  // The generator's subject image (needed for single-pose regen).
+  let subject = "";
+  if (gen) {
+    subject = isImg(gen.refImagePath) ? gen.refImagePath : "";
+    if (!subject) for (const e of (allEdges || [])) {
+      const t = workflowParseEdgeRef(e.to); if (!t || t.node !== gen.id || t.port !== "in") continue;
+      const f = workflowParseEdgeRef(e.from); if (!f) continue;
+      const up = (allNodes || []).find(n => n.id === f.node);
+      if (up && isImg(up.path)) { subject = up.path; break; }
+    }
+  }
+  const model    = (gen && gen.model) || WORKFLOW_I2I_DEFAULT_MODEL;
+  const provider = ((window.TH_MEDIA && window.TH_MEDIA.imageModels) || []).find(m => m.id === model)?.provider || "openai";
+  const aspect   = (gen && gen.aspect) || "1:1";
+
+  const downstreamAssetPaths = () => {
+    const out = [];
+    for (const e of (allEdges || [])) {
+      const f = workflowParseEdgeRef(e.from); if (!f || f.node !== node.id) continue;
+      const t = workflowParseEdgeRef(e.to);   if (!t) continue;
+      const dn = (allNodes || []).find(n => n.id === t.node);
+      if (dn && dn.kind === "asset" && typeof dn.path === "string" && dn.path.startsWith("source/")) out.push(dn.path);
+    }
+    return out;
+  };
+  const pushDownstream = async (fromPath) => {
+    for (const to of downstreamAssetPaths()) {
+      if (to === fromPath) continue;
+      try {
+        await fetch(apiUrl("/__copy_file"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: fromPath, to }),
+        });
+      } catch (_e) { /* best-effort; daemon file-watcher refreshes consumers */ }
+    }
+  };
+
+  const selectPose = async (id) => {
+    const fr = genFrames[id]; if (!fr || fr.status !== "done") return;
+    onChange({ viewPose: id, path: fr.path, assetKind: "image" });
+    await pushDownstream(fr.path);
+  };
+
+  const regen = async (id) => {
+    if (!gen) return;
+    if (!subject) { setErr("The wired generator has no subject image."); return; }
+    const item = workflowPoseItem(id, genCustom); if (!item) return;
+    setErr(""); setBusy(b => ({ ...b, [id]: true }));
+    try {
+      const out = `source/main/images/pose-${gen.id}-${id}.png`;
+      const body = {
+        skill: "pose-subject", provider, model, output: out, aspect,
+        prompt: workflowPosePromptForItem(item.frag), input_path: subject,
+      };
+      const r = await fetch(apiUrl("/__asset_generate"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      onChange({ viewBump: { ...(node.viewBump || {}), [id]: Date.now() } });
+      if (id === active) await pushDownstream(out);
+    } catch (e) { setErr((e && e.message) ? e.message : String(e)); }
+    finally { setBusy(b => { const n2 = { ...b }; delete n2[id]; return n2; }); }
+  };
+
+  return html`
+    <div className=${"workflow-node workflow-node-poseviewer" + (selected ? " is-selected" : "")}
+         data-node-id=${node.id}
+         style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+         onMouseDownCapture=${() => onSelect && onSelect()}>
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-skill-glyph">⊡</span>
+        <span className="workflow-node-skill-title">Pose viewer</span>
+        <span className="workflow-node-bar-spacer"/>
+        <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
+      </div>
+      <div className="workflow-node-poseviewer-body" onMouseDown=${(e) => e.stopPropagation()}>
+        ${!gen ? html`<div className="wpv-empty">Wire a <b>Pose / restyle set</b> generator's output into the input port.</div>`
+          : !doneIds.length ? html`<div className="wpv-empty">No generated poses yet - tick poses and hit <b>Generate set</b> on the generator.</div>`
+          : html`
+            <div className="wpv-stage">
+              <img src=${bust(activeFrame.path, viewBump[active] || activeFrame.v)} alt=${active}/>
+            </div>
+            <div className="wpv-caption">${(workflowPoseItem(active, genCustom) || {}).label || active}</div>`}
+        ${err && html`<div className="wpv-err" title=${err}>${err}</div>`}
+        ${!selected && doneIds.length ? html`<div className="wpv-hint">click to switch poses →</div>` : null}
+      </div>
+
+      ${selected && gen && selectedIds.length ? html`
+        <div className="pose-viewer-panel" onMouseDown=${(e) => e.stopPropagation()}>
+          <div className="pose-viewer-panel-head">Poses</div>
+          <div className="pose-viewer-panel-list">
+            ${selectedIds.map(id => {
+              const it = workflowPoseItem(id, genCustom) || { label: id };
+              const fr = genFrames[id] || {};
+              const isActive = id === active;
+              const isBusy = !!busy[id];
+              return html`<div key=${id}
+                className=${"pose-viewer-row" + (isActive ? " is-active" : "")}
+                onClick=${(e) => { e.stopPropagation(); selectPose(id); }}>
+                <div className="pose-viewer-thumb">
+                  ${fr.status === "done" ? html`<img src=${bust(fr.path, viewBump[id] || fr.v)} alt=${it.label}/>`
+                    : (fr.status === "loading" || isBusy) ? html`<span className="wpose-tile-spin"/>`
+                    : fr.status === "error" ? html`<span className="wpose-tile-x" title=${fr.error}>!</span>`
+                    : html`<span className="wpose-tile-dot">·</span>`}
+                </div>
+                <span className="pose-viewer-row-label">${it.label}${isActive ? " ✓" : ""}</span>
+                ${fr.status === "done" ? html`<button className="pose-viewer-regen" title="Regenerate just this pose"
+                  disabled=${isBusy || !subject}
+                  onClick=${(e) => { e.stopPropagation(); regen(id); }}>↻</button>` : null}
+              </div>`;
+            })}
+          </div>
+        </div>` : null}
+
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Wire the Pose set generator's output here." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}><div className="workflow-port-dot"/></div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="Carries the currently-selected pose." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}><div className="workflow-port-dot"/></div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
     </div>`;
 }

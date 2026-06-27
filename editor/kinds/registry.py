@@ -1495,6 +1495,27 @@ KINDS = {
         "notes": "Raster image -> AI-redrawn frame cycle baked to a sprite-sheet PNG + atlas JSON. Wire a source image into `in` and click Generate (i2i, subject-preserving, one call per frame, packed client-side); an Agent can also author it via the `edit` port.",
     },
 
+    # ── pose-viewer ───────────────────────────────────────────────────────
+    "pose-viewer": {
+        "title":        "Pose viewer",
+        "category":     "container",
+        "inputs": {
+            "viewPose":  {"type": "text", "userEditable": False},
+            "path":      {"type": "text", "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "Presentation companion to the Pose / restyle SET node. Wire a pose-set generator's output into `in`; the viewer shows ONE selected pose large and exposes a floating side panel (on select) to switch between the generated poses instantly or regenerate a single one. Its `out` carries the currently-selected pose.",
+    },
+
     # ── prototype ─────────────────────────────────────────────────────────
     "prototype": {
         "title":        "Prototype (live iframe)",
@@ -3525,6 +3546,12 @@ KIND_IO = {
               "ingest": "editTarget", "canonical": "source/{branch}/animated-sprite-{id}.json",
               "authoring": _SPRITE_AUTHORING},
         ],
+    },
+    "pose-viewer": {
+        "provides": [{"port": "out", "label": "Selected pose", "tags": ["asset", "remixable", "blendable"],
+                       "resolve": "assetFile"}],
+        "accepts":  [{"port": "in", "label": "Pose set", "tags": ["asset", "asset-gen", "runnable", "sprite"],
+                       "ingest": "context"}],
     },
     "design-system": {
         "provides": [{"port": "out", "label": "DS reference", "tags": ["design-system", "folder"],
