@@ -39557,6 +39557,37 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
         }
       }
+      // video-chain keyframe anchors: collect EVERY wired image asset in
+      // left-to-right canvas order. 2+ anchors -> keyframe mode (each
+      // consecutive pair becomes one clip pinned start+end); 1 -> auto-handoff
+      // (single start frame + prompt lines). The ordered list rides in
+      // options.anchors; the daemon resolves each path/data-uri to a frame.
+      let chainAnchors = null;
+      if (skillSpec.id === "video-chain") {
+        const acc = [];
+        for (const e of edges) {
+          const t = workflowParseEdgeRef(e.to);
+          if (!t || t.node !== skillId || t.port !== "in") continue;
+          const f = workflowParseEdgeRef(e.from);
+          if (!f) continue;
+          const up = nodeById[f.node];
+          if (!up) continue;
+          const ax = (typeof up.x === "number") ? up.x : 0;
+          if (up.kind === "asset" && typeof up.path === "string" && up.path.startsWith("source/")) {
+            acc.push({ x: ax, path: up.path });
+          } else if (up.kind === "asset" && typeof up.path === "string"
+                     && up.path.startsWith("inline:svg/") && typeof up.src === "string"
+                     && up.src.startsWith("<svg")) {
+            try { acc.push({ x: ax, data_uri: await workflowRasterizeSvgToPng(up.src) }); } catch {}
+          } else if (up.kind === "skill" && writtenPathByskill[up.id]) {
+            acc.push({ x: ax, path: writtenPathByskill[up.id] });
+          }
+        }
+        acc.sort((a, b) => a.x - b.x);
+        if (acc.length >= 2) {
+          chainAnchors = acc.map(a => (a.path ? { path: a.path } : { data_uri: a.data_uri }));
+        }
+      }
       // A prompt's inline [filename] badge supplies an OPTIONAL reference image,
       // even to skills that only declare a prompt input (generate-image promotes
       // to image-edit). A directly-wired asset takes priority; the badge fills in
@@ -39583,7 +39614,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           && typeof skillNode.refImagePath === "string" && skillNode.refImagePath.startsWith("source/")) {
         assetInputPath = skillNode.refImagePath;
       }
-      if (wantsPrompt && promptTexts.length === 0) {
+      if (wantsPrompt && promptTexts.length === 0 && !chainAnchors) {
+        // video-chain in keyframe mode (2+ wired images) doesn't require a
+        // prompt - the images define the chain; prompt lines are optional guidance.
         update(skillId, { status: "error", error: "Connect a prompt node to this skill's input" }); break;
       }
       if (wantsAsset && !assetInputPath && !assetInputDataUri && skillSpec.pathway !== "Tool") {
@@ -40215,7 +40248,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           // a directive; "edit"/unset stays raw img2img (today's behaviour).
           const refDirective = (hasRefImg && skillSpec.id === "generate-image")
             ? workflowRefModeDirective(skillNode.refMode) : "";
-          const body = { skill: skillSpec.id, provider, model, output: outputPath, aspect, options };
+          const body = { skill: skillSpec.id, provider, model, output: outputPath, aspect,
+            options: chainAnchors ? { ...(options || {}), anchors: chainAnchors } : options };
           if (wantsPrompt) body.prompt = refDirective ? ((prompt ? prompt + "\n\n" : "") + refDirective) : prompt;
           else if (skillSpec.id === "pose-subject" && prompt) body.prompt = prompt;
           // Send the resolved asset for any image-producing skill - not just

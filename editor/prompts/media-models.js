@@ -645,20 +645,23 @@
       hasAspect: true,
     },
     {
-      // Video chain - one start frame + a list of segment prompts → one
-      // stitched mp4. Each line in the prompt box is one shot (or separate
-      // multi-line shots with a `---` line); the node renders each shot as an
-      // image→video clip, hands the LAST frame of each clip to the next clip as
-      // its opening frame (seamless continuity), then ffmpeg-concatenates them
-      // server-side into a single video. Because every clip is image→video, the
-      // model list is filtered to i2v-capable models and the wired image input
-      // becomes the first clip's start frame. Default is Higgsfield DoP (the
-      // provider with the cleanest i2v + end-frame story in this codebase); any
-      // fal image-to-video model works too. The whole chain runs in ONE
-      // server-side request, so a long chain can take several minutes.
+      // Video chain - render a sequence of image→video clips and ffmpeg-stitch
+      // them into ONE mp4. Two modes, picked by how many images you wire in:
+      //   • AUTO-HANDOFF (1 wired image): each line in the prompt box is one
+      //     shot; the LAST frame of each clip seeds the next clip's start frame,
+      //     so continuity is derived. Works on any i2v model.
+      //   • KEYFRAME-ANCHOR (2+ wired images): lay the images out left→right on
+      //     the canvas and wire them all in; each consecutive pair becomes one
+      //     clip pinned at BOTH ends (imgA→imgB), so the images ARE the chain
+      //     (N images → N-1 clips). Prompt lines are optional per-transition
+      //     guidance. Higgsfield-only - it's the one provider that can pin an
+      //     end frame (that field is best-effort pending live API confirmation).
+      //     Anchor order = source-node x-position (left→right).
+      // Every clip is image→video, so the model list is filtered to i2v models.
+      // The whole chain runs in ONE server-side request, so it can take minutes.
       id: "video-chain",
       label: "Video chain",
-      hint: "start frame + segment prompts (one shot per line) → one stitched .mp4 (last frame of each clip seeds the next - seamless continuity)",
+      hint: "1 image = auto-handoff (one shot per prompt line); 2+ images wired left→right = keyframe morph A→B→C (Higgsfield) → one stitched .mp4",
       glyph: "⇉",
       pathway: "A",
       defaultModel: "dop-turbo",

@@ -1404,31 +1404,86 @@ def _ffmpeg_concat_videos(ffmpeg, clip_paths, out_abs):
         raise RuntimeError(f"ffmpeg concat failed: {err}")
 
 
-def _chain_one_segment(api_key, provider, model, aspect, seg_prompt, options, start_uri):
-    """Render ONE clip whose motion starts from `start_uri` (a data URI). Routes
-    to the same renderer the plain `video-gen` skill uses for this provider."""
+def _chain_one_segment(api_key, provider, model, aspect, seg_prompt, options,
+                       start_uri, end_uri=None):
+    """Render ONE clip whose motion starts from `start_uri` (a data URI). When
+    `end_uri` is given the final frame is pinned too (keyframe-anchor mode) -
+    only Higgsfield DoP can do that, so end_uri is ignored on fal. Routes to the
+    same renderer the plain `video-gen` skill uses for this provider."""
     opts = dict(options or {})
     if provider == "higgsfield":
         opts["start_image_url"] = start_uri
+        if end_uri:
+            opts["end_image_url"] = end_uri
         return _higgsfield_generate_video(api_key, seg_prompt, model, aspect, opts)
     # fal image-to-video: the renderer forwards options.image_url to fal.
     opts["image_url"] = start_uri
     return _fal_generate_video(api_key, seg_prompt, model, aspect, opts)
 
 
-def _video_chain_generate(api_key, provider, model, aspect, prompt, options, start_uri):
-    """Generate each segment with last-frame→next-start handoff, then concat the
-    clips into one mp4. Returns the stitched mp4 bytes. `start_uri` is the data
-    URI of the wired start frame for the FIRST clip."""
-    if not start_uri:
-        raise RuntimeError(
-            "video-chain needs a start frame - wire an image into the node's "
-            "asset input (it becomes the first clip's opening frame)")
+def _video_chain_generate(api_key, provider, model, aspect, prompt, options,
+                          start_uri, anchor_uris=None):
+    """Build one stitched mp4 from a chain of clips, in one of two modes:
+
+      • KEYFRAME-ANCHOR (anchor_uris has 2+ frames): each consecutive pair of
+        wired images becomes one clip pinned at BOTH ends (imgA→imgB), so the
+        images ARE the chain. N images → N-1 clips. Prompt lines (optional) guide
+        each transition in order. Higgsfield-only (it's the one provider that can
+        pin an end frame).
+
+      • AUTO-HANDOFF (one start frame): each prompt line is one clip; the LAST
+        frame of clip i seeds clip i+1, so continuity is derived, not pinned.
+
+    Returns the stitched mp4 bytes."""
     if not _ffmpeg_have():
         raise RuntimeError(
             "video-chain needs ffmpeg on PATH for frame extraction + concat "
             "(install with `brew install ffmpeg`)")
     ffmpeg = _ffmpeg_bin()
+    anchors = [a for a in (anchor_uris or []) if a]
+
+    # ── Keyframe-anchor mode ────────────────────────────────────────────────
+    if len(anchors) >= 2:
+        if provider != "higgsfield":
+            raise RuntimeError(
+                "keyframe-anchor mode (2+ wired images) needs an end-frame-capable "
+                "model - pick a Higgsfield DoP model. fal image-to-video models can "
+                "only pin the START frame, so wire a single start image instead "
+                "(auto-handoff), or switch the model to Higgsfield.")
+        if len(anchors) > _CHAIN_MAX_SEGMENTS + 1:
+            raise RuntimeError(
+                f"video-chain is capped at {_CHAIN_MAX_SEGMENTS} clips "
+                f"({_CHAIN_MAX_SEGMENTS + 1} anchor images); got {len(anchors)}")
+        # Prompt lines are OPTIONAL guidance here, one per A→B transition.
+        segs = _parse_chain_segments(prompt)
+        with tempfile.TemporaryDirectory(prefix="woven-chain-") as td:
+            clip_paths = []
+            for i in range(len(anchors) - 1):
+                seg = segs[i] if i < len(segs) else ""
+                print(f"[video-chain] keyframe clip {i + 1}/{len(anchors) - 1}: "
+                      f"A→B {seg[:48]!r}", flush=True)
+                clip_bytes = _chain_one_segment(
+                    api_key, provider, model, aspect, seg, options,
+                    anchors[i], end_uri=anchors[i + 1])
+                cp = os.path.join(td, f"clip{i:02d}.mp4")
+                with open(cp, "wb") as f:
+                    f.write(clip_bytes)
+                clip_paths.append(cp)
+            if len(clip_paths) == 1:
+                with open(clip_paths[0], "rb") as f:
+                    return f.read()
+            out = os.path.join(td, "chain.mp4")
+            _ffmpeg_concat_videos(ffmpeg, clip_paths, out)
+            with open(out, "rb") as f:
+                return f.read()
+
+    # ── Auto-handoff mode ───────────────────────────────────────────────────
+    if not start_uri and anchors:
+        start_uri = anchors[0]
+    if not start_uri:
+        raise RuntimeError(
+            "video-chain needs a start frame - wire an image into the node's "
+            "asset input (it becomes the first clip's opening frame)")
     segs = _parse_chain_segments(prompt)
     if not segs:
         raise RuntimeError(
@@ -13079,13 +13134,31 @@ class H(http.server.SimpleHTTPRequestHandler):
                             hf_opts["image_url"] = _file_to_data_uri(input_abs)
                     bytes_ = _higgsfield_generate_video(api_key, prompt, model, aspect, hf_opts)
                 elif skill == "video-chain" and provider in ("higgsfield", "fal"):
-                    # Chain N segment prompts (one per line, or `---`-separated)
-                    # into one stitched mp4. The wired image is the first clip's
-                    # start frame; each clip's last frame seeds the next.
+                    # Two modes (see _video_chain_generate):
+                    #  • 1 wired image  → auto-handoff: prompt lines drive clips,
+                    #    each clip's last frame seeds the next.
+                    #  • 2+ wired images (options.anchors, ordered left→right) →
+                    #    keyframe-anchor: each consecutive pair is one clip pinned
+                    #    start+end (Higgsfield endframe).
                     start_uri = input_data_uri or (
                         _file_to_data_uri(input_abs) if input_abs else None)
+                    anchor_uris = []
+                    for a in (options.get("anchors") if isinstance(options, dict) else None) or []:
+                        if not isinstance(a, dict):
+                            continue
+                        du = a.get("data_uri")
+                        ap = a.get("path")
+                        if isinstance(du, str) and du.startswith("data:"):
+                            anchor_uris.append(du)
+                        elif isinstance(ap, str) and ap.startswith("source/") \
+                                and ".." not in ap.split("/"):
+                            try:
+                                anchor_uris.append(_file_to_data_uri(_safe_join(project_root, ap)))
+                            except Exception as e:
+                                return self._reply(400, {"error": f"bad anchor path {ap!r}: {e}"})
                     bytes_ = _video_chain_generate(
-                        api_key, provider, model, aspect, prompt, options, start_uri)
+                        api_key, provider, model, aspect, prompt, options, start_uri,
+                        anchor_uris=anchor_uris)
                 elif provider == "fal" and skill == "3d-gen":
                     # v3.5 - 3D model generation. Bytes are .glb / .gltf.
                     # Long timeout (up to 10min for some models).
