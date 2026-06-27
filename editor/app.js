@@ -58761,12 +58761,16 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
         body: JSON.stringify({
           skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
           output: rawOut, aspect, input_path: src,
-          options: { background: "transparent", output_format: "png", quality: "high" },
+          options: { background: "transparent" },
           prompt: subjectDirective + "\n\n" + spriteSheetPrompt(anim, n, cols, rows),
         }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.ok) throw new Error((j && (j.error || j.hint)) || `sheet generation failed (HTTP ${r.status})`);
+      if (!r.ok || !j.ok) {
+        const d = j && j.detail;
+        const dmsg = d && ((d.error && (d.error.message || d.error)) || d.message || (typeof d === "string" ? d : JSON.stringify(d)));
+        throw new Error([j && (j.error || j.hint), dmsg].filter(Boolean).join(" - ") || `sheet generation failed (HTTP ${r.status})`);
+      }
       setGen({ phase: "running", step: 1, total: 1, error: "" });
       // Slice the generated grid into one clean uniform horizontal strip.
       const sheetImg = await loadImg(withProjectQuery("/" + rawOut, "_n=" + Date.now()));
