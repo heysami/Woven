@@ -25475,7 +25475,6 @@ const WORKFLOW_NODE_FACTORY = {
   "animated-sprite": (p) => ({
     kind: "animated-sprite", w: 300, h: 330,
     name: p.name || "Animated sprite",
-    engine: p.engine || "procedural",
     animation: p.animation || "idle",
     frameCount: p.frameCount || 6,
     fps: p.fps || 12,
@@ -58674,7 +58673,6 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
         name: nd.name || "Animated sprite",
         source: nd.source || upstreamSource || "",
         animation: nd.animation || "idle",
-        engine: nd.engine || "procedural",
         frameCount: Number(nd.frameCount) || 6,
         fps: Number(nd.fps) || 12,
         loop: nd.loop !== false,
@@ -58693,7 +58691,6 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
         if (typeof j.name === "string")        patch.name = j.name;
         if (typeof j.source === "string")      patch.source = j.source;
         if (typeof j.animation === "string")   patch.animation = j.animation;
-        if (typeof j.engine === "string")      patch.engine = j.engine;
         if (j.frameCount != null)              patch.frameCount = Number(j.frameCount) || 6;
         if (j.fps != null)                     patch.fps = Number(j.fps) || 12;
         if (typeof j.loop === "boolean")       patch.loop = j.loop;
@@ -58743,27 +58740,14 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     return `This is frame ${i + 1} of ${n} in a SEAMLESSLY LOOPING ${anim} animation (frame ${n} flows back into frame 1). ${beat} The subject MUST stay identical to the reference image - same character, colours, art style, scale and camera framing, centred, full body visible - and sit on a FULLY TRANSPARENT background: no backdrop, no ground, no drop shadow. Output ONE frame only: no grid, no sprite sheet, no text, no border.`;
   }
 
-  // Deterministic per-frame transform for the PROCEDURAL engine - the same
-  // source pixels, warped per beat (squash-and-stretch / bob / lunge / yaw).
-  // Returns { sx, sy, dx, dy, rot } applied around a bottom-centre anchor.
-  function spriteProceduralTransform(anim, p) {
-    const TAU = Math.PI * 2, s = Math.sin(TAU * p);
-    if (anim === "jump") { const a = Math.sin(Math.PI * p); return { sx: 1 - 0.08 * a, sy: 1 + 0.13 * a, dx: 0, dy: -0.34 * a, rot: 0 }; }
-    if (anim === "turn") { return { sx: Math.cos(TAU * p), sy: 1, dx: 0, dy: 0, rot: 0 }; }
-    if (anim === "attack") { const l = Math.sin(Math.PI * p); return { sx: 1 + 0.05 * l, sy: 1 - 0.04 * l, dx: 0.12 * l, dy: 0, rot: -0.05 * l }; }
-    if (anim === "walk" || anim === "run") { const b = anim === "run" ? 1.7 : 1; return { sx: 1, sy: 1 - 0.03 * Math.abs(s) * b, dx: 0.02 * s * b, dy: -0.04 * Math.abs(s) * b, rot: 0.05 * s * b }; }
-    return { sx: 1 - 0.035 * s, sy: 1 + 0.05 * s, dx: 0, dy: -0.05 * Math.max(0, s), rot: 0.015 * s };  // idle / custom
-  }
-
-  // Run on click - like every other asset generator. PROCEDURAL warps the one
-  // source per beat (instant, no AI, transparent by construction); AI redraws
-  // each frame via i2i (new poses, needs an image model). Both pack one strip.
+  // Run on click - like every other asset generator: redraw each frame from
+  // the wired source via i2i (subject-preserving), then pack them into a strip.
   const runGenerate = useCallback(async () => {
     const src = node.source || upstreamSource || "";
     if (!src) { setGen({ phase: "error", step: 0, total: 0, error: "Wire a source image into the input port first." }); return; }
     const n = Math.max(1, Math.min(64, Number(node.frameCount) || 6));
     const anim = node.animation || "idle";
-    const engine = node.engine || "procedural";
+    const subjectDirective = workflowRefModeDirective("subject");
     const cell = 256;   // packed cell size - keeps the sheet light
     const loadImg = (url) => new Promise((res, rej) => {
       const im = new Image();
@@ -58773,46 +58757,28 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     });
     setGen({ phase: "running", step: 0, total: n, error: "" });
     try {
+      const framePaths = [];
+      for (let i = 0; i < n; i++) {
+        const out = `source/${branch}/sprites/animated-sprite-${node.id}/frame-${i}.png`;
+        const r = await fetch(apiUrl("/__asset_generate"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
+            output: out, aspect: "1:1", input_path: src,
+            options: { background: "transparent", output_format: "png" },
+            prompt: subjectDirective + "\n\n" + spritePosePrompt(anim, i, n),
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error((j && (j.error || j.hint)) || `frame ${i + 1} failed (HTTP ${r.status})`);
+        framePaths.push(out);
+        setGen({ phase: "running", step: i + 1, total: n, error: "" });
+      }
+      const imgs = await Promise.all(framePaths.map(pp => loadImg(withProjectQuery("/" + pp, "_n=" + Date.now()))));
       const cnv = document.createElement("canvas");
       cnv.width = cell * n; cnv.height = cell;
       const ctx = cnv.getContext("2d");
-      if (engine === "procedural") {
-        const im = await loadImg(withProjectQuery("/" + src, "_n=" + Date.now()));
-        const iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
-        const fr = Math.min((cell * 0.84) / iw, (cell * 0.9) / ih);
-        const fw2 = iw * fr, fh2 = ih * fr;
-        for (let i = 0; i < n; i++) {
-          const t = spriteProceduralTransform(anim, i / n);
-          ctx.save();
-          ctx.translate(i * cell + cell / 2 + t.dx * cell, cell - cell * 0.05 + t.dy * cell);
-          ctx.rotate(t.rot);
-          ctx.scale(t.sx, t.sy);
-          ctx.drawImage(im, -fw2 / 2, -fh2, fw2, fh2);   // bottom-centre anchored
-          ctx.restore();
-          setGen({ phase: "running", step: i + 1, total: n, error: "" });
-        }
-      } else {
-        const subjectDirective = workflowRefModeDirective("subject");
-        const framePaths = [];
-        for (let i = 0; i < n; i++) {
-          const out = `source/${branch}/sprites/animated-sprite-${node.id}/frame-${i}.png`;
-          const r = await fetch(apiUrl("/__asset_generate"), {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
-              output: out, aspect: "1:1", input_path: src,
-              options: { background: "transparent", output_format: "png" },
-              prompt: subjectDirective + "\n\n" + spritePosePrompt(anim, i, n),
-            }),
-          });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok || !j.ok) throw new Error((j && (j.error || j.hint)) || `frame ${i + 1} failed (HTTP ${r.status})`);
-          framePaths.push(out);
-          setGen({ phase: "running", step: i + 1, total: n, error: "" });
-        }
-        const imgs = await Promise.all(framePaths.map(pp => loadImg(withProjectQuery("/" + pp, "_n=" + Date.now()))));
-        imgs.forEach((im, i) => ctx.drawImage(im, i * cell, 0, cell, cell));
-      }
+      imgs.forEach((im, i) => ctx.drawImage(im, i * cell, 0, cell, cell));
       const dataUrl = cnv.toDataURL("image/png");
       const sheetPath = `source/${branch}/sprites/animated-sprite-${node.id}.png`;
       const wr = await fetch(apiUrl("/__write_binary"), {
@@ -58844,7 +58810,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     } catch (e) {
       setGen({ phase: "error", step: 0, total: n, error: (e && e.message) || String(e) });
     }
-  }, [node.id, node.source, node.frameCount, node.fps, node.animation, node.engine, upstreamSource, branch, onChange]);
+  }, [node.id, node.source, node.frameCount, node.fps, node.animation, upstreamSource, branch, onChange]);
 
   const frames = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
   const frameCount = Math.max(1, Number(node.frameCount) || frames.length || 6);
@@ -58908,13 +58874,6 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
           </button>`}
         ${gen.phase === "error" && html`<div className="workflow-node-skill-msg-error" style=${{ fontSize: "10.5px", textAlign: "center" }}>${gen.error}</div>`}
         <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 8px", alignItems: "center", fontSize: "11.5px" }}>
-          <label style=${{ opacity: 0.7 }}>Engine</label>
-          <select value=${node.engine || "procedural"} onChange=${(e) => onChange({ engine: e.target.value })}
-                  style=${{ font: "inherit", padding: "2px 4px" }}
-                  title="Procedural: warp the same source per frame (instant, no AI key, transparent, great for idle/bob). AI redraw: a fresh i2i drawing per frame (new poses, needs an image model - best for walk/run/attack).">
-            <option value="procedural">Procedural (no AI)</option>
-            <option value="ai">AI redraw</option>
-          </select>
           <label style=${{ opacity: 0.7 }}>Animation</label>
           <select value=${node.animation || "idle"} onChange=${(e) => onChange({ animation: e.target.value })}
                   style=${{ font: "inherit", padding: "2px 4px" }}>

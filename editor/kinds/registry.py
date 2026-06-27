@@ -1472,7 +1472,6 @@ KINDS = {
         "inputs": {
             "name":       {"type": "text",   "userEditable": True},
             "source":     {"type": "text",   "userEditable": False},
-            "engine":     {"type": "text",   "userEditable": True},
             "animation":  {"type": "text",   "userEditable": True},
             "frameCount": {"type": "number", "userEditable": True},
             "fps":        {"type": "number", "userEditable": True},
