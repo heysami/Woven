@@ -161,10 +161,32 @@ def share_get_by_token(token):
     return None
 
 
-def share_create(project, prototype, label=None, email_gate=False):
+# Sentinel "prototype" for a project's multiplayer transport share. Never a real
+# source/ dir - the live editor loads /source/<files> by project root, so this
+# share needs no prototype of its own.
+LIVE_PROTO = "__multiplayer__"
+
+
+def live_share_get_or_create(project):
+    """Get (or create) the project's dedicated MULTIPLAYER transport share - the
+    live-only share Go Live hosts its session on, independent of any prototype
+    share. Idempotent per project."""
+    rec, _created = share_create(project, LIVE_PROTO,
+                                 label="Multiplayer session", live_only=True)
+    if not rec.get("liveOnly"):
+        rec = share_update(rec["id"], {"liveOnly": True}) or rec
+    return rec
+
+
+def share_create(project, prototype, label=None, email_gate=False, live_only=False):
     """Create a share record. One share per (project, prototype) - creating
     again returns the existing record (idempotent, so the node's Share
-    button can't mint duplicate tunnels for the same prototype)."""
+    button can't mint duplicate tunnels for the same prototype).
+
+    live_only=True marks a project-level MULTIPLAYER transport share: it hosts
+    the live co-edit session on its own tunnel but the gate refuses the public
+    prototype-review routes for it, and the editor hides it from every "shared
+    prototype" list. This keeps Go Live fully independent of prototype sharing."""
     with _REGISTRY_LOCK:
         data = shares_load()
         for s in data["shares"]:
@@ -177,6 +199,7 @@ def share_create(project, prototype, label=None, email_gate=False):
             "prototype":  prototype,
             "label":      (label or "").strip() or f"{project} / {prototype}",
             "emailGate":  bool(email_gate),
+            "liveOnly":   bool(live_only),
             # A share can expose a stable (woven) link, a randomised (quick)
             # link, or BOTH at once - they are independent intents (quickOn /
             # wovenOn). New shares default to the stable link when a broker is
@@ -1466,6 +1489,11 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         if _LIVE is not None and (sub == "/live" or sub.startswith("/live/")):
             if _LIVE.handle_get(self, rec, sub):
                 return
+        # A multiplayer transport share hosts ONLY the live co-edit; it never
+        # publishes the prototype-review surface. Any non-/live route 404s so the
+        # tunnel can't be used to browse the project.
+        if rec.get("liveOnly"):
+            return self._send_json(404, {"error": "not found"})
         # Viewer shell + assets.
         if sub == "/":
             return self._send_file(os.path.join(INSTALL_ROOT, "editor", "share", "viewer.html"))
@@ -1565,6 +1593,9 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         if _LIVE is not None and sub.startswith("/live/"):
             if _LIVE.handle_post(self, rec, sub):
                 return
+        # Multiplayer transport share: only /live routes; no review surface.
+        if rec.get("liveOnly"):
+            return self._send_json(404, {"error": "not found"})
         root = self._project_root(rec)
         if root is None:
             return self._send_json(500, {"error": "project unavailable"})

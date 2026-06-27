@@ -10043,9 +10043,6 @@ function ShareMenuButton() {
   const session = findLiveShare(shares, reachable);
   const people = (session && session.live && session.live.participants) || [];
   const isLive = !!session && people.length > 0;
-  const startShare = session
-    || shares.find(s => s.status === "running" || s.status === "starting")
-    || shares[0] || null;
 
   const protoNodes = nodes.filter(n =>
     n.kind === "prototype" || (n.kind === "asset" && (n.assetKind === "html" || n.assetKind === "html-set")));
@@ -10072,36 +10069,18 @@ function ShareMenuButton() {
     }
     return html`<span className="share-item-glyph"><${Icon.Image}/></span>`;
   };
-  // A session can be hosted if there's already a tunnel, OR a prototype we can
-  // publish a tunnel for on the fly.
-  const hostCandidateSlug = () => {
-    for (const n of protoNodes) { const sl = shareSlugForNode(n); if (sl) return sl; }
-    return null;
-  };
-  const canHost = !!startShare || !!hostCandidateSlug();
-
-  // One-click Go Live: reuse a running tunnel, else publish the first prototype
-  // (create-and-tunnel) and host the session on it. The session is project-wide;
-  // it just needs ANY tunnel for transport.
-  const goLiveAuto = async () => {
-    if (startShare) { liveOp(startShare.id, "start"); return; }
-    const slug = hostCandidateSlug();
-    if (!slug) { flashErr("Add a prototype to the canvas first - multiplayer hosts on a published prototype."); return; }
-    setB("golive", true);
+  // Multiplayer runs on its OWN dedicated live-only tunnel (POST /__multiplayer),
+  // fully independent of prototype sharing - going live never publishes a
+  // prototype, and ending tears the multiplayer tunnel back down.
+  const mpOp = async (op) => {
+    setB("mp", true);
     try {
-      const r = await fetch(apiUrl("/__share/create"), {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prototype: slug }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || "share failed");
-      if (j.tunnelError) flashErr(j.tunnelError);
-      const id = j.share && j.share.id;
-      if (!id) throw new Error("share created but no id returned");
-      const r2 = await fetch(`/__live/${id}/start`, {
+      const r = await fetch(apiUrl(`/__multiplayer/${op}`), {
         method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      const j2 = await r2.json().catch(() => ({}));
-      if (!r2.ok) throw new Error(j2.error || "go live failed");
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `${op} failed`);
       reloadShares();
-    } catch (e) { flashErr(String(e.message || e)); } finally { setB("golive", false); }
+    } catch (e) { flashErr(String(e.message || e)); } finally { setB("mp", false); }
   };
 
   const openUserTesting = (slug) => {
@@ -10209,7 +10188,7 @@ function ShareMenuButton() {
             <div className="th-live-hint">Multiplayer live co-editing for the whole project. Guests co-edit in real time; all runs use your agent.</div>
             ${session ? (() => {
               const liveUrl = (session.shareUrl || "") + "live/";
-              const isBusy = !!busy[session.id];
+              const isBusy = !!busy.mp;
               return html`
                 <div className=${"th-live-status" + (isLive ? " is-live" : "")}>
                   <span className="th-live-dot"/>
@@ -10222,25 +10201,23 @@ function ShareMenuButton() {
                       onClick=${isGuest ? undefined : () => liveOp(session.id, "role", { guestId: p.guestId, role: p.role === "editor" ? "viewer" : "editor" })}
                       className="th-live-avatar" style=${{ background: p.color }}>${(p.name || "?").slice(0, 1).toUpperCase()}</span>`)}
                   </div>`}
-                ${session.shareUrl && linkRow("live", liveUrl)}
+                ${session.shareUrl ? linkRow("live", liveUrl) : html`<div className="th-live-hint">Starting the multiplayer link…</div>`}
                 ${!isGuest && html`
                   <div className="th-live-actions">
                     <button className="th-live-end" disabled=${isBusy}
-                      title="End the live session - guests are disconnected; the tunnel keeps running for comments"
-                      onClick=${async () => { if (await uiConfirm("End the live session? Guests are disconnected immediately.")) liveOp(session.id, "stop"); }}>
-                      <${Icon.Stop}/> End session
+                      title="End the multiplayer session - guests are disconnected and the multiplayer tunnel is shut down"
+                      onClick=${async () => { if (await uiConfirm("End the multiplayer session? Guests are disconnected immediately.")) mpOp("stop"); }}>
+                      <${Icon.Stop}/> ${isBusy ? "Ending…" : "End session"}
                     </button>
                   </div>`}`;
             })() : html`
               <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
-              ${!isGuest && (canHost ? html`
-                <button className="go-live-cta" disabled=${cfMissing || !!busy.golive || !!(startShare && busy[startShare.id])}
-                  title=${cfMissing ? "Install cloudflared first" : (startShare ? "Start a project live session" : "Publish a prototype + start a project live session")}
-                  onClick=${goLiveAuto}><${Icon.Globe}/> ${busy.golive ? "Going live…" : "Go Live"}</button>
-                ${!startShare && html`<div className="th-live-hint">Publishes your first prototype through a tunnel to host the session on.</div>`}
-              ` : html`
-                <div className="th-live-hint">Add a prototype to the canvas first - a live session hosts on a published prototype.</div>
-              `)}
+              ${!isGuest && html`
+                <button className="go-live-cta" disabled=${cfMissing || !!busy.mp}
+                  title=${cfMissing ? "Install cloudflared first" : "Start a project multiplayer session on its own tunnel"}
+                  onClick=${() => mpOp("start")}><${Icon.Globe}/> ${busy.mp ? "Going live…" : "Go Live"}</button>
+                ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local skills) to host a session.</div>`}
+              `}
             `}
           </div>
         `}
@@ -10364,7 +10341,7 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
         .then(j => {
           if (!j) return;
           const pid = activeProjectId();
-          const ps = [...new Set((j.shares || []).filter(s => !pid || s.project === pid).map(s => s.prototype))].sort();
+          const ps = [...new Set((j.shares || []).filter(s => !s.liveOnly && (!pid || s.project === pid)).map(s => s.prototype))].sort();
           setProtos(ps);
           setDraftProto(prev => prev || ps[0] || "");
         })
@@ -18180,7 +18157,6 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
           </div>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -19756,7 +19732,6 @@ Restate your file plan in one short message; if anything is genuinely ambiguous,
           </div>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -19841,7 +19816,6 @@ Restate your plan briefly; if anything is ambiguous, ask - otherwise proceed and
           </div>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -21484,7 +21458,7 @@ function SharesLanding({ onCountChange }) {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
       .then((j) => {
         setData(j);
-        if (onCountChange) onCountChange((j.shares || []).length);
+        if (onCountChange) onCountChange((j.shares || []).filter(s => !s.liveOnly).length);
       })
       .catch(() => {});
   }, [onCountChange]);
@@ -21525,7 +21499,9 @@ function SharesLanding({ onCountChange }) {
   // the wrong location. This tab now only manages the tunnels + links +
   // comments for shared prototypes.
 
-  const shares = (data && data.shares) || [];
+  // Exclude the project's multiplayer transport share - it's not a published
+  // prototype, it just hosts the live session (managed from the Share menu).
+  const shares = ((data && data.shares) || []).filter(s => !s.liveOnly);
   const cfMissing = data && data.cloudflared && !data.cloudflared.found;
   const wovenAvail = !!(data && data.woven && data.woven.available);
   // Distinct projects (for the filter dropdown) + the active text/project filter.
@@ -21848,7 +21824,6 @@ function ShareHousekeepingModal({ onClose }) {
           `}
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -22192,7 +22167,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [shareCount, setShareCount] = useState(null);
   useEffect(() => {
     fetch("/__shares").then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (j) setShareCount((j.shares || []).length); })
+      .then((j) => { if (j) setShareCount((j.shares || []).filter(s => !s.liveOnly).length); })
       .catch(() => {});
   }, []);
 
@@ -50105,7 +50080,6 @@ function WorkflowPromptInspectorModal({ debug, label, onClose }) {
           `)}
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -55077,7 +55051,6 @@ function WorkflowVersionPicker({ node, allNodes, allEdges, onClose, onChange }) 
           <span>${versions.length} of ${versionMax}${unpinnedCount > versionMax ? " - over cap" : ""}</span>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -56075,6 +56048,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // (doesn't use NodeVersioningChrome), so this capture lives here. The
   // chrome handles prototype + design-system separately.
   const captureGuard = useRef(new Set());
+  // slice9 frame asset → inline slice editor (hooks at top, before any early return)
+  const [s9Open, setS9Open] = useState(false);
+  const [s9Anchor, setS9Anchor] = useState(null);
   useEffect(() => {
     const av = node.activeVersionId;
     if (!av) return;
@@ -57293,6 +57269,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     ? Object.keys(galleryEntries).filter(n => !dsChangedFiles.includes(n)).sort()
     : [];
   const galleryReminderOpen = isDsGallery && dsChangedFiles.length > 0;
+  const s9IsFrame = (kind === "image") && (allEdges || []).some((e) => {
+    if ((e.to || "").split(".", 1)[0] !== node.id) return false;
+    const from = (allNodes || []).find((n) => n.id === (e.from || "").split(".", 1)[0]);
+    return from && from.skill === "slice9-frame";
+  });
 
   return html`
     <div
@@ -57325,6 +57306,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           >OK, got it!</button>
         </div>
       `}
+      ${s9IsFrame && html`
+        <button className="workflow-asset-s9btn" style=${{ position: "absolute", left: "8px", bottom: "8px", zIndex: 6 }}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setS9Anchor({ x: r.right, y: r.top }); setS9Open(true); }}
+          title="Adjust the 9-slice insets for this frame">▦ Adjust slices</button>
+      `}
+      ${s9Open && s9IsFrame && node.path && html`<${Slice9Editor} pngPath=${node.path} anchor=${s9Anchor} onClose=${() => setS9Open(false)} />`}
       <div className="workflow-node-bar workflow-node-asset-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-asset-glyph">${glyph}</span>
         ${html`
@@ -69399,7 +69387,6 @@ function CustomAppSettingModal({ node, existing, onClose, onAdd }) {
             onClick=${() => onAdd(proposal)}>Add setting</button>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -74031,7 +74018,6 @@ function ConvertSectionModal({ cfg, onPatch, onCancel, onConfirm }) {
             disabled=${!canConfirm} onClick=${onConfirm}>Convert</button>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -76368,7 +76354,6 @@ function WorkflowReplaceAssetChooser({ targetNode, onCancel, onPick }) {
           <button className="tbtn" onClick=${onCancel}>Cancel</button>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -76524,7 +76509,6 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
           >Apply (${selected.size})</button>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -76977,7 +76961,6 @@ function WorkflowSettingsDialog({ onClose }) {
           `}
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -77109,7 +77092,6 @@ function WorkflowExportsDialog({ onClose }) {
               </div>`}
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
@@ -77531,7 +77513,7 @@ function Slice9Editor({ pngPath, anchor, onClose }) {
   const DISP = 300;
   // memoise per pngPath - recomputing the cache-bust every render would reload
   // the <img> each frame and re-fire onImgLoad (which would reset the insets).
-  const pngUrl = useMemo(() => apiUrl("/" + pngPath) + "?t=" + Date.now(), [pngPath]);
+  const pngUrl = useMemo(() => withProjectQuery("/" + pngPath, "_v=" + Date.now()), [pngPath]);
   const sidecarPath = pngPath.replace(/\.(png|webp|jpe?g)$/i, ".slice9.json");
   const [src, setSrc] = useState(256);
   const [S, setS] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
@@ -77614,7 +77596,6 @@ function Slice9Editor({ pngPath, anchor, onClose }) {
     <input type="number" value=${S[side]} onChange=${(e) => setS((p) => ({ ...p, [side]: clamp(+e.target.value) }))} /></div>`;
 
   return createPortal(html`
-    <div className="s9e-backdrop" onMouseDown=${onClose}>
       <div className="s9e-panel" style=${pos} onMouseDown=${(e) => e.stopPropagation()}>
         <div className="s9e-head">
           <span className="s9e-title">Adjust slices</span>
@@ -77648,30 +77629,18 @@ function Slice9Editor({ pngPath, anchor, onClose }) {
               <div className="s9e-pv-row"><span>wide</span><div className="s9e-pv" style=${pvStyle(240, 52)}>Confirm</div></div>
               <div className="s9e-pv-row"><span>panel</span><div className="s9e-pv" style=${pvStyle(280, 140)}>Dialog</div></div>
             </div>
-            <button className="s9e-save" onClick=${save} disabled=${saving}>${saving ? "Saving…" : saved ? "Saved ✓" : "Save slices"}</button>
+            <div className="s9e-actions">
+              <button className="s9e-done" onClick=${onClose}>Done</button>
+              <button className="s9e-save" onClick=${save} disabled=${saving}>${saving ? "Saving…" : saved ? "Saved ✓" : "Save slices"}</button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 
 function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, onSpawnConnected, allNodes, allEdges, projectId }) {
   const [dragging, setDragging] = useState(false);
-  // slice9-frame: the on-node slice editor (a floating portal panel). Resolve
-  // the generated PNG by following this node's out-edge to its asset card.
-  const [s9Open, setS9Open] = useState(false);
-  const [s9Anchor, setS9Anchor] = useState(null);
-  const s9OutPath = (() => {
-    if ((node.skill || "") !== "slice9-frame") return null;
-    const outs = (allEdges || []).filter((e) => (e.from || "").split(".", 1)[0] === node.id);
-    for (const e of outs) {
-      const tid = (e.to || "").split(".", 1)[0];
-      const tn = (allNodes || []).find((n) => n.id === tid);
-      if (tn && tn.kind === "asset" && tn.path) return tn.path;
-    }
-    return node.outputPath || node.output || null;
-  })();
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -77994,15 +77963,6 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         ${status === "done" && html`
           <div className="workflow-node-skill-msg workflow-node-skill-msg-ok">✓ written</div>
         `}
-        ${node.skill === "slice9-frame" && status === "done" && s9OutPath && html`
-          <button
-            className="workflow-node-skill-s9btn"
-            onMouseDown=${(e) => e.stopPropagation()}
-            onClick=${(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setS9Anchor({ x: r.right, y: r.top }); setS9Open(true); }}
-            title="Open the 9-slice editor for the generated frame"
-          >▦ Adjust slices</button>
-        `}
-        ${s9Open && s9OutPath && html`<${Slice9Editor} pngPath=${s9OutPath} anchor=${s9Anchor} onClose=${() => setS9Open(false)} />`}
       </div>
       <div
         className="workflow-port-zone workflow-port-zone-in"
@@ -79721,7 +79681,6 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
           </button>
         </div>
       </div>
-    </div>
   `, document.body);
 }
 

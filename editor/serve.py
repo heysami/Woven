@@ -8436,6 +8436,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
             if m_live:
                 return self._live_op(m_live.group(1), m_live.group(2), qs)
+            m_mp = re.match(r"^/__multiplayer/(start|stop)$", parsed.path)
+            if m_mp:
+                return self._multiplayer_op(m_mp.group(1), qs)
             m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
@@ -15522,6 +15525,43 @@ class H(http.server.SimpleHTTPRequestHandler):
             "ok": True,
             "share": _shares.share_summary(fresh) if fresh else None,
             "live": _live.session_summary(share_id),
+        })
+
+    # POST /__multiplayer/(start|stop)?project=<id>
+    #   The project-level multiplayer entry point. Hosts the live session on a
+    #   DEDICATED live-only transport share (its own tunnel), independent of any
+    #   prototype share - so going live never publishes a prototype.
+    #   start - get/create the project's live-only share, raise its tunnel, open
+    #           the session.
+    #   stop  - end the session AND tear the dedicated tunnel down (nothing
+    #           lingers shared).
+    def _multiplayer_op(self, op, qs):
+        try:
+            resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        pid = (_qs_get(qs, "project") or "").strip() or "default"
+        try:
+            rec = _shares.live_share_get_or_create(pid)
+            sid = rec["id"]
+            if op == "start":
+                try:
+                    _shares.tunnel_start(sid)
+                except Exception as e:
+                    return self._reply(500, {"error": f"tunnel failed: {e}"})
+                _live.session_start(sid)
+            elif op == "stop":
+                _live.session_stop(sid)
+                _shares.tunnel_stop(sid)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        fresh = _shares.share_get(sid)
+        return self._reply(200, {
+            "ok": True,
+            "share": _shares.share_summary(fresh) if fresh else None,
+            "live": _live.session_summary(sid),
         })
 
     # GET /__live_cursors.js - host-side live-cursors overlay (injected into the
