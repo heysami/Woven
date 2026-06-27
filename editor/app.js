@@ -43532,6 +43532,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onBaked=${(bakedPath) => spawnAppNodeOutput(setData, n, bakedPath)}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -58783,7 +58784,7 @@ function ensureSpriteKeyframes() {
 
 const SPRITE_ANIMATIONS = ["idle", "walk", "run", "attack", "jump", "turn", "custom"];
 
-function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onBaked, allNodes, allEdges }) {
   const w = node.w || 300;
   const h = node.h || 330;
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
@@ -59062,12 +59063,13 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       if (!wr.ok) { const t = await wr.text().catch(() => ""); throw new Error("write failed - " + t.slice(0, 120)); }
       onChange({ bakedHtml: outPath, bakedVer: Date.now(), path: outPath, assetKind: "html" });
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outPath] } }));
+      if (onBaked) onBaked(outPath);   // drop / refresh an asset card on the canvas
     } catch (e) {
       setGen({ phase: "error", step: 0, total: 0, error: "bake failed - " + ((e && e.message) || String(e)) });
     } finally {
       setBaking(false);
     }
-  }, [node.sheet, node.id, node.name, node.loop, node.fps, node.frameWidth, node.frameHeight, node.atlas, branch, onChange]);
+  }, [node.sheet, node.id, node.name, node.loop, node.fps, node.frameWidth, node.frameHeight, node.atlas, branch, onChange, onBaked]);
 
   const frames = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
   const frameCount = Math.max(1, Number(node.frameCount) || frames.length || 6);
