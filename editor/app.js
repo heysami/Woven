@@ -51487,7 +51487,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
   const [busy, setBusy] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(null);   // which link's Copy flashed ✓ ("w" | "q")
   const [replyDrafts, setReplyDrafts] = useState({});
   const [panelW] = useState(340);
 
@@ -51545,11 +51545,12 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
     } catch (e) { flashErr(String(e.message || e)); }
     finally { setShareBusy(false); }
   };
-  const copyShareUrl = async () => {
-    if (!share || !share.shareUrl) return;
-    try { await navigator.clipboard.writeText(share.shareUrl); } catch {}
-    setCopied(true); setTimeout(() => setCopied(false), 1500);
-    if (share.urlChanged) shareOp("ack_url");
+  const copyLink = async (key, url) => {
+    if (!url) return;
+    try { await navigator.clipboard.writeText(url); } catch {}
+    setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1500);
+    // Copying the fresh randomised URL acknowledges the "URL changed" warning.
+    if (key === "q" && share && share.urlChanged) shareOp("ack_url");
   };
 
   // ── Comment ops (editor-side author = "Owner") ────────────────────
@@ -51729,13 +51730,29 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
           </div>
           <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} wovenAvail=${wovenAvail} busy=${shareBusy}
             onToggle=${(which, on) => shareOp("update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
-          ${share.shareUrl && html`
-            <div key="surl" className="workflow-comments-share-url">
-              <code title=${share.shareUrl}>${share.shareUrl}</code>
-              <button className="shares-btn" onClick=${copyShareUrl}>${copied ? "✓" : "Copy"}</button>
-              <button className="shares-btn" onClick=${() => window.open(share.shareUrl, "_blank")} title="Open the share link">↗</button>
-            </div>
-          `}
+          ${(() => {
+            const linkBlock = (label, key, url, status) => {
+              const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
+              return html`
+                <div key=${"link-" + key} className="share-link-block" style=${{ marginTop: "5px" }}>
+                  <div className="share-link-label">${label}</div>
+                  ${url ? html`
+                    <div className="workflow-comments-share-url">
+                      <code title=${url}>${url}</code>
+                      <button className="shares-btn" onClick=${() => copyLink(key, url)}>${copied === key ? "✓" : "Copy"}</button>
+                      <button className="shares-btn" onClick=${() => window.open(url, "_blank")} title="Open the share link">↗</button>
+                    </div>` : html`
+                    <div className="share-link-pending">
+                      <span className=${"shares-dot is-" + meta.dot}></span>
+                      <span>${status === "starting" ? "Starting…" : meta.label}</span>
+                    </div>`}
+                </div>`;
+            };
+            return html`
+              ${share.wovenOn && linkBlock("Stable link", "w", share.wovenUrl, share.wovenStatus)}
+              ${share.quickOn && linkBlock("Randomised URL", "q", share.quickUrl, share.quickStatus)}
+            `;
+          })()}
         ${err && html`<div className="workflow-comments-err">${err}</div>`}
       </div>
       <div className="workflow-comments-filters">
@@ -77611,7 +77628,7 @@ function Slice9Editor({ pngPath, anchor, onClose }) {
               <div className="s9e-guide s9e-v" style=${{ left: gp(S.left) + "px" }} onPointerDown=${() => { dragRef.current = "left"; }}/>
               <div className="s9e-guide s9e-v" style=${{ left: (DISP - gp(S.right)) + "px" }} onPointerDown=${() => { dragRef.current = "right"; }}/>
             </div>
-            <p className="s9e-hint">drag the cyan guides - values are source pixels</p>
+            <p className="s9e-hint">drag the guides to fix the insets - values are source pixels</p>
           </div>
           <div className="s9e-right">
             <div className="s9e-nums">${num("top")}${num("right")}${num("bottom")}${num("left")}</div>
