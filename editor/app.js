@@ -10047,6 +10047,37 @@ function ShareMenuButton() {
   const assetNodes = nodes.filter(n => n.kind === "asset" && !VISUAL_SKIP.has(n.assetKind));
   const labelOf = (n) => n.label || n.title || shareSlugForNode(n) || n.id;
   const shareForSlug = (slug) => shares.find(s => s.prototype === slug) || null;
+  // A session can be hosted if there's already a tunnel, OR a prototype we can
+  // publish a tunnel for on the fly.
+  const hostCandidateSlug = () => {
+    for (const n of protoNodes) { const sl = shareSlugForNode(n); if (sl) return sl; }
+    return null;
+  };
+  const canHost = !!startShare || !!hostCandidateSlug();
+
+  // One-click Go Live: reuse a running tunnel, else publish the first prototype
+  // (create-and-tunnel) and host the session on it. The session is project-wide;
+  // it just needs ANY tunnel for transport.
+  const goLiveAuto = async () => {
+    if (startShare) { liveOp(startShare.id, "start"); return; }
+    const slug = hostCandidateSlug();
+    if (!slug) { flashErr("Add a prototype to the canvas first - multiplayer hosts on a published prototype."); return; }
+    setB("golive", true);
+    try {
+      const r = await fetch(apiUrl("/__share/create"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prototype: slug }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "share failed");
+      if (j.tunnelError) flashErr(j.tunnelError);
+      const id = j.share && j.share.id;
+      if (!id) throw new Error("share created but no id returned");
+      const r2 = await fetch(`/__live/${id}/start`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j2 = await r2.json().catch(() => ({}));
+      if (!r2.ok) throw new Error(j2.error || "go live failed");
+      reloadShares();
+    } catch (e) { flashErr(String(e.message || e)); } finally { setB("golive", false); }
+  };
 
   const openUserTesting = (slug) => {
     try {
@@ -10160,12 +10191,13 @@ function ShareMenuButton() {
                   </div>`}`;
             })() : html`
               <div className="th-live-status"><span className="th-live-dot"/>Not live</div>
-              ${!isGuest && (startShare ? html`
-                <button className="go-live-cta" disabled=${cfMissing || !!busy[startShare.id]}
-                  title=${cfMissing ? "Install cloudflared first" : "Start a project live session"}
-                  onClick=${() => liveOp(startShare.id, "start")}><${Icon.Globe}/> Go Live</button>
+              ${!isGuest && (canHost ? html`
+                <button className="go-live-cta" disabled=${cfMissing || !!busy.golive || !!(startShare && busy[startShare.id])}
+                  title=${cfMissing ? "Install cloudflared first" : (startShare ? "Start a project live session" : "Publish a prototype + start a project live session")}
+                  onClick=${goLiveAuto}><${Icon.Globe}/> ${busy.golive ? "Going live…" : "Go Live"}</button>
+                ${!startShare && html`<div className="th-live-hint">Publishes your first prototype through a tunnel to host the session on.</div>`}
               ` : html`
-                <div className="th-live-hint">Share a prototype first (Prototype / HTML tab) - a live session needs a published tunnel to host on.</div>
+                <div className="th-live-hint">Add a prototype to the canvas first - a live session hosts on a published prototype.</div>
               `)}
             `}
           </div>
