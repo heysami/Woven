@@ -10047,6 +10047,25 @@ function ShareMenuButton() {
   const assetNodes = nodes.filter(n => n.kind === "asset" && !VISUAL_SKIP.has(n.assetKind));
   const labelOf = (n) => n.label || n.title || shareSlugForNode(n) || n.id;
   const shareForSlug = (slug) => shares.find(s => s.prototype === slug) || null;
+  // The on-disk file backing an asset node (active version's canonical path,
+  // else node.path) - the same resolution WorkflowAssetNode uses for capture.
+  const assetPath = (n) => {
+    const v = (n.versions || []).find(x => x && x.id === n.activeVersionId);
+    const p = (v && v.canonicalPaths && v.canonicalPaths[0]) || n.path;
+    return (p && typeof p === "string" && !p.startsWith("inline:")) ? p : null;
+  };
+  // A real image preview for raster/svg assets (served like the library grid:
+  // "/" + path + project search), falling back to the image glyph otherwise.
+  const assetThumb = (n) => {
+    const k = n.assetKind || "image";
+    const p = assetPath(n);
+    if (p && (k === "image" || k === "svg")) {
+      return html`<span className="share-item-thumb">
+        <img src=${"/" + p.replace(/^\/+/, "") + location.search} loading="lazy" alt=${labelOf(n)}/>
+      </span>`;
+    }
+    return html`<span className="share-item-glyph"><${Icon.Image}/></span>`;
+  };
   // A session can be hosted if there's already a tunnel, OR a prototype we can
   // publish a tunnel for on the fly.
   const hostCandidateSlug = () => {
@@ -10238,7 +10257,7 @@ function ShareMenuButton() {
             ${assetNodes.map(n => html`
               <div className="share-item" key=${n.id}>
                 <div className="share-item-head">
-                  <span className="share-item-glyph"><${Icon.Image}/></span>
+                  ${assetThumb(n)}
                   <span className="share-item-label" title=${labelOf(n)}>${labelOf(n)}</span>
                 </div>
                 <div className="share-item-actions">

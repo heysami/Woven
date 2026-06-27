@@ -4884,6 +4884,18 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .share-item-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .share-item-glyph { display: inline-grid; place-items: center; color: var(--text-muted); flex: 0 0 auto; }
 .share-item-glyph svg { width: 14px; height: 14px; }
+.share-item-thumb {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: inline-grid;
+  place-items: center;
+}
+.share-item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .share-item-label {
   flex: 1 1 auto;
   min-width: 0;
