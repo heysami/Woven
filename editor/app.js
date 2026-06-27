@@ -56956,7 +56956,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // The card aspect already tracks the device-class viewport aspect, so the
   // scaled render fills the body with no letterbox. The user toggles via the
   // title-bar ⊡/⤢ button (html kind only).
-  const htmlFit = (node.htmlFit === "fill") ? "fill" : "scale";
+  // Pose boxes are small responsive UIs - always "fill" (iframe == card), even
+  // for boxes baked before htmlFit was stored, so they never letterbox.
+  const _isPoseBox = typeof node.path === "string" && /\/poses\/pose-box-/.test(node.path);
+  const htmlFit = (node.htmlFit === "fill" || _isPoseBox) ? "fill" : "scale";
   const _htmlVP = (_size.deviceClass === "mobile")  ? { w: 390,  h: 844 }
                 : (_size.deviceClass === "desktop") ? { w: 1440, h: 900 }
                 : { w: 1280, h: 800 };

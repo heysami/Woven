@@ -23857,7 +23857,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .wpose-genbtn {
   appearance: none; cursor: pointer; width: 100%;
   border: 0; border-radius: 8px;
-  background: var(--accent); color: var(--accent-text, #fff);
+  background: var(--accent); color: var(--accent-fg, white);
   font: 600 12.5px/1 inherit; padding: 9px 12px;
 }
 .wpose-genbtn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -23876,7 +23876,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--accent-soft, transparent); color: var(--accent-text, var(--text));
   font: 600 11.5px/1 inherit; padding: 7px 10px; margin-top: 2px;
 }
-.wpose-openviewer:hover { background: var(--accent); color: var(--accent-text, #fff); }
+.wpose-openviewer:hover { background: var(--accent); color: var(--accent-fg, white); }
 .wpose-gallery {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: 8px;
