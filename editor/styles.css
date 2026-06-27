@@ -27735,3 +27735,21 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .s9e-save:hover{ background:var(--accent-strong); }
 .s9e-done{ background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:8px 12px; font-weight:600; font-size:12px; cursor:pointer; }
 .s9e-actions{ display:flex; gap:8px; }
+
+/* ============================================================================
+   9-slice editor, in-node: guides drawn directly on the asset card image, with
+   the numeric controls in the existing asset controls side panel. No overlay.
+   ============================================================================ */
+.s9n-overlay{ position:absolute; inset:0; z-index:4; touch-action:none; }
+.s9n-g{ position:absolute; background:var(--accent); }
+.s9n-g.s9n-h{ left:0; right:0; height:2px; margin-top:-1px; cursor:ns-resize; }
+.s9n-g.s9n-v{ top:0; bottom:0; width:2px; margin-left:-1px; cursor:ew-resize; }
+.s9n-g::after{ content:""; position:absolute; }
+.s9n-g.s9n-h::after{ left:0; right:0; top:-6px; height:13px; }
+.s9n-g.s9n-v::after{ top:0; bottom:0; left:-6px; width:13px; }
+.s9n-k{ position:absolute; width:12px; height:12px; border-radius:50%; background:var(--accent);
+  border:2px solid var(--surface); transform:translate(-50%,-50%); box-shadow:0 1px 2px rgba(0,0,0,.25); cursor:grab; }
+.s9c-nums{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:4px 12px 8px; }
+.s9c-n label{ display:block; font-size:9.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px; }
+.s9c-n input{ width:100%; box-sizing:border-box; background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius-sm); color:var(--text); padding:4px 5px; font:inherit; font-size:12px; }

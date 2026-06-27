@@ -28434,7 +28434,6 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const native = [];
   if (akind === "image" || akind === "svg" || akind === "video") native.push({ nkey: "bg", kind: "bgcolor", label: "Background" });
   if (akind === "image") native.push({ nkey: "crop", kind: "button", label: "Crop", event: "th:asset-open-crop" });
-  if (akind === "image") native.push({ nkey: "slice9", kind: "button", label: "9-slice", event: "th:asset-open-slice9" });
 
   if (!selected || !rect || (!schema.length && !native.length)) return null;
   const PANEL_W = 236, GAP = 12;
@@ -28510,6 +28509,33 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       ${isCol ? null : items.map(renderer)}
     </div>`;
   };
+  const _s9 = node.s9 || {};
+  const _s9src = _s9.src || 256;
+  const _s9slice = _s9.slice || [Math.round(_s9src/4), Math.round(_s9src/4), Math.round(_s9src/4), Math.round(_s9src/4)];
+  const _setS9 = (p) => onChange && onChange({ s9: { ..._s9, ...p } });
+  const _s9clamp = (v) => Math.max(0, Math.min(Math.floor(_s9src/2), Math.round(v||0)));
+  const renderSlice9 = () => html`<div className="wac-group" key="__s9">
+    <button className="wac-group-head" onClick=${() => toggleGroup("9-slice")} aria-expanded=${!collapsedGroups["9-slice"]}>
+      <span className="wac-caret">${collapsedGroups["9-slice"] ? "▸" : "▾"}</span><span className="wac-group-name">9-slice</span>
+    </button>
+    ${collapsedGroups["9-slice"] ? null : html`<${React.Fragment}>
+      <div className="wac-row"><label className="wac-label">Adjust on canvas</label>
+        <input className="wac-toggle" type="checkbox" checked=${!!_s9.guides} onChange=${(ev) => _setS9({ guides: ev.target.checked })}/></div>
+      ${_s9.guides ? html`<${React.Fragment}>
+        <div className="s9c-nums">
+          ${["Top","Right","Bottom","Left"].map((lbl,i) => html`<div className="s9c-n" key=${lbl}><label>${lbl}</label>
+            <input type="number" value=${_s9slice[i]} onMouseDown=${(ev)=>ev.stopPropagation()}
+              onChange=${(ev) => { const ns = _s9slice.slice(); ns[i] = _s9clamp(+ev.target.value); _setS9({ slice: ns }); }}/></div>`)}
+        </div>
+        <div className="wac-row wac-row-range"><label className="wac-label">Border<span className="wac-val">${_s9.width || Math.round(_s9src*0.18)}</span></label>
+          <input className="wac-range" type="range" min="2" max=${Math.floor(_s9src/2)} value=${_s9.width || Math.round(_s9src*0.18)}
+            onInput=${(ev) => _setS9({ width: parseInt(ev.target.value,10) })}/></div>
+        <div className="wac-row"><label className="wac-label">Edges</label>
+          <select className="wac-select" value=${_s9.repeat || "stretch"} onChange=${(ev) => _setS9({ repeat: ev.target.value })}>
+            <option value="stretch">stretch</option><option value="round">round</option><option value="repeat">repeat</option><option value="space">space</option></select></div>
+      <//>` : null}
+    <//>`}
+  </div>`;
   const panel = html`<div className=${"workflow-asset-controls-panel" + (busy ? " is-busy" : "")} data-node-id=${nodeId}
       style=${{ position: "fixed", top: rect.top + "px", left: left + "px", width: PANEL_W + "px", zIndex: 41 }}
       onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
@@ -28523,6 +28549,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     </div>
     ${collapsed ? null : html`<div className="wac-body">
       ${native.length ? renderGroup("Asset", native, renderNative, "__native") : null}
+      ${akind === "image" ? renderSlice9() : null}
       ${groups.map((g) => renderGroup(g.name, g.items, renderKnob, g.name))}
     </div>`}
   </div>`;
@@ -56496,13 +56523,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     window.addEventListener("th:asset-open-crop", onOpenCrop);
     return () => window.removeEventListener("th:asset-open-crop", onOpenCrop);
   }, [node.id]);
-  // 9-slice editor - same controls-panel "Open" → event pattern as crop.
-  const [s9Open, setS9Open] = useState(false);
-  useEffect(() => {
-    const onOpenS9 = (ev) => { if (ev && ev.detail && ev.detail.nodeId === node.id) setS9Open(true); };
-    window.addEventListener("th:asset-open-slice9", onOpenS9);
-    return () => window.removeEventListener("th:asset-open-slice9", onOpenS9);
-  }, [node.id]);
   // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
   // overflow probe, then write the device class + natural aspect back to
   // node.size so the adaptive sizing block downstream picks the right
@@ -57362,7 +57382,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           >OK, got it!</button>
         </div>
       `}
-      ${s9Open && node.path && html`<${Slice9Editor} pngPath=${node.path} onClose=${() => setS9Open(false)} />`}
+
       <div className="workflow-node-bar workflow-node-asset-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-asset-glyph">${glyph}</span>
         ${html`
@@ -57518,6 +57538,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         style=${node.bgColor ? { background: node.bgColor } : undefined}
       >
         ${bodyContent}
+        ${node.s9 && node.s9.guides && (kind === "image" || kind === "svg" || kind === "vector") && node.path && html`<${Slice9Guides} pngPath=${node.path} s9=${node.s9} onPatch=${(p) => onChange && onChange({ s9: { ...(node.s9 || {}), ...p } })} />`}
         ${lodIsEmbed && lodLive && lod !== "full" && html`
           <${WorkflowLodVeil} zoom=${zoom} glyph=${glyph} label=${basename} mode="body"/>
         `}
@@ -77651,138 +77672,66 @@ function LlmPromptPreviewSection({ node, onChange }) {
   `;
 }
 
-// 9-slice editor - a floating panel (portal) for a slice9-frame node's output.
-// Auto-detected insets are a guess; the user drags the four guides to fix them
-// and sees the result as a live border-image at button / wide / panel sizes
-// before saving back to the <output>.slice9.json sidecar. The detector is only
-// the default - this is the authority.
-function Slice9Editor({ pngPath, onClose }) {
-  const DISP = 300;
-  // memoise per pngPath - recomputing the cache-bust every render would reload
-  // the <img> each frame and re-fire onImgLoad (which would reset the insets).
-  const pngUrl = useMemo(() => withProjectQuery("/" + pngPath, "_v=" + Date.now()), [pngPath]);
-  const sidecarPath = pngPath.replace(/\.(png|webp|jpe?g)$/i, ".slice9.json");
-  const [src, setSrc] = useState(256);
-  const [S, setS] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
-  const [bw, setBw] = useState(28);
-  const [repeat, setRepeat] = useState("stretch");
-  const [pix, setPix] = useState(false);
-  const [seeded, setSeeded] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const stageRef = useRef(null);
-  const dragRef = useRef(null);
-  const seededRef = useRef(false);   // insets settled (from sidecar or first image load)
-
+// In-node 9-slice guides - drawn directly ON the asset card's image (no overlay,
+// no modal). Shares node.s9 with the controls-panel "9-slice" group. Seeds from
+// the <frame>.slice9.json sidecar (the detector's guess) the first time, else quarter.
+function Slice9Guides({ pngPath, s9, onPatch }) {
+  const [src, setSrc] = useState((s9 && s9.src) || 256);
+  const ref = useRef(null);
+  const drag = useRef(null);
+  const seeded = useRef(false);
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const sidecar = pngPath.replace(/\.(png|webp|jpe?g)$/i, ".slice9.json");
+    const img = new Image();
+    img.onload = async () => {
+      if (!alive) return;
+      const n = img.naturalWidth || 256;
+      setSrc(n);
+      if (seeded.current || (s9 && s9.slice)) { if (s9 && !s9.src) onPatch({ src: n }); return; }
+      seeded.current = true;
+      let slice = null, width = null, repeat = null;
       try {
-        const r = await fetch(apiUrl("/" + sidecarPath));
-        if (!alive || !r.ok) return;
-        const j = await r.json();
-        if (Array.isArray(j.slice) && j.slice.length === 4) {
-          setS({ top: j.slice[0], right: j.slice[1], bottom: j.slice[2], left: j.slice[3] });
-          setSeeded(true); seededRef.current = true;
-        }
-        if (j.width) setBw(j.width);
-        if (j.repeat) setRepeat(j.repeat);
-      } catch (e) { /* no sidecar yet - fall back to quarter default on image load */ }
-    })();
-    return () => { alive = false; };
-  }, [sidecarPath]);
-
-  const clamp = (v) => Math.max(0, Math.min(Math.floor(src / 2), Math.round(v || 0)));
-  const onImgLoad = (e) => {
-    const n = e.target.naturalWidth || 256;
-    setSrc(n);
-    if (!seededRef.current) { seededRef.current = true; const q = Math.round(n / 4); setS({ top: q, right: q, bottom: q, left: q }); }
-  };
-
-  useEffect(() => {
-    const onMove = (e) => {
-      const side = dragRef.current; if (!side) return;
-      const st = stageRef.current; if (!st) return;
-      const rect = st.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / DISP * src;
-      const y = (e.clientY - rect.top) / DISP * src;
-      setS((prev) => {
-        const nx = { ...prev };
-        if (side === "top") nx.top = clamp(y);
-        else if (side === "bottom") nx.bottom = clamp(src - y);
-        else if (side === "left") nx.left = clamp(x);
-        else if (side === "right") nx.right = clamp(src - x);
-        return nx;
-      });
+        const r = await fetch(withProjectQuery("/" + sidecar));
+        if (r.ok) { const j = await r.json(); if (Array.isArray(j.slice) && j.slice.length === 4) slice = j.slice; if (j.width) width = j.width; if (j.repeat) repeat = j.repeat; }
+      } catch (e) {}
+      if (!slice) { const q = Math.round(n / 4); slice = [q, q, q, q]; }
+      onPatch({ src: n, slice, width: width || Math.round(n * 0.18), repeat: repeat || "stretch" });
     };
-    const onUp = () => { dragRef.current = null; };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-  }, [src]);
-
-  const biStr = `url(${pngUrl}) ${S.top} ${S.right} ${S.bottom} ${S.left} fill / ${bw}px / 0 ${repeat}`;
-  const pvStyle = (w, h) => ({ width: w + "px", height: h + "px", borderStyle: "solid", borderWidth: bw + "px", borderImage: biStr, imageRendering: pix ? "pixelated" : "auto" });
-  const gp = (px) => (px / src * DISP);
-
-  const save = async () => {
-    setSaving(true); setSaved(false);
-    try {
-      const text = JSON.stringify({ src: pngPath.split("/").pop(), slice: [S.top, S.right, S.bottom, S.left], width: bw, repeat, fill: true }, null, 2);
-      const r = await fetch(apiUrl("/__write_text"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: sidecarPath, text }) });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      setSaved(true);
-      try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [sidecarPath] } })); } catch (e) {}
-    } catch (e) { setSaved(false); } finally { setSaving(false); }
-  };
-
-  const num = (side) => html`<div className="s9e-num"><label>${side}</label>
-    <input type="number" value=${S[side]} onChange=${(e) => setS((p) => ({ ...p, [side]: clamp(+e.target.value) }))} /></div>`;
-
-  return createPortal(html`
-    <div className="asset-crop-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="asset-crop-modal s9e-modal" onMouseDown=${(e) => e.stopPropagation()}>
-        <header className="asset-crop-head">
-          <span className="asset-crop-title">Adjust 9-slice</span>
-          <span className="asset-crop-dims">${src} × ${src} px</span>
-          <button className="asset-crop-x" onClick=${onClose} title="Close (Esc)" aria-label="Close">×</button>
-        </header>
-        <div className="s9e-body">
-          <div className="s9e-left">
-            <div className="s9e-stage" ref=${stageRef} style=${{ width: DISP + "px", height: DISP + "px" }}>
-              <img src=${pngUrl} onLoad=${onImgLoad} draggable=${false} alt="" />
-              <div className="s9e-guide s9e-h" style=${{ top: gp(S.top) + "px" }} onPointerDown=${() => { dragRef.current = "top"; }}/>
-              <div className="s9e-guide s9e-h" style=${{ top: (DISP - gp(S.bottom)) + "px" }} onPointerDown=${() => { dragRef.current = "bottom"; }}/>
-              <div className="s9e-guide s9e-v" style=${{ left: gp(S.left) + "px" }} onPointerDown=${() => { dragRef.current = "left"; }}/>
-              <div className="s9e-guide s9e-v" style=${{ left: (DISP - gp(S.right)) + "px" }} onPointerDown=${() => { dragRef.current = "right"; }}/>
-            </div>
-            <p className="s9e-hint">drag the guides to fix the insets - values are source pixels</p>
-          </div>
-          <div className="s9e-right">
-            <div className="s9e-nums">${num("top")}${num("right")}${num("bottom")}${num("left")}</div>
-            <div className="s9e-row"><label>Border px</label>
-              <input type="range" min="6" max="80" value=${bw} onInput=${(e) => setBw(+e.target.value)} /><span className="s9e-bwv">${bw}</span></div>
-            <div className="s9e-row"><label>Edges</label>
-              <select value=${repeat} onChange=${(e) => setRepeat(e.target.value)}>
-                <option value="stretch">stretch</option><option value="round">round</option>
-                <option value="repeat">repeat</option><option value="space">space</option>
-              </select>
-              <label className="s9e-chk"><input type="checkbox" checked=${pix} onChange=${(e) => setPix(e.target.checked)} /> pixelated</label>
-            </div>
-            <div className="s9e-pv-wrap">
-              <div className="s9e-pv-row"><span>button</span><div className="s9e-pv" style=${pvStyle(120, 42)}>Start</div></div>
-              <div className="s9e-pv-row"><span>wide</span><div className="s9e-pv" style=${pvStyle(240, 52)}>Confirm</div></div>
-              <div className="s9e-pv-row"><span>panel</span><div className="s9e-pv" style=${pvStyle(280, 140)}>Dialog</div></div>
-            </div>
-            <div className="s9e-actions">
-              <button className="s9e-done" onClick=${onClose}>Done</button>
-              <button className="s9e-save" onClick=${save} disabled=${saving}>${saving ? "Saving…" : saved ? "Saved ✓" : "Save slices"}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `, document.body);
+    img.src = withProjectQuery("/" + pngPath);
+    return () => { alive = false; };
+  }, [pngPath]);
+  const q = Math.round(src / 4);
+  const S = (s9 && s9.slice) || [q, q, q, q];
+  const clamp = (v) => Math.max(0, Math.min(Math.floor(src / 2), Math.round(v || 0)));
+  const pct = (p) => (p / src * 100);
+  useEffect(() => {
+    const move = (ev) => {
+      const side = drag.current; if (!side) return;
+      const el = ref.current; if (!el) return;
+      const r = el.getBoundingClientRect();
+      const x = (ev.clientX - r.left) / r.width * src, y = (ev.clientY - r.top) / r.height * src;
+      const ns = S.slice();
+      if (side === "top") ns[0] = clamp(y); else if (side === "right") ns[1] = clamp(src - x);
+      else if (side === "bottom") ns[2] = clamp(src - y); else ns[3] = clamp(x);
+      onPatch({ slice: ns });
+    };
+    const up = () => { drag.current = null; };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  }, [S.join(","), src]);
+  const down = (side) => (ev) => { ev.stopPropagation(); drag.current = side; };
+  return html`<div ref=${ref} className="s9n-overlay" onMouseDown=${(ev) => ev.stopPropagation()}>
+    <div className="s9n-g s9n-h" style=${{ top: pct(S[0]) + "%" }} onPointerDown=${down("top")}/>
+    <div className="s9n-g s9n-h" style=${{ bottom: pct(S[2]) + "%" }} onPointerDown=${down("bottom")}/>
+    <div className="s9n-g s9n-v" style=${{ left: pct(S[3]) + "%" }} onPointerDown=${down("left")}/>
+    <div className="s9n-g s9n-v" style=${{ right: pct(S[1]) + "%" }} onPointerDown=${down("right")}/>
+    <div className="s9n-k" style=${{ left: "50%", top: pct(S[0]) + "%" }} onPointerDown=${down("top")}/>
+    <div className="s9n-k" style=${{ left: "50%", top: (100 - pct(S[2])) + "%" }} onPointerDown=${down("bottom")}/>
+    <div className="s9n-k" style=${{ top: "50%", left: pct(S[3]) + "%" }} onPointerDown=${down("left")}/>
+    <div className="s9n-k" style=${{ top: "50%", left: (100 - pct(S[1])) + "%" }} onPointerDown=${down("right")}/>
+  </div>`;
 }
 
 function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, onSpawnConnected, allNodes, allEdges, projectId }) {
