@@ -59007,35 +59007,23 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       });
       const dur = (n / FPSv).toFixed(3);
       const anim = `wovenPlay ${dur}s steps(${n}) ${loop ? "infinite" : "1 forwards"}`;
-      // Responsive: the sprite scales to FILL its container (contain, aspect
-      // preserved) and recomputes the px-based background-size + travel on
-      // resize - so it never looks tiny in a big embed or oversized in a small
-      // one. background-position-x/background-size must be px for steps() to
-      // land each frame exactly, hence the JS rather than pure %.
+      // Pure-CSS responsive: .win is aspect-locked and sized with vw/vh (which
+      // recompute on resize automatically - no JS, so no stale-viewport bug).
+      // .strip is N frames wide; translateX(-100%) == one full strip == N
+      // frames, so steps(N) lands each frame exactly. Contains to the embed.
       const doc = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${(node.name || "Animated sprite").replace(/[<&]/g, "")}</title>
 <style>
   html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
-  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-  #sprite{background:url('${dataUri}') no-repeat;background-position-x:0;image-rendering:auto;
+  .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  .win{aspect-ratio:${FW} / ${FH};width:min(100vw, 100vh * ${FW} / ${FH});max-width:100vw;max-height:100vh;overflow:hidden;position:relative}
+  .strip{position:absolute;inset:0;width:${n * 100}%;height:100%;
+    background:url('${dataUri}') left center / 100% 100% no-repeat;image-rendering:auto;
     animation:${anim}}
-  @keyframes wovenPlay{to{background-position-x:var(--travel,0)}}
-  @media (prefers-reduced-motion: reduce){#sprite{animation:none}}
+  @keyframes wovenPlay{to{transform:translateX(-100%)}}
+  @media (prefers-reduced-motion: reduce){.strip{animation:none}}
 </style></head><body>
-<div id="wrap"><div id="sprite"></div></div>
-<script>
-(function(){
-  var N=${n}, FW=${FW}, FH=${FH}, el=document.getElementById('sprite');
-  function fit(){
-    var s=Math.min(window.innerWidth/FW, window.innerHeight/FH)||1;
-    var w=Math.max(1,Math.round(FW*s)), h=Math.max(1,Math.round(FH*s));
-    el.style.width=w+'px'; el.style.height=h+'px';
-    el.style.backgroundSize=(w*N)+'px '+h+'px';
-    el.style.setProperty('--travel','-'+(w*N)+'px');
-  }
-  window.addEventListener('resize',fit); fit();
-})();
-</script>
+<div class="stage"><div class="win"><div class="strip"></div></div></div>
 </body></html>`;
       const outPath = `source/${branch}/animated-sprite-${node.id}.html`;
       const wr = await fetch(apiUrl("/__write_text"), {
