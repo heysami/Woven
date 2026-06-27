@@ -58772,24 +58772,74 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     return `Redraw the character from the reference image as a SPRITE SHEET of ${cycle}. Lay out EXACTLY ${n} frames on a uniform ${cols}x${rows} grid (${cols} columns, ${rows} rows), read left-to-right then top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale in each cell. The ${n} frames must form ONE smooth, seamless loop (the last flows back into the first) with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the reference. Place the whole grid on a PLAIN, FLAT, SOLID light-grey background with NO scenery, NO shadows and NO gradients, clearly separated from the character so the background can be cleanly removed afterwards. No gridlines, no borders, no frame numbers, no text.`;
   }
 
-  // Run on click - like every other asset generator: redraw each frame from
-  // the wired source via i2i (subject-preserving), then pack them into a strip.
+  const loadImg = useCallback((url) => new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("could not load " + url));
+    im.src = url;
+  }), []);
+
+  // Slice the (transparent) raw grid sheet into a clean uniform horizontal
+  // strip using the chosen grid, then write the sheet + atlas. NO AI - this is
+  // what both the final generation step and the manual slicing controls call.
+  const repackFromRaw = useCallback(async (rawPath, grid) => {
+    const cell = 256;
+    const n = Math.max(1, Math.min(64, Number(node.frameCount) || 6));
+    const anim = node.animation || "idle";
+    const cols = Math.max(1, Math.round(Number(grid.cols) || 1));
+    const rows = Math.max(1, Math.round(Number(grid.rows) || 1));
+    const offX = grid.offX || 0, offY = grid.offY || 0, gutX = grid.gutX || 0, gutY = grid.gutY || 0;
+    const raw = await loadImg(withProjectQuery("/" + rawPath, "_n=" + Date.now()));
+    const gw = raw.naturalWidth || raw.width, gh = raw.naturalHeight || raw.height;
+    const cwf = (1 - 2 * offX - (cols - 1) * gutX) / cols;
+    const chf = (1 - 2 * offY - (rows - 1) * gutY) / rows;
+    const cnv = document.createElement("canvas");
+    cnv.width = cell * n; cnv.height = cell;
+    const ctx = cnv.getContext("2d");
+    for (let i = 0; i < n; i++) {
+      const gc = i % cols, gr = Math.floor(i / cols);
+      const sx = (offX + gc * (cwf + gutX)) * gw, sy = (offY + gr * (chf + gutY)) * gh;
+      const sw = cwf * gw, sh = chf * gh;
+      if (sw <= 0 || sh <= 0) continue;
+      const fr = Math.min(cell / sw, cell / sh);     // contain-fit each cell, centred
+      const dw = sw * fr, dh = sh * fr;
+      ctx.drawImage(raw, sx, sy, sw, sh, i * cell + (cell - dw) / 2, (cell - dh) / 2, dw, dh);
+    }
+    const dataUrl = cnv.toDataURL("image/png");
+    const sheetPath = `source/${branch}/sprites/animated-sprite-${node.id}.png`;
+    const wr = await fetch(apiUrl("/__write_binary"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: sheetPath, dataUrl }),
+    });
+    const wj = await wr.json().catch(() => ({}));
+    if (!wr.ok || !wj.ok) throw new Error((wj && wj.error) || "could not write sprite sheet");
+    const dur = Math.round(1000 / Math.max(1, Number(node.fps) || 12));
+    const atlas = {
+      frames: Array.from({ length: n }, (_v, i) => ({
+        filename: `${anim}_${i}`, frame: { x: i * cell, y: 0, w: cell, h: cell },
+        rotated: false, trimmed: false,
+        spriteSourceSize: { x: 0, y: 0, w: cell, h: cell },
+        sourceSize: { w: cell, h: cell }, duration: dur,
+      })),
+      meta: {
+        app: "woven-animated-sprite", image: `animated-sprite-${node.id}.png`,
+        format: "RGBA8888", size: { w: cell * n, h: cell }, scale: "1",
+        fps: Number(node.fps) || 12,
+        frameTags: [{ name: anim, from: 0, to: n - 1, direction: "forward" }],
+      },
+    };
+    onChange({ sheet: sheetPath, atlas, frameWidth: cell, frameHeight: cell, path: sheetPath, assetKind: "image",
+               frameCount: n, rawSheet: rawPath, grid: { cols, rows, offX, offY, gutX, gutY }, sheetVer: Date.now() });
+    window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [sheetPath] } }));
+  }, [node.id, node.frameCount, node.animation, node.fps, branch, onChange, loadImg]);
+
+  // Generate the cycle (one i2i call) -> rembg cut-out -> slice (repack).
   const runGenerate = useCallback(async () => {
     const src = node.source || upstreamSource || "";
     if (!src) { setGen({ phase: "error", step: 0, total: 0, error: "Wire a source image into the input port first." }); return; }
     const n = Math.max(1, Math.min(64, Number(node.frameCount) || 6));
     const anim = node.animation || "idle";
     const subjectDirective = workflowRefModeDirective("subject");
-    const cell = 256;   // packed cell size - keeps the sheet light
-    const loadImg = (url) => new Promise((res, rej) => {
-      const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = () => rej(new Error("could not load " + url));
-      im.src = url;
-    });
-    // One generation draws the whole cycle on a near-square grid (better cell
-    // aspect than a single long row); we then slice that grid into a clean,
-    // uniform horizontal strip so the atlas + preview stay simple.
     const cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
     const aspect = cols > rows ? "3:2" : cols < rows ? "2:3" : "1:1";
@@ -58822,53 +58872,32 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       });
       const rbj = await rb.json().catch(() => ({}));
       if (!rb.ok || !rbj.ok) throw reportErr(rb, rbj, "background removal (rembg) failed - is the rembg package installed? (Settings > local packages)");
-      // 3) Slice the cut-out grid into one clean uniform horizontal strip.
+      // 3) Slice the cut-out grid into the strip (default even grid; the user
+      //    can then fine-tune the boundaries below without re-generating).
       setGen({ phase: "running", step: 2, total: 3, error: "" });
-      const sheetImg = await loadImg(withProjectQuery("/" + cutOut, "_n=" + Date.now()));
-      const gw = sheetImg.naturalWidth || sheetImg.width, gh = sheetImg.naturalHeight || sheetImg.height;
-      const cw = gw / cols, ch = gh / rows;
-      const cnv = document.createElement("canvas");
-      cnv.width = cell * n; cnv.height = cell;
-      const ctx = cnv.getContext("2d");
-      for (let i = 0; i < n; i++) {
-        const gc = i % cols, gr = Math.floor(i / cols);
-        const fr = Math.min(cell / cw, cell / ch);   // contain-fit each cell, centred
-        const dw = cw * fr, dh = ch * fr;
-        ctx.drawImage(sheetImg, gc * cw, gr * ch, cw, ch,
-                      i * cell + (cell - dw) / 2, (cell - dh) / 2, dw, dh);
-      }
-      const dataUrl = cnv.toDataURL("image/png");
-      const sheetPath = `source/${branch}/sprites/animated-sprite-${node.id}.png`;
-      const wr = await fetch(apiUrl("/__write_binary"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: sheetPath, dataUrl }),
-      });
-      const wj = await wr.json().catch(() => ({}));
-      if (!wr.ok || !wj.ok) throw new Error((wj && wj.error) || "could not write sprite sheet");
-      // TexturePacker/Aseprite-shaped atlas (JSON-array frames).
-      const dur = Math.round(1000 / Math.max(1, Number(node.fps) || 12));
-      const atlas = {
-        frames: Array.from({ length: n }, (_v, i) => ({
-          filename: `${anim}_${i}`,
-          frame: { x: i * cell, y: 0, w: cell, h: cell },
-          rotated: false, trimmed: false,
-          spriteSourceSize: { x: 0, y: 0, w: cell, h: cell },
-          sourceSize: { w: cell, h: cell }, duration: dur,
-        })),
-        meta: {
-          app: "woven-animated-sprite", image: `animated-sprite-${node.id}.png`,
-          format: "RGBA8888", size: { w: cell * n, h: cell }, scale: "1",
-          fps: Number(node.fps) || 12,
-          frameTags: [{ name: anim, from: 0, to: n - 1, direction: "forward" }],
-        },
-      };
-      onChange({ sheet: sheetPath, atlas, frameWidth: cell, frameHeight: cell, path: sheetPath, assetKind: "image", frameCount: n });
-      window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [sheetPath] } }));
+      await repackFromRaw(cutOut, { cols, rows, offX: 0, offY: 0, gutX: 0, gutY: 0 });
       setGen({ phase: "done", step: 1, total: 1, error: "" });
     } catch (e) {
       setGen({ phase: "error", step: 0, total: n, error: (e && e.message) || String(e) });
     }
-  }, [node.id, node.source, node.frameCount, node.fps, node.animation, upstreamSource, branch, onChange]);
+  }, [node.id, node.source, node.frameCount, node.fps, node.animation, upstreamSource, branch, repackFromRaw]);
+
+  // Manual slicing: update the grid + debounce-repack from the saved raw sheet.
+  const repackTimer = useRef(null);
+  const [slicing, setSlicing] = useState(false);
+  const adjustGrid = useCallback((patch) => {
+    const c = node.grid || {};
+    const next = { cols: c.cols || 1, rows: c.rows || 1, offX: c.offX || 0, offY: c.offY || 0, gutX: c.gutX || 0, gutY: c.gutY || 0, ...patch };
+    onChange({ grid: next });
+    if (!node.rawSheet) return;
+    clearTimeout(repackTimer.current);
+    setSlicing(true);
+    repackTimer.current = setTimeout(() => {
+      repackFromRaw(node.rawSheet, next)
+        .catch((e) => setGen({ phase: "error", step: 0, total: 0, error: (e && e.message) || String(e) }))
+        .finally(() => setSlicing(false));
+    }, 350);
+  }, [node.grid, node.rawSheet, onChange, repackFromRaw]);
 
   const frames = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
   const frameCount = Math.max(1, Number(node.frameCount) || frames.length || 6);
@@ -58877,6 +58906,22 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
   const fh = Number(node.frameHeight) || (frames[0] && frames[0].frame && frames[0].frame.h) || 128;
   const sourcePath = node.source || upstreamSource || "";
   const sheetReady = !!(node.sheet && frames.length);
+  const sheetVer = node.sheetVer || 0;
+
+  // Slicing grid (fractions of the raw sheet) + the cell rectangles to overlay.
+  const grid = (() => {
+    if (node.grid) return node.grid;
+    const c = Math.ceil(Math.sqrt(frameCount));
+    return { cols: c, rows: Math.ceil(frameCount / c), offX: 0, offY: 0, gutX: 0, gutY: 0 };
+  })();
+  const gCols = Math.max(1, Math.round(grid.cols || 1)), gRows = Math.max(1, Math.round(grid.rows || 1));
+  const gOffX = grid.offX || 0, gOffY = grid.offY || 0, gGutX = grid.gutX || 0, gGutY = grid.gutY || 0;
+  const gCwf = (1 - 2 * gOffX - (gCols - 1) * gGutX) / gCols;
+  const gChf = (1 - 2 * gOffY - (gRows - 1) * gGutY) / gRows;
+  const gridRects = Array.from({ length: frameCount }, (_v, i) => {
+    const gc = i % gCols, gr = Math.floor(i / gCols);
+    return { x: gOffX + gc * (gCwf + gGutX), y: gOffY + gr * (gChf + gGutY), w: gCwf, h: gChf };
+  });
 
   // Fit the preview to the body width, preserving the frame aspect.
   const availW = w - 28;
@@ -58885,7 +58930,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
   const dispH = Math.round(fh * scale);
   const previewStyle = sheetReady ? {
     width: dispW + "px", height: dispH + "px",
-    backgroundImage: `url(${withProjectQuery("/" + node.sheet)})`,
+    backgroundImage: `url(${withProjectQuery("/" + node.sheet, "_v=" + sheetVer)})`,
     backgroundRepeat: "no-repeat",
     backgroundSize: `${dispW * frameCount}px ${dispH}px`,
     backgroundPositionX: "0px",
@@ -58950,6 +58995,32 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
                  onChange=${(e) => onChange({ loop: e.target.checked })}/>
         </div>
         ${sheetReady && html`<div style=${{ fontSize: "10px", opacity: 0.5 }}>${frames.length} frames · ${fw}×${fh} · sprite sheet + atlas</div>`}
+        ${node.rawSheet && html`
+          <div style=${{ borderTop: "1px solid rgba(0,0,0,0.08)", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div style=${{ fontSize: "10.5px", opacity: 0.6 }}>Frame slicing${slicing ? " · re-slicing…" : ""} - drag the boxes onto the frames if the AI grid is off</div>
+            <div style=${{ position: "relative", lineHeight: 0, borderRadius: "4px", overflow: "hidden", background: "repeating-conic-gradient(#0000000d 0% 25%, transparent 0% 50%) 50% / 14px 14px" }}>
+              <img src=${withProjectQuery("/" + node.rawSheet, "_v=" + sheetVer)} alt="raw sheet" style=${{ width: "100%", display: "block" }}/>
+              <svg viewBox="0 0 1 1" preserveAspectRatio="none" style=${{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+                ${gridRects.map((rc, i) => html`<rect key=${i} x=${rc.x} y=${rc.y} width=${rc.w} height=${rc.h} fill="none" stroke="#ff2d78" strokeWidth="0.006" vectorEffect="non-scaling-stroke"/>`)}
+              </svg>
+            </div>
+            <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr auto 1fr", gap: "4px 8px", alignItems: "center", fontSize: "11px" }}>
+              <label style=${{ opacity: 0.7 }}>Cols</label>
+              <input type="number" min="1" max="16" value=${gCols} onMouseDown=${(e) => e.stopPropagation()}
+                     onInput=${(e) => adjustGrid({ cols: Math.max(1, Math.min(16, parseInt(e.target.value) || 1)) })}
+                     style=${{ font: "inherit", padding: "2px 4px", width: "100%" }}/>
+              <label style=${{ opacity: 0.7 }}>Rows</label>
+              <input type="number" min="1" max="16" value=${gRows} onMouseDown=${(e) => e.stopPropagation()}
+                     onInput=${(e) => adjustGrid({ rows: Math.max(1, Math.min(16, parseInt(e.target.value) || 1)) })}
+                     style=${{ font: "inherit", padding: "2px 4px", width: "100%" }}/>
+            </div>
+            ${[["offX", "Offset X"], ["offY", "Offset Y"], ["gutX", "Gutter X"], ["gutY", "Gutter Y"]].map(([k, lab]) => html`
+              <label key=${k} style=${{ display: "grid", gridTemplateColumns: "58px 1fr", gap: "6px", alignItems: "center", fontSize: "11px" }}>
+                <span style=${{ opacity: 0.7 }}>${lab}</span>
+                <input type="range" min="0" max="0.15" step="0.005" value=${grid[k] || 0} onMouseDown=${(e) => e.stopPropagation()}
+                       onInput=${(e) => adjustGrid({ [k]: parseFloat(e.target.value) })}/>
+              </label>`)}
+          </div>`}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in"
            data-port-node=${node.id} data-port-side="in"
