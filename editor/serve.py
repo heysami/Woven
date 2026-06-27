@@ -1887,14 +1887,15 @@ def _local_slice9(input_abs_path, out_abs, options):
 # prompt still produces a valid 9-slice frame (hollow, transparent center,
 # identical corners, tileable edges) - the shape slice9_detect.py needs.
 SLICE9_FRAME_CONTRACT = (
-    "\n\nRENDER REQUIREMENTS (this is a UI border FRAME for 9-slice / "
-    "border-image): a single ornate rectangular border frame, centered, on a "
-    "FULLY TRANSPARENT background. Hollow frame - the four corners are "
-    "IDENTICAL; the straight edges between corners are uniform along their "
-    "length so they tile without a seam (no unique motif mid-edge). The CENTER "
-    "is completely empty and transparent: no fill, no panel, no text, no "
-    "content inside. Flat even lighting, orthographic front view, no cast "
-    "shadow, no perspective, crisp edges. Square 1:1 composition."
+    "\n\n[Usage context - this image will be used as a CSS 9-slice "
+    "border-image. At render time the element is resized to arbitrary "
+    "dimensions: the four CORNERS stay fixed (never scaled), the EDGES between "
+    "them tile/stretch along their length, and the CENTER fills the interior. "
+    "So keep each corner self-contained, make the edges uniform so they repeat "
+    "without a visible seam, and render the subject flat and front-on "
+    "(orthographic, no perspective, no cast shadow) filling the square. Whether "
+    "the subject is a solid filled control (e.g. a button face) or a hollow "
+    "open frame follows from what is described above - do not force either.]"
 )
 
 
