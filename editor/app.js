@@ -25433,7 +25433,8 @@ const WORKFLOW_NODE_FACTORY = {
     const finalKind = p.assetKind || extKind;
     // HTML asset cards match the 1920×1440 design viewport; raster assets
     // stay compact (220×170) - same as the library drop.
-    const { w, h } = finalKind === "html" ? { w: 1920, h: 1440 } : { w: 220, h: 170 };
+    const { w, h } = (p.w && p.h) ? { w: p.w, h: p.h }
+      : finalKind === "html" ? { w: 1920, h: 1440 } : { w: 220, h: 170 };
     return { kind: "asset", w, h, assetKind: finalKind, path };
   },
   "agent": (p) => {
@@ -73014,6 +73015,61 @@ function workflowPosePromptForItem(frag) {
   return [head, body, tail].join("\n\n");
 }
 
+// Bake ONE self-contained "pose box" HTML asset from a generated set. `poses` is
+// [{label, url}] (url = project-qualified absolute image URL). The page shows one
+// pose at a time, has a built-in switcher bar, AND registers a "Pose" select knob
+// via the asset-controls shim so the editor's floating controls panel can switch
+// it too. This is the single durable, draggable artefact the generator outputs -
+// drag it onto the canvas and flip between poses, no generator needed.
+function workflowPoseAssetHtml(poses) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const labels = poses.map(p => p.label);
+  const imgs = poses.map((p, i) => `<img data-i="${i}" class="${i === 0 ? "on" : ""}" alt="${esc(p.label)}" src="${esc(p.url)}">`).join("\n    ");
+  const btns = poses.map((p, i) => `<button type="button" data-i="${i}" class="${i === 0 ? "on" : ""}">${esc(p.label)}</button>`).join("\n    ");
+  return `<!doctype html><html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;background:#111;overflow:hidden;font-family:system-ui,sans-serif}
+  .stage{position:absolute;inset:0 0 44px 0;display:flex;align-items:center;justify-content:center;
+    background:repeating-conic-gradient(#ffffff0d 0% 25%, transparent 0% 50%) 50% / 18px 18px}
+  .stage img{max-width:100%;max-height:100%;object-fit:contain;display:none}
+  .stage img.on{display:block}
+  .bar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:4px;flex-wrap:wrap;justify-content:center;
+    padding:6px;background:#0b0b0b;border-top:1px solid #ffffff1a;max-height:120px;overflow:auto}
+  .bar button{font:600 11px system-ui;padding:4px 9px;border-radius:999px;border:1px solid #ffffff33;
+    background:#ffffff14;color:#fff;cursor:pointer}
+  .bar button.on{background:#fff;color:#000;border-color:#fff}
+</style></head><body>
+  <div class="stage" id="stage">
+    ${imgs}
+  </div>
+  <div class="bar" id="bar">
+    ${btns}
+  </div>
+  <script src="/editor/tools/_shared/asset-controls.js"></script>
+  <script>
+  (function(){
+    var labels = ${JSON.stringify(labels)};
+    function show(i){
+      var imgs=document.querySelectorAll('#stage img'), btns=document.querySelectorAll('#bar button');
+      for(var k=0;k<imgs.length;k++) imgs[k].classList.toggle('on',k===i);
+      for(var k=0;k<btns.length;k++) btns[k].classList.toggle('on',k===i);
+    }
+    var bs=document.querySelectorAll('#bar button');
+    for(var k=0;k<bs.length;k++){ (function(b){ b.addEventListener('click',function(){
+      var i=+b.dataset.i; show(i);
+      try{ if(window.__wovenControls) window.__wovenControls.set('pose', labels[i]); }catch(e){}
+    }); })(bs[k]); }
+    try{
+      window.__wovenControls && window.__wovenControls.register({
+        key:'pose', label:'Pose', options: labels, default: labels[0],
+        apply: function(v){ var i=labels.indexOf(v); if(i>=0) show(i); }
+      });
+    }catch(e){}
+  })();
+  </script>
+</body></html>`;
+}
+
 // True when an image model can consume an input image (image-to-image). Guards
 // the control + the auto-promote so an attached reference never silently 400s.
 function workflowModelHasI2I(modelId) {
@@ -73168,17 +73224,16 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
   // Is a Pose viewer ACTUALLY wired to this generator's out right now? Computed
   // live from the edges (NOT a sticky node flag) so that if the viewer was
   // deleted, generating / the Open-viewer button will create a fresh one.
-  const hasViewer = (allEdges || []).some(e => {
+  // The single durable output: one self-contained HTML "pose box" asset that
+  // embeds every generated pose + a built-in switcher. Drag it around / re-drag
+  // it from Library → HTML pages; it survives deleting this generator.
+  const poseBoxPath = `source/main/poses/pose-box-${node.id}.html`;
+  const hasPoseBox = (allEdges || []).some(e => {
     const f = workflowParseEdgeRef(e.from); if (!f || f.node !== node.id) return false;
     const t = workflowParseEdgeRef(e.to); if (!t) return false;
     const dn = (allNodes || []).find(n => n.id === t.node);
-    return dn && dn.kind === "pose-viewer";
+    return dn && dn.kind === "asset" && dn.path === poseBoxPath;
   });
-  const ensureViewer = () => {
-    if (onSpawnConnected && !hasViewer) {
-      onSpawnConnected("right", { kind: "pose-viewer", newPort: "in", anchorPort: "out" });
-    }
-  };
 
   // Subject image: an on-node pick (refImagePath) wins, else a wired asset.
   const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p) && p.startsWith("source/");
@@ -73192,8 +73247,38 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
     }
   }
 
-  const framePath = (id) => `source/main/images/pose-${node.id}-${id}.png`;
+  // Frames live under poses/ (NOT images/) so they don't clutter Library →
+  // Assets - only the baked HTML pose box is the user-facing artefact.
+  const framePath = (id) => `source/main/poses/frame-${node.id}-${id}.png`;
   const bust = (p, v) => { const u = withProjectQuery("/" + p); return u + (u.includes("?") ? "&" : "?") + "_v=" + (v || 0); };
+
+  // Bake the one pose-box HTML from the done frames in `fm`, then create a single
+  // asset node for it (once). Called at the end of every generate / regenerate.
+  const bakePoseBox = async (fm) => {
+    const map = fm || frames;
+    const poses = [];
+    for (const id of selectedIds) {
+      const fr = map[id];
+      if (fr && fr.status === "done" && fr.path) {
+        const it = workflowPoseItem(id, custom) || { label: id };
+        poses.push({ label: it.label, url: bust(fr.path, fr.v) });
+      }
+    }
+    if (!poses.length) return;
+    try {
+      await fetch(apiUrl("/__write_text"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: poseBoxPath, text: workflowPoseAssetHtml(poses) }),
+      });
+    } catch (_e) { return; }
+    if (onSpawnConnected && !hasPoseBox) {
+      onSpawnConnected("right", {
+        kind: "asset", payload: { path: poseBoxPath, assetKind: "html", w: 340, h: 380, name: "Poses" },
+        newPort: "in", anchorPort: "out",
+      });
+    }
+    try { window.dispatchEvent(new Event("th:asset-refresh")); } catch (_e) {}
+  };
 
   const downstreamAssetPaths = () => {
     const out = [];
@@ -73221,12 +73306,13 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
     if (busy) return;
     if (!subject) { setErr("Wire or pick a subject image into the node first."); return; }
     setErr("");
-    // Make sure a Pose viewer exists to browse the set - BEFORE the early-return
-    // below, so even "Regenerate all" (or generating when all are already done)
-    // re-creates a viewer if it was deleted.
-    ensureViewer();
     const todo = ids.filter(id => force || !(frames[id] && frames[id].status === "done"));
-    if (!todo.length) return;
+    if (!todo.length) {
+      // Nothing to (re)generate, but if the pose box is missing (e.g. deleted),
+      // re-bake it from the existing frames so the user always has their box.
+      await bakePoseBox(frames);
+      return;
+    }
     const acc = { ...frames };
     const flush = (id, val) => { acc[id] = val; onChange({ poseFrames: { ...acc } }); };
     let done = 0;
@@ -73252,17 +73338,10 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
       }
       done++; setBusy({ done, total: todo.length });
     }
-    // Default the generator's own output to the first done pose so anything
-    // wired directly (not via the viewer) still resolves to an image.
-    if (!node.activePose) {
-      const first = selectedIds.find(id => acc[id] && acc[id].status === "done");
-      if (first) onChange({ activePose: first, path: acc[first].path, assetKind: "image" });
-    }
     setBusy(null);
-    // Surface the freshly-written pose PNGs in the Library → Assets panel (they
-    // live under source/main/images, which /__assets scans). Without this nudge
-    // the panel only reloads on a full Run, so generated poses look "missing".
-    try { window.dispatchEvent(new Event("th:asset-refresh")); } catch (_e) {}
+    // Bake the single pose-box HTML asset from the freshly generated frames and
+    // link it (once). This is the user-facing output: one box that switches poses.
+    await bakePoseBox(acc);
   };
 
   const selectPose = async (id) => {
@@ -73345,12 +73424,12 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
         <div className="wpose-status">
           ${selectedIds.length === 0
             ? html`<span>Tick poses above, then <b>Generate set</b>.</span>`
-            : html`<span>${doneCount}/${selectedIds.length} generated.${doneCount ? " Browse / regenerate in the Pose viewer; each pose is also saved under Library → Assets." : ""}</span>`}
+            : html`<span>${doneCount}/${selectedIds.length} generated.${doneCount ? " Output is ONE pose box (switch poses inside it). Find it under Library → HTML pages to re-drag." : ""}</span>`}
         </div>
-        ${doneCount && !hasViewer ? html`
-          <button className="wpose-openviewer" title="Create / re-create the linked Pose viewer to browse and switch poses"
-            onClick=${(e) => { e.stopPropagation(); ensureViewer(); }} onMouseDown=${(e) => e.stopPropagation()}>
-            ⊡ Open Pose viewer
+        ${doneCount && !hasPoseBox ? html`
+          <button className="wpose-openviewer" title="Re-create the linked pose box (one asset that switches between the generated poses)"
+            onClick=${(e) => { e.stopPropagation(); bakePoseBox(frames); }} onMouseDown=${(e) => e.stopPropagation()}>
+            ⊡ Open pose box
           </button>` : null}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in"

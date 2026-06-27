@@ -23870,6 +23870,13 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   text-align: center; padding: 2px 4px;
 }
 .wpose-status b { color: var(--text); font-weight: 600; }
+.wpose-openviewer {
+  appearance: none; cursor: pointer; width: 100%;
+  border: 1px solid var(--accent); border-radius: 8px;
+  background: var(--accent-soft, transparent); color: var(--accent-text, var(--text));
+  font: 600 11.5px/1 inherit; padding: 7px 10px; margin-top: 2px;
+}
+.wpose-openviewer:hover { background: var(--accent); color: var(--accent-text, #fff); }
 .wpose-gallery {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: 8px;
