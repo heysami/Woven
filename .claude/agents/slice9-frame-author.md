@@ -40,8 +40,6 @@ JSON
 
 You still own the prompt's STYLE (material, palette, corner motif from the `styleCue`); the daemon only appends the geometry contract (hollow, transparent center, identical corners, tileable edges), so you do NOT need to restate it. The daemon writes the final frame AND a `<role>.slice9.json` sidecar holding `{ slice:[t,r,b,l], width, repeat, fill, corner, detected }`. If `detected` is `false`, the model failed the hollow-center contract for that role - re-run with the transparency/empty-center demand made more emphatic in your style prompt (it is the single most common failure).
 
-(The lower-level `slice9-normalize` transform skill exists for hand-wired chains or re-slicing an external frame; for normal authoring use `slice9-frame` above.)
-
 ## Assemble the atlas
 Read every `<assetRoot>/slice9/${skinId}/<role>.slice9.json` and write `<assetRoot>/slice9/${skinId}/atlas.json` in the SAME shape the procedural skins emit (so it is a drop-in for the `slice9` theme):
 ```json

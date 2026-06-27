@@ -369,23 +369,6 @@
       hasAspect: true,
     },
     {
-      // ADVANCED finisher (the chain's last step): square + trim an already-
-      // generated frame and auto-detect its insets. Most users want slice9-frame
-      // above (one node); this exists for hand-wired prompt→generate→rembg→here
-      // pipelines or to re-slice an externally supplied frame.
-      id: "slice9-normalize",
-      label: "Slice-9 normalize",
-      hint: "asset → 9-slice frame (local · square + auto-detect slice insets · writes .slice9.json · no API key)",
-      glyph: "▦",
-      pathway: "Local",
-      provider: "local",
-      model: "auto",
-      inputs: ["asset"],
-      output: "image",
-      hasModelDropdown: false,
-      hasAspect: false,
-    },
-    {
       id: "upscale",
       label: "Upscale image",
       hint: "asset → image (4× by default)",

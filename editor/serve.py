@@ -1768,9 +1768,6 @@ _GENERATE_DISPATCH = {
 }
 _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
-    # slice9-normalize: square + trim a generated frame and auto-detect its
-    # border-image-slice insets (tools-level slice9_detect.py). Local, no key.
-    ("slice9-normalize", "local"): "local_slice9",
     ("rembg",   "fal"):   "fal_transform",
     ("upscale", "fal"):   "fal_transform",
     # Image → 3D. Both are transforms (image in → 3D file out), so they slot
@@ -13264,15 +13261,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "local rembg can't read SVG / data URIs - needs raster bytes. "
                             "Use a file-backed asset or a fal-based rembg in a later phase."})
                     bytes_ = _local_rembg(input_abs, model, options)
-                elif provider == "local" and skill == "slice9-normalize":
-                    if input_data_uri:
-                        return self._reply(400, {"error":
-                            "slice9-normalize needs file-backed raster bytes, not a data URI."})
-                    try:
-                        _s9_out = _safe_join(project_root, output)
-                    except Exception as e:
-                        return self._reply(400, {"error": f"invalid output path: {e}"})
-                    bytes_ = _local_slice9(input_abs, _s9_out, options)
                 elif provider == "sam3d" and skill in ("image-to-ply", "image-to-glb"):
                     if not input_abs:
                         return self._reply(400, {"error":
