@@ -18482,6 +18482,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if not os.path.isdir(sub_dir): continue
                     for fname in sorted(os.listdir(sub_dir)):
                         if fname.startswith("."): continue
+                        # slice9 sidecar metadata ({slice,width,...}) - not a
+                        # draggable asset; a .json here would otherwise classify
+                        # as Lottie and fail to render when dropped on the canvas.
+                        if fname.endswith(".slice9.json"): continue
                         fpath = os.path.join(sub_dir, fname)
                         if not os.path.isfile(fpath): continue
                         try: st = os.stat(fpath)
