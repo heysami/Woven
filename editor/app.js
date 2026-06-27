@@ -10132,12 +10132,30 @@ function ShareMenuButton() {
 
   // One link's row: its URL when the tunnel is up, else a labelled state line so
   // an enabled-but-not-yet-ready link is visible instead of silently missing.
-  const modeLinkRow = (label, key, url, status) => {
+  // opts (randomised link only): { changed, onRegen, onAck }.
+  const modeLinkRow = (label, key, url, status, opts) => {
     const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
+    const o = opts || {};
     return html`
       <div className="share-link-block">
-        <div className="share-link-label">${label}</div>
-        ${url ? linkRow(key, url) : html`
+        <div className="share-link-label" style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span>${label}</span>
+          ${o.changed && html`<span className="shares-url-changed" title="This randomised URL changed since you last copied it - copy & resend it; the old link is dead">⚠ changed</span>`}
+        </div>
+        ${url ? html`
+          <div className="th-live-link">
+            <code title=${url}>${url}</code>
+            <button className="th-icon-btn" title=${copiedId === key ? "Copied ✓" : "Copy link"}
+              onClick=${() => { copy(key, url); if (o.onAck) o.onAck(); }}>
+              <${copiedId === key ? Icon.Check : Icon.Copy}/>
+            </button>
+            <button className="th-icon-btn" title="Open in a new tab" onClick=${() => window.open(url, "_blank")}>
+              <${Icon.External}/>
+            </button>
+            ${o.onRegen && html`<button className="th-icon-btn" title="Generate a new randomised URL (the old one stops working)" onClick=${o.onRegen}>
+              <${Icon.Refresh}/>
+            </button>`}
+          </div>` : html`
           <div className="share-link-pending">
             <span className=${"shares-dot is-" + meta.dot}></span>
             <span>${status === "starting" ? "Starting…" : meta.label}</span>
@@ -10156,12 +10174,15 @@ function ShareMenuButton() {
         <div className="share-controls-row">
           <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
           <span className="share-controls-status">${st.label}</span>
-          ${s.urlChanged && html`<span className="shares-url-changed" title="The randomised tunnel URL changed since last copy - resend the link">⚠ URL changed</span>`}
         </div>
         <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} wovenAvail=${wovenAvail} busy=${isBusy || cfMissing}
           onToggle=${(which, on) => tunnelOp(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
         ${s.wovenOn && modeLinkRow("Stable link", s.id + ":w", s.wovenUrl, s.wovenStatus)}
-        ${s.quickOn && modeLinkRow("Randomised URL", s.id + ":q", s.quickUrl, s.quickStatus)}
+        ${s.quickOn && modeLinkRow("Randomised URL", s.id + ":q", s.quickUrl, s.quickStatus, {
+          changed: s.urlChanged,
+          onRegen: async () => { await tunnelOp(s.id, "update", { quickOn: false }); await tunnelOp(s.id, "update", { quickOn: true }); },
+          onAck: () => { if (s.urlChanged) tunnelOp(s.id, "ack_url"); },
+        })}
         ${!s.quickOn && !s.wovenOn && html`<div className="th-live-hint">Turn on a link above to publish a URL.</div>`}
       </div>`;
   };
@@ -50731,6 +50752,11 @@ function UserTestingScreen({ slug, onClose }) {
   return html`
     <div className="ut-screen" role="dialog" aria-label="User testing" onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
       <div className="ut-screen-bar">
+        <button className="project-home-btn ut-screen-back" onClick=${onClose} title="Back to workflow (Esc)">
+          <span className="project-home-arrow">←</span>
+          <${Icon.Branch}/>
+          <span>Workflow</span>
+        </button>
         <span className="ut-screen-glyph"><${Icon.Eye}/></span>
         <div className="ut-screen-titles">
           <div className="ut-screen-title">User testing</div>
@@ -50739,7 +50765,6 @@ function UserTestingScreen({ slug, onClose }) {
         <div className="ut-screen-spacer"></div>
         ${cap.state === "ready" && !publishBase && html`
           <span className="ut-screen-pubhint">Publish via Share to build links${cloudflaredFound ? "" : " (install cloudflared first)"}.</span>`}
-        <button className="ut-screen-close" title="Close (Esc)" aria-label="Close" onClick=${onClose}>×</button>
       </div>
 
       ${cap.state === "loading" && html`<div className="ut-screen-center"><div className="ut-screen-card">Checking user testing…</div></div>`}
@@ -51732,21 +51757,30 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
           <div key="srow" className="workflow-comments-share-row">
             <span className=${"shares-dot is-" + stMeta[0]}></span>
             <span className="workflow-comments-share-status">${stMeta[1]}</span>
-            ${share.urlChanged && html`<span className="shares-url-changed" title="The randomised tunnel URL changed since last copy - resend the link">⚠ URL changed</span>`}
           </div>
           <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} wovenAvail=${wovenAvail} busy=${shareBusy || !cloudflared}
             onToggle=${(which, on) => shareOp("update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
           ${(() => {
+            // Mint a fresh randomised URL in one click (restart just the quick tunnel).
+            const regenQuick = async () => {
+              await shareOp("update", { quickOn: false });
+              await shareOp("update", { quickOn: true });
+            };
             const linkBlock = (label, key, url, status) => {
               const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
+              const isQuick = key === "q";
               return html`
                 <div key=${"link-" + key} className="share-link-block" style=${{ marginTop: "5px" }}>
-                  <div className="share-link-label">${label}</div>
+                  <div className="share-link-label" style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span>${label}</span>
+                    ${isQuick && share.urlChanged && html`<span className="shares-url-changed" title="This randomised URL changed since you last copied it - copy & resend it; the old link is dead">⚠ changed</span>`}
+                  </div>
                   ${url ? html`
                     <div className="workflow-comments-share-url">
                       <code title=${url}>${url}</code>
                       <button className="shares-btn" onClick=${() => copyLink(key, url)}>${copied === key ? "✓" : "Copy"}</button>
                       <button className="shares-btn" onClick=${() => window.open(url, "_blank")} title="Open the share link">↗</button>
+                      ${isQuick && html`<button className="shares-btn" disabled=${shareBusy} onClick=${regenQuick} title="Generate a new randomised URL (the old one stops working)">↻</button>`}
                     </div>` : html`
                     <div className="share-link-pending">
                       <span className=${"shares-dot is-" + meta.dot}></span>
