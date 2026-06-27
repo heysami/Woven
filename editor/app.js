@@ -55737,15 +55737,25 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     }
   };
 
-  // Outpaint the expanded margin with gpt-image. Render the padded image + a
-  // mask (opaque over the original, transparent over the new margin) straight
-  // into the nearest gpt-image bucket, then hand both to /__asset_generate.
+  // Outpaint the expanded margin with gpt-image, then REFRAME the result locally.
+  // gpt-image's edit endpoint re-renders the whole frame at one of its fixed
+  // size buckets, so we can't trust it to keep the original OR to honour the
+  // crop's aspect. So we use the model only for the NEW margin: send the padded
+  // image + a mask, let it write a candidate to the file, then load that back,
+  // stretch it to the TRUE expand size (ow x oh, the crop's real ratio), and
+  // paste the ORIGINAL pixels back over their exact region. The result is the
+  // right ratio and the original is untouched - only the added margin is AI.
+  // (The mask still helps the model paint a margin that abuts the original; it
+  // needs the daemon restarted to take effect, but the local paste-back makes
+  // preservation correct either way.)
   const expandRegenerate = async () => {
     if (!natural || !natural.w || !isExpanded) return;
     setBusy(true); setBusyLabel("Regenerating…");
     try {
       const ow = Math.max(1, Math.round(rect.w * natural.w));
       const oh = Math.max(1, Math.round(rect.h * natural.h));
+      const dx = Math.round(-rect.x * natural.w); // original's top-left in output space
+      const dy = Math.round(-rect.y * natural.h);
       const [bw, bh, aspect] = assetPickBucket(ow, oh);
       // Map output-space -> bucket. The original image lands scaled at this offset.
       const sx = bw / ow, sy = bh / oh;
@@ -55753,7 +55763,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
       const iy = (-rect.y * natural.h) * sy;
       const iw = natural.w * sx;
       const ih = natural.h * sy;
-      const full = await loadImage(src);
+      const full = await loadImage(src); // ORIGINAL pixels - captured before the model overwrites the file
 
       const img = document.createElement("canvas");
       img.width = bw; img.height = bh;
@@ -55784,6 +55794,30 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || ("HTTP " + res.status));
+
+      // The model wrote a candidate frame (any size/aspect) to `path`. Reframe it
+      // to the true expand size and paste the original back so only the new
+      // margin is AI. Stretching the candidate to ow x oh is correct regardless
+      // of the size it came back at: its content corresponds to the layout we
+      // sent, so its original-region lands exactly where we paste the real one.
+      const gen = await loadImage(src + (src.includes("?") ? "&" : "?") + "_=" + Date.now());
+      const ext = (path.split(".").pop() || "").toLowerCase();
+      const mime = (ext === "jpg" || ext === "jpeg") ? "image/jpeg"
+        : ext === "webp" ? "image/webp" : "image/png";
+      const out = document.createElement("canvas");
+      out.width = ow; out.height = oh;
+      const octx = out.getContext("2d");
+      if (mime !== "image/png") { octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, ow, oh); }
+      octx.drawImage(gen, 0, 0, ow, oh);                  // model frame -> true ratio (fills the new margin)
+      octx.drawImage(full, dx, dy, natural.w, natural.h); // original pasted back, pixel-exact
+      const dataUrl = out.toDataURL(mime, 0.92);
+      const wr = await fetch(apiUrl("/__write_binary"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, dataUrl }),
+      });
+      if (!wr.ok) throw new Error("write failed (HTTP " + wr.status + ")");
+
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
       onClose();
     } catch (err) {
