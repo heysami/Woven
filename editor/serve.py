@@ -1279,6 +1279,195 @@ def _higgsfield_generate_video(api_key, prompt, model, aspect, options):
     raise RuntimeError("higgsfield: timed out waiting for DoP render")
 
 
+# ── Video chain (start→end-frame handoff + ffmpeg concat) ────────────────────
+# The `video-chain` skill turns ONE start frame + a list of segment prompts into
+# ONE stitched mp4. Each segment is an image→video clip; the LAST frame of clip
+# N is extracted and fed as the START frame of clip N+1, so the joins read as a
+# single continuous shot. After all clips render, ffmpeg concatenates them.
+#
+# Per-segment generation reuses the SAME renderers as the plain `video-gen`
+# skill - Higgsfield DoP (default) or any fal image-to-video model - so the
+# chain inherits whatever providers are already wired. The only new machinery is
+# the frame handoff + the concat, both done locally with ffmpeg (already a hard
+# dependency of the whisper transcription path).
+_CHAIN_MAX_SEGMENTS = 8
+
+
+def _ffmpeg_bin():
+    """Locate ffmpeg the same way the whisper path does (PATH, then the common
+    Homebrew location). Returns the path string; callers check existence."""
+    return shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+
+
+def _ffprobe_bin():
+    return shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
+
+
+def _ffmpeg_have():
+    ff = _ffmpeg_bin()
+    return os.path.isfile(ff) or bool(shutil.which("ffmpeg"))
+
+
+def _parse_chain_segments(prompt):
+    """Split the node's prompt into ordered segment prompts. A line that is
+    exactly `---` is an explicit separator (so a single segment can span several
+    lines); when no such separator is present, each non-blank line is one
+    segment. Blank lines and surrounding whitespace are trimmed away."""
+    text = (prompt or "").replace("\r\n", "\n").replace("\r", "\n")
+    if re.search(r"(?m)^\s*---\s*$", text):
+        chunks = re.split(r"(?m)^\s*---\s*$", text)
+        segs = [c.strip() for c in chunks]
+    else:
+        segs = [ln.strip() for ln in text.split("\n")]
+    return [s for s in segs if s]
+
+
+def _ffmpeg_extract_last_frame(ffmpeg, video_abs, out_png_abs):
+    """Write the final frame of `video_abs` to `out_png_abs`. `-sseof -1` seeks
+    one second before EOF and `-update 1 -frames:v 1` keeps overwriting a single
+    image so we land on the very last decoded frame. Falls back to a duration
+    seek when EOF-relative seeking yields nothing (some muxers don't support
+    it)."""
+    subprocess.run(
+        [ffmpeg, "-y", "-sseof", "-1", "-i", video_abs,
+         "-update", "1", "-frames:v", "1", out_png_abs],
+        capture_output=True, timeout=120, check=False)
+    if os.path.isfile(out_png_abs) and os.path.getsize(out_png_abs) > 0:
+        return
+    # Fallback: probe the duration, then seek to just before the end.
+    dur = _ffprobe_duration(video_abs)
+    if dur and dur > 0.1:
+        subprocess.run(
+            [ffmpeg, "-y", "-ss", f"{max(0.0, dur - 0.1):.3f}", "-i", video_abs,
+             "-update", "1", "-frames:v", "1", out_png_abs],
+            capture_output=True, timeout=120, check=False)
+
+
+def _ffprobe_duration(video_abs):
+    """Return the container duration in seconds, or None if ffprobe is missing /
+    fails."""
+    probe = _ffprobe_bin()
+    if not (os.path.isfile(probe) or shutil.which("ffprobe")):
+        return None
+    try:
+        r = subprocess.run(
+            [probe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", video_abs],
+            capture_output=True, text=True, timeout=60, check=False)
+        return float((r.stdout or "").strip())
+    except Exception:
+        return None
+
+
+def _ffprobe_has_audio(video_abs):
+    """True only if the clip carries at least one audio stream."""
+    probe = _ffprobe_bin()
+    if not (os.path.isfile(probe) or shutil.which("ffprobe")):
+        return False
+    try:
+        r = subprocess.run(
+            [probe, "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=index",
+             "-of", "default=noprint_wrappers=1:nokey=1", video_abs],
+            capture_output=True, text=True, timeout=60, check=False)
+        return bool((r.stdout or "").strip())
+    except Exception:
+        return False
+
+
+def _ffmpeg_concat_videos(ffmpeg, clip_paths, out_abs):
+    """Concatenate clips into one mp4 via the concat filter (re-encode), which
+    tolerates the minor timestamp / param drift you get across separately
+    rendered clips. Audio is carried through only when EVERY clip has an audio
+    stream (mixed presence makes the filter error); otherwise the result is
+    video-only."""
+    n = len(clip_paths)
+    have_audio = n > 0 and all(_ffprobe_has_audio(p) for p in clip_paths)
+    args = [ffmpeg, "-y"]
+    for p in clip_paths:
+        args += ["-i", p]
+    pieces = ""
+    for i in range(n):
+        pieces += f"[{i}:v]"
+        if have_audio:
+            pieces += f"[{i}:a]"
+    if have_audio:
+        flt = f"{pieces}concat=n={n}:v=1:a=1[outv][outa]"
+        args += ["-filter_complex", flt, "-map", "[outv]", "-map", "[outa]"]
+    else:
+        flt = f"{pieces}concat=n={n}:v=1:a=0[outv]"
+        args += ["-filter_complex", flt, "-map", "[outv]"]
+    args += ["-pix_fmt", "yuv420p", "-movflags", "+faststart", out_abs]
+    r = subprocess.run(args, capture_output=True, timeout=600, check=False)
+    if not (os.path.isfile(out_abs) and os.path.getsize(out_abs) > 0):
+        err = (r.stderr or b"").decode("utf-8", "replace")[-500:]
+        raise RuntimeError(f"ffmpeg concat failed: {err}")
+
+
+def _chain_one_segment(api_key, provider, model, aspect, seg_prompt, options, start_uri):
+    """Render ONE clip whose motion starts from `start_uri` (a data URI). Routes
+    to the same renderer the plain `video-gen` skill uses for this provider."""
+    opts = dict(options or {})
+    if provider == "higgsfield":
+        opts["start_image_url"] = start_uri
+        return _higgsfield_generate_video(api_key, seg_prompt, model, aspect, opts)
+    # fal image-to-video: the renderer forwards options.image_url to fal.
+    opts["image_url"] = start_uri
+    return _fal_generate_video(api_key, seg_prompt, model, aspect, opts)
+
+
+def _video_chain_generate(api_key, provider, model, aspect, prompt, options, start_uri):
+    """Generate each segment with last-frame→next-start handoff, then concat the
+    clips into one mp4. Returns the stitched mp4 bytes. `start_uri` is the data
+    URI of the wired start frame for the FIRST clip."""
+    if not start_uri:
+        raise RuntimeError(
+            "video-chain needs a start frame - wire an image into the node's "
+            "asset input (it becomes the first clip's opening frame)")
+    if not _ffmpeg_have():
+        raise RuntimeError(
+            "video-chain needs ffmpeg on PATH for frame extraction + concat "
+            "(install with `brew install ffmpeg`)")
+    ffmpeg = _ffmpeg_bin()
+    segs = _parse_chain_segments(prompt)
+    if not segs:
+        raise RuntimeError(
+            "video-chain needs at least one segment prompt - put one shot per "
+            "line in the prompt box (or separate multi-line shots with a `---`)")
+    if len(segs) > _CHAIN_MAX_SEGMENTS:
+        raise RuntimeError(
+            f"video-chain is capped at {_CHAIN_MAX_SEGMENTS} segments "
+            f"(got {len(segs)}); split into separate chains")
+
+    with tempfile.TemporaryDirectory(prefix="woven-chain-") as td:
+        clip_paths = []
+        cur_start = start_uri
+        for i, seg in enumerate(segs):
+            print(f"[video-chain] segment {i + 1}/{len(segs)}: {seg[:60]!r}", flush=True)
+            clip_bytes = _chain_one_segment(
+                api_key, provider, model, aspect, seg, options, cur_start)
+            cp = os.path.join(td, f"clip{i:02d}.mp4")
+            with open(cp, "wb") as f:
+                f.write(clip_bytes)
+            clip_paths.append(cp)
+            # Hand the last frame forward as the next clip's opening frame.
+            if i < len(segs) - 1:
+                fp = os.path.join(td, f"frame{i:02d}.png")
+                _ffmpeg_extract_last_frame(ffmpeg, cp, fp)
+                if not (os.path.isfile(fp) and os.path.getsize(fp) > 0):
+                    raise RuntimeError(
+                        f"video-chain: could not extract the last frame of "
+                        f"segment {i + 1} for handoff")
+                cur_start = _file_to_data_uri(fp)
+        if len(clip_paths) == 1:
+            with open(clip_paths[0], "rb") as f:
+                return f.read()
+        out = os.path.join(td, "chain.mp4")
+        _ffmpeg_concat_videos(ffmpeg, clip_paths, out)
+        with open(out, "rb") as f:
+            return f.read()
+
+
 def _fal_transform_image(api_key, model, input_abs_path, options, input_data_uri=None):
     """fal.ai image-in / image-out endpoints (rembg, upscale, etc.). Accepts
     either a local file path (encoded server-side) or a pre-built data URI
@@ -1492,6 +1681,12 @@ _GENERATE_DISPATCH = {
     # Higgsfield DoP image→video (async submit+poll). Accepts a start frame
     # (required) + an optional end frame; see _higgsfield_generate_video.
     ("video-gen",      "higgsfield"): "higgsfield_video",
+    # Video chain - start frame + N segment prompts → N image→video clips with
+    # last-frame→next-start handoff, ffmpeg-concatenated into ONE mp4. Runs on
+    # whichever i2v provider the chosen model belongs to (Higgsfield DoP default,
+    # or any fal image-to-video model). See _video_chain_generate.
+    ("video-chain",    "higgsfield"): "video_chain",
+    ("video-chain",    "fal"):        "video_chain",
     # v3.5 - 3D model generation via fal (triposr, hyper3d-rodin,
     # hunyuan3d-v2 family etc.). Bytes are a .glb / .gltf file. Without
     # this entry the orchestrator's 3D drawer got `no renderer for
@@ -12715,10 +12910,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             raw_uri = body.get("input_data_uri")
             in_path = (body.get("input_path") or "").strip()
             if raw_uri or in_path:
-                # Higgsfield DoP video is image→video: an input frame IS the
-                # start frame, so it's allowed here (resolved to options.image_url
-                # in the dispatch branch below).
-                _hf_video = (provider == "higgsfield" and skill == "video-gen")
+                # Higgsfield DoP video + the video-chain skill are image→video:
+                # an input frame IS the (first clip's) start frame, so it's
+                # allowed here (resolved to a start-frame data URI in the
+                # dispatch branch below).
+                _hf_video = (
+                    skill == "video-chain"
+                    or (provider == "higgsfield" and skill == "video-gen"))
                 if not _hf_video and (provider != "openai" or not (model or "").startswith("gpt-image")):
                     return self._reply(400, {
                         "error":
@@ -12823,6 +13021,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                         elif input_abs:
                             hf_opts["image_url"] = _file_to_data_uri(input_abs)
                     bytes_ = _higgsfield_generate_video(api_key, prompt, model, aspect, hf_opts)
+                elif skill == "video-chain" and provider in ("higgsfield", "fal"):
+                    # Chain N segment prompts (one per line, or `---`-separated)
+                    # into one stitched mp4. The wired image is the first clip's
+                    # start frame; each clip's last frame seeds the next.
+                    start_uri = input_data_uri or (
+                        _file_to_data_uri(input_abs) if input_abs else None)
+                    bytes_ = _video_chain_generate(
+                        api_key, provider, model, aspect, prompt, options, start_uri)
                 elif provider == "fal" and skill == "3d-gen":
                     # v3.5 - 3D model generation. Bytes are .glb / .gltf.
                     # Long timeout (up to 10min for some models).

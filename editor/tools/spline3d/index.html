@@ -241,6 +241,15 @@
       </details>
 
       <details class="wv-acc" open>
+        <summary>PBR maps <span class="tag">normal · rough · metal · AO · height</span></summary>
+        <div class="wv-acc-body">
+        <div id="pbr-maps"></div>
+        <input type="file" id="pbr-file" accept="image/*" style="display:none"/>
+        <div class="empty" style="padding:6px 4px;font-size:11px">Drop a real PBR stack onto the selected surface (or a Meshy-imported model) - layered over the colour texture above. Roughness &amp; metalness maps set their slider to full so the map drives the channel. Maps share the Repeat above.</div>
+        </div>
+      </details>
+
+      <details class="wv-acc" open>
         <summary>Live blob <span class="tag">smooth · editable</span></summary>
         <div class="wv-acc-body">
         <div class="row"><button class="btn on full" id="b-liveblob"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><circle cx="12" cy="12" r="8"/></svg>Live blob from selected</button></div>
@@ -1432,7 +1441,11 @@ $('#t-pattern').addEventListener('change', e => {
     const t = procTexture(e.target.value); t.repeat.set(rep, rep); applyTexture(s, t);
   });
 });
-$('#t-repeat').addEventListener('input', e => { const r = parseInt(e.target.value); $('#t-repeat-v').textContent = r; selection.forEach(s => { if (s.material.map) { s.material.map.repeat.set(r, r); s.material.map.needsUpdate = true; } }); });
+$('#t-repeat').addEventListener('input', e => {
+  const r = parseInt(e.target.value); $('#t-repeat-v').textContent = r;
+  const keys = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'bumpMap', 'emissiveMap'];
+  selection.forEach(s => keys.forEach(k => { const t = s.material && s.material[k]; if (t && t.repeat) { t.repeat.set(r, r); t.needsUpdate = true; } }));
+});
 $('#t-image').addEventListener('click', () => $('#t-file').click());
 $('#t-file').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
@@ -1443,6 +1456,63 @@ $('#t-file').addEventListener('change', e => {
     selection.forEach(s => applyTexture(s, tex)); flash('Image texture applied');
   });
   r.readAsDataURL(f); e.target.value = '';
+});
+
+// ── PBR map channels (per-channel image uploads) ───────────────────────────
+// Beyond the albedo `map` above, drop a real PBR stack onto the selected
+// surface (or a Meshy-imported model): normal / roughness / metalness / AO /
+// height. Uploaded as data-URL textures at runtime, the same way the albedo
+// upload works (runtime-only, not serialized). `after` runs on apply. AO needs
+// a 2nd UV set; we mirror uv -> uv2 on demand. (No emissive channel: the
+// selection outline reuses material.emissive, so an emissive map would be
+// stomped on the next select/deselect.)
+const PBR_MAPS = [
+  { key:'normalMap',    label:'Normal',            srgb:false, after:m=>{ if (m.normalScale) m.normalScale.set(1, 1); } },
+  { key:'roughnessMap', label:'Roughness',         srgb:false, after:m=>{ m.roughness = 1; } },
+  { key:'metalnessMap', label:'Metalness',         srgb:false, after:m=>{ m.metalness = 1; } },
+  { key:'aoMap',        label:'Ambient occlusion', srgb:false, needsUV2:true, after:m=>{ m.aoMapIntensity = 1; } },
+  { key:'bumpMap',      label:'Height',            srgb:false, after:m=>{ m.bumpScale = 0.05; } },
+];
+function ensureUV2(geo) { if (geo && geo.attributes && geo.attributes.uv && !geo.attributes.uv2) geo.setAttribute('uv2', geo.attributes.uv.clone()); }
+let pbrTarget = null;   // channel key the hidden file input is loading for
+function applyPBRMap(channel, tex) {
+  const cfg = PBR_MAPS.find(c => c.key === channel); if (!cfg) return;
+  selection.forEach(s => {
+    const m = s.material; if (!m || !(channel in m)) return;
+    if (tex && cfg.needsUV2) ensureUV2(s.geometry);
+    m[channel] = tex || null;
+    if (tex && cfg.after) cfg.after(m);
+    m.needsUpdate = true;
+  });
+}
+(function buildPBRMapRows() {
+  const wrap = $('#pbr-maps'); if (!wrap) return;
+  PBR_MAPS.forEach(cfg => {
+    const row = document.createElement('div'); row.className = 'field'; row.style.alignItems = 'center';
+    const lab = document.createElement('label'); lab.textContent = cfg.label;
+    const thumb = document.createElement('div'); thumb.className = 'swatch'; thumb.dataset.k = cfg.key;
+    thumb.style.cssText = 'width:22px;height:22px;border-radius:5px;flex:0 0 auto;background:rgba(255,255,255,.06)';
+    const btn = document.createElement('button'); btn.className = 'btn ghost'; btn.textContent = 'Upload'; btn.style.flex = '1';
+    const clr = document.createElement('button'); clr.className = 'btn ghost'; clr.dataset.clr = '1'; clr.textContent = '×';
+    clr.title = 'Remove map'; clr.style.cssText = 'flex:0 0 auto;padding:0 9px;display:none';
+    btn.addEventListener('click', () => { if (!selection.length) { flash('Select an object first'); return; } pbrTarget = cfg.key; $('#pbr-file').click(); });
+    clr.addEventListener('click', () => { if (!selection.length) return; applyPBRMap(cfg.key, null); flash(cfg.label + ' map removed'); refresh(); });
+    row.appendChild(lab); row.appendChild(thumb); row.appendChild(btn); row.appendChild(clr);
+    wrap.appendChild(row);
+  });
+})();
+$('#pbr-file').addEventListener('change', e => {
+  const f = e.target.files[0], channel = pbrTarget; e.target.value = ''; if (!f || !channel) return;
+  const cfg = PBR_MAPS.find(c => c.key === channel);
+  const r = new FileReader();
+  r.onload = () => new THREE.TextureLoader().load(r.result, tex => {
+    tex.colorSpace = cfg.srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    const rep = parseInt($('#t-repeat').value); tex.repeat.set(rep, rep);
+    tex.userData = { src: r.result };
+    applyPBRMap(channel, tex); refresh(); flash(cfg.label + ' map applied');
+  });
+  r.readAsDataURL(f);
 });
 
 // Simulation
@@ -1576,6 +1646,12 @@ function refresh() {
     if (m && m.color) $('#m-color').value = '#' + m.color.getHexString();
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
     if (m) { set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5); }
+    // Sync PBR map slots (thumbnail + clear) to the selected material.
+    document.querySelectorAll('#pbr-maps [data-k]').forEach(thumb => {
+      const tex = m && m[thumb.dataset.k], src = tex && tex.userData && tex.userData.src;
+      thumb.style.background = src ? 'center/cover url("' + src + '")' : (tex ? '#6c7bff' : 'rgba(255,255,255,.06)');
+      const clr = thumb.parentElement.querySelector('[data-clr]'); if (clr) clr.style.display = tex ? 'inline-block' : 'none';
+    });
     $('#fur-toggle').classList.toggle('on', !!s.userData.fur);
     // Imported-clip controls - for a Meshy/imported glb that carries baked
     // animation clips on the selected object. (The model's own rig + motion is

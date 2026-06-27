@@ -628,6 +628,33 @@
       hasAspect: true,
     },
     {
+      // Video chain - one start frame + a list of segment prompts → one
+      // stitched mp4. Each line in the prompt box is one shot (or separate
+      // multi-line shots with a `---` line); the node renders each shot as an
+      // image→video clip, hands the LAST frame of each clip to the next clip as
+      // its opening frame (seamless continuity), then ffmpeg-concatenates them
+      // server-side into a single video. Because every clip is image→video, the
+      // model list is filtered to i2v-capable models and the wired image input
+      // becomes the first clip's start frame. Default is Higgsfield DoP (the
+      // provider with the cleanest i2v + end-frame story in this codebase); any
+      // fal image-to-video model works too. The whole chain runs in ONE
+      // server-side request, so a long chain can take several minutes.
+      id: "video-chain",
+      label: "Video chain",
+      hint: "start frame + segment prompts (one shot per line) → one stitched .mp4 (last frame of each clip seeds the next - seamless continuity)",
+      glyph: "⇉",
+      pathway: "A",
+      defaultModel: "dop-turbo",
+      provider: "higgsfield",
+      pathwayAFallback: { provider: "higgsfield", model: "dop-turbo", ext: "mp4" },
+      inputs: ["prompt", "asset"],
+      output: "video",
+      hasModelDropdown: true,
+      // image→video each step, so only i2v-capable models qualify.
+      modelsFilter: (m) => m.caps && m.caps.includes("i2v"),
+      hasAspect: true,
+    },
+    {
       // v3.4.40 - Hyperframes-flavored motion piece. The OLD "video-gen"
       // → "Motion (HTML)" intent now authors files using the Hyperframes
       // composition model (https://github.com/heygen-com/hyperframes):
