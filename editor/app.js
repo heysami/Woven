@@ -58717,27 +58717,19 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     return "main";
   }, [allEdges, allNodes]);
 
-  // Per-frame i2i prompt: same subject, EXPLICITLY different articulation per
-  // beat (not just "phase X%", which the model collapses into a zoom pulse).
-  function spritePosePrompt(anim, i, n) {
-    const p = i / Math.max(1, n);                 // 0..1 loop phase
-    const deg = Math.round(p * 360);
-    const bob = Math.sin(p * Math.PI * 2);        // -1..1 vertical bob
-    const vpos = bob > 0.35
-      ? "at the TOP of a small hop - body STRETCHED slightly taller and narrower (squash-and-stretch)"
-      : bob < -0.35
-        ? "at the BOTTOM of the bob - body SQUASHED slightly shorter and wider, weight settled"
-        : "at neutral mid-height, weight shifting";
-    const blink = (i === Math.floor(n / 2)) ? " Eyes are mid-BLINK (closed) on this frame." : " Eyes open.";
-    const beat = ({
-      idle:   `Idle bob, phase ${deg}deg: the character is ${vpos}.${blink} Relaxed limbs, subtle sway - the silhouette must visibly differ from the neighbouring frames, not merely scale up or down.`,
-      walk:   `Walk cycle, phase ${deg}deg: legs in the matching stride (contact / down / passing / lift), opposite arm forward, body bobbing with the step.`,
-      run:    `Run cycle, phase ${deg}deg: exaggerated stride and forward lean, both feet off the ground at the passing phase, arms pumping.`,
-      attack: `Attack, phase ${deg}deg: ${p < 0.4 ? "winding up, weight back" : p < 0.6 ? "the STRIKE - fully extended, leaning in" : "follow-through and recovery"}.`,
-      jump:   `Jump, phase ${deg}deg: ${p < 0.25 ? "crouch / anticipation" : p < 0.5 ? "launch - body stretched upward" : p < 0.75 ? "apex - tucked" : "landing squash"}.`,
-      turn:   `Turn: the character rotated ${deg}deg around its vertical axis (yaw), facing accordingly.`,
-    })[anim] || `Pose at phase ${deg}deg of the loop, clearly distinct from adjacent frames.`;
-    return `This is frame ${i + 1} of ${n} in a SEAMLESSLY LOOPING ${anim} animation (frame ${n} flows back into frame 1). ${beat} The subject MUST stay identical to the reference image - same character, colours, art style, scale and camera framing, centred, full body visible - and sit on a FULLY TRANSPARENT background: no backdrop, no ground, no drop shadow. Output ONE frame only: no grid, no sprite sheet, no text, no border.`;
+  // Single-call sprite-sheet prompt: the model draws the WHOLE cycle at once on
+  // a uniform grid, so the frames are coherent (real movement between them)
+  // rather than N disconnected redraws that collapse into a zoom.
+  function spriteSheetPrompt(anim, n, cols, rows) {
+    const cycle = ({
+      idle:   "a gentle IDLE animation - the character breathing and bobbing, subtle squash-and-stretch, with one blink partway through the loop",
+      walk:   "a side-view WALK cycle - legs and arms swinging through a full stride, body bobbing with each step",
+      run:    "a fast RUN cycle - exaggerated stride, forward lean, arms pumping, airborne at the passing pose",
+      attack: "an ATTACK - wind-up, then the strike fully extended, then follow-through and recovery",
+      jump:   "a JUMP - crouch / anticipation, launch with the body stretched, apex, then landing squash",
+      turn:   "the character TURNING to face a new direction, rotating around its vertical axis",
+    })[anim] || `a smooth looping ${anim} animation`;
+    return `Redraw the character from the reference image as a SPRITE SHEET of ${cycle}. Lay out EXACTLY ${n} frames on a uniform ${cols}x${rows} grid (${cols} columns, ${rows} rows), read left-to-right then top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale in each cell. The ${n} frames must form ONE smooth, seamless loop (the last flows back into the first) with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the reference. FULLY TRANSPARENT background. No gridlines, no borders, no frame numbers, no text.`;
   }
 
   // Run on click - like every other asset generator: redraw each frame from
@@ -58755,30 +58747,41 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       im.onerror = () => rej(new Error("could not load " + url));
       im.src = url;
     });
-    setGen({ phase: "running", step: 0, total: n, error: "" });
+    // One generation draws the whole cycle on a near-square grid (better cell
+    // aspect than a single long row); we then slice that grid into a clean,
+    // uniform horizontal strip so the atlas + preview stay simple.
+    const cols = Math.ceil(Math.sqrt(n));
+    const rows = Math.ceil(n / cols);
+    const aspect = cols > rows ? "3:2" : cols < rows ? "2:3" : "1:1";
+    setGen({ phase: "running", step: 0, total: 1, error: "" });
     try {
-      const framePaths = [];
-      for (let i = 0; i < n; i++) {
-        const out = `source/${branch}/sprites/animated-sprite-${node.id}/frame-${i}.png`;
-        const r = await fetch(apiUrl("/__asset_generate"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
-            output: out, aspect: "1:1", input_path: src,
-            options: { background: "transparent", output_format: "png" },
-            prompt: subjectDirective + "\n\n" + spritePosePrompt(anim, i, n),
-          }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok) throw new Error((j && (j.error || j.hint)) || `frame ${i + 1} failed (HTTP ${r.status})`);
-        framePaths.push(out);
-        setGen({ phase: "running", step: i + 1, total: n, error: "" });
-      }
-      const imgs = await Promise.all(framePaths.map(pp => loadImg(withProjectQuery("/" + pp, "_n=" + Date.now()))));
+      const rawOut = `source/${branch}/sprites/animated-sprite-${node.id}/__sheet_raw.png`;
+      const r = await fetch(apiUrl("/__asset_generate"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
+          output: rawOut, aspect, input_path: src,
+          options: { background: "transparent", output_format: "png", quality: "high" },
+          prompt: subjectDirective + "\n\n" + spriteSheetPrompt(anim, n, cols, rows),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error((j && (j.error || j.hint)) || `sheet generation failed (HTTP ${r.status})`);
+      setGen({ phase: "running", step: 1, total: 1, error: "" });
+      // Slice the generated grid into one clean uniform horizontal strip.
+      const sheetImg = await loadImg(withProjectQuery("/" + rawOut, "_n=" + Date.now()));
+      const gw = sheetImg.naturalWidth || sheetImg.width, gh = sheetImg.naturalHeight || sheetImg.height;
+      const cw = gw / cols, ch = gh / rows;
       const cnv = document.createElement("canvas");
       cnv.width = cell * n; cnv.height = cell;
       const ctx = cnv.getContext("2d");
-      imgs.forEach((im, i) => ctx.drawImage(im, i * cell, 0, cell, cell));
+      for (let i = 0; i < n; i++) {
+        const gc = i % cols, gr = Math.floor(i / cols);
+        const fr = Math.min(cell / cw, cell / ch);   // contain-fit each cell, centred
+        const dw = cw * fr, dh = ch * fr;
+        ctx.drawImage(sheetImg, gc * cw, gr * ch, cw, ch,
+                      i * cell + (cell - dw) / 2, (cell - dh) / 2, dw, dh);
+      }
       const dataUrl = cnv.toDataURL("image/png");
       const sheetPath = `source/${branch}/sprites/animated-sprite-${node.id}.png`;
       const wr = await fetch(apiUrl("/__write_binary"), {
@@ -58806,7 +58809,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       };
       onChange({ sheet: sheetPath, atlas, frameWidth: cell, frameHeight: cell, path: sheetPath, assetKind: "image", frameCount: n });
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [sheetPath] } }));
-      setGen({ phase: "done", step: n, total: n, error: "" });
+      setGen({ phase: "done", step: 1, total: 1, error: "" });
     } catch (e) {
       setGen({ phase: "error", step: 0, total: n, error: (e && e.message) || String(e) });
     }
@@ -58867,7 +58870,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
             onClick=${(e) => { e.stopPropagation(); runGenerate(); }} disabled=${genBusy}
             title="Redraw the source image into a frame cycle and bake a sprite sheet (i2i, subject-preserving)">
             ${genBusy
-              ? html`<span className="workflow-node-skill-spinner"/><span>Generating ${gen.step}/${gen.total}…</span>`
+              ? html`<span className="workflow-node-skill-spinner"/><span>${gen.step ? "Packing frames…" : "Generating sheet…"}</span>`
               : gen.phase === "done" ? "Regenerate ↺"
               : gen.phase === "error" ? "Retry"
               : html`<${React.Fragment}><${Icon.Play}/> Generate frames<//>`}
