@@ -58960,7 +58960,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
            style=${{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px", overflow: "auto", height: "calc(100% - 30px)" }}>
         <div style=${{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: dispH + 8 + "px", background: "repeating-conic-gradient(#0000000d 0% 25%, transparent 0% 50%) 50% / 16px 16px", borderRadius: "6px", overflow: "hidden" }}>
           ${sheetReady
-            ? html`<div style=${previewStyle}/>`
+            ? html`<div key=${sheetVer + "-" + fps + "-" + frameCount + "-" + (node.loop !== false)} style=${previewStyle}/>`
             : sourcePath
               ? html`<img src=${withProjectQuery("/" + sourcePath)} alt="source" style=${{ maxWidth: availW + "px", maxHeight: "120px", objectFit: "contain", opacity: 0.85 }}/>`
               : html`<div style=${{ fontSize: "11px", opacity: 0.55, textAlign: "center", padding: "12px" }}>Wire a raster image into the input port</div>`}
@@ -59015,11 +59015,14 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
                      style=${{ font: "inherit", padding: "2px 4px", width: "100%" }}/>
             </div>
             ${[["offX", "Offset X"], ["offY", "Offset Y"], ["gutX", "Gutter X"], ["gutY", "Gutter Y"]].map(([k, lab]) => html`
-              <label key=${k} style=${{ display: "grid", gridTemplateColumns: "58px 1fr", gap: "6px", alignItems: "center", fontSize: "11px" }}>
+              <div key=${k} style=${{ display: "grid", gridTemplateColumns: "58px 1fr 64px", gap: "6px", alignItems: "center", fontSize: "11px" }}>
                 <span style=${{ opacity: 0.7 }}>${lab}</span>
-                <input type="range" min="0" max="0.15" step="0.005" value=${grid[k] || 0} onMouseDown=${(e) => e.stopPropagation()}
+                <input type="range" min="0" max="0.25" step="0.001" value=${grid[k] || 0} onMouseDown=${(e) => e.stopPropagation()}
                        onInput=${(e) => adjustGrid({ [k]: parseFloat(e.target.value) })}/>
-              </label>`)}
+                <input type="number" min="0" max="0.5" step="0.001" value=${Number((grid[k] || 0).toFixed(3))} onMouseDown=${(e) => e.stopPropagation()}
+                       onInput=${(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) adjustGrid({ [k]: Math.max(0, Math.min(0.5, v)) }); }}
+                       style=${{ font: "inherit", padding: "2px 4px", width: "100%" }}/>
+              </div>`)}
           </div>`}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in"
