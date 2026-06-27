@@ -45521,37 +45521,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
         </div>
       </div>
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Character poses</div>
-        <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "skill", skill: "pose-subject", model: "gpt-image-2", aspect: "1:1" }));
-            }}
-            title="Drag onto canvas - Pose / restyle set. Wire a subject image (character / object) into the input, tick which angles / expressions / poses you want, and Generate once - it batch-generates the whole set (identity-preserving image-to-image) and auto-links a Pose viewer to browse them."
-          >
-            <span className="workflow-library-item-glyph">⟳</span>
-            <span className="workflow-library-item-label">Pose / restyle set</span>
-            <span className="workflow-library-item-id">subject → pose set</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "pose-viewer" }));
-            }}
-            title="Drag onto canvas - Pose viewer. Wire a Pose / restyle set generator's output into the input port. Shows ONE selected pose large; select the node to reveal a floating side panel that switches between the generated poses instantly (or regenerates a single one). The output carries the currently-selected pose."
-          >
-            <span className="workflow-library-item-glyph">⊡</span>
-            <span className="workflow-library-item-label">Pose viewer</span>
-            <span className="workflow-library-item-id">pose set → one pose</span>
-          </div>
-        </div>
-      </div>
-      <div className="workflow-library-section">
         <div className="workflow-library-section-head">Iterator</div>
         <div className="workflow-library-list">
           <div className="workflow-library-item"
@@ -45947,6 +45916,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">◳</span>
             <span className="workflow-library-item-label">Animated sprite</span>
             <span className="workflow-library-item-id">image → sprite sheet</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "skill", skill: "pose-subject", model: "gpt-image-2", aspect: "1:1" }));
+            }}
+            title="Drag onto canvas - Pose / restyle set. Wire a subject image (character / object) into the input, tick which angles / expressions / poses you want, and Generate once - it batch-generates the whole set (identity-preserving image-to-image) and auto-links a Pose viewer to browse them."
+          >
+            <span className="workflow-library-item-glyph">⟳</span>
+            <span className="workflow-library-item-label">Pose / restyle set</span>
+            <span className="workflow-library-item-id">subject → pose set</span>
           </div>
         </div>
         <div className="workflow-library-section-head">Building blocks</div>
@@ -73273,6 +73255,10 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
       if (first) onChange({ activePose: first, path: acc[first].path, assetKind: "image" });
     }
     setBusy(null);
+    // Surface the freshly-written pose PNGs in the Library → Assets panel (they
+    // live under source/main/images, which /__assets scans). Without this nudge
+    // the panel only reloads on a full Run, so generated poses look "missing".
+    try { window.dispatchEvent(new Event("th:asset-refresh")); } catch (_e) {}
   };
 
   const selectPose = async (id) => {
@@ -73478,6 +73464,7 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
     // 3) push to any OTHER wired downstream assets too.
     await pushDownstream(fr.path);
     onChange({ viewPose: id, path: poseAssetPath, assetKind: "image" });
+    try { window.dispatchEvent(new Event("th:asset-refresh")); } catch (_e) {}
   };
 
   const regen = async (id) => {
@@ -73498,6 +73485,7 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
       if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
       onChange({ viewBump: { ...(node.viewBump || {}), [id]: Date.now() } });
       if (id === active) await pushDownstream(out);
+      try { window.dispatchEvent(new Event("th:asset-refresh")); } catch (_e) {}
     } catch (e) { setErr((e && e.message) ? e.message : String(e)); }
     finally { setBusy(b => { const n2 = { ...b }; delete n2[id]; return n2; }); }
   };
