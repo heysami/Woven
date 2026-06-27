@@ -9859,28 +9859,31 @@ function SubagentPanel({ agent, runTitle }) {
   `;
 }
 
-/* ShareModeToggle - the per-share link-mode control. Two independent-looking
-   switches (Stable link / Randomised URL) instead of a hard either/or segmented
-   pick. Backed by ONE tunnel, so exactly one mode is active at a time: turning
-   the inactive switch on activates that mode (the other then reads off). The
-   Stable switch only appears when the Woven broker is configured. */
-function ShareModeToggle({ mode, wovenAvail, busy, onPick }) {
-  const isStable = mode === "woven";
-  const sw = (on, label, tip, target) => html`
+/* ShareModeToggle - the per-share link controls. Two genuinely INDEPENDENT
+   switches: Stable link (woven) and Randomised URL (quick). Either, both, or
+   (via Stop) neither can be on - both URLs are served at once when both are on.
+   The only constraint: you can't switch the LAST one off here (that would stop
+   sharing - use Stop for that), so the share always keeps at least one link
+   while published. The Stable switch only appears when the Woven broker is
+   configured. onToggle(which, on) where which is "quick" | "woven". */
+function ShareModeToggle({ quickOn, wovenOn, wovenAvail, busy, onToggle }) {
+  const sw = (on, label, tip, which, canOff) => html`
     <button type="button" className=${"share-switch" + (on ? " is-on" : "")}
       role="switch" aria-checked=${on ? "true" : "false"}
-      disabled=${busy || on}
+      disabled=${busy || (on && !canOff)}
       title=${tip}
-      onClick=${() => { if (!on) onPick(target); }}>
+      onClick=${() => { if (!on || canOff) onToggle(which, !on); }}>
       <span className="share-switch-track"><span className="share-switch-knob"/></span>
       <span className="share-switch-label">${label}</span>
     </button>`;
   return html`
     <div className="share-mode-switches">
-      ${wovenAvail && sw(isStable, "Stable link",
-        "Stable link - a permanent getwoven.design URL that survives daemon restarts", "woven")}
-      ${sw(!isStable, "Randomised URL",
-        "Randomised link - a random trycloudflare.com URL that changes on every restart", "quick")}
+      ${wovenAvail && sw(wovenOn, "Stable link",
+        "Stable link - a permanent getwoven.design URL that survives daemon restarts",
+        "woven", quickOn /* can turn off only while the randomised link stays on */)}
+      ${sw(quickOn, "Randomised URL",
+        "Randomised link - a random trycloudflare.com URL that changes on every restart",
+        "quick", wovenOn /* can turn off only while the stable link stays on */)}
     </div>`;
 }
 
@@ -10149,9 +10152,11 @@ function ShareMenuButton() {
             <${running ? Icon.Stop : Icon.Play}/>
           </button>
         </div>
-        <${ShareModeToggle} mode=${s.mode} wovenAvail=${wovenAvail} busy=${isBusy}
-          onPick=${(mode) => tunnelOp(s.id, "update", { mode })}/>
-        ${s.shareUrl ? linkRow(s.id, s.shareUrl) : html`<div className="th-live-hint">Start the tunnel to get a link.</div>`}
+        <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} wovenAvail=${wovenAvail} busy=${isBusy}
+          onToggle=${(which, on) => tunnelOp(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
+        ${s.wovenUrl && linkRow(s.id + ":w", s.wovenUrl)}
+        ${s.quickUrl && linkRow(s.id + ":q", s.quickUrl)}
+        ${!s.wovenUrl && !s.quickUrl && html`<div className="th-live-hint">Start a link to get a public URL.</div>`}
       </div>`;
   };
 
@@ -21610,8 +21615,8 @@ function SharesLanding({ onCountChange }) {
                 <${Icon.Comment}/> ${cc.open || 0}<span className="shares-row-comments-total">/${cc.total || 0}</span>
               </div>
               <div className="shares-row-actions">
-                <${ShareModeToggle} mode=${s.mode} wovenAvail=${wovenAvail} busy=${isBusy}
-                  onPick=${(mode) => op(s.id, "update", { mode })}/>
+                <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} wovenAvail=${wovenAvail} busy=${isBusy}
+                  onToggle=${(which, on) => op(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
                 ${s.status === "running" || s.status === "starting"
                   ? html`<button className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "stop")} title="Stop the tunnel - the public URL goes dark">Stop</button>`
@@ -51729,8 +51734,8 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
               ? html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("stop")}>Stop</button>`
               : html`<button className="shares-btn shares-btn-primary" disabled=${shareBusy || !cloudflared} onClick=${() => shareOp("start")}>Start</button>`}
           </div>
-          <${ShareModeToggle} key="mode" mode=${share.mode} wovenAvail=${wovenAvail} busy=${shareBusy}
-            onPick=${(mode) => shareOp("update", { mode })}/>
+          <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} wovenAvail=${wovenAvail} busy=${shareBusy}
+            onToggle=${(which, on) => shareOp("update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
           ${share.shareUrl && html`
             <div key="surl" className="workflow-comments-share-url">
               <code title=${share.shareUrl}>${share.shareUrl}</code>

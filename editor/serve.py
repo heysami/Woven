@@ -16469,9 +16469,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                 patch["label"] = body["label"].strip()[:120]
             if patch:
                 _shares.share_update(share_id, patch)
-            # Switching quick <-> woven may provision + restart the tunnel, so
-            # it can fail (broker/cloudflared) - surface that.
-            if isinstance(body, dict) and body.get("mode") in ("quick", "woven"):
+            # Toggling the stable / randomised links independently (a share can
+            # carry BOTH). Provisioning/spawning a tunnel can fail - surface it.
+            if isinstance(body, dict) and ("quickOn" in body or "wovenOn" in body):
+                try:
+                    _shares.set_modes(
+                        share_id,
+                        quick=(bool(body["quickOn"]) if "quickOn" in body else None),
+                        woven=(bool(body["wovenOn"]) if "wovenOn" in body else None),
+                    )
+                except Exception as e:
+                    return self._reply(500, {"error": str(e)})
+            # Legacy single-mode switch (kept for older clients).
+            elif isinstance(body, dict) and body.get("mode") in ("quick", "woven"):
                 try:
                     _shares.share_set_mode(share_id, body["mode"])
                 except Exception as e:

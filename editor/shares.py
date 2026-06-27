@@ -177,11 +177,15 @@ def share_create(project, prototype, label=None, email_gate=False):
             "prototype":  prototype,
             "label":      (label or "").strip() or f"{project} / {prototype}",
             "emailGate":  bool(email_gate),
-            # New shares default to the stable (woven) URL when a broker is
-            # configured; fall back to quick if it isn't. Existing records with no
-            # `mode` field stay quick (share_mode()), so this never silently
-            # migrates a live share.
+            # A share can expose a stable (woven) link, a randomised (quick)
+            # link, or BOTH at once - they are independent intents (quickOn /
+            # wovenOn). New shares default to the stable link when a broker is
+            # configured, else the randomised one. `mode` is kept as a derived
+            # back-compat hint; share_modes() is the source of truth and migrates
+            # legacy records (no quickOn/wovenOn) from `mode` + `active`.
             "mode":       ("woven" if WOVEN_BROKER_URL else "quick"),
+            "quickOn":    (not WOVEN_BROKER_URL),
+            "wovenOn":    bool(WOVEN_BROKER_URL),
             "active":     False,
             "createdAt":  _now_iso(),
             "lastUrl":    "",
@@ -331,24 +335,16 @@ def _tunnel_reader(t):
         print(f"[share] tunnel for {t.share_id} failed: {t.error}", flush=True)
 
 
-def tunnel_start(share_id):
-    """Spawn a quick tunnel for the share, pointing at the gate port.
-    Idempotent: an already-live tunnel is returned as-is. Marks the share
-    active (user intent persists across daemon restarts)."""
+def _quick_start(share_id):
+    """Spawn (or reuse) the per-share quick cloudflared tunnel → gate port."""
     if GATE_PORT is None:
         raise RuntimeError("share gate server not started")
-    rec = share_get(share_id)
-    if rec is None:
-        raise ValueError(f"unknown share: {share_id}")
-    if share_mode(rec) == "woven":
-        return _woven_share_start(share_id)
     binary = find_cloudflared()
     if not binary:
         raise RuntimeError("cloudflared not found - install it (macOS: brew install cloudflared)")
     with _TUNNELS_LOCK:
         t = TUNNELS.get(share_id)
         if t and t.proc.poll() is None:
-            share_update(share_id, {"active": True})
             return t
         proc = subprocess.Popen(
             [binary, "tunnel", "--url", f"http://127.0.0.1:{GATE_PORT}",
@@ -362,86 +358,152 @@ def tunnel_start(share_id):
         TUNNELS[share_id] = t
     threading.Thread(target=_tunnel_reader, args=(t,), daemon=True,
                      name=f"share-tunnel-{share_id}").start()
-    share_update(share_id, {"active": True})
-    print(f"[share] tunnel starting for {share_id} (pid {proc.pid}) → gate :{GATE_PORT}", flush=True)
+    print(f"[share] quick tunnel starting for {share_id} (pid {proc.pid}) → gate :{GATE_PORT}", flush=True)
     return t
 
 
-def tunnel_stop(share_id, *, keep_intent=False):
-    """SIGTERM the share's tunnel. keep_intent=True leaves `active` as-is
-    (used during shutdown so boot-time restore re-opens user-wanted
-    tunnels); the normal Stop button clears it."""
-    rec = share_get(share_id)
-    if rec is not None and share_mode(rec) == "woven":
-        return _woven_share_stop(share_id, keep_intent)
+def _quick_stop(share_id):
+    """SIGTERM the per-share quick tunnel process (if any). Intent-agnostic."""
     with _TUNNELS_LOCK:
         t = TUNNELS.pop(share_id, None)
     if t is not None:
         t.stopping = True
-        try:
-            t.proc.terminate()
-        except Exception:
-            pass
-        try:
-            t.proc.wait(timeout=3)
+        try: t.proc.terminate()
+        except Exception: pass
+        try: t.proc.wait(timeout=3)
         except Exception:
             try: t.proc.kill()
             except Exception: pass
-    if not keep_intent:
-        share_update(share_id, {"active": False})
     return t is not None
+
+
+def _persist_modes(share_id, quick, woven):
+    """Write the two independent intents (plus derived back-compat fields)."""
+    share_update(share_id, {
+        "quickOn": bool(quick),
+        "wovenOn": bool(woven),
+        "active":  bool(quick or woven),          # derived: any link wanted
+        "mode":    ("woven" if woven else "quick"),  # legacy hint only
+    })
+
+
+def set_modes(share_id, *, quick=None, woven=None):
+    """Set the share's two link intents independently (None = leave unchanged),
+    then reconcile the running tunnels to match. Either, both, or neither may be
+    on; with neither on the share is effectively stopped. Raises on tunnel
+    failure (cloudflared/broker)."""
+    rec = share_get(share_id)
+    if rec is None:
+        raise ValueError(f"unknown share: {share_id}")
+    cur = share_modes(rec)
+    q = cur["quick"] if quick is None else bool(quick)
+    w = cur["woven"] if woven is None else bool(woven)
+    # Persist intents FIRST so _woven_active_count() reflects the new state when
+    # we decide whether to tear the shared tunnel down.
+    _persist_modes(share_id, q, w)
+    if q:
+        _quick_start(share_id)
+    else:
+        _quick_stop(share_id)
+    if w:
+        _woven_tunnel_start()
+        share_update(share_id, {"lastStartedAt": _now_iso()})
+    elif _woven_active_count() == 0:
+        _woven_tunnel_stop()
+    return share_get(share_id)
+
+
+def tunnel_start(share_id):
+    """One-click publish: start every enabled link, defaulting to one when none
+    is set yet (stable if a broker is configured, else randomised). Idempotent."""
+    rec = share_get(share_id)
+    if rec is None:
+        raise ValueError(f"unknown share: {share_id}")
+    m = share_modes(rec)
+    if not m["quick"] and not m["woven"]:
+        if WOVEN_BROKER_URL: m["woven"] = True
+        else: m["quick"] = True
+    return set_modes(share_id, quick=m["quick"], woven=m["woven"])
+
+
+def tunnel_stop(share_id, *, keep_intent=False):
+    """Stop BOTH links for the share. keep_intent=True leaves the intents as-is
+    (used during shutdown so boot-time restore re-opens user-wanted tunnels);
+    the normal Stop button clears both."""
+    if not keep_intent:
+        _persist_modes(share_id, False, False)
+    stopped = _quick_stop(share_id)
+    # Tear the shared woven tunnel down only when no woven share wants it.
+    if _woven_active_count() == 0:
+        if _woven_tunnel_stop():
+            stopped = True
+    return stopped
 
 
 def stop_all_tunnels():
     with _TUNNELS_LOCK:
         ids = list(TUNNELS.keys())
     for sid in ids:
-        tunnel_stop(sid, keep_intent=True)
+        _quick_stop(sid)
     if ids:
         print(f"[share] stopped {len(ids)} tunnel(s) on shutdown", flush=True)
-    # The shared woven tunnel isn't in TUNNELS - stop it too (keep intent so
+    # The shared woven tunnel isn't in TUNNELS - stop it too (intents persist so
     # active woven shares are restored on next boot).
     if _woven_tunnel_stop():
         print("[share] stopped woven tunnel on shutdown", flush=True)
 
 
 def restore_active_tunnels():
-    """Boot-time: restart tunnels for every share whose `active` intent
-    survived the last daemon. Quick-tunnel URLs WILL differ - the reader
-    thread records prevUrl/lastUrlChangedAt so the UI can flag it."""
+    """Boot-time: restart every link a share still wants (quickOn / wovenOn).
+    Quick-tunnel URLs WILL differ - the reader thread records prevUrl/
+    lastUrlChangedAt so the UI can flag it."""
     if not find_cloudflared():
-        actives = [s for s in shares_load().get("shares", []) if s.get("active")]
+        actives = [s for s in shares_load().get("shares", [])
+                   if share_modes(s)["quick"] or share_modes(s)["woven"]]
         if actives:
-            print(f"[share] {len(actives)} share(s) marked active but cloudflared "
+            print(f"[share] {len(actives)} share(s) want a link but cloudflared "
                   "is not installed - tunnels NOT restored", flush=True)
         return
     for s in shares_load().get("shares", []):
-        if s.get("active"):
+        m = share_modes(s)
+        if m["quick"] or m["woven"]:
             try:
-                tunnel_start(s["id"])
+                set_modes(s["id"], quick=m["quick"], woven=m["woven"])
             except Exception as e:
                 print(f"[share] failed to restore tunnel for {s.get('id')}: {e}", flush=True)
 
 
-def tunnel_status(rec):
-    """Liveness + URL summary for one share record. Status values:
+def _quick_status(rec):
+    """Liveness + URL of the per-share quick tunnel. Status values:
     running / starting / stopped / exited / error / no-cloudflared."""
-    if share_mode(rec) == "woven":
-        return _woven_status(rec)
     with _TUNNELS_LOCK:
         t = TUNNELS.get(rec.get("id"))
     if t is not None and t.proc.poll() is None:
         status = "running" if t.url else "starting"
-        return {"status": status, "url": t.url or "", "pid": t.proc.pid,
-                "error": ""}
+        return {"status": status, "url": t.url or "", "pid": t.proc.pid, "error": ""}
     if t is not None:
-        # Process object still known but dead.
         status = t.state if t.state in ("error", "exited", "stopped") else "stopped"
         return {"status": status, "url": "", "pid": None, "error": t.error or ""}
-    if rec.get("active") and not find_cloudflared():
+    if share_modes(rec)["quick"] and not find_cloudflared():
         return {"status": "no-cloudflared", "url": "", "pid": None,
                 "error": "cloudflared binary not found"}
     return {"status": "stopped", "url": "", "pid": None, "error": ""}
+
+
+def tunnel_status(rec):
+    """Overall liveness for a share, folding both links (running wins). Kept for
+    back-compat; share_summary computes the per-link detail directly."""
+    modes = share_modes(rec)
+    sts = []
+    if modes["quick"]: sts.append(_quick_status(rec))
+    if modes["woven"]: sts.append(_woven_status(rec))
+    if not sts:
+        return {"status": "stopped", "url": "", "pid": None, "error": ""}
+    for want in ("running", "starting"):
+        for s in sts:
+            if s["status"] == want:
+                return s
+    return sts[0]
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -449,8 +511,22 @@ def tunnel_status(rec):
 # ═════════════════════════════════════════════════════════════════════════
 
 def share_mode(rec):
-    """A record's tunnel mode, defaulting to quick for pre-Woven records."""
-    return "woven" if (rec or {}).get("mode") == "woven" else "quick"
+    """A record's primary tunnel mode (back-compat hint). Prefer share_modes()."""
+    m = share_modes(rec)
+    return "woven" if m["woven"] else "quick"
+
+
+def share_modes(rec):
+    """The two independent link intents for a share: {"quick": bool, "woven": bool}.
+    Source of truth = the quickOn/wovenOn fields. Legacy records (written before
+    both-links support) carry only `mode` + `active`, so derive from those."""
+    rec = rec or {}
+    if "quickOn" in rec or "wovenOn" in rec:
+        return {"quick": bool(rec.get("quickOn")), "woven": bool(rec.get("wovenOn"))}
+    active = bool(rec.get("active"))
+    woven = active and rec.get("mode") == "woven"
+    quick = active and rec.get("mode") != "woven"
+    return {"quick": quick, "woven": woven}
 
 
 def woven_install_id():
@@ -695,67 +771,41 @@ def _woven_tunnel_stop():
 
 
 def _woven_active_count():
-    """How many woven shares currently want a tunnel - the shared named tunnel
+    """How many shares currently want the stable link - the shared named tunnel
     runs iff this is > 0."""
     return sum(1 for s in shares_load().get("shares", [])
-               if share_mode(s) == "woven" and s.get("active"))
-
-
-def _woven_share_start(share_id):
-    """Bring up the shared named tunnel (if needed) and mark this woven share
-    active, stamping its base URL so the summary can build the link."""
-    _woven_tunnel_start()
-    base = woven_base_url()
-    share_update(share_id, {"active": True, "lastUrl": base, "lastStartedAt": _now_iso()})
-    with _WOVEN_LOCK:
-        return _WOVEN
-
-
-def _woven_share_stop(share_id, keep_intent):
-    if not keep_intent:
-        share_update(share_id, {"active": False})
-    # Tear the shared tunnel down only when no woven share wants it anymore.
-    if _woven_active_count() == 0:
-        _woven_tunnel_stop()
-    return True
+               if share_modes(s)["woven"])
 
 
 def _woven_status(rec):
-    """tunnel_status() equivalent for a woven share - liveness comes from the
-    single shared tunnel, the URL is this install's stable base."""
-    base = woven_base_url() or (rec.get("lastUrl") or "").strip()
+    """tunnel_status() equivalent for a share's STABLE link - liveness comes from
+    the single shared tunnel, the URL is this install's stable base. Keyed on the
+    woven intent (not the generic active flag) so a quick-only share never reads
+    as having a live stable link."""
+    if not share_modes(rec)["woven"]:
+        return {"status": "stopped", "url": "", "pid": None, "error": ""}
+    base = woven_base_url()
     with _WOVEN_LOCK:
         t = _WOVEN
     alive = t is not None and t.proc.poll() is None
-    if rec.get("active") and alive:
+    if alive:
         status = "running" if t.state == "running" else "starting"
         return {"status": status, "url": base if status == "running" else "",
                 "pid": t.proc.pid, "error": ""}
-    if rec.get("active") and not find_cloudflared():
+    if not find_cloudflared():
         return {"status": "no-cloudflared", "url": "", "pid": None,
                 "error": "cloudflared binary not found"}
-    if rec.get("active") and t is not None and t.state == "error":
+    if t is not None and t.state == "error":
         return {"status": "error", "url": "", "pid": None, "error": t.error or ""}
     return {"status": "stopped", "url": "", "pid": None, "error": ""}
 
 
 def share_set_mode(share_id, mode):
-    """Switch a share between quick and woven. If it is live, restart it in the
-    new mode (the base URL differs, so URL fields are reset)."""
-    mode = "woven" if mode == "woven" else "quick"
-    rec = share_get(share_id)
-    if rec is None:
-        raise ValueError(f"unknown share: {share_id}")
-    if share_mode(rec) == mode:
-        return share_get(share_id)
-    was_active = bool(rec.get("active"))
-    if was_active:
-        tunnel_stop(share_id)          # stop in the OLD mode (clears active intent)
-    share_update(share_id, {"mode": mode, "lastUrl": "", "prevUrl": "",
-                            "lastUrlChangedAt": ""})
-    if was_active:
-        tunnel_start(share_id)         # restart in the NEW mode
-    return share_get(share_id)
+    """Legacy single-mode switch - sets the chosen link on and the other off.
+    Prefer set_modes() for independent control."""
+    if mode == "woven":
+        return set_modes(share_id, quick=False, woven=True)
+    return set_modes(share_id, quick=True, woven=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -1630,22 +1680,39 @@ def start_gate_server(main_port):
 def share_summary(rec):
     """Record + live status + comment counts, ready for the UI."""
     out = dict(rec)
-    out.pop("token", None)   # editor uses shareUrl below; token stays server-side-ish
-    st = tunnel_status(rec)
-    out["status"] = st["status"]
-    out["pid"]    = st["pid"]
-    out["error"]  = st["error"]
-    out["mode"]   = share_mode(rec)
-    url = st["url"] or (rec.get("lastUrl") if st["status"] == "running" else "")
-    # While running, the canonical link is <tunnel-url>/s/<token>/.
-    out["shareUrl"] = (url.rstrip("/") + "/s/" + rec.get("token", "") + "/") if url else ""
-    out["localUrl"] = (f"http://127.0.0.1:{GATE_PORT}/s/{rec.get('token','')}/"
+    token = rec.get("token", "")
+    out.pop("token", None)   # editor uses the *Url fields below; token stays server-side-ish
+    modes = share_modes(rec)
+    qst = _quick_status(rec) if modes["quick"] else {"status": "stopped", "url": "", "pid": None, "error": ""}
+    wst = _woven_status(rec) if modes["woven"] else {"status": "stopped", "url": "", "pid": None, "error": ""}
+
+    def _link(base):
+        return (base.rstrip("/") + "/s/" + token + "/") if base else ""
+
+    out["quickOn"]  = modes["quick"]
+    out["wovenOn"]  = modes["woven"]
+    out["mode"]     = share_mode(rec)   # legacy hint (woven if the stable link is on)
+    # Per-link public URLs - a share can carry BOTH at once.
+    qurl = qst["url"] or (rec.get("lastUrl") if (modes["quick"] and qst["status"] == "running") else "")
+    out["quickUrl"] = _link(qurl)
+    out["wovenUrl"] = _link(wst["url"])
+    # shareUrl stays the single canonical link for back-compat readers; prefer
+    # the stable link when both are live.
+    out["shareUrl"] = out["wovenUrl"] or out["quickUrl"]
+    # Overall status folds both links (running wins, then starting).
+    sts = [s["status"] for s in ([qst] if modes["quick"] else []) + ([wst] if modes["woven"] else [])]
+    out["status"] = ("running" if "running" in sts else
+                     "starting" if "starting" in sts else
+                     (sts[0] if sts else "stopped"))
+    out["pid"]    = qst["pid"] or wst["pid"]
+    out["error"]  = qst["error"] or wst["error"]
+    out["localUrl"] = (f"http://127.0.0.1:{GATE_PORT}/s/{token}/"
                        if GATE_PORT else "")
-    # URL-change detection only makes sense for the randomised (quick) tunnel,
-    # whose *.trycloudflare.com URL is reassigned on every restart. The stable
-    # (woven) link is a fixed getwoven.design URL that never changes, so it must
-    # never raise the "URL changed - resend the link" flag.
-    out["urlChanged"] = (share_mode(rec) != "woven"
+    # URL-change detection only applies to the randomised (quick) link, whose
+    # *.trycloudflare.com URL is reassigned on every restart. The stable (woven)
+    # link is a fixed getwoven.design URL that never changes, so it never raises
+    # the "URL changed - resend the link" flag.
+    out["urlChanged"] = (modes["quick"]
                          and bool(rec.get("prevUrl"))
                          and rec.get("prevUrl") != rec.get("lastUrl"))
     out["hasThumbnail"] = False
