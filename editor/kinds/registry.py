@@ -1492,7 +1492,7 @@ KINDS = {
         "runStatusFlow": ["queued", "done"],
         "completion":   {"requires": []},
         "pauseAfter":   False,
-        "notes": "Raster image -> AI-redrawn frame cycle baked to a sprite-sheet PNG + atlas JSON. Wire a source image into `in`; wire an Agent into `edit` to generate frames.",
+        "notes": "Raster image -> AI-redrawn frame cycle baked to a sprite-sheet PNG + atlas JSON. Wire a source image into `in` and click Generate (i2i, subject-preserving, one call per frame, packed client-side); an Agent can also author it via the `edit` port.",
     },
 
     # ── prototype ─────────────────────────────────────────────────────────

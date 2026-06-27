@@ -58670,6 +58670,104 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
     onChange,
   });
 
+  const [gen, setGen] = useState({ phase: "idle", step: 0, total: 0, error: "" });
+  const genBusy = gen.phase === "running";
+
+  // Assets live under the wired prototype's branch, else "main".
+  const branch = useMemo(() => {
+    for (const e of (allEdges || [])) {
+      const upId = (e.from || "").split(".", 1)[0];
+      const up = (allNodes || []).find(n => n.id === upId);
+      if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
+    }
+    return "main";
+  }, [allEdges, allNodes]);
+
+  // Per-frame i2i prompt: same subject, different beat of the named cycle.
+  function spritePosePrompt(anim, i, n) {
+    const pct = Math.round((i / Math.max(1, n)) * 100);
+    const beat = ({
+      idle:   `a gentle idle breathing / bob, this frame at ${pct}% of the loop`,
+      walk:   `a walk-cycle leg-and-arm pose at ${pct}% of the stride`,
+      run:    `a fast run-cycle pose at ${pct}% of the stride`,
+      attack: `an attack beat (wind-up, strike, recovery) at ${pct}% of the swing`,
+      jump:   `a jump beat (crouch, launch, apex, land) at ${pct}% of the arc`,
+      turn:   `a turn / rotation pose at ${pct}% of the spin`,
+    })[anim] || `a pose at ${pct}% of the loop`;
+    return `Frame ${i + 1} of ${n} of a smooth, seamlessly looping ${anim} animation of the subject in the reference image: ${beat}. Keep the subject's identity, colours, proportions and art style identical to the reference; same scale, centered, full subject in frame, plain transparent background. Output ONE single frame only - no grid, no sprite sheet, no text, no border.`;
+  }
+
+  // Run on click - like every other asset generator. Redraw N frames from the
+  // wired source via i2i (subject-preserving), pack the strip, write the sheet.
+  const runGenerate = useCallback(async () => {
+    const src = node.source || upstreamSource || "";
+    if (!src) { setGen({ phase: "error", step: 0, total: 0, error: "Wire a source image into the input port first." }); return; }
+    const n = Math.max(1, Math.min(64, Number(node.frameCount) || 6));
+    const anim = node.animation || "idle";
+    const subjectDirective = workflowRefModeDirective("subject");
+    const cell = 256;   // packed cell size - keeps the sheet light
+    setGen({ phase: "running", step: 0, total: n, error: "" });
+    const framePaths = [];
+    try {
+      for (let i = 0; i < n; i++) {
+        const out = `source/${branch}/sprites/animated-sprite-${node.id}/frame-${i}.png`;
+        const r = await fetch(apiUrl("/__asset_generate"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            skill: "generate-image", provider: "openai", model: WORKFLOW_I2I_DEFAULT_MODEL,
+            output: out, aspect: "1:1", input_path: src,
+            prompt: subjectDirective + "\n\n" + spritePosePrompt(anim, i, n),
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error((j && (j.error || j.hint)) || `frame ${i + 1} failed (HTTP ${r.status})`);
+        framePaths.push(out);
+        setGen({ phase: "running", step: i + 1, total: n, error: "" });
+      }
+      // Pack the frames left-to-right into one strip.
+      const imgs = await Promise.all(framePaths.map(p => new Promise((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => rej(new Error("could not load " + p));
+        im.src = withProjectQuery("/" + p, "_n=" + Date.now());
+      })));
+      const cnv = document.createElement("canvas");
+      cnv.width = cell * n; cnv.height = cell;
+      const ctx = cnv.getContext("2d");
+      imgs.forEach((im, i) => ctx.drawImage(im, i * cell, 0, cell, cell));
+      const dataUrl = cnv.toDataURL("image/png");
+      const sheetPath = `source/${branch}/sprites/animated-sprite-${node.id}.png`;
+      const wr = await fetch(apiUrl("/__write_binary"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: sheetPath, dataUrl }),
+      });
+      const wj = await wr.json().catch(() => ({}));
+      if (!wr.ok || !wj.ok) throw new Error((wj && wj.error) || "could not write sprite sheet");
+      // TexturePacker/Aseprite-shaped atlas (JSON-array frames).
+      const dur = Math.round(1000 / Math.max(1, Number(node.fps) || 12));
+      const atlas = {
+        frames: framePaths.map((_p, i) => ({
+          filename: `${anim}_${i}`,
+          frame: { x: i * cell, y: 0, w: cell, h: cell },
+          rotated: false, trimmed: false,
+          spriteSourceSize: { x: 0, y: 0, w: cell, h: cell },
+          sourceSize: { w: cell, h: cell }, duration: dur,
+        })),
+        meta: {
+          app: "woven-animated-sprite", image: `animated-sprite-${node.id}.png`,
+          format: "RGBA8888", size: { w: cell * n, h: cell }, scale: "1",
+          fps: Number(node.fps) || 12,
+          frameTags: [{ name: anim, from: 0, to: n - 1, direction: "forward" }],
+        },
+      };
+      onChange({ sheet: sheetPath, atlas, frameWidth: cell, frameHeight: cell, path: sheetPath, assetKind: "image", frameCount: n });
+      window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [sheetPath] } }));
+      setGen({ phase: "done", step: n, total: n, error: "" });
+    } catch (e) {
+      setGen({ phase: "error", step: 0, total: n, error: (e && e.message) || String(e) });
+    }
+  }, [node.id, node.source, node.frameCount, node.fps, node.animation, upstreamSource, branch, onChange]);
+
   const frames = (node.atlas && Array.isArray(node.atlas.frames)) ? node.atlas.frames : [];
   const frameCount = Math.max(1, Number(node.frameCount) || frames.length || 6);
   const fps = Math.max(1, Number(node.fps) || 12);
@@ -58720,7 +58818,17 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
               ? html`<img src=${withProjectQuery("/" + sourcePath)} alt="source" style=${{ maxWidth: availW + "px", maxHeight: "120px", objectFit: "contain", opacity: 0.85 }}/>`
               : html`<div style=${{ fontSize: "11px", opacity: 0.55, textAlign: "center", padding: "12px" }}>Wire a raster image into the input port</div>`}
         </div>
-        ${!sheetReady && sourcePath && html`<div style=${{ fontSize: "10.5px", opacity: 0.55, textAlign: "center" }}>Source ready · wire an Agent into the edit port to generate frames</div>`}
+        ${sourcePath && html`
+          <button className="workflow-node-skill-run" data-status=${gen.phase === "running" ? "loading" : gen.phase}
+            onClick=${(e) => { e.stopPropagation(); runGenerate(); }} disabled=${genBusy}
+            title="Redraw the source image into a frame cycle and bake a sprite sheet (i2i, subject-preserving)">
+            ${genBusy
+              ? html`<span className="workflow-node-skill-spinner"/><span>Generating ${gen.step}/${gen.total}…</span>`
+              : gen.phase === "done" ? "Regenerate ↺"
+              : gen.phase === "error" ? "Retry"
+              : html`<${React.Fragment}><${Icon.Play}/> Generate frames<//>`}
+          </button>`}
+        ${gen.phase === "error" && html`<div className="workflow-node-skill-msg-error" style=${{ fontSize: "10.5px", textAlign: "center" }}>${gen.error}</div>`}
         <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 8px", alignItems: "center", fontSize: "11.5px" }}>
           <label style=${{ opacity: 0.7 }}>Animation</label>
           <select value=${node.animation || "idle"} onChange=${(e) => onChange({ animation: e.target.value })}
