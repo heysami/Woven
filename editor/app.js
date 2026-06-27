@@ -43517,7 +43517,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
-                onBaked=${(bakedPath) => spawnAppNodeOutput(setData, n, bakedPath)}
+                onBaked=${(bakedPath) => spawnAppNodeOutput(setData, n, bakedPath, { htmlFit: "fill" })}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -59020,7 +59020,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
 <style>
   html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
   .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-  .win{aspect-ratio:${FW} / ${FH};width:min(100vw, 100vh * ${FW} / ${FH});max-width:100vw;max-height:100vh;overflow:hidden;position:relative}
+  .win{aspect-ratio:${FW} / ${FH};width:min(100vw, calc(100vh * ${FW} / ${FH}));max-width:100vw;max-height:100vh;overflow:hidden;position:relative}
   .strip{position:absolute;inset:0;width:${n * 100}%;height:100%;
     background:url('${dataUri}') left center / 100% 100% no-repeat;image-rendering:auto;
     animation:${anim}}
@@ -66663,7 +66663,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
 
 // Spawn an asset card wired to .out on first bake (mirrors composer / vector /
 // spline). assetKind derives from the baked file extension. Re-bakes no-op.
-function spawnAppNodeOutput(setData, n, bakedPath) {
+function spawnAppNodeOutput(setData, n, bakedPath, extraProps) {
   const ext = (String(bakedPath).split(".").pop() || "").toLowerCase();
   const assetKind = ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp" ? "image"
     : ext === "svg" ? "svg"
@@ -66674,8 +66674,17 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
     : "image";
   setData(d => {
     const edges = d.edges || [];
-    const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id && (e.from || "").endsWith(".out"));
-    if (hasOut) return d;
+    const outEdge = (d.edges || []).find(e => (e.from || "").split(".", 1)[0] === n.id && (e.from || "").endsWith(".out"));
+    if (outEdge) {
+      // Already wired to a consumer. If the caller passed extra props (the
+      // animated-sprite player needs htmlFit:"fill" so the iframe runs at card
+      // size, not the 1280x800 default), patch the wired asset so a re-bake
+      // fixes it in place; otherwise leave the graph untouched.
+      if (!extraProps) return d;
+      const tgtId = (outEdge.to || "").split(".", 1)[0];
+      return { ...d, nodes: (d.nodes || []).map(nd =>
+        nd.id === tgtId && nd.kind === "asset" ? { ...nd, path: bakedPath, assetKind, ...extraProps } : nd) };
+    }
     const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     const fw = n.w || 720;
     const newAsset = {
@@ -66683,6 +66692,7 @@ function spawnAppNodeOutput(setData, n, bakedPath) {
       x: (n.x || 0) + fw + 60, y: (n.y || 0), w: 360, h: 240,
       path: bakedPath, spawnedBy: n.kind + "-bake-output",
       boundTo: { node: n.id, port: "out" },
+      ...(extraProps || {}),
     };
     return {
       ...d,
