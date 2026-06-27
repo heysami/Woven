@@ -30402,7 +30402,11 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
         // the buttons shift to sit BESIDE the panels instead of being covered.
         document.querySelectorAll(
           '.workflow-asset-controls-panel[data-node-id="' + nodeId + '"], '
-          + '.workflow-asset-inputs-panel[data-node-id="' + nodeId + '"]'
+          + '.workflow-asset-inputs-panel[data-node-id="' + nodeId + '"], '
+          // The Pose viewer's floating switch panel (a child of the node el, so
+          // not caught by the detached-frame widening above which is gated on
+          // data-detached). Keeps the ⊕ button beside it, not under it.
+          + '.pose-viewer-panel[data-node-id="' + nodeId + '"]'
         ).forEach(p => {
           const pr = p.getBoundingClientRect();
           if (pr.width > 0 && pr.height > 0) {
@@ -43472,6 +43476,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => setNodeDragging(true)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSpawnConnected=${(side, item) => spawnConnectedNode(n.id, side, item)}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
               />
@@ -43889,6 +43894,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onRun=${runSkill}
                 onAddOutputAsset=${addOutputAsset}
+                onSpawnConnected=${(side, item) => spawnConnectedNode(n.id, side, item)}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
                 projectId=${activeProjectId()}
@@ -72713,14 +72719,18 @@ const WORKFLOW_POSE_TURN = [
   { id: "90R",  label: "Profile right" },
   { id: "135R", label: "Back-¾ right" },
 ];
+// Rotation phrasing is deliberately FORCEFUL and explicit about degree: gpt-image
+// image-to-image clings to the input composition and under-rotates, so a mild
+// "three-quarter view" comes out near-front. Each phrase states the angle, what
+// the camera sees, and that it must look clearly different from the front view.
 const WORKFLOW_POSE_TURN_PHRASE = {
-  "45L":  "rotated 45 degrees to its left (three-quarter view of its left side)",
-  "90L":  "rotated to a full left profile (side view)",
-  "135L": "rotated 135 degrees away to its left (back three-quarter view)",
-  "180":  "rotated to face directly away from the camera (back view)",
-  "45R":  "rotated 45 degrees to its right (three-quarter view of its right side)",
-  "90R":  "rotated to a full right profile (side view)",
-  "135R": "rotated 135 degrees away to its right (back three-quarter view)",
+  "45L":  "ROTATE the character about 45 degrees to its left into a three-quarter view. Its body and head must be clearly pivoted off-axis - NOT facing the camera straight on - so we see more of one side of the face and body. This must look distinctly different from a front view.",
+  "90L":  "ROTATE the character a full 90 degrees to its left into a COMPLETE SIDE PROFILE. The camera sees it entirely from the side: only one eye, one ear and the side of the body are visible, the face pointing sideways. It must NOT face the camera.",
+  "135L": "ROTATE the character about 135 degrees to its left: it is mostly facing away from the camera, showing its back and only a sliver of one side.",
+  "180":  "ROTATE the character a full 180 degrees to face directly AWAY from the camera: we see the BACK of the character only, with no face visible at all.",
+  "45R":  "ROTATE the character about 45 degrees to its right into a three-quarter view. Its body and head must be clearly pivoted off-axis - NOT facing the camera straight on - so we see more of the other side of the face and body. This must look distinctly different from a front view.",
+  "90R":  "ROTATE the character a full 90 degrees to its right into a COMPLETE SIDE PROFILE. The camera sees it entirely from the side: only one eye, one ear and the side of the body are visible, the face pointing sideways. It must NOT face the camera.",
+  "135R": "ROTATE the character about 135 degrees to its right: it is mostly facing away from the camera, showing its back and only a sliver of one side.",
 };
 const WORKFLOW_POSE_TILT = [
   { id: "",     label: "Tilt: keep" },
@@ -72797,14 +72807,14 @@ function workflowPosePrompt(node) {
 // keys for node.poseSel / node.poseFrames so a generated frame survives reorder.
 const WORKFLOW_POSE_SET_GROUPS = [
   { key: "Angle", items: [
-    { id: "a-front",   label: "Front",        frag: "facing the camera straight on (front view)" },
+    { id: "a-front",   label: "Front",        frag: "facing the camera straight on, a clean front view" },
     { id: "a-ql",      label: "¾ left",       frag: WORKFLOW_POSE_TURN_PHRASE["45L"] },
     { id: "a-pl",      label: "Profile left", frag: WORKFLOW_POSE_TURN_PHRASE["90L"] },
     { id: "a-back",    label: "Back",         frag: WORKFLOW_POSE_TURN_PHRASE["180"] },
     { id: "a-pr",      label: "Profile right",frag: WORKFLOW_POSE_TURN_PHRASE["90R"] },
     { id: "a-qr",      label: "¾ right",      frag: WORKFLOW_POSE_TURN_PHRASE["45R"] },
-    { id: "a-above",   label: "From above",   frag: "viewed from a high angle, the camera looking down on the subject" },
-    { id: "a-below",   label: "From below",   frag: "viewed from a low angle, the camera looking up at the subject" },
+    { id: "a-above",   label: "From above",   frag: "viewed from a clearly HIGH angle, the camera looking down on the character from above (top-down tilt), distinctly not eye-level" },
+    { id: "a-below",   label: "From below",   frag: "viewed from a clearly LOW angle, the camera looking up at the character from below (worm's-eye tilt), distinctly not eye-level" },
   ]},
   { key: "Expression", items: [
     { id: "e-neutral", label: "Neutral",   frag: "a calm, neutral facial expression" },
@@ -72843,12 +72853,18 @@ function workflowPoseItem(id, custom) {
 // "centered, consistent scale" instruction so a generated SET reads as one
 // coherent turnaround/sheet rather than drifting in framing per frame.
 function workflowPosePromptForItem(frag) {
-  const head = "Re-render the EXACT SAME subject shown in the attached reference image, "
-    + "preserving its identity faithfully - the same face, proportions, distinctive features, "
-    + "colours, materials and design. Keep a clean, uncluttered background consistent with the "
-    + "reference, and keep the subject centered at a consistent size and framing.";
-  const body = "Change ONLY this: " + frag + ".";
-  const tail = "Do not invent a different character or object, and change nothing except what is stated above.";
+  // Identity is preserved ("same character") but the orientation/pose is allowed
+  // to change DRAMATICALLY - the previous "keep framing, change ONLY this"
+  // wording fought the rotation and the model under-rotated. Now the change is
+  // the headline and is stated as mandatory + clearly visible.
+  const head = "Re-render the SAME character from the attached reference image - it must stay "
+    + "recognizably the same character: same face design, colours, proportions, costume and art "
+    + "style. You SHOULD change its orientation and pose as instructed below, even dramatically; "
+    + "the camera angle and posture may differ a lot from the reference.";
+  const body = "REQUIRED CHANGE (this must be clearly visible in the result, do not just copy the "
+    + "reference): " + frag;
+  const tail = "Match the reference's art style, lighting and clean plain background, and keep the "
+    + "character roughly centered at a similar size. Do not invent a different character.";
   return [head, body, tail].join("\n\n");
 }
 
@@ -72980,13 +72996,13 @@ function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId,
 // clicking a tile switches the active pose INSTANTLY - no re-generation. Each
 // tile has its own ↻ to regenerate just that pose. The selected tile is the
 // node's output: it's copied onto any wired downstream asset (and node.path).
-function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown, onRemove, onChange, onStartEdge, allNodes, allEdges, projectId }) {
+function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown, onRemove, onChange, onStartEdge, onSpawnConnected, allNodes, allEdges, projectId }) {
   const [busy, setBusy]   = useState(null);   // {done,total} while a batch runs, else null
   const [err, setErr]     = useState("");
   const [draft, setDraft] = useState("");     // custom-pose text field
 
-  const w = Math.max(340, node.w || 376);
-  const h = Math.max(460, node.h || 540);
+  const w = Math.max(320, node.w || 360);
+  const h = Math.max(360, node.h || 430);
   const model    = node.model || WORKFLOW_I2I_DEFAULT_MODEL;
   const provider = ((window.TH_MEDIA && window.TH_MEDIA.imageModels) || [])
     .find(m => m.id === model)?.provider || "openai";
@@ -73001,6 +73017,16 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
   for (const g of WORKFLOW_POSE_SET_GROUPS) for (const it of g.items) if (sel[it.id]) selectedIds.push(it.id);
   for (const c of custom) if (sel[c.id]) selectedIds.push(c.id);
   const pending = selectedIds.filter(id => !(frames[id] && frames[id].status === "done"));
+  const doneCount = selectedIds.length - pending.length;
+
+  // Is a Pose viewer already wired to this generator's out? (Used to auto-link
+  // one on first Generate so results show in the viewer, not an inline gallery.)
+  const hasViewer = !!node.viewerLinked || (allEdges || []).some(e => {
+    const f = workflowParseEdgeRef(e.from); if (!f || f.node !== node.id) return false;
+    const t = workflowParseEdgeRef(e.to); if (!t) return false;
+    const dn = (allNodes || []).find(n => n.id === t.node);
+    return dn && dn.kind === "pose-viewer";
+  });
 
   // Subject image: an on-node pick (refImagePath) wins, else a wired asset.
   const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p) && p.startsWith("source/");
@@ -73045,6 +73071,12 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
     const todo = ids.filter(id => force || !(frames[id] && frames[id].status === "done"));
     if (!todo.length) return;
     setErr("");
+    // Auto-link a Pose viewer so the generated set is browsed there (the node no
+    // longer shows an inline gallery). One per generator - guarded by viewerLinked.
+    if (onSpawnConnected && !hasViewer) {
+      onSpawnConnected("right", { kind: "pose-viewer", newPort: "in", anchorPort: "out" });
+      onChange({ viewerLinked: true });
+    }
     const acc = { ...frames };
     const flush = (id, val) => { acc[id] = val; onChange({ poseFrames: { ...acc } }); };
     let done = 0;
@@ -73069,6 +73101,12 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
         flush(id, { status: "error", error: (e && e.message) ? e.message : String(e) });
       }
       done++; setBusy({ done, total: todo.length });
+    }
+    // Default the generator's own output to the first done pose so anything
+    // wired directly (not via the viewer) still resolves to an image.
+    if (!node.activePose) {
+      const first = selectedIds.find(id => acc[id] && acc[id].status === "done");
+      if (first) onChange({ activePose: first, path: acc[first].path, assetKind: "image" });
     }
     setBusy(null);
   };
@@ -73150,31 +73188,10 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
         </button>
         ${err && html`<div className="wpose-err" title=${err}>${err}</div>`}
 
-        <div className="wpose-gallery">
+        <div className="wpose-status">
           ${selectedIds.length === 0
-            ? html`<div className="wpose-empty">Tick poses above, then Generate. Generated poses appear here - click one to make it the output, instantly.</div>`
-            : selectedIds.map(id => {
-              const it = workflowPoseItem(id, custom) || { label: id };
-              const fr = frames[id] || {};
-              const isActive = active === id;
-              return html`<div key=${id}
-                className=${"wpose-tile" + (isActive ? " is-active" : "")}
-                title=${it.label}
-                onClick=${(e) => { e.stopPropagation(); selectPose(id); }}
-                onMouseDown=${(e) => e.stopPropagation()}>
-                <div className="wpose-tile-img">
-                  ${fr.status === "done" ? html`<img src=${bust(fr.path, fr.v)} alt=${it.label}/>`
-                    : fr.status === "loading" ? html`<span className="wpose-tile-spin"/>`
-                    : fr.status === "error" ? html`<span className="wpose-tile-x" title=${fr.error}>!</span>`
-                    : html`<span className="wpose-tile-dot">·</span>`}
-                  <button className="wpose-tile-regen" title="Regenerate just this pose"
-                    disabled=${!!busy || !subject}
-                    onClick=${(e) => { e.stopPropagation(); runGen([id], true); }}
-                    onMouseDown=${(e) => e.stopPropagation()}>↻</button>
-                </div>
-                <span className="wpose-tile-label">${it.label}${isActive ? " ✓" : ""}</span>
-              </div>`;
-            })}
+            ? html`<span>Tick poses above, then <b>Generate set</b> - they open in a linked Pose viewer.</span>`
+            : html`<span>${doneCount}/${selectedIds.length} generated${doneCount ? html` · switch / regenerate in the linked viewer →` : ""}</span>`}
         </div>
       </div>
       <div className="workflow-port-zone workflow-port-zone-in"
@@ -73196,7 +73213,7 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
 // floating right panel listing every generated pose - click to switch the
 // active pose instantly (and copy it onto wired downstream assets), or ↻ to
 // regenerate a single pose (writes back to the generator's frame file).
-function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSpawnConnected, allNodes, allEdges }) {
   const [busy, setBusy] = useState({});   // { [id]: true } while regenerating
   const [err, setErr]   = useState("");
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
@@ -73265,10 +73282,38 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
     }
   };
 
+  // The viewer's selected pose is materialized into ONE persistent, file-backed
+  // asset node downstream, so the result survives deleting the generator/viewer
+  // (their PNGs are otherwise orphaned). This canonical file is always the
+  // currently-selected pose; the asset node points at it and is created once.
+  const poseAssetPath = `source/main/images/pose-pick-${node.id}.png`;
+  const assetWired = !!node.assetLinked || (allEdges || []).some(e => {
+    const f = workflowParseEdgeRef(e.from); if (!f || f.node !== node.id) return false;
+    const t = workflowParseEdgeRef(e.to); if (!t) return false;
+    const dn = (allNodes || []).find(n => n.id === t.node);
+    return dn && dn.kind === "asset";
+  });
+
   const selectPose = async (id) => {
     const fr = genFrames[id]; if (!fr || fr.status !== "done") return;
-    onChange({ viewPose: id, path: fr.path, assetKind: "image" });
+    // 1) write the pick into the persistent pose-asset file (durable).
+    try {
+      await fetch(apiUrl("/__copy_file"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: fr.path, to: poseAssetPath }),
+      });
+    } catch (_e) { /* best-effort */ }
+    // 2) auto-create the persistent asset node once (wired viewer.out → asset.in).
+    if (onSpawnConnected && !assetWired) {
+      onSpawnConnected("right", {
+        kind: "asset", payload: { path: poseAssetPath, assetKind: "image", name: "Pose" },
+        newPort: "in", anchorPort: "out",
+      });
+      onChange({ assetLinked: true });
+    }
+    // 3) push to any OTHER wired downstream assets too.
     await pushDownstream(fr.path);
+    onChange({ viewPose: id, path: poseAssetPath, assetKind: "image" });
   };
 
   const regen = async (id) => {
@@ -73317,7 +73362,7 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
       </div>
 
       ${selected && gen && selectedIds.length ? html`
-        <div className="pose-viewer-panel" onMouseDown=${(e) => e.stopPropagation()}>
+        <div className="pose-viewer-panel" data-node-id=${node.id} onMouseDown=${(e) => e.stopPropagation()}>
           <div className="pose-viewer-panel-head">Poses</div>
           <div className="pose-viewer-panel-list">
             ${selectedIds.map(id => {
@@ -77337,7 +77382,7 @@ function LlmPromptPreviewSection({ node, onChange }) {
   `;
 }
 
-function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, allNodes, allEdges, projectId }) {
+function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, onSpawnConnected, allNodes, allEdges, projectId }) {
   const [dragging, setDragging] = useState(false);
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -77407,6 +77452,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
       node=${node} zoom=${zoom} dragging=${dragging}
       onHandleDown=${onHandleDown} onResizeDown=${onResizeDown}
       onRemove=${onRemove} onChange=${onChange} onStartEdge=${onStartEdge}
+      onSpawnConnected=${onSpawnConnected}
       allNodes=${allNodes} allEdges=${allEdges} projectId=${projectId} />`;
   }
 
