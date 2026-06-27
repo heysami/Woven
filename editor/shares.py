@@ -1692,6 +1692,12 @@ def share_summary(rec):
     out["quickOn"]  = modes["quick"]
     out["wovenOn"]  = modes["woven"]
     out["mode"]     = share_mode(rec)   # legacy hint (woven if the stable link is on)
+    # Per-link liveness so the UI can show each link's own state (running /
+    # starting / exited / error) instead of silently hiding a link with no URL.
+    out["quickStatus"] = qst["status"] if modes["quick"] else "off"
+    out["wovenStatus"] = wst["status"] if modes["woven"] else "off"
+    out["quickError"]  = qst["error"] if modes["quick"] else ""
+    out["wovenError"]  = wst["error"] if modes["woven"] else ""
     # Per-link public URLs - a share can carry BOTH at once.
     qurl = qst["url"] or (rec.get("lastUrl") if (modes["quick"] and qst["status"] == "running") else "")
     out["quickUrl"] = _link(qurl)

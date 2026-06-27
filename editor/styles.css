@@ -4943,6 +4943,22 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .share-controls { display: flex; flex-direction: column; gap: 6px; }
 .share-controls-row { display: flex; align-items: center; gap: 7px; }
 .share-controls-status { font-size: 11.5px; color: var(--text-muted); }
+.share-link-block { display: flex; flex-direction: column; gap: 2px; }
+.share-link-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.share-link-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
 
 /* Two-switch link-mode control (Stable / Randomised) - non-XOR styling. */
 .share-mode-switches { display: flex; flex-direction: column; gap: 4px; }

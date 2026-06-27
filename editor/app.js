@@ -10133,6 +10133,21 @@ function ShareMenuButton() {
       </button>
     </div>`;
 
+  // One link's row: its URL when the tunnel is up, else a labelled state line so
+  // an enabled-but-not-yet-ready link is visible instead of silently missing.
+  const modeLinkRow = (label, key, url, status) => {
+    const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
+    return html`
+      <div className="share-link-block">
+        <div className="share-link-label">${label}</div>
+        ${url ? linkRow(key, url) : html`
+          <div className="share-link-pending">
+            <span className=${"shares-dot is-" + meta.dot}></span>
+            <span>${status === "starting" ? "Starting…" : meta.label}</span>
+          </div>`}
+      </div>`;
+  };
+
   // Per-share controls (status + start/stop + dual mode toggle + link), shared
   // by every prototype row that has a share.
   const shareControls = (s) => {
@@ -10154,9 +10169,9 @@ function ShareMenuButton() {
         </div>
         <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} wovenAvail=${wovenAvail} busy=${isBusy}
           onToggle=${(which, on) => tunnelOp(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
-        ${s.wovenUrl && linkRow(s.id + ":w", s.wovenUrl)}
-        ${s.quickUrl && linkRow(s.id + ":q", s.quickUrl)}
-        ${!s.wovenUrl && !s.quickUrl && html`<div className="th-live-hint">Start a link to get a public URL.</div>`}
+        ${s.wovenOn && modeLinkRow("Stable link", s.id + ":w", s.wovenUrl, s.wovenStatus)}
+        ${s.quickOn && modeLinkRow("Randomised URL", s.id + ":q", s.quickUrl, s.quickStatus)}
+        ${!s.quickOn && !s.wovenOn && html`<div className="th-live-hint">Turn on a link above to publish a URL.</div>`}
       </div>`;
   };
 
