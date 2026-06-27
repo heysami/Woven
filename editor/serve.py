@@ -1667,6 +1667,12 @@ def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_conte
 _GENERATE_DISPATCH = {
     ("generate-image", "openai"): "openai_image",
     ("generate-image", "fal"):    "fal_image",
+    # pose-subject is identity-preserving image-to-image: same renderer family
+    # as generate-image (always an OpenAI gpt-image edit, since it ships a
+    # subject image + a compiled pose prompt). The i2i branch in _asset_generate
+    # is keyed on provider=openai + a gpt-image model, not on the skill name, so
+    # routing here is all that's needed for the edit endpoint to fire.
+    ("pose-subject",   "openai"): "openai_image",
     # Pathway-A SVG generation via Quiver. When the user runs an svg-gen
     # node and a Quiver key is configured, the editor routes here instead
     # of falling back to Pathway B (Claude writing the SVG by hand).
