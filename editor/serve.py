@@ -575,6 +575,14 @@ def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, 
     if isinstance(options, dict):
         if options.get("quality"):
             add_field("quality", options["quality"])
+        # gpt-image-1 family supports a transparent background on edits too
+        # (the multipart `background` field is dropped by older models, so gate
+        # it). Without this, i2i edits come back with a filled background even
+        # when the prompt asks for transparency - which breaks sprite cut-outs.
+        if model.startswith("gpt-image") and options.get("background"):
+            add_field("background", options["background"])
+        if model.startswith("gpt-image") and options.get("output_format"):
+            add_field("output_format", options["output_format"])
     ext_for_mime = {
         "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
         "image/webp": "webp",
