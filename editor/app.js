@@ -28403,7 +28403,8 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const akind = node.assetKind || "image";
   const native = [];
   if (akind === "image" || akind === "svg" || akind === "video") native.push({ nkey: "bg", kind: "bgcolor", label: "Background" });
-  if (akind === "image") native.push({ nkey: "crop", kind: "button", label: "Crop" });
+  if (akind === "image") native.push({ nkey: "crop", kind: "button", label: "Crop", event: "th:asset-open-crop" });
+  if (akind === "image") native.push({ nkey: "slice9", kind: "button", label: "9-slice", event: "th:asset-open-slice9" });
 
   if (!selected || !rect || (!schema.length && !native.length)) return null;
   const PANEL_W = 236, GAP = 12;
@@ -28462,7 +28463,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     if (e.kind === "button") {
       return html`<div className="wac-row" key=${e.nkey}>
         <label className="wac-label">${e.label}</label>
-        <button className="wac-mini" onClick=${() => window.dispatchEvent(new CustomEvent("th:asset-open-crop", { detail: { nodeId } }))}>Open</button>
+        <button className="wac-mini" onClick=${() => window.dispatchEvent(new CustomEvent(e.event || "th:asset-open-crop", { detail: { nodeId } }))}>Open</button>
       </div>`;
     }
     return null;
@@ -56065,9 +56066,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // (doesn't use NodeVersioningChrome), so this capture lives here. The
   // chrome handles prototype + design-system separately.
   const captureGuard = useRef(new Set());
-  // slice9 frame asset → inline slice editor (hooks at top, before any early return)
-  const [s9Open, setS9Open] = useState(false);
-  const [s9Anchor, setS9Anchor] = useState(null);
   useEffect(() => {
     const av = node.activeVersionId;
     if (!av) return;
@@ -56458,6 +56456,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     const onOpenCrop = (ev) => { if (ev && ev.detail && ev.detail.nodeId === node.id) setCropOpen(true); };
     window.addEventListener("th:asset-open-crop", onOpenCrop);
     return () => window.removeEventListener("th:asset-open-crop", onOpenCrop);
+  }, [node.id]);
+  // 9-slice editor - same controls-panel "Open" → event pattern as crop.
+  const [s9Open, setS9Open] = useState(false);
+  useEffect(() => {
+    const onOpenS9 = (ev) => { if (ev && ev.detail && ev.detail.nodeId === node.id) setS9Open(true); };
+    window.addEventListener("th:asset-open-slice9", onOpenS9);
+    return () => window.removeEventListener("th:asset-open-slice9", onOpenS9);
   }, [node.id]);
   // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
   // overflow probe, then write the device class + natural aspect back to
@@ -57286,11 +57291,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     ? Object.keys(galleryEntries).filter(n => !dsChangedFiles.includes(n)).sort()
     : [];
   const galleryReminderOpen = isDsGallery && dsChangedFiles.length > 0;
-  const s9IsFrame = (kind === "image") && (allEdges || []).some((e) => {
-    if ((e.to || "").split(".", 1)[0] !== node.id) return false;
-    const from = (allNodes || []).find((n) => n.id === (e.from || "").split(".", 1)[0]);
-    return from && from.skill === "slice9-frame";
-  });
 
   return html`
     <div
@@ -57323,13 +57323,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           >OK, got it!</button>
         </div>
       `}
-      ${s9IsFrame && html`
-        <button className="workflow-asset-s9btn" style=${{ position: "absolute", left: "8px", bottom: "8px", zIndex: 6 }}
-          onMouseDown=${(e) => e.stopPropagation()}
-          onClick=${(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setS9Anchor({ x: r.right, y: r.top }); setS9Open(true); }}
-          title="Adjust the 9-slice insets for this frame">▦ Adjust slices</button>
-      `}
-      ${s9Open && s9IsFrame && node.path && html`<${Slice9Editor} pngPath=${node.path} anchor=${s9Anchor} onClose=${() => setS9Open(false)} />`}
+      ${s9Open && node.path && html`<${Slice9Editor} pngPath=${node.path} onClose=${() => setS9Open(false)} />`}
       <div className="workflow-node-bar workflow-node-asset-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-asset-glyph">${glyph}</span>
         ${html`
@@ -77526,7 +77520,7 @@ function LlmPromptPreviewSection({ node, onChange }) {
 // and sees the result as a live border-image at button / wide / panel sizes
 // before saving back to the <output>.slice9.json sidecar. The detector is only
 // the default - this is the authority.
-function Slice9Editor({ pngPath, anchor, onClose }) {
+function Slice9Editor({ pngPath, onClose }) {
   const DISP = 300;
   // memoise per pngPath - recomputing the cache-bust every render would reload
   // the <img> each frame and re-fire onImgLoad (which would reset the insets).
@@ -77606,19 +77600,17 @@ function Slice9Editor({ pngPath, anchor, onClose }) {
     } catch (e) { setSaved(false); } finally { setSaving(false); }
   };
 
-  const pos = anchor
-    ? { left: Math.max(12, Math.min(anchor.x + 12, window.innerWidth - 700)) + "px", top: Math.max(12, Math.min(anchor.y, window.innerHeight - 470)) + "px" }
-    : { left: "50%", top: "12vh", transform: "translateX(-50%)" };
   const num = (side) => html`<div className="s9e-num"><label>${side}</label>
     <input type="number" value=${S[side]} onChange=${(e) => setS((p) => ({ ...p, [side]: clamp(+e.target.value) }))} /></div>`;
 
   return createPortal(html`
-      <div className="s9e-panel" style=${pos} onMouseDown=${(e) => e.stopPropagation()}>
-        <div className="s9e-head">
-          <span className="s9e-title">Adjust slices</span>
-          <span className="s9e-dim">${src}×${src}</span>
-          <button className="s9e-x" onClick=${onClose} title="Close">✕</button>
-        </div>
+    <div className="asset-crop-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="asset-crop-modal s9e-modal" onMouseDown=${(e) => e.stopPropagation()}>
+        <header className="asset-crop-head">
+          <span className="asset-crop-title">Adjust 9-slice</span>
+          <span className="asset-crop-dims">${src} × ${src} px</span>
+          <button className="asset-crop-x" onClick=${onClose} title="Close (Esc)" aria-label="Close">×</button>
+        </header>
         <div className="s9e-body">
           <div className="s9e-left">
             <div className="s9e-stage" ref=${stageRef} style=${{ width: DISP + "px", height: DISP + "px" }}>
@@ -77653,6 +77645,7 @@ function Slice9Editor({ pngPath, anchor, onClose }) {
           </div>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
