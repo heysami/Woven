@@ -23714,10 +23714,17 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   appearance: none;
   flex: 1 1 0;
   min-width: 0;
-  background: var(--surface-2);
+  background-color: var(--surface-2);
+  /* Custom chevron so the control reads as a dropdown (appearance:none strips
+     the native arrow). Matches .workflow-refimg-mode. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 5px);
-  padding: 3px 6px;
+  padding: 3px 18px 3px 6px;
   font: 500 10.5px/1.2 var(--font-mono, ui-monospace, monospace);
   color: var(--text);
   cursor: pointer;
@@ -23754,6 +23761,126 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   user-select: none;
 }
 .workflow-pose-keep input { margin: 0; cursor: pointer; }
+
+/* ── Pose / restyle SET node (batch generator + gallery) ── */
+.workflow-node-poseset {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-1, 0 2px 8px rgba(0,0,0,0.08));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workflow-node-poseset.is-dragging { box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+.workflow-node-poseset-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  height: calc(100% - 30px);
+  overflow: auto;
+}
+.wpose-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wpose-model {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.wpose-pick {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2);
+}
+.wpose-group { display: flex; flex-direction: column; gap: 4px; }
+.wpose-group-label {
+  font: 600 9px/1.2 var(--font-mono, ui-monospace, monospace);
+  text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted);
+}
+.wpose-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.wpose-chip {
+  appearance: none; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-muted);
+  font: 500 10.5px/1 var(--font, inherit);
+  padding: 4px 9px;
+}
+.wpose-chip:hover { border-color: var(--accent); color: var(--text); }
+.wpose-chip.is-on {
+  background: var(--accent-soft, var(--accent)); border-color: var(--accent);
+  color: var(--accent-text, #fff);
+}
+.wpose-chip.has-frame::after { content: " ●"; font-size: 8px; opacity: 0.7; }
+.wpose-custom { display: flex; gap: 4px; margin-top: 2px; }
+.wpose-custom input {
+  flex: 1 1 0; min-width: 0;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text);
+  font: 400 11px/1.3 inherit; padding: 3px 7px; outline: 0;
+}
+.wpose-custom input:focus { border-color: var(--accent); }
+.wpose-custom button {
+  flex: 0 0 auto; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-2); color: var(--text);
+  font: 600 12px/1 inherit; padding: 0 9px;
+}
+.wpose-custom button:hover { border-color: var(--accent); }
+.wpose-genbtn {
+  appearance: none; cursor: pointer; width: 100%;
+  border: 0; border-radius: 8px;
+  background: var(--accent); color: var(--accent-text, #fff);
+  font: 600 12.5px/1 inherit; padding: 9px 12px;
+}
+.wpose-genbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wpose-err {
+  font: 500 10.5px/1.3 var(--font-mono, ui-monospace, monospace);
+  color: var(--danger, #c0392b); white-space: pre-wrap;
+}
+.wpose-gallery {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+.wpose-empty {
+  grid-column: 1 / -1;
+  font: 400 11px/1.4 inherit; color: var(--text-muted);
+  text-align: center; padding: 14px 8px;
+}
+.wpose-tile {
+  cursor: pointer; border: 1.5px solid var(--border); border-radius: 8px;
+  overflow: hidden; background: var(--surface-2); display: flex; flex-direction: column;
+}
+.wpose-tile:hover { border-color: var(--accent); }
+.wpose-tile.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft, var(--accent)); }
+.wpose-tile-img {
+  position: relative; aspect-ratio: 1 / 1; display: flex;
+  align-items: center; justify-content: center;
+  background: repeating-conic-gradient(#0000000d 0% 25%, transparent 0% 50%) 50% / 14px 14px;
+}
+.wpose-tile-img img { width: 100%; height: 100%; object-fit: contain; }
+.wpose-tile-regen {
+  position: absolute; top: 3px; right: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 0; cursor: pointer;
+  background: rgba(0,0,0,0.55); color: #fff; font-size: 12px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.12s;
+}
+.wpose-tile:hover .wpose-tile-regen { opacity: 1; }
+.wpose-tile-regen:disabled { opacity: 0; }
+.wpose-tile-spin {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: wovenSpin 0.8s linear infinite;
+}
+@keyframes wovenSpin { to { transform: rotate(360deg); } }
+.wpose-tile-x { color: var(--danger, #c0392b); font-weight: 700; font-size: 16px; }
+.wpose-tile-dot { color: var(--text-faint); font-size: 18px; }
+.wpose-tile-label {
+  font: 500 10px/1.2 var(--font-mono, ui-monospace, monospace);
+  color: var(--text); padding: 4px 5px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* Empty-state picker - a native select (escapes node-body overflow) listing
    existing canvas images + an "Upload new…" option. Styled like the mode
    select but with a dashed border to read as "not set yet". */

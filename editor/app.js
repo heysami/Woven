@@ -72667,6 +72667,68 @@ function workflowPosePrompt(node) {
   return [head, body, tail].join("\n\n");
 }
 
+// ── Pose SET catalog (the redesigned pose-subject node) ──
+// Each item is one generatable pose/angle/expression. `frag` is the single
+// change the i2i prompt asks for; identity is locked by the head/tail wrapper
+// in workflowPosePromptForItem. Groups drive the checklist UI; ids are stable
+// keys for node.poseSel / node.poseFrames so a generated frame survives reorder.
+const WORKFLOW_POSE_SET_GROUPS = [
+  { key: "Angle", items: [
+    { id: "a-front",   label: "Front",        frag: "facing the camera straight on (front view)" },
+    { id: "a-ql",      label: "¾ left",       frag: WORKFLOW_POSE_TURN_PHRASE["45L"] },
+    { id: "a-pl",      label: "Profile left", frag: WORKFLOW_POSE_TURN_PHRASE["90L"] },
+    { id: "a-back",    label: "Back",         frag: WORKFLOW_POSE_TURN_PHRASE["180"] },
+    { id: "a-pr",      label: "Profile right",frag: WORKFLOW_POSE_TURN_PHRASE["90R"] },
+    { id: "a-qr",      label: "¾ right",      frag: WORKFLOW_POSE_TURN_PHRASE["45R"] },
+    { id: "a-above",   label: "From above",   frag: "viewed from a high angle, the camera looking down on the subject" },
+    { id: "a-below",   label: "From below",   frag: "viewed from a low angle, the camera looking up at the subject" },
+  ]},
+  { key: "Expression", items: [
+    { id: "e-neutral", label: "Neutral",   frag: "a calm, neutral facial expression" },
+    { id: "e-smile",   label: "Smile",     frag: "a warm, happy smiling expression" },
+    { id: "e-laugh",   label: "Laugh",     frag: "a joyful, open-mouthed laughing expression" },
+    { id: "e-angry",   label: "Angry",     frag: "an angry, scowling expression" },
+    { id: "e-surprise",label: "Surprised", frag: "a surprised, wide-eyed expression" },
+    { id: "e-sad",     label: "Sad",       frag: "a sad, downcast expression" },
+    { id: "e-wink",    label: "Wink",      frag: "a playful winking expression" },
+  ]},
+  { key: "Pose", items: [
+    { id: "p-stand",   label: "Standing",  frag: "standing upright in a relaxed, balanced stance" },
+    { id: "p-sit",     label: "Sitting",   frag: "sitting down" },
+    { id: "p-walk",    label: "Walking",   frag: "a mid-walk stride" },
+    { id: "p-run",     label: "Running",   frag: "running in a dynamic action pose" },
+    { id: "p-jump",    label: "Jumping",   frag: "mid-jump, airborne in a dynamic pose" },
+    { id: "p-wave",    label: "Waving",    frag: "waving one arm in greeting" },
+    { id: "p-tpose",   label: "T-pose",    frag: "a neutral T-pose, arms outstretched horizontally (rig reference)" },
+    { id: "p-crouch",  label: "Crouching", frag: "crouching low to the ground" },
+  ]},
+];
+const WORKFLOW_POSE_SET_INDEX = (() => {
+  const m = {};
+  for (const g of WORKFLOW_POSE_SET_GROUPS) for (const it of g.items) m[it.id] = it;
+  return m;
+})();
+
+// Resolve a pose id (catalog OR a custom item) to { label, frag }.
+function workflowPoseItem(id, custom) {
+  if (WORKFLOW_POSE_SET_INDEX[id]) return WORKFLOW_POSE_SET_INDEX[id];
+  const c = (custom || []).find(x => x && x.id === id);
+  return c ? { label: c.label, frag: c.label } : null;
+}
+
+// Single-change identity-preserving prompt for ONE pose-set item. Adds a
+// "centered, consistent scale" instruction so a generated SET reads as one
+// coherent turnaround/sheet rather than drifting in framing per frame.
+function workflowPosePromptForItem(frag) {
+  const head = "Re-render the EXACT SAME subject shown in the attached reference image, "
+    + "preserving its identity faithfully - the same face, proportions, distinctive features, "
+    + "colours, materials and design. Keep a clean, uncluttered background consistent with the "
+    + "reference, and keep the subject centered at a consistent size and framing.";
+  const body = "Change ONLY this: " + frag + ".";
+  const tail = "Do not invent a different character or object, and change nothing except what is stated above.";
+  return [head, body, tail].join("\n\n");
+}
+
 // True when an image model can consume an input image (image-to-image). Guards
 // the control + the auto-promote so an attached reference never silently 400s.
 function workflowModelHasI2I(modelId) {
@@ -72787,60 +72849,220 @@ function WorkflowRefImagePicker({ node, onChange, allNodes, allEdges, projectId,
 // The subject image attaches via the shared ref-image picker (wired asset edge,
 // pick-existing, or upload) - mode is hidden because pose-subject is always
 // identity-preserving i2i.
-function WorkflowPosePanel({ node, onChange, allNodes, allEdges, projectId }) {
-  const n = node || {};
-  const sel = (field, opts, title) => html`
-    <select className="workflow-pose-sel" value=${n[field] || ""} title=${title || ""}
-      onChange=${(e) => onChange({ [field]: e.target.value })}
-      onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
-      ${opts.map(o => html`<option key=${o.id} value=${o.id}>${o.label}</option>`)}
-    </select>`;
-  const txt = (field, ph) => html`
-    <input className="workflow-pose-txt" type="text" value=${n[field] || ""} placeholder=${ph}
-      onChange=${(e) => onChange({ [field]: e.target.value })}
-      onMouseDown=${(e) => e.stopPropagation()} onClick=${(e) => e.stopPropagation()} />`;
+// ── Pose / restyle SET node (skill: pose-subject) ──
+// Redesigned UX: instead of one manual i2i run, you TICK which poses/angles/
+// expressions you want (or add custom ones), hit "Generate set" once, and the
+// node batch-generates every selected pose from the one subject image (each its
+// own identity-preserving i2i). Generated frames are cached on the node, so
+// clicking a tile switches the active pose INSTANTLY - no re-generation. Each
+// tile has its own ↻ to regenerate just that pose. The selected tile is the
+// node's output: it's copied onto any wired downstream asset (and node.path).
+function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown, onRemove, onChange, onStartEdge, allNodes, allEdges, projectId }) {
+  const [busy, setBusy]   = useState(null);   // {done,total} while a batch runs, else null
+  const [err, setErr]     = useState("");
+  const [draft, setDraft] = useState("");     // custom-pose text field
+
+  const w = Math.max(340, node.w || 376);
+  const h = Math.max(460, node.h || 540);
+  const model    = node.model || WORKFLOW_I2I_DEFAULT_MODEL;
+  const provider = ((window.TH_MEDIA && window.TH_MEDIA.imageModels) || [])
+    .find(m => m.id === model)?.provider || "openai";
+  const aspect   = node.aspect || "1:1";
+  const custom   = Array.isArray(node.poseCustom) ? node.poseCustom : [];
+  const sel      = node.poseSel || {};
+  const frames   = node.poseFrames || {};
+  const active   = node.activePose || "";
+
+  // Ordered list of selected pose ids (catalog order, then custom order).
+  const selectedIds = [];
+  for (const g of WORKFLOW_POSE_SET_GROUPS) for (const it of g.items) if (sel[it.id]) selectedIds.push(it.id);
+  for (const c of custom) if (sel[c.id]) selectedIds.push(c.id);
+  const pending = selectedIds.filter(id => !(frames[id] && frames[id].status === "done"));
+
+  // Subject image: an on-node pick (refImagePath) wins, else a wired asset.
+  const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p) && p.startsWith("source/");
+  let subject = isImg(node.refImagePath) ? node.refImagePath : "";
+  if (!subject) {
+    for (const e of (allEdges || [])) {
+      const t = workflowParseEdgeRef(e.to); if (!t || t.node !== node.id || t.port !== "in") continue;
+      const f = workflowParseEdgeRef(e.from); if (!f) continue;
+      const up = (allNodes || []).find(n => n.id === f.node);
+      if (up && isImg(up.path)) { subject = up.path; break; }
+    }
+  }
+
+  const framePath = (id) => `source/main/images/pose-${node.id}-${id}.png`;
+  const bust = (p, v) => { const u = withProjectQuery("/" + p); return u + (u.includes("?") ? "&" : "?") + "_v=" + (v || 0); };
+
+  const downstreamAssetPaths = () => {
+    const out = [];
+    for (const e of (allEdges || [])) {
+      const f = workflowParseEdgeRef(e.from); if (!f || f.node !== node.id) continue;
+      const t = workflowParseEdgeRef(e.to);   if (!t) continue;
+      const dn = (allNodes || []).find(n => n.id === t.node);
+      if (dn && dn.kind === "asset" && typeof dn.path === "string" && dn.path.startsWith("source/")) out.push(dn.path);
+    }
+    return out;
+  };
+
+  const toggle = (id) => { if (busy) return; onChange({ poseSel: { ...sel, [id]: !sel[id] } }); };
+  const addCustom = () => {
+    const label = draft.trim();
+    if (!label || busy) return;
+    const id = "c-" + Date.now().toString(36);
+    onChange({ poseCustom: [...custom, { id, label }], poseSel: { ...sel, [id]: true } });
+    setDraft("");
+  };
+
+  // Sequential batch (one i2i call per pose). `acc` owns poseFrames for the run
+  // so successive flushes don't clobber each other off the stale node prop.
+  const runGen = async (ids, force) => {
+    if (busy) return;
+    if (!subject) { setErr("Wire or pick a subject image into the node first."); return; }
+    const todo = ids.filter(id => force || !(frames[id] && frames[id].status === "done"));
+    if (!todo.length) return;
+    setErr("");
+    const acc = { ...frames };
+    const flush = (id, val) => { acc[id] = val; onChange({ poseFrames: { ...acc } }); };
+    let done = 0;
+    setBusy({ done, total: todo.length });
+    for (const id of todo) {
+      const item = workflowPoseItem(id, custom);
+      if (!item) { done++; setBusy({ done, total: todo.length }); continue; }
+      flush(id, { status: "loading" });
+      try {
+        const out = framePath(id);
+        const body = {
+          skill: "pose-subject", provider, model, output: out, aspect,
+          prompt: workflowPosePromptForItem(item.frag), input_path: subject,
+        };
+        const r = await fetch(apiUrl("/__asset_generate"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+        flush(id, { status: "done", path: out, v: Date.now() });
+      } catch (e) {
+        flush(id, { status: "error", error: (e && e.message) ? e.message : String(e) });
+      }
+      done++; setBusy({ done, total: todo.length });
+    }
+    setBusy(null);
+  };
+
+  const selectPose = async (id) => {
+    const fr = frames[id];
+    if (!fr || fr.status !== "done") return;
+    onChange({ activePose: id, path: fr.path, assetKind: "image" });
+    for (const to of downstreamAssetPaths()) {
+      if (to === fr.path) continue;
+      try {
+        await fetch(apiUrl("/__copy_file"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: fr.path, to }),
+        });
+      } catch (_e) { /* best-effort; the daemon's file watcher refreshes consumers */ }
+    }
+  };
+
+  const chip = (it) => {
+    const on = !!sel[it.id];
+    const st = frames[it.id] && frames[it.id].status;
+    return html`<button key=${it.id} type="button"
+      className=${"wpose-chip" + (on ? " is-on" : "") + (st === "done" ? " has-frame" : "")}
+      title=${it.frag || it.label}
+      onClick=${(e) => { e.stopPropagation(); toggle(it.id); }}
+      onMouseDown=${(e) => e.stopPropagation()}>${it.label}</button>`;
+  };
+
   return html`
-    <div className="workflow-pose-panel" onMouseDown=${(e) => e.stopPropagation()}>
-      <div className="workflow-pose-subject">
-        <span className="workflow-pose-label">Subject</span>
-        <${WorkflowRefImagePicker}
-          node=${node} onChange=${onChange}
-          allNodes=${allNodes} allEdges=${allEdges} projectId=${projectId}
-          hideMode=${true}
-          label="The subject (character / object) to re-pose. Wire an image into the in-port, or pick / upload here."
-          placeholder="＋ subject image"
-        />
+    <div className=${"workflow-node workflow-node-poseset" + (dragging ? " is-dragging" : "")}
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+      <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-skill-glyph">⟳</span>
+        <span className="workflow-node-skill-title">Pose / restyle set</span>
+        <span className="workflow-node-bar-spacer"/>
+        <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
-      <div className="workflow-pose-row">
-        <span className="workflow-pose-label">Rotate</span>
-        ${sel("poseTurn", WORKFLOW_POSE_TURN, "Turn (yaw axis)")}
-        ${sel("poseTilt", WORKFLOW_POSE_TILT, "Tilt (pitch axis)")}
-        ${sel("poseRoll", WORKFLOW_POSE_ROLL, "Roll axis")}
+      <div className="workflow-node-poseset-body" onMouseDown=${(e) => e.stopPropagation()}>
+        <div className="wpose-top">
+          <${WorkflowRefImagePicker}
+            node=${node} onChange=${onChange}
+            allNodes=${allNodes} allEdges=${allEdges} projectId=${projectId}
+            hideMode=${true}
+            label="The subject (character / object) to re-pose. Wire an image into the in-port, or pick / upload here."
+            placeholder="＋ subject image" />
+          <select className="workflow-pose-sel wpose-model" value=${model} title="Image model (image-to-image)"
+            onChange=${(e) => onChange({ model: e.target.value })} onMouseDown=${(e) => e.stopPropagation()}>
+            ${((window.TH_MEDIA && window.TH_MEDIA.imageModels) || []).filter(m => m.caps && m.caps.includes("i2i") && m.integrated)
+              .map(m => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}
+          </select>
+        </div>
+
+        <div className="wpose-pick">
+          ${WORKFLOW_POSE_SET_GROUPS.map(g => html`
+            <div className="wpose-group" key=${g.key}>
+              <span className="wpose-group-label">${g.key}</span>
+              <div className="wpose-chips">${g.items.map(chip)}</div>
+            </div>`)}
+          ${custom.length ? html`<div className="wpose-group">
+            <span className="wpose-group-label">Custom</span>
+            <div className="wpose-chips">${custom.map(c => chip({ id: c.id, label: c.label, frag: c.label }))}</div>
+          </div>` : null}
+          <div className="wpose-custom">
+            <input type="text" value=${draft} placeholder="add custom pose / angle…"
+              onInput=${(e) => setDraft(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }}
+              onMouseDown=${(e) => e.stopPropagation()} onClick=${(e) => e.stopPropagation()} />
+            <button type="button" onClick=${(e) => { e.stopPropagation(); addCustom(); }} onMouseDown=${(e) => e.stopPropagation()}>＋</button>
+          </div>
+        </div>
+
+        <button className="wpose-genbtn" disabled=${!!busy || !selectedIds.length || !subject}
+          title=${!subject ? "Wire or pick a subject image first" : !selectedIds.length ? "Tick at least one pose" : "Generate every selected pose that isn't done yet"}
+          onClick=${(e) => { e.stopPropagation(); runGen(selectedIds, false); }} onMouseDown=${(e) => e.stopPropagation()}>
+          ${busy ? `Generating… ${busy.done}/${busy.total}`
+            : pending.length ? `Generate ${pending.length} pose${pending.length > 1 ? "s" : ""}`
+            : selectedIds.length ? "Regenerate all ↺" : "Generate set"}
+        </button>
+        ${err && html`<div className="wpose-err" title=${err}>${err}</div>`}
+
+        <div className="wpose-gallery">
+          ${selectedIds.length === 0
+            ? html`<div className="wpose-empty">Tick poses above, then Generate. Generated poses appear here - click one to make it the output, instantly.</div>`
+            : selectedIds.map(id => {
+              const it = workflowPoseItem(id, custom) || { label: id };
+              const fr = frames[id] || {};
+              const isActive = active === id;
+              return html`<div key=${id}
+                className=${"wpose-tile" + (isActive ? " is-active" : "")}
+                title=${it.label}
+                onClick=${(e) => { e.stopPropagation(); selectPose(id); }}
+                onMouseDown=${(e) => e.stopPropagation()}>
+                <div className="wpose-tile-img">
+                  ${fr.status === "done" ? html`<img src=${bust(fr.path, fr.v)} alt=${it.label}/>`
+                    : fr.status === "loading" ? html`<span className="wpose-tile-spin"/>`
+                    : fr.status === "error" ? html`<span className="wpose-tile-x" title=${fr.error}>!</span>`
+                    : html`<span className="wpose-tile-dot">·</span>`}
+                  <button className="wpose-tile-regen" title="Regenerate just this pose"
+                    disabled=${!!busy || !subject}
+                    onClick=${(e) => { e.stopPropagation(); runGen([id], true); }}
+                    onMouseDown=${(e) => e.stopPropagation()}>↻</button>
+                </div>
+                <span className="wpose-tile-label">${it.label}${isActive ? " ✓" : ""}</span>
+              </div>`;
+            })}
+        </div>
       </div>
-      <div className="workflow-pose-row">
-        <span className="workflow-pose-label">Pose</span>
-        ${sel("posePose", WORKFLOW_POSE_POSES, "Body pose")}
-        ${txt("posePoseText", n.posePose === "custom" ? "describe the pose" : "extra pose detail")}
-      </div>
-      <div className="workflow-pose-row">
-        <span className="workflow-pose-label">Face</span>
-        ${sel("poseExpr", WORKFLOW_POSE_EXPRS, "Facial expression (characters)")}
-        ${txt("poseExprText", n.poseExpr === "custom" ? "describe the expression" : "extra expression detail")}
-      </div>
-      <div className="workflow-pose-row">
-        <span className="workflow-pose-label">Wear</span>
-        ${txt("poseCloth", "change outfit / clothing")}
-        <label className="workflow-pose-keep" title="Lock the original outfit - ignore the clothing field">
-          <input type="checkbox" checked=${!!n.poseClothKeep}
-            onChange=${(e) => onChange({ poseClothKeep: e.target.checked })}
-            onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()} />
-          keep
-        </label>
-      </div>
-      <textarea className="workflow-pose-notes" value=${n.poseNotes || ""}
-        placeholder="Anything else required (background, lighting, props, framing…)"
-        onChange=${(e) => onChange({ poseNotes: e.target.value })}
-        onMouseDown=${(e) => e.stopPropagation()} onClick=${(e) => e.stopPropagation()} />
+      <div className="workflow-port-zone workflow-port-zone-in"
+           data-port-node=${node.id} data-port-side="in"
+           title="Wire the subject image (asset / image node) to re-pose."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}><div className="workflow-port-dot"/></div>
+      <div className="workflow-port-zone workflow-port-zone-out"
+           data-port-node=${node.id} data-port-side="out"
+           title="Carries the currently-selected pose - wire into an asset, section, or composer."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}><div className="workflow-port-dot"/></div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
     </div>`;
 }
 
@@ -76887,12 +77109,21 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   // the body's overflow:auto pushed it past the visible region. Floor
   // tall enough to fit the standard layout; manual resize can still go
   // bigger but not smaller than the content needs.
-  const _isPose = (node.skill || "generate-image") === "pose-subject";
-  const w = Math.max(_isPose ? 260 : 240, node.w || (_isPose ? 300 : 280));
-  const h = Math.max(_isPose ? 392 : 200, node.h || (_isPose ? 412 : 220));
+  const w = Math.max(240, node.w || 280);
+  const h = Math.max(200, node.h || 220);
   const status = (runState && runState.status) || "idle";
   const error  = runState && runState.error;
   const skillId = node.skill || "generate-image";
+
+  // pose-subject has a fully custom node (batch pose-set generator + gallery),
+  // not the generic skill shell. Rendered as its own component.
+  if (skillId === "pose-subject") {
+    return html`<${WorkflowPoseSetNode}
+      node=${node} zoom=${zoom} dragging=${dragging}
+      onHandleDown=${onHandleDown} onResizeDown=${onResizeDown}
+      onRemove=${onRemove} onChange=${onChange} onStartEdge=${onStartEdge}
+      allNodes=${allNodes} allEdges=${allEdges} projectId=${projectId} />`;
+  }
 
   const skillSpec = ((window.TH_MEDIA && window.TH_MEDIA.skills) || []).find(s => s.id === skillId);
   const aspects   = (window.TH_MEDIA && window.TH_MEDIA.aspects) || [];
@@ -77118,15 +77349,6 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
             />
           `}
         </div>
-        ${skillId === "pose-subject" && html`
-          <${WorkflowPosePanel}
-            node=${node}
-            onChange=${onChange}
-            allNodes=${allNodes}
-            allEdges=${allEdges}
-            projectId=${projectId}
-          />
-        `}
         <div className="workflow-node-skill-inputs">
           ${wantsPrompt && html`<span className="workflow-node-skill-inputtag">prompt ←</span>`}
           ${wantsAsset  && html`<span className="workflow-node-skill-inputtag">asset ←</span>`}
