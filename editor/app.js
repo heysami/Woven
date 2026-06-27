@@ -18186,6 +18186,7 @@ function DsCustomizerStep({ settings, setSettings, custom, busy, err, onBack, on
           </div>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
