@@ -54540,17 +54540,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
             onClick: onToggleComments,
             className: "workflow-node-top-action-share",
           },
-          onToggleUserTesting && {
-            key: "user-testing",
-            icon: html`<${Icon.Eye}/>`,
-            tip: userTestingOpen
-              ? "Hide user testing panel."
-              : "User testing - run moderated + unmoderated tests: build sessions, invite participants, and turn their recordings into insights.",
-            ariaLabel: "User testing",
-            active: userTestingOpen,
-            onClick: onToggleUserTesting,
-            className: "workflow-node-top-action-user-testing",
-          },
           onOpenCanvasFrames && {
             key: "canvas-frames",
             icon: html`<${Icon.Canvas}/>`,
