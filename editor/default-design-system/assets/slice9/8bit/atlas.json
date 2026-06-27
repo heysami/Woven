@@ -1,0 +1,75 @@
+{
+  "id": "8bit",
+  "label": "8-bit generic",
+  "library": "aesthetic-8-bit-generic",
+  "tile": 24,
+  "corner": 8,
+  "imageRendering": "pixelated",
+  "frames": {
+    "panel": {
+      "src": "panel.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "fill": true,
+      "width": 24,
+      "repeat": "stretch",
+      "role": "panel"
+    },
+    "card": {
+      "src": "card.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "fill": true,
+      "width": 24,
+      "repeat": "stretch",
+      "role": "card"
+    },
+    "button": {
+      "src": "button.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "fill": true,
+      "width": 16,
+      "repeat": "stretch",
+      "role": "button"
+    },
+    "button-active": {
+      "src": "button-active.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "fill": true,
+      "width": 16,
+      "repeat": "stretch",
+      "role": "button-active"
+    },
+    "input": {
+      "src": "input.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "fill": true,
+      "width": 16,
+      "repeat": "stretch",
+      "role": "input"
+    }
+  }
+}

@@ -1702,6 +1702,9 @@ _GENERATE_DISPATCH = {
 }
 _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
+    # slice9-normalize: square + trim a generated frame and auto-detect its
+    # border-image-slice insets (tools-level slice9_detect.py). Local, no key.
+    ("slice9-normalize", "local"): "local_slice9",
     ("rembg",   "fal"):   "fal_transform",
     ("upscale", "fal"):   "fal_transform",
     # Image → 3D. Both are transforms (image in → 3D file out), so they slot
@@ -1759,6 +1762,54 @@ def _local_rembg(input_abs_path, model_name, options):
             )
         raise RuntimeError(f"rembg failed: {stderr.strip()[:500]}")
     return result.stdout
+
+
+# Phase 4c - local slice-9 normalisation. Mirrors _local_rembg's subprocess
+# pattern (so PIL need not be importable in the daemon's own interpreter at
+# startup). Runs slice9_detect.py `normalize`: squares + trims the generated
+# frame, auto-detects the four slice insets from where the transparent center
+# begins, writes an atlas sidecar (<output>.slice9.json) the orchestrating
+# agent reads, and returns the normalised PNG bytes.
+def _local_slice9(input_abs_path, out_abs, options):
+    if not os.path.isfile(input_abs_path):
+        raise RuntimeError(f"input image not found: {input_abs_path}")
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slice9_detect.py")
+    if not os.path.isfile(script):
+        raise RuntimeError("slice9_detect.py not found next to serve.py")
+    try:
+        result = subprocess.run(
+            [sys.executable, script, "normalize", input_abs_path],
+            capture_output=True, timeout=120, check=False,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("python3 not found")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("slice9 normalize timed out")
+    if result.returncode != 0:
+        stderr = (result.stderr or b"").decode("utf-8", "replace")
+        if "No module named 'PIL'" in stderr or "Pillow" in stderr:
+            raise RuntimeError(
+                "Pillow (PIL) is required for slice9 frames: pip install --user Pillow",
+            )
+        raise RuntimeError(f"slice9 normalize failed: {stderr.strip()[:500]}")
+    png_bytes = result.stdout
+    # stderr carries the detected slice metadata as JSON - persist an atlas sidecar.
+    try:
+        meta = json.loads((result.stderr or b"{}").decode("utf-8", "replace") or "{}")
+    except Exception:
+        meta = {}
+    try:
+        keep = ("slice", "width", "repeat", "fill", "corner", "detected")
+        sidecar = dict(src=os.path.basename(out_abs))
+        for k in keep:
+            if k in meta:
+                sidecar[k] = meta[k]
+        os.makedirs(os.path.dirname(out_abs), exist_ok=True)
+        with open(os.path.splitext(out_abs)[0] + ".slice9.json", "w") as f:
+            json.dump(sidecar, f, indent=2)
+    except Exception:
+        pass  # sidecar is best-effort; the PNG is the primary artifact
+    return png_bytes
 
 
 # ── SAM 3D Objects: image → Gaussian-splat (.ply) via an external GPU service ─
@@ -13061,6 +13112,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "local rembg can't read SVG / data URIs - needs raster bytes. "
                             "Use a file-backed asset or a fal-based rembg in a later phase."})
                     bytes_ = _local_rembg(input_abs, model, options)
+                elif provider == "local" and skill == "slice9-normalize":
+                    if input_data_uri:
+                        return self._reply(400, {"error":
+                            "slice9-normalize needs file-backed raster bytes, not a data URI."})
+                    try:
+                        _s9_out = _safe_join(project_root, output)
+                    except Exception as e:
+                        return self._reply(400, {"error": f"invalid output path: {e}"})
+                    bytes_ = _local_slice9(input_abs, _s9_out, options)
                 elif provider == "sam3d" and skill in ("image-to-ply", "image-to-glb"):
                     if not input_abs:
                         return self._reply(400, {"error":

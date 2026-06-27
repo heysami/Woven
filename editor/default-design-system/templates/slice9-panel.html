@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-theme="slice9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default - Slice-9 game UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<!-- all.css pulls styles + components/slice9.css + themes/slice9.css in order -->
+<link rel="stylesheet" href="../all.css">
+<style>
+  body{ margin:0; min-height:100vh; background:#0e0f1c;
+        background-image:radial-gradient(#1c1e34 1px, transparent 1px); background-size:8px 8px;
+        font-family:"Plus Jakarta Sans",system-ui,sans-serif; color:#f4f4f4; }
+  .stage{ max-width:860px; margin:0 auto; padding:40px 24px 80px; display:grid; gap:28px; }
+  .stage h1{ font-size:22px; letter-spacing:.04em; margin:0 0 4px; }
+  .stage .lede{ color:#aeb4d6; margin:0; font-size:14px; }
+  /* prove resolution independence: same atlas, three element sizes */
+  .sizes{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+  .row{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  label{ display:block; font-size:12px; color:#aeb4d6; margin-bottom:6px; }
+  .field{ flex:1 1 220px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <header>
+    <h1>Slice-9 game UI</h1>
+    <p class="lede">One generated raster atlas (24&times;24 tiles, 8px corner) framing the canonical
+       <code>.card</code> / <code>.btn</code> / <code>.input</code> classes via <code>border-image</code>.
+       No class edits - the look comes from <code>data-theme="slice9"</code> alone.</p>
+  </header>
+
+  <!-- canonical role markup, framed by themes/slice9.css with no extra classes -->
+  <div class="card">
+    <h2 style="margin:0 0 6px">Dialog panel</h2>
+    <p style="margin:0 0 16px;color:#aeb4d6;font-size:14px">Corners stay pixel-exact at any size; edges
+       tile, the center fills. This whole card is a single 1.2&nbsp;KB PNG.</p>
+    <div class="row">
+      <button class="btn btn--primary">Confirm</button>
+      <button class="btn btn--outline">Cancel</button>
+    </div>
+  </div>
+
+  <!-- resolution independence: identical panel.png at 3 footprints -->
+  <div>
+    <p class="lede" style="margin-bottom:12px">Same <code>panel.png</code>, three sizes - corners never distort:</p>
+    <div class="sizes">
+      <div class="s9 s9--panel" style="width:120px;height:80px"></div>
+      <div class="s9 s9--panel" style="width:200px;height:120px"></div>
+      <div class="s9 s9--panel" style="width:90px;height:160px"></div>
+    </div>
+  </div>
+
+  <!-- form: recessed input wells + raised key -->
+  <div class="section-card">
+    <h2 style="margin:0 0 14px">New game</h2>
+    <div class="row" style="align-items:flex-start">
+      <div class="field">
+        <label>Hero name</label>
+        <input class="input" value="ARIN" style="width:100%">
+      </div>
+      <div class="field">
+        <label>Class</label>
+        <select class="select" style="width:100%"><option>Knight</option><option>Mage</option></select>
+      </div>
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:18px">
+      <button class="btn btn--primary">Start &#9654;</button>
+    </div>
+  </div>
+
+  <!-- standalone .s9 buttons (component layer, no theme needed) -->
+  <div class="row">
+    <button class="s9 s9--btn">Press me</button>
+    <button class="s9 s9--btn">Inventory</button>
+    <input class="s9 s9--input" placeholder="search items..." style="width:220px">
+  </div>
+</div>
+</body>
+</html>

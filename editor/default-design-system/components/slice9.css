@@ -1,0 +1,55 @@
+/* ==========================================================================
+   components/slice9.css - reusable 9-slice (border-image) chrome.
+
+   The aesthetic-AGNOSTIC layer. It knows HOW to hang a generated raster frame
+   on an element via border-image; it knows NOTHING about which atlas. A theme
+   (or inline style) supplies the frame per role through CSS custom properties:
+
+     --s9-src      url(...) of the frame PNG          (border-image-source)
+     --s9-slice    t r b l [+ "fill"]                 (border-image-slice)
+     --s9-width    how thick the border renders        (border-image-width)
+     --s9-repeat   stretch | round | repeat | space    (border-image-repeat)
+     --s9-pad      content inset (>= visual border)    (padding)
+
+   Apply with the .s9 marker + a role modifier, OR let a theme bind the frame
+   to the canonical role classes (.card / .btn / .input) - see themes/slice9.css.
+
+   WHY border-image and not a background sprite: the four corners stay pixel-
+   exact at ANY element size while the edges tile/stretch and the center fills.
+   One raster, resolution-independent chrome - the classic game-UI primitive.
+   ========================================================================== */
+
+.s9{
+  /* the frame */
+  border-style: solid;                 /* required for border-image to paint */
+  border-width: var(--s9-width, 24px);
+  border-image-source: var(--s9-src);
+  border-image-slice: var(--s9-slice, 8 fill);
+  border-image-width: var(--s9-width, 24px);
+  border-image-repeat: var(--s9-repeat, stretch);
+  border-image-outset: 0;
+  /* keep generated pixel art crisp when scaled up by border-image-width */
+  image-rendering: pixelated;
+  /* the visual border eats into the box; give content room to clear it */
+  padding: var(--s9-pad, 16px);
+  background: transparent;             /* the frame's "fill" region IS the bg */
+  box-shadow: none;
+  border-radius: 0;                    /* corners come from the sprite, not CSS */
+}
+
+/* Role modifiers - each just points --s9-* at a different atlas frame. The
+   url()s here are RELATIVE to the stylesheet, so a project can ship the atlas
+   anywhere and re-point with one var. Defaults wired to the 8-bit proof atlas. */
+.s9--panel { --s9-src: url("../assets/slice9/8bit/panel.png"); }
+.s9--card  { --s9-src: url("../assets/slice9/8bit/card.png"); }
+.s9--input { --s9-src: url("../assets/slice9/8bit/input.png"); --s9-pad: 10px 12px; --s9-width:18px; }
+.s9--btn   { --s9-src: url("../assets/slice9/8bit/button.png"); --s9-pad: 10px 18px; --s9-width:18px; cursor:pointer; }
+.s9--btn:active,
+.s9--btn.is-pressed{ --s9-src: url("../assets/slice9/8bit/button-active.png"); }
+
+/* A11y: never let the sprite swallow the focus ring. */
+.s9:focus-visible{ outline: 3px solid var(--primary-500, #5b6ee1); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: no-preference){
+  .s9--btn{ transition: none; } /* pixel UI: no easing, state flips on the frame */
+}

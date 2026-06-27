@@ -1,0 +1,134 @@
+/* themes/slice9.css - apply via <html data-theme="slice9">
+   ==========================================================================
+   A RASTER-BACKED STYLE OVERLAY for the Woven template design system.
+
+   Where analog/glassmorphism paint their identity at runtime (canvas/WebGL),
+   slice9's identity lives entirely in a GENERATED RASTER ATLAS of 9-slice
+   frames (assets/slice9/<skin>/*.png, produced by tools/slice9-gen.py for the
+   geometric skins, or by the image-gen path for ornate skins). The GPU does the
+   slicing via border-image, so there is ZERO render-time JS - the raster IS the
+   design system.
+
+   SKIN-SWITCHING. The look is parameterised by per-role frame vars + a few
+   geometry vars. The base block defaults to the 8-bit skin; a second attribute
+   re-points everything to another atlas with ONE token:
+
+     <html data-theme="slice9">                     -> 8-bit (default)
+     <html data-theme="slice9" data-s9-skin="snes">  -> 16-bit SNES JRPG window
+     <html data-theme="slice9" data-s9-skin="scifi"> -> sci-fi HUD panel
+     <html data-theme="slice9" data-s9-skin="cozy">  -> cozy parchment / wood
+
+   The role rules (bottom of file) are written ONCE and consume the vars, so a
+   new skin is a var block + a generated atlas folder - no new selectors.
+
+   NB on paths: url() inside a custom property resolves relative to THIS
+   stylesheet (themes/), which is why every --s9f-* points at ../assets/...
+   ========================================================================== */
+
+/* ===== default skin = 8-bit ============================================= */
+:root[data-theme="slice9"]{
+  --radius-base:0; --radius-l:0; --radius-pill:0;
+  --shadow-xs:none; --shadow-s:none; --shadow-base:none; --shadow-m:none; --shadow-l:none; --shadow-xl:none;
+
+  /* geometry (source corner px + rendered border widths) */
+  --s9-slice:8;
+  --s9-bw-panel:24px;
+  --s9-bw-ctl:16px;
+
+  /* per-role frame sources */
+  --s9f-panel:url("../assets/slice9/8bit/panel.png");
+  --s9f-card:url("../assets/slice9/8bit/card.png");
+  --s9f-button:url("../assets/slice9/8bit/button.png");
+  --s9f-button-active:url("../assets/slice9/8bit/button-active.png");
+  --s9f-input:url("../assets/slice9/8bit/input.png");
+
+  /* register tokens */
+  --surface:#1a1c2c; --surface-default:#21243a; --surface-medium:#29366f; --surface-strong:#3a4a8c;
+  --fg-default:#f4f4f4; --fg-muted:#aeb4d6; --fg-subtle:#7d84ad;
+  --border-default:#3a4a8c; --border-subtle:#29366f;
+  --primary-500:#5b6ee1;
+  --s9-on-frame:#ffffff;     /* text on panels/buttons */
+  --s9-field-ink:#1a1c2c;    /* text inside input wells */
+  --s9-field-ph:#7d84ad;
+}
+
+/* ===== 16-bit SNES JRPG window ========================================== */
+:root[data-theme="slice9"][data-s9-skin="snes"]{
+  --s9-slice:10; --s9-bw-panel:20px; --s9-bw-ctl:12px;
+  --s9f-panel:url("../assets/slice9/snes/panel.png");
+  --s9f-card:url("../assets/slice9/snes/card.png");
+  --s9f-button:url("../assets/slice9/snes/button.png");
+  --s9f-button-active:url("../assets/slice9/snes/button-active.png");
+  --s9f-input:url("../assets/slice9/snes/input.png");
+  --fg-default:#eaf0ff; --primary-500:#6cb8e8;
+  --s9-on-frame:#ffffff; --s9-field-ink:#cfe0ff; --s9-field-ph:#6f80b4;
+}
+
+/* ===== sci-fi HUD panel ================================================= */
+:root[data-theme="slice9"][data-s9-skin="scifi"]{
+  --s9-slice:12; --s9-bw-panel:24px; --s9-bw-ctl:14px;
+  --s9f-panel:url("../assets/slice9/scifi/panel.png");
+  --s9f-card:url("../assets/slice9/scifi/card.png");
+  --s9f-button:url("../assets/slice9/scifi/button.png");
+  --s9f-button-active:url("../assets/slice9/scifi/button-active.png");
+  --s9f-input:url("../assets/slice9/scifi/input.png");
+  --fg-default:#d6f7ff; --primary-500:#34e3ff;
+  --s9-on-frame:#d6f7ff; --s9-field-ink:#aee9f6; --s9-field-ph:#4f8696;
+}
+
+/* ===== cozy parchment / wood (LIGHT register) =========================== */
+:root[data-theme="slice9"][data-s9-skin="cozy"]{
+  --s9-slice:9; --s9-bw-panel:18px; --s9-bw-ctl:11px;
+  --s9f-panel:url("../assets/slice9/cozy/panel.png");
+  --s9f-card:url("../assets/slice9/cozy/card.png");
+  --s9f-button:url("../assets/slice9/cozy/button.png");
+  --s9f-button-active:url("../assets/slice9/cozy/button-active.png");
+  --s9f-input:url("../assets/slice9/cozy/input.png");
+  --fg-default:#3a2412; --primary-500:#c9954f;
+  --s9-on-frame:#3a2412; --s9-field-ink:#3a2412; --s9-field-ph:#9a7a4a;
+}
+
+/* ==========================================================================
+   Role bindings (written ONCE, consume the vars). Existing markup is framed
+   with no class edits - the canonical roles inherit the chosen skin.
+   ========================================================================== */
+:root[data-theme="slice9"] :where(.card,.section-card,.modal,.panel,.btn,.btn--primary,.btn--outline,.input,.select,.textarea){
+  border-style:solid; border-radius:0; background:transparent; box-shadow:none;
+  border-image-slice:var(--s9-slice) fill;
+  border-image-repeat:stretch; border-image-outset:0; image-rendering:pixelated;
+}
+
+/* panels / cards / modals */
+:root[data-theme="slice9"] :where(.card,.section-card,.modal,.panel){
+  border-width:var(--s9-bw-panel);
+  border-image-source:var(--s9f-panel);
+  border-image-width:var(--s9-bw-panel);
+  padding:18px; color:var(--fg-default);
+}
+:root[data-theme="slice9"] :where(.card--filled,.stat-hero--brand){ border-image-source:var(--s9f-card); }
+
+/* buttons -> raised key, recessed on press */
+:root[data-theme="slice9"] :where(.btn,.btn--primary,.btn--outline){
+  border-width:var(--s9-bw-ctl);
+  border-image-source:var(--s9f-button);
+  border-image-width:var(--s9-bw-ctl);
+  padding:6px 14px; color:var(--s9-on-frame); font-weight:600; cursor:pointer; transition:none;
+}
+:root[data-theme="slice9"] :where(.btn,.btn--primary):active,
+:root[data-theme="slice9"] :where(.btn,.btn--primary).is-pressed{
+  border-image-source:var(--s9f-button-active); transform:translateY(1px);
+}
+
+/* fields -> recessed well */
+:root[data-theme="slice9"] :where(.input,.select,.textarea){
+  border-width:var(--s9-bw-ctl);
+  border-image-source:var(--s9f-input);
+  border-image-width:var(--s9-bw-ctl);
+  padding:6px 10px; color:var(--s9-field-ink);
+}
+:root[data-theme="slice9"] :where(.input,.select,.textarea)::placeholder{ color:var(--s9-field-ph); }
+
+/* focus ring must clear the sprite */
+:root[data-theme="slice9"] :where(.btn,.btn--primary,.input,.select,.textarea):focus-visible{
+  outline:3px solid var(--primary-500); outline-offset:3px;
+}

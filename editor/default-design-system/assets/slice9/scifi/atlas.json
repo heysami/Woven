@@ -1,0 +1,75 @@
+{
+  "id": "scifi",
+  "label": "Sci-fi HUD panel",
+  "library": "aesthetic-arknights-endfield-industrial",
+  "tile": 32,
+  "corner": 12,
+  "imageRendering": "pixelated",
+  "frames": {
+    "panel": {
+      "src": "panel.png",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "fill": true,
+      "width": 24,
+      "repeat": "stretch",
+      "role": "panel"
+    },
+    "card": {
+      "src": "card.png",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "fill": true,
+      "width": 24,
+      "repeat": "stretch",
+      "role": "card"
+    },
+    "button": {
+      "src": "button.png",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "fill": true,
+      "width": 12,
+      "repeat": "stretch",
+      "role": "button"
+    },
+    "button-active": {
+      "src": "button-active.png",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "fill": true,
+      "width": 12,
+      "repeat": "stretch",
+      "role": "button-active"
+    },
+    "input": {
+      "src": "input.png",
+      "slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "fill": true,
+      "width": 12,
+      "repeat": "stretch",
+      "role": "input"
+    }
+  }
+}

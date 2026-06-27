@@ -1,0 +1,75 @@
+{
+  "id": "snes",
+  "label": "16-bit SNES JRPG window",
+  "library": "aesthetic-pixel-snes-jrpg",
+  "tile": 32,
+  "corner": 10,
+  "imageRendering": "pixelated",
+  "frames": {
+    "panel": {
+      "src": "panel.png",
+      "slice": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "fill": true,
+      "width": 20,
+      "repeat": "stretch",
+      "role": "panel"
+    },
+    "card": {
+      "src": "card.png",
+      "slice": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "fill": true,
+      "width": 20,
+      "repeat": "stretch",
+      "role": "card"
+    },
+    "button": {
+      "src": "button.png",
+      "slice": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "fill": true,
+      "width": 10,
+      "repeat": "stretch",
+      "role": "button"
+    },
+    "button-active": {
+      "src": "button-active.png",
+      "slice": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "fill": true,
+      "width": 10,
+      "repeat": "stretch",
+      "role": "button-active"
+    },
+    "input": {
+      "src": "input.png",
+      "slice": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "fill": true,
+      "width": 10,
+      "repeat": "stretch",
+      "role": "input"
+    }
+  }
+}

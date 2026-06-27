@@ -1,0 +1,75 @@
+{
+  "id": "cozy",
+  "label": "Cozy parchment / wood",
+  "library": "aesthetic-pixel-modern-cozy",
+  "tile": 28,
+  "corner": 9,
+  "imageRendering": "pixelated",
+  "frames": {
+    "panel": {
+      "src": "panel.png",
+      "slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "fill": true,
+      "width": 18,
+      "repeat": "stretch",
+      "role": "panel"
+    },
+    "card": {
+      "src": "card.png",
+      "slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "fill": true,
+      "width": 18,
+      "repeat": "stretch",
+      "role": "card"
+    },
+    "button": {
+      "src": "button.png",
+      "slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "fill": true,
+      "width": 9,
+      "repeat": "stretch",
+      "role": "button"
+    },
+    "button-active": {
+      "src": "button-active.png",
+      "slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "fill": true,
+      "width": 9,
+      "repeat": "stretch",
+      "role": "button-active"
+    },
+    "input": {
+      "src": "input.png",
+      "slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "fill": true,
+      "width": 9,
+      "repeat": "stretch",
+      "role": "input"
+    }
+  }
+}

@@ -350,6 +350,23 @@
       hasAspect: false,
     },
     {
+      // 9-slice frame finisher: square + trim a generated (rembg'd) frame and
+      // auto-detect its border-image-slice insets, writing a .slice9.json
+      // sidecar. The image-gen path for slice9 game-UI atlases (ornate frames -
+      // gold filigree, carved stone - that the procedural slice9-gen.py can't draw).
+      id: "slice9-normalize",
+      label: "Slice-9 normalize",
+      hint: "asset → 9-slice frame (local · square + auto-detect slice insets · writes .slice9.json · no API key)",
+      glyph: "▦",
+      pathway: "Local",
+      provider: "local",
+      model: "auto",
+      inputs: ["asset"],
+      output: "image",
+      hasModelDropdown: false,
+      hasAspect: false,
+    },
+    {
       id: "upscale",
       label: "Upscale image",
       hint: "asset → image (4× by default)",

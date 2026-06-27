@@ -26,6 +26,7 @@
 @import url("components/doc.css");
 @import url("components/charts.css");
 @import url("components/fab.css");
+@import url("components/slice9.css");
 
 /* 3. style overlays */
 @import url("themes/minimal.css");
@@ -37,3 +38,4 @@
 @import url("themes/neobrutalism.css");
 @import url("themes/analog.css");
 @import url("themes/rams.css");
+@import url("themes/slice9.css");

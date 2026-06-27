@@ -25,7 +25,8 @@
     { "id": "techminimalism", "label": "Tech-minimalism", "attr": "data-theme=\"techminimalism\"", "file": "themes/techminimalism.css", "desc": "Frutiger-DORFic / Teenage Engineering: concrete grey, single safety-orange, mono micro-labels, hairlines." },
     { "id": "neobrutalism", "label": "Neobrutalism", "attr": "data-theme=\"neobrutalism\"", "file": "themes/neobrutalism.css", "desc": "Monochrome editorial: cream paper, ink borders, zero radius, zero-blur offset shadow." },
     { "id": "analog", "label": "Analog", "attr": "data-theme=\"analog\"", "file": "themes/analog.css", "desc": "Ink-on-paper halftone: light surfaces with a live per-element halftone gradient (analog.js) on nav, filled cards and buttons." },
-    { "id": "rams", "label": "Rams", "attr": "data-theme=\"rams\"", "file": "themes/rams.css", "desc": "Elegant Dieter Rams / Braun skeuomorphism: warm-grey device face, subtle top-down gradients + hairline bevels, recessed-well + raised-key controls that depress on press." }
+    { "id": "rams", "label": "Rams", "attr": "data-theme=\"rams\"", "file": "themes/rams.css", "desc": "Elegant Dieter Rams / Braun skeuomorphism: warm-grey device face, subtle top-down gradients + hairline bevels, recessed-well + raised-key controls that depress on press." },
+    { "id": "slice9", "label": "Slice-9 game UI", "attr": "data-theme=\"slice9\"", "file": "themes/slice9.css", "desc": "Raster-backed 9-slice (border-image) game chrome: a generated frame atlas (assets/slice9/<id>/*.png from tools/slice9-gen.py) bound to .card/.btn/.input - zero render-time JS, resolution-independent corners. Library: aesthetic-8-bit-generic." }
   ],
   "assets": [
     "assets/sidebar-grid.svg",
