@@ -9949,8 +9949,11 @@ function ShareMenuButton() {
   const cap = useUserTestingCapability();
   const utEnabled = !!(cap && cap.config && cap.config.enabled);
   // A live-session GUEST gets a read-only view: they can see state + copy links
-  // but cannot start/stop sessions, end them, or change roles.
-  const isGuest = typeof window !== "undefined" && !!window.__thLiveActive;
+  // but cannot start/stop sessions, end them, or change roles. Detect the guest
+  // by __thLiveToken (set only on a joined guest, cursors.js) - NOT
+  // __thLiveActive, which cursors-host.js ALSO sets true on the HOST editor when
+  // a session is live (so using it here hid End session + Go Live from the host).
+  const isGuest = typeof window !== "undefined" && !!window.__thLiveToken;
 
   const reloadShares = useCallback(() => {
     fetch(apiUrl("/__shares"))
@@ -45484,7 +45487,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Asset generators</div>
         <div className="workflow-library-list">
-          ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).map(s => {
+          ${((window.TH_MEDIA && window.TH_MEDIA.skills) || []).filter(s => s.id !== "pose-subject").map(s => {
             // Each skill is draggable; payload carries kind+skill so the drop
             // handler creates a node already configured for this skill type.
             const payload = { kind: "skill", skill: s.id };
@@ -45514,6 +45517,37 @@ function WorkflowLibrary({ tab = "nodes" }) {
               </div>
             `;
           })}
+        </div>
+      </div>
+      <div className="workflow-library-section">
+        <div className="workflow-library-section-head">Character poses</div>
+        <div className="workflow-library-list">
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "skill", skill: "pose-subject", model: "gpt-image-2", aspect: "1:1" }));
+            }}
+            title="Drag onto canvas - Pose / restyle set. Wire a subject image (character / object) into the input, tick which angles / expressions / poses you want, and Generate once - it batch-generates the whole set (identity-preserving image-to-image) and auto-links a Pose viewer to browse them."
+          >
+            <span className="workflow-library-item-glyph">⟳</span>
+            <span className="workflow-library-item-label">Pose / restyle set</span>
+            <span className="workflow-library-item-id">subject → pose set</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "pose-viewer" }));
+            }}
+            title="Drag onto canvas - Pose viewer. Wire a Pose / restyle set generator's output into the input port. Shows ONE selected pose large; select the node to reveal a floating side panel that switches between the generated poses instantly (or regenerates a single one). The output carries the currently-selected pose."
+          >
+            <span className="workflow-library-item-glyph">⊡</span>
+            <span className="workflow-library-item-label">Pose viewer</span>
+            <span className="workflow-library-item-id">pose set → one pose</span>
+          </div>
         </div>
       </div>
       <div className="workflow-library-section">
@@ -45912,19 +45946,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">◳</span>
             <span className="workflow-library-item-label">Animated sprite</span>
             <span className="workflow-library-item-id">image → sprite sheet</span>
-          </div>
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "pose-viewer" }));
-            }}
-            title="Drag onto canvas - pose viewer. Wire a Pose / restyle SET generator's output into the input port. Shows ONE selected pose large; click the node to reveal a floating side panel that switches between the generated poses instantly (or regenerates a single one). The output carries the currently-selected pose."
-          >
-            <span className="workflow-library-item-glyph">⊡</span>
-            <span className="workflow-library-item-label">Pose viewer</span>
-            <span className="workflow-library-item-id">pose set → one pose</span>
           </div>
         </div>
         <div className="workflow-library-section-head">Building blocks</div>
