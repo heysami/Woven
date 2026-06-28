@@ -6177,27 +6177,8 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .wv-knob.is-disabled { opacity: 0.5; pointer-events: none; }
 
 /* Slider - custom track with an accent fill driven by --wv-fill (set inline). */
-.wv-slider {
-  -webkit-appearance: none; appearance: none;
-  width: 100%; height: 18px; background: transparent; cursor: pointer;
-}
-.wv-slider::-webkit-slider-runnable-track {
-  height: 4px; border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) var(--wv-fill, 0%), var(--border) var(--wv-fill, 0%));
-}
-.wv-slider::-moz-range-track { height: 4px; border-radius: 999px; background: var(--border); }
-.wv-slider::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
-.wv-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
-  background: var(--surface); border: 2px solid var(--accent);
-  box-shadow: var(--shadow-sm); cursor: grab;
-}
-.wv-slider::-moz-range-thumb {
-  width: 14px; height: 14px; border-radius: 50%;
-  background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); cursor: grab;
-}
-.wv-slider:active::-webkit-slider-thumb { cursor: grabbing; }
+/* Native green slider (accent fill + thumb) - the Woven reference look. */
+.wv-slider { width: 100%; height: 18px; accent-color: var(--accent); cursor: pointer; }
 
 /* Readout box (label + value rows), e.g. simulation STEP / STATE. */
 .wv-readout { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); }
@@ -6214,20 +6195,18 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .wv-layer-badge { font: 600 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 2px 4px; }
 
 /* No browser-blue native controls anywhere in the editor - tint every native
-   range / checkbox / radio with the project accent (green). Custom-appearance
-   sliders (-webkit-appearance:none) ignore this, so the polished kit sliders
-   are unaffected. */
+   range / checkbox / radio with the project accent (green), and give colour
+   inputs a clean swatch instead of the blue-bordered default. */
 input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+input[type="color"]:not(.wac-color) {
+  -webkit-appearance: none; appearance: none;
+  padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer;
+}
+input[type="color"]:not(.wac-color)::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]:not(.wac-color)::-webkit-color-swatch { border: 0; border-radius: 3px; }
 
 /* Animated-sprite node: promote its bare sliders to the polished kit look. */
-.workflow-node-sprite-body input[type="range"] {
-  -webkit-appearance: none; appearance: none; height: 18px; background: transparent; cursor: pointer;
-}
-.workflow-node-sprite-body input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--border); }
-.workflow-node-sprite-body input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: var(--border); }
-.workflow-node-sprite-body input[type="range"]::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
-.workflow-node-sprite-body input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); }
-.workflow-node-sprite-body input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); }
+.workflow-node-sprite-body input[type="range"] { height: 18px; accent-color: var(--accent); cursor: pointer; }
 .wac-color {
   width: 30px; height: 22px; flex: 0 0 auto;
   padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -27140,16 +27119,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-vector-field select:hover { border-color: var(--border-strong); }
 .workflow-vector-field input:focus,
 .workflow-vector-field select:focus { outline: none; border-color: var(--accent); }
-/* Polished slider - clean track + ring thumb (Firefox also fills to value). */
-.workflow-vector-field input[type="range"] {
-  flex: 1; -webkit-appearance: none; appearance: none;
-  height: 18px; background: transparent; cursor: pointer; margin: 0;
-}
-.workflow-vector-field input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--border); }
-.workflow-vector-field input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: var(--border); }
-.workflow-vector-field input[type="range"]::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
-.workflow-vector-field input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); }
-.workflow-vector-field input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); }
+/* Native green slider (accent fill + thumb) - the Woven reference look. */
+.workflow-vector-field input[type="range"] { flex: 1; height: 18px; accent-color: var(--accent); cursor: pointer; margin: 0; }
 .workflow-vector-field-val {
   flex: 0 0 auto;
   font: 11px var(--font-mono);

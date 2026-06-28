@@ -130,6 +130,24 @@
 .wv-btn-icon { width: 28px; padding: 0; }
 .wv-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
 
+/* ── Native control kit (applies to EVERY tool, no opt-in class needed) ──────
+   The single source of truth so sliders / checkboxes / colour swatches read the
+   same green across all tools instead of the browser's default blue. Sliders use
+   the native accent fill (green track up to the thumb + green thumb) - the look
+   in the Woven reference panels. A tool that wants a bespoke slider can still
+   override `input[type=range]` in its own (later-loaded) <style>. */
+input[type="range"] { accent-color: var(--wv-accent); height: 18px; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--wv-accent); }
+input[type="color"] {
+  -webkit-appearance: none; appearance: none;
+  width: 30px; height: 22px; padding: 0;
+  border: 1px solid var(--wv-border); border-radius: var(--wv-radius-sm);
+  background: none; cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 3px; }
+input[type="color"]::-moz-color-swatch { border: 0; border-radius: 3px; }
+
 .wv-input, .wv-select {
   height: 28px; padding: 0 8px;
   background: var(--wv-surface);

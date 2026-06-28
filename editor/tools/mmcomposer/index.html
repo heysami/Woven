@@ -83,12 +83,7 @@
   .fld>label .v{color:var(--ink);font-family:var(--mono);font-size:12px;font-weight:600}
   select,input[type=text],input[type=number],textarea{font-family:inherit;font-size:12px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%;outline:none}
   textarea{font-family:var(--mono);font-size:11px;min-height:74px;resize:vertical;white-space:pre}
-  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;background:transparent;cursor:pointer;margin:1px 0}
-  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:999px;background:linear-gradient(to right,var(--acc) var(--wv-fill,0%),var(--line) var(--wv-fill,0%))}
-  input[type=range]::-moz-range-track{height:4px;border-radius:999px;background:var(--line)}
-  input[type=range]::-moz-range-progress{height:4px;border-radius:999px;background:var(--acc)}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:var(--panel);border:2px solid var(--acc);box-shadow:var(--wv-shadow-sm)}
-  input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--panel);border:2px solid var(--acc);box-shadow:var(--wv-shadow-sm)}
+  input[type=range]{width:100%;height:18px;accent-color:var(--acc);cursor:pointer}
   input[type=range]:disabled{opacity:.5;cursor:default}
   input[type=color]{width:36px;height:24px;padding:0;border:1px solid var(--line);background:transparent;border-radius:4px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -106,8 +101,6 @@
   .effitem{border:1px solid var(--line);border-radius:8px;padding:9px;margin:8px 0;background:var(--wv-surface-2)}
   .effitem .eh{display:flex;align-items:center;gap:6px}
   .effitem .eh select{flex:1}
-  /* Spectrum bar under each effect header (reference effect-stack look). */
-  .effitem-bar{height:5px;border-radius:999px;margin:8px 0 2px;background:linear-gradient(90deg,var(--acc),#6fcdbb 38%,#e8c85f 72%,#e58aa6);opacity:.92}
   .toolbar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:7}
   .hint{font-size:10px;color:var(--ink2);margin:2px 0 0}
   hr{border:0;border-top:1px solid var(--line);margin:10px 0}
@@ -4667,7 +4660,6 @@ function renderInspector(){
       rm.onclick=()=>{ stack.splice(idx,1); emit(); renderInspector(); };
       eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
       card.appendChild(eh);
-      const fxbar=document.createElement('div'); fxbar.className='effitem-bar'; card.appendChild(fxbar);
       card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
       // fluid is a CPU layer-buffer sim, not a GL shader - render its own controls.
       if(eff.type==='fluid'){
