@@ -50,11 +50,12 @@
   --danger:        oklch(57% 0.20 22);
   --danger-soft:   oklch(95% 0.04 22);
 
-  /* Type - Plus Jakarta Sans (humanist geometric) for UI + Space Mono (labels,
-     IDs, coordinates - the TE typewriter-grotesque). Metric-close fallbacks. */
-  --font-sans:    "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono:    "Space Mono", "JetBrains Mono", ui-monospace, monospace;
-  --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  /* Type - exactly two faces: Plus Jakarta Sans (humanist geometric) for UI +
+     Inconsolata (clean humanist monospace) for labels, IDs, coordinates, code.
+     System fallbacks only - no extra web fonts. */
+  --font-sans:    "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono:    "Inconsolata", ui-monospace, monospace;
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
 
   /* Radii */
   --radius-sm: 4px;
@@ -681,7 +682,7 @@ button {
   padding: 18px 22px 0;
 }
 .newproj-card-head h2 {
-  margin: 0; font: 600 16px/1.2 var(--font-sans, -apple-system, system-ui, sans-serif);
+  margin: 0; font: 600 16px/1.2 var(--font-sans);
 }
 .newproj-close {
   border: 0; background: transparent; cursor: pointer;
@@ -691,9 +692,9 @@ button {
 .newproj-close:hover { background: rgba(0,0,0,0.05); }
 .newproj-card-body { padding: 16px 22px; display: flex; flex-direction: column; gap: 10px; }
 .newproj-field { display: flex; flex-direction: column; gap: 6px; }
-.newproj-label { font: 600 11px/1.2 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; }
+.newproj-label { font: 600 11px/1.2 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; }
 .newproj-field input {
-  font: 400 14px/1.4 var(--font-sans, system-ui, sans-serif);
+  font: 400 14px/1.4 var(--font-sans);
   padding: 10px 12px;
   border: 1px solid var(--border, rgba(0,0,0,0.18));
   border-radius: 4px;
@@ -701,17 +702,17 @@ button {
   color: var(--text, #1a1a1a);
 }
 .newproj-field input:focus { outline: 2px solid var(--accent, #2c5fff); outline-offset: 1px; }
-.newproj-meta { font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif); opacity: 0.7; display: flex; gap: 6px; flex-wrap: wrap; }
-.newproj-meta code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono, ui-monospace, monospace); }
+.newproj-meta { font: 400 12px/1.4 var(--font-sans); opacity: 0.7; display: flex; gap: 6px; flex-wrap: wrap; }
+.newproj-meta code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); }
 .newproj-warning { color: #b04a00; }
-.newproj-error { color: #b00020; font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif); }
+.newproj-error { color: #b00020; font: 400 12px/1.4 var(--font-sans); }
 .newproj-card-foot {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 22px 18px;
   border-top: 1px solid var(--border, rgba(0,0,0,0.08));
 }
 .newproj-cancel, .newproj-create {
-  font: 600 13px/1.2 var(--font-sans, system-ui, sans-serif);
+  font: 600 13px/1.2 var(--font-sans);
   padding: 8px 16px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
 }
 .newproj-cancel { background: transparent; color: var(--text, #1a1a1a); border-color: var(--border, rgba(0,0,0,0.18)); }
@@ -740,8 +741,8 @@ button {
 }
 .newproj-ds-check.is-on { background: var(--accent, #2c5fff); border-color: var(--accent, #2c5fff); }
 .newproj-ds-toggle-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.newproj-ds-toggle-title { font: 600 13px/1.3 var(--font-sans, system-ui, sans-serif); }
-.newproj-ds-toggle-sub { font: 400 12px/1.4 var(--font-sans, system-ui, sans-serif); opacity: 0.66; }
+.newproj-ds-toggle-title { font: 600 13px/1.3 var(--font-sans); }
+.newproj-ds-toggle-sub { font: 400 12px/1.4 var(--font-sans); opacity: 0.66; }
 
 /* ── New-project: DS customizer (step 2) - wide split overlay ── */
 .dscz-overlay {
@@ -760,8 +761,8 @@ button {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
   padding: 18px 22px 14px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.1));
 }
-.dscz-head-titles h2 { margin: 0; font: 600 17px/1.2 var(--font-sans, system-ui, sans-serif); }
-.dscz-head-titles p { margin: 5px 0 0; font: 400 12.5px/1.5 var(--font-sans, system-ui, sans-serif); opacity: 0.66; max-width: 760px; }
+.dscz-head-titles h2 { margin: 0; font: 600 17px/1.2 var(--font-sans); }
+.dscz-head-titles p { margin: 5px 0 0; font: 400 12.5px/1.5 var(--font-sans); opacity: 0.66; max-width: 760px; }
 .dscz-body { flex: 1 1 auto; min-height: 0; display: flex; }
 /* Right-docked controls column: the preview fills the space to its left; the
    controls scroll and the footer pins to the bottom, both at the panel width. */
@@ -785,12 +786,12 @@ button {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: 50%;
   border: 1.5px solid var(--border, #cfd3da); background: var(--bg, #fff);
-  font: 700 12.5px/1 var(--font-sans, system-ui, sans-serif);
+  font: 700 12.5px/1 var(--font-sans);
   color: color-mix(in srgb, currentColor 55%, transparent);
   transition: border-color 0.14s, background 0.14s, color 0.14s, transform 0.14s;
 }
 .dscz-step-label {
-  font: 500 11px/1.25 var(--font-sans, system-ui, sans-serif); text-align: center;
+  font: 500 11px/1.25 var(--font-sans); text-align: center;
   opacity: 0.6; transition: opacity 0.14s;
 }
 .dscz-step:hover .dscz-step-dot { border-color: var(--accent, #2c5fff); }
@@ -825,8 +826,8 @@ button {
   border-color: var(--accent, #2c5fff);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #2c5fff) 30%, transparent);
 }
-.dscz-styletile-name { font: 600 12px/1.2 var(--font-sans, system-ui, sans-serif); }
-.dscz-styletile-desc { font: 400 10.5px/1.25 var(--font-sans, system-ui, sans-serif); opacity: 0.6; }
+.dscz-styletile-name { font: 600 12px/1.2 var(--font-sans); }
+.dscz-styletile-desc { font: 400 10.5px/1.25 var(--font-sans); opacity: 0.6; }
 /* Mini representative preview inside each tile. */
 .dscz-styletile-vis {
   display: block; height: 46px; border-radius: 6px; overflow: hidden;
@@ -906,7 +907,7 @@ button {
 /* Build-settings checkboxes (imagery / orchestrators allow-lists). */
 .dscz-check {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
-  font: 400 12.5px/1.3 var(--font-sans, system-ui, sans-serif); opacity: 0.9;
+  font: 400 12.5px/1.3 var(--font-sans); opacity: 0.9;
 }
 .dscz-check input { accent-color: var(--accent, #2c5fff); flex: none; }
 .dscz-checkgrid { display: flex; flex-direction: column; gap: 7px; padding: 2px 0 2px 4px; }
@@ -914,41 +915,41 @@ button {
 .dscz-group { display: flex; flex-direction: column; gap: 9px; }
 .dscz-group-label {
   display: flex; align-items: center; gap: 8px;
-  font: 600 11px/1.2 var(--font-sans, system-ui, sans-serif);
+  font: 600 11px/1.2 var(--font-sans);
   letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.72;
 }
 .dscz-group-val { font-weight: 500; letter-spacing: 0; text-transform: none; opacity: 0.85; }
 .dscz-reset {
   margin-left: auto; border: 0; background: transparent; cursor: pointer;
-  font: 500 10.5px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.02em;
+  font: 500 10.5px/1 var(--font-sans); letter-spacing: 0.02em;
   text-transform: none; color: var(--accent, #2c5fff); padding: 2px 4px; border-radius: 3px;
 }
 .dscz-reset:hover { background: color-mix(in srgb, var(--accent, #2c5fff) 12%, transparent); }
-.dscz-row-hint { font: 400 11px/1.45 var(--font-sans, system-ui, sans-serif); opacity: 0.58; }
+.dscz-row-hint { font: 400 11px/1.45 var(--font-sans); opacity: 0.58; }
 .dscz-stack { display: flex; flex-direction: column; gap: 5px; }
-.dscz-stack-label { font: 400 12px/1.3 var(--font-sans, system-ui, sans-serif); opacity: 0.8; display: flex; justify-content: space-between; }
+.dscz-stack-label { font: 400 12px/1.3 var(--font-sans); opacity: 0.8; display: flex; justify-content: space-between; }
 .dscz-stack-label b { font-weight: 600; opacity: 0.95; }
 .dscz-range { width: 100%; accent-color: var(--accent, #2c5fff); }
 .dscz-select {
-  width: 100%; font: 400 13px/1.3 var(--font-sans, system-ui, sans-serif);
+  width: 100%; font: 400 13px/1.3 var(--font-sans);
   padding: 8px 10px; border: 1px solid var(--border, rgba(0,0,0,0.18));
   border-radius: 5px; background: white; color: var(--text, #1a1a1a);
 }
 /* Custom-font slot (typed Google family name + uploaded-file fallback). */
 .dscz-text {
-  width: 100%; font: 400 13px/1.3 var(--font-sans, system-ui, sans-serif);
+  width: 100%; font: 400 13px/1.3 var(--font-sans);
   padding: 8px 10px; border: 1px solid var(--border, rgba(0,0,0,0.18));
   border-radius: 5px; background: white; color: var(--text, #1a1a1a);
 }
 .dscz-customfont { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px 4px; }
 .dscz-customfont-or {
-  font: 600 9px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.08em;
+  font: 600 9px/1 var(--font-sans); letter-spacing: 0.08em;
   text-transform: uppercase; opacity: 0.42;
 }
 .dscz-customfont-file { display: flex; align-items: center; gap: 8px; }
 .dscz-fontfile {
   flex: 1 1 auto; min-width: 0; text-align: left; cursor: pointer;
-  font: 500 12.5px/1.2 var(--font-sans, system-ui, sans-serif);
+  font: 500 12.5px/1.2 var(--font-sans);
   padding: 8px 10px; border: 1px dashed var(--border, rgba(0,0,0,0.28));
   border-radius: 5px; background: white; color: var(--text, #1a1a1a);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -965,7 +966,7 @@ button {
 .dscz-pal-trigger:hover { border-color: var(--accent, #2c5fff); }
 .dscz-pal-strip { display: inline-flex; flex: 0 0 auto; width: 70px; height: 18px; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
 .dscz-pal-strip > span { flex: 1; }
-.dscz-pal-name { font: 500 12.5px/1.2 var(--font-sans, system-ui, sans-serif); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dscz-pal-name { font: 500 12.5px/1.2 var(--font-sans); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dscz-pal-name-empty { opacity: 0.55; }
 .dscz-pal-caret { flex: 0 0 auto; opacity: 0.5; font-size: 11px; transition: transform 0.12s; }
 .dscz-pal-caret.is-open { transform: rotate(180deg); }
@@ -981,7 +982,7 @@ button {
 .dscz-pal-item:hover { background: rgba(0,0,0,0.05); }
 .dscz-pal-item.is-active { background: color-mix(in srgb, var(--accent, #2c5fff) 12%, transparent); }
 .dscz-pal-group {
-  font: 600 10px/1.2 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.06em; text-transform: uppercase;
+  font: 600 10px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase;
   opacity: 0.5; padding: 8px 6px 4px;
 }
 .dscz-pal-group:first-child { padding-top: 4px; }
@@ -989,21 +990,21 @@ button {
 .dscz-morelink {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; cursor: pointer;
   background: transparent; border: 0; padding: 4px 2px; text-align: left;
-  font: 500 12px/1.3 var(--font-sans, system-ui, sans-serif); color: var(--accent, #2c5fff);
+  font: 500 12px/1.3 var(--font-sans); color: var(--accent, #2c5fff);
 }
 .dscz-morelink:hover { text-decoration: underline; }
-.dscz-sub-label { font: 600 10px/1.2 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; margin: 4px 0 2px; }
+.dscz-sub-label { font: 600 10px/1.2 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; margin: 4px 0 2px; }
 /* two-column Light/Dark colour row */
 .dscz-ld { display: flex; flex-direction: column; gap: 4px; }
-.dscz-ld-label { font: 500 12px/1.2 var(--font-sans, system-ui, sans-serif); opacity: 0.9; }
+.dscz-ld-label { font: 500 12px/1.2 var(--font-sans); opacity: 0.9; }
 .dscz-ld-cols { display: flex; gap: 8px; }
 .dscz-ld-cols.two .dscz-ld-col { flex: 1 1 0; min-width: 0; }
 .dscz-ld-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.dscz-ld-tag { font: 600 9px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.45; }
+.dscz-ld-tag { font: 600 9px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.45; }
 .dscz-mini { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dscz-mini-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(0,0,0,0.18); position: relative; overflow: hidden; }
 .dscz-mini-sw input[type=color] { position: absolute; inset: -4px; width: 200%; height: 200%; border: 0; padding: 0; cursor: pointer; opacity: 0; }
-.dscz-mini-hex { flex: 1 1 0; min-width: 0; width: 100%; font: 400 11px/1.3 var(--font-mono, ui-monospace, monospace);
+.dscz-mini-hex { flex: 1 1 0; min-width: 0; width: 100%; font: 400 11px/1.3 var(--font-mono);
   padding: 4px 6px; border: 1px solid var(--border, rgba(0,0,0,0.16)); border-radius: 4px; background: white; color: var(--text, #1a1a1a); text-transform: uppercase; }
 .dscz-mini-reset { flex: 0 0 auto; width: 16px; height: 16px; border: 0; background: transparent; cursor: pointer; color: var(--text, #1a1a1a); opacity: 0.45; font-size: 14px; line-height: 1; padding: 0; }
 .dscz-mini-reset:hover { opacity: 0.9; }
@@ -1015,9 +1016,9 @@ button {
 }
 .dscz-color-swatch input[type=color] { position: absolute; inset: -4px; width: 200%; height: 200%; border: 0; padding: 0; cursor: pointer; opacity: 0; }
 .dscz-color-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.dscz-color-label { font: 500 12px/1.2 var(--font-sans, system-ui, sans-serif); opacity: 0.85; }
+.dscz-color-label { font: 500 12px/1.2 var(--font-sans); opacity: 0.85; }
 .dscz-color-hex {
-  width: 100%; font: 400 12px/1.3 var(--font-mono, ui-monospace, monospace);
+  width: 100%; font: 400 12px/1.3 var(--font-mono);
   padding: 5px 8px; border: 1px solid var(--border, rgba(0,0,0,0.16));
   border-radius: 4px; background: white; color: var(--text, #1a1a1a); text-transform: uppercase;
 }
@@ -1030,7 +1031,7 @@ button {
   transition: border-color 0.12s, background 0.12s;
 }
 .dscz-logo-drop:hover { border-color: var(--accent, #2c5fff); background: color-mix(in srgb, var(--accent, #2c5fff) 6%, transparent); }
-.dscz-logo-placeholder { display: inline-flex; align-items: center; gap: 7px; font: 500 12.5px/1 var(--font-sans, system-ui, sans-serif); opacity: 0.66; }
+.dscz-logo-placeholder { display: inline-flex; align-items: center; gap: 7px; font: 500 12.5px/1 var(--font-sans); opacity: 0.66; }
 .dscz-logo-thumb { max-height: 48px; max-width: 100%; object-fit: contain; }
 /* dark check backdrop so a white/transparent logo reads in the picker */
 .dscz-logo-drop:has(.dscz-logo-thumb) { background: #1f2733; border-style: solid; }
@@ -1042,7 +1043,7 @@ button {
 }
 .dscz-preview-tab {
   flex: 0 0 auto; cursor: pointer; white-space: nowrap;
-  font: 500 12px/1 var(--font-sans, system-ui, sans-serif);
+  font: 500 12px/1 var(--font-sans);
   padding: 7px 11px; border: 1px solid transparent; border-radius: 6px;
   background: transparent; color: var(--text, #1a1a1a); opacity: 0.62;
   transition: background 0.12s, opacity 0.12s;
@@ -1065,7 +1066,7 @@ button {
 .dscz-scheme-check:hover:not(:disabled) { background: rgba(0,0,0,0.04); }
 .dscz-scheme-check.is-on { border-color: color-mix(in srgb, var(--accent, #2c5fff) 35%, transparent); background: color-mix(in srgb, var(--accent, #2c5fff) 7%, transparent); }
 .dscz-scheme-check:disabled { cursor: default; }
-.dscz-scheme-check-label { font: 500 13px/1.2 var(--font-sans, system-ui, sans-serif); }
+.dscz-scheme-check-label { font: 500 13px/1.2 var(--font-sans); }
 .dscz-preview-frame { width: 100%; flex: 1 1 auto; min-height: 0; border: 0; display: block; background: #fff; transition: opacity 0.12s ease; }
 
 /* "Default library" tuning gallery on the Capabilities landing - a stack of
@@ -1073,15 +1074,15 @@ button {
 .deflib-samples-head {
   margin-top: 22px; padding-bottom: 10px;
   border-bottom: 1px solid var(--border, rgba(0,0,0,0.1));
-  font: 600 15px/1.2 var(--font-sans, system-ui, sans-serif); color: var(--text, #1a1a1a);
+  font: 600 15px/1.2 var(--font-sans); color: var(--text, #1a1a1a);
 }
 .deflib-rows { margin-top: 18px; display: flex; flex-direction: column; gap: 30px; }
 .deflib-row { display: flex; flex-direction: column; gap: 8px; }
 .deflib-row-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.deflib-row-name { font: 600 14px/1.2 var(--font-sans, system-ui, sans-serif); color: var(--text, #1a1a1a); }
+.deflib-row-name { font: 600 14px/1.2 var(--font-sans); color: var(--text, #1a1a1a); }
 .deflib-row-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .deflib-chip {
-  font: 500 11px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.01em;
+  font: 500 11px/1 var(--font-sans); letter-spacing: 0.01em;
   padding: 4px 8px; border-radius: 999px; white-space: nowrap;
   border: 1px solid var(--border, rgba(0,0,0,0.12)); color: var(--text, #1a1a1a);
   background: color-mix(in srgb, var(--text, #1a1a1a) 4%, transparent);
@@ -1089,10 +1090,10 @@ button {
 .deflib-chip-scheme { border-color: color-mix(in srgb, var(--accent, #2c5fff) 35%, transparent); color: var(--accent, #2c5fff); background: color-mix(in srgb, var(--accent, #2c5fff) 8%, transparent); }
 .deflib-chip-accent { display: inline-flex; align-items: center; gap: 5px; }
 .deflib-chip-dot { display: inline-block; width: 9px; height: 9px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.18); flex: none; }
-.deflib-row-note { font: 400 12.5px/1.5 var(--font-sans, system-ui, sans-serif); color: var(--text, #1a1a1a); opacity: 0.62; max-width: 92ch; }
+.deflib-row-note { font: 400 12.5px/1.5 var(--font-sans); color: var(--text, #1a1a1a); opacity: 0.62; max-width: 92ch; }
 .deflib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 2px; }
 .deflib-cell { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.deflib-cap { font: 500 11px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text, #1a1a1a); opacity: 0.45; }
+.deflib-cap { font: 500 11px/1 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text, #1a1a1a); opacity: 0.45; }
 /* Scaled thumbnail: fixed desktop aspect, iframe rendered at 1280×800 and
    transform-scaled to fill. pointer-events off - these are previews. */
 .deflib-thumb {
@@ -1245,7 +1246,7 @@ button {
 .orchestrator-card-id {
   font-size: 11px; padding: 2px 7px; border-radius: 6px;
   background: var(--surface-2); color: var(--text-muted);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .orchestrator-card-version {
   font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums;
@@ -1292,7 +1293,7 @@ button {
 .orchestrator-card-model-select {
   border: 0; background: transparent;
   font-size: 11px; color: var(--text-muted);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   cursor: pointer; max-width: 150px;
   padding: 0;
 }
@@ -1379,7 +1380,7 @@ button {
 .orchestrator-chip {
   display: inline-block;
   padding: 2px 8px;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px; line-height: 1.5;
   border-radius: 4px;
   background: var(--surface-2);
@@ -1419,20 +1420,20 @@ button {
 }
 .orchestrator-trigger-source {
   font-size: 10px; color: var(--text-faint);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .orchestrator-section-docs { padding-top: 12px; }
 .orchestrator-doc-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .orchestrator-doc {
   display: inline-block;
-  font-family: ui-monospace, monospace; font-size: 10px;
+  font-family: var(--font-mono); font-size: 10px;
   padding: 1px 6px; border-radius: 4px;
   background: var(--surface-2); color: var(--text-muted);
 }
 
 .orchestrators-scope {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 /* ─── v3.3 - System landing - LIGHT MODE ─────────────────────────────── */
@@ -1904,7 +1905,7 @@ button {
 .ref-header-categories li { padding-left: 14px; position: relative; }
 .ref-header-categories li::before { content: "·"; position: absolute; left: 4px; color: var(--text-faint); font-weight: 700; }
 .ref-header-categories strong { color: var(--text); font-weight: 600; }
-.ref-header-categories code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); font-family: var(--font-mono, ui-monospace, monospace); }
+.ref-header-categories code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--text); font-family: var(--font-mono); }
 
 .ref-group         { display: flex; flex-direction: column; gap: 12px; }
 .ref-group-head    { display: flex; flex-direction: column; gap: 4px; }
@@ -1913,7 +1914,7 @@ button {
 .ref-group-desc    { font-size: 12px; color: var(--text-muted); max-width: 760px; line-height: 1.5; }
 .ref-grid          { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
 .ref-chip-row      { display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.ref-chip          { display: inline-block; padding: 2px 7px; font-family: ui-monospace, monospace; font-size: 11px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
+.ref-chip          { display: inline-block; padding: 2px 7px; font-family: var(--font-mono); font-size: 11px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
 .ref-chip-tool     { background: oklch(94% 0.04 250); color: oklch(40% 0.15 250); }
 .ref-chip-path     { background: transparent; color: var(--text-faint); font-size: 10px; }
 
@@ -2005,7 +2006,7 @@ button {
 .proto-catalog-card-slug   {
   font-size: 11px; padding: 1px 6px; border-radius: 4px;
   background: var(--surface-2); color: var(--text-muted);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .proto-catalog-card-imgcount {
   font-size: 10.5px;
@@ -2085,7 +2086,7 @@ button {
   color: var(--text-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .proto-catalog-thumb.is-missing .proto-catalog-thumb-btn {
   background:
@@ -2268,7 +2269,7 @@ button {
   background: var(--surface);
   padding: 1px 5px;
   border-radius: 3px;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 .skills-upload-root {
@@ -2280,7 +2281,7 @@ button {
   background: var(--surface);
   padding: 1px 5px;
   border-radius: 3px;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
 }
 .skills-upload-msg {
@@ -2301,7 +2302,7 @@ button {
 .skill-card-head-text { min-width: 0; }
 .skill-card-name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .skill-label { font-size: 14px; font-weight: 600; color: var(--text); }
-.skill-id { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-family: ui-monospace, monospace; }
+.skill-id { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono); }
 .skill-card-hint { margin-top: 3px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .skill-pathway {
   font-size: 9px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 6px;
@@ -2317,7 +2318,7 @@ button {
 .skill-row-value { font-size: 12px; color: var(--text-muted); }
 .skill-row-value-meta { font-size: 11px; color: var(--text-faint); }
 .skill-chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
-.skill-chip { display: inline-block; padding: 1px 7px; font-family: ui-monospace, monospace; font-size: 11px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
+.skill-chip { display: inline-block; padding: 1px 7px; font-family: var(--font-mono); font-size: 11px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
 .skill-chip-input  { background: oklch(94% 0.04 250); color: oklch(40% 0.15 250); }
 .skill-chip-output { background: var(--accent-soft); color: var(--accent-text); }
 .skill-chip-output-text   { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
@@ -2332,7 +2333,7 @@ button {
 }
 .skill-expand-btn:hover { color: var(--text); }
 .skill-system-prompt {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px; line-height: 1.5;
   padding: 12px;
   background: var(--surface-3); border-radius: 6px;
@@ -2366,7 +2367,7 @@ button {
   color: var(--text);
 }
 .subagent-card-head:hover { background: var(--surface-2); }
-.subagent-name { font-family: ui-monospace, monospace; font-size: 12px; }
+.subagent-name { font-family: var(--font-mono); font-size: 12px; }
 .subagent-name code { background: transparent; color: oklch(40% 0.15 250); }
 .subagent-summary { font-size: 12px; color: var(--text-muted); line-height: 1.4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subagent-toggle { font-size: 10px; color: var(--text-faint); }
@@ -2376,7 +2377,7 @@ button {
 .subagent-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
 .subagent-description { font-size: 13px; line-height: 1.6; color: var(--text); }
 .subagent-codeblock {
-  font-family: ui-monospace, monospace; font-size: 11px;
+  font-family: var(--font-mono); font-size: 11px;
   padding: 10px 12px;
   background: var(--surface-3); border-radius: 6px;
   color: var(--text);
@@ -2403,12 +2404,12 @@ button {
   color: var(--text);
 }
 .kind-card-head:hover { background: var(--surface-2); }
-.kind-name { font-family: ui-monospace, monospace; font-size: 12px; background: transparent !important; padding: 0 !important; color: var(--accent-text) !important; font-weight: 600; }
+.kind-name { font-family: var(--font-mono); font-size: 12px; background: transparent !important; padding: 0 !important; color: var(--accent-text) !important; font-weight: 600; }
 .kind-title { font-size: 12px; color: var(--text-muted); }
 .kind-dispatch {
   font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
   background: var(--surface-2); color: var(--text-muted);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .kind-dispatch-none                  { background: var(--surface-2); color: var(--text-faint); }
 .kind-dispatch-inline-server-call    { background: var(--accent-soft);  color: var(--accent-text); }
@@ -2429,8 +2430,8 @@ button {
   padding: 6px 10px;
   background: var(--surface-2); border-radius: 6px;
 }
-.kind-field-name { font-family: ui-monospace, monospace; font-size: 12px; background: transparent !important; color: oklch(40% 0.15 250) !important; padding: 0 !important; font-weight: 600; }
-.kind-field-type { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--surface-3); color: var(--text-muted); font-family: ui-monospace, monospace; }
+.kind-field-name { font-family: var(--font-mono); font-size: 12px; background: transparent !important; color: oklch(40% 0.15 250) !important; padding: 0 !important; font-weight: 600; }
+.kind-field-type { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--surface-3); color: var(--text-muted); font-family: var(--font-mono); }
 .kind-field-type-text     { background: oklch(94% 0.04 250); color: oklch(40% 0.15 250); }
 .kind-field-type-markdown { background: oklch(94% 0.04 295); color: oklch(42% 0.16 295); }
 .kind-field-type-bool     { background: oklch(96% 0.06 80);  color: oklch(45% 0.13 65); }
@@ -2443,10 +2444,10 @@ button {
 
 .kind-fanout { font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
 .kind-fanout strong { color: var(--text); }
-.kind-fanout code   { font-family: ui-monospace, monospace; font-size: 11px; padding: 1px 5px; background: var(--surface-2); border-radius: 3px; color: oklch(40% 0.15 250); }
+.kind-fanout code   { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; background: var(--surface-2); border-radius: 3px; color: oklch(40% 0.15 250); }
 
 .kind-completion-list { padding-left: 16px; margin: 0; font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
-.kind-completion-list code { font-family: ui-monospace, monospace; font-size: 11px; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--text); }
+.kind-completion-list code { font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--text); }
 
 .kind-howto-body { font-size: 12px; line-height: 1.55; color: var(--text-muted); }
 
@@ -3023,8 +3024,7 @@ button {
   pointer-events: none;
 }
 .landing-card-label {
-  font-family: var(--font-display), "Bricolage Grotesque", var(--font-sans);
-  font-family: "Bricolage Grotesque", var(--font-sans);
+  font-family: var(--font-display);
   font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -3041,7 +3041,7 @@ button {
    hover actions: it fades out as they fade in so they never overlap. */
 .landing-card-age {
   flex: 0 0 auto;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
@@ -3053,7 +3053,7 @@ button {
   pointer-events: none;
 }
 .landing-card-id {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-faint);
   letter-spacing: 0.02em;
@@ -3279,7 +3279,7 @@ button {
   white-space: nowrap;
 }
 .landing-card-star-slug {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
   overflow: hidden;
@@ -3566,7 +3566,7 @@ button {
 .proto-door-meta-project { font-weight: 600; color: var(--text); }
 .proto-door-meta-sep { color: var(--text-faint); }
 .proto-door-meta-path {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-faint);
   background: var(--surface-2);
@@ -3718,7 +3718,7 @@ button {
   background: color-mix(in oklch, var(--danger, #dc2626) 6%, var(--surface));
 }
 .workflow-zoom {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-muted);
   padding: 2px 8px;
@@ -5608,7 +5608,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   cursor: not-allowed;
 }
 .canvas-ctxmenu-shortcut {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
   letter-spacing: 0.04em;
@@ -6387,7 +6387,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 10.5px;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6467,7 +6467,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   overflow: auto;
   background: var(--surface);
   color: var(--text);
-  font: 10.5px/1.4 ui-monospace, Menlo, monospace;
+  font: 10.5px/1.4 var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -6636,7 +6636,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-radius: 8px;
   background: oklch(22% 0.01 250);
   color: oklch(98% 0.002 250);
-  font: 500 12.5px/1.3 var(--font-ui, Inter, system-ui, sans-serif);
+  font: 500 12.5px/1.3 var(--font-sans);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
   pointer-events: none;
   animation: workflow-pick-toast-in 0.16s ease-out;
@@ -7135,7 +7135,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   padding: 4px 8px;
   background: var(--text, #1a1a1a);
   color: var(--surface, #fff);
-  font: 500 11px var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font: 500 11px var(--font-sans);
   letter-spacing: 0.01em;
   text-transform: none;
   white-space: nowrap;
@@ -7150,7 +7150,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section-title {
   /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
      uppercase. Color stays per-kind. */
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -7160,7 +7160,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   background: transparent;
   border: 0;
   outline: 0;
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -7434,7 +7434,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   gap: 6px;
   align-items: center;
 }
-.workflow-setting-expr { font-family: var(--font-mono, ui-monospace, monospace); }
+.workflow-setting-expr { font-family: var(--font-mono); }
 .workflow-setting-binding-del {
   border: 0; background: transparent; color: var(--text-faint);
   cursor: pointer; font-size: 14px; line-height: 1;
@@ -8281,7 +8281,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   margin-top: 4px;
 }
 .workflow-canvas-hint-keys kbd {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   padding: 1px 5px;
   border: 1px solid var(--border);
@@ -8488,7 +8488,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   margin-top: 4px;
 }
 .workflow-empty-composer-keys kbd {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   padding: 1px 5px;
   border: 1px solid var(--border);
@@ -8614,7 +8614,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 /* Node-bar title - standardised across node kinds: same mono face, size,
    weight + uppercase. Color stays per-kind. */
 .workflow-node-label {
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -9185,7 +9185,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-ds-reminder-body { flex: 1 1 auto; }
 .workflow-ds-reminder code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   padding: 0 3px; border-radius: 3px;
   border: 1px solid var(--surface);
@@ -9225,7 +9225,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-asset-glyph svg { width: 14px; height: 14px; }
 .workflow-node-asset-name {
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -9367,7 +9367,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   line-height: 1;
 }
 .workflow-node-asset-icon-kind {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -9689,7 +9689,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-version-row-thumb-empty,
 .workflow-composition-row-thumb-empty {
-  color: var(--text-faint); font-size: 22px; font-family: var(--font-mono, monospace);
+  color: var(--text-faint); font-size: 22px; font-family: var(--font-mono);
   letter-spacing: -0.02em; font-weight: 600;
 }
 
@@ -9705,11 +9705,11 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-version-row-label { font-weight: 600; }
 .workflow-version-row-id,
-.workflow-composition-row-id { font-family: var(--font-mono, monospace); color: var(--text-muted); }
+.workflow-composition-row-id { font-family: var(--font-mono); color: var(--text-muted); }
 /* Sequence chip - primary identifier for each version row. Stable across
    reverts (always reflects chronological order, not list order). */
 .workflow-version-row-seq {
-  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-family: var(--font-mono);
   font-weight: 600;
   background: color-mix(in oklch, var(--accent) 10%, var(--surface));
   color: var(--text);
@@ -9755,7 +9755,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .th-portal-tip {
   background: oklch(22% 0.01 250);
   color: oklch(98% 0.002 250);
-  font: 500 11.5px/1.35 var(--font-ui, Inter, system-ui, sans-serif);
+  font: 500 11.5px/1.35 var(--font-sans);
   padding: 6px 9px;
   border-radius: 5px;
   /* Long descriptions wrap instead of bleeding off-screen. The viewport
@@ -9876,7 +9876,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node-asset[data-kind="3d"]     .workflow-node-asset-glyph,
 .workflow-node-asset[data-kind="viz"]    .workflow-node-asset-glyph { color: var(--accent-text); }
 .workflow-node-asset-foot {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-faint);
   padding: 4px 8px;
@@ -10439,7 +10439,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node-agent-title {
   /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
      uppercase. Color stays per-kind. */
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -10475,7 +10475,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   height: 14px;
   line-height: 14px;
   border-radius: 7px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -10496,7 +10496,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-agent-row:last-of-type { border-bottom: 0; }
 .workflow-node-agent-row-label {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -10620,7 +10620,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   font-size: 12px;
 }
 .workflow-agent-preamble-role {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -10629,14 +10629,14 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-agent-preamble-row { margin: 6px 0; }
 .workflow-agent-preamble-label {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-faint);
   margin-bottom: 2px;
 }
 .workflow-agent-preamble-value {
   margin: 2px 0 0;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.45;
   color: var(--text);
@@ -10808,7 +10808,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   position: absolute; left: 44px; bottom: 58px;
   transform: translateX(-50%);
   white-space: nowrap;
-  font: 600 11px/1 var(--font-sans, system-ui);
+  font: 600 11px/1 var(--font-sans);
   color: var(--hot);
   background: var(--surface);
   border: 1px solid color-mix(in oklch, var(--hot) 34%, transparent);
@@ -10834,7 +10834,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   min-width: 13px; height: 13px; padding: 0 3px;
   border-radius: 7px;
   background: oklch(30% 0.03 250); color: white;
-  font: 500 9px/13px var(--font-sans, system-ui);
+  font: 500 9px/13px var(--font-sans);
   text-align: center;
 }
 @keyframes aabPulse {     /* fill - subtle, slow breathing + light-orange glow */
@@ -11145,7 +11145,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   display: flex; align-items: center; gap: 8px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px; color: var(--text-muted);
 }
 .workflow-folder-picker-up {
@@ -11351,7 +11351,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   border-right: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
   background: color-mix(in oklch, var(--accent) 18%, var(--surface));
   color: var(--text);
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   cursor: grab;
@@ -11436,7 +11436,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .chat-composer-attachment-icon { font-size: 12px; }
 .chat-composer-attachment-name {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
   white-space: nowrap;
@@ -11577,7 +11577,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
@@ -11626,7 +11626,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   min-width: 0;
 }
 .chat-slash-detail-cmd {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   /* color is inherited from the per-kind class echoed on this node */
@@ -11725,7 +11725,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   padding: 8px 12px 10px;
 }
 .workflow-agent-turn-role {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -11755,7 +11755,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-agent-meta-block summary { cursor: pointer; user-select: none; }
 .workflow-agent-meta-block ul { margin: 4px 0 0; padding-left: 18px; }
 .workflow-agent-meta-block code {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   background: var(--surface-2);
   padding: 1px 4px;
@@ -11813,7 +11813,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-agent-chat-hint {
   font-size: 10.5px;
   color: var(--text-faint);
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 
 /* Bottom-right corner: drag both width AND height. */
@@ -11984,7 +11984,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-prompt-glyph svg { width: 14px; height: 14px; }
 .workflow-node-prompt-title {
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -12110,7 +12110,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1;
 }
 .ds-badge-id {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text);
 }
@@ -12192,7 +12192,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: not-allowed;
 }
 .ds-router-tab-id {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text);
 }
@@ -12262,7 +12262,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.5;
 }
 .ds-fonts-hint code {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 .ds-fonts-grid {
@@ -12300,7 +12300,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
 }
 .ds-fonts-detail {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-faint);
 }
@@ -12363,7 +12363,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-faint);
 }
 .ds-library-path code {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text);
   background: var(--bg);
@@ -12472,7 +12472,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .ds-modal-glyph { color: var(--accent); font-size: 14px; }
 .ds-modal-path {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 400;
   color: var(--text-faint);
@@ -12521,7 +12521,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex-wrap: wrap;
 }
 .ds-modal-entry-num {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-faint);
 }
@@ -12559,7 +12559,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .ds-modal-entry-code,
 .ds-modal-entry-uses code {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   background: var(--surface-2);
   padding: 1px 5px;
@@ -12668,7 +12668,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-ds-title {
   /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
      uppercase. Color stays per-kind. */
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -12827,7 +12827,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 10.5px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   color: var(--text-muted);
   max-width: 100%;
 }
@@ -12875,7 +12875,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 1 1 120px;
   min-width: 100px;
   font-size: 11px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 .workflow-node-ds-attach-err {
   font-size: 10.5px;
@@ -12970,7 +12970,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 8px;
 }
 .workflow-node-iter-glyph { font-size: 14px; color: oklch(48% 0.16 300); width: 18px; text-align: center; }
-.workflow-node-iter-title { font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-node-iter-title { font: 500 11px var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-node-iter-body {
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 12px 0;             /* bottom padding moved onto the sticky action row */
@@ -13005,7 +13005,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   width: 26px; height: 22px;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 3px; cursor: pointer; padding: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   transition: background 80ms ease, color 80ms ease;
 }
 .workflow-node-iter-kindbtn:hover {
@@ -13026,7 +13026,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-iter-variants { display: flex; flex-direction: column; gap: 4px; }
 .workflow-node-iter-variant { display: flex; align-items: center; gap: 6px; }
 .workflow-node-iter-variant-num {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--text-faint);
   width: 28px; flex: 0 0 28px;
 }
@@ -13202,7 +13202,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: transparent;
   /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
      uppercase. Color stays per-kind. */
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -13237,7 +13237,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid transparent;
   background: transparent;
   font: inherit;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text);
   padding: 4px 6px;
@@ -13296,7 +13296,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: transparent;
   /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
      uppercase. Color stays per-kind. */
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -13363,7 +13363,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   height: 18px;
   padding: 0 7px;
   border-radius: 9px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9.5px;
   font-weight: 500;
   text-decoration: none;
@@ -13434,7 +13434,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   width: 100%;
   outline: none;
 }
-.workflow-node-typo-levelnum { font-family: var(--font-mono, ui-monospace, monospace); }
+.workflow-node-typo-levelnum { font-family: var(--font-mono); }
 .workflow-node-typo-levelname:focus,
 .workflow-node-typo-levelnum:focus {
   background: var(--surface-2);
@@ -13478,7 +13478,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--accent-soft);
   color: var(--accent-text);
   border: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 /* Prototype generator - "no DS wired" state. Same chip shape but in the
@@ -13540,7 +13540,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   line-height: 1.4;
 }
@@ -13593,7 +13593,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-skill-title {
   /* Canonical node-title style (matches .workflow-node-label): mono, 11px/500,
      uppercase. Color stays per-kind. */
-  font: 500 11px var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text);
@@ -13621,7 +13621,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   min-width: 0;  /* allow children to shrink below their intrinsic width */
 }
 .workflow-node-skill-model {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -13646,7 +13646,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-skill-modelpick {
   flex: 1 1 0;
   min-width: 0;         /* allow shrink below intrinsic width */
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 4px 4px 4px 6px;
   border: 1px solid var(--border);
@@ -13664,7 +13664,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex-wrap: wrap;
 }
 .workflow-node-skill-inputtag {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -13792,7 +13792,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   background: var(--surface);
@@ -13851,7 +13851,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   background: var(--surface);
@@ -13920,7 +13920,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .daemon-down-dialog-cmd code {
   flex: 1 1 auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text);
   word-break: break-all;
@@ -13942,7 +13942,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 6px;
   padding: 4px 12px;
   border-radius: 999px;
-  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -14035,7 +14035,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-head { text-align: center; display: grid; gap: 8px; }
 .model-setup-eyebrow {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -14054,7 +14054,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .model-setup-desc code {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 1px 6px;
   background: var(--surface-2);
@@ -14108,7 +14108,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.5;
 }
 .model-setup-choice-desc code {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 0 4px;
   background: var(--surface-2);
@@ -14116,7 +14116,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 3px;
 }
 .model-setup-choice-cta {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -14171,14 +14171,14 @@ a.ds-badge:hover, button.ds-badge:hover {
 .model-setup-cli-name { font-size: 14px; font-weight: 600; }
 .model-setup-cli-state {
   margin-left: auto;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
 }
 .model-setup-cli-install code,
 .model-setup-cli-hint code {
   display: inline-block;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 4px 8px;
   background: var(--surface-2);
@@ -14248,7 +14248,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 3%, var(--surface));
 }
 .model-setup-wizard-eyebrow {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -14275,7 +14275,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   align-items: center;
   justify-content: center;
   font: inherit;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
@@ -14386,7 +14386,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .model-setup-wizard-step-of {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-muted);
   letter-spacing: 0.04em;
@@ -14659,7 +14659,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-install-modal-cmd code {
   flex: 1 1 auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text);
   word-break: break-all;
@@ -14721,7 +14721,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-section-head { display: grid; gap: 4px; text-align: center; margin-bottom: 6px; }
 .onboarding-section-eyebrow {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -14776,7 +14776,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-asset-state {
   margin-left: auto;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -14796,7 +14796,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11px;
   color: var(--accent, oklch(55% 0.18 252));
   text-decoration: none;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 .onboarding-asset-docs:hover { text-decoration: underline; }
 .onboarding-asset-row-form {
@@ -14809,7 +14809,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 0 10px;
   font: inherit;
   font-size: 12.5px;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border-strong);
@@ -14866,7 +14866,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-tool-state {
   margin-left: auto;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -14892,7 +14892,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11px;
   color: var(--accent, oklch(55% 0.18 252));
   text-decoration: none;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 .onboarding-tool-docs:hover { text-decoration: underline; }
 .onboarding-tool-err {
@@ -14902,7 +14902,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid color-mix(in oklch, var(--danger, #dc2626) 30%, var(--border));
   border-radius: 4px;
   padding: 6px 8px;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   word-break: break-word;
 }
 @media (max-width: 720px) {
@@ -15017,13 +15017,13 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
 }
 .workflow-settings-skills {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-faint);
   flex: 1;
 }
 .workflow-settings-status {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -15053,7 +15053,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-settings-key {
   flex: 1;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 7px 10px;
   border: 1px solid var(--border);
@@ -15076,7 +15076,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-settings-hint a { color: var(--accent-text); }
 .workflow-settings-hint code {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   background: var(--surface-2);
   padding: 1px 5px;
   border-radius: 3px;
@@ -15144,7 +15144,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11.5px;
   color: var(--text-muted);
   margin-top: 2px;
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 .workflow-modal-close {
   width: 28px;
@@ -15185,7 +15185,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex-wrap: wrap;
 }
 .workflow-modal-kindchip {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 4px 8px;
   border-radius: 999px;
@@ -15282,7 +15282,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 6px;
 }
 .workflow-modal-path {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
   white-space: nowrap;
@@ -15291,7 +15291,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   margin-top: 2px;
 }
 .workflow-modal-kind {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -15302,7 +15302,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid var(--border);
 }
 .workflow-modal-tag {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -15365,7 +15365,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.5;
 }
 .landing-empty-desc code {
-  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 1px 6px;
   background: var(--surface-2);
@@ -15644,7 +15644,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 
 /* === Export-name modal === */
-.export-name-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.export-name-input { font-family: var(--font-mono); }
 .export-name-input[data-state="conflict"] {
   border-color: #d9824a;
   background: rgba(217, 130, 74, 0.06);
@@ -15667,7 +15667,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.45;
 }
 .export-name-hint code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 1px 4px;
   border-radius: 3px;
@@ -15688,7 +15688,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: rgba(178, 122, 42, 0.10);
 }
 .export-name-warn code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 4px;
@@ -15728,7 +15728,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   white-space: nowrap;
 }
 .export-submit-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.95em;
   margin-left: 4px;
   padding: 1px 5px;
@@ -15881,7 +15881,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid var(--border);
   border-radius: 99px;
   padding: 3px 10px;
-  font: 600 11px var(--font-ui, inherit);
+  font: 600 11px var(--font-sans);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -15933,7 +15933,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   transform: translateX(-50%);
   background: oklch(22% 0.01 250);
   color: oklch(98% 0.002 250);
-  font: 500 11px/1.1 var(--font-ui, Inter, system-ui, sans-serif);
+  font: 500 11px/1.1 var(--font-sans);
   padding: 6px 9px;
   border-radius: 4px;
   white-space: nowrap;
@@ -15987,7 +15987,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 3px;
   background: oklch(28% 0.01 250);
   color: oklch(78% 0.005 250);
-  font: 500 9.5px var(--font-mono, JetBrains Mono, monospace);
+  font: 500 9.5px var(--font-mono);
   letter-spacing: 0.04em;
   vertical-align: baseline;
 }
@@ -16295,7 +16295,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   max-width: 80%;
   display: grid;
   gap: 6px;
-  font-family: var(--font-sans, inherit);
+  font-family: var(--font-sans);
   box-shadow: var(--shadow-sm, 0 1px 2px oklch(0% 0 0 / 0.04));
 }
 .frame-empty-label {
@@ -18252,7 +18252,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  font: 500 11px/1.3 var(--font-ui, inherit);
+  font: 500 11px/1.3 var(--font-sans);
   color: oklch(100% 0 0);
   background: var(--accent);
   border: 1px solid var(--accent);
@@ -21466,7 +21466,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-inspector-panel-title {
   flex: 1;
-  font: 11.5px/1.2 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 11.5px/1.2 var(--font-mono);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -21529,7 +21529,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-code-panel-title {
   flex: 1;
-  font: 11.5px/1.2 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 11.5px/1.2 var(--font-mono);
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -21569,7 +21569,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: transparent;
   border: 0;
   padding: 6px 10px;
-  font: 11px/1.2 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 11px/1.2 var(--font-mono);
   color: var(--text-faint);
   cursor: pointer;
   border-right: 1px solid var(--border);
@@ -21619,7 +21619,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 0;
   outline: 0;
   background: transparent;
-  font: 11.5px/1.5 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 11.5px/1.5 var(--font-mono);
   color: var(--text);
   resize: none;
   white-space: pre;
@@ -21645,7 +21645,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 10px;
-  font: 11px/1.2 var(--font-sans, system-ui);
+  font: 11px/1.2 var(--font-sans);
   color: var(--text-faint);
   cursor: pointer;
   white-space: nowrap;
@@ -21680,7 +21680,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   padding: 6px 10px;
   background: rgba(192, 57, 43, 0.08);
   border-top: 1px solid color-mix(in srgb, var(--danger, #c0392b) 30%, transparent);
-  font: 11px/1.3 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 11px/1.3 var(--font-mono);
   color: var(--danger, #c0392b);
   flex: 0 0 auto;
 }
@@ -21710,7 +21710,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-code-panel-error {
   padding: 16px;
   color: var(--danger, #c0392b);
-  font: 11.5px/1.4 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 11.5px/1.4 var(--font-mono);
   background: rgba(192, 57, 43, 0.06);
 }
 /* v3.4.36 - Right-edge resize handle. The previous version pushed the
@@ -21742,7 +21742,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 10px;
-  font: 11px/1.2 var(--font-sans, system-ui);
+  font: 11px/1.2 var(--font-sans);
   color: var(--text-faint);
   cursor: pointer;
   white-space: nowrap;
@@ -22226,7 +22226,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 0;
   padding: 2px 4px;
   text-align: left;
-  font: 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  font: 11px/1.3 var(--font-mono);
   color: var(--text);
   cursor: pointer;
   border-radius: 3px;
@@ -22271,7 +22271,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .zoom-inspector-color-input {
   flex: 1;
   min-width: 0;
-  font: 10.5px/1.3 var(--font-mono, ui-monospace, monospace);
+  font: 10.5px/1.3 var(--font-mono);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -22343,7 +22343,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: 3px;
   text-align: left;
   cursor: pointer;
-  font: 11px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 11px/1.2 var(--font-mono);
   color: var(--text);
 }
 .zoom-inspector-color-token:hover { background: var(--surface-2); }
@@ -22358,13 +22358,13 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .zoom-inspector-color-token-value {
   font-size: 9.5px;
   color: var(--text-faint);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   white-space: nowrap;
 }
 .zoom-inspector-input {
   flex: 1;
   min-width: 0;
-  font: 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  font: 11px/1.3 var(--font-mono);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -22376,7 +22376,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .zoom-inspector-textfield {
   width: 100%;
   box-sizing: border-box;
-  font: 10.5px/1.4 var(--font-mono, ui-monospace, monospace);
+  font: 10.5px/1.4 var(--font-mono);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -22418,7 +22418,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .zoom-inspector-box-input {
   flex: 1;
   min-width: 0;
-  font: 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  font: 11px/1.3 var(--font-mono);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -23757,7 +23757,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-pose-label {
   flex: 0 0 42px;
-  font: 600 9.5px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 9.5px/1.2 var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
@@ -23777,7 +23777,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 5px);
   padding: 3px 18px 3px 6px;
-  font: 500 10.5px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 500 10.5px/1.2 var(--font-mono);
   color: var(--text);
   cursor: pointer;
   outline: 0;
@@ -23807,7 +23807,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font: 500 10px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 500 10px/1.2 var(--font-mono);
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -23846,7 +23846,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .wpose-group { display: flex; flex-direction: column; gap: 4px; }
 .wpose-group-label {
-  font: 600 9px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 9px/1.2 var(--font-mono);
   text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted);
 }
 .wpose-chips { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -23854,7 +23854,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   appearance: none; cursor: pointer;
   border: 1px solid var(--border); border-radius: 999px;
   background: var(--surface); color: var(--text-muted);
-  font: 500 10.5px/1 var(--font, inherit);
+  font: 500 10.5px/1 var(--font-sans);
   padding: 4px 9px;
 }
 .wpose-chip:hover { border-color: var(--accent); color: var(--text); }
@@ -23886,7 +23886,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .wpose-genbtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .wpose-err {
-  font: 500 10.5px/1.3 var(--font-mono, ui-monospace, monospace);
+  font: 500 10.5px/1.3 var(--font-mono);
   color: var(--danger, #c0392b); white-space: pre-wrap;
 }
 .wpose-status {
@@ -23941,7 +23941,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .wpose-tile-x { color: var(--danger, #c0392b); font-weight: 700; font-size: 16px; }
 .wpose-tile-dot { color: var(--text-faint); font-size: 18px; }
 .wpose-tile-label {
-  font: 500 10px/1.2 var(--font-mono, ui-monospace, monospace);
+  font: 500 10px/1.2 var(--font-mono);
   color: var(--text); padding: 4px 5px; text-align: center;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -23968,14 +23968,14 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .wpv-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .wpv-caption {
   flex: 0 0 auto; text-align: center;
-  font: 600 11px/1.2 var(--font-mono, ui-monospace, monospace); color: var(--text);
+  font: 600 11px/1.2 var(--font-mono); color: var(--text);
 }
 .wpv-empty {
   flex: 1 1 0; display: flex; align-items: center; justify-content: center;
   font: 400 11.5px/1.45 inherit; color: var(--text-muted); text-align: center; padding: 10px;
 }
 .wpv-hint { flex: 0 0 auto; text-align: center; font: 400 9.5px/1.2 inherit; color: var(--text-faint); }
-.wpv-err { flex: 0 0 auto; font: 500 10px/1.3 var(--font-mono, ui-monospace, monospace); color: var(--danger, #c0392b); }
+.wpv-err { flex: 0 0 auto; font: 500 10px/1.3 var(--font-mono); color: var(--danger, #c0392b); }
 
 /* Floating switch panel - sits just to the right of the node when selected. */
 .pose-viewer-panel {
@@ -23988,7 +23988,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .pose-viewer-panel-head {
   flex: 0 0 auto; padding: 8px 10px;
-  font: 600 9px/1 var(--font-mono, ui-monospace, monospace);
+  font: 600 9px/1 var(--font-mono);
   text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted);
   border-bottom: 1px solid var(--border);
 }
@@ -24007,7 +24007,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .pose-viewer-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .pose-viewer-row-label {
   flex: 1 1 0; min-width: 0;
-  font: 500 11px/1.2 var(--font-mono, ui-monospace, monospace); color: var(--text);
+  font: 500 11px/1.2 var(--font-mono); color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pose-viewer-regen {
@@ -24404,7 +24404,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-bottom: 1px solid var(--border);
 }
 .wizard-eyebrow {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
   letter-spacing: 0.06em;
@@ -24998,7 +24998,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: color-mix(in oklch, var(--accent) 4%, transparent);
 }
 .chat-direction-type-eyebrow {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -25021,7 +25021,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   margin: 4px 0 0;
 }
 .chat-direction-type-caption {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.03em;
@@ -25053,7 +25053,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   max-height: 110px;
 }
 .chat-direction-image-axis-label {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9px;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -25073,7 +25073,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--surface-2);
 }
 .chat-direction-image-caption {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 9.5px;
   color: var(--text-faint);
   line-height: 1.35;
@@ -26935,22 +26935,22 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--bg, #fff); color: var(--text, #1a1a1a);
 }
 .shares-hk-grouprow:hover { border-color: var(--accent, #2c5fff); }
-.shares-hk-grouprow-label { font: 600 14px/1.3 var(--font-sans, system-ui, sans-serif); display: flex; align-items: center; gap: 8px; }
+.shares-hk-grouprow-label { font: 600 14px/1.3 var(--font-sans); display: flex; align-items: center; gap: 8px; }
 .shares-hk-grouprow-sub { font: 11px/1.4 var(--font-mono); opacity: 0.7; margin-top: 2px; }
 .shares-hk-grouprow-sub code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; }
 .shares-hk-grouprow-stats { display: flex; align-items: center; gap: 14px; flex: none; white-space: nowrap; }
-.shares-hk-grouprow-imgs { display: inline-flex; align-items: center; gap: 5px; font: 600 13px var(--font-sans, system-ui, sans-serif); }
+.shares-hk-grouprow-imgs { display: inline-flex; align-items: center; gap: 5px; font: 600 13px var(--font-sans); }
 .shares-hk-grouprow-bytes { font: 12px var(--font-mono); opacity: 0.65; }
-.shares-hk-grouprow-total { font: 12px var(--font-sans, system-ui, sans-serif); opacity: 0.6; }
+.shares-hk-grouprow-total { font: 12px var(--font-sans); opacity: 0.6; }
 
 .shares-hk-detail-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .shares-hk-detail-toolbar .shares-search { flex: 1; min-width: 160px; }
 .shares-hk-bulkbar { display: flex; align-items: center; gap: 10px; }
-.shares-hk-selall { display: inline-flex; align-items: center; gap: 7px; font: 13px var(--font-sans, system-ui, sans-serif); cursor: pointer; }
+.shares-hk-selall { display: inline-flex; align-items: center; gap: 7px; font: 13px var(--font-sans); cursor: pointer; }
 
-.shares-hk-table { width: 100%; border-collapse: collapse; font: 13px var(--font-sans, system-ui, sans-serif); }
+.shares-hk-table { width: 100%; border-collapse: collapse; font: 13px var(--font-sans); }
 .shares-hk-table th {
-  text-align: left; font: 600 11px/1.2 var(--font-sans, system-ui, sans-serif);
+  text-align: left; font: 600 11px/1.2 var(--font-sans);
   letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6;
   padding: 6px 8px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.12)); position: sticky; top: 0;
   background: var(--bg, #fff);
@@ -27184,7 +27184,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 7px;
-  font: 11.5px var(--font-ui, inherit);
+  font: 11.5px var(--font-sans);
   background: var(--bg);
   outline: none;
 }
