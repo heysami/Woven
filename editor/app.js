@@ -46069,13 +46069,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-id">content + behaviour</span>
           </div>
           <div className="workflow-library-item" draggable=${true}
-            onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "sketch" })); }}
-            title="Drag onto canvas - a Sketch: an imperative code layer (draw(ctx,frame,controls,content)) run in a sandboxed iframe and composited as a layer. The escape hatch for interactions not expressible by wiring primitives. Wire into the Interactive composer; numeric controls auto-expose param: ports.">
-            <span className="workflow-library-item-glyph">&lt;/&gt;</span>
-            <span className="workflow-library-item-label">Sketch</span>
-            <span className="workflow-library-item-id">code layer</span>
-          </div>
-          <div className="workflow-library-item" draggable=${true}
             onDragStart=${(e) => { e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "position" })); }}
             title="Drag onto canvas - a Position source (single / grid / instances / physics / drawn / rope / camera-feed + 3D modes). Wire into a layer, except direct-to-pixel/spline/voxel editors with no layer concept.">
             <span className="workflow-library-item-glyph">⊞</span>
