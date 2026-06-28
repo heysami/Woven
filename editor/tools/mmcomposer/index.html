@@ -59,18 +59,11 @@
      and the Canvas controls below it stay put. */
   .layers{padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0;overflow-y:auto}
   .layer{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;cursor:pointer}
-  .layer:hover{border-color:color-mix(in oklab,var(--acc) 30%,var(--line))}
-  .layer.sel{border-color:color-mix(in oklab,var(--acc) 45%,transparent);background:var(--wv-accent-soft)}
-  .layer .top{display:flex;align-items:center;gap:7px}
-  .layer .dot{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
-  .layer .nm{flex:1;font-weight:600;font-size:12.5px;background:transparent;border:0;color:var(--ink);outline:none;min-width:0}
-  .layer .meta{margin-top:5px;color:var(--ink2);font-size:10px;display:flex;gap:5px;flex-wrap:wrap}
-  .tag{background:var(--wv-surface-3);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-family:var(--mono);font-size:9px;color:var(--ink2)}
-  .tag.kind{color:var(--wv-accent-text);border-color:color-mix(in oklab,var(--acc) 35%,transparent);background:var(--wv-accent-soft)}
-  .layer .iconbtn{color:var(--ink2)}
-  .layer .iconbtn[data-act=up],.layer .iconbtn[data-act=down],.layer .iconbtn[data-act=del]{opacity:0;transition:opacity .1s ease}
-  .layer:hover .iconbtn[data-act],.layer.sel .iconbtn[data-act]{opacity:1}
-  .layer .iconbtn:hover{color:var(--ink);border-color:var(--acc)}
+  .layer.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+  .layer .top{display:flex;align-items:center;gap:6px}
+  .layer .nm{flex:1;font-weight:600;font-size:12px;background:transparent;border:0;color:var(--ink);outline:none;min-width:0}
+  .layer .meta{margin-top:3px;color:var(--ink2);font-size:10px;display:flex;gap:6px;flex-wrap:wrap}
+  .tag{background:var(--wv-surface-3);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:9px}
   .iconbtn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0}
   .acc-sec{border-bottom:1px solid var(--line)}
   .acc-h{padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
@@ -79,12 +72,11 @@
   .acc-b{padding:4px 12px 12px;display:none}
   .acc-sec.open .acc-b{display:block}
   .fld{margin:8px 0;display:flex;flex-direction:column;gap:3px}
-  .fld>label{font-size:10px;color:var(--ink2);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:baseline}
-  .fld>label .v{color:var(--ink);font-family:var(--mono);font-size:12px;font-weight:600}
+  .fld>label{font-size:10px;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between}
+  .fld>label .v{color:var(--acc);font-family:var(--mono)}
   select,input[type=text],input[type=number],textarea{font-family:inherit;font-size:12px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%;outline:none}
   textarea{font-family:var(--mono);font-size:11px;min-height:74px;resize:vertical;white-space:pre}
-  input[type=range]{width:100%;height:18px;accent-color:var(--acc);cursor:pointer}
-  input[type=range]:disabled{opacity:.5;cursor:default}
+  input[type=range]{width:100%;accent-color:var(--acc)}
   input[type=color]{width:36px;height:24px;padding:0;border:1px solid var(--line);background:transparent;border-radius:4px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   .stagewrap{position:relative;max-width:100%;max-height:100%;box-shadow:0 0 60px #000 inset}
@@ -98,7 +90,7 @@
   .small{font-size:10px;color:var(--ink2)}
   .impacts{margin-top:6px;display:flex;flex-direction:column;gap:6px}
   .impact{border:1px dashed var(--line);border-radius:6px;padding:6px;background:var(--wv-surface-2)}
-  .effitem{border:1px solid var(--line);border-radius:8px;padding:9px;margin:8px 0;background:var(--wv-surface-2)}
+  .effitem{border:1px solid var(--line);border-radius:6px;padding:6px;margin:6px 0;background:var(--wv-surface-2)}
   .effitem .eh{display:flex;align-items:center;gap:6px}
   .effitem .eh select{flex:1}
   .toolbar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:7}
@@ -4224,9 +4216,6 @@ const ICONS={
   car:'<svg class="ic car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>',
 };
 
-// Stable per-layer accent dot colour, hashed from the layer id (varied hues,
-// matching the colour-coded layers in the reference design).
-function layerColor(L){ let h=0; const s=String(L.id||L.name||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return `oklch(70% 0.13 ${h%360})`; }
 function renderLayerList(){
   const root=document.getElementById('layerList'); root.innerHTML='';
   [...STATE.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
@@ -4235,15 +4224,14 @@ function renderLayerList(){
     // edge drag and anchors a `layerin:<layerId>` port to this row's geometry.
     el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
     el.innerHTML=`<div class="top">
-        <span class="dot" style="background:${layerColor(L)}"></span>
+        <button class="iconbtn sm" data-act="vis" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</button>
         <input class="nm" value="${esc(L.name)}">
         <button class="iconbtn sm" data-act="up" title="up">${ICONS.up}</button>
         <button class="iconbtn sm" data-act="down" title="down">${ICONS.down}</button>
-        <button class="iconbtn sm" data-act="vis" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</button>
         <button class="iconbtn sm" data-act="del" title="delete">${ICONS.trash}</button>
       </div>
       <div class="meta">
-        <span class="tag kind">${L.content.kind}</span>
+        <span class="tag">${L.content.kind}</span>
         <span class="tag">pos:${L.positioning.mode}</span>
         <span class="tag">trig:${L.trigger.source}</span>
         <span class="tag">fx:${L.effects.stack.length}</span>
@@ -4268,13 +4256,12 @@ function renderLayerList(){
       el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
       el.style.borderStyle='dashed'; el.style.opacity='.92';
       el.innerHTML=`<div class="top">
-          <span class="dot" style="background:${layerColor(L)}"></span>
+          <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
           <input class="nm" value="${esc(L.name)}" readonly title="Driven by a wired Layer node - edit it on the canvas">
           <span class="tag" style="border-color:var(--acc2);color:var(--acc2)">wired</span>
-          <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
         </div>
         <div class="meta">
-          <span class="tag kind">${L.content.kind}</span>
+          <span class="tag">${L.content.kind}</span>
           <span class="tag">pos:${L.positioning.mode}</span>
           <span class="tag">trig:${L.trigger.source}</span>
           <span class="tag">fx:${L.effects.stack.length}</span>
@@ -4304,10 +4291,8 @@ document.getElementById('addLayer').onclick=()=>{
 function fSlider(label,val,min,max,step,on){
   const w=document.createElement('div'); w.className='fld';
   w.innerHTML=`<label>${label}<span class="v"></span></label><input type="range" min="${min}" max="${max}" step="${step}" value="${val}">`;
-  const v=w.querySelector('.v'), inp=w.querySelector('input');
-  const fill=()=>inp.style.setProperty('--wv-fill', (((+inp.value-min)/((max-min)||1))*100)+'%');
-  v.textContent=(+val).toFixed(step<1?2:0); fill();
-  inp.oninput=()=>{ v.textContent=(+inp.value).toFixed(step<1?2:0); fill(); on(+inp.value); emit(); };
+  const v=w.querySelector('.v'), inp=w.querySelector('input'); v.textContent=(+val).toFixed(step<1?2:0);
+  inp.oninput=()=>{ v.textContent=(+inp.value).toFixed(step<1?2:0); on(+inp.value); emit(); };
   return w;
 }
 function fSelect(label,val,opts,on){
