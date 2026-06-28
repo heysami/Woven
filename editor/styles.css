@@ -8778,6 +8778,127 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   white-space: nowrap;
 }
 
+/* ─── Quiet (resting) node faces ──────────────────────────────────────
+   A node carrying data-quiet shows a SIMPLIFIED look while it is neither
+   hovered nor selected, and reveals its full editor the moment the pointer
+   enters it or it is selected. Two modes:
+     data-quiet="face" - an absolute icon+name overlay replaces the body.
+     data-quiet="bare" - the chrome bar(s) collapse, leaving only content.
+   Both gate on the same :not(:hover):not([data-selected="true"]) rest state. */
+
+/* face mode - the overlay sits inside the node (absolute, so it never adds a
+   grid row), opaque over the warm surface, and is pointer-transparent so the
+   hover that hides it always reaches the node. */
+.workflow-node-quiet {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 16px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-radius: inherit;
+  pointer-events: none;
+  text-align: center;
+  overflow: hidden;
+}
+.workflow-node[data-quiet="face"]:not(:hover):not([data-selected="true"]) > .workflow-node-quiet {
+  display: flex;
+}
+.workflow-node-quiet-icon {
+  font-size: 36px;
+  line-height: 1;
+  opacity: 0.92;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-node-quiet-icon svg { width: 36px; height: 36px; }
+.workflow-node-quiet-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-quiet-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-quiet-extra {
+  margin-top: 4px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+/* color-palette face extra - a centered row of scheme boxes. */
+.workflow-node-quiet-swatches {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.workflow-node-quiet-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, oklch(0% 0 0) 10%, transparent);
+}
+/* iterator face extra - a compact list of variants / remixes / blend inputs. */
+.workflow-node-quiet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  text-align: left;
+}
+.workflow-node-quiet-listrow {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.workflow-node-quiet-listnum { color: var(--text-faint); flex: none; }
+.workflow-node-quiet-listtext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* bare mode - collapse the chrome bar row(s) so only the content remains. The
+   bar stays in flow (visibility:hidden) so grid auto-placement keeps the body
+   in its row; the track itself collapses to 0. */
+.workflow-node[data-quiet="bare"]:not(:hover):not([data-selected="true"]) {
+  grid-template-rows: 0 1fr;
+}
+.workflow-node[data-quiet="bare"]:not(:hover):not([data-selected="true"]) > .workflow-node-bar {
+  visibility: hidden;
+  overflow: hidden;
+  min-height: 0;
+}
+/* formatted-text carries an extra typobar row above the editor. */
+.workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) {
+  grid-template-rows: 0 0 1fr;
+}
+.workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) > .workflow-fmttext-typobar {
+  visibility: hidden;
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* ─── Canvas-frames body-drag overlay ─────────────────────────────────
    When the frames node is NOT selected, this layer floats above the
    pointer-events:none iframe and absorbs body clicks. It both lets the

@@ -43603,6 +43603,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
@@ -43619,6 +43621,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
@@ -43972,6 +43976,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -43988,6 +43994,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -44004,6 +44012,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -44020,6 +44030,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 seedText=${_assistantCollectText(resolveUpstreamInputs(n, data.nodes, data.edges))}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -44037,6 +44049,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -44053,6 +44067,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -44069,6 +44085,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -52904,6 +52922,26 @@ function WorkflowLodVeil({ zoom, glyph, label, mode = "fill" }) {
   `;
 }
 
+// Quiet (resting) node face - the SIMPLIFIED look a node shows when it is
+// neither hovered nor selected. A big icon + a bigger name (+ optional extras
+// like swatch boxes, a variant list, or a font sample). Rendered as an
+// absolute inset overlay INSIDE the node so it can't disturb the node's grid
+// rows; CSS (`.workflow-node[data-quiet="face"]:not(:hover):not([data-selected="true"])`)
+// toggles it on at rest and hides it the instant the node is hovered/selected,
+// revealing the full editor underneath. `fontFamily` (typography) renders the
+// icon + name in the chosen font so the resting card previews the typeface.
+function WorkflowQuietFace({ glyph, name, sub, extra, fontFamily }) {
+  const fstyle = fontFamily ? { fontFamily } : undefined;
+  return html`
+    <div className="workflow-node-quiet" aria-hidden="true">
+      <div className="workflow-node-quiet-icon" style=${fstyle}>${glyph}</div>
+      ${name != null ? html`<div className="workflow-node-quiet-name" style=${fstyle}>${name}</div>` : null}
+      ${sub != null ? html`<div className="workflow-node-quiet-sub">${sub}</div>` : null}
+      ${extra != null ? html`<div className="workflow-node-quiet-extra">${extra}</div>` : null}
+    </div>
+  `;
+}
+
 // v3.9.x - Lightweight LOD for the app-node EDITORS (composer / driven app-tool /
 // custom-app / vector / spline-3d). Before this they were the one family left out
 // of the zoom-out placeholder: zoomed far out they kept painting their full editor
@@ -58051,6 +58089,7 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
   return html`
     <div
       className="workflow-node workflow-node-prompt"
+      data-quiet="bare"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
       data-run-status=${node.runStatus || ""}
@@ -58899,7 +58938,7 @@ function useAgentEditTarget(node, allNodes, allEdges, { path, serialize, apply, 
   }, [canonicalPath]);
 }
 
-function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+function WorkflowColorPaletteNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
   const w = node.w || 320;
   const h = node.h || 280;
   const swatches = node.swatches || [];
@@ -58933,6 +58972,9 @@ function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onCh
   const [editingName, setEditingName] = useState(false);
   return html`
     <div className="workflow-node workflow-node-palette"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-palette-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-palette-glyph">●</span>
@@ -58990,6 +59032,10 @@ function WorkflowColorPaletteNode({ node, zoom, onMove, onResize, onRemove, onCh
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
+      <${WorkflowQuietFace} glyph=${"●"} name=${node.name || "Color palette"}
+        extra=${html`<div className="workflow-node-quiet-swatches">${swatches.slice(0, 10).map((s, i) => html`
+          <span key=${i} className="workflow-node-quiet-swatch" style=${{ background: s.value || "#000" }} title=${s.value || ""}/>
+        `)}</div>`} />
     </div>
   `;
 }
@@ -59525,7 +59571,7 @@ function typoResolverChip(status, label, currentSource, onUpload, currentUrl) {
   return html`<div className="workflow-node-typo-chip is-missing" title=${status.error || "Unknown error"}>${label} · ${status.error || "?"}</div>`;
 }
 
-function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+function WorkflowTypographyNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
   const w = node.w || 360;
   const h = node.h || 360;
   const levels = node.levels || [];
@@ -59616,6 +59662,9 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
   const [editingName, setEditingName] = useState(false);
   return html`
     <div className="workflow-node workflow-node-typo"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-typo-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-typo-glyph">Aa</span>
@@ -59723,6 +59772,11 @@ function WorkflowTypographyNode({ node, zoom, onMove, onResize, onRemove, onChan
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      <${WorkflowQuietFace}
+        glyph=${"Aa"}
+        name=${node.fontFamily || node.name || "Typography"}
+        sub=${node.fontFamily ? "Typography" : null}
+        fontFamily=${node.fontFamily || undefined} />
     </div>
   `;
 }
@@ -65653,6 +65707,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
   return html`
     <div
       className="workflow-node workflow-node-fmttext"
+      data-quiet="bare"
       data-selected=${selected ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
@@ -70582,6 +70637,7 @@ function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize,
   return html`
     <div
       className="workflow-node workflow-node-mermaid"
+      data-quiet="bare"
       data-selected=${selected ? "true" : "false"}
       onMouseDownCapture=${() => onSelect && onSelect()}
       data-node-id=${node.id}
@@ -70815,7 +70871,7 @@ function WorkflowMermaidCodePanel({ node, onChange, onClose, zoom }) {
    handler is provided by the canvas-level dispatcher; the UI here is just
    editing fields + showing run state. */
 
-function WorkflowRepeaterNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState }) {
+function WorkflowRepeaterNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState }) {
   const n = Math.max(1, Math.min(8, node.n || 4));
   const variants = (node.variants || []).slice(0, n);
   while (variants.length < n) variants.push("");
@@ -70842,6 +70898,9 @@ function WorkflowRepeaterNode({ node, zoom, onMove, onResize, onRemove, onChange
   };
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-repeater"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Refresh}/></span>
@@ -70929,11 +70988,15 @@ function WorkflowRepeaterNode({ node, zoom, onMove, onResize, onRemove, onChange
         </div>
       `)}
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Refresh}/>`} name=${"Repeater"} sub=${n + " variants"}
+        extra=${html`<div className="workflow-node-quiet-list">${variants.map((v, i) => html`
+          <div key=${i} className="workflow-node-quiet-listrow"><span className="workflow-node-quiet-listnum">#${i + 1}</span><span className="workflow-node-quiet-listtext">${(v || "").trim() || "(auto)"}</span></div>
+        `)}</div>`} />
     </div>
   `;
 }
 
-function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState }) {
+function WorkflowRemixNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState }) {
   const n = Math.max(1, Math.min(8, node.n || 4));
   const variants = (node.variants || []).slice(0, n);
   while (variants.length < n) variants.push("");
@@ -70955,6 +71018,9 @@ function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   };
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-remix"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Shuffle}/></span>
@@ -71061,11 +71127,15 @@ function WorkflowRemixNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         </div>
       `)}
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Shuffle}/>`} name=${"Remix"} sub=${n + " variants"}
+        extra=${html`<div className="workflow-node-quiet-list">${variants.map((v, i) => html`
+          <div key=${i} className="workflow-node-quiet-listrow"><span className="workflow-node-quiet-listnum">#${i + 1}</span><span className="workflow-node-quiet-listtext">${(v || "").trim() || "(auto)"}</span></div>
+        `)}</div>`} />
     </div>
   `;
 }
 
-function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState }) {
+function WorkflowBlendNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState }) {
   const n = Math.max(2, Math.min(6, node.n || 3));
   const slots = (node.slots || []).slice(0, n);
   while (slots.length < n) slots.push({ weight: 1, criteria: "" });
@@ -71082,6 +71152,9 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   };
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-blend"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Blend}/></span>
@@ -71174,6 +71247,10 @@ function WorkflowBlendNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Blend}/>`} name=${"Blend"} sub=${n + " inputs"}
+        extra=${html`<div className="workflow-node-quiet-list">${slots.map((s, i) => html`
+          <div key=${i} className="workflow-node-quiet-listrow"><span className="workflow-node-quiet-listnum">#${i + 1}</span><span className="workflow-node-quiet-listtext">${((s && s.criteria) || "").trim() || "input " + (i + 1)}</span></div>
+        `)}</div>`} />
     </div>
   `;
 }
@@ -71209,7 +71286,7 @@ function AssistantModelSelect({ value, onChange, title }) {
 // the back-and-forth (streaming, stop/resume) - the same chat every agent node
 // uses. saveInterviewRefined (onSaveRefined) captures the agent's final message
 // into the wired/auto-spawned output prompt node.
-function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSaveRefined, seedText, runState }) {
+function WorkflowInterviewNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSaveRefined, seedText, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const [chatOpen, setChatOpen] = useState(false);
@@ -71220,6 +71297,9 @@ function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChang
   const interviewerSystem = _interviewerSystemPrompt(node, seedText || "");
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-refiner workflow-node-assistant"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Loop}/></span>
@@ -71296,18 +71376,22 @@ function WorkflowInterviewNode({ node, zoom, onMove, onResize, onRemove, onChang
         onClose=${() => setChatOpen(false)}
         onChange=${onChange}
       />`}
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Loop}/>`} name=${"Interviewing assistant"} />
     </div>
   `;
 }
 
 // ── Assistant 1: Research assistant ───────────────────────────────────────
-function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(360, node.w || 420), h = Math.max(440, node.h || 460);
   const busy = runState?.status === "loading";
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Search}/></span>
@@ -71374,12 +71458,13 @@ function WorkflowResearchNode({ node, zoom, onMove, onResize, onRemove, onChange
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Research assistant"} />
     </div>
   `;
 }
 
 // ── Assistant 2: Testing assistant ────────────────────────────────────────
-function WorkflowTestingNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(380, node.w || 440), h = Math.max(460, node.h || 500);
@@ -71387,6 +71472,9 @@ function WorkflowTestingNode({ node, zoom, onMove, onResize, onRemove, onChange,
   const total = Math.min(node.maxTesters || 12, (node.personaTypes || 3) * (node.testersPerType || 2));
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Users || Icon.User || Icon.Spark}/></span>
@@ -71440,6 +71528,7 @@ function WorkflowTestingNode({ node, zoom, onMove, onResize, onRemove, onChange,
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Testing assistant"} />
     </div>
   `;
 }
@@ -71840,6 +71929,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   return html`
     <div
       className="workflow-node workflow-node-ds"
+      data-quiet="face"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
@@ -72104,6 +72194,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
           refresh();
         }}
       />`}
+      <${WorkflowQuietFace} glyph=${"◐"} name=${dsId} sub=${"Design system"} />
     </div>
   `;
 }
@@ -74711,6 +74802,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   return html`
     <div
       className="workflow-node workflow-node-ds workflow-node-ds-brainstorm"
+      data-quiet="face"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
@@ -74982,6 +75074,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
         title="Drag to resize"
         onMouseDown=${onResizeDown}
       />
+      <${WorkflowQuietFace} glyph=${"✦"} name=${"DS brainstorm"} />
     </div>
   `;
 }
@@ -78063,7 +78156,7 @@ function Slice9Guides({ pngPath, s9, onPatch }) {
   </div>`;
 }
 
-function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, onSpawnConnected, allNodes, allEdges, projectId }) {
+function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, onSpawnConnected, allNodes, allEdges, projectId }) {
   const [dragging, setDragging] = useState(false);
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -78164,7 +78257,10 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
     return html`
       <div
         className=${"workflow-node workflow-node-skill workflow-node-skill-llm" + (dragging ? " is-dragging" : "")}
+        data-quiet="face"
         data-status=${status}
+        data-selected=${selected ? "true" : "false"}
+        onMouseDownCapture=${() => onSelect && onSelect()}
         data-node-id=${node.id}
         style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
       >
@@ -78212,6 +78308,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         <div className="workflow-node-port workflow-node-port-in"  data-side="in"  onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}/>
         <div className="workflow-node-port workflow-node-port-out" data-side="out" onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}/>
         <div className="workflow-node-resize" onMouseDown=${onResizeDown}/>
+        <${WorkflowQuietFace} glyph=${html`<${Icon.Text}/>`} name=${node.title || "LLM call"} />
       </div>
     `;
   }
@@ -78271,8 +78368,11 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
   return html`
     <div
       className="workflow-node workflow-node-skill"
+      data-quiet="face"
       data-dragging=${dragging ? "true" : "false"}
       data-status=${status}
+      data-selected=${selected ? "true" : "false"}
+      onMouseDownCapture=${() => onSelect && onSelect()}
       data-skill=${skillId}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
@@ -78414,6 +78514,7 @@ function WorkflowSkillNode({ node, zoom, onMove, onResize, onRemove, onChange, o
         title="Drag to resize width and height"
         onMouseDown=${onResizeDown}
       />
+      <${WorkflowQuietFace} glyph=${skillGlyph(skillSpec)} name=${skillSpec.label} />
     </div>
   `;
 }
@@ -78817,6 +78918,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
   return html`
     <div
       className="workflow-node workflow-node-agent"
+      data-quiet="face"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
       data-run-status=${node.runStatus || ""}
@@ -79269,6 +79371,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         onClose=${() => setReadPickerOpen(false)}
         onPick=${(p) => { onChange && onChange({ referenceFolder: p }); setReadPickerOpen(false); }}
       />`}
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Bot}/>`} name=${name} />
     </div>
   `;
 }
