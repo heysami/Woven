@@ -58935,6 +58935,9 @@ function WorkflowColorPaletteNode({ node, zoom, selected, onSelect, onMove, onRe
   const w = node.w || 320;
   const h = node.h || 280;
   const swatches = node.swatches || [];
+  // Display name. Treat the legacy default "Palette" (and blank) as unnamed so
+  // both the bar and the quiet face read "Color palette"; a real custom name wins.
+  const paletteName = (node.name && node.name.trim() && node.name.trim().toLowerCase() !== "palette") ? node.name : "Color palette";
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   useAgentEditTarget(node, allNodes, allEdges, {
@@ -58970,12 +58973,12 @@ function WorkflowColorPaletteNode({ node, zoom, selected, onSelect, onMove, onRe
          onMouseDownCapture=${() => onSelect && onSelect()}
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-palette-bar" onMouseDown=${onHandleDown}>
-        <span className="workflow-node-palette-glyph">●</span>
+        <span className="workflow-node-palette-glyph"><${Icon.Palette}/></span>
         ${editingName
           ? html`<input
               className="workflow-node-palette-name"
               autoFocus
-              value=${node.name || "Palette"}
+              value=${paletteName}
               onInput=${(e) => onChange({ name: e.target.value })}
               onBlur=${() => setEditingName(false)}
               onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setEditingName(false); } }}
@@ -58987,7 +58990,7 @@ function WorkflowColorPaletteNode({ node, zoom, selected, onSelect, onMove, onRe
               onDoubleClick=${(e) => { e.stopPropagation(); setEditingName(true); }}
               title="Double-click to rename"
               style=${{ cursor: "grab", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", userSelect: "none" }}
-            >${node.name || "Palette"}</span>`}
+            >${paletteName}</span>`}
         <span className="workflow-node-bar-spacer"/>
         <button className="workflow-node-close" title="Remove" onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
@@ -59025,7 +59028,7 @@ function WorkflowColorPaletteNode({ node, zoom, selected, onSelect, onMove, onRe
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown} title="Drag to resize"/>
-      <${WorkflowQuietFace} glyph=${"●"} name=${node.name || "Color palette"}
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Palette}/>`} name=${paletteName}
         extra=${html`<div className="workflow-node-quiet-swatches">${swatches.slice(0, 10).map((s, i) => html`
           <span key=${i} className="workflow-node-quiet-swatch" style=${{ background: s.value || "#000" }} title=${s.value || ""}/>
         `)}</div>`} />

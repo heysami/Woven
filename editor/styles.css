@@ -13494,7 +13494,11 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent);
   width: 14px;
   text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.workflow-node-palette-glyph svg { width: 14px; height: 14px; }
 .workflow-node-palette-name {
   border: 0;
   background: transparent;
