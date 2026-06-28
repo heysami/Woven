@@ -1252,7 +1252,7 @@ KINDS = {
 
     # ── assistant-interview (replaces the old iterator-refiner) ────────────
     "assistant-interview": {
-        "title":        "Interviewing assistant (interviews the real user)",
+        "title":        "Brief refinement assistant (interviews the real user)",
         "category":     "assistant",
         "inputs": {
             "goal":         {"type": "markdown", "userEditable": True},

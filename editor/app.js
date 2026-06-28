@@ -26047,7 +26047,7 @@ const WORKFLOW_CONNECT_DEFS = {
   },
   // ── Assistant family ────────────────────────────────────────────────────
   "assistant-interview": {
-    label: "Interviewing assistant",
+    label: "Brief refinement assistant",
     // text-gen ONLY (a runtime producer) - no fixed text until the interview
     // finishes; feeds prompt.in via text-gen, same as the old refiner did.
     provides: { out: { label: "Refined prompt", tags: ["text-gen"] } },
@@ -45683,8 +45683,8 @@ function WorkflowLibrary({ tab = "nodes" }) {
                }}
                title="Drag onto canvas - an agent interviews YOU in a chat loop until your prompt meets the goal, then writes the refined prompt.">
             <span className="workflow-library-item-glyph"><${Icon.Loop}/></span>
-            <span className="workflow-library-item-label">Interviewing assistant</span>
-            <span className="workflow-library-item-id">interviews you</span>
+            <span className="workflow-library-item-label">Brief refinement assistant</span>
+            <span className="workflow-library-item-id">interviews you to refine the brief</span>
           </div>
         </div>
       </div>
@@ -71423,11 +71423,11 @@ function WorkflowInterviewNode({ node, zoom, selected, onSelect, onMove, onResiz
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Loop}/></span>
-        <span className="workflow-node-iter-title">Interviewing assistant</span>
+        <span className="workflow-node-iter-title">Brief refinement assistant</span>
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip} className="workflow-node-close"
-          tip="Remove this interviewing assistant from the canvas."
-          ariaLabel="Remove interviewing assistant"
+          tip="Remove this brief refinement assistant from the canvas."
+          ariaLabel="Remove brief refinement assistant"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }}
           onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
@@ -71496,7 +71496,7 @@ function WorkflowInterviewNode({ node, zoom, selected, onSelect, onMove, onResiz
         onClose=${() => setChatOpen(false)}
         onChange=${onChange}
       />`}
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Loop}/>`} name=${"Interviewing assistant"} sub=${(node.goal || "").trim() || null} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Loop}/>`} name=${"Brief refinement assistant"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
 }
