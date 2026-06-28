@@ -7153,7 +7153,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   line-height: 1.2;
 }
 .workflow-node-section-title-input {
@@ -7163,7 +7163,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   padding: 0;
   min-width: 8ch;
   width: 22ch;
@@ -10448,7 +10448,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -11993,7 +11993,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12677,7 +12677,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13211,7 +13211,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   flex: 1 1 0;
   min-width: 0;
   outline: none;
@@ -13305,7 +13305,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   flex: 1 1 0;
   min-width: 0;
   outline: none;
@@ -13602,7 +13602,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font: 500 11px var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
