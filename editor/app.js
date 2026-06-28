@@ -55883,7 +55883,7 @@ function assetPickBucket(w, h) {
 // model fills only the new area and preserves the original.
 function WorkflowAssetCropModal({ src, path, label, onClose, onApplied }) {
   const [natural, setNatural] = useState(null); // { w, h } of the source file
-  const [rect, setRect] = useState({ x: 0.08, y: 0.08, w: 0.84, h: 0.84 }); // image units; may exceed 0..1 when expanding
+  const [rect, setRect] = useState({ x: 0, y: 0, w: 1, h: 1 }); // image units; full image by default (drag inward to crop), may exceed 0..1 when expanding
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Working…");
   const [fillPrompt, setFillPrompt] = useState(""); // optional outpaint guidance
