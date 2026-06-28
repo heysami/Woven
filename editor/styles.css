@@ -29,15 +29,15 @@
      ORANGE is the energetic "hot" accent (the RECORD button / GAIN knob /
      cable), reserved for special places only: the primary Run action and the
      live "running" indicator. Use --hot sparingly so it stays a focal point. */
-  --accent:        oklch(56% 0.14 159);
-  --accent-soft:   oklch(95% 0.038 162);
-  --accent-text:   oklch(45% 0.125 162);
-  --accent-strong: oklch(48% 0.145 160);
-  /* Hot - vivid TE orange (#fa5a14-ish). Special / primary-action only. */
-  --hot:           oklch(64% 0.205 42);
-  --hot-soft:      oklch(95% 0.045 52);
-  --hot-text:      oklch(52% 0.195 40);
-  --hot-strong:    oklch(58% 0.215 38);
+  --accent:        oklch(58% 0.11 188);
+  --accent-soft:   oklch(95% 0.035 188);
+  --accent-text:   oklch(46% 0.10 188);
+  --accent-strong: oklch(50% 0.115 188);
+  /* Hot - DORFic safety orange (#FF6600). Special / primary-action only. */
+  --hot:           oklch(70% 0.196 42);
+  --hot-soft:      oklch(95% 0.05 50);
+  --hot-text:      oklch(56% 0.19 42);
+  --hot-strong:    oklch(64% 0.21 42);
   /* Success reads as a brighter, yellower green so a "done" node is legible
      against the bluer brand green; danger a hotter red. */
   --success:       oklch(63% 0.16 150);
@@ -1184,7 +1184,7 @@ button {
 .orchestrators-info {
   padding: 14px 18px;
   background: var(--accent-soft);
-  border: 1px solid oklch(85% 0.05 162);
+  border: 1px solid oklch(85% 0.05 188);
   border-radius: 10px;
   font-size: 13px; line-height: 1.55;
   color: var(--text);
@@ -1381,7 +1381,7 @@ button {
 }
 .orchestrator-chip-agent    { background: oklch(94% 0.04 250); border-color: oklch(85% 0.07 250); color: oklch(40% 0.15 250); }
 .orchestrator-chip-skill    { background: oklch(94% 0.04 295); border-color: oklch(85% 0.07 295); color: oklch(42% 0.16 295); }
-.orchestrator-chip-kind     { background: var(--accent-soft);  border-color: oklch(85% 0.05 162); color: var(--accent-text); }
+.orchestrator-chip-kind     { background: var(--accent-soft);  border-color: oklch(85% 0.05 188); color: var(--accent-text); }
 .orchestrator-chip-override { background: oklch(96% 0.06 80);  border-color: oklch(85% 0.10 75); color: oklch(45% 0.13 65); }
 .orchestrator-chip-trio     { background: oklch(94% 0.04 350); border-color: oklch(85% 0.07 350); color: oklch(45% 0.15 5); }
 
@@ -1525,7 +1525,7 @@ button {
   color: var(--text-faint);
   line-height: 1.4;
 }
-.system-nav-item.is-active .system-nav-hint { color: oklch(50% 0.10 162); }
+.system-nav-item.is-active .system-nav-hint { color: oklch(50% 0.10 188); }
 
 .system-content {
   min-width: 0;
@@ -1609,7 +1609,7 @@ button {
 }
 .system-threads-dot.is-live    { background: oklch(62% 0.17 145); box-shadow: 0 0 0 3px oklch(62% 0.17 145 / 0.18); }
 .system-threads-dot.is-waiting { background: oklch(70% 0.14 85); }
-.system-threads-dot.is-done    { background: oklch(62% 0.12 162); }
+.system-threads-dot.is-done    { background: oklch(62% 0.12 188); }
 .system-threads-dot.is-failed  { background: oklch(58% 0.18 25); }
 .system-threads-dot.is-stopped { background: var(--text-faint); }
 .system-threads-row-title {
@@ -1973,7 +1973,7 @@ button {
   box-shadow: 0 1px 3px rgba(40, 34, 26, 0.04);
 }
 .proto-catalog-card[data-cat="shell"]    { border-top: 3px solid oklch(78% 0.12 250); }
-.proto-catalog-card[data-cat="style"]    { border-top: 3px solid oklch(80% 0.13 160); }
+.proto-catalog-card[data-cat="style"]    { border-top: 3px solid oklch(80% 0.13 188); }
 .proto-catalog-card[data-cat="aesthetic"]{ border-top: 3px solid oklch(82% 0.15 330); }
 .proto-catalog-card[data-cat="recipe"]   { border-top: 3px solid oklch(82% 0.14 60);  }
 .proto-catalog-card[data-cat="scene"]    { border-top: 3px solid oklch(76% 0.12 200); }
@@ -7564,15 +7564,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
       45deg,
       transparent 0,
       transparent 29px,
-      color-mix(in oklch, var(--border-strong) 8%, transparent) 29px,
-      color-mix(in oklch, var(--border-strong) 8%, transparent) 30px
+      color-mix(in oklch, var(--border-strong) 15%, transparent) 29px,
+      color-mix(in oklch, var(--border-strong) 15%, transparent) 30px
     ),
     repeating-linear-gradient(
       -45deg,
       transparent 0,
       transparent 29px,
-      color-mix(in oklch, var(--border-strong) 8%, transparent) 29px,
-      color-mix(in oklch, var(--border-strong) 8%, transparent) 30px
+      color-mix(in oklch, var(--border-strong) 15%, transparent) 29px,
+      color-mix(in oklch, var(--border-strong) 15%, transparent) 30px
     ),
     radial-gradient(circle at 50% 36%, var(--surface) 0%, transparent 72%);
   cursor: default;
@@ -14288,8 +14288,8 @@ a.ds-badge:hover, button.ds-badge:hover {
    came out pinkish. Direct values keep the hue locked to the
    accent's green band. */
 .model-setup-wizard-dot[data-done="true"] {
-  background: oklch(92% 0.04 162);
-  border-color: oklch(76% 0.10 162);
+  background: oklch(92% 0.04 188);
+  border-color: oklch(76% 0.10 188);
   color: var(--accent-text);
 }
 /* "You are here" → solid dark slate with a ring. Deliberately NOT using
@@ -14312,7 +14312,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 0 0 36px;
 }
 .model-setup-wizard-line[data-done="true"] {
-  background: oklch(78% 0.09 162);
+  background: oklch(78% 0.09 188);
 }
 .model-setup-wizard-body {
   padding: 16px 20px;
@@ -21982,7 +21982,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: 2px;
 }
 .zoom-selection-ring[data-tool="export"] {
-  outline-color: oklch(70% 0.18 160);
+  outline-color: oklch(70% 0.18 188);
 }
 .zoom-selection-ring[data-tool="comment"] {
   outline-color: oklch(70% 0.18 60);

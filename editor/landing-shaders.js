@@ -330,7 +330,7 @@
 
     float pat = smoothstep(460.0 * uScale, 0.0, dist);
     pat = pat * pat * (3.0 - 2.0 * pat);
-    fcol = mix(fcol, mix(fcol, vec3(0.82, 0.82, 0.82), line * 0.5), pat);
+    fcol = mix(fcol, mix(fcol, vec3(0.92, 0.92, 0.92), line * 0.35), pat);
 
     float sgn = mod(id.x + id.y, 2.0) < 0.5 ? 1.0 : -1.0;
     float HS  = 11.0 * uScale;
