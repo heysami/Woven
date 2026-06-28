@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [style-aurorism, recipe-aurora-marketing, aesthetic-frutiger-aero]
 notForUseWhen: high-density data UI, brutalist flat
+images:
+  - src: shader-mesh-gradient.png
+    reason: Mesh Gradient (animated 16-point color mesh) - shader fill preview.
 ---
 
 # Mesh Gradient (animated 16-point color mesh)

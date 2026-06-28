@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-op-art, aesthetic-y2k-memphis-loud, aesthetic-acid-design]
 notForUseWhen: minimal restrained SaaS, photoreal hero
+images:
+  - src: shader-concentric-patterns.png
+    reason: Concentric Patterns (bold nested ring shapes) - shader fill preview.
 ---
 
 # Concentric Patterns (bold nested ring shapes)

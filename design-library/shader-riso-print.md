@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-anti-design, style-raster-cutout]
 notForUseWhen: glossy enterprise polish, photoreal hero
+images:
+  - src: shader-riso-print.png
+    reason: Riso Print (2-color screen re-print with grain + registration shift) - shader fill preview.
 ---
 
 # Riso Print (2-color screen re-print with grain + registration shift)

@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-acid-graphics, aesthetic-y2k-memphis-loud, recipe-editorial-magazine, aesthetic-vaporwave]
 notForUseWhen: minimal corporate, dense data UI
+images:
+  - src: shader-fluid-halftone.png
+    reason: Fluid Halftone (advected ink re-screened as dots) - shader fill preview.
 ---
 
 # Fluid Halftone (advected ink re-screened as dots)

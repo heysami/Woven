@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-cyberpunk, recipe-ai-foundry-dark, aesthetic-cassette-futurism, aesthetic-cosmic-horizon]
 notForUseWhen: flat corporate, dense data tables
+images:
+  - src: shader-glowing-wave.png
+    reason: Glowing Wave (luminous wave fill, on-canvas glow) - shader fill preview.
 ---
 
 # Glowing Wave (luminous wave fill, on-canvas glow)

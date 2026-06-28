@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-dark-botanical-maximalism, aesthetic-cosmic-horizon, aesthetic-cottagegoth]
 notForUseWhen: crisp flat UI, hard-edged poster
+images:
+  - src: shader-fractal-noise.png
+    reason: Fractal Noise (Perlin / Value / Voronoise procedural fill) - shader fill preview.
 ---
 
 # Fractal Noise (Perlin / Value / Voronoise procedural fill)

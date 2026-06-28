@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-crypto-degen, recipe-devtools-marketing, aesthetic-cyberpunk]
 notForUseWhen: warm editorial, hand-drawn / organic vibes
+images:
+  - src: shader-particle-web.png
+    reason: Particle Web (proximity-linked constellation field) - shader fill preview.
 ---
 
 # Particle Web (proximity-linked constellation field)

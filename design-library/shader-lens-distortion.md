@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-cyberpunk, recipe-bento-marketing, aesthetic-frutiger-aero]
 notForUseWhen: flat editorial type, accessibility-critical text
+images:
+  - src: shader-lens-distortion.png
+    reason: Lens Distortion (barrel/pincushion + radial chromatic aberration) - shader fill preview.
 ---
 
 # Lens Distortion (barrel/pincushion + radial chromatic aberration)

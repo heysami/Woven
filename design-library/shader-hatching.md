@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, style-doodle, recipe-newspaper-of-record]
 notForUseWhen: glossy modern SaaS, vibrant pop
+images:
+  - src: shader-hatching.png
+    reason: Hatching (cross-hatch line shading from luminance) - shader fill preview.
 ---
 
 # Hatching (cross-hatch line shading from luminance)

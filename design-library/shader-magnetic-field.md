@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-depin-hardware, recipe-scientific-infra-marketing, aesthetic-blueprint-hologram, aesthetic-cosmic-horizon]
 notForUseWhen: playful kids brands, dense text UI
+images:
+  - src: shader-magnetic-field.png
+    reason: Magnetic Field (curl flow-field streamlines) - shader fill preview.
 ---
 
 # Magnetic Field (curl flow-field streamlines)

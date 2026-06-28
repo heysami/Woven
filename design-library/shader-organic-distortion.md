@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-surreal-dream-stage, aesthetic-vaporwave, aesthetic-acid-design, aesthetic-dreamcore]
 notForUseWhen: precise data viz, technical diagrams
+images:
+  - src: shader-organic-distortion.png
+    reason: Organic Distortion (ripple / swirl / twist / bulge domain-warp) - shader fill preview.
 ---
 
 # Organic Distortion (ripple / swirl / twist / bulge domain-warp)

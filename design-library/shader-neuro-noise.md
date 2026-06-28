@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [recipe-ai-foundry-dark, aesthetic-bioluminescent-deep, aesthetic-dark-botanical-maximalism]
 notForUseWhen: hard-edged brutalist, flat poster
+images:
+  - src: shader-neuro-noise.png
+    reason: Neuro Noise (organic marbled / neural fold field) - shader fill preview.
 ---
 
 # Neuro Noise (organic marbled / neural fold field)

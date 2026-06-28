@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-solarpunk, aesthetic-coastal-grandmother, aesthetic-frutiger-aero, aesthetic-dreamcore]
 notForUseWhen: hard tech UI, dense dashboards
+images:
+  - src: shader-clouds.png
+    reason: Clouds (procedural turbulent cloud texture) - shader fill preview.
 ---
 
 # Clouds (procedural turbulent cloud texture)

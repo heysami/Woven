@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-cosmic-horizon, aesthetic-bioluminescent-deep, aesthetic-luxury-cinematic-dark, aesthetic-defi-cosmic]
 notForUseWhen: bright airy brands, flat utilitarian UI
+images:
+  - src: shader-nebula.png
+    reason: Nebula (deep-space colored gas + stars) - shader fill preview.
 ---
 
 # Nebula (deep-space colored gas + stars)

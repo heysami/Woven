@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-frutiger-aero, aesthetic-positivity-kawaii, style-claymorphism, aesthetic-y2k-futurism]
 notForUseWhen: serious financial UI, dense data
+images:
+  - src: shader-metaball-merge.png
+    reason: Metaball Merge (gooey blobs that fuse and split) - shader fill preview.
 ---
 
 # Metaball Merge (gooey blobs that fuse and split)

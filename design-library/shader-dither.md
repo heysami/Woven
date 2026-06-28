@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-8-bit-generic, style-pixel-bitmap, aesthetic-cassette-futurism, aesthetic-monochrome-pop-poster]
 notForUseWhen: smooth premium gradients, photoreal hero
+images:
+  - src: shader-dither.png
+    reason: Dither (Atkinson / Floyd-Steinberg / Bayer screen) - shader fill preview.
 ---
 
 # Dither (Atkinson / Floyd-Steinberg / Bayer screen)

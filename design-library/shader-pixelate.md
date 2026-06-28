@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-8-bit-generic, aesthetic-vaporwave, aesthetic-cyberpunk, style-pixel-bitmap]
 notForUseWhen: high-detail product shots, fine type
+images:
+  - src: shader-pixelate.png
+    reason: Pixelate (mosaic + tile-scatter) - shader fill preview.
 ---
 
 # Pixelate (mosaic + tile-scatter)

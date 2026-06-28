@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [recipe-swiss-grid, aesthetic-bauhaus, aesthetic-monochrome-tech-editorial, aesthetic-constructivism]
 notForUseWhen: organic hand-drawn vibes, photoreal
+images:
+  - src: shader-pattern-grid.png
+    reason: Pattern Grid (geometric repeat fill) - shader fill preview.
 ---
 
 # Pattern Grid (geometric repeat fill)

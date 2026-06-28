@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-y2k-futurism, style-bold-display, style-oversized-neo-grotesque]
 notForUseWhen: calm restrained brands, dense tables
+images:
+  - src: shader-particle-stretch.png
+    reason: Particle Stretch (directional pixel-smear motion trails) - shader fill preview.
 ---
 
 # Particle Stretch (directional pixel-smear motion trails)

@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-monochrome-pop-poster, aesthetic-luxury-cinematic-dark, recipe-editorial-magazine, aesthetic-acid-graphics]
 notForUseWhen: brand photos that must keep true color
+images:
+  - src: shader-gradient-map.png
+    reason: Gradient Map (luminance remapped to a custom color ramp) - shader fill preview.
 ---
 
 # Gradient Map (luminance remapped to a custom color ramp)

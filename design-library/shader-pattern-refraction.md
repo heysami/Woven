@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [style-liquid-glass, style-glassmorphism, aesthetic-frutiger-aero, aesthetic-surreal-dream-stage]
 notForUseWhen: flat editorial, accessibility-critical text
+images:
+  - src: shader-pattern-refraction.png
+    reason: Pattern Refraction (light refracted through a ribbed pattern) - shader fill preview.
 ---
 
 # Pattern Refraction (light refracted through a ribbed pattern)

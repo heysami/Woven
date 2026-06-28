@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-acid-graphics, aesthetic-vaporwave, style-bold-display]
 notForUseWhen: calm restrained brands, precise diagrams
+images:
+  - src: shader-slice-shift.png
+    reason: Slice Shift (angled bands sheared apart) - shader fill preview.
 ---
 
 # Slice Shift (angled bands sheared apart)

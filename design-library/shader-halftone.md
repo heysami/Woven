@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-y2k-memphis-loud, aesthetic-anti-design, aesthetic-monochrome-pop-poster]
 notForUseWhen: smooth gradient hero, photoreal product
+images:
+  - src: shader-halftone.png
+    reason: Halftone (vintage print / comic dot screen) - shader fill preview.
 ---
 
 # Halftone (vintage print / comic dot screen)

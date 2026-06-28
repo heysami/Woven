@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, aesthetic-cosmic-horizon, aesthetic-bioluminescent-deep, aesthetic-solarpunk]
 notForUseWhen: flat utilitarian UI, bright airy brands
+images:
+  - src: shader-godrays.png
+    reason: Godrays (volumetric light shafts from a source) - shader fill preview.
 ---
 
 # Godrays (volumetric light shafts from a source)

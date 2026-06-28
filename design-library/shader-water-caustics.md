@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-bioluminescent-deep, aesthetic-coastal-grandmother, aesthetic-solarpunk, aesthetic-frutiger-aero]
 notForUseWhen: corporate dashboards, hard tech UI
+images:
+  - src: shader-water-caustics.png
+    reason: Water Caustics (shimmering refracted light net) - shader fill preview.
 ---
 
 # Water Caustics (shimmering refracted light net)

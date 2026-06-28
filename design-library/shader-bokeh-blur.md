@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, recipe-bento-marketing, aesthetic-frutiger-aero, recipe-aurora-marketing]
 notForUseWhen: crisp technical diagrams, dense tables
+images:
+  - src: shader-bokeh-blur.png
+    reason: Bokeh Blur (depth-of-field highlight bloom) - shader fill preview.
 ---
 
 # Bokeh Blur (depth-of-field highlight bloom)

@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-y2k-futurism, aesthetic-urbling, aesthetic-cyberpunk, style-holographic]
 notForUseWhen: matte editorial, flat utilitarian UI
+images:
+  - src: shader-chromatic-metal.png
+    reason: Chromatic Metal (inflated glossy metal + RGB separation) - shader fill preview.
 ---
 
 # Chromatic Metal (inflated glossy metal + RGB separation)

@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-acid-design, aesthetic-neubrutalism, aesthetic-monochrome-pop-poster, aesthetic-y2k-memphis-loud]
 notForUseWhen: photoreal product, subtle luxury
+images:
+  - src: shader-color-outline.png
+    reason: Color Outline (stacked offset outlines + gradient edge line-art) - shader fill preview.
 ---
 
 # Color Outline (stacked offset outlines + gradient edge line-art)

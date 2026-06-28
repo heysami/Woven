@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-luxury-cinematic-dark, aesthetic-cosmic-horizon, aesthetic-bioluminescent-deep]
 notForUseWhen: crisp product shots that must stay legible
+images:
+  - src: shader-luminance-particles.png
+    reason: Luminance Particles (image dissolves into glowing motes) - shader fill preview.
 ---
 
 # Luminance Particles (image dissolves into glowing motes)

@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cassette-futurism, recipe-ai-foundry-dark, aesthetic-y2k-futurism]
 notForUseWhen: flat clean SaaS, photographic hero
+images:
+  - src: shader-dither-waves.png
+    reason: Dither Waves (luminous wave bands, error-diffusion screen) - shader fill preview.
 ---
 
 # Dither Waves (luminous wave bands, error-diffusion screen)

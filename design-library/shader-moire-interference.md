@@ -11,6 +11,9 @@ needsSource: no
 stackable: yes
 pairsPrototypes: [aesthetic-op-art, aesthetic-acid-design, aesthetic-monochrome-tech-editorial, recipe-swiss-grid]
 notForUseWhen: calm wellness brands, accessibility-first UI
+images:
+  - src: shader-moire-interference.png
+    reason: Moire Interference (beating line/dot fields + RGB separation) - shader fill preview.
 ---
 
 # Moire Interference (beating line/dot fields + RGB separation)

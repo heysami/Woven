@@ -11,6 +11,9 @@ needsSource: yes
 stackable: yes
 pairsPrototypes: [aesthetic-monochrome-pop-poster, aesthetic-cyberpunk, recipe-editorial-magazine, aesthetic-acid-graphics]
 notForUseWhen: brand photos needing true color
+images:
+  - src: shader-channel-mixer.png
+    reason: Channel Mixer (false-color / duotone channel remap) - shader fill preview.
 ---
 
 # Channel Mixer (false-color / duotone channel remap)
