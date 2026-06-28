@@ -59,11 +59,18 @@
      and the Canvas controls below it stay put. */
   .layers{padding:8px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0;overflow-y:auto}
   .layer{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:7px 8px;cursor:pointer}
-  .layer.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
-  .layer .top{display:flex;align-items:center;gap:6px}
-  .layer .nm{flex:1;font-weight:600;font-size:12px;background:transparent;border:0;color:var(--ink);outline:none;min-width:0}
-  .layer .meta{margin-top:3px;color:var(--ink2);font-size:10px;display:flex;gap:6px;flex-wrap:wrap}
-  .tag{background:var(--wv-surface-3);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:9px}
+  .layer:hover{border-color:color-mix(in oklab,var(--acc) 30%,var(--line))}
+  .layer.sel{border-color:color-mix(in oklab,var(--acc) 45%,transparent);background:var(--wv-accent-soft)}
+  .layer .top{display:flex;align-items:center;gap:7px}
+  .layer .dot{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
+  .layer .nm{flex:1;font-weight:600;font-size:12.5px;background:transparent;border:0;color:var(--ink);outline:none;min-width:0}
+  .layer .meta{margin-top:5px;color:var(--ink2);font-size:10px;display:flex;gap:5px;flex-wrap:wrap}
+  .tag{background:var(--wv-surface-3);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-family:var(--mono);font-size:9px;color:var(--ink2)}
+  .tag.kind{color:var(--wv-accent-text);border-color:color-mix(in oklab,var(--acc) 35%,transparent);background:var(--wv-accent-soft)}
+  .layer .iconbtn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0;color:var(--ink2)}
+  .layer .iconbtn[data-act=up],.layer .iconbtn[data-act=down],.layer .iconbtn[data-act=del]{opacity:0;transition:opacity .1s ease}
+  .layer:hover .iconbtn[data-act],.layer.sel .iconbtn[data-act]{opacity:1}
+  .layer .iconbtn:hover{color:var(--ink);border-color:var(--acc)}
   .iconbtn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0}
   .acc-sec{border-bottom:1px solid var(--line)}
   .acc-h{padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
@@ -4216,6 +4223,9 @@ const ICONS={
   car:'<svg class="ic car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>',
 };
 
+// Stable per-layer dot colour, hashed from the layer id (varied hues, matching
+// the colour-coded layers in the reference design).
+function layerColor(L){ let h=0; const s=String(L.id||L.name||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return `oklch(70% 0.13 ${h%360})`; }
 function renderLayerList(){
   const root=document.getElementById('layerList'); root.innerHTML='';
   [...STATE.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
@@ -4224,14 +4234,15 @@ function renderLayerList(){
     // edge drag and anchors a `layerin:<layerId>` port to this row's geometry.
     el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
     el.innerHTML=`<div class="top">
-        <button class="iconbtn sm" data-act="vis" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</button>
+        <span class="dot" style="background:${layerColor(L)}"></span>
         <input class="nm" value="${esc(L.name)}">
         <button class="iconbtn sm" data-act="up" title="up">${ICONS.up}</button>
         <button class="iconbtn sm" data-act="down" title="down">${ICONS.down}</button>
+        <button class="iconbtn sm" data-act="vis" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</button>
         <button class="iconbtn sm" data-act="del" title="delete">${ICONS.trash}</button>
       </div>
       <div class="meta">
-        <span class="tag">${L.content.kind}</span>
+        <span class="tag kind">${L.content.kind}</span>
         <span class="tag">pos:${L.positioning.mode}</span>
         <span class="tag">trig:${L.trigger.source}</span>
         <span class="tag">fx:${L.effects.stack.length}</span>
@@ -4256,12 +4267,13 @@ function renderLayerList(){
       el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
       el.style.borderStyle='dashed'; el.style.opacity='.92';
       el.innerHTML=`<div class="top">
-          <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
+          <span class="dot" style="background:${layerColor(L)}"></span>
           <input class="nm" value="${esc(L.name)}" readonly title="Driven by a wired Layer node - edit it on the canvas">
           <span class="tag" style="border-color:var(--acc2);color:var(--acc2)">wired</span>
+          <span class="iconbtn sm" title="visibility">${L.visible?ICONS.eye:ICONS.eyeoff}</span>
         </div>
         <div class="meta">
-          <span class="tag">${L.content.kind}</span>
+          <span class="tag kind">${L.content.kind}</span>
           <span class="tag">pos:${L.positioning.mode}</span>
           <span class="tag">trig:${L.trigger.source}</span>
           <span class="tag">fx:${L.effects.stack.length}</span>
