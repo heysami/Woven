@@ -4645,6 +4645,9 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   color: #fff;
 }
 .th-git-btn.is-primary:hover:not(:disabled) { filter: brightness(0.95); background: var(--accent); }
+/* The primary button can sit inside .th-git-repo-row, whose `svg { color: var(--text-muted) }`
+   would otherwise tint the icon grey on the teal fill. Force the icon to match the white label. */
+.th-git-btn.is-primary svg { color: #fff; }
 /* Destructive rollback actions - visually separated from the safe commit/push/
    pull row so a discard is never a mis-click. */
 .th-git-actions-danger { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
