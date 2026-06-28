@@ -10279,7 +10279,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   border: 0;
   border-radius: 50%;
   background: var(--hot);
-  color: var(--hot-ink);
+  color: #fff;
   font-size: 14px;
   font-weight: 600;
   line-height: 1;
@@ -10291,7 +10291,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 .workflow-node-skill-addout:hover {
   transform: scale(1.1);
-  background: color-mix(in oklab, var(--hot) 88%, black);
+  background: color-mix(in oklab, var(--hot) 80%, white);
 }
 .workflow-node-skill-addout:active { transform: scale(0.95); }
 
@@ -14081,7 +14081,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: background 0.1s ease, transform 0.05s ease;
 }
 .workflow-node-skill-run:hover:not([disabled]) {
-  background: color-mix(in oklab, var(--hot) 90%, black);
+  background: color-mix(in oklab, var(--hot) 78%, white);
 }
 .workflow-node-skill-run:active:not([disabled]) { transform: translateY(1px); }
 .workflow-node-skill-run[disabled] { opacity: 0.7; cursor: not-allowed; }
