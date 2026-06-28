@@ -20156,9 +20156,17 @@ body[data-panel-resizing="true"] {
 .chat-drawer[data-fullscreen="true"] > .chat-footer { border-radius: 0; }
 .chat-drawer[data-fullscreen="true"] .chat-body {
   /* Centre the conversation column inside the wide canvas so long lines
-     stay readable instead of stretching edge-to-edge. */
-  padding-left: max(14px, calc(50vw - 460px));
-  padding-right: max(14px, calc(50vw - 460px));
+     stay readable instead of stretching edge-to-edge. Cap an inner column
+     and centre it rather than padding the scroll container with viewport
+     units: `calc(50vw - 460px)` padding assumes the body is exactly 100vw,
+     so when the body is narrower than the viewport (docked drawer) or the
+     viewport is wide, the two paddings exceed the body width and crush the
+     content box to a sliver - every message then wraps one char per line. */
+  align-items: center;
+}
+.chat-drawer[data-fullscreen="true"] .chat-body > * {
+  width: 100%;
+  max-width: 920px;
 }
 .chat-action-fullscreen { font-family: var(--font-mono); font-size: 12px; }
 .chat-drawer > .chat-header { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }

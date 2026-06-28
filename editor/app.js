@@ -19639,6 +19639,7 @@ const LIBRARY_GROUPS = [
   { id: "recipe",    label: "Recipes" },
   { id: "photo",     label: "Photography" },
   { id: "illust",    label: "Illustration" },
+  { id: "shader",    label: "Shaders" },
   { id: "material",  label: "Materials" },
   { id: "motion",    label: "Motion" },
 ];
@@ -19651,6 +19652,7 @@ const LIBRARY_GROUP_CONSUMER = {
   shell: "the /prototype skill", style: "the /prototype skill",
   aesthetic: "the /prototype skill", recipe: "the /prototype skill",
   photo: "photography-orchestrator", illust: "illustration-orchestrator",
+  shader: "shader-orchestrator",
   material: "material-orchestrator", motion: "motion-studio-orchestrator",
 };
 function libraryConsumersFor(groupIds) {
@@ -19817,7 +19819,7 @@ Restate your file plan in one short message; if anything is genuinely ambiguous,
 
           <div className="sysadd-field">
             <span className="sysadd-label">Does it need a new library group?</span>
-            <span className="sysadd-hint">A library group is a whole CATEGORY of design vocabulary an orchestrator owns + reads - photography-orchestrator owns <code>photo-</code>, material-orchestrator owns <code>material-</code>. Leave off if it reads existing groups (shell · style · aesthetic · recipe · photo · illust · material · motion).</span>
+            <span className="sysadd-hint">A library group is a whole CATEGORY of design vocabulary an orchestrator owns + reads - photography-orchestrator owns <code>photo-</code>, material-orchestrator owns <code>material-</code>. Leave off if it reads existing groups (shell · style · aesthetic · recipe · photo · illust · shader · material · motion).</span>
             <div className="sysadd-radio-row">
               <button type="button" className=${"sysadd-radio" + (needsGroup === "no" ? " is-on" : "")} onClick=${() => setNeedsGroup("no")}>No - reads existing groups</button>
               <button type="button" className=${"sysadd-radio" + (needsGroup === "yes" ? " is-on" : "")} onClick=${() => setNeedsGroup("yes")}>Yes - define new group(s)</button>
@@ -19879,7 +19881,7 @@ ${desc.trim()}
 
 This is an ENTRY change inside an existing group - NOT a new group (a new group is new structure, which is a new-orchestrator task). The group's consumer already reads the whole group, so:
 1. Create or edit \`design-library/<prefix>-<slug>.md\` (YAML frontmatter + prose + any sample-image references), using the existing entries in that group as the shape template.
-2. If the group has a discovery index (e.g. \`docs/research/<group>-library.index.json\` / \`.md\` for photo / illust / material / motion), add or update your entry there too so the consumer can find it. Grep \`.claude/agents/\` and \`prototype/\` for references to any slug you rename or remove and fix them in the SAME change.
+2. If the group has a discovery index (e.g. \`docs/research/<group>-library.index.json\` / \`.md\` for photo / illust / shader / material / motion), add or update your entry there too so the consumer can find it. Grep \`.claude/agents/\` and \`prototype/\` for references to any slug you rename or remove and fix them in the SAME change.
 3. Verify with \`curl $TH_DAEMON_URL/__prototype_catalog\` and report what changed.
 
 Restate your plan briefly; if anything is ambiguous, ask - otherwise proceed and report.`;
