@@ -8538,7 +8538,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
      warm surface-2 tint at the very top fades into the white body by ~72px,
      so the header region reads as faintly tinted and melts seamlessly into
      the body. No abrupt boundary. */
-  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 72px);
+  background: var(--surface);
   /* v2.53 - no grey chrome. The node edge is a whisper-faint WARM (light
      orange) ring + a very soft warm lift instead of a flat black drop shadow,
      so cards read as resting on warm paper, not casting a murky shadow. Kept
@@ -10429,7 +10429,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   grid-template-rows: 32px 1fr;
 }
 .workflow-node-agent-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, var(--accent-soft) 50%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
 }
 .workflow-node-agent-glyph {
   font-size: 14px;
@@ -11971,7 +11971,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   grid-template-rows: 32px 1fr;
 }
 .workflow-node-prompt-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, var(--accent-soft) 40%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
 }
 .workflow-node-prompt-glyph {
   font-size: 12px;
@@ -12656,7 +12656,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   grid-template-rows: 32px 1fr;
 }
 .workflow-node-ds-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 12%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
   gap: 8px;
 }
 .workflow-node-ds-glyph {
@@ -12901,7 +12901,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Brainstorm node uses the DS chrome but is a separate concept - accent
    the bar in violet so it's visually distinct from the DS library generator. */
 .workflow-node-ds-brainstorm .workflow-node-ds-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, oklch(70% 0.18 290) 12%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
 }
 .workflow-node-ds-brainstorm .workflow-node-ds-glyph {
   color: oklch(58% 0.2 290);
@@ -12966,7 +12966,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Phase 8 - Iterator nodes (Repeater / Remix / Blend / Refiner). */
 .workflow-node-iter { display: grid; grid-template-rows: 32px 1fr; }
 .workflow-node-iter-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, oklch(58% 0.12 300) 12%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
   gap: 8px;
 }
 .workflow-node-iter-glyph { font-size: 14px; color: oklch(48% 0.16 300); width: 18px; text-align: center; }
@@ -13188,7 +13188,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   grid-template-rows: 32px 1fr;
 }
 .workflow-node-palette-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, var(--accent-soft) 60%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
   gap: 8px;
 }
 .workflow-node-palette-glyph {
@@ -13281,7 +13281,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   grid-template-rows: 32px auto 1fr;
 }
 .workflow-node-typo-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, var(--accent-soft) 60%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
   gap: 8px;
 }
 .workflow-node-typo-glyph {
@@ -13582,7 +13582,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Skill = the generation/action node → the "hot" orange family (warm header
    gradient + orange glyph + orange + button), pairing with its orange Run. */
 .workflow-node-skill-bar {
-  background: linear-gradient(180deg, color-mix(in oklch, var(--hot) 11%, var(--surface-2)) 0%, transparent 100%);
+  background: transparent;
 }
 .workflow-node-skill-glyph {
   font-size: 14px;
@@ -27404,6 +27404,41 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid rgba(0,0,0,0.5);
   border-radius: 2px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+/* orientation toolbar: rotate L/R + flip H/V, applied before the crop frame */
+.asset-crop-tools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.asset-crop-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.asset-crop-tool:hover:not(:disabled) { border-color: var(--text-faint); }
+.asset-crop-tool:disabled { opacity: 0.5; cursor: default; }
+.asset-crop-tool.is-on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.asset-crop-tool-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 6px;
+  background: var(--border);
 }
 .asset-crop-foot {
   display: flex;
