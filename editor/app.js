@@ -28439,6 +28439,65 @@ function useTrackedNodeRect(nodeId, active) {
 /* The floating RIGHT control panel. Queries the selected asset's schema (contract
    or fallback), renders grouped knobs, pushes every change live into the iframe,
    and debounce-persists the whole set to node.controls so it survives reload. */
+/* ────────── Shared control kit ──────────
+   Knob: an interactive rotary dial (drag up/down to change), pointer line in the
+   accent. Reusable across the asset auto-panel, the select-tool inspector, and
+   app-node panels. Value maps to a 270 sweep (-135..+135). Shift = fine drag,
+   double-click = reset to `def` if provided. */
+function Knob({ value, min = 0, max = 1, step = 0.01, onInput, label, display, def, size = 56, disabled }) {
+  const dragRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const lo = (min == null ? 0 : min), hi = (max == null ? 1 : max);
+  const range = (hi - lo) || 1;
+  const clamp = (x) => Math.max(lo, Math.min(hi, x));
+  const snap = (x) => (step ? Math.round(x / step) * step : x);
+  const v = clamp(value == null ? lo : value);
+  const frac = (v - lo) / range;
+  const ang = -135 + frac * 270;                 // degrees from 12 o'clock
+  const r = ang * Math.PI / 180;
+  const pr = 30;                                  // pointer length (viewBox 0..100, centre 50)
+  const px = 50 + pr * Math.sin(r);
+  const py = 50 - pr * Math.cos(r);
+  const onDown = (e) => {
+    if (disabled) return;
+    e.preventDefault(); e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    dragRef.current = { y: e.clientY, v, id: e.pointerId };
+    setDragging(true);
+  };
+  const onMove = (e) => {
+    const d = dragRef.current; if (!d) return;
+    const dy = d.y - e.clientY;                   // drag up = increase
+    const speed = e.shiftKey ? 600 : 150;         // px for a full sweep
+    onInput && onInput(clamp(snap(d.v + (dy / speed) * range)));
+  };
+  const onUp = (e) => {
+    if (!dragRef.current) return;
+    dragRef.current = null; setDragging(false);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+  };
+  const onWheel = (e) => {
+    if (disabled) return;
+    e.preventDefault(); e.stopPropagation();
+    const dir = e.deltaY < 0 ? 1 : -1;
+    onInput && onInput(clamp(snap(v + dir * (step || range / 100))));
+  };
+  return html`
+    <div className=${"wv-knob" + (disabled ? " is-disabled" : "")} data-dragging=${dragging}>
+      <svg className="wv-knob-dial" width=${size} height=${size} viewBox="0 0 100 100"
+           style=${{ touchAction: "none" }}
+           onPointerDown=${onDown} onPointerMove=${onMove} onPointerUp=${onUp} onPointerCancel=${onUp}
+           onWheel=${onWheel}
+           onDblClick=${def == null ? undefined : (e) => { e.stopPropagation(); onInput && onInput(clamp(snap(def))); }}>
+        <circle className="wv-knob-face" cx="50" cy="50" r="42"/>
+        <line className="wv-knob-pointer" x1="50" y1="50" x2=${px.toFixed(2)} y2=${py.toFixed(2)}/>
+      </svg>
+      ${label != null && html`<div className="wv-knob-label">${label}</div>`}
+      ${display != null && html`<div className="wv-knob-val">${display}</div>`}
+    </div>
+  `;
+}
+
 function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const nodeId = node.id;
   const rect = useTrackedNodeRect(nodeId, selected);
@@ -28580,12 +28639,25 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       </div>`;
     }
     const min = e.min != null ? e.min : 0, max = e.max != null ? e.max : 1, step = e.step != null ? e.step : 0.01;
-    const shown = typeof v === "number" ? (+v).toFixed(step < 1 ? 2 : 0) : v;
-    return html`<div className="wac-row wac-row-range" key=${e.key}>
-      <label className="wac-label">${e.label}<span className="wac-val">${shown}</span></label>
-      <input className="wac-range" type="range" min=${min} max=${max} step=${step} value=${v == null ? min : v}
-        onInput=${(ev) => onKnob(e, parseFloat(ev.target.value))}/>
-    </div>`;
+    const num = typeof v === "number" ? (+v).toFixed(step < 1 ? 2 : 0) : v;
+    const shown = (e.unit && typeof v === "number") ? `${num}${e.unit}` : num;
+    // Compact floats render as rotary KNOBS (the dial look); wide integer ranges
+    // (counts, large pixel ranges) stay as sliders where a knob reads poorly.
+    // An asset can force either via display:"knob" | "slider".
+    const wideInt = step >= 1 && (max - min) > 24;
+    const asSlider = e.display === "slider" || (e.display !== "knob" && wideInt);
+    if (asSlider) {
+      return html`<div className="wac-row wac-row-range" key=${e.key}>
+        <label className="wac-label">${e.label}<span className="wac-val">${shown}</span></label>
+        <input className="wv-slider wac-range" type="range" min=${min} max=${max} step=${step} value=${v == null ? min : v}
+          style=${{ "--wv-fill": (((( v == null ? min : v) - min) / ((max - min) || 1)) * 100) + "%" }}
+          onInput=${(ev) => onKnob(e, parseFloat(ev.target.value))}/>
+      </div>`;
+    }
+    return html`<${Knob} key=${e.key}
+      value=${v == null ? min : v} min=${min} max=${max} step=${step} def=${e.default}
+      label=${e.label} display=${shown}
+      onInput=${(nv) => onKnob(e, nv)}/>`;
   };
   const renderNative = (e) => {
     if (e.kind === "bgcolor") {
@@ -28616,7 +28688,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       <button className="wac-group-head" onClick=${() => toggleGroup(name)} aria-expanded=${!isCol}>
         <span className="wac-caret">${isCol ? "▸" : "▾"}</span><span className="wac-group-name">${name}</span>
       </button>
-      ${isCol ? null : items.map(renderer)}
+      ${isCol ? null : html`<div className="wac-group-body">${items.map(renderer)}</div>`}
     </div>`;
   };
   // 9-slice group: lives in THIS side panel; drives node.s9 which the asset card

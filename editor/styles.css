@@ -6112,6 +6112,80 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .wac-row-range { flex-direction: column; align-items: stretch; gap: 3px; }
 .wac-range { width: 100%; accent-color: var(--accent); height: 16px; }
+
+/* ────────── Shared control kit (knob / slider / readout / layer-row) ──────────
+   Polished panel controls matching the dial/slider reference. Used by the asset
+   auto-panel group body, the select-tool inspector, and (next) app-node panels. */
+/* Group body: knobs flow two-up in a grid; full-width rows (color/select/slider)
+   break to their own line. */
+.wac-group-body { display: flex; flex-wrap: wrap; gap: 12px 8px; align-items: flex-start; }
+.wac-group-body > .wac-row { flex: 0 0 100%; }
+.wac-group-body > .wv-knob { flex: 0 0 calc(50% - 4px); }
+
+/* Rotary knob */
+.wv-knob {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 2px 0; user-select: none;
+}
+.wv-knob-dial { display: block; cursor: ns-resize; touch-action: none; overflow: visible; }
+.wv-knob-face {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  transition: stroke 0.12s ease;
+}
+.wv-knob[data-dragging="true"] .wv-knob-face,
+.wv-knob-dial:hover .wv-knob-face { stroke: color-mix(in oklab, var(--accent) 55%, var(--border-strong)); }
+.wv-knob-pointer {
+  stroke: var(--accent-text);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.wv-knob[data-dragging="true"] .wv-knob-pointer { stroke: var(--accent); }
+.wv-knob-label {
+  font: 600 9.5px/1.1 var(--font-mono);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); text-align: center;
+}
+.wv-knob-val { font: 11px/1.1 var(--font-mono); color: var(--text); text-align: center; }
+.wv-knob.is-disabled { opacity: 0.5; pointer-events: none; }
+
+/* Slider - custom track with an accent fill driven by --wv-fill (set inline). */
+.wv-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 18px; background: transparent; cursor: pointer;
+}
+.wv-slider::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--wv-fill, 0%), var(--border) var(--wv-fill, 0%));
+}
+.wv-slider::-moz-range-track { height: 4px; border-radius: 999px; background: var(--border); }
+.wv-slider::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
+.wv-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent);
+  box-shadow: var(--shadow-sm); cursor: grab;
+}
+.wv-slider::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); cursor: grab;
+}
+.wv-slider:active::-webkit-slider-thumb { cursor: grabbing; }
+
+/* Readout box (label + value rows), e.g. simulation STEP / STATE. */
+.wv-readout { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); }
+.wv-readout-row { display: flex; align-items: center; justify-content: space-between; }
+.wv-readout-k { font: 600 9.5px/1.1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.wv-readout-v { font: 600 12px/1.1 var(--font-mono); color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* Layer row (eye toggle + thumbnail + label + type badge). */
+.wv-layer-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-sm); }
+.wv-layer-row[data-active="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.wv-layer-eye { display: inline-flex; color: var(--accent-text); flex: 0 0 auto; background: none; }
+.wv-layer-thumb { width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border); object-fit: cover; flex: 0 0 auto; background: var(--surface-2); }
+.wv-layer-name { flex: 1; font: 12px/1.2 var(--font-mono); color: var(--text); }
+.wv-layer-badge { font: 600 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 2px 4px; }
 .wac-color {
   width: 30px; height: 22px; flex: 0 0 auto;
   padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -7138,17 +7212,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    title bar and resize corner intercept pointer events. */
 .workflow-node-section {
   position: absolute;
-  /* v3.x - sections wear the SAME chrome as a node card: white body, a
-     transparent border that reads as a whisper-faint warm ring, and a soft
-     warm (orange) lift - no dashed outline, no transparent fill. */
-  border: 1px solid transparent;
+  /* v3.6 - match the Woven design-system section card (.section-card): neutral
+     grey border + soft neutral shadow, not the old warm-orange ring/lift. */
+  border: 1px solid var(--border);
   /* top-left square so it merges flush with the title tab; other corners round */
   border-radius: 0 14px 14px 14px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--hot) 6%, transparent),
-    0 1px 5px color-mix(in oklab, var(--hot) 6%, transparent),
-    0 6px 18px color-mix(in oklab, var(--hot) 5%, transparent);
+    0 1px 4px color-mix(in oklab, var(--text) 6%, transparent),
+    0 6px 18px color-mix(in oklab, var(--text) 4%, transparent);
   box-sizing: border-box;
   pointer-events: none;
   transition: box-shadow 0.12s ease;
@@ -7165,9 +7237,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-section[data-dragging="true"] {
   box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--hot) 10%, transparent),
-    0 2px 8px color-mix(in oklab, var(--hot) 9%, transparent),
-    0 10px 26px color-mix(in oklab, var(--hot) 7%, transparent);
+    0 2px 8px color-mix(in oklab, var(--text) 9%, transparent),
+    0 10px 26px color-mix(in oklab, var(--text) 6%, transparent);
 }
 .workflow-node-section-bar {
   position: absolute;
@@ -7182,19 +7253,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   gap: 8px;
   padding: 4px 10px 4px 12px;
   background: var(--surface);
-  /* Match the body's whisper-faint warm ring instead of the neutral grey
-     --border, so the left edge reads as ONE continuous line where the title
-     tab meets the group body (was: 1px solid var(--border)). */
-  border: 1px solid color-mix(in oklab, var(--hot) 6%, transparent);
+  /* Neutral grey border matching the body, so the left edge reads as ONE
+     continuous line where the title tab meets the section body. */
+  border: 1px solid var(--border);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
-  /* The body wears a soft warm lift-glow (0 1px 5px / 0 6px 18px hot). Mirror
-     it UPWARD on the tab so the tab+body share one continuous orange halo
-     instead of the tab reading flat. Upward offsets keep the glow off the
-     junction so there's no seam where the tab meets the body. */
-  box-shadow:
-    0 -1px 5px color-mix(in oklab, var(--hot) 6%, transparent),
-    0 -6px 18px color-mix(in oklab, var(--hot) 5%, transparent);
+  /* Faint neutral lift mirrored UPWARD so the tab + body share one halo. */
+  box-shadow: 0 -1px 4px color-mix(in oklab, var(--text) 5%, transparent);
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
