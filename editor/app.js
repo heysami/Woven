@@ -71369,7 +71369,7 @@ function WorkflowInterviewNode({ node, zoom, selected, onSelect, onMove, onResiz
         onClose=${() => setChatOpen(false)}
         onChange=${onChange}
       />`}
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Loop}/>`} name=${"Interviewing assistant"} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Loop}/>`} name=${"Interviewing assistant"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
 }
@@ -71451,7 +71451,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Research assistant"} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Research assistant"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
 }
@@ -71521,7 +71521,7 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Testing assistant"} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Testing assistant"} sub=${(node.task || "").trim() || null} />
     </div>
   `;
 }

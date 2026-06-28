@@ -8838,11 +8838,16 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-quiet-sub {
   font-size: 11.5px;
+  line-height: 1.35;
   color: var(--text-muted);
   max-width: 100%;
+  text-align: center;
+  /* wrap a sentence (e.g. an assistant's goal) to a few centred lines rather
+     than truncating to one; short labels still render on a single line. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .workflow-node-quiet-extra {
   margin-top: 4px;
