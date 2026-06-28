@@ -28630,75 +28630,124 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   return createPortal(panel, document.body);
 }
 
-/* The floating LEFT inputs panel. Lists the typed assets this node consumes
-   (text / image / palette / section …) via resolveUpstreamInputs. Text inputs are
-   inline-editable and write back to the upstream prompt node (re-running it). */
-function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges }) {
+/* The floating LEFT pipeline panel. Walks the asset's generating lineage
+   (prompt → generator → rembg) via workflowAssetLineage and surfaces, in
+   order: the actual prompt (editable, writes back to the prompt node), the
+   generator skill with a model picker + a Regenerate button that re-runs the
+   whole chain, and - when the asset is a transparent cut-out - the
+   remove-background step. Replaces the old generic "Inputs" list, which only
+   ever saw the asset's direct upstream (the empty-text generator node) and so
+   showed empty prompts + a useless skill name. */
+function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges, onRunSkill, onPatchNode, runStates }) {
   const nodeId = node.id;
   const rect = useTrackedNodeRect(nodeId, selected);
-  const inputs = useMemo(() => {
-    let list = [];
-    try { list = resolveUpstreamInputs(node, allNodes, allEdges) || []; } catch (e) { list = []; }
-    // Drop EMPTY inputs - an upstream skill/prompt node with no text and no
-    // asset is just a wiring artifact, not content the user consumes. Hiding
-    // these keeps the panel (and its appearance) meaningful; an all-empty set
-    // hides the panel entirely.
-    return list.filter((inp) => {
-      if (inp.type === "text") return !!(inp.text && inp.text.trim());
-      if (inp.type === "asset" || inp.type === "glb-import") return !!inp.url;
-      if (inp.type === "palette") return !!(inp.swatches && inp.swatches.length);
-      if (inp.type === "unbaked") return false;
-      return true; // web / section / typography / number / etc. carry their own content
-    });
+  const lineage = useMemo(() => {
+    try { return workflowAssetLineage(node, allNodes, allEdges); } catch (e) { return null; }
   }, [node, allNodes, allEdges]);
-  const [drafts, setDrafts] = useState({});
-  if (!selected || !rect || !inputs.length) return null;
-  const PANEL_W = 224, GAP = 12;
+  const [draft, setDraft] = useState(null);
+
+  const promptNode = lineage && lineage.promptNode;
+  const genNode    = lineage && lineage.generatorNode;
+  const rembgNode  = lineage && lineage.rembgNode;
+  const runRoot    = (lineage && lineage.terminalSkill) || genNode;
+  const hasPipe    = !!(promptNode || genNode);
+
+  if (!selected || !rect || !hasPipe) return null;
+  const PANEL_W = 232, GAP = 12;
   const left = rect.left - PANEL_W - GAP;
   if (shouldHideNodeChrome(rect, left, left + PANEL_W, 0)) return null;
 
-  const saveText = (inp) => {
-    const txt = (inp.fromId in drafts) ? drafts[inp.fromId] : (inp.text || "");
-    window.dispatchEvent(new CustomEvent("th:asset-refine-prompt", { detail: { promptNodeId: inp.fromId, newText: txt } }));
+  // Run status across the regenerated chain (root + generator + rembg).
+  const rs = runStates || {};
+  const chainLoading = [runRoot, genNode, rembgNode].some(n => n && rs[n.id] && rs[n.id].status === "loading");
+  const chainError = (runRoot && rs[runRoot.id] && rs[runRoot.id].status === "error") ? rs[runRoot.id].error : null;
+
+  // Prompt editing - draft is local until saved back to the prompt node.
+  const promptText = promptNode ? (promptNode.text || "") : "";
+  const cur = draft == null ? promptText : draft;
+  const dirty = !!promptNode && cur !== promptText;
+  const savePrompt = () => {
+    if (!promptNode) return;
+    window.dispatchEvent(new CustomEvent("th:asset-refine-prompt", { detail: { promptNodeId: promptNode.id, newText: cur } }));
+    setDraft(null);
   };
-  const renderInput = (inp, i) => {
-    const key = (inp.fromId || inp.type || "in") + "-" + i;
-    if (inp.type === "text") {
-      const cur = (inp.fromId in drafts) ? drafts[inp.fromId] : (inp.text || "");
-      const dirty = cur !== (inp.text || "");
-      return html`<div className="wai-item wai-text" key=${key}>
-        <div className="wai-label">${inp.label}</div>
-        <textarea className="wai-textarea" rows="3" value=${cur}
-          onMouseDown=${(e) => e.stopPropagation()}
-          onInput=${(e) => { const val = e.target.value; setDrafts((d) => ({ ...d, [inp.fromId]: val })); }}/>
-        ${dirty ? html`<button className="wai-save" onClick=${() => saveText(inp)}>Update prompt + re-run</button>` : null}
-      </div>`;
-    }
-    if (inp.type === "asset" || inp.type === "glb-import") {
-      const isImg = (inp.assetKind || "") === "image" || /\.(png|jpe?g|webp|gif|svg|avif)(\?|$)/i.test(inp.url || "");
-      return html`<div className="wai-item wai-asset" key=${key}>
-        <div className="wai-label">${inp.label}</div>
-        ${inp.url && isImg
-          ? html`<img className="wai-thumb" src=${inp.url} alt=${inp.label} draggable=${false}/>`
-          : html`<div className="wai-chip">${inp.assetKind || inp.type}</div>`}
-      </div>`;
-    }
-    if (inp.type === "palette") {
-      return html`<div className="wai-item" key=${key}>
-        <div className="wai-label">${inp.label}</div>
-        <div className="wai-swatches">${(inp.swatches || []).slice(0, 8).map((s, j) => html`<span className="wai-swatch" key=${j} style=${{ background: s }}></span>`)}</div>
-      </div>`;
-    }
-    return html`<div className="wai-item" key=${key}>
-      <div className="wai-label">${inp.label}</div>
-      <div className="wai-chip">${inp.type}</div>
-    </div>`;
-  };
+
+  // Generator model picker (simple setting). Mirrors WorkflowSkillNode's logic.
+  const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+  const genSpec = genNode ? skills.find(s => s.id === (genNode.skill || "generate-image")) : null;
+  const allModels = (() => {
+    if (!genSpec) return [];
+    if (genSpec.modelKind === "text") return (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
+    if (genSpec.output === "video") return (window.TH_MEDIA && window.TH_MEDIA.videoModels) || [];
+    if (genSpec.output === "3d") return (window.TH_MEDIA && window.TH_MEDIA.models3d) || [];
+    if (genSpec.output === "audio") return (window.TH_MEDIA && window.TH_MEDIA.audioModels) || [];
+    return (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
+  })();
+  const genModel = genNode ? _resolveLiveModel(genNode.model || "") : "";
+  const modelsByProvider = {};
+  for (const m of allModels) (modelsByProvider[m.provider] = modelsByProvider[m.provider] || []).push(m);
+  const providerLabels = (window.TH_MEDIA && window.TH_MEDIA.providers) || {};
+  const hasModelDropdown = !!(genSpec && genSpec.hasModelDropdown && allModels.length);
+
+  const regenerate = () => { if (runRoot && onRunSkill) onRunSkill(runRoot.id); };
+
   const panel = html`<div className="workflow-asset-inputs-panel" data-node-id=${nodeId}
       style=${{ position: "fixed", top: rect.top + "px", left: Math.max(8, left) + "px", width: PANEL_W + "px", zIndex: 41 }}
       onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
-    <div className="wai-head"><span className="wai-title">Inputs</span></div>
-    <div className="wai-body">${inputs.map(renderInput)}</div>
+    <div className="wai-head"><span className="wai-title">Pipeline</span></div>
+    <div className="wai-body">
+      ${promptNode ? html`
+        <div className="wai-stage">
+          <div className="wai-stage-head">
+            <span className="wai-stage-glyph"><${Icon.Text}/></span>
+            <span className="wai-stage-name">Prompt</span>
+          </div>
+          <textarea className="wai-textarea" rows="4" value=${cur}
+            placeholder="Describe what to generate…"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onInput=${(e) => setDraft(e.target.value)}/>
+          ${dirty ? html`<button className="wai-save" onClick=${savePrompt}>Save prompt</button>` : null}
+        </div>
+      ` : null}
+      ${genNode ? html`
+        <div className="wai-stage">
+          <div className="wai-stage-head">
+            <span className="wai-stage-glyph">${skillGlyph(genSpec)}</span>
+            <span className="wai-stage-name">Generator</span>
+            <span className="wai-stage-tag">${(genSpec && genSpec.label) || genNode.skill || "skill"}</span>
+          </div>
+          ${hasModelDropdown ? html`
+            <select className="wai-select" value=${genModel}
+              onMouseDown=${(e) => e.stopPropagation()}
+              onChange=${(e) => { const next = allModels.find(m => m.id === e.target.value); onPatchNode && onPatchNode(genNode.id, { model: e.target.value, provider: next ? next.provider : undefined }); }}
+              title="Model + provider for this generator">
+              ${Object.keys(modelsByProvider).map(pid => html`
+                <optgroup key=${pid} label=${(providerLabels[pid] && providerLabels[pid].label) || pid}>
+                  ${modelsByProvider[pid].map(m => html`<option key=${m.id} value=${m.id}>${m.label}</option>`)}
+                </optgroup>
+              `)}
+            </select>
+          ` : html`<div className="wai-modelchip">${genModel || "-"}</div>`}
+          <button className="wai-regen" data-status=${chainLoading ? "loading" : "idle"}
+            disabled=${chainLoading} onClick=${regenerate}
+            title=${"Re-run the prompt → generator" + (rembgNode ? " → remove-bg" : "") + " chain and overwrite this asset."}>
+            ${chainLoading
+              ? html`<span className="wai-spinner"/><span>Regenerating…</span>`
+              : html`<${React.Fragment}><${Icon.Play}/> Regenerate<//>`}
+          </button>
+          ${chainError ? html`<div className="wai-err" title=${chainError}>${chainError}</div>` : null}
+        </div>
+      ` : null}
+      ${rembgNode ? html`
+        <div className="wai-stage wai-stage-rembg">
+          <div className="wai-stage-head">
+            <span className="wai-stage-glyph"><${Icon.Scissors}/></span>
+            <span className="wai-stage-name">Remove background</span>
+          </div>
+          <div className="wai-stage-note">Transparent cut-out applied after generation. Re-runs with Regenerate.</div>
+        </div>
+      ` : null}
+    </div>
   </div>`;
   return createPortal(panel, document.body);
 }
@@ -43125,6 +43174,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 hasPickedChild=${pickedElement?.nodeId === n.id}
                 allNodes=${data.nodes || []}
                 allEdges=${data.edges || []}
+                onRunSkill=${runSkill}
+                onPatchNode=${(id, patch) => updateNode(id, patch)}
+                runStates=${runStates}
               />
             `)}
             ${codePanelNodeId && (() => {
@@ -56273,7 +56325,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose, onApplied }) {
   `, document.body);
 }
 
-function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible }) {
+function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible, onRunSkill, onPatchNode, runStates }) {
   const [dragging, setDragging] = useState(false);
   // Canvas LOD - embed kinds (live iframes) gate at the embed floor and get
   // hidden+veiled when far; raster/video kinds gate INITIAL load only (at
@@ -57985,7 +58037,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       />`}
       ${selected && !hasPickedChild && html`<${WorkflowAssetActionBar} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
       ${selected && !hasPickedChild && kind !== "html" && kind !== "html-set" && html`<${WorkflowAssetControlsPanel} node=${node} selected=${selected} onChange=${onChange}/>`}
-      ${selected && !hasPickedChild && kind !== "html" && kind !== "html-set" && html`<${WorkflowAssetInputsPanel} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges}/>`}
+      ${selected && !hasPickedChild && kind !== "html" && kind !== "html-set" && html`<${WorkflowAssetInputsPanel} node=${node} selected=${selected} allNodes=${allNodes} allEdges=${allEdges} onRunSkill=${onRunSkill} onPatchNode=${onPatchNode} runStates=${runStates}/>`}
     </div>
   `;
 }
@@ -60272,6 +60324,55 @@ function _firstProvidePort(kind) {
   const io = workflowKindIo(kind);
   const p = io && io.provides && io.provides[0];
   return (p && p.port) || "out";
+}
+/* Walk an asset node's GENERATING lineage - the prompt → generator → rembg
+   chain that produced it - so the left pipeline panel can surface the real
+   prompt (not the empty skill-node text) + a regenerate handle. Returns
+   { promptNode, generatorNode, rembgNode, terminalSkill } or null when the
+   asset has no upstream skill (e.g. an uploaded image or hand-drawn vector). */
+function workflowAssetLineage(assetNode, allNodes, allEdges) {
+  if (!assetNode) return null;
+  const byId = {};
+  for (const n of (allNodes || [])) if (n && n.id) byId[n.id] = n;
+  const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
+  const specOf = (n) => (n && n.kind === "skill")
+    ? skills.find(s => s.id === (n.skill || "generate-image")) : null;
+  const wantsPrompt = (n) => { const s = specOf(n); return !!(s && (s.inputs || []).includes("prompt")); };
+  const isRembg = (n) => !!(n && n.kind === "skill" && n.skill === "rembg");
+  // Nodes feeding ANY in-port of `id`.
+  const upstreamOf = (id) => {
+    const res = [];
+    for (const e of (allEdges || [])) {
+      const t = workflowParseEdgeRef(e.to || ""); if (!t || t.node !== id) continue;
+      const f = workflowParseEdgeRef(e.from || ""); if (!f) continue;
+      const up = byId[f.node]; if (up) res.push(up);
+    }
+    return res;
+  };
+  // The skill node directly producing this asset (rembg if transparent, else genImg).
+  const terminalSkill = upstreamOf(assetNode.id).find(n => n.kind === "skill") || null;
+  if (!terminalSkill) return null;
+  // BFS up the skill chain, collecting skills + the first prompt feeding any of them.
+  const chain = [];
+  let promptNode = null;
+  const seen = new Set([terminalSkill.id]);
+  const queue = [terminalSkill.id];
+  while (queue.length) {
+    const cur = byId[queue.shift()];
+    if (!cur) continue;
+    if (cur.kind === "skill") chain.push(cur);
+    for (const up of upstreamOf(cur.id)) {
+      if (up.kind === "prompt") { if (!promptNode) promptNode = up; continue; }
+      if (up.kind === "skill" && !seen.has(up.id)) { seen.add(up.id); queue.push(up.id); }
+    }
+  }
+  const rembgNode = chain.find(isRembg) || null;
+  const generatorNode = chain.find(n => wantsPrompt(n) && !isRembg(n))
+    || chain.find(n => !isRembg(n)) || terminalSkill;
+  if (!promptNode && generatorNode) {
+    promptNode = upstreamOf(generatorNode.id).find(n => n.kind === "prompt") || null;
+  }
+  return { promptNode, generatorNode, rembgNode, terminalSkill };
 }
 function useUpstreamInputs(node, allNodes, allEdges, opts) {
   return useMemo(

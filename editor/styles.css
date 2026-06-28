@@ -6136,6 +6136,57 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .wai-swatches { display: flex; gap: 3px; flex-wrap: wrap; }
 .wai-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--border); }
 
+/* Left PIPELINE panel - prompt → generator → rembg stages */
+.wai-stage {
+  display: flex; flex-direction: column; gap: 6px;
+  border-top: 1px solid var(--border); padding-top: 9px;
+}
+.wai-stage:first-child { border-top: none; padding-top: 0; }
+.wai-stage-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.wai-stage-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; flex: 0 0 auto; color: var(--text-muted);
+}
+.wai-stage-glyph svg { width: 13px; height: 13px; }
+.wai-stage-name {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-faint); flex: 0 0 auto;
+}
+.wai-stage-tag {
+  font-size: 10px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-left: auto; flex: 0 1 auto; min-width: 0;
+}
+.wai-select {
+  width: 100%; font: inherit; font-size: 11px; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px 6px; cursor: pointer;
+}
+.wai-select:focus { outline: none; border-color: var(--accent); }
+.wai-modelchip {
+  align-self: flex-start; font-size: 10.5px; color: var(--text-muted);
+  background: var(--surface-3); border-radius: var(--radius-sm); padding: 2px 7px;
+}
+.wai-regen {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 11px; font-weight: 600; color: #fff; background: var(--accent);
+  border: none; border-radius: var(--radius-sm); padding: 5px 9px; cursor: pointer;
+}
+.wai-regen svg { width: 12px; height: 12px; }
+.wai-regen:hover:not(:disabled) { background: var(--accent-strong); }
+.wai-regen:disabled { opacity: 0.65; cursor: default; }
+.wai-spinner {
+  width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto;
+  border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
+  animation: wai-spin 0.7s linear infinite;
+}
+@keyframes wai-spin { to { transform: rotate(360deg); } }
+.wai-err {
+  font-size: 10px; color: var(--danger, #d93636); line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wai-stage-note { font-size: 10px; color: var(--text-faint); line-height: 1.4; }
+
 /* Popover panel hanging off the action bar. Wide enough for the Remix
    form (variant inputs) but compact enough for the 1-line refine input.
    max-height + scroll so it doesn't overflow the viewport on small canvases. */
