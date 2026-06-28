@@ -31347,7 +31347,7 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
         </div>
         <div className="wf-pal-tabs" role="tablist">
           <button className="wf-pal-tab" role="tab" data-active=${tab === "text" ? "true" : "false"} onClick=${() => setTab("text")}>Canvas text</button>
-          <button className="wf-pal-tab" role="tab" data-active=${tab === "nodes" ? "true" : "false"} onClick=${() => setTab("nodes")}>Nodes &amp; navigation</button>
+          <button className="wf-pal-tab" role="tab" data-active=${tab === "nodes" ? "true" : "false"} onClick=${() => setTab("nodes")}>Nodes & navigation</button>
         </div>
         <div className="wf-pal-list">
           ${results.length === 0 && html`
