@@ -76107,16 +76107,28 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
         // for legacy edges, which keeps the default accent stroke).
         const edgeDtype = workflowPortDtype(fn, fromRef.port, "provides")
           || workflowPortDtype(tn, toRef.port, "accepts") || null;
+        const d = workflowEdgePath(a.x, a.y, b.x, b.y, workflowPortDir(fromRef.port, fn), workflowPortDir(toRef.port, tn));
         return html`
-          <path
-            key=${"e" + i}
-            className=${"workflow-edge" + (isSelected ? " workflow-edge-selected" : "") + (isActive ? " workflow-edge-active" : "") + workflowDtypeClass(edgeDtype)}
-            data-direction=${direction}
-            data-dtype=${edgeDtype}
-            d=${workflowEdgePath(a.x, a.y, b.x, b.y, workflowPortDir(fromRef.port, fn), workflowPortDir(toRef.port, tn))}
-            style=${{ pointerEvents: "stroke" }}
-            onMouseDown=${(ev) => { ev.stopPropagation(); onSelectEdge(i); }}
-          />
+          <g key=${"e" + i}>
+            <!-- Fat transparent hit-path so the thin wire is easy to click/select/delete. -->
+            <path
+              className="workflow-edge-hit"
+              d=${d}
+              fill="none"
+              stroke="transparent"
+              strokeWidth="18"
+              vectorEffect="non-scaling-stroke"
+              style=${{ pointerEvents: "stroke", cursor: "pointer" }}
+              onMouseDown=${(ev) => { ev.stopPropagation(); onSelectEdge(i); }}
+            />
+            <path
+              className=${"workflow-edge" + (isSelected ? " workflow-edge-selected" : "") + (isActive ? " workflow-edge-active" : "") + workflowDtypeClass(edgeDtype)}
+              data-direction=${direction}
+              data-dtype=${edgeDtype}
+              d=${d}
+              style=${{ pointerEvents: "none" }}
+            />
+          </g>
         `;
       })}
       ${pendingEdge && html`

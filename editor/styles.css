@@ -12279,13 +12279,19 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
    set inline so clicks near the curve select the edge. */
 .workflow-edge {
   fill: none;
-  stroke: var(--accent);
+  /* Plain connectors rest in a light grey (typed/dtype edges keep their colour,
+     pending-draw stays accent, selected goes hot). */
+  stroke: var(--border-strong);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
-  opacity: 0.7;
+  opacity: 0.95;
   cursor: pointer;
 }
 .workflow-edge:hover { opacity: 1; stroke-width: 3; }
+/* The visible wire is pointer-events:none; hover lives on the fat hit-path that
+   sits right before it, so light up the wire when its hit-path is hovered. */
+.workflow-edge-hit { fill: none; }
+.workflow-edge-hit:hover + .workflow-edge { opacity: 1; stroke-width: 3; }
 /* v3.5 - Selected edge now strokes in the project's HOT orange (TE-style
    record button). Previously a darker green (var(--accent-text)), which
    read as just "more saturated green" against the green default stroke
