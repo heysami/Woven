@@ -70205,7 +70205,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" style=${{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
             ${keys.length > 1 && html`<polyline points=${pts} fill="none" stroke="var(--accent,#79f)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`}
           </svg>
-          <div style=${{ position: "absolute", top: 0, bottom: 0, left: (phFrac * 100) + "%", width: "1px", background: "color-mix(in oklch, var(--accent,#79f) 55%, transparent)", pointerEvents: "none" }}/>
+          <div style=${{ position: "absolute", top: 0, bottom: 0, left: (phFrac * 100) + "%", width: "1px", background: "color-mix(in oklab, var(--accent,#79f) 55%, transparent)", pointerEvents: "none" }}/>
           ${keys.map((k, ki) => html`<div key=${ki}
             title=${"t=" + (k.t || 0) + "s  value=" + k.value + "  (double-click to delete)"}
             onPointerDown=${dragKey(ki)} onMouseDown=${(e) => e.stopPropagation()}
@@ -74144,13 +74144,13 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
     const f = cellFills[r + "," + c] || tableFill;
     const bg = f === "none" ? "transparent"
              : f === "white" ? "#fff"
-             : `color-mix(in oklch, ${wbColorCSS(f)} 16%, #fff)`;
+             : `color-mix(in oklab, ${wbColorCSS(f)} 16%, #fff)`;
     const border = (f === "white" || f === "none")
-      ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
+      ? "color-mix(in oklab, var(--wb-gray) 50%, #fff)"
       : wbColorCSS(f);
     return { bg, border };
   };
-  const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
+  const selBg = `color-mix(in oklab, var(--accent) 20%, var(--surface))`;
   const rootRef = useRef(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const titleInputRef = useRef(null);
@@ -75925,7 +75925,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           width: item.w + "px", height: item.h + "px", zIndex: z,
           "--wb-c": c,
           background: item.fill === "none" ? "transparent"
-            : `color-mix(in oklch, ${fillC} ${fillPct}%, transparent)`,
+            : `color-mix(in oklab, ${fillC} ${fillPct}%, transparent)`,
           borderColor: strokeC,
           borderRadius: Math.max(0, item.radius ?? 10) + "px",
           ...rotStyle,
@@ -76123,13 +76123,13 @@ function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, o
   const fillTok = item.fill || "white";
   const cellBg = fillTok === "none" ? "transparent"
                : fillTok === "white" ? "#fff"
-               : `color-mix(in oklch, ${wbColorCSS(fillTok)} 16%, #fff)`;
+               : `color-mix(in oklab, ${wbColorCSS(fillTok)} 16%, #fff)`;
   // Line colour is AUTOMATIC from the fill (clean light grey for white/none,
   // else the fill's own hue at full strength).
   const cellBorder = (fillTok === "white" || fillTok === "none")
-    ? "color-mix(in oklch, var(--wb-gray) 50%, #fff)"
+    ? "color-mix(in oklab, var(--wb-gray) 50%, #fff)"
     : wbColorCSS(fillTok);
-  const selBg = `color-mix(in oklch, var(--accent) 20%, var(--surface))`;
+  const selBg = `color-mix(in oklab, var(--accent) 20%, var(--surface))`;
   const rootRef = useRef(null);
   // Prefix sums (relative to the table's top-left) for cell geometry.
   const colX = useMemo(() => { const a = [0]; for (const w of cols) a.push(a[a.length - 1] + w); return a; }, [cols]);

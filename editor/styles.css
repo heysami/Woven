@@ -214,8 +214,8 @@ button {
     45deg,
     transparent 0px,
     transparent 18px,
-    color-mix(in oklch, var(--accent) 3.5%, transparent) 18px,
-    color-mix(in oklch, var(--accent) 3.5%, transparent) 36px
+    color-mix(in oklab, var(--accent) 3.5%, transparent) 18px,
+    color-mix(in oklab, var(--accent) 3.5%, transparent) 36px
   );
   z-index: 5;
   pointer-events: none;
@@ -630,7 +630,7 @@ button {
   height: auto;
   display: block;
   fill: var(--accent);
-  filter: drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 55%, transparent));
+  filter: drop-shadow(0 0 9px color-mix(in oklab, var(--accent) 55%, transparent));
 }
 .landing-meta {
   display: inline-flex;
@@ -2488,7 +2488,7 @@ button {
 .landing-filter:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 28%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 28%, transparent);
   background: rgba(255, 255, 255, 0.10);
 }
 .landing-new-btn {
@@ -2702,11 +2702,11 @@ button {
 .landing-header .cli-label,
 .landing-header .model-status-label { color: rgba(235, 240, 238, 0.82); }
 .landing-header .workflow-toolbar-gear svg { color: rgba(235, 240, 238, 0.82); }
-.landing-header .model-status-indicator { color: #fff; background: color-mix(in oklch, var(--hot) 60%, transparent); border-color: color-mix(in oklch, var(--hot) 70%, transparent); }
-.landing-header .model-status-indicator:hover { background: color-mix(in oklch, var(--hot) 75%, transparent); }
+.landing-header .model-status-indicator { color: #fff; background: color-mix(in oklab, var(--hot) 60%, transparent); border-color: color-mix(in oklab, var(--hot) 70%, transparent); }
+.landing-header .model-status-indicator:hover { background: color-mix(in oklab, var(--hot) 75%, transparent); }
 /* v3.x - degraded "key but no CLI" pill stays amber even on the dark band. */
-.landing-header .model-status-indicator[data-variant="warn"] { color: #fff; background: color-mix(in oklch, var(--warn, #d97706) 62%, transparent); border-color: color-mix(in oklch, var(--warn, #d97706) 72%, transparent); }
-.landing-header .model-status-indicator[data-variant="warn"]:hover { background: color-mix(in oklch, var(--warn, #d97706) 78%, transparent); }
+.landing-header .model-status-indicator[data-variant="warn"] { color: #fff; background: color-mix(in oklab, var(--warn, #d97706) 62%, transparent); border-color: color-mix(in oklab, var(--warn, #d97706) 72%, transparent); }
+.landing-header .model-status-indicator[data-variant="warn"]:hover { background: color-mix(in oklab, var(--warn, #d97706) 78%, transparent); }
 
 /* Main area - content sits over the light diamond field and scrolls up behind
    the frosted header (whose height is reserved by .landing-main's padding-top). */
@@ -3020,7 +3020,7 @@ button {
   background: var(--accent);
   clip-path: polygon(0 0, 100% 50%, 0 100%);
   filter: drop-shadow(0 0 4px var(--accent))
-          drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
+          drop-shadow(0 0 9px color-mix(in oklab, var(--accent) 70%, transparent));
   pointer-events: none;
 }
 .landing-card-label {
@@ -3711,11 +3711,11 @@ button {
 /* Preserve the warning/error signal borders the de-outline above would erase. */
 .workflow-bar .cli-indicator-missing,
 .workflow-bar .cli-indicator-needs-login {
-  border-color: color-mix(in oklch, var(--warn, #b45309) 30%, var(--border));
+  border-color: color-mix(in oklab, var(--warn, #b45309) 30%, var(--border));
 }
 .workflow-bar .daemon-indicator-down {
-  border-color: color-mix(in oklch, var(--danger, #dc2626) 40%, var(--border));
-  background: color-mix(in oklch, var(--danger, #dc2626) 6%, var(--surface));
+  border-color: color-mix(in oklab, var(--danger, #dc2626) 40%, var(--border));
+  background: color-mix(in oklab, var(--danger, #dc2626) 6%, var(--surface));
 }
 .workflow-zoom {
   font-family: var(--font-mono);
@@ -3795,8 +3795,8 @@ button {
   color: var(--text);
 }
 .workflow-nav-rail-btn.is-active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
   color: var(--text);
 }
 .workflow-nav-rail-sep {
@@ -3847,9 +3847,9 @@ button {
   color: var(--text);
 }
 .th-right-rail-btn.is-active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
-  color: var(--text);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 .th-right-rail-icon-wrap {
   position: relative;
@@ -4019,7 +4019,7 @@ body[data-panel-resizing="true"] .dock-tile-grip { cursor: grabbing; }
   z-index: 2;
   pointer-events: none;
   border: 2px solid var(--accent, oklch(72% 0.16 50));
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, transparent);
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 12%, transparent);
 }
 
 /* Reserve room in the embedded panel's header so the × (right, always present)
@@ -4117,8 +4117,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .th-tasks-filter-btn:hover { background: var(--surface-2); color: var(--text); }
 .th-tasks-filter-btn.is-active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
   color: var(--text);
 }
 .th-tasks-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
@@ -4347,7 +4347,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .th-live-status.is-live .th-live-dot {
   background: var(--success, #16A34A);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success, #16A34A) 25%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success, #16A34A) 25%, transparent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }
 .th-live-people { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px; }
@@ -4584,8 +4584,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-git-note {
   font-size: 11.5px;
   color: var(--success, #16A34A);
-  background: color-mix(in oklch, var(--success, #16A34A) 10%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--success, #16A34A) 30%, var(--border));
+  background: color-mix(in oklab, var(--success, #16A34A) 10%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--success, #16A34A) 30%, var(--border));
   border-radius: var(--radius-sm);
   padding: 5px 8px;
   margin-bottom: 8px;
@@ -4618,8 +4618,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   border-radius: 999px;
   padding: 2px 8px;
 }
-.th-git-pill.is-ahead { color: var(--success, #16A34A); border-color: color-mix(in oklch, var(--success, #16A34A) 40%, var(--border)); }
-.th-git-pill.is-behind { color: #d97706; border-color: color-mix(in oklch, #d97706 40%, var(--border)); }
+.th-git-pill.is-ahead { color: var(--success, #16A34A); border-color: color-mix(in oklab, var(--success, #16A34A) 40%, var(--border)); }
+.th-git-pill.is-behind { color: #d97706; border-color: color-mix(in oklab, #d97706 40%, var(--border)); }
 .th-git-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .th-git-btn {
   display: inline-flex;
@@ -4780,14 +4780,14 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   flex: 0 0 auto;
 }
 .go-live-btn.is-live {
-  background: color-mix(in oklch, var(--success, #16A34A) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--success, #16A34A) 45%, var(--border));
+  background: color-mix(in oklab, var(--success, #16A34A) 12%, var(--surface));
+  border-color: color-mix(in oklab, var(--success, #16A34A) 45%, var(--border));
   color: var(--success, #16A34A);
 }
-.go-live-btn.is-live:hover { filter: none; background: color-mix(in oklch, var(--success, #16A34A) 18%, var(--surface)); }
+.go-live-btn.is-live:hover { filter: none; background: color-mix(in oklab, var(--success, #16A34A) 18%, var(--surface)); }
 .go-live-dot.is-live {
   background: var(--success, #16A34A);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--success, #16A34A) 28%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--success, #16A34A) 28%, transparent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }
 
@@ -4812,8 +4812,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-icon-btn svg { width: 15px; height: 15px; }
 .th-icon-btn.is-primary { color: var(--success, #16A34A); }
 .th-icon-btn.is-primary:hover {
-  background: color-mix(in oklch, var(--success, #16A34A) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--success, #16A34A) 35%, var(--border));
+  background: color-mix(in oklab, var(--success, #16A34A) 12%, var(--surface));
+  border-color: color-mix(in oklab, var(--success, #16A34A) 35%, var(--border));
 }
 .th-icon-btn.is-danger:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
 
@@ -4878,7 +4878,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .share-menu-tab:hover { color: var(--text); background: var(--surface-2); }
 .share-menu-tab[data-active="true"] {
-  background: color-mix(in oklch, var(--success, #16A34A) 12%, var(--surface));
+  background: color-mix(in oklab, var(--success, #16A34A) 12%, var(--surface));
   color: var(--success, #16A34A);
 }
 .share-menu-body { overflow-y: auto; padding: 8px; }
@@ -5032,7 +5032,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .workflow-resize-handle:hover,
 .workflow-resize-handle:active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
 }
 /* Reserve space on the right for the fixed chat panel when active so the
    canvas doesn't render under it. */
@@ -5110,8 +5110,8 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .workflow-proto-tab:hover { background: var(--surface-2); color: var(--text); }
 .workflow-proto-tab.is-active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 10%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
   color: var(--text);
 }
 .workflow-proto-tab-label {
@@ -5181,11 +5181,11 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-right: 1px solid var(--border);
 }
 .workflow-proto-device-btn.is-active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 16%, transparent);
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 16%, transparent);
   color: var(--text);
 }
 .workflow-proto-device-btn.is-active:hover {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 24%, transparent);
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 24%, transparent);
 }
 /* Landscape - rotate the glyph 90° so the icon reads as turned on its side. */
 .workflow-proto-device-btn.is-landscape svg { transform: rotate(90deg); }
@@ -5258,7 +5258,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   cursor: pointer;
 }
 .workflow-proto-empty-btn:hover {
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
   background: var(--surface-2);
 }
 
@@ -5395,8 +5395,8 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
 }
 .workflow-bar-fullscreen:hover {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 10%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
   color: var(--text);
 }
 /* Floating Exit-fullscreen pill - sits in the top-right of the viewport
@@ -5421,7 +5421,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .workflow-fullscreen-exit:hover {
   background: var(--surface-2);
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
 }
 .workflow-fullscreen-exit:active { transform: translateY(1px); }
 
@@ -5624,7 +5624,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .canvas-ctxmenu-danger:not(:disabled) { color: var(--danger, #c0392b); }
 .canvas-ctxmenu-danger:not(:disabled):hover {
-  background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
+  background: color-mix(in oklab, var(--danger, #c0392b) 12%, var(--surface));
 }
 .canvas-ctxmenu-label {
   font: 600 10px var(--font-sans);
@@ -5672,7 +5672,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   color: oklch(98% 0.002 250);
   border-color: var(--accent);
   box-shadow:
-    0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent),
+    0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent),
     0 2px 6px rgba(0, 0, 0, 0.18);
 }
 .workflow-node-select-badge:active { transform: translateY(1px); }
@@ -5927,9 +5927,9 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
    at a glance that the bar is scoped to the red-outlined sub-element
    inside the iframe rather than the whole asset card. */
 .workflow-asset-action-bar-picked {
-  border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
   box-shadow:
-    0 0 0 2px color-mix(in oklch, var(--accent) 18%, transparent),
+    0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent),
     0 1px 3px rgba(0, 0, 0, 0.08),
     0 6px 18px rgba(0, 0, 0, 0.06);
 }
@@ -6195,7 +6195,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .workflow-asset-action-popover-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 22%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 22%, transparent);
 }
 .workflow-asset-action-popover-foot {
   display: flex;
@@ -6235,7 +6235,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   padding: 8px;
   border: 1px dashed var(--border);
   border-radius: 8px;
-  background: color-mix(in oklch, var(--surface-2) 60%, transparent);
+  background: color-mix(in oklab, var(--surface-2) 60%, transparent);
 }
 .workflow-asset-action-rules-label {
   font-size: 11px;
@@ -6282,8 +6282,8 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .workflow-asset-action-rule-chip.is-free {
   color: var(--text);
-  background: color-mix(in oklch, var(--surface-2) 90%, var(--accent));
-  border-color: color-mix(in oklch, var(--border) 60%, var(--accent));
+  background: color-mix(in oklab, var(--surface-2) 90%, var(--accent));
+  border-color: color-mix(in oklab, var(--border) 60%, var(--accent));
 }
 .workflow-asset-action-rule-chip.is-encourage {
   color: oklch(98% 0.002 250);
@@ -6316,7 +6316,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   font-size: 11.5px;
   margin-bottom: 6px;
   padding-bottom: 5px;
-  border-bottom: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, currentColor 18%, transparent);
 }
 .workflow-asset-action-rule-tip-row {
   display: flex;
@@ -6335,13 +6335,13 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .workflow-asset-action-rule-tip-row.is-current {
   opacity: 1;
-  background: color-mix(in oklch, currentColor 14%, transparent);
+  background: color-mix(in oklab, currentColor 14%, transparent);
   font-weight: 500;
 }
 .workflow-asset-action-rule-tip-foot {
   margin-top: 6px;
   padding-top: 5px;
-  border-top: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  border-top: 1px solid color-mix(in oklab, currentColor 18%, transparent);
   font-size: 10px;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -6360,20 +6360,20 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: color-mix(in oklch, var(--accent) 14%, var(--surface-2));
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface-2));
   color: var(--text);
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
   flex-shrink: 0;
 }
-.workflow-node-asset-kind-chip-image  { background: color-mix(in oklch, oklch(70% 0.18 250) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(70% 0.18 250) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-image  { background: color-mix(in oklab, oklch(70% 0.18 250) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(70% 0.18 250) 28%, var(--border)); }
 .workflow-node-asset-kind-chip-vector,
-.workflow-node-asset-kind-chip-svg    { background: color-mix(in oklch, oklch(72% 0.18 174) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(72% 0.18 174) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-svg    { background: color-mix(in oklab, oklch(72% 0.18 174) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(72% 0.18 174) 28%, var(--border)); }
 .workflow-node-asset-kind-chip-html,
-.workflow-node-asset-kind-chip-htmlset{ background: color-mix(in oklch, oklch(68% 0.18 60) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(68% 0.18 60) 28%, var(--border)); }
-.workflow-node-asset-kind-chip-lottie { background: color-mix(in oklch, oklch(70% 0.18 320) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(70% 0.18 320) 28%, var(--border)); }
-.workflow-node-asset-kind-chip-video  { background: color-mix(in oklch, oklch(60% 0.20 20) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(60% 0.20 20) 28%, var(--border)); }
-.workflow-node-asset-kind-chip-text   { background: color-mix(in oklch, oklch(50% 0.04 250) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(50% 0.04 250) 28%, var(--border)); }
-.workflow-node-asset-kind-chip-3d     { background: color-mix(in oklch, oklch(72% 0.18 200) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(72% 0.18 200) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-htmlset{ background: color-mix(in oklab, oklch(68% 0.18 60) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(68% 0.18 60) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-lottie { background: color-mix(in oklab, oklch(70% 0.18 320) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(70% 0.18 320) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-video  { background: color-mix(in oklab, oklch(60% 0.20 20) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(60% 0.20 20) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-text   { background: color-mix(in oklab, oklch(50% 0.04 250) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(50% 0.04 250) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-3d     { background: color-mix(in oklab, oklch(72% 0.18 200) 14%, var(--surface-2)); border-color: color-mix(in oklab, oklch(72% 0.18 200) 28%, var(--border)); }
 
 /* Model chip - outlined button that opens a small dropdown. */
 .workflow-node-asset-model-chip {
@@ -6405,7 +6405,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .workflow-node-asset-model-chip.has-override .workflow-node-asset-model-chip-btn {
   border-color: var(--accent);
   color: var(--text);
-  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
 }
 .workflow-node-asset-model-chip-menu {
   position: absolute;
@@ -6443,7 +6443,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   background: var(--surface-2);
 }
 .workflow-node-asset-model-chip-item.is-current {
-  background: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface));
   font-weight: 600;
 }
 .workflow-node-asset-model-chip-clear {
@@ -6653,17 +6653,17 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .workflow-pick-toast-icon svg { width: 14px; height: 14px; }
 .workflow-pick-toast-spinner {
   width: 13px; height: 13px;
-  border: 2px solid color-mix(in oklch, oklch(98% 0.002 250) 40%, transparent);
+  border: 2px solid color-mix(in oklab, oklch(98% 0.002 250) 40%, transparent);
   border-top-color: oklch(98% 0.002 250);
   border-radius: 50%;
   animation: workflowSpin 0.7s linear infinite;
 }
 .workflow-pick-toast-msg { letter-spacing: 0.005em; }
 .workflow-pick-toast-done {
-  background: linear-gradient(180deg, var(--accent) 0%, color-mix(in oklch, var(--accent) 85%, oklch(0% 0 0)) 100%);
+  background: linear-gradient(180deg, var(--accent) 0%, color-mix(in oklab, var(--accent) 85%, oklch(0% 0 0)) 100%);
 }
 .workflow-pick-toast-error {
-  background: linear-gradient(180deg, var(--danger, #c0392b) 0%, color-mix(in oklch, var(--danger, #c0392b) 85%, oklch(0% 0 0)) 100%);
+  background: linear-gradient(180deg, var(--danger, #c0392b) 0%, color-mix(in oklab, var(--danger, #c0392b) 85%, oklch(0% 0 0)) 100%);
 }
 @keyframes workflow-pick-toast-in {
   from { opacity: 0; transform: translate(-50%, 12px); }
@@ -6675,13 +6675,13 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
    attribute set by the WorkflowSurface render (see app.js). */
 body[data-pick-op-pending="true"] iframe[data-prototype-id],
 body[data-pick-op-pending="true"] iframe[data-asset-id] {
-  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
   outline-offset: -2px;
   animation: workflow-pick-op-pulse 1.2s ease-in-out infinite;
 }
 @keyframes workflow-pick-op-pulse {
-  0%, 100% { outline-color: color-mix(in oklch, var(--accent) 60%, transparent); }
-  50%      { outline-color: color-mix(in oklch, var(--accent) 95%, transparent); }
+  0%, 100% { outline-color: color-mix(in oklab, var(--accent) 60%, transparent); }
+  50%      { outline-color: color-mix(in oklab, var(--accent) 95%, transparent); }
 }
 
 /* Phase 4c - delete-on-hover button for deletable library items
@@ -6702,7 +6702,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-library-item:hover .workflow-library-item-del { opacity: 1; }
 .workflow-library-item-del:hover {
-  background: color-mix(in oklch, var(--danger, #c0392b) 14%, transparent);
+  background: color-mix(in oklab, var(--danger, #c0392b) 14%, transparent);
   color: var(--danger, #c0392b);
 }
 
@@ -7006,7 +7006,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   justify-content: center;
 }
 .workflow-library-card-thumb-empty {
-  background: color-mix(in oklch, var(--surface-2) 60%, var(--surface) 40%);
+  background: color-mix(in oklab, var(--surface-2) 60%, var(--surface) 40%);
   border-bottom: 1px dashed var(--border);
 }
 .workflow-library-card-thumb-glyph {
@@ -7031,7 +7031,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: 18px;
   height: 18px;
   border: 0;
-  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  background: color-mix(in oklab, var(--surface) 85%, transparent);
   backdrop-filter: blur(2px);
   border-radius: 4px;
   color: var(--text-faint);
@@ -7043,7 +7043,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-library-card:hover .workflow-library-card-del { opacity: 1; }
 .workflow-library-card-del:hover {
-  background: color-mix(in oklch, var(--danger, #c0392b) 14%, var(--surface) 86%);
+  background: color-mix(in oklab, var(--danger, #c0392b) 14%, var(--surface) 86%);
   color: var(--danger, #c0392b);
 }
 
@@ -7064,9 +7064,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   border-radius: 0 14px 14px 14px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
+    0 0 0 1px color-mix(in oklab, var(--hot) 6%, transparent),
+    0 1px 5px color-mix(in oklab, var(--hot) 6%, transparent),
+    0 6px 18px color-mix(in oklab, var(--hot) 5%, transparent);
   box-sizing: border-box;
   pointer-events: none;
   transition: box-shadow 0.12s ease;
@@ -7078,14 +7078,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   isolation: isolate;
 }
 .workflow-node-section[data-selected="true"] {
-  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
   outline-offset: -2px;
 }
 .workflow-node-section[data-dragging="true"] {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--hot) 10%, transparent),
-    0 2px 8px color-mix(in oklch, var(--hot) 9%, transparent),
-    0 10px 26px color-mix(in oklch, var(--hot) 7%, transparent);
+    0 0 0 1px color-mix(in oklab, var(--hot) 10%, transparent),
+    0 2px 8px color-mix(in oklab, var(--hot) 9%, transparent),
+    0 10px 26px color-mix(in oklab, var(--hot) 7%, transparent);
 }
 .workflow-node-section-bar {
   position: absolute;
@@ -7103,7 +7103,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   /* Match the body's whisper-faint warm ring instead of the neutral grey
      --border, so the left edge reads as ONE continuous line where the title
      tab meets the group body (was: 1px solid var(--border)). */
-  border: 1px solid color-mix(in oklch, var(--hot) 6%, transparent);
+  border: 1px solid color-mix(in oklab, var(--hot) 6%, transparent);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   /* The body wears a soft warm lift-glow (0 1px 5px / 0 6px 18px hot). Mirror
@@ -7111,8 +7111,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
      instead of the tab reading flat. Upward offsets keep the glow off the
      junction so there's no seam where the tab meets the body. */
   box-shadow:
-    0 -1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 -6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
+    0 -1px 5px color-mix(in oklab, var(--hot) 6%, transparent),
+    0 -6px 18px color-mix(in oklab, var(--hot) 5%, transparent);
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
@@ -7145,7 +7145,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   text-transform: none;
   white-space: nowrap;
   border-radius: 5px;
-  box-shadow: 0 2px 10px color-mix(in oklch, var(--text, #000) 22%, transparent);
+  box-shadow: 0 2px 10px color-mix(in oklab, var(--text, #000) 22%, transparent);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease 0.18s;
@@ -7188,7 +7188,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-section:hover .workflow-node-section-close { opacity: 1; }
 .workflow-node-section-close:hover {
-  background: color-mix(in oklch, var(--danger, #c0392b) 14%, transparent);
+  background: color-mix(in oklab, var(--danger, #c0392b) 14%, transparent);
   color: var(--danger, #c0392b);
 }
 /* v3.9 - Tidy button: same chrome as close, accent-on-hover (it organises,
@@ -7208,7 +7208,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-section:hover .workflow-node-section-tidy { opacity: 1; }
 .workflow-node-section-tidy:hover {
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
 /* v3.9 - Save-to-Local-library button: same chrome as tidy/close, holds an
@@ -7231,7 +7231,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-section-savelib svg { width: 13px; height: 13px; }
 .workflow-node-section:hover .workflow-node-section-savelib { opacity: 1; }
 .workflow-node-section-savelib:hover {
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
 .workflow-node-section-savelib.is-saved {
@@ -7271,7 +7271,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-node-customapp-expand svg { width: 13px; height: 13px; }
 .workflow-node-customapp-expand:hover {
   opacity: 1;
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
 .workflow-customapp-body {
@@ -7576,15 +7576,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
       45deg,
       transparent 0,
       transparent 29px,
-      color-mix(in oklch, var(--border-strong) 15%, transparent) 29px,
-      color-mix(in oklch, var(--border-strong) 15%, transparent) 30px
+      color-mix(in oklab, var(--border-strong) 15%, transparent) 29px,
+      color-mix(in oklab, var(--border-strong) 15%, transparent) 30px
     ),
     repeating-linear-gradient(
       -45deg,
       transparent 0,
       transparent 29px,
-      color-mix(in oklch, var(--border-strong) 15%, transparent) 29px,
-      color-mix(in oklch, var(--border-strong) 15%, transparent) 30px
+      color-mix(in oklab, var(--border-strong) 15%, transparent) 29px,
+      color-mix(in oklab, var(--border-strong) 15%, transparent) 30px
     ),
     radial-gradient(circle at 50% 36%, var(--surface) 0%, transparent 72%);
   cursor: default;
@@ -7746,7 +7746,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 /* Selected-state outline - subtle accent ring so the user can see which
    card is currently the "interactive" one. */
 .workflow-node[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) {
-  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
   outline-offset: -2px;
 }
 
@@ -7811,7 +7811,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-wb-textbox {
   /* background + border-color come inline from the item's fill / stroke /
      fillOpacity fields (legacy items fall back to `color` there). */
-  background: color-mix(in oklch, var(--wb-c, var(--wb-blue)) 16%, transparent);
+  background: color-mix(in oklab, var(--wb-c, var(--wb-blue)) 16%, transparent);
   border: 1.5px solid var(--wb-c, var(--wb-blue));
   display: flex;
   align-items: center;
@@ -7828,7 +7828,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text);
   font: 600 11.5px var(--font-mono);
 }
-.workflow-wb-num:focus { outline: 2px solid color-mix(in oklch, var(--accent) 45%, transparent); }
+.workflow-wb-num:focus { outline: 2px solid color-mix(in oklab, var(--accent) 45%, transparent); }
 .workflow-wb-swatch-none {
   background:
     linear-gradient(to top right, transparent 44%, var(--danger) 46%, var(--danger) 54%, transparent 56%),
@@ -7839,7 +7839,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   border-color: oklch(0% 0 0 / 0.22);
 }
 .workflow-wb-sticky {
-  background: color-mix(in oklch, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
+  background: color-mix(in oklab, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
   box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 4px 12px oklch(0% 0 0 / 0.07);
   border-radius: 2px;
   padding: 12px;
@@ -7870,19 +7870,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   box-sizing: border-box;
   border-radius: 10px;
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
+    0 0 0 1px color-mix(in oklab, var(--hot) 6%, transparent),
+    0 1px 5px color-mix(in oklab, var(--hot) 6%, transparent),
+    0 6px 18px color-mix(in oklab, var(--hot) 5%, transparent);
   transition: box-shadow 0.12s ease;
 }
 .workflow-wb-table:hover {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--hot) 12%, transparent),
-    0 2px 8px color-mix(in oklch, var(--hot) 11%, transparent),
-    0 10px 28px color-mix(in oklch, var(--hot) 9%, transparent);
+    0 0 0 1px color-mix(in oklab, var(--hot) 12%, transparent),
+    0 2px 8px color-mix(in oklab, var(--hot) 11%, transparent),
+    0 10px 28px color-mix(in oklab, var(--hot) 9%, transparent);
 }
 .workflow-wb-table[data-selected="true"] {
-  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
   outline-offset: -2px;
 }
 /* Rounds the table corners like a node by clipping the cell grid. Bound items
@@ -7912,7 +7912,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-wb-table-rowgrip { cursor: row-resize; }
 .workflow-wb-table-colgrip:hover,
 .workflow-wb-table-rowgrip:hover {
-  background: color-mix(in oklch, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 .workflow-wb-table-add {
   position: absolute;
@@ -7921,7 +7921,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   justify-content: center;
   padding: 0;
   line-height: 1;
-  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
   border-radius: 50%;
   background: var(--surface);
   color: var(--accent);
@@ -7935,7 +7935,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   align-items: center;
   justify-content: center;
   background: var(--surface);
-  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
   border-radius: 4px;
   cursor: move;
   box-shadow: 0 1px 3px oklch(0% 0 0 / 0.12);
@@ -7946,8 +7946,8 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-wb-ghost-rect {
   position: absolute;
   border-style: dashed;
-  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
-  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
   pointer-events: none;
 }
 .workflow-wb-overlay {
@@ -7959,7 +7959,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-wb-outline {
   position: absolute;
   border-style: solid;
-  border-color: color-mix(in oklch, var(--accent) 75%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 75%, transparent);
   pointer-events: none;
 }
 .workflow-wb-handle {
@@ -7999,9 +7999,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-group-bbox {
   position: absolute;
   border-style: solid;
-  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
   border-radius: 8px;
-  background: color-mix(in oklch, var(--accent) 3%, transparent);
+  background: color-mix(in oklab, var(--accent) 3%, transparent);
   pointer-events: none;
   z-index: 99998;
 }
@@ -8021,7 +8021,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   position: absolute; top: 6px; left: 6px; z-index: 6;
   width: 22px; height: 22px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
-  background: color-mix(in oklch, var(--bg) 78%, transparent);
+  background: color-mix(in oklab, var(--bg) 78%, transparent);
   border: 1px solid var(--border-strong);
   cursor: pointer;
   opacity: 0; transition: opacity .12s ease;
@@ -8054,7 +8054,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   padding: 6px 12px; border-radius: 7px;
   border: 1px solid var(--border-strong); background: transparent; color: var(--text);
 }
-.workflow-bulk-bar-btn:hover:not([disabled]) { background: color-mix(in oklch, var(--text) 6%, transparent); }
+.workflow-bulk-bar-btn:hover:not([disabled]) { background: color-mix(in oklab, var(--text) 6%, transparent); }
 .workflow-bulk-bar-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 .workflow-bulk-bar-btn.is-danger { border-color: #fecaca; color: #dc2626; }
 .workflow-bulk-bar-btn.is-danger:hover:not([disabled]) { background: #fef2f2; }
@@ -8073,7 +8073,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   background: var(--bg-elevated, var(--bg));
   box-shadow: 0 10px 28px rgba(0,0,0,0.24);
 }
-.workflow-convert-chip:hover { background: color-mix(in oklch, var(--text) 6%, var(--bg-elevated, var(--bg))); }
+.workflow-convert-chip:hover { background: color-mix(in oklab, var(--text) 6%, var(--bg-elevated, var(--bg))); }
 .workflow-convert-chip svg { width: 14px; height: 14px; }
 .workflow-convert-menu {
   display: flex; flex-direction: column; min-width: 150px; padding: 5px;
@@ -8086,7 +8086,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   cursor: pointer; padding: 7px 9px; border-radius: 6px;
   border: 0; background: transparent;
 }
-.workflow-convert-item:hover { background: color-mix(in oklch, var(--text) 8%, transparent); }
+.workflow-convert-item:hover { background: color-mix(in oklab, var(--text) 8%, transparent); }
 .workflow-convert-note {
   font: 500 10.5px var(--font-sans); color: var(--text-muted, #888);
   padding: 6px 9px 3px; max-width: 200px; line-height: 1.35;
@@ -8132,7 +8132,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-wb-tool-btn:hover { background: var(--surface-2); }
 .workflow-wb-tool-btn.is-active {
   background: var(--accent-soft);
-  border-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
   color: var(--accent-text);
 }
 .workflow-wb-tool-glyph { display: inline-flex; width: 15px; flex: none; }
@@ -8195,7 +8195,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-wb-seg-btn:hover { background: var(--surface-2); color: var(--text); }
 .workflow-wb-seg-btn.is-active {
   background: var(--accent-soft);
-  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
   color: var(--accent-text);
 }
 .workflow-wb-fmt-b { font-weight: 800; }
@@ -8208,13 +8208,13 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   width: 100%;
   padding: 7px 9px;
   border-radius: var(--radius);
-  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
   background: var(--accent-soft);
   color: var(--accent-text);
   font: 600 12.5px var(--font-sans);
   cursor: pointer;
 }
-.workflow-wb-pick-btn:hover { background: color-mix(in oklch, var(--accent) 22%, var(--surface)); }
+.workflow-wb-pick-btn:hover { background: color-mix(in oklab, var(--accent) 22%, var(--surface)); }
 .workflow-wb-pick-last {
   display: flex;
   align-items: center;
@@ -8368,7 +8368,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-empty-composer-input:focus {
   outline: 0;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
 }
 .workflow-empty-composer-attach {
   display: inline-flex;
@@ -8411,7 +8411,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   transition: background 0.12s, opacity 0.12s;
 }
 .workflow-empty-composer-send:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent) 92%, oklch(0% 0 0));
+  background: color-mix(in oklab, var(--accent) 92%, oklch(0% 0 0));
 }
 .workflow-empty-composer-send:disabled {
   opacity: 0.45;
@@ -8441,8 +8441,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   max-width: 240px;
 }
 .workflow-empty-composer-attachment.is-upload {
-  background: color-mix(in oklch, var(--accent) 6%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
 }
 .workflow-empty-composer-attachment-icon {
   display: inline-flex;
@@ -8482,7 +8482,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-empty-composer-spinner {
   width: 13px; height: 13px;
-  border: 2px solid color-mix(in oklch, oklch(98% 0.002 250) 50%, transparent);
+  border: 2px solid color-mix(in oklab, oklch(98% 0.002 250) 50%, transparent);
   border-top-color: oklch(98% 0.002 250);
   border-radius: 50%;
   animation: workflowSpin 0.7s linear infinite;
@@ -8554,9 +8554,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   /* Neutral soft drop shadow (was a warm orange glow that clashed with the
      neutral/teal chrome). Plain black at low alpha reads as clean depth. */
   box-shadow:
-    0 0 0 1px color-mix(in oklch, oklch(0% 0 0) 5%, transparent),
-    0 1px 5px color-mix(in oklch, oklch(0% 0 0) 7%, transparent),
-    0 6px 18px color-mix(in oklch, oklch(0% 0 0) 6%, transparent);
+    0 0 0 1px color-mix(in oklab, oklch(0% 0 0) 5%, transparent),
+    0 1px 5px color-mix(in oklab, oklch(0% 0 0) 7%, transparent),
+    0 6px 18px color-mix(in oklab, oklch(0% 0 0) 6%, transparent);
   /* v3.5 - port labels need to sit OUTSIDE the node body so they don't
      overlap iframe content. `overflow: clip` + `overflow-clip-margin` keeps
      the iframe (and any other body content) clipped to the rounded node
@@ -8569,15 +8569,15 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node:hover {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, oklch(0% 0 0) 8%, transparent),
-    0 2px 8px color-mix(in oklch, oklch(0% 0 0) 10%, transparent),
-    0 10px 28px color-mix(in oklch, oklch(0% 0 0) 9%, transparent);
+    0 0 0 1px color-mix(in oklab, oklch(0% 0 0) 8%, transparent),
+    0 2px 8px color-mix(in oklab, oklch(0% 0 0) 10%, transparent),
+    0 10px 28px color-mix(in oklab, oklch(0% 0 0) 9%, transparent);
 }
 .workflow-node[data-dragging="true"] {
   box-shadow:
-    0 0 0 1.5px color-mix(in oklch, oklch(0% 0 0) 14%, transparent),
-    0 4px 14px color-mix(in oklch, oklch(0% 0 0) 16%, transparent),
-    0 16px 40px color-mix(in oklch, oklch(0% 0 0) 12%, transparent);
+    0 0 0 1.5px color-mix(in oklab, oklch(0% 0 0) 14%, transparent),
+    0 4px 14px color-mix(in oklab, oklch(0% 0 0) 16%, transparent),
+    0 16px 40px color-mix(in oklab, oklch(0% 0 0) 12%, transparent);
 }
 /* On hover/select, square the NODE box's connecting corners (top where the
    title bar attaches; bottom where the version strip attaches) so the node's
@@ -8807,19 +8807,19 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    shares the workflow canvas's zoom 1:1. Frames in the embed match the
    on-screen size of frames on the workflow canvas at the same zoom. */
 .workflow-node-frames {
-  background: color-mix(in oklch, var(--surface-2) 35%, transparent) !important;
-  border: 1.5px dashed color-mix(in oklch, var(--text-faint) 65%, transparent) !important;
+  background: color-mix(in oklab, var(--surface-2) 35%, transparent) !important;
+  border: 1.5px dashed color-mix(in oklab, var(--text-faint) 65%, transparent) !important;
   box-shadow: none !important;
   border-radius: 14px;
 }
 .workflow-node-frames:hover {
-  border-color: color-mix(in oklch, var(--text-faint) 90%, transparent) !important;
+  border-color: color-mix(in oklab, var(--text-faint) 90%, transparent) !important;
   box-shadow: none !important;
 }
 .workflow-node-frames[data-selected="true"] {
   border-color: var(--text) !important;
   border-style: solid !important;
-  background: color-mix(in oklch, var(--surface-2) 55%, transparent) !important;
+  background: color-mix(in oklab, var(--surface-2) 55%, transparent) !important;
 }
 /* Section-bar treatment: the title strip sits above the body (matches the
    .workflow-node-section-bar pattern) so the body reads as the pure
@@ -9005,7 +9005,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    navigated away from its locked screen. Carries the Return button. */
 .workflow-node-proto[data-orphan="true"] {
   border-color: var(--danger, #c0392b);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--danger, #c0392b) 18%, transparent),
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--danger, #c0392b) 18%, transparent),
               0 1px 3px rgba(0,0,0,0.08), 0 6px 18px rgba(0,0,0,0.06);
 }
 .workflow-node-orphan-banner {
@@ -9016,8 +9016,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
-  background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
-  border-bottom: 1px solid color-mix(in oklch, var(--danger, #c0392b) 30%, var(--border));
+  background: color-mix(in oklab, var(--danger, #c0392b) 12%, var(--surface));
+  border-bottom: 1px solid color-mix(in oklab, var(--danger, #c0392b) 30%, var(--border));
   font-size: 11.5px;
   color: var(--text);
   z-index: 1;
@@ -9038,7 +9038,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid color-mix(in oklch, var(--danger, #c0392b) 40%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--danger, #c0392b) 40%, var(--border));
   background: var(--surface);
   color: var(--text);
   font-size: 11.5px;
@@ -9304,7 +9304,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   inset: 0;
   pointer-events: none;
   z-index: 5;
-  border: 0 solid color-mix(in oklch, var(--accent) 60%, transparent);
+  border: 0 solid color-mix(in oklab, var(--accent) 60%, transparent);
 }
 .workflow-node-asset[data-selected="true"] .workflow-node-asset-bar::after {
   border-top-width: 2px;
@@ -9343,7 +9343,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   inset: 0;
   pointer-events: none;
   z-index: 5;
-  border: 0 solid color-mix(in oklch, var(--accent) 60%, transparent);
+  border: 0 solid color-mix(in oklab, var(--accent) 60%, transparent);
 }
 .workflow-node-proto[data-selected="true"] > .workflow-node-bar::after {
   border-top-width: 2px;
@@ -9379,7 +9379,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   inset: 0;
   pointer-events: none;
   z-index: 5;
-  border: 0 solid color-mix(in oklch, var(--accent) 60%, transparent);
+  border: 0 solid color-mix(in oklab, var(--accent) 60%, transparent);
 }
 .workflow-node-frames[data-selected="true"] > .workflow-node-frames-bar::after {
   border-top-width: 2px;
@@ -9565,10 +9565,10 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-asset-replace:hover {
   border-color: var(--accent); color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
 }
 .workflow-node-asset-replace:active {
-  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
 }
 /* v3.0 - auto-size affordance. Mirrors the replace-button shape so it sits
    cleanly in the same chip row. Shown only when sizing is "custom". */
@@ -9583,10 +9583,10 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-asset-autosize:hover {
   border-color: var(--accent); color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
 }
 .workflow-node-asset-autosize:active {
-  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
 }
 /* v3.4.21 - Disabled state. Button stays in the toolbar (so the affordance
    is always discoverable) but reads as inactive: low-opacity icon, no hover
@@ -9694,8 +9694,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   white-space: nowrap;
 }
 .workflow-node-asset-lineage-chip[data-diverged="true"] {
-  background: color-mix(in oklch, orange 18%, var(--bg));
-  border-color: color-mix(in oklch, orange 50%, var(--border));
+  background: color-mix(in oklab, orange 18%, var(--bg));
+  border-color: color-mix(in oklab, orange 50%, var(--border));
   color: var(--text);
 }
 .workflow-node-asset-lineage-chip[data-kind="non-asset"] {
@@ -9718,7 +9718,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    A plain semi-transparent fill reads as "modal context" without the cost. */
 .workflow-version-picker-scrim {
   position: fixed; inset: 0; z-index: 9000;
-  background: color-mix(in oklch, var(--bg) 65%, transparent);
+  background: color-mix(in oklab, var(--bg) 65%, transparent);
   display: flex; align-items: center; justify-content: center;
   padding: 32px;
 }
@@ -9794,11 +9794,11 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   transition: background 80ms ease, border-color 80ms ease;
 }
 .workflow-version-row:hover,
-.workflow-composition-row:hover { background: var(--surface-hover, color-mix(in oklch, var(--accent) 8%, var(--surface))); }
+.workflow-composition-row:hover { background: var(--surface-hover, color-mix(in oklab, var(--accent) 8%, var(--surface))); }
 .workflow-version-row[data-selected="true"] { border-color: var(--accent); }
 .workflow-version-row[data-active="true"],
 .workflow-composition-row[data-active="true"] {
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
 }
 
 .workflow-version-row-thumb,
@@ -9839,7 +9839,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-version-row-seq {
   font-family: var(--font-mono);
   font-weight: 600;
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
   color: var(--text);
   padding: 1px 6px;
   border-radius: 3px;
@@ -10052,7 +10052,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-skill-addout:hover {
   transform: scale(1.1);
-  background: color-mix(in oklch, var(--hot) 88%, black);
+  background: color-mix(in oklab, var(--hot) 88%, black);
 }
 .workflow-node-skill-addout:active { transform: scale(0.95); }
 
@@ -10147,7 +10147,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
   pointer-events: auto;
   cursor: crosshair;
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--accent) 70%, transparent));
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--accent) 70%, transparent));
   transition: transform 0.1s ease, background 0.1s ease, filter 0.1s ease;
 }
 .workflow-port-zone-in  .workflow-port-dot { transform: translateX(-50%); }
@@ -10170,7 +10170,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-port-dot:hover {
   background: var(--accent-strong);
   filter: drop-shadow(0 0 4px var(--accent))
-          drop-shadow(0 0 9px color-mix(in oklch, var(--accent) 70%, transparent));
+          drop-shadow(0 0 9px color-mix(in oklab, var(--accent) 70%, transparent));
 }
 /* Port-diamond fill convention: RIGHT/out ports stay SOLID green (the default
    .workflow-port-dot above). LEFT/in ports read as an OUTLINE diamond - green
@@ -10213,19 +10213,19 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   --dtype-color:   oklch(80% 0.20 130);
 }
 .workflow-dtype-event   .workflow-port-dot { background: var(--dtype-event);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-event) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-event) 70%, transparent)); }
 .workflow-dtype-number  .workflow-port-dot { background: var(--dtype-number);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-number) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-number) 70%, transparent)); }
 .workflow-dtype-vector2 .workflow-port-dot { background: var(--dtype-vector2);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-vector2) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-vector2) 70%, transparent)); }
 .workflow-dtype-region  .workflow-port-dot { background: var(--dtype-region);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-region) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-region) 70%, transparent)); }
 .workflow-dtype-boolean .workflow-port-dot { background: var(--dtype-boolean);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-boolean) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-boolean) 70%, transparent)); }
 .workflow-dtype-string  .workflow-port-dot { background: var(--dtype-string);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-string) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-string) 70%, transparent)); }
 .workflow-dtype-color   .workflow-port-dot { background: var(--dtype-color);
-  filter: drop-shadow(0 0 2px color-mix(in oklch, var(--dtype-color) 70%, transparent)); }
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--dtype-color) 70%, transparent)); }
 /* Typed edges take the same stroke colour. The :not() guards keep the selected
    (hot orange) + pending states winning even though those rules are single-class
    (the dtype rule is two-class and would otherwise out-specify them). */
@@ -10283,7 +10283,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-port-live-value {
   margin-left: 5px; padding: 0 4px; border-radius: 5px;
   font-size: 9px; line-height: 1.5; font-variant-numeric: tabular-nums;
-  background: color-mix(in oklch, var(--accent, #79f) 22%, transparent);
+  background: color-mix(in oklab, var(--accent, #79f) 22%, transparent);
   color: var(--text, #222); white-space: nowrap; pointer-events: none;
   max-width: 64px; overflow: hidden; text-overflow: ellipsis;
   text-transform: none; letter-spacing: 0; font-weight: 600;
@@ -10295,8 +10295,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   animation: workflow-port-live-pulse 1.1s ease-in-out infinite;
 }
 @keyframes workflow-port-live-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent, #79f) 55%, transparent); }
-  50%      { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent, #79f) 0%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent, #79f) 55%, transparent); }
+  50%      { box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent, #79f) 0%, transparent); }
 }
 
 /* ── W3E: Run/Live toggle on the composer node bar. Inert by default; "is-live"
@@ -10311,9 +10311,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node-live-toggle:hover { color: var(--text, #222); border-color: var(--accent, #79f); }
 .workflow-node-live-toggle .workflow-node-live-label { font-weight: 600; letter-spacing: .02em; }
 .workflow-node-live-toggle.is-live {
-  background: color-mix(in oklch, var(--dtype-color, #4caf50) 22%, transparent);
-  border-color: color-mix(in oklch, var(--dtype-color, #4caf50) 60%, transparent);
-  color: color-mix(in oklch, var(--dtype-color, #4caf50) 80%, var(--text, #111));
+  background: color-mix(in oklab, var(--dtype-color, #4caf50) 22%, transparent);
+  border-color: color-mix(in oklab, var(--dtype-color, #4caf50) 60%, transparent);
+  color: color-mix(in oklab, var(--dtype-color, #4caf50) 80%, var(--text, #111));
 }
 .workflow-node-live-toggle.is-live svg { animation: workflow-port-live-pulse 1.1s ease-in-out infinite; border-radius: 50%; }
 
@@ -10322,40 +10322,40 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node-sendback {
   display: inline-flex; align-items: center; gap: 4px;
   margin: 0 4px; padding: 2px 7px; border-radius: 12px;
-  border: 1px solid color-mix(in oklch, var(--accent, #79f) 55%, transparent);
-  background: color-mix(in oklch, var(--accent, #79f) 16%, transparent);
-  color: color-mix(in oklch, var(--accent, #79f) 85%, var(--text, #111));
+  border: 1px solid color-mix(in oklab, var(--accent, #79f) 55%, transparent);
+  background: color-mix(in oklab, var(--accent, #79f) 16%, transparent);
+  color: color-mix(in oklab, var(--accent, #79f) 85%, var(--text, #111));
   font-size: 10px; line-height: 1.4; cursor: pointer;
   transition: background .12s ease, color .12s ease, border-color .12s ease;
 }
 .workflow-node-sendback:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent, #79f) 26%, transparent);
+  background: color-mix(in oklab, var(--accent, #79f) 26%, transparent);
   border-color: var(--accent, #79f);
 }
 .workflow-node-sendback:disabled { opacity: .6; cursor: default; }
 .workflow-node-sendback .workflow-node-sendback-label { font-weight: 600; letter-spacing: .02em; }
 .workflow-node-sendback.is-done {
-  background: color-mix(in oklch, var(--dtype-color, #4caf50) 24%, transparent);
-  border-color: color-mix(in oklch, var(--dtype-color, #4caf50) 60%, transparent);
-  color: color-mix(in oklch, var(--dtype-color, #4caf50) 85%, var(--text, #111));
+  background: color-mix(in oklab, var(--dtype-color, #4caf50) 24%, transparent);
+  border-color: color-mix(in oklab, var(--dtype-color, #4caf50) 60%, transparent);
+  color: color-mix(in oklab, var(--dtype-color, #4caf50) 85%, var(--text, #111));
 }
 .workflow-node-sendback.is-error {
-  background: color-mix(in oklch, #e5484d 22%, transparent);
-  border-color: color-mix(in oklch, #e5484d 60%, transparent);
-  color: color-mix(in oklch, #e5484d 85%, var(--text, #111));
+  background: color-mix(in oklab, #e5484d 22%, transparent);
+  border-color: color-mix(in oklab, #e5484d 60%, transparent);
+  color: color-mix(in oklab, #e5484d 85%, var(--text, #111));
 }
 
 /* ── W3E node-body polish: typed logic port labels take a faint dtype-coloured
    border + text so the port type reads on the LABEL, not just the diamond. Only
    logic ports carry a .workflow-dtype-* class on the zone, so legacy labels are
    untouched. ── */
-.workflow-port-zone.workflow-dtype-event   .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-event) 55%, var(--border)); color: var(--dtype-event); }
-.workflow-port-zone.workflow-dtype-number  .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-number) 55%, var(--border)); color: var(--dtype-number); }
-.workflow-port-zone.workflow-dtype-vector2 .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-vector2) 55%, var(--border)); color: var(--dtype-vector2); }
-.workflow-port-zone.workflow-dtype-region  .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-region) 55%, var(--border)); color: var(--dtype-region); }
-.workflow-port-zone.workflow-dtype-boolean .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-boolean) 55%, var(--border)); color: var(--dtype-boolean); }
-.workflow-port-zone.workflow-dtype-string  .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-string) 55%, var(--border)); color: var(--dtype-string); }
-.workflow-port-zone.workflow-dtype-color   .workflow-port-label { border-color: color-mix(in oklch, var(--dtype-color) 55%, var(--border)); color: var(--dtype-color); }
+.workflow-port-zone.workflow-dtype-event   .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-event) 55%, var(--border)); color: var(--dtype-event); }
+.workflow-port-zone.workflow-dtype-number  .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-number) 55%, var(--border)); color: var(--dtype-number); }
+.workflow-port-zone.workflow-dtype-vector2 .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-vector2) 55%, var(--border)); color: var(--dtype-vector2); }
+.workflow-port-zone.workflow-dtype-region  .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-region) 55%, var(--border)); color: var(--dtype-region); }
+.workflow-port-zone.workflow-dtype-boolean .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-boolean) 55%, var(--border)); color: var(--dtype-boolean); }
+.workflow-port-zone.workflow-dtype-string  .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-string) 55%, var(--border)); color: var(--dtype-string); }
+.workflow-port-zone.workflow-dtype-color   .workflow-port-label { border-color: color-mix(in oklab, var(--dtype-color) 55%, var(--border)); color: var(--dtype-color); }
 /* Compact dropdowns / inputs in a logic node body (no template/code clutter for
    the small atomic nodes - the controls are the whole story). */
 .workflow-node-logic .workflow-spec-input { font-size: 11px; }
@@ -10392,7 +10392,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
   border: 1px solid var(--border);
   padding: 1px 6px;
   border-radius: 999px;
@@ -10608,7 +10608,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   letter-spacing: 0.02em;
   background: var(--accent-soft);
   color: var(--accent-text);
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
   margin-right: 2px;
   vertical-align: 1px;
 }
@@ -10619,7 +10619,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   gap: 8px;
   font-size: 11px;
   padding: 2px 0;
-  border-bottom: 1px dashed color-mix(in oklch, var(--border) 60%, transparent);
+  border-bottom: 1px dashed color-mix(in oklab, var(--border) 60%, transparent);
 }
 .workflow-node-agent-row:last-of-type { border-bottom: 0; }
 .workflow-node-agent-row-label {
@@ -10643,15 +10643,15 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    progress visible at a glance so the user can tell the loop is actually
    advancing instead of stalled. */
 .workflow-node-agent-row-convo {
-  background: color-mix(in oklch, var(--accent) 6%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface));
 }
 .workflow-node-agent-turn-badge {
   display: inline-block;
   font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 15%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  background: color-mix(in oklab, var(--accent) 15%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
   border-radius: 99px;
   padding: 1px 7px;
   margin-right: 6px;
@@ -10664,10 +10664,10 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   font: inherit; color: inherit;
 }
 .workflow-node-agent-row-convo-btn:hover {
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
 }
 .workflow-node-agent-row-convo-btn.is-open {
-  border-bottom-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+  border-bottom-color: color-mix(in oklab, var(--accent) 30%, var(--border));
 }
 /* Inline transcript - scrollable list of turns rendered inside the agent
    card when the user expands the conversation. Each turn is a role label
@@ -10677,7 +10677,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   max-height: 280px;
   overflow-y: auto;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--accent) 3%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 3%, var(--surface));
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px;
 }
@@ -10739,8 +10739,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    Unmounts as soon as the run is spawned (the user's first turn will then
    show the same content as a real composed message). */
 .chat-preamble {
-  background: color-mix(in oklch, var(--accent-soft) 25%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border));
+  background: color-mix(in oklab, var(--accent-soft) 25%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--border));
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 12px;
@@ -10779,7 +10779,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-agent-preamble-foot {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px dashed color-mix(in oklch, var(--border) 60%, transparent);
+  border-top: 1px dashed color-mix(in oklab, var(--border) 60%, transparent);
   font-size: 11px;
   color: var(--text-faint);
   font-style: italic;
@@ -10796,14 +10796,14 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    Targets any .workflow-node so this works for asset cards, prompt cards,
    prototype-style html iframes, agent cards, etc. */
 @keyframes workflowRunPulse {
-  0%   { box-shadow: 0 0 0 0   color-mix(in oklch, var(--hot) 32%, transparent); }
-  70%  { box-shadow: 0 0 0 8px color-mix(in oklch, var(--hot)  0%, transparent); }
-  100% { box-shadow: 0 0 0 0   color-mix(in oklch, var(--hot)  0%, transparent); }
+  0%   { box-shadow: 0 0 0 0   color-mix(in oklab, var(--hot) 32%, transparent); }
+  70%  { box-shadow: 0 0 0 8px color-mix(in oklab, var(--hot)  0%, transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in oklab, var(--hot)  0%, transparent); }
 }
 .workflow-node[data-run-status="pending"] {
   /* Active = hot orange (the RECORD-LED feel). */
-  border-color: color-mix(in oklch, var(--hot) 55%, var(--border));
-  outline: 2px dashed color-mix(in oklch, var(--hot) 55%, transparent);
+  border-color: color-mix(in oklab, var(--hot) 55%, var(--border));
+  outline: 2px dashed color-mix(in oklab, var(--hot) 55%, transparent);
   outline-offset: -3px;
   animation: workflowRunPulse 1.6s ease-out infinite;
 }
@@ -10813,14 +10813,14 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   top: 6px; right: 6px;
   width: 14px; height: 14px;
   border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--hot) 35%, transparent);
+  border: 2px solid color-mix(in oklab, var(--hot) 35%, transparent);
   border-top-color: var(--hot);
   animation: workflowSpin 0.85s linear infinite;
   pointer-events: none;
 }
 .workflow-node[data-run-status="error"] {
   border-color: oklch(58% 0.18 25);
-  outline: 2px solid color-mix(in oklch, oklch(58% 0.18 25) 50%, transparent);
+  outline: 2px solid color-mix(in oklab, oklch(58% 0.18 25) 50%, transparent);
   outline-offset: -3px;
 }
 .workflow-node[data-run-status="error"]::after {
@@ -10844,7 +10844,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    the user's attention should go to chat, not to the output card. */
 .workflow-node[data-run-status="paused"] {
   border-color: oklch(75% 0.14 75);
-  outline: 2px dashed color-mix(in oklch, oklch(75% 0.14 75) 60%, transparent);
+  outline: 2px dashed color-mix(in oklab, oklch(75% 0.14 75) 60%, transparent);
   outline-offset: -3px;
 }
 .workflow-node[data-run-status="paused"]::after {
@@ -10911,12 +10911,12 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
      the aabPulse keyframes below; this is the static fallback (e.g.
      reduced-motion). Reversed from white-on-orange → white-on-orange diamond. */
   background: var(--hot);
-  border: 1px solid color-mix(in oklch, var(--surface) 34%, transparent);
-  box-shadow: 0 0 12px color-mix(in oklch, var(--hot) 34%, transparent);
+  border: 1px solid color-mix(in oklab, var(--surface) 34%, transparent);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--hot) 34%, transparent);
 }
 .aab-square-out {
   width: 38px; height: 38px;
-  border: 1.5px solid color-mix(in oklch, var(--hot) 40%, transparent);
+  border: 1.5px solid color-mix(in oklab, var(--hot) 40%, transparent);
   background: transparent;
   /* the outline FOLLOWS the fill's breathing - lagging, with a bigger swing */
   animation-name: aabPulseBig;
@@ -10938,10 +10938,10 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   font: 600 11px/1 var(--font-sans);
   color: var(--hot);
   background: var(--surface);
-  border: 1px solid color-mix(in oklch, var(--hot) 34%, transparent);
+  border: 1px solid color-mix(in oklab, var(--hot) 34%, transparent);
   border-radius: 9px;
   padding: 3px 7px;
-  box-shadow: 0 2px 9px color-mix(in oklch, var(--hot) 22%, transparent);
+  box-shadow: 0 2px 9px color-mix(in oklab, var(--hot) 22%, transparent);
   opacity: 0;
   pointer-events: none;
 }
@@ -10965,8 +10965,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   text-align: center;
 }
 @keyframes aabPulse {     /* fill - subtle, slow breathing + light-orange glow */
-  0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.94); box-shadow: 0 0 9px color-mix(in oklch, var(--hot) 26%, transparent); }
-  50%      { transform: translate(-50%, -50%) rotate(45deg) scale(1.06); box-shadow: 0 0 18px color-mix(in oklch, var(--hot) 44%, transparent); }
+  0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.94); box-shadow: 0 0 9px color-mix(in oklab, var(--hot) 26%, transparent); }
+  50%      { transform: translate(-50%, -50%) rotate(45deg) scale(1.06); box-shadow: 0 0 18px color-mix(in oklab, var(--hot) 44%, transparent); }
 }
 @keyframes aabPulseBig {  /* outline - bigger swing, lagged via animation-delay */
   0%, 100% { transform: translate(-50%, -50%) rotate(45deg) scale(0.86); }
@@ -10980,18 +10980,18 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   flex: 1 1 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 8px; padding: 16px;
-  background: color-mix(in oklch, oklch(75% 0.14 75) 8%, var(--surface));
+  background: color-mix(in oklab, oklch(75% 0.14 75) 8%, var(--surface));
   border-radius: 4px;
   color: var(--text);
 }
 .workflow-paused-placeholder[data-error="true"] {
-  background: color-mix(in oklch, oklch(58% 0.18 25) 8%, var(--surface));
+  background: color-mix(in oklab, oklch(58% 0.18 25) 8%, var(--surface));
 }
 /* v3.9 - eager "building" prototype placeholder. Hot-tinted to match the
    data-run-status="pending" pulse + the working badge, so the whole
    "an agent is building this right now" story reads as one colour. */
 .workflow-paused-placeholder[data-building="true"] {
-  background: color-mix(in oklch, var(--hot) 8%, var(--surface));
+  background: color-mix(in oklab, var(--hot) 8%, var(--surface));
 }
 .workflow-paused-placeholder[data-building="true"] .workflow-paused-placeholder-icon {
   color: var(--hot);
@@ -11034,14 +11034,14 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   /* Layered: opaque base colour fills the block so any underlying
      checkerboard / parent background doesn't bleed; the moving gradient
      rides on top as a highlight band. */
-  background-color: color-mix(in oklch, var(--text) 8%, var(--surface));
+  background-color: color-mix(in oklab, var(--text) 8%, var(--surface));
   background-image:
     linear-gradient(
       90deg,
       transparent 0%,
-      color-mix(in oklch, var(--text) 8%,  transparent) 35%,
-      color-mix(in oklch, var(--text) 18%, transparent) 50%,
-      color-mix(in oklch, var(--text) 8%,  transparent) 65%,
+      color-mix(in oklab, var(--text) 8%,  transparent) 35%,
+      color-mix(in oklab, var(--text) 18%, transparent) 50%,
+      color-mix(in oklab, var(--text) 8%,  transparent) 65%,
       transparent 100%
     );
   background-size: 220% 100%;
@@ -11057,8 +11057,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-skeleton-label {
   font-size: 11px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.08em;
-  color: color-mix(in oklch, var(--text) 60%, transparent);
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  color: color-mix(in oklab, var(--text) 60%, transparent);
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
   padding: 4px 12px; border-radius: 99px;
   backdrop-filter: blur(2px);
 }
@@ -11116,7 +11116,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-agent-output-browse:hover {
   border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
 }
 
 /* ── Folder node mini file-explorer ──────────────────────────────────────
@@ -11134,7 +11134,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   color: var(--text-muted); cursor: pointer; flex-shrink: 0;
 }
 .workflow-node-folder-barbtn:hover {
-  color: var(--text); background: color-mix(in oklch, var(--text) 10%, transparent);
+  color: var(--text); background: color-mix(in oklab, var(--text) 10%, transparent);
 }
 
 /* Empty state - centered "Select a folder…" call to action. */
@@ -11152,7 +11152,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-folder-pick:hover {
   border-color: var(--accent); border-style: solid;
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
 }
 .workflow-node-folder-empty-hint { font-size: 11px; color: var(--text-faint); }
 
@@ -11164,7 +11164,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node-folder-explorer[data-dragover="true"] {
   box-shadow: inset 0 0 0 2px var(--accent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
 }
 
 .workflow-node-folder-toolbar {
@@ -11179,7 +11179,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   cursor: pointer; max-width: 120px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.workflow-node-folder-crumb:hover { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.workflow-node-folder-crumb:hover { background: color-mix(in oklab, var(--accent) 12%, transparent); }
 .workflow-node-folder-crumb:disabled { color: var(--text); cursor: default; background: transparent; font-weight: 600; }
 .workflow-node-folder-crumb-sep { color: var(--text-faint); font-size: 11px; }
 .workflow-node-folder-toolbtn {
@@ -11189,7 +11189,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   color: var(--text-muted); cursor: pointer; flex-shrink: 0;
 }
 .workflow-node-folder-toolbtn:hover {
-  color: var(--text); background: color-mix(in oklch, var(--text) 10%, transparent);
+  color: var(--text); background: color-mix(in oklab, var(--text) 10%, transparent);
 }
 
 .workflow-node-folder-list {
@@ -11206,7 +11206,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   display: flex; align-items: center; gap: 4px;
   padding: 0 6px 0 8px; min-height: 26px;
 }
-.workflow-node-folder-row:hover { background: color-mix(in oklch, var(--text) 6%, transparent); }
+.workflow-node-folder-row:hover { background: color-mix(in oklab, var(--text) 6%, transparent); }
 .workflow-node-folder-open {
   flex: 1 1 0; min-width: 0;
   appearance: none; border: none; background: transparent;
@@ -11236,11 +11236,11 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   color: var(--text-muted); cursor: pointer;
 }
 .workflow-node-folder-rowbtn:hover {
-  color: var(--text); background: color-mix(in oklch, var(--text) 12%, transparent);
+  color: var(--text); background: color-mix(in oklab, var(--text) 12%, transparent);
 }
 .workflow-node-folder-rowbtn-danger:hover {
   color: var(--danger);
-  background: color-mix(in oklch, var(--danger) 14%, transparent);
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
 }
 
 /* Folder-picker modal - overlays the editor surface, renders a sortable
@@ -11248,7 +11248,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    navigate into) with an escape hatch to the OS-native picker. */
 .workflow-folder-picker-backdrop {
   position: fixed; inset: 0;
-  background: color-mix(in oklch, #000 30%, transparent);
+  background: color-mix(in oklab, #000 30%, transparent);
   display: flex; align-items: center; justify-content: center;
   z-index: 9999;
 }
@@ -11258,14 +11258,14 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 14px 40px color-mix(in oklch, #000 30%, transparent);
+  box-shadow: 0 14px 40px color-mix(in oklab, #000 30%, transparent);
   overflow: hidden;
 }
 .workflow-folder-picker-bar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--accent) 6%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface));
 }
 .workflow-folder-picker-title { flex: 1; font-weight: 600; font-size: 13px; }
 .workflow-folder-picker-pathrow {
@@ -11293,7 +11293,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-folder-picker-err {
   padding: 10px; color: oklch(40% 0.15 25);
-  background: color-mix(in oklch, oklch(58% 0.18 25) 8%, var(--surface));
+  background: color-mix(in oklab, oklch(58% 0.18 25) 8%, var(--surface));
   border-radius: 4px;
   white-space: pre-wrap; font-size: 12px;
 }
@@ -11307,8 +11307,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   padding: 2px 6px 2px 2px;
 }
 .workflow-folder-picker-dir-row:hover {
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 20%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 20%, var(--border));
 }
 .workflow-folder-picker-dir {
   appearance: none; flex: 1 1 0;
@@ -11330,12 +11330,12 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-folder-picker-rowbtn:hover {
   border-color: var(--accent); color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
 }
 .workflow-folder-picker-rowbtn-danger:hover {
   border-color: oklch(58% 0.18 25);
   color: oklch(50% 0.18 25);
-  background: color-mix(in oklch, oklch(58% 0.18 25) 12%, var(--surface));
+  background: color-mix(in oklab, oklch(58% 0.18 25) 12%, var(--surface));
 }
 .workflow-folder-picker-newdir {
   appearance: none; border: 1px solid var(--border); background: var(--surface);
@@ -11345,7 +11345,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-folder-picker-newdir:hover {
   border-color: var(--accent); color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
 }
 .workflow-folder-picker-newdir:disabled { opacity: 0.5; cursor: default; }
 .workflow-folder-picker-open,
@@ -11355,23 +11355,23 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   cursor: pointer; color: var(--text);
 }
 .workflow-folder-picker-select {
-  background: color-mix(in oklch, var(--accent) 15%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent) 15%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
   color: var(--accent);
 }
 .workflow-folder-picker-select:hover {
-  background: color-mix(in oklch, var(--accent) 22%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface));
 }
 .workflow-folder-picker-foot {
   display: flex; gap: 8px; padding: 10px 12px;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklch, var(--surface-2, var(--surface)) 30%, var(--surface));
+  background: color-mix(in oklab, var(--surface-2, var(--surface)) 30%, var(--surface));
 }
 .workflow-folder-picker-pickcurrent {
   flex: 1;
   appearance: none; border-radius: 4px; padding: 8px 12px; font: inherit; cursor: pointer;
-  background: color-mix(in oklch, var(--accent) 15%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent) 15%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, var(--border));
   color: var(--accent); font-weight: 600;
 }
 .workflow-folder-picker-pickcurrent:hover { border-color: var(--accent); }
@@ -11411,13 +11411,13 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    the agent paused for input even with the drawer closed. */
 .workflow-node-agent-chat-btn-attn {
   border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent-soft) 70%, var(--surface));
+  background: color-mix(in oklab, var(--accent-soft) 70%, var(--surface));
   color: var(--accent-text);
   animation: workflowAttnPulse 1.6s ease-in-out infinite;
 }
 @keyframes workflowAttnPulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent) 35%, transparent); }
-  50%      { box-shadow: 0 0 0 6px color-mix(in oklch, var(--accent) 0%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 35%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 0%, transparent); }
 }
 
 /* Chat composer - image attachment chips above textarea, attach button left
@@ -11448,8 +11448,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   align-items: stretch;
   gap: 0;
   font-size: 11.5px;
-  background: color-mix(in oklch, var(--accent) 6%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
   border-radius: 6px;
   overflow: hidden;
 }
@@ -11475,8 +11475,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   min-width: 22px;
   padding: 0 6px;
   border: 0;
-  border-right: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
-  background: color-mix(in oklch, var(--accent) 18%, var(--surface));
+  border-right: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface));
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -11484,7 +11484,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   cursor: grab;
 }
 .chat-composer-queue-index:active { cursor: grabbing; }
-.chat-composer-queue-index:hover { background: color-mix(in oklch, var(--accent) 28%, var(--surface)); }
+.chat-composer-queue-index:hover { background: color-mix(in oklab, var(--accent) 28%, var(--surface)); }
 .chat-composer-queue-index:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -11528,7 +11528,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   text-underline-offset: 2px;
 }
 .chat-composer-queue-body:hover {
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
 }
 .chat-composer-queue-meta {
   flex: none;
@@ -11542,7 +11542,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .chat-composer-queue-rm {
   width: 24px;
   border: 0;
-  border-left: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
+  border-left: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
   background: transparent;
   color: var(--text-faint);
   cursor: pointer;
@@ -11874,7 +11874,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-agent-turn-meta {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px dashed color-mix(in oklch, var(--border) 60%, transparent);
+  border-top: 1px dashed color-mix(in oklab, var(--border) 60%, transparent);
   font-size: 11.5px;
   color: var(--text-faint);
 }
@@ -11902,7 +11902,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-agent-turn-loading .workflow-node-skill-spinner {
   display: inline-block; vertical-align: middle; margin-right: 6px;
   width: 12px; height: 12px;
-  border: 2px solid color-mix(in oklch, var(--text-faint) 70%, transparent);
+  border: 2px solid color-mix(in oklab, var(--text-faint) 70%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: workflowSkillSpin 0.7s linear infinite;
@@ -11988,12 +11988,12 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   pointer-events: auto;
 }
 .workflow-canvas-wrap[data-edge-dragging="true"] .workflow-port-zone:hover {
-  background: color-mix(in oklch, var(--accent) 6%, transparent);
+  background: color-mix(in oklab, var(--accent) 6%, transparent);
 }
 .workflow-canvas-wrap[data-edge-dragging="true"] .workflow-port-zone:hover .workflow-port-dot {
   background: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in oklch, var(--accent) 35%, transparent);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in oklab, var(--accent) 35%, transparent);
 }
 /* Slightly soft outer "snap" pulse to communicate "let go here". */
 .workflow-canvas-wrap[data-edge-dragging="true"] .workflow-port-zone-in:hover  { box-shadow: inset 4px 0 0 -2px var(--accent); }
@@ -12064,7 +12064,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   opacity: 1;
   stroke-width: 2.5;
   stroke-dasharray: 8 6;
-  stroke: color-mix(in oklch, var(--accent) 80%, oklch(60% 0.18 18));
+  stroke: color-mix(in oklab, var(--accent) 80%, oklch(60% 0.18 18));
   animation: workflow-edge-flow-fwd 1.4s linear infinite;
 }
 .workflow-edge-active[data-direction="incoming"] {
@@ -12089,7 +12089,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-canvas-wrap [data-node-id][data-connected="true"] {
   /* Slightly stronger outline than the default border, but distinct from
      the accent-tinted selected outline. */
-  outline: 1.5px dashed color-mix(in oklch, var(--accent) 65%, oklch(60% 0.18 18));
+  outline: 1.5px dashed color-mix(in oklab, var(--accent) 65%, oklch(60% 0.18 18));
   outline-offset: 3px;
   border-radius: 8px;
 }
@@ -12273,11 +12273,11 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-style: italic;
 }
 .ds-badge-built {
-  border-color: color-mix(in oklch, oklch(58% 0.15 174) 40%, var(--border));
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
 }
 .ds-badge-missing {
-  border-color: color-mix(in oklch, oklch(58% 0.14 60) 50%, var(--border));
-  background: color-mix(in oklch, oklch(58% 0.14 60) 6%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.14 60) 50%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.14 60) 6%, var(--surface));
 }
 .ds-badge-unset {
   opacity: 0.6;
@@ -12372,7 +12372,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .ds-fonts.is-dragover {
   border-color: var(--accent);
-  background: var(--accent-soft, color-mix(in oklch, var(--accent) 8%, transparent));
+  background: var(--accent-soft, color-mix(in oklab, var(--accent) 8%, transparent));
 }
 .ds-fonts .ds-section-h {
   display: flex;
@@ -12538,8 +12538,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  background: color-mix(in oklch, oklch(58% 0.14 60) 14%, var(--surface));
-  border-bottom: 1px solid color-mix(in oklch, oklch(58% 0.14 60) 30%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.14 60) 14%, var(--surface));
+  border-bottom: 1px solid color-mix(in oklab, oklch(58% 0.14 60) 30%, var(--border));
   color: oklch(38% 0.12 60);
   font-size: 12.5px;
 }
@@ -12561,7 +12561,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-decoration: none;
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid color-mix(in oklch, oklch(58% 0.14 60) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, oklch(58% 0.14 60) 30%, var(--border));
   background: var(--surface);
   transition: background 0.08s, border-color 0.08s, color 0.08s;
 }
@@ -12653,9 +12653,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface);
   transition: border-color 0.08s, background 0.08s;
 }
-.ds-modal-entry-accept { border-color: color-mix(in oklch, oklch(58% 0.15 174) 45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.15 174) 5%, var(--surface)); }
-.ds-modal-entry-reject { border-color: color-mix(in oklch, oklch(58% 0.18 25)  45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.18 25)  5%, var(--surface)); }
-.ds-modal-entry-defer  { border-color: color-mix(in oklch, oklch(58% 0.14 60)  45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.14 60)  5%, var(--surface)); }
+.ds-modal-entry-accept { border-color: color-mix(in oklab, oklch(58% 0.15 174) 45%, var(--border)); background: color-mix(in oklab, oklch(58% 0.15 174) 5%, var(--surface)); }
+.ds-modal-entry-reject { border-color: color-mix(in oklab, oklch(58% 0.18 25)  45%, var(--border)); background: color-mix(in oklab, oklch(58% 0.18 25)  5%, var(--surface)); }
+.ds-modal-entry-defer  { border-color: color-mix(in oklab, oklch(58% 0.14 60)  45%, var(--border)); background: color-mix(in oklab, oklch(58% 0.14 60)  5%, var(--surface)); }
 .ds-modal-entry-head {
   display: flex;
   align-items: baseline;
@@ -12747,8 +12747,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 1 1 100%;
   font-size: 11.5px;
   color: var(--danger, #c0392b);
-  background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--danger, #c0392b) 32%, var(--border));
+  background: color-mix(in oklab, var(--danger, #c0392b) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--danger, #c0392b) 32%, var(--border));
   padding: 6px 10px;
   border-radius: 4px;
   line-height: 1.4;
@@ -12781,7 +12781,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent-fg, white);
 }
 .ds-modal-foot-btn-primary:hover {
-  background: color-mix(in oklch, var(--accent) 80%, black 10%);
+  background: color-mix(in oklab, var(--accent) 80%, black 10%);
   color: var(--accent-fg, white);
 }
 .ds-modal-foot-btn[data-disabled="true"],
@@ -12834,8 +12834,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   white-space: nowrap;
 }
 .workflow-node-ds-badge-built {
-  background: color-mix(in oklch, oklch(58% 0.15 174) 14%, var(--surface));
-  border-color: color-mix(in oklch, oklch(58% 0.15 174) 40%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.15 174) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
   color: oklch(38% 0.12 174);
 }
 .workflow-node-ds-badge-draft {
@@ -12867,9 +12867,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   width: 100%;
   box-sizing: border-box;
   padding: 9px 12px;
-  border: 1px solid color-mix(in oklch, var(--accent) 40%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
   border-radius: 6px;
-  background: color-mix(in oklch, var(--accent) 9%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 9%, var(--surface));
   color: var(--accent);
   font: inherit;
   font-size: 12px;
@@ -12878,8 +12878,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .workflow-node-ds-template-btn:hover {
-  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent) 60%, var(--border));
+  background: color-mix(in oklab, var(--accent) 16%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
 }
 .workflow-node-ds-template-glyph {
   font-size: 13px;
@@ -12945,7 +12945,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-ds-seg:last-child { border-right: 0; }
 .workflow-node-ds-seg:hover { background: var(--surface-2); color: var(--text); }
 .workflow-node-ds-seg.is-active {
-  background: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface));
   color: var(--accent-text, var(--text));
   font-weight: 600;
 }
@@ -13081,7 +13081,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 6px;
 }
 .workflow-node-ds-action-build:hover {
-  background: color-mix(in oklch, var(--accent) 80%, black 10%);
+  background: color-mix(in oklab, var(--accent) 80%, black 10%);
   color: var(--accent-fg, white);
 }
 .workflow-node-ds-action[disabled],
@@ -13096,7 +13096,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: inline-block;
   width: 10px;
   height: 10px;
-  border: 1.5px solid color-mix(in oklch, white 60%, transparent);
+  border: 1.5px solid color-mix(in oklab, white 60%, transparent);
   border-top-color: white;
   border-radius: 50%;
   animation: workflow-node-ds-spin 0.7s linear infinite;
@@ -13151,13 +13151,13 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: background 80ms ease, color 80ms ease;
 }
 .workflow-node-iter-kindbtn:hover {
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
   color: var(--text);
 }
 .workflow-node-iter-kindbtn.is-active {
-  background: color-mix(in oklch, var(--accent) 18%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface));
   color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
 }
 .workflow-node-iter-kindhint {
   font-size: 10.5px; color: var(--text-faint); font-style: italic;
@@ -13207,8 +13207,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11px;
   line-height: 1.4;
   color: oklch(40% 0.15 25);
-  background: color-mix(in oklch, oklch(58% 0.18 25) 8%, var(--surface));
-  border: 1px solid color-mix(in oklch, oklch(58% 0.18 25) 30%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.18 25) 8%, var(--surface));
+  border: 1px solid color-mix(in oklab, oklch(58% 0.18 25) 30%, var(--border));
   border-radius: 4px;
   padding: 6px 8px;
   white-space: pre-wrap;
@@ -13218,8 +13218,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
   color: oklch(38% 0.12 174);
   padding: 2px 7px; border-radius: 99px;
-  background: color-mix(in oklch, oklch(58% 0.15 174) 14%, var(--surface));
-  border: 1px solid color-mix(in oklch, oklch(58% 0.15 174) 30%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.15 174) 14%, var(--surface));
+  border: 1px solid color-mix(in oklab, oklch(58% 0.15 174) 30%, var(--border));
 }
 .workflow-node-iter-field { display: flex; flex-direction: column; gap: 4px; }
 .workflow-node-iter-field-label {
@@ -13519,13 +13519,13 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-typo-chip.is-idle { opacity: 0.5; }
 .workflow-node-typo-chip.is-resolving { color: var(--text-muted); font-style: italic; }
 .workflow-node-typo-chip.is-found {
-  background: color-mix(in oklch, oklch(58% 0.15 174) 12%, var(--surface));
-  border-color: color-mix(in oklch, oklch(58% 0.15 174) 40%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.15 174) 12%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
   color: oklch(38% 0.12 174);
 }
 .workflow-node-typo-chip.is-missing {
-  background: color-mix(in oklch, oklch(58% 0.14 60) 12%, var(--surface));
-  border-color: color-mix(in oklch, oklch(58% 0.14 60) 35%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.14 60) 12%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.14 60) 35%, var(--border));
   color: oklch(38% 0.12 60);
 }
 .workflow-node-typo-chip-upload {
@@ -13555,7 +13555,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   grid-template-columns: 90px 1fr;
   gap: 8px;
   align-items: center;
-  border-bottom: 1px dashed color-mix(in oklch, var(--border) 50%, transparent);
+  border-bottom: 1px dashed color-mix(in oklab, var(--border) 50%, transparent);
   padding-bottom: 6px;
 }
 .workflow-node-typo-row:last-child { border-bottom: 0; }
@@ -13619,14 +13619,14 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 99px;
   background: var(--accent-soft);
   color: var(--accent-text);
-  border: 1px solid color-mix(in oklch, var(--accent) 25%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
   font-family: var(--font-mono);
   font-size: 10px;
 }
 /* Prototype generator - "no DS wired" state. Same chip shape but in the
    muted/error tone so the user knows the in-port still needs an edge. */
 .workflow-node-ds-upstream-chip-missing {
-  background: color-mix(in oklch, var(--surface-2) 70%, transparent);
+  background: color-mix(in oklab, var(--surface-2) 70%, transparent);
   color: var(--text-faint);
   border-color: var(--border);
   font-style: italic;
@@ -13703,14 +13703,14 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-ds-stream-status .ds-stream-icon,
 .workflow-node-ds-stream-status { color: var(--text-faint); font-style: italic; }
-.workflow-node-ds-stream-tool .ds-stream-icon { color: color-mix(in oklch, var(--accent, #4a7bff) 70%, var(--text)); }
+.workflow-node-ds-stream-tool .ds-stream-icon { color: color-mix(in oklab, var(--accent, #4a7bff) 70%, var(--text)); }
 .workflow-node-ds-stream-tool-out .ds-stream-icon { color: var(--text-faint); }
 .workflow-node-ds-stream-tool-out { color: var(--text-faint); }
 .workflow-node-ds-stream-tool-err .ds-stream-icon { color: var(--danger, #c0392b); }
 .workflow-node-ds-stream-tool-err { color: var(--danger, #c0392b); }
-.workflow-node-ds-stream-text .ds-stream-icon { color: color-mix(in oklch, var(--text) 50%, var(--text-faint)); }
+.workflow-node-ds-stream-text .ds-stream-icon { color: color-mix(in oklab, var(--text) 50%, var(--text-faint)); }
 .workflow-node-ds-stream-text {
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
   border-radius: 4px;
   padding: 3px 5px;
   margin: 1px 0;
@@ -13838,13 +13838,13 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: background 0.1s ease, transform 0.05s ease;
 }
 .workflow-node-skill-run:hover:not([disabled]) {
-  background: color-mix(in oklch, var(--hot) 90%, black);
+  background: color-mix(in oklab, var(--hot) 90%, black);
 }
 .workflow-node-skill-run:active:not([disabled]) { transform: translateY(1px); }
 .workflow-node-skill-run[disabled] { opacity: 0.7; cursor: not-allowed; }
 .workflow-node-skill-run[data-status="loading"][disabled] { cursor: progress; }
 .workflow-node-skill-run[data-status="loading"] {
-  background: color-mix(in oklch, var(--hot) 70%, var(--text-faint));
+  background: color-mix(in oklab, var(--hot) 70%, var(--text-faint));
 }
 .workflow-node-skill-run[data-status="done"] {
   background: var(--success);  /* green */
@@ -13856,7 +13856,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid color-mix(in oklch, var(--surface) 60%, transparent);
+  border: 2px solid color-mix(in oklab, var(--surface) 60%, transparent);
   border-top-color: var(--surface);
   border-radius: 50%;
   animation: workflowSkillSpin 0.7s linear infinite;
@@ -13876,9 +13876,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.45;
 }
 .workflow-node-skill-msg-error {
-  background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface));
+  background: color-mix(in oklab, var(--danger, #c0392b) 12%, var(--surface));
   color: var(--danger, #c0392b);
-  border: 1px solid color-mix(in oklch, var(--danger, #c0392b) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--danger, #c0392b) 30%, var(--border));
 }
 .workflow-node-skill-msg-ok {
   color: oklch(45% 0.18 174);
@@ -13889,15 +13889,15 @@ a.ds-badge:hover, button.ds-badge:hover {
    chrome), not a hard outline. */
 .workflow-node-skill[data-status="done"] {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--success) 60%, transparent),
-    0 2px 10px color-mix(in oklch, var(--success) 24%, transparent),
-    0 10px 30px color-mix(in oklch, var(--success) 15%, transparent);
+    0 0 0 1px color-mix(in oklab, var(--success) 60%, transparent),
+    0 2px 10px color-mix(in oklab, var(--success) 24%, transparent),
+    0 10px 30px color-mix(in oklab, var(--success) 15%, transparent);
 }
 .workflow-node-skill[data-status="error"] {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--danger, #c0392b) 55%, transparent),
-    0 2px 10px color-mix(in oklch, var(--danger, #c0392b) 24%, transparent),
-    0 10px 30px color-mix(in oklch, var(--danger, #c0392b) 16%, transparent);
+    0 0 0 1px color-mix(in oklab, var(--danger, #c0392b) 55%, transparent),
+    0 2px 10px color-mix(in oklab, var(--danger, #c0392b) 24%, transparent),
+    0 10px 30px color-mix(in oklab, var(--danger, #c0392b) 16%, transparent);
 }
 
 /* Phase 4a - Workflow toolbar gear (Settings entry point). */
@@ -13951,11 +13951,11 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .cli-indicator-ok .cli-dot {
   background: var(--ok, #16a34a);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ok, #16a34a) 25%, transparent);
 }
 .cli-indicator-missing {
-  border-color: color-mix(in oklch, var(--warn, #b45309) 30%, var(--border));
-  color: color-mix(in oklch, var(--warn, #b45309) 70%, var(--text-muted));
+  border-color: color-mix(in oklab, var(--warn, #b45309) 30%, var(--border));
+  color: color-mix(in oklab, var(--warn, #b45309) 70%, var(--text-muted));
 }
 .cli-indicator-missing .cli-dot {
   background: var(--warn, #b45309);
@@ -13966,8 +13966,8 @@ a.ds-badge:hover, button.ds-badge:hover {
    harder "nothing here". Same color as missing keeps the warning vocabulary
    uniform with the rest of the landing. */
 .cli-indicator-needs-login {
-  border-color: color-mix(in oklch, var(--warn, #b45309) 30%, var(--border));
-  color: color-mix(in oklch, var(--warn, #b45309) 70%, var(--text-muted));
+  border-color: color-mix(in oklab, var(--warn, #b45309) 30%, var(--border));
+  color: color-mix(in oklab, var(--warn, #b45309) 70%, var(--text-muted));
 }
 .cli-indicator-needs-login .cli-dot {
   background: var(--warn, #b45309);
@@ -14010,16 +14010,16 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .daemon-indicator-ok .cli-dot {
   background: var(--ok, #16a34a);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ok, #16a34a) 25%, transparent);
 }
 .daemon-indicator-down {
-  border-color: color-mix(in oklch, var(--danger, #dc2626) 40%, var(--border));
-  color: color-mix(in oklch, var(--danger, #dc2626) 70%, var(--text-muted));
-  background: color-mix(in oklch, var(--danger, #dc2626) 6%, var(--surface));
+  border-color: color-mix(in oklab, var(--danger, #dc2626) 40%, var(--border));
+  color: color-mix(in oklab, var(--danger, #dc2626) 70%, var(--text-muted));
+  background: color-mix(in oklab, var(--danger, #dc2626) 6%, var(--surface));
 }
 .daemon-indicator-down .cli-dot {
   background: var(--danger, #dc2626);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--danger, #dc2626) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--danger, #dc2626) 25%, transparent);
   animation: cli-dot-pulse 1.6s ease-in-out infinite;
 }
 .daemon-indicator-loading .cli-dot {
@@ -14033,8 +14033,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: pointer;
 }
 .daemon-indicator-down:hover {
-  border-color: color-mix(in oklch, var(--danger, #dc2626) 55%, var(--border));
-  background: color-mix(in oklch, var(--danger, #dc2626) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--danger, #dc2626) 55%, var(--border));
+  background: color-mix(in oklab, var(--danger, #dc2626) 10%, var(--surface));
 }
 .daemon-down-dialog {
   width: min(440px, 92vw);
@@ -14055,7 +14055,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: color-mix(in oklch, var(--text) 4%, var(--surface));
+  background: color-mix(in oklab, var(--text) 4%, var(--surface));
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 8px 6px 10px;
@@ -14092,18 +14092,18 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  background: color-mix(in oklch, var(--danger, #dc2626) 14%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--danger, #dc2626) 55%, transparent);
-  color: color-mix(in oklch, var(--danger, #dc2626) 78%, var(--text));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger, #dc2626) 14%, transparent);
+  background: color-mix(in oklab, var(--danger, #dc2626) 14%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--danger, #dc2626) 55%, transparent);
+  color: color-mix(in oklab, var(--danger, #dc2626) 78%, var(--text));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger, #dc2626) 14%, transparent);
   animation: model-status-pulse 2.4s ease-in-out infinite;
 }
 .model-status-indicator:hover {
-  background: color-mix(in oklch, var(--danger, #dc2626) 22%, var(--surface));
-  border-color: color-mix(in oklch, var(--danger, #dc2626) 75%, transparent);
+  background: color-mix(in oklab, var(--danger, #dc2626) 22%, var(--surface));
+  border-color: color-mix(in oklab, var(--danger, #dc2626) 75%, transparent);
 }
 .model-status-indicator:focus-visible {
-  outline: 2px solid color-mix(in oklch, var(--danger, #dc2626) 65%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--danger, #dc2626) 65%, transparent);
   outline-offset: 2px;
 }
 .model-status-dot {
@@ -14112,30 +14112,30 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 50%;
   background: var(--danger, #dc2626);
   flex: 0 0 7px;
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--danger, #dc2626) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--danger, #dc2626) 30%, transparent);
   animation: cli-dot-pulse 1.2s ease-in-out infinite;
 }
 @keyframes model-status-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger, #dc2626) 12%, transparent); }
-  50%      { box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger, #dc2626) 22%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger, #dc2626) 12%, transparent); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in oklab, var(--danger, #dc2626) 22%, transparent); }
 }
 /* v3.x - degraded variant: an API key is set but no agent CLI is on PATH, so
    simple prompts run while agentic workflows are off. Amber + no pulse - a
    downgrade nudge, not a hard failure. */
 .model-status-indicator[data-variant="warn"] {
-  background: color-mix(in oklch, var(--warn, #d97706) 14%, var(--surface));
-  border-color: color-mix(in oklch, var(--warn, #d97706) 55%, transparent);
-  color: color-mix(in oklch, var(--warn, #d97706) 80%, var(--text));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--warn, #d97706) 12%, transparent);
+  background: color-mix(in oklab, var(--warn, #d97706) 14%, var(--surface));
+  border-color: color-mix(in oklab, var(--warn, #d97706) 55%, transparent);
+  color: color-mix(in oklab, var(--warn, #d97706) 80%, var(--text));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--warn, #d97706) 12%, transparent);
   animation: none;
 }
 .model-status-indicator[data-variant="warn"]:hover {
-  background: color-mix(in oklch, var(--warn, #d97706) 22%, var(--surface));
-  border-color: color-mix(in oklch, var(--warn, #d97706) 75%, transparent);
+  background: color-mix(in oklab, var(--warn, #d97706) 22%, var(--surface));
+  border-color: color-mix(in oklab, var(--warn, #d97706) 75%, transparent);
 }
 .model-status-indicator[data-variant="warn"] .model-status-dot {
   background: var(--warn, #d97706);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warn, #d97706) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--warn, #d97706) 30%, transparent);
   animation: none;
 }
 /* Step-1 onboarding warning + "required" tag for the CLI-mandatory flow. */
@@ -14143,17 +14143,17 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex; align-items: flex-start; gap: 8px;
   margin: 2px 0 10px; padding: 8px 10px;
   border-radius: 8px; font-size: 12px; line-height: 1.45;
-  background: color-mix(in oklch, var(--warn, #d97706) 12%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--warn, #d97706) 40%, transparent);
-  color: color-mix(in oklch, var(--warn, #d97706) 82%, var(--text));
+  background: color-mix(in oklab, var(--warn, #d97706) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--warn, #d97706) 40%, transparent);
+  color: color-mix(in oklab, var(--warn, #d97706) 82%, var(--text));
 }
 .model-setup-cli-warning svg { flex: 0 0 16px; width: 16px; height: 16px; margin-top: 1px; }
 .model-setup-choice-tag {
   display: inline-block; margin-left: 6px; padding: 1px 6px;
   border-radius: 999px; font-size: 9px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
-  background: color-mix(in oklch, var(--hot, #e11d48) 18%, transparent);
-  color: color-mix(in oklch, var(--hot, #e11d48) 80%, var(--text));
+  background: color-mix(in oklab, var(--hot, #e11d48) 18%, transparent);
+  color: color-mix(in oklab, var(--hot, #e11d48) 80%, var(--text));
 }
 
 
@@ -14170,9 +14170,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   max-width: 760px;
   margin: 0 auto;
   border-style: solid;
-  border-color: color-mix(in oklch, var(--danger, #dc2626) 35%, var(--border-strong));
+  border-color: color-mix(in oklab, var(--danger, #dc2626) 35%, var(--border-strong));
   background: linear-gradient(180deg,
-    color-mix(in oklch, var(--danger, #dc2626) 4%, var(--surface)),
+    color-mix(in oklab, var(--danger, #dc2626) 4%, var(--surface)),
     var(--surface));
 }
 .model-setup-head { text-align: center; display: grid; gap: 8px; }
@@ -14181,7 +14181,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: color-mix(in oklch, var(--danger, #dc2626) 70%, var(--text-muted));
+  color: color-mix(in oklab, var(--danger, #dc2626) 70%, var(--text-muted));
 }
 .model-setup-title {
   font-size: 22px;
@@ -14226,7 +14226,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-choice:hover {
   border-color: var(--accent, oklch(55% 0.18 252));
-  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
+  background: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
 }
 .model-setup-choice:active { transform: translateY(1px); }
 .model-setup-choice-icon {
@@ -14293,8 +14293,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 8px;
 }
 .model-setup-cli-row.is-ready {
-  border-color: color-mix(in oklch, var(--ok, #16a34a) 45%, var(--border));
-  background: color-mix(in oklch, var(--ok, #16a34a) 4%, var(--surface));
+  border-color: color-mix(in oklab, var(--ok, #16a34a) 45%, var(--border));
+  background: color-mix(in oklab, var(--ok, #16a34a) 4%, var(--surface));
 }
 .model-setup-cli-row-head {
   display: flex;
@@ -14308,7 +14308,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .model-setup-cli-dot[data-ok="true"] {
   background: var(--ok, #16a34a);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ok, #16a34a) 25%, transparent);
 }
 .model-setup-cli-name { font-size: 14px; font-weight: 600; }
 .model-setup-cli-state {
@@ -14387,7 +14387,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 0;
   padding: 14px 20px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 3%, var(--surface));
+  background: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 3%, var(--surface));
 }
 .model-setup-wizard-eyebrow {
   font-family: var(--font-mono);
@@ -14426,7 +14426,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 0 0 28px;
 }
 .model-setup-wizard-dot:hover {
-  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 40%, var(--border));
+  border-color: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 40%, var(--border));
 }
 /* "Done but NOT the step you're on" → light-green ✓. Softer than the
    chip greens elsewhere so a completed step recedes visually while
@@ -14452,7 +14452,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: oklch(28% 0.02 250);
   border-color: oklch(28% 0.02 250);
   color: var(--surface);
-  box-shadow: 0 0 0 3px color-mix(in oklch, oklch(28% 0.02 250) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, oklch(28% 0.02 250) 22%, transparent);
 }
 .model-setup-wizard-line {
   height: 1.5px;
@@ -14489,7 +14489,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 8px;
   padding: 10px 20px;
   border-top: 1px solid var(--border);
-  background: var(--surface-2, color-mix(in oklch, var(--surface) 95%, var(--text) 5%));
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 95%, var(--text) 5%));
 }
 .model-setup-wizard-nav {
   appearance: none;
@@ -14504,8 +14504,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
 }
 .model-setup-wizard-nav:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 6%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 6%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
 }
 .model-setup-wizard-nav:disabled {
   opacity: 0.42;
@@ -14521,7 +14521,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent, oklch(55% 0.18 252));
 }
 .model-setup-wizard-nav.is-primary:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 6%, var(--surface));
+  background: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 6%, var(--surface));
 }
 .model-setup-wizard-nav.is-primary:disabled {
   border-color: var(--border);
@@ -14565,9 +14565,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .model-setup-step1-status[data-ok="true"] {
-  border-color: color-mix(in oklch, var(--ok, #16a34a) 50%, var(--border));
-  background: color-mix(in oklch, var(--ok, #16a34a) 5%, var(--surface));
-  color: color-mix(in oklch, var(--ok, #16a34a) 80%, var(--text));
+  border-color: color-mix(in oklab, var(--ok, #16a34a) 50%, var(--border));
+  background: color-mix(in oklab, var(--ok, #16a34a) 5%, var(--surface));
+  color: color-mix(in oklab, var(--ok, #16a34a) 80%, var(--text));
 }
 .model-setup-step1-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -14620,10 +14620,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 8px;
   transition: border-color .12s, background .12s;
 }
-.onboarding-sendkey-opt:hover { border-color: color-mix(in oklch, var(--accent) 40%, var(--border)); }
+.onboarding-sendkey-opt:hover { border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
 .onboarding-sendkey-opt[data-active="true"] {
   border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
 }
 .onboarding-sendkey-keys { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .onboarding-sendkey-sub  { font-size: 11px; color: var(--text-muted); }
@@ -14663,11 +14663,11 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-orch-pill-block {
   color: var(--danger, #c2410c);
-  background: color-mix(in oklch, var(--danger, #c2410c) 14%, transparent);
+  background: color-mix(in oklab, var(--danger, #c2410c) 14%, transparent);
 }
 .onboarding-orch-pill-warn {
   color: var(--warn, #b45309);
-  background: color-mix(in oklch, var(--warn, #b45309) 16%, transparent);
+  background: color-mix(in oklab, var(--warn, #b45309) 16%, transparent);
 }
 .onboarding-orch-gate { font-size: 11px; line-height: 1.4; }
 .onboarding-orch-gate-block { color: var(--danger, #c2410c); }
@@ -14794,7 +14794,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: color-mix(in oklch, var(--text) 4%, var(--surface));
+  background: color-mix(in oklab, var(--text) 4%, var(--surface));
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 8px 6px 10px;
@@ -14818,7 +14818,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 0 0 auto;
 }
 .model-install-modal-copy:hover {
-  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
+  border-color: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 35%, var(--border));
 }
 .model-install-modal-row-key {
   border-top: 1px dashed var(--border);
@@ -14837,8 +14837,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
 }
 .model-install-modal-key-btn:hover {
-  border-color: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 45%, var(--border));
-  background: color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 5%, var(--surface));
 }
 .model-install-modal-foot {
   display: flex;
@@ -14846,7 +14846,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 8px;
   padding: 12px 18px;
   border-top: 1px solid var(--border);
-  background: var(--surface-2, color-mix(in oklch, var(--surface) 95%, var(--text) 5%));
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 95%, var(--text) 5%));
 }
 
 /* Shared layout for the optional sub-sections (Step 2 · asset providers,
@@ -14892,8 +14892,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 8px;
 }
 .onboarding-asset-row.is-set {
-  border-color: color-mix(in oklch, var(--ok, #16a34a) 45%, var(--border));
-  background: color-mix(in oklch, var(--ok, #16a34a) 4%, var(--surface));
+  border-color: color-mix(in oklab, var(--ok, #16a34a) 45%, var(--border));
+  background: color-mix(in oklab, var(--ok, #16a34a) 4%, var(--surface));
 }
 .onboarding-asset-row-head {
   display: flex;
@@ -14908,7 +14908,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-asset-dot[data-ok="true"] {
   background: var(--ok, #16a34a);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ok, #16a34a) 25%, transparent);
 }
 .onboarding-asset-name { font-size: 13.5px; font-weight: 600; }
 .onboarding-asset-covers {
@@ -14961,7 +14961,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .onboarding-asset-input:focus {
   outline: none;
   border-color: var(--accent, oklch(55% 0.18 252));
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent, oklch(55% 0.18 252)) 18%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent, oklch(55% 0.18 252)) 18%, transparent);
 }
 .onboarding-asset-form-actions {
   display: flex;
@@ -14982,8 +14982,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 8px;
 }
 .onboarding-tool-row.is-installed {
-  border-color: color-mix(in oklch, var(--ok, #16a34a) 45%, var(--border));
-  background: color-mix(in oklch, var(--ok, #16a34a) 4%, var(--surface));
+  border-color: color-mix(in oklab, var(--ok, #16a34a) 45%, var(--border));
+  background: color-mix(in oklab, var(--ok, #16a34a) 4%, var(--surface));
 }
 .onboarding-tool-row-head {
   display: flex;
@@ -14998,7 +14998,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .onboarding-tool-dot[data-ok="true"] {
   background: var(--ok, #16a34a);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ok, #16a34a) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ok, #16a34a) 25%, transparent);
 }
 .onboarding-tool-name { font-size: 13.5px; font-weight: 600; }
 .onboarding-tool-skills {
@@ -15040,8 +15040,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .onboarding-tool-err {
   font-size: 11px;
   color: var(--danger, #dc2626);
-  background: color-mix(in oklch, var(--danger, #dc2626) 6%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--danger, #dc2626) 30%, var(--border));
+  background: color-mix(in oklab, var(--danger, #dc2626) 6%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--danger, #dc2626) 30%, var(--border));
   border-radius: 4px;
   padding: 6px 8px;
   font-family: var(--font-mono);
@@ -15089,7 +15089,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: color-mix(in oklch, var(--accent) 70%, var(--text-faint));
+  background: color-mix(in oklab, var(--accent) 70%, var(--text-faint));
   animation: chat-streaming-dot 1.05s ease-in-out infinite both;
 }
 .chat-streaming-dots > span:nth-child(2) { animation-delay: 0.15s; }
@@ -15210,7 +15210,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 6px;
 }
 .workflow-settings-msg-ok   { background: oklch(96% 0.04 174); color: oklch(40% 0.18 174); }
-.workflow-settings-msg-fail { background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface)); color: var(--danger, #c0392b); }
+.workflow-settings-msg-fail { background: color-mix(in oklab, var(--danger, #c0392b) 12%, var(--surface)); color: var(--danger, #c0392b); }
 .workflow-settings-hint {
   font-size: 11.5px;
   color: var(--text-faint);
@@ -15250,7 +15250,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in oklch, var(--text) 30%, transparent);
+  background: color-mix(in oklab, var(--text) 30%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15367,7 +15367,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-modal-row:hover { background: var(--surface-2); }
 .workflow-modal-row-selected { background: var(--accent-soft); }
-.workflow-modal-row-selected:hover { background: color-mix(in oklch, var(--accent-soft) 80%, var(--surface)); }
+.workflow-modal-row-selected:hover { background: color-mix(in oklab, var(--accent-soft) 80%, var(--surface)); }
 .workflow-modal-check {
   width: 16px;
   height: 16px;
@@ -15457,9 +15457,9 @@ a.ds-badge:hover, button.ds-badge:hover {
    tags so users can tell at a glance which entries come from the
    canvas edges vs which were detected in the live DOM. */
 .workflow-modal-tag-wired {
-  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 16%, var(--surface));
   color: var(--accent);
-  border: 1px solid color-mix(in oklch, var(--accent) 32%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 32%, transparent);
 }
 .workflow-modal-foot {
   display: flex;
@@ -15480,7 +15480,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   justify-items: center;
   gap: 12px;
   padding: 60px 28px;
-  background: color-mix(in oklch, #ffffff 78%, transparent);
+  background: color-mix(in oklab, #ffffff 78%, transparent);
   border: 1px dashed var(--border-strong);
   border-radius: var(--landing-radius);
   text-align: center;
@@ -15567,9 +15567,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 3px;
   padding: 1px 7px;
   height: 18px;
-  background: color-mix(in oklch, oklch(58% 0.14 60) 14%, var(--surface));
+  background: color-mix(in oklab, oklch(58% 0.14 60) 14%, var(--surface));
   color: oklch(38% 0.12 60);
-  border: 1px solid color-mix(in oklch, oklch(58% 0.14 60) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, oklch(58% 0.14 60) 30%, var(--border));
   border-radius: 99px;
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -19285,8 +19285,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 
 /* === AskUserQuestion clickable card ====================================== */
 .askq-card {
-  background: color-mix(in oklch, var(--warning-soft) 60%, var(--surface));
-  border: 1px solid color-mix(in oklch, var(--warning) 35%, transparent);
+  background: color-mix(in oklab, var(--warning-soft) 60%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--warning) 35%, transparent);
   border-radius: var(--radius);
   padding: 10px 12px;
   display: flex;
@@ -19336,7 +19336,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--warning);
   padding: 1px 6px;
   background: var(--surface);
-  border: 1px solid color-mix(in oklch, var(--warning) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warning) 35%, transparent);
   border-radius: 3px;
 }
 .askq-prompt {
@@ -19431,7 +19431,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11.5px;
   color: var(--danger);
   background: var(--danger-soft);
-  border: 1px solid color-mix(in oklch, var(--danger) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
   border-radius: var(--radius-sm);
   padding: 6px 8px;
 }
@@ -19443,7 +19443,7 @@ a.ds-badge:hover, button.ds-badge:hover {
    live font samples, and reference cues. Submit semantics match the
    generic askq-card. */
 .direction-card {
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
   border-radius: var(--radius);
   background: var(--surface);
   padding: 14px 14px 12px;
@@ -19451,7 +19451,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex; flex-direction: column; gap: 10px;
 }
 .direction-card[data-answered="true"] {
-  background: color-mix(in oklch, var(--success-soft, var(--accent-soft)) 50%, var(--surface));
+  background: color-mix(in oklab, var(--success-soft, var(--accent-soft)) 50%, var(--surface));
 }
 .direction-prompt {
   font-size: 12.5px;
@@ -19600,11 +19600,11 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--accent);
   color: oklch(98% 0.002 250);
   box-shadow:
-    inset 0 1px 2px color-mix(in oklch, oklch(0% 0 0) 16%, transparent),
-    0 0 0 2px color-mix(in oklch, var(--accent) 25%, transparent);
+    inset 0 1px 2px color-mix(in oklab, oklch(0% 0 0) 16%, transparent),
+    0 0 0 2px color-mix(in oklab, var(--accent) 25%, transparent);
 }
 .runs-trigger[data-open="true"]:hover {
-  background: color-mix(in oklch, var(--accent) 92%, oklch(0% 0 0));
+  background: color-mix(in oklab, var(--accent) 92%, oklch(0% 0 0));
   border-color: var(--accent);
 }
 .runs-trigger[data-open="true"] .runs-label,
@@ -19612,7 +19612,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: oklch(98% 0.002 250);
 }
 .runs-trigger[data-open="true"] .runs-count {
-  background: color-mix(in oklch, oklch(0% 0 0) 22%, transparent);
+  background: color-mix(in oklab, oklch(0% 0 0) 22%, transparent);
   color: oklch(98% 0.002 250);
 }
 /* When the panel is open, the live-pulse needs a different ring colour to
@@ -19621,10 +19621,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: oklch(98% 0.002 250);
   box-shadow:
     0 0 0 2px var(--accent),
-    0 0 0 4px color-mix(in oklch, oklch(98% 0.002 250) 50%, transparent);
+    0 0 0 4px color-mix(in oklab, oklch(98% 0.002 250) 50%, transparent);
 }
 .runs-trigger[data-live="true"] {
-  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
   color: var(--accent-text);
 }
 .runs-trigger svg { width: 14px; height: 14px; }
@@ -19645,7 +19645,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 2px var(--bg),
-              0 0 0 4px color-mix(in oklch, var(--accent) 30%, transparent);
+              0 0 0 4px color-mix(in oklab, var(--accent) 30%, transparent);
   animation: chat-pulse 1.2s ease-in-out infinite;
   pointer-events: none;
 }
@@ -19659,7 +19659,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   margin-left: 2px;
 }
 .runs-trigger[data-live="true"] .runs-count {
-  background: color-mix(in oklch, var(--accent) 18%, transparent);
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
   color: var(--accent-text);
 }
 
@@ -19715,7 +19715,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 10px 10px;
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  border: 1px dashed color-mix(in oklch, var(--accent) 40%, transparent);
+  border: 1px dashed color-mix(in oklab, var(--accent) 40%, transparent);
   color: var(--accent-text);
   font: inherit;
   font-weight: 500;
@@ -19724,7 +19724,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: background 0.12s, border-color 0.12s;
 }
 .runs-new-chat:hover {
-  background: color-mix(in oklch, var(--accent-soft) 70%, var(--accent) 8%);
+  background: color-mix(in oklab, var(--accent-soft) 70%, var(--accent) 8%);
   border-color: var(--accent);
 }
 .runs-new-chat-plus {
@@ -19792,12 +19792,12 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .runs-row-dot[data-status="live"] {
   background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }
 .runs-row-dot[data-status="waiting"] {
   background: var(--warning);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 25%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--warning) 25%, transparent);
 }
 .runs-row-dot[data-status="done"] { background: var(--success); }
 .runs-row-dot[data-status="fail"] { background: var(--danger); }
@@ -19876,7 +19876,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .chat-drawer-resize-handle:hover,
 .chat-drawer-resize-handle:active {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
 }
 .chat-drawer[data-fullscreen="true"] .chat-drawer-resize-handle {
   display: none;
@@ -20015,7 +20015,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   height: 12px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1.5px solid color-mix(in oklch, var(--hot) 25%, var(--border));
+  border: 1.5px solid color-mix(in oklab, var(--hot) 25%, var(--border));
   border-top-color: var(--hot);
   animation: chat-active-agent-spin 0.7s linear infinite;
 }
@@ -20054,7 +20054,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   cursor: pointer;
 }
 .chat-active-tab[data-active="true"] {
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent-text);
 }
 .chat-active-list {
@@ -20135,8 +20135,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    scoped, long-lived) get a folder tint so they don't read like an
    attachment from this single turn. */
 .chat-composer-upload {
-  background: color-mix(in oklch, var(--accent) 6%, var(--surface-2));
-  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface-2));
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
 }
 .chat-composer-upload-btn {
   /* Same chrome as the attach button, just a different glyph. */
@@ -20145,10 +20145,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    button is gated. A subtle tinted background shows the composer is in
    "queue mode" without taking the keyboard away. */
 .chat-composer[data-busy="true"] {
-  background: color-mix(in oklch, var(--accent) 4%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 4%, var(--surface));
 }
 .chat-composer[data-busy="true"] .chat-composer-input-wrap {
-  border-color: color-mix(in oklch, var(--accent) 25%, var(--border));
+  border-color: color-mix(in oklab, var(--accent) 25%, var(--border));
 }
 /* Mid-turn the Stop button joins Send inside the box (two 28px buttons +
    6px gap + 7px inset). The default 44px right padding only clears one, so
@@ -20208,13 +20208,13 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    demote the Send button from solid accent to outlined-accent so the user
    reads it as "deferred" rather than "fire now." */
 .chat-composer-send.chat-composer-send-queue {
-  background: color-mix(in oklch, var(--accent) 14%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface));
   color: var(--accent);
-  outline: 1px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  outline: 1px solid color-mix(in oklab, var(--accent) 55%, transparent);
   outline-offset: -1px;
 }
 .chat-composer-send.chat-composer-send-queue:hover:not([disabled]) {
-  background: color-mix(in oklch, var(--accent) 22%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface));
   filter: none;
 }
 /* v3.5.1 - Stop button moved from the chat header down next to Send so the
@@ -20268,7 +20268,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 11.5px;
   color: var(--danger);
   background: var(--danger-soft);
-  border: 1px solid color-mix(in oklch, var(--danger) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
   border-radius: var(--radius-sm);
   padding: 4px 8px;
 }
@@ -20357,10 +20357,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chip-done       { background: var(--success-soft); color: var(--success); border-color: color-mix(in oklch, var(--success) 30%, transparent); }
-.chip-fail       { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklch, var(--danger)  30%, transparent); }
-.chip-error      { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklch, var(--danger)  30%, transparent); }
-.chip-streaming  { background: var(--accent-soft);  color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
+.chip-done       { background: var(--success-soft); color: var(--success); border-color: color-mix(in oklab, var(--success) 30%, transparent); }
+.chip-fail       { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklab, var(--danger)  30%, transparent); }
+.chip-error      { background: var(--danger-soft);  color: var(--danger);  border-color: color-mix(in oklab, var(--danger)  30%, transparent); }
+.chip-streaming  { background: var(--accent-soft);  color: var(--accent-text); border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
 .chip-connecting { background: var(--surface-2);    color: var(--text-muted); border-color: var(--border); }
 .chip-pulse {
   width: 6px; height: 6px;
@@ -20390,7 +20390,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-color: var(--border);
   color: var(--danger);
 }
-.chat-action-stop:hover { background: var(--danger-soft); border-color: color-mix(in oklch, var(--danger) 35%, transparent); }
+.chat-action-stop:hover { background: var(--danger-soft); border-color: color-mix(in oklab, var(--danger) 35%, transparent); }
 .chat-action-close { font-size: 16px; line-height: 1; }
 
 .chat-body {
@@ -20548,7 +20548,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   padding: 6px 8px;
 }
 .chat-tool-result[data-error="true"] {
-  border-color: color-mix(in oklch, var(--danger) 35%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 35%, transparent);
   background: var(--danger-soft);
 }
 .chat-tool-output {
@@ -20631,12 +20631,12 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   color: var(--surface);
   border-bottom-right-radius: 4px;
 }
-.chat-bubble-user .md-link { color: var(--surface); text-decoration-color: color-mix(in oklch, var(--surface) 60%, transparent); }
+.chat-bubble-user .md-link { color: var(--surface); text-decoration-color: color-mix(in oklab, var(--surface) 60%, transparent); }
 .chat-bubble-user .md-link:hover { text-decoration-color: var(--surface); }
 .chat-bubble-user .md-code,
 .chat-bubble-user .md-link-file {
-  background: color-mix(in oklch, var(--surface) 18%, var(--accent));
-  border-color: color-mix(in oklch, var(--surface) 30%, var(--accent));
+  background: color-mix(in oklab, var(--surface) 18%, var(--accent));
+  border-color: color-mix(in oklab, var(--surface) 30%, var(--accent));
   color: var(--surface);
 }
 .chat-bubble-prefix {
@@ -20653,7 +20653,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .chat-row-error,
 .chat-error {
   background: var(--danger-soft);
-  border: 1px solid color-mix(in oklch, var(--danger) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
   border-radius: var(--radius-sm);
   padding: 6px 8px;
   color: var(--danger);
@@ -20733,7 +20733,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  text-decoration-color: color-mix(in oklab, var(--accent) 35%, transparent);
 }
 .md-link:hover { text-decoration-color: var(--accent); }
 .md-link-file {
@@ -20741,14 +20741,14 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 0.92em;
   text-decoration: none;
   background: var(--accent-soft);
-  border: 1px solid color-mix(in oklch, var(--accent) 25%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 25%, transparent);
   border-radius: 3px;
   padding: 0 4px;
   color: var(--accent-text);
   cursor: pointer;
 }
 .md-link-file:hover {
-  background: color-mix(in oklch, var(--accent) 18%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface));
   border-color: var(--accent);
 }
 .md-inline { display: inline; }
@@ -20800,7 +20800,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   background-clip: padding-box;
   flex-shrink: 0;
 }
@@ -21022,7 +21022,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-family: var(--font-mono);
   font-size: 11px;
   background: var(--accent-soft);
-  border: 1px solid color-mix(in oklch, var(--accent) 25%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 25%, transparent);
   border-radius: 3px;
   padding: 1px 6px;
   color: var(--accent-text);
@@ -21033,7 +21033,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   white-space: nowrap;
 }
 .tool-path:hover {
-  background: color-mix(in oklch, var(--accent) 18%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface));
   border-color: var(--accent);
 }
 /* Absolute / unfocusable paths - informational, not interactive: muted,
@@ -21064,7 +21064,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .tool-result[data-compact="true"] { padding: 4px 10px; }
 .tool-result[data-error="true"] {
   background: var(--danger-soft);
-  border-top-color: color-mix(in oklch, var(--danger) 25%, transparent);
+  border-top-color: color-mix(in oklab, var(--danger) 25%, transparent);
 }
 .tool-result-collapsed {
   display: flex;
@@ -21076,7 +21076,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .tool-result-collapsed[data-error="true"] {
   background: var(--danger-soft);
-  border-top-color: color-mix(in oklch, var(--danger) 25%, transparent);
+  border-top-color: color-mix(in oklab, var(--danger) 25%, transparent);
 }
 .tool-result-head {
   display: flex;
@@ -21176,7 +21176,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 
 /* TodoWrite */
-.tool-card-todo .tool-head { background: color-mix(in oklch, var(--success) 6%, var(--surface-2)); }
+.tool-card-todo .tool-head { background: color-mix(in oklab, var(--success) 6%, var(--surface-2)); }
 .todo-list {
   list-style: none;
   margin: 0;
@@ -21242,13 +21242,13 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-family: var(--font-mono);
 }
 .diff-minus {
-  background: color-mix(in oklch, var(--danger) 6%, var(--surface));
-  color: color-mix(in oklch, var(--danger) 70%, var(--text));
+  background: color-mix(in oklab, var(--danger) 6%, var(--surface));
+  color: color-mix(in oklab, var(--danger) 70%, var(--text));
 }
 .diff-minus .diff-tag { color: var(--danger); }
 .diff-plus {
-  background: color-mix(in oklch, var(--success) 8%, var(--surface));
-  color: color-mix(in oklch, var(--success) 65%, var(--text));
+  background: color-mix(in oklab, var(--success) 8%, var(--surface));
+  color: color-mix(in oklab, var(--success) 65%, var(--text));
 }
 .diff-plus .diff-tag { color: var(--success); }
 .diff-group + .diff-group { border-top: 1px solid var(--border); }
@@ -21353,7 +21353,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   justify-content: space-between;
   gap: 12px;
   padding: 6px 10px;
-  background: color-mix(in oklch, var(--accent) 7%, var(--surface-2));
+  background: color-mix(in oklab, var(--accent) 7%, var(--surface-2));
   border-bottom: 1px solid var(--border);
 }
 .agent-grid-title {
@@ -21384,9 +21384,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 11.5px;
   min-width: 0;
 }
-.agent-card[data-status="running"] { border-color: color-mix(in oklch, var(--accent) 35%, transparent); }
-.agent-card[data-status="failed"]  { border-color: color-mix(in oklch, var(--danger) 35%, transparent); background: var(--danger-soft); }
-.agent-card[data-status="done"]    { border-color: color-mix(in oklch, var(--success) 28%, transparent); }
+.agent-card[data-status="running"] { border-color: color-mix(in oklab, var(--accent) 35%, transparent); }
+.agent-card[data-status="failed"]  { border-color: color-mix(in oklab, var(--danger) 35%, transparent); background: var(--danger-soft); }
+.agent-card[data-status="done"]    { border-color: color-mix(in oklab, var(--success) 28%, transparent); }
 .agent-card-head {
   display: flex;
   align-items: baseline;
@@ -21467,7 +21467,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .agent-card-result[data-error="true"] {
   background: var(--danger-soft);
-  border-color: color-mix(in oklch, var(--danger) 25%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 25%, transparent);
   color: var(--danger);
 }
 
@@ -21643,8 +21643,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
   line-height: 1.35;
   color: oklch(50% 0.12 50);
-  background: color-mix(in oklch, oklch(70% 0.14 70) 14%, var(--surface));
-  border: 1px solid color-mix(in oklch, oklch(70% 0.14 70) 40%, var(--border));
+  background: color-mix(in oklab, oklch(70% 0.14 70) 14%, var(--surface));
+  border: 1px solid color-mix(in oklab, oklch(70% 0.14 70) 40%, var(--border));
   border-radius: 4px;
   padding: 6px 8px;
   margin: 4px 4px 8px;
@@ -22010,8 +22010,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   color: var(--text);
 }
 .zoom-tool[data-active="true"] {
-  background: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
-  border-color: color-mix(in oklch, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
+  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
   color: var(--text);
 }
 .zoom-tool[data-disabled="true"] {
@@ -22408,7 +22408,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .zoom-inspector-color-swatch.is-inherited {
   border-style: dashed;
-  border-color: color-mix(in oklch, var(--border) 60%, var(--text-faint));
+  border-color: color-mix(in oklab, var(--border) 60%, var(--text-faint));
 }
 .zoom-inspector-color-input {
   flex: 1;
@@ -24466,7 +24466,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .history-panel-busy {
   position: absolute; inset: 0;
-  background: color-mix(in oklch, var(--surface), transparent 25%);
+  background: color-mix(in oklab, var(--surface), transparent 25%);
   display: flex; align-items: center; justify-content: center;
   font-size: 12px;
   color: var(--text-muted);
@@ -24546,7 +24546,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   pointer-events: none;
   border-style: solid;
   border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
   border-radius: 2px;
   z-index: 5;
 }
@@ -24844,7 +24844,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   margin-top: 12px;
   padding: 10px 12px;
   background: var(--accent-soft);
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
   border-radius: 6px;
   font-size: 12px;
   color: var(--accent-text);
@@ -25151,16 +25151,16 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px 10px;
-  border: 1px dashed color-mix(in oklch, var(--accent) 35%, transparent);
+  border: 1px dashed color-mix(in oklab, var(--accent) 35%, transparent);
   border-radius: 6px;
-  background: color-mix(in oklch, var(--accent) 4%, transparent);
+  background: color-mix(in oklab, var(--accent) 4%, transparent);
 }
 .chat-direction-type-eyebrow {
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in oklch, var(--accent) 70%, var(--text-muted));
+  color: color-mix(in oklab, var(--accent) 70%, var(--text-muted));
   margin-bottom: 2px;
 }
 .chat-direction-display {
@@ -25268,7 +25268,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 11px;
   font-weight: 600;
   color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -25282,7 +25282,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--accent);
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
   padding: 0 5px;
   border-radius: 999px;
 }
@@ -25299,7 +25299,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 11px;
   color: oklch(60% 0.2 25);
   padding: 6px 8px;
-  border: 1px solid color-mix(in oklch, oklch(60% 0.2 25) 30%, transparent);
+  border: 1px solid color-mix(in oklab, oklch(60% 0.2 25) 30%, transparent);
   border-radius: 4px;
 }
 
@@ -26842,7 +26842,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   align-items: center;
   gap: 8px;
   background: var(--accent-soft);
-  border: 1px solid color-mix(in oklch, var(--accent) 28%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
   color: var(--accent-text);
   border-radius: 9px;
   padding: 7px 12px;
@@ -26856,7 +26856,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent);
 }
 .shares-toolbar {
   display: flex;
@@ -27366,7 +27366,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 11px;
   cursor: pointer;
 }
-.sv-filter.is-active { background: var(--accent-soft); color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 30%, transparent); }
+.sv-filter.is-active { background: var(--accent-soft); color: var(--accent-text); border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
 .sv-status-chip { font-size: 9.5px; font-weight: 650; border-radius: 999px; padding: 1px 6px; }
 .sv-status-chip.done { background: #d1fae5; color: #059669; }
 .sv-status-chip.archived { background: #f3f4f6; color: #6b7280; }
@@ -27669,7 +27669,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-library-card .workflow-library-sel {
   position: absolute; top: 4px; left: 4px; z-index: 3;
   display: inline-flex; padding: 1px 2px; border-radius: 4px;
-  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  background: color-mix(in oklab, var(--surface) 80%, transparent);
   backdrop-filter: blur(2px);
 }
 .workflow-library-item-deletable { position: relative; padding-left: 30px; }
@@ -27682,8 +27682,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-color: var(--accent, #79f);
 }
 .workflow-library-item.is-selected {
-  background: color-mix(in oklch, var(--accent, #79f) 14%, transparent);
-  border-color: color-mix(in oklch, var(--accent, #79f) 40%, transparent);
+  background: color-mix(in oklab, var(--accent, #79f) 14%, transparent);
+  border-color: color-mix(in oklab, var(--accent, #79f) 40%, transparent);
 }
 
 /* ============================================================
@@ -27714,7 +27714,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .ut-screen-spacer { flex: 1 1 auto; }
 .ut-screen-pubhint {
   font-size: 11.5px; color: var(--text-muted);
-  background: var(--warning-soft); border: 1px solid color-mix(in oklch, var(--warning) 40%, transparent);
+  background: var(--warning-soft); border: 1px solid color-mix(in oklab, var(--warning) 40%, transparent);
   padding: 4px 9px; border-radius: 999px;
 }
 .ut-screen-back { margin-right: 4px; }
@@ -27760,7 +27760,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid transparent; background: transparent; cursor: pointer; width: 100%;
 }
 .ut-side-item:hover { background: var(--surface-2); }
-.ut-side-item.is-active { background: var(--accent-soft); border-color: color-mix(in oklch, var(--accent) 35%, transparent); }
+.ut-side-item.is-active { background: var(--accent-soft); border-color: color-mix(in oklab, var(--accent) 35%, transparent); }
 .ut-side-item-label { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ut-side-item-meta { display: flex; align-items: center; gap: 6px; }
 .ut-side-item-proto { font-family: var(--font-mono); font-size: 10px; color: var(--accent-text); background: var(--accent-soft); padding: 1px 6px; border-radius: 999px; }
@@ -27785,7 +27785,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
 }
 .ut-count b { color: var(--text); font-weight: 700; }
-.ut-count-recording { background: var(--hot-soft); border-color: color-mix(in oklch, var(--hot) 35%, transparent); color: var(--hot-text); }
+.ut-count-recording { background: var(--hot-soft); border-color: color-mix(in oklab, var(--hot) 35%, transparent); color: var(--hot-text); }
 .ut-count-complete b, .ut-count-processed b { color: var(--success); }
 
 .ut-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
@@ -27827,9 +27827,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
   background: var(--surface); color: var(--text-muted); align-self: center; justify-self: end; white-space: nowrap; height: fit-content;
 }
-.ut-chip[data-state="invited"] { color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 35%, transparent); background: var(--accent-soft); }
-.ut-chip[data-state="recording"] { color: var(--hot-text); border-color: color-mix(in oklch, var(--hot) 40%, transparent); background: var(--hot-soft); }
-.ut-chip[data-state="complete"] { color: color-mix(in oklch, var(--success) 70%, black); border-color: color-mix(in oklch, var(--success) 45%, transparent); background: var(--success-soft); }
+.ut-chip[data-state="invited"] { color: var(--accent-text); border-color: color-mix(in oklab, var(--accent) 35%, transparent); background: var(--accent-soft); }
+.ut-chip[data-state="recording"] { color: var(--hot-text); border-color: color-mix(in oklab, var(--hot) 40%, transparent); background: var(--hot-soft); }
+.ut-chip[data-state="complete"] { color: color-mix(in oklab, var(--success) 70%, black); border-color: color-mix(in oklab, var(--success) 45%, transparent); background: var(--success-soft); }
 .ut-chip[data-state="processed"] { color: var(--text-muted); border-color: var(--border); background: var(--surface-2); }
 
 .ut-links { display: flex; flex-direction: column; gap: 8px; grid-column: 1 / -1; margin-top: 2px; }
@@ -27840,7 +27840,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .ut-link-ico { width: 26px; height: 26px; flex: 0 0 auto; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; }
 .ut-link-ico svg { width: 13px; height: 13px; }
 .ut-link-ico-testee { background: var(--accent-soft); color: var(--accent-text); }
-.ut-link-ico-reviewer { background: color-mix(in oklch, var(--text-muted) 14%, transparent); color: var(--text-muted); }
+.ut-link-ico-reviewer { background: color-mix(in oklab, var(--text-muted) 14%, transparent); color: var(--text-muted); }
 .ut-link-txt { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .ut-link-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .ut-link-hint { font-size: 11px; color: var(--text-faint); }
