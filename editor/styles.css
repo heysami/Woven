@@ -5,17 +5,18 @@
    uppercase, tracked, monospace). Decoration: forbidden; precision: mandatory. */
 
 :root {
-  /* Surfaces - warm paper-white, faintly neutral (TE light hardware) */
-  --bg:        oklch(98.6% 0.003 70);
+  /* Surfaces - neutral white (chroma 0); the chrome no longer reads warm.
+     Nodes keep the original warm tint via a scoped override on .workflow-node. */
+  --bg:        oklch(98.6% 0 0);
   --surface:   oklch(100% 0 0);
-  --surface-2: oklch(97% 0.004 70);
-  --surface-3: oklch(94% 0.005 70);
-  --border:    oklch(90% 0.005 70);
-  --border-strong: oklch(83% 0.006 70);
+  --surface-2: oklch(97% 0 0);
+  --surface-3: oklch(94% 0 0);
+  --border:    oklch(90% 0 0);
+  --border-strong: oklch(83% 0 0);
 
   /* Canvas */
-  --canvas-bg: oklch(96% 0.004 70);
-  --canvas-dot: oklch(87% 0.005 70);
+  --canvas-bg: oklch(96% 0 0);
+  --canvas-dot: oklch(87% 0 0);
 
   /* Text - near-black ink, faintly warm */
   --text:       oklch(22% 0.008 60);
@@ -546,7 +547,7 @@ button {
      grid) can keep its sidebar in place while only the right content
      pane scrolls inside landing-main. */
   overflow: hidden;
-  background: oklch(97% 0.004 70);
+  background: oklch(97% 0 0);
   color: var(--text);
   font-family: var(--font-sans);
   display: flex;
@@ -8488,6 +8489,14 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 
 /* Nodes */
 .workflow-node {
+  /* Keep nodes on the original WARM paper tint even though the surrounding UI
+     chrome went neutral. Re-pinning the surface tokens here scopes the warmth
+     to the node and every descendant that reads var(--surface*/--border). */
+  --surface:   oklch(100% 0 0);
+  --surface-2: oklch(97% 0.004 70);
+  --surface-3: oklch(94% 0.005 70);
+  --border:    oklch(90% 0.005 70);
+  --border-strong: oklch(83% 0.006 70);
   position: absolute;
   /* v3.4.26 - Isolate the per-node stacking context. Without this, child
      elements with explicit z-index (notably .workflow-port-zone at z-index:2)
@@ -27505,12 +27514,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--warning-soft); border: 1px solid color-mix(in oklch, var(--warning) 40%, transparent);
   padding: 4px 9px; border-radius: 999px;
 }
-.ut-screen-close {
-  width: 30px; height: 30px; border: none; background: transparent;
-  color: var(--text-faint); font-size: 22px; line-height: 1; cursor: pointer;
-  border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center;
-}
-.ut-screen-close:hover { background: var(--surface-2); color: var(--text); }
+.ut-screen-back { margin-right: 4px; }
 
 /* centered capability states */
 .ut-screen-center { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 40px; }
