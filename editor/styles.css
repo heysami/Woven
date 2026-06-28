@@ -27671,12 +27671,22 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   display: inline-flex; padding: 1px 2px; border-radius: 4px;
   background: color-mix(in oklab, var(--surface) 80%, transparent);
   backdrop-filter: blur(2px);
+  opacity: 0; transition: opacity .12s ease;
 }
+/* Checkbox stays out of the way until the card is hovered/focused or already
+   ticked, so the resting grid isn't cluttered with empty checkboxes. */
+.workflow-library-card:hover .workflow-library-sel,
+.workflow-library-card:focus-within .workflow-library-sel,
+.workflow-library-card.is-selected .workflow-library-sel { opacity: 1; }
 .workflow-library-item-deletable { position: relative; padding-left: 30px; }
 .workflow-library-item .workflow-library-sel {
   position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
   display: inline-flex; z-index: 2;
+  opacity: 0; transition: opacity .12s ease;
 }
+.workflow-library-item:hover .workflow-library-sel,
+.workflow-library-item:focus-within .workflow-library-sel,
+.workflow-library-item.is-selected .workflow-library-sel { opacity: 1; }
 .workflow-library-card.is-selected {
   outline: 2px solid var(--accent, #79f); outline-offset: -2px;
   border-color: var(--accent, #79f);
