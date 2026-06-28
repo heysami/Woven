@@ -16376,14 +16376,17 @@ a.ds-badge:hover, button.ds-badge:hover {
    bar's free center. z-index sits above every top bar but below modals. */
 .surface-nav {
   position: fixed;
-  top: 6px;
+  /* Vertically center the pill on the top bar's mid-line (every surface bar is
+     the --toolbar-h 44px row), independent of the pill's own height. */
+  top: calc(var(--toolbar-h, 44px) / 2);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   /* Above full-screen surfaces (the User testing dialog is z-9500, the
      prototype door is fixed) so the nav stays the one consistent control on
      every surface; still below true modals / overlays (z-9700+). */
   z-index: 9600;
   display: inline-flex;
+  align-items: center;
   gap: 2px;
   padding: 3px;
   background: var(--surface-2);
@@ -16392,6 +16395,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   box-shadow: var(--shadow-sm);
 }
 .surface-nav-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 4px 14px;
   border-radius: 4px;
   color: var(--text-muted);
