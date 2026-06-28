@@ -18,10 +18,11 @@
   --canvas-bg: oklch(100% 0 0);
   --canvas-dot: oklch(87% 0 0);
 
-  /* Text - near-black ink, faintly warm */
+  /* Text - near-black ink, faintly warm. --text-faint darkened from a light
+     64% grey to 53% so small faint labels stay legible (avoid light grey text). */
   --text:       oklch(22% 0.008 60);
   --text-muted: oklch(47% 0.008 60);
-  --text-faint: oklch(64% 0.007 60);
+  --text-faint: oklch(53% 0.008 60);
 
   /* Semantic - teenage.engineering palette. GREEN is the signature/primary
      accent (the RIDDIM display + PLAY-button green): it carries all the
