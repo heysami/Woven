@@ -22611,7 +22611,6 @@ function ProjectsLanding({ info, projects, onReload }) {
 
   return html`
     <div className="landing-root">
-      <canvas ref=${bgCanvasRef} className="landing-bg-canvas" aria-hidden="true"></canvas>
       <header className="landing-header">
         <div className="landing-header-inner">
           <div className="landing-brandrow">
