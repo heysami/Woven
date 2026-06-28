@@ -56647,6 +56647,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // or downstream node referencing that path picks up the cropped bytes on the
   // th:asset-refresh bump. See WorkflowAssetCropModal.
   const [cropOpen, setCropOpen] = useState(false);
+  // Crop/orient for a POSE BOX (an html asset whose currently-shown <img> is one
+  // of N baked pose frames). Unlike a plain image node, the editable file is the
+  // SELECTED frame inside the iframe, resolved live at click time, not node.path.
+  const [poseEdit, setPoseEdit] = useState(null); // { src, path, label } | null
   // The controls panel (portaled outside this node) opens crop via an event,
   // since it can't reach this node-local state directly.
   useEffect(() => {
@@ -56654,6 +56658,35 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     window.addEventListener("th:asset-open-crop", onOpenCrop);
     return () => window.removeEventListener("th:asset-open-crop", onOpenCrop);
   }, [node.id]);
+  // Resolve the pose box's currently-selected frame to a project-relative file +
+  // a loadable src, then open the crop/orient modal on it.
+  const openPoseEdit = () => {
+    const ifr = document.querySelector('iframe[data-asset-id="' + node.id + '"]');
+    let imgEl = null;
+    try {
+      const doc = ifr && ifr.contentDocument;
+      imgEl = (doc && (doc.querySelector('#stage img.on') || doc.querySelector('#stage img'))) || null;
+    } catch (_e) { imgEl = null; }
+    if (!imgEl || !imgEl.src) { uiAlert("Open the pose box and pick a pose first.", { title: "Edit pose" }); return; }
+    let rel = "";
+    try { rel = new URL(imgEl.src, location.href).pathname.replace(/^\/+/, ""); } catch (_e) { rel = ""; }
+    if (!/^source\//.test(rel)) { uiAlert("Could not resolve the selected pose's file.", { title: "Edit pose" }); return; }
+    setPoseEdit({ src: imgEl.src, path: rel, label: imgEl.getAttribute("alt") || "Pose" });
+  };
+  // After a pose-frame edit lands, bump just that frame's <img> inside the iframe
+  // (fresh cache-buster) so the edit shows WITHOUT reloading the box - a reload
+  // would reset the switcher back to the first pose.
+  const onPoseEdited = (p) => {
+    try {
+      const ifr = document.querySelector('iframe[data-asset-id="' + node.id + '"]');
+      const doc = ifr && ifr.contentDocument;
+      if (!doc) return;
+      doc.querySelectorAll('#stage img').forEach((im) => {
+        let u; try { u = new URL(im.src, location.href); } catch (_e) { return; }
+        if (u.pathname.replace(/^\/+/, "") === p) { u.searchParams.set("_t", Date.now().toString(36)); im.src = u.toString(); }
+      });
+    } catch (_e) {}
+  };
   // Detect desktop vs mobile from the HTML's <meta name="viewport"> + an
   // overflow probe, then write the device class + natural aspect back to
   // node.size so the adaptive sizing block downstream picks the right
@@ -57644,6 +57677,15 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Crop}/><//>
         `}
+        ${_isPoseBox && isFileRef && !isInlinePath && html`
+          <${HoverTip}
+            className="workflow-node-action workflow-node-action-crop"
+            tip="Edit the selected pose - crop, flip, rotate or expand. Overwrites that pose's image file in place (undo via history)."
+            ariaLabel="Edit selected pose"
+            onClick=${(e) => { e.stopPropagation(); openPoseEdit(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Crop}/><//>
+        `}
         <${HoverTip}
           className="workflow-node-action workflow-node-action-export"
           tip="Export - bundle this asset into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar). HTML/html-set get a runnable bundle; single-file assets land under resources/<kind>/ with a README that explains how to integrate."
@@ -57862,6 +57904,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         path=${path}
         label=${basename}
         onClose=${() => setCropOpen(false)}
+      />`}
+      ${poseEdit && html`<${WorkflowAssetCropModal}
+        src=${poseEdit.src}
+        path=${poseEdit.path}
+        label=${poseEdit.label}
+        onClose=${() => setPoseEdit(null)}
+        onApplied=${(p) => onPoseEdited(p)}
       />`}
       ${pickerOpen && html`<${WorkflowVersionPicker}
         node=${node}
