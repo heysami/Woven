@@ -9271,7 +9271,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    (the bars float OUTSIDE its box), so for asset nodes we drop that outline and
    draw per-part border pseudos that meet at the open seams: rounded at the bar
    top and the bottom strip, square through the body - one unbroken ring. */
-.workflow-node-asset[data-selected="true"] { outline: none; }
+.workflow-node-asset[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) { outline: none; }
 .workflow-node-asset[data-selected="true"] .workflow-node-asset-bar::after,
 .workflow-node-asset[data-selected="true"] .workflow-node-asset-body::after,
 .workflow-node-asset[data-selected="true"] .workflow-node-asset-chrome-bottom::after {
@@ -9305,6 +9305,71 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   border-bottom-width: 2px;
   border-bottom-left-radius: 10px;
   border-bottom-right-radius: 10px;
+}
+
+/* Same spanning selection ring for PROTOTYPE nodes (floating bar + full-bleed
+   iframe body + version strip). html / html-set nodes render through the asset
+   component above, so they're already covered. */
+.workflow-node-proto[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) { outline: none; }
+.workflow-node-proto[data-selected="true"] > .workflow-node-bar::after,
+.workflow-node-proto[data-selected="true"] .workflow-node-iframe-scale::after,
+.workflow-node-proto[data-selected="true"] .workflow-node-asset-versions::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  border: 0 solid color-mix(in oklch, var(--accent) 60%, transparent);
+}
+.workflow-node-proto[data-selected="true"] > .workflow-node-bar::after {
+  border-top-width: 2px;
+  border-left-width: 2px;
+  border-right-width: 2px;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+.workflow-node-proto[data-selected="true"] .workflow-node-iframe-scale::after {
+  border-left-width: 2px;
+  border-right-width: 2px;
+}
+.workflow-node-proto[data-selected="true"]:has(.workflow-node-asset-versions) .workflow-node-asset-versions::after {
+  border-left-width: 2px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+.workflow-node-proto[data-selected="true"]:not(:has(.workflow-node-asset-versions)) .workflow-node-iframe-scale::after {
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+/* Same spanning ring for FRAMES (group) nodes - floating bar + body, no bottom
+   strip, so the ring closes on the body's own rounded bottom. */
+.workflow-node-frames[data-selected="true"]:not([data-run-status="pending"]):not([data-run-status="error"]) { outline: none; }
+.workflow-node-frames[data-selected="true"] > .workflow-node-frames-bar::after,
+.workflow-node-frames[data-selected="true"] .workflow-node-frames-body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  border: 0 solid color-mix(in oklch, var(--accent) 60%, transparent);
+}
+.workflow-node-frames[data-selected="true"] > .workflow-node-frames-bar::after {
+  border-top-width: 2px;
+  border-left-width: 2px;
+  border-right-width: 2px;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+.workflow-node-frames[data-selected="true"] .workflow-node-frames-body::after {
+  border-left-width: 2px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
 }
 /* Cutout assets (transparent-background PNG / SVG) read cleaner WITHOUT the
    checkerboard behind them - the checker is meant to signal "this region is
