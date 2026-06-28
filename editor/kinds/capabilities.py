@@ -96,22 +96,39 @@ def _parse_media_models() -> dict:
             "integrated": (integ == "true") if integ else None,
         })
 
-    # Skills: each is a top-level object with `{ id: "...", ... }` inside a SKILLS-shaped block.
-    # Look for entries with explicit modelsFilter / modelKind keys (rembg, upscale, llm, describe, generate-image).
-    skill_block_re = re.compile(
-        r"\{\s*id:\s*\"([^\"]+)\"[^}]{0,800}\}",
-        re.DOTALL,
-    )
-    for m in skill_block_re.finditer(src):
-        block = m.group(0)
-        # Heuristic: it's a skill if the block has modelsFilter OR provider:"local" OR a model: "..." key
-        if ("modelsFilter" in block or "modelKind" in block
-                or 'provider: "local"' in block or "pathwayBExt" in block):
-            sid = m.group(1)
-            # Avoid double-listing providers / image models we already captured
-            if sid in seen_provider_ids: continue
-            if sid in seen_model_ids: continue
-            out["skills"].append({"id": sid, "snippet": block[:200].replace("\n", " ")})
+    # Skills: EVERY entry in the `const SKILLS = [ ... ];` array. The previous
+    # implementation scanned the whole file for `{ id: "..." }` blocks and kept
+    # only those matching a `modelsFilter`/`modelKind`/`provider:"local"`/
+    # `pathwayBExt` heuristic - which silently dropped 15 of the 21 skills
+    # (every Pathway-B skill: shader, viz, html-page, svg-gen, threejs,
+    # lottie-gen, canvas-gen, motion-gen, plus audio-gen / video-gen /
+    # video-chain / pose-subject / slice9-frame / upscale / 3d-gen). The
+    # `[^}]{0,800}` brace match also truncated on the first nested `}`. Result:
+    # `/__capabilities` reported 6 skills while the app actually has 21, so the
+    # catalog read as "not updated". Fix: isolate the SKILLS array and treat
+    # each `id:` in it as a skill (no heuristic - membership in the array IS the
+    # definition), slicing each object's block so label/hint/output/pathway are
+    # captured even past long inline comments.
+    skills_section = re.search(r"const\s+SKILLS\s*=\s*\[(.+?)\n\s*\];", src, re.DOTALL)
+    if skills_section:
+        sect = skills_section.group(1)
+        id_positions = [(im.start(), im.group(1))
+                        for im in re.finditer(r'^\s*id:\s*"([^"]+)"', sect, re.M)]
+        for i, (pos, sid) in enumerate(id_positions):
+            end = id_positions[i + 1][0] if i + 1 < len(id_positions) else len(sect)
+            block = sect[pos:end]
+
+            def _field(key, _b=block):
+                fm = re.search(key + r':\s*"([^"]*)"', _b)
+                return fm.group(1) if fm else ""
+
+            out["skills"].append({
+                "id":      sid,
+                "label":   _field("label"),
+                "hint":    _field("hint"),
+                "output":  _field("output"),
+                "pathway": _field("pathway"),
+            })
 
     return out
 
