@@ -334,9 +334,9 @@ button {
 }
 .branch-menu-title {
   font-size: 10.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-weight: 600;
   padding: 8px 8px 6px;
 }
@@ -374,7 +374,7 @@ button {
 .branch-tag {
   font-family: var(--font-mono);
   font-size: 9.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 1px 5px;
@@ -437,9 +437,9 @@ button {
 }
 .project-menu-title {
   font-size: 10.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-weight: 600;
   padding: 8px 8px 6px;
 }
@@ -650,7 +650,7 @@ button {
 .landing-meta-label {
   font-size: 11px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   color: rgba(225, 232, 229, 0.55);
 }
 .landing-meta-path {
@@ -700,7 +700,7 @@ button {
 .newproj-close:hover { background: rgba(0,0,0,0.05); }
 .newproj-card-body { padding: 16px 22px; display: flex; flex-direction: column; gap: 10px; }
 .newproj-field { display: flex; flex-direction: column; gap: 6px; }
-.newproj-label { font: 600 11px/1.2 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; }
+.newproj-label { font: 600 11px/1.2 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; font-family: var(--font-mono); opacity: 0.7; }
 .newproj-field input {
   font: 400 14px/1.4 var(--font-sans);
   padding: 10px 12px;
@@ -924,7 +924,7 @@ button {
 .dscz-group-label {
   display: flex; align-items: center; gap: 8px;
   font: 600 11px/1.2 var(--font-sans);
-  letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.72;
+  letter-spacing: 0.05em; text-transform: uppercase; font-family: var(--font-mono); opacity: 0.72;
 }
 .dscz-group-val { font-weight: 500; letter-spacing: 0; text-transform: none; opacity: 0.85; }
 .dscz-reset {
@@ -952,7 +952,7 @@ button {
 .dscz-customfont { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px 4px; }
 .dscz-customfont-or {
   font: 600 9px/1 var(--font-sans); letter-spacing: 0.08em;
-  text-transform: uppercase; opacity: 0.42;
+  text-transform: uppercase; font-family: var(--font-mono); opacity: 0.42;
 }
 .dscz-customfont-file { display: flex; align-items: center; gap: 8px; }
 .dscz-fontfile {
@@ -990,7 +990,7 @@ button {
 .dscz-pal-item:hover { background: rgba(0,0,0,0.05); }
 .dscz-pal-item.is-active { background: color-mix(in srgb, var(--accent, #2c5fff) 12%, transparent); }
 .dscz-pal-group {
-  font: 600 10px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase;
+  font: 600 10px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-mono);
   opacity: 0.5; padding: 8px 6px 4px;
 }
 .dscz-pal-group:first-child { padding-top: 4px; }
@@ -1001,14 +1001,14 @@ button {
   font: 500 12px/1.3 var(--font-sans); color: var(--accent, #2c5fff);
 }
 .dscz-morelink:hover { text-decoration: underline; }
-.dscz-sub-label { font: 600 10px/1.2 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; margin: 4px 0 2px; }
+.dscz-sub-label { font: 600 10px/1.2 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; font-family: var(--font-mono); opacity: 0.55; margin: 4px 0 2px; }
 /* two-column Light/Dark colour row */
 .dscz-ld { display: flex; flex-direction: column; gap: 4px; }
 .dscz-ld-label { font: 500 12px/1.2 var(--font-sans); opacity: 0.9; }
 .dscz-ld-cols { display: flex; gap: 8px; }
 .dscz-ld-cols.two .dscz-ld-col { flex: 1 1 0; min-width: 0; }
 .dscz-ld-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.dscz-ld-tag { font: 600 9px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.45; }
+.dscz-ld-tag { font: 600 9px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-mono); opacity: 0.45; }
 .dscz-mini { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dscz-mini-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(0,0,0,0.18); position: relative; overflow: hidden; }
 .dscz-mini-sw input[type=color] { position: absolute; inset: -4px; width: 200%; height: 200%; border: 0; padding: 0; cursor: pointer; opacity: 0; }
@@ -1101,7 +1101,7 @@ button {
 .deflib-row-note { font: 400 12.5px/1.5 var(--font-sans); color: var(--text, #1a1a1a); opacity: 0.62; max-width: 92ch; }
 .deflib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 2px; }
 .deflib-cell { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.deflib-cap { font: 500 11px/1 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text, #1a1a1a); opacity: 0.45; }
+.deflib-cap { font: 500 11px/1 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; font-family: var(--font-mono); color: var(--text, #1a1a1a); opacity: 0.45; }
 /* Scaled thumbnail: fixed desktop aspect, iframe rendered at 1280×800 and
    transform-scaled to fill. pointer-events off - these are previews. */
 .deflib-thumb {
@@ -1193,7 +1193,7 @@ button {
 }
 .orchestrators-header-meta {
   display: inline-flex; align-items: baseline; gap: 12px;
-  font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.06em;
 }
 .orchestrators-disabled-summary { color: oklch(55% 0.12 60); }
 
@@ -1368,8 +1368,8 @@ button {
   border-top: 1px solid var(--border);
 }
 .orchestrator-section-title {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 .orchestrator-dispatch-group { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .orchestrator-dispatch-group-title {
@@ -1411,7 +1411,7 @@ button {
 }
 .orchestrator-trigger-mode {
   display: inline-block;
-  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-family: var(--font-mono);
   padding: 1px 5px; border-radius: 3px;
   background: oklch(94% 0.04 250);
   color: oklch(40% 0.15 250);
@@ -1486,8 +1486,8 @@ button {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
   padding: 4px 10px;
 }
 .system-sidebar-subhead {
@@ -1870,8 +1870,8 @@ button {
   box-shadow: 0 16px 40px rgba(0,0,0,0.28); padding: 6px;
 }
 .landing-threads-menu-head {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--text-faint); padding: 6px 8px 8px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.06em;
+  color: var(--text-muted); padding: 6px 8px 8px;
 }
 .landing-threads-row {
   display: flex; align-items: center; gap: 8px; width: 100%;
@@ -2091,7 +2091,7 @@ button {
 .proto-catalog-thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .proto-catalog-thumb-placeholder {
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-family: var(--font-mono);
@@ -2151,8 +2151,8 @@ button {
   font-size: 11.5px;
 }
 .proto-catalog-card-meta-label {
-  color: var(--text-faint);
-  text-transform: uppercase;
+  color: var(--text-muted);
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
   font-size: 10px;
 }
@@ -2322,7 +2322,7 @@ button {
 
 .skill-section { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
 .skill-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.skill-row-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); min-width: 90px; }
+.skill-row-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-mono); color: var(--text-muted); min-width: 90px; }
 .skill-row-value { font-size: 12px; color: var(--text-muted); }
 .skill-row-value-meta { font-size: 11px; color: var(--text-faint); }
 .skill-chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -2351,7 +2351,7 @@ button {
   margin: 6px 0 0;
 }
 
-.skill-howto-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 4px; }
+.skill-howto-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-mono); color: var(--text-muted); margin-bottom: 4px; }
 .skill-howto-body  { font-size: 12px; line-height: 1.55; color: var(--text-muted); }
 .skill-howto-body code { background: var(--surface-2); padding: 1px 5px; border-radius: 3px; font-size: 11px; color: var(--text); }
 
@@ -2382,7 +2382,7 @@ button {
 
 .subagent-card-body { padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); }
 .subagent-section { display: flex; flex-direction: column; gap: 6px; }
-.subagent-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.subagent-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-mono); color: var(--text-muted); }
 .subagent-description { font-size: 13px; line-height: 1.6; color: var(--text); }
 .subagent-codeblock {
   font-family: var(--font-mono); font-size: 11px;
@@ -2429,7 +2429,7 @@ button {
 .kind-card-body { padding: 4px 16px 18px; display: flex; flex-direction: column; gap: 14px; border-top: 1px solid var(--border); }
 .kind-section { display: flex; flex-direction: column; gap: 6px; }
 .kind-section-row { flex-direction: row; align-items: center; gap: 10px; }
-.kind-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.kind-section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-mono); color: var(--text-muted); }
 .kind-notes { font-size: 13px; line-height: 1.6; color: var(--text); }
 
 .kind-fields { display: flex; flex-direction: column; gap: 6px; }
@@ -2445,8 +2445,8 @@ button {
 .kind-field-type-bool     { background: oklch(96% 0.06 80);  color: oklch(45% 0.13 65); }
 .kind-field-type-array    { background: oklch(94% 0.04 350); color: oklch(45% 0.15 5); }
 .kind-field-type-object   { background: var(--accent-soft);  color: var(--accent-text); }
-.kind-field-required { font-size: 9px; color: oklch(50% 0.18 28); text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em; }
-.kind-field-locked   { font-size: 9px; color: var(--text-faint); text-transform: uppercase; font-weight: 600; letter-spacing: 0.06em; }
+.kind-field-required { font-size: 9px; color: oklch(50% 0.18 28); text-transform: uppercase; font-family: var(--font-mono); font-weight: 700; letter-spacing: 0.06em; }
+.kind-field-locked   { font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.06em; }
 .kind-field-label    { font-size: 11px; color: var(--text); }
 .kind-field-doc      { width: 100%; margin-top: 4px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
@@ -2757,7 +2757,7 @@ button {
 .landing-field-label {
   font-size: 11px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   color: var(--text-muted);
 }
 .landing-field-hint {
@@ -3181,8 +3181,8 @@ button {
   gap: 6px;
   font-size: 10.5px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 .landing-card-stars-icon { color: var(--accent); display: inline-flex; }
 .landing-card-stars-list {
@@ -4149,7 +4149,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-tasks-group-title {
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.03em;
   min-width: 0;
   overflow: hidden;
@@ -4192,7 +4192,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .th-tasks-agent-sec-toggle {
   display: flex;
@@ -4234,7 +4234,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .th-tasks-row-label {
   font-size: 12px;
@@ -4248,7 +4248,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 .th-tasks-overflow {
@@ -4335,8 +4335,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-live-section-head {
   font-size: 10.5px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
   padding: 2px 6px 8px;
 }
 .th-live-status {
@@ -4726,10 +4726,10 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 /* Conflict side-by-side (ours / theirs). */
 .th-git-conflict-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
 .th-git-conflict-col { background: var(--surface, #fff); min-width: 0; overflow: auto; max-height: 40vh; }
-.th-git-conflict-col-head { position: sticky; top: 0; padding: 4px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.th-git-conflict-col-head { position: sticky; top: 0; padding: 4px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em; background: var(--surface-2); border-bottom: 1px solid var(--border); }
 .th-git-conflict-col.is-ours .th-git-conflict-col-head { color: #15803d; }
 .th-git-conflict-col.is-theirs .th-git-conflict-col-head { color: #b91c1c; }
-.th-git-conflict-merged-head { padding: 8px 12px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.th-git-conflict-merged-head { padding: 8px 12px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em; color: var(--text-muted); }
 
 /* GitHub account + per-project repo picker (top of the Git panel). */
 .th-git-account { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
@@ -4972,8 +4972,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 .share-link-pending {
   display: flex;
@@ -5318,9 +5318,9 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   padding: 8px 14px 6px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-proto-picker-item {
   display: flex;
@@ -5508,9 +5508,9 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   padding: 12px 14px 8px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   /* v3.6 - the head doubles as the panel title for the nav-rail-driven
      library ("Nodes" / "Outputs"), with an optional count badge inline. */
   display: flex;
@@ -5534,16 +5534,16 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   /* Category headers read as quiet section labels - same grey small-caps
      treatment as the panel head, in the shared sans face. */
   font: 600 11px/1.2 var(--font-sans);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-library-section-tag {
   font-size: 10px;
   font-weight: 500;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -5658,9 +5658,9 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .canvas-ctxmenu-label {
   font: 600 10px var(--font-sans);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   padding: 4px 10px 2px;
 }
 .canvas-ctxmenu-swatches {
@@ -5883,7 +5883,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   color: var(--text-muted);
   padding: 4px 8px 6px;
 }
@@ -6025,14 +6025,14 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   color: var(--text-muted);
   flex: 1 1 auto;
 }
 .wac-source {
   font-size: 9px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -6079,15 +6079,15 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .wac-group-name {
   font-size: 9.5px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 /* Frozen while a slow (>100ms) asset update is in flight. */
 .wac-busy {
   font-size: 9px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   color: var(--accent-text);
 }
@@ -6158,7 +6158,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .wai-chip {
   align-self: flex-start;
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.03em; color: var(--text-muted);
   background: var(--surface-3); border-radius: var(--radius-sm);
   padding: 2px 7px;
@@ -6179,8 +6179,8 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .wai-stage-glyph svg { width: 13px; height: 13px; }
 .wai-stage-name {
-  font-size: 9.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.05em; color: var(--text-faint); flex: 0 0 auto;
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; font-family: var(--font-mono);
+  letter-spacing: 0.05em; color: var(--text-muted); flex: 0 0 auto;
 }
 .wai-stage-tag {
   font-size: 10px; color: var(--text-muted);
@@ -6425,7 +6425,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   border-top: 1px solid color-mix(in oklab, currentColor 18%, transparent);
   font-size: 10px;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   opacity: 0.6;
 }
 
@@ -6440,7 +6440,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   background: color-mix(in oklab, var(--accent) 14%, var(--surface-2));
   color: var(--text);
   border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
@@ -7435,9 +7435,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-customapp-settings-title {
   font-size: 10px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-customapp-setting-add {
   border: 1px solid var(--border);
@@ -8187,9 +8187,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-wb-tools-title {
   font: 600 11px var(--font-sans);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-wb-tools-list {
   display: flex;
@@ -8229,9 +8229,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-wb-tools-section { display: flex; flex-direction: column; gap: 6px; }
 .workflow-wb-tools-sublabel {
   font: 600 11px var(--font-sans);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-wb-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
 .workflow-wb-swatch {
@@ -9199,7 +9199,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   cursor: help;
 }
 .workflow-node-perms-label {
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   font-size: 9px;
   color: var(--muted, #888);
@@ -9765,7 +9765,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 /* Phase 4c - empty-state placeholder for asset cards whose file doesn't
    exist yet (fresh user-created asset awaiting its first Run). Replaces the
@@ -10653,7 +10653,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   transform: translateY(-50%);
   font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--text-muted);
   background: color-mix(in oklab, var(--surface) 92%, transparent);
@@ -10743,7 +10743,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .workflow-browser-mode {
   font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -10891,7 +10891,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-node-agent-row-summary {
   font-size: 11.5px;
@@ -10912,7 +10912,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .workflow-node-agent-turn-badge {
   display: inline-block;
   font-size: 10px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.04em;
+  text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em;
   color: var(--accent);
   background: color-mix(in oklab, var(--accent) 15%, var(--surface));
   border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
@@ -10963,8 +10963,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 .workflow-node-agent-transcript-role {
   font-size: 9.5px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.05em;
+  color: var(--text-muted);
   margin-bottom: 2px;
 }
 .workflow-node-agent-transcript-content {
@@ -11272,7 +11272,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 .workflow-paused-placeholder-title {
   font-size: 12px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.06em;
   color: oklch(45% 0.14 75);
 }
 .workflow-paused-placeholder-body {
@@ -11320,7 +11320,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 .workflow-skeleton-label {
   font-size: 11px; font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.08em;
+  text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.08em;
   color: color-mix(in oklab, var(--text) 60%, transparent);
   background: color-mix(in oklab, var(--surface) 70%, transparent);
   padding: 4px 12px; border-radius: 99px;
@@ -11660,8 +11660,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .workflow-agent-preamble-turn-system    { border-left-color: oklch(60% 0.12 60); }
 .workflow-agent-preamble-turn-role {
   font-size: 10px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.05em;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 .workflow-agent-preamble-turn-content {
@@ -11939,8 +11939,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 .chat-slash-head-meta {
   font-size: 10px;
@@ -12079,12 +12079,12 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   padding: 2px 7px;
   border-radius: 3px;
   white-space: nowrap;
   background: var(--surface-2);
-  color: var(--text-faint);
+  color: var(--text-muted);
   flex: 0 0 auto;
 }
 .chat-slash-detail-badge-cc           { background: oklch(94% 0.04 200); color: oklch(40% 0.13 200); }
@@ -12120,7 +12120,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 .workflow-agent-turn-text {
@@ -12468,7 +12468,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   padding: 0 8px;
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -12528,7 +12528,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-badge-state {
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   color: oklch(48% 0.14 60);  /* amber */
 }
@@ -12605,9 +12605,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-router-tab-state {
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ds-router-tab[data-active="true"] .ds-router-tab-state {
   color: var(--text-muted);
@@ -12764,9 +12764,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-library-eyebrow {
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ds-library-path code {
   font-family: var(--font-mono);
@@ -12950,10 +12950,10 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-modal-entry-label {
   flex: 0 0 64px;
   text-align: right;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   padding-top: 1px;
 }
@@ -13092,7 +13092,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   line-height: 1;
   border: 1px solid var(--border);
   white-space: nowrap;
@@ -13157,7 +13157,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-ds-field-label {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
   color: var(--text-muted);
 }
@@ -13387,7 +13387,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex; align-items: center; gap: 8px;
   font-size: 11px; color: var(--text-muted);
 }
-.workflow-node-iter-nrow > span { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.workflow-node-iter-nrow > span { font-weight: 600; text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em; }
 .workflow-node-iter-nrow input,
 .workflow-node-iter-nrow select {
   border: 1px solid var(--border); background: var(--surface);
@@ -13479,7 +13479,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   word-break: break-word;
 }
 .workflow-node-iter-done {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; font-family: var(--font-mono);
   color: oklch(38% 0.12 174);
   padding: 2px 7px; border-radius: 99px;
   background: color-mix(in oklab, oklch(58% 0.15 174) 14%, var(--surface));
@@ -13487,7 +13487,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-iter-field { display: flex; flex-direction: column; gap: 4px; }
 .workflow-node-iter-field-label {
-  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 .workflow-node-iter-field textarea {
@@ -13876,9 +13876,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-ds-upstream-label {
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-node-ds-upstream-chip {
   display: inline-flex;
@@ -13922,9 +13922,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-ds-stream-label {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-node-ds-stream-clear {
   border: 0;
@@ -14419,7 +14419,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .model-setup-choice-tag {
   display: inline-block; margin-left: 6px; padding: 1px 6px;
   border-radius: 999px; font-size: 9px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
+  text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em; vertical-align: middle;
   background: color-mix(in oklab, var(--hot, #e11d48) 18%, transparent);
   color: color-mix(in oklab, var(--hot, #e11d48) 80%, var(--text));
 }
@@ -14924,7 +14924,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: .04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   padding: 2px 6px;
   border-radius: 999px;
   white-space: nowrap;
@@ -15135,7 +15135,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 10.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .onboarding-section-title { font-size: 14px; font-weight: 600; }
 .onboarding-section-desc {
@@ -15496,9 +15496,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-settings-section-group-head {
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.08em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   padding: 6px 4px 2px;
   margin-top: 8px;
   border-top: 1px solid var(--border);
@@ -15884,10 +15884,10 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .modal-eyebrow {
   font-size: 10.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   font-weight: 600;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .modal-title {
   font-size: 16px;
@@ -15927,7 +15927,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-weight: 600;
   color: var(--text-muted);
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
 }
 .modal-hint {
   text-transform: none;
@@ -17014,9 +17014,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .popover-title {
   font-size: 10.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-weight: 600;
   padding: 6px 8px 4px;
   display: flex;
@@ -17228,9 +17228,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-nav h3 {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin: 0 0 6px;
   padding: 0 8px;
 }
@@ -17606,9 +17606,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .inspector-label {
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .inspector-target {
   font-family: var(--font-mono);
@@ -17777,9 +17777,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .proto-nav h3 {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin: 0 0 6px;
   padding: 0 4px;
 }
@@ -17818,7 +17818,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .proto-nav-kind {
   font-family: var(--font-mono);
   font-size: 9.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -17841,7 +17841,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .proto-meta-k {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -17921,9 +17921,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .flow-nav h3 {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin: 0 0 8px;
 }
 .flow-blurb { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0 0 16px; }
@@ -17937,7 +17937,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-align: center;
 }
 .flow-stat-n { font-size: 18px; font-weight: 600; color: var(--text); }
-.flow-stat-l { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.flow-stat-l { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.04em; }
 .flow-legend { display: grid; gap: 8px; font-size: 12px; color: var(--text); }
 .flow-legend-row { display: flex; align-items: center; gap: 8px; }
 .flow-legend-step {
@@ -18080,9 +18080,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ia-sitemap-eyebrow {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ia-sitemap-stats { font-size: 12px; color: var(--text-muted); }
 .ia-sitemap-actions { display: flex; gap: 6px; }
@@ -18221,7 +18221,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ia-kid-kind {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -18383,9 +18383,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ia-content-eyebrow {
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ia-content-title {
   font-size: 24px;
@@ -18404,7 +18404,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-weight: 600;
   margin: 0 0 14px;
   color: var(--text);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
 }
 .ia-empty {
@@ -18466,7 +18466,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ia-entity-list { display: grid; gap: 6px; }
 .ia-entity {
@@ -18866,9 +18866,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .flow-drag-menu-title {
   font-size: 10.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   padding: 6px 8px 4px;
 }
 .flow-drag-menu-title strong { color: var(--text); }
@@ -18935,8 +18935,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .flow-add-lane {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
+  color: var(--text-muted);
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   margin-right: 4px;
 }
@@ -18992,7 +18992,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ia-entity-x {
   background: transparent;
@@ -19130,9 +19130,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .sm-rail h3 {
   margin: 0 0 12px;
   font-size: 11.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .sm-rail-item {
   display: block;
@@ -19232,8 +19232,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .sm-node-meta {
   font-size: 10.5px;
-  color: var(--text-faint);
-  text-transform: uppercase;
+  color: var(--text-muted);
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -19504,8 +19504,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .agent-menu-head {
   font-size: 10.5px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
   padding: 4px 6px 2px;
 }
 .agent-menu-empty {
@@ -19632,8 +19632,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .perm-menu-head {
   font-size: 10.5px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
   padding: 4px 6px 2px;
 }
 .perm-menu-foot {
@@ -19677,7 +19677,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -20089,8 +20089,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 4px 6px 2px;
   font-size: 10.5px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  text-transform: uppercase; font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 .runs-refresh {
   font-size: 14px;
@@ -20757,7 +20757,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   border: 1px solid transparent;
   /* Second in the shrink order (after the title): the chip's TEXT may
      ellipsize on very narrow drawers; the pulse dot + buttons stay. */
@@ -20861,7 +20861,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin-right: 6px;
   padding: 1px 5px;
   border: 1px solid var(--border);
@@ -21051,7 +21051,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .chat-bubble-prefix {
   font-size: 10.5px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   margin-right: 4px;
   opacity: 0.72;
 }
@@ -21094,7 +21094,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .md-h1 { font-size: 16px; }
 .md-h2 { font-size: 14.5px; }
 .md-h3 { font-size: 13.5px; color: var(--text); }
-.md-h4, .md-h5, .md-h6 { font-size: 12.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.md-h4, .md-h5, .md-h6 { font-size: 12.5px; color: var(--text-muted); text-transform: uppercase; font-family: var(--font-mono); letter-spacing: 0.03em; }
 .md-hr {
   border: 0;
   border-top: 1px dashed var(--border);
@@ -21499,7 +21499,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .tool-result[data-error="true"] .tool-result-tag { color: var(--danger); }
 .tool-result-more {
@@ -21823,7 +21823,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: 3px;
   font-size: 10px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   font-weight: 600;
 }
 .agent-card-status[data-status="running"] {
@@ -22660,7 +22660,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .zoom-inspector-label {
   font-size: 10px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   color: var(--muted);
   margin-bottom: 6px;
 }
@@ -22852,7 +22852,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   padding: 4px 6px;
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
@@ -23014,7 +23014,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .zoom-popover-title {
   font-size: 11px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--muted);
   padding: 4px 6px 6px;
@@ -24151,7 +24151,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   min-width: 0;
 }
 .workflow-ds-picker-label {
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
@@ -24973,7 +24973,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .wizard-eyebrow {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin-bottom: 4px;
@@ -25064,7 +25064,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .wizard-preset-rec.wizard-preset-alpha {
   background: var(--hot);
   color: var(--hot-ink);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   font-weight: 600;
 }
@@ -25284,7 +25284,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .chat-decision-eyebrow {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -25446,7 +25446,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
 }
 
@@ -25650,7 +25650,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .chat-direction-badge {
   font-family: var(--font-mono);
   font-size: 9.5px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   display: flex;
@@ -25688,7 +25688,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .chat-direction-recommended {
   font-size: 9.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
@@ -25763,7 +25763,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-size: 10.5px;
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
 }
 
@@ -25840,9 +25840,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-skill-llm-preview-section { display: flex; flex-direction: column; gap: 3px; }
 .workflow-skill-llm-preview-label {
   font-size: 10px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-skill-llm-preview-pre {
   font-family: var(--font-mono);
@@ -25991,7 +25991,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-composer-field-stacked > span:first-child {
   min-width: 0;
   font: 9.5px var(--font-mono);
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -26082,9 +26082,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-composer-section-head {
   font-size: 10px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.05em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin-bottom: 4px;
   display: flex;
   align-items: center;
@@ -26222,9 +26222,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    so the user understands WHY there are two 3×3 grids stacked. */
 .workflow-composer-subhead {
   font-size: 9.5px;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.06em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   margin: 8px 0 3px;
 }
 .workflow-composer-subhead:first-child { margin-top: 0; }
@@ -26384,8 +26384,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-fmttext-typobar-head {
   font-size: 10px;
-  color: var(--text-faint);
-  text-transform: uppercase;
+  color: var(--text-muted);
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   margin-right: 4px;
 }
@@ -26544,7 +26544,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-mermaid-error-head {
   font: 11px/1.2 var(--font-sans);
   color: var(--danger, #c0392b);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   margin-bottom: 6px;
 }
@@ -26568,9 +26568,9 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-mermaid-typebar-label {
   font: 10px var(--font-sans);
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .workflow-mermaid-typebar-select {
   appearance: none;
@@ -26680,7 +26680,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-vector-section-head {
   font: 600 10.5px/1.2 var(--font-mono);
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   display: flex;
@@ -26697,7 +26697,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-vector-subhead {
   font: 500 10.5px/1.2 var(--font-mono);
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
@@ -27004,8 +27004,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-vector-field-wide { flex: 1 1 auto; }
 .workflow-vector-field span:first-child {
   font-size: 10px;
-  color: var(--text-faint);
-  text-transform: uppercase;
+  color: var(--text-muted);
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
@@ -27039,7 +27039,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-vector-field-stacked > span:first-child {
   min-width: 0;
   font: 9.5px var(--font-mono);
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -27067,7 +27067,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid var(--border);
   border-radius: 4px;
   font: 10px var(--font-mono);
-  color: var(--text-faint);
+  color: var(--text-muted);
   cursor: pointer;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -27518,7 +27518,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .shares-hk-table { width: 100%; border-collapse: collapse; font: 13px var(--font-sans); }
 .shares-hk-table th {
   text-align: left; font: 600 11px/1.2 var(--font-sans);
-  letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6;
+  letter-spacing: 0.04em; text-transform: uppercase; font-family: var(--font-mono); opacity: 0.6;
   padding: 6px 8px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.12)); position: sticky; top: 0;
   background: var(--bg, #fff);
 }
@@ -28038,7 +28038,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .asset-crop-tag {
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: uppercase; font-family: var(--font-mono);
   letter-spacing: 0.04em;
   padding: 2px 7px;
   border-radius: 999px;
@@ -28181,7 +28181,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .ut-side-title {
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted);
 }
 .ut-side-list { flex: 1 1 auto; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 3px; }
 .ut-side-empty { padding: 16px 10px; font-size: 12.5px; color: var(--text-faint); line-height: 1.5; }
@@ -28311,7 +28311,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 /* ---- per-flow start/end triggers (Objective tab) ---- */
 .ut-cfg-triggers { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px dashed var(--border); }
 .ut-trigger { display: flex; align-items: center; gap: 8px; }
-.ut-trigger-k { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); width: 64px; flex: 0 0 auto; }
+.ut-trigger-k { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); width: 64px; flex: 0 0 auto; }
 .ut-trigger-v { flex: 1 1 auto; font-size: 12.5px; color: var(--text-faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ut-trigger-v.is-set { color: var(--accent-text); font-weight: 500; }
 
@@ -28362,7 +28362,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .s9e-hint{ font-size:11px; color:var(--text-faint); margin:8px 0 0; }
 .s9e-right{ display:flex; flex-direction:column; gap:12px; min-width:280px; }
 .s9e-nums{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-.s9e-num label{ display:block; font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px; }
+.s9e-num label{ display:block; font-size:10px; color:var(--text-muted); text-transform:uppercase; font-family: var(--font-mono); letter-spacing:.03em; margin-bottom:3px; }
 .s9e-num input{ width:100%; box-sizing:border-box; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); padding:5px 6px; font:inherit; font-size:12px; }
 .s9e-row{ display:flex; gap:10px; align-items:center; }
 .s9e-row > label{ font-size:11px; color:var(--text-muted); min-width:60px; }
@@ -28393,6 +28393,6 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .s9n-k{ position:absolute; width:12px; height:12px; border-radius:50%; background:var(--accent);
   border:2px solid var(--surface); transform:translate(-50%,-50%); box-shadow:0 1px 2px rgba(0,0,0,.25); cursor:grab; }
 .s9c-nums{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:4px 12px 8px; }
-.s9c-n label{ display:block; font-size:9.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px; }
+.s9c-n label{ display:block; font-size:9.5px; color:var(--text-muted); text-transform:uppercase; font-family: var(--font-mono); letter-spacing:.03em; margin-bottom:2px; }
 .s9c-n input{ width:100%; box-sizing:border-box; background:var(--surface); border:1px solid var(--border);
   border-radius:var(--radius-sm); color:var(--text); padding:4px 5px; font:inherit; font-size:12px; }
