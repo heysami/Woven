@@ -50,11 +50,11 @@
   --danger:        oklch(57% 0.20 22);
   --danger-soft:   oklch(95% 0.04 22);
 
-  /* Type - Space Grotesk (UI, characterful grotesque) + Space Mono (labels,
+  /* Type - Plus Jakarta Sans (humanist geometric) for UI + Space Mono (labels,
      IDs, coordinates - the TE typewriter-grotesque). Metric-close fallbacks. */
-  --font-sans:    "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans:    "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
   --font-mono:    "Space Mono", "JetBrains Mono", ui-monospace, monospace;
-  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
 
   /* Radii */
   --radius-sm: 4px;
@@ -95,6 +95,10 @@ body {
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;
+  /* Plus Jakarta Sans runs a touch wider than the old Space Grotesk; a gentle
+     global tightening keeps UI text dense without disturbing the uppercase mono
+     labels (those set their own positive tracking, which overrides this). */
+  letter-spacing: -0.006em;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
