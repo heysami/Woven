@@ -342,7 +342,7 @@
     float innerBand = smoothstep(0.34, 0.40, edge) * (1.0 - smoothstep(0.40, 0.46, edge));
     bool fxEdge = abs(f.x) > abs(f.y);
     float sel = (sgn > 0.0) ? (fxEdge ? 1.0 : 0.0) : (fxEdge ? 0.0 : 1.0);
-    fcol = mix(fcol, vec3(0.90, 0.90, 0.90), innerBand * sel * lit * 0.9);
+    fcol = mix(fcol, vec3(0.95, 0.95, 0.95), innerBand * sel * lit * 0.9);
 
     o = vec4(fcol, 1.0);
   }`;
