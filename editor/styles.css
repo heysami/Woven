@@ -26710,46 +26710,49 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-node-vector[data-detached="true"] .workflow-vector-left {
   right: 100%;
-  margin-right: 8px;
+  margin-right: 10px;
   top: 30px;
   bottom: 0;
-  width: 200px;
-  padding: 8px;
+  width: 210px;
+  padding: 10px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 4px color-mix(in oklab, var(--text) 6%, transparent), 0 10px 30px color-mix(in oklab, var(--text) 9%, transparent);
 }
 .workflow-node-vector[data-detached="true"] .workflow-vector-right {
   left: 100%;
-  margin-left: 8px;
+  margin-left: 10px;
   top: 30px;
   bottom: 0;
-  width: 260px;
-  padding: 8px;
+  width: 288px;
+  padding: 6px 14px 14px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 4px color-mix(in oklab, var(--text) 6%, transparent), 0 10px 30px color-mix(in oklab, var(--text) 9%, transparent);
 }
 .workflow-vector-section {
-  background: var(--surface-2, rgba(0, 0, 0, 0.02));
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
-  border-radius: 6px;
-  padding: 8px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 0 2px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 9px;
   min-width: 0;
 }
+.workflow-vector-section:first-child { border-top: 0; padding-top: 4px; }
 .workflow-vector-section-head {
-  font: 600 10.5px/1.2 var(--font-mono);
+  font: 600 10px/1.2 var(--font-mono);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 1px;
 }
 .workflow-vector-count {
   background: var(--surface);
@@ -26825,11 +26828,11 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   cursor: pointer;
   min-width: 0;
 }
-.workflow-vector-tool:hover { border-color: var(--accent, #3b82f6); }
+.workflow-vector-tool:hover { border-color: var(--accent); }
 .workflow-vector-tool.is-on {
-  background: var(--accent, #3b82f6);
-  border-color: var(--accent, #3b82f6);
-  color: #fff;
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  color: var(--accent-text);
 }
 .workflow-vector-tool-glyph {
   display: inline-flex;
@@ -26895,18 +26898,18 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-vector-layer-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 4px;
+  gap: 6px;
+  padding: 5px 7px;
   background: var(--surface);
   border: 1px solid transparent;
-  border-radius: 4px;
-  font: 11px var(--font-mono);
+  border-radius: 6px;
+  font: 11.5px var(--font-mono);
   cursor: pointer;
 }
 .workflow-vector-layer-row:hover { background: var(--surface-2, rgba(0, 0, 0, 0.04)); }
 .workflow-vector-layer-row.is-active {
-  border-color: var(--accent, #3b82f6);
-  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  background: var(--accent-soft);
 }
 .workflow-vector-layer-vis,
 .workflow-vector-layer-mv,
@@ -27055,22 +27058,26 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-vector-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 28px;
 }
 .workflow-vector-field {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
-  font: 11px var(--font-mono);
+  font: 11.5px var(--font-mono);
   color: var(--text);
 }
 .workflow-vector-field-wide { flex: 1 1 auto; }
 .workflow-vector-field span:first-child {
-  font-size: 10px;
+  flex: 0 0 auto;
+  min-width: 52px;
+  font-size: 11px;
   color: var(--text-muted);
-  text-transform: uppercase; font-family: var(--font-mono);
-  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  font-family: var(--font-sans);
+  letter-spacing: 0;
   white-space: nowrap;
 }
 .workflow-vector-field input[type="number"],
@@ -27078,20 +27085,34 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .workflow-vector-field select {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 3px 5px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  font: 11px var(--font-mono);
+  border-radius: 7px;
+  font: 11.5px var(--font-mono);
   color: var(--text);
   box-sizing: border-box;
   width: 100%;
 }
-.workflow-vector-field input[type="range"] { flex: 1; }
+.workflow-vector-field input:hover,
+.workflow-vector-field select:hover { border-color: var(--border-strong); }
+.workflow-vector-field input:focus,
+.workflow-vector-field select:focus { outline: none; border-color: var(--accent); }
+/* Polished slider - clean track + ring thumb (Firefox also fills to value). */
+.workflow-vector-field input[type="range"] {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 18px; background: transparent; cursor: pointer; margin: 0;
+}
+.workflow-vector-field input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--border); }
+.workflow-vector-field input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: var(--border); }
+.workflow-vector-field input[type="range"]::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--accent); }
+.workflow-vector-field input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); }
+.workflow-vector-field input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow-sm); }
 .workflow-vector-field-val {
-  font: 10px var(--font-mono);
-  color: var(--text-faint);
-  min-width: 28px;
+  flex: 0 0 auto;
+  font: 11px var(--font-mono);
+  color: var(--text);
+  min-width: 34px;
   text-align: right;
 }
 .workflow-vector-field-stacked {
@@ -27102,10 +27123,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .workflow-vector-field-stacked > span:first-child {
   min-width: 0;
-  font: 9.5px var(--font-mono);
+  font: 11px var(--font-sans);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  letter-spacing: 0;
 }
 .workflow-vector-field-stacked > input,
 .workflow-vector-field-stacked > select {
