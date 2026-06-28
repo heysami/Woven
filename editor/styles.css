@@ -13660,6 +13660,88 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-assistant-reply textarea:focus { border-color: var(--accent); }
 
+/* ── Assistant result panel ──────────────────────────────────────────────
+   Floating right-side summary that breaks out of the node when selected (see
+   WorkflowAssistantResultPanel). Positioned by .workflow-node-float-panel
+   (position:absolute, z-index, pointer-events) when the node is detached. */
+.workflow-assistant-panel {
+  left: calc(100% + 16px); top: 0;
+  width: 360px; max-height: 720px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 16px 18px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 12px 34px -14px rgba(0,0,0,0.30), 0 2px 8px -4px rgba(0,0,0,0.18);
+  overflow-y: auto; overflow-x: hidden;
+  font-size: 13px; line-height: 1.45;
+  cursor: default;
+}
+.workflow-assistant-panel-research { width: 400px; }
+.wap-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.wap-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-muted); }
+.wap-count { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.wap-sub { font-size: 12px; color: var(--text-muted); margin-top: -2px; }
+.wap-section-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-faint); margin-top: 2px; }
+.wap-empty { font-size: 12px; color: var(--text-faint); padding: 6px 2px; }
+
+/* Status pills (REC/GOOD/POSS/PASS/WARN/FAIL). */
+.wap-pill { flex: none; align-self: flex-start;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+.wap-pill-pass { color: var(--success); background: color-mix(in oklab, var(--success) 13%, var(--surface)); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
+.wap-pill-warn { color: color-mix(in oklab, var(--warning) 78%, #000); background: color-mix(in oklab, var(--warning) 18%, var(--surface)); border-color: color-mix(in oklab, var(--warning) 50%, transparent); }
+.wap-pill-fail { color: var(--danger); background: color-mix(in oklab, var(--danger) 11%, var(--surface)); border-color: color-mix(in oklab, var(--danger) 38%, transparent); }
+
+/* Status dots. */
+.wap-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--text-faint); }
+.wap-dot-pass { background: var(--success); }
+.wap-dot-warn { background: var(--warning); }
+.wap-dot-fail { background: var(--danger); }
+
+/* Research result cards. */
+.wap-list { display: flex; flex-direction: column; gap: 8px; }
+.wap-card { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+  padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.wap-card-main { min-width: 0; flex: 1 1 auto; }
+.wap-title { font-size: 13px; font-weight: 650; color: var(--text); }
+.wap-summary { font-size: 12px; color: var(--text-muted); margin-top: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wap-source { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+.wap-favicon { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.wap-why { font-size: 11.5px; color: var(--text-muted); margin-top: 7px;
+  border-top: 1px dashed var(--border); padding-top: 6px; }
+.wap-why-label { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
+
+/* Testing: live counters grid. */
+.wap-counters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wap-counter { border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; background: var(--surface-2); }
+.wap-counter-num { font-size: 26px; font-weight: 750; line-height: 1; color: var(--text); }
+.wap-counter-hot { color: var(--hot, #b8860b); }
+.wap-counter-lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-faint); margin-top: 6px; }
+
+/* Testing: probe rows. */
+.wap-probe { display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.wap-probe-text { flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Testing: pass rate. */
+.wap-rate-row { display: flex; align-items: center; gap: 10px; }
+.wap-rate-num { font-size: 30px; font-weight: 750; line-height: 1; color: var(--success); }
+.wap-rate-pill { font-size: 11px; color: var(--text-muted); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+.wap-rate-bar { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.wap-rate-fill { height: 100%; background: var(--success); border-radius: 999px; transition: width 0.3s ease; }
+
+/* Testing: agent roster. */
+.wap-agents { display: flex; flex-direction: column; gap: 2px; }
+.wap-agent { display: flex; align-items: center; gap: 9px; padding: 6px 2px; border-bottom: 1px solid var(--border); }
+.wap-agent:last-child { border-bottom: 0; }
+.wap-agent-name { flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wap-agent-count { font-size: 12px; color: var(--text-faint); }
+
 /* Whiteboard emoji sticker (FigJam-style stamp) + the tool's emoji palette. */
 .workflow-wb-sticker { cursor: default; pointer-events: auto; }
 .workflow-wb-emoji-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }

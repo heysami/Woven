@@ -39471,12 +39471,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const headers = ["Result", "Source", "Summary", "Why it qualifies", "Visual", "Verdict", "Assistant"];
       const colWidths = [220, 200, 320, 240, 300, 90, 300];
       const rows = kept.map(k => [k.title || "", k.url || "", k.summary || "", k.why || "", "", "", ""]);
-      const tx = Math.round(node.x + (node.w || 420) + 80), ty = Math.round(node.y);
+      // Clear of the node's floating result panel (~438px) so the table never
+      // sits under it when the node is selected.
+      const tx = Math.round(node.x + (node.w || 420) + 480), ty = Math.round(node.y);
       const tableId = workflowBuildResultTable({
         title: "Research: " + query.slice(0, 40), headers, rows, x: tx, y: ty,
         colWidths, rowH: 190,
       });
-      updateNode(nodeId, { tableId });
+      // Summary twin for the floating right panel (the table stays the detailed view).
+      const _host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return (u || "").slice(0, 40); } };
+      updateNode(nodeId, { tableId, result: {
+        kind: "research", query, builtAt: Date.now(),
+        items: kept.map(k => ({
+          title: k.title || "", source: _host(k.url), url: k.url || "",
+          summary: k.summary || "", why: k.why || "",
+          verdict: k.verdict || (k.why ? "good" : "nothing"),
+        })),
+      } });
       updateNode(tableId, { runStatus: "running" });   // diamond floats on the table too
 
       // Per result: Visual node IN the cell (col 4), Verdict emoji sticker
@@ -39538,6 +39549,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!node) return;
     const task = (node.task || "").trim();
     if (!task) { setRun({ status: "error", error: "Describe what to test first." }); return; }
+    const t0 = Date.now();
     setRun({ status: "loading", phase: "personas", error: null });
     updateNode(nodeId, { runStatus: "running" });   // float the working badge
     try {
@@ -39577,12 +39589,36 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (node.tableId) _assistantDropTable(node.tableId);
       const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Reply", "Idea", "Verdict", "Assistant"];
       const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", "", "", ""]);
-      const tx = Math.round(node.x + (node.w || 440) + 80), ty = Math.round(node.y);
+      // Clear of the node's floating result panel (~378px) so the table never
+      // sits under it when the node is selected.
+      const tx = Math.round(node.x + (node.w || 440) + 420), ty = Math.round(node.y);
       const tableId = workflowBuildResultTable({
         title: "Testers: " + task.slice(0, 30), headers, rows, x: tx, y: ty,
         colWidths: [140, 120, 200, 180, 160, 220, 300, 260, 90, 300],
       });
       updateNode(nodeId, { tableId });
+
+      // Build the floating-panel summary (the "Simulation report"). Written
+      // twice: a preliminary pass once replies are in (verdicts pending), then a
+      // final pass with the judged verdicts + pass rate. Keeps the canvas table
+      // as the detailed view; this is the glanceable twin.
+      const writeTestingResult = (rep, vby) => {
+        const out = rep.map((s, i) => {
+          const v = (vby && vby[i]) || {};
+          return { name: s.t.name || ("Tester " + (i + 1)), type: s.t.type || "", comment: v.comment || (s.idea || "").slice(0, 90) || "", verdict: v.verdict || "" };
+        });
+        const judged = out.filter(t => t.verdict);
+        const issues = judged.filter(t => { const k = _assistantVerdict(t.verdict).key; return k === "bad" || k === "nothing"; }).length;
+        const passCount = judged.filter(t => { const k = _assistantVerdict(t.verdict).key; return k === "recommended" || k === "good"; }).length;
+        const typeList = [...new Set(out.map(t => t.type).filter(Boolean))];
+        const agents = typeList.map(ty => ({ name: ty, count: out.filter(t => t.type === ty).length }));
+        updateNode(nodeId, { result: {
+          kind: "testing", task, builtAt: Date.now(),
+          counters: { testers: out.length, issues, types: typeList.length, elapsedMs: Date.now() - t0 },
+          passRate: judged.length ? Math.round((passCount * 100) / judged.length) : 0,
+          passCount, total: judged.length, agents, testers: out,
+        } });
+      };
       updateNode(tableId, { runStatus: "running" });   // diamond floats on the table while it fills
 
       // Parse a tester's reply into reply / idea / questions[].
@@ -39633,6 +39669,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         }
         workflowSetCellText(tableId, i + 1, 6, state[i].reply);
         workflowSetCellText(tableId, i + 1, 7, state[i].idea);
+        writeTestingResult(state, null);   // live-fill the panel as replies land
       }
 
       // Clarification passes (max 3 total). For testers that asked a lot of
@@ -39681,6 +39718,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         workflowAddCellSticker(tableId, i + 1, 8, vd.emoji, 44);
         workflowAddCellBox(tableId, i + 1, 9, (v.comment || vd.label), vd.color);
       }
+      writeTestingResult(state, verdicts);   // final: judged verdicts + pass rate
 
       updateNode(nodeId, { runStatus: "done" });
       updateNode(tableId, { runStatus: "done" });
@@ -71576,6 +71614,116 @@ function AssistantModelSelect({ value, onChange, title }) {
     </label>`;
 }
 
+// ── Assistant result panel ────────────────────────────────────────────────
+// A floating right-side panel that surfaces an assistant node's result the way
+// the sprawling canvas table can't: one compact, glanceable report. It floats
+// out of the node's right edge ONLY while the node is selected (the established
+// float-panel convention - see .workflow-node-float-panel) and only once a
+// result exists. The detailed canvas table that setupResearch/setupTesting
+// build stays the always-on, expandable view; this panel is the summary twin.
+const _ASSIST_DOTS = ["#5b6ee1", "#e15b5b", "#5bb98c", "#d9a441", "#8c5be1", "#41b6d9", "#d96d41", "#41a0d9"];
+const _assistDotColor = (i) => _ASSIST_DOTS[i % _ASSIST_DOTS.length];
+// Map a free-text verdict to a status tone (pass/warn/fail) + the short pill
+// label each surface wants: research uses REC/GOOD/POSS, testing PASS/WARN/FAIL.
+const _assistStatus = (verdict) => {
+  const k = _assistantVerdict(verdict).key;
+  if (k === "recommended") return { tone: "pass", research: "REC",  testing: "PASS" };
+  if (k === "good")        return { tone: "pass", research: "GOOD", testing: "PASS" };
+  if (k === "possible")    return { tone: "warn", research: "POSS", testing: "WARN" };
+  if (k === "bad")         return { tone: "fail", research: "BAD",  testing: "FAIL" };
+  return { tone: "fail", research: "—", testing: "FAIL" };
+};
+function _assistFmtElapsed(ms) {
+  if (!ms || ms < 0) return "—";
+  const s = ms / 1000;
+  if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+  return Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
+}
+
+function WorkflowAssistantResultPanel({ node }) {
+  const res = node.result;
+  if (!res) return null;
+  // Stop canvas pan/drag/zoom from eating panel scroll + clicks.
+  const swallow = { onMouseDown: (e) => e.stopPropagation(), onWheel: (e) => e.stopPropagation() };
+
+  if (res.kind === "research") {
+    const items = res.items || [];
+    return html`
+      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+        <div className="wap-head">
+          <span className="wap-kicker">Research findings</span>
+          <span className="wap-count">${items.length} result${items.length === 1 ? "" : "s"}</span>
+        </div>
+        ${res.query && html`<div className="wap-sub">${res.query}</div>`}
+        <div className="wap-list">
+          ${items.map((it, i) => {
+            const st = _assistStatus(it.verdict);
+            return html`
+              <div key=${i} className="wap-card">
+                <div className="wap-card-main">
+                  <div className="wap-title">${it.title || it.source || "(untitled)"}</div>
+                  ${it.summary && html`<div className="wap-summary">${it.summary}</div>`}
+                  ${it.source && html`<div className="wap-source"><span className="wap-favicon" style=${{ background: _assistDotColor(i) }}/>${it.source}</div>`}
+                  ${it.why && html`<div className="wap-why"><span className="wap-why-label">Why it qualifies</span>${it.why}</div>`}
+                </div>
+                <span className=${"wap-pill wap-pill-" + st.tone}>${st.research}</span>
+              </div>`;
+          })}
+          ${!items.length && html`<div className="wap-empty">No results yet.</div>`}
+        </div>
+      </div>`;
+  }
+
+  if (res.kind === "testing") {
+    const c = res.counters || {};
+    const testers = res.testers || [];
+    const agents = res.agents || [];
+    const rate = res.passRate || 0;
+    return html`
+      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-testing" ...${swallow}>
+        <div className="wap-head"><span className="wap-kicker">Simulation report</span></div>
+        <div className="wap-section-label">Live counters</div>
+        <div className="wap-counters">
+          <div className="wap-counter"><div className="wap-counter-num">${c.testers ?? 0}</div><div className="wap-counter-lbl">Testers</div></div>
+          <div className="wap-counter"><div className="wap-counter-num wap-counter-hot">${c.issues ?? 0}</div><div className="wap-counter-lbl">Issues found</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${c.types ?? 0}</div><div className="wap-counter-lbl">Persona types</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${_assistFmtElapsed(c.elapsedMs)}</div><div className="wap-counter-lbl">Elapsed</div></div>
+        </div>
+        <div className="wap-section-label">Probes</div>
+        <div className="wap-list">
+          ${testers.map((t, i) => {
+            const st = _assistStatus(t.verdict);
+            return html`
+              <div key=${i} className="wap-probe">
+                <span className=${"wap-dot wap-dot-" + st.tone}/>
+                <span className="wap-probe-text">${t.comment || t.name || ("Tester " + (i + 1))}</span>
+                <span className=${"wap-pill wap-pill-" + st.tone}>${t.verdict ? st.testing : "…"}</span>
+              </div>`;
+          })}
+          ${!testers.length && html`<div className="wap-empty">Running testers…</div>`}
+        </div>
+        ${res.total > 0 && html`
+          <div className="wap-section-label">Pass rate</div>
+          <div className="wap-rate-row">
+            <div className="wap-rate-num">${rate}%</div>
+            <div className="wap-rate-pill">${res.passCount} / ${res.total} pass</div>
+          </div>
+          <div className="wap-rate-bar"><div className="wap-rate-fill" style=${{ width: rate + "%" }}/></div>`}
+        ${agents.length > 0 && html`
+          <div className="wap-section-label">Agents</div>
+          <div className="wap-agents">
+            ${agents.map((a, i) => html`
+              <div key=${i} className="wap-agent">
+                <span className="wap-dot" style=${{ background: _assistDotColor(i) }}/>
+                <span className="wap-agent-name">${a.name}</span>
+                <span className="wap-agent-count">${a.count}</span>
+              </div>`)}
+          </div>`}
+      </div>`;
+  }
+  return null;
+}
+
 // ── Assistant 3: Interviewing assistant (real streaming agent-run chat) ────
 // The interview IS a normal agent run: the node's goal/focus/push-past become
 // the interviewer system prompt, and the standard WorkflowAgentChatDialog drives
@@ -71683,12 +71831,16 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(360, node.w || 420), h = Math.max(440, node.h || 460);
   const busy = runState?.status === "loading";
+  const hasResult = !!(node.result && (node.result.items || []).length);
+  const detached = selected && hasResult;
+  const panelR = detached ? 438 : 0;
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
          data-quiet="face"
          data-selected=${selected ? "true" : "false"}
+         data-detached=${detached ? "true" : "false"}
          onMouseDownCapture=${() => onSelect && onSelect()}
-         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Search}/></span>
         <span className="workflow-node-iter-title">Research assistant</span>
@@ -71754,6 +71906,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Research assistant"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
@@ -71766,12 +71919,16 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
   const w = Math.max(380, node.w || 440), h = Math.max(460, node.h || 500);
   const busy = runState?.status === "loading";
   const total = Math.min(node.maxTesters || 12, (node.personaTypes || 3) * (node.testersPerType || 2));
+  const hasResult = !!(node.result && ((node.result.testers || []).length || node.result.total));
+  const detached = selected && hasResult;
+  const panelR = detached ? 378 : 0;
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
          data-quiet="face"
          data-selected=${selected ? "true" : "false"}
+         data-detached=${detached ? "true" : "false"}
          onMouseDownCapture=${() => onSelect && onSelect()}
-         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}>
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Users || Icon.User || Icon.Spark}/></span>
         <span className="workflow-node-iter-title">Testing assistant</span>
@@ -71824,6 +71981,7 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Testing assistant"} sub=${(node.task || "").trim() || null} />
     </div>
   `;
