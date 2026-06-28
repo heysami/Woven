@@ -7646,29 +7646,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap {
   position: relative;
   overflow: hidden;
-  /* v3.5 - diamond lattice texture (was an axis-aligned square grid). Two
-     repeating-linear-gradients at ±45° cross to form a 45°-rotated square
-     grid (i.e. diamonds), matching the landing-diamonds visual language so
-     the workflow canvas reads as the same family. 1px lines at ~13% border
-     opacity, 30px perpendicular pitch - same visual density as the prior
-     square grid, just rotated. The soft centre wash on top stays. */
+  /* v3.6 - diamond lattice of DOTS (was crossing ±45° lines). A base dot grid
+     plus a second grid offset by half the tile (centered-square lattice), so
+     each dot's nearest neighbours form a DIAMOND rather than a rectangle.
+     42px tile + 21px offset => ~30px nearest-dot spacing, the same visual
+     density as the prior line grid. The soft centre wash on top stays. */
   background-color: var(--canvas-bg);
   background-image:
-    repeating-linear-gradient(
-      45deg,
-      transparent 0,
-      transparent 29px,
-      color-mix(in oklab, var(--border-strong) 15%, transparent) 29px,
-      color-mix(in oklab, var(--border-strong) 15%, transparent) 30px
-    ),
-    repeating-linear-gradient(
-      -45deg,
-      transparent 0,
-      transparent 29px,
-      color-mix(in oklab, var(--border-strong) 15%, transparent) 29px,
-      color-mix(in oklab, var(--border-strong) 15%, transparent) 30px
-    ),
+    radial-gradient(circle, color-mix(in oklab, var(--border-strong) 34%, transparent) 1.2px, transparent 1.7px),
+    radial-gradient(circle, color-mix(in oklab, var(--border-strong) 34%, transparent) 1.2px, transparent 1.7px),
     radial-gradient(circle at 50% 36%, var(--surface) 0%, transparent 72%);
+  background-size: 42px 42px, 42px 42px, 100% 100%;
+  background-position: 0 0, 21px 21px, 0 0;
+  background-repeat: repeat, repeat, no-repeat;
   cursor: default;
 }
 .workflow-canvas-wrap[data-space="true"] { cursor: grab; }
