@@ -3221,151 +3221,16 @@ def _chrome_screenshot(url: str, out_png: str, width: int = 1280, height: int = 
 # ── Template-DS sample previews (static PNG snapshots) ───────────────────
 # The Capabilities "Template Design System" gallery used to mount 20 live
 # iframes (10 UI styles × 2 surfaces) - each one a full DS boot (all.css +
-# style overlay + fonts + JS runtime). That's the slow landing. Instead we
-# pre-render each sample to a PNG under default-design-system/previews/ and
-# the landing renders <img>. Regeneration is daemon-driven and on demand: the
-# client owns buildDsCustomization, so it computes each sample's injected
-# CSS + font URLs and POSTs the manifest to /__ds_regen_previews; this worker
-# assembles a self-contained harness per sample (the SAME head injection the
-# live thumbnail does) and headless-Chrome-captures it. Cached PNGs persist
-# until regenerated; a stale snapshot only matters after a DS template / style
-# / token-default change, which is exactly when the user re-runs regeneration.
+# style overlay + fonts + JS runtime). That's the slow landing. Instead each
+# sample is rasterised ONCE to a PNG under default-design-system/previews/ and
+# the landing renders a plain <img>. The capture is client-side: the editor
+# already boots each sample live, so it html2canvas-pro's that frame and POSTs
+# the bytes to /__ds_save_preview (see DefaultLibraryLanding in app.js). No
+# headless Chrome, no server-side render. A snapshot only goes stale after a DS
+# template / style / token-default change, which is when the user re-bakes.
 DS_PREVIEWS_DIR = os.path.join(DEFAULT_DS_DIR, "previews")
-_DS_REGEN_LOCK = threading.Lock()
-_DS_REGEN = {"running": False, "total": 0, "done": 0, "ok": 0,
-             "results": [], "error": None, "finished_at": 0}
 _DS_SNAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 _DS_SNAP_VIEW_RE = re.compile(r"^[a-z0-9-]{1,20}$")
-
-
-def _ds_build_snapshot_harness(file_rel: str, style_id: str, dark: bool, js_style: bool,
-                               font_url: str, heading_font_url: str,
-                               override_css: str, dark_css: str) -> "tuple":
-    """Read the DS template at file_rel and return (harness_html, dir_rel)
-    carrying the same <head> injection the live thumbnail applies, so headless
-    Chrome renders the real styled surface. (None, None) if template missing.
-    Mirrors DsTuneThumb.apply() in editor/app.js - keep the two in sync."""
-    try:
-        tpl_path = _safe_join(DEFAULT_DS_DIR, file_rel)
-    except ValueError:
-        return None, None
-    if not os.path.isfile(tpl_path):
-        return None, None
-    with open(tpl_path, "r", encoding="utf-8") as f:
-        html_src = f.read()
-
-    def _attr(u: str) -> str:
-        return (u or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
-
-    theme = style_id or ("dark" if dark else "")
-    parts = ['<link rel="stylesheet" href="/__default_ds/all.css">']
-    if font_url:
-        parts.append('<link rel="stylesheet" href="%s">' % _attr(font_url))
-    if heading_font_url:
-        parts.append('<link rel="stylesheet" href="%s">' % _attr(heading_font_url))
-    # darkCss is scoped to [data-theme="dark"]; a STYLE overlay shadows that,
-    # so also bind it to the ds-scheme-dark class (same rewrite the client does).
-    dcss = dark_css or ""
-    if dcss:
-        dcss = dcss.replace('[data-theme="dark"]{', '[data-theme="dark"], :root.ds-scheme-dark{')
-    parts.append("<style id=\"__ds_custom_style\">%s\n%s</style>" % (override_css or "", dcss))
-    parts.append(
-        "<script>document.documentElement.setAttribute('data-theme', %s);"
-        "document.documentElement.classList.toggle('ds-scheme-dark', %s);</script>"
-        % (json.dumps(theme), "true" if dark else "false"))
-    if js_style and style_id and _DS_SNAP_ID_RE.match(style_id):
-        parts.append('<script defer src="/__default_ds/themes/%s.js"></script>' % style_id)
-    head_inject = "\n".join(parts)
-    # Re-run token docs + analog refresh once everything has settled (the live
-    # thumbnail calls these after injecting; the template defines them).
-    tail = ("<script>window.addEventListener('load',function(){setTimeout(function(){"
-            "try{window.__renderTokenDocs&&window.__renderTokenDocs();}catch(e){}"
-            "try{window.__analog&&window.__analog.refresh&&window.__analog.refresh();}catch(e){}"
-            "},150);});</script>")
-    if "</head>" in html_src:
-        html_src = html_src.replace("</head>", head_inject + "\n</head>", 1)
-    else:
-        html_src = head_inject + html_src
-    if "</body>" in html_src:
-        html_src = html_src.replace("</body>", tail + "\n</body>", 1)
-    else:
-        html_src = html_src + tail
-    return html_src, os.path.dirname(file_rel)
-
-
-def _ds_regen_worker(samples: list) -> None:
-    """Build a harness + capture a PNG for each sample. Updates _DS_REGEN as it
-    goes so the client can poll progress. Temp harness files live beside their
-    template (so relative links resolve) and are removed at the end."""
-    results: list = []
-    ok_count = 0
-    tmp_files: list = []
-    try:
-        os.makedirs(DS_PREVIEWS_DIR, exist_ok=True)
-        for s in samples:
-            sid = str(s.get("id") or "")
-            view = str(s.get("view") or "")
-            file_rel = str(s.get("file") or "")
-            entry = {"id": sid, "view": view, "ok": False}
-            if not (_DS_SNAP_ID_RE.match(sid) and _DS_SNAP_VIEW_RE.match(view)):
-                entry["error"] = "bad id/view"
-                results.append(entry)
-                _ds_regen_progress(results, ok_count)
-                continue
-            style_id = str(s.get("styleId") or "").strip()
-            dark = bool(s.get("dark"))
-            js_style = bool(s.get("js"))
-            harness, dir_rel = _ds_build_snapshot_harness(
-                file_rel, style_id, dark, js_style,
-                str(s.get("fontUrl") or ""), str(s.get("headingFontUrl") or ""),
-                str(s.get("overrideCss") or ""), str(s.get("darkCss") or ""))
-            if harness is None:
-                entry["error"] = "template missing: " + file_rel
-                results.append(entry)
-                _ds_regen_progress(results, ok_count)
-                continue
-            tmp_name = "__snap_%s_%s.html" % (sid, view)
-            tmp_rel = (dir_rel + "/" + tmp_name) if dir_rel else tmp_name
-            try:
-                tmp_abs = _safe_join(DEFAULT_DS_DIR, tmp_rel)
-            except ValueError:
-                entry["error"] = "bad path"
-                results.append(entry)
-                _ds_regen_progress(results, ok_count)
-                continue
-            try:
-                with open(tmp_abs, "w", encoding="utf-8") as f:
-                    f.write(harness)
-                tmp_files.append(tmp_abs)
-                url = "http://127.0.0.1:%d/__default_ds/%s" % (PORT, urllib.parse.quote(tmp_rel))
-                out_png = os.path.join(DS_PREVIEWS_DIR, sid + "-" + view + ".png")
-                if _chrome_screenshot(url, out_png, width=1280, height=800):
-                    entry["ok"] = True
-                    ok_count += 1
-                else:
-                    entry["error"] = "capture failed"
-            except Exception as e:
-                entry["error"] = str(e)
-            results.append(entry)
-            _ds_regen_progress(results, ok_count)
-    finally:
-        for p in tmp_files:
-            with contextlib.suppress(OSError):
-                os.remove(p)
-        with _DS_REGEN_LOCK:
-            _DS_REGEN["running"] = False
-            _DS_REGEN["done"] = len(results)
-            _DS_REGEN["ok"] = ok_count
-            _DS_REGEN["results"] = results
-            _DS_REGEN["finished_at"] = int(time.time())
-        print("[ds-preview] regenerated %d/%d sample previews" % (ok_count, len(results)), flush=True)
-
-
-def _ds_regen_progress(results: list, ok_count: int) -> None:
-    with _DS_REGEN_LOCK:
-        _DS_REGEN["done"] = len(results)
-        _DS_REGEN["ok"] = ok_count
-        _DS_REGEN["results"] = list(results)
 
 
 def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
@@ -8566,8 +8431,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._design_system_save(qs)
             if parsed.path == "/__ds_proposals":
                 return self._ds_proposals_save(qs)
-            if parsed.path == "/__ds_regen_previews":
-                return self._ds_regen_previews()
+            if parsed.path == "/__ds_save_preview":
+                return self._ds_save_preview(qs)
             if parsed.path == "/__upload_font":
                 return self._upload_font_post(qs)
             if parsed.path == "/__delete_font":
@@ -8945,8 +8810,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Static serve for the bundled starter DS - powers the new-project DS
         # customizer's live-preview iframe. `/__default_ds/gallery.html` and the
         # relative styles.css / shells/ / templates/ it links resolve here.
-        if url_path == "/__ds_regen_previews/status":
-            return self._ds_regen_status()
         if url_path == "/__default_ds" or url_path.startswith("/__default_ds/"):
             return self._default_ds_file(url_path[len("/__default_ds"):])
         if url_path == "/__ds_proposals":
@@ -12857,40 +12720,31 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    # ── POST /__ds_regen_previews ─────────────────────────────────────────
-    # Regenerate the static PNG snapshots for the Capabilities "Template Design
-    # System" gallery. Body: { samples: [{ id, view, file, styleId, dark, js,
-    # overrideCss, darkCss, fontUrl, headingFontUrl }] } - the client computes
-    # the per-sample injection (it owns buildDsCustomization). Runs on a worker
-    # thread; the client polls GET /__ds_regen_previews/status for progress.
-    def _ds_regen_previews(self):
+    # ── POST /__ds_save_preview?id=<sid>&view=<view> ──────────────────────
+    # Save ONE static PNG snapshot for the Capabilities "Template Design System"
+    # gallery. The client rasterises each sample in-browser with html2canvas-pro
+    # (the same DS boot it shows live) and POSTs the PNG bytes here; we just write
+    # it to previews/<id>-<view>.png. No headless Chrome, no server-side render -
+    # the gallery then serves a plain <img> of the saved file.
+    def _ds_save_preview(self, qs):
+        sid = (qs.get("id", [""])[0] or "").strip()
+        view = (qs.get("view", [""])[0] or "").strip()
+        if not (_DS_SNAP_ID_RE.match(sid) and _DS_SNAP_VIEW_RE.match(view)):
+            return self._reply(400, {"error": "bad id/view"})
+        png_bytes = self._read_png_body()
+        if not png_bytes:
+            return self._reply(400, {"error": "no PNG body"})
         try:
-            body = self._read_json_body(max_bytes=16 * 1024 * 1024)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-        samples = body.get("samples") if isinstance(body, dict) else None
-        if not isinstance(samples, list) or not samples:
-            return self._reply(400, {"error": "samples[] required"})
-        if len(samples) > 200:
-            return self._reply(400, {"error": "too many samples (max 200)"})
-        if not _find_chrome_binary():
-            return self._reply(503, {"error": "no Chrome/Chromium binary found - "
-                                     "install Chrome to regenerate previews (the gallery "
-                                     "keeps its live-iframe fallback meanwhile)"})
-        with _DS_REGEN_LOCK:
-            if _DS_REGEN["running"]:
-                return self._reply(409, {"error": "a regeneration is already running",
-                                          "done": _DS_REGEN["done"], "total": _DS_REGEN["total"]})
-            _DS_REGEN.update({"running": True, "total": len(samples), "done": 0,
-                              "ok": 0, "results": [], "error": None, "finished_at": 0})
-        threading.Thread(target=_ds_regen_worker, args=(samples,), daemon=True).start()
-        return self._reply(200, {"started": True, "total": len(samples)})
-
-    # ── GET /__ds_regen_previews/status ───────────────────────────────────
-    def _ds_regen_status(self):
-        with _DS_REGEN_LOCK:
-            st = dict(_DS_REGEN)
-        return self._reply(200, st)
+            os.makedirs(DS_PREVIEWS_DIR, exist_ok=True)
+            out_png = os.path.join(DS_PREVIEWS_DIR, sid + "-" + view + ".png")
+            tmp_png = out_png + ".tmp"
+            with open(tmp_png, "wb") as f:
+                f.write(png_bytes)
+            os.replace(tmp_png, out_png)
+        except OSError as e:
+            return self._reply(500, {"error": "write failed: " + str(e)})
+        return self._reply(200, {"ok": True, "bytes": len(png_bytes),
+                                 "file": "previews/%s-%s.png" % (sid, view)})
 
     # ── Phase 4a - BYOK media config + asset generation ──────────────────
     # GET  /__media_config            → masked config status (has_key/last_test_*)

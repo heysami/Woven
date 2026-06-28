@@ -18376,6 +18376,113 @@ function dsStyleSampleChips(p) {
    STYLE overlay (data-theme = styleId, the full all.css bundle, the dark class
    when requested, and the style's JS runtime if it ships one) is injected into
    the iframe head on load - the same mechanism the live customizer uses. */
+/* Inject the full DS bundle (all.css) + style overlay (data-theme) + optional
+   JS-backed style runtime + fonts + the computed custom-token <style> into a
+   sample iframe's document. The SINGLE source of truth for "boot a DS sample",
+   shared by the live thumbnail (DsTuneThumb) and the client-side rasteriser
+   (dsCaptureSampleToPng) so the static PNG matches the live boot exactly.
+   onAllCssLoad (optional) re-runs the caller once all.css lands - the live
+   thumbnail uses it to keep its custom <style> last in the cascade; the
+   rasteriser waits instead. */
+function dsInjectSampleHead(doc, { custom, dark, styleId, js }, onAllCssLoad) {
+  if (!doc || !doc.head) return;
+  custom = custom || {};
+  if (!doc.getElementById("__ds_all")) {
+    const allLink = doc.createElement("link");
+    allLink.id = "__ds_all"; allLink.rel = "stylesheet";
+    const allUrl = apiUrl("/__default_ds/all.css");
+    allLink.href = allUrl + (allUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+    if (onAllCssLoad) allLink.addEventListener("load", onAllCssLoad);
+    doc.head.appendChild(allLink);
+  }
+  // Style overlay: data-theme carries the style id; a STYLE wins over the plain
+  // dark scheme, and the style's own dark variant is reached by toggling the
+  // ds-scheme-dark class the editor uses.
+  if (doc.documentElement) {
+    const theme = styleId || (dark ? "dark" : "");
+    if (theme) doc.documentElement.setAttribute("data-theme", theme);
+    else doc.documentElement.removeAttribute("data-theme");
+    doc.documentElement.classList.toggle("ds-scheme-dark", !!dark);
+  }
+  // JS-backed styles (glassmorphism dispersion-prism, analog halftone) ship a
+  // runtime under themes/<id>.js - inject it so the sample shows the real thing.
+  if (js && styleId && doc.body && !doc.getElementById("__ds_style_js")) {
+    const s = doc.createElement("script");
+    s.id = "__ds_style_js"; s.defer = true;
+    const jsUrl = apiUrl("/__default_ds/themes/" + styleId + ".js");
+    s.src = jsUrl + (jsUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+    doc.body.appendChild(s);
+  }
+  const ensureFont = (id, url) => {
+    let l = doc.getElementById(id);
+    if (url) {
+      if (!l) { l = doc.createElement("link"); l.id = id; l.rel = "stylesheet"; doc.head.appendChild(l); }
+      if (l.getAttribute("href") !== url) l.setAttribute("href", url);
+    } else if (l) { l.parentNode.removeChild(l); }
+  };
+  ensureFont("__ds_custom_font", custom.font && custom.font.googleFontsUrl);
+  ensureFont("__ds_custom_font_h", custom.headingFont && custom.headingFont.googleFontsUrl);
+  let style = doc.getElementById("__ds_custom_style");
+  if (!style) { style = doc.createElement("style"); style.id = "__ds_custom_style"; }
+  // The computed dark role block is scoped to [data-theme="dark"] which a STYLE
+  // overlay shadows, so also bind it to the ds-scheme-dark class.
+  let darkCss = custom.darkCss || "";
+  if (darkCss) darkCss = darkCss.replace('[data-theme="dark"]{', '[data-theme="dark"], :root.ds-scheme-dark{');
+  style.textContent = (custom.overrideCss || "") + "\n" + darkCss;
+  doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
+}
+
+/* Client-side rasteriser: boot one DS sample in a hidden 1280×800 iframe, let
+   it settle, html2canvas-pro it to a PNG, and save it to previews/<id>-<view>.png
+   via POST /__ds_save_preview. Replaces the old headless-Chrome server capture -
+   it runs in the editor that's already open, so there's no Chrome subprocess to
+   hang and nothing "generated" at view time; the gallery just shows the <img>. */
+async function dsCaptureSampleToPng({ id, view, file, custom, dark, styleId, js }) {
+  if (typeof window === "undefined" || typeof window.html2canvas !== "function") {
+    throw new Error("html2canvas-pro not loaded");
+  }
+  const LOGICAL_W = 1280, LOGICAL_H = 800;
+  const ifr = document.createElement("iframe");
+  ifr.setAttribute("aria-hidden", "true");
+  ifr.scrolling = "no";
+  Object.assign(ifr.style, {
+    position: "fixed", left: "-99999px", top: "0", border: "0",
+    width: LOGICAL_W + "px", height: LOGICAL_H + "px", visibility: "hidden", pointerEvents: "none",
+  });
+  ifr.src = apiUrl("/__default_ds/" + file);
+  document.body.appendChild(ifr);
+  try {
+    await new Promise((res, rej) => {
+      ifr.addEventListener("load", res, { once: true });
+      ifr.addEventListener("error", () => rej(new Error("iframe failed to load " + file)), { once: true });
+      setTimeout(() => rej(new Error("iframe load timeout: " + file)), 15000);
+    });
+    let doc;
+    try { doc = ifr.contentDocument; } catch { doc = null; }
+    if (!doc || !doc.body) throw new Error("iframe document inaccessible");
+    dsInjectSampleHead(doc, { custom, dark, styleId, js });
+    // Let all.css, fonts, the optional style JS runtime and token-doc rendering
+    // settle before snapshotting the single frame.
+    try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
+    try { if (doc.fonts && doc.fonts.ready) await doc.fonts.ready; } catch {}
+    await new Promise(r => setTimeout(r, js ? 1100 : 500));
+    try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
+    const canvas = await window.html2canvas(doc.documentElement, {
+      width: LOGICAL_W, height: LOGICAL_H, windowWidth: LOGICAL_W, windowHeight: LOGICAL_H,
+      backgroundColor: null, useCORS: true, allowTaint: false, logging: false, scale: 1,
+    });
+    if (!canvas || !canvas.toDataURL) throw new Error("html2canvas returned no canvas");
+    const dataUrl = canvas.toDataURL("image/png");
+    if (!dataUrl || dataUrl.length < 200) throw new Error("captured raster was empty");
+    const r = await fetch(apiUrl("/__ds_save_preview?id=" + encodeURIComponent(id) + "&view=" + encodeURIComponent(view)), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }),
+    });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ("save HTTP " + r.status)); }
+  } finally {
+    ifr.remove();
+  }
+}
+
 function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) {
   const LOGICAL_W = 1280, LOGICAL_H = 800;
   const wrapRef = useRef(null);
@@ -18404,58 +18511,9 @@ function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) 
     let doc;
     try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.head) return;
-    // Pull in the full bundle (component partials + every style overlay) so the
-    // data-theme overlay below actually has rules to apply - most templates only
-    // link styles.css themselves. Re-apply once it lands.
-    if (!doc.getElementById("__ds_all")) {
-      const allLink = doc.createElement("link");
-      allLink.id = "__ds_all"; allLink.rel = "stylesheet";
-      const allUrl = apiUrl("/__default_ds/all.css");
-      allLink.href = allUrl + (allUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
-      allLink.addEventListener("load", () => { try { apply(); } catch {} });
-      doc.head.appendChild(allLink);
-    }
-    // Style overlay: data-theme carries the style id; a STYLE wins over the
-    // plain dark scheme, and the style's own dark variant is reached by toggling
-    // the ds-scheme-dark class the editor uses (e.g. techminimalism's
-    // :root.ds-scheme-dark[data-theme="techminimalism"] block).
-    if (doc.documentElement) {
-      const theme = styleId || (dark ? "dark" : "");
-      if (theme) doc.documentElement.setAttribute("data-theme", theme);
-      else doc.documentElement.removeAttribute("data-theme");
-      doc.documentElement.classList.toggle("ds-scheme-dark", !!dark);
-    }
-    // JS-backed styles (glassmorphism dispersion-prism, analog halftone) ship a
-    // runtime under themes/<id>.js - inject it so the thumbnail shows the real
-    // thing, not the CSS fallback. Self-activates on data-theme.
-    if (js && styleId && doc.body && !doc.getElementById("__ds_style_js")) {
-      const s = doc.createElement("script");
-      s.id = "__ds_style_js"; s.defer = true;
-      const jsUrl = apiUrl("/__default_ds/themes/" + styleId + ".js");
-      s.src = jsUrl + (jsUrl.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
-      doc.body.appendChild(s);
-    }
-    // Body + (optional) heading font links. A two-font tune (e.g. Analog's
-    // Fraunces headings over a Source-Serif body) emits --font-heading in
-    // overrideCss, so the heading face must be fetched too or it falls back.
-    const ensureFont = (id, url) => {
-      let l = doc.getElementById(id);
-      if (url) {
-        if (!l) { l = doc.createElement("link"); l.id = id; l.rel = "stylesheet"; doc.head.appendChild(l); }
-        if (l.getAttribute("href") !== url) l.setAttribute("href", url);
-      } else if (l) { l.parentNode.removeChild(l); }
-    };
-    ensureFont("__ds_custom_font", custom.font && custom.font.googleFontsUrl);
-    ensureFont("__ds_custom_font_h", custom.headingFont && custom.headingFont.googleFontsUrl);
-    let style = doc.getElementById("__ds_custom_style");
-    if (!style) { style = doc.createElement("style"); style.id = "__ds_custom_style"; }
-    // Light overrides always apply; the computed dark role block is scoped to
-    // [data-theme="dark"] which a STYLE overlay shadows, so also bind it to the
-    // ds-scheme-dark class we toggle above.
-    let darkCss = custom.darkCss || "";
-    if (darkCss) darkCss = darkCss.replace('[data-theme="dark"]{', '[data-theme="dark"], :root.ds-scheme-dark{');
-    style.textContent = (custom.overrideCss || "") + "\n" + darkCss;
-    doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
+    // Boot the sample (all.css + style overlay + JS runtime + fonts + tokens).
+    // The shared helper re-runs this on all.css load to keep our <style> last.
+    dsInjectSampleHead(doc, { custom, dark, styleId, js }, () => { try { apply(); } catch {} });
     try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
     try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
   }, [custom, dark, styleId, js]);
@@ -18520,10 +18578,11 @@ function DefaultLibraryLanding() {
   }, []);
 
   // Static PNG snapshots make the gallery near-instant; the iframe boot is a
-  // fallback only. Regeneration is daemon-driven (headless Chrome) and must be
-  // re-run after a DS template / style / token-default change. The client owns
-  // buildDsCustomization, so it ships each sample's computed injection to the
-  // daemon, which assembles a harness + captures it. `bust` re-fetches the imgs
+  // fallback only (a cell shows the live iframe ONLY when its PNG is missing).
+  // Re-bake after a DS template / style / token-default change. Capture is
+  // client-side via html2canvas-pro (dsCaptureSampleToPng) - each sample is
+  // rasterised in a hidden iframe in THIS browser and the PNG is saved to the
+  // daemon, so there's no headless Chrome to hang. `bust` re-fetches the imgs
   // once capture finishes. Two surfaces per style: landing + the design system.
   const [regen, setRegen] = useState(null);   // {running,done,total,ok,err}
   const [bust, setBust] = useState(0);
@@ -18532,35 +18591,23 @@ function DefaultLibraryLanding() {
       { view: "landing", file: "templates/landing.html" },
       { view: "gallery", file: "gallery.html" },
     ];
-    const samples = [];
+    const jobs = [];
     for (const p of DS_STYLE_SAMPLES) {
-      const c = sampleCustoms[p.id] || {};
       for (const v of views) {
-        samples.push({
-          id: p.id, view: v.view, file: v.file,
-          styleId: p.styleId || "", dark: !!p.dark, js: !!p.js,
-          overrideCss: c.overrideCss || "", darkCss: c.darkCss || "",
-          fontUrl: (c.font && c.font.googleFontsUrl) || "",
-          headingFontUrl: (c.headingFont && c.headingFont.googleFontsUrl) || "",
-        });
+        jobs.push({ id: p.id, view: v.view, file: v.file,
+          custom: sampleCustoms[p.id] || {}, dark: !!p.dark, styleId: p.styleId || "", js: !!p.js });
       }
     }
-    setRegen({ running: true, done: 0, total: samples.length, ok: 0, err: null });
-    try {
-      const r = await fetch(apiUrl("/__ds_regen_previews"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ samples }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ("HTTP " + r.status)); }
-      for (;;) {
-        await new Promise(res => setTimeout(res, 1500));
-        const st = await (await fetch(apiUrl("/__ds_regen_previews/status"))).json();
-        setRegen({ running: !!st.running, done: st.done || 0, total: st.total || samples.length, ok: st.ok || 0, err: null });
-        if (!st.running) break;
-      }
-      setBust(Date.now());
-    } catch (e) {
-      setRegen({ running: false, done: 0, total: 0, ok: 0, err: String((e && e.message) || e) });
+    setRegen({ running: true, done: 0, total: jobs.length, ok: 0, err: null });
+    let ok = 0, lastErr = null;
+    for (let i = 0; i < jobs.length; i++) {
+      try { await dsCaptureSampleToPng(jobs[i]); ok++; }
+      catch (e) { lastErr = jobs[i].id + "/" + jobs[i].view + ": " + String((e && e.message) || e); }
+      setRegen({ running: true, done: i + 1, total: jobs.length, ok, err: null });
+      setBust(Date.now());   // reveal each PNG as it lands
     }
+    setRegen({ running: false, done: jobs.length, total: jobs.length, ok,
+               err: ok === 0 ? (lastErr || "capture failed") : null });
   }, [sampleCustoms]);
 
   return html`
@@ -18571,7 +18618,7 @@ function DefaultLibraryLanding() {
         action=${html`<div className="deflib-head-actions">
           <button className="sysadd-bar-btn" type="button"
             onClick=${onRegen} disabled=${!!(regen && regen.running)}
-            title="Re-render every sample to a static PNG via headless Chrome (~1 min). Run this after changing a DS template, style, or the token defaults. Needs the daemon running and Chrome installed.">
+            title="Rasterise every sample to a static PNG in your browser (html2canvas) and save it, so the gallery shows plain images. Run this after changing a DS template, style, or the token defaults.">
             <${Icon.Refresh}/><span>${regen && regen.running ? "Rendering " + regen.done + "/" + regen.total + "…" : "Regenerate previews"}</span></button>
           <button className="sysadd-bar-btn" type="button"
             onClick=${() => setTuneOpen(true)}
@@ -19849,6 +19896,7 @@ Restate your file plan in one short message; if anything is genuinely ambiguous,
           </div>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -19933,6 +19981,7 @@ Restate your plan briefly; if anything is ambiguous, ask - otherwise proceed and
           </div>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -21941,6 +21990,7 @@ function ShareHousekeepingModal({ onClose }) {
           `}
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -50301,6 +50351,7 @@ function WorkflowPromptInspectorModal({ debug, label, onClose }) {
           `)}
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -55318,6 +55369,7 @@ function WorkflowVersionPicker({ node, allNodes, allEdges, onClose, onChange }) 
           <span>${versions.length} of ${versionMax}${unpinnedCount > versionMax ? " - over cap" : ""}</span>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -69953,6 +70005,7 @@ function CustomAppSettingModal({ node, existing, onClose, onAdd }) {
             onClick=${() => onAdd(proposal)}>Add setting</button>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -74726,6 +74779,7 @@ function ConvertSectionModal({ cfg, onPatch, onCancel, onConfirm }) {
             disabled=${!canConfirm} onClick=${onConfirm}>Convert</button>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -77064,6 +77118,7 @@ function WorkflowReplaceAssetChooser({ targetNode, onCancel, onPick }) {
           <button className="tbtn" onClick=${onCancel}>Cancel</button>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -77219,6 +77274,7 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
           >Apply (${selected.size})</button>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -77671,6 +77727,7 @@ function WorkflowSettingsDialog({ onClose }) {
           `}
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -77831,6 +77888,7 @@ function WorkflowExportsDialog({ onClose }) {
               </div>`}
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
@@ -80358,6 +80416,7 @@ function WorkflowFolderPickerDialog({ initialPath, onClose, onPick }) {
           </button>
         </div>
       </div>
+    </div>
   `, document.body);
 }
 
