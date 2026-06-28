@@ -16323,7 +16323,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   top: 6px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 80;
+  /* Above full-screen surfaces (the User testing dialog is z-9500, the
+     prototype door is fixed) so the nav stays the one consistent control on
+     every surface; still below true modals / overlays (z-9700+). */
+  z-index: 9600;
   display: inline-flex;
   gap: 2px;
   padding: 3px;

@@ -31896,7 +31896,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [leftPanel]);
   useEffect(() => {
     try { localStorage.setItem("th-workflow-main-view", mainView); } catch {}
+    // Broadcast so the top SurfaceNav (rendered outside this component) reflects
+    // canvas↔proto changes made here (rail, zoom flows, etc.).
+    try { window.dispatchEvent(new CustomEvent("th:wf-mainview", { detail: mainView })); } catch {}
   }, [mainView]);
+  // React to mode changes driven by the top SurfaceNav (Canvas / Preview).
+  // Entering proto clears canvas-anchored transient UI (selection bars / pick
+  // inspector / context menu portal to body and would float over the viewer).
+  useEffect(() => {
+    const h = (e) => {
+      const v = e.detail === "proto" ? "proto" : "canvas";
+      if (v === "proto") {
+        setProtoViewerMounted(true);
+        setSelectedNodeIds(new Set());
+        setSelectedEdge(null);
+        setCtxMenu(null);
+        setPickedElement(null);
+        setCodePanelNodeId(null);
+      }
+      setMainView(v);
+    };
+    window.addEventListener("th:wf-mainview", h);
+    return () => window.removeEventListener("th:wf-mainview", h);
+  }, []);
   const onRailPanel = useCallback((which) => {
     // Panel icons always land in Build mode - the whiteboard rail icon is
     // the only way in, so Nodes/Outputs double as the way back out.
@@ -31923,19 +31945,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
     toggleWbMode();
   }, [mainView, toggleWbMode]);
-  const onRailProto = useCallback(() => {
-    if (mainView === "proto") { setMainView("canvas"); return; }
-    setProtoViewerMounted(true);
-    setMainView("proto");
-    // Clear canvas-anchored transient UI. The selection action bars / pick
-    // inspector / context menu portal to document.body and would otherwise
-    // float over the prototype viewer (the hidden canvas keeps valid rects).
-    setSelectedNodeIds(new Set());
-    setSelectedEdge(null);
-    setCtxMenu(null);
-    setPickedElement(null);
-    setCodePanelNodeId(null);
-  }, [mainView]);
 
   // Zoom overlay state - set to { filePath, branch, nodeId } when the user
   // clicks 🔍 on a Workflow prototype node or HTML asset card, or "Edit" on
@@ -42585,14 +42594,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             tip="Visual assets - image / SVG / video / scenes"
             onClick=${() => onRailPanel("visual")}
           ><${Icon.Image}/><//>
-          <div className="workflow-nav-rail-sep"/>
-          <${HoverTip}
-            placement="right"
-            className=${"workflow-nav-rail-btn" + (mainView === "proto" ? " is-active" : "")}
-            ariaLabel="Prototype viewer"
-            tip="Prototype viewer - browse in browser-style tabs"
-            onClick=${onRailProto}
-          ><${Icon.Canvas}/><//>
         </nav>
         <div className="workflow-library-col">
           ${wbMode ? html`
@@ -50977,11 +50978,6 @@ function UserTestingScreen({ slug, onClose }) {
   return html`
     <div className="ut-screen" role="dialog" aria-label="User testing" onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
       <div className="ut-screen-bar">
-        <button className="project-home-btn ut-screen-back" onClick=${onClose} title="Back to workflow (Esc)">
-          <span className="project-home-arrow">←</span>
-          <${Icon.Branch}/>
-          <span>Workflow</span>
-        </button>
         <span className="ut-screen-glyph"><${Icon.Eye}/></span>
         <div className="ut-screen-titles">
           <div className="ut-screen-title">User testing</div>
@@ -80963,36 +80959,67 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
   `;
 }
 
+/* The workflow surface has an internal mode: "canvas" (the node graph) vs
+   "proto" (the Prototype viewer - browser-style tabs, which stays mounted like
+   real tabs). Both are the SAME WorkflowCanvas instance; the mode is internal
+   state persisted in localStorage. The top SurfaceNav (rendered OUTSIDE
+   WorkflowCanvas) both drives and reflects it via the `th:wf-mainview` event,
+   so Canvas↔Preview toggles the live viewer with NO remount (tabs survive). */
+const WF_MAINVIEW_KEY = "th-workflow-main-view";
+function readWorkflowMainView() {
+  try { return localStorage.getItem(WF_MAINVIEW_KEY) === "proto" ? "proto" : "canvas"; }
+  catch { return "canvas"; }
+}
+function setWorkflowMainView(v) {
+  const val = v === "proto" ? "proto" : "canvas";
+  try { localStorage.setItem(WF_MAINVIEW_KEY, val); } catch {}
+  try { window.dispatchEvent(new CustomEvent("th:wf-mainview", { detail: val })); } catch {}
+}
+
 /* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
-   One segmented control, present on every project-scoped surface, that swaps
-   between the four top-level routes <Root> renders:
-     Canvas  → ?view=workflow   (the infinite node canvas)
-     Preview → ?view=prototype  (PrototypeDoor - the live running app)
-     Testing → ?view=usertesting  (only when the capability is enabled)
-     Editor  → no ?view=        (the design editor / <App>)
-   It only swaps the URL `view`; nothing about the editor's own internal views
-   changes. Hidden inside embed iframes (?embed=1) - those are locked viewers. */
+   One segmented control, the single consistent top nav on every project-scoped
+   surface. It swaps between:
+     Canvas  → workflow surface, node graph     (?view=workflow, mode=canvas)
+     Preview → workflow surface, Prototype viewer(?view=workflow, mode=proto)
+     Testing → user testing                     (?view=usertesting, if enabled)
+     Editor  → the design editor                (no ?view= → <App>)
+   Canvas and Preview are two MODES of the same workflow surface, so switching
+   between them just flips the internal mode (no reload, the proto viewer's tabs
+   stay alive). Hidden inside embed iframes (?embed=1) - those are locked. */
 const SURFACE_DEFAULT = "editor";
 function SurfaceNav() {
   const cap = useUserTestingCapability();
+  const [wfMain, setWfMain] = useState(readWorkflowMainView);
+  useEffect(() => {
+    const h = (e) => setWfMain(e.detail === "proto" ? "proto" : "canvas");
+    window.addEventListener("th:wf-mainview", h);
+    return () => window.removeEventListener("th:wf-mainview", h);
+  }, []);
   if (viewIsEmbed()) return null;
   const nav = thReadNav();
   if (!nav.hasProject) return null;          // never on the projects gallery
   const cur = nav.view || SURFACE_DEFAULT;
   const utEnabled = !!(cap && cap.config && cap.config.enabled);
-  // `view` = the URL value to set (null = editor, the default surface). Drops
-  // ?utproto so leaving the testing page doesn't leak its prototype filter.
+  // Navigate to a top-level surface. Drops ?utproto so leaving the testing page
+  // doesn't leak its prototype filter.
   const go = (view) => {
     const u = new URL(location.href);
     if (view) u.searchParams.set("view", view); else u.searchParams.delete("view");
     u.searchParams.delete("utproto");
     thNavigate(u.toString());
   };
+  // Enter the workflow surface in a given mode. Persist + broadcast first (so a
+  // live WorkflowCanvas flips instantly, and a fresh mount reads the right
+  // mode), then navigate only if we're not already on the workflow surface.
+  const toWorkflow = (mode) => {
+    setWorkflowMainView(mode);
+    if (cur !== "workflow") go("workflow");
+  };
   const segs = [
-    { label: "Canvas",  view: "workflow",    active: cur === "workflow" },
-    { label: "Preview", view: "prototype",   active: cur === "prototype" },
-    ...(utEnabled ? [{ label: "Testing", view: "usertesting", active: cur === "usertesting" }] : []),
-    { label: "Editor",  view: null,          active: cur === "editor" },
+    { label: "Canvas",  active: cur === "workflow" && wfMain === "canvas", onClick: () => toWorkflow("canvas") },
+    { label: "Preview", active: cur === "workflow" && wfMain === "proto",  onClick: () => toWorkflow("proto") },
+    ...(utEnabled ? [{ label: "Testing", active: cur === "usertesting", onClick: () => go("usertesting") }] : []),
+    { label: "Editor",  active: cur === "editor", onClick: () => go(null) },
   ];
   return html`
     <div className="surface-nav" role="tablist" aria-label="Surface">
@@ -81002,7 +81029,7 @@ function SurfaceNav() {
           role="tab"
           aria-selected=${s.active}
           className=${"surface-nav-seg" + (s.active ? " is-active" : "")}
-          onClick=${() => { if (!s.active) go(s.view); }}
+          onClick=${() => { if (!s.active) s.onClick(); }}
         >${s.label}</button>
       `)}
     </div>
