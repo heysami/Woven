@@ -8857,7 +8857,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   text-align: center;
   overflow: hidden;
 }
-.workflow-node[data-quiet="face"]:not(:hover):not([data-selected="true"]) > .workflow-node-quiet {
+body:not([data-wf-no-simplify]) .workflow-node[data-quiet="face"]:not(:hover):not([data-selected="true"]) > .workflow-node-quiet {
   display: flex;
 }
 /* The resting icon inherits each node's own top-bar glyph colour (set per kind
@@ -8948,36 +8948,36 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 /* bare mode - collapse the chrome bar row(s) so only the content remains. The
    bar stays in flow (visibility:hidden) so grid auto-placement keeps the body
    in its row; the track itself collapses to 0. */
-.workflow-node[data-quiet="bare"]:not(:hover):not([data-selected="true"]) {
+body:not([data-wf-no-simplify]) .workflow-node[data-quiet="bare"]:not(:hover):not([data-selected="true"]) {
   grid-template-rows: 0 1fr;
 }
-.workflow-node[data-quiet="bare"]:not(:hover):not([data-selected="true"]) > .workflow-node-bar {
+body:not([data-wf-no-simplify]) .workflow-node[data-quiet="bare"]:not(:hover):not([data-selected="true"]) > .workflow-node-bar {
   visibility: hidden;
   overflow: hidden;
   min-height: 0;
 }
 /* formatted-text carries an extra typobar row above the editor. */
-.workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) {
+body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) {
   grid-template-rows: 0 0 1fr;
 }
-.workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) > .workflow-fmttext-typobar {
+body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) > .workflow-fmttext-typobar {
   visibility: hidden;
   overflow: hidden;
   min-height: 0;
 }
 /* At rest, prompt + formatted-text read as centered cards (content centred both
    axes); editing layout returns the moment the node is hovered or selected. */
-.workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-render {
+body:not([data-wf-no-simplify]) .workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-render {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
 }
-.workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-text {
+body:not([data-wf-no-simplify]) .workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-text {
   text-align: center;
 }
-.workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-fmttext-editor {
+body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-fmttext-editor {
   display: flex;
   flex-direction: column;
   align-items: center;

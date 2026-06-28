@@ -7154,6 +7154,29 @@ function saveSendOnEnter(v) {
   try { window.dispatchEvent(new CustomEvent("th:chat-send-pref-changed")); } catch {}
 }
 
+/* Node simplification preference. true (default) = canvas nodes show a
+   simplified resting face when neither hovered nor selected; false = nodes
+   always render their full view. Stored in the same settings blob and applied
+   globally via a `data-wf-no-simplify` attribute on <body> that the quiet-face
+   CSS rules gate on (see styles.css). Read live so the toggle takes effect
+   without a reload. */
+function loadNodeSimplify() { return loadSettings().nodeSimplifyAtRest !== false; }
+function applyNodeSimplifyAttr() {
+  try { document.body.toggleAttribute("data-wf-no-simplify", !loadNodeSimplify()); } catch {}
+}
+function saveNodeSimplify(v) {
+  saveSettings({ nodeSimplifyAtRest: !!v });
+  applyNodeSimplifyAttr();
+  try { window.dispatchEvent(new CustomEvent("th:node-simplify-changed")); } catch {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("th:node-simplify-changed", applyNodeSimplifyAttr);
+  if (typeof document !== "undefined") {
+    if (document.body) applyNodeSimplifyAttr();
+    else window.addEventListener("DOMContentLoaded", applyNodeSimplifyAttr);
+  }
+}
+
 /* Pending-queue persistence - the composer's send-while-busy queue is
    React state, so closing the drawer unmounts it and a page refresh
    discards it entirely. Mirror it to localStorage keyed by runId so a
@@ -77594,13 +77617,13 @@ function WorkflowSettingsDialog({ onClose }) {
     { id: "api", label: "API keys" },
     { id: "install", label: "Things to install" },
     { id: "figma", label: "Send to Figma" },
-    { id: "sendkey", label: "Send key" },
+    { id: "sendkey", label: "Preferences" },
   ];
   const subByTab = {
     api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
-    sendkey: "Chat composer · saved in this browser, applies live",
+    sendkey: "Editor preferences · saved in this browser, applies live",
   };
 
   return createPortal(html`
@@ -77657,33 +77680,62 @@ function WorkflowSettingsDialog({ onClose }) {
    onboarding's top-bordered block. */
 function WorkflowSendKeySection() {
   const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
+  const [simplify, setSimplify] = useState(() => loadNodeSimplify());
   useEffect(() => {
     const on = () => setSendOnEnter(loadSendOnEnter());
     window.addEventListener("th:chat-send-pref-changed", on);
     return () => window.removeEventListener("th:chat-send-pref-changed", on);
   }, []);
+  useEffect(() => {
+    const on = () => setSimplify(loadNodeSimplify());
+    window.addEventListener("th:node-simplify-changed", on);
+    return () => window.removeEventListener("th:node-simplify-changed", on);
+  }, []);
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
+  const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
   return html`
-    <div className="workflow-settings-section">
-      <div className="onboarding-sendkey-head">
-        <span className="onboarding-sendkey-title">Chat send key</span>
-        <span className="onboarding-sendkey-desc">How you send a message to the agent from the chat box.</span>
+    <${React.Fragment}>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Chat send key</span>
+          <span className="onboarding-sendkey-desc">How you send a message to the agent from the chat box.</span>
+        </div>
+        <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Chat send key">
+          <button type="button" role="radio" aria-checked=${!sendOnEnter}
+            className="onboarding-sendkey-opt" data-active=${!sendOnEnter}
+            onClick=${() => pick(false)}>
+            <span className="onboarding-sendkey-keys">⌘/Ctrl + ↵</span>
+            <span className="onboarding-sendkey-sub">Enter = new line</span>
+          </button>
+          <button type="button" role="radio" aria-checked=${sendOnEnter}
+            className="onboarding-sendkey-opt" data-active=${sendOnEnter}
+            onClick=${() => pick(true)}>
+            <span className="onboarding-sendkey-keys">↵ Enter</span>
+            <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
+          </button>
+        </div>
       </div>
-      <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Chat send key">
-        <button type="button" role="radio" aria-checked=${!sendOnEnter}
-          className="onboarding-sendkey-opt" data-active=${!sendOnEnter}
-          onClick=${() => pick(false)}>
-          <span className="onboarding-sendkey-keys">⌘/Ctrl + ↵</span>
-          <span className="onboarding-sendkey-sub">Enter = new line</span>
-        </button>
-        <button type="button" role="radio" aria-checked=${sendOnEnter}
-          className="onboarding-sendkey-opt" data-active=${sendOnEnter}
-          onClick=${() => pick(true)}>
-          <span className="onboarding-sendkey-keys">↵ Enter</span>
-          <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
-        </button>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Canvas nodes</span>
+          <span className="onboarding-sendkey-desc">How nodes look when they're not hovered or selected.</span>
+        </div>
+        <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Canvas node detail">
+          <button type="button" role="radio" aria-checked=${simplify}
+            className="onboarding-sendkey-opt" data-active=${simplify}
+            onClick=${() => pickSimplify(true)}>
+            <span className="onboarding-sendkey-keys">Simplified at rest</span>
+            <span className="onboarding-sendkey-sub">Big icon + name; full view on hover/select</span>
+          </button>
+          <button type="button" role="radio" aria-checked=${!simplify}
+            className="onboarding-sendkey-opt" data-active=${!simplify}
+            onClick=${() => pickSimplify(false)}>
+            <span className="onboarding-sendkey-keys">Always full</span>
+            <span className="onboarding-sendkey-sub">No simplification</span>
+          </button>
+        </div>
       </div>
-    </div>
+    <//>
   `;
 }
 
