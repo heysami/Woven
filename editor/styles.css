@@ -3804,9 +3804,9 @@ button {
   color: var(--text);
 }
 .workflow-nav-rail-btn.is-active {
-  background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 12%, var(--surface));
-  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
-  color: var(--text);
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  color: var(--accent-text);
 }
 .workflow-nav-rail-sep {
   width: 22px;
@@ -3856,9 +3856,9 @@ button {
   color: var(--text);
 }
 .th-right-rail-btn.is-active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  color: var(--accent-text);
 }
 .th-right-rail-icon-wrap {
   position: relative;
@@ -16327,12 +16327,13 @@ a.ds-badge:hover, button.ds-badge:hover {
   margin: 4px 0;
   background: var(--border);
 }
-/* The rail buttons reuse .tab.tab-icon; the active state mirrors the old
-   toolbar tabs (filled surface + subtle shadow). */
+/* Selected icon-nav state: soft-green tint + green border + GREEN icon (the icon
+   inherits color via currentColor). Never the solid-accent fill with a white
+   glyph - that's reserved for primary action buttons, not navigation. */
 .editor-left-rail .tab-icon[data-active="true"] {
-  background: var(--surface-2);
-  color: var(--text);
-  box-shadow: var(--shadow-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  color: var(--accent-text);
 }
 
 /* ────────── Editor canvas 2nd panel (tools list + docked minimap) ──────────
