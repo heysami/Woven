@@ -50859,6 +50859,7 @@ function UserTestingScreen({ slug, onClose }) {
   const [copied, setCopied] = useState(null);
   const [activeId, setActiveId] = useState(null); // selected session
   const [tab, setTab] = useState("objective");
+  const [protos, setProtos] = useState([]);       // source/<slug>/ for the switcher
 
   const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
 
@@ -50879,6 +50880,18 @@ function UserTestingScreen({ slug, onClose }) {
     return () => clearInterval(t);
   }, [cap.state, refetch]);
 
+  // The project's prototypes, for the header switcher (swap which slug this
+  // scoped page is filtered to without navigating back out to the canvas).
+  useEffect(() => {
+    if (cap.state !== "ready") return;
+    let alive = true;
+    fetch(apiUrl("/__source_prototypes"))
+      .then(r => r.ok ? r.json() : { prototypes: [] })
+      .then(j => { if (alive) setProtos((j && j.prototypes) || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [cap.state]);
+
   const op = useCallback(async (body) => {
     setBusy(true); setErr(null);
     try {
@@ -50893,6 +50906,24 @@ function UserTestingScreen({ slug, onClose }) {
 
   const allSessions = (data && data.sessions) || [];
   const sessions = useMemo(() => slug ? allSessions.filter(s => s.prototype === slug) : allSessions, [allSessions, slug]);
+
+  // Prototype switcher options. Keep the current slug present even if the
+  // source scan hasn't surfaced it yet, so the select never shows a blank.
+  const protoOptions = useMemo(() => {
+    const ids = protos.map(p => p.id);
+    if (slug && !ids.includes(slug)) ids.unshift(slug);
+    return ids;
+  }, [protos, slug]);
+  // Swap which prototype this page is scoped to by rewriting ?utproto; the
+  // top-level view re-reads it on navigation and re-passes `slug`. Empty =
+  // the "all prototypes" view.
+  const switchProto = (next) => {
+    const u = new URL(location.href);
+    u.searchParams.set("view", "usertesting");
+    if (next) u.searchParams.set("utproto", next);
+    else u.searchParams.delete("utproto");
+    thNavigate(u.toString());
+  };
   const publishBase = (data && data.publishBase) || "";
   const cloudflaredFound = !!(data && data.cloudflared && data.cloudflared.found);
   const active = useMemo(() => sessions.find(s => s.id === activeId) || null, [sessions, activeId]);
@@ -50954,7 +50985,15 @@ function UserTestingScreen({ slug, onClose }) {
         <span className="ut-screen-glyph"><${Icon.Eye}/></span>
         <div className="ut-screen-titles">
           <div className="ut-screen-title">User testing</div>
-          <div className="ut-screen-sub">${slug ? `source/${slug}/` : "all prototypes"}</div>
+          ${cap.state === "ready"
+            ? html`<div className="ut-screen-subrow">
+                <select className="ut-proto-switch" value=${slug || ""}
+                  onChange=${(e) => switchProto(e.target.value)} aria-label="Switch prototype">
+                  <option value="">All prototypes</option>
+                  ${protoOptions.map(id => html`<option key=${id} value=${id}>source/${id}/</option>`)}
+                </select>
+              </div>`
+            : html`<div className="ut-screen-sub">${slug ? `source/${slug}/` : "all prototypes"}</div>`}
         </div>
         <div className="ut-screen-spacer"></div>
         ${cap.state === "ready" && !publishBase && html`

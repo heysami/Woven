@@ -27970,6 +27970,17 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .ut-screen-titles { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; }
 .ut-screen-title { font-size: 14px; font-weight: 600; }
 .ut-screen-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.ut-screen-subrow { display: flex; align-items: center; }
+.ut-proto-switch {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent; border-radius: 4px;
+  padding: 1px 3px; margin-left: -3px;
+  max-width: 320px; cursor: pointer;
+}
+.ut-proto-switch:hover { border-color: var(--border); color: var(--text); }
+.ut-proto-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ut-screen-spacer { flex: 1 1 auto; }
 .ut-screen-pubhint {
   font-size: 11.5px; color: var(--text-muted);
