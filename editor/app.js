@@ -31220,20 +31220,51 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
 //                        new node of a chosen kind at the viewport centre.
 // ↑/↓ move the highlight, ↵ activates, Esc closes. Mirrors the spotlight /
 // command-palette pattern; rendered via createPortal so it floats over all.
-const PALETTE_ADD_KINDS = [
-  ["prompt", "Prompt"],
-  ["section", "Section"],
-  ["table", "Table"],
-  ["agent", "Agent"],
-  ["skill", "Skill"],
-  ["asset", "Asset"],
-  ["browser", "Browser"],
-  ["folder", "Folder"],
-  ["color-palette", "Colour palette"],
-  ["typography", "Typography"],
-  ["design-system", "Design system"],
-  ["composer", "Composer"],
+// The "add a node" catalog for the Cmd+K tab - mirrors the left library rail
+// (App nodes + Building blocks) plus the common content / structure / agent
+// kinds, so the palette can create anything the rail can. `glyph` is the same
+// symbol the rail shows; `payload` seeds non-default kinds (eg. the pose set
+// is a pre-configured skill node). Keep in sync with WorkflowLibrary's rail.
+const WORKFLOW_ADD_CATALOG = [
+  // App nodes
+  { kind: "browser",           label: "Web browser",          glyph: "◍", sub: "url → live page" },
+  { kind: "vector-editor",     label: "Vector editor",        glyph: "✎", sub: "svg drawing" },
+  { kind: "spline-3d",         label: "3D editor",            glyph: "⬢", sub: "spline-style scene" },
+  { kind: "composer",          label: "Composer",             glyph: "▣", sub: "layered canvas" },
+  { kind: "hyperframes",       label: "Hyperframes",          glyph: "Hf", sub: "motion timeline" },
+  { kind: "font-editor",       label: "Font creator",         glyph: "Aa", sub: "glyphs → otf" },
+  { kind: "image-editor",      label: "Image editor",         glyph: "▦", sub: "raster · layers" },
+  { kind: "pixel-editor",      label: "Pixel editor",         glyph: "▩", sub: "code · draw · ascii" },
+  { kind: "voxel-3d",          label: "Voxel editor",         glyph: "⬚", sub: "grid voxels" },
+  { kind: "gaussian-splat-3d", label: "Splat Lab",            glyph: "✦", sub: "gaussian splats · 3d" },
+  { kind: "material-lab",      label: "Material Lab",         glyph: "◉", sub: "liquid glass · shaders" },
+  { kind: "synth",             label: "Synth / percussion",   glyph: "∿", sub: "webaudio → wav" },
+  { kind: "music",             label: "Music maker",          glyph: "♪", sub: "patterns → wav" },
+  { kind: "mm-composer",       label: "Interactive composer", glyph: "❖", sub: "layers · triggers · fx" },
+  { kind: "animated-sprite",   label: "Animated sprite",      glyph: "◳", sub: "image → sprite sheet" },
+  { kind: "skill",             label: "Pose / restyle set",   glyph: "⟳", sub: "subject → pose set",
+    payload: { skill: "pose-subject", model: "gpt-image-2", aspect: "1:1" } },
+  // Building blocks
+  { kind: "layer",             label: "Layer",                glyph: "▤", sub: "content + behaviour" },
+  { kind: "position",          label: "Position",             glyph: "⊞", sub: "placement scheme" },
+  { kind: "trigger",           label: "Trigger",              glyph: "◇", sub: "reactivity + impacts" },
+  { kind: "effect",            label: "Effect",               glyph: "✲", sub: "shader post-effect" },
+  { kind: "number-generator",  label: "Number",               glyph: "#", sub: "value source" },
+  { kind: "timeline",          label: "Timeline",             glyph: "⧖", sub: "playhead · keyframes" },
+  // Content / structure / agents
+  { kind: "prompt",            label: "Prompt",               glyph: "¶", sub: "text brief" },
+  { kind: "section",           label: "Section",              glyph: "§", sub: "group / navigation" },
+  { kind: "table",             label: "Table",                glyph: "▥", sub: "grid of results" },
+  { kind: "agent",             label: "Agent",                glyph: "✶", sub: "autonomous run" },
+  { kind: "asset",             label: "Asset",                glyph: "▢", sub: "file / media" },
+  { kind: "folder",            label: "Folder",               glyph: "⊟", sub: "gathered files" },
+  { kind: "color-palette",     label: "Colour palette",       glyph: "◐", sub: "swatches" },
+  { kind: "typography",        label: "Typography",           glyph: "Tt", sub: "type scale" },
+  { kind: "design-system",     label: "Design system",        glyph: "◆", sub: "tokens + components" },
 ];
+// Punctuation-insensitive match key so "materiallab" finds "Material Lab" and
+// "splatlab" finds "Splat Lab" (drops spaces / hyphens / slashes).
+function palNorm(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
 
 // Best human label for a node across the many kinds (each carries its own
 // "name" field). Falls back to a Title-cased kind.
@@ -31271,6 +31302,14 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
     const out = [];
     const ns = Array.isArray(nodes) ? nodes : [];
     const items = Array.isArray(wb) ? wb : [];
+    const qn = palNorm(query);
+    // True when `query` matches `blob` either as a literal substring OR with
+    // punctuation stripped from both sides (so "materiallab" finds it too).
+    const hit = (blob) => {
+      if (!query) return true;
+      const b = String(blob || "").toLowerCase();
+      return b.includes(query) || (qn && palNorm(b).includes(qn));
+    };
     if (tab === "text") {
       if (!query) return [];
       for (const it of items) {
@@ -31294,24 +31333,25 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
       }
       return out.slice(0, 60);
     }
-    // tab === "nodes": sections (navigations) first, then other nodes, then
-    // "Add <kind>" entries once the query matches a kind.
+    // tab === "nodes": sections (navigations) first, then other nodes already
+    // on the canvas, then "Add <kind>" entries from the library catalog.
     for (const s of ns) {
       if (s.kind !== "section") continue;
       const label = paletteNodeLabel(s);
-      if (query && !label.toLowerCase().includes(query)) continue;
+      if (!hit(label)) continue;
       out.push({ key: "nav:" + s.id, kind: "nav", badge: "§", label, meta: "Navigation", run: () => onFocusNode(s.id) });
     }
     for (const n of ns) {
       if (n.kind === "section") continue;
       const label = paletteNodeLabel(n);
-      if (query && !(label + " " + (n.kind || "")).toLowerCase().includes(query)) continue;
+      if (!hit(label + " " + (n.kind || ""))) continue;
       out.push({ key: "node:" + n.id, kind: "node", badge: (n.kind || "n").charAt(0), label, meta: "Go to · " + n.kind, run: () => onFocusNode(n.id) });
     }
     if (query) {
-      for (const [kind, label] of PALETTE_ADD_KINDS) {
-        if (!(label.toLowerCase().includes(query) || kind.includes(query))) continue;
-        out.push({ key: "add:" + kind, kind: "add", badge: "+", label: "Add " + label, meta: "New node", run: () => onAddNode(kind) });
+      for (const e of WORKFLOW_ADD_CATALOG) {
+        if (!hit(e.label + " " + e.kind + " " + (e.sub || ""))) continue;
+        out.push({ key: "add:" + e.kind + ":" + e.label, kind: "add", badge: e.glyph || "+",
+          label: "Add " + e.label, meta: e.sub || "New node", run: () => onAddNode(e.kind, e.payload) });
       }
     }
     return out.slice(0, 60);
@@ -31809,8 +31849,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [wrapRef, zoom, setPan, setSelectedNodeIds, setSelectedWbIds]);
   // Create a fresh node of `kind` (factory defaults) at the viewport centre,
   // commit via setData, and select it - same shape as the library-drop path.
-  const paletteAddNode = useCallback((kind) => {
-    const body = workflowMakeNodeOfKind(kind, {});
+  const paletteAddNode = useCallback((kind, payload) => {
+    const body = workflowMakeNodeOfKind(kind, payload || {});
     if (!body) return;
     const id = workflowNewNodeId();
     const wrap = wrapRef.current;
