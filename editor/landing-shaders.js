@@ -328,28 +328,12 @@
     float dist = length(mouseT - fragT);
     vec3 fcol = base;
 
+    // Cursor effect: ONLY the lattice lines brighten near the cursor. No 3D
+    // face-shading or edge "shine" - on a pure-white field those can only
+    // render as dark streaks, which is the shadow we explicitly do NOT want.
     float pat = smoothstep(460.0 * uScale, 0.0, dist);
     pat = pat * pat * (3.0 - 2.0 * pat);
     fcol = mix(fcol, mix(fcol, vec3(0.92, 0.92, 0.92), line * 0.35), pat);
-
-    float sgn = mod(id.x + id.y, 2.0) < 0.5 ? 1.0 : -1.0;
-    float HS  = 11.0 * uScale;
-    float Z   = sgn * 0.5 * (cos(PI * f.x) + cos(PI * f.y)) * HS;
-    float hx  = sgn * 0.5 * (-PI * sin(PI * f.x));
-    float hy  = sgn * 0.5 * (-PI * sin(PI * f.y));
-    vec2  g   = vec2(hx + hy, hx - hy) * (HS / CELL);
-    vec3  N   = normalize(vec3(-g, 1.0));
-    vec3  Ld  = normalize(vec3(mouseT, 110.0 * uScale) - vec3(fragT, Z));
-    float diff = dot(N, Ld);
-    float lit = smoothstep(200.0 * uScale, 0.0, dist);
-    lit = lit * lit * lit;
-    float shade = 1.0 + min(diff, 0.0) * 0.12;          // shadow-only, very subtle
-    fcol *= mix(1.0, shade, lit);
-
-    float innerBand = smoothstep(0.34, 0.40, edge) * (1.0 - smoothstep(0.40, 0.46, edge));
-    bool fxEdge = abs(f.x) > abs(f.y);
-    float sel = (sgn > 0.0) ? (fxEdge ? 1.0 : 0.0) : (fxEdge ? 0.0 : 1.0);
-    fcol = mix(fcol, vec3(0.88, 0.88, 0.88), innerBand * sel * lit * 0.9);
 
     o = vec4(fcol, 1.0);
   }`;

@@ -4025,11 +4025,11 @@ function EntitiesView({ model, setEdits }) {
         <svg className="arrow-layer" width="10000" height="10000">
           <defs>
             <marker id="ent-arr"      viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(54% 0.16 252)"/></marker>
-            <marker id="ent-arr-soft" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(58% 0.15 150)"/></marker>
+            <marker id="ent-arr-soft" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(58% 0.15 174)"/></marker>
             <marker id="ent-arr-warn" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(60% 0.16 30)"/></marker>
           </defs>
           ${lines.map((l, idx) => {
-            const color = l.kind === "inherit" ? "oklch(58% 0.15 150)" : l.kind === "weak-link" ? "oklch(60% 0.16 30)" : "oklch(54% 0.16 252)";
+            const color = l.kind === "inherit" ? "oklch(58% 0.15 174)" : l.kind === "weak-link" ? "oklch(60% 0.16 30)" : "oklch(54% 0.16 252)";
             const marker = l.kind === "inherit" ? "url(#ent-arr-soft)" : l.kind === "weak-link" ? "url(#ent-arr-warn)" : "url(#ent-arr)";
             const dim = connectedEntities && !(connectedEntities.has(l.from) && connectedEntities.has(l.to));
             const gid = `ent-grad-${idx}`;
@@ -4906,7 +4906,7 @@ function FlowView({ model, setEdits }) {
     const isDimmed = connectedFlow && !(connectedFlow.has(e.from) && connectedFlow.has(e.to));
     const branchTone = e.isDecisionBranch ? decisionBranchTone(e.action) : "neutral";
     const toneStroke =
-      branchTone === "yes" ? "oklch(58% 0.15 150)" :
+      branchTone === "yes" ? "oklch(58% 0.15 174)" :
       branchTone === "no"  ? "oklch(58% 0.18 25)"  :
       null;
     const edgeColor = isDropTarget ? "oklch(60% 0.18 75)"
@@ -5096,8 +5096,8 @@ function FlowView({ model, setEdits }) {
                   </foreignObject>
                 ` : n.isStart ? html`
                   <rect width=${n.w} height=${n.h} rx=${n.h/2}
-                    fill="oklch(94% 0.05 145)"
-                    stroke=${isSel ? "var(--accent)" : "oklch(58% 0.15 150)"} strokeWidth=${isSel ? "2" : "1.4"}/>
+                    fill="oklch(94% 0.05 174)"
+                    stroke=${isSel ? "var(--accent)" : "oklch(58% 0.15 174)"} strokeWidth=${isSel ? "2" : "1.4"}/>
                   <foreignObject x="0" y="0" width=${n.w} height=${n.h} style=${{ pointerEvents: "none" }}>
                     <div xmlns="http://www.w3.org/1999/xhtml" className="flow-node-text flow-node-text--center">
                       <div className="flow-node-label flow-node-label--start"><${Icon.Play}/> ${n.label}</div>
@@ -16338,8 +16338,8 @@ Workflow 1. Delete this request file when done.
               return html`
                 <g key=${n.id} transform=${`translate(${n.x}, ${n.y})`} className=${"sm-node sm-node--" + (n.kind || "default")}>
                   <rect width=${n.w} height=${n.h} rx="10"
-                    fill=${n.kind === "initial" ? "oklch(94% 0.05 145)" : n.kind === "terminal" ? "oklch(96% 0.005 250)" : "var(--surface)"}
-                    stroke=${n.kind === "initial" ? "oklch(58% 0.15 150)" : n.kind === "terminal" ? "var(--border-strong)" : "var(--border-strong)"}
+                    fill=${n.kind === "initial" ? "oklch(94% 0.05 174)" : n.kind === "terminal" ? "oklch(96% 0.005 250)" : "var(--surface)"}
+                    stroke=${n.kind === "initial" ? "oklch(58% 0.15 174)" : n.kind === "terminal" ? "var(--border-strong)" : "var(--border-strong)"}
                     strokeWidth="1.4"/>
                   ${n.kind === "terminal" && html`<rect width=${n.w - 8} height=${n.h - 8} x="4" y="4" rx="7" fill="none" stroke="var(--border-strong)" strokeWidth="1"/>`}
                   <foreignObject x="0" y="0" width=${n.w} height=${n.h} style=${{ pointerEvents: "none" }}>
@@ -28592,6 +28592,8 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       ${isCol ? null : items.map(renderer)}
     </div>`;
   };
+  // 9-slice group: lives in THIS side panel; drives node.s9 which the asset card
+  // reads to draw guides directly on the image (no overlay).
   const _s9 = node.s9 || {};
   const _s9src = _s9.src || 256;
   const _s9slice = _s9.slice || [Math.round(_s9src/4), Math.round(_s9src/4), Math.round(_s9src/4), Math.round(_s9src/4)];

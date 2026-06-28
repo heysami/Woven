@@ -29,19 +29,22 @@
      ORANGE is the energetic "hot" accent (the RECORD button / GAIN knob /
      cable), reserved for special places only: the primary Run action and the
      live "running" indicator. Use --hot sparingly so it stays a focal point. */
-  --accent:        oklch(58% 0.11 188);
-  --accent-soft:   oklch(95% 0.035 188);
-  --accent-text:   oklch(46% 0.10 188);
-  --accent-strong: oklch(50% 0.115 188);
+  --accent:        oklch(70% 0.11 174);
+  --accent-soft:   oklch(95% 0.04 174);
+  --accent-text:   oklch(48% 0.095 174);
+  --accent-strong: oklch(60% 0.12 174);
   /* Hot - DORFic safety orange (#FF6600). Special / primary-action only. */
   --hot:           oklch(70% 0.196 42);
   --hot-soft:      oklch(95% 0.05 50);
   --hot-text:      oklch(56% 0.19 42);
   --hot-strong:    oklch(64% 0.21 42);
-  /* Success reads as a brighter, yellower green so a "done" node is legible
-     against the bluer brand green; danger a hotter red. */
-  --success:       oklch(63% 0.16 150);
-  --success-soft:  oklch(95% 0.04 150);
+  /* Success / connected ("ok") now read TEAL too - no green anywhere in the
+     brand. --ok is the connected-status token (daemon/CLI dots) that was
+     previously undefined and fell back to a hardcoded green. */
+  --success:       oklch(67% 0.115 174);
+  --success-soft:  oklch(95% 0.04 174);
+  --ok:            oklch(70% 0.115 174);
+  --ok-soft:       oklch(95% 0.04 174);
   --warning:       oklch(76% 0.13 85);
   --warning-soft:  oklch(96% 0.05 85);
   --danger:        oklch(57% 0.20 22);
@@ -1184,7 +1187,7 @@ button {
 .orchestrators-info {
   padding: 14px 18px;
   background: var(--accent-soft);
-  border: 1px solid oklch(85% 0.05 188);
+  border: 1px solid oklch(85% 0.05 174);
   border-radius: 10px;
   font-size: 13px; line-height: 1.55;
   color: var(--text);
@@ -1381,7 +1384,7 @@ button {
 }
 .orchestrator-chip-agent    { background: oklch(94% 0.04 250); border-color: oklch(85% 0.07 250); color: oklch(40% 0.15 250); }
 .orchestrator-chip-skill    { background: oklch(94% 0.04 295); border-color: oklch(85% 0.07 295); color: oklch(42% 0.16 295); }
-.orchestrator-chip-kind     { background: var(--accent-soft);  border-color: oklch(85% 0.05 188); color: var(--accent-text); }
+.orchestrator-chip-kind     { background: var(--accent-soft);  border-color: oklch(85% 0.05 174); color: var(--accent-text); }
 .orchestrator-chip-override { background: oklch(96% 0.06 80);  border-color: oklch(85% 0.10 75); color: oklch(45% 0.13 65); }
 .orchestrator-chip-trio     { background: oklch(94% 0.04 350); border-color: oklch(85% 0.07 350); color: oklch(45% 0.15 5); }
 
@@ -1525,7 +1528,7 @@ button {
   color: var(--text-faint);
   line-height: 1.4;
 }
-.system-nav-item.is-active .system-nav-hint { color: oklch(50% 0.10 188); }
+.system-nav-item.is-active .system-nav-hint { color: oklch(50% 0.10 174); }
 
 .system-content {
   min-width: 0;
@@ -1607,9 +1610,9 @@ button {
   border-radius: 50%;
   background: var(--text-faint);
 }
-.system-threads-dot.is-live    { background: oklch(62% 0.17 145); box-shadow: 0 0 0 3px oklch(62% 0.17 145 / 0.18); }
+.system-threads-dot.is-live    { background: oklch(62% 0.17 174); box-shadow: 0 0 0 3px oklch(62% 0.17 174 / 0.18); }
 .system-threads-dot.is-waiting { background: oklch(70% 0.14 85); }
-.system-threads-dot.is-done    { background: oklch(62% 0.12 188); }
+.system-threads-dot.is-done    { background: oklch(62% 0.12 174); }
 .system-threads-dot.is-failed  { background: oklch(58% 0.18 25); }
 .system-threads-dot.is-stopped { background: var(--text-faint); }
 .system-threads-row-title {
@@ -1841,7 +1844,7 @@ button {
 }
 .landing-threads-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
 .landing-threads-btn svg { width: 15px; height: 15px; }
-.landing-threads-btn.has-live { border-color: oklch(62% 0.17 145 / 0.6); }
+.landing-threads-btn.has-live { border-color: oklch(62% 0.17 174 / 0.6); }
 .landing-threads-count {
   font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
   min-width: 14px; text-align: center;
@@ -1973,7 +1976,7 @@ button {
   box-shadow: 0 1px 3px rgba(40, 34, 26, 0.04);
 }
 .proto-catalog-card[data-cat="shell"]    { border-top: 3px solid oklch(78% 0.12 250); }
-.proto-catalog-card[data-cat="style"]    { border-top: 3px solid oklch(80% 0.13 188); }
+.proto-catalog-card[data-cat="style"]    { border-top: 3px solid oklch(80% 0.13 174); }
 .proto-catalog-card[data-cat="aesthetic"]{ border-top: 3px solid oklch(82% 0.15 330); }
 .proto-catalog-card[data-cat="recipe"]   { border-top: 3px solid oklch(82% 0.14 60);  }
 .proto-catalog-card[data-cat="scene"]    { border-top: 3px solid oklch(76% 0.12 200); }
@@ -6355,7 +6358,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 }
 .workflow-node-asset-kind-chip-image  { background: color-mix(in oklch, oklch(70% 0.18 250) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(70% 0.18 250) 28%, var(--border)); }
 .workflow-node-asset-kind-chip-vector,
-.workflow-node-asset-kind-chip-svg    { background: color-mix(in oklch, oklch(72% 0.18 150) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(72% 0.18 150) 28%, var(--border)); }
+.workflow-node-asset-kind-chip-svg    { background: color-mix(in oklch, oklch(72% 0.18 174) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(72% 0.18 174) 28%, var(--border)); }
 .workflow-node-asset-kind-chip-html,
 .workflow-node-asset-kind-chip-htmlset{ background: color-mix(in oklch, oklch(68% 0.18 60) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(68% 0.18 60) 28%, var(--border)); }
 .workflow-node-asset-kind-chip-lottie { background: color-mix(in oklch, oklch(70% 0.18 320) 14%, var(--surface-2)); border-color: color-mix(in oklch, oklch(70% 0.18 320) 28%, var(--border)); }
@@ -12124,7 +12127,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-style: italic;
 }
 .ds-badge-built {
-  border-color: color-mix(in oklch, oklch(58% 0.15 150) 40%, var(--border));
+  border-color: color-mix(in oklch, oklch(58% 0.15 174) 40%, var(--border));
 }
 .ds-badge-missing {
   border-color: color-mix(in oklch, oklch(58% 0.14 60) 50%, var(--border));
@@ -12504,7 +12507,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface);
   transition: border-color 0.08s, background 0.08s;
 }
-.ds-modal-entry-accept { border-color: color-mix(in oklch, oklch(58% 0.15 150) 45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.15 150) 5%, var(--surface)); }
+.ds-modal-entry-accept { border-color: color-mix(in oklch, oklch(58% 0.15 174) 45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.15 174) 5%, var(--surface)); }
 .ds-modal-entry-reject { border-color: color-mix(in oklch, oklch(58% 0.18 25)  45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.18 25)  5%, var(--surface)); }
 .ds-modal-entry-defer  { border-color: color-mix(in oklch, oklch(58% 0.14 60)  45%, var(--border)); background: color-mix(in oklch, oklch(58% 0.14 60)  5%, var(--surface)); }
 .ds-modal-entry-head {
@@ -12580,7 +12583,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: background 0.08s, border-color 0.08s, color 0.08s;
 }
 .ds-modal-verdict:hover { color: var(--text); border-color: var(--text-faint); }
-.ds-modal-verdict-accept.is-active { background: oklch(58% 0.15 150); border-color: oklch(58% 0.15 150); color: white; }
+.ds-modal-verdict-accept.is-active { background: oklch(58% 0.15 174); border-color: oklch(58% 0.15 174); color: white; }
 .ds-modal-verdict-reject.is-active { background: oklch(58% 0.18 25);  border-color: oklch(58% 0.18 25);  color: white; }
 .ds-modal-verdict-defer.is-active  { background: oklch(58% 0.14 60);  border-color: oklch(58% 0.14 60);  color: white; }
 .ds-modal-foot {
@@ -12685,9 +12688,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   white-space: nowrap;
 }
 .workflow-node-ds-badge-built {
-  background: color-mix(in oklch, oklch(58% 0.15 150) 14%, var(--surface));
-  border-color: color-mix(in oklch, oklch(58% 0.15 150) 40%, var(--border));
-  color: oklch(38% 0.12 150);
+  background: color-mix(in oklch, oklch(58% 0.15 174) 14%, var(--surface));
+  border-color: color-mix(in oklch, oklch(58% 0.15 174) 40%, var(--border));
+  color: oklch(38% 0.12 174);
 }
 .workflow-node-ds-badge-draft {
   background: var(--surface);
@@ -13067,10 +13070,10 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-node-iter-done {
   font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
-  color: oklch(38% 0.12 150);
+  color: oklch(38% 0.12 174);
   padding: 2px 7px; border-radius: 99px;
-  background: color-mix(in oklch, oklch(58% 0.15 150) 14%, var(--surface));
-  border: 1px solid color-mix(in oklch, oklch(58% 0.15 150) 30%, var(--border));
+  background: color-mix(in oklch, oklch(58% 0.15 174) 14%, var(--surface));
+  border: 1px solid color-mix(in oklch, oklch(58% 0.15 174) 30%, var(--border));
 }
 .workflow-node-iter-field { display: flex; flex-direction: column; gap: 4px; }
 .workflow-node-iter-field-label {
@@ -13370,9 +13373,9 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-typo-chip.is-idle { opacity: 0.5; }
 .workflow-node-typo-chip.is-resolving { color: var(--text-muted); font-style: italic; }
 .workflow-node-typo-chip.is-found {
-  background: color-mix(in oklch, oklch(58% 0.15 150) 12%, var(--surface));
-  border-color: color-mix(in oklch, oklch(58% 0.15 150) 40%, var(--border));
-  color: oklch(38% 0.12 150);
+  background: color-mix(in oklch, oklch(58% 0.15 174) 12%, var(--surface));
+  border-color: color-mix(in oklch, oklch(58% 0.15 174) 40%, var(--border));
+  color: oklch(38% 0.12 174);
 }
 .workflow-node-typo-chip.is-missing {
   background: color-mix(in oklch, oklch(58% 0.14 60) 12%, var(--surface));
@@ -13732,7 +13735,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid color-mix(in oklch, var(--danger, #c0392b) 30%, var(--border));
 }
 .workflow-node-skill-msg-ok {
-  color: oklch(45% 0.18 145);
+  color: oklch(45% 0.18 174);
   font-size: 11.5px;
   font-weight: 500;
 }
@@ -14288,8 +14291,8 @@ a.ds-badge:hover, button.ds-badge:hover {
    came out pinkish. Direct values keep the hue locked to the
    accent's green band. */
 .model-setup-wizard-dot[data-done="true"] {
-  background: oklch(92% 0.04 188);
-  border-color: oklch(76% 0.10 188);
+  background: oklch(92% 0.04 174);
+  border-color: oklch(76% 0.10 174);
   color: var(--accent-text);
 }
 /* "You are here" → solid dark slate with a ring. Deliberately NOT using
@@ -14312,7 +14315,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 0 0 36px;
 }
 .model-setup-wizard-line[data-done="true"] {
-  background: oklch(78% 0.09 188);
+  background: oklch(78% 0.09 174);
 }
 .model-setup-wizard-body {
   padding: 16px 20px;
@@ -15027,9 +15030,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .workflow-settings-status[data-state="ok"] {
-  color: oklch(45% 0.18 145);
-  border-color: oklch(70% 0.14 145);
-  background: oklch(96% 0.04 145);
+  color: oklch(45% 0.18 174);
+  border-color: oklch(70% 0.14 174);
+  background: oklch(96% 0.04 174);
 }
 .workflow-settings-status[data-state="untested"] {
   color: var(--accent-text);
@@ -15060,7 +15063,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 8px 10px;
   border-radius: 6px;
 }
-.workflow-settings-msg-ok   { background: oklch(96% 0.04 145); color: oklch(40% 0.18 145); }
+.workflow-settings-msg-ok   { background: oklch(96% 0.04 174); color: oklch(40% 0.18 174); }
 .workflow-settings-msg-fail { background: color-mix(in oklch, var(--danger, #c0392b) 12%, var(--surface)); color: var(--danger, #c0392b); }
 .workflow-settings-hint {
   font-size: 11.5px;
@@ -16613,8 +16616,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .edit-row-type[data-kind="replace"] { background: var(--warning-soft); color: oklch(40% 0.14 75); }
 .edit-row-type[data-kind="comment"] { background: var(--surface-3);    color: var(--text-muted); }
 .edit-row-type[data-kind="blank"]   { background: var(--surface-3);    color: var(--text-muted); }
-.edit-row-type[data-kind="style"]   { background: var(--success-soft); color: oklch(36% 0.13 150); }
-.edit-row-type[data-kind="move"]    { background: var(--success-soft); color: oklch(36% 0.13 150); }
+.edit-row-type[data-kind="style"]   { background: var(--success-soft); color: oklch(36% 0.13 174); }
+.edit-row-type[data-kind="move"]    { background: var(--success-soft); color: oklch(36% 0.13 174); }
 .edit-row-type[data-kind="annotation"] { background: var(--danger-soft); color: oklch(40% 0.18 25); }
 
 /* Inline note attached to a draw annotation - autosaves to strokeNotes[frameId] */
@@ -16917,8 +16920,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   letter-spacing: 0.06em;
   padding: 1px 5px;
   border-radius: 3px;
-  background: oklch(94% 0.04 150);
-  color: oklch(36% 0.13 150);
+  background: oklch(94% 0.04 174);
+  color: oklch(36% 0.13 174);
 }
 .type-row-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); text-align: right; }
 .primitive-card {
@@ -16954,7 +16957,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 3px;
   pointer-events: none;
 }
-.primitive-tag[data-state="live"]  { background: var(--success-soft); color: oklch(36% 0.13 150); }
+.primitive-tag[data-state="live"]  { background: var(--success-soft); color: oklch(36% 0.13 174); }
 .primitive-tag[data-state="stale"] { background: var(--warning-soft); color: oklch(40% 0.14 75); }
 
 /* Hidden iframes used to extract live primitive markup from rendered source.
@@ -17016,7 +17019,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .entity-tag[data-tag="variant"] { background: var(--accent-soft); color: var(--accent-text); }
-.entity-tag[data-tag="merged"]  { background: var(--success-soft); color: oklch(36% 0.13 150); }
+.entity-tag[data-tag="merged"]  { background: var(--success-soft); color: oklch(36% 0.13 174); }
 .entity-fields { padding: 4px 0; }
 .entity-field {
   display: grid;
@@ -17275,7 +17278,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .proto-nav-item--child[data-active="true"] .proto-nav-glyph,
 .proto-nav-item--child[data-active="true"] .proto-nav-kind { color: var(--accent-text); }
 .proto-nav-item[data-kind="overlay"] .proto-nav-glyph { color: oklch(54% 0.16 252); }
-.proto-nav-item[data-kind="state"]   .proto-nav-glyph { color: oklch(58% 0.15 150); }
+.proto-nav-item[data-kind="state"]   .proto-nav-glyph { color: oklch(58% 0.15 174); }
 .proto-nav-empty {
   font-size: 12px;
   color: var(--text-faint);
@@ -17411,8 +17414,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .flow-legend-start {
   width: 22px; height: 14px;
-  background: oklch(94% 0.05 145);
-  border: 1px solid oklch(58% 0.15 150);
+  background: oklch(94% 0.05 174);
+  border: 1px solid oklch(58% 0.15 174);
   border-radius: 99px;
 }
 .flow-legend-input {
@@ -17665,7 +17668,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent-text);
 }
 .ia-kid[data-kind="overlay"] .ia-kid-glyph { color: oklch(54% 0.16 252); }
-.ia-kid[data-kind="state"]   .ia-kid-glyph { color: oklch(58% 0.15 150); }
+.ia-kid[data-kind="state"]   .ia-kid-glyph { color: oklch(58% 0.15 174); }
 .ia-kid-glyph { font-size: 10px; }
 .ia-kid-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ia-kid-kind {
@@ -17747,7 +17750,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .ia-tree-node.is-root .ia-tree-label { font-size: 15px; font-weight: 700; }
 .ia-tree-node[data-kind="overlay"] { border-color: oklch(82% 0.05 252); }
-.ia-tree-node[data-kind="state"]   { border-color: oklch(82% 0.05 145); }
+.ia-tree-node[data-kind="state"]   { border-color: oklch(82% 0.05 174); }
 .ia-tree-node[data-depth="2"] .ia-tree-label { font-size: 12px; }
 .ia-tree-node[data-depth="3"] .ia-tree-label { font-size: 11.5px; }
 .ia-tree-card-head {
@@ -17782,7 +17785,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent-text);
 }
 .ia-tree-node[data-kind="overlay"] .ia-tree-kind { background: oklch(94% 0.04 252); color: oklch(38% 0.16 252); }
-.ia-tree-node[data-kind="state"]   .ia-tree-kind { background: oklch(94% 0.04 145); color: oklch(38% 0.13 145); }
+.ia-tree-node[data-kind="state"]   .ia-tree-kind { background: oklch(94% 0.04 174); color: oklch(38% 0.13 174); }
 .ia-tree-node.is-root      .ia-tree-kind { background: var(--surface-2); color: var(--text); }
 .ia-tree-label {
   font-size: 13px;
@@ -18052,7 +18055,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 2px;
   background: var(--accent);
 }
-.flow-lane-row > span:first-child[data-kind="system"]  { background: oklch(58% 0.15 150); }
+.flow-lane-row > span:first-child[data-kind="system"]  { background: oklch(58% 0.15 174); }
 .flow-lane-row > span:first-child[data-kind="service"] { background: oklch(70% 0.14 75); }
 .flow-lane-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .flow-lane-actions {
@@ -18150,7 +18153,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.flow-node-label--start         { color: oklch(30% 0.13 150); }
+.flow-node-label--start         { color: oklch(30% 0.13 174); }
 .flow-node-label--input         { color: var(--accent-text); }
 .flow-node-label--external      { color: var(--text-faint, oklch(48% 0.008 250)); }
 .flow-node-label--trigger       { color: oklch(32% 0.13 290); }
@@ -18259,7 +18262,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   pointer-events: none;
 }
 /* Variants override the accent for relationship kinds in the entity view. */
-.edge-chip[data-kind="inherit"]   { background: oklch(58% 0.15 150); border-color: oklch(58% 0.15 150); }
+.edge-chip[data-kind="inherit"]   { background: oklch(58% 0.15 174); border-color: oklch(58% 0.15 174); }
 .edge-chip[data-kind="weak-link"] { background: oklch(60% 0.16 30);  border-color: oklch(60% 0.16 30);  }
 .edge-chip[data-kind="link"]      { background: var(--accent);       border-color: var(--accent);       }
 
@@ -18285,8 +18288,8 @@ a.ds-badge:hover, button.ds-badge:hover {
    data-tone="yes"/"no" on the parent edge group. */
 .flow-svg .flow-edge[data-tone="yes"] .edge-chip,
 .flow-svg .edge-chip[data-tone="yes"] {
-  background: oklch(58% 0.15 150);
-  border-color: oklch(58% 0.15 150);
+  background: oklch(58% 0.15 174);
+  border-color: oklch(58% 0.15 174);
   color: oklch(100% 0 0);
 }
 .flow-svg .flow-edge[data-tone="no"] .edge-chip,
@@ -18511,7 +18514,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .edit-row-type[data-kind^="link."]    { background: oklch(94% 0.05 200); color: oklch(38% 0.16 200); }
 .edit-row-type[data-kind^="frame."]   { background: oklch(94% 0.05 280); color: oklch(38% 0.16 280); }
 .edit-row-type[data-kind^="arrow."]   { background: oklch(94% 0.05 280); color: oklch(38% 0.16 280); }
-.edit-row-type[data-kind^="ia."]      { background: oklch(94% 0.05 145); color: oklch(38% 0.13 145); }
+.edit-row-type[data-kind^="ia."]      { background: oklch(94% 0.05 174); color: oklch(38% 0.13 174); }
 .edit-row-type[data-kind^="meta."]    { background: oklch(94% 0.04 250); color: oklch(40% 0.10 250); }
 
 /* === Empty-state card (shared by StateMachine / Timeline / Grid views) === */
@@ -21982,7 +21985,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: 2px;
 }
 .zoom-selection-ring[data-tool="export"] {
-  outline-color: oklch(70% 0.18 188);
+  outline-color: oklch(70% 0.18 174);
 }
 .zoom-selection-ring[data-tool="comment"] {
   outline-color: oklch(70% 0.18 60);
@@ -22975,7 +22978,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   align-items: center;
   justify-content: center;
 }
-.workflow-node-action-audit-ok    { color: oklch(60% 0.15 145); }
+.workflow-node-action-audit-ok    { color: oklch(60% 0.15 174); }
 .workflow-node-action-audit-fixed { color: var(--accent-text, oklch(45% 0.18 252)); }
 .workflow-node-action-audit-warn  { color: oklch(56% 0.18 60); }
 .workflow-node-action-audit-fail  { color: oklch(56% 0.18 25); }
@@ -23039,7 +23042,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   padding: 4px 8px;
   border-radius: 999px;
 }
-.ds-audit-status-ok    { background: oklch(94% 0.06 145); color: oklch(40% 0.15 145); }
+.ds-audit-status-ok    { background: oklch(94% 0.06 174); color: oklch(40% 0.15 174); }
 .ds-audit-status-warn  { background: oklch(94% 0.06 60);  color: oklch(40% 0.15 60); }
 .ds-audit-status-fail  { background: oklch(94% 0.06 25);  color: oklch(40% 0.15 25); }
 .ds-audit-ds, .ds-audit-strictness {
@@ -23073,7 +23076,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   margin: 0 0 6px;
   font: 600 13px/1.2 var(--font-sans);
 }
-.ds-audit-section-ok h3       { color: oklch(40% 0.15 145); }
+.ds-audit-section-ok h3       { color: oklch(40% 0.15 174); }
 .ds-audit-section-fixes h3    { color: var(--accent-text, oklch(40% 0.18 252)); }
 .ds-audit-section-violations h3 { color: oklch(40% 0.15 25); }
 .ds-audit-section-warnings h3 { color: oklch(40% 0.15 60); }
@@ -23258,7 +23261,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .ds-audit-file-fail  .ds-audit-file-state { color: oklch(45% 0.18 25); }
 .ds-audit-file-fixed .ds-audit-file-state { color: var(--accent-text, oklch(40% 0.18 252)); }
 .ds-audit-file-warn  .ds-audit-file-state { color: oklch(45% 0.18 60); }
-.ds-audit-file-ok    .ds-audit-file-state { color: oklch(45% 0.15 145); }
+.ds-audit-file-ok    .ds-audit-file-state { color: oklch(45% 0.15 174); }
 .ds-audit-file-path {
   flex: 1 1 auto;
   font: 500 12px/1.3 var(--font-mono);
