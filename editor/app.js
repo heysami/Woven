@@ -31210,6 +31210,178 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   `;
 }
 
+// ── Cmd+F / Cmd+K canvas search palette ──────────────────────────────────
+// One overlay, two tabs that the user flips with the Tab key:
+//   "Canvas text"        (Cmd+F) - find ANY text on the canvas: whiteboard
+//                        text / textbox / sticky items + node titles + prompt
+//                        node bodies. Picking a hit pans+selects it.
+//   "Nodes & navigation" (Cmd+K) - jump to an existing node, jump to a
+//                        section (a "navigation" on this canvas), or ADD a
+//                        new node of a chosen kind at the viewport centre.
+// ↑/↓ move the highlight, ↵ activates, Esc closes. Mirrors the spotlight /
+// command-palette pattern; rendered via createPortal so it floats over all.
+const PALETTE_ADD_KINDS = [
+  ["prompt", "Prompt"],
+  ["section", "Section"],
+  ["table", "Table"],
+  ["agent", "Agent"],
+  ["skill", "Skill"],
+  ["asset", "Asset"],
+  ["browser", "Browser"],
+  ["folder", "Folder"],
+  ["color-palette", "Colour palette"],
+  ["typography", "Typography"],
+  ["design-system", "Design system"],
+  ["composer", "Composer"],
+];
+
+// Best human label for a node across the many kinds (each carries its own
+// "name" field). Falls back to a Title-cased kind.
+function paletteNodeLabel(n) {
+  if (!n) return "Node";
+  const raw = n.title || n.name || n.goal || n.task || n.skill || n.path || "";
+  const s = String(raw).trim();
+  if (s) return s.split("\n")[0].slice(0, 90);
+  const k = n.kind || "node";
+  return k.charAt(0).toUpperCase() + k.slice(1);
+}
+function paletteFirstLine(s, max = 90) {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
+}
+
+function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNode, onFocusWb, onAddNode }) {
+  const [tab, setTab] = useState(initialTab || "text");
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const inputRef = useRef(null);
+  // On each open, snap to the requested tab, clear the query, focus the input.
+  useEffect(() => {
+    if (!open) return;
+    setTab(initialTab || "text");
+    setQ("");
+    setActive(0);
+    const t = setTimeout(() => { try { inputRef.current && inputRef.current.focus(); } catch {} }, 0);
+    return () => clearTimeout(t);
+  }, [open, initialTab]);
+
+  const query = q.trim().toLowerCase();
+  const results = useMemo(() => {
+    if (!open) return [];
+    const out = [];
+    const ns = Array.isArray(nodes) ? nodes : [];
+    const items = Array.isArray(wb) ? wb : [];
+    if (tab === "text") {
+      if (!query) return [];
+      for (const it of items) {
+        if (!WORKFLOW_WB_TEXTLIKE.has(it.type)) continue;
+        const txt = String(it.text || "");
+        if (!txt.toLowerCase().includes(query)) continue;
+        out.push({
+          key: "wb:" + it.id, kind: "wb", badge: (it.type || "t").charAt(0),
+          label: paletteFirstLine(txt) || ("(empty " + it.type + ")"),
+          meta: it.type, run: () => onFocusWb(it),
+        });
+      }
+      for (const n of ns) {
+        const label = paletteNodeLabel(n);
+        if (!(label + " " + (n.text || "")).toLowerCase().includes(query)) continue;
+        out.push({
+          key: "node:" + n.id, kind: "node", badge: (n.kind || "n").charAt(0),
+          label, meta: n.kind + (n.text ? " · " + paletteFirstLine(n.text, 44) : ""),
+          run: () => onFocusNode(n.id),
+        });
+      }
+      return out.slice(0, 60);
+    }
+    // tab === "nodes": sections (navigations) first, then other nodes, then
+    // "Add <kind>" entries once the query matches a kind.
+    for (const s of ns) {
+      if (s.kind !== "section") continue;
+      const label = paletteNodeLabel(s);
+      if (query && !label.toLowerCase().includes(query)) continue;
+      out.push({ key: "nav:" + s.id, kind: "nav", badge: "§", label, meta: "Navigation", run: () => onFocusNode(s.id) });
+    }
+    for (const n of ns) {
+      if (n.kind === "section") continue;
+      const label = paletteNodeLabel(n);
+      if (query && !(label + " " + (n.kind || "")).toLowerCase().includes(query)) continue;
+      out.push({ key: "node:" + n.id, kind: "node", badge: (n.kind || "n").charAt(0), label, meta: "Go to · " + n.kind, run: () => onFocusNode(n.id) });
+    }
+    if (query) {
+      for (const [kind, label] of PALETTE_ADD_KINDS) {
+        if (!(label.toLowerCase().includes(query) || kind.includes(query))) continue;
+        out.push({ key: "add:" + kind, kind: "add", badge: "+", label: "Add " + label, meta: "New node", run: () => onAddNode(kind) });
+      }
+    }
+    return out.slice(0, 60);
+  }, [open, tab, query, nodes, wb, onFocusNode, onFocusWb, onAddNode]);
+
+  useEffect(() => { setActive(0); }, [tab, query]);
+
+  if (!open) return null;
+  const activate = (r) => { if (!r) return; try { r.run(); } catch {} onClose(); };
+  const onKeyDown = (e) => {
+    if (e.key === "Tab") { e.preventDefault(); setTab(t => (t === "text" ? "nodes" : "text")); return; }
+    if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive(i => Math.min(results.length - 1, i + 1)); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); setActive(i => Math.max(0, i - 1)); return; }
+    if (e.key === "Enter") { e.preventDefault(); activate(results[active]); return; }
+  };
+
+  return createPortal(html`
+    <div className="wf-pal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="wf-pal" role="dialog" aria-modal="true" onKeyDown=${onKeyDown}>
+        <div className="wf-pal-search">
+          <span className="wf-pal-search-icon" aria-hidden="true"><${Icon.Search}/></span>
+          <input
+            ref=${inputRef}
+            className="wf-pal-input"
+            type="text"
+            placeholder=${tab === "text" ? "Find text on the canvas…" : "Go to a node / section, or add a node…"}
+            value=${q}
+            spellcheck="false"
+            onInput=${(e) => setQ(e.target.value)}
+          />
+          <button className="wf-pal-x" onClick=${onClose} aria-label="Close"><${Icon.X}/></button>
+        </div>
+        <div className="wf-pal-tabs" role="tablist">
+          <button className="wf-pal-tab" role="tab" data-active=${tab === "text" ? "true" : "false"} onClick=${() => setTab("text")}>Canvas text</button>
+          <button className="wf-pal-tab" role="tab" data-active=${tab === "nodes" ? "true" : "false"} onClick=${() => setTab("nodes")}>Nodes &amp; navigation</button>
+        </div>
+        <div className="wf-pal-list">
+          ${results.length === 0 && html`
+            <div className="wf-pal-empty">
+              ${tab === "text"
+                ? (query ? "No matching text on the canvas." : "Type to find any text on the canvas.")
+                : (query ? "No matches - keep typing to add a node." : "Type to jump to a node or section, or add one.")}
+            </div>
+          `}
+          ${results.map((r, i) => html`
+            <button
+              key=${r.key}
+              className=${"wf-pal-row" + (i === active ? " is-active" : "")}
+              data-kind=${r.kind}
+              onMouseEnter=${() => setActive(i)}
+              onClick=${() => activate(r)}
+            >
+              <span className="wf-pal-row-badge">${r.badge}</span>
+              <span className="wf-pal-row-label">${r.label}</span>
+              <span className="wf-pal-row-meta">${r.meta}</span>
+            </button>
+          `)}
+        </div>
+        <div className="wf-pal-foot">
+          <span><kbd>Tab</kbd> switch tab</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+          <span><kbd>↵</kbd> go</span>
+          <span><kbd>esc</kbd> close</span>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
 function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onLibResizeStart }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
@@ -31596,6 +31768,63 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:focus-node", onFocus);
     return () => window.removeEventListener("th:focus-node", onFocus);
   }, [data.nodes, wrapRef, setPan, zoom]);
+
+  // ── Cmd+F / Cmd+K search palette ──────────────────────────────────────
+  // Cmd+F opens the palette on the "find text on the canvas" tab; Cmd+K on
+  // the "nodes & navigation" tab. Capture-phase + preventDefault so we beat
+  // the browser's native find. The palette itself owns Tab/arrow/Enter/Esc.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteTab, setPaletteTab] = useState("text");
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = (e.key || "").toLowerCase();
+      if (k === "f") { e.preventDefault(); setPaletteTab("text"); setPaletteOpen(true); }
+      else if (k === "k") { e.preventDefault(); setPaletteTab("nodes"); setPaletteOpen(true); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+  // Pan the canvas so a node's centre lands in the viewport centre, then
+  // select it (deferred a tick so React absorbs the pan first) - mirrors the
+  // th:focus-node handler above.
+  const paletteFocusNode = useCallback((nodeId) => {
+    const node = (data.nodes || []).find(n => n && n.id === nodeId);
+    const wrap = wrapRef.current;
+    if (!node || !wrap) return;
+    const r = wrap.getBoundingClientRect();
+    const cx = (node.x || 0) + ((node.w || 320) / 2);
+    const cy = (node.y || 0) + ((node.h || 240) / 2);
+    setPan({ x: r.width / 2 - cx * zoom, y: r.height / 2 - cy * zoom });
+    setTimeout(() => { setSelectedWbIds(new Set()); setSelectedNodeIds(new Set([nodeId])); }, 0);
+  }, [data.nodes, wrapRef, zoom, setPan, setSelectedNodeIds, setSelectedWbIds]);
+  const paletteFocusWb = useCallback((it) => {
+    const wrap = wrapRef.current;
+    if (!it || !wrap) return;
+    const r = wrap.getBoundingClientRect();
+    const cx = (it.x || 0) + ((it.w || 200) / 2);
+    const cy = (it.y || 0) + ((it.h || 80) / 2);
+    setPan({ x: r.width / 2 - cx * zoom, y: r.height / 2 - cy * zoom });
+    setTimeout(() => { setSelectedNodeIds(new Set()); setSelectedWbIds(new Set([it.id])); }, 0);
+  }, [wrapRef, zoom, setPan, setSelectedNodeIds, setSelectedWbIds]);
+  // Create a fresh node of `kind` (factory defaults) at the viewport centre,
+  // commit via setData, and select it - same shape as the library-drop path.
+  const paletteAddNode = useCallback((kind) => {
+    const body = workflowMakeNodeOfKind(kind, {});
+    if (!body) return;
+    const id = workflowNewNodeId();
+    const wrap = wrapRef.current;
+    let cx = 0, cy = 0;
+    if (wrap) {
+      const r = wrap.getBoundingClientRect();
+      cx = (r.width / 2 - pan.x) / zoom;
+      cy = (r.height / 2 - pan.y) / zoom;
+    }
+    const node = { id, ...body, x: Math.round(cx - (body.w || 280) / 2), y: Math.round(cy - 18) };
+    if (node.kind === "prototype") node.instanceId = id;
+    setData(d => ({ ...d, nodes: [...(d.nodes || []), node] }));
+    setTimeout(() => { setSelectedWbIds(new Set()); setSelectedNodeIds(new Set([id])); }, 0);
+  }, [pan, zoom, wrapRef, setData, setSelectedNodeIds, setSelectedWbIds]);
 
   // v2.4b - compute the set of node IDs connected to the selected node by
   // walking data.edges. Then imperatively flag matching DOM nodes with
@@ -42651,6 +42880,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         >${Math.round(zoom * 100)}%<//>
         <${ShareMenuButton}/>
       </div>
+      <${WorkflowSearchPalette}
+        open=${paletteOpen}
+        initialTab=${paletteTab}
+        onClose=${() => setPaletteOpen(false)}
+        nodes=${data.nodes || []}
+        wb=${wbItems}
+        onFocusNode=${paletteFocusNode}
+        onFocusWb=${paletteFocusWb}
+        onAddNode=${paletteAddNode}
+      />
       ${fullscreen && html`
         <button
           className="workflow-fullscreen-exit"
