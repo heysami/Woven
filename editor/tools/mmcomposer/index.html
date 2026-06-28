@@ -103,9 +103,11 @@
   .small{font-size:10px;color:var(--ink2)}
   .impacts{margin-top:6px;display:flex;flex-direction:column;gap:6px}
   .impact{border:1px dashed var(--line);border-radius:6px;padding:6px;background:var(--wv-surface-2)}
-  .effitem{border:1px solid var(--line);border-radius:6px;padding:6px;margin:6px 0;background:var(--wv-surface-2)}
+  .effitem{border:1px solid var(--line);border-radius:8px;padding:9px;margin:8px 0;background:var(--wv-surface-2)}
   .effitem .eh{display:flex;align-items:center;gap:6px}
   .effitem .eh select{flex:1}
+  /* Spectrum bar under each effect header (reference effect-stack look). */
+  .effitem-bar{height:5px;border-radius:999px;margin:8px 0 2px;background:linear-gradient(90deg,var(--acc),#6fcdbb 38%,#e8c85f 72%,#e58aa6);opacity:.92}
   .toolbar{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:7}
   .hint{font-size:10px;color:var(--ink2);margin:2px 0 0}
   hr{border:0;border-top:1px solid var(--line);margin:10px 0}
@@ -4665,6 +4667,7 @@ function renderInspector(){
       rm.onclick=()=>{ stack.splice(idx,1); emit(); renderInspector(); };
       eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
       card.appendChild(eh);
+      const fxbar=document.createElement('div'); fxbar.className='effitem-bar'; card.appendChild(fxbar);
       card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
       // fluid is a CPU layer-buffer sim, not a GL shader - render its own controls.
       if(eff.type==='fluid'){

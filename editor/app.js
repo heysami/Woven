@@ -10331,7 +10331,7 @@ function ShareMenuButton() {
         title=${tip}
         onClick=${toggle}
       >
-        <span className=${"go-live-dot" + (isLive ? " is-live" : "")}/>
+        ${isLive && html`<span className="go-live-dot is-live"/>`}
         <span className="go-live-label">${isLive ? `Share · Live ${people.length}` : "Share"}</span>
       </button>
       ${menu}
