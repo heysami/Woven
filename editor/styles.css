@@ -4775,10 +4775,10 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   gap: 6px;
   height: 30px;
   padding: 0 12px;
-  border: 1px solid var(--success, #16A34A);
+  border: 1px solid var(--hot);
   border-radius: 6px;
-  background: var(--success, #16A34A);
-  color: #fff;
+  background: var(--hot);
+  color: var(--hot-ink);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -4788,7 +4788,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .go-live-btn:hover { filter: brightness(0.94); }
 .go-live-dot {
   width: 7px; height: 7px; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--hot-ink);   /* dark ink reads on the gold fill (white was too faint) */
   flex: 0 0 auto;
 }
 .go-live-btn.is-live {
@@ -16425,6 +16425,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 5px;
   background: var(--surface-2);
   color: var(--text);
+  font-family: var(--font-sans);   /* native <select> defaults to the system font otherwise */
   font-size: 12px;
   cursor: pointer;
 }
