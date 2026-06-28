@@ -153,6 +153,7 @@ button {
    which view is active to place it correctly. EditsPanel/ChatDrawer/
    HistoryPanel/agent-busy-banner are all position:absolute|fixed, so they
    ignore the grid entirely. */
+.app > .canvas-view,
 .app > .canvas-wrap,
 .app > .proto-view,
 .app > .proto-empty,
@@ -194,7 +195,8 @@ button {
    The selectors below match the specificity of the broad freeze rule above
    (which has three :not() class-spec pseudo-classes) so the override wins
    the cascade. The negations are no-ops for these matched classes. */
-.app[data-agent-busy="true"] > .canvas-wrap:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner) {
+.app[data-agent-busy="true"] > .canvas-wrap:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner),
+.app[data-agent-busy="true"] > .canvas-view .canvas-wrap:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner) {
   pointer-events: auto;
 }
 .app[data-agent-busy="true"] .canvas-wrap .frame:not(.toolbar):not(.chat-drawer):not(.agent-busy-banner),
@@ -16332,6 +16334,41 @@ a.ds-badge:hover, button.ds-badge:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* ────────── Editor canvas 2nd panel (tools list + docked minimap) ──────────
+   The canvas view renders this beside the thin icon rail - same shape as the
+   workflow whiteboard-tools panel: a labeled tool list at the top, the minimap
+   docked at the bottom. Mirrors how .flow-view places its own .flow-nav. */
+.canvas-view {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;   /* panel (auto) + canvas (1fr); auto = 0 when no panel (embed) */
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+.canvas-tools-panel {
+  display: flex;
+  flex-direction: column;
+  width: 212px;
+  min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.canvas-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+}
+/* Dock the minimap at the bottom of the panel (it is position:absolute when it
+   floats over the canvas; here it sits in normal flow). */
+.canvas-tools-panel .minimap {
+  position: static;
+  margin: auto 12px 12px;
+  width: auto;
+  height: 132px;
+}
+
 /* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
    Floating segmented control, centered at the very top of every project-scoped
    surface. The editor toolbar's .toolbar-mid is empty, so it lands cleanly in
@@ -16531,6 +16568,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .canvas-wrap {
   position: relative;
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
   background:
     radial-gradient(circle, var(--canvas-dot) 1px, transparent 1px) 0 0 / 24px 24px,
     var(--canvas-bg);

@@ -6105,7 +6105,7 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   `;
 }
 
-function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke, selectionRef, onSelectionCountChange }) {
+function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke, selectionRef, onSelectionCountChange }) {
   // Read frames/arrows from the materialized model so col/row migration and
   // edit-time moves both flow through. D.frames (raw data) only carries x/y
   // until the migration shim inside applyModelEdits attaches col/row to the
@@ -6564,6 +6564,8 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
   };
 
   return html`
+    <div className="canvas-view">
+    ${!viewIsEmbed() && html`<${CanvasToolsPanel} tool=${tool} setTool=${setTool} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>`}
     <div
       ref=${wrapRef}
       className=${"canvas-wrap" + (cloneMode ? " is-clone-placing" : "") + (arrowFrom ? " is-arrow-drawing" : "")}
@@ -6748,12 +6750,10 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
       />
       <${InspectorPanel} picked=${picked} tool=${tool} edits=${edits} onStyle=${onStyle} onMove=${onMove}/>
       <${ZoomPill} zoom=${zoom}/>
-      ${/* v3.5 - skip the floating MiniMap when the editor is rendered with
-            ?embed=1 (Canvas-frames node embeds it inside a workflow node).
-            The workflow canvas already has its own minimap docked in the
-            library rail; a second one floating over the embedded surface
-            reads as duplicated chrome and crowds an already-small viewport. */ ""}
-      ${!(_qsFromLocation() && _qsFromLocation().get("embed") === "1") && html`<${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>`}
+      ${/* v3.6 - the MiniMap moved into the docked CanvasToolsPanel (2nd left
+            panel), mirroring workflow mode. In embed mode the panel is
+            suppressed, so the minimap is absent there too - the workflow node
+            that hosts the embed already shows its own minimap. */ ""}
       ${cloneMode && html`
         <div className="clone-mode-banner" onClick=${(e) => e.stopPropagation()}>
           <${Icon.Copy}/>
@@ -6774,6 +6774,7 @@ function CanvasView({ model, tool, edits, setEdits, layoutEdits, setLayoutEdits,
           <button className="clone-mode-cancel" onClick=${() => setArrowFrom(null)}>Cancel · Esc</button>
         </div>
       `}
+    </div>
     </div>
   `;
 }
@@ -81055,14 +81056,13 @@ const EDITOR_TOOL_TABS = [
   { key: "draw",      icon: () => Icon.Pen,     label: "Draw",      kbd: "D" },
 ];
 
-/* The editor's left icon rail. Holds the view switcher (always) and the canvas
-   tools (only on the canvas view, same gate the old toolbar tools-group used).
-   Tooltips fly to the RIGHT (tab-tip-right) since the rail hugs the left edge.
-   Views that carry their own left panel (User flow's .flow-nav, IA's
-   .ia-sitemap-wrap) render inside the `view` grid cell, i.e. to the right of
-   this rail - the thin rail and the view panel sit side by side, no overlap. */
-function EditorLeftRail({ view, setView, tool, setTool }) {
-  const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
+/* The editor's left icon rail - the thin VIEW switcher only (like the workflow
+   nav rail). The canvas TOOLS live in a 2nd panel rendered by CanvasView (tools
+   list + docked minimap), mirroring workflow mode. Tooltips fly to the RIGHT
+   (tab-tip-right) since the rail hugs the left edge. Views that carry their own
+   left panel (User flow's .flow-nav, IA's .ia-sitemap-wrap) render inside the
+   `view` grid cell, to the right of this rail - no overlap. */
+function EditorLeftRail({ view, setView }) {
   return html`
     <div className="editor-left-rail">
       <div className="elr-group">
@@ -81077,21 +81077,34 @@ function EditorLeftRail({ view, setView, tool, setTool }) {
           ><${v.icon()}/><span className="tab-tip tab-tip-right">${v.label} <kbd>${v.kbd}</kbd></span></button>
         `)}
       </div>
-      ${view === "canvas" && html`
-        <div className="elr-sep" aria-hidden="true"></div>
-        <div className="elr-group">
-          ${EDITOR_TOOL_TABS.map(t => html`
-            <button
-              key=${t.key}
-              className="tab tab-icon"
-              data-active=${tool === t.key}
-              onClick=${() => setOrToggle(t.key)}
-              aria-label=${t.label + " tool"}
-              title=${t.label}
-            ><${t.icon()}/><span className="tab-tip tab-tip-right">${t.label} <kbd>${t.kbd}</kbd></span></button>
-          `)}
-        </div>
-      `}
+    </div>
+  `;
+}
+
+/* The editor canvas's 2nd left panel - the labeled tools list + a docked
+   minimap below, the same shape the workflow whiteboard-tools panel uses.
+   Rendered by CanvasView (so the minimap shares the canvas pan/zoom/frames);
+   suppressed in embed mode. */
+function CanvasToolsPanel({ tool, setTool, frames, pan, zoom, wrapRef, gridMeta }) {
+  const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
+  return html`
+    <div className="canvas-tools-panel">
+      <div className="canvas-tools-list">
+        ${EDITOR_TOOL_TABS.map(t => html`
+          <button
+            key=${t.key}
+            type="button"
+            className=${"workflow-wb-tool-btn" + (tool === t.key ? " is-active" : "")}
+            aria-pressed=${tool === t.key ? "true" : "false"}
+            onClick=${() => setOrToggle(t.key)}
+          >
+            <span className="workflow-wb-tool-glyph"><${t.icon()}/></span>
+            <span className="workflow-wb-tool-label">${t.label}</span>
+            <kbd className="workflow-wb-tool-key">${t.kbd}</kbd>
+          </button>
+        `)}
+      </div>
+      <${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>
     </div>
   `;
 }
@@ -82068,7 +82081,6 @@ function App() {
       />`}
       ${!embedMode && html`<${EditorLeftRail}
         view=${view} setView=${setView}
-        tool=${tool} setTool=${setTool}
       />`}
       ${!embedMode && html`<${RightNavRail}
         onStartNewChat=${openNewChat}
@@ -82092,7 +82104,7 @@ function App() {
         branchId=${"main"}
         setView=${setView}
       />`}
-      ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke} selectionRef=${editorSelectionRef} onSelectionCountChange=${setEditorSelectionCount}/>`}
+      ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} setTool=${setTool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke} selectionRef=${editorSelectionRef} onSelectionCountChange=${setEditorSelectionCount}/>`}
       ${view === "prototype" && html`<${PrototypeView}/>`}
       ${view === "flow"      && html`<${FlowView}    model=${model} setEdits=${setEdits}/>`}
       ${view === "ia"        && html`<${IAView}      model=${model} setEdits=${setEdits}/>`}
