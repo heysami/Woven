@@ -5080,6 +5080,25 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .workflow-body[data-view="proto"] .workflow-proto-viewer { visibility: visible; }
 .workflow-body[data-view="proto"] .workflow-canvas-wrap { visibility: hidden; }
+/* Preview = the workflow surface in proto mode. It is now a top-level surface
+   (driven by the SurfaceNav), so present it as a clean, full-bleed prototype
+   viewer: collapse the left nav rail + library column + drag handle (navigation
+   lives in the top SurfaceNav now), keeping only the viewer and the right rail.
+   Mirrors the fullscreen-canvas collapse below. */
+.workflow-body[data-view="proto"] {
+  grid-template-columns: 0 0 0 1fr var(--th-right-rail-w, 44px);
+}
+.workflow-body[data-view="proto"] .workflow-nav-rail,
+.workflow-body[data-view="proto"] .workflow-library,
+.workflow-body[data-view="proto"] .workflow-resize-handle-lib {
+  visibility: hidden;
+  width: 0;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
 /* Body-portal'd canvas chrome (stage pill, pick toast) anchors against
    .workflow-canvas-wrap rects, which stay valid under visibility:hidden -
    hide them while the prototype viewer is up so they can't float over it. */
