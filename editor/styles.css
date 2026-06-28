@@ -9084,8 +9084,6 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   z-index: 3;
   height: 32px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-bottom: none;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
   transition: opacity 0.14s ease;
@@ -9137,8 +9135,6 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   z-index: 3;
   height: 32px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-bottom: none;
   border-top-left-radius: 12px;
   border-top-right-radius: 12px;
   transition: opacity 0.14s ease;
@@ -9215,8 +9211,6 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   /* White header panel rounded at the TOP only; its bottom edge meets the
      asset's (now-squared) top edge so the two read as one card. */
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-bottom: none;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
   transition: opacity 0.14s ease;
@@ -9270,6 +9264,47 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node-asset[data-selected="true"]:has(.workflow-node-asset-chrome-bottom > *) .workflow-node-asset-body {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
+}
+
+/* Selection ring spanning the floating bar + body + bottom chrome as ONE
+   continuous rounded outline. The node's own `outline` only wraps the body
+   (the bars float OUTSIDE its box), so for asset nodes we drop that outline and
+   draw per-part border pseudos that meet at the open seams: rounded at the bar
+   top and the bottom strip, square through the body - one unbroken ring. */
+.workflow-node-asset[data-selected="true"] { outline: none; }
+.workflow-node-asset[data-selected="true"] .workflow-node-asset-bar::after,
+.workflow-node-asset[data-selected="true"] .workflow-node-asset-body::after,
+.workflow-node-asset[data-selected="true"] .workflow-node-asset-chrome-bottom::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  border: 0 solid color-mix(in oklch, var(--accent) 60%, transparent);
+}
+.workflow-node-asset[data-selected="true"] .workflow-node-asset-bar::after {
+  border-top-width: 2px;
+  border-left-width: 2px;
+  border-right-width: 2px;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+.workflow-node-asset[data-selected="true"] .workflow-node-asset-body::after {
+  border-left-width: 2px;
+  border-right-width: 2px;
+}
+.workflow-node-asset[data-selected="true"]:has(.workflow-node-asset-chrome-bottom > *) .workflow-node-asset-chrome-bottom::after {
+  border-left-width: 2px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+/* No bottom chrome → close the ring on the body's own (still-rounded) bottom. */
+.workflow-node-asset[data-selected="true"]:not(:has(.workflow-node-asset-chrome-bottom > *)) .workflow-node-asset-body::after {
+  border-bottom-width: 2px;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
 }
 /* Cutout assets (transparent-background PNG / SVG) read cleaner WITHOUT the
    checkerboard behind them - the checker is meant to signal "this region is
@@ -9506,7 +9541,6 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border-top: 1px solid var(--border);
   background: var(--surface);
   min-height: 18px;
   overflow: visible;   /* allow .tab-tip on each dot to escape upward */
@@ -9557,7 +9591,6 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border-top: 1px solid var(--border);
   background: var(--surface);
   min-height: 22px;
 }
@@ -9886,8 +9919,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   font-size: 10px;
   color: var(--text-faint);
   padding: 4px 8px;
-  background: var(--surface-2);
-  border-top: 1px solid var(--border);
+  background: var(--surface);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -11831,6 +11863,10 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   height: 16px;
   cursor: nwse-resize;
   z-index: 3;
+  /* Grip hidden at rest - only the diagonal lines reveal on node hover/select.
+     The 16px hit area stays active so the corner is always resizable. */
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.1s ease;
   background:
     linear-gradient(135deg,
       transparent 0%, transparent 55%,
@@ -11840,6 +11876,10 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
       transparent 75%, transparent 85%,
       var(--border-strong) 85%, var(--border-strong) 90%,
       transparent 90%);
+}
+.workflow-node:hover .workflow-node-resize-corner,
+.workflow-node[data-selected="true"] .workflow-node-resize-corner {
+  opacity: 1;
 }
 .workflow-node-resize-corner:hover {
   background:
@@ -12033,7 +12073,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
    edited. Matches the textarea's box metrics so swapping in/out doesn't shift
    the content. Click anywhere to swap back to the editable textarea. */
 .workflow-node-prompt-render {
-  padding: 10px 12px 18px;
+  padding: 10px 12px 22px;
   font-family: inherit;
   font-size: 12.5px;
   line-height: 1.5;
@@ -12047,6 +12087,13 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   white-space: pre-wrap;
   overflow-wrap: break-word;
   cursor: text;
+  /* Fade the bottom edge to white when the text overflows, signalling that the
+     node scrolls. The bottom padding (22px) is larger than the fade (20px), so
+     once scrolled to the end the last line clears the fade and stays crisp; the
+     fade only bites into cut-off content mid-scroll, and falls over empty
+     padding (invisible) when the content fits. Pure CSS, no scroll listener. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }
 /* Inline [filename] reference badge inside a prompt's rendered text. */
 .workflow-prompt-badge {
