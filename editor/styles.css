@@ -8809,20 +8809,27 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node[data-quiet="face"]:not(:hover):not([data-selected="true"]) > .workflow-node-quiet {
   display: flex;
 }
+/* The resting icon inherits each node's own top-bar glyph colour (set per kind
+   below); default to the muted bar tint used by mermaid/fmttext/agent glyphs. */
 .workflow-node-quiet-icon {
-  font-size: 36px;
+  font-size: 34px;
   line-height: 1;
-  opacity: 0.92;
-  color: var(--text);
+  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.workflow-node-quiet-icon svg { width: 36px; height: 36px; }
+.workflow-node-quiet-icon svg { width: 34px; height: 34px; }
+.workflow-node-iter   .workflow-node-quiet-icon { color: oklch(48% 0.16 300); }
+.workflow-node-skill  .workflow-node-quiet-icon { color: var(--hot); }
+.workflow-node-ds     .workflow-node-quiet-icon { color: var(--accent); }
+.workflow-node-ds-brainstorm .workflow-node-quiet-icon { color: oklch(58% 0.2 290); }
+.workflow-node-palette .workflow-node-quiet-icon { color: var(--accent); }
+.workflow-node-typo   .workflow-node-quiet-icon { color: var(--accent); }
 .workflow-node-quiet-name {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
   color: var(--text);
   max-width: 100%;
   overflow: hidden;
@@ -8858,7 +8865,8 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   border-radius: 5px;
   box-shadow: inset 0 0 0 1px color-mix(in oklab, oklch(0% 0 0) 10%, transparent);
 }
-/* iterator face extra - a compact list of variants / remixes / blend inputs. */
+/* iterator face extra - a compact list of variants / remixes / blend inputs,
+   set off from the title block by a hairline separator with extra L/R room. */
 .workflow-node-quiet-list {
   display: flex;
   flex-direction: column;
@@ -8867,6 +8875,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   max-height: 100%;
   overflow: hidden;
   text-align: left;
+  margin-top: 6px;
+  padding: 11px 14px 0;
+  border-top: 1px solid var(--border);
 }
 .workflow-node-quiet-listrow {
   display: flex;
@@ -8897,6 +8908,25 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   visibility: hidden;
   overflow: hidden;
   min-height: 0;
+}
+/* At rest, prompt + formatted-text read as centered cards (content centred both
+   axes); editing layout returns the moment the node is hovered or selected. */
+.workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-render {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-text {
+  text-align: center;
+}
+.workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-fmttext-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 /* ─── Canvas-frames body-drag overlay ─────────────────────────────────
