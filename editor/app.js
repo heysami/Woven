@@ -9302,7 +9302,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartCh
               `}
               ${w.kind !== "thread" && html`
                 <button className="dock-tile-close" title="Close panel" aria-label="Close panel"
-                  onClick=${() => onClose(w.id)}>×</button>
+                  onClick=${() => onClose(w.id)}><${Icon.X}/></button>
               `}
               ${tileBody(w)}
             </div>
@@ -20883,50 +20883,61 @@ function McpLanding() {
         name="MCP servers"
         count=${servers.length}
         desc=${html`Optional MCP servers the harness exposes to spawned <code>claude</code> subprocesses via <code>--mcp-config</code>. Built-in <code>WebFetch</code> and <code>WebSearch</code> stay primary; these are escalation paths (Chrome for logged-in pages, Figma for design files). Runtime config: <code>${data.configPath}</code>${data.configured ? "" : " (not present - flag will be skipped at spawn-time)"}.`}
-        action=${html`<button className="sysadd-bar-btn" type="button" onClick=${() => setAddOpen(o => !o)} aria-expanded=${addOpen}>
-          <${addOpen ? Icon.X : Icon.Plus}/><span>${addOpen ? "Cancel" : "Add server"}</span></button>`}
+        action=${html`<button className="sysadd-bar-btn" type="button" onClick=${() => setAddOpen(true)}>
+          <${Icon.Plus}/><span>Add server</span></button>`}
         extra=${html`<div className="sys-shead-extra">${wiredCount} of ${servers.length} wired into the runtime config.</div>`}
       />
 
-      <div className="mcp-add">
-        ${addOpen && html`
-          <div className="mcp-add-form">
-            <div className="mcp-add-row">
-              <label className="mcp-add-field">
-                <span>id</span>
-                <input value=${addForm.id} onInput=${setF("id")} placeholder="my-server" spellCheck=${false}/>
-              </label>
-              <label className="mcp-add-field">
-                <span>label</span>
-                <input value=${addForm.label} onInput=${setF("label")} placeholder="My Server"/>
-              </label>
+      ${addOpen && html`
+        <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) setAddOpen(false); }}>
+          <div className="modal mcp-add-modal" role="dialog" aria-modal="true">
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">MCP servers</div>
+                <div className="modal-title">Add a server</div>
+              </div>
+              <button className="modal-x" onClick=${() => setAddOpen(false)}>×</button>
             </div>
-            <label className="mcp-add-field">
-              <span>command (full command line the daemon spawns)</span>
-              <input value=${addForm.command} onInput=${setF("command")} placeholder="npx -y some-mcp@latest" spellCheck=${false}/>
-            </label>
-            <label className="mcp-add-field">
-              <span>purpose</span>
-              <input value=${addForm.purpose} onInput=${setF("purpose")} placeholder="What this server does - shown to agents in the capabilities preamble"/>
-            </label>
-            <label className="mcp-add-field">
-              <span>when to use (optional)</span>
-              <input value=${addForm.whenToUse} onInput=${setF("whenToUse")} placeholder="When should an agent reach for it?"/>
-            </label>
-            <label className="mcp-add-field">
-              <span>requires (optional, one per line)</span>
-              <textarea rows="2" value=${addForm.requires} onInput=${setF("requires")} placeholder="Node.js / npx on PATH"></textarea>
-            </label>
-            ${addErr && html`<div className="mcp-add-error">${addErr}</div>`}
-            <div className="mcp-add-actions">
-              <button className="mcp-add-submit" disabled=${addBusy || !addForm.id.trim() || !addForm.command.trim()} onClick=${submitAdd}>
+            <div className="modal-body">
+              <div className="mcp-add-form">
+                <div className="mcp-add-row">
+                  <label className="mcp-add-field">
+                    <span>id</span>
+                    <input value=${addForm.id} onInput=${setF("id")} placeholder="my-server" spellCheck=${false} autoFocus/>
+                  </label>
+                  <label className="mcp-add-field">
+                    <span>label</span>
+                    <input value=${addForm.label} onInput=${setF("label")} placeholder="My Server"/>
+                  </label>
+                </div>
+                <label className="mcp-add-field">
+                  <span>command (full command line the daemon spawns)</span>
+                  <input value=${addForm.command} onInput=${setF("command")} placeholder="npx -y some-mcp@latest" spellCheck=${false}/>
+                </label>
+                <label className="mcp-add-field">
+                  <span>purpose</span>
+                  <input value=${addForm.purpose} onInput=${setF("purpose")} placeholder="What this server does - shown to agents in the capabilities preamble"/>
+                </label>
+                <label className="mcp-add-field">
+                  <span>when to use (optional)</span>
+                  <input value=${addForm.whenToUse} onInput=${setF("whenToUse")} placeholder="When should an agent reach for it?"/>
+                </label>
+                <label className="mcp-add-field">
+                  <span>requires (optional, one per line)</span>
+                  <textarea rows="2" value=${addForm.requires} onInput=${setF("requires")} placeholder="Node.js / npx on PATH"></textarea>
+                </label>
+                ${addErr && html`<div className="mcp-add-error">${addErr}</div>`}
+              </div>
+            </div>
+            <div className="modal-foot">
+              <span className="mcp-add-hint">Writes both the runtime config and the catalog entry. Tools become <code>mcp__${addForm.id.trim() || "<id>"}__*</code> on the next spawn - agents see it automatically.</span>
+              <button className="tbtn tbtn-primary mcp-add-submit" disabled=${addBusy || !addForm.id.trim() || !addForm.command.trim()} onClick=${submitAdd}>
                 ${addBusy ? "Adding…" : "Add + wire server"}
               </button>
-              <span className="mcp-add-hint">Writes both the runtime config and the catalog entry. Tools become <code>mcp__${addForm.id.trim() || "<id>"}__*</code> on the next spawn - agents see it in their capabilities automatically.</span>
             </div>
           </div>
-        `}
-      </div>
+        </div>
+      `}
 
       <div className="subagent-list">
         ${servers.map(s => html`

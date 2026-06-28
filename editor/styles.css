@@ -1700,6 +1700,16 @@ button {
 }
 .mcp-add-submit:disabled { opacity: 0.5; cursor: default; }
 .mcp-add-hint { font-size: 11px; color: var(--text-faint); line-height: 1.45; }
+
+/* MCP "add server" now lives in a standard modal (consistent with the other
+   editor dialogs) instead of an inline expanding form. */
+.mcp-add-modal { width: 600px; }
+.mcp-add-modal .mcp-add-form {
+  background: none; border: 0; border-radius: 0; padding: 0; max-width: none;
+}
+.mcp-add-modal .modal-foot { justify-content: space-between; align-items: center; gap: 16px; }
+.mcp-add-modal .mcp-add-hint { flex: 1; min-width: 0; }
+.mcp-add-modal .mcp-add-submit { flex: 0 0 auto; white-space: nowrap; }
 .mcp-add-hint code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
 .mcp-remove {
   padding: 6px 12px;
@@ -1718,8 +1728,8 @@ button {
 .sysadd-bar-btn {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 8px 14px; font-size: 13px; font-weight: 600;
-  color: var(--accent-text); background: var(--accent-soft);
-  border: 1px solid var(--border); border-radius: 9px; cursor: pointer;
+  color: var(--hot-text); background: var(--hot-soft);
+  border: 1px solid color-mix(in oklab, var(--hot) 35%, transparent); border-radius: 9px; cursor: pointer;
   transition: filter 120ms;
 }
 .sysadd-bar-btn:hover { filter: brightness(0.97); }
@@ -3994,9 +4004,9 @@ body[data-panel-resizing="true"] .dock-resize-edge::after {
   border-radius: 6px;
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 15px; line-height: 1;
   cursor: pointer;
 }
+.dock-tile-close svg { width: 13px; height: 13px; display: block; }
 .dock-tile-close:hover { background: var(--surface-2); color: var(--text); }
 
 /* Drag-to-swap grip (top-left of each tile when 2+ windows are open). */
@@ -4035,7 +4045,14 @@ body[data-panel-resizing="true"] .dock-tile-grip { cursor: grabbing; }
    and the grip (left, only when 2+ tiles) never cover the title / refresh /
    count chrome. Thread tiles use ChatDrawer's own header, padded only when a
    grip is present (count ≥ 2). */
-.dock-tile .th-rail-panel-embedded .runs-panel-head { padding-right: 40px; }
+/* Give the embedded dock head a consistent height + vertical centering so the
+   absolutely-positioned grip/close (top:8px, 22px) land on its vertical middle. */
+.dock-tile .th-rail-panel-embedded .runs-panel-head,
+.dock-tile .th-rail-panel-embedded .th-subagent-head {
+  min-height: 38px;
+  align-items: center;
+  padding-right: 40px;
+}
 .dock-grid:not([data-count="1"]) .dock-tile .th-rail-panel-embedded .runs-panel-head { padding-left: 40px; }
 .dock-grid:not([data-count="1"]) .dock-tile[data-kind="thread"] .chat-header { padding-left: 38px; }
 
