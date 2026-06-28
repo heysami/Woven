@@ -9322,6 +9322,33 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   border-top-right-radius: 10px;
   transition: opacity 0.14s ease;
 }
+/* Narrow-node overflow menu - the ⋯ button + its dropdown that holds the
+   secondary action cluster (open / audit / manage / export / figma) when the
+   node is too narrow to lay them out inline. Anchored below the button, right-
+   aligned so it never clips off the node's right edge. */
+.workflow-node-overflow {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.workflow-node-overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+.workflow-node-overflow-menu > .workflow-node-action {
+  width: 28px;
+  height: 28px;
+}
 .workflow-node-proto .workflow-node-asset-versions {
   position: absolute;
   top: 100%;               /* float flush BELOW the prototype - never over it */

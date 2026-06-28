@@ -614,6 +614,7 @@ const Icon = {
   Pen:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 14l3-1 7-7-2-2-7 7-1 3z M9 4l3 3"/></svg>`,
   Move:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M2 8l2 2M2 8l2-2M14 8l-2 2M14 8l-2-2M8 14l-2-2M8 14l2-2"/></svg>`,
   Grip:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="6" cy="4" r=".9" fill="currentColor"/><circle cx="10" cy="4" r=".9" fill="currentColor"/><circle cx="6" cy="8" r=".9" fill="currentColor"/><circle cx="10" cy="8" r=".9" fill="currentColor"/><circle cx="6" cy="12" r=".9" fill="currentColor"/><circle cx="10" cy="12" r=".9" fill="currentColor"/></svg>`,
+  More:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/></svg>`,
   StateM:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="4" r="2"/><path d="M6 4h4M12 6v4M10.5 6.5l-5 5"/></svg>`,
   Clock:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`,
   Grid:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12"/></svg>`,
@@ -18379,8 +18380,8 @@ function dsStyleSampleChips(p) {
 /* Inject the full DS bundle (all.css) + style overlay (data-theme) + optional
    JS-backed style runtime + fonts + the computed custom-token <style> into a
    sample iframe's document. The SINGLE source of truth for "boot a DS sample",
-   shared by the live thumbnail (DsTuneThumb) and the client-side rasteriser
-   (dsCaptureSampleToPng) so the static PNG matches the live boot exactly.
+   used by DsTuneThumb for both the live preview and its self-heal rasterise, so
+   the saved static PNG matches the live boot exactly.
    onAllCssLoad (optional) re-runs the caller once all.css lands - the live
    thumbnail uses it to keep its custom <style> last in the cascade; the
    rasteriser waits instead. */
@@ -18432,68 +18433,21 @@ function dsInjectSampleHead(doc, { custom, dark, styleId, js }, onAllCssLoad) {
   doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
 }
 
-/* Client-side rasteriser: boot one DS sample in a hidden 1280×800 iframe, let
-   it settle, html2canvas-pro it to a PNG, and save it to previews/<id>-<view>.png
-   via POST /__ds_save_preview. Replaces the old headless-Chrome server capture -
-   it runs in the editor that's already open, so there's no Chrome subprocess to
-   hang and nothing "generated" at view time; the gallery just shows the <img>. */
-async function dsCaptureSampleToPng({ id, view, file, custom, dark, styleId, js }) {
-  if (typeof window === "undefined" || typeof window.html2canvas !== "function") {
-    throw new Error("html2canvas-pro not loaded");
-  }
-  const LOGICAL_W = 1280, LOGICAL_H = 800;
-  const ifr = document.createElement("iframe");
-  ifr.setAttribute("aria-hidden", "true");
-  ifr.scrolling = "no";
-  Object.assign(ifr.style, {
-    position: "fixed", left: "-99999px", top: "0", border: "0",
-    width: LOGICAL_W + "px", height: LOGICAL_H + "px", visibility: "hidden", pointerEvents: "none",
-  });
-  ifr.src = apiUrl("/__default_ds/" + file);
-  document.body.appendChild(ifr);
-  try {
-    await new Promise((res, rej) => {
-      ifr.addEventListener("load", res, { once: true });
-      ifr.addEventListener("error", () => rej(new Error("iframe failed to load " + file)), { once: true });
-      setTimeout(() => rej(new Error("iframe load timeout: " + file)), 15000);
-    });
-    let doc;
-    try { doc = ifr.contentDocument; } catch { doc = null; }
-    if (!doc || !doc.body) throw new Error("iframe document inaccessible");
-    dsInjectSampleHead(doc, { custom, dark, styleId, js });
-    // Let all.css, fonts, the optional style JS runtime and token-doc rendering
-    // settle before snapshotting the single frame.
-    try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
-    try { if (doc.fonts && doc.fonts.ready) await doc.fonts.ready; } catch {}
-    await new Promise(r => setTimeout(r, js ? 1100 : 500));
-    try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
-    const canvas = await window.html2canvas(doc.documentElement, {
-      width: LOGICAL_W, height: LOGICAL_H, windowWidth: LOGICAL_W, windowHeight: LOGICAL_H,
-      backgroundColor: null, useCORS: true, allowTaint: false, logging: false, scale: 1,
-    });
-    if (!canvas || !canvas.toDataURL) throw new Error("html2canvas returned no canvas");
-    const dataUrl = canvas.toDataURL("image/png");
-    if (!dataUrl || dataUrl.length < 200) throw new Error("captured raster was empty");
-    const r = await fetch(apiUrl("/__ds_save_preview?id=" + encodeURIComponent(id) + "&view=" + encodeURIComponent(view)), {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }),
-    });
-    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ("save HTTP " + r.status)); }
-  } finally {
-    ifr.remove();
-  }
-}
-
-function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) {
+function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view }) {
   const LOGICAL_W = 1280, LOGICAL_H = 800;
   const wrapRef = useRef(null);
   const iframeRef = useRef(null);
   const [scale, setScale] = useState(0.28);
-  // Prefer the pre-rendered PNG snapshot (near-instant); fall back to the live
-  // iframe boot only if the snapshot is missing (404 before first regen) or
-  // fails. `bust` re-tries the img after a regeneration.
+  // Prefer the pre-rendered PNG snapshot (near-instant). If it's missing we fall
+  // back to the live iframe boot AND self-heal: once the iframe has settled we
+  // html2canvas it, save the PNG, then flip back to <img>. So a missing preview
+  // fixes itself on first view - no button, no headless Chrome. `healed` is the
+  // post-capture cache-buster that loads the freshly saved file.
   const hasSnap = !!(sampleId && view);
   const [imgFailed, setImgFailed] = useState(false);
-  useEffect(() => { setImgFailed(false); }, [bust, sampleId, view]);
+  const [healed, setHealed] = useState(0);
+  const healTriedRef = useRef(false);
+  useEffect(() => { setImgFailed(false); healTriedRef.current = false; }, [sampleId, view]);
   const useImg = hasSnap && !imgFailed;
 
   useEffect(() => {
@@ -18521,6 +18475,37 @@ function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) 
   // Re-apply when the style changes after the frame is already loaded.
   useEffect(() => { apply(); }, [apply]);
 
+  // Self-heal: when the iframe fallback is showing (PNG missing), rasterise the
+  // settled frame with html2canvas-pro ONCE and POST it to /__ds_save_preview,
+  // then flip back to <img>. Captures the already-rendered iframe (no extra
+  // boot). Silent on failure (e.g. endpoint absent before a daemon restart) -
+  // it just stays on the live iframe and retries on the next full page load.
+  const selfHeal = useCallback(async () => {
+    if (healTriedRef.current || useImg || !hasSnap) return;
+    healTriedRef.current = true;
+    const ifr = iframeRef.current;
+    let doc;
+    try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
+    if (!doc || !doc.body || typeof window.html2canvas !== "function") return;
+    try {
+      if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
+      await new Promise(r => setTimeout(r, js ? 1100 : 500));
+      try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
+      const canvas = await window.html2canvas(doc.documentElement, {
+        width: LOGICAL_W, height: LOGICAL_H, windowWidth: LOGICAL_W, windowHeight: LOGICAL_H,
+        backgroundColor: null, useCORS: true, allowTaint: false, logging: false, scale: 1,
+      });
+      const dataUrl = canvas && canvas.toDataURL ? canvas.toDataURL("image/png") : "";
+      if (!dataUrl || dataUrl.length < 200) return;
+      const r = await fetch(apiUrl("/__ds_save_preview?id=" + encodeURIComponent(sampleId) + "&view=" + encodeURIComponent(view)), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }),
+      });
+      if (r.ok) { setHealed(Date.now()); setImgFailed(false); }
+    } catch {}
+  }, [useImg, hasSnap, sampleId, view, js]);
+
+  const onFrameLoad = useCallback(() => { apply(); selfHeal(); }, [apply, selfHeal]);
+
   return html`
     <div ref=${wrapRef} className=${"deflib-thumb" + (dark ? " is-dark" : "")}>
       ${useImg ? html`
@@ -18528,7 +18513,7 @@ function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) 
           className="deflib-thumb-img"
           alt="Style preview"
           loading="lazy"
-          src=${apiUrl("/__default_ds/previews/" + sampleId + "-" + view + ".png") + (bust ? ("?v=" + bust) : "")}
+          src=${apiUrl("/__default_ds/previews/" + sampleId + "-" + view + ".png") + (healed ? ("?v=" + healed) : "")}
           onError=${() => setImgFailed(true)}/>
       ` : html`
         <iframe
@@ -18539,7 +18524,7 @@ function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) 
           scrolling="no"
           style=${{ width: LOGICAL_W + "px", height: LOGICAL_H + "px", transform: "scale(" + scale + ")" }}
           src=${apiUrl("/__default_ds/" + file)}
-          onLoad=${apply}/>
+          onLoad=${onFrameLoad}/>
       `}
     </div>
   `;
@@ -18579,37 +18564,10 @@ function DefaultLibraryLanding() {
 
   // Static PNG snapshots make the gallery near-instant; the iframe boot is a
   // fallback only (a cell shows the live iframe ONLY when its PNG is missing).
-  // Re-bake after a DS template / style / token-default change. Capture is
-  // client-side via html2canvas-pro (dsCaptureSampleToPng) - each sample is
-  // rasterised in a hidden iframe in THIS browser and the PNG is saved to the
-  // daemon, so there's no headless Chrome to hang. `bust` re-fetches the imgs
-  // once capture finishes. Two surfaces per style: landing + the design system.
-  const [regen, setRegen] = useState(null);   // {running,done,total,ok,err}
-  const [bust, setBust] = useState(0);
-  const onRegen = useCallback(async () => {
-    const views = [
-      { view: "landing", file: "templates/landing.html" },
-      { view: "gallery", file: "gallery.html" },
-    ];
-    const jobs = [];
-    for (const p of DS_STYLE_SAMPLES) {
-      for (const v of views) {
-        jobs.push({ id: p.id, view: v.view, file: v.file,
-          custom: sampleCustoms[p.id] || {}, dark: !!p.dark, styleId: p.styleId || "", js: !!p.js });
-      }
-    }
-    setRegen({ running: true, done: 0, total: jobs.length, ok: 0, err: null });
-    let ok = 0, lastErr = null;
-    for (let i = 0; i < jobs.length; i++) {
-      try { await dsCaptureSampleToPng(jobs[i]); ok++; }
-      catch (e) { lastErr = jobs[i].id + "/" + jobs[i].view + ": " + String((e && e.message) || e); }
-      setRegen({ running: true, done: i + 1, total: jobs.length, ok, err: null });
-      setBust(Date.now());   // reveal each PNG as it lands
-    }
-    setRegen({ running: false, done: jobs.length, total: jobs.length, ok,
-               err: ok === 0 ? (lastErr || "capture failed") : null });
-  }, [sampleCustoms]);
-
+  // Missing snapshots SELF-HEAL: each DsTuneThumb rasterises its own settled
+  // iframe via html2canvas-pro and saves the PNG (see DsTuneThumb.selfHeal), so
+  // the gallery converges to plain <img> on its own - no button, no headless
+  // Chrome. Two surfaces per style: landing + the design system.
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
@@ -18617,20 +18575,13 @@ function DefaultLibraryLanding() {
         desc=${html`The template design system every new project can inherit - tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below showcases one of its <strong>UI styles</strong> on the same two surfaces - the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) - on the default tokens, so the difference you see is purely the style. <strong>Try customisation</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
         action=${html`<div className="deflib-head-actions">
           <button className="sysadd-bar-btn" type="button"
-            onClick=${onRegen} disabled=${!!(regen && regen.running)}
-            title="Rasterise every sample to a static PNG in your browser (html2canvas) and save it, so the gallery shows plain images. Run this after changing a DS template, style, or the token defaults.">
-            <${Icon.Refresh}/><span>${regen && regen.running ? "Rendering " + regen.done + "/" + regen.total + "…" : "Regenerate previews"}</span></button>
-          <button className="sysadd-bar-btn" type="button"
             onClick=${() => setTuneOpen(true)}
             title="Open the token customizer against a live preview (sandbox - nothing is saved)">
             <${Icon.Palette}/><span>Try customisation</span></button>
         </div>`}
       />
 
-      <div className="deflib-samples-head">Template Design System Samples · UI styles${
-        regen && !regen.running && (regen.err || regen.ok)
-          ? html`<span className=${"deflib-regen-note" + (regen.err ? " is-err" : "")}>${regen.err ? "Regeneration failed: " + regen.err : "Rendered " + regen.ok + " previews"}</span>`
-          : null}</div>
+      <div className="deflib-samples-head">Template Design System Samples · UI styles</div>
       <div className="deflib-rows">
         ${DS_STYLE_SAMPLES.map(preset => html`
           <div key=${preset.id} className="deflib-row">
@@ -18643,11 +18594,11 @@ function DefaultLibraryLanding() {
             <div className="deflib-row-note">${preset.note}</div>
             <div className="deflib-grid">
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="templates/landing.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="landing" bust=${bust}/>
+                <${DsTuneThumb} file="templates/landing.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="landing"/>
                 <figcaption className="deflib-cap">Landing page</figcaption>
               </figure>
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="gallery.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="gallery" bust=${bust}/>
+                <${DsTuneThumb} file="gallery.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="gallery"/>
                 <figcaption className="deflib-cap">Design system</figcaption>
               </figure>
             </div>
@@ -53699,6 +53650,9 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   const [auditing, setAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  // Overflow menu for the secondary action cluster when the node is too narrow
+  // to lay every control out inline. See the bar render below.
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   // ── Auto-linked DS ───────────────────────────────────────────────────
   // The prototype is generated WITH a specific DS - that link lives in
@@ -54526,6 +54480,29 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   const h = node.h || 480;
   const locked = !!node.lockedState;
 
+  // Narrow-node handling for the floating title bar. The bar is pinned to the
+  // node width (left:0; right:0); without this its flex children spill out past
+  // the node's right edge once the node is dragged narrow. We shed the lowest-
+  // value controls first (the path label, then the device toggle), and finally
+  // fold the secondary action cluster (open / audit / manage / export / figma)
+  // into a ⋯ overflow menu so nothing becomes unreachable - the nav controls
+  // and close button always stay inline. Thresholds are in node-space px (the
+  // bar lays out in node space; canvas zoom scales the whole thing uniformly).
+  const barHideLabel  = w < 540;
+  const barHideDevice = w < 440;
+  const barOverflow   = w < 380;
+  // Close the overflow menu on any outside pointer-down.
+  useEffect(() => {
+    if (!overflowOpen) return;
+    const onDoc = () => setOverflowOpen(false);
+    window.addEventListener("mousedown", onDoc);
+    return () => window.removeEventListener("mousedown", onDoc);
+  }, [overflowOpen]);
+  // Collapse the menu automatically if the node grows back wide enough.
+  useEffect(() => {
+    if (!barOverflow && overflowOpen) setOverflowOpen(false);
+  }, [barOverflow, overflowOpen]);
+
   // v3.9 - device preview. Switching device sets the iframe's natural viewport
   // (so responsive breakpoints fire) AND reshapes the node to that viewport's
   // aspect at the SAME on-canvas scale, so the embed fills the box with no
@@ -54573,7 +54550,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
     >
       <div className="workflow-node-bar" onMouseDown=${onHandleDown}>
-        <span className="workflow-node-glyph"><${Icon.Play}/></span>
+        ${!barOverflow && html`<span className="workflow-node-glyph"><${Icon.Play}/></span>`}
         <${HoverTip}
           className="workflow-node-action workflow-node-action-nav"
           tip="Back - step back through this prototype's nav history, or reload to the locked screen when there's nothing to step back to."
@@ -54598,6 +54575,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onClick=${(e) => { e.stopPropagation(); goHome(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Home}/><//>
+        ${!barHideDevice && html`
         <span className="workflow-node-device-toggle" onMouseDown=${(e) => e.stopPropagation()}>
           ${PROTO_DEVICE_PRESETS.map(d => {
             const isActive = activeDevice === d.id;
@@ -54620,8 +54598,8 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
               ><${d.Icon}/><//>
             `;
           })}
-        </span>
-        <span className="workflow-node-label">source/${branch}/</span>
+        </span>`}
+        ${!barHideLabel && html`<span className="workflow-node-label">source/${branch}/</span>`}
         ${locked && html`
           <${HoverTip}
             className="workflow-node-action workflow-node-lock workflow-node-action-unpin"
@@ -54633,57 +54611,84 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           ><${Icon.Pin}/><//>
         `}
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip}
-          className="workflow-node-action"
-          tip="Open this prototype in the editor (new tab)"
-          ariaLabel="Open in editor"
-          onClick=${(e) => { e.stopPropagation(); openInEditor(); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        ><${Icon.OpenExt}/><//>
-        ${onChange && html`
-          <${React.Fragment}>
-            ${linkedDsRef && html`<${WorkflowDsStrictnessToggle}
-              value=${node.dsStrictness || "loose"}
-              onChange=${(v) => onChange({ dsStrictness: v })}
-              hasDs=${true}
-            />`}
-            <${HoverTip}
-              className=${"workflow-node-action workflow-node-action-audit-proto"
-                + (auditing ? " is-loading" : "")
-                + (!linkedDsRef ? " is-no-ds" : "")}
-              tip=${!linkedDsRef
-                ? "No design system linked. Set meta.dsRef in source/" + branch + "/meta.json (or the project's editor/data.js) to enable the DS audit."
-                : auditing
-                  ? "Auditing every HTML file in source/" + branch + "/ against DS '" + linkedDsRef + "' …"
-                  : "DS linked: '" + linkedDsRef + "'. Click to audit every HTML file in source/" + branch + "/ - applies surgical fixes for palette / typography violations and reports the result."}
-              ariaLabel=${!linkedDsRef ? "DS audit (no DS linked)" : ("DS audit · " + linkedDsRef)}
-              disabled=${!linkedDsRef || auditing}
-              onClick=${(e) => { e.stopPropagation(); runDsAudit(); }}
-              onMouseDown=${(e) => e.stopPropagation()}
-            >${auditing ? html`<${Icon.Refresh}/>` : html`<${Icon.Shield}/>`}<//>
-          <//>
-        `}
-        <${HoverTip}
-          className="workflow-node-action"
-          tip="Manage exposed assets - open the full list of assets and pick which ones to expose to upstream writers."
-          ariaLabel="Manage exposed assets"
-          onClick=${(e) => { e.stopPropagation(); openManage(); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        ><${Icon.List}/><//>
-        <${HoverTip}
-          className="workflow-node-action workflow-node-action-export"
-          tip="Export - bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar)."
-          ariaLabel="Export prototype"
-          onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        ><${Icon.Download}/><//>
-        <${HoverTip}
-          className="workflow-node-action workflow-node-action-figma"
-          tip="Send to Figma - rebuild this rendered prototype as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
-          ariaLabel="Send to Figma"
-          onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
-          onMouseDown=${(e) => e.stopPropagation()}
-        ><${Icon.Figma}/><//>
+        ${(() => {
+          // The secondary action cluster - rendered inline when the bar has room,
+          // or tucked into a ⋯ overflow menu when the node is too narrow so the
+          // controls never spill past the node edge.
+          const secondary = html`
+            <${React.Fragment}>
+              <${HoverTip}
+                className="workflow-node-action"
+                tip="Open this prototype in the editor (new tab)"
+                ariaLabel="Open in editor"
+                onClick=${(e) => { e.stopPropagation(); openInEditor(); }}
+                onMouseDown=${(e) => e.stopPropagation()}
+              ><${Icon.OpenExt}/><//>
+              ${onChange && html`
+                <${React.Fragment}>
+                  ${linkedDsRef && html`<${WorkflowDsStrictnessToggle}
+                    value=${node.dsStrictness || "loose"}
+                    onChange=${(v) => onChange({ dsStrictness: v })}
+                    hasDs=${true}
+                  />`}
+                  <${HoverTip}
+                    className=${"workflow-node-action workflow-node-action-audit-proto"
+                      + (auditing ? " is-loading" : "")
+                      + (!linkedDsRef ? " is-no-ds" : "")}
+                    tip=${!linkedDsRef
+                      ? "No design system linked. Set meta.dsRef in source/" + branch + "/meta.json (or the project's editor/data.js) to enable the DS audit."
+                      : auditing
+                        ? "Auditing every HTML file in source/" + branch + "/ against DS '" + linkedDsRef + "' …"
+                        : "DS linked: '" + linkedDsRef + "'. Click to audit every HTML file in source/" + branch + "/ - applies surgical fixes for palette / typography violations and reports the result."}
+                    ariaLabel=${!linkedDsRef ? "DS audit (no DS linked)" : ("DS audit · " + linkedDsRef)}
+                    disabled=${!linkedDsRef || auditing}
+                    onClick=${(e) => { e.stopPropagation(); runDsAudit(); }}
+                    onMouseDown=${(e) => e.stopPropagation()}
+                  >${auditing ? html`<${Icon.Refresh}/>` : html`<${Icon.Shield}/>`}<//>
+                <//>
+              `}
+              <${HoverTip}
+                className="workflow-node-action"
+                tip="Manage exposed assets - open the full list of assets and pick which ones to expose to upstream writers."
+                ariaLabel="Manage exposed assets"
+                onClick=${(e) => { e.stopPropagation(); openManage(); }}
+                onMouseDown=${(e) => e.stopPropagation()}
+              ><${Icon.List}/><//>
+              <${HoverTip}
+                className="workflow-node-action workflow-node-action-export"
+                tip="Export - bundle this prototype's source tree + bundled design system + a README + a port-fallback static server into the project's configured export folder (set via the ⤓ Exports button in the workflow toolbar)."
+                ariaLabel="Export prototype"
+                onClick=${(e) => { e.stopPropagation(); runExportForNode(node.id, node.label || node.title); }}
+                onMouseDown=${(e) => e.stopPropagation()}
+              ><${Icon.Download}/><//>
+              <${HoverTip}
+                className="workflow-node-action workflow-node-action-figma"
+                tip="Send to Figma - rebuild this rendered prototype as editable Figma layers via the Woven Bridge plugin (open + connected in Figma Desktop). Reads the live canvas render, so keep it open."
+                ariaLabel="Send to Figma"
+                onClick=${(e) => { e.stopPropagation(); runSendToFigmaForNode(node.id, node.label || node.title); }}
+                onMouseDown=${(e) => e.stopPropagation()}
+              ><${Icon.Figma}/><//>
+            <//>
+          `;
+          if (!barOverflow) return secondary;
+          return html`
+            <span className="workflow-node-overflow" onMouseDown=${(e) => e.stopPropagation()}>
+              <${HoverTip}
+                className=${"workflow-node-action" + (overflowOpen ? " is-active" : "")}
+                tip="More actions - open, audit, manage assets, export, send to Figma."
+                ariaLabel="More actions"
+                onClick=${(e) => { e.stopPropagation(); setOverflowOpen(o => !o); }}
+              ><${Icon.More}/><//>
+              ${overflowOpen && html`
+                <div
+                  className="workflow-node-overflow-menu"
+                  onClickCapture=${() => setOverflowOpen(false)}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                >${secondary}</div>
+              `}
+            </span>
+          `;
+        })()}
         <${HoverTip}
           className="workflow-node-close"
           tip="Remove this prototype instance from the canvas (does not delete files on disk)."
