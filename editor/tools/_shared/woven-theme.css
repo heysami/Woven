@@ -45,11 +45,11 @@
   --wv-accent-soft:   oklch(95% 0.038 162);
   --wv-accent-text:   oklch(45% 0.125 162);
   --wv-accent-strong: oklch(48% 0.145 160);
-  /* Hot - vivid TE orange. Reserved for the primary Run / record action only. */
-  --wv-hot:           oklch(64% 0.205 42);
-  --wv-hot-soft:      oklch(95% 0.045 52);
-  --wv-hot-text:      oklch(52% 0.195 40);
-  --wv-hot-strong:    oklch(58% 0.215 38);
+  /* Hot - bright gold. Reserved for the primary Run / record action only. */
+  --wv-hot:           oklch(85% 0.17 89);
+  --wv-hot-soft:      oklch(96% 0.055 92);
+  --wv-hot-text:      oklch(58% 0.14 82);
+  --wv-hot-strong:    oklch(78% 0.18 88);
   /* Semantic */
   --wv-success:       oklch(63% 0.16 150);
   --wv-success-soft:  oklch(95% 0.04 150);

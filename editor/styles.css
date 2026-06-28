@@ -33,11 +33,13 @@
   --accent-soft:   oklch(95% 0.04 174);
   --accent-text:   oklch(48% 0.095 174);
   --accent-strong: oklch(60% 0.12 174);
-  /* Hot - DORFic safety orange (#FF6600). Special / primary-action only. */
-  --hot:           oklch(70% 0.196 42);
-  --hot-soft:      oklch(95% 0.05 50);
-  --hot-text:      oklch(56% 0.19 42);
-  --hot-strong:    oklch(64% 0.21 42);
+  /* Hot - bright gold (brighter take on an antique-gold cue). Special / primary-action only. */
+  --hot:           oklch(86% 0.17 90);
+  --hot-soft:      oklch(96% 0.055 92);
+  --hot-text:      oklch(60% 0.14 82);
+  --hot-strong:    oklch(79% 0.18 88);
+  /* Ink for text/glyphs sitting ON a --hot fill: gold is too light for white. */
+  --hot-ink:       oklch(34% 0.085 78);
   /* Success / connected ("ok") now read TEAL too - no green anywhere in the
      brand. --ok is the connected-status token (daemon/CLI dots) that was
      previously undefined and fell back to a hardcoded green. */
@@ -10277,7 +10279,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   border: 0;
   border-radius: 50%;
   background: var(--hot);
-  color: var(--surface);
+  color: var(--hot-ink);
   font-size: 14px;
   font-weight: 600;
   line-height: 1;
@@ -14072,7 +14074,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 7px;
   /* The RECORD-style primary action - the one place orange leads. */
   background: var(--hot);
-  color: var(--surface);
+  color: var(--hot-ink);
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -24903,7 +24905,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    so it visually distinguishes from the lower-case "default" badge on Blank. */
 .wizard-preset-rec.wizard-preset-alpha {
   background: var(--hot);
-  color: oklch(100% 0 0);
+  color: var(--hot-ink);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
