@@ -55891,12 +55891,17 @@ function assetPickBucket(w, h) {
 // transparent. "Add blank canvas" keeps it transparent; "Regenerate fill" sends
 // the padded image + an outpaint mask to the gpt-image edit endpoint so the
 // model fills only the new area and preserves the original.
-function WorkflowAssetCropModal({ src, path, label, onClose }) {
+function WorkflowAssetCropModal({ src, path, label, onClose, onApplied }) {
   const [natural, setNatural] = useState(null); // { w, h } of the source file
   const [rect, setRect] = useState({ x: 0.08, y: 0.08, w: 0.84, h: 0.84 }); // image units; may exceed 0..1 when expanding
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("Working…");
   const [fillPrompt, setFillPrompt] = useState(""); // optional outpaint guidance
+  // Orientation transform, applied to the WHOLE image BEFORE the crop frame, so
+  // the frame + handles always read against the transformed (what-you-see) view.
+  const [flipH, setFlipH] = useState(false);
+  const [flipV, setFlipV] = useState(false);
+  const [rot, setRot] = useState(0); // 0 / 90 / 180 / 270, clockwise degrees
   const [, setVpTick] = useState(0); // bumped on window resize so the stage refits
   const canvasRef = useRef(null); // the full coordinate-space box (drag math reads its width)
   const dragRef = useRef(null);
@@ -55983,8 +55988,30 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     window.addEventListener("pointerup", onUp);
   };
 
-  const outW = natural && natural.w ? Math.max(1, Math.round(rect.w * natural.w)) : 0;
-  const outH = natural && natural.h ? Math.max(1, Math.round(rect.h * natural.h)) : 0;
+  // A 90/270 rotation swaps the working width/height; every layout + output
+  // dimension below reads these rotated dims, not natural.w/h directly.
+  const swap = rot === 90 || rot === 270;
+  const tnatW = natural ? (swap ? natural.h : natural.w) : 0;
+  const tnatH = natural ? (swap ? natural.w : natural.h) : 0;
+  const hasXf = rot !== 0 || flipH || flipV;
+  // Bake flip+rotate into a tnatW×tnatH canvas (or pass the image through
+  // untouched when there's no transform). Flip is applied in the original frame,
+  // then the whole thing rotates. Returned value is a valid drawImage source.
+  const buildTransformed = (full) => {
+    if (!hasXf) return full;
+    const c = document.createElement("canvas");
+    c.width = tnatW; c.height = tnatH;
+    const cx = c.getContext("2d");
+    cx.translate(tnatW / 2, tnatH / 2);
+    cx.rotate((rot * Math.PI) / 180);
+    cx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+    cx.drawImage(full, -natural.w / 2, -natural.h / 2, natural.w, natural.h);
+    return c;
+  };
+  const rotateBy = (deg) => setRot((r) => (((r + deg) % 360) + 360) % 360);
+
+  const outW = tnatW ? Math.max(1, Math.round(rect.w * tnatW)) : 0;
+  const outH = tnatH ? Math.max(1, Math.round(rect.h * tnatH)) : 0;
   const isFull = rect.x <= 0.001 && rect.y <= 0.001 && rect.w >= 0.999 && rect.h >= 0.999;
   // Any edge pulled past the image bounds = expansion (new canvas to fill).
   const isExpanded = rect.x < -0.001 || rect.y < -0.001
@@ -55997,11 +56024,11 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     if (!natural || !natural.w) { onClose(); return; }
     setBusy(true); setBusyLabel(isExpanded ? "Expanding…" : "Cropping…");
     try {
-      const ow = Math.max(1, Math.round(rect.w * natural.w));
-      const oh = Math.max(1, Math.round(rect.h * natural.h));
-      const dx = Math.round(-rect.x * natural.w);
-      const dy = Math.round(-rect.y * natural.h);
-      const full = await loadImage(src); // decode at natural res, not the scaled preview
+      const ow = Math.max(1, Math.round(rect.w * tnatW));
+      const oh = Math.max(1, Math.round(rect.h * tnatH));
+      const dx = Math.round(-rect.x * tnatW);
+      const dy = Math.round(-rect.y * tnatH);
+      const full = buildTransformed(await loadImage(src)); // natural res, with flip/rotate baked in
       const canvas = document.createElement("canvas");
       canvas.width = ow; canvas.height = oh;
       const ctx = canvas.getContext("2d");
@@ -56009,7 +56036,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
       const mime = (ext === "jpg" || ext === "jpeg") ? "image/jpeg"
         : ext === "webp" ? "image/webp" : "image/png";
       if (mime !== "image/png" && isExpanded) { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, ow, oh); }
-      ctx.drawImage(full, dx, dy, natural.w, natural.h);
+      ctx.drawImage(full, dx, dy, tnatW, tnatH);
       const dataUrl = canvas.toDataURL(mime, 0.92); // throws on a tainted canvas
       const res = await fetch(apiUrl("/__write_binary"), {
         method: "POST",
@@ -56019,6 +56046,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
       if (!res.ok) throw new Error("write failed (HTTP " + res.status + ")");
       // Bump every node + iframe pointing at this path to the new bytes.
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
+      if (onApplied) { try { await onApplied(path); } catch (_e) {} }
       onClose();
     } catch (err) {
       setBusy(false);
@@ -56041,18 +56069,18 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
     if (!natural || !natural.w || !isExpanded) return;
     setBusy(true); setBusyLabel("Regenerating…");
     try {
-      const ow = Math.max(1, Math.round(rect.w * natural.w));
-      const oh = Math.max(1, Math.round(rect.h * natural.h));
-      const dx = Math.round(-rect.x * natural.w); // original's top-left in output space
-      const dy = Math.round(-rect.y * natural.h);
+      const ow = Math.max(1, Math.round(rect.w * tnatW));
+      const oh = Math.max(1, Math.round(rect.h * tnatH));
+      const dx = Math.round(-rect.x * tnatW); // original's top-left in output space
+      const dy = Math.round(-rect.y * tnatH);
       const [bw, bh, aspect] = assetPickBucket(ow, oh);
       // Map output-space -> bucket. The original image lands scaled at this offset.
       const sx = bw / ow, sy = bh / oh;
-      const ix = (-rect.x * natural.w) * sx;
-      const iy = (-rect.y * natural.h) * sy;
-      const iw = natural.w * sx;
-      const ih = natural.h * sy;
-      const full = await loadImage(src); // ORIGINAL pixels - captured before the model overwrites the file
+      const ix = (-rect.x * tnatW) * sx;
+      const iy = (-rect.y * tnatH) * sy;
+      const iw = tnatW * sx;
+      const ih = tnatH * sy;
+      const full = buildTransformed(await loadImage(src)); // ORIGINAL pixels (flip/rotate baked) - captured before the model overwrites the file
 
       const img = document.createElement("canvas");
       img.width = bw; img.height = bh;
@@ -56098,7 +56126,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
       const octx = out.getContext("2d");
       if (mime !== "image/png") { octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, ow, oh); }
       octx.drawImage(gen, 0, 0, ow, oh);                  // model frame -> true ratio (fills the new margin)
-      octx.drawImage(full, dx, dy, natural.w, natural.h); // original pasted back, pixel-exact
+      octx.drawImage(full, dx, dy, tnatW, tnatH);         // original pasted back, pixel-exact
       const dataUrl = out.toDataURL(mime, 0.92);
       const wr = await fetch(apiUrl("/__write_binary"), {
         method: "POST",
@@ -56108,6 +56136,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
       if (!wr.ok) throw new Error("write failed (HTTP " + wr.status + ")");
 
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
+      if (onApplied) { try { await onApplied(path); } catch (_e) {} }
       onClose();
     } catch (err) {
       setBusy(false);
@@ -56126,21 +56155,30 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
   // the centred [0,1] slice of that box.
   const vpW = (typeof window !== "undefined" ? window.innerWidth : 1200);
   const vpH = (typeof window !== "undefined" ? window.innerHeight : 800);
-  const fitScale = natural && natural.w
-    ? Math.min((vpW * 0.42) / (natural.w * SPAN), (vpH * 0.34) / (natural.h * SPAN))
+  const fitScale = tnatW
+    ? Math.min((vpW * 0.42) / (tnatW * SPAN), (vpH * 0.34) / (tnatH * SPAN))
     : 0;
-  const canvasStyle = natural && natural.w
-    ? { width: Math.max(80, natural.w * SPAN * fitScale) + "px", height: Math.max(80, natural.h * SPAN * fitScale) + "px" }
+  const canvasStyle = tnatW
+    ? { width: Math.max(80, tnatW * SPAN * fitScale) + "px", height: Math.max(80, tnatH * SPAN * fitScale) + "px" }
     : { width: "320px", height: "320px" };
-  // The image sits centred, occupying the [0,1] slice of the coordinate space.
-  const imgStyle = { left: toPct(0) + "%", top: toPct(0) + "%", width: (1 / SPAN) * 100 + "%", height: (1 / SPAN) * 100 + "%" };
+  // The image sits centred on the [0,1] slice. It's rendered at its OWN aspect
+  // (natural.w×natural.h display px) then flipped/rotated around centre, so a
+  // 90° turn's bounding box exactly fills the rotated slice.
+  const imgStyle = tnatW
+    ? {
+        left: toPct(0.5) + "%", top: toPct(0.5) + "%",
+        width: natural.w * fitScale + "px", height: natural.h * fitScale + "px",
+        transformOrigin: "center center",
+        transform: `translate(-50%, -50%) rotate(${rot}deg) scale(${flipH ? -1 : 1}, ${flipV ? -1 : 1})`,
+      }
+    : { left: toPct(0) + "%", top: toPct(0) + "%", width: (1 / SPAN) * 100 + "%", height: (1 / SPAN) * 100 + "%" };
   const boxStyle = { left: toPct(rect.x) + "%", top: toPct(rect.y) + "%", width: (rect.w / SPAN) * 100 + "%", height: (rect.h / SPAN) * 100 + "%" };
 
   return createPortal(html`
     <div className="asset-crop-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="asset-crop-modal" onMouseDown=${(e) => e.stopPropagation()}>
         <header className="asset-crop-head">
-          <span className="asset-crop-title">Crop &amp; expand</span>
+          <span className="asset-crop-title">Crop, orient &amp; expand</span>
           <span className="asset-crop-label" title=${path}>${label}</span>
           ${isExpanded ? html`<span className="asset-crop-tag">expand</span>` : ""}
           <span className="asset-crop-dims">${outW && outH ? outW + " × " + outH + " px" : "…"}</span>
@@ -56163,6 +56201,21 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
             </div>
           </div>
         </div>
+        <div className="asset-crop-tools" role="toolbar" aria-label="Orient image">
+          <button className="asset-crop-tool" disabled=${busy} title="Rotate left 90°" aria-label="Rotate left 90 degrees" onClick=${() => rotateBy(-90)}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h6a3 3 0 0 1 3 3v0a3 3 0 0 1-3 3H6"/><path d="M4.8 3.2 2.5 5.5l2.3 2.3"/></svg>
+          </button>
+          <button className="asset-crop-tool" disabled=${busy} title="Rotate right 90°" aria-label="Rotate right 90 degrees" onClick=${() => rotateBy(90)}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 5.5h-6a3 3 0 0 0-3 3v0a3 3 0 0 0 3 3H10"/><path d="M11.2 3.2 13.5 5.5l-2.3 2.3"/></svg>
+          </button>
+          <span className="asset-crop-tool-sep"/>
+          <button className=${"asset-crop-tool" + (flipH ? " is-on" : "")} disabled=${busy} title="Flip horizontal" aria-label="Flip horizontal" aria-pressed=${flipH} onClick=${() => setFlipH(v => !v)}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12"/><path d="M6 4 2.5 8 6 12z"/><path d="M10 4l3.5 4L10 12z"/></svg>
+          </button>
+          <button className=${"asset-crop-tool" + (flipV ? " is-on" : "")} disabled=${busy} title="Flip vertical" aria-label="Flip vertical" aria-pressed=${flipV} onClick=${() => setFlipV(v => !v)}>
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M4 6 8 2.5 12 6z"/><path d="M4 10l4 3.5L12 10z"/></svg>
+          </button>
+        </div>
         ${isExpanded ? html`
           <div className="asset-crop-fillbar">
             <span className="asset-crop-fill-note">New area is empty. <b>Regenerate fill</b> outpaints it with AI; <b>Add blank canvas</b> leaves it transparent.</span>
@@ -56179,7 +56232,7 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
         <footer className="asset-crop-foot">
           <span className="asset-crop-hint">Drag the frame to crop, or pull a handle past the edge to expand. Apply overwrites this file in place; downstream uses update automatically.</span>
           <span className="asset-crop-foot-spacer"/>
-          <button className="asset-crop-reset" disabled=${busy} onClick=${() => { setRect({ x: 0, y: 0, w: 1, h: 1 }); setFillPrompt(""); }}>Reset</button>
+          <button className="asset-crop-reset" disabled=${busy} onClick=${() => { setRect({ x: 0, y: 0, w: 1, h: 1 }); setFillPrompt(""); setFlipH(false); setFlipV(false); setRot(0); }}>Reset</button>
           <button className="asset-crop-cancel" disabled=${busy} onClick=${onClose}>Cancel</button>
           ${isExpanded ? html`
             <button className="asset-crop-blank" disabled=${busy || !natural || !natural.w} onClick=${applyCrop}>
@@ -56189,8 +56242,8 @@ function WorkflowAssetCropModal({ src, path, label, onClose }) {
               ${busy && busyLabel === "Regenerating…" ? busyLabel : "Regenerate fill"}
             </button>
           ` : html`
-            <button className="asset-crop-apply" disabled=${busy || isFull || !natural || !natural.w} onClick=${applyCrop}>
-              ${busy ? busyLabel : "Apply crop"}
+            <button className="asset-crop-apply" disabled=${busy || (isFull && !hasXf) || !natural || !natural.w} onClick=${applyCrop}>
+              ${busy ? busyLabel : (isFull && hasXf ? "Apply" : "Apply crop")}
             </button>
           `}
         </footer>
@@ -73727,6 +73780,7 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
 function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSpawnConnected, allNodes, allEdges }) {
   const [busy, setBusy] = useState({});   // { [id]: true } while regenerating
   const [err, setErr]   = useState("");
+  const [cropOpen, setCropOpen] = useState(false); // crop/orient modal for the active pose
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(220, node.w || 300);
@@ -73868,6 +73922,10 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
           : html`
             <div className="wpv-stage">
               <img src=${bust(activeFrame.path, viewBump[active] || activeFrame.v)} alt=${active}/>
+              ${activeFrame.status === "done" ? html`<button className="wpv-edit" title="Crop, orient & expand this pose" aria-label="Edit pose image"
+                onClick=${(e) => { e.stopPropagation(); setCropOpen(true); }} onMouseDown=${(e) => e.stopPropagation()}>
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 1.5V11a1.5 1.5 0 0 0 1.5 1.5H14"/><path d="M11.5 14.5V5a1.5 1.5 0 0 0-1.5-1.5H2"/></svg>
+              </button>` : null}
             </div>
             <div className="wpv-caption">${(workflowPoseItem(active, genCustom) || {}).label || active}</div>`}
         ${err && html`<div className="wpv-err" title=${err}>${err}</div>`}
@@ -73900,6 +73958,20 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
             })}
           </div>
         </div>` : null}
+
+      ${cropOpen && activeFrame && activeFrame.status === "done" ? html`<${WorkflowAssetCropModal}
+        src=${bust(activeFrame.path, viewBump[active] || activeFrame.v)}
+        path=${activeFrame.path}
+        label=${(workflowPoseItem(active, genCustom) || {}).label || active}
+        onClose=${() => setCropOpen(false)}
+        onApplied=${async (p) => {
+          // Reflect the edit in the stage + thumb, and propagate to the pick /
+          // any wired downstream assets so consumers see the cropped pixels.
+          onChange({ viewBump: { ...(node.viewBump || {}), [active]: Date.now() } });
+          await pushDownstream(p);
+          try { window.dispatchEvent(new Event("th:asset-refresh")); } catch (_e) {}
+        }}
+      />` : null}
 
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Wire the Pose set generator's output here." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}><div className="workflow-port-dot"/></div>

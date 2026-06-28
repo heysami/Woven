@@ -8968,7 +8968,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   color: var(--accent);
 }
 .workflow-node-proto[data-locked="true"] .workflow-node-bar {
-  background: color-mix(in oklch, var(--accent-soft) 60%, var(--surface-2));
+  background: var(--surface);
 }
 .workflow-node-action-expose {
   position: relative;
@@ -9083,7 +9083,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   left: 0; right: 0;
   z-index: 3;
   height: 32px;
-  background: var(--surface-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
   transition: opacity 0.14s ease;
@@ -9134,7 +9136,9 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   left: 0; right: 0;
   z-index: 3;
   height: 32px;
-  background: var(--surface-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
   border-top-left-radius: 12px;
   border-top-right-radius: 12px;
   transition: opacity 0.14s ease;
@@ -9208,9 +9212,11 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   z-index: 3;
   height: 26px;
   padding: 0 6px;
-  /* Solid header panel rounded at the TOP only; its bottom edge meets the
+  /* White header panel rounded at the TOP only; its bottom edge meets the
      asset's (now-squared) top edge so the two read as one card. */
-  background: var(--surface-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
   transition: opacity 0.14s ease;
@@ -23961,11 +23967,27 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   padding: 10px 12px; height: calc(100% - 30px); overflow: hidden;
 }
 .wpv-stage {
+  position: relative;
   flex: 1 1 0; min-height: 0; border-radius: 8px; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   background: repeating-conic-gradient(#0000000d 0% 25%, transparent 0% 50%) 50% / 16px 16px;
 }
 .wpv-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* image-edit affordance (crop/orient) for the selected pose, parity with a
+   normal image asset; shows on hover / when the node is selected */
+.wpv-edit {
+  position: absolute; top: 6px; right: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border-radius: 6px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  color: var(--text); cursor: pointer;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.workflow-node-poseviewer:hover .wpv-edit,
+.workflow-node-poseviewer.is-selected .wpv-edit { opacity: 1; }
+.wpv-edit:hover { border-color: var(--text-faint); }
 .wpv-caption {
   flex: 0 0 auto; text-align: center;
   font: 600 11px/1.2 var(--font-mono); color: var(--text);
