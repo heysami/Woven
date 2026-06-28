@@ -20792,7 +20792,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   gap: 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface);
 }
 /* Shrink order when the drawer gets narrow: the TITLE truncates first
    (flex 1 1 + min-width 0 → it absorbs all the squeeze), then the status

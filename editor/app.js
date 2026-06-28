@@ -12195,11 +12195,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         </div>
         <div className="chat-status-group">
           <${ChatStatusChip} status=${status} error=${error}/>
-          <button
-            className="chat-action chat-action-fullscreen"
-            onClick=${() => setFullscreen(f => !f)}
-            title=${fullscreen ? "Exit fullscreen" : "Fullscreen"}
-          >${fullscreen ? "⤡" : "⤢"}</button>
           <button className="chat-action chat-action-close" onClick=${handleClose} title="Close (run keeps going)">×</button>
         </div>
       </div>
