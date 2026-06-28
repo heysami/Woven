@@ -9501,7 +9501,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
         className=${"th-right-rail-btn" + (openKinds?.includes("tasks") ? " is-active" : "")}
         ariaLabel="Open tasks & subagents"
         tip="Tasks & subagents - every dispatch + to-do across runs, finished included"
-        onClick=${() => onOpenWindow && onOpenWindow("tasks")}
+        onClick=${() => { setActive(null); onOpenWindow && onOpenWindow("tasks"); }}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Bot}/>
@@ -9512,29 +9512,18 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
         className=${"th-right-rail-btn" + (openKinds?.includes("comments") ? " is-active" : "")}
         ariaLabel="Open comments"
         tip="Comments - reviewer & live-guest feedback across the project (not AI build comments)"
-        onClick=${() => onOpenWindow && onOpenWindow("comments")}
+        onClick=${() => { setActive(null); onOpenWindow && onOpenWindow("comments"); }}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.User}/>
         </span>
       <//>
-      ${onOpenUserTesting && html`<${HoverTip}
-        placement="left"
-        className="th-right-rail-btn"
-        ariaLabel="Open user testing"
-        tip="User testing - build sessions, invite participants, review recordings & generate insights"
-        onClick=${onOpenUserTesting}
-      >
-        <span className="th-right-rail-icon-wrap">
-          <${Icon.Eye}/>
-        </span>
-      <//>`}
       <${HoverTip}
         placement="left"
         className=${"th-right-rail-btn th-right-rail-btn-git" + (openKinds?.includes("git") ? " is-active" : "")}
         ariaLabel="Open git & GitHub"
         tip="Git - commit, push, pull & history for this project"
-        onClick=${() => onOpenWindow && onOpenWindow("git")}
+        onClick=${() => { setActive(null); onOpenWindow && onOpenWindow("git"); }}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Branch}/>
@@ -42499,6 +42488,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             tip="App nodes - browser, vector editor, 3D editor, composer"
             onClick=${() => onRailPanel("app-nodes")}
           ><${Icon.Cube}/><//>
+          <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
             placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "library" ? " is-active" : "")}
@@ -67255,7 +67245,7 @@ const SPEC_NODE_DEFS = {
     ],
   },
   "sketch": {
-    glyph: "</>", label: "Sketch", canonical: (b, id) => `source/${b}/sketch-${id}.json`,
+    glyph: html`<${Icon.Code}/>`, label: "Sketch", canonical: (b, id) => `source/${b}/sketch-${id}.json`,
     source: (b, id) => `source/${b}/sketch-${id}.js`,
     fields: [
       // The sketch's body lives in its source module (controls + draw); the Code

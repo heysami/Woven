@@ -5490,7 +5490,11 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .workflow-library-section {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
+}
+/* No divider line between node-category sections - just a little breathing
+   space above each header (the first one's extra margin collapses at the top). */
+.workflow-library-section + .workflow-library-section {
+  margin-top: 8px;
 }
 .workflow-library-section-head {
   padding: 10px 14px 6px;
