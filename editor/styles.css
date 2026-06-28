@@ -6194,10 +6194,32 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
 .wv-layer-name { flex: 1; font: 12px/1.2 var(--font-mono); color: var(--text); }
 .wv-layer-badge { font: 600 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 2px 4px; }
 
-/* No browser-blue native controls anywhere in the editor - tint every native
-   range / checkbox / radio with the project accent (green), and give colour
-   inputs a clean swatch instead of the blue-bordered default. */
-input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+/* The Woven slider, editor-wide: thin track with a bright-teal fill (--wv-fill
+   set by the global setter in Root) + a teal handle wearing a light-teal halo
+   ring. Plus green checkbox/radio and a clean colour swatch (no browser blue). */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  height: 20px; background: transparent; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px; border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--wv-fill, 0%), var(--surface-3, var(--border)) var(--wv-fill, 0%));
+}
+input[type="range"]::-moz-range-track { height: 5px; border-radius: 999px; background: var(--surface-3, var(--border)); }
+input[type="range"]::-moz-range-progress { height: 5px; border-radius: 999px; background: var(--accent); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; margin-top: -3.5px; border-radius: 50%;
+  background: var(--accent); border: 0;
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 26%, var(--surface));
+  cursor: grab;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 0;
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 26%, var(--surface));
+}
+input[type="range"]:active::-webkit-slider-thumb { cursor: grabbing; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 input[type="color"]:not(.wac-color) {
   -webkit-appearance: none; appearance: none;
   padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer;

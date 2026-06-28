@@ -82735,3 +82735,25 @@ function DialogHost() {
 }
 
 createRoot(document.getElementById("root")).render(html`<${React.Fragment}><${Root}/><${DialogHost}/><//>`);
+
+/* Drive the slider fill (--wv-fill) on every range input so the custom track
+   actually fills to its value in Chrome (it can't auto-fill a styled track).
+   Delegated input listener for live drag + a debounced re-scan for re-renders. */
+(function () {
+  const setFill = (el) => {
+    if (!el || el.type !== "range") return;
+    let min = parseFloat(el.min); if (isNaN(min)) min = 0;
+    let max = parseFloat(el.max); if (isNaN(max)) max = 100;
+    let v = parseFloat(el.value); if (isNaN(v)) v = min;
+    const pct = max > min ? ((v - min) / (max - min)) * 100 : 0;
+    el.style.setProperty("--wv-fill", Math.max(0, Math.min(100, pct)) + "%");
+  };
+  const scan = () => { document.querySelectorAll('input[type="range"]').forEach(setFill); };
+  document.addEventListener("input",  (e) => { if (e.target && e.target.type === "range") setFill(e.target); }, true);
+  document.addEventListener("change", (e) => { if (e.target && e.target.type === "range") setFill(e.target); }, true);
+  let pending = 0;
+  const schedule = () => { if (pending) return; pending = setTimeout(() => { pending = 0; scan(); }, 120); };
+  const initFill = () => { scan(); try { new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true }); } catch (e) {} };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initFill);
+  else initFill();
+})();
