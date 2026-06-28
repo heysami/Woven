@@ -5015,7 +5015,10 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
    neutral idle, accent-tinted on hover so the affordance is discoverable. */
 .workflow-resize-handle {
   cursor: col-resize;
-  background: transparent;
+  /* Fill with the panel surface so the grey .workflow-root (--surface-2)
+     behind the grid doesn't show through this 4px column as a grey strip
+     between the white library panel and the white canvas. */
+  background: var(--surface);
   transition: background 0.1s ease;
   user-select: none;
   z-index: 5;

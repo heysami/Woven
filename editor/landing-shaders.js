@@ -330,7 +330,7 @@
 
     float pat = smoothstep(460.0 * uScale, 0.0, dist);
     pat = pat * pat * (3.0 - 2.0 * pat);
-    fcol = mix(fcol, mix(fcol, vec3(0.885, 0.875, 0.855), line * 0.5), pat);
+    fcol = mix(fcol, mix(fcol, vec3(0.82, 0.82, 0.82), line * 0.5), pat);
 
     float sgn = mod(id.x + id.y, 2.0) < 0.5 ? 1.0 : -1.0;
     float HS  = 11.0 * uScale;
@@ -343,7 +343,7 @@
     float diff = dot(N, Ld);
     float lit = smoothstep(200.0 * uScale, 0.0, dist);
     lit = lit * lit * lit;
-    float shade = 1.0 + min(diff, 0.0) * 0.38;          // shadow-only, no hotspot
+    float shade = 1.0 + min(diff, 0.0) * 0.12;          // shadow-only, very subtle
     fcol *= mix(1.0, shade, lit);
 
     float innerBand = smoothstep(0.34, 0.40, edge) * (1.0 - smoothstep(0.40, 0.46, edge));
