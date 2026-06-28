@@ -131,10 +131,15 @@
   #shaderOk.show{display:block}
 
   /* center: stage */
-  #center{flex:1;min-width:0;position:relative;overflow:auto;background:
+  #center{flex:1;min-width:0;position:relative;overflow:hidden;background:
     radial-gradient(1200px 700px at 30% -10%,#13161c,transparent),
     radial-gradient(900px 600px at 110% 120%,#0f1217,transparent),#08090b;
-    display:flex;align-items:center;justify-content:center}
+    display:flex;align-items:stretch;justify-content:center}
+  /* #stage is a FIXED preview viewport (fills #center minus the 30px gap via
+     align-items:stretch). The backdrop + WebGL canvases are pinned to it (inset:0)
+     while #gallery scrolls the sample INSIDE it - so sticky DS chrome (topbar /
+     sidebar) stays pinned and the glass tracks it (remeasured on #gallery scroll),
+     instead of a too-tall page overflowing #center past the reach of scroll-to-top. */
   #stage{position:relative;width:760px;max-width:calc(100% - 60px);margin:30px;border-radius:20px;overflow:hidden;
     box-shadow:0 30px 90px #000a,0 0 0 1px #ffffff10;background:#0b0d12;
     --m-radius:18px; --m-accent:#7cc7ff; --m-accent2:#3b82f6;}
@@ -146,8 +151,10 @@
   #fxcanvas{position:absolute;inset:0;z-index:3;pointer-events:none;display:none}
   #glwarn{position:absolute;inset:0;z-index:1;display:none;align-items:center;justify-content:center;color:#ffb4b4;
     font-family:var(--mono);font-size:12px;text-align:center;padding:30px;background:#0008}
-  /* the DS component set - content sits ON TOP of the glass */
-  #gallery{position:relative;z-index:2;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
+  /* the DS component set - content sits ON TOP of the glass. Absolute inset:0 +
+     overflow:auto makes it the SCROLLER inside the stage viewport (the canvases
+     stay pinned behind/above it), so sticky DS chrome sticks while it scrolls. */
+  #gallery{position:absolute;inset:0;z-index:2;overflow:auto;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
   #zoominfo{position:absolute;left:12px;bottom:10px;font-size:10.5px;color:var(--dim2);font-family:var(--mono);
     background:#0008;padding:4px 9px;border-radius:6px;pointer-events:none;z-index:10}
 
@@ -237,6 +244,7 @@
         <option value="ecommerce">DS - E-commerce</option>
         <option value="tables">DS - Tables</option>
         <option value="user-profile">DS - Profile</option>
+        <option value="components">Components (generic)</option>
       </select>
     </label>
     <div class="spacer"></div>
@@ -1155,16 +1163,19 @@ function glassRuntime(opts){
   }
   function measure(){
     const sr=stage.getBoundingClientRect();
-    const els=stage.querySelectorAll(sel);
     const out=[];
-    els.forEach(el=>{
+    const add=el=>{
       const r=el.getBoundingClientRect();
       if(r.width<2||r.height<2) return;
       let rad=parseFloat(getComputedStyle(el).borderTopLeftRadius)||0;
       const x=r.left-sr.left, y=r.top-sr.top, w=r.width, h=r.height;
       rad=Math.min(rad, Math.min(w,h)/2);
       out.push([x*dpr, y*dpr, w*dpr, h*dpr, rad*dpr]);
-    });
+    };
+    stage.querySelectorAll(sel).forEach(add);
+    // surfaces that live OUTSIDE the light DOM (e.g. a DS-page sample injected
+    // into a shadow root) are supplied by the host so they still get glass.
+    if(opts.getExtraEls){ const ex=opts.getExtraEls()||[]; ex.forEach(add); }
     panels = out.slice(0,24);
   }
   function updateBackdrop(){
@@ -1424,7 +1435,7 @@ function buildInspector(){
       if(key==='dark'){
         const lb=document.createElement('label'); lb.className='toggle'; lb.style.marginTop='4px';
         const ci=document.createElement('input'); ci.type='checkbox'; ci.checked=!!m.dark;
-        ci.onchange=()=>{ m.dark=ci.checked; stage.dataset.surface = ci.checked ? 'dark' : 'light'; emit(); if(typeof captureDSPage==='function') captureDSPage(curPage, ci.checked); };
+        ci.onchange=()=>{ m.dark=ci.checked; stage.dataset.surface = ci.checked ? 'dark' : 'light'; emit(); if(curForegroundPage) loadDSPageForeground(curForegroundPage, ci.checked); };
         lb.appendChild(ci); lb.appendChild(document.createTextNode('Dark mode')); gs.appendChild(lb); return;
       }
       if(key==='rimMouse'){
@@ -1553,10 +1564,164 @@ async function captureDSPage(page, dark){
     toast(curPage+' set'+(dark?' (dark)':''));
   }catch(e){ toast('capture failed: '+e.message); console.error(e); }
 }
-// page selector drives the backdrop sample; capture in the glass's current dark state
+/* ---- DS page as the FOREGROUND sample (the real template wears the glass) ----
+   Instead of only rasterising a DS page behind the glass, we inject the real
+   template into the stage and turn its surfaces into transparent shells, so the
+   WebGL glass renders through the actual DS components. The template lives in a
+   shadow root so its global CSS can't leak onto the lab chrome; the glass runtime
+   measures the glassified surfaces via getExtraEls (see ensureRuntime). */
+let _dsHost=null, _dsShadow=null, _dsSurfaces=[];
+let curForegroundPage=null;
+function dsSurfaceEls(){ return _dsSurfaces; }
+
+// Wrap the built-in generic gallery ONCE (preserves node identity so the cached
+// dsSwatches / dsCardImg refs stay valid) so we can hide it when a DS page loads.
+const genericGallery=document.createElement('div');
+genericGallery.id='genericGallery';
+genericGallery.style.cssText='display:flex;flex-direction:column;gap:22px';
+while(gallery.firstChild) genericGallery.appendChild(gallery.firstChild);
+gallery.appendChild(genericGallery);
+
+function showGenericGallery(){
+  curForegroundPage=null; _dsSurfaces=[];
+  if(_dsHost){ _dsHost.remove(); _dsHost=null; _dsShadow=null; }
+  genericGallery.style.display='flex';
+  gallery.style.padding='';           // restore the generic-set inset
+  gallery.scrollTop=0;
+  if(RT){ RT.remeasure(); }
+}
+
+// Pick the prominent "surface" elements of an injected page and turn them into
+// transparent glass shells. Capped at 24 (the shader's panel limit).
+function glassifyShadow(){
+  _dsSurfaces=[];
+  if(!_dsShadow) return;
+  const page=_dsShadow.querySelector('.ds-page'); if(!page) return;
+  // Liquid glass is a CHROME material: it dresses the persistent navigation
+  // surfaces (top bar, side nav, footer, app bar) ONLY - never content cards,
+  // tiles or buttons. Target the DS canonical chrome role classes (and any
+  // explicit [data-glass] opt-in), per the design system's chrome contract.
+  const CHROME_SEL='.topbar, .sidebar, .footer, .appbar, .navbar, [data-glass]';
+  const out=[];
+  page.querySelectorAll(CHROME_SEL).forEach(el=>{
+    // skip a chrome element nested inside another already-picked one (avoid double glass)
+    if(out.some(p=>p!==el && p.contains(el))) return;
+    const r=el.getBoundingClientRect();
+    if(r.width<40||r.height<24) return;
+    el.classList.add('mat-surface'); out.push(el);
+  });
+  _dsSurfaces=out.slice(0,24);
+}
+
+// Recursively fetch a stylesheet and FLATTEN its @import chain, resolving every
+// relative @import / url() to an absolute path. Needed because DS pages link
+// ../all.css which @imports styles.css (the :root token block) + partials with
+// relative URLs - inlining the raw text would 404 the imports and lose tokens.
+// fetch with a hard timeout + retries. The editor daemon can briefly stall early
+// requests while a large sibling resource (the 211KB html2canvas) is still
+// downloading; a stalled attempt aborts and retries instead of failing the load.
+async function _fetchText(url, ms){
+  let lastErr;
+  for(let attempt=0; attempt<3; attempt++){
+    const ctl=new AbortController();
+    const t=setTimeout(()=>ctl.abort(), (ms||6000)+attempt*2000);
+    try{ const r=await fetch(url,{cache:'no-store',signal:ctl.signal}); const txt=await r.text(); clearTimeout(t); return txt; }
+    catch(e){ lastErr=e; clearTimeout(t); await new Promise(r=>setTimeout(r, 400+attempt*600)); }
+  }
+  throw lastErr||new Error('fetch failed');
+}
+async function _flattenCss(absUrl, depth){
+  if(depth>6) return '';
+  let txt; try{ txt=await _fetchText(absUrl, 8000); }catch(e){ return ''; }
+  const dir=absUrl.replace(/[^/]*$/,'');
+  const importRe=/@import\s+url\(\s*['"]?([^'")]+)['"]?\s*\)\s*;?/g;
+  const matches=[...txt.matchAll(importRe)];
+  let result='', idx=0;
+  for(const mm of matches){
+    result+=txt.slice(idx, mm.index);
+    const href=mm[1];
+    if(/^(https?:)?\/\//.test(href)){ /* remote (fonts) -> covered by <link>, drop */ }
+    else { try{ const child=new URL(href, location.origin+dir).pathname; result+='\n'+await _flattenCss(child, depth+1)+'\n'; }catch(e){} }
+    idx=mm.index+mm[0].length;
+  }
+  result+=txt.slice(idx);
+  // relative url(...) -> absolute (skip data:/remote/fragment)
+  return result.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, (full,q,u)=>{
+    if(/^(data:|https?:|\/\/|#)/.test(u)) return full;
+    try{ return 'url("'+new URL(u, location.origin+dir).pathname+'")'; }catch(e){ return full; }
+  });
+}
+
+async function loadDSPageForeground(page, dark){
+  if(typeof fetch!=='function'){ return; }
+  toast('Loading '+page+'…');
+  try{
+    const base='/editor/default-design-system/templates/';
+    const html=await _fetchText(base+page+'.html', 8000);
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    // External font links stay as <link>; relative stylesheets get FLATTENED +
+    // inlined so the shadow (and a later bake) is self-contained.
+    let fontLinks='', inlineCss='';
+    const links=[...doc.querySelectorAll('link[rel="stylesheet"]')];
+    for(const l of links){
+      const href=l.getAttribute('href')||''; if(!href) continue;
+      if(/^(https?:)?\/\//.test(href)){ fontLinks+='<link rel="stylesheet" href="'+href+'">'; continue; }
+      try{ const abs=new URL(href, location.origin+base).pathname; inlineCss+='/* '+abs+' */\n'+await _flattenCss(abs,0)+'\n'; }catch(e){}
+    }
+    doc.querySelectorAll('style').forEach(s=> inlineCss+=s.textContent+'\n');
+    // Inside a shadow root :root matches nothing, so the DS token block
+    // (:root{--...}) would never define the design tokens. Retarget :root onto
+    // the shadow host so the tokens cascade into the injected page.
+    inlineCss = inlineCss.replace(/:root(\[[^\]]*\])?/g, (m,attr)=> attr? ':host('+attr+')' : ':host');
+    const glassCtl='<style id="dsGlassCtl">'+
+        ':host{display:block;width:100%}.ds-page{padding:0}'+
+        /* glassified surfaces -> transparent so the WebGL glass shows through */
+        '.mat-surface{background:transparent!important;background-color:transparent!important;'+
+          'background-image:none!important;box-shadow:none!important;border-color:transparent!important;backdrop-filter:none!important}'+
+      '</style>';
+    // build (or reuse) the isolated shadow host as the foreground. A DS page is a
+    // full app shell - drop the gallery inset so the chrome bleeds to the stage
+    // edges and the sticky topbar pins flush to the top of the viewport.
+    genericGallery.style.display='none';
+    gallery.style.padding='0'; gallery.scrollTop=0;
+    if(!_dsHost){ _dsHost=document.createElement('div'); _dsHost.id='dsHost'; _dsHost.style.cssText='display:block;width:100%'; gallery.appendChild(_dsHost); _dsShadow=_dsHost.attachShadow({mode:'open'}); }
+    _dsHost.setAttribute('data-theme', dark?'dark':'light');
+    // styles.css-only pages (landing/ecommerce/profile) carry no dark overlay, so
+    // supply the semantic dark tokens (retargeted :root -> :host) when dark.
+    const darkRoles = dark ? '<style>'+DS_DARK_ROLES.replace(/:root(\[[^\]]*\])?/g,(m,a)=> a? ':host('+a+')' : ':host')+'</style>' : '';
+    _dsShadow.innerHTML =
+      fontLinks +
+      '<style>'+inlineCss+'</style>' + darkRoles + glassCtl +
+      '<div class="ds-page"'+(dark?' data-theme="dark"':'')+'>'+doc.body.innerHTML+'</div>';
+    // let the shadow stylesheets + fonts settle, then glassify + measure
+    // (race fonts.ready against a timeout so a stalled webfont can't freeze us)
+    try{ await Promise.race([document.fonts.ready, new Promise(r=>setTimeout(r,1500))]); }catch(e){}
+    await new Promise(r=>setTimeout(r,200));
+    glassifyShadow();
+    curForegroundPage=page;
+    // keep the page legible: a light page wants a light scene behind the glass so
+    // its dark text survives over the transparent surfaces (and vice-versa).
+    if(!STATE.bgImage){
+      STATE.background = dark? '#0b0d12' : '#e9edf4';
+      STATE.backdrop   = dark? 'aurora-gradient' : 'mono-soft';
+    }
+    renderAll(); syncScene();
+    if(RT){ RT.refreshBackdrop(); RT.remeasure(); setTimeout(()=>{ if(RT){ glassifyShadow(); RT.remeasure(); } }, 450); }
+    emit();
+    toast(page+' loaded');
+  }catch(e){ toast('load failed: '+e.message); console.error('[materiallab] page load',e); }
+}
+
+// page selector swaps the live DS-template foreground (or restores the generic set)
 const pageSel=document.getElementById('pageSel');
-if(pageSel){ pageSel.onchange=()=>captureDSPage(pageSel.value, !!(STATE&&STATE.material&&STATE.material.dark)); }
-if(!NODE){ setTimeout(()=>captureDSPage('landing', false), 400); }   // standalone: auto-load the landing page
+function selectPage(v){ if(v==='components') showGenericGallery(); else loadDSPageForeground(v, !!(STATE&&STATE.material&&STATE.material.dark)); }
+if(pageSel){ pageSel.onchange=()=>selectPage(pageSel.value); }
+// auto-load the landing page as the default sample (both standalone AND in-node).
+// Wait for full page load (so the 211KB html2canvas finishes downloading and frees
+// the daemon's connection slots) before firing the template fetches.
+function _autoLoadSample(){ if(!curForegroundPage && pageSel){ selectPage(pageSel.value||'landing'); } }
+if(document.readyState==='complete') setTimeout(_autoLoadSample, 300);
+else window.addEventListener('load', ()=> setTimeout(_autoLoadSample, 300));
 
 /* drag an image onto the stage */
 const centerEl=document.getElementById('center');
@@ -1673,6 +1838,7 @@ function ensureRuntime(){
     getFragSrc:()=> activeFrag(),
     getUniforms:()=> matToUniforms(STATE.material),
     isFluid:()=> !!(MATERIALS[STATE.material.type] && MATERIALS[STATE.material.type].fluid),
+    getExtraEls:()=> dsSurfaceEls(),
     drawBackdrop:(ctx,w,h)=> drawBackdropInto(ctx,w,h,STATE,bgImg),
     onError:(msg)=>{ glcanvas.style.display='none'; glwarn.style.display='flex'; glwarn.textContent='Glass shader error: '+msg; },
   });
@@ -1772,6 +1938,17 @@ document.getElementById('btnBake').onclick=()=>{
 function fitStage(){ if(RT) RT.resize(); if(FX) FX.resize(); cacheStageRect(); }
 window.addEventListener('resize', fitStage);
 document.getElementById('center').addEventListener('scroll', cacheStageRect, {passive:true});
+// #gallery is the inner scroller; as the sample scrolls, sticky DS chrome (topbar/
+// sidebar) moves within the stage viewport, so re-measure the glass panels each
+// scroll (rAF-throttled - never a per-event getBoundingClientRect storm) so the
+// glass tracks the chrome instead of staying frozen at its load-time position.
+{
+  let _smQ=false;
+  document.getElementById('gallery').addEventListener('scroll', ()=>{
+    if(_smQ) return; _smQ=true;
+    requestAnimationFrame(()=>{ _smQ=false; if(RT) RT.remeasure(); });
+  }, {passive:true});
+}
 // Event-driven re-fit on node-resize / float-reflow. Observe #stage (the canvas
 // host) and #coreCanvas (the pinned viewport it tracks). Guarded against
 // double-construction; never a per-frame polling loop.
@@ -1805,6 +1982,21 @@ function bakeHTML(){
   const ovlSrc = ovl ? composeOverlay(ovl) : '';
   const ovlBlend = ovl ? (OVERLAYS[ovl.type].blend||'normal') : 'normal';
   const ovlCol = ovl ? hexRGB(ovl.color||'#ffd9a8') : [255,255,255];
+  // DS-page foreground: serialize the live, already-glassified shadow root so the
+  // export reproduces the exact sample (its CSS is inlined, surfaces pre-marked).
+  const dsActive = !!(curForegroundPage && _dsShadow);
+  const dsShadowHTML = dsActive ? _dsShadow.innerHTML : '';
+  const galleryHTML = dsActive ? '<div id="dsHost" style="display:block;width:100%"></div>' : `
+    <div class="mat ds-card"><div class="head">Typography</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body Small - the quick brown fox jumps over the lazy dog.</div><div class="type-caption">Caption / Label</div></div>
+    <div class="galrow"><div class="galcol">
+      <div class="mat ds-card"><div class="head">Color palette</div><div class="swatches">${swatches}</div></div>
+      <div class="mat ds-card"><div class="head">Tabs</div><div class="tabs"><div class="tab active">Overview</div><div class="tab">Activity</div><div class="tab">Settings</div><div class="tab">More</div></div></div>
+      <div class="mat ds-input">Enter text…</div>
+      <div class="mat ds-card"><div class="head">Buttons</div><div class="btnrow"><div class="mat ds-btn">Primary</div><div class="mat ds-btn">Secondary</div><div class="ds-btn tertiary">Tertiary</div><div class="mat ds-btn disabled">Disabled</div></div></div>
+    </div><div class="galcol" style="flex:0 0 auto">
+      <div class="mat product-card"><div class="pc-img" style="background-image:url('${cardImg}')"></div><div class="pc-body"><div class="pc-title">Card Title</div><div class="pc-text">A line of body text describing the card content.</div><div class="pc-link">Action →</div></div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="mat chip-pill"><span class="dotc"></span>Chip</div><div class="mat chip-pill"><span class="dotc"></span>Tag</div></div>
+    </div></div>`;
 
   const runtimeJS = [
     'const VS_SRC='+JSON.stringify(VS_SRC)+';',
@@ -1815,9 +2007,14 @@ function bakeHTML(){
     drawBackdropInto.toString(),
     glassRuntime.toString(),
     'let bgImg=null;',
+    dsActive ? ('var __dsShadow=null;(function(){var h=document.getElementById("dsHost");if(h){__dsShadow=h.attachShadow({mode:"open"});__dsShadow.innerHTML='+JSON.stringify(dsShadowHTML)+';}})();') : 'var __dsShadow=null;',
     'const RT=glassRuntime({canvas:document.getElementById("glcanvas"),stage:document.getElementById("stage"),vsSrc:VS_SRC,panelSelector:".mat",'+
       'getFragSrc:()=>FRAG_SRC,getUniforms:()=>matToUniforms(STATE.material),isFluid:()=>'+(fluidFlag?'true':'false')+',drawBackdrop:(ctx,w,h)=>drawBackdropInto(ctx,w,h,STATE,bgImg),'+
+      'getExtraEls:()=>__dsShadow?[].slice.call(__dsShadow.querySelectorAll(".mat-surface")):[],'+
       'onError:(m)=>{var w=document.getElementById("glwarn");if(w){w.style.display="flex";w.textContent="Glass shader error: "+m;}}});',
+    dsActive ? 'if(RT){setTimeout(()=>RT.remeasure(),300);setTimeout(()=>RT.remeasure(),900);}' : '',
+    // re-measure the glass as the sample scrolls so it tracks sticky chrome (rAF-throttled)
+    '(function(){var g=document.getElementById("gallery");if(!g)return;var q=false;g.addEventListener("scroll",function(){if(q)return;q=true;requestAnimationFrame(function(){q=false;if(RT)RT.remeasure();});},{passive:true});})();',
     bgUrl ? 'if(RT){bgImg=new Image();bgImg.crossOrigin="anonymous";bgImg.onload=function(){RT.refreshBackdrop();};bgImg.src='+JSON.stringify(bgUrl)+';}' : '',
     // full-stage overlay FX (only emitted when an effect is active)
     ovl ? overlayRuntime.toString() : '',
@@ -1834,13 +2031,16 @@ function bakeHTML(){
 <style>
   *{box-sizing:border-box}
   html,body{margin:0;min-height:100%;background:${st.background};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-  #wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px}
+  html,body{height:100%}
+  /* #stage is a fixed-height preview viewport; #gallery scrolls the sample inside
+     it so sticky chrome stays pinned and the glass (pinned canvases) tracks it. */
+  #wrap{height:100vh;display:flex;align-items:stretch;justify-content:center;padding:40px;box-sizing:border-box}
   #stage{position:relative;width:760px;max-width:100%;border-radius:20px;overflow:hidden;box-shadow:0 30px 90px #000a;background:${st.background};--m-radius:${radius};--m-accent:${acc};--m-accent2:${acc2}}
   #backdrop{position:absolute;inset:0;z-index:0;background-image:${bc.backgroundImage.replace(/"/g,'&quot;')};background-color:${st.background};${bcExtra}}
   #glcanvas{position:absolute;inset:0;z-index:1;pointer-events:none;display:block}
   #fxcanvas{position:absolute;inset:0;z-index:3;pointer-events:none;display:none}
   #glwarn{position:absolute;inset:0;z-index:1;display:none;align-items:center;justify-content:center;color:#ffb4b4;font-family:ui-monospace,Menlo,monospace;font-size:12px;text-align:center;padding:30px;background:#0008}
-  #gallery{position:relative;z-index:2;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
+  #gallery{position:absolute;inset:0;z-index:2;overflow:auto;padding:${dsActive?'0':'26px 28px'};display:flex;flex-direction:column;gap:22px}
   .mat{position:relative;border-radius:var(--m-radius)}.mat>*{position:relative;z-index:2}
   .ds-card{padding:24px 26px}.head{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#fff;opacity:.6;margin-bottom:14px;font-weight:700;text-shadow:0 1px 3px #0006}
   .type-display{font-size:38px;font-weight:800;line-height:1.05;letter-spacing:-.02em;color:#fff;margin:0;text-shadow:0 2px 10px #0007}.type-heading{font-size:21px;font-weight:700;color:#fff;margin:8px 0 0;text-shadow:0 1px 6px #0007}
@@ -1860,18 +2060,7 @@ function bakeHTML(){
 </style></head><body>
 <div id="wrap"><div id="stage" data-surface="${surface}">
   <div id="backdrop"></div><canvas id="glcanvas"></canvas><canvas id="fxcanvas"></canvas><div id="glwarn"></div>
-  <div id="gallery">
-    <div class="mat ds-card"><div class="head">Typography</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body Small - the quick brown fox jumps over the lazy dog.</div><div class="type-caption">Caption / Label</div></div>
-    <div class="galrow"><div class="galcol">
-      <div class="mat ds-card"><div class="head">Color palette</div><div class="swatches">${swatches}</div></div>
-      <div class="mat ds-card"><div class="head">Tabs</div><div class="tabs"><div class="tab active">Overview</div><div class="tab">Activity</div><div class="tab">Settings</div><div class="tab">More</div></div></div>
-      <div class="mat ds-input">Enter text…</div>
-      <div class="mat ds-card"><div class="head">Buttons</div><div class="btnrow"><div class="mat ds-btn">Primary</div><div class="mat ds-btn">Secondary</div><div class="ds-btn tertiary">Tertiary</div><div class="mat ds-btn disabled">Disabled</div></div></div>
-    </div><div class="galcol" style="flex:0 0 auto">
-      <div class="mat product-card"><div class="pc-img" style="background-image:url('${cardImg}')"></div><div class="pc-body"><div class="pc-title">Card Title</div><div class="pc-text">A line of body text describing the card content.</div><div class="pc-link">Action →</div></div></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="mat chip-pill"><span class="dotc"></span>Chip</div><div class="mat chip-pill"><span class="dotc"></span>Tag</div></div>
-    </div></div>
-  </div>
+  <div id="gallery">${galleryHTML}</div>
 </div></div>
 <script>${runtimeJS}<\/script>
 </body></html>`;
