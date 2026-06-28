@@ -1094,6 +1094,11 @@ button {
 }
 .deflib-thumb.is-dark { background: #16171b; }
 .deflib-thumb-frame { position: absolute; top: 0; left: 0; transform-origin: top left; border: 0; pointer-events: none; }
+/* Pre-rendered PNG snapshot (the fast path); same 1280:800 frame as the iframe. */
+.deflib-thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; pointer-events: none; }
+.deflib-head-actions { display: inline-flex; align-items: center; gap: 8px; }
+.deflib-regen-note { margin-left: 10px; font-weight: 400; font-size: 12px; opacity: 0.6; }
+.deflib-regen-note.is-err { color: var(--danger, #c0392b); opacity: 0.85; }
 @media (max-width: 720px) {
   .deflib-grid { grid-template-columns: 1fr; }
 }

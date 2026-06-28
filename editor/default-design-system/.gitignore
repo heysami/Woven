@@ -1,0 +1,8 @@
+# Transient capture harnesses written by /__ds_regen_previews (removed after
+# each capture; ignored here so a crashed run never leaves one staged).
+__snap_*.html
+templates/__snap_*.html
+
+# The committed sample snapshots ARE tracked - generate them with the
+# "Regenerate previews" button on the Capabilities → Template Design System tab.
+!previews/

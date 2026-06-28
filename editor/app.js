@@ -18364,11 +18364,18 @@ function dsStyleSampleChips(p) {
    STYLE overlay (data-theme = styleId, the full all.css bundle, the dark class
    when requested, and the style's JS runtime if it ships one) is injected into
    the iframe head on load - the same mechanism the live customizer uses. */
-function DsTuneThumb({ file, custom, dark, styleId, js }) {
+function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view, bust }) {
   const LOGICAL_W = 1280, LOGICAL_H = 800;
   const wrapRef = useRef(null);
   const iframeRef = useRef(null);
   const [scale, setScale] = useState(0.28);
+  // Prefer the pre-rendered PNG snapshot (near-instant); fall back to the live
+  // iframe boot only if the snapshot is missing (404 before first regen) or
+  // fails. `bust` re-tries the img after a regeneration.
+  const hasSnap = !!(sampleId && view);
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [bust, sampleId, view]);
+  const useImg = hasSnap && !imgFailed;
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -18446,15 +18453,24 @@ function DsTuneThumb({ file, custom, dark, styleId, js }) {
 
   return html`
     <div ref=${wrapRef} className=${"deflib-thumb" + (dark ? " is-dark" : "")}>
-      <iframe
-        ref=${iframeRef}
-        className="deflib-thumb-frame"
-        title="Style preview"
-        loading="lazy"
-        scrolling="no"
-        style=${{ width: LOGICAL_W + "px", height: LOGICAL_H + "px", transform: "scale(" + scale + ")" }}
-        src=${apiUrl("/__default_ds/" + file)}
-        onLoad=${apply}/>
+      ${useImg ? html`
+        <img
+          className="deflib-thumb-img"
+          alt="Style preview"
+          loading="lazy"
+          src=${apiUrl("/__default_ds/previews/" + sampleId + "-" + view + ".png") + (bust ? ("?v=" + bust) : "")}
+          onError=${() => setImgFailed(true)}/>
+      ` : html`
+        <iframe
+          ref=${iframeRef}
+          className="deflib-thumb-frame"
+          title="Style preview"
+          loading="lazy"
+          scrolling="no"
+          style=${{ width: LOGICAL_W + "px", height: LOGICAL_H + "px", transform: "scale(" + scale + ")" }}
+          src=${apiUrl("/__default_ds/" + file)}
+          onLoad=${apply}/>
+      `}
     </div>
   `;
 }
@@ -18491,18 +18507,71 @@ function DefaultLibraryLanding() {
     return m;
   }, []);
 
+  // Static PNG snapshots make the gallery near-instant; the iframe boot is a
+  // fallback only. Regeneration is daemon-driven (headless Chrome) and must be
+  // re-run after a DS template / style / token-default change. The client owns
+  // buildDsCustomization, so it ships each sample's computed injection to the
+  // daemon, which assembles a harness + captures it. `bust` re-fetches the imgs
+  // once capture finishes. Two surfaces per style: landing + the design system.
+  const [regen, setRegen] = useState(null);   // {running,done,total,ok,err}
+  const [bust, setBust] = useState(0);
+  const onRegen = useCallback(async () => {
+    const views = [
+      { view: "landing", file: "templates/landing.html" },
+      { view: "gallery", file: "gallery.html" },
+    ];
+    const samples = [];
+    for (const p of DS_STYLE_SAMPLES) {
+      const c = sampleCustoms[p.id] || {};
+      for (const v of views) {
+        samples.push({
+          id: p.id, view: v.view, file: v.file,
+          styleId: p.styleId || "", dark: !!p.dark, js: !!p.js,
+          overrideCss: c.overrideCss || "", darkCss: c.darkCss || "",
+          fontUrl: (c.font && c.font.googleFontsUrl) || "",
+          headingFontUrl: (c.headingFont && c.headingFont.googleFontsUrl) || "",
+        });
+      }
+    }
+    setRegen({ running: true, done: 0, total: samples.length, ok: 0, err: null });
+    try {
+      const r = await fetch(apiUrl("/__ds_regen_previews"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ samples }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ("HTTP " + r.status)); }
+      for (;;) {
+        await new Promise(res => setTimeout(res, 1500));
+        const st = await (await fetch(apiUrl("/__ds_regen_previews/status"))).json();
+        setRegen({ running: !!st.running, done: st.done || 0, total: st.total || samples.length, ok: st.ok || 0, err: null });
+        if (!st.running) break;
+      }
+      setBust(Date.now());
+    } catch (e) {
+      setRegen({ running: false, done: 0, total: 0, ok: 0, err: String((e && e.message) || e) });
+    }
+  }, [sampleCustoms]);
+
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
         name="Template Design System"
         desc=${html`The template design system every new project can inherit - tokens (colour, type, spacing, roundness), a logo, and a full set of primitive templates. Each row below showcases one of its <strong>UI styles</strong> on the same two surfaces - the <strong>landing page</strong> and <strong>the design system</strong> (component gallery) - on the default tokens, so the difference you see is purely the style. <strong>Try customisation</strong> opens the full customizer against a live preview; to bake a tuned copy into a project use <code>Use template design system</code> on that project's design-system node.`}
-        action=${html`<button className="sysadd-bar-btn" type="button"
-          onClick=${() => setTuneOpen(true)}
-          title="Open the token customizer against a live preview (sandbox - nothing is saved)">
-          <${Icon.Palette}/><span>Try customisation</span></button>`}
+        action=${html`<div className="deflib-head-actions">
+          <button className="sysadd-bar-btn" type="button"
+            onClick=${onRegen} disabled=${!!(regen && regen.running)}
+            title="Re-render every sample to a static PNG via headless Chrome (~1 min). Run this after changing a DS template, style, or the token defaults. Needs the daemon running and Chrome installed.">
+            <${Icon.Refresh}/><span>${regen && regen.running ? "Rendering " + regen.done + "/" + regen.total + "…" : "Regenerate previews"}</span></button>
+          <button className="sysadd-bar-btn" type="button"
+            onClick=${() => setTuneOpen(true)}
+            title="Open the token customizer against a live preview (sandbox - nothing is saved)">
+            <${Icon.Palette}/><span>Try customisation</span></button>
+        </div>`}
       />
 
-      <div className="deflib-samples-head">Template Design System Samples · UI styles</div>
+      <div className="deflib-samples-head">Template Design System Samples · UI styles${
+        regen && !regen.running && (regen.err || regen.ok)
+          ? html`<span className=${"deflib-regen-note" + (regen.err ? " is-err" : "")}>${regen.err ? "Regeneration failed: " + regen.err : "Rendered " + regen.ok + " previews"}</span>`
+          : null}</div>
       <div className="deflib-rows">
         ${DS_STYLE_SAMPLES.map(preset => html`
           <div key=${preset.id} className="deflib-row">
@@ -18515,11 +18584,11 @@ function DefaultLibraryLanding() {
             <div className="deflib-row-note">${preset.note}</div>
             <div className="deflib-grid">
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="templates/landing.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js}/>
+                <${DsTuneThumb} file="templates/landing.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="landing" bust=${bust}/>
                 <figcaption className="deflib-cap">Landing page</figcaption>
               </figure>
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="gallery.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js}/>
+                <${DsTuneThumb} file="gallery.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="gallery" bust=${bust}/>
                 <figcaption className="deflib-cap">Design system</figcaption>
               </figure>
             </div>
