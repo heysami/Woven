@@ -5823,6 +5823,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
 }
+.workflow-connector-spawn-btn svg { width: 15px; height: 15px; display: block; }
 .workflow-connector-spawn-btn:hover {
   background: var(--surface-2);
   color: var(--text);
@@ -8546,10 +8547,12 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
      where green read muddy. */
   border: 1px solid transparent;
   border-radius: 10px;
+  /* Neutral soft drop shadow (was a warm orange glow that clashed with the
+     neutral/teal chrome). Plain black at low alpha reads as clean depth. */
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 1px 5px color-mix(in oklch, var(--hot) 6%, transparent),
-    0 6px 18px color-mix(in oklch, var(--hot) 5%, transparent);
+    0 0 0 1px color-mix(in oklch, oklch(0% 0 0) 5%, transparent),
+    0 1px 5px color-mix(in oklch, oklch(0% 0 0) 7%, transparent),
+    0 6px 18px color-mix(in oklch, oklch(0% 0 0) 6%, transparent);
   /* v3.5 - port labels need to sit OUTSIDE the node body so they don't
      overlap iframe content. `overflow: clip` + `overflow-clip-margin` keeps
      the iframe (and any other body content) clipped to the rounded node
@@ -8562,15 +8565,32 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 }
 .workflow-node:hover {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--hot) 12%, transparent),
-    0 2px 8px color-mix(in oklch, var(--hot) 11%, transparent),
-    0 10px 28px color-mix(in oklch, var(--hot) 9%, transparent);
+    0 0 0 1px color-mix(in oklch, oklch(0% 0 0) 8%, transparent),
+    0 2px 8px color-mix(in oklch, oklch(0% 0 0) 10%, transparent),
+    0 10px 28px color-mix(in oklch, oklch(0% 0 0) 9%, transparent);
 }
 .workflow-node[data-dragging="true"] {
   box-shadow:
-    0 0 0 1.5px color-mix(in oklch, var(--hot) 30%, transparent),
-    0 4px 14px color-mix(in oklch, var(--hot) 20%, transparent),
-    0 16px 40px color-mix(in oklch, var(--hot) 14%, transparent);
+    0 0 0 1.5px color-mix(in oklch, oklch(0% 0 0) 14%, transparent),
+    0 4px 14px color-mix(in oklch, oklch(0% 0 0) 16%, transparent),
+    0 16px 40px color-mix(in oklch, oklch(0% 0 0) 12%, transparent);
+}
+/* On hover/select, square the NODE box's connecting corners (top where the
+   title bar attaches; bottom where the version strip attaches) so the node's
+   own rounded edge + shadow no longer pokes past the now-squared content.
+   Mirrors the body corner-squaring; only the floating-bar node kinds. */
+.workflow-node-asset:hover, .workflow-node-asset[data-selected="true"],
+.workflow-node-proto:hover, .workflow-node-proto[data-selected="true"],
+.workflow-node-frames:hover, .workflow-node-frames[data-selected="true"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.workflow-node-asset:hover:has(.workflow-node-asset-chrome-bottom > *),
+.workflow-node-asset[data-selected="true"]:has(.workflow-node-asset-chrome-bottom > *),
+.workflow-node-proto:hover:has(.workflow-node-asset-versions),
+.workflow-node-proto[data-selected="true"]:has(.workflow-node-asset-versions) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 /* Crop full-bleed opaque bodies to the node's rounded bottom corners. The
    node clips with `overflow-clip-margin: 64px` (so the connector ports' hover

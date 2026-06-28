@@ -30606,30 +30606,10 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
             if (pr.right > right) right = pr.right;
           }
         });
-        // v3.x - the ⊕ buttons must centre on the WHOLE visual card, not just
-        // the node body. On asset / prototype / frames nodes the title bar and
-        // version strip FLOAT outside the node box (position:absolute,
-        // bottom/top:100%), so the node's own rect is body-only and midY lands
-        // too high. Extend top/bottom to cover those floating bars; for inline-
-        // bar nodes (prompt/agent/etc.) the bars sit inside the box already, so
-        // this is a no-op.
-        let top = r.top, bottom = r.bottom;
-        el.querySelectorAll(
-          ".workflow-node-bar, .workflow-node-frames-bar, "
-          + ".workflow-node-asset-versions, .workflow-node-asset-lineage, "
-          + ".workflow-node-asset-chrome-bottom"
-        ).forEach(b => {
-          const br = b.getBoundingClientRect();
-          if (br.width > 0 && br.height > 0) {
-            if (br.top < top) top = br.top;
-            if (br.bottom > bottom) bottom = br.bottom;
-          }
-        });
-        const height = bottom - top;
-        if (!last || last.top !== top || last.left !== left
-            || last.right !== right || last.height !== height) {
-          last = { top: top, left: left, width: right - left, height: height,
-                   right: right, bottom: bottom };
+        if (!last || last.top !== r.top || last.left !== left
+            || last.right !== right || last.height !== r.height) {
+          last = { top: r.top, left: left, width: right - left, height: r.height,
+                   right: right, bottom: r.bottom };
           setRect(last);
         }
       } else if (last) {
@@ -30731,7 +30711,7 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
           aria-label="Add upstream node"
           onMouseDown=${(e) => e.stopPropagation()}
           onClick=${(e) => { e.stopPropagation(); setOpenSide(s => s === "left" ? null : "left"); }}
-        >+</button>
+        ><${Icon.Plus}/></button>
       `}
       ${rightHas && html`
         <button
@@ -30741,7 +30721,7 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
           aria-label="Add downstream node"
           onMouseDown=${(e) => e.stopPropagation()}
           onClick=${(e) => { e.stopPropagation(); setOpenSide(s => s === "right" ? null : "right"); }}
-        >+</button>
+        ><${Icon.Plus}/></button>
       `}
       ${openSide && renderMenu(openSide)}
     </div>
