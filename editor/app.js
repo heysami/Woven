@@ -50850,7 +50850,7 @@ function UtBufferedTextarea({ value, commit, className, placeholder, rows }) {
    Reuses the same capability hook + /__usertesting ops + link formula as the
    old dock; only the presentation is new (composed from the editor's design
    system, so it reads native). */
-function UserTestingScreen({ slug, onClose }) {
+function UserTestingScreen({ slug, onClose, info }) {
   const cap = useUserTestingCapability();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -50978,19 +50978,15 @@ function UserTestingScreen({ slug, onClose }) {
   return html`
     <div className="ut-screen" role="dialog" aria-label="User testing" onMouseDown=${(e) => e.stopPropagation()} onWheel=${(e) => e.stopPropagation()}>
       <div className="ut-screen-bar">
-        <span className="ut-screen-glyph"><${Icon.Eye}/></span>
-        <div className="ut-screen-titles">
-          <div className="ut-screen-title">User testing</div>
-          ${cap.state === "ready"
-            ? html`<div className="ut-screen-subrow">
-                <select className="ut-proto-switch" value=${slug || ""}
-                  onChange=${(e) => switchProto(e.target.value)} aria-label="Switch prototype">
-                  <option value="">All prototypes</option>
-                  ${protoOptions.map(id => html`<option key=${id} value=${id}>source/${id}/</option>`)}
-                </select>
-              </div>`
-            : html`<div className="ut-screen-sub">${slug ? `source/${slug}/` : "all prototypes"}</div>`}
-        </div>
+        <${ProjectHomeButton} info=${info}/>
+        <span className="toolbar-mode-label">User testing</span>
+        ${cap.state === "ready"
+          ? html`<select className="editor-proto-switch" value=${slug || ""}
+              onChange=${(e) => switchProto(e.target.value)} aria-label="Filter by prototype" title="Filter by prototype">
+              <option value="">All prototypes</option>
+              ${protoOptions.map(id => html`<option key=${id} value=${id}>${id}</option>`)}
+            </select>`
+          : html`<span className="ut-screen-sub">${slug ? slug : "all prototypes"}</span>`}
         <div className="ut-screen-spacer"></div>
         ${cap.state === "ready" && !publishBase && html`
           <span className="ut-screen-pubhint">Publish via Share to build links${cloudflaredFound ? "" : " (install cloudflared first)"}.</span>`}
@@ -82354,7 +82350,7 @@ function Root() {
     };
     return html`<${React.Fragment}>
       <${SurfaceNav}/>
-      <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT}/>
+      <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT} info=${info}/>
       <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
     <//>`;
