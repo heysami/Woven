@@ -72,6 +72,19 @@
   .layer:hover .iconbtn[data-act],.layer.sel .iconbtn[data-act]{opacity:1}
   .layer .iconbtn:hover{color:var(--ink);border-color:var(--acc)}
   .iconbtn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0}
+  /* Effect-stack overview - the read-only layer pipeline at the top of the
+     inspector (gradient bar + name + type tag per layer). */
+  .effstack{padding:11px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+  .effstack-h{display:flex;align-items:center;gap:8px;font:700 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+  .effstack-hint{margin-left:auto;font:400 10px var(--mono);color:var(--ink2);text-transform:none;letter-spacing:0}
+  .effstack-list{display:flex;flex-direction:column;gap:6px}
+  .effstack-row{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2);cursor:pointer}
+  .effstack-row:hover{border-color:color-mix(in oklab,var(--acc) 30%,var(--line))}
+  .effstack-row.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+  .effstack-row-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .effstack-name{flex:1;font-weight:600;font-size:12.5px;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .effstack-tag{font:9.5px var(--mono);color:var(--ink2);flex:0 0 auto}
+  .effstack-bar{height:5px;border-radius:999px}
   .acc-sec{border-bottom:1px solid var(--line)}
   .acc-h{padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
   .acc-h .car{transition:transform .15s;color:var(--ink2)}
@@ -4379,6 +4392,25 @@ function assetOpts(kindFilter){
 }
 
 /* ---------- INSPECTOR ----------------------------------------------------- */
+// The reference "EFFECT STACK" overview: every layer as a compact row (gradient
+// bar + name + content tag), top of stack first, click to select. Read-only; the
+// editable layer list lives in the LEFT panel. Independent DOM from the effects
+// accordion below it.
+function renderEffectStack(){
+  const wrap=document.createElement('div'); wrap.className='effstack';
+  wrap.innerHTML=`<div class="effstack-h"><span>Effect stack</span><span class="effstack-hint">composite</span></div>`;
+  const list=document.createElement('div'); list.className='effstack-list';
+  [...STATE.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
+    const row=document.createElement('div'); row.className='effstack-row'+(L.id===selId?' sel':'');
+    const c=layerColor(L);
+    row.innerHTML=`<div class="effstack-row-top"><span class="effstack-name">${esc(L.name)}</span><span class="effstack-tag">${esc(L.content.kind)}</span></div>`
+      +`<div class="effstack-bar" style="background:linear-gradient(90deg, ${c}, color-mix(in oklab, ${c} 45%, #e8c85f))"></div>`;
+    row.onclick=()=>{ selId=L.id; renderAll(); };
+    list.appendChild(row);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
 function renderInspector(){
   const body=document.getElementById('inspBody'); body.innerHTML='';
   const L=selectedLayer();
@@ -4402,6 +4434,9 @@ function renderInspector(){
     body.appendChild(maskAccordion(L));
     return;
   }
+
+  /* Effect-stack overview - read-only layer pipeline (click a row to select). */
+  body.appendChild(renderEffectStack());
 
   /* LAYER accordion - layer-level fields (feedback / trail) */
   body.appendChild(accordion('Layer',(b)=>{
