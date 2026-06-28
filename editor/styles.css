@@ -133,16 +133,20 @@ button {
      var(--th-dock-w) and collapses to 0 when no windows are open, so the
      1fr `view` canvas reclaims the space. Right `auto` track is the icon
      rail. banner + toolbar span all three columns. */
-  grid-template-columns: 1fr var(--th-dock-w, 0px) auto;
+  /* Far-left `leftrail` track holds the editor's vertical icon rail
+     (EditorLeftRail: view switcher + canvas tools). It is `auto`, so it
+     collapses to 0 when the rail isn't rendered (embed mode). */
+  grid-template-columns: auto 1fr var(--th-dock-w, 0px) auto;
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
-    "banner  banner banner"
-    "toolbar toolbar toolbar"
-    "view    dock   rightrail";
+    "banner   banner banner banner"
+    "toolbar  toolbar toolbar toolbar"
+    "leftrail view   dock   rightrail";
   height: 100vh;
 }
 .app > .ds-proposal-banner { grid-area: banner; }
 .app > .toolbar             { grid-area: toolbar; min-height: var(--toolbar-h); }
+.app > .editor-left-rail    { grid-area: leftrail; }
 .app > .th-right-rail       { grid-area: rightrail; }
 .app > .right-dock          { grid-area: dock; }
 /* Every view-root sits in the same `view` cell so we don't need to know
@@ -171,7 +175,7 @@ button {
    style multiplayer awareness). The toolbar, right nav rail, chat drawer, and
    busy banner stay live so the user can still navigate views, open the runs
    panel, or send a follow-up message in the composer. */
-.app[data-agent-busy="true"] > *:not(.toolbar):not(.th-right-rail):not(.chat-drawer):not(.agent-busy-banner) {
+.app[data-agent-busy="true"] > *:not(.toolbar):not(.editor-left-rail):not(.th-right-rail):not(.chat-drawer):not(.agent-busy-banner) {
   pointer-events: none;
   filter: saturate(0.8);
   opacity: 0.78;
@@ -16271,6 +16275,93 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: pointer;
 }
 .clone-mode-cancel:hover { color: var(--text); border-color: var(--accent); }
+
+/* ────────── Editor left icon rail ──────────
+   Vertical strip on the far-left grid column. Holds the view switcher (and the
+   canvas tools below a divider). Sits in its own grid track so views that carry
+   their own left panel (User flow's .flow-nav, IA's .ia-sitemap-wrap) render to
+   the right of it without overlap. z-index keeps it above the agent-busy stripe
+   (z-5) so view navigation stays visibly live while an agent edits. */
+.editor-left-rail {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: visible;
+}
+.editor-left-rail .elr-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.editor-left-rail .elr-sep {
+  width: 20px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+/* The rail buttons reuse .tab.tab-icon; the active state mirrors the old
+   toolbar tabs (filled surface + subtle shadow). */
+.editor-left-rail .tab-icon[data-active="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
+   Floating segmented control, centered at the very top of every project-scoped
+   surface. The editor toolbar's .toolbar-mid is empty, so it lands cleanly in
+   that gap; on the canvas / preview / testing surfaces it floats over their top
+   bar's free center. z-index sits above every top bar but below modals. */
+.surface-nav {
+  position: fixed;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.surface-nav-seg {
+  padding: 4px 14px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.surface-nav-seg:hover { color: var(--text); }
+.surface-nav-seg.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Editor-mode prototype switcher (in the toolbar, next to the Editor label). */
+.editor-proto-switch {
+  height: 26px;
+  max-width: 180px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.editor-proto-switch:hover { border-color: var(--border-strong); }
 
 .tabs {
   display: flex;

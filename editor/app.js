@@ -80963,8 +80963,158 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
   `;
 }
 
-function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFrame, canvasGap, onSetFrameSize, agents, agentId, onAgentChange, runActive, lastRun, onReopenRun, onStartNewChat, workspaceInfo, projects, onReloadWorkspace, onUpdateFromSource, history, historyOpen, onOpenHistory, onCloseHistory }) {
+/* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
+   One segmented control, present on every project-scoped surface, that swaps
+   between the four top-level routes <Root> renders:
+     Canvas  → ?view=workflow   (the infinite node canvas)
+     Preview → ?view=prototype  (PrototypeDoor - the live running app)
+     Testing → ?view=usertesting  (only when the capability is enabled)
+     Editor  → no ?view=        (the design editor / <App>)
+   It only swaps the URL `view`; nothing about the editor's own internal views
+   changes. Hidden inside embed iframes (?embed=1) - those are locked viewers. */
+const SURFACE_DEFAULT = "editor";
+function SurfaceNav() {
+  const cap = useUserTestingCapability();
+  if (viewIsEmbed()) return null;
+  const nav = thReadNav();
+  if (!nav.hasProject) return null;          // never on the projects gallery
+  const cur = nav.view || SURFACE_DEFAULT;
+  const utEnabled = !!(cap && cap.config && cap.config.enabled);
+  // `view` = the URL value to set (null = editor, the default surface). Drops
+  // ?utproto so leaving the testing page doesn't leak its prototype filter.
+  const go = (view) => {
+    const u = new URL(location.href);
+    if (view) u.searchParams.set("view", view); else u.searchParams.delete("view");
+    u.searchParams.delete("utproto");
+    thNavigate(u.toString());
+  };
+  const segs = [
+    { label: "Canvas",  view: "workflow",    active: cur === "workflow" },
+    { label: "Preview", view: "prototype",   active: cur === "prototype" },
+    ...(utEnabled ? [{ label: "Testing", view: "usertesting", active: cur === "usertesting" }] : []),
+    { label: "Editor",  view: null,          active: cur === "editor" },
+  ];
+  return html`
+    <div className="surface-nav" role="tablist" aria-label="Surface">
+      ${segs.map(s => html`
+        <button
+          key=${s.label}
+          role="tab"
+          aria-selected=${s.active}
+          className=${"surface-nav-seg" + (s.active ? " is-active" : "")}
+          onClick=${() => { if (!s.active) go(s.view); }}
+        >${s.label}</button>
+      `)}
+    </div>
+  `;
+}
+
+/* ────────── Editor view + tool definitions ──────────
+   Single source of truth for the editor's left rail (and the keyboard
+   shortcuts wired in <App>). Moved here when the view tabs + tools migrated
+   out of the top Toolbar into the vertical .editor-left-rail. */
+const EDITOR_VIEW_TABS = [
+  { key: "canvas",       icon: () => Icon.Canvas, label: "Canvas",                   kbd: "1" },
+  { key: "prototype",    icon: () => Icon.Play,   label: "Prototype",                kbd: "2" },
+  { key: "flow",         icon: () => Icon.Flow,   label: "User flow",                kbd: "3" },
+  { key: "ia",           icon: () => Icon.Tree,   label: "Information architecture", kbd: "4" },
+  { key: "ds",           icon: () => Icon.Palette,label: "Design system",            kbd: "5" },
+  { key: "entities",     icon: () => Icon.DB,     label: "Entities",                 kbd: "6" },
+  { key: "stateMachine", icon: () => Icon.StateM, label: "State machine",            kbd: "7" },
+  { key: "timeline",     icon: () => Icon.Clock,  label: "Timeline",                 kbd: "8" },
+  { key: "grid",         icon: () => Icon.Grid,   label: "Grid",                     kbd: "9" },
+];
+const EDITOR_TOOL_TABS = [
+  { key: "select",    icon: () => Icon.Cursor,  label: "Select",    kbd: "V" },
+  { key: "rearrange", icon: () => Icon.Move,    label: "Rearrange", kbd: "R" },
+  { key: "comment",   icon: () => Icon.Comment, label: "Comment",   kbd: "C" },
+  { key: "text",      icon: () => Icon.Text,    label: "Text",      kbd: "T" },
+  { key: "draw",      icon: () => Icon.Pen,     label: "Draw",      kbd: "D" },
+];
+
+/* The editor's left icon rail. Holds the view switcher (always) and the canvas
+   tools (only on the canvas view, same gate the old toolbar tools-group used).
+   Tooltips fly to the RIGHT (tab-tip-right) since the rail hugs the left edge.
+   Views that carry their own left panel (User flow's .flow-nav, IA's
+   .ia-sitemap-wrap) render inside the `view` grid cell, i.e. to the right of
+   this rail - the thin rail and the view panel sit side by side, no overlap. */
+function EditorLeftRail({ view, setView, tool, setTool }) {
   const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
+  return html`
+    <div className="editor-left-rail">
+      <div className="elr-group">
+        ${EDITOR_VIEW_TABS.map(v => html`
+          <button
+            key=${v.key}
+            className="tab tab-icon"
+            data-active=${view === v.key}
+            onClick=${() => setView(v.key)}
+            aria-label=${v.label}
+            title=${v.label}
+          ><${v.icon()}/><span className="tab-tip tab-tip-right">${v.label} <kbd>${v.kbd}</kbd></span></button>
+        `)}
+      </div>
+      ${view === "canvas" && html`
+        <div className="elr-sep" aria-hidden="true"></div>
+        <div className="elr-group">
+          ${EDITOR_TOOL_TABS.map(t => html`
+            <button
+              key=${t.key}
+              className="tab tab-icon"
+              data-active=${tool === t.key}
+              onClick=${() => setOrToggle(t.key)}
+              aria-label=${t.label + " tool"}
+              title=${t.label}
+            ><${t.icon()}/><span className="tab-tip tab-tip-right">${t.label} <kbd>${t.kbd}</kbd></span></button>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* Editor-mode prototype switcher. The editor is scoped to ONE prototype at a
+   time (?prototype=<slug> → boot stamps D.meta.activePrototype). Switching is a
+   full reload because the editor reads the boot-captured `D`. Options come from
+   /__source_prototypes (same source the User testing header switcher uses). */
+function EditorProtoSwitch() {
+  const [protos, setProtos] = useState([]);
+  const cur = activePrototypeSlug();
+  useEffect(() => {
+    let alive = true;
+    fetch(apiUrl("/__source_prototypes"))
+      .then(r => (r.ok ? r.json() : { prototypes: [] }))
+      .then(j => { if (alive) setProtos((j && j.prototypes) || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // Keep the current slug present even if the scan hasn't surfaced it yet, so
+  // the select never renders blank.
+  const ids = useMemo(() => {
+    const list = protos.map(p => p.id);
+    if (cur && !list.includes(cur)) list.unshift(cur);
+    return list;
+  }, [protos, cur]);
+  const onChange = (next) => {
+    if (!next || next === cur) return;
+    const u = new URL(location.href);
+    u.searchParams.set("prototype", next);
+    u.searchParams.delete("view");   // stay on the editor surface
+    thNavigate(u.toString());        // full reload - editor needs a fresh D
+  };
+  if (ids.length <= 1) return null;  // nothing to switch to
+  return html`
+    <select
+      className="editor-proto-switch"
+      value=${cur}
+      onChange=${(e) => onChange(e.target.value)}
+      title="Switch prototype"
+      aria-label="Switch prototype"
+    >${ids.map(id => html`<option key=${id} value=${id}>${id}</option>`)}</select>
+  `;
+}
+
+function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap, onSetFrameSize, agents, agentId, onAgentChange, runActive, lastRun, onReopenRun, onStartNewChat, workspaceInfo, projects, onReloadWorkspace, onUpdateFromSource, history, historyOpen, onOpenHistory, onCloseHistory }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportsOpen, setExportsOpen]   = useState(false);
   const [sizeDialogOpen, setSizeDialogOpen] = useState(false);
@@ -80983,6 +81133,7 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
       <div className="toolbar-left">
         <${ProjectHomeButton} info=${workspaceInfo}/>
         <span className="toolbar-mode-label" title=${`Editor · ${D.meta.project}`}>Editor</span>
+        <${EditorProtoSwitch}/>
         <button
           className="tbtn frame-size-btn"
           data-tip-host="true"
@@ -80992,29 +81143,9 @@ function Toolbar({ view, setView, tool, setTool, editsCount, onSubmit, defaultFr
           <span style=${{ width: 14, display: "inline-block", textAlign: "center" }}>⤢</span>
           <span className="tab-tip">${(defaultFrame?.w || 1440) + "×" + (defaultFrame?.h || 900) + " · gap " + (canvasGap ?? 120) + "px"}</span>
         </button>
-        <div className="tabs tabs-icon">
-          <button className="tab tab-icon" data-active=${view === "canvas"}    onClick=${() => setView("canvas")}    title="Canvas (1)" aria-label="Canvas"><${Icon.Canvas}/><span className="tab-tip">Canvas <kbd>1</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "prototype"} onClick=${() => setView("prototype")} title="Prototype (2)" aria-label="Prototype"><${Icon.Play}/><span className="tab-tip">Prototype <kbd>2</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "flow"}      onClick=${() => setView("flow")}      title="User flow (3)" aria-label="User flow"><${Icon.Flow}/><span className="tab-tip">User flow <kbd>3</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "ia"}        onClick=${() => setView("ia")}        title="Information architecture (4)" aria-label="IA"><${Icon.Tree}/><span className="tab-tip">Information architecture <kbd>4</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "ds"}        onClick=${() => setView("ds")}        title="Design system (5)" aria-label="Design system"><${Icon.Palette}/><span className="tab-tip">Design system <kbd>5</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "entities"}  onClick=${() => setView("entities")}  title="Entities (6)" aria-label="Entities"><${Icon.DB}/><span className="tab-tip">Entities <kbd>6</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "stateMachine"} onClick=${() => setView("stateMachine")} title="State machine (7)" aria-label="State machine"><${Icon.StateM}/><span className="tab-tip">State machine <kbd>7</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "timeline"}     onClick=${() => setView("timeline")}     title="Timeline (8)"      aria-label="Timeline"><${Icon.Clock}/><span className="tab-tip">Timeline <kbd>8</kbd></span></button>
-          <button className="tab tab-icon" data-active=${view === "grid"}         onClick=${() => setView("grid")}         title="Grid (9)"          aria-label="Grid"><${Icon.Grid}/><span className="tab-tip">Grid <kbd>9</kbd></span></button>
-        </div>
       </div>
       <div className="toolbar-mid"></div>
       <div className="toolbar-right">
-        ${view === "canvas" && html`
-          <div className="tabs tabs-icon tools-group">
-            <button className="tab tab-icon" data-active=${tool === "select"}    onClick=${() => setOrToggle("select")}    title="Select (V)"     aria-label="Select tool"><${Icon.Cursor}/><span className="tab-tip">Select <kbd>V</kbd></span></button>
-            <button className="tab tab-icon" data-active=${tool === "rearrange"} onClick=${() => setOrToggle("rearrange")} title="Rearrange (R)"  aria-label="Rearrange tool"><${Icon.Move}/><span className="tab-tip">Rearrange <kbd>R</kbd></span></button>
-            <button className="tab tab-icon" data-active=${tool === "comment"}   onClick=${() => setOrToggle("comment")}   title="Comment (C)"    aria-label="Comment tool"><${Icon.Comment}/><span className="tab-tip">Comment <kbd>C</kbd></span></button>
-            <button className="tab tab-icon" data-active=${tool === "text"}      onClick=${() => setOrToggle("text")}      title="Text (T)"       aria-label="Text tool"><${Icon.Text}/><span className="tab-tip">Text <kbd>T</kbd></span></button>
-            <button className="tab tab-icon" data-active=${tool === "draw"}      onClick=${() => setOrToggle("draw")}      title="Draw (D)"       aria-label="Draw tool"><${Icon.Pen}/><span className="tab-tip">Draw <kbd>D</kbd></span></button>
-          </div>
-        `}
         <${BranchDocsButtons}/>
         <${DaemonIndicator} compact=${true}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
@@ -81912,6 +82043,10 @@ function App() {
         onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
         onCloseHistory=${() => setHistoryOpen(false)}
       />`}
+      ${!embedMode && html`<${EditorLeftRail}
+        view=${view} setView=${setView}
+        tool=${tool} setTool=${setTool}
+      />`}
       ${!embedMode && html`<${RightNavRail}
         onStartNewChat=${openNewChat}
         onStartChatWithPrompt=${spawnFromComposer}
@@ -82164,6 +82299,7 @@ function Root() {
   // Project-scoped alternates. Both bypass <App> entirely so their chrome is
   // self-contained and the editor's heavy bootstrap stays out of the way.
   if (hasProject && view === "prototype") return html`<${React.Fragment}>
+    <${SurfaceNav}/>
     <${PrototypeDoor}/>
     <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
@@ -82172,6 +82308,7 @@ function Root() {
   // workflow remounts the canvas with fresh internal state (data, history,
   // chat) instead of React reusing the previous project's instance.
   if (hasProject && view === "workflow")  return html`<${React.Fragment}>
+    <${SurfaceNav}/>
     <${WorkflowCanvas} key=${"wf:" + (project || "")}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
@@ -82189,6 +82326,7 @@ function Root() {
       thNavigate(u.toString());
     };
     return html`<${React.Fragment}>
+      <${SurfaceNav}/>
       <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT}/>
       <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
@@ -82196,6 +82334,7 @@ function Root() {
   }
   // Otherwise the regular editor for the active project (or single-mode legacy).
   return html`<${React.Fragment}>
+    <${SurfaceNav}/>
     <${App}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
