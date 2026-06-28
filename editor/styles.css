@@ -15,7 +15,7 @@
   --border-strong: oklch(83% 0 0);
 
   /* Canvas */
-  --canvas-bg: oklch(96% 0 0);
+  --canvas-bg: oklch(100% 0 0);
   --canvas-dot: oklch(87% 0 0);
 
   /* Text - near-black ink, faintly warm */
@@ -7561,15 +7561,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
       45deg,
       transparent 0,
       transparent 29px,
-      color-mix(in oklch, var(--border-strong) 13%, transparent) 29px,
-      color-mix(in oklch, var(--border-strong) 13%, transparent) 30px
+      color-mix(in oklch, var(--border-strong) 8%, transparent) 29px,
+      color-mix(in oklch, var(--border-strong) 8%, transparent) 30px
     ),
     repeating-linear-gradient(
       -45deg,
       transparent 0,
       transparent 29px,
-      color-mix(in oklch, var(--border-strong) 13%, transparent) 29px,
-      color-mix(in oklch, var(--border-strong) 13%, transparent) 30px
+      color-mix(in oklch, var(--border-strong) 8%, transparent) 29px,
+      color-mix(in oklch, var(--border-strong) 8%, transparent) 30px
     ),
     radial-gradient(circle at 50% 36%, var(--surface) 0%, transparent 72%);
   cursor: default;

@@ -323,7 +323,7 @@
     float edge = max(abs(f.x), abs(f.y));
 
     // ---- LIGHT: flat diamond field + cursor lighting -----------------------
-    vec3 base = vec3(0.962, 0.957, 0.947);
+    vec3 base = vec3(1.0, 1.0, 1.0);
     float line = smoothstep(0.47, 0.5, edge);
     float dist = length(mouseT - fragT);
     vec3 fcol = base;
@@ -349,7 +349,7 @@
     float innerBand = smoothstep(0.34, 0.40, edge) * (1.0 - smoothstep(0.40, 0.46, edge));
     bool fxEdge = abs(f.x) > abs(f.y);
     float sel = (sgn > 0.0) ? (fxEdge ? 1.0 : 0.0) : (fxEdge ? 0.0 : 1.0);
-    fcol = mix(fcol, vec3(0.995, 0.99, 0.984), innerBand * sel * lit * 0.9);
+    fcol = mix(fcol, vec3(0.88, 0.88, 0.88), innerBand * sel * lit * 0.9);
 
     o = vec4(fcol, 1.0);
   }`;
