@@ -32481,8 +32481,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (tool === "select") {
       const hitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoomRef.current);
       if (hitId) { wbSelectPointerDown(e, hitId); return; }
-      const nHit = nodeHitAt(wp.x, wp.y);
-      if (nHit) { nodeSelectPointerDown(e, nHit); return; }
+      // Resolve the node under the pointer. Geometry (nodeHitAt) first; then fall
+      // back to the DOM ancestor's data-node-id - which catches a SECTION dragged
+      // by its title BAR (the bar sits ABOVE the node box, outside its AABB) and a
+      // TABLE dragged by its frame / move-grip. Without this they miss the AABB and
+      // drop through to a marquee. stopPropagation so the node's own bubble drag
+      // handler (section bar / table) doesn't ALSO fire and double-drag.
+      let nHit = nodeHitAt(wp.x, wp.y);
+      if (!nHit && e.target && e.target.closest) {
+        const domEl = e.target.closest("[data-node-id]");
+        const did = domEl && domEl.getAttribute("data-node-id");
+        if (did && (dataNodesRef.current || []).some(n => n && n.id === did)) nHit = did;
+      }
+      if (nHit) { e.stopPropagation(); nodeSelectPointerDown(e, nHit); return; }
       setMarquee({
         x0: wp.x, y0: wp.y, x1: wp.x, y1: wp.y,
         additive: e.shiftKey,
@@ -42823,17 +42834,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 e.preventDefault();
                 return;
               }
-              // Table cell-range selection + row/column resize strips own
-              // their events (they fire on bubble, after this capture handler),
-              // so bail here or this would start a table move underneath them.
-              // The move grip is deliberately NOT listed - it falls through so
-              // dragging it moves the table.
-              // With the SELECT tool, a table owns ALL its events (header drag,
-              // cell select, resize) - bail so the wb-mode node path doesn't
-              // ALSO select/drag it (double-drag + mixed selection). But the
-              // CREATION tools (sticky / text / pen / shape / arrow) must still
-              // fall through so you can drop those items ONTO a table.
-              if (wbToolRef.current === "select" && e.target.closest(".workflow-node-table")) return;
+              // A table's OWN event-owning regions bail here so the wb node path
+              // doesn't also act on them: cell-range selection (.workflow-wb-table-hit,
+              // present only while the table is selected) and the row/column resize
+              // strips. Everything ELSE on a table - its frame and the move-grip -
+              // falls through to wbPointerDown, which resolves the table by its DOM
+              // id and moves it (so a table is draggable in whiteboard mode, not just
+              // marquee'd). Creation tools fall through here too, to drop onto a table.
               if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
