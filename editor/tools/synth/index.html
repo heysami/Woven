@@ -1,23 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Woven Synth</title>
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
 <style>
   :root {
-    --bg: #0d0f14;
-    --panel: #161a22;
-    --panel-2: #1d222d;
-    --line: #2a3140;
-    --ink: #e6e9ef;
-    --muted: #8a93a6;
-    --accent: #5ad1c4;
-    --accent-2: #f5a623;
-    --hot: #ff5d73;
-    --radius: 10px;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Local tool vars remapped onto Woven tokens (woven-theme.css). The CHROME
+       follows the editor theme: light tokens by default, dark block when the
+       editor is dark (tool-theme.js sets data-theme on <html>). */
+    --bg: var(--wv-surface-2);
+    --panel: var(--wv-surface);
+    --panel-2: var(--wv-surface-2);
+    --line: var(--wv-border);
+    --ink: var(--wv-text);
+    --muted: var(--wv-text-muted);
+    --accent: var(--wv-accent);
+    --accent-2: var(--wv-hot);
+    --hot: var(--wv-danger);
+    --radius: var(--wv-radius-lg);
+    --mono: var(--wv-font-mono);
+    --sans: var(--wv-font-sans);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -33,7 +38,7 @@
     display: flex; align-items: center; gap: 12px;
     padding: 10px 16px;
     border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, #12151c, #0d0f14);
+    background: var(--panel);
     position: sticky; top: 0; z-index: 10;
   }
   header .logo {
@@ -69,10 +74,10 @@
   .knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
   .knob {
     width: 48px; height: 48px; border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #2c3340, #14171f 70%);
+    background: radial-gradient(circle at 35% 30%, var(--wv-surface-3), var(--wv-surface-2) 70%);
     border: 1px solid var(--line);
     position: relative; cursor: ns-resize; touch-action: none;
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.4);
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.04), var(--wv-shadow-sm);
   }
   .knob::after {
     content: ""; position: absolute; left: 50%; top: 6px;
@@ -89,11 +94,11 @@
   }
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
-    background: var(--accent); cursor: pointer; border: 2px solid #0d0f14;
+    background: var(--accent); cursor: pointer; border: 2px solid var(--panel);
   }
   input[type="range"]::-moz-range-thumb {
     width: 13px; height: 13px; border-radius: 50%; background: var(--accent);
-    cursor: pointer; border: 2px solid #0d0f14;
+    cursor: pointer; border: 2px solid var(--panel);
   }
 
   select, input[type="text"], input[type="number"] {
@@ -109,11 +114,11 @@
     padding: 7px 12px; font-size: 12px; cursor: pointer; font-family: var(--sans);
     transition: background 0.12s, border-color 0.12s;
   }
-  button:hover { background: #232a36; border-color: #3a4456; }
-  button.primary { background: var(--accent); color: #06201d; border-color: var(--accent); font-weight: 600; }
-  button.primary:hover { background: #6fe0d3; }
+  button:hover { background: var(--wv-surface-3); border-color: var(--wv-border-strong); }
+  button.primary { background: var(--accent); color: var(--wv-text-on-accent); border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { background: var(--wv-accent-strong); border-color: var(--wv-accent-strong); }
   button.preset { font-family: var(--mono); font-size: 11px; padding: 6px 11px; }
-  button.on { background: var(--accent-2); color: #2a1a00; border-color: var(--accent-2); }
+  button.on { background: var(--accent-2); color: var(--wv-text-on-accent); border-color: var(--accent-2); }
 
   .osc-list { display: flex; flex-direction: column; gap: 10px; }
   .osc-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -128,11 +133,11 @@
   .keys { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
   .key {
     flex: 1; min-width: 34px; padding: 16px 0 8px; border-radius: 0 0 6px 6px;
-    background: linear-gradient(180deg, #e9edf4, #c4ccd8);
-    color: #1a1f29; border: 1px solid #aab3c2; font-family: var(--mono);
+    background: linear-gradient(180deg, var(--wv-surface), var(--wv-surface-3));
+    color: var(--ink); border: 1px solid var(--wv-border-strong); font-family: var(--mono);
     font-size: 10px; cursor: pointer; user-select: none; text-align: center;
   }
-  .key.black { background: linear-gradient(180deg, #2a313d, #161a22); color: #cfd6e2; border-color: #000; }
+  .key.black { background: linear-gradient(180deg, var(--wv-viewport-2), var(--wv-viewport)); color: var(--wv-text-faint); border-color: var(--wv-viewport); }
   .key:active, .key.down { filter: brightness(1.25); transform: translateY(1px); }
 
   .pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
@@ -141,12 +146,12 @@
     border: 1px solid var(--line); font-family: var(--mono); font-size: 12px;
     cursor: pointer; text-align: center; user-select: none;
   }
-  .pad:active, .pad.down { background: var(--accent-2); color: #2a1a00; border-color: var(--accent-2); }
+  .pad:active, .pad.down { background: var(--accent-2); color: var(--wv-text-on-accent); border-color: var(--accent-2); }
 
   .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .badge { font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px; }
   .badge.ok { color: var(--accent); border-color: var(--accent); }
-  canvas#scope { width: 100%; height: 70px; background: #0a0c11; border: 1px solid var(--line); border-radius: 8px; display: block; }
+  canvas#scope { width: 100%; height: 70px; background: var(--wv-viewport); border: 1px solid var(--line); border-radius: 8px; display: block; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
   .seg button { border: none; border-radius: 0; border-right: 1px solid var(--line); }
   .seg button:last-child { border-right: none; }
@@ -1036,14 +1041,19 @@
     const cv = $("scope");
     const ctx2d = cv.getContext("2d");
     const buf = new Uint8Array(masterAnalyser.fftSize);
+    const rootStyle = getComputedStyle(document.documentElement);
+    function tok(name, fallback) {
+      const v = rootStyle.getPropertyValue(name).trim();
+      return v || fallback;
+    }
     function draw() {
       requestAnimationFrame(draw);
       const w = cv.width = cv.clientWidth * (window.devicePixelRatio || 1);
       const h = cv.height = 70 * (window.devicePixelRatio || 1);
       masterAnalyser.getByteTimeDomainData(buf);
-      ctx2d.fillStyle = "#0a0c11"; ctx2d.fillRect(0, 0, w, h);
+      ctx2d.fillStyle = tok("--wv-viewport", "#0a0c11"); ctx2d.fillRect(0, 0, w, h);
       ctx2d.lineWidth = 1.5 * (window.devicePixelRatio || 1);
-      ctx2d.strokeStyle = "#5ad1c4";
+      ctx2d.strokeStyle = tok("--wv-accent", "#5ad1c4");
       ctx2d.beginPath();
       const slice = w / buf.length;
       for (let i = 0; i < buf.length; i++) {

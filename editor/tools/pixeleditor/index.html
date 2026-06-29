@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Sets data-theme on <html> from shared localStorage (live, mirrors the editor
+     chrome). MUST load first + synchronous so the theme is set before paint. -->
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixel Editor</title>
@@ -102,23 +105,27 @@
      flex:1 .stage. In detached mode, detached-panels.css absolutely positions
      #coreCanvas onto the node's core rect. */
   #coreCanvas { flex: 1; position: relative; min-width: 0; display: flex; }
+  /* The canvas WELL/backdrop is chrome (not content): map it onto the Woven
+     viewport token so it follows the editor theme. The checkerboard tiles use
+     viewport-2 as a subtle second tone. The pixel artwork drawn into #canvas is
+     untouched content. */
   .stage {
     flex: 1; position: relative; min-width: 0; overflow: hidden;
     background:
-      linear-gradient(45deg, #14171d 25%, transparent 25%),
-      linear-gradient(-45deg, #14171d 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, #14171d 75%),
-      linear-gradient(-45deg, transparent 75%, #14171d 75%);
+      linear-gradient(45deg, var(--wv-viewport-2) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--wv-viewport-2) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--wv-viewport-2) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--wv-viewport-2) 75%);
     background-size: 20px 20px;
     background-position: 0 0, 0 10px, 10px -10px, -10px 0;
-    background-color: #0b0d11;
+    background-color: var(--wv-viewport);
   }
   #canvas { position: absolute; image-rendering: pixelated; cursor: crosshair;
-    box-shadow: 0 0 0 1px var(--line), 0 8px 40px #0008; }
+    box-shadow: 0 0 0 1px var(--line), var(--wv-shadow-lg); }
   .stage-hud {
     position: absolute; bottom: 8px; left: 10px; font-family: var(--mono);
     font-size: 11px; color: var(--txt-faint); pointer-events: none;
-    background: #0b0d11aa; padding: 3px 7px; border-radius: 4px;
+    background: var(--wv-viewport); padding: 3px 7px; border-radius: 4px;
   }
   .zoomctl {
     position: absolute; top: 12px; right: 14px; display: flex; gap: 4px; z-index: 10;
@@ -214,13 +221,13 @@
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
     background: var(--panel-2); border: 1px solid var(--line-2); color: var(--txt);
     padding: 8px 14px; border-radius: var(--radius); font-size: 12px;
-    box-shadow: 0 8px 30px #000a; opacity: 0; pointer-events: none;
+    box-shadow: var(--wv-shadow-lg); opacity: 0; pointer-events: none;
     transition: opacity .2s, transform .2s; z-index: 50;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 
   ::-webkit-scrollbar { width: 9px; height: 9px; }
-  ::-webkit-scrollbar-thumb { background: #2c323d; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb { background: var(--wv-border-strong); border-radius: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
@@ -1431,16 +1438,16 @@
       const scrim=document.createElement("div");
       scrim.style.cssText="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)";
       const box=document.createElement("div");
-      box.style.cssText="min-width:240px;max-width:380px;background:#1c1c1e;color:#f2f2f2;border:1px solid #3a3a3c;border-radius:10px;padding:16px 16px 12px;font:13px/1.5 system-ui,-apple-system,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.5)";
+      box.style.cssText="min-width:240px;max-width:380px;background:var(--wv-surface);color:var(--wv-text);border:1px solid var(--wv-border);border-radius:10px;padding:16px 16px 12px;font:13px/1.5 system-ui,-apple-system,sans-serif;box-shadow:var(--wv-shadow-lg)";
       const msg=document.createElement("div"); msg.textContent=message; msg.style.cssText="white-space:pre-line;margin-bottom:12px";
       box.appendChild(msg);
       let input=null;
-      if(isPrompt){ input=document.createElement("input"); input.type="text"; input.value=def||""; input.style.cssText="width:100%;box-sizing:border-box;background:#2c2c2e;color:#fff;border:1px solid #48484a;border-radius:6px;padding:7px 9px;margin-bottom:12px;font:13px system-ui"; box.appendChild(input); }
+      if(isPrompt){ input=document.createElement("input"); input.type="text"; input.value=def||""; input.style.cssText="width:100%;box-sizing:border-box;background:var(--wv-surface-2);color:var(--wv-text);border:1px solid var(--wv-border);border-radius:6px;padding:7px 9px;margin-bottom:12px;font:13px system-ui"; box.appendChild(input); }
       const row=document.createElement("div"); row.style.cssText="display:flex;gap:8px;justify-content:flex-end";
       const bcancel=document.createElement("button"); bcancel.textContent=cancel;
       const bok=document.createElement("button"); bok.textContent=ok;
-      for(const b of [bcancel,bok]) b.style.cssText="padding:6px 13px;border-radius:6px;border:1px solid #48484a;background:#2c2c2e;color:#fff;cursor:pointer;font:13px system-ui";
-      bok.style.background="#0a84ff"; bok.style.borderColor="#0a84ff";
+      for(const b of [bcancel,bok]) b.style.cssText="padding:6px 13px;border-radius:6px;border:1px solid var(--wv-border);background:var(--wv-surface-2);color:var(--wv-text);cursor:pointer;font:13px system-ui";
+      bok.style.background="var(--wv-accent)"; bok.style.borderColor="var(--wv-accent)"; bok.style.color="var(--wv-text-on-accent)";
       row.appendChild(bcancel); row.appendChild(bok); box.appendChild(row); scrim.appendChild(box); document.body.appendChild(scrim);
       const done=(v)=>{ scrim.remove(); resolve(v); };
       bok.addEventListener("click",()=>done(isPrompt?(input?input.value:""):true));

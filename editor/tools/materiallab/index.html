@@ -1,6 +1,10 @@
 <!doctype html>
 <html lang="en">
 <head>
+<!-- editor dark/light theme: sets data-theme on THIS tool's own <html> from the
+     editor's shared localStorage, live. Must run first + synchronous (before paint)
+     so the chrome keys off :root[data-theme] (via --wv-*) with no flash. -->
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>MATERIAL LAB</title>
@@ -76,7 +80,7 @@
   body.sa-dock:not(.detached-panels) #coreCanvas{ position:relative !important; inset:auto !important; flex:1 1 auto !important; }
   /* top-bar page selector */
   #top .topsel{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);margin-left:8px}
-  #top .topsel select{font:inherit;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+  #top .topsel select{font:inherit;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
   .grp{padding:11px 13px;border-bottom:1px solid var(--line)}
   .grp h3{margin:0 0 10px;font-size:10.5px;letter-spacing:.13em;color:var(--dim);font-weight:700;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
   .grp h3 .pill{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.04em;font-weight:600}
@@ -97,11 +101,11 @@
   .chip:hover{border-color:var(--wv-border-strong);color:var(--txt)}
   .chip.on{background:var(--acc-soft);border-color:var(--acc);color:var(--wv-accent-text)}
   .mtchip{display:flex;align-items:center;gap:6px;padding:6px 9px}
-  .mtchip .glsw{width:15px;height:15px;border-radius:5px;border:1px solid #ffffff33;flex:0 0 auto}
+  .mtchip .glsw{width:15px;height:15px;border-radius:5px;border:1px solid var(--wv-border);flex:0 0 auto}
   .toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);cursor:pointer;margin-bottom:4px}
   .toggle input{width:34px;height:19px;-webkit-appearance:none;background:var(--wv-surface-3);border-radius:11px;position:relative;cursor:pointer;outline:none;transition:.15s;flex:0 0 auto}
   .toggle input:checked{background:var(--acc)}
-  .toggle input::after{content:'';position:absolute;width:15px;height:15px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}
+  .toggle input::after{content:'';position:absolute;width:15px;height:15px;border-radius:50%;background:var(--wv-text-on-accent);top:2px;left:2px;transition:.15s}
   .toggle input:checked::after{left:17px}
   .hint{font-size:10px;color:var(--dim2);line-height:1.5;margin-top:6px}
   .palrow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
@@ -124,8 +128,8 @@
   .sbtns .tbtn{flex:1;justify-content:center}
   .sbtns .tbtn.primary{background:var(--acc);border-color:var(--acc);color:var(--wv-text-on-accent)}
   .sbtns .tbtn.primary:hover{background:var(--wv-accent-strong);border-color:var(--wv-accent-strong)}
-  #shaderErr{margin-top:8px;font-family:var(--mono);font-size:10px;line-height:1.5;color:#ffb4b4;
-    background:#241414;border:1px solid #5a2b2b;border-radius:7px;padding:8px 10px;white-space:pre-wrap;display:none;max-height:140px;overflow:auto}
+  #shaderErr{margin-top:8px;font-family:var(--mono);font-size:10px;line-height:1.5;color:var(--wv-danger);
+    background:var(--wv-danger-soft);border:1px solid var(--wv-danger);border-radius:7px;padding:8px 10px;white-space:pre-wrap;display:none;max-height:140px;overflow:auto}
   #shaderErr.show{display:block}
   #shaderOk{margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--good);display:none}
   #shaderOk.show{display:block}

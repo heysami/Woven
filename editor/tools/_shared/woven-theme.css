@@ -80,6 +80,58 @@
   --wv-gap:    8px;
 }
 
+/* ── DARK SCHEME ────────────────────────────────────────────────────────────
+   Mirrors the editor chrome dark block (editor/styles.css :root[data-theme=dark]).
+   Activated when the tool iframe's <html> gets data-theme="dark" - done by
+   _shared/tool-theme.js, which self-resolves the editor's scheme from the shared
+   same-origin localStorage and live-updates on storage/OS change. Any tool that
+   drives its chrome through the --wv-* tokens (map local vars onto these) flips
+   for free. Auto-derived: surface/text lightness curved, GREEN accent hue/chroma
+   preserved (only lightness lifted), soft tints flipped to dark hue-washes.
+   Viewport tokens stay dark in BOTH schemes (they back canvas/3D content). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --wv-bg:            oklch(15% 0 0);
+  --wv-surface:       oklch(19% 0 0);
+  --wv-surface-2:     oklch(22% 0.004 70);
+  --wv-surface-3:     oklch(26% 0.005 70);
+  --wv-border:        oklch(32% 0.005 70);
+  --wv-border-strong: oklch(42% 0.006 70);
+
+  /* Content viewports: keep dark (a hair deeper than the chrome base for depth). */
+  --wv-viewport:      oklch(13% 0.004 70);
+  --wv-viewport-2:    oklch(17% 0.005 70);
+
+  --wv-text:          oklch(92% 0.006 60);
+  --wv-text-muted:    oklch(72% 0.006 60);
+  --wv-text-faint:    oklch(58% 0.006 60);
+  /* Ink ON a --wv-accent fill: accent is a bright green in dark, so ink flips DARK
+     (was white) to stay readable. Tool buttons should use this, not literal #fff. */
+  --wv-text-on-accent: oklch(22% 0.04 159);
+
+  --wv-accent:        oklch(64% 0.15 159);
+  --wv-accent-soft:   oklch(28% 0.05 159);
+  --wv-accent-text:   oklch(78% 0.12 160);
+  --wv-accent-strong: oklch(70% 0.15 159);
+
+  --wv-hot:           oklch(84% 0.17 89);
+  --wv-hot-soft:      oklch(30% 0.06 88);
+  --wv-hot-text:      oklch(80% 0.14 82);
+  --wv-hot-strong:    oklch(82% 0.18 88);
+
+  --wv-success:       oklch(68% 0.16 150);
+  --wv-success-soft:  oklch(28% 0.05 150);
+  --wv-warning:       oklch(78% 0.13 85);
+  --wv-warning-soft:  oklch(30% 0.05 85);
+  --wv-danger:        oklch(64% 0.20 22);
+  --wv-danger-soft:   oklch(28% 0.07 22);
+
+  --wv-shadow-sm: 0 1px 0 oklch(0% 0 0 / 0.30), 0 0 0 0.5px oklch(0% 0 0 / 0.45);
+  --wv-shadow-md: 0 4px 12px oklch(0% 0 0 / 0.45), 0 1px 0 oklch(0% 0 0 / 0.30);
+  --wv-shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.55), 0 2px 0 oklch(0% 0 0 / 0.30);
+}
+
 /* ── Base component layer (opt-in via .wv-* classes) ───────────────────────── */
 
 .wv-panel {

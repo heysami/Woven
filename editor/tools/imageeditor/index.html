@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Theme sync FIRST + synchronous: sets data-theme on <html> from shared
+     editor localStorage before any chrome paints (chrome follows editor light/dark). -->
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Woven · Image Editor</title>
-<!-- Woven design system: shared light theme + detached floating-panel chrome. -->
+<!-- Woven design system: shared theme tokens + detached floating-panel chrome. -->
 <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
 <link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <script src="/editor/tools/_shared/tooltip.js" defer></script>
@@ -80,7 +83,7 @@
   .tool svg{width:19px; height:19px; display:block;}
   .tool .tip{
     position:absolute; left:46px; top:50%; transform:translateY(-50%);
-    background:#000; color:#fff; padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
+    background:var(--wv-text); color:var(--wv-bg); padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
     opacity:0; pointer-events:none; transition:opacity .12s; z-index:50;
   }
   .tool:hover .tip{opacity:.92;}
@@ -111,9 +114,10 @@
     mix-blend-mode:difference; display:none; left:0; top:0; box-shadow:0 0 0 1px rgba(0,0,0,.4) inset;
   }
   #zoomHud{
-    position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,.55); backdrop-filter:blur(6px);
+    position:absolute; left:10px; bottom:10px;
+    background:color-mix(in oklab,var(--wv-surface) 86%,transparent); backdrop-filter:blur(6px);
     border:1px solid var(--line); border-radius:6px; padding:5px 8px; display:flex; gap:6px; align-items:center;
-    font-size:11px; color:var(--ink2);
+    font-size:11px; color:var(--ink2); box-shadow:var(--wv-shadow-sm);
   }
   #zoomHud button{background:none; border:none; color:var(--ink2); cursor:pointer; font-size:14px; padding:0 4px;}
   #zoomHud button:hover{color:var(--ink);}
@@ -162,7 +166,7 @@
     padding:3px 6px; font-size:12px; cursor:pointer; flex:1;
   }
   .swatches{display:flex; flex-wrap:wrap; gap:5px;}
-  .sw{width:18px; height:18px; border-radius:4px; cursor:pointer; border:1px solid rgba(255,255,255,.12);}
+  .sw{width:18px; height:18px; border-radius:4px; cursor:pointer; border:1px solid var(--line2);}
   .sw:hover{transform:scale(1.12);}
   .hint{color:var(--ink3); font-size:11px; line-height:1.5;}
   /* layers list */
@@ -196,9 +200,11 @@
     font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink3);
     background:var(--bg); border:1px solid var(--line); border-radius:3px; padding:1px 4px; margin-left:4px;
   }
-  .layer .badge.mask{color:#c9a8ff; border-color:#43385e;}
-  .layer .badge.grad{color:#ffd28a; border-color:#5e5238;}
-  .layer .badge.asset{color:#8af0d2; border-color:#2f5a4d;}
+  /* Category kind hues stay semantic; borders derive from the hue so they read
+     on both light and dark chrome (was dark-only hardcoded border colors). */
+  .layer .badge.mask{color:#7c4dff; border-color:color-mix(in oklab,#7c4dff 38%,var(--line));}
+  .layer .badge.grad{color:#c98a2a; border-color:color-mix(in oklab,#c98a2a 38%,var(--line));}
+  .layer .badge.asset{color:#1f9e78; border-color:color-mix(in oklab,#1f9e78 38%,var(--line));}
   .layer .sub{font-size:10px; color:var(--ink3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .layer .reorder{display:flex; flex-direction:column; gap:1px; opacity:0;}
   .layer:hover .reorder{opacity:1;}
@@ -229,21 +235,24 @@
   /* selection actions bar */
   #selBar{
     position:absolute; top:10px; left:50%; transform:translateX(-50%);
-    background:rgba(0,0,0,.6); backdrop-filter:blur(8px); border:1px solid var(--line);
+    background:color-mix(in oklab,var(--wv-surface) 88%,transparent); backdrop-filter:blur(8px); border:1px solid var(--line);
     border-radius:8px; padding:5px 7px; display:none; gap:6px; align-items:center; font-size:11px; color:var(--ink2);
+    box-shadow:var(--wv-shadow-md, var(--wv-shadow-sm));
   }
   #selBar.show{display:flex;}
   /* toast */
   #toast{
     position:absolute; bottom:14px; left:50%; transform:translateX(-50%) translateY(20px);
-    background:#000; color:#fff; padding:7px 14px; border-radius:7px; font-size:12px;
+    background:var(--wv-text); color:var(--wv-bg); padding:7px 14px; border-radius:7px; font-size:12px;
     opacity:0; transition:.25s; pointer-events:none; z-index:60; border:1px solid var(--line2);
+    box-shadow:var(--wv-shadow-md, var(--wv-shadow-sm));
   }
   #toast.show{opacity:.96; transform:translateX(-50%) translateY(0);}
   /* standalone notice */
   #standalone{
-    position:absolute; top:8px; right:8px; background:rgba(0,0,0,.5); border:1px solid var(--line);
-    color:var(--ink3); font-size:10px; padding:3px 7px; border-radius:5px; z-index:40;
+    position:absolute; top:8px; right:8px;
+    background:color-mix(in oklab,var(--wv-surface) 85%,transparent); border:1px solid var(--line);
+    color:var(--ink3); font-size:10px; padding:3px 7px; border-radius:5px; z-index:40; box-shadow:var(--wv-shadow-sm);
   }
   .scroll-thin::-webkit-scrollbar{width:9px; height:9px;}
   .scroll-thin::-webkit-scrollbar-thumb{background:var(--line2); border-radius:5px; border:2px solid var(--bg2);}

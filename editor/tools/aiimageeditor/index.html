@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Theme bridge MUST be first + synchronous: sets data-theme on this iframe's
+     <html> from shared localStorage before woven-theme.css paints (no flash). -->
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Woven · AI Image Editor</title>
-<!-- Woven design system: shared light theme + detached floating-panel chrome. -->
+<!-- Woven design system: shared light/dark theme + detached floating-panel chrome. -->
 <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
 <link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
 <style>
@@ -15,6 +18,7 @@
     --line:var(--wv-border); --line2:var(--wv-border);
     --ink:var(--wv-text); --ink2:var(--wv-text-muted);
     --ink3:var(--wv-text-faint, var(--wv-text-muted));
+    --on-accent:var(--wv-text-on-accent, #fff);
     --accent:var(--wv-accent); --accent2:var(--wv-accent-strong, var(--wv-accent));
     --danger:var(--wv-danger, #d23b3b); --good:var(--wv-success, #2faf6a);
     --radius:7px;
@@ -66,7 +70,7 @@
   .tool svg{width:19px; height:19px; display:block;}
   .tool .tip{
     position:absolute; left:46px; top:50%; transform:translateY(-50%);
-    background:#000; color:#fff; padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
+    background:var(--wv-text); color:var(--wv-bg); padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
     opacity:0; pointer-events:none; transition:opacity .12s; z-index:50;
   }
   .tool:hover .tip{opacity:.92;}
@@ -80,15 +84,17 @@
   #coreCanvas{flex:1; display:flex; min-width:0; min-height:0; position:relative;}
   #stage{
     flex:1; position:relative; overflow:auto; min-width:0;
+    /* transparency-checker well, themed off the viewport tokens (darkens in dark) */
     background:
-      linear-gradient(45deg,#c4c8cf 25%,transparent 25%,transparent 75%,#c4c8cf 75%),
-      linear-gradient(45deg,#c4c8cf 25%,#d6dadf 25%,#d6dadf 75%,#c4c8cf 75%);
+      linear-gradient(45deg,var(--wv-viewport-2) 25%,transparent 25%,transparent 75%,var(--wv-viewport-2) 75%),
+      linear-gradient(45deg,var(--wv-viewport-2) 25%,var(--wv-viewport) 25%,var(--wv-viewport) 75%,var(--wv-viewport-2) 75%);
     background-size:22px 22px; background-position:0 0,11px 11px;
+    background-color:var(--wv-viewport);
     display:flex; align-items:center; justify-content:center; padding:18px;
   }
   /* width/height are set in JS (fitWrap) to the image's aspect, fitted to the
      stage - so the overlay (inset:0) covers the rendered pixels EXACTLY. */
-  #canvasWrap{position:relative; box-shadow:0 8px 40px rgba(0,0,0,.4); line-height:0; flex:0 0 auto;}
+  #canvasWrap{position:relative; box-shadow:var(--wv-shadow-lg, 0 8px 40px rgba(0,0,0,.4)); line-height:0; flex:0 0 auto;}
   #srcImg{display:block; width:100%; height:100%; object-fit:contain; user-select:none; -webkit-user-drag:none;}
   #scribbleCanvas{position:absolute; inset:0; width:100%; height:100%;}
   #overlay{position:absolute; inset:0;}
@@ -123,7 +129,7 @@
   .objrow-label{flex:1; background:transparent; border:none; color:var(--ink); font-size:12px; font-weight:600; padding:1px 2px; min-width:0;}
   .objrow-label:focus{outline:1px solid var(--line2); border-radius:3px;}
   .objrow-type{font-size:9px; padding:1px 5px; border-radius:8px; background:var(--panel2); color:var(--ink2); text-transform:uppercase; letter-spacing:.4px;}
-  .objrow-type.text{background:#2b6cb033; color:#2b6cb0;}
+  .objrow-type.text{background:var(--wv-accent-soft, var(--wv-surface-2)); color:var(--wv-accent-text, var(--wv-accent));}
   .objrow-cmt{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:5px; padding:4px 6px; font-size:11px; resize:vertical; min-height:26px;}
   .objrow-acts{display:flex; gap:5px; align-items:center;}
   .mini{background:var(--bg); border:1px solid var(--line); color:var(--ink2); border-radius:5px; padding:2px 7px; font-size:10px; cursor:pointer;}

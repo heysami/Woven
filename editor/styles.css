@@ -4436,7 +4436,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-tasks-agent-pre {
   margin: 0;
   padding: 7px 9px;
-  background: var(--surface-1);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
@@ -4626,7 +4626,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
 }
 .th-live-end svg { width: 14px; height: 14px; }
-.th-live-end:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+.th-live-end:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
 .th-live-end:disabled { opacity: 0.5; cursor: default; }
 .th-live-go { margin: 4px 6px 2px; }
 .th-live-hint {
@@ -4669,7 +4669,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .th-mode-opt:hover:not(:disabled) { color: var(--text); }
 .th-mode-opt.is-on {
-  background: var(--surface-1, #fff);
+  background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0,0,0,.08);
   cursor: default;
@@ -5067,7 +5067,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   border: 1px solid var(--success, #16A34A);
   border-radius: 6px;
   background: var(--success, #16A34A);
-  color: #fff;
+  color: var(--accent-ink);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -5087,7 +5087,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   max-height: min(70vh, 620px);
   display: flex;
   flex-direction: column;
-  background: var(--surface-1, #fff);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 16px 48px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
@@ -5166,7 +5166,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   padding: 4px 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--surface-1, #fff);
+  background: var(--surface);
   color: var(--text-muted);
   cursor: pointer;
 }

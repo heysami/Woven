@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- FIRST child of <head>, synchronous: sets data-theme on this iframe's <html>
+     from the editor's shared localStorage (live), so woven-theme.css's
+     :root[data-theme="dark"] token block applies before first paint (no flash).
+     Chrome renders LIGHT when the editor is dark, per the shared remap. -->
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Voxel 3D Editor</title>

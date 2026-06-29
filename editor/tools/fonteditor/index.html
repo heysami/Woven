@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Sync editor light/dark theme onto this iframe's <html data-theme> from shared
+     localStorage (live). MUST load first + synchronous so the right tokens apply
+     before first paint. -->
+<script src="/editor/tools/_shared/tool-theme.js"></script>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Font Creator</title>
@@ -127,7 +131,7 @@
 
   .modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:50}
   .modal-bg.show{display:flex}
-  .modal{background:var(--panel); border:1px solid var(--line); border-radius:10px; width:min(440px,92vw); padding:16px; box-shadow:0 16px 48px rgba(0,0,0,.5)}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:10px; width:min(440px,92vw); padding:16px; box-shadow:var(--wv-shadow-lg)}
   .modal h3{margin:0 0 10px; font-size:14px}
   .modal .row{display:flex; gap:8px; align-items:flex-end; margin-bottom:10px}
   .modal .row label.fld{flex:1}
@@ -737,7 +741,7 @@ function drawCanvas(){
   // glyph fill
   if(editState.data){
     const p = new Path2D(dataToScreenPath(editState.data, view.scale, view.scale, view.ox, view.oy));
-    ctx.fillStyle = editState.nodeEdit ? "rgba(108,140,255,.22)" : getCSS("--canvas-ink");
+    ctx.fillStyle = editState.nodeEdit ? getCSS("--wv-accent-soft") : getCSS("--canvas-ink");
     ctx.fill(p, "nonzero");
     if(editState.nodeEdit){
       ctx.strokeStyle=getCSS("--accent"); ctx.lineWidth=1; ctx.stroke(p);

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script src="/editor/tools/_shared/tool-theme.js"></script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Hyperframes</title>
@@ -10,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   <style>
     :root {
-      color-scheme: light;
+      color-scheme: light dark;
       --bg: var(--wv-bg);
       --panel: var(--wv-surface);
       --panel-2: var(--wv-surface-2);
@@ -29,6 +30,16 @@
       --viewport-2: var(--wv-viewport-2);
       --sans: var(--wv-font-sans);
       --mono: var(--wv-font-mono);
+      /* Chrome lines/scrims drawn ON the dark viewport. Tinted off the
+         viewport-2 token so they stay legible in both light + dark. */
+      --wv-grid-line: color-mix(in oklab, var(--wv-viewport-2) 70%, transparent);
+      --tl-surface: color-mix(in oklab, var(--wv-surface) 86%, transparent);
+      --tl-line: var(--wv-border);
+      --tl-line-soft: color-mix(in oklab, var(--wv-border) 55%, transparent);
+      --tl-text: var(--wv-text);
+      --tl-text-muted: var(--wv-text-muted);
+      --tl-text-faint: var(--wv-text-faint);
+      --tl-lane: var(--wv-surface-3);
     }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -166,8 +177,8 @@
       place-items: center;
       overflow: hidden;
       background:
-        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
-        linear-gradient(0deg, rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, var(--wv-grid-line) 1px, transparent 1px),
+        linear-gradient(0deg, var(--wv-grid-line) 1px, transparent 1px),
         var(--viewport);
       background-size: 28px 28px;
       position: relative;
@@ -175,7 +186,7 @@
     .stage-shell {
       position: relative;
       transform-origin: center;
-      box-shadow: 0 24px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.12);
+      box-shadow: var(--wv-shadow-lg), 0 0 0 1px var(--wv-border);
     }
     #stage {
       position: relative;
@@ -214,8 +225,8 @@
       right: 14px;
       bottom: 14px;
       height: 118px;
-      border: 1px solid rgba(255,255,255,.14);
-      background: rgba(8,11,16,.74);
+      border: 1px solid var(--tl-line);
+      background: var(--tl-surface);
       backdrop-filter: blur(8px);
       border-radius: 8px;
       padding: 8px 10px;
@@ -224,27 +235,27 @@
       gap: 6px;
       pointer-events: auto;
       z-index: 3;
-      box-shadow: 0 10px 26px rgba(0,0,0,.26);
+      box-shadow: var(--wv-shadow-md);
     }
     .timeline-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      color: rgba(255,255,255,.82);
+      color: var(--tl-text);
       font: 10px/1 var(--mono);
       text-transform: uppercase;
       letter-spacing: .08em;
     }
     .time-readout {
-      color: rgba(255,255,255,.64);
+      color: var(--tl-text-muted);
       letter-spacing: 0;
       text-transform: none;
     }
     .ruler {
       position: relative;
       height: 18px;
-      border-top: 1px solid rgba(255,255,255,.08);
+      border-top: 1px solid var(--tl-line-soft);
       cursor: ew-resize;
       margin-left: 118px;
     }
@@ -253,13 +264,13 @@
       top: 0;
       bottom: 0;
       width: 1px;
-      background: rgba(255,255,255,.16);
+      background: var(--tl-line);
     }
     .tick-label {
       position: absolute;
       top: 4px;
       transform: translateX(-50%);
-      color: rgba(255,255,255,.54);
+      color: var(--tl-text-faint);
       font: 9px/1 var(--mono);
       white-space: nowrap;
     }
@@ -285,14 +296,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: rgba(255,255,255,.58);
+      color: var(--tl-text-muted);
       font: 10px/1 var(--mono);
     }
     .lane {
       position: relative;
       height: 10px;
       border-radius: 999px;
-      background: rgba(255,255,255,.08);
+      background: var(--tl-lane);
     }
     .segment {
       position: absolute;
@@ -301,20 +312,20 @@
       min-width: 4px;
       border-radius: 999px;
       background: linear-gradient(90deg, var(--accent), var(--wv-hot));
-      border: 1px solid rgba(255,255,255,.2);
+      border: 1px solid var(--tl-line);
       cursor: pointer;
     }
     .segment.active {
-      box-shadow: 0 0 0 2px rgba(255,255,255,.38);
+      box-shadow: 0 0 0 2px var(--accent);
     }
     .playhead {
       position: absolute;
       top: 29px;
       bottom: 8px;
       width: 2px;
-      background: #fff;
+      background: var(--accent);
       border-radius: 2px;
-      box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 0 14px rgba(255,255,255,.45);
+      box-shadow: 0 0 0 1px var(--viewport);
       pointer-events: none;
       z-index: 4;
     }
@@ -326,9 +337,9 @@
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: #fff;
+      background: var(--accent);
       transform: translateX(-50%);
-      box-shadow: 0 0 0 1px rgba(0,0,0,.38);
+      box-shadow: 0 0 0 1px var(--viewport);
     }
     .empty {
       color: var(--muted);
