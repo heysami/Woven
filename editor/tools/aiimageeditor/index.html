@@ -86,8 +86,10 @@
     background-size:22px 22px; background-position:0 0,11px 11px;
     display:flex; align-items:center; justify-content:center; padding:18px;
   }
-  #canvasWrap{position:relative; box-shadow:0 8px 40px rgba(0,0,0,.4); line-height:0; flex:0 0 auto; max-width:100%; max-height:100%;}
-  #srcImg{display:block; max-width:100%; max-height:100%; height:auto; user-select:none; -webkit-user-drag:none;}
+  /* width/height are set in JS (fitWrap) to the image's aspect, fitted to the
+     stage - so the overlay (inset:0) covers the rendered pixels EXACTLY. */
+  #canvasWrap{position:relative; box-shadow:0 8px 40px rgba(0,0,0,.4); line-height:0; flex:0 0 auto;}
+  #srcImg{display:block; width:100%; height:100%; object-fit:contain; user-select:none; -webkit-user-drag:none;}
   #scribbleCanvas{position:absolute; inset:0; width:100%; height:100%;}
   #overlay{position:absolute; inset:0;}
   #empty{color:var(--ink2); font-size:13px; text-align:center; padding:24px; max-width:340px;}
@@ -289,6 +291,7 @@ function loadSource(url){
       srcImg.src=url;
       wrap.style.display=''; emptyEl.style.display='none';
       sizeScribble();
+      fitWrap();
       renderOverlay();
       refreshButtons();
       resolve(true);
@@ -314,6 +317,25 @@ function sizeScribble(){
   let w=SRC.w, h=SRC.h, cap=1600;
   if(Math.max(w,h)>cap){ const s=cap/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
   if(scrib.width!==w || scrib.height!==h){ scrib.width=w; scrib.height=h; }
+}
+// Size #canvasWrap to the IMAGE's aspect, fitted inside the stage. The overlay +
+// scribble are inset:0 of the wrap, so this guarantees boxes (positioned as % of
+// the wrap) land exactly on the rendered image - regardless of the node's own
+// (non-square) proportions. Event-driven only (load / resize / select), never
+// per-frame, per the layout-thrash rule.
+function fitWrap(){
+  if(!SRC.img || !SRC.w || !SRC.h) return;
+  const sr=stage.getBoundingClientRect();
+  const cs=getComputedStyle(stage);
+  const padX=(parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0);
+  const padY=(parseFloat(cs.paddingTop)||0)+(parseFloat(cs.paddingBottom)||0);
+  const availW=Math.max(20, sr.width-padX);
+  const availH=Math.max(20, sr.height-padY);
+  const ar=SRC.w/SRC.h;
+  let w=availW, h=w/ar;
+  if(h>availH){ h=availH; w=h*ar; }
+  wrap.style.width=Math.round(w)+'px';
+  wrap.style.height=Math.round(h)+'px';
 }
 
 // ============================================================================
@@ -852,7 +874,7 @@ window.addEventListener('message',(ev)=>{
     applyContent(d.content||[]);
   } else if(d.type==='aiimg:select'){
     document.body.classList.toggle('detached-panels', !!d.selected);
-    requestAnimationFrame(()=>reportPanels());
+    requestAnimationFrame(()=>{ reportPanels(); fitWrap(); renderOverlay(); });
   }
 });
 
@@ -876,7 +898,7 @@ function reportPanels(){
   b.setProperty('--panel-t',panelT+'px'); b.setProperty('--panel-b',panelB+'px');
   if(EMBEDDED){ try{ parent.postMessage({ type:'aiimg:panels', nodeId:NODE, panelL, panelR, panelT, panelB }, '*'); }catch(e){} }
 }
-window.addEventListener('resize',()=>{ if(document.body.classList.contains('detached-panels')) reportPanels(); });
+window.addEventListener('resize',()=>{ if(document.body.classList.contains('detached-panels')) reportPanels(); fitWrap(); renderOverlay(); });
 
 // ============================================================================
 // BOOT
