@@ -82690,6 +82690,75 @@ function parseOwnerRepo(remote) {
   return { owner: "", repo: "" };
 }
 
+// Connect a backend / database provider (Supabase first) by pasting its API
+// token, stored host-side like the GitHub sign-in - so API-mode publishing is
+// hands-off and the user never pastes a token into chat. Provider-agnostic via
+// the /__providers registry; the token is verified before it is saved and never
+// leaves the machine (not in the repo, publish.json, or the browser).
+function ProviderConnect({ provider }) {
+  const [info, setInfo]       = useState(null);   // status entry for this provider
+  const [editing, setEditing] = useState(false);
+  const [tok, setTok]         = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [err, setErr]         = useState(null);
+
+  const reload = useCallback(() => {
+    fetch(apiUrl("/__providers/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && j.providers) setInfo(j.providers[provider] || null); })
+      .catch(() => {});
+  }, [provider]);
+  useEffect(() => { reload(); }, [reload]);
+
+  const connect = async () => {
+    if (!tok.trim() || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch("/__providers/connect?provider=" + encodeURIComponent(provider), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: tok.trim() }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "could not connect");
+      setTok(""); setEditing(false); reload();
+    } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  };
+  const disconnect = async () => {
+    setBusy(true);
+    try { await fetch("/__providers/disconnect?provider=" + encodeURIComponent(provider), { method: "POST" }); reload(); }
+    catch {} finally { setBusy(false); }
+  };
+
+  if (!info) return null;
+  const connected = !!info.connected;
+  return html`
+    <div style=${{ border: "1px solid var(--border)", borderRadius: "8px", padding: "8px 10px", marginTop: "6px" }}>
+      <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <span className=${"shares-dot is-" + (connected ? "ok" : "idle")}></span>
+        <span style=${{ fontSize: "13px" }}>${info.label}: <strong>${connected ? "connected" : "not connected"}</strong></span>
+        <span style=${{ marginLeft: "auto" }}>
+          ${connected
+            ? html`<button type="button" className="sysadd-btn-cancel" disabled=${busy} onClick=${disconnect}>Disconnect</button>`
+            : editing
+              ? html`<button type="button" className="sysadd-btn-cancel" disabled=${busy} onClick=${() => { setEditing(false); setErr(null); }}>Cancel</button>`
+              : html`<button type="button" className="sysadd-btn-go" onClick=${() => setEditing(true)}>Connect</button>`}
+        </span>
+      </div>
+      ${editing && !connected && html`
+        <div style=${{ marginTop: "8px" }}>
+          <input className="sysadd-input" type="password" value=${tok} placeholder=${info.tokenLabel || "API token"}
+            autoFocus=${true} onInput=${e => setTok(e.target.value)}
+            onKeyDown=${e => { if (e.key === "Enter") connect(); }} style=${{ width: "100%", boxSizing: "border-box" }}/>
+          <div style=${{ display: "flex", alignItems: "center", gap: "10px", marginTop: "6px" }}>
+            ${info.tokenUrl && html`<a href=${info.tokenUrl} target="_blank" rel="noopener" className="sysadd-hint" style=${{ textDecoration: "underline" }}>Get a token</a>`}
+            <span className="sysadd-hint">${info.tokenHint || ""}</span>
+            <button type="button" className="sysadd-btn-go" style=${{ marginLeft: "auto" }} disabled=${!tok.trim() || busy} onClick=${connect}>${busy ? "Checking…" : "Save"}</button>
+          </div>
+          <p className="sysadd-hint" style=${{ marginTop: "4px" }}>Stored on this machine only (never in your repo or the browser); verified against ${info.label} before saving.</p>
+        </div>`}
+      ${err && html`<div className="sysadd-error" style=${{ marginTop: "6px" }}>${err}</div>`}
+    </div>`;
+}
+
 // The publish modal: a GitHub-linked + existing-repo gate, the domain choice
 // (github.io / getwoven subdomain / custom), and the two setup styles
 // (automatic / guided). Dispatches the publish-orchestrator via a project-scoped
@@ -82906,7 +82975,12 @@ function PublishModal({ onClose, onStarted }) {
             </div>
           </div>
 
-          <p className="sysadd-hint">Backend: <strong>Supabase</strong>, only if the app stores data - a simple site gets a basic auth + profile/preferences/files set (still tailored to this app's fields); a real multi-entity app gets a schema derived from its own entities, wired to real data. The published repo is public.</p>
+          <div className="sysadd-field">
+            <span className="sysadd-label">Database backend (only if your app stores data)</span>
+            <p className="sysadd-hint" style=${{ marginTop: 0 }}>A simple site gets a basic auth + profile/preferences/files set (tailored to this app's fields); a real multi-entity app gets a schema derived from its own entities, wired to real data. Connect Supabase once here and publishing stays hands-off - no token-pasting in chat.</p>
+            <${ProviderConnect} provider="supabase"/>
+          </div>
+          <p className="sysadd-hint">The published repo is public.</p>
 
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>

@@ -56,6 +56,7 @@ import live as _live        # live session - host-authoritative multiplayer over
 import usertesting as _ut          # user testing mode - session recording registry + artifacts
 import usertesting_gate as _ut_gate  # user testing gate delegate (/t/ testee, /r/ reviewer)
 import git_ops as _gitops    # git/GitHub backbone - deliberate commit/publish + fork/PR
+import providers as _providers  # host-side connect store for backend/db providers (Supabase, ...)
 
 
 def _pick_port() -> int:
@@ -8718,6 +8719,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token|fork|pr)$", parsed.path)
             if m_gh:
                 return self._github_op(m_gh.group(1), qs)
+            m_prov = re.match(r"^/__providers/(connect|disconnect)$", parsed.path)
+            if m_prov:
+                return self._providers_op(m_prov.group(1), qs)
             if parsed.path == "/__live_presence":
                 try:
                     body = self._read_json_body(max_bytes=8 * 1024)
@@ -9039,6 +9043,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._github_repos(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__publish":
             return self._publish_state(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__providers/status":
+            return self._providers_status()
         if url_path == "/__share_thumbnail":
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
@@ -16270,6 +16276,39 @@ class H(http.server.SimpleHTTPRequestHandler):
                                          "error": f"publish.json unreadable: {e}"})
         if data is None:
             return self._reply(200, {"exists": False, "state": skeleton()})
+        # v2+ per-prototype keyed shape: { prototypes: { <id>: {...} } }.  # noqa: keep adjacency
+        return self._publish_state_resolve(data, proto, skeleton)
+
+    # ── Backend / database provider connections (Supabase first) ──────────
+    # Host-side token store mirrored on git_ops: the user connects ONCE via the
+    # Woven Connect field, the token lives at ~/.woven/providers/<id>.json (0600,
+    # never in a repo / publish.json / the browser), and the publish orchestrator
+    # reads it server-side instead of asking the user to paste it into chat.
+    # GET /__providers/status  → { providers: { <id>: {label, connected, meta, ...} } }
+    def _providers_status(self):
+        return self._reply(200, {"providers": _providers.status()})
+
+    # POST /__providers/(connect|disconnect)?provider=<id>   body {token} for connect
+    def _providers_op(self, op, qs):
+        provider = (_qs_get(qs, "provider") or "").strip()
+        if provider not in _providers.PROVIDERS:
+            return self._reply(400, {"error": "unknown provider"})
+        if op == "disconnect":
+            _providers.clear(provider)
+            return self._reply(200, {"ok": True, "connected": False})
+        try:
+            body = self._read_json_body(max_bytes=16 * 1024)
+        except ValueError:
+            body = {}
+        tok = (body or {}).get("token") if isinstance(body, dict) else ""
+        ok, meta = _providers.validate(provider, tok)
+        if not ok:
+            return self._reply(400, {"error": meta.get("error") or "could not validate token"})
+        _providers.save(provider, (tok or "").strip(), meta)
+        return self._reply(200, {"ok": True, "connected": True, "meta": meta})
+
+    # Resolve a parsed publish.json against a requested prototype id.
+    def _publish_state_resolve(self, data, proto, skeleton):
         # v2+ per-prototype keyed shape: { prototypes: { <id>: {...} } }.
         if isinstance(data.get("prototypes"), dict):
             protos = data["prototypes"]

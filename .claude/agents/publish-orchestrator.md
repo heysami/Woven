@@ -108,7 +108,7 @@ If the user later wants a custom domain or instant-cache CDN, Vercel / Netlify /
 
 Skip M2 entirely for a purely static brochure site. Otherwise:
 
-**Connect Supabase first (both paths need it):** a Supabase OAuth connect or a Management API personal access token, stored host-side (mode 0600, never in the repo or publish.json). If absent, add a `connect-supabase` task and STOP, same pattern as the GitHub gate. Never ship the service_role key; only `url` + the anon key reach the browser.
+**Connect Supabase first (both paths need it).** The user connects Supabase ONCE via the **Connect** button in the Publish modal's "Database backend" section; the Management API token is then stored host-side at `~/.woven/providers/supabase.json` (mode 0600, never in the repo, publish.json, or the browser). Check the connection with `GET $TH_DAEMON_URL/__providers/status` (reports `{ supabase: { connected } }`, never the token) or read the file; use the token only server-side for the Management API. If Supabase is NOT connected, add a `connect-supabase` task that points the user to that Connect button and STOP - do NOT ask the user to paste a token into chat (the button exists precisely so they never have to). Never ship the service_role key; only the project `url` + anon key reach the browser.
 
 ### Step A - classify the data need (intelligently, from the prototype)
 
