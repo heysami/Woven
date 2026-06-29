@@ -82028,15 +82028,6 @@ function PublishModal({ onClose, onStarted }) {
             Takes your prototype live on a real public URL using <strong>your own</strong> GitHub and Supabase accounts, not Woven's preview tunnel. This runs an agent and can use a lot of tokens depending on how you set it up.
           </p>
 
-          ${(wasPublished || connectedRepo) && html`
-            <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: "rgba(40,170,90,.12)" }}>
-              <span className="shares-dot is-ok"></span>
-              <span style=${{ fontSize: "13px" }}>
-                ${wasPublished
-                  ? html`Already published${publishedRepo ? html` to <strong>${publishedRepo}</strong>` : ""}${existingUrl ? html` <a href=${existingUrl} target="_blank" rel="noopener" style=${{ color: "inherit" }}>${existingUrl}</a>` : ""}. Publishing again updates the same site.`
-                  : html`Connected to repo <strong>${connectedRepo}</strong>. Publishing deploys your site to it, not a new repo.`}
-              </span>
-            </div>`}
 
           ${gh != null && !linked && html`
             <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: "rgba(210,150,40,.14)" }}>
