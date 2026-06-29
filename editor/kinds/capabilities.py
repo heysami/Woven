@@ -264,39 +264,56 @@ def _harness_skills_root() -> str:
     return os.path.join(base, ".harness-skills")
 
 
+def _harness_skills_roots() -> list:
+    """Dirs to scan for harness skills: the BUNDLED skills shipped in the repo
+    (INSTALL_ROOT/.harness-skills - always available so a skill like grill-me
+    works for every install, even with a separate workspace) plus the WORKSPACE's
+    user-installed skills. Workspace first so a user copy overrides a bundled one."""
+    roots, seen = [], set()
+    bundled = os.path.join(_PROTOCOL_ROOT, ".harness-skills")
+    for r in (_harness_skills_root(), bundled):
+        rr = os.path.abspath(r)
+        if rr not in seen and os.path.isdir(rr):
+            seen.add(rr)
+            roots.append(rr)
+    return roots
+
+
 def _scan_harness_skills() -> list:
-    """Walk .harness-skills/*/SKILL.md, extract frontmatter name/description.
-    Same tolerant YAML-ish parse as serve.py's _parse_skill_md_frontmatter."""
-    out = []
-    root = _harness_skills_root()
-    if not os.path.isdir(root):
-        return out
-    for slug in sorted(os.listdir(root)):
-        md = os.path.join(root, slug, "SKILL.md")
-        if not os.path.isfile(md):
-            continue
-        try:
-            with open(md, "r", encoding="utf-8") as f:
-                head = f.read(8192)
-        except OSError:
-            continue
-        name, desc = slug, ""
-        if head.startswith("---"):
-            end = head.find("\n---", 3)
-            if end > 0:
-                for line in head[3:end].splitlines():
-                    line = line.strip()
-                    if ":" not in line or line.startswith("#"):
-                        continue
-                    k, _, v = line.partition(":")
-                    k = k.strip().lower()
-                    v = v.strip().strip('"').strip("'")
-                    if k == "name" and v:
-                        name = v
-                    elif k == "description" and v:
-                        desc = v
-        out.append({"slug": slug, "name": name, "description": desc[:300],
-                    "path": md, "source": "user"})
+    """Walk every harness-skills root (workspace + bundled repo), extract
+    frontmatter name/description. Deduped by slug, workspace winning."""
+    out, seen_slugs = [], set()
+    bundled_root = os.path.abspath(os.path.join(_PROTOCOL_ROOT, ".harness-skills"))
+    for root in _harness_skills_roots():
+        for slug in sorted(os.listdir(root)):
+            if slug in seen_slugs:
+                continue
+            md = os.path.join(root, slug, "SKILL.md")
+            if not os.path.isfile(md):
+                continue
+            try:
+                with open(md, "r", encoding="utf-8") as f:
+                    head = f.read(8192)
+            except OSError:
+                continue
+            name, desc = slug, ""
+            if head.startswith("---"):
+                end = head.find("\n---", 3)
+                if end > 0:
+                    for line in head[3:end].splitlines():
+                        line = line.strip()
+                        if ":" not in line or line.startswith("#"):
+                            continue
+                        k, _, v = line.partition(":")
+                        k = k.strip().lower()
+                        v = v.strip().strip('"').strip("'")
+                        if k == "name" and v:
+                            name = v
+                        elif k == "description" and v:
+                            desc = v
+            seen_slugs.add(slug)
+            out.append({"slug": slug, "name": name, "description": desc[:300],
+                        "path": md, "source": ("bundled" if root == bundled_root else "user")})
     return out
 
 

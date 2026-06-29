@@ -19990,10 +19990,19 @@ class H(http.server.SimpleHTTPRequestHandler):
         library, so a skill the agent should be able to invoke has to be
         added here explicitly."""
         out = []
+        seen_slugs = set()
         user_root = self._cc_skills_root_user()
-        if os.path.isdir(user_root):
-            for slug in sorted(os.listdir(user_root)):
-                sk_dir = os.path.join(user_root, slug)
+        bundled_root = os.path.join(INSTALL_ROOT, ".harness-skills")
+        # Workspace (user-installed) first so it overrides a bundled skill of the
+        # same slug; bundled (shipped in the repo, e.g. grill-me) always included
+        # so it's available even when the workspace is a separate dir.
+        for root, src in ((user_root, "user"), (bundled_root, "bundled")):
+            if not os.path.isdir(root):
+                continue
+            for slug in sorted(os.listdir(root)):
+                if slug in seen_slugs:
+                    continue
+                sk_dir = os.path.join(root, slug)
                 if not os.path.isdir(sk_dir):
                     continue
                 md = os.path.join(sk_dir, "SKILL.md")
@@ -20001,16 +20010,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                     continue
                 meta = self._parse_skill_md_frontmatter(md) or {}
                 name = meta.get("name") or slug
-                # Path shown to the user - relative to workspace if applicable,
-                # else absolute (still useful for "where did this land?").
                 show_path = md
                 if WORKSPACE_DIR and md.startswith(WORKSPACE_DIR):
                     show_path = "<workspace>" + md[len(WORKSPACE_DIR):]
+                seen_slugs.add(slug)
                 out.append({
                     "slug":        slug,
                     "name":        name,
                     "description": meta.get("description", ""),
-                    "source":      "user",
+                    "source":      src,
                     "plugin":      None,
                     "path":        show_path,
                     "invocation":  "/" + slug,

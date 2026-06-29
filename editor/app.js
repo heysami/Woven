@@ -83147,6 +83147,7 @@ function DevelopmentView({ model, info }) {
   const gh    = (st && st.github) || {};
   const tasks = (st && st.tasks) || [];
   const log   = (st && st.log) || [];
+  const plan  = (st && st.plan) || null;
   const liveUrl = host.liveUrl || "";
 
   const copy = async () => {
@@ -83209,6 +83210,38 @@ function DevelopmentView({ model, info }) {
             ${milestone("Static deploy (GitHub Pages)", host.status || "none", gh.repo || (host.status && host.status !== "none" ? host.status : "not started"))}
             ${milestone("Database (Supabase)", db.status || "none", db.projectRef || (db.status && db.status !== "none" ? db.status : "not needed yet"))}
           </div>
+
+          ${plan ? html`
+            <div style=${{ marginBottom: "22px" }}>
+              <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                ${sectionH("Development plan")}
+                <span className=${"shares-dot is-" + (plan.status === "confirmed" ? "ok" : "warn")} style=${{ marginLeft: "2px" }}></span>
+                <span className="sysadd-hint">${plan.status === "confirmed" ? "confirmed" : (plan.status || "draft") + " - review + confirm in chat"}</span>
+              </div>
+              ${(plan.dataModel && plan.dataModel.length) ? html`
+                <div style=${{ marginBottom: "10px" }}>
+                  <div className="sysadd-hint" style=${{ fontWeight: 600, marginBottom: "2px" }}>Data model</div>
+                  ${plan.dataModel.map((e, i) => html`<div key=${i} style=${{ padding: "3px 0", borderBottom: rowLine, fontSize: "13px" }}>
+                    <strong>${e.entity}</strong>${(e.fields && e.fields.length) ? html` <span className="sysadd-hint">${e.fields.join(", ")}</span>` : ""}${(e.relationships && e.relationships.length) ? html` <span className="sysadd-hint">· ${e.relationships.join("; ")}</span>` : ""}
+                  </div>`)}
+                </div>` : ""}
+              ${(plan.flows && plan.flows.length) ? html`
+                <div style=${{ marginBottom: "10px" }}>
+                  <div className="sysadd-hint" style=${{ fontWeight: 600, marginBottom: "2px" }}>Flows</div>
+                  ${plan.flows.map((f, i) => html`<div key=${i} style=${{ padding: "3px 0", fontSize: "13px" }}><strong>${f.name}</strong>: <span className="sysadd-hint">${(f.steps || []).join(" → ")}</span></div>`)}
+                </div>` : ""}
+              ${(plan.ia && plan.ia.length) ? html`
+                <div style=${{ marginBottom: "10px" }}>
+                  <div className="sysadd-hint" style=${{ fontWeight: 600, marginBottom: "2px" }}>Information architecture</div>
+                  ${plan.ia.map((s, i) => html`<div key=${i} className="sysadd-hint" style=${{ padding: "2px 0", fontSize: "12px" }}>${s.screen} · reads ${(s.reads || []).join(", ") || "-"} · writes ${(s.writes || []).join(", ") || "-"}${(s.roles && s.roles.length) ? " · " + s.roles.join("/") : ""}</div>`)}
+                </div>` : ""}
+              ${(plan.roles && plan.roles.length) ? html`<div className="sysadd-hint" style=${{ marginBottom: "6px" }}><strong>Roles:</strong> ${plan.roles.map(r => r.name + (r.access ? " (" + r.access + ")" : "")).join(", ")}</div>` : ""}
+              ${(plan.openQuestions && plan.openQuestions.length) ? html`
+                <div style=${{ border: "1px solid var(--border)", borderRadius: "8px", padding: "8px 10px", background: "rgba(210,150,40,.08)" }}>
+                  <div className="sysadd-hint" style=${{ fontWeight: 600, marginBottom: "2px" }}>Open questions for you</div>
+                  ${plan.openQuestions.map((q, i) => html`<div key=${i} className="sysadd-hint" style=${{ padding: "2px 0" }}>• ${q}</div>`)}
+                </div>` : ""}
+            </div>` : ""}
 
           ${(() => {
             const human = tasks.filter(t => t.owner === "human" && t.status !== "done");

@@ -45,6 +45,14 @@ Create/maintain this file. It is the seed of the development-task surface, so ke
       "github": { "login": "", "repo": "", "htmlUrl": "", "branch": "main" },
       "host": { "provider": "github-pages", "liveUrl": "", "status": "pending" },
       "database": { "provider": "supabase", "projectRef": "", "url": "", "anonKey": "", "status": "none" },
+      "plan": {
+        "status": "draft|grilling|proposed|confirmed",
+        "dataModel": [ { "entity": "Applicant", "fields": ["nric", "name", "email"], "relationships": ["has-many Application"] } ],
+        "flows":     [ { "name": "Application", "steps": ["apply", "review", "offer", "accept", "pay"] } ],
+        "ia":        [ { "screen": "applicant-dashboard", "reads": ["Application"], "writes": ["Application"], "roles": ["applicant"] } ],
+        "roles":     [ { "name": "applicant", "access": "own records only" } ],
+        "openQuestions": [ "decisions the project could not answer, surfaced to the user" ]
+      },
       "tasks": [
         { "id": "connect-supabase", "title": "Connect Supabase", "status": "todo|doing|done|blocked",
           "owner": "human", "detail": "Publishing needs your Supabase account to create the database.",
@@ -142,6 +150,21 @@ BASIC means a SMALL, user-centric shape, NOT a fixed `profiles/preferences/files
 Owner-only RLS. Inject `supabase-config.js` + `@supabase/supabase-js`, wire sign-in + the real fields/tables you derived. Redeploy; verify a real round trip. The shape is small and standard enough to skip the review gate and go straight through - but the FIELDS and tables come from the prototype, not a hardcoded list.
 
 ### Real-model path (entity-driven - the prototype's own data model)
+
+For a REAL MODEL app, do the DEVELOPMENT-PLANNING phase (0a-0d) BEFORE any schema/build. This is the non-MVP flow; the BASIC path skips it entirely.
+
+0a. **Build the development plan from what Woven already modelled.** Read `source/<branch>/prototype.json` and structure three things into a `plan` object in publish.json (status `draft`), reusing the editor's own model - do NOT re-invent it:
+  - **Data model** - the `entities[]` + their `fields` + the `links`/`arrows` relationships (cardinality, FKs, derived vs stored).
+  - **Flows** - the end-to-end paths through the `frames` (screen sequence + state transitions, e.g. apply -> review -> offer -> accept -> pay) and the empty/error/partial states each screen must handle.
+  - **Information architecture** - which screen reads/writes which entity, the navigation + permission structure, the roles (read off the screens: applicant vs officer vs approver) and their row-level access.
+
+0b. **Grill the plan (two-agent loop) with the bundled grill-me skill.** READ the bundled `grill-me` skill (it ships in the repo at `.harness-skills/grill-me/SKILL.md` and is listed in your capabilities preamble under custom skills - it works for EVERY user, no Claude Code install needed) and run its interview AGAINST the plan. You hold the project knowledge: answer every question you can from `prototype.json` + the screens yourself (you are the "agent that knows the project"); only the genuine decisions the project cannot answer get escalated to the user. Drive at the data-model / flow / IA / roles / edge-case branches the skill lists until none are left unresolved, then REVISE the plan with the hardened answers. (You may instead dispatch a separate subagent as the griller and answer it yourself - same loop, two agents - but self-running the skill against your own plan is the lighter default.)
+
+0c. **User review + confirm gate.** Present the refined plan - data model, flows, IA, roles - to the USER in plain language (it is also in publish.json `plan`, which the Development tab renders), and WAIT for confirmation or edits. Do NOT build anything until the user confirms. Record `plan.status: "confirmed"`.
+
+0d. **Generate development tasks** from the confirmed plan: break the build into concrete `tasks` (schema migration, auth + roles/RLS, each end-to-end flow, per-screen wiring), `owner: "agent"` for what you do and `owner: "human"` (with an `action`) for anything that needs the user. These tasks drive the build below and show on the Development tab.
+
+Then build the confirmed plan:
 
 1. **Derive a real schema** from the `entities[]` + `fields` + `links` you read in Step A: one table per entity, a column per field (infer types: id/ref -> uuid/text + FK, date -> timestamptz, amount/quantum -> numeric, status/enum-ish -> text + check, flag -> boolean, file -> a storage path + bucket); FKs from the `links` / `arrows`; add auth + a `profiles`/`users` table and the app's ROLES read off the screens; keep the audit table if present.
 2. **Confirm before provisioning (review gate).** Present the derived schema - tables, key columns, relationships, roles - in plain language and WAIT for confirmation or edits. Record it in `database.schema` with status `proposed`.
