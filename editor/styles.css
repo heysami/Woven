@@ -14867,10 +14867,15 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 /* Onboarding step 1 now offers only the (required) Install-a-CLI choice -
    the Paste-an-API-key tile was removed - so the lone tile spans full width. */
-.model-setup-choices-single { grid-template-columns: 1fr; }
 /* The lone Install-a-CLI tile must HUG its content and center in the step - a
-   full-width tile left a dead gap on the right that nothing could fill. */
-.model-setup-choices-single { justify-items: center; }
+   full-width tile left a dead gap on the right that nothing could fill. The
+   two-class selector is deliberate: it has to beat `.model-setup-choices-compact
+   { grid-template-columns: 1fr 1fr }`, which otherwise wins on source order and
+   drops the tile into column 1 of a 2-col grid (the empty-right-side bug). */
+.model-setup-choices.model-setup-choices-single {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
 .model-setup-choices-single .model-setup-choice {
   width: fit-content;
   max-width: 100%;

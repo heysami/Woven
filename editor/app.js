@@ -19836,7 +19836,7 @@ function OnboardingUserTestingToggle() {
   return html`
     <div className="model-setup-optional-row">
       <div className="model-setup-optional-text">
-        <div className="model-setup-optional-title">User testing mode <span className="model-setup-choice-tag">optional</span></div>
+        <div className="model-setup-optional-title">User testing mode <span className="model-setup-choice-tag is-soft">optional</span></div>
         <div className="model-setup-optional-desc">${
           state === "ready" ? "Enabled. Run sessions from the Testing surface (top nav) or a prototype's share menu."
           : state === "provisioning" ? "Installing the local speech model (whisper-cpp, ~460 MB)…"
