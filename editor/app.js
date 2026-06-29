@@ -6867,7 +6867,7 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
    when unset, same fallback the bounds + drag code uses. Click anywhere on
    the minimap to pan the canvas so that point lands in the viewport center;
    mousedown + drag keeps the viewport tracking the cursor until mouseup. */
-function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan, extraBounds }) {
+function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan, setZoom, extraBounds }) {
   const list = Array.isArray(nodes) ? nodes : [];
   const hostRef = useRef(null);
   const innerRef = useRef(null);
@@ -7018,6 +7018,16 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan, extraBounds }) {
           height: Math.max(2, vhh * s),
         }}/>
       </div>
+      ${setZoom && html`<button type="button" className="workflow-minimap-zoom"
+        title=${zoom === 1 ? "Canvas zoom" : "Reset zoom to 100%"}
+        aria-label=${"Zoom " + Math.round(zoom * 100) + " percent, click to reset to 100%"}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); if (zoom !== 1) setZoom(1); }}
+        style=${{ position: "absolute", left: "6px", bottom: "6px", zIndex: 2,
+          height: "22px", padding: "0 8px", borderRadius: "6px",
+          border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)",
+          fontSize: "11px", fontWeight: 600, lineHeight: 1, cursor: "pointer" }}
+      >${Math.round(zoom * 100)}%</button>`}
     </div>
   `;
 }
@@ -8801,7 +8811,7 @@ function CliIndicator({ compact }) {
   }
   const state = ok ? "ok" : (needsLogin ? "needs-login" : "missing");
   const labelText = ok
-    ? ((preferred === "codex" ? "Codex " : "CLI ") + (version || ""))
+    ? (preferred === "codex" ? "Codex" : "CLI")
     : (needsLogin ? `${label} not signed in` : `${label} missing`);
   return html`<span
     className=${"cli-indicator cli-indicator-" + state}
@@ -42949,12 +42959,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         >⛶<//>
         <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)}/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
-        <${HoverTip}
-          className="workflow-zoom"
-          ariaLabel="Canvas zoom"
-          tip=${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}
-          onClick=${() => { if (zoom !== 1) setZoom(1); }}
-        >${Math.round(zoom * 100)}%<//>
         <${PublishButton}/>
         <${ShareMenuButton}/>
       </div>
@@ -43067,7 +43071,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             setZoom=${setZoom}
             onPick=${(id) => setSelectedNodeIds(new Set([id]))}
           />
-          <${WorkflowMiniMap} nodes=${data.nodes || []} extraBounds=${wbItems.map(wbItemBBox)} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan}/>
+          <${WorkflowMiniMap} nodes=${data.nodes || []} extraBounds=${wbItems.map(wbItemBBox)} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan} setZoom=${setZoom}/>
         </div>
         <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
         <div
@@ -81613,8 +81617,8 @@ function SurfaceNav() {
     { label: "Canvas",  active: cur === "workflow" && wfMain === "canvas", onClick: () => toWorkflow("canvas") },
     { label: "Preview", active: cur === "workflow" && wfMain === "proto",  onClick: () => toWorkflow("proto") },
     ...(utEnabled ? [{ label: "Testing", active: cur === "usertesting", onClick: () => go("usertesting") }] : []),
-    { label: "Develop", active: cur === "development", onClick: () => go("development") },
     { label: "Editor",  active: cur === "editor", onClick: () => go(null) },
+    { label: "Develop", active: cur === "development", onClick: () => go("development") },
   ];
   return html`
     <div className="surface-nav" role="tablist" aria-label="Surface">
