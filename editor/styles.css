@@ -4055,10 +4055,12 @@ button {
   z-index: 9550;
 }
 .right-rail-dock-host > .th-right-rail { height: 100%; }
-/* Reserve the rail's width so these views' own content (e.g. the Development
-   Publish button at top-right) never sits under the fixed rail. */
+/* Reserve the rail's width AND the open chat dock's width so these full-page
+   views' content shrinks beside them instead of sitting underneath. --dev-dock-w
+   is 0 when no dock window is open and the live dock width when open (set by
+   RightRailDock), so the content reflows as the dock opens / closes / resizes. */
 .ut-screen,
-.dev-view { padding-right: var(--th-right-rail-w, 44px); }
+.dev-view { padding-right: calc(var(--th-right-rail-w, 44px) + var(--dev-dock-w, 0px)); }
 .th-right-rail-btn {
   appearance: none;
   width: 34px;

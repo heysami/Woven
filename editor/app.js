@@ -9899,6 +9899,14 @@ function RightRailDock({ mode }) {
     root.style.setProperty("--workflow-chat-width", chatWidth + "px");
     return () => root.style.removeProperty("--workflow-chat-width");
   }, [chatWidth]);
+  // Reserve-width signal for full-page surfaces (Development / User testing) so
+  // their content shrinks beside the dock instead of sitting under it. 0 when no
+  // dock window is open, the live dock width when open (tracks resize).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--dev-dock-w", (dockWindows.length > 0 ? chatWidth : 0) + "px");
+    return () => root.style.removeProperty("--dev-dock-w");
+  }, [chatWidth, dockWindows.length]);
   const startChatResize = useCallback((e) => {
     e.preventDefault();
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
