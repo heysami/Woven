@@ -28770,7 +28770,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--bg); color: var(--text);
   font-family: var(--font-sans);
 }
-.ut-screen-bar {
+.ut-screen-bar,
+.dev-view-bar {
   /* Positioning context for the absolute-centered .surface-nav child. */
   position: relative;
   display: flex; align-items: center; gap: 4px;
@@ -28779,10 +28780,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
-/* Development has no bar - it's a bare scrolling page. Keep its pill pinned to
-   the viewport (fixed) so it doesn't scroll away; .dev-view is itself a fixed
-   stacking context, so the modal scrim still covers it. */
-.dev-view .surface-nav { position: fixed; }
+/* Development now wears the same top bar as User testing (so it doesn't read as
+   a headless page once the right rail / chat panel is open). The bar holds the
+   surface pill; the content scrolls below it. */
+.dev-view-scroll { flex: 1 1 auto; overflow: auto; }
 .ut-screen-glyph {
   display: inline-flex; width: 30px; height: 30px;
   align-items: center; justify-content: center;

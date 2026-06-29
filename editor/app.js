@@ -9110,8 +9110,8 @@ function ModelStatusIndicator({ onOpenSettings, compact }) {
     ? (compact ? "Agents off" : "Agents disabled - no CLI")
     : (compact ? "No model" : "No model configured");
   const tip = warn
-    ? "An API key is set, so simple prompt nodes work - but agentic workflows (node runs, chat, orchestrators) need a Claude Code or Codex CLI on PATH. Click to set one up."
-    : "No provider API key saved AND no CLI (Claude Code or Codex) on PATH. The agent can't run until you set one up - click to open Settings.";
+    ? "An API key is set, so simple prompt nodes work - but agentic workflows (node runs, chat, orchestrators) need a Claude Code, Codex, or opencode CLI on PATH. Click to set one up."
+    : "No provider API key saved AND no CLI (Claude Code, Codex, or opencode) on PATH. The agent can't run until you set one up - click to open Settings.";
   return html`<button
     type="button"
     className="model-status-indicator"
@@ -9379,7 +9379,7 @@ function AgentPicker({ agents, value, onChange, disabled }) {
       ${open && html`
         <div className="agent-menu">
           <div className="agent-menu-head">Agent</div>
-          ${agents.length === 0 && html`<div className="agent-menu-empty">No agents on PATH. Install Claude Code or Codex.</div>`}
+          ${agents.length === 0 && html`<div className="agent-menu-empty">No agents on PATH. Install Claude Code, Codex, or opencode.</div>`}
           ${agents.map(a => html`
             <button
               key=${a.id}
@@ -19868,7 +19868,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
                 <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
                 <div className="model-setup-choice-body">
                   <div className="model-setup-choice-title">Install a CLI <span className="model-setup-choice-tag">required</span></div>
-                  <div className="model-setup-choice-desc">Claude Code or Codex. Enables agents.</div>
+                  <div className="model-setup-choice-desc">Claude Code, Codex, or opencode. Enables agents.</div>
                 </div>
               </button>
             </div>
@@ -19893,7 +19893,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
               : "Almost there"}</div>
             <div className="model-setup-allset-sub">${
               allOk ? "Agent CLI connected and required local skills installed."
-              : canFinish ? "You can create projects and run simple prompt nodes - but agentic workflows stay disabled until you install a Claude Code or Codex CLI."
+              : canFinish ? "You can create projects and run simple prompt nodes - but agentic workflows stay disabled until you install a Claude Code, Codex, or opencode CLI."
               : "Finish the required steps to enable + New project."}</div>
             <div className="model-setup-extras">
               <div className="model-setup-extras-head">Additional info to know<span className="model-setup-extras-sub">optional extras you can set up anytime</span></div>
@@ -20012,7 +20012,7 @@ function OnboardingBrowserCard() {
         <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">2</span><span>Run a Testing node (or any browser task) - Woven wires the <strong>Chrome DevTools MCP</strong> automatically.</span></div>
         <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">3</span><span>The agent screenshots + clicks your pages by sight.</span></div>
       </div>
-      <div className="model-setup-xcard-foot">No extension needed. Claude Code only - Codex CLI can't drive a browser yet.</div>
+      <div className="model-setup-xcard-foot">No extension needed. Claude Code only - Codex and opencode CLIs can't drive a browser yet.</div>
     </div>
   `;
 }
@@ -78945,8 +78945,8 @@ function WorkflowBrowserSetupSection() {
           <li>The agent opens, screenshots, and clicks your pages by sight.</li>
         </ol>
         <span className="workflow-settings-localhint">
-          Claude Code CLI only - Codex CLI can't drive a browser yet (it still does web research over
-          its built-in network). Needs Node / npx on PATH.
+          Claude Code CLI only - Codex and opencode CLIs can't drive a browser yet (they still do web research over
+          their built-in network). Needs Node / npx on PATH.
         </span>
       </div>
     </div>
@@ -82897,7 +82897,7 @@ function PublishModal({ onClose, onStarted }) {
 // live URL, milestones (static deploy / Supabase), tasks, and an activity log.
 // Polls GET /__publish every 4s; renders a "not published yet" empty state until
 // the orchestrator writes the file.
-function DevelopmentView({ model }) {
+function DevelopmentView({ model, info }) {
   const [data, setData]     = useState(null);   // { exists, state }
   const [open, setOpen]     = useState(false);
   const [copied, setCopied] = useState(false);
@@ -82939,9 +82939,15 @@ function DevelopmentView({ model }) {
     </div>`;
 
   return html`
-    <div className="dev-view" style=${{ position: "fixed", inset: 0, overflow: "auto", background: "var(--bg)" }}>
-     <${SurfaceNav}/>
-     <div style=${{ maxWidth: "840px", margin: "0 auto", padding: "calc(var(--toolbar-h, 44px) + 20px) 24px 48px", boxSizing: "border-box" }}>
+    <div className="dev-view" style=${{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+     <div className="dev-view-bar">
+       <${ProjectHomeButton} info=${info}/>
+       <span className="toolbar-mode-label">Development</span>
+       <div className="ut-screen-spacer"></div>
+       <${SurfaceNav}/>
+     </div>
+     <div className="dev-view-scroll">
+     <div style=${{ maxWidth: "840px", margin: "0 auto", padding: "20px 24px 48px", boxSizing: "border-box" }}>
       <div style=${{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
         <h1 style=${{ fontSize: "20px", margin: 0 }}>Development</h1>
         <button className="sysadd-btn-go" style=${{ marginLeft: "auto" }} onClick=${() => setOpen(true)}>
@@ -82995,6 +83001,7 @@ function DevelopmentView({ model }) {
             </div>` : ""}`}
 
       ${open && html`<${PublishModal} onClose=${() => setOpen(false)} onStarted=${() => { setOpen(false); reload(); }}/>`}
+     </div>
      </div>
     </div>
   `;
@@ -84152,7 +84159,7 @@ function Root() {
   // testing), reachable from every surface via SurfaceNav's "Develop" segment
   // and from the Publish button. Shows the project's publish.json state.
   if (hasProject && view === "development") return html`<${React.Fragment}>
-    <${DevelopmentView} key=${"dev:" + (project || "")}/>
+    <${DevelopmentView} key=${"dev:" + (project || "")} info=${info}/>
     <${RightRailDock} mode="development"/>
     <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
