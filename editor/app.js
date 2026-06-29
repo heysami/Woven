@@ -82699,6 +82699,8 @@ function PublishModal({ onClose, onStarted }) {
   const [gh, setGh]               = useState(null);   // null = checking; {signedIn, login}
   const [pub, setPub]             = useState(null);   // /__publish state - already-published detection
   const [git, setGit]             = useState(null);   // /__git/status - this project's own connected repo
+  const [protos, setProtos]       = useState([]);     // /__source_prototypes
+  const [proto, setProto]         = useState("");     // selected prototype id
   const [domainMode, setDomainMode] = useState("default"); // default | getwoven | custom
   const [subname, setSubname]     = useState("");
   const [customDom, setCustomDom] = useState("");
@@ -82724,6 +82726,19 @@ function PublishModal({ onClose, onStarted }) {
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (alive && j) setGit(j); })
       .catch(() => {});
+    // Which prototype to publish. A project can host more than one (each is a
+    // source/<slug>/index.html). Default to the active one, else the first.
+    fetch(apiUrl("/__source_prototypes"))
+      .then(r => (r.ok ? r.json() : { prototypes: [] }))
+      .then(j => {
+        if (!alive) return;
+        const list = (j && j.prototypes) || [];
+        setProtos(list);
+        const active = (typeof activePrototypeSlug === "function") ? activePrototypeSlug() : null;
+        const pick = (active && list.some(p => p.id === active)) ? active : ((list[0] && list[0].id) || "");
+        setProto(pick);
+      })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -82746,7 +82761,7 @@ function PublishModal({ onClose, onStarted }) {
     domainMode === "default" ||
     (domainMode === "getwoven" && subVal.ok) ||
     (domainMode === "custom"   && customVal.ok);
-  const canStart = linked && domainReady && !busy;
+  const canStart = linked && domainReady && !!proto && !busy;
 
   const MODES = [
     { id: "api",           label: "Automatic (API)", cost: "Cheapest",
@@ -82784,8 +82799,13 @@ function PublishModal({ onClose, onStarted }) {
       const repoLine = targetRepo
         ? "This project ALREADY has a GitHub repo connected: " + targetRepo + ". Publish to / update THAT repo - do NOT create a new one.\n\n"
         : "";
+      const selProto = protos.find(p => p.id === proto);
+      const protoLine = selProto
+        ? "Publish the prototype \"" + selProto.id + "\" (entry: " + (selProto.path || ("source/" + selProto.id + "/index.html")) + "). Deploy THAT prototype's source directory, with its index.html as the site entry.\n\n"
+        : "";
       const prompt =
         "Publish this prototype to a real, durable public URL using MY OWN accounts.\n\n" +
+        protoLine +
         setupLine + "\n\n" +
         domainLine + "\n\n" +
         repoLine +
@@ -82819,6 +82839,15 @@ function PublishModal({ onClose, onStarted }) {
               <span className="shares-dot is-warn"></span>
               <span style=${{ fontSize: "13px" }}>GitHub not linked. Link your GitHub from the Share menu first - publishing creates the repo under your account.</span>
             </div>`}
+
+          <div className="sysadd-field">
+            <span className="sysadd-label">Which prototype?</span>
+            ${protos.length === 0
+              ? html`<span className="sysadd-hint">No built prototype found in this project to publish.</span>`
+              : html`<select className="sysadd-input" value=${proto} onChange=${e => setProto(e.target.value)}>
+                  ${protos.map(p => html`<option key=${p.id} value=${p.id}>${p.id}</option>`)}
+                </select>`}
+          </div>
 
           <div className="sysadd-field">
             <span className="sysadd-label">Where should it live?</span>
