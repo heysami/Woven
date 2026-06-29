@@ -154,7 +154,8 @@
   /* the DS component set - content sits ON TOP of the glass. Absolute inset:0 +
      overflow:auto makes it the SCROLLER inside the stage viewport (the canvases
      stay pinned behind/above it), so sticky DS chrome sticks while it scrolls. */
-  #gallery{position:absolute;inset:0;z-index:2;overflow:auto;padding:26px 28px;display:flex;flex-direction:column;gap:22px}
+  #gallery{position:absolute;inset:0;z-index:2;overflow:auto;padding:26px 28px;display:flex;flex-direction:column;gap:22px;scrollbar-width:none}
+  #gallery::-webkit-scrollbar{width:0;height:0}
   #zoominfo{position:absolute;left:12px;bottom:10px;font-size:10.5px;color:var(--dim2);font-family:var(--mono);
     background:#0008;padding:4px 9px;border-radius:6px;pointer-events:none;z-index:10}
 
@@ -1059,6 +1060,34 @@ function drawBackdropInto(ctx,w,h,state,img){
   }
 }
 
+/* Draw the DS-page CONTENT raster as the glass refraction source: width-fit to
+   the canvas, top-aligned, and SCROLLED by the live #gallery scrollTop. Because
+   the sticky chrome panels are measured at their pinned screen rects, sampling
+   this scrolled raster makes the glass refract whatever content is beneath the
+   chrome right now - real glass over the live page, not a synthetic gradient. */
+function drawDSRasterInto(ctx,w,h){
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle=(STATE&&STATE.background)||'#e9edf4'; ctx.fillRect(0,0,w,h);
+  const img=_dsRaster;
+  if(img && img.complete && img.naturalWidth){
+    const scale=w/img.naturalWidth;
+    const off=(gallery.scrollTop||0)*scale;
+    ctx.drawImage(img, 0, -off, w, img.naturalHeight*scale);
+  }
+}
+// Mirror the same raster + scroll offset onto the #backdrop element (shown where
+// no glass covers), so the glass refraction reads continuous with the page around
+// it. Driven on load and on every #gallery scroll.
+function syncDSBackdrop(){
+  if(!_dsRaster){ return; }
+  const sc=gallery.scrollTop||0;
+  backdrop.style.backgroundColor=(STATE&&STATE.background)||'#e9edf4';
+  backdrop.style.backgroundImage='url("'+_dsRaster.src+'")';
+  backdrop.style.backgroundSize='100% auto';
+  backdrop.style.backgroundRepeat='no-repeat';
+  backdrop.style.backgroundPosition='0 '+(-sc)+'px';
+}
+
 /* ====================================================================== */
 /*  GLASS RUNTIME - the real WebGL2 engine. SELF-CONTAINED: it references   */
 /*  nothing in outer scope, so .toString() inlines cleanly into the export. */
@@ -1326,12 +1355,18 @@ function renderContentBits(){
 /* ====================================================================== */
 function renderAll(){
   if(!STATE) return;
-  const bc=backdropDOMCSS(STATE, backdropImageUrl());
-  backdrop.style.backgroundColor=bc.backgroundColor;
-  backdrop.style.backgroundImage=bc.backgroundImage;
-  backdrop.style.backgroundSize=bc.backgroundSize||'';
-  backdrop.style.backgroundPosition=bc.backgroundPosition||'';
-  backdrop.style.backgroundRepeat=bc.backgroundRepeat||'';
+  if(_dsRaster){
+    // DS-page mode: the backdrop IS the live page raster (scroll-synced), so the
+    // glass refracts real content - don't overwrite it with the synthetic scene.
+    syncDSBackdrop();
+  } else {
+    const bc=backdropDOMCSS(STATE, backdropImageUrl());
+    backdrop.style.backgroundColor=bc.backgroundColor;
+    backdrop.style.backgroundImage=bc.backgroundImage;
+    backdrop.style.backgroundSize=bc.backgroundSize||'';
+    backdrop.style.backgroundPosition=bc.backgroundPosition||'';
+    backdrop.style.backgroundRepeat=bc.backgroundRepeat||'';
+  }
   applyAccents();
   renderContentBits();
   syncBgImage();
@@ -1571,6 +1606,7 @@ async function captureDSPage(page, dark){
    shadow root so its global CSS can't leak onto the lab chrome; the glass runtime
    measures the glassified surfaces via getExtraEls (see ensureRuntime). */
 let _dsHost=null, _dsShadow=null, _dsSurfaces=[];
+let _dsRaster=null;        // content raster (chrome hidden) the glass refracts
 let curForegroundPage=null;
 function dsSurfaceEls(){ return _dsSurfaces; }
 
@@ -1583,12 +1619,13 @@ while(gallery.firstChild) genericGallery.appendChild(gallery.firstChild);
 gallery.appendChild(genericGallery);
 
 function showGenericGallery(){
-  curForegroundPage=null; _dsSurfaces=[];
+  curForegroundPage=null; _dsSurfaces=[]; _dsRaster=null;
   if(_dsHost){ _dsHost.remove(); _dsHost=null; _dsShadow=null; }
   genericGallery.style.display='flex';
   gallery.style.padding='';           // restore the generic-set inset
   gallery.scrollTop=0;
-  if(RT){ RT.remeasure(); }
+  renderAll();                        // restore the synthetic backdrop
+  if(RT){ RT.refreshBackdrop(); RT.remeasure(); }
 }
 
 // Pick the prominent "surface" elements of an injected page and turn them into
@@ -1652,6 +1689,34 @@ async function _flattenCss(absUrl, depth){
   });
 }
 
+// Snapshot the injected page's CONTENT (chrome hidden) to a raster the WebGL glass
+// refracts. Captured at the live page width so the raster aligns 1:1 with the
+// sticky chrome the glass sits on. html2canvas-pro traverses the shadow root.
+async function captureDSRaster(dark){
+  _dsRaster=null;
+  if(typeof html2canvas==='undefined' || !_dsShadow) return;
+  const page=_dsShadow.querySelector('.ds-page'); if(!page) return;
+  try{
+    const W=Math.max(2, page.offsetWidth||gallery.clientWidth||700);
+    const H=Math.max(2, Math.min(6000, page.scrollHeight));
+    // html2canvas re-resolves CSS in a cloned sandbox where the shadow's :host()
+    // rules don't match, so the live DISPLAY state (content hidden) would capture
+    // blank. Force the CAPTURE state directly on the clone in onclone: show all
+    // content, hide the chrome - inline styles beat the stylesheet rules, and
+    // visibility (not display) keeps every layout box so the raster aligns with
+    // the live sticky chrome the glass sits on.
+    const cv=await html2canvas(page,{width:W,height:H,windowWidth:W,scale:1,
+      backgroundColor:(dark?'#1E232C':'#ffffff'),useCORS:true,allowTaint:false,logging:false,
+      onclone:(doc,el)=>{ try{
+        const root=el&&el.querySelectorAll?el:doc;
+        root.querySelectorAll('*').forEach(e=>{ e.style.visibility='visible'; });
+        root.querySelectorAll('.mat-surface').forEach(e=>{ e.style.visibility='hidden'; e.querySelectorAll('*').forEach(c=>{ c.style.visibility='hidden'; }); });
+      }catch(_){ } }
+    });
+    await new Promise((res)=>{ const im=new Image(); im.onload=()=>{ _dsRaster=im; res(); }; im.onerror=()=>res(); im.src=cv.toDataURL('image/png'); });
+  }catch(e){ console.warn('[materiallab] raster capture',e); }
+}
+
 async function loadDSPageForeground(page, dark){
   if(typeof fetch!=='function'){ return; }
   toast('Loading '+page+'…');
@@ -1678,6 +1743,13 @@ async function loadDSPageForeground(page, dark){
         /* glassified surfaces -> transparent so the WebGL glass shows through */
         '.mat-surface{background:transparent!important;background-color:transparent!important;'+
           'background-image:none!important;box-shadow:none!important;border-color:transparent!important;backdrop-filter:none!important}'+
+        /* The page CONTENT is drawn by the raster backdrop (so the WebGL glass can
+           refract it); the live DOM keeps ONLY the chrome visible (crisp text,
+           sticky) over the glass. Content stays in flow (hidden, not removed) so
+           scroll height + sticky offsets match the raster exactly. The capture
+           inverts this per-element on the html2canvas clone (see captureDSRaster). */
+        '.ds-page *{visibility:hidden}'+
+        '.mat-surface,.mat-surface *{visibility:visible}'+
       '</style>';
     // build (or reuse) the isolated shadow host as the foreground. A DS page is a
     // full app shell - drop the gallery inset so the chrome bleeds to the stage
@@ -1699,14 +1771,13 @@ async function loadDSPageForeground(page, dark){
     await new Promise(r=>setTimeout(r,200));
     glassifyShadow();
     curForegroundPage=page;
-    // keep the page legible: a light page wants a light scene behind the glass so
-    // its dark text survives over the transparent surfaces (and vice-versa).
-    if(!STATE.bgImage){
-      STATE.background = dark? '#0b0d12' : '#e9edf4';
-      STATE.backdrop   = dark? 'aurora-gradient' : 'mono-soft';
-    }
+    // the raster IS the visible page, so the scene fill behind it is just the page
+    // surface colour (shows only in any transparent gaps).
+    STATE.background = dark? '#1E232C' : '#ffffff';
+    // snapshot the content (chrome hidden) -> the real thing the glass refracts
+    await captureDSRaster(dark);
     renderAll(); syncScene();
-    if(RT){ RT.refreshBackdrop(); RT.remeasure(); setTimeout(()=>{ if(RT){ glassifyShadow(); RT.remeasure(); } }, 450); }
+    if(RT){ RT.refreshBackdrop(); RT.remeasure(); setTimeout(()=>{ if(RT){ glassifyShadow(); syncDSBackdrop(); RT.refreshBackdrop(); RT.remeasure(); } }, 450); }
     emit();
     toast(page+' loaded');
   }catch(e){ toast('load failed: '+e.message); console.error('[materiallab] page load',e); }
@@ -1839,7 +1910,7 @@ function ensureRuntime(){
     getUniforms:()=> matToUniforms(STATE.material),
     isFluid:()=> !!(MATERIALS[STATE.material.type] && MATERIALS[STATE.material.type].fluid),
     getExtraEls:()=> dsSurfaceEls(),
-    drawBackdrop:(ctx,w,h)=> drawBackdropInto(ctx,w,h,STATE,bgImg),
+    drawBackdrop:(ctx,w,h)=> _dsRaster ? drawDSRasterInto(ctx,w,h) : drawBackdropInto(ctx,w,h,STATE,bgImg),
     onError:(msg)=>{ glcanvas.style.display='none'; glwarn.style.display='flex'; glwarn.textContent='Glass shader error: '+msg; },
   });
   FX=overlayRuntime({
@@ -1946,7 +2017,13 @@ document.getElementById('center').addEventListener('scroll', cacheStageRect, {pa
   let _smQ=false;
   document.getElementById('gallery').addEventListener('scroll', ()=>{
     if(_smQ) return; _smQ=true;
-    requestAnimationFrame(()=>{ _smQ=false; if(RT) RT.remeasure(); });
+    requestAnimationFrame(()=>{
+      _smQ=false;
+      // scroll the raster under the pinned chrome (backdrop + glass refraction
+      // source), then re-measure so the glass tracks the sticky surfaces.
+      if(_dsRaster){ syncDSBackdrop(); if(RT) RT.refreshBackdrop(); }
+      if(RT) RT.remeasure();
+    });
   }, {passive:true});
 }
 // Event-driven re-fit on node-resize / float-reflow. Observe #stage (the canvas
@@ -1986,6 +2063,8 @@ function bakeHTML(){
   // export reproduces the exact sample (its CSS is inlined, surfaces pre-marked).
   const dsActive = !!(curForegroundPage && _dsShadow);
   const dsShadowHTML = dsActive ? _dsShadow.innerHTML : '';
+  // the captured page-content raster the glass refracts (scroll-synced in the export)
+  const dsRasterUrl = (dsActive && _dsRaster && _dsRaster.src) ? _dsRaster.src : '';
   const galleryHTML = dsActive ? '<div id="dsHost" style="display:block;width:100%"></div>' : `
     <div class="mat ds-card"><div class="head">Typography</div><h1 class="type-display">Display Large</h1><div class="type-heading">Heading Medium</div><div class="type-body">Body Small - the quick brown fox jumps over the lazy dog.</div><div class="type-caption">Caption / Label</div></div>
     <div class="galrow"><div class="galcol">
@@ -2008,13 +2087,18 @@ function bakeHTML(){
     glassRuntime.toString(),
     'let bgImg=null;',
     dsActive ? ('var __dsShadow=null;(function(){var h=document.getElementById("dsHost");if(h){__dsShadow=h.attachShadow({mode:"open"});__dsShadow.innerHTML='+JSON.stringify(dsShadowHTML)+';}})();') : 'var __dsShadow=null;',
+    // DS page-content raster: the live thing the glass refracts, scroll-synced
+    'var __dsRaster=null;'+(dsRasterUrl?('(function(){var im=new Image();im.onload=function(){__dsRaster=im;__syncDSbg();if(RT)RT.refreshBackdrop();};im.src='+JSON.stringify(dsRasterUrl)+';})();'):''),
+    'var __gal=document.getElementById("gallery"),__bd=document.getElementById("backdrop");',
+    'function __drawDSRaster(ctx,w,h){ctx.clearRect(0,0,w,h);ctx.fillStyle=(STATE.background||"#fff");ctx.fillRect(0,0,w,h);var im=__dsRaster;if(im&&im.complete&&im.naturalWidth){var s=w/im.naturalWidth,o=(__gal?__gal.scrollTop:0)*s;ctx.drawImage(im,0,-o,w,im.naturalHeight*s);}}',
+    'function __syncDSbg(){if(!__dsRaster||!__bd)return;var sc=__gal?__gal.scrollTop:0;__bd.style.backgroundColor=(STATE.background||"#fff");__bd.style.backgroundImage=\'url("\'+__dsRaster.src+\'")\';__bd.style.backgroundSize="100% auto";__bd.style.backgroundRepeat="no-repeat";__bd.style.backgroundPosition="0 "+(-sc)+"px";}',
     'const RT=glassRuntime({canvas:document.getElementById("glcanvas"),stage:document.getElementById("stage"),vsSrc:VS_SRC,panelSelector:".mat",'+
-      'getFragSrc:()=>FRAG_SRC,getUniforms:()=>matToUniforms(STATE.material),isFluid:()=>'+(fluidFlag?'true':'false')+',drawBackdrop:(ctx,w,h)=>drawBackdropInto(ctx,w,h,STATE,bgImg),'+
+      'getFragSrc:()=>FRAG_SRC,getUniforms:()=>matToUniforms(STATE.material),isFluid:()=>'+(fluidFlag?'true':'false')+',drawBackdrop:(ctx,w,h)=>__dsRaster?__drawDSRaster(ctx,w,h):drawBackdropInto(ctx,w,h,STATE,bgImg),'+
       'getExtraEls:()=>__dsShadow?[].slice.call(__dsShadow.querySelectorAll(".mat-surface")):[],'+
       'onError:(m)=>{var w=document.getElementById("glwarn");if(w){w.style.display="flex";w.textContent="Glass shader error: "+m;}}});',
     dsActive ? 'if(RT){setTimeout(()=>RT.remeasure(),300);setTimeout(()=>RT.remeasure(),900);}' : '',
-    // re-measure the glass as the sample scrolls so it tracks sticky chrome (rAF-throttled)
-    '(function(){var g=document.getElementById("gallery");if(!g)return;var q=false;g.addEventListener("scroll",function(){if(q)return;q=true;requestAnimationFrame(function(){q=false;if(RT)RT.remeasure();});},{passive:true});})();',
+    // scroll the raster under the pinned chrome + re-measure so the glass tracks it (rAF-throttled)
+    '(function(){var g=document.getElementById("gallery");if(!g)return;var q=false;g.addEventListener("scroll",function(){if(q)return;q=true;requestAnimationFrame(function(){q=false;if(__dsRaster){__syncDSbg();if(RT)RT.refreshBackdrop();}if(RT)RT.remeasure();});},{passive:true});})();',
     bgUrl ? 'if(RT){bgImg=new Image();bgImg.crossOrigin="anonymous";bgImg.onload=function(){RT.refreshBackdrop();};bgImg.src='+JSON.stringify(bgUrl)+';}' : '',
     // full-stage overlay FX (only emitted when an effect is active)
     ovl ? overlayRuntime.toString() : '',
@@ -2040,7 +2124,8 @@ function bakeHTML(){
   #glcanvas{position:absolute;inset:0;z-index:1;pointer-events:none;display:block}
   #fxcanvas{position:absolute;inset:0;z-index:3;pointer-events:none;display:none}
   #glwarn{position:absolute;inset:0;z-index:1;display:none;align-items:center;justify-content:center;color:#ffb4b4;font-family:ui-monospace,Menlo,monospace;font-size:12px;text-align:center;padding:30px;background:#0008}
-  #gallery{position:absolute;inset:0;z-index:2;overflow:auto;padding:${dsActive?'0':'26px 28px'};display:flex;flex-direction:column;gap:22px}
+  #gallery{position:absolute;inset:0;z-index:2;overflow:auto;padding:${dsActive?'0':'26px 28px'};display:flex;flex-direction:column;gap:22px;scrollbar-width:none}
+  #gallery::-webkit-scrollbar{width:0;height:0}
   .mat{position:relative;border-radius:var(--m-radius)}.mat>*{position:relative;z-index:2}
   .ds-card{padding:24px 26px}.head{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#fff;opacity:.6;margin-bottom:14px;font-weight:700;text-shadow:0 1px 3px #0006}
   .type-display{font-size:38px;font-weight:800;line-height:1.05;letter-spacing:-.02em;color:#fff;margin:0;text-shadow:0 2px 10px #0007}.type-heading{font-size:21px;font-weight:700;color:#fff;margin:8px 0 0;text-shadow:0 1px 6px #0007}
