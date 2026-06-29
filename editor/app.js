@@ -10520,7 +10520,6 @@ function ShareMenuButton() {
           onRegen: async () => { await tunnelOp(s.id, "update", { quickOn: false }); await tunnelOp(s.id, "update", { quickOn: true }); },
           onAck: () => { if (s.urlChanged) tunnelOp(s.id, "ack_url"); },
         })}
-        ${s.quickOn && html`<div className="th-live-hint">A randomised URL is reissued whenever the daemon dies or restarts - regenerate it (↻) and resend the new link; the old one stops working.</div>`}
         ${!s.quickOn && !s.wovenOn && html`<div className="th-live-hint">Turn on a link above to publish a URL.</div>`}
       </div>`;
   };
@@ -10552,7 +10551,7 @@ function ShareMenuButton() {
       ${!reachable && html`<div className="th-live-hint">Daemon unreachable - sharing is offline.</div>`}
       <div className="shares-served-banner">
         <span className="shares-served-dot"></span>
-        <span>Links are served from <b>this computer</b> - people can only open them while it's on and Woven is running. Close or restart it and every link goes dark.</span>
+        <span>Links are served from <b>this computer</b> - people can only open them while it's on and Woven is running; close it and every link goes dark. A <b>randomised URL</b> also changes each time the daemon dies or restarts, so you'll need to regenerate it and resend the new link.</span>
       </div>
       <div className="share-menu-body">
         ${tab === "project" && html`
@@ -82208,11 +82207,6 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="toolbar-gear"/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
-        <${AgentPicker}
-          agents=${agents}
-          value=${agentId}
-          onChange=${onAgentChange}
-          disabled=${runActive}/>
         <button
           className="tbtn tbtn-update-source tbtn-icon-only"
           disabled=${runActive}

@@ -27604,7 +27604,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--accent-soft);
   border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
   color: var(--accent-text);
-  border-radius: 9px;
+  border-radius: 0;
   padding: 7px 12px;
   font-size: 12.5px;
   line-height: 1.4;
