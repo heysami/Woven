@@ -81652,6 +81652,7 @@ const EDITOR_VIEW_TABS = [
   { key: "stateMachine", icon: () => Icon.StateM, label: "State machine",            kbd: "7" },
   { key: "timeline",     icon: () => Icon.Clock,  label: "Timeline",                 kbd: "8" },
   { key: "grid",         icon: () => Icon.Grid,   label: "Grid",                     kbd: "9" },
+  { key: "development",  icon: () => Icon.Code,   label: "Development",              kbd: "0" },
 ];
 const EDITOR_TOOL_TABS = [
   { key: "select",    icon: () => Icon.Cursor,  label: "Select",    kbd: "V" },
@@ -81817,8 +81818,242 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
             <${Icon.Send}/> ${runActive ? "Running…" : "Submit"}
           </button>
         </div>
+        <${PublishButton} setView=${setView}/>
         <${ShareMenuButton}/>
       </div>
+    </div>
+  `;
+}
+
+/* ────────── Publish (deploy to a real public URL) ────────── */
+// Dot class per publish/task status, reusing the shares-dot palette.
+const PUB_STATUS_DOT = {
+  live: "ok", done: "ok", building: "warn", pending: "warn", doing: "warn",
+  none: "idle", todo: "idle", error: "err", blocked: "err", failed: "err",
+};
+
+// Toolbar entry point - sibling of ShareMenuButton. Opens the publish modal and,
+// once a run is dispatched, drops the user on the Development tab to watch it.
+function PublishButton({ setView }) {
+  const [open, setOpen] = useState(false);
+  return html`
+    <${React.Fragment}>
+      <button type="button" className="go-live-btn"
+        title="Publish - take this prototype live on a real public URL using your own GitHub + Supabase"
+        onClick=${() => setOpen(true)}>
+        <${Icon.Globe}/> <span className="go-live-label">Publish</span>
+      </button>
+      ${open && html`<${PublishModal}
+        onClose=${() => setOpen(false)}
+        onStarted=${() => { setOpen(false); if (setView) setView("development"); }}/>`}
+    <//>
+  `;
+}
+
+// The publish modal: cost-honest warning, the GitHub-linked gate, and the three
+// build modes (api / browser / collaborative). Dispatches the publish-orchestrator
+// via a project-scoped run; the orchestrator owns the actual deploy + state file.
+function PublishModal({ onClose, onStarted }) {
+  const [mode, setMode] = useState("api");
+  const [gh, setGh]     = useState(null);   // null = checking; {signedIn, login}
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(apiUrl("/__github/status"))
+      .then(r => r.json())
+      .then(j => { if (alive) setGh(j || { signedIn: false }); })
+      .catch(() => { if (alive) setGh({ signedIn: false }); });
+    return () => { alive = false; };
+  }, []);
+
+  const linked = !!(gh && gh.signedIn);
+  const MODES = [
+    { id: "api",           label: "Automatic (API)", cost: "Cheapest",
+      desc: "The agent creates the repo, pushes, enables hosting, and provisions Supabase server-side via official APIs. Recommended." },
+    { id: "browser",       label: "AI browser-use",  cost: "Most tokens",
+      desc: "The agent drives provider dashboards by clicking, for steps with no API. Slower and more fragile." },
+    { id: "collaborative", label: "Work together",   cost: "Low agent cost",
+      desc: "The agent gives you exact click-by-click steps and you perform them, keeping control of each account." },
+  ];
+
+  const start = async () => {
+    if (!linked || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const prompt =
+        "Publish this prototype to a real, durable public URL using MY OWN accounts.\n\n" +
+        "Publish mode: " + mode + ".\n" +
+        "- api: do everything server-side via the GitHub + Supabase APIs (cheapest).\n" +
+        "- browser: drive provider dashboards with browser-use only where no API exists (most tokens).\n" +
+        "- collaborative: give me precise click-by-click steps and I will perform them.\n\n" +
+        "Dispatch the publish-orchestrator. Provider target: Supabase (sign-in + profiles / preferences / files) " +
+        "plus GitHub Pages for the static front end. Follow the simple-DB MVP path. My GitHub is linked. " +
+        "Warn me before creating a PUBLIC repo, then run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
+      const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform", prompt, title: "Publish prototype" });
+      if (onStarted) onStarted(run);
+    } catch (e) {
+      setErr(e.message || String(e));
+      setBusy(false);
+    }
+  };
+
+  return createPortal(html`
+    <div className="sysadd-overlay" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="sysadd-card" role="dialog" aria-modal="true" aria-label="Publish prototype">
+        <div className="sysadd-head">
+          <h2>Publish this prototype</h2>
+          <button className="sysadd-close" onClick=${onClose} aria-label="Close"><${Icon.X}/></button>
+        </div>
+        <div className="sysadd-body">
+          <p className="sysadd-hint" style=${{ marginTop: 0 }}>
+            Takes your prototype live on a real public URL using <strong>your own</strong> GitHub and Supabase accounts, not Woven's preview tunnel. This runs an agent and can use a lot of tokens depending on the mode you pick.
+          </p>
+
+          <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: linked ? "rgba(40,170,90,.12)" : "rgba(210,150,40,.14)" }}>
+            <span className=${"shares-dot is-" + (linked ? "ok" : "warn")}></span>
+            <span style=${{ fontSize: "13px" }}>
+              ${gh == null ? "Checking GitHub…"
+                : linked ? html`GitHub linked as <strong>${gh.login || "your account"}</strong>`
+                : "GitHub not linked. Link your GitHub from the Share menu first - publishing creates the repo under your account."}
+            </span>
+          </div>
+
+          <div className="sysadd-field">
+            <span className="sysadd-label">How should the agent do it?</span>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              ${MODES.map(m => html`
+                <button key=${m.id} type="button"
+                  className=${"sysadd-radio" + (mode === m.id ? " is-on" : "")}
+                  style=${{ textAlign: "left", display: "block", padding: "9px 11px", height: "auto" }}
+                  onClick=${() => setMode(m.id)}>
+                  <span style=${{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
+                    <strong>${m.label}</strong>
+                    <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>${m.cost}</span>
+                  </span>
+                  <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${m.desc}</span>
+                </button>
+              `)}
+            </div>
+          </div>
+
+          <p className="sysadd-hint">Target: <strong>Supabase</strong> (sign-in, profiles, preferences, files) plus <strong>GitHub Pages</strong> for the static site. The published repo is public.</p>
+
+          ${err && html`<div className="sysadd-error">${err}</div>`}
+        </div>
+        <div className="sysadd-foot">
+          <span className="sysadd-foot-note">Progress streams in chat; status lands on the Development tab.</span>
+          <div className="sysadd-foot-actions">
+            <button className="sysadd-btn-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
+            <button className="sysadd-btn-go" onClick=${start} disabled=${!linked || busy}>${busy ? "Starting…" : "Publish"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
+// The Development tab: an inspectable view of the project's publish.json state -
+// live URL, milestones (static deploy / Supabase), tasks, and an activity log.
+// Polls GET /__publish every 4s; renders a "not published yet" empty state until
+// the orchestrator writes the file.
+function DevelopmentView({ model }) {
+  const [data, setData]     = useState(null);   // { exists, state }
+  const [open, setOpen]     = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const reload = useCallback(() => {
+    fetch(apiUrl("/__publish"))
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("unreachable"))))
+      .then(j => setData(j))
+      .catch(() => setData(d => d || { exists: false, state: null, error: "daemon unreachable" }));
+  }, []);
+
+  useEffect(() => {
+    reload();
+    const t = setInterval(reload, 4000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  const st    = (data && data.state) || null;
+  const host  = (st && st.host) || {};
+  const db    = (st && st.database) || {};
+  const gh    = (st && st.github) || {};
+  const tasks = (st && st.tasks) || [];
+  const log   = (st && st.log) || [];
+  const liveUrl = host.liveUrl || "";
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(liveUrl); } catch {}
+    setCopied(true); setTimeout(() => setCopied(false), 1600);
+  };
+
+  const pill = (status) => html`<span className=${"shares-dot is-" + (PUB_STATUS_DOT[status] || "idle")} style=${{ marginRight: "7px", flex: "0 0 auto" }}></span>`;
+  const rowLine = "1px solid var(--line, rgba(128,128,128,.18))";
+  const sectionH = (t) => html`<h2 style=${{ fontSize: "12px", textTransform: "uppercase", letterSpacing: ".05em", opacity: .65, margin: "0 0 4px" }}>${t}</h2>`;
+  const milestone = (label, status, detail) => html`
+    <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "9px 0", borderBottom: rowLine }}>
+      ${pill(status)}
+      <span style=${{ fontWeight: 600 }}>${label}</span>
+      <span className="sysadd-hint" style=${{ marginLeft: "auto" }}>${detail}</span>
+    </div>`;
+
+  return html`
+    <div className="dev-view" style=${{ padding: "24px", maxWidth: "840px", margin: "0 auto", overflow: "auto", height: "100%", boxSizing: "border-box" }}>
+      <div style=${{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
+        <h1 style=${{ fontSize: "20px", margin: 0 }}>Development</h1>
+        <button className="sysadd-btn-go" style=${{ marginLeft: "auto" }} onClick=${() => setOpen(true)}>
+          <${Icon.Globe}/> Publish
+        </button>
+      </div>
+
+      ${data == null ? html`<p className="sysadd-hint">Loading…</p>`
+        : !data.exists ? html`
+          <div style=${{ padding: "36px 24px", textAlign: "center", border: "1px dashed var(--line, rgba(128,128,128,.32))", borderRadius: "12px" }}>
+            <p style=${{ fontWeight: 600, marginBottom: "6px" }}>Not published yet</p>
+            <p className="sysadd-hint" style=${{ maxWidth: "460px", margin: "0 auto 16px" }}>
+              Publishing takes this prototype live on a real public URL using your own GitHub and Supabase accounts. Run it and the deploy status, live link, and development tasks show up here.
+            </p>
+            <button className="sysadd-btn-go" onClick=${() => setOpen(true)}><${Icon.Globe}/> Publish this prototype</button>
+          </div>`
+        : html`
+          ${liveUrl ? html`
+            <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", borderRadius: "10px", background: "rgba(40,170,90,.12)", marginBottom: "18px" }}>
+              ${pill(host.status)}
+              <code style=${{ fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis" }}>${liveUrl}</code>
+              <button className="th-icon-btn" title=${copied ? "Copied" : "Copy link"} onClick=${copy} style=${{ marginLeft: "auto" }}><${copied ? Icon.Check : Icon.Copy}/></button>
+              <button className="th-icon-btn" title="Open in a new tab" onClick=${() => window.open(liveUrl, "_blank")}><${Icon.External}/></button>
+            </div>`
+          : html`<p className="sysadd-hint" style=${{ marginBottom: "14px" }}>Publish in progress - no live URL yet.</p>`}
+
+          <div style=${{ marginBottom: "22px" }}>
+            ${sectionH("Milestones")}
+            ${milestone("Static deploy (GitHub Pages)", host.status || "none", gh.repo || (host.status && host.status !== "none" ? host.status : "not started"))}
+            ${milestone("Database (Supabase)", db.status || "none", db.projectRef || (db.status && db.status !== "none" ? db.status : "not needed yet"))}
+          </div>
+
+          <div style=${{ marginBottom: "22px" }}>
+            ${sectionH("Tasks")}
+            ${tasks.length === 0 ? html`<p className="sysadd-hint">No tasks yet.</p>`
+              : tasks.map(t => html`
+                <div key=${t.id} style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0", borderBottom: rowLine }}>
+                  ${pill(t.status)}
+                  <span>${t.title || t.id}</span>
+                  ${t.detail ? html`<span className="sysadd-hint" style=${{ marginLeft: "auto", maxWidth: "52%", textAlign: "right" }}>${t.detail}</span>` : ""}
+                </div>`)}
+          </div>
+
+          ${log.length > 0 ? html`
+            <div>
+              ${sectionH("Activity")}
+              ${log.slice(-14).reverse().map((e, i) => html`
+                <div key=${i} className="sysadd-hint" style=${{ padding: "3px 0", fontFamily: "var(--mono, ui-monospace, monospace)", fontSize: "12px" }}>
+                  ${(e.step || "") + (e.result ? ": " + e.result : "")}
+                </div>`)}
+            </div>` : ""}`}
+
+      ${open && html`<${PublishModal} onClose=${() => setOpen(false)} onStarted=${() => { setOpen(false); reload(); }}/>`}
     </div>
   `;
 }
@@ -82718,6 +82953,7 @@ function App() {
       ${view === "stateMachine" && html`<${StateMachineView} model=${model} setEdits=${setEdits}/>`}
       ${view === "timeline"     && html`<${TimelineView}     model=${model} setEdits=${setEdits}/>`}
       ${view === "grid"         && html`<${GridView}         model=${model} setEdits=${setEdits}/>`}
+      ${view === "development"  && html`<${DevelopmentView}  model=${model}/>`}
       ${!embedMode && html`<${EditsPanel}
         edits=${edits}
         strokes=${strokes}

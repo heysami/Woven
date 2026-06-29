@@ -1,0 +1,37 @@
+{
+  "id": "publish-orchestrator",
+  "label": "Publish",
+  "tagline": "Take a prototype live on the internet using the user's own GitHub + Supabase",
+  "version": "v0.1",
+  "defaultEnabled": true,
+  "directionImpact": "none",
+  "subagentName": "publish-orchestrator",
+  "playbookPath": ".claude/agents/publish-orchestrator.md",
+  "description": "Publishes a Woven prototype to a real public URL using the USER'S OWN accounts (never Woven's). API / GitHub-app first: creates a GitHub repo under the signed-in account, exports the prototype source, pushes, enables a static host (GitHub Pages for the MVP), and returns the live URL. For the simple-DB path it then provisions a Supabase project (profiles / preferences / files), injects the client config, and redeploys. Detects whether GitHub is linked and, if not, emits a link-GitHub task instead of failing. Warns up-front about token cost and runs in one of three modes: api (default, cheapest, server-side API/CLI), browser (AI drives provider dashboards via browser-use, most tokens), or collaborative (agent emits click-by-click steps, the user drives). MVP scope = the simple-website / simple-DB path only; the complex-app classifier + flow/data-object breakdown + two-agent grill loop are deferred. Writes durable state to <project>/publish.json (the seed of the development-task surface). Honors the no-terminal-for-user rule: in api/browser modes the agent does the work; only collaborative mode hands steps to the user, and only because they chose it.",
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "publish / deploy / take it live",
+      "rule": "User wants the current prototype put online (publish, deploy, ship it, take it live, put it on the internet, give me a real URL, host it). Dispatch publish-orchestrator. It gates on GitHub being linked, warns about token cost, confirms the mode (api default), runs M1 (static deploy) and, when the user wants stored profiles/preferences/files, M2 (Supabase). It uses the USER'S accounts via the stored GitHub token + a Supabase token the user connects - never Woven's infra.",
+      "ruleSource": "publish-orchestrator.manifest.json hardRule"
+    }
+  ],
+  "hardRule": {
+    "header": "Publishing a prototype online",
+    "body": "When the user asks to PUBLISH / DEPLOY / take a prototype live / put it on the internet / get a real shareable URL that is NOT the ephemeral getwoven.design share tunnel, dispatch the `publish-orchestrator` (Task subagent_type: publish-orchestrator). Do NOT attempt the GitHub repo creation, push, host enablement, or Supabase provisioning inline yourself - the orchestrator owns the cost-warning, the mode choice (api / browser / collaborative), the GitHub-linked gate, and the durable publish.json state machine. Publishing uses the USER'S OWN GitHub + Supabase accounts, never Woven's broker/tunnel infra (that is only for previews)."
+  },
+  "dispatches": {
+    "research": [],
+    "components": [],
+    "lenses": []
+  },
+  "skills": ["grill-me"],
+  "nodeKinds": {
+    "container": [],
+    "agent_overrides": []
+  },
+  "documents": {
+    "designDoc": ".claude/agents/publish-orchestrator.md",
+    "calibration": null
+  }
+}

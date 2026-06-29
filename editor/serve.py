@@ -8845,6 +8845,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._github_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__github/repos":
             return self._github_repos(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__publish":
+            return self._publish_state(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_thumbnail":
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
@@ -16036,6 +16038,35 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, {"repos": _gitops.list_repos(tok)})
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+
+    # ── Publish (deploy to a real public URL) - durable state ──────────────
+    # GET /__publish?project=<id>  → { exists, state } where state is the
+    # project's publish.json (the publish-orchestrator's durable state machine:
+    # github / host / database / tasks / log). When the project has never been
+    # published, exists=false and state is the default skeleton so the
+    # Development tab can render a consistent "not published yet" view.
+    def _publish_state(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        path = os.path.join(root, "publish.json")
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return self._reply(200, {"exists": True, "state": json.load(f)})
+            except (json.JSONDecodeError, OSError) as e:
+                return self._reply(200, {"exists": True, "state": None,
+                                         "error": f"publish.json unreadable: {e}"})
+        skeleton = {
+            "version": 1, "mode": "api", "complexity": "unknown",
+            "github":   {"login": "", "repo": "", "htmlUrl": "", "branch": "main"},
+            "host":     {"provider": "github-pages", "liveUrl": "", "status": "none"},
+            "database": {"provider": "supabase", "projectRef": "", "url": "",
+                         "anonKey": "", "status": "none"},
+            "tasks": [], "log": [],
+        }
+        return self._reply(200, {"exists": False, "state": skeleton})
 
     # POST /__github/(device/start|device/poll|signout|connect_repo|create_repo)?project=<id>
     def _github_op(self, op, qs):
