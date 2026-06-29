@@ -5096,15 +5096,98 @@ def _ut_flow_durations(session, pid):
     return out
 
 
-def _ut_insights_to_wb(session, columns, rows, cells):
+def _wb_text_height(text, width_px, font_px=14.0, line_height=1.35):
+    """Server-side twin of the client's _measureWrappedTextHeight (app.js): the
+    approximate wrapped pixel height of `text` in a `width_px`-wide box at the wb
+    text metrics (sans, word-break, line-height 1.35). Good enough to size table
+    rows so stickies (overflow:hidden) never clip their notes."""
+    width_px = max(20.0, float(width_px))
+    char_w = font_px * 0.52  # avg glyph advance for the UI sans at small sizes
+    per_line = max(1, int(width_px // char_w))
+    lines = 0
+    for para in str(text if text is not None else " ").split("\n"):
+        lines += max(1, -(-len(para) // per_line)) if para else 1  # ceil-div
+    return lines * font_px * line_height
+
+
+def _wb_clear_origin(workflow, gap=80.0, default=(160.0, 160.0)):
+    """An (x, y) just to the right of all existing canvas content (free-floating
+    nodes + wb items; cell-bound items are skipped as they live inside a table),
+    so a freshly dropped block never overlaps what's already there. Falls back to
+    `default` on an empty canvas. Reused for the user-testing insights board."""
+    rights, tops = [], []
+    for n in (workflow.get("nodes") or []):
+        if not isinstance(n, dict):
+            continue
+        try:
+            x, y = float(n.get("x") or 0), float(n.get("y") or 0)
+            rights.append(x + float(n.get("w") or 320)); tops.append(y)
+        except Exception:
+            pass
+    for it in (workflow.get("wb") or []):
+        if not isinstance(it, dict) or it.get("cell"):
+            continue
+        try:
+            if it.get("type") == "arrow":
+                xs = [float(it[k]) for k in ("x1", "x2") if it.get(k) is not None]
+                ys = [float(it[k]) for k in ("y1", "y2") if it.get(k) is not None]
+                if xs and ys:
+                    rights.append(max(xs)); tops.append(min(ys))
+            else:
+                x, y = float(it.get("x") or 0), float(it.get("y") or 0)
+                rights.append(x + float(it.get("w") or 0)); tops.append(y)
+        except Exception:
+            pass
+    if not rights:
+        return default
+    return (round(max(rights) + gap, 1), round(min(tops), 1))
+
+
+def _ut_insights_to_wb(session, columns, rows, cells, origin=(160.0, 160.0)):
     """Build the wb table + one sticky per insight cell (pre-minted table id so
-    the stickies bind via cell.tableId in a single atomic add)."""
-    HEADER_H, ROW_H, COL_W, LABEL_W = 40.0, 150.0, 230.0, 170.0
+    the stickies bind via cell.tableId in a single atomic add). Rows auto-size to
+    their tallest cell (via _wb_text_height) so multi-note stickies never clip,
+    and the whole table is dropped at `origin` (clear of existing content)."""
+    HEADER_H, COL_W, LABEL_W = 40.0, 250.0, 180.0
+    OX = 10.0           # sticky inset within its cell
+    STICKY_PAD = 24.0   # the sticky's own CSS padding (12px each side)
+    MIN_ROW_H, MAX_ROW_H = 96.0, 520.0
+    note_w = COL_W - 2 * OX   # sticky width in a note cell
+    label_w = LABEL_W - 12.0  # row-label sticky width (ox=6)
+
+    colidx = {str(n): i for i, n in enumerate(columns)}
+    rowidx = {str(n): i for i, n in enumerate(rows)}
+    sent_color = {"positive": "green", "neutral": "yellow", "negative": "pink"}
+
+    # Pre-resolve each note cell's text + color so rows can be sized to content.
+    note_cells = {}  # (ri, ci) -> (text, color)
+    for cell in (cells or []):
+        rn, cn = str(cell.get("row")), str(cell.get("col"))
+        if rn not in rowidx or cn not in colidx:
+            continue
+        notes = cell.get("notes") or []
+        if not notes:
+            continue
+        color = sent_color.get(str(notes[0].get("sentiment") or "neutral").lower(), "yellow")
+        text = "\n".join("- " + str(n.get("text") or "") for n in notes[:3])
+        note_cells[(rowidx[rn], colidx[cn])] = (text, color)
+
+    # Row heights: tallest of the row label + every note sticky in that row.
+    row_heights = [HEADER_H]
+    for ri, name in enumerate(rows):
+        need = _wb_text_height(str(name), label_w - STICKY_PAD) + STICKY_PAD + 12.0
+        for ci in range(len(columns)):
+            nc = note_cells.get((ri, ci))
+            if nc:
+                h = _wb_text_height(nc[0], note_w - STICKY_PAD) + STICKY_PAD + 2 * OX
+                need = max(need, h)
+        row_heights.append(min(MAX_ROW_H, max(MIN_ROW_H, round(need, 1))))
+
     col_widths = [LABEL_W] + [COL_W] * len(columns)
-    row_heights = [HEADER_H] + [ROW_H] * len(rows)
     table_id = "w%x%s" % (int(time.time() * 1000), os.urandom(3).hex())
+    ox0, oy0 = float(origin[0]), float(origin[1])
     items = [{
-        "id": table_id, "type": "table", "x": 160.0, "y": 160.0,
+        "id": table_id, "type": "table", "x": ox0, "y": oy0,
         "w": float(sum(col_widths)), "h": float(sum(row_heights)),
         "cols": col_widths, "rows": row_heights, "merges": [],
         "title": session.get("label") or "User testing insights",
@@ -5119,25 +5202,14 @@ def _ut_insights_to_wb(session, columns, rows, cells):
     for ci, name in enumerate(columns):
         items.append(_label(0, ci + 1, name, COL_W - 12, HEADER_H - 8))
     for ri, name in enumerate(rows):
-        items.append(_label(ri + 1, 0, name, LABEL_W - 12, ROW_H - 12))
+        items.append(_label(ri + 1, 0, name, label_w, row_heights[ri + 1] - 12))
 
-    colidx = {str(n): i for i, n in enumerate(columns)}
-    rowidx = {str(n): i for i, n in enumerate(rows)}
-    sent_color = {"positive": "green", "neutral": "yellow", "negative": "pink"}
-    for cell in (cells or []):
-        rn, cn = str(cell.get("row")), str(cell.get("col"))
-        if rn not in rowidx or cn not in colidx:
-            continue
-        notes = cell.get("notes") or []
-        if not notes:
-            continue
-        color = sent_color.get(str(notes[0].get("sentiment") or "neutral").lower(), "yellow")
-        text = "\n".join("- " + str(n.get("text") or "") for n in notes[:3])
+    for (ri, ci), (text, color) in note_cells.items():
         items.append({
             "type": "sticky", "x": 0.0, "y": 0.0,
-            "w": COL_W - 24, "h": ROW_H - 24, "text": text, "color": color,
-            "cell": {"tableId": table_id, "r": rowidx[rn] + 1,
-                     "c": colidx[cn] + 1, "ox": 10, "oy": 10},
+            "w": note_w, "h": row_heights[ri + 1] - 2 * OX,
+            "text": text, "color": color,
+            "cell": {"tableId": table_id, "r": ri + 1, "c": ci + 1, "ox": OX, "oy": OX},
         })
     return items, table_id
 
@@ -5220,7 +5292,13 @@ def _ut_build_insights(session, bundle, project_root):
     data = _ut_parse_json(raw)
     columns = [str(c) for c in (data.get("columns") or flow_names)]
     rows = [str(r) for r in (data.get("rows") or [b["participant"] for b in bundle])]
-    items, table_id = _ut_insights_to_wb(session, columns, rows, data.get("cells") or [])
+    # Drop the board clear of whatever is already on the canvas (and step it
+    # further out on each run) instead of a fixed origin that overlaps content.
+    try:
+        origin = _wb_clear_origin(_live_read_workflow(project_root))
+    except Exception:
+        origin = (160.0, 160.0)
+    items, table_id = _ut_insights_to_wb(session, columns, rows, data.get("cells") or [], origin=origin)
     added = _wb_add_items(project_root, items)
     return {"tableId": table_id, "added": len(added), "columns": columns, "rows": rows}
 
