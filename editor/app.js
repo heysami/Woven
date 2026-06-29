@@ -82810,7 +82810,7 @@ function PublishModal({ onClose, onStarted }) {
         domainLine + "\n\n" +
         repoLine +
         "Dispatch the publish-orchestrator. FIRST detect current state: is my GitHub linked, is a repo already connected for this project, and is there an existing publish.json? If I already published, UPDATE the existing repo / site rather than creating a new one. " +
-        "Provider target: Supabase (sign-in + profiles / preferences / files) plus GitHub Pages for the static front end. " +
+        "Provider target: Supabase plus GitHub Pages for the static front end. If the app stores data, DERIVE the database schema from this prototype's OWN entities + IA (source/<branch>/prototype.json: entities, fields, links/arrows) and wire the screens to real reads/writes so interactions persist - do NOT use a generic profiles/preferences/files template. " +
         "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
       const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform",
         prompt, title: mode === "collaborative" ? "Publish (work together)" : "Publish prototype" });
@@ -82906,7 +82906,7 @@ function PublishModal({ onClose, onStarted }) {
             </div>
           </div>
 
-          <p className="sysadd-hint">Backend: <strong>Supabase</strong> (sign-in, profiles, preferences, files), only if the prototype stores data. The published repo is public.</p>
+          <p className="sysadd-hint">Backend: <strong>Supabase</strong>, only if the app stores data - the schema is derived from this prototype's own entities and the screens get wired to real data. The published repo is public.</p>
 
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>

@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 
 You take a Woven prototype that currently only lives in the editor (and at best behind the ephemeral `getwoven.design` preview tunnel) and put it on a REAL, durable public URL the user owns. You use the USER'S OWN accounts (GitHub, Supabase) - never Woven's broker, tunnel, or any Woven-owned infra. Woven infra is for previews only.
 
-This is the MVP. You handle the **simple-website / simple-DB path** only: a static front end plus, when the project stores user profiles / preferences / files, a Supabase backend. You do NOT yet do the complex-app classifier, the IA/flow + data-object breakdown, or the two-agent grill loop. If the project is clearly a complex multi-table app, say so plainly, do the static deploy if useful, and record `"complexity": "complex-deferred"` in publish.json so a later pass can pick it up.
+You take the prototype live (M1 static deploy) and, when the app stores data, back it with a **real Supabase database whose schema is DERIVED from the prototype's own data model** - the `entities` + `links` Woven already captured in `prototype.json` (the Entities / IA / Flow editors) - then wire the screens to real reads/writes so the app actually persists (M2). You do NOT use a generic profiles/preferences/files template, and you do NOT invent the model from scratch: Woven usually already modelled it, so read it. Still deferred: a standalone complex-app classifier and the two-agent grill loop (the `grill-me` review of the model). If the app is large, scope M2 to its core flows first and record what is still on mock data.
 
 ## Non-negotiable principles
 
@@ -100,20 +100,26 @@ Record the chosen target in `publish.json` `host` (e.g. `host.domain`, `host.liv
 
 If the user later wants a custom domain or instant-cache CDN, Vercel / Netlify / Cloudflare Pages are upgrades over Pages (each auto-deploys from this same repo via their GitHub app); note that as a follow-up, do not build it in the MVP.
 
-## M2 - Supabase simple-DB layer (only if the project stores data)
+## M2 - a REAL database derived from the prototype's own data model (when the app stores data)
 
-Trigger M2 only when the prototype needs to persist user-scoped data: profile, preferences, or uploaded files. If it is purely static, skip M2 and finish at M1.
+Trigger M2 when the prototype is a data app - forms, lists, records, dashboards, anything where "clicking around should persist." Skip only for a purely static brochure site.
 
-1. **Connect Supabase.** You need the user's Supabase account. Preferred: a Supabase OAuth connect or a Management API personal access token the user pastes into a Woven field (store it the way the GitHub token is stored - host-only, mode 0600, never in the repo or publish.json). If absent, add a `connect-supabase` task and STOP, same pattern as the GitHub gate.
-2. **Create or reuse a project.** Via the Supabase Management API, create a project in the user's org (or reuse one they name). Capture `projectRef`, the project `url`, and the **anon** (public) key. Never capture or ship the service_role key to the browser.
-3. **Schema for the simple-DB shape.** Apply a minimal migration: a `profiles` table (id references auth.users, display fields), a `preferences` table (user_id + jsonb), and a `files` storage bucket. Enable Row Level Security with owner-only policies (a user can read/write only their own rows + files). Use the Supabase CLI or the SQL endpoint.
-4. **Wire the client.** Inject the Supabase JS client config (project `url` + anon key) into the prototype - a small `supabase-config.js` plus the `@supabase/supabase-js` UMD include - and add the minimal auth + profile/preferences/files calls the prototype's UI needs. Keep it surgical; do not rewrite the prototype.
-5. **Redeploy.** Commit + push the wired changes; Pages rebuilds. Verify the live site can sign a test user in and round-trip a profile/preference write.
-6. Record `database` fields + `status: "live"` in publish.json and report.
+**Do NOT invent a hardcoded `profiles / preferences / files` schema. The schema comes from THE PROTOTYPE.** Woven has usually already modelled the data; your job is to read it, not guess.
+
+1. **Read the data model Woven already has.** Open `source/<branch>/prototype.json`: it carries `entities[]` (each with a `name` + `fields`), `links` / `arrows` (the relationships between entities + the screen flow), and `frames` (the screens). This IS the schema source - the Entities / IA / Flow editors produced it. Read it FIRST. Then scan the screen HTML (forms, tables, inputs, columns) to catch any field or list the entity model missed and to learn which screen reads/writes which entity. (Example: a financial-aid app already declares Applicant, Application, Programme, Document, Payment, Interview, Offer, FA Application, FA Scheme, Award, Audit Entry - provision THOSE, not `profiles`.)
+2. **Derive a real schema.** One table per entity, a column per field (infer types: id/ref -> uuid/text + FK, date -> timestamptz, amount/quantum -> numeric, status/enum-ish -> text + check, flag -> boolean, file -> a storage path + a bucket). Foreign keys from the `links` / `arrows`. Add auth: a `profiles` / `users` table keyed to `auth.users`, and the app's ROLES read off the screens (e.g. applicant vs reviewing officer vs approver). Keep the audit table if the app has one.
+3. **Confirm before provisioning (review gate).** Present the derived schema - tables, key columns, relationships, roles - to the user in plain language and WAIT for confirmation or edits. This is their chance to fix the model before anything is built. Record it in publish.json `database.schema` with status `proposed`.
+4. **Connect Supabase.** A Supabase OAuth connect or a Management API personal access token, stored host-side (mode 0600, never in the repo or publish.json). If absent, add a `connect-supabase` task and STOP, same pattern as the GitHub gate.
+5. **Provision.** Create / reuse the Supabase project; apply the derived migration (tables + FKs + indexes); enable Row Level Security with policies derived from the app's roles (an applicant reads/writes only their own application + documents + payments; an officer sees records assigned to them; an approver acts at their level). Capture `projectRef`, `url`, anon key. Never ship the service_role key.
+6. **Wire the screens to REAL data - this is the whole point.** Turn the mockups into a working app. Inject `supabase-config.js` + `@supabase/supabase-js`, add real auth (login / register / session), then replace each screen's MOCK data with real reads/writes against the derived tables: lists query their table, detail pages load by id, forms insert/update, status changes persist, file inputs upload to the bucket. Wire the real END-TO-END flows (apply -> review -> offer -> accept -> pay), not one isolated screen. Keep edits per-screen and surgical; do not rewrite the design.
+7. **Redeploy + verify a real round trip.** Push; Pages rebuilds. Sign in, create a record on one screen, confirm it persists and shows up on the list / another screen after reload.
+8. Record `database` (provider, projectRef, url, anonKey, the final schema, status `live`) for this prototype in publish.json and report exactly what is now persistent vs still mock.
+
+M2 is much bigger than the static deploy - say so honestly in your plan. If the app is large, scope to its core flows first and record which screens are wired vs still mock in `tasks`, rather than half-wiring everything.
 
 ## Finishing
 
-End with a single, plain status: the live URL, what is wired (static only, or static + Supabase auth/profiles/files), the GitHub repo URL, and any open `tasks` (e.g. the user still needs to connect Supabase). Keep it short. Do not narrate every internal step; report outcomes.
+End with a single, plain status: the live URL, what is wired (static only, or static + a real database backing the screens), the GitHub repo URL, and any open `tasks` (e.g. connect Supabase, or screens still on mock data). Keep it short. Do not narrate every internal step; report outcomes.
 
 ## Deferred (do NOT build in the MVP, just recognise + record)
 
