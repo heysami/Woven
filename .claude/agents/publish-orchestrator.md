@@ -108,7 +108,11 @@ If the user later wants a custom domain or instant-cache CDN, Vercel / Netlify /
 
 Skip M2 entirely for a purely static brochure site. Otherwise:
 
-**Connect Supabase first (both paths need it).** The user connects Supabase ONCE via the **Connect** button in the Publish modal's "Database backend" section; the Management API token is then stored host-side at `~/.woven/providers/supabase.json` (mode 0600, never in the repo, publish.json, or the browser). Check the connection with `GET $TH_DAEMON_URL/__providers/status` (reports `{ supabase: { connected } }`, never the token) or read the file; use the token only server-side for the Management API. If Supabase is NOT connected, add a `connect-supabase` task that points the user to that Connect button and STOP - do NOT ask the user to paste a token into chat (the button exists precisely so they never have to). Never ship the service_role key; only the project `url` + anon key reach the browser.
+**Connect the chosen backend first (both paths need it).** The caller picks the backend - `supabase` (default) or `cloudflare`. The user connects that account ONCE via the **Connect** button in the Publish modal's "Database backend" section; the token is stored host-side at `~/.woven/providers/<backend>.json` (mode 0600, never in the repo, publish.json, or the browser). Check it with `GET $TH_DAEMON_URL/__providers/status` (reports `{ <backend>: { connected } }`, never the token) or read the file; use the token only server-side. If the chosen backend is NOT connected, add a `connect-<backend>` task that points the user to that Connect button and STOP - do NOT ask the user to paste a token into chat (the button exists precisely so they never have to). Never ship a secret/service key to the browser; only the public client config (project URL + anon/publishable key) ships.
+
+**The classify step + schema derivation below are backend-agnostic** - BASIC vs REAL MODEL and the entity-derived tables are the same. Only PROVISIONING + the client wiring differ:
+- **Supabase backend:** tables via the Management API / a SQL migration, Row Level Security, `@supabase/supabase-js` client, Supabase Auth for sign-in. Turnkey auth + storage - the default, best when the app has user accounts.
+- **Cloudflare backend:** the same derived tables in a **D1** database (SQL) + an **R2** bucket for files, provisioned via the Cloudflare API / wrangler with the connected token; reads/writes go through a small **Pages Functions / Workers** API layer (the static front end calls it). Cloudflare has NO turnkey user-auth like Supabase - if the app needs real accounts, implement email magic-link via a Worker + a `sessions` table in D1, or tell the user Supabase is the better pick for auth-heavy apps. Cloudflare is the lean choice for data-centric apps without heavy auth.
 
 ### Step A - classify the data need (intelligently, from the prototype)
 
@@ -146,6 +150,6 @@ End with a single, plain status: the live URL, what is wired (static only, or st
 
 - Complex-app detection + the IA/flow + data-object breakdown (reuse the editor's IA/Flow view later).
 - The two-agent grill loop (one agent holds project knowledge, one interviews via the `grill-me` skill until satisfied, then revises) ahead of a user review gate and task generation.
-- Provider choice beyond Supabase + GitHub Pages (Cloudflare D1/R2, Vercel, Render).
+- Further backends beyond Supabase + Cloudflare (Firebase, Neon, PocketBase) and hosts beyond GitHub Pages (Vercel, Render).
 
 If you hit any of these, record the intent in publish.json `tasks` with status `todo` and a clear `detail`, then continue with what the MVP can do.

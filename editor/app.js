@@ -82613,6 +82613,13 @@ const PUB_STATUS_DOT = {
   none: "idle", todo: "idle", error: "err", blocked: "err", failed: "err",
 };
 
+// Database backends the publish flow can target (only matters if the app stores
+// data). Each maps to a /__providers entry for connecting the account.
+const DB_PROVIDERS = [
+  { id: "supabase",   label: "Supabase",   desc: "Postgres + built-in auth + storage. Best when the app has user accounts." },
+  { id: "cloudflare", label: "Cloudflare", desc: "D1 (SQL) + R2 (files) on Cloudflare. Lean; auth is lighter than Supabase." },
+];
+
 // Toolbar entry point - sibling of ShareMenuButton. Opens the publish modal and,
 // once a run is dispatched, drops the user on the Development tab to watch it.
 function PublishButton() {
@@ -82788,6 +82795,7 @@ function PublishModal({ onClose, onStarted }) {
   const [subname, setSubname]     = useState("");
   const [subStatus, setSubStatus] = useState(null);  // live getwoven availability {state, reason}
   const [customDom, setCustomDom] = useState("");
+  const [dbProvider, setDbProvider] = useState("supabase"); // which backend M2 targets
   const [busy, setBusy]           = useState(false);
   const [err, setErr]             = useState(null);
 
@@ -82918,7 +82926,7 @@ function PublishModal({ onClose, onStarted }) {
         domainLine + "\n\n" +
         repoLine +
         "Dispatch the publish-orchestrator. FIRST detect current state: is my GitHub linked, is a repo already connected for this project, and is there an existing publish.json? If I already published, UPDATE the existing repo / site rather than creating a new one. " +
-        "Provider target: Supabase plus GitHub Pages for the static front end. If the app stores data, CLASSIFY first by reading this prototype's data model (source/<branch>/prototype.json: entities, fields, links/arrows): a simple website gets the BASIC shape (auth + a profile/preferences/files set, but TAILORED to this app's actual fields + content, never a blind template); a real multi-entity app gets a schema DERIVED from its OWN entities with the screens wired to real reads/writes so interactions persist. Both are derived from the prototype - do not blindly default to basic when it already has a rich entity graph. " +
+        "Host: GitHub Pages for the static front end. Database backend (only if the app stores data): " + dbProvider + " (supabase = Postgres + auth + storage; cloudflare = D1 SQL + R2 files). If the app stores data, CLASSIFY first by reading this prototype's data model (source/<branch>/prototype.json: entities, fields, links/arrows): a simple website gets the BASIC shape (auth + a profile/preferences/files set, but TAILORED to this app's actual fields + content, never a blind template); a real multi-entity app gets a schema DERIVED from its OWN entities with the screens wired to real reads/writes so interactions persist. Both are derived from the prototype - do not blindly default to basic when it already has a rich entity graph. Use the connected " + dbProvider + " account (token host-side via /__providers); do not ask for a token in chat. " +
         "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
       const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform",
         prompt, title: mode === "collaborative" ? "Publish (work together)" : "Publish prototype" });
@@ -83020,8 +83028,17 @@ function PublishModal({ onClose, onStarted }) {
 
           <div className="sysadd-field">
             <span className="sysadd-label">Database backend (only if your app stores data)</span>
-            <p className="sysadd-hint" style=${{ marginTop: 0 }}>A simple site gets a basic auth + profile/preferences/files set (tailored to this app's fields); a real multi-entity app gets a schema derived from its own entities, wired to real data. Connect Supabase once here and publishing stays hands-off - no token-pasting in chat.</p>
-            <${BackendProviders}/>
+            <p className="sysadd-hint" style=${{ marginTop: 0 }}>A simple site gets a basic auth + profile/preferences/files set (tailored to this app's fields); a real multi-entity app gets a schema derived from its own entities, wired to real data. Connect the account once here and publishing stays hands-off - no token-pasting in chat.</p>
+            <div style=${{ display: "flex", gap: "6px", marginTop: "2px" }}>
+              ${DB_PROVIDERS.map(p => html`
+                <button key=${p.id} type="button" className=${"sysadd-radio" + (dbProvider === p.id ? " is-on" : "")}
+                  style=${{ flex: "1 1 0", textAlign: "left", padding: "8px 10px", height: "auto" }}
+                  onClick=${() => setDbProvider(p.id)}>
+                  <strong>${p.label}</strong>
+                  <span className="sysadd-hint" style=${{ display: "block", marginTop: "2px", whiteSpace: "normal" }}>${p.desc}</span>
+                </button>`)}
+            </div>
+            <${ProviderConnect} provider=${dbProvider}/>
           </div>
           <p className="sysadd-hint">The published repo is public.</p>
 
