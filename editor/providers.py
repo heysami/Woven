@@ -99,28 +99,48 @@ def validate(provider, tok):
     return False, {"error": "unknown provider: " + str(provider)}
 
 
-def _validate_supabase(tok):
+def _sb_get(tok, path):
+    """GET a Supabase Management API path. Returns (http_code, parsed_json|None).
+    code 0 = could not reach Supabase at all."""
     req = urllib.request.Request(
-        "https://api.supabase.com/v1/organizations",
+        "https://api.supabase.com" + path,
         headers={"Authorization": "Bearer " + tok, "Accept": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.loads(r.read().decode("utf-8") or "[]")
+            try:
+                return r.status, json.loads(r.read().decode("utf-8") or "null")
+            except Exception:
+                return r.status, None
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            return False, {"error": "token rejected by Supabase (invalid or wrong scope)"}
-        return False, {"error": "Supabase API error " + str(e.code)}
-    except Exception as e:
-        return False, {"error": "could not reach Supabase: " + str(e)}
-    orgs = []
-    if isinstance(data, list):
-        for o in data:
-            if isinstance(o, dict):
-                nm = o.get("name") or o.get("id")
-                if nm:
-                    orgs.append(nm)
-    return True, {"orgs": orgs}
+        return e.code, None
+    except Exception:
+        return 0, None
+
+
+def _validate_supabase(tok):
+    """A USABLE Management token can list its own projects even when org-level
+    reads are out of scope, so try /v1/projects first and fall back to
+    /v1/organizations. 403 means the token is authenticated but scoped - that is
+    still a real, usable token (the publish agent provisions with project-level
+    calls), so accept it. Only a clear 401 (or no Supabase response) is a reject -
+    do NOT block a token that actually works."""
+    last = None
+    for path in ("/v1/projects", "/v1/organizations"):
+        code, data = _sb_get(tok, path)
+        if 200 <= code < 300:
+            meta = {}
+            if isinstance(data, list):
+                meta = {"count": len(data), "kind": path.rsplit("/", 1)[-1]}
+            return True, meta
+        if code == 403:
+            return True, {"scope": "limited"}   # authenticated, just not org-read
+        last = code
+    if last == 0:
+        return False, {"error": "could not reach Supabase to verify the token"}
+    if last == 401:
+        return False, {"error": "token rejected by Supabase - it must be a Management API token from supabase.com/dashboard/account/tokens (starts with sbp_), not a project anon/service key"}
+    return False, {"error": "Supabase rejected the token (HTTP " + str(last) + ")"}
 
 
 def _validate_cloudflare(tok):
