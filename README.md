@@ -25,7 +25,7 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 5. [Step 1 · connect a model](#5-step-1--connect-a-model)
 6. [Step 2 · add asset-provider keys (image · video · SVG)](#6-step-2--add-asset-provider-keys-image--video--svg)
 7. [Step 3 · review orchestrators](#7-step-3--review-orchestrators)
-8. [Step 4 · install local skills (rembg)](#8-step-4--install-local-skills-rembg)
+8. [Step 4 · install local skills](#8-step-4--install-local-skills)
 9. [Create your first project](#9-create-your-first-project)
 10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
 11. [The final prototype](#11-the-final-prototype)
@@ -34,16 +34,28 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 
 ## 1. What you need before starting
 
-You only need four things on your machine. The first three are the **minimum to launch the editor**; `rembg` (the fourth) is installed later from the onboarding card and is covered in [Step 4](#8-step-4--install-local-skills-rembg).
+There are **three things to launch the editor**, plus **four local skills** the first-run wizard installs for you (these gate project creation, see [Step 4](#8-step-4--install-local-skills)). The three launch requirements:
 
 | Requirement      | Minimum                                              | Why                                                                          | How to check                          |
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
 | **A modern browser** | Chrome / Edge / Safari / Firefox, last ~2 years | Renders the editor UI. The daemon serves it; the browser is just the front-end. | (no command, just open it)            |
 | **A model connection** | **one of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` |
-| **`rembg`**      | latest                                              | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~170 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
 
-You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a set of pure-Python files (stdlib only, no third-party packages). Node/npm are only relevant if you choose to install a CLI via `npm` in [Step 2](#2-install).
+The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). But the four required local skills below bring their own tooling: two install via **Homebrew** and one via **npm**, so for a complete setup you also need **[Homebrew](https://brew.sh)** (macOS/Linux) and **[Node.js](https://nodejs.org)** on your machine.
+
+### Local skills the wizard installs (Step 4)
+
+On first run the onboarding wizard installs four local skills the asset / sharing / shader pipelines depend on. **All four are required gates**: the **+ New project** button stays disabled until every one is present. Each has a one-click install button on the onboarding card.
+
+| Skill            | Installs via                          | Prereq    | Covers                                                                 |
+| ---------------- | ------------------------------------- | --------- | --------------------------------------------------------------------- |
+| **rembg**        | pip (`pip3 install --user rembg`)     | Python    | background removal in the `raster-foreground` pipeline; ~170 MB model on first use |
+| **cloudflared**  | Homebrew (`brew install cloudflared`) | Homebrew  | Share-mode quick tunnels (publish a prototype for review / multiplayer) |
+| **glslang**      | Homebrew (`brew install glslang`)     | Homebrew  | GLSL compile-check for the post-run shader lint                       |
+| **shader-verify**| npm + a Chromium download             | Node.js   | headless render-check (shader compiles AND isn't blank); ~150 MB Chromium |
+
+On Windows (no Homebrew), install `cloudflared` and `glslang` from their own releases (winget / scoop / the project download pages) before finishing onboarding.
 
 ### If your Python is too old (below 3.9)
 
@@ -116,7 +128,7 @@ The card is a single wizard with five numbered pips across the top:
 
 **1 Agent model · 2 Asset keys · 3 Orchestrators · 4 Local skills · 5 Done**
 
-Click any pip to jump to that step, or use **← Back / Next →** at the bottom. Only **Step 1 (a CLI)** and **Step 4 (rembg)** are required gates; Steps 2 and 3 are optional and never block. The next five sections walk through each step.
+Click any pip to jump to that step, or use **← Back / Next →** at the bottom. Only **Step 1 (a CLI)** and **Step 4 (the four local skills)** are required gates; Steps 2 and 3 are optional and never block. The next five sections walk through each step.
 
 ---
 
@@ -173,21 +185,22 @@ Rows whose pipeline depends on a key you haven't set in Step 2 are shown as **li
 
 ---
 
-## 8. Step 4 · install local skills (rembg)
+## 8. Step 4 · install local skills
 
-The wizard's **Step 4 · Local skills** lists Python packages the daemon will install into your user site (`pip install --user`). **`rembg` is the one required entry**: it's the background-removal step in the `raster-foreground` asset pipeline (every character, mascot, or isolated subject runs through it on the way to the canvas). Skip it and foreground asset generation falls over at the cutout stage.
+The wizard's **Step 4 · Local skills** lists on-demand tools the daemon installs for you. **Four are required gates** (each shows a red **REQUIRED** badge until present) and the **+ New project** button stays disabled until all four are installed:
 
-![Onboarding · Step 4 · Local skills (rembg)](docs/screenshots/03b-onboarding-local-skills.png)
+| Skill            | Install button → runs            | Needs    | What breaks without it                                          |
+| ---------------- | -------------------------------- | -------- | -------------------------------------------------------------- |
+| **rembg**        | `pip3 install --user rembg`      | Python   | foreground asset generation falls over at the cutout stage (~170 MB model first run) |
+| **cloudflared**  | `brew install cloudflared`       | Homebrew | Share mode can't open a public review tunnel                   |
+| **glslang**      | `brew install glslang`           | Homebrew | the shader lint can't catch real GLSL compile errors          |
+| **shader-verify**| npm install + Chromium download  | Node.js  | no headless render-check for compiles-but-blank shaders (~150 MB Chromium) |
 
-Click **Install rembg** and give it a minute. First install pulls ~170 MB of ONNX model weights.
+![Onboarding · Step 4 · Local skills](docs/screenshots/03b-onboarding-local-skills.png)
 
-If you'd rather drop down to the terminal:
+Click each **Install** button and give it a minute (`shader-verify` is the slowest, it pulls a Chromium). If you'd rather drop to a terminal, the commands above are exactly what the buttons run. The two Homebrew skills need **[Homebrew](https://brew.sh)** and `shader-verify` needs **[Node.js](https://nodejs.org)** already on your machine; install those first if the button reports the prereq is missing.
 
-```bash
-pip3 install --user rembg
-```
-
-Optional packages (for `particle-gl`, `3d`, etc.) can wait. Install them from the gear icon → Settings when the matching pipeline first asks for them.
+A fifth skill, **whisper-cpp** (offline transcription for User Testing), is **optional**, install it later from the gear icon → Settings if you use that feature.
 
 Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). Dismiss the card and the **+ New project** button lights up.
 
@@ -195,7 +208,7 @@ Once the required steps are satisfied, **Step 5 · Done** confirms you're set (*
 
 ## 9. Create your first project
 
-Once a model is configured and rembg is installed, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
+Once a model is configured and the four required local skills are installed, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
 
 ![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 
