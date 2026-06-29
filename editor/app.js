@@ -82012,7 +82012,7 @@ function PublishModal({ onClose, onStarted }) {
   };
 
   return createPortal(html`
-    <div className="sysadd-overlay" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="sysadd-overlay" style=${{ zIndex: 9800 }} onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="sysadd-card" role="dialog" aria-modal="true" aria-label="Publish prototype">
         <div className="sysadd-head">
           <h2>Publish this prototype</h2>
