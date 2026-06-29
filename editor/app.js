@@ -22850,6 +22850,41 @@ function ProjectsLanding({ info, projects, onReload }) {
     return () => { if (disposeBg) disposeBg(); };
   }, []);
 
+  // Cursor-reveal for the dot field. The whole landing is plain white; the dot
+  // lattice (.landing-root::before) is masked by a radial gradient centred on
+  // the pointer, so the dots only bloom in a soft radius around the cursor.
+  // We publish the pointer position as --landing-mx/--landing-my (viewport px -
+  // .landing-root is position:fixed inset:0, so clientX/Y map straight onto it)
+  // and toggle .is-cursor-active to fade the field in/out as the pointer enters
+  // and leaves the window.
+  useEffect(() => {
+    const root = document.querySelector(".landing-root");
+    if (!root) return;
+    let raf = 0, px = 0, py = 0;
+    const apply = () => {
+      raf = 0;
+      root.style.setProperty("--landing-mx", px + "px");
+      root.style.setProperty("--landing-my", py + "px");
+    };
+    const onMove = (e) => {
+      px = e.clientX; py = e.clientY;
+      if (!root.classList.contains("is-cursor-active")) root.classList.add("is-cursor-active");
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    const onLeave = (e) => {
+      // Only fade out when the pointer actually leaves the window, not when it
+      // crosses between child elements (relatedTarget null === left the page).
+      if (!e.relatedTarget) root.classList.remove("is-cursor-active");
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    document.addEventListener("pointerout", onLeave);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerout", onLeave);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   // The black header is taken out of flow (position: absolute, pinned top), so
   // the scrolling cards pass behind it. .landing-main therefore needs a top
   // padding equal to the live header height so its content starts just below the

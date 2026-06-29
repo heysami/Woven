@@ -614,21 +614,42 @@ button {
      grid) can keep its sidebar in place while only the right content
      pane scrolls inside landing-main. */
   overflow: hidden;
-  /* v3.6 - diamond lattice of DOTS (was the WebGL diamond-field shader), to
-     match the workflow canvas background. Base dot grid + a half-tile-offset
-     grid so each dot's nearest neighbours form a diamond, not a rectangle. */
-  background-color: oklch(97% 0 0);
+  /* v3.7 - PURE WHITE field. The diamond lattice of dots no longer paints the
+     whole page; it lives on the ::before overlay below and is revealed only in
+     a soft radius around the cursor (a cursor-tracked mask). Away from the
+     pointer the page is plain white - the dots bloom in as the cursor passes,
+     echoing the old WebGL diamond-field that lit up under the cursor. */
+  background-color: #fff;
+  color: var(--text);
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+}
+/* The dot grid itself - a full-page diamond lattice (base grid + half-tile
+   offset grid so each dot's nearest neighbours form a diamond). It is masked
+   by a radial gradient centred on the cursor, so only the dots NEAR the
+   pointer are visible; everywhere else the mask is transparent and the white
+   .landing-root shows through. --landing-mx/--landing-my are kept in sync with
+   the pointer from app.js; their off-screen defaults mean no dots show until
+   the cursor first moves over the landing. */
+.landing-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background-image:
     radial-gradient(circle, color-mix(in oklab, var(--border-strong) 32%, transparent) 1.2px, transparent 1.7px),
     radial-gradient(circle, color-mix(in oklab, var(--border-strong) 32%, transparent) 1.2px, transparent 1.7px);
   background-size: 42px 42px, 42px 42px;
   background-position: 0 0, 21px 21px;
   background-repeat: repeat, repeat;
-  color: var(--text);
-  font-family: var(--font-sans);
-  display: flex;
-  flex-direction: column;
+  -webkit-mask-image: radial-gradient(circle 230px at var(--landing-mx, -300px) var(--landing-my, -300px), #000 0%, rgba(0,0,0,0.9) 38%, transparent 74%);
+          mask-image: radial-gradient(circle 230px at var(--landing-mx, -300px) var(--landing-my, -300px), #000 0%, rgba(0,0,0,0.9) 38%, transparent 74%);
+  opacity: 0;
+  transition: opacity 260ms ease;
 }
+.landing-root.is-cursor-active::before { opacity: 1; }
 /* Background canvas - full viewport, paints the uniform light diamond field.
    z-index: 0 (the lowest) - it's the absolute background. Cards stack ABOVE
    it; the frosted header stacks above them. */
