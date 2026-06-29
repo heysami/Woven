@@ -20527,6 +20527,38 @@ function SystemAgentThreadButton({ threads, onOpen }) {
 }
 
 
+// System landing "Connections" section: the accounts publishing uses (GitHub +
+// the backend providers), connected once so the publish flow stays hands-off.
+// Reuses ProviderConnect/BackendProviders from the publish modal.
+function ConnectionsLanding() {
+  const [gh, setGh] = useState(null);
+  useEffect(() => {
+    fetch(apiUrl("/__github/status")).then(r => (r.ok ? r.json() : null)).then(j => setGh(j || {})).catch(() => {});
+  }, []);
+  const linked = !!(gh && gh.signedIn);
+  return html`
+    <div className="system-connections" style=${{ maxWidth: "720px" }}>
+      <h2 style=${{ fontSize: "16px", margin: "0 0 4px" }}>Connected accounts</h2>
+      <p className="sysadd-hint" style=${{ marginTop: 0 }}>The accounts Woven uses to publish your prototypes. Connect each once and publishing stays hands-off - no token-pasting in chat. Tokens are stored on this machine only, never in a repo or the browser.</p>
+
+      <div style=${{ marginTop: "16px" }}>
+        <span className="sysadd-label">GitHub <span className="sysadd-hint" style=${{ fontWeight: 400 }}>(repo + GitHub Pages hosting)</span></span>
+        <div style=${{ display: "flex", alignItems: "center", gap: "8px", border: "1px solid var(--border)", borderRadius: "8px", padding: "8px 10px", marginTop: "4px" }}>
+          <span className=${"shares-dot is-" + (linked ? "ok" : "idle")}></span>
+          <span style=${{ fontSize: "13px" }}>
+            ${gh == null ? "Checking…" : linked ? html`Connected as <strong>${gh.login || "your account"}</strong>` : "Not connected"}
+          </span>
+          ${gh != null && !linked && html`<span className="sysadd-hint" style=${{ marginLeft: "auto" }}>Sign in from the Share menu or the Publish flow.</span>`}
+        </div>
+      </div>
+
+      <div style=${{ marginTop: "16px" }}>
+        <span className="sysadd-label">Database backends</span>
+        <${BackendProviders}/>
+      </div>
+    </div>`;
+}
+
 function SystemLanding({ onSpawnSystemThread }) {
   const [activeSection, setActiveSection] = useState("default-library");
 
@@ -20575,6 +20607,8 @@ function SystemLanding({ onSpawnSystemThread }) {
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials - the design-library/ visual catalog" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
+    { id: "connections", label: "Connections", count: null,
+      hint: "Connected accounts publishing uses - GitHub, Supabase, Cloudflare - so publishing stays hands-off" },
     { id: "fonts",      label: "Custom fonts",   count: globalFonts ? globalFonts.count : 0,
       hint: "Your uploaded font collection - shared across every project; agents check these first when proposing typography" },
     { id: "skills",     label: "Skills",     count: skills.length,
@@ -20609,6 +20643,7 @@ function SystemLanding({ onSpawnSystemThread }) {
       <div className="system-content">
         ${activeSection === "default-library" && html`<${DefaultLibraryLanding}/>`}
         ${activeSection === "orchestrators"   && html`<${OrchestratorsLanding} scopeLabel="workspace" onSpawnSystemThread=${onSpawnSystemThread}/>`}
+        ${activeSection === "connections"     && html`<${ConnectionsLanding}/>`}
         ${activeSection === "skills"     && html`<${SkillsLanding}/>`}
         ${activeSection === "fonts"      && html`<div className="system-fonts"><${DSFontsPanel} scope="global"/></div>`}
         ${activeSection === "prototype"  && html`<${PrototypeCatalogLanding} data=${protoCatalog} onSpawnSystemThread=${onSpawnSystemThread}/>`}
