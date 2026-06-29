@@ -45663,7 +45663,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
   //   "designs" - Prototypes + Design-system pages (the registered/built UIs)
   //   "htmls"   - Other generated HTML pages / components
   // (Visual assets are now their own nav-rail panel, not a sub-tab here.)
-  const [protosSubTab, setProtosSubTab] = useState("designs");
   // Re-fetch the library asset + saved-prompt lists. Wired to th:asset-refresh
   // (fires after any successful Run) and th:library-refresh (manual nudges).
   const [starredProtos, setStarredProtos] = useState(() => getStarredPrototypesSync());
@@ -46662,23 +46661,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
       </div>
       ` : null}
       ${tab === "protos" ? html`
-      <div className="workflow-library-subtabs" role="tablist">
-        <button
-          role="tab"
-          className=${"workflow-library-subtab" + (protosSubTab === "designs" ? " is-active" : "")}
-          aria-selected=${protosSubTab === "designs" ? "true" : "false"}
-          onClick=${() => setProtosSubTab("designs")}
-          title="Registered prototypes + design-system pages"
-        >Prototypes & designs<span className="workflow-library-tab-count">${extraProtos.length + dsPages.length}</span></button>
-        <button
-          role="tab"
-          className=${"workflow-library-subtab" + (protosSubTab === "htmls" ? " is-active" : "")}
-          aria-selected=${protosSubTab === "htmls" ? "true" : "false"}
-          onClick=${() => setProtosSubTab("htmls")}
-          title="Other generated HTML pages / components"
-        >Other HTMLs<span className="workflow-library-tab-count">${htmlPages.length}</span></button>
-      </div>
-      ${protosSubTab === "designs" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Prototypes</div>
         ${(extraProtos.length === 0)
@@ -46857,17 +46839,14 @@ function WorkflowLibrary({ tab = "nodes" }) {
               ${dsPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
-      ` : null}
-      ${protosSubTab === "htmls" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">HTML pages · components</div>
         ${htmlPages.length === 0
-          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>) or the DS pages that land in the Prototypes &amp; designs tab.</div>`
+          ? html`<div className="workflow-library-empty">No generated HTML pages yet. Run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>) or the DS pages that land in the Design system pages section above.</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
               ${htmlPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
-      ` : null}
       ` : null}
       ${tab === "visual" ? html`
       <div className="workflow-library-section">
