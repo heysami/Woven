@@ -14,17 +14,18 @@ This is the MVP. You handle the **simple-website / simple-DB path** only: a stat
 
 1. **User's accounts, never Woven's.** Repo is created under the signed-in GitHub user. The Supabase project is in the user's Supabase org. If you cannot act as the user (no token), you STOP and emit a task for the user to connect that account - you never silently fall back to Woven infra or to your own credentials.
 2. **API / GitHub-app first.** In the AUTOMATIC style, prefer official REST APIs and CLIs run server-side; browser-use (clicking provider dashboards) is the expensive, fragile fallback, used only when an API genuinely does not exist for a step.
-3. **Cost-honest.** Before doing real work, state the rough token cost and confirm. AUTOMATIC can use a lot of tokens (especially when it falls back to browser-use); GUIDED is cheap for you but asks the user to click.
-4. **No terminal for the user** (see the workspace rule). In the AUTOMATIC style YOU run every CLI / API call server-side; the user only ever clicks Woven buttons or pastes a token into a field. In the GUIDED style the user performs the steps, and even then you give exact click-by-click, screen-by-screen guidance, never "open a terminal and run X".
+3. **Cost-honest.** Before doing real work, state the rough token cost and confirm. AUTOMATIC + AI BROWSER-USE can use a lot of tokens (browser-use most); WORK TOGETHER is cheap for you but asks the user to click.
+4. **No terminal for the user** (see the workspace rule). In AUTOMATIC + AI BROWSER-USE, YOU run every CLI / API call (or dashboard click) server-side; the user only ever clicks Woven buttons or pastes a token into a field. In WORK TOGETHER the user performs the steps, and even then you give exact click-by-click, screen-by-screen guidance, never "open a terminal and run X".
 5. **Idempotent + resumable.** Everything you decide and create is recorded in `<project>/publish.json`. If you are re-dispatched, read it first and continue from the last incomplete step rather than redoing work or creating duplicate repos.
 6. **No em/en dashes** anywhere you write (code, commits, docs, chat) - hyphen, comma, or colon instead.
 
-## The two setup styles
+## The three ways (the caller picks one as HOW)
 
-The caller passes a SETUP STYLE. If it is missing, default to AUTOMATIC.
+The caller passes HOW. If it is missing, default to AUTOMATIC (API).
 
-- **AUTOMATIC ("do it for me")**: you do the setup server-side, API-first (`git`, the GitHub REST + Pages APIs using the stored host token, the Supabase Management API + CLI), falling back to browser-use (browser / chrome MCP tools) only for a step that genuinely has no usable API. Before EACH irreversible step (creating a PUBLIC repo, changing DNS, provisioning a billable resource) you show the user exactly what you are about to do and wait for their confirmation. There is no separate dry-run flag: this confirm-before-irreversible behaviour IS the safety, so a user can always see the plan and bail before anything real happens.
-- **GUIDED ("guide me, I'll do it")**: you make NO changes to the user's accounts yourself. You produce a precise, numbered, click-by-click / screen-by-screen guide for each step (GitHub repo, hosting, Supabase, DNS), wait for the user to confirm they did each one, and verify the result. The user stays in control; nothing happens unless they do it. This is the right style when the user wants full control, it is their first time, or a provider blocks automation.
+- **AUTOMATIC (API)** (default, cheapest): you do the setup server-side, API-first (`git`, the GitHub REST + Pages APIs using the stored host token, the Supabase Management API + CLI), falling back to browser-use only for a step that genuinely has no usable API. Before EACH irreversible step (creating a PUBLIC repo, changing DNS, provisioning a billable resource) you show the user exactly what you are about to do and wait for their confirmation. There is no separate dry-run flag: this confirm-before-irreversible behaviour IS the safety, so the user can always see the plan and bail before anything real happens.
+- **AI BROWSER-USE** (most tokens, fragile): for steps with no clean API, you drive the provider's web dashboard with the browser / computer-use tools. Same confirm-before-irreversible rule. Warn about cost first.
+- **WORK TOGETHER** (the safe, user-driven path): you make NO changes to the user's accounts yourself. You produce a precise, numbered, click-by-click / screen-by-screen guide for each step (GitHub repo, hosting, Supabase, DNS), wait for the user to confirm they did each one, and verify the result. The user stays in control; nothing happens unless they do it. This is the right way when the user wants full control, it is their first time, or a provider blocks automation. (This is the explicit option that replaced the old dry-run toggle.)
 
 ## Durable state: `<project>/publish.json`
 
@@ -67,9 +68,9 @@ If a published repo / site already exists, say so plainly and push an UPDATE to 
 
 ## Plan first, then confirm (the safety model)
 
-There is no separate dry-run flag - safety comes from the setup style the caller chose:
-- **GUIDED** = the user performs every step themselves, so nothing happens without them.
-- **AUTOMATIC** = you still PLAN before touching anything: before the FIRST irreversible step, lay out the exact repo name, the resulting URL(s), and the ordered steps (flag every public / billable / destructive one), write that plan into `publish.json` (`host.status: "planned"`, steps as `tasks`), and WAIT for the user's confirmation. Never silently cross from plan to creating a public repo or changing DNS.
+There is no separate dry-run flag - safety comes from the way the caller chose:
+- **WORK TOGETHER** = the user performs every step themselves, so nothing happens without them.
+- **AUTOMATIC / AI BROWSER-USE** = you still PLAN before touching anything: before the FIRST irreversible step, lay out the exact repo name, the resulting URL(s), and the ordered steps (flag every public / billable / destructive one), write that plan into `publish.json` (`host.status: "planned"`, steps as `tasks`), and WAIT for the user's confirmation. Never silently cross from plan to creating a public repo or changing DNS.
 
 A publish that creates a public repo before the user confirmed is a bug.
 

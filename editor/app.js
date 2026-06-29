@@ -81905,7 +81905,7 @@ function parseOwnerRepo(remote) {
 // (automatic / guided). Dispatches the publish-orchestrator via a project-scoped
 // run; the orchestrator owns the actual deploy + state file.
 function PublishModal({ onClose, onStarted }) {
-  const [setupMode, setSetupMode] = useState("auto"); // auto | guided
+  const [mode, setMode]           = useState("api"); // api | browser | collaborative
   const [gh, setGh]               = useState(null);   // null = checking; {signedIn, login}
   const [pub, setPub]             = useState(null);   // /__publish state - already-published detection
   const [git, setGit]             = useState(null);   // /__git/status - this project's own connected repo
@@ -81958,11 +81958,13 @@ function PublishModal({ onClose, onStarted }) {
     (domainMode === "custom"   && customVal.ok);
   const canStart = linked && domainReady && !busy;
 
-  const SETUP = [
-    { id: "auto",   label: "Do it for me", tag: "Automatic",
-      desc: "The agent creates the GitHub repo, deploys the site, and sets up the database for you. It shows each action and asks before anything becomes public or irreversible." },
-    { id: "guided", label: "Guide me, I'll do it", tag: "You stay in control",
-      desc: "The agent gives you exact step-by-step instructions and you do each one yourself. Nothing happens unless you do it. Best for your first time or when you want full control." },
+  const MODES = [
+    { id: "api",           label: "Automatic (API)", cost: "Cheapest",
+      desc: "The agent creates the repo, pushes, enables hosting, and provisions Supabase server-side via official APIs. It shows each action and confirms before anything becomes public. Recommended." },
+    { id: "browser",       label: "AI browser-use",  cost: "Most tokens",
+      desc: "The agent drives provider dashboards by clicking, for steps with no API. Slower and more fragile." },
+    { id: "collaborative", label: "Work together",   cost: "You stay in control",
+      desc: "The agent gives you exact click-by-click steps and you perform them yourself, keeping control of each account. Nothing happens unless you do it." },
   ];
 
   const radioStyle = { textAlign: "left", display: "block", padding: "9px 11px", height: "auto" };
@@ -81983,9 +81985,12 @@ function PublishModal({ onClose, onStarted }) {
       } else {
         domainLine = "Domain target: the default GitHub Pages URL (" + ghName + ".github.io/<repo>); no custom domain.";
       }
-      const setupLine = setupMode === "guided"
-        ? "SETUP STYLE = GUIDED: do NOT make changes to my accounts yourself. Give me precise, numbered, click-by-click / screen-by-screen instructions for each setup step (GitHub repo, hosting, Supabase, DNS), wait for me to confirm I did each one, and verify the result. I stay in control - nothing happens unless I do it."
-        : "SETUP STYLE = AUTOMATIC: do the setup for me server-side, API-first (GitHub + Supabase APIs), browser-use only where no API exists. Before each irreversible step (creating a PUBLIC repo, changing DNS) show me exactly what you are about to do and wait for my confirmation.";
+      const setupLine =
+        mode === "collaborative"
+          ? "HOW = WORK TOGETHER: do NOT make changes to my accounts yourself. Give me precise, numbered, click-by-click / screen-by-screen instructions for each setup step (GitHub repo, hosting, Supabase, DNS), wait for me to confirm I did each one, and verify the result. I stay in control - nothing happens unless I do it."
+        : mode === "browser"
+          ? "HOW = AI BROWSER-USE: do the setup for me by driving the provider dashboards with the browser/computer-use tools (use it for steps that have no clean API). Before each irreversible step (creating a PUBLIC repo, changing DNS) show me exactly what you are about to do and wait for my confirmation."
+          : "HOW = AUTOMATIC (API): do the setup for me server-side, API-first (GitHub + Supabase APIs), browser-use only where no API exists. Before each irreversible step (creating a PUBLIC repo, changing DNS) show me exactly what you are about to do and wait for my confirmation.";
       const repoLine = targetRepo
         ? "This project ALREADY has a GitHub repo connected: " + targetRepo + ". Publish to / update THAT repo - do NOT create a new one.\n\n"
         : "";
@@ -81998,7 +82003,7 @@ function PublishModal({ onClose, onStarted }) {
         "Provider target: Supabase (sign-in + profiles / preferences / files) plus GitHub Pages for the static front end. " +
         "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
       const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform",
-        prompt, title: setupMode === "guided" ? "Publish (guided setup)" : "Publish prototype" });
+        prompt, title: mode === "collaborative" ? "Publish (work together)" : "Publish prototype" });
       if (onStarted) onStarted(run);
     } catch (e) {
       setErr(e.message || String(e));
@@ -82077,18 +82082,18 @@ function PublishModal({ onClose, onStarted }) {
           </div>
 
           <div className="sysadd-field">
-            <span className="sysadd-label">How do you want to set it up?</span>
+            <span className="sysadd-label">How should the agent do it?</span>
             <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              ${SETUP.map(s => html`
-                <button key=${s.id} type="button"
-                  className=${"sysadd-radio" + (setupMode === s.id ? " is-on" : "")}
+              ${MODES.map(m => html`
+                <button key=${m.id} type="button"
+                  className=${"sysadd-radio" + (mode === m.id ? " is-on" : "")}
                   style=${radioStyle}
-                  onClick=${() => setSetupMode(s.id)}>
+                  onClick=${() => setMode(m.id)}>
                   <span style=${{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
-                    <strong>${s.label}</strong>
-                    <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>${s.tag}</span>
+                    <strong>${m.label}</strong>
+                    <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>${m.cost}</span>
                   </span>
-                  <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${s.desc}</span>
+                  <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${m.desc}</span>
                 </button>
               `)}
             </div>
@@ -82099,10 +82104,10 @@ function PublishModal({ onClose, onStarted }) {
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>
         <div className="sysadd-foot">
-          <span className="sysadd-foot-note">${setupMode === "guided" ? "The agent will hand you step-by-step instructions in chat." : "The agent shows each action and confirms before anything goes public."}</span>
+          <span className="sysadd-foot-note">${mode === "collaborative" ? "The agent will hand you step-by-step instructions in chat." : "The agent shows each action and confirms before anything goes public."}</span>
           <div className="sysadd-foot-actions">
             <button className="sysadd-btn-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
-            <button className="sysadd-btn-go" onClick=${start} disabled=${!canStart}>${busy ? "Starting…" : (setupMode === "guided" ? "Get my steps" : "Publish")}</button>
+            <button className="sysadd-btn-go" onClick=${start} disabled=${!canStart}>${busy ? "Starting…" : (mode === "collaborative" ? "Get my steps" : "Publish")}</button>
           </div>
         </div>
       </div>
