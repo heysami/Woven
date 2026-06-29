@@ -151,10 +151,10 @@ Owner-only RLS. Inject `supabase-config.js` + `@supabase/supabase-js`, wire sign
 
 ### Real-model path (entity-driven - the prototype's own data model)
 
-For a REAL MODEL app, do the DEVELOPMENT-PLANNING phase (0a-0d) BEFORE any schema/build. This is the non-MVP flow; the BASIC path skips it entirely.
+For a REAL MODEL app, the DEVELOPMENT-PLANNING phase (0a-0d) is the headline of the whole publish - run it FIRST and run it for real. This is the non-MVP "complex" flow the user is looking for; the BASIC path skips it entirely. NON-NEGOTIABLE: you MUST populate the `plan` (a real dataModel + flows + ia, not an empty skeleton), run the grill, and get the user's confirmation BEFORE you provision the database or wire any screen. A `plan` left as an empty `draft` while you move on to the build means you SKIPPED the complex flow - that is the bug to avoid. The static deploy (M1) may run in parallel (it is just the clickable mock), but the DB build (M2) does NOT start until `plan.status` is `confirmed`.
 
-0a. **Build the development plan from what Woven already modelled.** Read `source/<branch>/prototype.json` and structure three things into a `plan` object in publish.json (status `draft`), reusing the editor's own model - do NOT re-invent it:
-  - **Data model** - the `entities[]` + their `fields` + the `links`/`arrows` relationships (cardinality, FKs, derived vs stored).
+0a. **Build the development plan from what Woven already modelled.** Read `source/<branch>/prototype.json` and structure three things into a `plan` object in publish.json (status `draft` -> fill it in; do not leave the arrays empty), reusing the editor's own model - do NOT re-invent it. NOTE the real shape: each entity is `{ "id": "<EntityName>", "fields": [ { "name", "type", "pk"?, "fk"? } ] }` - the entity NAME is in `id` (not a `name` key), and a field's `fk` names the related entity. Use that:
+  - **Data model** - one plan entry per `entities[]` item: `entity` = its `id`, `fields` = the field names, `relationships` = derived from each field's `fk` (e.g. `programmeId fk:Programme` => "belongs-to Programme") plus the `links`/`arrows`.
   - **Flows** - the end-to-end paths through the `frames` (screen sequence + state transitions, e.g. apply -> review -> offer -> accept -> pay) and the empty/error/partial states each screen must handle.
   - **Information architecture** - which screen reads/writes which entity, the navigation + permission structure, the roles (read off the screens: applicant vs officer vs approver) and their row-level access.
 
