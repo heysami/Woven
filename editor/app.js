@@ -81843,9 +81843,10 @@ function PublishButton() {
   return html`
     <${React.Fragment}>
       <button type="button" className="go-live-btn"
+        style=${{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
         title="Publish - take this prototype live on a real public URL using your own GitHub + Supabase"
         onClick=${() => setOpen(true)}>
-        <${Icon.Globe}/> <span className="go-live-label">Publish</span>
+        <span className="go-live-label">Publish</span>
       </button>
       ${open && html`<${PublishModal}
         onClose=${() => setOpen(false)}
@@ -82033,14 +82034,11 @@ function PublishModal({ onClose, onStarted }) {
               </span>
             </div>`}
 
-          <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: linked ? "rgba(40,170,90,.12)" : "rgba(210,150,40,.14)" }}>
-            <span className=${"shares-dot is-" + (linked ? "ok" : "warn")}></span>
-            <span style=${{ fontSize: "13px" }}>
-              ${gh == null ? "Checking GitHub…"
-                : linked ? html`GitHub linked as <strong>${gh.login || "your account"}</strong>`
-                : "GitHub not linked. Link your GitHub from the Share menu first - publishing creates the repo under your account."}
-            </span>
-          </div>
+          ${gh != null && !linked && html`
+            <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: "rgba(210,150,40,.14)" }}>
+              <span className="shares-dot is-warn"></span>
+              <span style=${{ fontSize: "13px" }}>GitHub not linked. Link your GitHub from the Share menu first - publishing creates the repo under your account.</span>
+            </div>`}
 
           <div className="sysadd-field">
             <span className="sysadd-label">Where should it live?</span>
