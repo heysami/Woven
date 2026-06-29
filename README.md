@@ -34,16 +34,32 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 
 ## 1. What you need before starting
 
-You only need four things on your machine:
+You only need four things on your machine. The first three are the **minimum to launch the editor**; `rembg` (the fourth) is installed later from the onboarding card and is covered in [Step 4](#8-step-4--install-local-skills-rembg).
 
-| Requirement      | Why                                                                          | How to check                          |
-| ---------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
-| **Python 3.9+**  | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (matches the system `python3` on a clean macOS). | `python3 --version`                   |
-| **A modern browser** | Chrome, Edge, Safari, or Firefox (anything from the last ~2 years).      | (no command, just open it)            |
-| **One of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | The editor needs at least one way to reach a text model so the agent can run workflows. **The CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` |
-| **`rembg`**      | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~170 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
+| Requirement      | Minimum                                              | Why                                                                          | How to check                          |
+| ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
+| **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
+| **A modern browser** | Chrome / Edge / Safari / Firefox, last ~2 years | Renders the editor UI. The daemon serves it; the browser is just the front-end. | (no command, just open it)            |
+| **A model connection** | **one of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` |
+| **`rembg`**      | latest                                              | Background-removal step in the `raster-foreground` asset pipeline (characters / mascots / isolated subjects). One-click install from the onboarding card, or `pip3 install --user rembg`. First install pulls ~170 MB of model weights. | `python3 -c "import rembg; print(rembg.__version__)"` |
 
-You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a set of pure-Python files (stdlib only, no third-party packages).
+You do **not** need Node, npm, Docker, or a build step. The editor ships as static HTML + a set of pure-Python files (stdlib only, no third-party packages). Node/npm are only relevant if you choose to install a CLI via `npm` in [Step 2](#2-install).
+
+### If your Python is too old (below 3.9)
+
+Check first:
+
+```bash
+python3 --version
+```
+
+If it prints **3.8 or lower** (or `python3` isn't found), install a newer one. You don't have to remove the old Python; just make a 3.9+ interpreter available:
+
+- **macOS** - the system `python3` is usually 3.9 already. If yours is older, install via [Homebrew](https://brew.sh): `brew install python@3.12`, or grab the installer from [python.org/downloads](https://www.python.org/downloads/).
+- **Windows** - install from [python.org/downloads](https://www.python.org/downloads/) (tick **"Add python.exe to PATH"** in the installer), or `winget install Python.Python.3.12`.
+- **Linux** - use your package manager (`sudo apt install python3` / `sudo dnf install python3`), or [pyenv](https://github.com/pyenv/pyenv) if your distro's version is stuck below 3.9.
+
+Then launch the daemon with the newer interpreter explicitly if `python3` still points at the old one - e.g. `python3.12 editor/serve.py`. Everything is stdlib only, so there is nothing else to install for the daemon itself.
 
 ---
 
