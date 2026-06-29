@@ -10,7 +10,7 @@ Each kind of visual has its own pipeline. Raster portraits get generated and cut
 
 The output is real. Plain HTML, CSS, and JS in `source/`. Opens by double-clicking. Emails to a designer who's never heard of Woven.
 
-You bring the agent (Claude Code, Codex, or an API key). Woven is the canvas around it.
+You bring the agent (Claude Code, Codex, opencode, or an API key). Woven is the canvas around it.
 
 This README walks through your first run end-to-end, from install to the Ghibli-themed Totoro feeder app at the bottom, generated from one prompt.
 
@@ -40,7 +40,7 @@ There are **three things to launch the editor**, plus **four local skills** the 
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
 | **A modern browser** | Chrome / Edge / Safari / Firefox, last ~2 years | Renders the editor UI. The daemon serves it; the browser is just the front-end. | (no command, just open it)            |
-| **A model connection** | **one of:** Claude Code CLI · Codex CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` |
+| **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
 
 The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). But the four required local skills below bring their own tooling: two install via **Homebrew** and one via **npm**, so for a complete setup you also need **[Homebrew](https://brew.sh)** (macOS/Linux) and **[Node.js](https://nodejs.org)** on your machine.
 
@@ -87,12 +87,18 @@ cd Woven
 npm install -g @anthropic-ai/claude-code   # Claude Code
 # or
 npm install -g @openai/codex               # Codex
+# or
+brew install sst/tap/opencode              # opencode (multi-provider) - or: npm i -g opencode-ai
 
 # 3. Sign in once so the CLI has a session
-claude login    # (if you installed Claude Code)
+claude login         # (if you installed Claude Code)
 # or
-codex login     # (if you installed Codex)
+codex login          # (if you installed Codex)
+# or
+opencode auth login  # (if you installed opencode - then `opencode models` to pick a default)
 ```
+
+opencode is a multi-provider harness: it manages its own auth and default model, so after `opencode auth login` you connect any provider it supports (Anthropic, OpenAI, etc.) and Woven shells out to it for text-output runs.
 
 If you'd rather paste an API key instead of installing a CLI, skip the `npm install` step; you'll paste the key in the onboarding UI in [Step 1](#5-step-1--connect-a-model). Note that a key alone runs **simple prompt** nodes only - agentic workflows (node runs, chat, orchestrators) still need a CLI.
 
@@ -140,9 +146,9 @@ Step 1 wires up the model the agent runs on. There are two paths, and they are *
 
 ### 5a · Install a CLI (required for agents)
 
-A **Claude Code or Codex CLI on your `PATH` is the required backend.** The agent loop, file tools, and context compaction all live in the CLI harness, so node runs, chat, and orchestrators only work once a CLI is connected.
+A **Claude Code, Codex, or opencode CLI on your `PATH` is the required backend.** The agent loop, file tools, and context compaction all live in the CLI harness, so node runs, chat, and orchestrators only work once a CLI is connected.
 
-Click **Install a CLI** to open the **Install a model CLI** popup. It lists both supported binaries with copy-paste install + login commands:
+Click **Install a CLI** to open the **Install a model CLI** popup. It lists all three supported binaries (Claude Code, Codex, opencode) with copy-paste install + login commands:
 
 ![Onboarding · Step 1 · install-a-CLI popup](docs/screenshots/02-onboarding-cli-picker.png)
 
@@ -272,7 +278,7 @@ Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip
 | Symptom                                              | Fix                                                                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Top-right pill stays red after pasting a key         | Click the **gear icon → Test** on that provider row in Settings to verify the key.                     |
-| **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`. (Shows **Codex CLI missing** if Codex is your preferred CLI.) |
+| **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`. (Shows **Codex CLI missing** or **opencode CLI missing** if that's your preferred CLI, install via `npm install -g @openai/codex` / `brew install sst/tap/opencode` then its login command.) |
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the repo root.         |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
 | Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#6-step-2--add-asset-provider-keys-image--video--svg)). |
