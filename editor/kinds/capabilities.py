@@ -200,6 +200,11 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__exa/search",         "purpose": "Exa (exa.ai) web search - PAID + METERED. Body {query, numResults?, type?, category?, contents?}. NEVER auto-run: only on explicit user request, and offer-first if you reach for it mid-task. See the 'Exa web search' capability rule"},
         {"method": "POST", "path": "/__assistant/tester",   "purpose": "Run ONE 'simple agent' subagent (bare preamble, per-node model) for a Testing-assistant persona row. Body {model, system, prompt, useBrowser?}. With useBrowser it gets the chrome MCP to open + screenshot + click an asset by sight. Returns {ok, text}"},
         {"method": "POST", "path": "/__assistant/research",  "purpose": "Run ONE 'simple agent' subagent with Claude Code's built-in WebSearch + WebFetch enabled (NO paid Exa key) for the Research assistant's agent mode. Body {model, system, prompt}. Returns {ok, text}"},
+        {"method": "GET",  "path": "/__publish",             "purpose": "PUBLISH FEATURE - read a project's publish.json state (per prototype: ?prototype=<id>): deploy status, milestones, tasks, activity log"},
+        {"method": "GET",  "path": "/__providers/status",    "purpose": "PUBLISH - which backend/db providers (supabase, cloudflare) are CONNECTED host-side; never returns the token"},
+        {"method": "POST", "path": "/__providers/connect",   "purpose": "PUBLISH - connect a backend provider (?provider=supabase|cloudflare, body {token}); verifies + stores the token host-side (0600). Connect-once so publishing is hands-off - never ask the user to paste a token in chat"},
+        {"method": "GET",  "path": "/__names/check",          "purpose": "PUBLISH - check a getwoven.design vanity subdomain's availability (?name=<n>) via the broker names registry"},
+        {"method": "POST", "path": "/__names/claim",          "purpose": "PUBLISH - claim a getwoven.design subdomain for a published site (body {name, repo}); the daemon adds the verified GitHub login and the broker creates <name>.getwoven.design -> <login>.github.io. The BROKER holds the Cloudflare token, so NO Cloudflare/user token is ever needed here"},
     ]
 
 
