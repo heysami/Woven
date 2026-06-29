@@ -15415,6 +15415,168 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
   line-height: 1.45;
 }
+/* The optional User-testing row sits inside the centered all-set body; left-
+   align it and lay it out as a tidy bordered row (text left, action right)
+   instead of inheriting the centered block stacking. */
+.model-setup-optional-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  margin-top: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--surface) 60%, transparent);
+}
+.model-setup-optional-text { flex: 1 1 auto; min-width: 0; }
+.model-setup-optional-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.model-setup-optional-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-top: 3px;
+}
+.model-setup-optional-status {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ok, #16a34a);
+  white-space: nowrap;
+}
+.model-setup-optional-row .model-setup-wizard-nav { flex: 0 0 auto; }
+
+/* Softer, neutral variant of the REQUIRED/optional tag - calm gray instead of
+   the loud red, for purely-optional informational rows (Send to Figma). */
+.model-setup-choice-tag.is-soft {
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 92%, var(--text) 8%));
+  color: var(--text-muted);
+}
+
+/* "Additional info to know" group on the onboarding final step - wraps the
+   optional extras (user testing, Send to Figma, Browser use) under one calm
+   header so they read as nice-to-knows, not required steps. */
+.model-setup-extras {
+  width: 100%;
+  text-align: left;
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+.model-setup-extras-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.model-setup-extras-sub {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-faint, var(--text-muted));
+}
+/* Reset the extras children's own top margins - the group controls spacing. */
+.model-setup-extras > .model-setup-optional-row,
+.model-setup-extras > .model-setup-xcard { margin-top: 0; }
+
+/* Shared explainer card for the onboarding extras (Send to Figma, Browser use).
+   A calm, left-aligned info card: glyph + title/desc, optional "two ways" block,
+   a numbered flow, and a footer note. No action button (setup is manual). */
+.model-setup-xcard {
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--surface) 60%, transparent);
+  display: grid;
+  gap: 11px;
+}
+.model-setup-xcard-head { display: flex; gap: 12px; align-items: flex-start; }
+.model-setup-xcard-glyph {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 92%, var(--text) 8%));
+  color: var(--text);
+}
+.model-setup-xcard-text { min-width: 0; }
+.model-setup-xcard-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.model-setup-xcard-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-top: 3px;
+}
+.model-setup-xcard-ways { display: grid; gap: 6px; }
+.model-setup-xcard-way {
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 92%, var(--text) 8%));
+}
+.model-setup-xcard-way strong { font-weight: 600; }
+.model-setup-xcard-sublabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.model-setup-xcard-steps { display: grid; gap: 7px; }
+.model-setup-xcard-step {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.model-setup-xcard-step strong { font-weight: 600; }
+.model-setup-xcard-step code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 92%, var(--text) 8%));
+}
+.model-setup-xcard-step-n {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-2, color-mix(in oklab, var(--surface) 92%, var(--text) 8%));
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  transform: translateY(1px);
+}
+.model-setup-xcard-foot {
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px dashed var(--border);
+  padding-top: 9px;
+}
 
 /* v3.4.43 - Install-instructions popup opened from Step 1's CTA.
    Reuses the .workflow-modal-backdrop / .workflow-modal pattern from the

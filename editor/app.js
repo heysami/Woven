@@ -19785,7 +19785,12 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
               allOk ? "Agent CLI connected and required local skills installed."
               : canFinish ? "You can create projects and run simple prompt nodes - but agentic workflows stay disabled until you install a Claude Code or Codex CLI."
               : "Finish the required steps to enable + New project."}</div>
-            <${OnboardingUserTestingToggle}/>
+            <div className="model-setup-extras">
+              <div className="model-setup-extras-head">Additional info to know<span className="model-setup-extras-sub">optional extras you can set up anytime</span></div>
+              <${OnboardingUserTestingToggle}/>
+              <${OnboardingFigmaCard}/>
+              <${OnboardingBrowserCard}/>
+            </div>
           </div>
         `}
       </div>
@@ -19849,6 +19854,59 @@ function OnboardingUserTestingToggle() {
   `;
 }
 
+/* WS-FIGMA - Explainer card on the onboarding final step for Send to Figma.
+   No enable/install action - two complementary paths: the direct Woven Bridge
+   plugin button (no agent), or pasting a Figma link to the agent which uses
+   Figma's hosted MCP. Calm informational card; full guide in Settings. */
+function OnboardingFigmaCard() {
+  return html`
+    <div className="model-setup-xcard">
+      <div className="model-setup-xcard-head">
+        <span className="model-setup-xcard-glyph"><${Icon.Figma}/></span>
+        <div className="model-setup-xcard-text">
+          <div className="model-setup-xcard-title">Send to Figma <span className="model-setup-choice-tag is-soft">optional</span></div>
+          <div className="model-setup-xcard-desc">Turn a rendered prototype into editable Figma layers. Two ways to do it:</div>
+        </div>
+      </div>
+      <div className="model-setup-xcard-ways">
+        <div className="model-setup-xcard-way"><strong>Direct, no agent</strong> — the Send-to-Figma button rebuilds the page via the local Woven Bridge plugin (nothing leaves your machine).</div>
+        <div className="model-setup-xcard-way"><strong>Via the agent</strong> — paste a Figma link in chat and the agent reads or builds it through Figma's MCP (sign in to Figma once).</div>
+      </div>
+      <div className="model-setup-xcard-sublabel">Set up the direct path:</div>
+      <div className="model-setup-xcard-steps">
+        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">1</span><span>Install the <strong>Woven Bridge</strong> plugin in Figma Desktop.</span></div>
+        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">2</span><span>Open it and <strong>Connect</strong> to this editor (the dot turns green).</span></div>
+        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">3</span><span>Hit the <strong>Figma</strong> button on any prototype node to send.</span></div>
+      </div>
+      <div className="model-setup-xcard-foot">Full guide later in Settings → Send to Figma.</div>
+    </div>
+  `;
+}
+
+/* WS-BROWSER - Explainer card on the onboarding final step for Browser use.
+   Woven drives the user's REAL Chrome via the Chrome DevTools MCP (CDP) - there
+   is no extension to install. Claude Code wires it automatically for browser
+   tasks (e.g. testing nodes with URLs); Codex CLI cannot drive a browser. */
+function OnboardingBrowserCard() {
+  return html`
+    <div className="model-setup-xcard">
+      <div className="model-setup-xcard-head">
+        <span className="model-setup-xcard-glyph"><${Icon.Globe}/></span>
+        <div className="model-setup-xcard-text">
+          <div className="model-setup-xcard-title">Browser use <span className="model-setup-choice-tag is-soft">optional</span></div>
+          <div className="model-setup-xcard-desc">Let the agent see + click a real browser - for testing prototypes and live research. It drives your own Chrome, so cookies and logins carry over.</div>
+        </div>
+      </div>
+      <div className="model-setup-xcard-steps">
+        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">1</span><span>Start Chrome with remote debugging: <code>--remote-debugging-port=9222</code>.</span></div>
+        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">2</span><span>Run a Testing node (or any browser task) - Woven wires the <strong>Chrome DevTools MCP</strong> automatically.</span></div>
+        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">3</span><span>The agent screenshots + clicks your pages by sight.</span></div>
+      </div>
+      <div className="model-setup-xcard-foot">No extension needed. Claude Code only - Codex CLI can't drive a browser yet.</div>
+    </div>
+  `;
+}
+
 /* v3.4.43 - Lightweight install-instructions popup opened from Step 1's CTA.
    Shows the two CLI install paths (Claude Code · Codex) as copy-paste blocks
    plus an "Or paste an API key" button that opens the existing Settings
@@ -19863,7 +19921,7 @@ function ModelInstallDialog({ onClose, onRefresh }) {
   const copy = (text, id) => {
     try { navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(c => c === id ? null : c), 1400); } catch {}
   };
-  return html`
+  return createPortal(html`
     <div className="workflow-modal-backdrop" onClick=${onClose}>
       <div className="workflow-modal model-install-modal" onClick=${e => e.stopPropagation()}>
         <div className="workflow-modal-head">
@@ -19896,7 +19954,7 @@ function ModelInstallDialog({ onClose, onRefresh }) {
         </div>
       </div>
     </div>
-  `;
+  `, document.body);
 }
 
 /* Full-page project browser. Rendered at /editor/ when in workspace mode
@@ -78687,7 +78745,14 @@ function WorkflowFigmaSection() {
         Desktop) rebuilds it as real frames, text, and images. Nothing leaves your machine.
       </div>
       <div className="workflow-settings-hint">
-        <strong>One-time setup</strong>
+        <strong>Two ways.</strong> Use the <strong>Send to Figma</strong> button on a node (no agent;
+        the Woven Bridge plugin rebuilds the page, set up below), or paste a Figma link in chat and
+        let the agent read or build it through <strong>Figma's hosted MCP</strong> (sign in to Figma
+        on first use). The button is exact + offline; the MCP is better for pulling existing Figma
+        designs into the agent.
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>One-time setup</strong> (button path)
         <ol>
           <li>In Figma Desktop: <code>Plugins → Development → Import plugin from manifest…</code>
             and pick <code>editor/tools/figma-bridge/manifest.json</code>.</li>
@@ -78713,6 +78778,41 @@ function WorkflowFigmaSection() {
         <strong>Notes.</strong> v1 uses absolute positioning (no auto-layout yet); canvas, SVG, and
         video come over as plain frames. Full details + the scene format are in
         <code>editor/tools/figma-bridge/README.md</code> and <code>SCENE.md</code>.
+      </div>
+    </div>
+  `;
+}
+
+/* WS-BROWSER - Settings help for letting the agent drive a real browser. Woven
+   wires the Chrome DevTools MCP (CDP) - there is NO extension to install. Claude
+   Code gets it; Codex CLI does not. */
+function WorkflowBrowserSetupSection() {
+  return html`
+    <div className="workflow-settings-section">
+      <div className="workflow-settings-section-head">
+        <span className="workflow-settings-provider">Browser use</span>
+        <span className="workflow-settings-skills">agent screenshots + clicks a real browser</span>
+      </div>
+      <div className="workflow-settings-hint">
+        For testing prototypes and live research the agent can drive your real Chrome through the
+        <strong>Chrome DevTools MCP</strong> - there is no extension to install. It reuses your
+        logged-in profile, cookies, and sessions; nothing is sent anywhere.
+      </div>
+      <div className="workflow-settings-hint">
+        <strong>Setup</strong>
+        <ol>
+          <li>Start Chrome with remote debugging once:
+            <code>open -a "Google Chrome" --args --remote-debugging-port=9222</code>
+            (macOS; on Windows/Linux launch Chrome with the same
+            <code>--remote-debugging-port=9222</code> flag).</li>
+          <li>Run any browser task - e.g. a Testing assistant node with URLs. Woven wires the
+            Chrome DevTools MCP (<code>npx chrome-devtools-mcp</code>) into the agent automatically.</li>
+          <li>The agent opens, screenshots, and clicks your pages by sight.</li>
+        </ol>
+        <span className="workflow-settings-localhint">
+          Claude Code CLI only - Codex CLI can't drive a browser yet (it still does web research over
+          its built-in network). Needs Node / npx on PATH.
+        </span>
       </div>
     </div>
   `;
@@ -78799,6 +78899,7 @@ function WorkflowSettingsDialog({ onClose }) {
           ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>
+            <${WorkflowBrowserSetupSection}/>
           ` : tab === "figma" ? html`
             <${WorkflowFigmaSection}/>
           ` : html`
