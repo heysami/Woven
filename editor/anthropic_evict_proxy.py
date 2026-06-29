@@ -39,7 +39,7 @@ WIRE-IN
 CONFIG (env)
 ------------
   EVICT_PROXY_PORT    listen port (default 8787)
-  EVICT_KEEP_IMAGES   how many most-recent images to keep (default 2)
+  EVICT_KEEP_IMAGES   how many most-recent images to keep (default 10)
   EVICT_UPSTREAM_HOST upstream host (default api.anthropic.com)
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-KEEP_IMAGES = int(os.environ.get("EVICT_KEEP_IMAGES", "2"))
+KEEP_IMAGES = int(os.environ.get("EVICT_KEEP_IMAGES", "10"))
 LISTEN_PORT = int(os.environ.get("EVICT_PROXY_PORT", "8787"))
 UPSTREAM_TIMEOUT = 600  # long turns stream for minutes; don't kill mid-response
 
