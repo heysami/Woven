@@ -81894,9 +81894,9 @@ function validateCustomDomain(dom) {
 // (api / browser / collaborative). Dispatches the publish-orchestrator via a
 // project-scoped run; the orchestrator owns the actual deploy + state file.
 function PublishModal({ onClose, onStarted }) {
-  const [mode, setMode]           = useState("api");
+  const [setupMode, setSetupMode] = useState("auto"); // auto | guided
   const [gh, setGh]               = useState(null);   // null = checking; {signedIn, login}
-  const [dryRun, setDryRun]       = useState(true);   // safe by default
+  const [pub, setPub]             = useState(null);   // /__publish state - already-published detection
   const [domainMode, setDomainMode] = useState("default"); // default | getwoven | custom
   const [subname, setSubname]     = useState("");
   const [customDom, setCustomDom] = useState("");
@@ -81909,11 +81909,21 @@ function PublishModal({ onClose, onStarted }) {
       .then(r => r.json())
       .then(j => { if (alive) setGh(j || { signedIn: false }); })
       .catch(() => { if (alive) setGh({ signedIn: false }); });
+    // Detect whether this project was already published (publish.json) so we say
+    // "this updates the existing site" instead of implying a fresh repo.
+    fetch(apiUrl("/__publish"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (alive && j) setPub(j); })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const linked = !!(gh && gh.signedIn);
   const ghName = (linked && gh.login) ? gh.login : "your-account";
+  const pubState = (pub && pub.state) || null;
+  const existingRepo = (pubState && pubState.github && pubState.github.repo) || "";
+  const existingUrl  = (pubState && pubState.host && pubState.host.liveUrl) || "";
+  const alreadyPublished = !!(pub && pub.exists && (existingRepo || existingUrl));
   const subVal = validateSubname(subname);
   const customVal = validateCustomDomain(customDom);
   const domainReady =
@@ -81922,13 +81932,11 @@ function PublishModal({ onClose, onStarted }) {
     (domainMode === "custom"   && customVal.ok);
   const canStart = linked && domainReady && !busy;
 
-  const MODES = [
-    { id: "api",           label: "Automatic (API)", cost: "Cheapest",
-      desc: "The agent creates the repo, pushes, enables hosting, and provisions Supabase server-side via official APIs. Recommended." },
-    { id: "browser",       label: "AI browser-use",  cost: "Most tokens",
-      desc: "The agent drives provider dashboards by clicking, for steps with no API. Slower and more fragile." },
-    { id: "collaborative", label: "Work together",   cost: "Low agent cost",
-      desc: "The agent gives you exact click-by-click steps and you perform them, keeping control of each account." },
+  const SETUP = [
+    { id: "auto",   label: "Do it for me", tag: "Automatic",
+      desc: "The agent creates the GitHub repo, deploys the site, and sets up the database for you. It shows each action and asks before anything becomes public or irreversible." },
+    { id: "guided", label: "Guide me, I'll do it", tag: "You stay in control",
+      desc: "The agent gives you exact step-by-step instructions and you do each one yourself. Nothing happens unless you do it. Best for your first time or when you want full control." },
   ];
 
   const radioStyle = { textAlign: "left", display: "block", padding: "9px 11px", height: "auto" };
@@ -81949,22 +81957,18 @@ function PublishModal({ onClose, onStarted }) {
       } else {
         domainLine = "Domain target: the default GitHub Pages URL (" + ghName + ".github.io/<repo>); no custom domain.";
       }
-      const dryLine = dryRun
-        ? "DRY RUN / PLAN ONLY: do NOT create any repo, push, enable hosting, provision Supabase, or change DNS. Produce a precise PLAN - the exact repo name, the resulting URL(s), every step you would take, accounts/permissions needed, anything destructive - write it into publish.json with status 'planned', then STOP and ask me to confirm before doing anything real."
-        : "EXECUTE for real, but WARN me and wait for my confirmation before each irreversible step (creating a PUBLIC repo, changing DNS).";
+      const setupLine = setupMode === "guided"
+        ? "SETUP STYLE = GUIDED: do NOT make changes to my accounts yourself. Give me precise, numbered, click-by-click / screen-by-screen instructions for each setup step (GitHub repo, hosting, Supabase, DNS), wait for me to confirm I did each one, and verify the result. I stay in control - nothing happens unless I do it."
+        : "SETUP STYLE = AUTOMATIC: do the setup for me server-side, API-first (GitHub + Supabase APIs), browser-use only where no API exists. Before each irreversible step (creating a PUBLIC repo, changing DNS) show me exactly what you are about to do and wait for my confirmation.";
       const prompt =
         "Publish this prototype to a real, durable public URL using MY OWN accounts.\n\n" +
-        dryLine + "\n\n" +
-        "Publish mode: " + mode + ".\n" +
-        "- api: do everything server-side via the GitHub + Supabase APIs (cheapest).\n" +
-        "- browser: drive provider dashboards with browser-use only where no API exists (most tokens).\n" +
-        "- collaborative: give me precise click-by-click steps and I will perform them.\n\n" +
+        setupLine + "\n\n" +
         domainLine + "\n\n" +
-        "Dispatch the publish-orchestrator. Provider target: Supabase (sign-in + profiles / preferences / files) " +
-        "plus GitHub Pages for the static front end. Follow the simple-DB MVP path. My GitHub is linked. " +
-        "Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
+        "Dispatch the publish-orchestrator. FIRST detect current state: is my GitHub linked, is a repo already connected for this project, and is there an existing publish.json? If I already published, UPDATE the existing repo / site rather than creating a new one. " +
+        "Provider target: Supabase (sign-in + profiles / preferences / files) plus GitHub Pages for the static front end. " +
+        "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
       const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform",
-        prompt, title: dryRun ? "Plan publish (dry run)" : "Publish prototype" });
+        prompt, title: setupMode === "guided" ? "Publish (guided setup)" : "Publish prototype" });
       if (onStarted) onStarted(run);
     } catch (e) {
       setErr(e.message || String(e));
@@ -81981,16 +81985,16 @@ function PublishModal({ onClose, onStarted }) {
         </div>
         <div className="sysadd-body">
           <p className="sysadd-hint" style=${{ marginTop: 0 }}>
-            Takes your prototype live on a real public URL using <strong>your own</strong> GitHub and Supabase accounts, not Woven's preview tunnel. This runs an agent and can use a lot of tokens depending on the mode you pick.
+            Takes your prototype live on a real public URL using <strong>your own</strong> GitHub and Supabase accounts, not Woven's preview tunnel. This runs an agent and can use a lot of tokens depending on how you set it up.
           </p>
 
-          <label style=${{ display: "flex", gap: "9px", alignItems: "flex-start", padding: "10px 11px", border: "1px solid var(--border)", borderRadius: "8px", margin: "4px 0 14px", cursor: "pointer", background: dryRun ? "rgba(40,170,90,.08)" : "transparent" }}>
-            <input type="checkbox" checked=${dryRun} onChange=${e => setDryRun(e.target.checked)} style=${{ marginTop: "2px" }}/>
-            <span>
-              <strong style=${{ fontSize: "13px" }}>Plan only (dry run)</strong>
-              <span className="sysadd-hint" style=${{ display: "block", marginTop: "2px" }}>The agent describes exactly what it would create and the resulting URL, then stops. Nothing irreversible runs while this is on. Recommended for your first try.</span>
-            </span>
-          </label>
+          ${alreadyPublished && html`
+            <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: "rgba(40,170,90,.12)" }}>
+              <span className="shares-dot is-ok"></span>
+              <span style=${{ fontSize: "13px" }}>
+                Already published${existingRepo ? html` to <strong>${existingRepo}</strong>` : ""}${existingUrl ? html` <a href=${existingUrl} target="_blank" rel="noopener" style=${{ color: "inherit" }}>${existingUrl}</a>` : ""}. Publishing again updates the same site.
+              </span>
+            </div>`}
 
           <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: linked ? "rgba(40,170,90,.12)" : "rgba(210,150,40,.14)" }}>
             <span className=${"shares-dot is-" + (linked ? "ok" : "warn")}></span>
@@ -82041,18 +82045,18 @@ function PublishModal({ onClose, onStarted }) {
           </div>
 
           <div className="sysadd-field">
-            <span className="sysadd-label">How should the agent do it?</span>
+            <span className="sysadd-label">How do you want to set it up?</span>
             <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              ${MODES.map(m => html`
-                <button key=${m.id} type="button"
-                  className=${"sysadd-radio" + (mode === m.id ? " is-on" : "")}
+              ${SETUP.map(s => html`
+                <button key=${s.id} type="button"
+                  className=${"sysadd-radio" + (setupMode === s.id ? " is-on" : "")}
                   style=${radioStyle}
-                  onClick=${() => setMode(m.id)}>
+                  onClick=${() => setSetupMode(s.id)}>
                   <span style=${{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
-                    <strong>${m.label}</strong>
-                    <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>${m.cost}</span>
+                    <strong>${s.label}</strong>
+                    <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>${s.tag}</span>
                   </span>
-                  <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${m.desc}</span>
+                  <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${s.desc}</span>
                 </button>
               `)}
             </div>
@@ -82063,10 +82067,10 @@ function PublishModal({ onClose, onStarted }) {
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>
         <div className="sysadd-foot">
-          <span className="sysadd-foot-note">${dryRun ? "Plans only - nothing is created. Progress streams in chat." : "Progress streams in chat; status lands on the Development tab."}</span>
+          <span className="sysadd-foot-note">${setupMode === "guided" ? "The agent will hand you step-by-step instructions in chat." : "The agent shows each action and confirms before anything goes public."}</span>
           <div className="sysadd-foot-actions">
             <button className="sysadd-btn-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
-            <button className="sysadd-btn-go" onClick=${start} disabled=${!canStart}>${busy ? "Starting…" : (dryRun ? "Plan it" : "Publish")}</button>
+            <button className="sysadd-btn-go" onClick=${start} disabled=${!canStart}>${busy ? "Starting…" : (setupMode === "guided" ? "Get my steps" : "Publish")}</button>
           </div>
         </div>
       </div>
