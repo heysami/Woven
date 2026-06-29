@@ -130,3 +130,25 @@ async def delete_dns(client: httpx.AsyncClient, subdomain: str) -> None:
             f"{API}/zones/{CF_ZONE_ID}/dns_records/{existing}",
             headers=_HEADERS,
         )
+
+
+async def upsert_cname(client: httpx.AsyncClient, subdomain: str, target: str) -> str:
+    """Create-or-update an UNPROXIED CNAME <subdomain>.<base-domain> -> target,
+    for pointing a vanity name at an external host (e.g. <login>.github.io for a
+    published GitHub Pages site). DNS-only (proxied=False) so GitHub Pages can
+    serve its own HTTPS cert for the custom domain. Idempotent."""
+    fqdn = f"{subdomain}.{BASE_DOMAIN}"
+    payload = {"type": "CNAME", "name": fqdn, "content": target, "proxied": False}
+    existing = await _find_dns(client, fqdn)
+    if existing:
+        r = await client.put(
+            f"{API}/zones/{CF_ZONE_ID}/dns_records/{existing}",
+            headers=_HEADERS, json=payload,
+        )
+    else:
+        r = await client.post(
+            f"{API}/zones/{CF_ZONE_ID}/dns_records",
+            headers=_HEADERS, json=payload,
+        )
+    _check(r)
+    return fqdn

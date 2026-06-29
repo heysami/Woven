@@ -8722,6 +8722,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_prov = re.match(r"^/__providers/(connect|disconnect)$", parsed.path)
             if m_prov:
                 return self._providers_op(m_prov.group(1), qs)
+            if parsed.path == "/__names/claim":
+                return self._names_claim(qs)
             if parsed.path == "/__live_presence":
                 try:
                     body = self._read_json_body(max_bytes=8 * 1024)
@@ -9045,6 +9047,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._publish_state(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__providers/status":
             return self._providers_status()
+        if url_path == "/__names/check":
+            return self._names_check(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_thumbnail":
             return self._share_thumbnail_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__share_comments":
@@ -16306,6 +16310,67 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": meta.get("error") or "could not validate token"})
         _providers.save(provider, (tok or "").strip(), meta)
         return self._reply(200, {"ok": True, "connected": True, "meta": meta})
+
+    # ── Vanity getwoven.design subdomains for published sites ─────────────
+    # Proxy to the broker (which owns the names registry + Cloudflare DNS). The
+    # daemon adds the user's verified GitHub login + token so the broker can
+    # confirm ownership; the token is sent over HTTPS to Woven's own broker and
+    # used there only for a one-shot GitHub /user check (never stored).
+    # GET /__names/check?name=<n>  → { available, name, reason }
+    def _names_check(self, qs):
+        name = (_qs_get(qs, "name") or "").strip()
+        if not name:
+            return self._reply(200, {"available": False, "reason": "empty"})
+        if not _shares.WOVEN_BROKER_URL:
+            return self._reply(200, {"available": None, "reason": "naming broker not configured"})
+        try:
+            url = _shares.WOVEN_BROKER_URL + "/names/check?name=" + urllib.parse.quote(name)
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                return self._reply(200, json.load(r))
+        except urllib.error.HTTPError as e:
+            return self._reply(200, {"available": False, "reason": "broker error " + str(e.code)})
+        except Exception:
+            return self._reply(200, {"available": None, "reason": "naming broker unreachable"})
+
+    # POST /__names/claim   body {name, repo?, target?}  → { ok, fqdn, target }
+    def _names_claim(self, qs):
+        if not _shares.WOVEN_BROKER_URL:
+            return self._reply(400, {"error": "naming broker not configured"})
+        tok = _gitops.host_token()
+        if not tok:
+            return self._reply(401, {"error": "not signed in to GitHub"})
+        login = (_gitops.load_token() or {}).get("login") or ""
+        if not login:
+            return self._reply(400, {"error": "GitHub login unknown - reconnect GitHub"})
+        try:
+            body = self._read_json_body(max_bytes=16 * 1024)
+        except ValueError:
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        payload = json.dumps({
+            "name":    (body.get("name") or "").strip(),
+            "ghLogin": login,
+            "ghToken": tok,
+            "repo":    body.get("repo") or "",
+            "target":  body.get("target") or "",
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            _shares.WOVEN_BROKER_URL + "/names/claim", data=payload,
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return self._reply(200, json.load(r))
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = (json.load(e) or {}).get("detail")
+            except Exception:
+                pass
+            code = e.code if e.code in (400, 401, 403, 409) else 502
+            return self._reply(code, {"error": detail or ("broker error " + str(e.code))})
+        except Exception as e:
+            return self._reply(502, {"error": "naming broker unreachable: " + str(e)})
 
     # Resolve a parsed publish.json against a requested prototype id.
     def _publish_state_resolve(self, data, proto, skeleton):

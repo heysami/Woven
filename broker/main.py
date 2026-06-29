@@ -22,6 +22,7 @@ import os
 import re
 import time
 from collections import defaultdict, deque
+from typing import Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -32,6 +33,16 @@ import cloudflare as cf
 import store
 
 INSTALL_RE = re.compile(r"^[a-f0-9]{32}$")     # client mints uuid4().hex
+# Vanity published-site names: 3-30 chars, lowercase letters/numbers/hyphens,
+# no leading/trailing hyphen. (Install-id-shaped names are excluded too.)
+NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$")
+RESERVED_NAMES = {
+    "www", "api", "app", "apps", "admin", "mail", "email", "smtp", "ftp", "ns",
+    "ns1", "ns2", "cdn", "static", "assets", "share", "s", "live", "getwoven",
+    "woven", "broker", "status", "help", "support", "docs", "blog", "dev", "test",
+    "staging", "preview", "dashboard", "account", "login", "auth", "billing",
+    "pay", "store", "shop", "id", "go", "link",
+}
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 REAP_TTL_DAYS = int(os.environ.get("REAP_TTL_DAYS", "45"))
 
@@ -160,3 +171,97 @@ async def reap(x_admin_token: str = Header(default="")) -> dict:
         await store.delete(row["install_id"])
         reaped += 1
     return {"reaped": reaped, "ttlDays": REAP_TTL_DAYS}
+
+
+# ── Vanity published-site names (username.getwoven.design) ────────────────
+# A name maps to a PUBLISHED site, not a tunnel: we point an unproxied CNAME
+# <name>.getwoven.design -> <login>.github.io so GitHub Pages serves it. The
+# name is owned by a GitHub login, VERIFIED at claim time by calling GitHub
+# /user with the user's own token (used once, never stored) - that stops anyone
+# squatting a name pointing at an account they do not control.
+
+
+class NameClaimReq(BaseModel):
+    name: str
+    ghLogin: str
+    ghToken: str
+    repo: Optional[str] = None
+    target: Optional[str] = None     # defaults to <ghLogin>.github.io
+
+
+def _name_ok(name: str):
+    """(normalized_name, None) if usable, else (None, reason)."""
+    n = (name or "").strip().lower()
+    if not n:
+        return None, "empty"
+    if not NAME_RE.match(n):
+        return None, "3-30 chars: lowercase letters, numbers, hyphens; no leading/trailing hyphen"
+    if n in RESERVED_NAMES or INSTALL_RE.match(n):
+        return None, "reserved"
+    return n, None
+
+
+async def _verify_gh(login: str, token: str) -> bool:
+    """True iff `token` belongs to GitHub user `login` (case-insensitive). The
+    token is used ONLY here and never stored."""
+    if not (login and token):
+        return False
+    try:
+        r = await _client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": "token " + token,
+                     "Accept": "application/vnd.github+json",
+                     "User-Agent": "woven-broker"},
+        )
+        if r.status_code != 200:
+            return False
+        return (r.json().get("login") or "").lower() == login.lower()
+    except Exception:
+        return False
+
+
+@app.get("/names/check")
+async def names_check(name: str = "") -> dict:
+    n, why = _name_ok(name)
+    if not n:
+        return {"available": False, "name": (name or "").strip().lower(), "reason": why}
+    row = await store.name_get(n)
+    if row:
+        return {"available": False, "name": n, "reason": "taken"}
+    return {"available": True, "name": n}
+
+
+@app.post("/names/claim")
+async def names_claim(body: NameClaimReq, request: Request) -> dict:
+    _rate_limit(_client_ip(request))
+    n, why = _name_ok(body.name)
+    if not n:
+        raise HTTPException(400, "invalid name: " + (why or ""))
+    login = (body.ghLogin or "").strip()
+    if not login:
+        raise HTTPException(400, "ghLogin required")
+    if not await _verify_gh(login, body.ghToken):
+        raise HTTPException(403, f"could not verify you own the GitHub account '{login}'")
+    row = await store.name_get(n)
+    if row and (row["gh_login"] or "").lower() != login.lower():
+        raise HTTPException(409, "name already taken")
+    target = (body.target or f"{login.lower()}.github.io").strip()
+    fqdn = await cf.upsert_cname(_client, subdomain=n, target=target)
+    await store.name_upsert(n, login, (body.repo or ""), target, fqdn)
+    return {"ok": True, "name": n, "fqdn": fqdn, "target": target}
+
+
+@app.post("/names/release")
+async def names_release(body: NameClaimReq, request: Request) -> dict:
+    n, why = _name_ok(body.name)
+    if not n:
+        raise HTTPException(400, "invalid name")
+    row = await store.name_get(n)
+    if not row:
+        return {"ok": True}
+    if (row["gh_login"] or "").lower() != (body.ghLogin or "").lower() \
+            or not await _verify_gh(body.ghLogin, body.ghToken):
+        raise HTTPException(403, "not the owner")
+    await cf.delete_dns(_client, subdomain=n)
+    await store.name_delete(n)
+    return {"ok": True}

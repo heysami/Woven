@@ -26,6 +26,23 @@ _pool: Optional[asyncpg.Pool] = None
 async def init() -> None:
     global _pool
     _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+    # Vanity-name registry for PUBLISHED sites (username.getwoven.design ->
+    # <login>.github.io). Self-creates so a deploy needs no manual migration;
+    # the installs table is assumed to already exist.
+    async with _pool.acquire() as c:
+        await c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS names (
+              name       text PRIMARY KEY,
+              gh_login   text NOT NULL,
+              repo       text,
+              target     text NOT NULL,
+              fqdn       text NOT NULL,
+              created_at timestamptz DEFAULT now(),
+              updated_at timestamptz DEFAULT now()
+            )
+            """
+        )
 
 
 async def close() -> None:
@@ -76,3 +93,32 @@ async def stale(ttl_days: int) -> list:
             "WHERE last_seen < now() - ($1 || ' days')::interval",
             str(ttl_days),
         )
+
+
+# ── Vanity-name registry (published-site subdomains) ──────────────────────
+
+async def name_get(name: str) -> Optional[asyncpg.Record]:
+    async with _pool.acquire() as c:
+        return await c.fetchrow("SELECT * FROM names WHERE name=$1", name)
+
+
+async def name_upsert(name: str, gh_login: str, repo: str, target: str, fqdn: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute(
+            """
+            INSERT INTO names (name, gh_login, repo, target, fqdn, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, now(), now())
+            ON CONFLICT (name) DO UPDATE
+              SET gh_login = EXCLUDED.gh_login,
+                  repo     = EXCLUDED.repo,
+                  target   = EXCLUDED.target,
+                  fqdn     = EXCLUDED.fqdn,
+                  updated_at = now()
+            """,
+            name, gh_login, repo, target, fqdn,
+        )
+
+
+async def name_delete(name: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute("DELETE FROM names WHERE name=$1", name)

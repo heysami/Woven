@@ -88,7 +88,7 @@ The caller passes one of three domain targets. The static site is GitHub Pages e
 
 - **github.io default** - the site lives at `<login>.github.io/<repo>/`. No DNS, nothing to validate. This is the safe default and the right pick for a first real publish.
 - **custom domain** (the user owns it, e.g. `app.yoursite.com`) - set it as the repo's GitHub Pages custom domain, then give the user the EXACT DNS record to add at their registrar (a `CNAME` to `<login>.github.io`, or the four `A` records for an apex domain), wait for it to resolve, enable "Enforce HTTPS", and verify before reporting done. You cannot edit their registrar; this step is collaborative by nature - hand them precise click-by-click DNS steps.
-- **getwoven.design subdomain** (e.g. `name.getwoven.design`) - Woven owns this DNS (Cloudflare, via the broker). Publishing here needs (a) a names registry so two users cannot claim the same name and (b) a broker DNS upsert pointing the subdomain at `<login>.github.io` plus the repo's Pages custom-domain set to it. The names registry for PUBLISHED sites does not exist yet (the broker today only maps install-ids to share-tunnel subdomains). So until that broker piece is built: deploy to the github.io URL, record a `claim-getwoven-subdomain` task in publish.json with the requested name in `detail`, and tell the user the vanity address is pending that backend. Do NOT fake it as live.
+- **getwoven.design subdomain** (e.g. `name.getwoven.design`) - Woven owns this DNS (Cloudflare, via the broker), and the names registry now exists. To bind it: `POST $TH_DAEMON_URL/__names/claim` with body `{ "name": "<name>", "repo": "<owner>/<repo>" }` - the daemon adds the user's verified GitHub login + token and the broker (a) checks the name is free / owned by this login, (b) creates an unproxied CNAME `<name>.getwoven.design -> <login>.github.io`, and (c) records ownership; it returns `{ ok, fqdn, target }`. Then set the REPO'S GitHub Pages custom domain to that `<name>.getwoven.design` (the `CNAME` file in the published tree + the Pages API) and wait for DNS + the Pages cert to come up before reporting live. If `/__names/claim` returns an error (taken / not signed in / broker down), keep the site live on the github.io URL, record a `claim-getwoven-subdomain` task with the reason, and tell the user plainly - do NOT fake the vanity address as live.
 
 Record the chosen target in `publish.json` `host` (e.g. `host.domain`, `host.liveUrl`).
 
@@ -146,7 +146,6 @@ End with a single, plain status: the live URL, what is wired (static only, or st
 
 - Complex-app detection + the IA/flow + data-object breakdown (reuse the editor's IA/Flow view later).
 - The two-agent grill loop (one agent holds project knowledge, one interviews via the `grill-me` skill until satisfied, then revises) ahead of a user review gate and task generation.
-- `username.getwoven.design` vanity naming (separate feature, same GitHub-login identity spine).
 - Provider choice beyond Supabase + GitHub Pages (Cloudflare D1/R2, Vercel, Render).
 
 If you hit any of these, record the intent in publish.json `tasks` with status `todo` and a clear `detail`, then continue with what the MVP can do.

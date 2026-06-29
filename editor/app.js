@@ -82772,6 +82772,7 @@ function PublishModal({ onClose, onStarted }) {
   const [proto, setProto]         = useState("");     // selected prototype id
   const [domainMode, setDomainMode] = useState("default"); // default | getwoven | custom
   const [subname, setSubname]     = useState("");
+  const [subStatus, setSubStatus] = useState(null);  // live getwoven availability {state, reason}
   const [customDom, setCustomDom] = useState("");
   const [busy, setBusy]           = useState(false);
   const [err, setErr]             = useState(null);
@@ -82811,6 +82812,30 @@ function PublishModal({ onClose, onStarted }) {
     return () => { alive = false; };
   }, []);
 
+  // Live getwoven.design availability: debounce the subdomain input and ask the
+  // broker (via /__names/check) whether the name is free. Only runs for the
+  // getwoven option and only once the format is valid.
+  useEffect(() => {
+    if (domainMode !== "getwoven") { setSubStatus(null); return; }
+    const v = subname.trim().toLowerCase();
+    if (!validateSubname(v).ok) { setSubStatus(null); return; }
+    setSubStatus({ state: "checking" });
+    let alive = true;
+    const t = setTimeout(() => {
+      fetch(apiUrl("/__names/check?name=" + encodeURIComponent(v)))
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => {
+          if (!alive) return;
+          if (!j) { setSubStatus({ state: "unknown" }); return; }
+          if (j.available === true) setSubStatus({ state: "available" });
+          else if (j.available === false) setSubStatus({ state: "taken", reason: j.reason });
+          else setSubStatus({ state: "unknown", reason: j.reason });
+        })
+        .catch(() => { if (alive) setSubStatus({ state: "unknown" }); });
+    }, 450);
+    return () => { alive = false; clearTimeout(t); };
+  }, [subname, domainMode]);
+
   const linked = !!(gh && gh.signedIn);
   const ghName = (linked && gh.login) ? gh.login : "your-account";
   const connected = parseOwnerRepo(git && git.repo ? git.remote : "");
@@ -82828,7 +82853,7 @@ function PublishModal({ onClose, onStarted }) {
   const customVal = validateCustomDomain(customDom);
   const domainReady =
     domainMode === "default" ||
-    (domainMode === "getwoven" && subVal.ok) ||
+    (domainMode === "getwoven" && subVal.ok && (!subStatus || subStatus.state !== "taken")) ||
     (domainMode === "custom"   && customVal.ok);
   const canStart = linked && domainReady && !!proto && !busy;
 
@@ -82937,10 +82962,14 @@ function PublishModal({ onClose, onStarted }) {
                     onInput=${e => setSubname(e.target.value.toLowerCase())}/>
                   <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>.getwoven.design</span>
                 </div>
-                <div className="sysadd-hint" style=${{ paddingLeft: "12px", color: (subname.trim() && !subVal.ok) ? "var(--danger, #d2693c)" : "inherit" }}>
+                <div className="sysadd-hint" style=${{ paddingLeft: "12px", color: (subname.trim() && (!subVal.ok || (subStatus && subStatus.state === "taken"))) ? "var(--danger, #d2693c)" : "inherit" }}>
                   ${subname.trim() && !subVal.ok ? subVal.msg
-                    : subVal.ok ? html`<span className="shares-dot is-ok"></span> Format looks good. Availability is confirmed when you publish.`
-                    : "3-30 chars, lowercase letters / numbers / hyphens."}
+                    : !subVal.ok ? "3-30 chars, lowercase letters / numbers / hyphens."
+                    : (subStatus && subStatus.state === "checking") ? "Checking availability…"
+                    : (subStatus && subStatus.state === "available") ? html`<span className="shares-dot is-ok"></span> ${subname.trim().toLowerCase()}.getwoven.design is available`
+                    : (subStatus && subStatus.state === "taken") ? "That name is already taken - pick another."
+                    : (subStatus && subStatus.state === "unknown") ? "Format looks good. We'll confirm availability when you publish."
+                    : html`<span className="shares-dot is-ok"></span> Format looks good.`}
                 </div>`}
 
               <button type="button" className=${"sysadd-radio" + (domainMode === "custom" ? " is-on" : "")} style=${radioStyle} onClick=${() => setDomainMode("custom")}>
