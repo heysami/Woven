@@ -14664,6 +14664,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 14px;
   margin-top: 4px;
 }
+/* Onboarding step 1 now offers only the (required) Install-a-CLI choice -
+   the Paste-an-API-key tile was removed - so the lone tile spans full width. */
+.model-setup-choices-single { grid-template-columns: 1fr; }
 .model-setup-choice {
   display: grid;
   grid-template-columns: auto 1fr;

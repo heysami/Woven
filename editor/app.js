@@ -19326,7 +19326,7 @@ function OnboardingOrchestratorsSection({ mediaCfg }) {
    not by the wizard itself, so the user can roam.
    Step 1 collapses to a single button that opens a small install-
    instructions popup - no two-tile choice screen, no inline sub-picker. */
-function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAcknowledge }) {
+function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
   // v3.x - The agent CLI is the REQUIRED backend. A pasted API key only powers
   // "simple prompt" nodes (single-shot, no tools); agentic workflows - node
   // runs, chat, orchestrators - need a `claude` or `codex` CLI on PATH, because
@@ -19385,33 +19385,18 @@ function ModelSetupCard({ onOpenSettings, onRefresh, mediaCfg, localSkills, onAc
       <div className="model-setup-wizard-body">
         ${step === 1 && html`
           <div className="model-setup-step1">
-            <div className="model-setup-step1-status" data-ok=${modelOk}>
-              <span className="model-setup-step1-dot"/>
-              <span className="model-setup-step1-label">${
-                modelOk ? "Agent CLI connected"
-                : hasKeyOnly ? "API key only - agents disabled"
-                : "No model yet"}</span>
-              ${!modelOk && html`<span className="onboarding-tool-required-badge" title="A Claude Code or Codex CLI is required for agentic workflows">REQUIRED</span>`}
-            </div>
             ${hasKeyOnly && html`
               <div className="model-setup-cli-warning">
                 <${Icon.Alert}/>
                 <span>An API key runs <strong>simple prompt</strong> nodes only. Agentic workflows - node runs, chat, orchestrators - need a CLI. Install one below to enable them.</span>
               </div>
             `}
-            <div className="model-setup-choices model-setup-choices-compact">
+            <div className="model-setup-choices model-setup-choices-compact model-setup-choices-single">
               <button className="model-setup-choice" type="button" onClick=${() => setInstallOpen(true)}>
                 <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
                 <div className="model-setup-choice-body">
                   <div className="model-setup-choice-title">Install a CLI <span className="model-setup-choice-tag">required</span></div>
                   <div className="model-setup-choice-desc">Claude Code or Codex - enables agents.</div>
-                </div>
-              </button>
-              <button className="model-setup-choice" type="button" onClick=${onOpenSettings}>
-                <div className="model-setup-choice-icon"><${Icon.Lock}/></div>
-                <div className="model-setup-choice-body">
-                  <div className="model-setup-choice-title">Paste an API key</div>
-                  <div className="model-setup-choice-desc">Simple prompts only - no agents.</div>
                 </div>
               </button>
             </div>
@@ -22380,6 +22365,9 @@ function ProjectsLanding({ info, projects, onReload }) {
   // Show the wizard while there's something to do, OR while we're showing
   // the post-completion "All set!" state that the user hasn't dismissed yet.
   const wizardOpen = setupNeeded || (wasNeededRef.current && !setupAcknowledged);
+  // True exactly when the onboarding setup card (ModelSetupCard) is on screen.
+  // Reused to keep the Housekeeping trigger off the first-run / setup view.
+  const onboardingCardShowing = projects.length === 0 && !creating && wizardOpen && onboardingReady;
   // Workspace DS list - needed for the wizard's "Pick from workspace" path.
   // Lazy-fetched only when the wizard opens (cheap GET, but no need to spam
   // the daemon on every landing render).
@@ -22743,11 +22731,10 @@ function ProjectsLanding({ info, projects, onReload }) {
           onCreated=${onClonedCreated}
         />`}
 
-        ${activeTab === "projects" && projects.length === 0 && !creating && wizardOpen && onboardingReady && html`
+        ${activeTab === "projects" && onboardingCardShowing && html`
           <${ModelSetupCard}
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
-            onOpenSettings=${() => setSettingsOpen(true)}
             onRefresh=${() => {
               // v3.4.50 - Dispatch BOTH change events so every consumer of
               // useMediaConfig / useAgents re-polls - including the top-right
@@ -22918,7 +22905,7 @@ function ProjectsLanding({ info, projects, onReload }) {
             `}
           </div>
         `}
-        ${activeTab === "projects" && html`
+        ${activeTab === "projects" && !onboardingCardShowing && html`
           <div className="landing-housekeeping">
             <button className="landing-hk-trigger" onClick=${() => setHousekeepingOpen(true)} title="Manage and permanently delete projects in the trash">
               <${Icon.Trash}/>
@@ -78469,11 +78456,11 @@ const LOCAL_PACKAGES = [
     hint: "Cloudflare quick tunnels for Share mode · installed via Homebrew · no Cloudflare account needed",
     skills: "Share prototypes for review",
     docsUrl: "https://github.com/cloudflare/cloudflared",
-    // NOT required - sharing is opt-in, and the Shares tab + prototype-node
-    // comments dock degrade gracefully (Start disabled + install hint) when
-    // the binary is missing. Flip to required:true to make onboarding block
-    // on it like rembg.
-    required: false,
+    // v3.4.x - Marked required. Installs via Homebrew; onboarding blocks
+    // until present (needs Homebrew on the machine). The Shares tab +
+    // prototype-node comments dock still degrade gracefully at runtime.
+    required: true,
+    requiredReason: "Cloudflare quick tunnel for Share mode - publishing prototypes for review and hosting multiplayer sessions both need it.",
   },
   {
     id: "glslang",
@@ -78482,9 +78469,11 @@ const LOCAL_PACKAGES = [
     hint: "GLSL reference compiler · brew install glslang · real shader compile errors (any shader, no browser)",
     skills: "Shader compile-check",
     docsUrl: "https://github.com/KhronosGroup/glslang",
-    // Optional - shaders degrade to the static lint when absent. When present,
-    // the post-run shader lint compile-checks every <script type=x-shader> block.
-    required: false,
+    // v3.4.x - Marked required. Installs via Homebrew; onboarding blocks until
+    // present. When present, the post-run shader lint compile-checks every
+    // <script type=x-shader> block instead of falling back to the static lint.
+    required: true,
+    requiredReason: "GLSL reference compiler - the post-run shader lint needs it to catch real compile errors in every shader block.",
   },
   {
     id: "shader-verify",
@@ -78493,9 +78482,11 @@ const LOCAL_PACKAGES = [
     hint: "Headless Playwright + Chromium · runs the shader and checks it compiles AND isn't blank · ~150 MB browser",
     skills: "Shader render-check",
     docsUrl: "https://playwright.dev",
-    // Optional + heaviest. Catches what glslang can't: JS-assembled shaders and
-    // compiles-but-renders-blank. Requires Node.js on PATH.
-    required: false,
+    // v3.4.x - Marked required. The heaviest install (npm + a ~150 MB Chromium);
+    // needs Node.js on PATH and onboarding blocks until present. Catches what
+    // glslang can't: JS-assembled shaders and compiles-but-renders-blank.
+    required: true,
+    requiredReason: "Headless Playwright + Chromium render check - catches shaders that compile but render blank, and JS-assembled shaders glslang can't see.",
   },
 ];
 
