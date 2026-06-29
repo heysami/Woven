@@ -4505,7 +4505,7 @@ POKE_HELPER = r"""
 #   apps/daemon/src/json-event-stream.ts    → _normalize_claude_frame
 #   apps/daemon/src/claude-stream.ts        → _drain_stdout's frame loop
 
-AGENT_BIN_ENV = {"claude": "CLAUDE_BIN", "codex": "CODEX_BIN"}
+AGENT_BIN_ENV = {"claude": "CLAUDE_BIN", "codex": "CODEX_BIN", "opencode": "OPENCODE_BIN"}
 
 # Permission mode for spawned agents. In non-interactive (-p / stream-json) mode
 # Claude Code can't show its tool-permission prompt - without a mode set, every
@@ -4593,6 +4593,32 @@ AGENT_DEFS = {
         # protocol (banner / user / codex / exec / succeeded markers) -
         # _drain_stderr_codex parses it into proper agent events.
         "args": ["exec", "--sandbox", "danger-full-access"],
+        "permission_flag": None,
+        "permission_default": None,
+        "prompt_via_stdin": False,
+        "stdin_format": "argv",
+    },
+    "opencode": {
+        "bin": "opencode",
+        # opencode (sst/opencode) is a third terminal agent the user can pick.
+        # Its non-interactive surface is `opencode run [--format json] <prompt>`:
+        #   • run: one-shot, non-interactive (no TUI). Like codex, the prompt is
+        #     the trailing positional argv (prompt_via_stdin=False), NOT a
+        #     stream-json frame on stdin.
+        #   • --format json: emits newline-delimited JSON *events* on STDOUT
+        #     (step_start / text / tool / step_finish, each carrying a nested
+        #     `part`). That's the Claude stdout-streaming shape, not codex's
+        #     stderr text protocol - so opencode runs through _drain_stdout +
+        #     _OpenCodeStreamParser (see _drain_stdout's agent-id branch), with
+        #     stderr left as plain passthrough.
+        # opencode manages its own auth + default model via `opencode auth login`
+        # and its own config (no --append-system-prompt flag), so - like codex -
+        # the Woven harness preamble is PREPENDED to the prompt text rather than
+        # passed via a flag (see _run_create's spawn branch). Tool permissions in
+        # `run` mode default to non-interactive execution; if a future opencode
+        # version blocks on a permission prompt, add the right flag here based on
+        # the empirical message (mirrors the codex note above).
+        "args": ["run", "--format", "json"],
         "permission_flag": None,
         "permission_default": None,
         "prompt_via_stdin": False,
@@ -6631,6 +6657,20 @@ def _agent_logged_in(agent_id: str):
         if (os.environ.get("OPENAI_API_KEY") or "").strip():
             return True
         return False
+    if agent_id == "opencode":
+        # opencode stores provider credentials (written by `opencode auth login`)
+        # under its XDG data dir - $XDG_DATA_HOME/opencode/auth.json, defaulting
+        # to ~/.local/share/opencode/auth.json. We never read the contents, only
+        # check existence. Return None (unknown - the UI shows no "not signed in"
+        # warning) when the file is absent, because opencode can also be driven
+        # by provider env keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / etc.) we
+        # can't enumerate here - a hard False would mis-warn those users.
+        xdg = (os.environ.get("XDG_DATA_HOME") or "").strip() or os.path.join(home, ".local", "share")
+        for cred in (os.path.join(xdg, "opencode", "auth.json"),
+                     os.path.join(home, ".local", "share", "opencode", "auth.json")):
+            if os.path.isfile(cred):
+                return True
+        return None
     return None
 
 
@@ -7083,6 +7123,13 @@ def _drain_stdout(state: "RunState") -> None:
     (proc=None) rehydrated from history after a restart. Don't copy this
     unguarded pattern into a handler.
     """
+    # opencode emits JSON *events* on stdout (Claude shape) but re-emits growing
+    # parts, so it needs a STATEFUL parser instance per run rather than the
+    # stateless _normalize_frame. Claude/codex keep _normalize_frame (codex's
+    # real content is on stderr; its stdout is empty so this loop just idles to
+    # the finally-block). The parser's output shape matches _normalize_frame, so
+    # the lifecycle code below is identical for every agent.
+    _oc_parser = _OpenCodeStreamParser() if state.agent_id == "opencode" else None
     try:
         for raw in state.proc.stdout:
             line = raw.decode("utf-8", errors="replace").strip()
@@ -7095,7 +7142,8 @@ def _drain_stdout(state: "RunState") -> None:
                 # so the user can see something even if the parser is wrong.
                 state.append("agent", {"type": "raw", "text": line})
                 continue
-            for ev in _normalize_frame(state.agent_id, frame):
+            _events = _oc_parser.feed(frame) if _oc_parser else _normalize_frame(state.agent_id, frame)
+            for ev in _events:
                 state.append("agent", ev)
                 # Capture the session id off the first init frame - needed
                 # by /__run/:id/resume so post-Stop replies can rejoin the
@@ -7486,6 +7534,150 @@ class _CodexStderrParser:
     def finish(self):
         """Called when the run ends - flush any still-open tool call."""
         return self._flush_tool()
+
+
+class _OpenCodeStreamParser:
+    """Parse `opencode run --format json` stdout into normalised agent events.
+
+    Unlike codex (plain-text on stderr), opencode emits newline-delimited JSON
+    *events* on STDOUT - architecturally the Claude shape, so this runs inside
+    _drain_stdout (not _drain_stderr). Each line is one event:
+
+        {"type":"step_start","sessionID":"ses_…","part":{"type":"step-start"}}
+        {"type":"text","part":{"type":"text","text":"…"}}
+        {"type":"tool","part":{"type":"tool","tool":"bash","callID":"…",
+                               "state":{"status":"completed","input":{…},"output":"…"}}}
+        {"type":"step_finish","part":{"type":"step-finish",
+                               "tokens":{…},"cost":0}}
+
+    Two real-world wrinkles this parser absorbs:
+
+    1. STATEFUL DEDUP. opencode's event bus re-emits a part each time it grows
+       (message.part.updated), so a text part can arrive several times carrying
+       the *cumulative* text, not a delta. We track the last string seen per
+       part id and emit only the new suffix, so the chat never double-prints.
+       If `run --format json` instead emits each finalised part once, the
+       suffix-of-"" is the whole text - same result either way.
+
+    2. NO RELIANCE ON step_finish FOR COMPLETION. There's a known opencode bug
+       (anomalyco/opencode#26855) where `run --format json` can exit before
+       emitting the final step_finish event. We surface step_finish as a `usage`
+       event when it does arrive, but NEVER treat it as turn-done; the run
+       completes off the subprocess exit that _drain_stdout's finally-block
+       already handles. (step_finish also brackets each model step, not the
+       whole run, so it isn't a turn boundary anyway.)
+
+    feed(frame) returns a list of normalised event dicts in the SAME shape as
+    _normalize_frame's output (text_delta / thinking_delta / tool_use /
+    tool_result / usage / status), so _drain_stdout's lifecycle logic needs no
+    per-agent branching beyond choosing this parser.
+    """
+
+    def __init__(self):
+        self._started = False
+        self._text = {}            # part-key → last cumulative string seen
+        self._tool_started = set()  # callIDs that emitted tool_use
+        self._tool_done = set()     # callIDs that emitted tool_result
+
+    def _suffix(self, key, text):
+        """Return the new tail of `text` relative to what we last emitted for
+        `key`. Cumulative-safe: if text extends the previous value we emit only
+        the appended part; on a non-prefix change (rare rewrite) we emit the
+        whole new value rather than silently dropping it."""
+        text = text or ""
+        prev = self._text.get(key, "")
+        if text == prev:
+            return ""
+        delta = text[len(prev):] if (prev and text.startswith(prev)) else text
+        self._text[key] = text
+        return delta
+
+    def feed(self, frame):
+        out = []
+        if not isinstance(frame, dict):
+            return out
+        etype = frame.get("type") or ""
+        part = frame.get("part") if isinstance(frame.get("part"), dict) else {}
+        ptype = (part.get("type") or "").replace("_", "-") or etype.replace("_", "-")
+
+        # ── step / session lifecycle ──────────────────────────────────────
+        if etype == "step_start" or ptype == "step-start":
+            sid = frame.get("sessionID") or frame.get("sessionId") or part.get("sessionID")
+            if not self._started:
+                self._started = True
+                ev = {"type": "status", "label": "starting"}
+                if sid:
+                    ev["sessionId"] = sid
+                out.append(ev)
+            return out
+        if etype == "step_finish" or ptype == "step-finish":
+            tokens = part.get("tokens")
+            cost = part.get("cost")
+            if tokens or cost is not None:
+                out.append({"type": "usage", "usage": {"tokens": tokens, "cost": cost}})
+            return out
+
+        # ── text ──────────────────────────────────────────────────────────
+        if etype == "text" or ptype == "text":
+            txt = part.get("text") if part else None
+            if txt is None:
+                txt = frame.get("text")
+            key = "text:" + str(part.get("id") or part.get("messageID") or "default")
+            delta = self._suffix(key, txt)
+            if delta:
+                out.append({"type": "text_delta", "delta": delta})
+            return out
+
+        # ── reasoning / thinking ──────────────────────────────────────────
+        if etype in ("reasoning", "thinking") or ptype in ("reasoning", "thinking"):
+            txt = part.get("text") if part else None
+            if txt is None:
+                txt = frame.get("text")
+            key = "reason:" + str(part.get("id") or part.get("messageID") or "default")
+            delta = self._suffix(key, txt)
+            if delta:
+                out.append({"type": "thinking_delta", "delta": delta})
+            return out
+
+        # ── tool call ─────────────────────────────────────────────────────
+        if etype == "tool" or ptype == "tool":
+            callid = part.get("callID") or part.get("callId") or part.get("id")
+            tname = part.get("tool") or part.get("name") or "tool"
+            tstate = part.get("state") if isinstance(part.get("state"), dict) else {}
+            status = tstate.get("status")
+            tinput = tstate.get("input")
+            if tinput is None:
+                tinput = part.get("input")
+            if callid and callid not in self._tool_started:
+                self._tool_started.add(callid)
+                out.append({
+                    "type": "tool_use",
+                    "id": callid,
+                    "name": tname,
+                    "input": tinput if tinput is not None else {},
+                })
+            if callid and status in ("completed", "error") and callid not in self._tool_done:
+                self._tool_done.add(callid)
+                output = tstate.get("output")
+                if output is None:
+                    output = tstate.get("error") or tstate.get("title") or ""
+                if not isinstance(output, str):
+                    try:
+                        output = json.dumps(output, ensure_ascii=False)
+                    except Exception:
+                        output = str(output)
+                out.append({
+                    "type": "tool_result",
+                    "toolUseId": callid,
+                    "content": output,
+                    "isError": status == "error",
+                })
+            return out
+
+        # Unknown event types (session.idle bookkeeping, file parts, etc.) carry
+        # no user-facing content - drop quietly rather than dumping raw JSON into
+        # chat (mirrors _normalize_frame's "drop other system subtypes" policy).
+        return out
 
 
 # ── Prompt composer ──────────────────────────────────────────────────────────
@@ -12778,10 +12970,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # actually answers.
         claude_avail = detect_agent_bin("claude") is not None
         codex_avail  = detect_agent_bin("codex")  is not None
+        opencode_avail = detect_agent_bin("opencode") is not None
         return self._reply(200, {
             "providers": masked,
             "claude_cli_available": claude_avail,
             "codex_cli_available":  codex_avail,
+            "opencode_cli_available": opencode_avail,
         })
 
     def _media_config_set(self):
@@ -22210,7 +22404,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if _mcp_config_spawn_args():
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
-        elif agent_id == "codex":
+        elif agent_id in ("codex", "opencode"):
             # v3.5 - Codex chats get the SAME capabilities preamble as Claude
             # (so they know visual-orchestrator etc. exist), plus a translation
             # note that maps Claude's `Task(subagent_type: ...)` dispatch
@@ -22219,6 +22413,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             # reentrant and picks whichever runtime is available, so the
             # nested planner can run on Claude or another codex; codex doesn't
             # have to care.
+            # opencode rides the SAME branch: it also takes its prompt as
+            # positional argv (no --append-system-prompt flag), also has shell +
+            # tool access for the curl-dispatch bridge, and benefits from the
+            # same capabilities preamble + output discipline. Only the
+            # runtime-name and write-tool wording differ.
+            _runtime_label = "Codex CLI" if agent_id == "codex" else "opencode CLI"
+            _write_tool = "apply_patch" if agent_id == "codex" else "the write/edit tool"
             codex_sys_bits = [QUESTION_FORM_SYSTEM_PROMPT]
             if WORKSPACE_DIR and project_root != INSTALL_ROOT:
                 codex_sys_bits.append(WORKSPACE_LAYOUT_PROMPT)
@@ -22237,9 +22438,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
             codex_sys_bits.append(
                 "\n## Subagent dispatch on this runtime\n\n"
-                "You are running on the Codex CLI, which has no native `Task` "
-                "tool. Wherever the capabilities preamble or any subagent spec "
-                "instructs you to dispatch a planner subagent via the Task "
+                f"You are running on the {_runtime_label}, which has no native "
+                "`Task` tool. Wherever the capabilities preamble or any subagent "
+                "spec instructs you to dispatch a planner subagent via the Task "
                 "tool, instead run this shell command:\n\n"
                 "```\n"
                 "curl -N -s -X POST "
@@ -22273,7 +22474,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # human-readable line, not the diff body.
             codex_sys_bits.append(
                 "\n## Chat output discipline\n\n"
-                "When you call `apply_patch` (or any file-write tool), do NOT "
+                f"When you call {_write_tool} (or any file-write tool), do NOT "
                 "echo the patch body or file contents into the chat. The tool "
                 "call itself records the change; printing the diff into chat "
                 "creates noise that's hard to read and may misrender. "
@@ -22286,9 +22487,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "the entire file or command output back into chat unless the "
                 "user explicitly asks. Summarise."
             )
-            # Codex's preamble is prepended to the user prompt rather than
-            # passed via a flag - codex `exec` has no --append-system-prompt
-            # equivalent. The shape mirrors `_dispatch_planner_via_codex`.
+            # The preamble is prepended to the user prompt rather than passed via
+            # a flag - neither codex `exec` nor opencode `run` has an
+            # --append-system-prompt equivalent. Mirrors `_dispatch_planner_via_codex`.
             codex_preamble = "\n\n".join(p.strip() for p in codex_sys_bits if p and p.strip())
             prompt_text = (
                 "===== HARNESS PREAMBLE =====\n"
@@ -22728,21 +22929,25 @@ class H(http.server.SimpleHTTPRequestHandler):
     # the same runId - the user perceives one continuous conversation, as
     # they would with any normal chat UI.
     def _run_resume_codex(self, state, run_id, text):
-        """Fake resume for codex: reconstruct prior conversation as a
-        text transcript, prepend it to the new user message, spawn a
-        fresh `codex exec` with the combined prompt. Same run_id, same
-        event log appended.
+        """Fake resume for the argv-prompt single-shot agents (codex AND
+        opencode): reconstruct prior conversation as a text transcript,
+        prepend it to the new user message, spawn a fresh run with the
+        combined prompt. Same run_id, same event log appended.
 
-        Why fake: codex's exec mode is single-shot per spawn. There's no
-        `codex exec --resume <id>` equivalent. The transcript approach
-        loses things like tool-call provenance from the model's
-        perspective but gives the model enough context to answer follow-
-        up questions like "what happened?" after a crash.
+        Why fake: both `codex exec` and `opencode run` are single-shot per
+        spawn - neither has Claude's stream-json `--resume <session-id>`
+        protocol we can drive here. The transcript approach loses things like
+        tool-call provenance from the model's perspective but gives the model
+        enough context to answer follow-up questions like "what happened?"
+        after the prior process exited. Agent-neutral: it reads the runtime off
+        `state.agent_id`, so the fresh spawn uses that agent's own AGENT_DEFS
+        args (e.g. `run --format json` for opencode) and routes back through
+        _drain_stdout, whose opencode branch re-parses the JSON event stream.
         """
-        defs = AGENT_DEFS["codex"]
-        bin_path = state.bin_path or detect_agent_bin("codex")
+        defs = AGENT_DEFS[state.agent_id]
+        bin_path = state.bin_path or detect_agent_bin(state.agent_id)
         if not bin_path:
-            return self._reply(500, {"error": "codex binary not on PATH"})
+            return self._reply(500, {"error": f"{state.agent_id} binary not on PATH"})
         # Reconstruct the conversation. Each event-log entry of type "agent"
         # carries a normalised event dict; we walk those and rebuild a
         # transcript that reads naturally.
@@ -22814,19 +23019,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                 start_new_session=True,  # own process group so Stop can group-kill the whole tree (incl. MCP/bash grandchildren)
             )
         except Exception as e:
-            return self._reply(500, {"error": f"codex resume spawn failed: {type(e).__name__}: {e}"})
+            return self._reply(500, {"error": f"{state.agent_id} resume spawn failed: {type(e).__name__}: {e}"})
         # Reset run lifecycle for the new process.
         state.proc = proc
         state.done = False
         state.exit_code = None
         state.turn_done = False
-        state.append("status", {"label": "resumed", "agentId": "codex"})
+        state.append("status", {"label": "resumed", "agentId": state.agent_id})
         state.append("user_message", {"text": text})
         threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                          name=f"run-{run_id}-stdout-resumed").start()
         threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
                          name=f"run-{run_id}-stderr-resumed").start()
-        return self._reply(200, {"ok": True, "agentId": "codex"})
+        return self._reply(200, {"ok": True, "agentId": state.agent_id})
 
 
     def _run_resume(self, run_id):
@@ -22869,13 +23074,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(409, {
                 "error": "run is still active; use /user-message instead",
             })
-        # v3.5 - Codex resume. Codex doesn't have Claude's stream-json
-        # --resume <session-id> protocol; each `codex exec` is a fresh
-        # session. We fake resume by reconstructing the prior conversation
-        # as a transcript and prepending it to the new prompt, then spawning
-        # a fresh codex with that combined prompt. Same run_id, same event
-        # log - new process underneath.
-        if state.agent_id == "codex":
+        # v3.5 - Codex/opencode resume. Neither has Claude's stream-json
+        # --resume <session-id> protocol; each `codex exec` / `opencode run`
+        # is a fresh session. We fake resume by reconstructing the prior
+        # conversation as a transcript and prepending it to the new prompt,
+        # then spawning a fresh run with that combined prompt. Same run_id,
+        # same event log - new process underneath.
+        if state.agent_id in ("codex", "opencode"):
             return self._run_resume_codex(state, run_id, text)
         if state.agent_id != "claude":
             return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})

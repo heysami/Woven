@@ -7441,8 +7441,8 @@ function getDefaultForCapability(cap) {
   if (!v || !v.provider) return null;
   return v;
 }
-/* v3.5 - Which CLI (`claude` vs `codex`) the chat spawn should use, based on
-   the user's agent-capability default. Falls back to "claude" so the
+/* v3.5 - Which CLI (`claude` / `codex` / `opencode`) the chat spawn should use,
+   based on the user's agent-capability default. Falls back to "claude" so the
    historical default keeps working when no preference is saved. The daemon
    side of this is keyed on the same agentId - see AGENT_DEFS in serve.py. */
 function pickAgentIdForChat() {
@@ -7450,6 +7450,7 @@ function pickAgentIdForChat() {
     const def = getDefaultForCapability("agent");
     if (def && def.provider === "openai")    return "codex";
     if (def && def.provider === "anthropic") return "claude";
+    if (def && def.provider === "opencode")  return "opencode";
   } catch {}
   return "claude";
 }
@@ -8968,6 +8969,7 @@ function CliIndicator({ compact }) {
   }
   const claude = (agents || []).find(a => a.id === "claude");
   const codex  = (agents || []).find(a => a.id === "codex");
+  const opencode = (agents || []).find(a => a.id === "opencode");
   // Decide which CLI to surface. Order:
   //   1. The user's explicit agent-capability default (set in Settings →
   //      Default models per capability)
@@ -8981,15 +8983,28 @@ function CliIndicator({ compact }) {
   let preferred = "claude";
   if (agentDef && agentDef.provider === "openai")    preferred = "codex";
   else if (agentDef && agentDef.provider === "anthropic") preferred = "claude";
+  else if (agentDef && agentDef.provider === "opencode") preferred = "opencode";
   else if (codex && codex.available && !(claude && claude.available)) preferred = "codex";
-  // The chip shows the preferred CLI's state. (Both CLIs missing is handled
-  // by ModelStatusIndicator's "No model" pill.)
-  const target = preferred === "codex" ? codex : claude;
-  const label  = preferred === "codex" ? "Codex CLI" : "Claude CLI";
-  const installHint = preferred === "codex"
-    ? "Install it (npm i -g @openai/codex, then run `codex login`) so the agent can dispatch."
-    : "Install it (npm i -g @anthropic-ai/claude-code or install the desktop app) so the agent can dispatch.";
-  const keyName = preferred === "codex" ? "OpenAI" : "Anthropic";
+  else if (opencode && opencode.available && !(claude && claude.available) && !(codex && codex.available)) preferred = "opencode";
+  // The chip shows the preferred CLI's state. (All CLIs missing is handled
+  // by ModelStatusIndicator's "No model" pill.) Per-CLI copy lives in one map
+  // so a third runtime doesn't fan out into nested ternaries everywhere.
+  const CLI_META = {
+    claude:   { target: claude,   label: "Claude CLI", short: "CLI",      keyName: "Anthropic",
+                installHint: "Install it (npm i -g @anthropic-ai/claude-code or install the desktop app) so the agent can dispatch.",
+                loginCmd: "claude login" },
+    codex:    { target: codex,    label: "Codex CLI",  short: "Codex",    keyName: "OpenAI",
+                installHint: "Install it (npm i -g @openai/codex, then run `codex login`) so the agent can dispatch.",
+                loginCmd: "codex login" },
+    opencode: { target: opencode, label: "opencode",   short: "opencode", keyName: "provider",
+                installHint: "Install it (brew install sst/tap/opencode, then run `opencode auth login`) so the agent can dispatch.",
+                loginCmd: "opencode auth login" },
+  };
+  const meta = CLI_META[preferred] || CLI_META.claude;
+  const target = meta.target;
+  const label  = meta.label;
+  const installHint = meta.installHint;
+  const keyName = meta.keyName;
   const installed = !!(target && target.available);
   // v3.6 - Three-state pill. `loggedIn` is what /__agents now reports; null
   // (unknown - e.g. older daemon, unsupported CLI) is treated as "don't
@@ -9001,7 +9016,7 @@ function CliIndicator({ compact }) {
   const needsLogin = installed && loginKnown && !loggedIn;
   const ok = installed && loggedIn;
   const version = target && target.version ? String(target.version).split(/\s+/)[0] : null;
-  const loginCmd = preferred === "codex" ? "codex login" : "claude login";
+  const loginCmd = meta.loginCmd;
   let tooltip;
   let tipShort;
   if (ok) {
@@ -9016,7 +9031,7 @@ function CliIndicator({ compact }) {
   }
   const state = ok ? "ok" : (needsLogin ? "needs-login" : "missing");
   const labelText = ok
-    ? (preferred === "codex" ? "Codex" : "CLI")
+    ? meta.short
     : (needsLogin ? `${label} not signed in` : `${label} missing`);
   return html`<span
     className=${"cli-indicator cli-indicator-" + state}
@@ -9048,7 +9063,7 @@ function useMediaConfig() {
       const j = await r.json();
       setConfig(j);
     } catch {
-      setConfig({ providers: {}, claude_cli_available: false, codex_cli_available: false });
+      setConfig({ providers: {}, claude_cli_available: false, codex_cli_available: false, opencode_cli_available: false });
     } finally {
       setLoaded(true);
     }
@@ -9064,9 +9079,9 @@ function useMediaConfig() {
   }, [reload]);
   const providers = (config && config.providers) || {};
   const hasAnyKey = Object.values(providers).some(p => p && (p.has_key || p.saved || p.from_env));
-  // v3.5 - `hasCli` is true when EITHER native CLI is available so the
-  // "no model configured" pill clears as soon as Codex login alone is set up.
-  const hasCli = !!(config && (config.claude_cli_available || config.codex_cli_available));
+  // v3.5 - `hasCli` is true when ANY supported CLI is available so the
+  // "no model configured" pill clears as soon as Codex/opencode login alone is set up.
+  const hasCli = !!(config && (config.claude_cli_available || config.codex_cli_available || config.opencode_cli_available));
   return { config, loaded, hasAnyKey, hasCli, configured: hasAnyKey || hasCli, reload };
 }
 
@@ -19263,6 +19278,7 @@ function ModelSetupCliPicker({ onRefresh, onBack }) {
   const { agents, loaded, reload: reloadAgents } = useAgents();
   const claude = (agents || []).find(a => a.id === "claude");
   const codex  = (agents || []).find(a => a.id === "codex");
+  const opencode = (agents || []).find(a => a.id === "opencode");
   const rows = [
     {
       id: "claude",
@@ -19283,6 +19299,18 @@ function ModelSetupCliPicker({ onRefresh, onBack }) {
       install: "npm install -g @openai/codex",
       hint: "Provided as an alternate agent - log in via `codex login` once installed.",
       docs: "https://github.com/openai/codex",
+    },
+    {
+      id: "opencode",
+      label: "opencode",
+      ok: !!(opencode && opencode.available),
+      version: opencode && opencode.version,
+      bin: opencode && opencode.bin,
+      install: "brew install sst/tap/opencode   # or: npm i -g opencode-ai",
+      // opencode is a multi-provider harness: it manages auth AND the model in
+      // its own config, so the guide is install -> auth login -> pick a model.
+      hint: "Then run `opencode auth login` to connect a provider (Anthropic, OpenAI, etc.), and `opencode models` to pick the default model. Woven shells out to it for text-output runs.",
+      docs: "https://opencode.ai/docs/",
     },
   ];
   return html`
@@ -19998,6 +20026,7 @@ function ModelInstallDialog({ onClose, onRefresh }) {
   const cmds = [
     { label: "Claude Code (Anthropic)", install: "npm install -g @anthropic-ai/claude-code", login: "claude login" },
     { label: "Codex (OpenAI)",          install: "npm install -g @openai/codex",            login: "codex login" },
+    { label: "opencode (multi-provider)", install: "brew install sst/tap/opencode",          login: "opencode auth login" },
   ];
   const [copied, setCopied] = useState(null);
   const copy = (text, id) => {
@@ -78535,7 +78564,7 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
     <div className="workflow-default-providers">
       <div className="workflow-settings-section-group-head">Default models per capability</div>
       <div className="workflow-settings-section-group-sub">
-        Each row defaults to the best available option for that capability - a model whose API key is configured below, OR the matching CLI (Claude Code CLI for anthropic, Codex CLI for openai) when no key is set but the CLI is installed. Pick a different provider/model to override. ✓ = key configured, CLI = falls back to its native CLI, ⚠ = no key + no CLI (won't run until you paste a key).
+        Each row defaults to the best available option for that capability - a model whose API key is configured below, OR the matching CLI (Claude Code CLI for anthropic, Codex CLI for openai, opencode for opencode) when no key is set but the CLI is installed. Pick a different provider/model to override. ✓ = key configured, CLI = falls back to its native CLI, ⚠ = no key + no CLI (won't run until you paste a key).
       </div>
       ${CAPABILITY_KEYS.map(cap => html`
         <${WorkflowDefaultProviderRow}
@@ -78573,6 +78602,12 @@ function _providerAvailability(mediaConfig, providerId) {
     if (mediaConfig && mediaConfig.codex_cli_available)  return { ok: true, source: "cli" };
     if (mediaConfig && mediaConfig.claude_cli_available) return { ok: true, source: "cli-substitute" };
   }
+  // opencode is its own runtime (multi-provider, no API key) - it's available
+  // purely when its CLI is on PATH. No sibling-substitute: opencode is only
+  // ever satisfied by opencode.
+  if (providerId === "opencode") {
+    if (mediaConfig && mediaConfig.opencode_cli_available) return { ok: true, source: "cli" };
+  }
   return { ok: false, source: "none" };
 }
 function _pickAutoForCapability(cap, models, mediaConfig) {
@@ -78609,6 +78644,12 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
     }
     if (mediaConfig.codex_cli_available) {
       const m = pickForProvider("openai");
+      if (m) return { provider: m.provider, model: m.id, source: "cli" };
+    }
+    // opencode is the last CLI tie-break (after the two native CLIs) so an
+    // opencode-only install still labels the agent row instead of "(none)".
+    if (mediaConfig.opencode_cli_available) {
+      const m = pickForProvider("opencode");
       if (m) return { provider: m.provider, model: m.id, source: "cli" };
     }
     // No native CLI → fall through to API-key loop below.

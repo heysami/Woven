@@ -234,6 +234,15 @@
     { id: "claude-opus-4-6",       provider: "anthropic", label: "claude-opus-4.6",    hint: "Anthropic · 1M context",      caps: ["text", "vision"], integrated: true },
     { id: "claude-sonnet-4-6",     provider: "anthropic", label: "claude-sonnet-4.6",  hint: "Anthropic · current sonnet",  caps: ["text", "vision"], integrated: true },
     { id: "claude-haiku-4-5",      provider: "anthropic", label: "claude-haiku-4.5",   hint: "Anthropic · fast + cheap",    caps: ["text", "vision"], integrated: true },
+    // opencode (sst/opencode) is a third agent CLI. It's multi-provider and
+    // manages its own auth + default model, so it's a cliOnly sentinel like the
+    // codex/claude defaults: when picked, the daemon spawns `opencode run` and
+    // opencode uses whatever model `opencode auth login` / `opencode models`
+    // configured. provider:"opencode" is what pickAgentIdForChat maps to the
+    // "opencode" agentId, and _providerAvailability gates it on the
+    // opencode_cli_available flag. No PROVIDERS catalog row (it has no API key
+    // to save in Settings); the agent picker falls back to the bare id label.
+    { id: "opencode-default",      provider: "opencode",  label: "opencode default",   hint: "Multi-provider · uses opencode's own configured model", caps: ["text"], integrated: true, cliOnly: true },
   ];
 
   // Video models. fal rows dispatch through fal's sync POST endpoint and parse
