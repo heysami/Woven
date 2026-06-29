@@ -741,57 +741,95 @@ vec4 shade(Ctx c){
   return vec4(clamp(col,0.0,1.0),uAlpha);
 }` },
 
-/* ---------------- DIGITAL EFFECT ---------------- */
+/* ---------------- DIGITAL EFFECTS ----------------
+   These are SCREEN / PRINT processes, not refractive glass: they sample the
+   backdrop FLAT (texture(uBackdrop,c.uv)), never through the bezel refraction
+   offset c.refr - otherwise every panel would warp at its edges like glass.
+   Studied from the shared mm-composer fx.js (dither/crt/halftone/chromatic) and
+   the DS analog.js classic halftone screen (angled dot ramp). */
 'crt-phosphor':{ name:'CRT Phosphor', cat:'Digital', lum:'dark', swatch:'repeating-linear-gradient(0deg,#0c2a12,#0c2a12 2px,#031206 4px)',
   dials:['scale','glow','alpha'],
-  params:mp({colorA:'#0d2a14',scale:18,glow:0.5,alpha:1.0}),
+  params:mp({colorA:'#36ff7a',scale:14,glow:0.45,alpha:1.0}),
   shade:`vec4 shade(Ctx c){
-  vec3 base = sampleRefract(c);
-  base = mix(base, uColorA, 0.3);
+  vec3 src = texture(uBackdrop, c.uv).rgb;
+  float lum = dot(src, vec3(0.299,0.587,0.114));
+  // RGB phosphor triad across 3 device px - gentle (45%) so content stays bright
   float sx = mod(c.fc.x, 3.0);
-  vec3 sub = vec3(step(sx,1.0), step(1.0,sx)*step(sx,2.0), step(2.0,sx));
-  base *= 0.5 + 1.0*sub;
-  float scan = 0.7 + 0.3*sin(c.fc.y*3.14159/(uScale*0.3+1.0));
-  base *= scan;
-  base += base*uGlow;
-  return vec4(base, uAlpha);
+  vec3 mask = vec3(smoothstep(1.3,0.0,abs(sx-0.5)),
+                   smoothstep(1.3,0.0,abs(sx-1.5)),
+                   smoothstep(1.3,0.0,abs(sx-2.5)));
+  mask = mix(vec3(1.0), mask, 0.45);
+  // scanlines (pitch from uScale)
+  float scan = 0.86 + 0.14*sin(c.fc.y * 6.28318 / max(2.0, uScale*0.3));
+  vec3 col = src * mask * scan;
+  col += uColorA * uGlow * (1.0-lum) * 0.55;     // phosphor afterglow in the shadows
+  col += src * uGlow * 0.22;                       // gentle bloom
+  float vig = 1.0 - 0.22*dot(c.pos,c.pos);         // soft tube vignette to the panel edge
+  col *= clamp(vig,0.0,1.0);
+  return vec4(col, uAlpha);
 }` },
 
 'halftone-cmyk':{ name:'Halftone CMYK', cat:'Digital', lum:'light', swatch:'radial-gradient(circle at 25% 25%,#111 25%,transparent 26%),radial-gradient(circle at 75% 75%,#111 25%,transparent 26%),#fff',
   dials:['scale','alpha'],
-  params:mp({colorA:'#10131a',colorB:'#f5f1e8',scale:6,alpha:1.0}),
-  shade:`vec4 shade(Ctx c){
-  vec3 src = sampleRefract(c);
-  vec2 g = c.fc/uScale;
-  float dotd = length(fract(g)-0.5);
-  float lum = dot(src, vec3(0.299,0.587,0.114));
-  float ink = step(dotd, (1.0-lum)*0.6);
-  vec3 col = mix(uColorB, src*0.5+uColorA*0.5, ink);             // ink dots on light paper
+  params:mp({colorB:'#f5f1e8',scale:6,alpha:1.0}),
+  // True 4-colour process screen: separate C/M/Y/K, each screened at its classic
+  // angle (15/75/0/45 deg), subtractively printed on paper (uColorB). Dot AREA
+  // tracks ink amount (radius = sqrt(amount)), the way real halftone works.
+  shade:`float screenDot(vec2 fc, float ang, float cell, float amt){
+  float ca=cos(ang), sa=sin(ang);
+  vec2 p = mat2(ca,-sa,sa,ca) * fc;
+  vec2 g = fract(p/cell) - 0.5;
+  float d = length(g) * 2.0;                        // 0 centre -> ~1.4 corner
+  float r = sqrt(clamp(amt,0.0,1.0));              // dot area ~ ink amount
+  return smoothstep(r+0.12, r-0.12, d);
+}
+vec4 shade(Ctx c){
+  vec3 src = texture(uBackdrop, c.uv).rgb;
+  float k = 1.0 - max(max(src.r,src.g),src.b);
+  float ik = max(1e-3, 1.0-k);
+  float cC=clamp((1.0-src.r-k)/ik,0.0,1.0), cM=clamp((1.0-src.g-k)/ik,0.0,1.0), cY=clamp((1.0-src.b-k)/ik,0.0,1.0);
+  float cell = max(2.0, uScale);
+  float dC=screenDot(c.fc, radians(15.0), cell, cC);
+  float dM=screenDot(c.fc, radians(75.0), cell, cM);
+  float dY=screenDot(c.fc, radians( 0.0), cell, cY);
+  float dK=screenDot(c.fc, radians(45.0), cell, k);
+  vec3 col = uColorB;                               // paper
+  col *= 1.0 - vec3(0.0,0.7,0.9)*dC;               // cyan ink absorbs R (a touch of G/B too)
+  col *= 1.0 - vec3(0.8,0.0,0.6)*dM;               // magenta absorbs G
+  col *= 1.0 - vec3(0.85,0.75,0.0)*dY;             // yellow absorbs B
+  col *= 1.0 - 0.92*dK;                             // key (black)
   return vec4(col, uAlpha);
 }` },
 
 'dither-1bit':{ name:'1-bit Dither', cat:'Digital', lum:'light', swatch:'repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0/6px 6px',
-  dials:['alpha'],
-  params:mp({colorA:'#0c0f16',colorB:'#edeee0',alpha:1.0}),
+  dials:['scale','alpha'],
+  params:mp({colorA:'#0c0f16',colorB:'#edeee0',scale:2,alpha:1.0}),
+  // Ordered Bayer 4x4 threshold on a chunky pixel grid (scale = block px), two
+  // tone (ink/paper). No brightness bias - midtones read as a clean dot pattern.
   shade:`vec4 shade(Ctx c){
-  vec3 src = sampleRefract(c);
-  float lum = dot(src, vec3(0.299,0.587,0.114)) + 0.25;         // bias bright -> mostly paper
-  int ix = int(mod(c.fc.x,4.0)), iy = int(mod(c.fc.y,4.0));
-  float th = BAYER[iy*4+ix]/16.0;
-  float bw = step(th, lum);
-  vec3 col = mix(uColorA, uColorB, bw);
-  return vec4(col, uAlpha);
+  float px = max(1.0, uScale);
+  vec2 blk = floor(c.fc/px);
+  vec2 suv = (blk*px + px*0.5)/uRes;                // sample at block centre
+  vec3 src = texture(uBackdrop, suv).rgb;
+  float lum = dot(src, vec3(0.299,0.587,0.114));
+  int ix=int(mod(blk.x,4.0)), iy=int(mod(blk.y,4.0));
+  float th=(BAYER[iy*4+ix]+0.5)/16.0;
+  float bw=step(th, lum);
+  return vec4(mix(uColorA, uColorB, bw), uAlpha);
 }` },
 
 'chromatic-aberration':{ name:'Chromatic Aberration', cat:'Digital', lum:'dark', swatch:'linear-gradient(135deg,#ff5a5a,#5aff8c 50%,#5a8cff)',
   dials:['dispersion','alpha'],
   params:mp({dispersion:0.4,alpha:1.0}),
+  // Lens-style radial fringing centred on the PANEL (c.pos), splitting R/B
+  // outward, strongest at the edges - flat sampled, no glass warp, no vignette.
   shade:`vec4 shade(Ctx c){
-  vec2 d = c.uv-0.5;
-  float r = length(d);
-  vec2 off = d*r*uDisp*0.4;
-  vec3 col = vec3(texture(uBackdrop,c.uv-off).r, texture(uBackdrop,c.uv).g, texture(uBackdrop,c.uv+off).b);
-  col *= 1.0 - r*r*0.5;
+  vec2 dir = c.pos;                                 // -1..1 from panel centre
+  float r = length(dir);
+  vec2 off = normalize(dir + 1e-6) * r * r * uDisp * 0.012;
+  vec3 col = vec3(texture(uBackdrop,c.uv+off).r,
+                  texture(uBackdrop,c.uv).g,
+                  texture(uBackdrop,c.uv-off).b);
   return vec4(col, uAlpha);
 }` },
 
