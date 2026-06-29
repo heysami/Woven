@@ -138,6 +138,8 @@
   <div class="col left" data-float-panel="left">
     <div class="hd">
       <h1>Composer</h1><div class="sp"></div>
+      <button class="sm" id="groupSel" title="Group the selected layer into a new folder">Group</button>
+      <button class="sm" id="addGroup" title="Add an empty group folder">+ Group</button>
       <button class="sm" id="addLayer" title="Add layer">+ Layer</button>
     </div>
     <div class="layers" id="layerList"></div>
@@ -664,18 +666,22 @@ let gotInit=false;
      WIRED.triggers  [{source,params,impacts}]        global triggers
      WIRED.layers    [{id,spec:{name,z,opacity,blend,visible},children:[...]}]
                       each child = {type:'asset'|'position'|'trigger'|'effect',...}
+     WIRED.groups    [{id,spec:{name,z,opacity,blend,visible},children:[...]}]
+                      children = member layers/groups (type:'layer'|'layer-group',
+                      recursed) + shared position/trigger/effect specs.
    ------------------------------------------------------------------------- */
-let WIRED = { effects:[], positions:[], triggers:[], layers:[], logic:null };
-let _wiredVer=0, _wiredCache=null, _wiredCacheVer=-1;
+let WIRED = { effects:[], positions:[], triggers:[], layers:[], groups:[], logic:null };
+let _wiredVer=0, _wiredCache=null, _wiredCacheVer=-1, _wiredGroupCache=null, _wiredGroupLeafCache=null;
 function storeWired(d){
   WIRED = {
     effects:   Array.isArray(d.effects)   ? d.effects   : [],
     positions: Array.isArray(d.positions) ? d.positions : [],
     triggers:  Array.isArray(d.triggers)  ? d.triggers  : [],
     layers:    Array.isArray(d.layers)    ? d.layers    : [],
+    groups:    Array.isArray(d.groups)    ? d.groups    : [],
     logic:     (d.logic && typeof d.logic==='object') ? d.logic : null,
   };
-  _wiredVer++; _wiredCache=null;   // invalidate synthesized-layer cache
+  _wiredVer++; _wiredCache=null; _wiredGroupCache=null; _wiredGroupLeafCache=null;   // invalidate synthesized caches
   // Logic Graph (W2C): recompile the logic plan when the projection changes;
   // warm the optional W2D input modules so capture is ready on the next frame.
   LogicBridge.setProjection(WIRED.logic);
@@ -762,7 +768,11 @@ function normalizeRuntimePositioning(p,W,H){
   return p;
 }
 function buildWiredRuntimeLayers(){
-  return (WIRED.layers||[]).map((wl,wi)=>{
+  return (WIRED.layers||[]).map(buildOneWiredLayer);
+}
+/* Build ONE runtime layer from a wired layer entry ({id,spec,children}). Reused
+   for top-level WIRED.layers AND for member layers nested inside a wired group. */
+function buildOneWiredLayer(wl,wi){
     const spec=wl.spec||{};
     // Shape render node (PART 2): a polygon / polyline drawn from up to 8 wired
     // logic vector2 points. It is a self-contained layer (no asset/position/
@@ -1066,17 +1076,94 @@ function buildWiredRuntimeLayers(){
     const mo = (typeof STATE!=='undefined' && STATE.wiredMasks) ? STATE.wiredMasks[L.id] : null;
     if(mo && mo.by) L.mask = Object.assign({by:'',src:'lum',dst:'alpha'}, mo);
     return L;
-  });
 }
-/* Inline + wired layers, the full set the runtime renders this frame. */
+/* Inline + wired layers, the full set the runtime renders this frame. Wired
+   GROUP member leaves are appended too so PASS A draws every member as a leaf
+   buffer; the tree builder re-nests them via their groupId. */
 function allRuntimeLayers(){
   const wired=wiredRuntimeLayers();
-  return wired.length ? STATE.layers.concat(wired) : STATE.layers;
+  const wm=wiredGroupMemberLayers();
+  let out=STATE.layers;
+  if(wired.length) out=out.concat(wired);
+  if(wm.length) out=out.concat(wm);
+  return out;
 }
+/* Inline + wired groups, the full set of groups the render tree walks. */
+function allRuntimeGroups(){
+  const wired=wiredRuntimeGroups();
+  return wired.length ? (STATE.groups||[]).concat(wired) : (STATE.groups||[]);
+}
+/* Map wired effect children to a runtime effect stack (same contract as the
+   per-layer effect mapper in buildOneWiredLayer). */
+function _wiredEffectStack(effK){
+  return (effK||[]).map(e=>{
+    const fx = wiredChildSpec(e);
+    const fp = fx.params||{};
+    const fxType = fx.type || fp.type;
+    const isCustom = !!(fx.glsl && String(fx.glsl).trim()) || fxType==='custom' || fxType==='shader';
+    let intensity = fx.intensity!=null?fx.intensity:(fp.intensity!=null?fp.intensity:1), params = fp;
+    const b = fx._bindings;
+    if(b){ params = Object.assign({}, params);
+      for(const k in b){ const src=b[k]; if(!src||src.kind==='logic'||Sources.isVector(src)) continue;
+        const val=Sources.eval(src,{index:0,time:Input.clock,count:1});
+        if(k==='intensity') intensity=val; else params[k]=val; }
+    }
+    return {type:isCustom?'custom':fxType, params, intensity, glsl:fx.glsl, _fxSpec:(b?fx:null)};
+  });
+}
+/* Walk WIRED.groups (recursively through nested member groups) into two flat
+   lists: runtime GROUP objects (fillGroup shape, with children = member ids) and
+   member LEAF runtime layers (each tagged with its parent groupId so the render
+   tree re-nests them). Cached until storeWired() invalidates. */
+function _buildWiredGroupTree(){
+  if(_wiredGroupCache && _wiredGroupLeafCache) return {groups:_wiredGroupCache, leaves:_wiredGroupLeafCache};
+  const groups=[], leaves=[]; let leafIdx=0;
+  function procGroup(wg, parentId){
+    const spec=wg.spec||{};
+    const kids=Array.isArray(wg.children)?wg.children:[];
+    const gid=wg.id||('WG'+groups.length);
+    const childIds=[];
+    for(const k of kids){
+      if(!k) continue;
+      if(k.type==='layer'){ const L=buildOneWiredLayer(k, leafIdx++); L.groupId=gid; leaves.push(L); childIds.push(L.id); }
+      else if(k.type==='layer-group'){ childIds.push(procGroup(k, gid)); }
+    }
+    const posK=kids.find(k=>k&&k.type==='position');
+    const trigK=kids.find(k=>k&&k.type==='trigger');
+    const effK=kids.filter(k=>k&&k.type==='effect');
+    const posSpec = posK ? wiredChildSpec(posK) : null;
+    const positioning = posSpec ? composerPositioningFromSpec(posSpec) : {mode:'single',x:0.5,y:0.5,scale:1,rot:0};
+    const trigSpec = trigK ? wiredChildSpec(trigK) : null;
+    const trigParams = trigSpec ? triggerBoundParams(trigSpec) : null;
+    const trigger = trigSpec
+      ? Object.assign({source:trigSpec.source||'none', impacts:triggerResolvedImpacts(trigSpec, trigParams)}, trigParams)
+      : {source:'none',impacts:[]};
+    const G = fillGroup({
+      id: gid,
+      name: spec.name || ('Group '+(groups.length+1)),
+      z: finiteNumber(spec.z, 100+groups.length),
+      visible: spec.visible!==false,
+      opacity: finiteNumber(spec.opacity,1),
+      blend: blendModeOf(spec.blend),
+      positioning, trigger,
+      effects:{stack:_wiredEffectStack(effK)},
+      children: childIds,
+    });
+    G._wired=true; G._isGroup=true; G.groupId=parentId||null;
+    G._trigSpec = trigSpec || null;
+    groups.push(G);
+    return gid;
+  }
+  for(const wg of (WIRED.groups||[])) procGroup(wg, null);
+  _wiredGroupCache=groups; _wiredGroupLeafCache=leaves;
+  return {groups, leaves};
+}
+function wiredRuntimeGroups(){ return _buildWiredGroupTree().groups; }
+function wiredGroupMemberLayers(){ return _buildWiredGroupTree().leaves; }
 
 function defaultState(){
   return {v:1,canvasW:1280,canvasH:720,background:'#000000',inputs:{camera:false,mic:false},wiredMasks:{},
-    layers:[]};
+    layers:[], groups:[]};
 }
 let STATE = defaultState();
 
@@ -1100,7 +1187,36 @@ function fillLayer(L){
   L.mask = Object.assign({by:'',src:'lum',dst:'alpha'}, L.mask||{});
   L.effects = L.effects||{stack:[]}; L.effects.stack = L.effects.stack||[];
   L.effects.stack.forEach(e=>{ e.params=e.params||{}; e.intensity=e.intensity??1; e.inputs=e.inputs||{}; });
+  // groupId: the id of the immediate parent GROUP this layer belongs to, or null
+  // for a root-level layer. This is a FAST parent-lookup cache; the authoritative
+  // membership + order lives in group.children (see fillGroup / reconcileGroupTree).
+  L.groupId = L.groupId || null;
   return L;
+}
+/* A GROUP folds several layers (and/or nested groups) into one unit that shares a
+   transform, opacity, blend, effect stack, mask and trigger. children[] is the
+   ORDERED, authoritative membership (entries are leaf-layer ids OR group ids);
+   each member also carries groupId pointing back here. _isGroup is the runtime
+   discriminator the render tree branches on. */
+function fillGroup(G){
+  G.id = G.id||uid();
+  G.name = G.name||'Group';
+  G.z = G.z??0; G.visible = G.visible!==false; G.collapsed = !!G.collapsed;
+  G.opacity = G.opacity!=null?G.opacity:1;
+  G.blend = G.blend||'source-over';
+  G.positioning = Object.assign({mode:'single',x:0.5,y:0.5,scale:1,rot:0}, G.positioning||{});
+  fillPositioning(G.positioning);
+  G.trigger = Object.assign({source:'none',impacts:[]}, G.trigger||{});
+  fillTrigger(G.trigger);
+  // group-level mask: parity with layers (multiply a channel of the group
+  // composite by a channel of another rendered layer/group).
+  G.mask = Object.assign({by:'',src:'lum',dst:'alpha'}, G.mask||{});
+  G.effects = G.effects||{stack:[]}; G.effects.stack = G.effects.stack||[];
+  G.effects.stack.forEach(e=>{ e.params=e.params||{}; e.intensity=e.intensity??1; e.inputs=e.inputs||{}; });
+  G.groupId = G.groupId || null;   // a group can itself be nested in a parent group
+  G.children = Array.isArray(G.children) ? G.children.filter(x=>typeof x==='string') : [];
+  G._isGroup = true;
+  return G;
 }
 function fillPositioning(p){
   const d={
@@ -1170,11 +1286,49 @@ function normalizeState(s){
   s.inputs=Object.assign({camera:false,mic:false},s.inputs||{});
   s.wiredMasks=(s.wiredMasks && typeof s.wiredMasks==='object') ? s.wiredMasks : {};
   s.layers=(s.layers||[]).map(fillLayer);
+  s.groups=(s.groups||[]).map(fillGroup);
+  reconcileGroupTree(s);
   // An empty doc normally falls back to the demo so a fresh node isn't blank -
   // Start EMPTY when there is nothing to render - no default demo layers. The
   // user adds layers (or wires Layer nodes) themselves; an empty composition is
   // the intended blank slate, not a bug to paper over with a grid-pulse demo.
   return s;
+}
+/* Make the group tree internally consistent after a load (or any external
+   mutation). group.children is authoritative for membership + order; this:
+     - drops child ids that don't resolve to a live layer or group,
+     - de-duplicates membership (an id may belong to at most ONE parent),
+     - breaks cycles (a group cannot be its own ancestor),
+     - rewrites every member's groupId from the group that actually lists it
+       (clearing stale groupId pointers that no group claims).
+   Inline + wired ids share one flat namespace, but reconcile only operates on the
+   inline STATE (wired groups are rebuilt from the node graph each frame). */
+function reconcileGroupTree(s){
+  const groups=s.groups||[]; const layers=s.layers||[];
+  const groupById={}; for(const G of groups) groupById[G.id]=G;
+  const layerById={}; for(const L of layers) layerById[L.id]=L;
+  const claimed=new Set();           // ids already assigned to a parent (dedup)
+  // a group is an ancestor of `id` ? (cycle guard)
+  const isAncestor=(ancId,id)=>{
+    let cur=groupById[id], guard=0;
+    while(cur && guard++<256){ if(cur.groupId===ancId) return true; cur=groupById[cur.groupId]; }
+    return false;
+  };
+  for(const G of groups){
+    const kept=[];
+    for(const cid of (G.children||[])){
+      if(cid===G.id) continue;                       // no self-membership
+      const child=layerById[cid]||groupById[cid];
+      if(!child) continue;                            // dead id
+      if(claimed.has(cid)) continue;                  // already in another group
+      if(groupById[cid] && isAncestor(cid, G.id)) continue;  // would form a cycle
+      claimed.add(cid); kept.push(cid); child.groupId=G.id;
+    }
+    G.children=kept;
+  }
+  // anything no group claims is a root: clear a stale groupId pointer.
+  for(const L of layers){ if(L.groupId && !claimed.has(L.id)) L.groupId=null; }
+  for(const G of groups){ if(G.groupId && !claimed.has(G.id)) G.groupId=null; }
 }
 
 /* ===========================================================================
@@ -2988,8 +3142,9 @@ function applyMap(v, map, range){
   if(map==='threshold') return v>=0.5 ? hi : lo;
   return lerp(lo,hi,clamp(v,0,1));
 }
-function computeImpacts(triggerVals, layers, globalTrig){
-  // returns { layerId: { opacity?, scale?, position?:[dx,dy], effIntensity?:[..per effect or global..] } }
+function computeImpacts(triggerVals, layers, globalTrig, groupTrigs){
+  // returns { id: { opacity?, scale?, position?:[dx,dy], effIntensity?:[..per effect or global..] } }
+  // id may be a layer id OR a group id (group triggers can target either).
   const ls = layers || STATE.layers;
   const ov={};
   function route(impacts, tv){
@@ -3011,7 +3166,23 @@ function computeImpacts(triggerVals, layers, globalTrig){
   if(globalTrig && globalTrig._impacts && globalTrig._impacts.length){
     route(globalTrig._impacts, globalTrig);
   }
+  // GROUP triggers route their own impacts onto targeted ids (group or member).
+  if(groupTrigs) for(const gt of groupTrigs){ if(gt && gt._impacts && gt._impacts.length) route(gt._impacts, gt); }
   return ov;
+}
+/* Recursively flatten a group's membership to LEAF layer ids (descending through
+   nested groups), cycle-guarded. Used to broadcast a group trigger to members. */
+function groupMemberLeaves(G, groupById, layerById, seen){
+  seen = seen || new Set();
+  if(!G || seen.has(G.id)) return [];
+  seen.add(G.id);
+  const out=[];
+  for(const cid of (G.children||[])){
+    const cg=groupById && groupById[cid];
+    if(cg) out.push(...groupMemberLeaves(cg, groupById, layerById, seen));
+    else out.push(cid);   // a leaf-layer id (or an id that resolves to one)
+  }
+  return out;
 }
 
 /* ---------- WIRED top-level position / trigger application ----------------- */
@@ -3951,6 +4122,9 @@ const Engine = {
     this.runDetectors();
     // inline + wired-spec layers form the full runtime set this frame
     const layers=allRuntimeLayers();
+    // inline + wired GROUPS the composite tree walks (PASS B). Empty for docs
+    // with no groups, so the render path stays identical to the flat behaviour.
+    const groups=allRuntimeGroups();
     // WIRED top-level positions/triggers take effect as global defaults:
     //   first wired position → default scheme for layers in 'single' default
     //   first wired trigger  → a global trigger value broadcast to all layers
@@ -3982,11 +4156,29 @@ const Engine = {
         }
       }
     }
+    // shared id-maps (used by the group trigger broadcast below AND PASS B).
+    const groupById={}; for(const G of groups) groupById[G.id]=G;
+    const layerById={}; for(const L of layers) layerById[L.id]=L;
     // 1) evaluate triggers (per-layer), then fold in the global wired trigger
     const tvals={}; for(const L of layers) tvals[L.id]=Triggers.eval(L);
     if(globalTrig){ for(const L of layers){ if(!tvals[L.id]||tvals[L.id].v===0) tvals[L.id]=globalTrig; } }
-    // 2) compute cross-layer impacts (inline impacts + wired global trigger impacts)
-    const overrides=computeImpacts(tvals, layers, globalTrig);
+    // 1b) GROUP triggers: each group with a live trigger BROADCASTS its value to
+    //     its member leaves (recursively) that have no live trigger of their own -
+    //     scoped reuse of the global-broadcast pattern - and contributes its OWN
+    //     impacts (target = group id OR a specific member) via groupTrigs below.
+    const groupTrigs=[];
+    for(const G of groups){
+      if(!G.trigger || G.trigger.source==='none') continue;
+      const gv=Triggers.eval(G);                       // {v,vec}
+      gv._impacts=G.trigger.impacts||[];
+      groupTrigs.push(Object.assign({id:G.id}, gv));
+      for(const leafId of groupMemberLeaves(G, groupById, layerById)){
+        if(!tvals[leafId] || tvals[leafId].v===0) tvals[leafId]=gv;
+      }
+    }
+    // 2) compute cross-layer impacts (inline impacts + wired global trigger impacts
+    //    + group-own impacts keyed by impact target, which may be a group id).
+    const overrides=computeImpacts(tvals, layers, globalTrig, groupTrigs);
     // 3) clear base canvases
     ctx.clearRect(0,0,W,H); ctx.fillStyle=STATE.background; ctx.fillRect(0,0,W,H);
     if(this.fx&&this.fx.gl){ this.fx.gl.clearColor(0,0,0,0); this.fx.gl.clear(this.fx.gl.COLOR_BUFFER_BIT); }
@@ -4071,6 +4263,11 @@ const Engine = {
     // prune buffers for layers that no longer exist
     const live=new Set(layers.map(L=>L.id));
     for(const id of Object.keys(this._bufs)){ if(!live.has(id)) delete this._bufs[id]; }
+    // prune group FBOs for groups that no longer exist (parallel pool, keyed by
+    // plain group id; the leaf `live` set never contains group ids).
+    this._groupBufs=this._groupBufs||{};
+    const liveGroups=new Set(groups.map(G=>G.id));
+    for(const id of Object.keys(this._groupBufs)){ if(!liveGroups.has(id)) delete this._groupBufs[id]; }
     SketchHost.prune(live);   // tear down iframes for sketch layers that went away
     PopHost.prune(live);      // free GPU particle buffers for layers that went away
     Scene3DHost.prune(live);  // free 3D layer canvases for layers that went away
@@ -4082,10 +4279,50 @@ const Engine = {
     const csLive=new Set();
     for(const L of layers){ for(const cs of layerCustomStatefuls(L)) csLive.add(csInstId(L.id,cs.idx)); }
     for(const id of Array.from(_gpuCsIds)){ if(!csLive.has(id)) disposeCustomStateful(id); }
-    // 4b) PASS B - composite visible layers in z-order, applying channel masks.
-    const ordered=[...layers].filter(L=>L.visible).sort((a,b)=>(a.z||0)-(b.z||0));
-    for(const L of ordered){
-      const buf=rendered[L.id]; if(!buf) continue;
+    // 4b) PASS B - composite the layer/group TREE in z-order. With no groups this
+    //     is exactly the old flat "composite visible layers by z" loop: every
+    //     root is a leaf and compositeNode dispatches straight to compositeLeaf.
+    this._groupBufs=this._groupBufs||{};
+    const getGroupBuf=(id)=>{
+      let b=this._groupBufs[id];
+      if(!b){ const cv=document.createElement('canvas'); b=this._groupBufs[id]={cv,cx:cv.getContext('2d')}; }
+      if(b.cv.width!==W||b.cv.height!==H){ b.cv.width=W; b.cv.height=H; }
+      return b;
+    };
+    const resolveChildren=(node)=> (node.children||[]).map(id=>groupById[id]||layerById[id]).filter(Boolean);
+    const groupBufCv=(id)=> (this._groupBufs[id]?this._groupBufs[id].cv:null);
+    // shared transform for a group composite: translate/rotate/scale the whole
+    // group around the CANVAS centre. Default single positioning (0.5,0.5,1,0)
+    // with no override resolves to identity, so a plain group is a pass-through.
+    const applyGroupTransform=(c,node,ov)=>{
+      const p=node.positioning||{};
+      let sc=(p.scale!=null?p.scale:1); if(ov&&ov.scale!=null) sc*=ov.scale;
+      const rot=(p.rot||0);   // radians, same convention as a 'single' layer
+      const cx=W/2, cy=H/2;
+      let ox=((p.x!=null?p.x:0.5)-0.5)*W, oy=((p.y!=null?p.y:0.5)-0.5)*H;
+      if(ov&&ov.position){ ox=(ov.position[0]-0.5)*W; oy=(ov.position[1]-0.5)*H; }
+      c.translate(cx+ox, cy+oy);
+      if(rot) c.rotate(rot);
+      if(sc!==1) c.scale(sc,sc);
+      c.translate(-cx,-cy);
+    };
+    // a group with NO isolating properties draws its children straight into the
+    // parent ctx (no FBO) - keeps blending bit-identical to the flat path.
+    const isTrivialGroup=(node,ov)=>{
+      const p=node.positioning||{};
+      if((p.x!=null?p.x:0.5)!==0.5 || (p.y!=null?p.y:0.5)!==0.5) return false;
+      if((p.scale!=null?p.scale:1)!==1 || (p.rot||0)!==0) return false;
+      if((node.opacity!=null?node.opacity:1)!==1) return false;
+      if((node.blend||'source-over')!=='source-over') return false;
+      if(node.mask && node.mask.by) return false;
+      if(node.effects && node.effects.stack && node.effects.stack.length) return false;
+      if(ov && (ov.opacity!=null||ov.scale!=null||ov.position!=null||ov.effIntensity!=null)) return false;
+      return true;
+    };
+    // LEAF composite - the verbatim per-layer body, parameterised on destCtx so a
+    // group can composite its children into the group FBO instead of the canvas.
+    const compositeLeaf=(L,destCtx)=>{
+      const buf=rendered[L.id]; if(!buf) return;
       const ov=overrides[L.id]||{};
       // Copy into the scratch buffer so masking/effects never mutate this layer's
       // stored pixels - another layer may still read it as a mask source.
@@ -4103,8 +4340,8 @@ const Engine = {
       this.lctx.clearRect(0,0,W,H); this.lctx.drawImage(buf.cv,0,0);
       // mask: multiply a channel of this layer by a channel of another layer
       if(L.mask && L.mask.by){
-        const mb=rendered[L.mask.by];
-        if(mb) maskByChannel(this.lctx, W, H, mb.cv, L.mask.src, L.mask.dst);
+        const mb=rendered[L.mask.by] || {cv:groupBufCv(L.mask.by)};
+        if(mb && mb.cv) maskByChannel(this.lctx, W, H, mb.cv, L.mask.src, L.mask.dst);
       }
       // base transforms can be overridden by impacts; wired layers carry their
       // own spec.opacity (multiplied with any impact opacity).
@@ -4112,18 +4349,60 @@ const Engine = {
       const opacity = (ov.opacity!=null?ov.opacity:1) * baseOp;
       // 5) per-layer effects chain on this layer buffer, then composite
       const hasFx = L.effects.stack.length>0 && this.fx && this.fx.gl;
-      ctx.save();
-      ctx.globalAlpha=opacity;
-      ctx.globalCompositeOperation = (L._wired && L._blend) ? L._blend : 'source-over';
+      destCtx.save();
+      destCtx.globalAlpha=opacity;
+      destCtx.globalCompositeOperation = (L._wired && L._blend) ? L._blend : 'source-over';
       if(hasFx){
         const eInt = ov.effIntensity!=null?ov.effIntensity:null;
-        this.fx.apply(this.layerBuf, L.effects.stack, W, H, time, eInt, (id)=> (rendered[id]?rendered[id].cv:null), L.id);
-        ctx.drawImage(this.cgl,0,0,W,H);
+        this.fx.apply(this.layerBuf, L.effects.stack, W, H, time, eInt, (id)=> (rendered[id]?rendered[id].cv:groupBufCv(id)), L.id);
+        destCtx.drawImage(this.cgl,0,0,W,H);
       } else {
-        ctx.drawImage(this.layerBuf,0,0);
+        destCtx.drawImage(this.layerBuf,0,0);
       }
-      ctx.restore();
-    }
+      destCtx.restore();
+    };
+    // GROUP composite - composite children into the group FBO, then apply the
+    // group's shared transform + opacity + blend + mask + GL effect stack once to
+    // the whole composite, and draw it into destCtx. Recurses for nested groups.
+    const compositeGroup=(node,destCtx)=>{
+      if(node.visible===false) return;
+      const ov=overrides[node.id]||{};
+      const kids=resolveChildren(node)
+        .filter(n=> n._isGroup ? n.visible!==false : n.visible)
+        .sort((a,b)=>(a.z||0)-(b.z||0));
+      if(isTrivialGroup(node,ov)){ for(const k of kids) compositeNode(k,destCtx); return; }
+      const gbuf=getGroupBuf(node.id);
+      gbuf.cx.clearRect(0,0,W,H);
+      for(const k of kids) compositeNode(k, gbuf.cx);   // recursion (nested groups)
+      // stage the group composite into the shared scratch for mask/effects, the
+      // same machinery a leaf uses (this.lctx / this.layerBuf / this.cgl).
+      this.lctx.clearRect(0,0,W,H); this.lctx.drawImage(gbuf.cv,0,0);
+      if(node.mask && node.mask.by){
+        const mb=rendered[node.mask.by] || {cv:groupBufCv(node.mask.by)};
+        if(mb && mb.cv) maskByChannel(this.lctx, W, H, mb.cv, node.mask.src, node.mask.dst);
+      }
+      const opacity=(ov.opacity!=null?ov.opacity:1)*(node.opacity!=null?node.opacity:1);
+      const hasFx = node.effects && node.effects.stack.length>0 && this.fx && this.fx.gl;
+      destCtx.save();
+      destCtx.globalAlpha=opacity;
+      destCtx.globalCompositeOperation = node.blend || 'source-over';
+      applyGroupTransform(destCtx, node, ov);
+      if(hasFx){
+        const eInt = ov.effIntensity!=null?ov.effIntensity:null;
+        this.fx.apply(this.layerBuf, node.effects.stack, W, H, time, eInt, (id)=> (rendered[id]?rendered[id].cv:groupBufCv(id)), node.id);
+        destCtx.drawImage(this.cgl,0,0,W,H);
+      } else {
+        destCtx.drawImage(this.layerBuf,0,0);
+      }
+      destCtx.restore();
+    };
+    const compositeNode=(node,destCtx)=>{ if(node._isGroup) compositeGroup(node,destCtx); else compositeLeaf(node,destCtx); };
+    // roots = top-level (un-parented) layers + groups, z-sorted ascending. With
+    // zero groups this is exactly the old `ordered` flat list.
+    const roots=[...layers.filter(L=>L.visible && !L.groupId),
+                 ...groups.filter(G=>G.visible!==false && !G.groupId)]
+                .sort((a,b)=>(a.z||0)-(b.z||0));
+    for(const r of roots) compositeNode(r, ctx);
     // 6) WIRED top-level effects: a FINAL post-process pass over the whole
     //    composited 2D canvas, via the shared fx.js chain.
     this.applyWiredEffects(W,H,time);
@@ -4226,6 +4505,10 @@ function selectedLayer(){
   return STATE.layers.find(l=>l.id===selId)
       || wiredRuntimeLayers().find(l=>l.id===selId);
 }
+function selectedGroup(){
+  return (STATE.groups||[]).find(g=>g.id===selId)
+      || wiredRuntimeGroups().find(g=>g.id===selId);
+}
 
 const ICONS={
   eye:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
@@ -4241,8 +4524,28 @@ const ICONS={
 function layerColor(L){ let h=0; const s=String(L.id||L.name||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return `oklch(70% 0.13 ${h%360})`; }
 function renderLayerList(){
   const root=document.getElementById('layerList'); root.innerHTML='';
-  [...STATE.layers].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(L=>{
+  const groups=STATE.groups||[];
+  const groupById={}; for(const G of groups) groupById[G.id]=G;
+  const layerById={}; for(const L of STATE.layers) layerById[L.id]=L;
+  const childrenOf=(G)=> (G.children||[]).map(id=>groupById[id]||layerById[id]).filter(Boolean);
+  // groups a node may move INTO: every group except itself and its descendants.
+  const moveTargets=(nodeId)=>{
+    const isDesc=(gid)=>{ let cur=groupById[gid],guard=0; while(cur&&guard++<256){ if(cur.id===nodeId) return true; cur=groupById[cur.groupId]; } return false; };
+    return groups.filter(G=>G.id!==nodeId && !isDesc(G.id));
+  };
+  // a compact "move to group" <select> appended to a row's top bar.
+  const moveSelect=(node)=>{
+    const sel=document.createElement('select'); sel.className='mv'; sel.title='Move into group';
+    sel.style.cssText='max-width:80px;font-size:11px;padding:1px 2px';
+    const opts=[['root','(root)'],...moveTargets(node.id).map(g=>[g.id,g.name])];
+    sel.innerHTML=opts.map(([v,l])=>`<option value="${v}" ${ (node.groupId||'root')===v?'selected':'' }>${esc(l)}</option>`).join('');
+    sel.onclick=e=>e.stopPropagation();
+    sel.onchange=e=>{ const v=e.target.value; if(v==='root') moveToRoot(node); else addToGroup(node,v); emit(); renderAll(); };
+    return sel;
+  };
+  const leafRow=(L, depth)=>{
     const el=document.createElement('div'); el.className='layer'+(L.id===selId?' sel':'');
+    if(depth) el.style.marginLeft=(depth*14)+'px';
     // Connector hit-target: the host peeks into this same-origin doc during an
     // edge drag and anchors a `layerin:<layerId>` port to this row's geometry.
     el.dataset.portNode=NODE; el.dataset.portLayer=L.id; el.dataset.portSide='layerin:'+L.id;
@@ -4261,15 +4564,59 @@ function renderLayerList(){
         <span class="tag">fx:${L.effects.stack.length}</span>
         ${(L.trigger.impacts||[]).length?`<span class="tag" style="border-color:var(--acc2);color:var(--acc2)">→${L.trigger.impacts.length}</span>`:''}
       </div>`;
-    el.onclick=(e)=>{ if(e.target.closest('button')||e.target.classList.contains('nm'))return;
+    if(groups.length) el.querySelector('.top').insertBefore(moveSelect(L), el.querySelector('[data-act=del]'));
+    el.onclick=(e)=>{ if(e.target.closest('button')||e.target.closest('select')||e.target.classList.contains('nm'))return;
       selId=L.id; renderAll(); };
     el.querySelector('.nm').onchange=e=>{ L.name=e.target.value; emit(); renderLayerList(); };
     el.querySelector('[data-act=vis]').onclick=()=>{ L.visible=!L.visible; emit(); renderLayerList(); };
     el.querySelector('[data-act=up]').onclick=()=>{ moveZ(L,1); };
     el.querySelector('[data-act=down]').onclick=()=>{ moveZ(L,-1); };
     el.querySelector('[data-act=del]').onclick=()=>{ delLayer(L); };
-    root.appendChild(el);
-  });
+    return el;
+  };
+  const groupRow=(G, depth)=>{
+    const el=document.createElement('div'); el.className='layer grp'+(G.id===selId?' sel':'');
+    if(depth) el.style.marginLeft=(depth*14)+'px';
+    el.style.borderColor='var(--acc2)';
+    el.dataset.portNode=NODE; el.dataset.portLayer=G.id; el.dataset.portSide='layerin:'+G.id;
+    const kids=childrenOf(G);
+    el.innerHTML=`<div class="top">
+        <button class="iconbtn sm" data-act="fold" title="${G.collapsed?'expand':'collapse'}">${G.collapsed?ICONS.car:ICONS.down}</button>
+        <span class="dot" style="background:${layerColor(G)}"></span>
+        <input class="nm" value="${esc(G.name)}">
+        <button class="iconbtn sm" data-act="up" title="up">${ICONS.up}</button>
+        <button class="iconbtn sm" data-act="down" title="down">${ICONS.down}</button>
+        <button class="iconbtn sm" data-act="vis" title="visibility">${G.visible?ICONS.eye:ICONS.eyeoff}</button>
+        <button class="iconbtn sm" data-act="del" title="ungroup (keep contents)">${ICONS.trash}</button>
+      </div>
+      <div class="meta">
+        <span class="tag kind" style="border-color:var(--acc2);color:var(--acc2)">group</span>
+        <span class="tag">${kids.length} item${kids.length===1?'':'s'}</span>
+        <span class="tag">trig:${G.trigger.source}</span>
+        <span class="tag">fx:${G.effects.stack.length}</span>
+      </div>`;
+    if(moveTargets(G.id).length) el.querySelector('.top').insertBefore(moveSelect(G), el.querySelector('[data-act=del]'));
+    el.onclick=(e)=>{ if(e.target.closest('button')||e.target.closest('select')||e.target.classList.contains('nm'))return;
+      selId=G.id; renderAll(); };
+    el.querySelector('.nm').onchange=e=>{ G.name=e.target.value; emit(); renderLayerList(); };
+    el.querySelector('[data-act=fold]').onclick=()=>{ G.collapsed=!G.collapsed; emit(); renderLayerList(); };
+    el.querySelector('[data-act=vis]').onclick=()=>{ G.visible=!G.visible; emit(); renderLayerList(); };
+    el.querySelector('[data-act=up]').onclick=()=>{ moveZ(G,1); };
+    el.querySelector('[data-act=down]').onclick=()=>{ moveZ(G,-1); };
+    el.querySelector('[data-act=del]').onclick=()=>{ deleteGroup(G); };
+    return el;
+  };
+  const renderNode=(node, depth)=>{
+    if(node._isGroup){
+      root.appendChild(groupRow(node, depth));
+      if(!node.collapsed) childrenOf(node).sort((a,b)=>(b.z||0)-(a.z||0)).forEach(ch=>renderNode(ch, depth+1));
+    } else {
+      root.appendChild(leafRow(node, depth));
+    }
+  };
+  // roots = top-level (un-parented) layers + groups, top-of-list = highest z.
+  const roots=[...STATE.layers.filter(L=>!L.groupId), ...groups.filter(G=>!G.groupId)].sort((a,b)=>(b.z||0)-(a.z||0));
+  roots.forEach(n=>renderNode(n,0));
   // Wired LAYER nodes appear here too - read-only rows (driven by the wired
   // node graph), labelled with the Layer NODE's name + a "wired" badge.
   const wired=wiredRuntimeLayers();
@@ -4296,12 +4643,61 @@ function renderLayerList(){
       root.appendChild(el);
     });
   }
+  // Wired GROUP nodes (driven by a wired layer-group node) - read-only rows.
+  const wgs=wiredRuntimeGroups();
+  if(wgs.length){
+    [...wgs].sort((a,b)=>(b.z||0)-(a.z||0)).forEach(G=>{
+      const el=document.createElement('div'); el.className='layer grp'+(G.id===selId?' sel':'');
+      el.dataset.portNode=NODE; el.dataset.portLayer=G.id; el.dataset.portSide='layerin:'+G.id;
+      el.style.borderStyle='dashed'; el.style.opacity='.92'; el.style.borderColor='var(--acc2)';
+      el.innerHTML=`<div class="top">
+          <span class="dot" style="background:${layerColor(G)}"></span>
+          <input class="nm" value="${esc(G.name)}" readonly title="Driven by a wired Layer-group node - edit it on the canvas">
+          <span class="tag" style="border-color:var(--acc2);color:var(--acc2)">wired group</span>
+          <span class="iconbtn sm" title="visibility">${G.visible?ICONS.eye:ICONS.eyeoff}</span>
+        </div>
+        <div class="meta">
+          <span class="tag">${(G.children||[]).length} items</span>
+          <span class="tag">trig:${G.trigger.source}</span>
+          <span class="tag">fx:${G.effects.stack.length}</span>
+        </div>`;
+      el.onclick=()=>{ selId=G.id; renderAll(); };
+      root.appendChild(el);
+    });
+  }
   // Layer rows changed → re-report geometry so layer ports track them (detached
   // only; the function no-ops otherwise). Defer one frame so layout has settled.
   if(_detached) requestAnimationFrame(reportLayerGeom);
 }
-function moveZ(L,dir){ L.z=(L.z||0)+dir; emit(); renderAll(); }
-function delLayer(L){ STATE.layers=STATE.layers.filter(x=>x.id!==L.id);
+function moveZ(node,dir){ node.z=(node.z||0)+dir; emit(); renderAll(); }
+// strip a node id from any parent group's children + clear its groupId.
+function detachFromParent(node){
+  if(node.groupId){ const p=(STATE.groups||[]).find(g=>g.id===node.groupId); if(p) p.children=(p.children||[]).filter(id=>id!==node.id); }
+  node.groupId=null;
+}
+function moveToRoot(node){ detachFromParent(node); }
+function addToGroup(node, groupId){
+  if(node.id===groupId) return;
+  detachFromParent(node);
+  const G=(STATE.groups||[]).find(g=>g.id===groupId); if(!G) return;
+  G.children=G.children||[]; if(!G.children.includes(node.id)) G.children.push(node.id);
+  node.groupId=G.id;
+}
+// dissolve a group: reparent its children to the group's parent (or root),
+// preserving order at the group's slot. Members never disappear.
+function deleteGroup(G){
+  const parentId=G.groupId||null;
+  const parent=parentId?(STATE.groups||[]).find(g=>g.id===parentId):null;
+  const kids=[...(G.children||[])];
+  let idx=-1;
+  if(parent){ idx=parent.children.indexOf(G.id); parent.children=parent.children.filter(id=>id!==G.id); }
+  for(const cid of kids){ const child=(STATE.layers||[]).find(l=>l.id===cid)||(STATE.groups||[]).find(g=>g.id===cid); if(child) child.groupId=parentId; }
+  if(parent){ const ins=idx>=0?idx:parent.children.length; parent.children.splice(ins,0,...kids); }
+  STATE.groups=(STATE.groups||[]).filter(g=>g.id!==G.id);
+  if(selId===G.id) selId=null;
+  emit(); renderAll();
+}
+function delLayer(L){ detachFromParent(L); STATE.layers=STATE.layers.filter(x=>x.id!==L.id);
   if(selId===L.id) selId=STATE.layers[0]&&STATE.layers[0].id; emit(); renderAll(); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -4310,6 +4706,23 @@ document.getElementById('addLayer').onclick=()=>{
   const L=fillLayer({id:uid(),name:'Layer '+(STATE.layers.length+1),z:maxZ+1,
     content:{kind:'shape',shape:'circle',color:'#b388ff'},positioning:{mode:'single'},trigger:{source:'none'},effects:{stack:[]}});
   STATE.layers.push(L); selId=L.id; emit(); renderAll();
+};
+document.getElementById('addGroup').onclick=()=>{
+  const allZ=[...STATE.layers,...(STATE.groups||[])].map(n=>n.z||0);
+  const maxZ=Math.max(0,...allZ);
+  STATE.groups=STATE.groups||[];
+  const G=fillGroup({id:uid(),name:'Group '+(STATE.groups.length+1),z:maxZ+1});
+  STATE.groups.push(G); selId=G.id; emit(); renderAll();
+};
+document.getElementById('groupSel').onclick=()=>{
+  // wrap the currently-selected inline layer (or group) into a new group.
+  const sel=STATE.layers.find(l=>l.id===selId)||(STATE.groups||[]).find(g=>g.id===selId);
+  if(!sel || sel.id===undefined){ showErr&&showErr('Select a layer first'); return; }
+  const allZ=[...STATE.layers,...(STATE.groups||[])].map(n=>n.z||0);
+  const G=fillGroup({id:uid(),name:'Group '+((STATE.groups||[]).length+1),z:Math.max(0,...allZ)+1});
+  STATE.groups=STATE.groups||[]; STATE.groups.push(G);
+  addToGroup(sel, G.id);
+  selId=G.id; emit(); renderAll();
 };
 
 /* ---------- field helpers ------------------------------------------------- */
@@ -4414,7 +4827,9 @@ function renderEffectStack(){
 function renderInspector(){
   const body=document.getElementById('inspBody'); body.innerHTML='';
   const L=selectedLayer();
-  document.getElementById('inspTitle').textContent=L?L.name:'No layer';
+  const G=L?null:selectedGroup();
+  document.getElementById('inspTitle').textContent=L?L.name:(G?G.name:'No layer');
+  if(G){ renderGroupInspector(body,G); return; }
   if(!L){ body.innerHTML='<p class="hint" style="padding:12px">Add a layer to begin.</p>'; return; }
   // Wired layers are driven by the node graph - show a read-only spec summary,
   // but the Mask is editable here (the override is stored composer-side).
@@ -4746,6 +5161,129 @@ function renderInspector(){
     b.appendChild(add);
   },'fx'));
 }
+/* GROUP inspector - the shared transform / appearance / trigger / mask / effects
+   applied to the whole folder of members. A group has no content of its own; its
+   pixels are the composite of its children. */
+function renderGroupInspector(body, G){
+  if(G._wired){
+    body.appendChild(html(`<div style="padding:12px"><p class="hint" style="margin:0">Driven by a wired Layer-group node. Edit its shared transform / trigger / effects on the canvas node.</p>
+      <div class="fld"><label>Members</label><span class="tag">${(G.children||[]).length}</span></div>
+      <div class="fld"><label>Trigger</label><span class="tag">${G.trigger.source}</span></div>
+      <div class="fld"><label>Effects</label><span class="tag">${G.effects.stack.length} fx</span></div></div>`));
+    return;
+  }
+  body.appendChild(html('<p class="hint" style="padding:8px 12px;margin:0">Group: a shared transform, opacity, blend, trigger and effect stack applied to every member layer.</p>'));
+  /* APPEARANCE */
+  body.appendChild(accordion('Group',(b)=>{
+    b.appendChild(fToggle('Visible',G.visible,v=>{G.visible=v; renderLayerList();}));
+    b.appendChild(fSlider('Opacity',G.opacity!=null?G.opacity:1,0,1,0.01,v=>G.opacity=v));
+    b.appendChild(fSelect('Blend',G.blend||'source-over',
+      [['source-over','Normal'],['multiply','Multiply'],['screen','Screen'],['overlay','Overlay'],['lighter','Add'],['lighten','Lighten'],['darken','Darken'],['difference','Difference']],
+      v=>G.blend=v));
+  },'gappear'));
+  /* TRANSFORM (single) - moves/scales/rotates the whole composite as a unit */
+  body.appendChild(accordion('Transform',(b)=>{
+    const p=G.positioning;
+    b.appendChild(fSlider('X',p.x!=null?p.x:0.5,0,1,0.01,v=>p.x=v));
+    b.appendChild(fSlider('Y',p.y!=null?p.y:0.5,0,1,0.01,v=>p.y=v));
+    b.appendChild(fSlider('Scale',p.scale!=null?p.scale:1,0.05,3,0.01,v=>p.scale=v));
+    b.appendChild(fSlider('Rotation',p.rot||0,0,6.28,0.01,v=>p.rot=v));
+    b.appendChild(html('<p class="hint">Transforms the whole group around the canvas centre.</p>'));
+  },'gxform'));
+  /* TRIGGER - broadcasts to every member + drives the group composite */
+  body.appendChild(accordion('Trigger',(b)=>groupTriggerBody(b,G),'gtrig'));
+  /* MASK - reuse the layer mask editor (groups carry .mask too) */
+  body.appendChild(maskAccordion(G));
+  /* EFFECTS - GL effect stack on the group composite */
+  body.appendChild(accordion('Effects',(b)=>groupEffectsBody(b,G),'gfx'));
+}
+function groupTriggerBody(b, G){
+  const t=G.trigger;
+  b.appendChild(fSelect('Source',t.source,
+    [['none','None'],['mouse-click','Mouse click'],['hover','Hover'],['position','Pointer position'],
+     ['timeline','Timeline'],['audio','Audio'],['camera','Camera']],
+    v=>{ t.source=v; fillTrigger(t); renderInspector(); }));
+  if(t.source==='position'){ b.appendChild(fSelect('Axis',t.axis,[['x','X'],['y','Y']],v=>t.axis=v)); }
+  else if(t.source==='timeline'){
+    b.appendChild(fSlider('Duration (s)',t.dur,0.5,20,0.5,v=>t.dur=v));
+    b.appendChild(fToggle('Loop',t.loop,v=>t.loop=v));
+    b.appendChild(fText('Keyframes JSON',JSON.stringify(t.keys),v=>{ try{t.keys=JSON.parse(v);}catch(e){showErr('bad keys JSON');} },true));
+  }
+  else if(t.source==='audio'){
+    const opts=[['mic','Microphone'],...CONTENT.filter(c=>c.kind==='audio').map(c=>[c.id,c.label||c.id])];
+    b.appendChild(fSelect('Source',t.sourceId||'mic',opts,v=>t.sourceId=v));
+    b.appendChild(fSelect('Feature',t.feature,[['loudness','Loudness'],['pitch','Pitch'],['band','Band']],v=>{t.feature=v;renderInspector();}));
+    if(t.feature==='band') b.appendChild(fSlider('Band',t.band,0,7,1,v=>t.band=v));
+  }
+  else if(t.source==='camera'){
+    b.appendChild(fSelect('Detector',t.detector,[['hand','Hand'],['face','Face'],['object','Object'],['ocr','OCR']],v=>t.detector=v));
+    b.appendChild(fSelect('Event',t.event,[['present','Present'],['count','Count'],['gesture','Gesture']],v=>t.event=v));
+  }
+  b.appendChild(html('<hr><label class="small" style="text-transform:uppercase;letter-spacing:.06em">Impacts</label>'));
+  // group impacts can target the group ITSELF (drives the composite), any member,
+  // or any other layer/group.
+  const targets=[['','- pick -'],[G.id,'(this group)'],
+    ...STATE.layers.map(x=>[x.id,x.name]),
+    ...(STATE.groups||[]).filter(g=>g.id!==G.id).map(g=>[g.id,g.name+' (group)'])];
+  const wrap=document.createElement('div'); wrap.className='impacts';
+  (t.impacts||[]).forEach((im,idx)=>{
+    const card=document.createElement('div'); card.className='impact';
+    card.appendChild(fSelect('Target',im.target||'',targets,v=>im.target=v));
+    card.appendChild(fSelect('Param',im.param,[['opacity','Opacity'],['scale','Scale'],['position','Position'],['effect.intensity','Effect intensity']],v=>im.param=v));
+    card.appendChild(fSelect('Map',im.map,[['linear','Linear'],['threshold','Threshold']],v=>im.map=v));
+    const rg=document.createElement('div'); rg.className='grid2';
+    rg.appendChild(numField('Range lo',im.range[0],v=>im.range[0]=v));
+    rg.appendChild(numField('Range hi',im.range[1],v=>im.range[1]=v));
+    card.appendChild(rg);
+    const del=document.createElement('button'); del.className='sm'; del.textContent='Remove impact';
+    del.onclick=()=>{ t.impacts.splice(idx,1); emit(); renderInspector(); }; card.appendChild(del);
+    wrap.appendChild(card);
+  });
+  b.appendChild(wrap);
+  const add=document.createElement('button'); add.className='sm'; add.textContent='+ Add impact';
+  add.onclick=()=>{ t.impacts.push({target:G.id,param:'opacity',map:'linear',range:[0,1]}); emit(); renderInspector(); };
+  b.appendChild(add);
+}
+function groupEffectsBody(b, G){
+  const stack=G.effects.stack;
+  stack.forEach((eff,idx)=>{
+    const card=document.createElement('div'); card.className='effitem';
+    const eh=document.createElement('div'); eh.className='eh';
+    const sel=document.createElement('select');
+    const selType=(eff.type==='shader')?'custom':eff.type;
+    sel.innerHTML=FX_TYPES_LOCAL.map(v=>`<option value="${v}" ${v===selType?'selected':''}>${FX_LABELS_LOCAL[v]||v}</option>`).join('');
+    sel.onchange=e=>{ eff.type=e.target.value; emit(); renderInspector(); };
+    eh.appendChild(sel);
+    const up=document.createElement('button'); up.className='iconbtn sm'; up.innerHTML=ICONS.up;
+    up.onclick=()=>{ if(idx>0){ [stack[idx-1],stack[idx]]=[stack[idx],stack[idx-1]]; emit(); renderInspector(); } };
+    const dn=document.createElement('button'); dn.className='iconbtn sm'; dn.innerHTML=ICONS.down;
+    dn.onclick=()=>{ if(idx<stack.length-1){ [stack[idx+1],stack[idx]]=[stack[idx],stack[idx+1]]; emit(); renderInspector(); } };
+    const rm=document.createElement('button'); rm.className='iconbtn sm'; rm.innerHTML=ICONS.trash;
+    rm.onclick=()=>{ stack.splice(idx,1); emit(); renderInspector(); };
+    eh.appendChild(up); eh.appendChild(dn); eh.appendChild(rm);
+    card.appendChild(eh);
+    card.appendChild(fSlider('Intensity',eff.intensity,0,1,0.01,v=>eff.intensity=v));
+    for(const u of uniformsFor(eff)){
+      const cur=(eff.params&&eff.params[u.from]!=null)?eff.params[u.from]:u.def;
+      if(u.bool) card.appendChild(fSelect(u.from,(cur?'1':''),[['','off'],['1','on']],v=>{ eff.params=eff.params||{}; eff.params[u.from]=!!v; }));
+      else card.appendChild(numField(u.from,cur,v=>{ eff.params=eff.params||{}; eff.params[u.from]=v; }));
+    }
+    for(const im of inputsFor(eff)){
+      eff.inputs=eff.inputs||{};
+      const cands=allRuntimeLayers().concat(allRuntimeGroups()).filter(x=>x.id!==G.id);
+      card.appendChild(fSelect(im.label||im.name, eff.inputs[im.name]||'',
+        [['','None'],...cands.map(x=>[x.id,x.name])], v=>{ eff.inputs[im.name]=v; emit(); }));
+    }
+    if(eff.type==='custom'||eff.type==='shader'){
+      card.appendChild(fText('Fragment GLSL',eff.glsl||'void main(){\n  o = texture(tex, uv);\n}',v=>{eff.glsl=v;},true));
+    }
+    b.appendChild(card);
+  });
+  const add=document.createElement('button'); add.className='sm'; add.textContent='+ Add effect';
+  add.onclick=()=>{ stack.push({type:'chromatic-aberration',params:{},intensity:0.5}); emit(); renderInspector(); };
+  b.appendChild(add);
+  b.appendChild(html('<p class="hint">GL effects apply to the whole group composite. CPU sims (fluid / face-morph) apply per-layer, not at group level.</p>'));
+}
 function numField(label,val,on){
   const w=document.createElement('div'); w.className='fld';
   w.innerHTML=`<label>${label}</label><input type="number" step="0.05" value="${val}">`;
@@ -4960,9 +5498,17 @@ function bake(){
   // strip runtime-only boids agent state off inline layers too
   for(const L of cfg.layers){ if(L&&L._boids) delete L._boids; }
   cfg.layers = cfg.layers.concat(wiredLayers);
+  // GROUPS: inline groups ride along via deep(STATE). Merge wired groups + their
+  // member leaves so the baked composite tree matches the editor exactly.
+  const wiredGroups=wiredRuntimeGroups().map(G=>{ const o=deep(G); o._wired=true; o._isGroup=true; return o; });
+  cfg.groups=(cfg.groups||[]).concat(wiredGroups);
+  const wiredGroupLeaves=wiredGroupMemberLayers().map(L=>{ const o=deep(L); o._wired=true; o._opacity=L._opacity; o._blend=L._blend; o.feedback=L.feedback||0; if(o._boids) delete o._boids; return o; });
+  cfg.layers=cfg.layers.concat(wiredGroupLeaves);
   // Pre-bake custom effect fragments so the standalone player needs no fx.js
   // import. Built-in effects are rendered from the embedded EFFECT_SPECS table.
   for(const L of cfg.layers){ if(L.effects&&Array.isArray(L.effects.stack)) L.effects.stack=L.effects.stack.map(bakeEffect); }
+  // pre-bake GROUP effect stacks too (groups carry a GL effect stack on the FBO).
+  for(const G of cfg.groups){ if(G.effects&&Array.isArray(G.effects.stack)) G.effects.stack=G.effects.stack.map(bakeEffect); }
   // inline wired asset urls (incl. wired-layer asset children) so the file is self-contained-ish
   const assets=CONTENT.map(c=>({id:c.id,url:c.url,kind:c.kind,label:c.label}));
   // WIRED top-level effects → final post-process stack (same shader-lab catalog,
@@ -5588,7 +6134,13 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     if(t.source==='camera'){const c=IN.detect;const n=t.detector==='hand'?c.hand:t.detector==='object'?c.object:c.face;if(t.event==='count')return{v:clamp(n/3,0,1)};return{v:n>0?1:0};}
     return{v:0}; }
   function applyMap(v,map,range){const[lo,hi]=range||[0,1];return map==='threshold'?(v>=0.5?hi:lo):lerp(lo,hi,clamp(v,0,1));}
-  function impacts(tv){const ov={};for(const L of CFG.layers){const t=tv[L.id];if(!t)continue;for(const im of (L.trigger.impacts||[])){if(!im||!im.target)continue;const val=applyMap(t.v,im.map,im.range);const o=ov[im.target]||(ov[im.target]={});if(im.param==='opacity')o.opacity=val;else if(im.param==='scale')o.scale=val;else if(im.param==='position')o.position=[t.vec?t.vec[0]:val,t.vec?t.vec[1]:val];else if(im.param==='effect.intensity')o.eInt=val;}}return ov;}
+  function impacts(tv, gTrigs){const ov={};
+    const route=(imps,t)=>{for(const im of (imps||[])){if(!im||!im.target)continue;const val=applyMap(t.v,im.map,im.range);const o=ov[im.target]||(ov[im.target]={});if(im.param==='opacity')o.opacity=val;else if(im.param==='scale')o.scale=val;else if(im.param==='position')o.position=[t.vec?t.vec[0]:val,t.vec?t.vec[1]:val];else if(im.param==='effect.intensity')o.eInt=val;}};
+    for(const L of CFG.layers){const t=tv[L.id];if(!t)continue;route(L.trigger.impacts,t);}
+    if(gTrigs)for(const gt of gTrigs){if(gt&&gt._impacts)route(gt._impacts,gt);}
+    return ov;}
+  // recursively flatten a group's members to leaf ids (cycle-guarded).
+  function gMemberLeaves(G,gById,seen){seen=seen||new Set();if(!G||seen.has(G.id))return[];seen.add(G.id);const out=[];for(const cid of (G.children||[])){const cg=gById&&gById[cid];if(cg)out.push.apply(out,gMemberLeaves(cg,gById,seen));else out.push(cid);}return out;}
   /* content draw */
   function drawM(media,ar,bw,bh,fit,ax,ay,tile){fit=['cover','contain','fill','none'].includes(fit)?fit:'contain';ax=ax||'center';ay=ay||'center';if(tile&&media){const pat=lctx.createPattern(media,'repeat');if(pat){lctx.fillStyle=pat;lctx.fillRect(-bw/2,-bh/2,bw,bh);return;}}let w=bw,h=bh;if(fit==='contain'){const s=Math.min(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='cover'){const s=Math.max(bw/(ar||1),bh);w=s*(ar||1);h=s;}else if(fit==='none'){h=bh;w=h*(ar||1);}const x=ax==='left'?-bw/2:ax==='right'?bw/2-w:-w/2,y=ay==='top'?-bh/2:ay==='bottom'?bh/2-h:-h/2;lctx.drawImage(media,x,y,w,h);}
   function drawPoly(c){const pts=[];const bind=c.points||{};const mirror=(c.fillSrc==='camera');const smPts=c._sm||(c._sm={});
@@ -5755,6 +6307,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       switch(dst){case'r':bd[i]*=mv;break;case'g':bd[i+1]*=mv;break;case'b':bd[i+2]*=mv;break;case'rgb':bd[i]*=mv;bd[i+1]*=mv;bd[i+2]*=mv;break;default:bd[i+3]*=mv;}}
     dctx.putImageData(base,0,0);}
   const BUFS={};
+  const GBUFS={};
   function applyFxFrom(srcC,stack,time,iOv,resolve,layerId){_fxResolve=resolve||null;ensure(W,H);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcC);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const ps=stack.filter(e=>e&&e.type&&e.type!=='__copy'&&e.type!=='fluid'&&e.type!=='face-morph'&&e.type!=='custom-stateful');_ringB=(layerId!=null&&ps.some(needsHistB))?pushRingB(layerId,srcTex,W,H):null;if(!ps.length){blit(srcTex,W,H,{type:'__copy'},time,1,null);return;}let inT=srcTex,pg=0;for(let i=0;i<ps.length;i++){const e=ps[i],last=i===ps.length-1;const inten=(iOv!=null?iOv:1)*(e.intensity!=null?e.intensity:1);blit(inT,W,H,e,time,inten,last?null:fbos[pg]);inT=texs[pg];pg^=1;}}
   /* top-level wired effects as a FINAL post-process over the composited 2D canvas */
   const TOP=(TOPFX||[]).filter(e=>e&&e.type&&e.type!=='__copy');
@@ -5857,7 +6410,13 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     IN.pdx=IN.px-IN._ppx;IN.pdy=IN.py-IN._ppy;IN._ppx=IN.px;IN._ppy=IN.py;
     ensureCam();    // a camera-content layer needs the live webcam
     LB.tick(now);   // W2C: tick the logic graph before resolving this frame's bindings
-    const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);const ov=impacts(tv);
+    const tv={};for(const L of CFG.layers)tv[L.id]=trigVal(L);
+    // GROUP triggers: broadcast each group's value to its member leaves (those
+    // with no live value), and collect group-own impacts (mirrors the editor).
+    const GROUPS=CFG.groups||[];const gById={};for(const G of GROUPS)gById[G.id]=G;
+    const gTrigs=[];
+    for(const G of GROUPS){if(!G.trigger||G.trigger.source==='none')continue;const gv=trigVal(G);gv._impacts=G.trigger.impacts||[];gTrigs.push(Object.assign({id:G.id},gv));for(const lid of gMemberLeaves(G,gById)){if(!tv[lid]||tv[lid].v===0)tv[lid]=gv;}}
+    const ov=impacts(tv,gTrigs);
     ctx.clearRect(0,0,W,H);ctx.fillStyle=CFG.background||'#000';ctx.fillRect(0,0,W,H);
     // layers read as a mask must render even when hidden
     const maskRefs=new Set();for(const L of CFG.layers){if(L.mask&&L.mask.by)maskRefs.add(L.mask.by);const st=L.effects&&L.effects.stack;if(st)for(const e of st){if(e&&e.inputs)for(const k in e.inputs){if(e.inputs[k])maskRefs.add(e.inputs[k]);}}}
@@ -5886,21 +6445,41 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     const live=new Set(CFG.layers.map(L=>L.id));for(const id in BUFS){if(!live.has(id))delete BUFS[id];}SH.prune(live);PopHostB.prune(live);Scene3DHostB.prune(live);
     // free fluid buffers (GPU + CPU) for layers / fluid effects that went away
     const fluLive=new Set(CFG.layers.filter(L=>layerFluid(L)).map(L=>L.id));for(const id of Array.from(_gpuFluIds)){if(!fluLive.has(id))disposeFlu(id);}for(const id in FLU){if(!fluLive.has(id))disposeFlu(id);}
-    // PASS B - composite visible layers in z-order, applying channel masks
-    const ord=[...CFG.layers].filter(L=>L.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
-    for(const L of ord){const b=rendered[L.id];if(!b)continue;const o=ov[L.id]||{};
-      // FLUID: stir the layer buffer with the persistent coarse Stam solver before compositing.
+    // PASS B - composite the layer/group TREE in z-order (mirrors the editor).
+    const lById={};for(const L of CFG.layers)lById[L.id]=L;
+    const getGBuf=(id)=>{let b=GBUFS[id];if(!b){const cv=document.createElement('canvas');cv.width=W;cv.height=H;b=GBUFS[id]={cv,cx:cv.getContext('2d')};}if(b.cv.width!==W||b.cv.height!==H){b.cv.width=W;b.cv.height=H;}return b;};
+    const gLive=new Set(GROUPS.map(G=>G.id));for(const id in GBUFS){if(!gLive.has(id))delete GBUFS[id];}
+    const gBufCv=(id)=>(GBUFS[id]?GBUFS[id].cv:null);
+    const resolveKids=(node)=>(node.children||[]).map(id=>gById[id]||lById[id]).filter(Boolean);
+    const applyGT=(c,node,o)=>{const p=node.positioning||{};let sc=(p.scale!=null?p.scale:1);if(o&&o.scale!=null)sc*=o.scale;const rot=(p.rot||0);const cx=W/2,cy=H/2;let ox=((p.x!=null?p.x:0.5)-0.5)*W,oy=((p.y!=null?p.y:0.5)-0.5)*H;if(o&&o.position){ox=(o.position[0]-0.5)*W;oy=(o.position[1]-0.5)*H;}c.translate(cx+ox,cy+oy);if(rot)c.rotate(rot);if(sc!==1)c.scale(sc,sc);c.translate(-cx,-cy);};
+    const trivialG=(node,o)=>{const p=node.positioning||{};if((p.x!=null?p.x:0.5)!==0.5||(p.y!=null?p.y:0.5)!==0.5)return false;if((p.scale!=null?p.scale:1)!==1||(p.rot||0)!==0)return false;if((node.opacity!=null?node.opacity:1)!==1)return false;if((node.blend||'source-over')!=='source-over')return false;if(node.mask&&node.mask.by)return false;if(node.effects&&node.effects.stack&&node.effects.stack.length)return false;if(o&&(o.opacity!=null||o.scale!=null||o.position!=null||o.eInt!=null))return false;return true;};
+    const compLeaf=(L,dctx)=>{const b=rendered[L.id];if(!b)return;const o=ov[L.id]||{};
       const fe=layerFluid(L); if(fe)stepFluid(b.cv,L.id,(fe.params||{}),dt);
       const me=layerMorph(L); if(me)FM.step(b.cv,L,(me.params||{}));
       lctx.clearRect(0,0,W,H);lctx.drawImage(b.cv,0,0);
-      if(L.mask&&L.mask.by){const mb=rendered[L.mask.by];if(mb)maskCh(lctx,mb.cv,L.mask.src,L.mask.dst);}
+      if(L.mask&&L.mask.by){const mb=rendered[L.mask.by]||{cv:gBufCv(L.mask.by)};if(mb&&mb.cv)maskCh(lctx,mb.cv,L.mask.src,L.mask.dst);}
       const baseOp=L._wired?(L._opacity!=null?L._opacity:1):1;
       const op=(o.opacity!=null?o.opacity:1)*baseOp;
       const blend=(L._wired&&L._blend)?L._blend:'source-over';
-      ctx.save();ctx.globalAlpha=op;ctx.globalCompositeOperation=blend;
-      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null,(id)=>(rendered[id]?rendered[id].cv:null),L.id);ctx.drawImage(cgl,0,0,W,H);}
-      else{ctx.drawImage(lb,0,0);}
-      ctx.restore();}
+      dctx.save();dctx.globalAlpha=op;dctx.globalCompositeOperation=blend;
+      if(L.effects&&L.effects.stack&&L.effects.stack.length&&GLOK){applyFx(L.effects.stack,IN.clock,o.eInt!=null?o.eInt:null,(id)=>(rendered[id]?rendered[id].cv:gBufCv(id)),L.id);dctx.drawImage(cgl,0,0,W,H);}
+      else{dctx.drawImage(lb,0,0);}
+      dctx.restore();};
+    function compGroup(node,dctx){if(node.visible===false)return;const o=ov[node.id]||{};
+      const kids=resolveKids(node).filter(n=>n.visible!==false).sort((a,b)=>(a.z||0)-(b.z||0));
+      if(trivialG(node,o)){for(const k of kids)compNode(k,dctx);return;}
+      const gb=getGBuf(node.id);gb.cx.clearRect(0,0,W,H);
+      for(const k of kids)compNode(k,gb.cx);
+      lctx.clearRect(0,0,W,H);lctx.drawImage(gb.cv,0,0);
+      if(node.mask&&node.mask.by){const mb=rendered[node.mask.by]||{cv:gBufCv(node.mask.by)};if(mb&&mb.cv)maskCh(lctx,mb.cv,node.mask.src,node.mask.dst);}
+      const op=(o.opacity!=null?o.opacity:1)*(node.opacity!=null?node.opacity:1);
+      dctx.save();dctx.globalAlpha=op;dctx.globalCompositeOperation=node.blend||'source-over';applyGT(dctx,node,o);
+      if(node.effects&&node.effects.stack&&node.effects.stack.length&&GLOK){applyFx(node.effects.stack,IN.clock,o.eInt!=null?o.eInt:null,(id)=>(rendered[id]?rendered[id].cv:gBufCv(id)),node.id);dctx.drawImage(cgl,0,0,W,H);}
+      else{dctx.drawImage(lb,0,0);}
+      dctx.restore();}
+    const compNode=(node,dctx)=>{ if(node._isGroup) compGroup(node,dctx); else compLeaf(node,dctx); };
+    const roots=[...CFG.layers.filter(L=>L.visible!==false&&!L.groupId),...GROUPS.filter(G=>G.visible!==false&&!G.groupId)].sort((a,b)=>(a.z||0)-(b.z||0));
+    for(const r of roots)compNode(r,ctx);
     applyTop(IN.clock);
     requestAnimationFrame(frame);}
   requestAnimationFrame(frame);

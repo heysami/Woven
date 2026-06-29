@@ -26507,6 +26507,16 @@ const WORKFLOW_CONNECT_DEFS = {
     accepts:  { in:   { label: "Content + behaviour", tags: ["asset", "position", "trigger", "effect"] },
                 edit: { label: "Edit layer", tags: ["text-gen", "asset-gen"] } },
   },
+  "layer-group": {
+    label: "Layer group",
+    // out is itself a `layer` so a group nests into another group OR feeds mm-composer.
+    provides: { out: { label: "Group", tags: ["layer"] } },
+    accepts:  { in:      { label: "Members (layers / groups)", tags: ["layer"] },
+                pos:     { label: "Shared position", tags: ["position"] },
+                trigger: { label: "Shared trigger", tags: ["trigger"] },
+                effect:  { label: "Shared effect",  tags: ["effect"] },
+                edit:    { label: "Edit group", tags: ["text-gen", "asset-gen"] } },
+  },
   "sketch": {
     label: "Sketch",
     provides: { out: { label: "Sketch layer", tags: ["layer"] } },
@@ -31562,6 +31572,7 @@ const WORKFLOW_ADD_CATALOG = [
     payload: { skill: "pose-subject", model: "gpt-image-2", aspect: "1:1" } },
   // Building blocks
   { kind: "layer",             label: "Layer",                glyph: "▤", sub: "content + behaviour" },
+  { kind: "layer-group",       label: "Layer group",          glyph: "▦", sub: "shared transform · fx · trigger" },
   { kind: "position",          label: "Position",             glyph: "⊞", sub: "placement scheme" },
   { kind: "trigger",           label: "Trigger",              glyph: "◇", sub: "reactivity + impacts" },
   { kind: "effect",            label: "Effect",               glyph: "✲", sub: "shader post-effect" },
@@ -61144,6 +61155,22 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
         out.push({ ...base, type: "layer", label, spec: up.spec || {}, layerId: up.id, children });
         continue;
       }
+      if (flavor === "layer-group") {
+        const depth = opts._depth || 0;
+        let children = [];
+        if (depth < 3) {
+          // Members arrive on `in` (each a layer / layer-group); the shared
+          // transform / trigger / effect arrive on pos / trigger / effect. Recurse
+          // them all (no toPort filter) so member layers carry their own bound
+          // content and a nested member group recurses again (depth-bounded).
+          const synth = (allEdges || [])
+            .filter(e => (e.to || "").split(".", 1)[0] === up.id)
+            .map(e => { const p = (e.to || "").split(".")[1] || "in"; return { from: e.from, to: "__group__." + p }; });
+          children = resolveUpstreamInputs({ id: "__group__" }, allNodes, synth, { _depth: depth + 1 });
+        }
+        out.push({ ...base, type: "layer-group", label, spec: up.spec || {}, groupId: up.id, children });
+        continue;
+      }
     }
     if (resolve === "dsRef" || up.kind === "design-system") {
       out.push({ ...base, type: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, version: up.version });
@@ -67556,6 +67583,18 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
   // Wired spec nodes → arrays of their JSON specs (Layer carries children).
   const specs = useMemo(() => {
     const wb = (spec, id) => _specWithBindings(spec, id, allNodes, allEdges);
+    // Serialize one child of a layer / layer-group input. A member LAYER or
+    // nested GROUP is recursed into the same {id,spec,children} shape the
+    // composer's buildWiredRuntime* consumes; a shared position/trigger/effect
+    // gets its bindings bound. Anything else passes through.
+    const mapMember = (c) => {
+      if (c.type === "layer") return { type: "layer", id: c.layerId, spec: _wiredLayerSpec(c, allNodes, allEdges),
+        children: (c.children || []).map(mapMember) };
+      if (c.type === "layer-group") return { type: "layer-group", id: c.groupId, spec: _wiredLayerSpec(c, allNodes, allEdges),
+        children: (c.children || []).map(mapMember) };
+      if (c.type === "position" || c.type === "effect" || c.type === "trigger") return { ...c, spec: wb(c.spec || {}, c.fromId) };
+      return c;
+    };
     return {
       effects:   inputs.filter(i => i.type === "effect").map(i => wb(i.spec || {}, i.fromId)),
       positions: inputs.filter(i => i.type === "position").map(i => wb(i.spec || {}, i.fromId)),
@@ -67566,6 +67605,12 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
           (c.type === "position" || c.type === "effect" || c.type === "trigger")
             ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
         )),
+      })),
+      // Layer GROUPS: a folder of member layers/groups sharing one transform /
+      // trigger / effect. children = members (recursed) + shared specs.
+      groups:    inputs.filter(i => i.type === "layer-group").map(i => ({
+        id: i.groupId, spec: _wiredLayerSpec(i, allNodes, allEdges),
+        children: (i.children || []).map(mapMember),
       })),
       // Logic Graph (W2C): serialized logic-graph projection (contract §3) sent
       // alongside effects/positions/triggers/layers so the tool runtime can
@@ -67713,6 +67758,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
                    numbers: numbersRef.current, timelines: timelinesRef.current,
                    effects: specsRef.current.effects, positions: specsRef.current.positions,
                    triggers: specsRef.current.triggers, layers: specsRef.current.layers,
+                   groups: specsRef.current.groups,
                    logic: specsRef.current.logic, branch });
     postToIframe({ type: cfg.prefix + ":select", selected: !!selectedRef.current });
     // W3E: restore the run/live seam after a (re)load so a persisted toggle holds.
@@ -67804,7 +67850,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
 
   // Reactive content/imports/specs push.
   useEffect(() => {
-    if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls,
+    if (readyRef.current) postToIframe({ type: cfg.prefix + ":content", content: contentAssets, imports: importUrls, groups: specs.groups,
       numbers: numberSources, timelines: timelineSources,
       effects: specs.effects, positions: specs.positions, triggers: specs.triggers, layers: specs.layers, logic: specs.logic });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68032,6 +68078,12 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
   }, [previewInputs, cfg, previewNode]);
   const specs = useMemo(() => {
     const wb = (spec, id) => _specWithBindings(spec, id, scopedNodes, scopedEdges);
+    const mapMember = (c) => {
+      if (c.type === "layer") return { type: "layer", id: c.layerId, spec: _wiredLayerSpec(c, scopedNodes, scopedEdges), children: (c.children || []).map(mapMember) };
+      if (c.type === "layer-group") return { type: "layer-group", id: c.groupId, spec: _wiredLayerSpec(c, scopedNodes, scopedEdges), children: (c.children || []).map(mapMember) };
+      if (c.type === "position" || c.type === "effect" || c.type === "trigger") return { ...c, spec: wb(c.spec || {}, c.fromId) };
+      return c;
+    };
     return {
       effects:   previewInputs.filter(i => i.type === "effect").map(i => wb(i.spec || {}, i.fromId)),
       positions: previewInputs.filter(i => i.type === "position").map(i => wb(i.spec || {}, i.fromId)),
@@ -68042,6 +68094,10 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
           (c.type === "position" || c.type === "effect" || c.type === "trigger")
             ? { ...c, spec: wb(c.spec || {}, c.fromId) } : c
         )),
+      })),
+      groups:    previewInputs.filter(i => i.type === "layer-group").map(i => ({
+        id: i.groupId, spec: _wiredLayerSpec(i, scopedNodes, scopedEdges),
+        children: (i.children || []).map(mapMember),
       })),
       // Logic Graph (W2C): projection scoped to the custom-app subgraph.
       logic: _logicProjection(scopedNodes, scopedEdges),
@@ -68086,6 +68142,7 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
                    content: contentRef.current, imports: importsRef.current,
                    effects: specsRef.current.effects, positions: specsRef.current.positions,
                    triggers: specsRef.current.triggers, layers: specsRef.current.layers,
+                   groups: specsRef.current.groups,
                    logic: specsRef.current.logic, branch });
     // Keep panels collapsed: never report selected - the preview is chrome-free.
     postToIframe({ type: cfg.prefix + ":select", selected: false });
@@ -68292,6 +68349,17 @@ const SPEC_NODE_DEFS = {
       { key: "opacity", label: "Opacity", type: "range", min: 0, max: 1, step: 0.01 },
       { key: "blend", label: "Blend", type: "select", options: ["normal","multiply","screen","overlay"] },
       { key: "feedback", label: "Feedback", type: "range", min: 0, max: 1, step: 0.01 },
+      { key: "visible", label: "Visible", type: "checkbox" },
+    ],
+  },
+  "layer-group": {
+    glyph: "▦", label: "Layer group", canonical: (b, id) => `source/${b}/group-${id}.json`,
+    source: (b, id) => `source/${b}/group-${id}.js`,
+    fields: [
+      { key: "name", label: "Name", type: "text" },
+      { key: "z", label: "Z", type: "number" },
+      { key: "opacity", label: "Opacity", type: "range", min: 0, max: 1, step: 0.01 },
+      { key: "blend", label: "Blend", type: "select", options: ["normal","multiply","screen","overlay"] },
       { key: "visible", label: "Visible", type: "checkbox" },
     ],
   },

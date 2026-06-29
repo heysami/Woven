@@ -1966,6 +1966,21 @@ KINDS = {
         "completion":   {"requires": []}, "pauseAfter": False,
         "notes": "One composition layer. Wire asset (content) + optional position/trigger/effect into its in-port, then wire its out into a host (mm-composer/image/composer). Author source/<branch>/layer-<id>.js.",
     },
+    "layer-group": {
+        "title":        "Layer group",
+        "category":     "container",
+        "inputs":       {
+            "source":   {"type": "code", "userEditable": True},
+            "spec":     {"type": "object", "userEditable": True},
+            "specView": {"type": "string", "userEditable": True},
+        },
+        "outputs":      {}, "outputsRoot": None, "consumeFrom": None,
+        "dispatch":     "none", "fanOut": None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False, "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []}, "pauseAfter": False,
+        "notes": "A FOLDER of layers sharing one transform / opacity / blend / trigger / effect stack. Wire member layer/layer-group nodes into its in-port + optional position/trigger/effect for the shared behaviour; its out is itself a `layer`, so it nests into another group or feeds an mm-composer. Author source/<branch>/group-<id>.js.",
+    },
     "sketch": {
         "title":        "Sketch (code)",
         "category":     "container",
@@ -3241,6 +3256,18 @@ _LAYER_AUTHORING = (
     "The layer's content + behaviour come from what you wire into its in-port: an asset, and optionally "
     "position / trigger / effect nodes. The editor compiles buildSpec(values) into source/{branch}/layer-{id}.json."
 )
+_LAYER_GROUP_AUTHORING = (
+    "This is a LAYER-GROUP node - a FOLDER of layers that share one transform, opacity, blend, trigger and "
+    "effect stack. Write `source/{branch}/group-{id}.js`, not JSON. Shape:\n"
+    "export const controls = { name:{type:'text',value:'Group'}, opacity:{type:'number',value:1,min:0,max:1}, "
+    "blend:{type:'select',value:'normal',options:['normal','multiply','screen','overlay']} };\n"
+    "export function buildSpec(values) { return {v:1,name:values.name,z:values.z,opacity:values.opacity,"
+    "blend:values.blend,visible:values.visible}; }\n"
+    "Wire the group's MEMBERS into its in-port (other layer / layer-group nodes), and optionally one position / "
+    "trigger / effect node for the SHARED transform / trigger / effect applied to the whole group composite. "
+    "Because the group's out-port is itself a `layer`, a group can be wired into another layer-group (nesting) or "
+    "into an mm-composer. The group's trigger BROADCASTS to every member layer."
+)
 _SKETCH_AUTHORING = (
     "This is a SKETCH node - an imperative CODE layer for interactions that cannot be expressed by wiring "
     "primitives (per-pixel/temporal/stateful effects: slit-scan, ring-buffer trails, custom pointer mappings, "
@@ -3922,6 +3949,19 @@ KIND_IO = {
             {"port": "edit", "label": "Edit layer", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/layer-{id}.js",
               "authoring": _LAYER_AUTHORING},
+        ],
+    },
+    "layer-group": {
+        "provides": [{"port": "out", "label": "Group", "tags": ["layer"],
+                       "resolve": "typed", "resolveArgs": {"flavor": "layer-group"}}],
+        "accepts":  [
+            {"port": "in", "label": "Members (layers / groups)", "tags": ["layer"], "ingest": "context"},
+            {"port": "pos", "label": "Shared position", "tags": ["position"], "ingest": "context"},
+            {"port": "trigger", "label": "Shared trigger", "tags": ["trigger"], "ingest": "context"},
+            {"port": "effect", "label": "Shared effect", "tags": ["effect"], "ingest": "context"},
+            {"port": "edit", "label": "Edit group", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/group-{id}.js",
+              "authoring": _LAYER_GROUP_AUTHORING},
         ],
     },
     "sketch": {
