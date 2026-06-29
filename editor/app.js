@@ -19715,6 +19715,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
                   <div className="model-setup-choice-title">Install a CLI <span className="model-setup-choice-tag">required</span></div>
                   <div className="model-setup-choice-desc">Claude Code or Codex - enables agents.</div>
                 </div>
+                <div className="model-setup-choice-go" aria-hidden="true"><${Icon.Forward}/></div>
               </button>
             </div>
             <button

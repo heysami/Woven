@@ -14747,6 +14747,21 @@ a.ds-badge:hover, button.ds-badge:hover {
 /* Onboarding step 1 now offers only the (required) Install-a-CLI choice -
    the Paste-an-API-key tile was removed - so the lone tile spans full width. */
 .model-setup-choices-single { grid-template-columns: 1fr; }
+/* The lone full-width Install-a-CLI tile would leave a big empty gap on the
+   right with only its short left-aligned label - balance the row with a
+   right-edge chevron affordance (it also signals the tile opens a dialog). */
+.model-setup-choices-single .model-setup-choice {
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+}
+.model-setup-choice-go {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.model-setup-choices-single .model-setup-choice:hover .model-setup-choice-go {
+  color: var(--accent, oklch(55% 0.18 252));
+}
 .model-setup-choice {
   display: grid;
   grid-template-columns: auto 1fr;
