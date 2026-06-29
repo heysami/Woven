@@ -9,7 +9,7 @@ tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 You take a Woven prototype that currently only lives in the editor (and at best behind the ephemeral `getwoven.design` preview tunnel) and put it on a REAL, durable public URL the user owns. You use the USER'S OWN accounts (GitHub, Supabase) - never Woven's broker, tunnel, or any Woven-owned infra. Woven infra is for previews only.
 
 You take the prototype live (M1 static deploy) and, when the app stores data, back it with Supabase (M2). M2 has TWO valid shapes and you CLASSIFY which one the prototype needs by reading its data model first:
-- **BASIC** - a normal website that just needs user accounts + a little per-user data (sign-in, profile, preferences, file uploads). The quick MVP path; usually all a website needs.
+- **BASIC** - a normal website that just needs user accounts + a little per-user data (sign-in, profile, preferences, maybe one or two simple tables). The quick MVP path; usually all a website needs. STILL tailored to this app's actual fields/screens, never a blind profiles/preferences/files template.
 - **REAL MODEL** - a genuine multi-entity app, where the schema is DERIVED from the prototype's own `entities` + `links` (already captured in `prototype.json` by the Entities / IA / Flow editors) and the screens are wired to real reads/writes so it actually persists.
 
 Do NOT blindly default to BASIC: if `prototype.json` already carries a rich entity graph, it is REAL MODEL. Equally, do NOT force REAL MODEL onto a simple site. Classify intelligently, say which and why, let the user override. Still deferred: a standalone complex-app project breakdown and the two-agent grill loop (the `grill-me` review of the model). For a large REAL MODEL app, scope M2 to the core flows first and record what is still on mock data.
@@ -118,9 +118,15 @@ There are TWO valid shapes. Read `source/<branch>/prototype.json` (`entities[]` 
 
 Say which you picked and WHY in one line, and let the user override. Do NOT default blindly to BASIC - look at the entities first; a rich entity graph means REAL MODEL.
 
-### Basic path (fast - "usually a website only needs these")
+### Basic path (fast, but still tailored to THIS app - never a blind template)
 
-Provision auth + a `profiles` table (id -> auth.users + display fields), a `preferences` table (user_id + jsonb), a `files` storage bucket, owner-only RLS. Inject `supabase-config.js` + `@supabase/supabase-js`, wire sign-in + profile / preferences / files. Redeploy; verify a sign-in + profile round trip. No schema review gate - this shape is standard. This is the MVP path and it goes straight through.
+BASIC means a SMALL, user-centric shape, NOT a fixed `profiles/preferences/files` boilerplate. Read the prototype's account / profile / settings screens + content first, then provision what THIS app actually needs:
+- auth + a `profiles` table whose columns are the fields this app actually collects on its sign-up / profile / account screens (not a generic name + avatar);
+- a `preferences` shape covering the options this app actually exposes in its settings;
+- a `files` bucket ONLY if the app uploads files;
+- plus any one or two simple app-specific tables the content implies, named in the app's own domain (a contact form -> `messages`, a newsletter -> `subscribers`, a to-do tool -> `todos`, saved items -> `bookmarks`).
+
+Owner-only RLS. Inject `supabase-config.js` + `@supabase/supabase-js`, wire sign-in + the real fields/tables you derived. Redeploy; verify a real round trip. The shape is small and standard enough to skip the review gate and go straight through - but the FIELDS and tables come from the prototype, not a hardcoded list.
 
 ### Real-model path (entity-driven - the prototype's own data model)
 
