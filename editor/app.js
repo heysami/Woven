@@ -6121,7 +6121,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
     const q = _qsFromLocation();
     return q && q.get("embed") === "1";
   })();
-  const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas(undefined, { interactive: !_embedNoInteract });
+  const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(undefined, { interactive: !_embedNoInteract });
   const { byFrame: auditByFrame } = useDsProposalIndex();
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(null);
@@ -6565,7 +6565,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
 
   return html`
     <div className="canvas-view">
-    ${!viewIsEmbed() && html`<${CanvasToolsPanel} tool=${tool} setTool=${setTool} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>`}
+    ${!viewIsEmbed() && html`<${CanvasToolsPanel} tool=${tool} setTool=${setTool} frames=${frames} pan=${pan} zoom=${zoom} setPan=${setPan} setZoom=${setZoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>`}
     <div
       ref=${wrapRef}
       className=${"canvas-wrap" + (cloneMode ? " is-clone-placing" : "") + (arrowFrom ? " is-arrow-drawing" : "")}
@@ -6749,11 +6749,12 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
         onClose=${() => setPopoverAt(null)}
       />
       <${InspectorPanel} picked=${picked} tool=${tool} edits=${edits} onStyle=${onStyle} onMove=${onMove}/>
-      <${ZoomPill} zoom=${zoom}/>
       ${/* v3.6 - the MiniMap moved into the docked CanvasToolsPanel (2nd left
-            panel), mirroring workflow mode. In embed mode the panel is
-            suppressed, so the minimap is absent there too - the workflow node
-            that hosts the embed already shows its own minimap. */ ""}
+            panel), mirroring workflow mode; the zoom indicator now lives in the
+            minimap's corner (like workflow), so the old floating ZoomPill is
+            gone here. In embed mode the panel is suppressed, so the minimap is
+            absent there too - the workflow node that hosts the embed already
+            shows its own minimap. */ ""}
       ${cloneMode && html`
         <div className="clone-mode-banner" onClick=${(e) => e.stopPropagation()}>
           <${Icon.Copy}/>
@@ -6788,13 +6789,39 @@ function ZoomPill({ zoom }) {
   `;
 }
 
-/* ────────── Minimap ────────── */
-function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
-  if (!frames.length) return null;
+/* ────────── Minimap ──────────
+   Docked flush into the bottom of the canvas-tools panel (mirroring workflow
+   mode's WorkflowMiniMap). Measures its host with a ResizeObserver so frames +
+   viewport scale to the actual panel width, centers the projected world, lets
+   you click/drag to pan when setPan is wired, and carries the zoom indicator in
+   its bottom-left corner when setZoom is wired. */
+function MiniMap({ frames, pan, zoom, wrapRef, gridMeta, setZoom, setPan }) {
   const meta = gridMeta || ((typeof D !== "undefined") ? D.meta : {});
   const cellW = (meta?.defaultFrame?.w) || 1440;
   const cellH = (meta?.defaultFrame?.h) || 900;
+  const hostRef = useRef(null);
+  const innerRef = useRef(null);
+  // Track the measured host size so frames + viewport scale to the actual
+  // docked panel width (the canvas-tools panel is user-resizable). Same
+  // ResizeObserver pattern the workflow minimap uses.
+  const [size, setSize] = useState({ w: 200, h: 130 });
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    setSize({ w: el.clientWidth || 200, h: el.clientHeight || 130 });
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(entries => {
+      for (const ent of entries) {
+        const r = ent.contentRect;
+        setSize({ w: Math.max(40, r.width), h: Math.max(40, r.height) });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const baseBB = useMemo(() => {
+    if (!frames.length) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     frames.forEach(f => {
       const [fx, fy] = gridXY(f, meta);
@@ -6818,8 +6845,7 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
   // v3.5 - union with the current viewport so the minimap stays addressable
   // when the user pans past the frames. Without this, the viewport indicator
   // clips against the minimap edge (or disappears entirely) and there's no
-  // way to tell which direction the world sits in. Padding the union out by
-  // a few % keeps the indicator from sitting flush against the edge.
+  // way to tell which direction the world sits in.
   const unionMinX = Math.min(baseBB.minX, vx);
   const unionMinY = Math.min(baseBB.minY, vy);
   const unionMaxX = Math.max(baseBB.maxX, vx + vww);
@@ -6830,32 +6856,87 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta }) {
     w: Math.max(1, unionMaxX - unionMinX),
     h: Math.max(1, unionMaxY - unionMinY),
   };
-  const PAD = 8, MW = 200 - 2*PAD, MH = 130 - 2*PAD;
+  const PAD = 8;
+  const MW = Math.max(20, size.w - 2 * PAD);
+  const MH = Math.max(20, size.h - 2 * PAD);
   const s = Math.min(MW / bb.w, MH / bb.h);
+  // Center the projected world inside the available inner box so the minimap
+  // doesn't drift to the top-left when the panel is wider than the world.
+  const projW = bb.w * s;
+  const projH = bb.h * s;
+  const offX  = PAD + (MW - projW) / 2;
+  const offY  = PAD + (MH - projH) / 2;
+
+  // Click/drag on the minimap → pan the canvas so the clicked point lands in
+  // the viewport center. Guarded on setPan so read-only call sites stay so.
+  const panToLocal = (px, py) => {
+    if (!setPan) return;
+    const w = wrapRef && wrapRef.current;
+    if (!w) return;
+    const wx = bb.minX + (px - offX) / s;
+    const wy = bb.minY + (py - offY) / s;
+    setPan({
+      x: w.clientWidth  / 2 - wx * zoom,
+      y: w.clientHeight / 2 - wy * zoom,
+    });
+  };
+  const onMinimapMouseDown = (e) => {
+    if (!setPan) return;
+    if (e.button !== 0) return;
+    const el = innerRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = el.getBoundingClientRect();
+    panToLocal(e.clientX - r.left, e.clientY - r.top);
+    const onMove = (ev) => {
+      const rr = el.getBoundingClientRect();
+      panToLocal(ev.clientX - rr.left, ev.clientY - rr.top);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("mouseup", onUp, true);
+    };
+    window.addEventListener("mousemove", onMove, true);
+    window.addEventListener("mouseup", onUp, true);
+  };
+
+  if (!frames.length) return null;
 
   return html`
-    <div className="minimap">
-      <div className="minimap-inner">
+    <div className="minimap" ref=${hostRef}>
+      <div
+        className="minimap-inner"
+        ref=${innerRef}
+        onMouseDown=${onMinimapMouseDown}
+        data-pannable=${setPan ? "true" : "false"}
+      >
         ${frames.map(f => {
           const [fx, fy] = gridXY(f, meta);
           const fw = f.w || cellW;
           const fh = f.h || cellH;
           return html`
             <div key=${f.id} className="minimap-frame" style=${{
-              left: PAD + (fx - bb.minX) * s,
-              top:  PAD + (fy - bb.minY) * s,
-              width: fw * s,
-              height: (fh + 32) * s,
+              left: offX + (fx - bb.minX) * s,
+              top:  offY + (fy - bb.minY) * s,
+              width:  Math.max(1, fw * s),
+              height: Math.max(1, (fh + 32) * s),
             }}/>
           `;
         })}
         <div className="minimap-viewport" style=${{
-          left: PAD + (vx - bb.minX) * s,
-          top:  PAD + (vy - bb.minY) * s,
-          width: vww * s,
-          height: vhh * s,
+          left: offX + (vx - bb.minX) * s,
+          top:  offY + (vy - bb.minY) * s,
+          width:  Math.max(2, vww * s),
+          height: Math.max(2, vhh * s),
         }}/>
       </div>
+      ${setZoom && html`<button type="button" className="minimap-zoom"
+        title=${zoom === 1 ? "Canvas zoom" : "Reset zoom to 100%"}
+        aria-label=${"Zoom " + Math.round(zoom * 100) + " percent, click to reset to 100%"}
+        onMouseDown=${(e) => e.stopPropagation()}
+        onClick=${(e) => { e.stopPropagation(); if (zoom !== 1) setZoom(1); }}
+      >${Math.round(zoom * 100)}%</button>`}
     </div>
   `;
 }
@@ -9750,7 +9831,13 @@ function RightRailDock({ mode }) {
     return () => { cancelled = true; };
   }, [chatRun]);
 
-  return html`<${React.Fragment}>
+  // Pin the rail + floating dock to the right edge. The standalone views this
+  // mounts into (User testing's .ut-screen, Development's .dev-view) are
+  // position:fixed full-screen, so there is no .app/.workflow-body grid column
+  // to place the rail in - without an explicit fixed host the rail falls into
+  // normal flow at the top-LEFT (and the z-9500 .ut-screen covers it entirely).
+  // z sits above .ut-screen (9500) but below .surface-nav (9600).
+  return html`<div className="right-rail-dock-host">
     <${RightNavRail}
       onStartNewChat=${openChat}
       onStartChatWithPrompt=${spawnChat}
@@ -9786,7 +9873,7 @@ function RightRailDock({ mode }) {
         selectionCount=${0}
       />`}
     />
-  <//>`;
+  </div>`;
 }
 
 /* extractRunSubagents / extractRunTasks - pull the subagent dispatches and the
@@ -46908,6 +46995,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                       <span className="workflow-library-item-glyph"><${Icon.Play}/></span>
                       <span className="workflow-library-item-label">${p.label}</span>
                       <span className="workflow-library-item-id">${p.id}</span>
+                      <div className="workflow-library-item-actions">
                       <button
                         type="button"
                         className=${"workflow-library-thumb-btn" + (isThumb ? " is-on" : "")}
@@ -46960,6 +47048,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                         draggable=${false}
                         onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
                       ><${Icon.Trash}/></button>`}
+                      </div>
                     </div>
                   `;
                 })}
@@ -81886,7 +81975,7 @@ function EditorLeftRail({ view, setView }) {
    minimap below, the same shape the workflow whiteboard-tools panel uses.
    Rendered by CanvasView (so the minimap shares the canvas pan/zoom/frames);
    suppressed in embed mode. */
-function CanvasToolsPanel({ tool, setTool, frames, pan, zoom, wrapRef, gridMeta }) {
+function CanvasToolsPanel({ tool, setTool, frames, pan, zoom, setPan, setZoom, wrapRef, gridMeta }) {
   const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
   return html`
     <div className="canvas-tools-panel">
@@ -81905,7 +81994,7 @@ function CanvasToolsPanel({ tool, setTool, frames, pan, zoom, wrapRef, gridMeta 
           </button>
         `)}
       </div>
-      <${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>
+      <${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} setPan=${setPan} setZoom=${setZoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>
     </div>
   `;
 }
@@ -81939,7 +82028,11 @@ function EditorProtoSwitch() {
     u.searchParams.delete("view");   // stay on the editor surface
     thNavigate(u.toString());        // full reload - editor needs a fresh D
   };
-  if (ids.length <= 1) return null;  // nothing to switch to
+  // Show the dropdown whenever there's at least one prototype, mirroring the
+  // User testing header (which always shows the prototype select). A single-
+  // prototype project still gets the selector showing the current slug, so the
+  // editor mode has the same prototype affordance as the other surfaces.
+  if (ids.length < 1) return null;
   return html`
     <select
       className="editor-proto-switch"
@@ -81948,6 +82041,22 @@ function EditorProtoSwitch() {
       title="Switch prototype"
       aria-label="Switch prototype"
     >${ids.map(id => html`<option key=${id} value=${id}>${id}</option>`)}</select>
+  `;
+}
+
+/* The Submit action no longer lives in the top nav (it's quiet now, matching
+   workflow mode). Instead it floats just below the nav, and ONLY when there is
+   something to submit: pending edits AND no run in flight. When it would be
+   disabled (no edits, or a run active) it hides entirely rather than greying
+   out. */
+function FloatingSubmit({ editsCount, runActive, onSubmit }) {
+  if (!editsCount || runActive) return null;
+  return html`
+    <div className="floating-submit">
+      <button className="tbtn tbtn-primary floating-submit-btn" onClick=${onSubmit}>
+        <${Icon.Send}/> Submit ${editsCount} edit${editsCount === 1 ? "" : "s"}
+      </button>
+    </div>
   `;
 }
 
@@ -81984,7 +82093,8 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
       <div className="toolbar-mid"></div>
       <div className="toolbar-right">
         <${BranchDocsButtons}/>
-        <${DaemonIndicator} compact=${true}/>
+        <${DaemonIndicator}/>
+        <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
         ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
         <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="toolbar-gear"/>
@@ -81994,25 +82104,20 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
           value=${agentId}
           onChange=${onAgentChange}
           disabled=${runActive}/>
-        <div className="toolbar-submit-group">
-          <button
-            className="tbtn tbtn-update-source tbtn-icon-only"
-            disabled=${runActive}
-            data-disabled=${runActive}
-            data-tip-host="true"
-            onClick=${onUpdateFromSource}
-            aria-label="Update from source"
-            title=${runActive
-              ? "An agent run is active - wait for it to finish before triggering Update from source"
-              : "Update from source - re-derive frames / primitives / entities from source/. Dispatches Workflow 1 (regenerate); streams in the chat drawer."}
-          >
-            <${Icon.Refresh}/>
-            <span className="tab-tip">${runActive ? "Run active" : "Update from source"}</span>
-          </button>
-          <button className="tbtn tbtn-primary" onClick=${onSubmit} data-disabled=${!editsCount || runActive}>
-            <${Icon.Send}/> ${runActive ? "Running…" : "Submit"}
-          </button>
-        </div>
+        <button
+          className="tbtn tbtn-update-source tbtn-icon-only"
+          disabled=${runActive}
+          data-disabled=${runActive}
+          data-tip-host="true"
+          onClick=${onUpdateFromSource}
+          aria-label="Update from source"
+          title=${runActive
+            ? "An agent run is active - wait for it to finish before triggering Update from source"
+            : "Update from source - re-derive frames / primitives / entities from source/. Dispatches Workflow 1 (regenerate); streams in the chat drawer."}
+        >
+          <${Icon.Refresh}/>
+          <span className="tab-tip">${runActive ? "Run active" : "Update from source"}</span>
+        </button>
         <${PublishButton}/>
         <${ShareMenuButton}/>
       </div>
@@ -83274,6 +83379,7 @@ function App() {
         onOpenHistory=${() => { history.refresh(); setHistoryOpen(true); }}
         onCloseHistory=${() => setHistoryOpen(false)}
       />`}
+      ${!embedMode && html`<${FloatingSubmit} editsCount=${edits.length} runActive=${runActive} onSubmit=${submit}/>`}
       ${!embedMode && html`<${EditorLeftRail}
         view=${view} setView=${setView}
       />`}

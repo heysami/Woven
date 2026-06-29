@@ -277,6 +277,56 @@ button {
 .toolbar-right { display: flex; align-items: center; gap: 4px; }
 .toolbar-mid    { display: flex; justify-content: center; }
 
+/* Quiet the editor top-nav chrome to match workflow mode, then go one step
+   further per the brief: the icon-only buttons carry NO border at all - not at
+   rest, not on hover - just a faint fill on hover. Pinned to 30px so the row
+   reads as a clean strip. Warning/error states (daemon down, CLI missing) keep
+   their own coloured borders via higher-specificity rules - those are signal. */
+.toolbar .daemon-indicator,
+.toolbar .cli-indicator,
+.toolbar .tbtn-history-group,
+.toolbar .workflow-toolbar-gear,
+.toolbar .tbtn-update-source.tbtn-icon-only {
+  height: 30px;
+  box-sizing: border-box;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.toolbar .daemon-indicator:hover,
+.toolbar .cli-indicator:hover,
+.toolbar .tbtn-history-group:hover,
+.toolbar .workflow-toolbar-gear:hover,
+.toolbar .tbtn-update-source.tbtn-icon-only:hover {
+  border-color: transparent;
+  background: var(--surface-2);
+}
+/* History trio reads as three bare icons: drop the inner dividers at rest,
+   restore them only on hover (same treatment workflow mode uses). */
+.toolbar .tbtn-history-group .tbtn-history-step + .tbtn-history-step,
+.toolbar .tbtn-history-group .tbtn-history-step + .tbtn-history {
+  border-left-color: transparent;
+}
+.toolbar .tbtn-history-group:hover .tbtn-history-step + .tbtn-history-step,
+.toolbar .tbtn-history-group:hover .tbtn-history-step + .tbtn-history {
+  border-left-color: var(--border);
+}
+
+/* Submit floats below the top nav, centered, only when there are edits to
+   submit (see FloatingSubmit). Sits above the canvas but below modals. */
+.floating-submit {
+  position: fixed;
+  top: calc(var(--toolbar-h, 44px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+}
+.floating-submit-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.18));
+}
+
 .brand {
   display: flex; align-items: center; gap: 8px;
   padding: 0 8px;
@@ -3552,6 +3602,18 @@ button {
   opacity: 1;
 }
 
+/* Prototype list rows carry several action buttons (thumbnail / star /
+   duplicate / rename / delete). The base .workflow-library-item is a 3-column
+   grid (glyph / label / one trailing cell), so dropping the buttons in loose
+   would overflow into extra grid rows (scattered layout). Group them into ONE
+   trailing cell as a tight inline row so the row matches every other list item. */
+.workflow-library-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: end;
+}
+
 /* Phase 3.5a - Prototype door (full-page iframe of source/<prototype>/). */
 .proto-door {
   position: fixed;
@@ -3855,6 +3917,24 @@ button {
   position: relative;
   z-index: 61;
 }
+/* Fixed host for the rail + floating dock on the standalone top-level views
+   (User testing, Development), which have no .app/.workflow-body grid column to
+   place the rail in. Pins the rail to the right edge, full height, above the
+   z-9500 .ut-screen but below the z-9600 .surface-nav. Sized to the rail's
+   width; the floating dock is position:fixed and anchors to the viewport. */
+.right-rail-dock-host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  z-index: 9550;
+}
+.right-rail-dock-host > .th-right-rail { height: 100%; }
+/* Reserve the rail's width so these views' own content (e.g. the Development
+   Publish button at top-right) never sits under the fixed rail. */
+.ut-screen,
+.dev-view { padding-right: var(--th-right-rail-w, 44px); }
 .th-right-rail-btn {
   appearance: none;
   width: 34px;
@@ -16551,17 +16631,21 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 2px;
   padding: 12px;
 }
-/* Dock the minimap at the bottom of the panel (it is position:absolute when it
-   floats over the canvas; here it sits in normal flow). Use `relative`, NOT
-   `static`: the minimap's frame rects are position:absolute, so the minimap must
-   stay a positioning context (and keep overflow:hidden) or the rects escape and
-   overlap the tools list above. */
+/* Dock the minimap flush into the bottom of the panel, matching workflow mode's
+   WorkflowMiniMap: full-bleed (no side/bottom margin, no radius), separated from
+   the tools list by a hairline top border only. Use `relative`, NOT `static`:
+   the frame rects are position:absolute, so the minimap must stay a positioning
+   context (and keep overflow:hidden) or the rects escape and overlap the list. */
 .canvas-tools-panel .minimap {
   position: relative;
   overflow: hidden;
-  margin: auto 12px 12px;
+  margin: auto 0 0;
   width: auto;
   height: 132px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 /* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
@@ -17915,6 +17999,28 @@ a.ds-badge:hover, button.ds-badge:hover {
 .minimap-inner {
   position: absolute; inset: 0;
 }
+.minimap-inner[data-pannable="true"] {
+  cursor: pointer;
+}
+/* Zoom indicator docked in the minimap's bottom-left corner (mirrors workflow
+   mode's .workflow-minimap-zoom). Click to reset to 100%. */
+.minimap-zoom {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 2;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.minimap-zoom:hover { background: var(--surface-2); }
 .minimap-frame {
   position: absolute;
   background: var(--surface-3);
