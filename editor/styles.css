@@ -91,6 +91,84 @@
   --th-right-rail-w: 44px;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   DARK SCHEME - editor chrome only.
+   Auto-derived from the light tokens above: surface/text lightness is curved
+   (not naively inverted), while every ACCENT keeps its hue + chroma and is only
+   lifted in lightness enough to stay legible on dark surfaces. Soft tints flip
+   from near-white washes to dark hue-tinted fills. Shadows lean heavier (dark
+   drop-shadows read weakly). Higher specificity than the plain :root blocks
+   below (whiteboard, data-type) so it wins regardless of source order - their
+   dark overrides live here too, by hue, never inverted.
+   Set the user's chosen scheme via <html data-theme="dark"> (index.html boot
+   script + app.js saveEditorTheme). Embedded iframes (prototype preview,
+   app-node, share viewer) are user content and are NOT covered by this. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces - panels sit a step ABOVE the base in dark (lighter), the inverse
+     of light where they sit above white. */
+  --bg:        oklch(15% 0 0);
+  --surface:   oklch(19% 0 0);
+  --surface-2: oklch(22% 0 0);
+  --surface-3: oklch(26% 0 0);
+  --border:    oklch(32% 0 0);
+  --border-strong: oklch(42% 0 0);
+
+  /* Canvas - a touch darker than the chrome base for depth; dots are a subtle lift. */
+  --canvas-bg: oklch(16% 0 0);
+  --canvas-dot: oklch(30% 0 0);
+
+  /* Text - high-lightness ink, the same faint-warm hue. --text-faint lifted
+     carefully (small labels are the first thing to fail in dark). */
+  --text:       oklch(92% 0.006 60);
+  --text-muted: oklch(72% 0.006 60);
+  --text-faint: oklch(60% 0.006 60);
+
+  /* Accent (teal) - hue/chroma preserved, lightness held bright on dark. */
+  --accent:        oklch(72% 0.12 174);
+  --accent-soft:   oklch(28% 0.05 174);
+  --accent-text:   oklch(76% 0.10 174);
+  --accent-strong: oklch(66% 0.13 174);
+  /* Hot (gold) - stays bright; ink-on-gold stays dark since the fill is light. */
+  --hot:           oklch(84% 0.17 90);
+  --hot-soft:      oklch(30% 0.06 88);
+  --hot-text:      oklch(80% 0.14 88);
+  --hot-strong:    oklch(82% 0.18 88);
+  --hot-ink:       oklch(30% 0.085 78);
+  /* Success / connected / warning / danger - hue preserved, soft tints darkened. */
+  --success:       oklch(70% 0.115 174);
+  --success-soft:  oklch(28% 0.05 174);
+  --ok:            oklch(72% 0.115 174);
+  --ok-soft:       oklch(28% 0.05 174);
+  --warning:       oklch(78% 0.13 85);
+  --warning-soft:  oklch(30% 0.05 85);
+  --danger:        oklch(64% 0.20 22);
+  --danger-soft:   oklch(28% 0.07 22);
+
+  /* Shadows - heavier alpha + a faint top hairline reads better than a darker blur. */
+  --shadow-sm: 0 1px 0 oklch(0% 0 0 / 0.30), 0 0 0 0.5px oklch(0% 0 0 / 0.45);
+  --shadow-md: 0 4px 12px oklch(0% 0 0 / 0.45), 0 1px 0 oklch(0% 0 0 / 0.30);
+  --shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.55), 0 2px 0 oklch(0% 0 0 / 0.30);
+}
+
+/* Nodes keep a faintly WARM surface in dark, mirroring the light-mode warm
+   override on .workflow-node (which re-pins these to near-white). */
+:root[data-theme="dark"] .workflow-node {
+  --surface:   oklch(21% 0.004 70);
+  --surface-2: oklch(24% 0.005 70);
+  --surface-3: oklch(28% 0.006 70);
+  --border:    oklch(34% 0.006 70);
+  --border-strong: oklch(44% 0.007 70);
+}
+
+/* Whiteboard ink/gray must read on a dark canvas; the coloured hues already sit
+   at mid-lightness and stay as-is (semantic identity, never inverted). */
+:root[data-theme="dark"] {
+  --wb-ink:  oklch(88% 0.012 264);
+  --wb-gray: oklch(60% 0.012 264);
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
@@ -665,6 +743,17 @@ button {
   pointer-events: none;
 }
 
+/* Landing dark scheme. The root base + the JS-painted diamond-field canvas are
+   the only landing surfaces CSS-tokens can't already flip: the root is pinned
+   PURE WHITE in light (kept that way) and re-based to var(--bg) in dark; the
+   canvas paints a fixed LIGHT field from landing-shaders.js (no CSS hook to
+   recolour), so it's hidden in dark and the token-driven ::before dot-grid
+   (already reads --border-strong, mask is alpha-only) carries the cursor-reveal
+   field. Cards/frosted card flip via their var(--surface) backgrounds. The
+   header is already a near-black band, legible in both schemes. */
+:root[data-theme="dark"] .landing-root { background-color: var(--bg); }
+:root[data-theme="dark"] .landing-bg-canvas { display: none; }
+
 /* Header - a flat BLACK bar, pinned to the top of the fixed .landing-root and
    taken out of flow so the cards scroll behind it. No shader, no glass, no
    teeth - just a solid surface with a straight bottom edge. */
@@ -789,7 +878,7 @@ button {
   padding: 10px 12px;
   border: 1px solid var(--border, rgba(0,0,0,0.18));
   border-radius: 4px;
-  background: white;
+  background: var(--surface-2);
   color: var(--text, #1a1a1a);
 }
 .newproj-field input:focus { outline: 2px solid var(--accent, #2c5fff); outline-offset: 1px; }
@@ -1310,7 +1399,7 @@ button {
 .orchestrator-card.is-disabled {
   opacity: 0.70;
   border-color: oklch(85% 0.08 60);
-  background: oklch(98% 0.02 70);
+  background: var(--surface-2);
 }
 
 .orchestrator-card-head {
@@ -1558,7 +1647,7 @@ button {
   flex-direction: column;
   gap: 4px;
   padding: 16px 12px 20px;
-  background: rgba(255, 255, 255, 0.50);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   backdrop-filter: blur(3px) saturate(1.15);
@@ -1637,7 +1726,7 @@ button {
   gap: 10px;
   margin-bottom: 24px;
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
 }
@@ -1747,7 +1836,7 @@ button {
   width: 100%;
   max-width: 720px;
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
 }
@@ -2902,7 +2991,7 @@ button {
   padding: 20px;
   align-content: start;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--landing-radius);
   box-shadow: none;
@@ -2923,7 +3012,7 @@ button {
 }
 .landing-card-editing {
   cursor: default;
-  background: #ffffff;
+  background: var(--surface);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -2999,11 +3088,11 @@ button {
    tile look). Bleeds to the card edges + rounded bottom corners. */
 .landing-card.landing-card-thumb-field .landing-card-body {
   border-radius: 0 0 var(--landing-radius) var(--landing-radius);
-  background: #ffffff;
+  background: var(--surface);
   transition: background 0.3s ease;
 }
 .landing-card.landing-card-thumb-field:hover .landing-card-body {
-  background: #ffffff;
+  background: var(--surface);
 }
 /* Hover behaviour for placeholder cards: ONLY the body content area
    solidifies to white. The strip stays transparent - the diamond shader
@@ -3263,7 +3352,7 @@ button {
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
@@ -14951,7 +15040,7 @@ a.ds-badge:hover, button.ds-badge:hover {
      not only in the margins around it. Kept light + blurred enough that the
      small status pills / refresh links / install buttons stay legible; the
      opaque header + footer bands carry the dense controls. */
-  background: rgba(255, 255, 255, 0.66);
+  background: color-mix(in oklab, var(--surface) 66%, transparent);
   backdrop-filter: blur(8px) saturate(1.08);
   -webkit-backdrop-filter: blur(8px) saturate(1.08);
   box-shadow: 0 6px 18px rgba(40, 34, 26, 0.10);
@@ -16054,7 +16143,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   justify-items: center;
   gap: 12px;
   padding: 60px 28px;
-  background: color-mix(in oklab, #ffffff 78%, transparent);
+  background: color-mix(in oklab, var(--surface) 78%, transparent);
   border: 1px dashed var(--border-strong);
   border-radius: var(--landing-radius);
   text-align: center;
@@ -19775,7 +19864,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .grid-table .grid-cell-empty {
   color: var(--text-faint);
   font-style: italic;
-  background: oklch(98% 0.002 250);
+  background: var(--surface-2);
 }
 .grid-cell-render { color: var(--text); }
 .grid-cell-note   { color: var(--text-faint); font-size: 11px; margin-top: 4px; }
@@ -24437,7 +24526,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--surface-2);
 }
 .prompt-inspector-section-ds .prompt-inspector-section-head {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--surface-3);
 }
 .prompt-inspector-section-head h3 {
   margin: 0;
@@ -28053,7 +28142,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-radius: 9px;
   padding: 8px 9px;
   margin-bottom: 7px;
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 .workflow-comment-card:hover { border-color: var(--border-strong); }
@@ -28132,7 +28221,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 .sv-status-chip.processed { background: var(--accent-soft); color: var(--accent-text); }
 .sv-mini-btn {
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface);
   color: var(--text-muted);
   border-radius: 6px;
   padding: 2px 7px;

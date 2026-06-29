@@ -39,7 +39,7 @@ if (!window.EDITOR_DATA || !window.EDITOR_DATA.meta) {
       const root = document.getElementById("root");
       if (!root) return;
       try { const _bv = document.getElementById("boot-veil"); if (_bv) _bv.remove(); } catch {}
-      root.innerHTML = `<div style="max-width:560px;margin:80px auto;padding:24px;border:1px solid oklch(91% 0.004 250);border-radius:8px;font:14px/1.5 Inter,system-ui;background:#fff;color:oklch(20% 0.01 250)"><h2 style="margin:0 0 8px;font-size:18px">Project data file failed to load</h2><p style="margin:0 0 12px;color:oklch(48% 0.008 250)">The script at <code style="font-family:JetBrains Mono;font-size:11.5px;background:oklch(97.2% 0.003 250);padding:1px 5px;border-radius:3px">editor/data.js</code> for project <strong>${_qs.get("project")}</strong> didn't set <code style="font-family:JetBrains Mono;font-size:11.5px;background:oklch(97.2% 0.003 250);padding:1px 5px;border-radius:3px">window.EDITOR_DATA</code>. Most common causes:</p><ul style="margin:0 0 12px 20px;padding:0;color:oklch(48% 0.008 250)"><li>The daemon hasn't been restarted after a v3.1 upgrade - restart it so the migration shim runs.</li><li>JS syntax error in editor/data.js - check DevTools console.</li><li>404 on editor/data.js - confirm the project's editor/ folder exists.</li></ul><p style="margin:0;color:oklch(48% 0.008 250)"><a href="${location.pathname}" style="color:oklch(45% 0.13 250);text-decoration:none">← Back to projects</a></p></div>`;
+      root.innerHTML = `<div style="max-width:560px;margin:80px auto;padding:24px;border:1px solid var(--border);border-radius:8px;font:14px/1.5 Inter,system-ui;background:var(--surface);color:var(--text)"><h2 style="margin:0 0 8px;font-size:18px">Project data file failed to load</h2><p style="margin:0 0 12px;color:var(--text-muted)">The script at <code style="font-family:JetBrains Mono;font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px">editor/data.js</code> for project <strong>${_qs.get("project")}</strong> didn't set <code style="font-family:JetBrains Mono;font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px">window.EDITOR_DATA</code>. Most common causes:</p><ul style="margin:0 0 12px 20px;padding:0;color:var(--text-muted)"><li>The daemon hasn't been restarted after a v3.1 upgrade - restart it so the migration shim runs.</li><li>JS syntax error in editor/data.js - check DevTools console.</li><li>404 on editor/data.js - confirm the project's editor/ folder exists.</li></ul><p style="margin:0;color:var(--text-muted)"><a href="${location.pathname}" style="color:var(--accent);text-decoration:none">← Back to projects</a></p></div>`;
     });
     throw new Error("window.EDITOR_DATA is missing - editor/data.js didn't evaluate. See DevTools console.");
   }
@@ -7267,6 +7267,48 @@ if (typeof window !== "undefined") {
   if (typeof document !== "undefined") {
     if (document.body) applyNodeSimplifyAttr();
     else window.addEventListener("DOMContentLoaded", applyNodeSimplifyAttr);
+  }
+}
+
+/* Editor colour scheme preference. "light" | "dark" | "system" (default
+   "system" = follow the OS). Stored in the same settings blob and applied by
+   setting data-theme on <html>; the styles.css `:root[data-theme="dark"]` block
+   remaps every chrome token from there. A synchronous bootstrap in index.html
+   sets the same attribute before first paint to avoid a flash - KEEP THE TWO
+   IN SYNC. Read live so the toggle takes effect without a reload, and (in
+   "system" mode) so the chrome follows the OS when it flips. On a real change we
+   fire a window resize so canvas surfaces that cache token colours repaint. */
+function loadEditorTheme() {
+  const v = loadSettings().editorTheme;
+  return v === "light" || v === "dark" || v === "system" ? v : "system";
+}
+function resolveEditorTheme(pref) {
+  const p = pref || loadEditorTheme();
+  if (p === "light" || p === "dark") return p;
+  try { return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+  catch { return "light"; }
+}
+function applyEditorThemeAttr(opts) {
+  try { document.documentElement.setAttribute("data-theme", resolveEditorTheme()); } catch {}
+  if (opts && opts.repaint) { try { window.dispatchEvent(new Event("resize")); } catch {} }
+}
+function saveEditorTheme(v) {
+  const pref = v === "light" || v === "dark" || v === "system" ? v : "system";
+  saveSettings({ editorTheme: pref });
+  applyEditorThemeAttr({ repaint: true });
+  try { window.dispatchEvent(new CustomEvent("th:editor-theme-changed")); } catch {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("th:editor-theme-changed", () => applyEditorThemeAttr({ repaint: true }));
+  try {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onOs = () => { if (loadEditorTheme() === "system") applyEditorThemeAttr({ repaint: true }); };
+    if (mq.addEventListener) mq.addEventListener("change", onOs);
+    else if (mq.addListener) mq.addListener(onOs);
+  } catch (e) {}
+  if (typeof document !== "undefined") {
+    if (document.documentElement) applyEditorThemeAttr();
+    else window.addEventListener("DOMContentLoaded", applyEditorThemeAttr);
   }
 }
 
@@ -78775,6 +78817,12 @@ function WorkflowSettingsDialog({ onClose }) {
 function WorkflowSendKeySection() {
   const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
   const [simplify, setSimplify] = useState(() => loadNodeSimplify());
+  const [theme, setTheme] = useState(() => loadEditorTheme());
+  useEffect(() => {
+    const on = () => setTheme(loadEditorTheme());
+    window.addEventListener("th:editor-theme-changed", on);
+    return () => window.removeEventListener("th:editor-theme-changed", on);
+  }, []);
   useEffect(() => {
     const on = () => setSendOnEnter(loadSendOnEnter());
     window.addEventListener("th:chat-send-pref-changed", on);
@@ -78787,8 +78835,35 @@ function WorkflowSendKeySection() {
   }, []);
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
   const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
+  const pickTheme = (v) => { saveEditorTheme(v); setTheme(v); };
   return html`
     <${React.Fragment}>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Appearance</span>
+          <span className="onboarding-sendkey-desc">Light, dark, or match your system setting.</span>
+        </div>
+        <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Appearance">
+          <button type="button" role="radio" aria-checked=${theme === "system"}
+            className="onboarding-sendkey-opt" data-active=${theme === "system"}
+            onClick=${() => pickTheme("system")}>
+            <span className="onboarding-sendkey-keys">System</span>
+            <span className="onboarding-sendkey-sub">Match OS light/dark</span>
+          </button>
+          <button type="button" role="radio" aria-checked=${theme === "light"}
+            className="onboarding-sendkey-opt" data-active=${theme === "light"}
+            onClick=${() => pickTheme("light")}>
+            <span className="onboarding-sendkey-keys">Light</span>
+            <span className="onboarding-sendkey-sub">Always light</span>
+          </button>
+          <button type="button" role="radio" aria-checked=${theme === "dark"}
+            className="onboarding-sendkey-opt" data-active=${theme === "dark"}
+            onClick=${() => pickTheme("dark")}>
+            <span className="onboarding-sendkey-keys">Dark</span>
+            <span className="onboarding-sendkey-sub">Always dark</span>
+          </button>
+        </div>
+      </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
           <span className="onboarding-sendkey-title">Chat send key</span>
