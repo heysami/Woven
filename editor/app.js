@@ -42968,6 +42968,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           tip=${zoom === 1 ? "Canvas zoom · ⌘+wheel to zoom, Space+drag to pan" : "Click to reset to 100%"}
           onClick=${() => { if (zoom !== 1) setZoom(1); }}
         >${Math.round(zoom * 100)}%<//>
+        <${PublishButton}/>
         <${ShareMenuButton}/>
       </div>
       <${WorkflowSearchPalette}
@@ -81621,6 +81622,7 @@ function SurfaceNav() {
     { label: "Canvas",  active: cur === "workflow" && wfMain === "canvas", onClick: () => toWorkflow("canvas") },
     { label: "Preview", active: cur === "workflow" && wfMain === "proto",  onClick: () => toWorkflow("proto") },
     ...(utEnabled ? [{ label: "Testing", active: cur === "usertesting", onClick: () => go("usertesting") }] : []),
+    { label: "Develop", active: cur === "development", onClick: () => go("development") },
     { label: "Editor",  active: cur === "editor", onClick: () => go(null) },
   ];
   return html`
@@ -81652,7 +81654,6 @@ const EDITOR_VIEW_TABS = [
   { key: "stateMachine", icon: () => Icon.StateM, label: "State machine",            kbd: "7" },
   { key: "timeline",     icon: () => Icon.Clock,  label: "Timeline",                 kbd: "8" },
   { key: "grid",         icon: () => Icon.Grid,   label: "Grid",                     kbd: "9" },
-  { key: "development",  icon: () => Icon.Code,   label: "Development",              kbd: "0" },
 ];
 const EDITOR_TOOL_TABS = [
   { key: "select",    icon: () => Icon.Cursor,  label: "Select",    kbd: "V" },
@@ -81818,7 +81819,7 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
             <${Icon.Send}/> ${runActive ? "Running…" : "Submit"}
           </button>
         </div>
-        <${PublishButton} setView=${setView}/>
+        <${PublishButton}/>
         <${ShareMenuButton}/>
       </div>
     </div>
@@ -81834,8 +81835,20 @@ const PUB_STATUS_DOT = {
 
 // Toolbar entry point - sibling of ShareMenuButton. Opens the publish modal and,
 // once a run is dispatched, drops the user on the Development tab to watch it.
-function PublishButton({ setView }) {
+function PublishButton() {
   const [open, setOpen] = useState(false);
+  // Publishing has its own top-level surface (?view=development) reachable from
+  // every surface via SurfaceNav. Navigate there once a run is dispatched so
+  // the user lands on the live status page, no matter which surface they
+  // pressed Publish from (workflow toolbar or the classic editor toolbar).
+  const goDevelopment = () => {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("view", "development");
+      u.searchParams.delete("utproto");
+      thNavigate(u.toString());
+    } catch {}
+  };
   return html`
     <${React.Fragment}>
       <button type="button" className="go-live-btn"
@@ -81845,7 +81858,7 @@ function PublishButton({ setView }) {
       </button>
       ${open && html`<${PublishModal}
         onClose=${() => setOpen(false)}
-        onStarted=${() => { setOpen(false); if (setView) setView("development"); }}/>`}
+        onStarted=${() => { setOpen(false); goDevelopment(); }}/>`}
     <//>
   `;
 }
@@ -82000,7 +82013,8 @@ function DevelopmentView({ model }) {
     </div>`;
 
   return html`
-    <div className="dev-view" style=${{ padding: "24px", maxWidth: "840px", margin: "0 auto", overflow: "auto", height: "100%", boxSizing: "border-box" }}>
+    <div className="dev-view" style=${{ position: "fixed", inset: 0, overflow: "auto", background: "var(--bg)" }}>
+     <div style=${{ maxWidth: "840px", margin: "0 auto", padding: "calc(var(--toolbar-h, 44px) + 20px) 24px 48px", boxSizing: "border-box" }}>
       <div style=${{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
         <h1 style=${{ fontSize: "20px", margin: 0 }}>Development</h1>
         <button className="sysadd-btn-go" style=${{ marginLeft: "auto" }} onClick=${() => setOpen(true)}>
@@ -82054,6 +82068,7 @@ function DevelopmentView({ model }) {
             </div>` : ""}`}
 
       ${open && html`<${PublishModal} onClose=${() => setOpen(false)} onStarted=${() => { setOpen(false); reload(); }}/>`}
+     </div>
     </div>
   `;
 }
@@ -82953,7 +82968,6 @@ function App() {
       ${view === "stateMachine" && html`<${StateMachineView} model=${model} setEdits=${setEdits}/>`}
       ${view === "timeline"     && html`<${TimelineView}     model=${model} setEdits=${setEdits}/>`}
       ${view === "grid"         && html`<${GridView}         model=${model} setEdits=${setEdits}/>`}
-      ${view === "development"  && html`<${DevelopmentView}  model=${model}/>`}
       ${!embedMode && html`<${EditsPanel}
         edits=${edits}
         strokes=${strokes}
@@ -83208,6 +83222,15 @@ function Root() {
     <${FigmaSendPromptHost}/>
     <//>`;
   }
+  // Development - its own top-level page (like the workflow canvas / user
+  // testing), reachable from every surface via SurfaceNav's "Develop" segment
+  // and from the Publish button. Shows the project's publish.json state.
+  if (hasProject && view === "development") return html`<${React.Fragment}>
+    <${SurfaceNav}/>
+    <${DevelopmentView} key=${"dev:" + (project || "")}/>
+    <${ExportPromptHost}/>
+    <${FigmaSendPromptHost}/>
+  <//>`;
   // Otherwise the regular editor for the active project (or single-mode legacy).
   return html`<${React.Fragment}>
     <${SurfaceNav}/>
