@@ -19430,7 +19430,6 @@ function OnboardingLocalToolRow({ pkg }) {
         <div className="onboarding-tool-required-reason">${pkg.requiredReason}</div>
       `}
       <div className="onboarding-tool-row-body">
-        <span className="onboarding-tool-hint">${pkg.hint}</span>
         <div className="onboarding-tool-actions">
           <a className="onboarding-tool-docs" href=${pkg.docsUrl} target="_blank" rel="noopener">docs ↗</a>
           ${!installed && html`
@@ -19717,9 +19716,8 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
                 <div className="model-setup-choice-icon"><${Icon.Bot}/></div>
                 <div className="model-setup-choice-body">
                   <div className="model-setup-choice-title">Install a CLI <span className="model-setup-choice-tag">required</span></div>
-                  <div className="model-setup-choice-desc">Claude Code or Codex - enables agents.</div>
+                  <div className="model-setup-choice-desc">Claude Code or Codex. Enables agents.</div>
                 </div>
-                <div className="model-setup-choice-go" aria-hidden="true"><${Icon.Forward}/></div>
               </button>
             </div>
             <button
