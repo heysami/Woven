@@ -9569,6 +9569,226 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
   <//>`;
 }
 
+/* RightRailDock - the editor's right panel (rail + tiling dock + chat) bundled
+   into ONE self-contained component so any standalone top-level view (User
+   testing, Development) gets the SAME right panel that editor + workflow modes
+   have, working IN PLACE - no navigating back to the canvas. It owns its own
+   window-manager, chat-run state, and dock geometry, and talks to the daemon
+   directly (runs, tasks, comments, git are all project-scoped, not view-scoped).
+   Mirrors the floating-dock wiring used by WorkflowCanvas. `mode` only steers
+   the chat preamble (editor vs workflow context). */
+function RightRailDock({ mode }) {
+  const branch = "main";
+  const [chatRun, setChatRun] = useState(null);
+  const [chatRunFinished, setChatRunFinished] = useState(false);
+  const [permissionMode, setPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
+  const onPermissionModeChange = useCallback((m) => { setPermissionMode(m); saveSettings({ permissionMode: m }); }, []);
+
+  // ── Right tiling dock (same model as the editor App / workflow canvas) ──
+  const [dockWindows, setDockWindows]   = useState([]);
+  const [dockColSplit, setDockColSplit] = useState(() => Number(loadDock().colSplit) || 50);
+  const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
+  const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
+  const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const openWindow = useCallback((descOrKind) => {
+    const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
+    setDockWindows(prev => {
+      let next;
+      if (desc.kind === "subagent") {
+        const wid = "w_sub_" + (desc.agent?.id || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind !== "thread") {
+        const idx = prev.findIndex(w => w.kind === desc.kind);
+        if (idx >= 0) next = prev.filter((_, i) => i !== idx);
+        else { const w = { id: "w_" + desc.kind, kind: desc.kind }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else {
+        const rid = desc.run?.runId;
+        let at = prev.findIndex(w => w.kind === "thread" && w.run?.runId === rid);
+        if (at < 0 && rid) at = prev.findIndex(w => w.kind === "thread" && !w.run?.runId);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], run: desc.run }; }
+        else { const w = { id: "w_thread_" + rid, kind: "thread", run: desc.run }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      }
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+  }, []);
+  const closeWindow = useCallback((id, run) => {
+    setDockWindows(prev => {
+      const next = prev.filter(w => w.id !== id);
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+    if (run?.runId) setChatRun(cur => (cur?.runId === run.runId ? null : cur));
+  }, []);
+  const swapWindows = useCallback((idA, idB) => {
+    setDockWindows(prev => {
+      const a = prev.findIndex(w => w.id === idA);
+      const b = prev.findIndex(w => w.id === idB);
+      if (a < 0 || b < 0 || a === b) return prev;
+      const next = prev.slice();
+      [next[a], next[b]] = [next[b], next[a]];
+      try { saveDock({ windows: serializeDock(next) }); } catch {}
+      return next;
+    });
+  }, []);
+  useEffect(() => { if (chatRun) openWindow({ kind: "thread", run: chatRun }); }, [chatRun, openWindow]);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--dock-col-split", dockColSplit + "%");
+    root.style.setProperty("--dock-row-split", dockRowSplit + "%");
+  }, [dockColSplit, dockRowSplit]);
+  const openKinds = dockWindows.filter(w => w.kind !== "thread").map(w => w.kind);
+  const startDockSplit = useCallback((axis) => (e) => {
+    e.preventDefault();
+    const grid = e.currentTarget.closest(".dock-grid");
+    if (!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const horiz = axis === "col";
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    const onMove = (ev) => {
+      const pct = horiz ? ((ev.clientX - rect.left) / rect.width) * 100 : ((ev.clientY - rect.top) / rect.height) * 100;
+      const clamped = Math.max(15, Math.min(85, pct));
+      document.documentElement.style.setProperty(horiz ? "--dock-col-split" : "--dock-row-split", clamped + "%");
+      (horiz ? dockColRef : dockRowRef).current = clamped;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      if (horiz) { setDockColSplit(dockColRef.current); saveDock({ colSplit: dockColRef.current }); }
+      else { setDockRowSplit(dockRowRef.current); saveDock({ rowSplit: dockRowRef.current }); }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  // Floating dock width (reads --workflow-chat-width, same slot the workflow
+  // canvas uses). Persists across reloads.
+  const CHAT_DEFAULT = 644, CHAT_MIN = 333;
+  const [chatWidth, setChatWidth] = useState(() => {
+    try { const v = parseInt(localStorage.getItem("th-workflow-chat-width") || "0", 10); return v >= CHAT_MIN ? v : CHAT_DEFAULT; }
+    catch { return CHAT_DEFAULT; }
+  });
+  const chatWidthRef = useRef(chatWidth);
+  useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--workflow-chat-width", chatWidth + "px");
+    return () => root.style.removeProperty("--workflow-chat-width");
+  }, [chatWidth]);
+  const startChatResize = useCallback((e) => {
+    e.preventDefault();
+    try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    const startX = e.clientX;
+    const startW = chatWidth;
+    const onMove = (ev) => {
+      const w = Math.max(CHAT_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
+      setChatWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { document.body.removeAttribute("data-panel-resizing"); } catch {}
+      try { localStorage.setItem("th-workflow-chat-width", String(chatWidthRef.current)); } catch {}
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [chatWidth]);
+
+  // ── Chat run lifecycle ──
+  const openChat = useCallback(() => {
+    setChatRun({ runId: null, isNew: true, title: "Chat", kind: "freeform", branch, agentId: pickAgentIdForChat() });
+    setChatRunFinished(false);
+  }, []);
+  const reopenRun = useCallback((run) => {
+    if (!run) return;
+    setChatRun(run);
+    setChatRunFinished(!!run.done || !!run.turnDone);
+  }, []);
+  const spawnChat = useCallback(async (text) => {
+    const wrappedPrompt = composeModeAwarePrompt(mode === "workflow" ? "workflow" : "editor", text);
+    const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    const agentDefault = getDefaultForCapability("agent");
+    const run = await triggerRun({
+      branch, agentId: pickAgentIdForChat(), kind: "freeform",
+      prompt: wrappedPrompt, title, permissionMode,
+      model: agentDefault && agentDefault.model || undefined,
+    });
+    setChatRun(run);
+    setChatRunFinished(false);
+    return run;
+  }, [permissionMode, mode]);
+  const handleComplete = useCallback(({ status }) => {
+    setChatRunFinished(status === "done" || status === "error" || status === "fail");
+  }, []);
+
+  // Truthfulness: on mount, attach to an already-running run for this project so
+  // the panel never lies about a live agent (matches the workflow canvas).
+  const didAttachRef = useRef(false);
+  useEffect(() => {
+    if (didAttachRef.current) return;
+    if (chatRun) { didAttachRef.current = true; return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/__runs"));
+        if (!r.ok) { didAttachRef.current = true; return; }
+        const j = await r.json();
+        const proj = activeProjectId();
+        const pick = (j.runs || [])
+          .filter(rn => (!proj || !rn.project || rn.project === proj))
+          .filter(rn => !rn.done && !rn.historical)
+          .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+        if (cancelled) return;
+        didAttachRef.current = true;
+        if (pick && pick.runId) { setChatRun(pick); setChatRunFinished(!!pick.turnDone); }
+      } catch { didAttachRef.current = true; }
+    })();
+    return () => { cancelled = true; };
+  }, [chatRun]);
+
+  return html`<${React.Fragment}>
+    <${RightNavRail}
+      onStartNewChat=${openChat}
+      onStartChatWithPrompt=${spawnChat}
+      onOpenRun=${reopenRun}
+      onOpenWindow=${openWindow}
+      openKinds=${openKinds}
+    />
+    <${RightDock}
+      floating
+      windows=${dockWindows}
+      onClose=${closeWindow}
+      onSwap=${swapWindows}
+      onResizeStart=${startChatResize}
+      onColResize=${startDockSplit("col")}
+      onRowResize=${startDockSplit("row")}
+      onStartChatWithPrompt=${spawnChat}
+      onOpenRun=${reopenRun}
+      onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+      renderThread=${(w) => html`<${ChatDrawer}
+        key=${w.id}
+        run=${w.run}
+        variant="tile"
+        onClose=${() => closeWindow(w.id, w.run)}
+        onStop=${() => {}}
+        onRunComplete=${handleComplete}
+        onStatusChange=${({ status }) => {
+          if (chatRun && w.run?.runId === chatRun.runId)
+            setChatRunFinished(status === "done" || status === "error" || status === "fail");
+        }}
+        permissionMode=${permissionMode}
+        onPermissionModeChange=${onPermissionModeChange}
+        onStartNewChat=${spawnChat}
+        selectionCount=${0}
+      />`}
+    />
+  <//>`;
+}
+
 /* extractRunSubagents / extractRunTasks - pull the subagent dispatches and the
    harness Task list out of ONE run's transcript (events mapped from /__chat or
    the live SSE: { event, data }). Mirrors the live-strip logic in ChatDrawer,
@@ -83338,6 +83558,7 @@ function Root() {
     return html`<${React.Fragment}>
       <${SurfaceNav}/>
       <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT} info=${info}/>
+      <${RightRailDock} mode="usertesting"/>
       <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
     <//>`;
@@ -83348,6 +83569,7 @@ function Root() {
   if (hasProject && view === "development") return html`<${React.Fragment}>
     <${SurfaceNav}/>
     <${DevelopmentView} key=${"dev:" + (project || "")}/>
+    <${RightRailDock} mode="development"/>
     <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
   <//>`;
