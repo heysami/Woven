@@ -57,6 +57,25 @@ Check whether GitHub is linked: `GET $TH_DAEMON_URL/__github/status` (reports `{
 
 If signed in, record `github.login` and continue.
 
+## Dry run (plan only)
+
+If the caller says DRY RUN / PLAN ONLY, you create and change NOTHING - no repo, no push, no Pages, no Supabase, no DNS. Instead:
+1. Resolve the prototype source and decide the exact repo name, the resulting live URL(s), and the full ordered step list you WOULD run (including every irreversible / public / billable step, called out plainly).
+2. Write that plan into `<project>/publish.json` with `host.status: "planned"` (and `database.status: "planned"` if M2 applies), the chosen domain target, and the steps as `tasks` with status `todo`.
+3. STOP and report the plan in plain language, then ask the user to confirm before any real run. Never silently cross from plan to execution.
+
+This is the user's safety valve - honor it exactly. A dry run that creates anything is a bug.
+
+## Where it lives (domain target)
+
+The caller passes one of three domain targets. The static site is GitHub Pages either way; the domain just changes the Pages custom-domain + DNS:
+
+- **github.io default** - the site lives at `<login>.github.io/<repo>/`. No DNS, nothing to validate. This is the safe default and the right pick for a first real publish.
+- **custom domain** (the user owns it, e.g. `app.yoursite.com`) - set it as the repo's GitHub Pages custom domain, then give the user the EXACT DNS record to add at their registrar (a `CNAME` to `<login>.github.io`, or the four `A` records for an apex domain), wait for it to resolve, enable "Enforce HTTPS", and verify before reporting done. You cannot edit their registrar; this step is collaborative by nature - hand them precise click-by-click DNS steps.
+- **getwoven.design subdomain** (e.g. `name.getwoven.design`) - Woven owns this DNS (Cloudflare, via the broker). Publishing here needs (a) a names registry so two users cannot claim the same name and (b) a broker DNS upsert pointing the subdomain at `<login>.github.io` plus the repo's Pages custom-domain set to it. The names registry for PUBLISHED sites does not exist yet (the broker today only maps install-ids to share-tunnel subdomains). So until that broker piece is built: deploy to the github.io URL, record a `claim-getwoven-subdomain` task in publish.json with the requested name in `detail`, and tell the user the vanity address is pending that backend. Do NOT fake it as live.
+
+Record the chosen target in `publish.json` `host` (e.g. `host.domain`, `host.liveUrl`).
+
 ## M1 - static deploy (the spine, do this first, always)
 
 1. **Resolve the prototype source.** The live files are `projects/<project>/source/<branch>/` (branch defaults to `main`): `index.html`, `data.js`, `styles.css`, `*.js`, plus any referenced assets and the project's `design-systems/`. `ls` the real paths; do not assume. The prototype is build-less (htm + React UMD), so the files ship as-is.

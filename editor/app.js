@@ -81863,14 +81863,54 @@ function PublishButton() {
   `;
 }
 
-// The publish modal: cost-honest warning, the GitHub-linked gate, and the three
-// build modes (api / browser / collaborative). Dispatches the publish-orchestrator
-// via a project-scoped run; the orchestrator owns the actual deploy + state file.
+// Reserved getwoven.design subdomains the user cannot claim (infra / confusable).
+const PUB_RESERVED_SUBDOMAINS = new Set([
+  "www", "api", "app", "apps", "admin", "mail", "ftp", "ns", "ns1", "ns2", "cdn",
+  "static", "assets", "share", "s", "live", "getwoven", "woven", "broker", "status",
+  "help", "support", "docs", "blog", "dev", "test", "staging", "preview", "dashboard",
+  "account", "login", "auth", "billing", "pay", "store", "shop",
+]);
+// Client-side NAME validation (format + reserved). Real and instant. The actual
+// "is this subdomain already claimed by another Woven user" check needs a broker
+// names registry that does not exist yet - that is confirmed at publish time.
+function validateSubname(name) {
+  const v = (name || "").trim().toLowerCase();
+  if (!v) return { ok: false, msg: "" };
+  if (v.length < 3) return { ok: false, msg: "At least 3 characters." };
+  if (v.length > 30) return { ok: false, msg: "30 characters max." };
+  if (!/^[a-z0-9-]+$/.test(v)) return { ok: false, msg: "Lowercase letters, numbers, and hyphens only." };
+  if (/^-|-$/.test(v)) return { ok: false, msg: "Cannot start or end with a hyphen." };
+  if (/--/.test(v)) return { ok: false, msg: "No double hyphens." };
+  if (PUB_RESERVED_SUBDOMAINS.has(v)) return { ok: false, msg: "That name is reserved." };
+  return { ok: true, msg: "" };
+}
+function validateCustomDomain(dom) {
+  const v = (dom || "").trim().toLowerCase();
+  if (!v) return { ok: false, msg: "" };
+  const labels = v.split(".");
+  if (labels.length < 2) return { ok: false, msg: "Enter a domain like app.yoursite.com" };
+  for (const l of labels) {
+    if (!/^[a-z0-9-]{1,63}$/.test(l) || l.startsWith("-") || l.endsWith("-")) {
+      return { ok: false, msg: "Enter a domain like app.yoursite.com" };
+    }
+  }
+  if (!/^[a-z]{2,}$/.test(labels[labels.length - 1])) return { ok: false, msg: "Needs a valid top-level domain." };
+  return { ok: true, msg: "" };
+}
+
+// The publish modal: a dry-run safety gate, the GitHub-linked gate, the domain
+// choice (github.io / getwoven subdomain / custom), and the three build modes
+// (api / browser / collaborative). Dispatches the publish-orchestrator via a
+// project-scoped run; the orchestrator owns the actual deploy + state file.
 function PublishModal({ onClose, onStarted }) {
-  const [mode, setMode] = useState("api");
-  const [gh, setGh]     = useState(null);   // null = checking; {signedIn, login}
-  const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState(null);
+  const [mode, setMode]           = useState("api");
+  const [gh, setGh]               = useState(null);   // null = checking; {signedIn, login}
+  const [dryRun, setDryRun]       = useState(true);   // safe by default
+  const [domainMode, setDomainMode] = useState("default"); // default | getwoven | custom
+  const [subname, setSubname]     = useState("");
+  const [customDom, setCustomDom] = useState("");
+  const [busy, setBusy]           = useState(false);
+  const [err, setErr]             = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -81882,6 +81922,15 @@ function PublishModal({ onClose, onStarted }) {
   }, []);
 
   const linked = !!(gh && gh.signedIn);
+  const ghName = (linked && gh.login) ? gh.login : "your-account";
+  const subVal = validateSubname(subname);
+  const customVal = validateCustomDomain(customDom);
+  const domainReady =
+    domainMode === "default" ||
+    (domainMode === "getwoven" && subVal.ok) ||
+    (domainMode === "custom"   && customVal.ok);
+  const canStart = linked && domainReady && !busy;
+
   const MODES = [
     { id: "api",           label: "Automatic (API)", cost: "Cheapest",
       desc: "The agent creates the repo, pushes, enables hosting, and provisions Supabase server-side via official APIs. Recommended." },
@@ -81891,20 +81940,40 @@ function PublishModal({ onClose, onStarted }) {
       desc: "The agent gives you exact click-by-click steps and you perform them, keeping control of each account." },
   ];
 
+  const radioStyle = { textAlign: "left", display: "block", padding: "9px 11px", height: "auto" };
+  const subFull = subname.trim().toLowerCase() + ".getwoven.design";
+
   const start = async () => {
-    if (!linked || busy) return;
+    if (!canStart) return;
     setBusy(true); setErr(null);
     try {
+      let domainLine;
+      if (domainMode === "getwoven") {
+        domainLine = "Domain target: the free Woven subdomain " + subFull +
+          ". Point GitHub Pages at it via the repo's custom-domain setting + a CNAME, and the Woven broker DNS for getwoven.design. " +
+          "If the Woven names registry / broker DNS for published sites is not yet wired, deploy to the github.io URL first and record a 'claim " + subFull + "' task.";
+      } else if (domainMode === "custom") {
+        domainLine = "Domain target: my own custom domain " + customDom.trim().toLowerCase() +
+          ". Set it as the GitHub Pages custom domain, give me the EXACT DNS record (CNAME) to add at my registrar, and verify it resolves before reporting done.";
+      } else {
+        domainLine = "Domain target: the default GitHub Pages URL (" + ghName + ".github.io/<repo>); no custom domain.";
+      }
+      const dryLine = dryRun
+        ? "DRY RUN / PLAN ONLY: do NOT create any repo, push, enable hosting, provision Supabase, or change DNS. Produce a precise PLAN - the exact repo name, the resulting URL(s), every step you would take, accounts/permissions needed, anything destructive - write it into publish.json with status 'planned', then STOP and ask me to confirm before doing anything real."
+        : "EXECUTE for real, but WARN me and wait for my confirmation before each irreversible step (creating a PUBLIC repo, changing DNS).";
       const prompt =
         "Publish this prototype to a real, durable public URL using MY OWN accounts.\n\n" +
+        dryLine + "\n\n" +
         "Publish mode: " + mode + ".\n" +
         "- api: do everything server-side via the GitHub + Supabase APIs (cheapest).\n" +
         "- browser: drive provider dashboards with browser-use only where no API exists (most tokens).\n" +
         "- collaborative: give me precise click-by-click steps and I will perform them.\n\n" +
+        domainLine + "\n\n" +
         "Dispatch the publish-orchestrator. Provider target: Supabase (sign-in + profiles / preferences / files) " +
         "plus GitHub Pages for the static front end. Follow the simple-DB MVP path. My GitHub is linked. " +
-        "Warn me before creating a PUBLIC repo, then run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
-      const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform", prompt, title: "Publish prototype" });
+        "Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
+      const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform",
+        prompt, title: dryRun ? "Plan publish (dry run)" : "Publish prototype" });
       if (onStarted) onStarted(run);
     } catch (e) {
       setErr(e.message || String(e));
@@ -81924,6 +81993,14 @@ function PublishModal({ onClose, onStarted }) {
             Takes your prototype live on a real public URL using <strong>your own</strong> GitHub and Supabase accounts, not Woven's preview tunnel. This runs an agent and can use a lot of tokens depending on the mode you pick.
           </p>
 
+          <label style=${{ display: "flex", gap: "9px", alignItems: "flex-start", padding: "10px 11px", border: "1px solid var(--border)", borderRadius: "8px", margin: "4px 0 14px", cursor: "pointer", background: dryRun ? "rgba(40,170,90,.08)" : "transparent" }}>
+            <input type="checkbox" checked=${dryRun} onChange=${e => setDryRun(e.target.checked)} style=${{ marginTop: "2px" }}/>
+            <span>
+              <strong style=${{ fontSize: "13px" }}>Plan only (dry run)</strong>
+              <span className="sysadd-hint" style=${{ display: "block", marginTop: "2px" }}>The agent describes exactly what it would create and the resulting URL, then stops. Nothing irreversible runs while this is on. Recommended for your first try.</span>
+            </span>
+          </label>
+
           <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: linked ? "rgba(40,170,90,.12)" : "rgba(210,150,40,.14)" }}>
             <span className=${"shares-dot is-" + (linked ? "ok" : "warn")}></span>
             <span style=${{ fontSize: "13px" }}>
@@ -81934,12 +82011,51 @@ function PublishModal({ onClose, onStarted }) {
           </div>
 
           <div className="sysadd-field">
+            <span className="sysadd-label">Where should it live?</span>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <button type="button" className=${"sysadd-radio" + (domainMode === "default" ? " is-on" : "")} style=${radioStyle} onClick=${() => setDomainMode("default")}>
+                <strong>GitHub Pages URL</strong>
+                <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${ghName}.github.io/your-repo - instant, no DNS setup. Best for a first test.</span>
+              </button>
+
+              <button type="button" className=${"sysadd-radio" + (domainMode === "getwoven" ? " is-on" : "")} style=${radioStyle} onClick=${() => setDomainMode("getwoven")}>
+                <strong>Free getwoven.design subdomain</strong>
+                <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>A clean Woven-hosted address you pick.</span>
+              </button>
+              ${domainMode === "getwoven" && html`
+                <div style=${{ display: "flex", alignItems: "center", gap: "6px", padding: "0 4px 2px 12px" }}>
+                  <input className="sysadd-input" style=${{ flex: "1 1 auto", minWidth: 0 }} value=${subname}
+                    placeholder="your-app" autoFocus=${true}
+                    onInput=${e => setSubname(e.target.value.toLowerCase())}/>
+                  <span className="sysadd-hint" style=${{ whiteSpace: "nowrap" }}>.getwoven.design</span>
+                </div>
+                <div className="sysadd-hint" style=${{ paddingLeft: "12px", color: (subname.trim() && !subVal.ok) ? "var(--danger, #d2693c)" : "inherit" }}>
+                  ${subname.trim() && !subVal.ok ? subVal.msg
+                    : subVal.ok ? html`<span className="shares-dot is-ok"></span> Format looks good. Availability is confirmed when you publish.`
+                    : "3-30 chars, lowercase letters / numbers / hyphens."}
+                </div>`}
+
+              <button type="button" className=${"sysadd-radio" + (domainMode === "custom" ? " is-on" : "")} style=${radioStyle} onClick=${() => setDomainMode("custom")}>
+                <strong>Your own custom domain</strong>
+                <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>A domain you already own. You add one DNS record; the agent gives the exact steps and verifies.</span>
+              </button>
+              ${domainMode === "custom" && html`
+                <div style=${{ padding: "0 4px 2px 12px" }}>
+                  <input className="sysadd-input" style=${{ width: "100%", boxSizing: "border-box" }} value=${customDom}
+                    placeholder="app.yoursite.com" autoFocus=${true}
+                    onInput=${e => setCustomDom(e.target.value.toLowerCase())}/>
+                </div>
+                ${customDom.trim() && !customVal.ok ? html`<div className="sysadd-hint" style=${{ paddingLeft: "12px", color: "var(--danger, #d2693c)" }}>${customVal.msg}</div>` : ""}`}
+            </div>
+          </div>
+
+          <div className="sysadd-field">
             <span className="sysadd-label">How should the agent do it?</span>
             <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
               ${MODES.map(m => html`
                 <button key=${m.id} type="button"
                   className=${"sysadd-radio" + (mode === m.id ? " is-on" : "")}
-                  style=${{ textAlign: "left", display: "block", padding: "9px 11px", height: "auto" }}
+                  style=${radioStyle}
                   onClick=${() => setMode(m.id)}>
                   <span style=${{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
                     <strong>${m.label}</strong>
@@ -81951,15 +82067,15 @@ function PublishModal({ onClose, onStarted }) {
             </div>
           </div>
 
-          <p className="sysadd-hint">Target: <strong>Supabase</strong> (sign-in, profiles, preferences, files) plus <strong>GitHub Pages</strong> for the static site. The published repo is public.</p>
+          <p className="sysadd-hint">Backend: <strong>Supabase</strong> (sign-in, profiles, preferences, files), only if the prototype stores data. The published repo is public.</p>
 
           ${err && html`<div className="sysadd-error">${err}</div>`}
         </div>
         <div className="sysadd-foot">
-          <span className="sysadd-foot-note">Progress streams in chat; status lands on the Development tab.</span>
+          <span className="sysadd-foot-note">${dryRun ? "Plans only - nothing is created. Progress streams in chat." : "Progress streams in chat; status lands on the Development tab."}</span>
           <div className="sysadd-foot-actions">
             <button className="sysadd-btn-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
-            <button className="sysadd-btn-go" onClick=${start} disabled=${!linked || busy}>${busy ? "Starting…" : "Publish"}</button>
+            <button className="sysadd-btn-go" onClick=${start} disabled=${!canStart}>${busy ? "Starting…" : (dryRun ? "Plan it" : "Publish")}</button>
           </div>
         </div>
       </div>
