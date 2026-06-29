@@ -12488,12 +12488,13 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
    set inline so clicks near the curve select the edge. */
 .workflow-edge {
   fill: none;
-  /* Plain connectors rest in a light grey (typed/dtype edges keep their colour,
-     pending-draw stays accent, selected goes hot). */
-  stroke: var(--border-strong);
+  /* Plain connectors rest in the project teal (typed/dtype edges keep their own
+     colour, pending-draw stays accent, selected goes hot). The fat hit-path
+     below owns selectability, so the resting colour is purely aesthetic. */
+  stroke: var(--accent);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
-  opacity: 0.95;
+  opacity: 0.8;
   cursor: pointer;
 }
 .workflow-edge:hover { opacity: 1; stroke-width: 3; }
@@ -16667,21 +16668,22 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 2px;
   padding: 12px;
 }
-/* Dock the minimap flush into the bottom of the panel, matching workflow mode's
-   WorkflowMiniMap: full-bleed (no side/bottom margin, no radius), separated from
-   the tools list by a hairline top border only. Use `relative`, NOT `static`:
-   the frame rects are position:absolute, so the minimap must stay a positioning
-   context (and keep overflow:hidden) or the rects escape and overlap the list. */
+/* Dock the minimap at the bottom of the panel as a clean, fully-bordered box.
+   A single top-only hairline (the old full-bleed treatment) read as a broken /
+   incomplete outline against the dotted canvas grid, so give it a complete
+   border + radius and inset it from the panel edges - the same tidy contained
+   look the floating minimap has. Use `relative`, NOT `static`: the frame rects
+   are position:absolute, so the minimap must stay a positioning context (and
+   keep overflow:hidden) or the rects escape and overlap the tools list above. */
 .canvas-tools-panel .minimap {
   position: relative;
   overflow: hidden;
-  margin: auto 0 0;
+  margin: auto 10px 10px;
   width: auto;
   height: 132px;
-  border: 0;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  box-shadow: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
