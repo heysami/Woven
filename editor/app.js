@@ -25764,6 +25764,10 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "image-editor", w: 900, h: 640,
     doc: p.doc || null,
   }),
+  "ai-image-editor": (p) => ({
+    kind: "ai-image-editor", w: 900, h: 660,
+    doc: p.doc || null,
+  }),
   "pixel-editor": (p) => ({
     kind: "pixel-editor", w: 720, h: 600,
     doc: p.doc || null,
@@ -26120,6 +26124,12 @@ const WORKFLOW_CONNECT_DEFS = {
     provides: { out: { label: "Baked image", tags: ["asset", "remixable", "blendable"] } },
     accepts:  { in:   { label: "Layer", tags: ["asset", "layer"] },
                 edit: { label: "Edit image", tags: ["text-gen", "asset-gen"] } },
+  },
+  "ai-image-editor": {
+    label: "AI image editor",
+    provides: { out: { label: "Edited image", tags: ["asset", "remixable", "blendable"] } },
+    accepts:  { in:   { label: "Source image", tags: ["asset"] },
+                edit: { label: "Edit analysis", tags: ["text-gen", "asset-gen"] } },
   },
   "pixel-editor": {
     label: "Pixel editor",
@@ -28597,6 +28607,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const native = [];
   if (akind === "image" || akind === "svg" || akind === "video") native.push({ nkey: "bg", kind: "bgcolor", label: "Background" });
   if (akind === "image") native.push({ nkey: "crop", kind: "button", label: "Crop", event: "th:asset-open-crop" });
+  if (akind === "image") native.push({ nkey: "aiedit", kind: "button", label: "AI edit", btn: "Analyse", event: "th:asset-ai-edit" });
 
   if (!selected || !rect || (!schema.length && !native.length)) return null;
   const PANEL_W = 236, GAP = 12;
@@ -28668,7 +28679,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     if (e.kind === "button") {
       return html`<div className="wac-row" key=${e.nkey}>
         <label className="wac-label">${e.label}</label>
-        <button className="wac-mini" onClick=${() => window.dispatchEvent(new CustomEvent(e.event || "th:asset-open-crop", { detail: { nodeId } }))}>Open</button>
+        <button className="wac-mini" onClick=${() => window.dispatchEvent(new CustomEvent(e.event || "th:asset-open-crop", { detail: { nodeId } }))}>${e.btn || "Open"}</button>
       </div>`;
     }
     return null;
@@ -31234,6 +31245,7 @@ const WORKFLOW_ADD_CATALOG = [
   { kind: "hyperframes",       label: "Hyperframes",          glyph: "Hf", sub: "motion timeline" },
   { kind: "font-editor",       label: "Font creator",         glyph: "Aa", sub: "glyphs → otf" },
   { kind: "image-editor",      label: "Image editor",         glyph: "▦", sub: "raster · layers" },
+  { kind: "ai-image-editor",   label: "AI image editor",      glyph: "◓", sub: "detect · move · regen" },
   { kind: "pixel-editor",      label: "Pixel editor",         glyph: "▩", sub: "code · draw · ascii" },
   { kind: "voxel-3d",          label: "Voxel editor",         glyph: "⬚", sub: "grid voxels" },
   { kind: "gaussian-splat-3d", label: "Splat Lab",            glyph: "✦", sub: "gaussian splats · 3d" },
@@ -31808,6 +31820,44 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:focus-node", onFocus);
     return () => window.removeEventListener("th:focus-node", onFocus);
   }, [data.nodes, wrapRef, setPan, zoom]);
+
+  // ── Asset-mode "AI edit" → spawn an ai-image-editor wired to the asset ──
+  // The AI-edit button on an image asset's control panel dispatches
+  // th:asset-ai-edit {nodeId}. Spawn an ai-image-editor node just to the
+  // right of that asset, wire asset.out → new.in (so the source image flows
+  // in via the normal content pipeline), flag doc.autoAnalyze so the tool
+  // runs the vision analysis once on load, then select + center it.
+  useEffect(() => {
+    const onAiEdit = (ev) => {
+      const assetId = ev && ev.detail && ev.detail.nodeId;
+      if (!assetId) return;
+      const asset = (data.nodes || []).find(n => n && n.id === assetId);
+      if (!asset) return;
+      const body = workflowMakeNodeOfKind("ai-image-editor", { doc: { autoAnalyze: true } });
+      if (!body) return;
+      const id = workflowNewNodeId();
+      const node = {
+        id, ...body,
+        x: Math.round((asset.x || 0) + (asset.w || 280) + 80),
+        y: Math.round(asset.y || 0),
+      };
+      setData(d => ({
+        ...d,
+        nodes: [...(d.nodes || []), node],
+        edges: [...(d.edges || []), { from: `${assetId}.out`, to: `${id}.in` }],
+      }));
+      const wrap = wrapRef && wrapRef.current;
+      if (wrap) {
+        const r = wrap.getBoundingClientRect();
+        const cx = (node.x || 0) + ((node.w || 320) / 2);
+        const cy = (node.y || 0) + ((node.h || 240) / 2);
+        setPan({ x: r.width / 2 - cx * zoom, y: r.height / 2 - cy * zoom });
+      }
+      setTimeout(() => { setSelectedWbIds(new Set()); setSelectedNodeIds(new Set([id])); }, 0);
+    };
+    window.addEventListener("th:asset-ai-edit", onAiEdit);
+    return () => window.removeEventListener("th:asset-ai-edit", onAiEdit);
+  }, [data.nodes, wrapRef, setPan, zoom, setData, setSelectedNodeIds, setSelectedWbIds]);
 
   // ── Cmd+F / Cmd+K search palette ──────────────────────────────────────
   // Cmd+F opens the palette on the "find text on the canvas" tab; Cmd+K on
@@ -46427,6 +46477,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
             draggable=${true}
             onDragStart=${(e) => {
               e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "ai-image-editor" }));
+            }}
+            title="Drag onto canvas - AI image editor. Wire ONE flat image (or use the 'AI edit' button on any image asset): a vision model detects each object + text and draws its boundary, makes a rembg 'ghost' cutout per object, then you scribble, comment, and drag/resize boundaries to reposition things. Regenerate composites the edit and runs gpt-image-2 to render a clean result."
+          >
+            <span className="workflow-library-item-glyph">◓</span>
+            <span className="workflow-library-item-label">AI image editor</span>
+            <span className="workflow-library-item-id">detect · move · regen</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
               e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "pixel-editor" }));
             }}
             title="Drag onto canvas - pixel-art editor with a code/data generator mode AND a manual draw mode (also an ASCII canvas). Bakes a .png (+ .txt in ASCII mode)."
@@ -60902,7 +60965,7 @@ function useUpstreamInputs(node, allNodes, allEdges, opts) {
 // of truth for the asset-resolution helpers below + the upstream resolver.
 const WORKFLOW_BAKED_EDITABLE_KINDS = new Set([
   "formatted-text", "composer", "vector-editor", "spline-3d",
-  "font-editor", "image-editor", "pixel-editor", "voxel-3d",
+  "font-editor", "image-editor", "ai-image-editor", "pixel-editor", "voxel-3d",
   "synth", "music", "material-lab", "mm-composer", "hyperframes", "gaussian-splat-3d",
 ]);
 // The captured OUTPUT node inside a custom-app's embedded subgraph. The
@@ -66698,6 +66761,15 @@ const APP_NODE_TOOLS = {
     canonicalIsBaked: false, imports: false,
     inTitle: "Wire an image asset as a layer, or an Agent to edit.",
     outTitle: "Pipe the flattened .png downstream.",
+  },
+  "ai-image-editor": {
+    glyph: "◓", label: "AI image editor", tool: "/editor/tools/aiimageeditor/index.html",
+    prefix: "aiimg", stateField: "doc",
+    canonical: (b, id) => `source/${b}/ai-image-${id}.json`,
+    baked:     (b, id) => `source/${b}/images/ai-image-${id}.png`,
+    canonicalIsBaked: false, imports: false,
+    inTitle: "Wire ONE image to analyse + edit, or an Agent to edit the analysis.",
+    outTitle: "Pipe the edited .png downstream.",
   },
   "pixel-editor": {
     glyph: "▩", label: "Pixel editor", tool: "/editor/tools/pixeleditor/index.html",

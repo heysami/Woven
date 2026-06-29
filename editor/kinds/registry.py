@@ -1737,6 +1737,24 @@ KINDS = {
         "pauseAfter":   False,
         "notes": "User-driven raster painter with layers, free-lasso selection, per-pixel alpha-mask layer, and gradient-map. Bake flattens to source/<branch>/images/image-<id>.png. Agent edits source/<branch>/image-<id>.json (structure/grades/selection, not pixels).",
     },
+    "ai-image-editor": {
+        "title":        "AI image editor",
+        "category":     "container",
+        "inputs": {
+            "doc":       {"type": "object", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": "AI-assisted single-image editor. Wire ONE flat image (or use the asset-mode 'AI edit' button). The tool analyses it with a vision LLM (skill=describe) into per-object + per-text boxes, makes a rembg 'ghost' cutout per box, and lets the user scribble, comment, and drag/resize each boundary to reposition objects. 'Regenerate' composites the moved ghosts + scribbles into a guidance image and sends it to gpt-image-2 (image-to-image) to render a clean result -> source/<branch>/images/ai-image-<id>.png. Agent edits source/<branch>/ai-image-<id>.json (boxes/comments/moves/instruction, NOT pixels).",
+    },
     "pixel-editor": {
         "title":        "Pixel editor",
         "category":     "container",
@@ -2989,6 +3007,30 @@ _IMAGE_AUTHORING = (
     "Defaults (lum→alpha) give the classic luminance cutout."
 )
 
+_AI_IMAGE_AUTHORING = (
+    "This is an AI IMAGE EDITOR - a single flat image is analysed into objects + text regions you can "
+    "annotate, reposition, and regenerate. You author the ANALYSIS + EDIT INTENT (boxes, comments, moves, "
+    "the global instruction) - you do NOT paint pixels and you do NOT invent the rendered result (the "
+    "regenerate step runs gpt-image-2 from the user/tool, not from you).\n"
+    "  Write the canonical file `source/{branch}/ai-image-{id}.json` (read it first; re-imported live). Schema:\n"
+    "      {\"v\":1,\"sourcePath\":\"source/{branch}/images/<file>.png\",\"w\":1024,\"h\":1024,\n"
+    "       \"objects\":[\n"
+    "         {\"id\":\"o1\",\"label\":\"red car\",\"type\":\"object|text\",\"text\":\"(recognised text, type=text only)\",\n"
+    "          \"box\":[x,y,w,h],            (normalised 0..1, original detected position)\n"
+    "          \"move\":[x,y,w,h],           (normalised 0..1, where the user dragged it; omit if unmoved)\n"
+    "          \"ghostPath\":\"source/{branch}/images/ai-ghost-{id}-o1.png\",  (rembg cutout, tool-written)\n"
+    "          \"comment\":\"make it blue\"}  (per-object edit note)\n"
+    "       ],\n"
+    "       \"scribblePath\":\"source/{branch}/images/ai-scribble-{id}.png\",  (optional freehand annotation layer)\n"
+    "       \"instruction\":\"global edit instruction\",\n"
+    "       \"resultPath\":\"source/{branch}/images/ai-image-{id}.png\"}\n"
+    "  `box`/`move` are [left,top,width,height] in 0..1 of the image. Set `move` to reposition an object "
+    "(the tool shows a ghost there and the regenerate guidance image moves it). Put per-object edits in "
+    "`comment`; put whole-image edits in `instruction`. ghostPath / scribblePath / resultPath are written by "
+    "the tool - reference them, do not fabricate their pixels. To request a regeneration, set the intent "
+    "fields; the user (or the tool) triggers the actual gpt-image-2 call."
+)
+
 _PIXEL_AUTHORING = (
     "This is a PIXEL editor. Pixels can be DECLARED by data/code (Data-Pixels style) or drawn manually; "
     "you produce the data. In ASCII mode the palette entries are glyphs instead of colors.\n"
@@ -3723,6 +3765,16 @@ KIND_IO = {
             {"port": "edit", "label": "Edit image", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/image-{id}.json",
               "authoring": _IMAGE_AUTHORING},
+        ],
+    },
+    "ai-image-editor": {
+        "provides": [{"port": "out", "label": "Edited image", "tags": ["asset", "remixable", "blendable"],
+                       "resolve": "bakedFile", "resolveArgs": {"ext": "png"}}],
+        "accepts":  [
+            {"port": "in", "label": "Source image", "tags": ["asset"], "ingest": "context"},
+            {"port": "edit", "label": "Edit analysis", "tags": ["text-gen", "asset-gen"],
+              "ingest": "editTarget", "canonical": "source/{branch}/ai-image-{id}.json",
+              "authoring": _AI_IMAGE_AUTHORING},
         ],
     },
     "pixel-editor": {

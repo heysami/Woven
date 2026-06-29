@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Woven · AI Image Editor</title>
+<!-- Woven design system: shared light theme + detached floating-panel chrome. -->
+<link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
+<link rel="stylesheet" href="/editor/tools/_shared/detached-panels.css">
+<style>
+  /* ── Woven DS remap (thin aliases of the shared --wv-* tokens) ──────────── */
+  :root{
+    --bg:var(--wv-bg); --bg2:var(--wv-surface);
+    --panel:var(--wv-surface); --panel2:var(--wv-surface-2);
+    --line:var(--wv-border); --line2:var(--wv-border);
+    --ink:var(--wv-text); --ink2:var(--wv-text-muted);
+    --ink3:var(--wv-text-faint, var(--wv-text-muted));
+    --accent:var(--wv-accent); --accent2:var(--wv-accent-strong, var(--wv-accent));
+    --danger:var(--wv-danger, #d23b3b); --good:var(--wv-success, #2faf6a);
+    --radius:7px;
+  }
+  *{box-sizing:border-box; -webkit-user-select:none; user-select:none;}
+  html,body{margin:0; height:100%; overflow:hidden;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:13px/1.4 var(--wv-font-sans, -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif);
+    display:flex; flex-direction:column;
+  }
+  input,select,button,textarea{ font-family:inherit; }
+  .mono{ font-family:var(--wv-font-mono, ui-monospace,monospace); }
+  /* ── top bar ── */
+  #topbar{
+    display:flex; align-items:center; gap:10px; padding:8px 12px;
+    background:linear-gradient(180deg,var(--bg2),var(--bg)); border-bottom:1px solid var(--line);
+    flex:0 0 auto; z-index:30;
+  }
+  .brand{font-weight:700; letter-spacing:.3px; font-size:13px; color:var(--ink);}
+  .brand b{color:var(--accent2);}
+  .sep{width:1px; height:22px; background:var(--line); margin:0 2px;}
+  .spacer{flex:1;}
+  .status{color:var(--ink3); font-size:11px; font-variant-numeric:tabular-nums; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .status.err{color:var(--danger);}
+  .status.busy{color:var(--accent2);}
+  button.btn{
+    background:var(--panel); color:var(--ink); border:1px solid var(--line2);
+    border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; display:inline-flex; align-items:center; gap:5px;
+  }
+  button.btn:hover:not(:disabled){background:var(--panel2); border-color:var(--accent);}
+  button.btn:active:not(:disabled){transform:translateY(1px);}
+  button.btn:disabled{opacity:.45; cursor:not-allowed;}
+  button.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--wv-text-on-accent, #fff); font-weight:600;}
+  button.btn.primary:hover:not(:disabled){background:var(--accent2);}
+  button.btn svg{width:15px; height:15px; display:block;}
+  /* ── layout ── */
+  #main{flex:1; display:flex; min-height:0;}
+  #toolrail{
+    flex:0 0 48px; width:48px; background:var(--bg2); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:4px; overflow-y:auto;
+  }
+  .tool{
+    width:36px; height:36px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--ink2); border:1px solid transparent; position:relative;
+  }
+  .tool:hover{background:var(--panel); color:var(--ink);}
+  .tool.active{background:var(--accent); color:var(--wv-text-on-accent, #fff); border-color:var(--accent);}
+  .tool svg{width:19px; height:19px; display:block;}
+  .tool .tip{
+    position:absolute; left:46px; top:50%; transform:translateY(-50%);
+    background:#000; color:#fff; padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
+    opacity:0; pointer-events:none; transition:opacity .12s; z-index:50;
+  }
+  .tool:hover .tip{opacity:.92;}
+  .rail-sep{width:30px; height:1px; background:var(--line); margin:4px 0;}
+  .rail-mini{font-size:9px; color:var(--ink3); text-align:center; line-height:1;}
+  .swatches{display:flex; flex-wrap:wrap; gap:3px; width:40px; justify-content:center;}
+  .sw{width:15px; height:15px; border-radius:50%; cursor:pointer; border:2px solid transparent;}
+  .sw.active{border-color:var(--ink);}
+  input[type=range].vsize{ width:40px; accent-color:var(--accent); }
+  /* canvas stage */
+  #coreCanvas{flex:1; display:flex; min-width:0; min-height:0; position:relative;}
+  #stage{
+    flex:1; position:relative; overflow:auto; min-width:0;
+    background:
+      linear-gradient(45deg,#c4c8cf 25%,transparent 25%,transparent 75%,#c4c8cf 75%),
+      linear-gradient(45deg,#c4c8cf 25%,#d6dadf 25%,#d6dadf 75%,#c4c8cf 75%);
+    background-size:22px 22px; background-position:0 0,11px 11px;
+    display:flex; align-items:center; justify-content:center; padding:18px;
+  }
+  #canvasWrap{position:relative; box-shadow:0 8px 40px rgba(0,0,0,.4); line-height:0; flex:0 0 auto; max-width:100%; max-height:100%;}
+  #srcImg{display:block; max-width:100%; max-height:100%; height:auto; user-select:none; -webkit-user-drag:none;}
+  #scribbleCanvas{position:absolute; inset:0; width:100%; height:100%;}
+  #overlay{position:absolute; inset:0;}
+  #empty{color:var(--ink2); font-size:13px; text-align:center; padding:24px; max-width:340px;}
+  /* boxes */
+  .obx{
+    position:absolute; border:1.5px solid var(--c,#28c08a); border-radius:3px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.25) inset; cursor:move;
+  }
+  .obx[data-moved="true"]{border-style:dashed; opacity:.5;}
+  .obx .obx-tag{
+    position:absolute; left:-1px; top:-18px; background:var(--c,#28c08a); color:#fff;
+    font-size:10px; line-height:1; padding:2px 5px; border-radius:3px 3px 3px 0; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis;
+  }
+  .obx .obx-badge{position:absolute; right:2px; top:2px; width:8px; height:8px; border-radius:50%; background:#f2b01e; box-shadow:0 0 0 1px #fff;}
+  .obx .rs{position:absolute; right:-5px; bottom:-5px; width:11px; height:11px; background:var(--c,#28c08a); border:1.5px solid #fff; border-radius:50%; cursor:nwse-resize;}
+  .ghost{position:absolute; pointer-events:auto; cursor:move; image-rendering:auto;}
+  .ghost img{width:100%; height:100%; display:block; -webkit-user-drag:none;}
+  .ghost.sel{outline:2px solid var(--c,#28c08a); outline-offset:1px;}
+  /* right column */
+  #rightcol{
+    flex:0 0 286px; width:286px; background:var(--bg2); border-left:1px solid var(--line);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  .rc-head{padding:8px 12px; font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--ink3); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:6px;}
+  .rc-head .ct{margin-left:auto; font-weight:600; color:var(--ink2);}
+  #objList{flex:1; overflow-y:auto; padding:6px; display:flex; flex-direction:column; gap:6px; min-height:60px;}
+  .objrow{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:7px 8px; display:flex; flex-direction:column; gap:5px;}
+  .objrow.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent);}
+  .objrow-top{display:flex; align-items:center; gap:6px;}
+  .objrow-dot{width:11px; height:11px; border-radius:3px; flex:0 0 auto;}
+  .objrow-label{flex:1; background:transparent; border:none; color:var(--ink); font-size:12px; font-weight:600; padding:1px 2px; min-width:0;}
+  .objrow-label:focus{outline:1px solid var(--line2); border-radius:3px;}
+  .objrow-type{font-size:9px; padding:1px 5px; border-radius:8px; background:var(--panel2); color:var(--ink2); text-transform:uppercase; letter-spacing:.4px;}
+  .objrow-type.text{background:#2b6cb033; color:#2b6cb0;}
+  .objrow-cmt{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:5px; padding:4px 6px; font-size:11px; resize:vertical; min-height:26px;}
+  .objrow-acts{display:flex; gap:5px; align-items:center;}
+  .mini{background:var(--bg); border:1px solid var(--line); color:var(--ink2); border-radius:5px; padding:2px 7px; font-size:10px; cursor:pointer;}
+  .mini:hover{border-color:var(--accent); color:var(--ink);}
+  .mini.warn:hover{border-color:var(--danger); color:var(--danger);}
+  .moved-tag{font-size:9px; color:var(--accent2); font-weight:700; text-transform:uppercase; letter-spacing:.4px;}
+  .rc-instr{padding:8px 12px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:5px;}
+  .rc-instr label{font-size:10px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--ink3);}
+  #instruction{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 8px; font-size:12px; resize:vertical; min-height:48px;}
+  .rc-hint{padding:6px 12px 10px; font-size:10px; color:var(--ink3); line-height:1.5; border-top:1px solid var(--line);}
+  .empty-list{color:var(--ink3); font-size:11px; text-align:center; padding:16px 8px;}
+  /* spinner */
+  .spin{width:13px; height:13px; border:2px solid var(--line2); border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite; display:inline-block; vertical-align:-2px;}
+  @keyframes sp{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<div id="topbar" data-float-panel="top">
+  <span class="brand">Woven <b>AI Image</b></span>
+  <div class="sep"></div>
+  <button class="btn primary" id="btnAnalyse" title="Detect objects + text and draw their boundaries">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    Analyse
+  </button>
+  <button class="btn" id="btnRegen" title="Composite your edits and regenerate a clean image">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+    Regenerate
+  </button>
+  <div class="spacer"></div>
+  <span class="status" id="status"></span>
+</div>
+
+<div id="main">
+  <div id="toolrail" data-float-panel="left"></div>
+  <div id="coreCanvas">
+    <div id="stage">
+      <div id="canvasWrap" style="display:none;">
+        <img id="srcImg" alt="">
+        <canvas id="scribbleCanvas"></canvas>
+        <div id="overlay"></div>
+      </div>
+      <div id="empty">Wire one image into this node (or press <b>AI edit</b> on an image asset), then click <b>Analyse</b>. The AI detects each object and text region, draws its boundary, and prepares a cut-out "ghost" you can drag to reposition. Scribble, comment, then <b>Regenerate</b>.</div>
+    </div>
+  </div>
+  <div id="rightcol" data-float-panel="right">
+    <div class="rc-head">Detected <span class="ct" id="objCount">0</span></div>
+    <div id="objList"><div class="empty-list">Nothing analysed yet.</div></div>
+    <div class="rc-instr">
+      <label for="instruction">Whole-image instruction</label>
+      <textarea id="instruction" placeholder="e.g. warmer evening light, remove the logo, photoreal finish"></textarea>
+    </div>
+    <div class="rc-hint">Drag a box (or its ghost) to reposition. Add a comment per object for local edits. Regenerate runs gpt-image-2 (needs an OpenAI key).</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ============================================================================
+// Woven AI Image Editor - driven-view tool (prefix "aiimg")
+// The host (WorkflowDrivenToolNode) owns persistence of the canonical JSON doc
+// + the baked result PNG; this tool owns the UI AND the AI orchestration,
+// calling the daemon's same-origin endpoints directly (project id is in our URL).
+// ============================================================================
+const Q = new URLSearchParams(location.search);
+const NODE = Q.get('nodeId') || '';
+const PID  = Q.get('project') || '';
+const EMBEDDED = (()=>{ try{ return window.parent && window.parent !== window; }catch(e){ return false; } })();
+function api(path){ const sep = path.includes('?') ? '&' : '?'; return PID ? path+sep+'project='+encodeURIComponent(PID) : path; }
+
+// ── Live document ───────────────────────────────────────────────────────────
+let BRANCH = 'main';
+let DOC = freshDoc();
+let SRC = { url:null, img:null, dataUrl:null, w:0, h:0 };   // loaded source image
+let RESULT_URL = null;                                       // last regenerated result (cache-busted)
+let PROV = { vision:null, visionModel:null, imageEdit:false, raw:[] };
+let applying = false;          // guard: applying external state must not echo aiimg:state
+let autoAnalyzePending = false;
+
+function freshDoc(){
+  return { v:1, sourcePath:null, w:0, h:0, objects:[], scribblePath:null, instruction:'', resultPath:null };
+}
+
+// ── Tool state ───────────────────────────────────────────────────────────────
+let TOOL = 'move';
+let BRUSH = { size:8, color:'#ff3b30' };
+const BRUSH_COLORS = ['#ff3b30','#ffcc00','#34c759','#0a84ff','#af52de','#ffffff','#111111'];
+let selObjId = null;
+const COLORS = ['#28c08a','#e0823a','#3b82f6','#d6478e','#8b5cf6','#14b8a6','#ef4444','#eab308','#6366f1','#10b981'];
+function colorFor(i){ return COLORS[i % COLORS.length]; }
+
+// ── DOM ──────────────────────────────────────────────────────────────────────
+const $ = (id)=>document.getElementById(id);
+const stage=$('stage'), wrap=$('canvasWrap'), srcImg=$('srcImg'),
+      overlay=$('overlay'), scrib=$('scribbleCanvas'), sctx=scrib.getContext('2d'),
+      emptyEl=$('empty'), statusEl=$('status'),
+      btnAnalyse=$('btnAnalyse'), btnRegen=$('btnRegen'),
+      objList=$('objList'), objCount=$('objCount'), instrEl=$('instruction');
+
+// ============================================================================
+// STATUS
+// ============================================================================
+let statusBusy=false;
+function setStatus(msg, kind){ statusEl.textContent=msg||''; statusEl.className='status'+(kind?(' '+kind):''); }
+function busy(msg){ statusBusy=true; statusEl.innerHTML='<span class="spin"></span> '+escapeHtml(msg); statusEl.className='status busy'; refreshButtons(); }
+function done(msg, kind){ statusBusy=false; setStatus(msg||'', kind); refreshButtons(); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function refreshButtons(){
+  const haveSrc = !!SRC.img;
+  btnAnalyse.disabled = statusBusy || !haveSrc;
+  btnRegen.disabled   = statusBusy || !haveSrc || !DOC.objects.length && !instrEl.value.trim() && !DOC.scribblePath;
+}
+
+// ============================================================================
+// TOOLRAIL
+// ============================================================================
+const TOOLS = [
+  { id:'move',    tip:'Move / resize boxes',   svg:'<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>' },
+  { id:'box',     tip:'Draw a new region',     svg:'<rect x="3" y="3" width="18" height="18" rx="2"/>' },
+  { id:'scribble',tip:'Scribble (annotate)',   svg:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>' },
+  { id:'erase',   tip:'Erase scribble',        svg:'<path d="M20 20H7L3 16a2 2 0 0 1 0-3l9-9a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-7 7"/><path d="M6 13l6 6"/>' },
+];
+function buildToolrail(){
+  const rail=$('toolrail'); rail.innerHTML='';
+  for(const t of TOOLS){
+    const el=document.createElement('div');
+    el.className='tool'+(TOOL===t.id?' active':''); el.dataset.tool=t.id;
+    el.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+t.svg+'</svg><span class="tip">'+t.tip+'</span>';
+    el.onclick=()=>{ TOOL=t.id; buildToolrail(); updateOverlayMode(); };
+    rail.appendChild(el);
+  }
+  // brush controls (only visual hint of size/color)
+  const sep=document.createElement('div'); sep.className='rail-sep'; rail.appendChild(sep);
+  const sizeWrap=document.createElement('div'); sizeWrap.className='rail-mini'; sizeWrap.textContent='size';
+  const size=document.createElement('input'); size.type='range'; size.min='2'; size.max='40'; size.value=String(BRUSH.size); size.className='vsize';
+  size.oninput=()=>{ BRUSH.size=parseInt(size.value,10)||8; };
+  rail.appendChild(sizeWrap); rail.appendChild(size);
+  const sw=document.createElement('div'); sw.className='swatches';
+  for(const c of BRUSH_COLORS){
+    const d=document.createElement('div'); d.className='sw'+(BRUSH.color===c?' active':''); d.style.background=c;
+    d.onclick=()=>{ BRUSH.color=c; buildToolrail(); };
+    sw.appendChild(d);
+  }
+  rail.appendChild(sw);
+}
+function updateOverlayMode(){
+  // Scribble/erase: the scribble canvas captures pointer; boxes ignore it.
+  const drawing = (TOOL==='scribble'||TOOL==='erase');
+  scrib.style.pointerEvents = drawing ? 'auto' : 'none';
+  overlay.style.pointerEvents = drawing ? 'none' : 'auto';
+  stage.style.cursor = (TOOL==='box') ? 'crosshair' : (drawing ? 'crosshair' : 'default');
+}
+
+// ============================================================================
+// SOURCE IMAGE
+// ============================================================================
+function loadSource(url){
+  return new Promise((resolve,reject)=>{
+    if(!url){ resolve(false); return; }
+    const img=new Image();
+    img.onload=()=>{
+      SRC.url=url; SRC.img=img; SRC.w=img.naturalWidth; SRC.h=img.naturalHeight; SRC.dataUrl=null;
+      DOC.w=SRC.w; DOC.h=SRC.h;
+      srcImg.src=url;
+      wrap.style.display=''; emptyEl.style.display='none';
+      sizeScribble();
+      renderOverlay();
+      refreshButtons();
+      resolve(true);
+    };
+    img.onerror=()=>{ resolve(false); };
+    // Same-origin daemon image → canvas-safe without crossOrigin. (External
+    // CDNs would taint the canvas; we surface that on the first crop attempt.)
+    img.src=url;
+  });
+}
+// Source as a data URL (cached). Used for vision input + crops + guidance.
+function srcDataUrl(maxDim){
+  if(!SRC.img) return null;
+  const cap = maxDim || 0;
+  let w=SRC.w, h=SRC.h;
+  if(cap && Math.max(w,h)>cap){ const s=cap/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const cx=c.getContext('2d'); cx.drawImage(SRC.img,0,0,w,h);
+  try{ return c.toDataURL('image/png'); }catch(e){ return null; }
+}
+function sizeScribble(){
+  // Cap scribble buffer to bound memory, but keep image aspect.
+  let w=SRC.w, h=SRC.h, cap=1600;
+  if(Math.max(w,h)>cap){ const s=cap/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+  if(scrib.width!==w || scrib.height!==h){ scrib.width=w; scrib.height=h; }
+}
+
+// ============================================================================
+// OVERLAY (boxes + ghosts)
+// ============================================================================
+function renderOverlay(){
+  overlay.innerHTML='';
+  if(!SRC.img) return;
+  DOC.objects.forEach((o,i)=>{
+    const col=colorFor(i);
+    const live = o.box;            // detected/original box
+    const moved = !!o.move;
+    // box element (drawn at original position; dashed+faded when moved)
+    const b=document.createElement('div');
+    b.className='obx'; b.dataset.id=o.id; b.dataset.moved=moved?'true':'false';
+    b.style.setProperty('--c',col);
+    placeAbs(b, moved ? o.box : o.box);
+    const tag=document.createElement('div'); tag.className='obx-tag'; tag.textContent=o.label||(o.type==='text'?'text':'object');
+    b.appendChild(tag);
+    if(o.comment && o.comment.trim()){ const bd=document.createElement('div'); bd.className='obx-badge'; b.appendChild(bd); }
+    const rs=document.createElement('div'); rs.className='rs'; b.appendChild(rs);
+    if(selObjId===o.id) b.style.boxShadow='0 0 0 2px '+col;
+    overlay.appendChild(b);
+    // ghost (only when moved AND we have a ghost image): drawn at the move box
+    if(moved && o._ghostImg){
+      const g=document.createElement('div'); g.className='ghost'+(selObjId===o.id?' sel':''); g.dataset.id=o.id; g.style.setProperty('--c',col);
+      placeAbs(g, o.move);
+      const gi=document.createElement('img'); gi.src=o._ghostImg.src; g.appendChild(gi);
+      overlay.appendChild(g);
+    } else if(moved){
+      // no ghost yet → show a solid box at the move position so the user still
+      // sees where it will land.
+      const g=document.createElement('div'); g.className='obx'; g.dataset.id=o.id; g.dataset.ghostbox='true'; g.style.setProperty('--c',col);
+      placeAbs(g, o.move);
+      const tg=document.createElement('div'); tg.className='obx-tag'; tg.textContent=(o.label||'object')+' →'; g.appendChild(tg);
+      const rs2=document.createElement('div'); rs2.className='rs'; g.appendChild(rs2);
+      overlay.appendChild(g);
+    }
+  });
+}
+function placeAbs(el, box){
+  el.style.left   = (box[0]*100)+'%';
+  el.style.top    = (box[1]*100)+'%';
+  el.style.width  = (box[2]*100)+'%';
+  el.style.height = (box[3]*100)+'%';
+}
+function clamp01(v){ return Math.max(0,Math.min(1,v)); }
+
+// ── pointer interactions on the overlay (move/resize boxes + ghosts) ─────────
+let drag=null;
+overlay.addEventListener('pointerdown',(e)=>{
+  if(TOOL!=='move') return;
+  const rsEl=e.target.closest('.rs');
+  const host=e.target.closest('.obx,.ghost');
+  if(!host) { selObjId=null; renderOverlay(); renderObjList(); return; }
+  const id=host.dataset.id; const o=DOC.objects.find(x=>x.id===id); if(!o) return;
+  selObjId=id; renderObjList();
+  const isGhost = host.classList.contains('ghost') || host.dataset.ghostbox==='true';
+  const editingBox = !isGhost && !o.move ? 'box' : 'move';   // dragging the original box of an unmoved obj edits box; otherwise edit move
+  // ensure a move box exists once the user grabs to reposition
+  const target = (editingBox==='box') ? 'box' : 'move';
+  if(target==='move' && !o.move) o.move = o.box.slice();
+  const wr=wrap.getBoundingClientRect();
+  drag={ id, target, mode: rsEl?'resize':'translate', sx:e.clientX, sy:e.clientY,
+         start:(o[target]||o.box).slice(), ww:wr.width, wh:wr.height };
+  host.setPointerCapture && host.setPointerCapture(e.pointerId);
+  e.preventDefault(); e.stopPropagation();
+});
+overlay.addEventListener('pointermove',(e)=>{
+  if(!drag) return;
+  const o=DOC.objects.find(x=>x.id===drag.id); if(!o) return;
+  const dx=(e.clientX-drag.sx)/drag.ww, dy=(e.clientY-drag.sy)/drag.wh;
+  let nb=drag.start.slice();
+  if(drag.mode==='translate'){ nb[0]=clamp01(drag.start[0]+dx); nb[1]=clamp01(drag.start[1]+dy); }
+  else { nb[2]=Math.max(0.02,Math.min(1-drag.start[0],drag.start[2]+dx)); nb[3]=Math.max(0.02,Math.min(1-drag.start[1],drag.start[3]+dy)); }
+  o[drag.target]=nb;
+  if(drag.target==='box' && !o.move){} // unmoved: editing detection box in place
+  renderOverlay();
+});
+overlay.addEventListener('pointerup',()=>{
+  if(!drag) return;
+  const id=drag.id; drag=null; renderObjList();
+  // Lazily (re)build a cut-out for an object the user just repositioned but
+  // which has no ghost yet (e.g. after a regenerate cleared them).
+  const o=DOC.objects.find(x=>x.id===id);
+  if(o && o.move && !o._ghostImg){ makeGhost(o).then(()=>renderOverlay()); }
+  scheduleEmit();
+});
+overlay.addEventListener('pointercancel',()=>{ drag=null; });
+
+// ── draw-a-box tool ──────────────────────────────────────────────────────────
+let boxDraw=null;
+overlay.addEventListener('pointerdown',(e)=>{
+  if(TOOL!=='box') return;
+  const wr=wrap.getBoundingClientRect();
+  boxDraw={ x0:(e.clientX-wr.left)/wr.width, y0:(e.clientY-wr.top)/wr.height, ww:wr.width, wh:wr.height, el:null };
+  overlay.setPointerCapture && overlay.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+overlay.addEventListener('pointermove',(e)=>{
+  if(!boxDraw) return;
+  const wr=wrap.getBoundingClientRect();
+  const x1=(e.clientX-wr.left)/wr.width, y1=(e.clientY-wr.top)/wr.height;
+  const box=[Math.min(boxDraw.x0,x1),Math.min(boxDraw.y0,y1),Math.abs(x1-boxDraw.x0),Math.abs(y1-boxDraw.y0)];
+  if(!boxDraw.el){ boxDraw.el=document.createElement('div'); boxDraw.el.className='obx'; boxDraw.el.style.setProperty('--c','#28c08a'); overlay.appendChild(boxDraw.el); }
+  placeAbs(boxDraw.el, box.map(clamp01)); boxDraw.box=box;
+});
+overlay.addEventListener('pointerup',async ()=>{
+  if(!boxDraw) return;
+  const box=boxDraw.box; const el=boxDraw.el; boxDraw=null;
+  if(el) el.remove();
+  if(!box || box[2]<0.02 || box[3]<0.02){ return; }
+  const o={ id:newId(), label:'region', type:'object', text:'', box:box.map(clamp01), move:null, ghostPath:null, comment:'' };
+  DOC.objects.push(o);
+  TOOL='move'; buildToolrail(); updateOverlayMode();
+  renderOverlay(); renderObjList(); scheduleEmit();
+  makeGhost(o).then(()=>{ renderOverlay(); scheduleEmit(); });
+});
+
+// ============================================================================
+// SCRIBBLE
+// ============================================================================
+let sdraw=null;
+function scPt(e){ const r=scrib.getBoundingClientRect(); return { x:(e.clientX-r.left)/r.width*scrib.width, y:(e.clientY-r.top)/r.height*scrib.height }; }
+scrib.addEventListener('pointerdown',(e)=>{
+  if(TOOL!=='scribble' && TOOL!=='erase') return;
+  sdraw=scPt(e); scrib.setPointerCapture && scrib.setPointerCapture(e.pointerId);
+  sctx.lineCap='round'; sctx.lineJoin='round';
+  e.preventDefault();
+});
+scrib.addEventListener('pointermove',(e)=>{
+  if(!sdraw) return; const p=scPt(e);
+  const scale = scrib.width / Math.max(1, wrap.getBoundingClientRect().width);
+  sctx.lineWidth=BRUSH.size*scale;
+  if(TOOL==='erase'){ sctx.globalCompositeOperation='destination-out'; sctx.strokeStyle='rgba(0,0,0,1)'; }
+  else { sctx.globalCompositeOperation='source-over'; sctx.strokeStyle=BRUSH.color; }
+  sctx.beginPath(); sctx.moveTo(sdraw.x,sdraw.y); sctx.lineTo(p.x,p.y); sctx.stroke();
+  sdraw=p;
+});
+scrib.addEventListener('pointerup',async ()=>{ if(sdraw){ sdraw=null; sctx.globalCompositeOperation='source-over'; await persistScribble(); scheduleEmit(); } });
+scrib.addEventListener('pointercancel',()=>{ sdraw=null; });
+
+async function persistScribble(){
+  if(!NODE) return;
+  let dataUrl; try{ dataUrl=scrib.toDataURL('image/png'); }catch(e){ return; }
+  const path='source/'+BRANCH+'/images/ai-scribble-'+NODE+'.png';
+  try{
+    const r=await fetch(api('/__write_binary'),{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path,dataUrl}) });
+    if(r.ok) DOC.scribblePath=path;
+  }catch(e){}
+}
+
+// ============================================================================
+// OBJECT LIST (right column)
+// ============================================================================
+function renderObjList(){
+  objCount.textContent=String(DOC.objects.length);
+  if(!DOC.objects.length){ objList.innerHTML='<div class="empty-list">Nothing analysed yet. Click <b>Analyse</b>.</div>'; refreshButtons(); return; }
+  objList.innerHTML='';
+  DOC.objects.forEach((o,i)=>{
+    const col=colorFor(i);
+    const row=document.createElement('div'); row.className='objrow'+(selObjId===o.id?' sel':'');
+    row.onclick=(e)=>{ if(e.target.closest('input,textarea,button')) return; selObjId=o.id; renderOverlay(); renderObjList(); };
+    const top=document.createElement('div'); top.className='objrow-top';
+    const dot=document.createElement('div'); dot.className='objrow-dot'; dot.style.background=col; top.appendChild(dot);
+    const lab=document.createElement('input'); lab.className='objrow-label'; lab.value=o.label||''; lab.placeholder='label';
+    lab.oninput=()=>{ o.label=lab.value; renderOverlay(); scheduleEmit(); };
+    top.appendChild(lab);
+    if(o.move){ const mv=document.createElement('span'); mv.className='moved-tag'; mv.textContent='moved'; top.appendChild(mv); }
+    const ty=document.createElement('span'); ty.className='objrow-type'+(o.type==='text'?' text':''); ty.textContent=o.type==='text'?'text':'obj'; top.appendChild(ty);
+    row.appendChild(top);
+    if(o.type==='text' && o.text){ const tx=document.createElement('div'); tx.style.cssText='font-size:11px;color:var(--ink2);'; tx.textContent='“'+o.text+'”'; row.appendChild(tx); }
+    const cmt=document.createElement('textarea'); cmt.className='objrow-cmt'; cmt.rows=1; cmt.value=o.comment||''; cmt.placeholder='edit this object (e.g. make it red)…';
+    cmt.oninput=()=>{ o.comment=cmt.value; renderOverlay(); scheduleEmit(); };
+    row.appendChild(cmt);
+    const acts=document.createElement('div'); acts.className='objrow-acts';
+    if(o.move){ const rp=document.createElement('button'); rp.className='mini'; rp.textContent='reset position'; rp.onclick=()=>{ o.move=null; renderOverlay(); renderObjList(); scheduleEmit(); }; acts.appendChild(rp); }
+    const del=document.createElement('button'); del.className='mini warn'; del.textContent='delete'; del.onclick=()=>{ DOC.objects=DOC.objects.filter(x=>x.id!==o.id); if(selObjId===o.id) selObjId=null; renderOverlay(); renderObjList(); scheduleEmit(); }; acts.appendChild(del);
+    row.appendChild(acts);
+    objList.appendChild(row);
+  });
+  refreshButtons();
+}
+instrEl.addEventListener('input',()=>{ DOC.instruction=instrEl.value; refreshButtons(); scheduleEmit(); });
+
+// ============================================================================
+// PROVIDER CAPABILITIES
+// ============================================================================
+async function loadCaps(){
+  try{
+    const r=await fetch(api('/__capabilities'),{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    const rows=(j&&j.providerAvailability)||[];
+    PROV.raw=rows;
+    const st=(id)=>{ const row=rows.find(x=>x.id===id); return row?row.status:'none'; };
+    // vision (describe) REQUIRES a real API key - the daemon 502s without one,
+    // and a CLI fallback can't pass images. Prefer Anthropic, then OpenAI.
+    const an=st('anthropic'), oa=st('openai');
+    if(an==='key'){ PROV.vision='anthropic'; PROV.visionModel='claude-sonnet-4-6'; }
+    else if(oa==='key'){ PROV.vision='openai'; PROV.visionModel='gpt-4o'; }
+    else { PROV.vision=null; }
+    // image edit requires an OpenAI API key (Codex CLI has no edit tool).
+    PROV.imageEdit = (oa==='key');
+  }catch(e){}
+}
+
+// ============================================================================
+// ANALYSE  (vision LLM → boxes  +  per-object rembg ghosts)
+// ============================================================================
+async function analyse(){
+  if(!SRC.img){ done('Wire an image first.','err'); return; }
+  if(capsP){ try{ await capsP; }catch(e){} }
+  if(!PROV.vision){ done('No vision model: add an OpenAI or Anthropic API key in Settings.','err'); return; }
+  busy('Analysing image…');
+  const dataUrl=srcDataUrl(1280);
+  if(!dataUrl){ done('Could not read the image (cross-origin?).','err'); return; }
+  const prompt = [
+    'You are a precise visual-detection engine. Detect every distinct OBJECT and every readable block of TEXT in this image.',
+    'Return ONLY a JSON object, no prose, no markdown fences. Schema:',
+    '{"objects":[{"label":"short name","type":"object"|"text","text":"the exact words (text type only, else empty)","box":[x,y,w,h]}]}',
+    'Coordinates are NORMALISED 0..1 relative to the image (x=left, y=top, w=width, h=height), origin at the top-left corner.',
+    'Keep boxes tight around each item. Merge a single sentence/heading into ONE text box. Limit to the ~25 most salient items.'
+  ].join('\n');
+  let text;
+  try{
+    const r=await fetch(api('/__llm_run'),{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ skill:'describe', provider:PROV.vision, model:PROV.visionModel, input_data_uri:dataUrl, prompt }) });
+    const j=await r.json();
+    if(!r.ok || !j || j.ok===false){ done('Analyse failed: '+((j&&(j.error||j.detail))||('HTTP '+r.status)),'err'); return; }
+    text=j.text||'';
+  }catch(e){ done('Analyse error: '+e.message,'err'); return; }
+  const parsed=parseDetections(text);
+  if(!parsed.length){ done('No objects detected (model returned nothing parseable).','err'); return; }
+  // Merge: replace detected set, keep nothing stale.
+  DOC.objects = parsed.map((d,i)=>({
+    id:newId(), label:d.label||((d.type==='text')?'text':'object'),
+    type:(d.type==='text'?'text':'object'), text:d.text||'',
+    box:normBox(d.box), move:null, ghostPath:null, comment:''
+  }));
+  selObjId=null;
+  renderOverlay(); renderObjList();
+  done(DOC.objects.length+' detected — preparing ghosts…');
+  scheduleEmit();
+  // Ghosts: crop each box + rembg, sequentially (bounded; rembg is heavy).
+  let made=0, failed=0;
+  for(const o of DOC.objects){
+    busy('Cut-out '+(made+failed+1)+'/'+DOC.objects.length+' ('+(o.label||'object')+')…');
+    const ok=await makeGhost(o);
+    if(ok) made++; else failed++;
+    renderOverlay();
+  }
+  scheduleEmit();
+  done(made+' ghosts ready'+(failed?(', '+failed+' fell back to raw crop'):'')+'.', failed?'':'');
+}
+
+function normBox(b){
+  if(!Array.isArray(b)||b.length<4) return [0.4,0.4,0.2,0.2];
+  let [x,y,w,h]=b.map(Number);
+  // Some models emit pixels or [x0,y0,x1,y1]. Normalise heuristically.
+  if(x>1.5||y>1.5||w>1.5||h>1.5){ // looks like pixels relative to source
+    const W=SRC.w||1000, H=SRC.h||1000;
+    // if w/h look like x1/y1 (greater than x/y and <=W), treat as corners
+    if(w>x && h>y && w<=W*1.05 && h<=H*1.05 && (w>1.5||h>1.5)){ w=w-x; h=h-y; }
+    x/=W; y/=H; w/=W; h/=H;
+  } else if(w<0||h<0){ // x1<x0 style normalised corners
+    if(w<x){ const t=w; w=Math.abs(x-t); }
+  }
+  x=clamp01(x); y=clamp01(y); w=clamp01(w); h=clamp01(h);
+  if(x+w>1) w=1-x; if(y+h>1) h=1-y;
+  if(w<0.01) w=0.01; if(h<0.01) h=0.01;
+  return [x,y,w,h];
+}
+function parseDetections(text){
+  if(!text) return [];
+  let s=String(text).trim();
+  s=s.replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();
+  // grab the outermost {...}
+  const a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a>=0 && b>a) s=s.slice(a,b+1);
+  let obj; try{ obj=JSON.parse(s); }catch(e){ return []; }
+  let arr = Array.isArray(obj) ? obj : (obj.objects||obj.detections||obj.items||[]);
+  if(!Array.isArray(arr)) return [];
+  return arr.filter(d=>d && (d.box||d.bbox||d.bounding_box)).map(d=>({
+    label:d.label||d.name||d.class||'', type:(d.type||(d.text?'text':'object')),
+    text:d.text||d.value||'', box:d.box||d.bbox||d.bounding_box
+  }));
+}
+
+// ── ghost = crop the box from source, write to file, rembg → transparent PNG ──
+async function makeGhost(o){
+  if(!SRC.img || !NODE) return false;
+  // crop in natural px
+  const W=SRC.w, H=SRC.h;
+  const cx=Math.round(o.box[0]*W), cy=Math.round(o.box[1]*H), cw=Math.max(2,Math.round(o.box[2]*W)), ch=Math.max(2,Math.round(o.box[3]*H));
+  const c=document.createElement('canvas'); c.width=cw; c.height=ch;
+  const g=c.getContext('2d');
+  try{ g.drawImage(SRC.img, cx,cy,cw,ch, 0,0,cw,ch); }catch(e){ return false; }
+  let cropUrl; try{ cropUrl=c.toDataURL('image/png'); }catch(e){ return false; }
+  const cropPath ='source/'+BRANCH+'/images/ai-crop-'+NODE+'-'+o.id+'.png';
+  const ghostPath='source/'+BRANCH+'/images/ai-ghost-'+NODE+'-'+o.id+'.png';
+  try{
+    // write the raw crop (rembg local needs a file on disk; it cannot read data URIs)
+    const wr=await fetch(api('/__write_binary'),{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path:cropPath, dataUrl:cropUrl}) });
+    if(!wr.ok) throw new Error('write crop failed');
+    // rembg → ghostPath. Prefer local (no key); fall back to fal if a key is wired.
+    let ok=await rembg('local','u2net',cropPath,ghostPath);
+    if(!ok && providerHasKey('fal')) ok=await rembg('fal','fal-ai/imageutils/rembg',cropPath,ghostPath);
+    o.ghostPath = ok ? ghostPath : cropPath;       // fall back to the raw crop as the ghost
+  }catch(e){ o.ghostPath=cropPath; }
+  // load the ghost image for live preview
+  await loadGhostImg(o);
+  return o.ghostPath===ghostPath;
+}
+function providerHasKey(id){ const r=PROV.raw.find(x=>x.id===id); return r && r.status==='key'; }
+async function rembg(provider,model,inPath,outPath){
+  try{
+    const r=await fetch(api('/__asset_generate'),{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ skill:'rembg', provider, model, input_path:inPath, output:outPath, medium:'raster-foreground' }) });
+    const j=await r.json().catch(()=>({}));
+    return r.ok && j && j.ok!==false;
+  }catch(e){ return false; }
+}
+function loadGhostImg(o){
+  return new Promise((res)=>{
+    if(!o.ghostPath){ res(false); return; }
+    const im=new Image(); im.onload=()=>{ o._ghostImg=im; res(true); }; im.onerror=()=>{ res(false); };
+    im.src=api('/'+o.ghostPath)+'&_b='+Date.now();
+  });
+}
+
+// ============================================================================
+// REGENERATE  (composite guidance image → gpt-image-2 image-to-image)
+// ============================================================================
+async function regenerate(){
+  if(!SRC.img){ done('Wire an image first.','err'); return; }
+  if(!PROV.imageEdit){ done('Regenerate needs an OpenAI API key (gpt-image-2). Add one in Settings.','err'); return; }
+  busy('Building guidance…');
+  let guidance; try{ guidance=buildGuidance(); }catch(e){ done('Guidance failed (cross-origin image?).','err'); return; }
+  if(!guidance){ done('Could not build guidance image.','err'); return; }
+  const instruction=buildInstruction();
+  const outPath='source/'+BRANCH+'/images/ai-image-'+NODE+'.png';
+  busy('Regenerating with gpt-image-2…');
+  try{
+    const r=await fetch(api('/__asset_generate'),{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ skill:'generate-image', provider:'openai', model:'gpt-image-2', prompt:instruction, input_data_uri:guidance, output:outPath, medium:'raster-photo', aspect:aspectFor() }) });
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok || (j&&j.ok===false)){ done('Regenerate failed: '+((j&&(j.error||(j.detail&&JSON.stringify(j.detail))))||('HTTP '+r.status)),'err'); return; }
+    DOC.resultPath=outPath;
+    RESULT_URL=api('/'+outPath)+'&_b='+Date.now();
+    // show the result as the new working image (so further edits build on it)
+    await adoptResult(RESULT_URL);
+    done('Regenerated.','');
+    emitNow();
+  }catch(e){ done('Regenerate error: '+e.message,'err'); }
+}
+function aspectFor(){
+  const r=SRC.w/Math.max(1,SRC.h);
+  if(r>1.4) return '3:2'; if(r<0.72) return '2:3'; return '1:1';
+}
+// Adopt a regenerated result as the new source to edit further; clears stale moves.
+async function adoptResult(url){
+  await loadSource(url);
+  // keep object boxes + comments, drop moves (they're now baked into the result)
+  for(const o of DOC.objects){ o.move=null; }
+  // refresh ghosts against the new pixels lazily (only when moved again)
+  for(const o of DOC.objects){ o._ghostImg=null; }
+  renderOverlay(); renderObjList();
+}
+// Build the guidance image at natural resolution: source, crude erase of moved
+// originals, ghosts placed at new positions, then scribbles on top.
+function buildGuidance(){
+  const W=SRC.w, H=SRC.h;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const x=c.getContext('2d');
+  x.drawImage(SRC.img,0,0,W,H);
+  // erase originals of moved objects with a smeared background patch
+  for(const o of DOC.objects){
+    if(!o.move) continue;
+    const bx=Math.round(o.box[0]*W), by=Math.round(o.box[1]*H), bw=Math.max(2,Math.round(o.box[2]*W)), bh=Math.max(2,Math.round(o.box[3]*H));
+    smearPatch(x,bx,by,bw,bh,W,H);
+  }
+  // draw ghosts at move positions
+  for(const o of DOC.objects){
+    if(!o.move || !o._ghostImg) continue;
+    const mx=Math.round(o.move[0]*W), my=Math.round(o.move[1]*H), mw=Math.max(2,Math.round(o.move[2]*W)), mh=Math.max(2,Math.round(o.move[3]*H));
+    try{ x.drawImage(o._ghostImg, mx,my,mw,mh); }catch(e){}
+  }
+  // scribbles on top, scaled to full res
+  try{ x.drawImage(scrib, 0,0,W,H); }catch(e){}
+  try{ return c.toDataURL('image/png'); }catch(e){ return null; }
+}
+// Cheap content-aware-ish fill: sample a blurred, upscaled copy of a ring around
+// the box and stamp it over the box so the moved object's hole is not obvious.
+function smearPatch(x,bx,by,bw,bh,W,H){
+  const pad=Math.round(Math.max(bw,bh)*0.6);
+  const sx=Math.max(0,bx-pad), sy=Math.max(0,by-pad);
+  const sw=Math.min(W-sx,bw+pad*2), sh=Math.min(H-sy,bh+pad*2);
+  const tmp=document.createElement('canvas'); tmp.width=24; tmp.height=24;
+  const t=tmp.getContext('2d');
+  try{ t.drawImage(SRC.img, sx,sy,sw,sh, 0,0,24,24); }catch(e){ return; }
+  x.save();
+  try{ x.filter='blur(14px)'; }catch(e){}
+  x.drawImage(tmp, 0,0,24,24, bx-pad/2,by-pad/2, bw+pad, bh+pad);
+  x.restore();
+}
+function buildInstruction(){
+  const lines=['Edit this image and render a clean, coherent, photorealistic result.'];
+  const moved=DOC.objects.filter(o=>o.move);
+  if(moved.length){
+    lines.push('Reposition these elements to where they now appear in the provided image (their old location is shown smeared/removed):');
+    moved.forEach(o=>lines.push('- the '+(o.label||'object')+' has been moved.'));
+  }
+  const cmts=DOC.objects.filter(o=>o.comment && o.comment.trim());
+  if(cmts.length){
+    lines.push('Apply these per-object edits:');
+    cmts.forEach(o=>lines.push('- '+(o.label||'object')+': '+o.comment.trim()));
+  }
+  if(DOC.scribblePath) lines.push('Honor the freehand annotations drawn over the image as edit guidance (do not render the scribble strokes literally).');
+  if(instrEl.value.trim()) lines.push('Overall: '+instrEl.value.trim());
+  if(lines.length===1) lines.push('Refine and clean up the image while preserving its subject and composition.');
+  return lines.join('\n');
+}
+
+// ============================================================================
+// SERIALIZE / APPLY  (driven-view contract)
+// ============================================================================
+function serializeState(){
+  return {
+    v:1, sourcePath:DOC.sourcePath||sourcePathFromUrl(SRC.url), w:SRC.w, h:SRC.h,
+    objects:DOC.objects.map(o=>({ id:o.id, label:o.label, type:o.type, text:o.text||'',
+      box:o.box, move:o.move||undefined, ghostPath:o.ghostPath||undefined, comment:o.comment||'' })),
+    scribblePath:DOC.scribblePath||undefined,
+    instruction:DOC.instruction||'',
+    resultPath:DOC.resultPath||undefined,
+  };
+}
+function sourcePathFromUrl(url){
+  if(!url) return null;
+  try{ const u=new URL(url, location.href); const p=decodeURIComponent(u.pathname).replace(/^\/+/,''); return p.startsWith('source/')?p:null; }catch(e){ return null; }
+}
+let emitTimer=null;
+function scheduleEmit(){ clearTimeout(emitTimer); emitTimer=setTimeout(emitNow,700); }
+async function emitNow(){
+  if(applying || !EMBEDDED) return;
+  // The node's deliverable (`out`) is the EDITED image, which only exists after a
+  // regenerate. Before that we persist the doc (analysis/comments/moves) but bake
+  // nothing, so no premature output card spawns. After a regen the result already
+  // lives at the baked path; we pass it through so the host stamps bakedPath.
+  let baked=null;
+  if(DOC.resultPath && RESULT_URL){
+    try{ const du=await urlToDataUrl(RESULT_URL); if(du) baked={dataUrl:du}; }catch(e){}
+  }
+  try{ parent.postMessage({ type:'aiimg:state', nodeId:NODE, state:serializeState(), baked }, '*'); }catch(e){}
+}
+function urlToDataUrl(url){
+  return new Promise((res)=>{
+    const im=new Image(); im.onload=()=>{ const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight; const g=c.getContext('2d'); g.drawImage(im,0,0); try{res(c.toDataURL('image/png'));}catch(e){res(null);} }; im.onerror=()=>res(null); im.src=url;
+  });
+}
+
+async function applyState(state){
+  applying=true;
+  try{
+    DOC = freshDoc();
+    if(state && typeof state==='object'){
+      DOC.sourcePath=state.sourcePath||null;
+      DOC.instruction=state.instruction||'';
+      DOC.scribblePath=state.scribblePath||null;
+      DOC.resultPath=state.resultPath||null;
+      DOC.objects=(state.objects||[]).map(o=>({ id:o.id||newId(), label:o.label||'', type:o.type==='text'?'text':'object',
+        text:o.text||'', box:Array.isArray(o.box)?o.box.slice():[0.4,0.4,0.2,0.2], move:Array.isArray(o.move)?o.move.slice():null,
+        ghostPath:o.ghostPath||null, comment:o.comment||'', _ghostImg:null }));
+      autoAnalyzePending = !!state.autoAnalyze && !DOC.objects.length;
+    }
+    instrEl.value=DOC.instruction;
+    // resolve a source: a prior regenerated result is the current working image
+    // (keep editing it across reloads); else the wired source; else the doc path.
+    const url = (DOC.resultPath?api('/'+DOC.resultPath)+'&_b='+Date.now():null) || wiredSourceUrl() || (DOC.sourcePath?api('/'+DOC.sourcePath):null);
+    if(url){ await loadSource(url); }
+    // restore scribble
+    if(DOC.scribblePath){ await restoreScribble(api('/'+DOC.scribblePath)+'&_b='+Date.now()); }
+    // restore ghost images
+    for(const o of DOC.objects){ if(o.move && o.ghostPath){ await loadGhostImg(o); } }
+    renderOverlay(); renderObjList();
+  } finally { applying=false; }
+  maybeAutoAnalyse();
+}
+function restoreScribble(url){
+  return new Promise((res)=>{ const im=new Image(); im.onload=()=>{ sctx.clearRect(0,0,scrib.width,scrib.height); try{sctx.drawImage(im,0,0,scrib.width,scrib.height);}catch(e){} res(true); }; im.onerror=()=>res(false); im.src=url; });
+}
+
+// ── wired content (the source image) ─────────────────────────────────────────
+let CONTENT=[];
+function wiredSourceUrl(){
+  const img=CONTENT.find(c=>c && (c.kind==='image'||/\.(png|jpe?g|webp|gif|avif)$/i.test(c.url||'')));
+  return img ? img.url : (CONTENT[0]&&CONTENT[0].url)||null;
+}
+async function applyContent(content){
+  CONTENT=Array.isArray(content)?content:[];
+  const url=wiredSourceUrl();
+  // only adopt a wired source if we don't already have a regenerated result to keep
+  if(url && (!DOC.resultPath) && url!==SRC.url){ await loadSource(url); renderOverlay(); }
+  refreshButtons();
+  maybeAutoAnalyse();
+}
+function maybeAutoAnalyse(){
+  if(autoAnalyzePending && SRC.img && !statusBusy && !DOC.objects.length){
+    autoAnalyzePending=false;
+    setTimeout(()=>analyse(), 120);
+  }
+}
+
+// ============================================================================
+// IDS / UTIL
+// ============================================================================
+let _idc=0;
+function newId(){ _idc++; return 'o'+Date.now().toString(36)+_idc.toString(36); }
+
+// ============================================================================
+// HOST PROTOCOL
+// ============================================================================
+btnAnalyse.onclick=()=>{ if(!btnAnalyse.disabled) analyse(); };
+btnRegen.onclick=()=>{ if(!btnRegen.disabled) regenerate(); };
+
+window.addEventListener('message',(ev)=>{
+  const d=ev&&ev.data; if(!d||!d.type) return;
+  if(d.nodeId && d.nodeId!==NODE) return;
+  if(d.type==='aiimg:init'){
+    if(d.branch) BRANCH=d.branch;
+    if(Array.isArray(d.content)) CONTENT=d.content;
+    applyState(d.state||null).then(()=>{ applyContent(d.content||[]); });
+  } else if(d.type==='aiimg:set-state'){
+    applyState(d.state||null);
+  } else if(d.type==='aiimg:content'){
+    applyContent(d.content||[]);
+  } else if(d.type==='aiimg:select'){
+    document.body.classList.toggle('detached-panels', !!d.selected);
+    requestAnimationFrame(()=>reportPanels());
+  }
+});
+
+// backdrop click in detached mode → ask host to deselect
+window.addEventListener('mousedown',(e)=>{
+  if(!document.body.classList.contains('detached-panels')) return;
+  const t=e.target;
+  if(t && t.closest && (t.closest('#coreCanvas')||t.closest('[data-float-panel]'))) return;
+  if(EMBEDDED){ try{ parent.postMessage({ type:'aiimg:deselect', nodeId:NODE }, '*'); }catch(e){} }
+}, true);
+
+// ── floating-panel geometry (detached-panels contract) ───────────────────────
+function reportPanels(){
+  const rail=$('toolrail'), rcol=$('rightcol'), tb=$('topbar');
+  const panelL=(rail?rail.offsetWidth:0)+8;
+  const panelR=(rcol?rcol.offsetWidth:0)+8;
+  const panelT=tb?tb.offsetHeight+8+30:0;
+  const panelB=0;
+  const b=document.body.style;
+  b.setProperty('--panel-l',panelL+'px'); b.setProperty('--panel-r',panelR+'px');
+  b.setProperty('--panel-t',panelT+'px'); b.setProperty('--panel-b',panelB+'px');
+  if(EMBEDDED){ try{ parent.postMessage({ type:'aiimg:panels', nodeId:NODE, panelL, panelR, panelT, panelB }, '*'); }catch(e){} }
+}
+window.addEventListener('resize',()=>{ if(document.body.classList.contains('detached-panels')) reportPanels(); });
+
+// ============================================================================
+// BOOT
+// ============================================================================
+buildToolrail();
+updateOverlayMode();
+renderObjList();
+refreshButtons();
+const capsP = loadCaps();
+(function announce(){ try{ parent.postMessage({ type:'aiimg:ready', nodeId:NODE }, '*'); }catch(e){} })();
+// If the host's init was cached/fired before our listener attached, nothing is
+// lost: the host also re-pushes init on iframe load.
+</script>
+</body>
+</html>
