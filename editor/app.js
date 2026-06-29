@@ -19743,7 +19743,6 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
               allOk ? "Agent CLI connected and required local skills installed."
               : canFinish ? "You can create projects and run simple prompt nodes - but agentic workflows stay disabled until you install a Claude Code or Codex CLI."
               : "Finish the required steps to enable + New project."}</div>
-            <${OnboardingUserTestingToggle}/>
           </div>
         `}
       </div>
@@ -19776,34 +19775,6 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
       ${installOpen && html`<${ModelInstallDialog}
         onClose=${() => setInstallOpen(false)}
         onRefresh=${async () => { await onRefresh(); setInstallOpen(false); }}/>`}
-    </div>
-  `;
-}
-
-/* WS-CAP - Optional "Enable user testing mode" toggle on the onboarding
-   wizard's final step. Purely additive + fully skippable: user testing is
-   off by default and the wizard finishes without it. Reuses the shared
-   useUserTestingCapability() hook so its tri-state matches the Settings row
-   and the prototype-node panel. */
-function OnboardingUserTestingToggle() {
-  const { state, enable, enabling, enableErr } = useUserTestingCapability();
-  return html`
-    <div className="model-setup-optional-row">
-      <div className="model-setup-optional-text">
-        <div className="model-setup-optional-title">User testing mode <span className="model-setup-choice-tag">optional</span></div>
-        <div className="model-setup-optional-desc">${
-          state === "ready" ? "Enabled. Open a prototype node's User testing panel to run sessions."
-          : state === "provisioning" ? "Installing the local speech model (whisper-cpp, ~460 MB)…"
-          : "Run moderated + unmoderated prototype tests. Installs a local speech model (~460 MB) - stays off until you turn it on."}</div>
-        ${enableErr && html`<div className="model-setup-cli-warning"><${Icon.Alert}/><span>${enableErr}</span></div>`}
-      </div>
-      ${state === "off" && html`
-        <button type="button" className="model-setup-wizard-nav" disabled=${enabling} onClick=${enable}>
-          ${enabling ? "Installing…" : "Enable"}
-        </button>
-      `}
-      ${state === "provisioning" && html`<span className="model-setup-optional-status">Installing…</span>`}
-      ${state === "ready" && html`<span className="model-setup-optional-status">✓ on</span>`}
     </div>
   `;
 }
@@ -51584,7 +51555,7 @@ function WorkflowUserTestingSettingsRow() {
         <div className="workflow-settings-msg workflow-settings-msg-fail">${(enableErr || "").slice(0, 600)}</div>
       `}
       ${state === "ready" && config && config.enabledAt && html`
-        <div className="workflow-settings-hint">Enabled ${config.enabledAt}. Open a prototype node's User testing panel to build sessions.</div>
+        <div className="workflow-settings-hint">Enabled ${config.enabledAt}. The Testing surface (top nav) and a prototype's share menu now expose user-testing sessions.</div>
       `}
     </div>
   `;
