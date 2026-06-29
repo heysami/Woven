@@ -24357,7 +24357,19 @@ function WorkflowCanvas() {
             // fresh load has no in-flight session. (The reconcile effect handles
             // a DS node that goes running mid-session, via its lastRunId.)
             const dsStuck = n.kind === "design-system" && n.runStatus === "running";
-            if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck) return n;
+            // Same hazard for the assistant nodes (research / testing) and the
+            // result tables they own: their run is driven entirely IN THE
+            // BROWSER (no daemon runId, no output file to HEAD-probe), so if the
+            // tab is interrupted before the run's try/catch flips the flag to
+            // done/error, the orange working badge floats forever - no resume
+            // path (brainstorm / per-card) ever touches these kinds. A fresh
+            // load has no in-flight assistant run, so a persisted "running" is
+            // always stale and safe to clear here.
+            const assistantStuck = (n.kind === "assistant-research"
+                                 || n.kind === "assistant-testing"
+                                 || n.kind === "table")
+                                 && n.runStatus === "running";
+            if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck && !assistantStuck) return n;
             if (n.runStatus === "pending" && n._brainstormRunId) return n;
             const next = { ...n, runStatus: null, runError: null };
             if (Array.isArray(n.pendingOutputIds)) next.pendingOutputIds = [];
