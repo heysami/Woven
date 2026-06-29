@@ -81888,15 +81888,27 @@ function validateCustomDomain(dom) {
   if (!/^[a-z]{2,}$/.test(labels[labels.length - 1])) return { ok: false, msg: "Needs a valid top-level domain." };
   return { ok: true, msg: "" };
 }
+// github.com/owner/repo(.git) (https, ssh, or scp form) -> {owner, repo}.
+function parseOwnerRepo(remote) {
+  let u = (remote || "").trim();
+  for (const pre of ["git@github.com:", "https://github.com/", "ssh://git@github.com/", "http://github.com/"]) {
+    if (u.startsWith(pre)) { u = u.slice(pre.length); break; }
+  }
+  if (u.endsWith(".git")) u = u.slice(0, -4);
+  const parts = u.split("/").filter(Boolean);
+  if (parts.length >= 2) return { owner: parts[parts.length - 2], repo: parts[parts.length - 1] };
+  return { owner: "", repo: "" };
+}
 
-// The publish modal: a dry-run safety gate, the GitHub-linked gate, the domain
-// choice (github.io / getwoven subdomain / custom), and the three build modes
-// (api / browser / collaborative). Dispatches the publish-orchestrator via a
-// project-scoped run; the orchestrator owns the actual deploy + state file.
+// The publish modal: a GitHub-linked + existing-repo gate, the domain choice
+// (github.io / getwoven subdomain / custom), and the two setup styles
+// (automatic / guided). Dispatches the publish-orchestrator via a project-scoped
+// run; the orchestrator owns the actual deploy + state file.
 function PublishModal({ onClose, onStarted }) {
   const [setupMode, setSetupMode] = useState("auto"); // auto | guided
   const [gh, setGh]               = useState(null);   // null = checking; {signedIn, login}
   const [pub, setPub]             = useState(null);   // /__publish state - already-published detection
+  const [git, setGit]             = useState(null);   // /__git/status - this project's own connected repo
   const [domainMode, setDomainMode] = useState("default"); // default | getwoven | custom
   const [subname, setSubname]     = useState("");
   const [customDom, setCustomDom] = useState("");
@@ -81915,15 +81927,29 @@ function PublishModal({ onClose, onStarted }) {
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (alive && j) setPub(j); })
       .catch(() => {});
+    // The project's OWN connected repo (is_repo gates this to a project-toplevel
+    // repo, never the parent Woven app repo) - so we can show the real repo name
+    // instead of the "your-repo" placeholder.
+    fetch(apiUrl("/__git/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (alive && j) setGit(j); })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const linked = !!(gh && gh.signedIn);
   const ghName = (linked && gh.login) ? gh.login : "your-account";
+  const connected = parseOwnerRepo(git && git.repo ? git.remote : "");
+  const connectedRepo = (connected.owner && connected.repo) ? (connected.owner + "/" + connected.repo) : "";
+  const pagesOwner = connected.owner || ghName;
+  const pagesRepo  = connected.repo || "your-repo";
   const pubState = (pub && pub.state) || null;
-  const existingRepo = (pubState && pubState.github && pubState.github.repo) || "";
-  const existingUrl  = (pubState && pubState.host && pubState.host.liveUrl) || "";
-  const alreadyPublished = !!(pub && pub.exists && (existingRepo || existingUrl));
+  const publishedRepo = (pubState && pubState.github && pubState.github.repo) || "";
+  const existingUrl   = (pubState && pubState.host && pubState.host.liveUrl) || "";
+  const wasPublished  = !!(pub && pub.exists && (publishedRepo || existingUrl));
+  // The repo the agent should reuse/update: a recorded published repo wins,
+  // else the project's already-connected repo.
+  const targetRepo = publishedRepo || connectedRepo;
   const subVal = validateSubname(subname);
   const customVal = validateCustomDomain(customDom);
   const domainReady =
@@ -81960,10 +81986,14 @@ function PublishModal({ onClose, onStarted }) {
       const setupLine = setupMode === "guided"
         ? "SETUP STYLE = GUIDED: do NOT make changes to my accounts yourself. Give me precise, numbered, click-by-click / screen-by-screen instructions for each setup step (GitHub repo, hosting, Supabase, DNS), wait for me to confirm I did each one, and verify the result. I stay in control - nothing happens unless I do it."
         : "SETUP STYLE = AUTOMATIC: do the setup for me server-side, API-first (GitHub + Supabase APIs), browser-use only where no API exists. Before each irreversible step (creating a PUBLIC repo, changing DNS) show me exactly what you are about to do and wait for my confirmation.";
+      const repoLine = targetRepo
+        ? "This project ALREADY has a GitHub repo connected: " + targetRepo + ". Publish to / update THAT repo - do NOT create a new one.\n\n"
+        : "";
       const prompt =
         "Publish this prototype to a real, durable public URL using MY OWN accounts.\n\n" +
         setupLine + "\n\n" +
         domainLine + "\n\n" +
+        repoLine +
         "Dispatch the publish-orchestrator. FIRST detect current state: is my GitHub linked, is a repo already connected for this project, and is there an existing publish.json? If I already published, UPDATE the existing repo / site rather than creating a new one. " +
         "Provider target: Supabase (sign-in + profiles / preferences / files) plus GitHub Pages for the static front end. " +
         "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
@@ -81988,11 +82018,13 @@ function PublishModal({ onClose, onStarted }) {
             Takes your prototype live on a real public URL using <strong>your own</strong> GitHub and Supabase accounts, not Woven's preview tunnel. This runs an agent and can use a lot of tokens depending on how you set it up.
           </p>
 
-          ${alreadyPublished && html`
+          ${(wasPublished || connectedRepo) && html`
             <div style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", margin: "4px 0 14px", background: "rgba(40,170,90,.12)" }}>
               <span className="shares-dot is-ok"></span>
               <span style=${{ fontSize: "13px" }}>
-                Already published${existingRepo ? html` to <strong>${existingRepo}</strong>` : ""}${existingUrl ? html` <a href=${existingUrl} target="_blank" rel="noopener" style=${{ color: "inherit" }}>${existingUrl}</a>` : ""}. Publishing again updates the same site.
+                ${wasPublished
+                  ? html`Already published${publishedRepo ? html` to <strong>${publishedRepo}</strong>` : ""}${existingUrl ? html` <a href=${existingUrl} target="_blank" rel="noopener" style=${{ color: "inherit" }}>${existingUrl}</a>` : ""}. Publishing again updates the same site.`
+                  : html`Connected to repo <strong>${connectedRepo}</strong>. Publishing deploys your site to it, not a new repo.`}
               </span>
             </div>`}
 
@@ -82010,7 +82042,7 @@ function PublishModal({ onClose, onStarted }) {
             <div style=${{ display: "flex", flexDirection: "column", gap: "6px" }}>
               <button type="button" className=${"sysadd-radio" + (domainMode === "default" ? " is-on" : "")} style=${radioStyle} onClick=${() => setDomainMode("default")}>
                 <strong>GitHub Pages URL</strong>
-                <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${ghName}.github.io/your-repo - instant, no DNS setup. Best for a first test.</span>
+                <span className="sysadd-hint" style=${{ display: "block", marginTop: "3px", whiteSpace: "normal" }}>${pagesOwner}.github.io/${pagesRepo} - instant, no DNS setup. Best for a first test.</span>
               </button>
 
               <button type="button" className=${"sysadd-radio" + (domainMode === "getwoven" ? " is-on" : "")} style=${radioStyle} onClick=${() => setDomainMode("getwoven")}>
