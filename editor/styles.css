@@ -16552,9 +16552,13 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 12px;
 }
 /* Dock the minimap at the bottom of the panel (it is position:absolute when it
-   floats over the canvas; here it sits in normal flow). */
+   floats over the canvas; here it sits in normal flow). Use `relative`, NOT
+   `static`: the minimap's frame rects are position:absolute, so the minimap must
+   stay a positioning context (and keep overflow:hidden) or the rects escape and
+   overlap the tools list above. */
 .canvas-tools-panel .minimap {
-  position: static;
+  position: relative;
+  overflow: hidden;
   margin: auto 12px 12px;
   width: auto;
   height: 132px;
