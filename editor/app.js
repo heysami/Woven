@@ -82759,6 +82759,20 @@ function ProviderConnect({ provider }) {
     </div>`;
 }
 
+// Render a Connect row for every registered backend provider, so adding one to
+// the /__providers registry (e.g. Cloudflare next to Supabase) surfaces it here
+// automatically - the proof the registry is truly extensible.
+function BackendProviders() {
+  const [ids, setIds] = useState([]);
+  useEffect(() => {
+    fetch(apiUrl("/__providers/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && j.providers) setIds(Object.keys(j.providers)); })
+      .catch(() => {});
+  }, []);
+  return html`${ids.map(id => html`<${ProviderConnect} key=${id} provider=${id}/>`)}`;
+}
+
 // The publish modal: a GitHub-linked + existing-repo gate, the domain choice
 // (github.io / getwoven subdomain / custom), and the two setup styles
 // (automatic / guided). Dispatches the publish-orchestrator via a project-scoped
@@ -83007,7 +83021,7 @@ function PublishModal({ onClose, onStarted }) {
           <div className="sysadd-field">
             <span className="sysadd-label">Database backend (only if your app stores data)</span>
             <p className="sysadd-hint" style=${{ marginTop: 0 }}>A simple site gets a basic auth + profile/preferences/files set (tailored to this app's fields); a real multi-entity app gets a schema derived from its own entities, wired to real data. Connect Supabase once here and publishing stays hands-off - no token-pasting in chat.</p>
-            <${ProviderConnect} provider="supabase"/>
+            <${BackendProviders}/>
           </div>
           <p className="sysadd-hint">The published repo is public.</p>
 

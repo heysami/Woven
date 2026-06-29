@@ -27,6 +27,12 @@ PROVIDERS = {
         "tokenHint": "Generate at supabase.com/dashboard/account/tokens (starts with sbp_).",
         "tokenUrl": "https://supabase.com/dashboard/account/tokens",
     },
+    "cloudflare": {
+        "label": "Cloudflare",
+        "tokenLabel": "API token",
+        "tokenHint": "Create at dash.cloudflare.com/profile/api-tokens (D1 + R2 + Pages edit) for the all-Cloudflare backend.",
+        "tokenUrl": "https://dash.cloudflare.com/profile/api-tokens",
+    },
 }
 
 
@@ -88,6 +94,8 @@ def validate(provider, tok):
         return False, {"error": "empty token"}
     if provider == "supabase":
         return _validate_supabase(tok)
+    if provider == "cloudflare":
+        return _validate_cloudflare(tok)
     return False, {"error": "unknown provider: " + str(provider)}
 
 
@@ -113,3 +121,25 @@ def _validate_supabase(tok):
                 if nm:
                     orgs.append(nm)
     return True, {"orgs": orgs}
+
+
+def _validate_cloudflare(tok):
+    req = urllib.request.Request(
+        "https://api.cloudflare.com/client/v4/user/tokens/verify",
+        headers={"Authorization": "Bearer " + tok, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return False, {"error": "token rejected by Cloudflare (invalid or wrong scope)"}
+        return False, {"error": "Cloudflare API error " + str(e.code)}
+    except Exception as e:
+        return False, {"error": "could not reach Cloudflare: " + str(e)}
+    if not (isinstance(data, dict) and data.get("success")):
+        return False, {"error": "Cloudflare rejected the token"}
+    st = (data.get("result") or {}).get("status")
+    if st != "active":
+        return False, {"error": "token status: " + str(st)}
+    return True, {"status": "active"}
