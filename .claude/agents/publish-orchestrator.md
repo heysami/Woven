@@ -46,7 +46,9 @@ Create/maintain this file. It is the seed of the development-task surface, so ke
       "host": { "provider": "github-pages", "liveUrl": "", "status": "pending" },
       "database": { "provider": "supabase", "projectRef": "", "url": "", "anonKey": "", "status": "none" },
       "tasks": [
-        { "id": "link-github", "title": "Link GitHub", "status": "todo|doing|done|blocked", "detail": "" }
+        { "id": "connect-supabase", "title": "Connect Supabase", "status": "todo|doing|done|blocked",
+          "owner": "human", "detail": "Publishing needs your Supabase account to create the database.",
+          "action": { "kind": "connect", "provider": "supabase" } }
       ],
       "log": [ { "ts": "", "step": "", "result": "" } ]
     }
@@ -56,10 +58,17 @@ Create/maintain this file. It is the seed of the development-task surface, so ke
 
 The caller tells you which prototype to publish (e.g. `Publish the prototype "main"`). Write that prototype's state under `prototypes["main"]` and leave any sibling prototypes' entries untouched. The Development tab reads `GET /__publish?prototype=<id>`, which returns `prototypes[<id>]` (or, for a legacy v1 flat file with no `prototypes` key, the flat object as-is). Write atomically (temp file + rename). Never put the GitHub token, the Supabase Management/service token, or any secret into publish.json or into the repo - only the Supabase URL + anon (public) key, which are safe to ship to the browser.
 
+**Human tasks = action cards.** Whenever a step needs the USER to do something (connect an account, add a DNS record, sign in, make a decision) and you are blocked on it, write a task with `"owner": "human"` and, when you can, an `"action"` so the Development tab renders it as an actionable CARD (under "Your tasks") instead of a plain row. Set `status` to `blocked` when you are waiting on it, `done` once satisfied. Action kinds the Development tab understands:
+- `{ "kind": "connect", "provider": "supabase" | "cloudflare" }` - renders the inline Connect field for that backend.
+- `{ "kind": "connect-github" }` - tells the user to sign in to GitHub (Share menu / Connections panel).
+- `{ "kind": "open", "url": "...", "label": "..." }` - an Open button (e.g. a provider dashboard / docs page).
+- `{ "kind": "dns", "record": { "type": "CNAME", "name": "app", "value": "<login>.github.io" } }` - shows the exact DNS record to add, with copy buttons (use this for custom-domain setup).
+Anything you do yourself stays `"owner": "agent"` (it shows in the plain Tasks list). Re-read publish.json when re-dispatched and flip a human task to `done` once the user has done it (e.g. the account is now connected per `/__providers/status`).
+
 ## Step 0 - GitHub gate
 
 Check whether GitHub is linked: `GET $TH_DAEMON_URL/__github/status` (reports `{configured, signedIn, login, avatar}`). If `signedIn` is false:
-- Add a `link-github` task to publish.json with status `todo`.
+- Add a `link-github` task to publish.json: `owner: "human"`, `status: "blocked"`, `action: { "kind": "connect-github" }` so it shows as an action card.
 - Tell the user, in one short message, that publishing needs their GitHub account and to use the existing GitHub sign-in panel in Woven (the editor already has device-flow + token-paste). Do NOT print terminal commands.
 - STOP and wait. When re-dispatched, recheck and continue.
 
@@ -87,7 +96,7 @@ A publish that creates a public repo before the user confirmed is a bug.
 The caller passes one of three domain targets. The static site is GitHub Pages either way; the domain just changes the Pages custom-domain + DNS:
 
 - **github.io default** - the site lives at `<login>.github.io/<repo>/`. No DNS, nothing to validate. This is the safe default and the right pick for a first real publish.
-- **custom domain** (the user owns it, e.g. `app.yoursite.com`) - set it as the repo's GitHub Pages custom domain, then give the user the EXACT DNS record to add at their registrar (a `CNAME` to `<login>.github.io`, or the four `A` records for an apex domain), wait for it to resolve, enable "Enforce HTTPS", and verify before reporting done. You cannot edit their registrar; this step is collaborative by nature - hand them precise click-by-click DNS steps.
+- **custom domain** (the user owns it, e.g. `app.yoursite.com`) - set it as the repo's GitHub Pages custom domain, then write a `add-dns` human task (`owner: "human"`, `status: "blocked"`, `action: { "kind": "dns", "record": { "type": "CNAME", "name": "app", "value": "<login>.github.io" } }` - or the four `A` records for an apex domain) so the Development tab shows the exact record with copy buttons. Wait for it to resolve, enable "Enforce HTTPS", verify, then flip the task to `done`. You cannot edit their registrar; this step is collaborative by nature.
 - **getwoven.design subdomain** (e.g. `name.getwoven.design`) - Woven owns this DNS (Cloudflare, via the broker), and the names registry now exists. To bind it: `POST $TH_DAEMON_URL/__names/claim` with body `{ "name": "<name>", "repo": "<owner>/<repo>" }` - the daemon adds the user's verified GitHub login + token and the broker (a) checks the name is free / owned by this login, (b) creates an unproxied CNAME `<name>.getwoven.design -> <login>.github.io`, and (c) records ownership; it returns `{ ok, fqdn, target }`. Then set the REPO'S GitHub Pages custom domain to that `<name>.getwoven.design` (the `CNAME` file in the published tree + the Pages API) and wait for DNS + the Pages cert to come up before reporting live. If `/__names/claim` returns an error (taken / not signed in / broker down), keep the site live on the github.io URL, record a `claim-getwoven-subdomain` task with the reason, and tell the user plainly - do NOT fake the vanity address as live.
 
 Record the chosen target in `publish.json` `host` (e.g. `host.domain`, `host.liveUrl`).
@@ -108,7 +117,7 @@ If the user later wants a custom domain or instant-cache CDN, Vercel / Netlify /
 
 Skip M2 entirely for a purely static brochure site. Otherwise:
 
-**Connect the chosen backend first (both paths need it).** The caller picks the backend - `supabase` (default) or `cloudflare`. The user connects that account ONCE via the **Connect** button in the Publish modal's "Database backend" section; the token is stored host-side at `~/.woven/providers/<backend>.json` (mode 0600, never in the repo, publish.json, or the browser). Check it with `GET $TH_DAEMON_URL/__providers/status` (reports `{ <backend>: { connected } }`, never the token) or read the file; use the token only server-side. If the chosen backend is NOT connected, add a `connect-<backend>` task that points the user to that Connect button and STOP - do NOT ask the user to paste a token into chat (the button exists precisely so they never have to). Never ship a secret/service key to the browser; only the public client config (project URL + anon/publishable key) ships.
+**Connect the chosen backend first (both paths need it).** The caller picks the backend - `supabase` (default) or `cloudflare`. The user connects that account ONCE via the **Connect** button in the Publish modal's "Database backend" section; the token is stored host-side at `~/.woven/providers/<backend>.json` (mode 0600, never in the repo, publish.json, or the browser). Check it with `GET $TH_DAEMON_URL/__providers/status` (reports `{ <backend>: { connected } }`, never the token) or read the file; use the token only server-side. If the chosen backend is NOT connected, add a `connect-<backend>` task (`owner: "human"`, `status: "blocked"`, `action: { "kind": "connect", "provider": "<backend>" }` so the Development tab shows an inline Connect card) and STOP - do NOT ask the user to paste a token into chat (the card exists precisely so they never have to). Never ship a secret/service key to the browser; only the public client config (project URL + anon/publishable key) ships.
 
 **The classify step + schema derivation below are backend-agnostic** - BASIC vs REAL MODEL and the entity-derived tables are the same. Only PROVISIONING + the client wiring differ:
 - **Supabase backend:** tables via the Management API / a SQL migration, Row Level Security, `@supabase/supabase-js` client, Supabase Auth for sign-in. Turnkey auth + storage - the default, best when the app has user accounts.

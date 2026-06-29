@@ -83202,16 +83202,52 @@ function DevelopmentView({ model, info }) {
             ${milestone("Database (Supabase)", db.status || "none", db.projectRef || (db.status && db.status !== "none" ? db.status : "not needed yet"))}
           </div>
 
-          <div style=${{ marginBottom: "22px" }}>
-            ${sectionH("Tasks")}
-            ${tasks.length === 0 ? html`<p className="sysadd-hint">No tasks yet.</p>`
-              : tasks.map(t => html`
-                <div key=${t.id} style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0", borderBottom: rowLine }}>
-                  ${pill(t.status)}
-                  <span>${t.title || t.id}</span>
-                  ${t.detail ? html`<span className="sysadd-hint" style=${{ marginLeft: "auto", maxWidth: "52%", textAlign: "right" }}>${t.detail}</span>` : ""}
-                </div>`)}
-          </div>
+          ${(() => {
+            const human = tasks.filter(t => t.owner === "human" && t.status !== "done");
+            const rest  = tasks.filter(t => !(t.owner === "human" && t.status !== "done"));
+            const actionEl = (t) => {
+              const a = t.action || {};
+              if (a.kind === "connect" && a.provider) return html`<div style=${{ marginTop: "8px" }}><${ProviderConnect} provider=${a.provider}/></div>`;
+              if (a.kind === "connect-github") return html`<p className="sysadd-hint" style=${{ margin: "8px 0 0" }}>Sign in to GitHub from the Share menu or the Connections panel, then this continues.</p>`;
+              if (a.kind === "open" && a.url) return html`<a href=${a.url} target="_blank" rel="noopener" className="sysadd-btn-go" style=${{ display: "inline-flex", textDecoration: "none", marginTop: "8px" }}>${a.label || "Open"}</a>`;
+              if (a.kind === "dns" && a.record) return html`
+                <div style=${{ marginTop: "8px", border: "1px solid var(--border)", borderRadius: "8px", padding: "8px 10px" }}>
+                  <div className="sysadd-hint" style=${{ marginBottom: "4px" }}>Add this DNS record at your registrar:</div>
+                  ${["type", "name", "value"].map(k => (a.record[k] != null ? html`
+                    <div key=${k} style=${{ display: "flex", gap: "8px", alignItems: "center", padding: "2px 0" }}>
+                      <span className="sysadd-hint" style=${{ width: "44px" }}>${k}</span>
+                      <code style=${{ fontSize: "12px" }}>${String(a.record[k])}</code>
+                      <button className="th-icon-btn" style=${{ marginLeft: "auto" }} title="Copy" onClick=${() => { try { navigator.clipboard.writeText(String(a.record[k])); } catch {} }}><${Icon.Copy}/></button>
+                    </div>` : ""))}
+                </div>`;
+              return "";
+            };
+            return html`
+              ${human.length > 0 ? html`
+                <div style=${{ marginBottom: "22px" }}>
+                  ${sectionH("Your tasks")}
+                  ${human.map(t => html`
+                    <div key=${t.id} style=${{ border: "1px solid var(--border)", borderRadius: "10px", padding: "12px 14px", marginBottom: "8px", background: t.status === "blocked" ? "rgba(210,150,40,.08)" : "transparent" }}>
+                      <div style=${{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        ${pill(t.status)}
+                        <strong>${t.title || t.id}</strong>
+                        <span className="sysadd-hint" style=${{ marginLeft: "auto" }}>${t.status === "blocked" ? "needs you" : t.status}</span>
+                      </div>
+                      ${t.detail ? html`<p className="sysadd-hint" style=${{ margin: "6px 0 0" }}>${t.detail}</p>` : ""}
+                      ${actionEl(t)}
+                    </div>`)}
+                </div>` : ""}
+              <div style=${{ marginBottom: "22px" }}>
+                ${sectionH("Tasks")}
+                ${rest.length === 0 ? html`<p className="sysadd-hint">${human.length ? "No other tasks." : "No tasks yet."}</p>`
+                  : rest.map(t => html`
+                    <div key=${t.id} style=${{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0", borderBottom: rowLine }}>
+                      ${pill(t.status)}
+                      <span>${t.title || t.id}</span>
+                      ${t.detail ? html`<span className="sysadd-hint" style=${{ marginLeft: "auto", maxWidth: "52%", textAlign: "right" }}>${t.detail}</span>` : ""}
+                    </div>`)}
+              </div>`;
+          })()}
 
           ${log.length > 0 ? html`
             <div>
