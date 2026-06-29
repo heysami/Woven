@@ -1,21 +1,24 @@
 ---
 name: grill-me
-description: Interview relentlessly about a plan or design until shared understanding, resolving each branch of the decision tree. Use when the user wants to stress-test a plan, get grilled on their design, or mentions "grill me" - and as the interviewer in a development-planning loop (grilling a project's flows, data model, and information architecture before building).
+description: Interview relentlessly about a plan, product, or design until shared understanding, resolving each branch of the decision tree. Use when the user wants to stress-test a plan, get grilled on their design, or mentions "grill me" - and as the interviewer in a development-planning loop (grilling a product's flows, data model, and information architecture before building).
 ---
 
-Interview relentlessly about every aspect of this plan or design until you reach a shared, unambiguous understanding. Walk down each branch of the decision tree, resolving dependencies between decisions one at a time. For every question, give your own recommended answer.
+Interview the user relentlessly about every aspect of this plan, product, or design until you reach a shared, unambiguous understanding. This is a LONG, thorough interrogation, not a quick check - keep going until there is no unresolved branch left that would change what gets built. For a real app that is typically 15-30+ questions, not three.
 
-Rules:
-- Ask ONE question at a time. Wait for the answer before the next.
-- If a question can be answered by exploring the codebase / the project (e.g. `prototype.json` entities, the screens, the design system), explore and answer it yourself instead of asking.
-- Prefer the question whose answer unblocks the most other decisions next.
-- Stop when there are no unresolved branches left that change what gets built - not before, not long after.
+How to run it:
+- Ask ONE question at a time. Wait for the answer before the next. Give your own recommended answer with each.
+- Walk down each branch of the decision tree, resolving dependencies one by one (answer the question that unblocks the most others next).
+- **Explore the code/project only for FACTS** - what entities, fields, and screens already exist. Do NOT invent the answer to a JUDGEMENT or INTENT question by staring at the mockup. A mockup shows the happy-path UI; it does NOT encode the product's rules, and you must not pretend it does.
+- **Grill the user on everything a mockup cannot answer.** These are the real questions, and there are many:
 
-When grilling a DEVELOPMENT PLAN (the two-agent loop, where one side holds the project knowledge and you interrogate it before any code is written), drive specifically at the things that break apps if left vague:
-- **Data model:** every entity's real fields + types, identity/keys, required vs optional, relationships and their cardinality (one-to-many? many-to-many through what?), what is derived vs stored, soft-delete vs hard-delete, audit needs.
-- **Flows:** the real end-to-end paths (e.g. apply -> review -> offer -> accept -> pay), every state a record moves through, who can move it, what happens on rejection / timeout / resubmission, and the empty / error / partial states each screen must handle.
-- **Information architecture:** which screen reads/writes which entity, the navigation + permission structure, what is shared vs per-user vs per-role.
-- **Roles & access:** the distinct roles, exactly what each can see and do, and the row-level rules ("an applicant sees only their own; an officer sees those assigned to them").
-- **Edge cases & rules:** validation, uniqueness, concurrency, money/rounding, dates/time zones, file types/sizes, and any domain rule a mockup quietly skipped.
+Drive hard at the PRODUCT, not just the schema:
+- **Intent & purpose** - what is each flow actually FOR, what does success look like, what is the user really trying to accomplish that the screens only hint at.
+- **Business rules** - the real logic behind each action: eligibility, limits, quotas, approval thresholds, pricing/quantum rules, what makes something valid or rejected. Mockups almost never show these.
+- **Edge cases & lifecycle** - what happens on reject / timeout / resubmission / duplicate / concurrent edit / withdrawal; can a record be edited after submit, deleted, archived; what is the full set of states each record moves through and who can move it.
+- **Permissions semantics** - not just "there are roles" but exactly what each role may see and do, on whose records, at which stage; the row-level rules in plain language.
+- **Data meaning** - which fields are required vs optional, unique, derived vs entered, units/currency/timezone, what a status value actually means.
+- **Scope & priorities** - what is in the first build vs later; which flows matter most; what is mock-only vs must-really-work.
 
-End by restating the resolved plan as a short, decision-by-decision summary the user can confirm or correct.
+Leave PURE IMPLEMENTATION to yourself - uuid vs serial, index choices, which API, table names. Do not spend the user's attention on those.
+
+End by restating the resolved understanding as a short, decision-by-decision summary the user can confirm or correct.
