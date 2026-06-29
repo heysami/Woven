@@ -7270,6 +7270,29 @@ if (typeof window !== "undefined") {
   }
 }
 
+/* Node corner-radius preference. "rounded" (default, 10px) | "sharp" (no
+   roundness). Global, in the same settings blob; applied by setting a
+   `data-wf-node-corners` attribute on <html> that re-points the
+   --wf-node-radius token (styles.css). A synchronous bootstrap in index.html
+   sets the same attribute before first paint - KEEP THE TWO IN SYNC. Read live
+   via th:node-corners-changed so the toggle takes effect without a reload. */
+function loadNodeCorners() { return loadSettings().nodeCorners === "sharp" ? "sharp" : "rounded"; }
+function applyNodeCornersAttr() {
+  try { document.documentElement.setAttribute("data-wf-node-corners", loadNodeCorners()); } catch {}
+}
+function saveNodeCorners(v) {
+  saveSettings({ nodeCorners: v === "sharp" ? "sharp" : "rounded" });
+  applyNodeCornersAttr();
+  try { window.dispatchEvent(new CustomEvent("th:node-corners-changed")); } catch {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("th:node-corners-changed", applyNodeCornersAttr);
+  if (typeof document !== "undefined") {
+    if (document.documentElement) applyNodeCornersAttr();
+    else window.addEventListener("DOMContentLoaded", applyNodeCornersAttr);
+  }
+}
+
 /* Editor colour scheme preference. "light" | "dark" | "system" (default
    "system" = follow the OS). Stored in the same settings blob and applied by
    setting data-theme on <html>; the styles.css `:root[data-theme="dark"]` block
@@ -7664,6 +7687,65 @@ function apiUrl(path) {
   if (!proj) return path;
   const sep = path.includes("?") ? "&" : "?";
   return path + sep + "project=" + encodeURIComponent(proj);
+}
+
+/* Canvas background colour - PROJECT-SPECIFIC, a separate value per light/dark
+   mode. Stored in a localStorage map keyed by project id; each entry is
+   { light?: "#hex", dark?: "#hex" }. Applied by setting the --canvas-bg token
+   INLINE on <html> to the value matching the resolved theme (so it overrides
+   the stylesheet default for the active mode only); the property is removed
+   when that mode has no custom colour, so the default surface returns. Re-
+   applied on theme change, OS-scheme flip, and project boot. The default
+   swatches mirror the stylesheet's --canvas-bg (light = white, dark ~= the
+   near-black oklch(16% 0 0)) so the picker opens showing today's colour. */
+const CANVAS_BG_KEY = "th:canvasBg:v1";
+const CANVAS_BG_DEFAULTS = { light: "#ffffff", dark: "#0d0d0d" };
+function loadCanvasBg() {
+  const proj = activeProjectId();
+  if (!proj) return {};
+  try {
+    const map = JSON.parse(localStorage.getItem(CANVAS_BG_KEY) || "{}");
+    const v = map && map[proj];
+    if (v && typeof v === "object") return { light: v.light || null, dark: v.dark || null };
+  } catch {}
+  return {};
+}
+function applyCanvasBgVar() {
+  if (typeof document === "undefined" || !document.documentElement) return;
+  const cfg = loadCanvasBg();
+  const color = cfg[resolveEditorTheme()];
+  try {
+    if (color) document.documentElement.style.setProperty("--canvas-bg", color);
+    else document.documentElement.style.removeProperty("--canvas-bg");
+  } catch {}
+}
+function saveCanvasBg(mode, color) {
+  const proj = activeProjectId();
+  if (!proj || (mode !== "light" && mode !== "dark")) return;
+  try {
+    const map = JSON.parse(localStorage.getItem(CANVAS_BG_KEY) || "{}");
+    const next = (map && typeof map === "object") ? map : {};
+    const entry = (next[proj] && typeof next[proj] === "object") ? { ...next[proj] } : {};
+    if (color) entry[mode] = color; else delete entry[mode];
+    if (!entry.light && !entry.dark) delete next[proj]; else next[proj] = entry;
+    localStorage.setItem(CANVAS_BG_KEY, JSON.stringify(next));
+  } catch {}
+  applyCanvasBgVar();
+  try { window.dispatchEvent(new CustomEvent("th:canvas-bg-changed")); } catch {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("th:canvas-bg-changed", applyCanvasBgVar);
+  window.addEventListener("th:editor-theme-changed", applyCanvasBgVar);
+  try {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onOs = () => { if (loadEditorTheme() === "system") applyCanvasBgVar(); };
+    if (mq.addEventListener) mq.addEventListener("change", onOs);
+    else if (mq.addListener) mq.addListener(onOs);
+  } catch (e) {}
+  if (typeof document !== "undefined") {
+    if (document.documentElement) applyCanvasBgVar();
+    else window.addEventListener("DOMContentLoaded", applyCanvasBgVar);
+  }
 }
 
 // Inverse of apiUrl for daemon-served assets: turn a resolved <img>.src (an
@@ -78919,10 +79001,22 @@ function WorkflowSendKeySection() {
   const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
   const [simplify, setSimplify] = useState(() => loadNodeSimplify());
   const [theme, setTheme] = useState(() => loadEditorTheme());
+  const [nodeCorners, setNodeCorners] = useState(() => loadNodeCorners());
+  const [canvasBg, setCanvasBg] = useState(() => loadCanvasBg());
   useEffect(() => {
     const on = () => setTheme(loadEditorTheme());
     window.addEventListener("th:editor-theme-changed", on);
     return () => window.removeEventListener("th:editor-theme-changed", on);
+  }, []);
+  useEffect(() => {
+    const on = () => setNodeCorners(loadNodeCorners());
+    window.addEventListener("th:node-corners-changed", on);
+    return () => window.removeEventListener("th:node-corners-changed", on);
+  }, []);
+  useEffect(() => {
+    const on = () => setCanvasBg(loadCanvasBg());
+    window.addEventListener("th:canvas-bg-changed", on);
+    return () => window.removeEventListener("th:canvas-bg-changed", on);
   }, []);
   useEffect(() => {
     const on = () => setSendOnEnter(loadSendOnEnter());
@@ -78937,6 +79031,13 @@ function WorkflowSendKeySection() {
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
   const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
   const pickTheme = (v) => { saveEditorTheme(v); setTheme(v); };
+  const pickCorners = (v) => { saveNodeCorners(v); setNodeCorners(v); };
+  const setBg = (mode, color) => { saveCanvasBg(mode, color); setCanvasBg(loadCanvasBg()); };
+  const resetBg = () => { saveCanvasBg("light", null); saveCanvasBg("dark", null); setCanvasBg(loadCanvasBg()); };
+  const proj = activeProjectId();
+  const bgLight = (canvasBg && canvasBg.light) || CANVAS_BG_DEFAULTS.light;
+  const bgDark = (canvasBg && canvasBg.dark) || CANVAS_BG_DEFAULTS.dark;
+  const bgCustom = !!(canvasBg && (canvasBg.light || canvasBg.dark));
   return html`
     <${React.Fragment}>
       <div className="workflow-settings-section">
@@ -79005,6 +79106,49 @@ function WorkflowSendKeySection() {
           </button>
         </div>
       </div>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Node corners</span>
+          <span className="onboarding-sendkey-desc">Rounded or sharp corners on canvas nodes.</span>
+        </div>
+        <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Node corners">
+          <button type="button" role="radio" aria-checked=${nodeCorners === "rounded"}
+            className="onboarding-sendkey-opt" data-active=${nodeCorners === "rounded"}
+            onClick=${() => pickCorners("rounded")}>
+            <span className="onboarding-sendkey-keys">Rounded</span>
+            <span className="onboarding-sendkey-sub">Soft corners</span>
+          </button>
+          <button type="button" role="radio" aria-checked=${nodeCorners === "sharp"}
+            className="onboarding-sendkey-opt" data-active=${nodeCorners === "sharp"}
+            onClick=${() => pickCorners("sharp")}>
+            <span className="onboarding-sendkey-keys">Sharp</span>
+            <span className="onboarding-sendkey-sub">No roundness</span>
+          </button>
+        </div>
+      </div>
+      ${proj ? html`
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Canvas background</span>
+          <span className="onboarding-sendkey-desc">A custom canvas colour for this project, separate for light and dark mode.</span>
+        </div>
+        <div className="workflow-canvasbg-row">
+          <label className="workflow-canvasbg-item">
+            <input type="color" value=${bgLight}
+              onChange=${(e) => setBg("light", e.target.value)}
+              aria-label="Light mode canvas colour" />
+            <span className="workflow-canvasbg-label">Light mode</span>
+          </label>
+          <label className="workflow-canvasbg-item">
+            <input type="color" value=${bgDark}
+              onChange=${(e) => setBg("dark", e.target.value)}
+              aria-label="Dark mode canvas colour" />
+            <span className="workflow-canvasbg-label">Dark mode</span>
+          </label>
+          ${bgCustom ? html`<button type="button" className="workflow-canvasbg-reset"
+            onClick=${resetBg}>Reset to default</button>` : null}
+        </div>
+      </div>` : null}
     <//>
   `;
 }

@@ -25,13 +25,16 @@
     (function () {
       try {
         var pref = "system";
+        var corners = "rounded";
         try {
           var s = JSON.parse(localStorage.getItem("th.editor.settings.v1") || "{}");
           if (s && (s.editorTheme === "light" || s.editorTheme === "dark" || s.editorTheme === "system")) pref = s.editorTheme;
+          if (s && s.nodeCorners === "sharp") corners = "sharp";
         } catch (e) {}
         var dark = pref === "dark" || (pref === "system" && window.matchMedia &&
           window.matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+        document.documentElement.setAttribute("data-wf-node-corners", corners);
       } catch (e) {}
     })();
   </script>

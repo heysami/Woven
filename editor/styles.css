@@ -18,6 +18,10 @@
   --canvas-bg: oklch(100% 0 0);
   --canvas-dot: oklch(87% 0 0);
 
+  /* Canvas node corner radius. Re-pointed to 0 by the global "Sharp" node-corner
+     preference (data-wf-node-corners="sharp" on <html>; see app.js). */
+  --wf-node-radius: 10px;
+
   /* Text - near-black ink, faintly warm. --text-faint darkened from a light
      64% grey to 53% so small faint labels stay legible (avoid light grey text). */
   --text:       oklch(22% 0.008 60);
@@ -8930,7 +8934,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
      deliberately subtle - orange at low alpha blends into the cream canvas
      where green read muddy. */
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--wf-node-radius, 10px);
   /* Neutral soft drop shadow (was a warm orange glow that clashed with the
      neutral/teal chrome). Plain black at low alpha reads as clean depth. */
   box-shadow:
@@ -8986,9 +8990,11 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-node-iframe-scale,
 .workflow-node-asset-body,
 .workflow-node-frames-body {
-  border-bottom-left-radius: 10px;
-  border-bottom-right-radius: 10px;
+  border-bottom-left-radius: var(--wf-node-radius, 10px);
+  border-bottom-right-radius: var(--wf-node-radius, 10px);
 }
+/* Global "Sharp" node-corner preference - zero the node radius token. */
+:root[data-wf-node-corners="sharp"] { --wf-node-radius: 0px; }
 .workflow-node-bar {
   display: flex;
   align-items: center;
@@ -15980,6 +15986,46 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .workflow-settings-section-pending {
   opacity: 0.55;
+  background: var(--surface-2);
+}
+/* Canvas-background colour pickers (Preferences > Canvas background). */
+.workflow-canvasbg-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.workflow-canvasbg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.workflow-canvasbg-item input[type="color"] {
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.workflow-canvasbg-label {
+  font-size: 13px;
+  color: var(--text);
+}
+.workflow-canvasbg-reset {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.workflow-canvasbg-reset:hover {
+  color: var(--text);
   background: var(--surface-2);
 }
 .workflow-settings-section-head {
