@@ -265,6 +265,8 @@ button {
 
 /* === Toolbar === */
 .toolbar {
+  /* Positioning context for the absolute-centered .surface-nav child. */
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -3644,6 +3646,8 @@ button {
   background: var(--surface-2);
 }
 .proto-door-bar {
+  /* Positioning context for the absolute-centered .surface-nav child. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3770,6 +3774,8 @@ button {
   overflow: hidden;
 }
 .workflow-bar {
+  /* Positioning context for the absolute-centered .surface-nav child. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -15822,9 +15828,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Above the floating .surface-nav pill (z-9600) so the scrim actually
-     covers it - the nav's own comment promises modals live at z-9700+. */
-  z-index: 9700;
+  z-index: 9000;
   animation: workflowModalFade 0.12s ease-out;
 }
 @keyframes workflowModalFade { from { opacity: 0; } to { opacity: 1; } }
@@ -16682,21 +16686,19 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 
 /* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
-   Floating segmented control, centered at the very top of every project-scoped
-   surface. The editor toolbar's .toolbar-mid is empty, so it lands cleanly in
-   that gap; on the canvas / preview / testing surfaces it floats over their top
-   bar's free center. z-index sits above every top bar but below modals. */
+   Segmented control, rendered as a CHILD of each surface's top bar (a real DOM
+   descendant, not a floating fixed overlay) so it inherits the bar's stacking
+   context and naturally sits BEHIND any modal scrim. Each host bar is
+   position:relative; the pill anchors absolute-centered on the bar's mid-line.
+   Development is the one surface with no bar - there the pill is a fixed child
+   of the scrolling .dev-view (see the .dev-view override below). */
 .surface-nav {
-  position: fixed;
+  position: absolute;
   /* Vertically center the pill on the top bar's mid-line (every surface bar is
      the --toolbar-h 44px row), independent of the pill's own height. */
   top: calc(var(--toolbar-h, 44px) / 2);
   left: 50%;
   transform: translate(-50%, -50%);
-  /* Above full-screen surfaces (the User testing dialog is z-9500, the
-     prototype door is fixed) so the nav stays the one consistent control on
-     every surface; still below true modals / overlays (z-9700+). */
-  z-index: 9600;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -28463,12 +28465,18 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   font-family: var(--font-sans);
 }
 .ut-screen-bar {
+  /* Positioning context for the absolute-centered .surface-nav child. */
+  position: relative;
   display: flex; align-items: center; gap: 4px;
   padding: 0 12px; min-height: var(--toolbar-h, 44px);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
+/* Development has no bar - it's a bare scrolling page. Keep its pill pinned to
+   the viewport (fixed) so it doesn't scroll away; .dev-view is itself a fixed
+   stacking context, so the modal scrim still covers it. */
+.dev-view .surface-nav { position: fixed; }
 .ut-screen-glyph {
   display: inline-flex; width: 30px; height: 30px;
   align-items: center; justify-content: center;

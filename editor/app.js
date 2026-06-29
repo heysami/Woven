@@ -23431,6 +23431,7 @@ function PrototypeDoor() {
         <div className="proto-door-actions">
           <a className="proto-door-open" href=${src} target="_blank" rel="noopener">Open in new tab ↗</a>
         </div>
+        <${SurfaceNav}/>
       </div>
       <iframe className="proto-door-iframe" src=${src} title="Prototype"/>
     </div>
@@ -43316,6 +43317,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
         <${PublishButton}/>
         <${ShareMenuButton}/>
+        <${SurfaceNav}/>
       </div>
       <${WorkflowSearchPalette}
         open=${paletteOpen}
@@ -51783,6 +51785,7 @@ function UserTestingScreen({ slug, onClose, info }) {
         <div className="ut-screen-spacer"></div>
         ${cap.state === "ready" && !publishBase && html`
           <span className="ut-screen-pubhint">Publish via Share to build links${cloudflaredFound ? "" : " (install cloudflared first)"}.</span>`}
+        <${SurfaceNav}/>
       </div>
 
       ${cap.state === "loading" && html`<div className="ut-screen-center"><div className="ut-screen-card">Checking user testing…</div></div>`}
@@ -82195,7 +82198,7 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
           <span className="tab-tip">${(defaultFrame?.w || 1440) + "×" + (defaultFrame?.h || 900) + " · gap " + (canvasGap ?? 120) + "px"}</span>
         </button>
       </div>
-      <div className="toolbar-mid"></div>
+      <div className="toolbar-mid"><${SurfaceNav}/></div>
       <div className="toolbar-right">
         <${BranchDocsButtons}/>
         <${DaemonIndicator}/>
@@ -82559,6 +82562,7 @@ function DevelopmentView({ model }) {
 
   return html`
     <div className="dev-view" style=${{ position: "fixed", inset: 0, overflow: "auto", background: "var(--bg)" }}>
+     <${SurfaceNav}/>
      <div style=${{ maxWidth: "840px", margin: "0 auto", padding: "calc(var(--toolbar-h, 44px) + 20px) 24px 48px", boxSizing: "border-box" }}>
       <div style=${{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
         <h1 style=${{ fontSize: "20px", margin: 0 }}>Development</h1>
@@ -83735,7 +83739,6 @@ function Root() {
   // Project-scoped alternates. Both bypass <App> entirely so their chrome is
   // self-contained and the editor's heavy bootstrap stays out of the way.
   if (hasProject && view === "prototype") return html`<${React.Fragment}>
-    <${SurfaceNav}/>
     <${PrototypeDoor}/>
     <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
@@ -83744,7 +83747,6 @@ function Root() {
   // workflow remounts the canvas with fresh internal state (data, history,
   // chat) instead of React reusing the previous project's instance.
   if (hasProject && view === "workflow")  return html`<${React.Fragment}>
-    <${SurfaceNav}/>
     <${WorkflowCanvas} key=${"wf:" + (project || "")}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
@@ -83762,7 +83764,6 @@ function Root() {
       thNavigate(u.toString());
     };
     return html`<${React.Fragment}>
-      <${SurfaceNav}/>
       <${UserTestingScreen} key=${"ut:" + (project || "")} slug=${utProto} onClose=${closeUT} info=${info}/>
       <${RightRailDock} mode="usertesting"/>
       <${ExportPromptHost}/>
@@ -83773,7 +83774,6 @@ function Root() {
   // testing), reachable from every surface via SurfaceNav's "Develop" segment
   // and from the Publish button. Shows the project's publish.json state.
   if (hasProject && view === "development") return html`<${React.Fragment}>
-    <${SurfaceNav}/>
     <${DevelopmentView} key=${"dev:" + (project || "")}/>
     <${RightRailDock} mode="development"/>
     <${ExportPromptHost}/>
@@ -83781,7 +83781,6 @@ function Root() {
   <//>`;
   // Otherwise the regular editor for the active project (or single-mode legacy).
   return html`<${React.Fragment}>
-    <${SurfaceNav}/>
     <${App}/>
     <${ChatImageLightbox}/>
     <${ExportPromptHost}/>
