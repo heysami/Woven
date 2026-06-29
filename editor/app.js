@@ -82928,15 +82928,35 @@ function PublishModal({ onClose, onStarted }) {
 // the orchestrator writes the file.
 function DevelopmentView({ model, info }) {
   const [data, setData]     = useState(null);   // { exists, state }
+  const [protos, setProtos] = useState([]);     // /__source_prototypes
+  const [proto, setProto]   = useState("");     // selected prototype id
   const [open, setOpen]     = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Prototype list for the header switcher (a project can host several, each
+  // publishes to its own site). Default to the active prototype, else the first.
+  useEffect(() => {
+    let alive = true;
+    fetch(apiUrl("/__source_prototypes"))
+      .then(r => (r.ok ? r.json() : { prototypes: [] }))
+      .then(j => {
+        if (!alive) return;
+        const list = (j && j.prototypes) || [];
+        setProtos(list);
+        const active = (typeof activePrototypeSlug === "function") ? activePrototypeSlug() : null;
+        setProto((active && list.some(p => p.id === active)) ? active : ((list[0] && list[0].id) || ""));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const reload = useCallback(() => {
-    fetch(apiUrl("/__publish"))
+    const path = proto ? ("/__publish?prototype=" + encodeURIComponent(proto)) : "/__publish";
+    fetch(apiUrl(path))
       .then(r => (r.ok ? r.json() : Promise.reject(new Error("unreachable"))))
       .then(j => setData(j))
       .catch(() => setData(d => d || { exists: false, state: null, error: "daemon unreachable" }));
-  }, []);
+  }, [proto]);
 
   useEffect(() => {
     reload();
@@ -82979,6 +82999,10 @@ function DevelopmentView({ model, info }) {
      <div style=${{ maxWidth: "840px", margin: "0 auto", padding: "20px 24px 48px", boxSizing: "border-box" }}>
       <div style=${{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
         <h1 style=${{ fontSize: "20px", margin: 0 }}>Development</h1>
+        ${protos.length > 0 && html`<select className="editor-proto-switch" value=${proto}
+          onChange=${(e) => setProto(e.target.value)} title="Which prototype" aria-label="Which prototype">
+          ${protos.map(p => html`<option key=${p.id} value=${p.id}>${p.id}</option>`)}
+        </select>`}
         <button className="sysadd-btn-go" style=${{ marginLeft: "auto" }} onClick=${() => setOpen(true)}>
           <${Icon.Globe}/> Publish
         </button>

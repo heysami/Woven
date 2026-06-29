@@ -29,24 +29,28 @@ The caller passes HOW. If it is missing, default to AUTOMATIC (API).
 
 ## Durable state: `<project>/publish.json`
 
-Create/maintain this file. It is the seed of the future development-task surface, so keep it structured and human-readable. Shape:
+Create/maintain this file. It is the seed of the development-task surface, so keep it structured and human-readable. State is keyed PER PROTOTYPE (a project can host several, each publishes to its own site), under the prototype id the caller gave you. Shape (v2):
 
 ```json
 {
-  "version": 1,
-  "mode": "api",
-  "complexity": "simple",
-  "github": { "login": "", "repo": "", "htmlUrl": "", "branch": "main" },
-  "host": { "provider": "github-pages", "liveUrl": "", "status": "pending" },
-  "database": { "provider": "supabase", "projectRef": "", "url": "", "anonKey": "", "status": "none" },
-  "tasks": [
-    { "id": "link-github", "title": "Link GitHub", "status": "todo|doing|done|blocked", "detail": "" }
-  ],
-  "log": [ { "ts": "", "step": "", "result": "" } ]
+  "version": 2,
+  "prototypes": {
+    "<prototype-id>": {
+      "mode": "api",
+      "complexity": "simple",
+      "github": { "login": "", "repo": "", "htmlUrl": "", "branch": "main" },
+      "host": { "provider": "github-pages", "liveUrl": "", "status": "pending" },
+      "database": { "provider": "supabase", "projectRef": "", "url": "", "anonKey": "", "status": "none" },
+      "tasks": [
+        { "id": "link-github", "title": "Link GitHub", "status": "todo|doing|done|blocked", "detail": "" }
+      ],
+      "log": [ { "ts": "", "step": "", "result": "" } ]
+    }
+  }
 }
 ```
 
-Write it atomically (temp file + rename). Never put the GitHub token, the Supabase Management/service token, or any secret into publish.json or into the repo - only the Supabase URL + anon (public) key, which are safe to ship to the browser.
+The caller tells you which prototype to publish (e.g. `Publish the prototype "main"`). Write that prototype's state under `prototypes["main"]` and leave any sibling prototypes' entries untouched. The Development tab reads `GET /__publish?prototype=<id>`, which returns `prototypes[<id>]` (or, for a legacy v1 flat file with no `prototypes` key, the flat object as-is). Write atomically (temp file + rename). Never put the GitHub token, the Supabase Management/service token, or any secret into publish.json or into the repo - only the Supabase URL + anon (public) key, which are safe to ship to the browser.
 
 ## Step 0 - GitHub gate
 

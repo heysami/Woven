@@ -16247,23 +16247,41 @@ class H(http.server.SimpleHTTPRequestHandler):
             root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
+        proto = (_qs_get(qs, "prototype") or "").strip()
         path = os.path.join(root, "publish.json")
+
+        def skeleton():
+            return {
+                "version": 2, "prototype": proto, "mode": "api", "complexity": "unknown",
+                "github":   {"login": "", "repo": "", "htmlUrl": "", "branch": "main"},
+                "host":     {"provider": "github-pages", "liveUrl": "", "status": "none"},
+                "database": {"provider": "supabase", "projectRef": "", "url": "",
+                             "anonKey": "", "status": "none"},
+                "tasks": [], "log": [],
+            }
+
+        data = None
         if os.path.isfile(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return self._reply(200, {"exists": True, "state": json.load(f)})
+                    data = json.load(f)
             except (json.JSONDecodeError, OSError) as e:
                 return self._reply(200, {"exists": True, "state": None,
                                          "error": f"publish.json unreadable: {e}"})
-        skeleton = {
-            "version": 1, "mode": "api", "complexity": "unknown",
-            "github":   {"login": "", "repo": "", "htmlUrl": "", "branch": "main"},
-            "host":     {"provider": "github-pages", "liveUrl": "", "status": "none"},
-            "database": {"provider": "supabase", "projectRef": "", "url": "",
-                         "anonKey": "", "status": "none"},
-            "tasks": [], "log": [],
-        }
-        return self._reply(200, {"exists": False, "state": skeleton})
+        if data is None:
+            return self._reply(200, {"exists": False, "state": skeleton()})
+        # v2+ per-prototype keyed shape: { prototypes: { <id>: {...} } }.
+        if isinstance(data.get("prototypes"), dict):
+            protos = data["prototypes"]
+            st = protos.get(proto) if proto else None
+            if st is None and not proto and len(protos) == 1:
+                st = next(iter(protos.values()))   # no id asked, only one - use it
+            if st is None:
+                return self._reply(200, {"exists": False, "state": skeleton()})
+            return self._reply(200, {"exists": True, "state": st})
+        # Legacy v1 flat shape (one deploy for the project's single prototype):
+        # return it for the requested prototype so existing publishes still show.
+        return self._reply(200, {"exists": True, "state": data})
 
     # POST /__github/(device/start|device/poll|signout|connect_repo|create_repo)?project=<id>
     def _github_op(self, op, qs):
