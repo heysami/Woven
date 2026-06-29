@@ -15822,7 +15822,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9000;
+  /* Above the floating .surface-nav pill (z-9600) so the scrim actually
+     covers it - the nav's own comment promises modals live at z-9700+. */
+  z-index: 9700;
   animation: workflowModalFade 0.12s ease-out;
 }
 @keyframes workflowModalFade { from { opacity: 0; } to { opacity: 1; } }
