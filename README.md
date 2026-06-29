@@ -202,7 +202,9 @@ Click each **Install** button and give it a minute (`shader-verify` is the slowe
 
 A fifth skill, **whisper-cpp** (offline transcription for User Testing), is **optional**, install it later from the gear icon → Settings if you use that feature.
 
-Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). Dismiss the card and the **+ New project** button lights up.
+Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). It also carries the optional **User testing mode** toggle. Click **Got it** to dismiss the card, and the **+ New project** button lights up.
+
+![Onboarding · Step 5 · Done](docs/screenshots/03d-onboarding-done.png)
 
 ---
 
