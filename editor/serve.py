@@ -15200,7 +15200,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": str(e)})
         if not isinstance(body, dict):
             return self._reply(400, {"error": "body must be an object"})
-        ds_ref = (body.get("dsRef") or "").strip()
+        _raw_ds = body.get("dsRef")
+        # Tolerate a legacy/object dsRef: only a string is a valid key; anything
+        # else (the meta.dsRef object, None) collapses to the project-root map.
+        ds_ref = _raw_ds.strip() if isinstance(_raw_ds, str) else ""
         safe_ds = ds_ref if re.match(r"^[A-Za-z0-9._-]+$", ds_ref) else ""
         if safe_ds:
             path = os.path.join(project_root, "design-systems", safe_ds, "figma-map.json")

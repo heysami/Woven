@@ -30535,7 +30535,9 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
       setStep("Converting page...");
       // Load the design-system component rules so flex/block subtrees that match
       // them are tagged for the plugin to swap into bound Figma instances.
-      const dsRef = (D.meta && D.meta.dsRef) || "";
+      // meta.dsRef is an OBJECT ({ id, ... }); the map is keyed by its id string.
+      const _dsr = (D.meta && D.meta.dsRef) || null;
+      const dsRef = (typeof _dsr === "string" ? _dsr : (_dsr && _dsr.id)) || "";
       let componentRules = [];
       try {
         const rr = await fetch(apiUrl("/__figma_map"), {
@@ -30570,7 +30572,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
 
   return html`
     <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div className="modal modal-narrow" role="dialog" aria-modal="true">
+      <div className="modal" role="dialog" aria-modal="true">
         <div className="modal-head">
           <div>
             <div className="modal-eyebrow">Send to Figma</div>
@@ -30584,6 +30586,7 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
             plugin running and connected in Figma Desktop
             (editor/tools/figma-bridge - see its README).
           </p>
+          ${!busy && phase !== "done" && html`<${FigmaComponentRules}/>`}
           ${(phase === "working" || phase === "done") && status && html`
             <div className="export-name-warn" data-overridden=${true}>${status}</div>
           `}
@@ -78543,7 +78546,10 @@ function figmaStrToVariants(s) {
    plugin side (Figma component keys are file-local). Elements that already carry
    a data-component attribute are detected automatically and need no rule. */
 function FigmaComponentRules() {
-  const dsRef = (D.meta && D.meta.dsRef) || "";
+  // meta.dsRef is an OBJECT ({ id, ... }); the export map is keyed by its id
+  // string. Be defensive about legacy projects that stored a bare string.
+  const _dsr = (D.meta && D.meta.dsRef) || null;
+  const dsRefId = (typeof _dsr === "string" ? _dsr : (_dsr && _dsr.id)) || "";
   const [rules, setRules] = useState([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -78555,7 +78561,7 @@ function FigmaComponentRules() {
       try {
         const r = await fetch(apiUrl("/__figma_map"), {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ op: "get", dsRef }),
+          body: JSON.stringify({ op: "get", dsRef: dsRefId }),
         });
         const j = await r.json().catch(() => ({}));
         if (!cancelled && Array.isArray(j.rules)) {
@@ -78564,7 +78570,7 @@ function FigmaComponentRules() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [dsRef]);
+  }, [dsRefId]);
 
   const update = (i, k, v) => { setSaved(false); setRules((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r))); };
   const addRow = () => { setSaved(false); setRules((rs) => rs.concat([{ selector: "", component: "", variants: "" }])); };
@@ -78578,7 +78584,7 @@ function FigmaComponentRules() {
     try {
       const r = await fetch(apiUrl("/__figma_map"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "set", dsRef, rules: payload }),
+        body: JSON.stringify({ op: "set", dsRef: dsRefId, rules: payload }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
@@ -78592,7 +78598,7 @@ function FigmaComponentRules() {
     <div className="workflow-settings-section">
       <div className="workflow-settings-section-head">
         <span className="workflow-settings-provider">Component mapping</span>
-        <span className="workflow-settings-skills">${dsRef ? ("design system: " + dsRef) : "no design system on this project"}</span>
+        <span className="workflow-settings-skills">${dsRefId ? ("design system: " + dsRefId) : "no design system on this project"}</span>
       </div>
       <div className="workflow-settings-hint">
         Tell the export which elements are design-system components, by CSS selector.
@@ -78753,7 +78759,6 @@ function WorkflowSettingsDialog({ onClose }) {
             <${WorkflowUserTestingSettingsRow}/>
           ` : tab === "figma" ? html`
             <${WorkflowFigmaSection}/>
-            <${FigmaComponentRules}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}
