@@ -103,7 +103,7 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
 
 **Read each plate with the Read tool and LOOK at it.** You are the art director reviewing the comp(s). In Phase B you extract, **per candidate**, only what the §4 gate needs to render its cards: the palette chips, the type sample (display + body, in the construction the plate rendered - §3.1), the mood/vibe words, and the one-line "why" of the direction. Hold these per-plate; they are previews, not a deliverable.
 
-**Do NOT write `workflow/art-direction-contract.json` in Phase B.** The committed contract is the single source of truth for the whole build, and it must be authored from the plate the user actually picks - not from your recommended candidate, and not as one file when 2-3 candidates exist. Authoring + writing it before the §4 pick produces a contract for a direction the user may reject or steer away from. The full contract is authored in **§4.5, after the gate, from the CHOSEN plate.** The schema below is the shape you will author **then** - read it now so your Phase B extraction captures the right observations, but write nothing to disk yet.
+**Do NOT write `workflow/art-direction-contract.json` in Phase B.** The committed contract is the single source of truth for the whole build, and it must be authored from the plate the user actually picks - not from your recommended candidate, and not as one file when 2-3 candidates exist. Authoring + writing it before the §4 pick produces a contract for a direction the user may reject or steer away from. The full contract is authored in **§4.6, after the gate and after the §4.5 crop pass, from the CHOSEN plate.** The schema below is the shape you will author **then** - read it now so your Phase B extraction captures the right observations, but write nothing to disk yet.
 
 The contract has two halves and the split is load-bearing:
 
@@ -184,21 +184,32 @@ The contract has two halves and the split is load-bearing:
   },
 
   "itemReferences": [
-    // LEAVE THIS [] IN PHASE B (and at §4.5 contract-write). It is populated ONLY in §4.6 -
-    // AFTER the user picks a plate at the §4 gate, and ONLY from the CHOSEN plate. Cropping in Phase B (before
-    // the pick) wastes work on a plate the user may reject and spends before the cost gate
-    // the orchestrator exists to honour. POPULATED ONLY when the project image model is
-    // i2i-capable (provider=openai, any gpt-image-* incl. the default gpt-image-2); stays [] otherwise (text path).
-    // Shape of each entry once §4.6 fills it (refs live under source/ - the only tree the
-    // gen endpoint writes AND the only tree downstream i2i can read as input_path):
+    // LEAVE THIS [] IN PHASE B. It is populated only in the mode=finalize dispatch, AFTER the
+    // pick, by the §4.5 crop pass (crop FIRST, then author this contract from the crops in §4.6).
+    // PRIORITISE the high-value references the old pass skipped: the human SUBJECT and the UI
+    // sample - NOT just discrete text stickers. By role:
+    //   subject - the person, rembg'd → i2i identity ref for hero/portrait raster-photo slots
+    //   ui      - nav+hero+card+button rectangle, NO rembg → composition/component ground-truth
+    //             for the build (layout/components) + the aesthetic-lens; matchesSlots:[] (not an i2i input)
+    //   item    - mascot / logo / album object / product, rembg'd → i2i ref for its raster slot
+    //   decoration - a sticker/badge that genuinely recurs as its own slot (LAST, sparingly)
+    // subject/item/(recurring decoration) need an i2i-capable model (openai gpt-image-*); the ui
+    // crop is worth taking regardless. Refs live under source/ (only writable + i2i-readable tree).
     {
-      "itemId": "sticker-chrome-star",
-      "refPath": "source/<branch>/_artdir_refs/sticker-chrome-star.png",  // cropped + bg-removed, AS the plate drew it
-      "matchesSlots": ["sticker-chrome-star", "merch-charm"],             // slot ids / intents the downstream enricher binds this ref to
-      "bboxNote": "top-right chrome star in north-star-2.png",
-      "instruction": "downstream sets this as refImagePath / input_path so the generated asset matches the plate's own rendering, not a text re-description"
+      "itemId": "hero-artist",
+      "role": "subject",
+      "refPath": "source/<branch>/_artdir_refs/hero-artist.png",   // rembg'd figure, AS the plate drew them
+      "matchesSlots": ["hero-portrait", "about-portrait"],          // raster-photo slots that should be THIS person
+      "bboxNote": "central figure in north-star-1.png"
+    },
+    {
+      "itemId": "ui-sample",
+      "role": "ui",
+      "refPath": "source/<branch>/_artdir_refs/ui-sample.png",      // nav+hero+card+button rectangle, layout intact
+      "matchesSlots": [],                                            // build/lens reference, not an image-gen input
+      "bboxNote": "top nav + STREAM NOW pill + LATEST DROP card stack"
     }
-    // ... one per depicted item that maps to a slot; [] when not i2i-capable OR pre-pick
+    // ... then item / decoration entries; [] when nothing reference-worthy or not i2i-capable
   ],
 
   "surfaceContracts": {
@@ -224,7 +235,7 @@ The contract has two halves and the split is load-bearing:
 }
 ```
 
-**You author this from the CHOSEN plate in §4.5 (after the gate), and write `workflow/art-direction-contract.json` there - NOT here.** In Phase B you only hold the per-candidate gate preview (palette / type sample / vibe / why). When the file is finally written in §4.5, it is the deliverable everything downstream reads.
+**You author this from the CHOSEN plate in §4.6 (after the gate AND after the §4.5 crop pass), and write `workflow/art-direction-contract.json` there - NOT here.** In Phase B you only hold the per-candidate gate preview (palette / type sample / vibe / why). When the file is finally written in §4.6, it is the deliverable everything downstream reads.
 
 ### 3.1 Match typography to the construction the plate ACTUALLY rendered
 
@@ -234,11 +245,11 @@ The image model draws the headline in whatever letterforms it invents - frequent
 2. **RESOLVE** `authored.typography.familyResolution` to the web-available family + variant/axis that realises that construction. If the named family has no matching axis, switch to the sibling that does: a static `Archivo Black` has no width axis, so a condensed-tall plate resolves to `Archivo` variable at high weight + reduced width (`wght 800 / wdth 75`), or `Archivo Narrow`; an extended plate resolves to `Archivo Expanded`. Same logic for round / italic / high-contrast reads - pick the variant, not the abstract name.
 3. If no web font matches the observed construction, say so in `constructionMatch` and pick the nearest - **never silently keep the standard-width family** while the plate ships condensed. The scale / tracking / line-height / case stay authored; only the family + variant is now construction-bound.
 
-### 3.2 Item-reference crops are DECLARED here, PRODUCED after the gate (§4.6)
+### 3.2 Reference crops are DECLARED here, PRODUCED after the gate (§4.5), and the contract is authored FROM them (§4.6)
 
-When the plate depicts a concrete ITEM that a planned image slot will also render (a specific sticker, the chrome star, a mascot, an album object), the downstream generator can take the plate's own rendering of that item as an i2i reference instead of re-inventing it from text - so the shipped asset tracks the approved sample.
+The plate's own rendering of the **human subject**, the **UI sample**, and the **key items** are the references that most improve the build: the subject crop is the i2i identity reference for the hero/portrait photos, the UI crop is the composition/component ground-truth, and item crops keep generated assets on the approved sample. These are far more valuable than discrete text stickers - do not let the easy-to-box text objects crowd them out.
 
-**But do NOT crop anything in Phase B.** Cropping is real work (file writes + a rembg call) and must not run before the user has picked a plate - it would spend on the agent's *recommended* plate, which the user may reject, and it would spend *before* the §4 cost gate this orchestrator exists to honour. So here in Phase B you only **note in prose** which depicted items look like good i2i references (and on which plate), as part of your steer summary at the gate. Leave `itemReferences: []` in the contract. The crops are produced in **§4.6, after the pick, from the CHOSEN plate only** - and only when the image model is i2i-capable. If the model is not i2i-capable, there is nothing to note and §4.6 is skipped entirely.
+**But do NOT crop anything in Phase B.** Cropping is real work (file writes + rembg) and must not run before the pick - it would spend on the agent's *recommended* plate, which the user may reject, before the §4 cost gate. So in Phase B you only **note in prose** which regions (subject / UI / items) look reference-worthy, as part of your steer summary at the gate. Leave `itemReferences: []`. The crops are produced in **§4.5, after the pick, from the CHOSEN plate** - and the contract is then authored in §4.6 GROUNDED in those crops (crop first, so the contract is an observation, not a glance).
 
 ## 4. Phase C - human steerage gate (§12.5) - emitted by the CALLER, not you
 
@@ -282,32 +293,36 @@ So: **do not emit the gate. RETURN the `<direction-options>` block below verbati
 
 In your `mode: "plate"` dispatch you STOP after returning the `gateBlock`. You author NO contract and crop NOTHING - those happen only in the `mode: "finalize"` dispatch, after the pick. A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never `<decision-request>`. Approval covers THIS build pass.
 
-## 4.5 Phase C.5 - (mode: finalize) author + write the contract from the CHOSEN plate
+## 4.5 Phase C.5 - (mode: finalize) DETECT + crop the reference regions FIRST - this is the close-read that grounds the contract
 
-Runs in the `mode: "finalize"` dispatch (the caller re-dispatched you with `chosenPlate: <n>` after the user picked). **This is the first time anything is written to disk for the direction.** Author the full contract (the §3 schema) from the chosen plate - `extracted` read off ITS pixels, `authored` harmonised with IT, `platePath` = the chosen plate, `candidatesConsidered` = the set you generated, `itemReferences: []` (filled next in §4.6). Write it to `workflow/art-direction-contract.json`. Because finalize only ever runs after a `plate-<n>` pick, no stale contract is ever left on disk for a steered/rejected direction.
+Runs in the `mode: "finalize"` dispatch (the caller re-dispatched you with `chosenPlate: <n>` after the pick). **Crop BEFORE you author the contract (§4.6), not after.** Isolating the real objects IS the inspection: you cannot write an accurate `extracted` (palette ratios, composition, material, type construction) or a useful `crossSurfaceContract` from a vague overall glance - you write it from having actually cut out and examined the person, the UI, and the key items. So detect + crop here, then author the contract in §4.6 from what you found.
 
-## 4.6 Phase C.6 - (mode: finalize) produce item-reference crops from the CHOSEN plate (AFTER §4.5)
+**What to crop - in PRIORITY order. The two highest-value references are the ones the old pass skipped: the human subject and the UI sample. Do NOT bias toward discrete text stickers/wordmarks just because they are easy to box.**
 
-Runs ONLY after §4.5 wrote the contract. Skip entirely when the project image model is not i2i-capable (provider `openai`, gpt-image-1 family - any other model 400s on an input image). When skipped, `itemReferences` stays `[]` and downstream keeps the text path - nothing breaks.
+1. **The human subject(s)** - if the product is people-centred (artist / founder / performer / character), the person is THE most important reference. Crop tight to the figure and rembg it. This becomes the i2i identity reference for the hero / portrait / press raster-photo slots, so the shipped people-photos are the same person as the approved plate. `role: "subject"`, `matchesSlots: [hero-portrait, about-portrait, ...]`.
+2. **The UI / chrome sample** - the nav + hero lockup + a primary card + the primary button, as one rectangular crop (NO rembg - keep the layout intact). This is the composition + component ground-truth: the build's layout/components step and the final aesthetic-lens read it as "this is how the UI should look". `role: "ui"`, `matchesSlots: []` (it is not an image-gen input; it is a build/lens reference).
+3. **Key identity / product items** - a mascot, the logo mark, an album object, the product itself. rembg each. i2i references for their matching raster slots. `role: "item"`.
+4. **Decorative items** (stickers, badges, starbursts) - LAST, and only the few that genuinely recur as their own slots. Most decoration is reproduced by the build in CSS/SVG and does NOT need a crop; do not fill the references with text badges.
 
-This is the producer step for `itemReferences[]`. It operates on the **chosen** plate (`platePath`), never on a candidate the user didn't pick. For each item the chosen plate depicts that maps to a planned image slot:
+Skip the i2i crops (subject/item/decoration) when the image model is not i2i-capable (provider `openai`, gpt-image-1 family) - leaving `itemReferences` empty of those; the `ui` crop is a build/lens reference, not an image-gen input, so take it regardless. For each crop:
 
-1. **Detect** - you already inspected the plate, so name the item's bounding box in plate pixels from that inspection. You are the detector; no separate endpoint is needed.
-2. **Crop** tight to the item, writing UNDER `source/` (the gen endpoint only reads/writes there):
-   ```bash
-   python3 -c "from PIL import Image; Image.open('$TH_PROJECT_ROOT/workflow/artdirection/north-star-<chosen>.png').crop((L,T,R,B)).save('$TH_PROJECT_ROOT/source/<branch>/_artdir_refs/<itemId>.raw.png')"
-   ```
-3. **Background-remove** via the transform route. **Both `input_path` and `output` are project-root-relative and MUST be under `source/`** (`editor/serve.py` - output must start with `source/`, input is `_safe_join`'d from project root); there is no `/tmp` and no `workflow/` write path here:
-   ```bash
-   curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
-     "skill":"rembg","provider":"local","model":"u2net",
-     "input_path":"source/<branch>/_artdir_refs/<itemId>.raw.png",
-     "output":"source/<branch>/_artdir_refs/<itemId>.png"}'
-   ```
-4. **Verify the crop landed on the right item** before trusting it - a bad bbox wastes the reference. Read back one or two of the `.png` outputs and confirm they show the intended item cleanly; re-crop with a corrected bbox if not.
-5. **Patch** the contract's `itemReferences[]` with each item's `{ itemId, refPath: "source/<branch>/_artdir_refs/<itemId>.png", matchesSlots, bboxNote }`, then re-write `workflow/art-direction-contract.json`.
+```bash
+# crop (writes under source/ - the only tree the gen endpoint reads/writes)
+python3 -c "from PIL import Image; Image.open('$TH_PROJECT_ROOT/workflow/artdirection/north-star-<chosen>.png').crop((L,T,R,B)).save('$TH_PROJECT_ROOT/source/<branch>/_artdir_refs/<id>.raw.png')"
+# rembg ONLY for subject/item crops (isolate the figure); SKIP rembg for the ui crop (keep layout). Both paths project-root-relative under source/:
+curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+  "skill":"rembg","provider":"local","model":"u2net",
+  "input_path":"source/<branch>/_artdir_refs/<id>.raw.png",
+  "output":"source/<branch>/_artdir_refs/<id>.png"}'
+```
 
-`source/<branch>/_artdir_refs/` is the right home: it is the only tree the gen endpoint can write, AND the only tree downstream `raster-foreground` can read as `input_path` (same `source/` constraint) - so the ref is born where i2i needs it. This is producer-only; downstream already consumes it end-to-end (the enricher copies `refPath` into `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`). No new plumbing.
+**Verify each crop landed on the right region** before trusting it - Read back the output and confirm it shows the intended person / UI / item cleanly; re-crop with a corrected bbox if not. A bad bbox both wastes the reference AND poisons the contract you are about to write from it. `source/<branch>/_artdir_refs/` is the right home: it is the only tree the gen endpoint can write AND the only tree downstream `raster-foreground` reads as `input_path`.
+
+## 4.6 Phase C.6 - (mode: finalize) author + write the contract, GROUNDED in the §4.5 crops
+
+Now author the full contract (the §3 schema) from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. Write `workflow/art-direction-contract.json` ONCE, fully populated (no later patch step). Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
+
+Downstream consumption is by `role`: entries with a non-empty `matchesSlots` (subject / item / recurring decoration) are i2i references - the illustration/photography enrichers copy `refPath` into the matched slot's `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`. The `role: "ui"` entry has no `matchesSlots`; the build's component/layout step and the aesthetic-lens read it as the composition ground-truth. No new plumbing.
 
 ## 5. Phase D - (mode: finalize) wire the contract node into the build chain
 
@@ -378,7 +393,7 @@ There are TWO hand-off shapes, one per mode.
   "branch": "<branch>",
   "contractPath": "workflow/art-direction-contract.json",
   "platePath": "workflow/artdirection/north-star-<chosen>.png",
-  "nextStep": "Caller now builds source via /prototype, but the build reads workflow/art-direction-contract.json as the AUTHORITATIVE design source, outranking the generic recipe/aesthetic template (the existing aesthetic-authority rule): step-tokens reads `extracted.palette` + `authored.spacing` + `authored.typography` (USE `authored.typography.familyResolution` as the actual @font-face/@import family + variant/axis, not the abstract display name - it matches the plate's rendered construction per §3.1); step-layout/step-optical read `extracted.composition`; step-components reads `authored.componentStyle`; step-motion reads `authored.motionCharacter`; step-content honours `extracted.moodWords`. THEN the asset orchestrators read `crossSurfaceContract`: illustration/photography/visual match `imageryRegister` + `sharedPaletteHexes`; material-orchestrator applies `materialDirective` + `reactiveBudget` to UI surfaces (not just imagery). When `itemReferences[]` is non-empty, the illustration/photography enrichers bind each matched slot's `refImagePath` to the item's `refPath` (§3.2) so the slot generates from the plate's own pixels. The final aesthetic-lens gate diffs the assembled runtime against this contract for cross-register coherence - the check that was missing.",
+  "nextStep": "Caller now builds source via /prototype, but the build reads workflow/art-direction-contract.json as the AUTHORITATIVE design source, outranking the generic recipe/aesthetic template (the existing aesthetic-authority rule): step-tokens reads `extracted.palette` + `authored.spacing` + `authored.typography` (USE `authored.typography.familyResolution` as the actual @font-face/@import family + variant/axis, not the abstract display name - it matches the plate's rendered construction per §3.1); step-layout/step-optical read `extracted.composition`; step-components reads `authored.componentStyle`; step-motion reads `authored.motionCharacter`; step-content honours `extracted.moodWords`. THEN the asset orchestrators read `crossSurfaceContract`: illustration/photography/visual match `imageryRegister` + `sharedPaletteHexes`; material-orchestrator applies `materialDirective` + `reactiveBudget` to UI surfaces (not just imagery). For `itemReferences[]` entries with a non-empty `matchesSlots` (role subject/item/recurring-decoration), the illustration/photography enrichers bind each matched slot's `refImagePath` to the entry's `refPath` (§3.2) so the slot generates from the plate's own pixels - the `subject` crop especially makes the hero/portrait photos the SAME person as the plate. The `role:'ui'` entry (matchesSlots empty) is the composition ground-truth: step-layout/step-components should view it as the target for chrome layout + component treatment, and the final aesthetic-lens diffs the assembled runtime against this contract for cross-register coherence - the check that was missing.",
   "wiringRequired": [
     "capabilities.py: add a pre-build hard-rule - if art-director is in the approved roster, dispatch it BEFORE step-stack; thread contractPath into the /prototype build envelope",
     "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template. step-tokens binds the display/body font from authored.typography.familyResolution (the construction-matched variant), not the abstract family name",
@@ -397,7 +412,7 @@ When `mode == "revise"`, a contract already exists and the user has just approve
 1. Read `priorContractPath`. Treat its `extracted` + `authored` + `crossSurfaceContract` as **the established law** - you are extending it, not re-deriving it. The chrome already shipped against it; gratuitous churn re-breaks the app.
 2. Generate ONE new plate that places the **new** surface into the EXISTING world (reuse the established palette/material/type - the plate's job here is to prove the new surface can live in the current frame, not to redesign).
 3. Generate + commit the revise plate node, inspect it, and **RETURN the gate block to the caller** exactly as `mode: "plate"` does (§4) - you cannot surface the gate yourself. Prepare (in memory, carried in the hand-off) the revised contract: `contractVersion` bumped (+1) and a new/updated `surfaceContracts["<newContainerId>"]` entry. Keep `extracted`/`authored` stable unless the new surface genuinely forces a small, named change - and if it does, record it in a `revisionNotes` array ("raised glow accent ratio 0.10→0.15 so the game surface and the chrome share a focal energy").
-4. The caller surfaces the revised plate at the gate, waits for the pick, and re-dispatches you `mode: "finalize"`. **Only then** do you write the bumped contract to `workflow/art-direction-contract.json` (overwriting the prior version) - never before the pick, exactly as the create-path §4.5 rule. Then the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
+4. The caller surfaces the revised plate at the gate, waits for the pick, and re-dispatches you `mode: "finalize"`. **Only then** do you write the bumped contract to `workflow/art-direction-contract.json` (overwriting the prior version) - never before the pick, exactly as the create-path §4.6 rule (crop in §4.5, write in §4.6). Then the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
 
 This is why the contract is **versioned, not write-once**: as soon as an owns-surface can be added after the build (and it always can), reconciliation requires a living contract.
 
@@ -428,8 +443,8 @@ The contract is only half the fix. The other half is letting `aesthetic-lens` **
 | §2 | generate plate(s) DIRECT via `/__asset_generate` → `source/<branch>/_artdir/` → cp `workflow/artdirection/` → commit `ad_plate_<projectId>_<n>` image node on canvas | YOU | plate |
 | §3 | per-candidate gate preview held in memory (NO file written) | YOU | plate |
 | §4 | RETURN `gateBlock` in hand-off → **CALLER emits** `<direction-options>` → user picks | CALLER emits / USER decides | plate |
-| §4.5 | author + write `workflow/art-direction-contract.json` from the CHOSEN plate (`itemReferences: []`) | YOU | finalize |
-| §4.6 | item-reference crops → `source/<branch>/_artdir_refs/*.png` + patch `itemReferences[]` (i2i-capable models only) | YOU | finalize |
+| §4.5 | DETECT + crop the reference regions FIRST (subject + UI sample + key items, NOT just text stickers) → `source/<branch>/_artdir_refs/*.png` | YOU | finalize |
+| §4.6 | author + write `workflow/art-direction-contract.json` GROUNDED in the §4.5 crops; `itemReferences[]` populated (role: subject/ui/item/decoration) | YOU | finalize |
 | §5 | `ad_contract_<projectId>` image asset node, edge-wired plates→contract→prototype | YOU | finalize |
 | §6 | (hand-off envelope, one shape per mode) | YOU | both |
 | Later | `/prototype` build reads the contract | CALLER | own scope |
