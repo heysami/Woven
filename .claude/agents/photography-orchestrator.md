@@ -108,7 +108,11 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"   # prese
 # from crossSurfaceContract.sharedPaletteHexes + extracted.lightModel, so the
 # photography reads as one world with the chrome the build derived from the
 # same contract. Bias the library style pick toward the contract's register;
-# bake the shared palette + light model into lightingHint / moodHint.
+# bake the contract's light model into lightingHint. For colour, give the palette
+# CHARACTER (register + crossSurfaceContract.colorUsePrinciple) in moodHint, NOT the
+# full sharedPaletteHexes - do not force every photo to carry all the brand colours.
+# The per-slot colour SUBSET + weight (small→accent, large→dominant/neutral) is
+# assigned later by visual-orchestrator step 3.5, which knows each slot's geometry.
 # If null, behave exactly as before.
 #
 # Item-reference binding: when artContract.itemReferences[] is present, check each
