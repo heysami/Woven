@@ -4,15 +4,14 @@ description: Render ONE scrapbook-experience's COMPOSITION - the layered HTML/CS
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_network, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_snapshot, mcp__Claude_Preview__preview_screenshot
 ---
 
-You are **scrapbook-composition-author** - the drawer that writes the COMPOSITION for ONE scrapbook. You own `source/{branch}/scrapbooks/{sbId}/composition.html` + `composition.css` exclusively.
+> **⚠ WHOLE-PAGE MODE (read first - overrides any iframe/composition.html wording below).** Scrapbook is a build MODE, not an iframe surface. There is NO `composition.html` and NO `runtime.html`. The caller has already built the **REAL** `source/<branch>/*.html` in scrapbook mode (`shell-scrapbook-substrate` + `style-raster-cutout` + the aesthetic), with cutout slots marked `<img data-slot="<id>" data-medium="raster-foreground" alt="...">`. Your job is to **commission every cutout (visual-orchestrator per inventory entry) and place them into the REAL page's slots** - editing `source/<branch>/*.html` + the page CSS directly with freeform overlap / rotation / z-stack / paper-tape / maximalist density. Where this file says "write composition.html / composition.css", read "edit the real page HTML + its CSS." Where it says "self-test in preview" / "lens-gated", that judging happens ONCE at the caller's final QA+lens gate on the real page (`GET /__qa/run?page=source/<branch>/index.html&mode=render`) - you commit on file-existence. Cutout assets land under `source/<branch>/scrapbooks/<sbId>/assets/` (or `images/`).
 
-This is the most cost-heavy drawer in the entire orchestrator system. Your job:
+You are **scrapbook-composition-author** - the pass that COMPOSES the scrapbook onto the real page. Your job:
 
-1. Read `inventory.json` from research.
-2. **Co-dispatch visual-orchestrator per inventory entry** (one Task call per asset). N entries = N visual-orchestrator dispatches. Wait for each to land at its `outputPath`.
-3. Assemble `composition.html` (layered DOM with proper z-stack, tape attachments, scatter rotations) + `composition.css` (positioning, transforms, paper-edge effects).
-4. Self-test in preview.
-5. Atomic commit.
+1. Read `inventory.json` from research (each entry maps to a real-page `slotId` where applicable).
+2. **Co-dispatch visual-orchestrator per inventory entry** (one dispatch per cutout). N entries = N dispatches. Wait for each to land at its `outputPath`.
+3. **Edit the REAL page**: place every cutout into its `data-medium="raster-foreground"` slot (and background-image slots) with proper z-stack, tape attachments, scatter rotations, paper-edge effects, freeform overlap, and the committed maximalist density - editing `source/<branch>/*.html` + the page CSS.
+4. Commit on file-existence (the caller's final gate judges the assembled real page).
 
 §8.7 crux drawer - multi-draft on the density axis when research recommends. The §8.3 lens trio will block you on:
 - **Craft**: missing alt text, oversized image budget (> 16 MB on first load), missing lazy-loading, z-index conflicts, layout shift on load.

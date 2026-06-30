@@ -2,18 +2,18 @@
   "id": "scrapbook-experience-orchestrator",
   "label": "Scrapbook experience",
   "tagline": "Raster-heavy collage pieces - vaporwave, cottagecore, Y2K, lo-fi, internetcore, dreamcore, mood-board",
-  "version": "v3.4",
+  "version": "v4.0",
   "defaultEnabled": true,
-  "directionImpact": "owns-surface",
+  "directionImpact": "imposes-register",
   "subagentName": "scrapbook-experience-orchestrator",
   "playbookPath": ".claude/agents/scrapbook-experience-orchestrator.md",
-  "description": "Crafts deeply-rendered raster-collage pieces where the aesthetic LIVES IN THE IMAGERY rather than in CSS - vaporwave, internetcore, cottagecore, dreamcore, weirdcore, liminalcore, Y2K, lo-fi, mixtape-cover, zine, mood-board, lookbook, Tumblr-grade. The sixth orchestrator sibling. Inherits simulation-orchestrator's discipline (research-then-drawers shape, lens trio with loop-until-bar, multi-draft cruxes via iterator-remix, hand-off split). What changes is purpose: where sim gives understanding, im gives creative-material body, nx gives presence, and game gives agency-toward-objective - scrapbook-experience gives the user A WORLD MADE OF IMAGES. The aesthetic itself is the artefact, communicated through dense raster composition that CSS alone cannot reach. The composition drawer co-dispatches visual-orchestrator per IMAGE INVENTORY entry - this is the most visual-orchestrator-heavy of the six orchestrators. PNG sequences substitute for transparent GIFs (generated frame-by-frame and sprite-sheet-animated). Handcrafted typography is first-class: hand-lettered raster headlines + careful web font choices commissioned via visual-orchestrator. Concept-lens scores against successFeel like 'finding someone's secret Tumblr from 2008' or 'a real polaroid I forgot I took' - never generic claims. Two raster-richness minimums every interactive piece commits by default: ≥1 PNG-sequence 'key visual' that loops like a transparent GIF (the live twitch a static collage misses - a chrome bust rotating, a glitter divider sparkling, a blinking cursor) and ≥1 raster UI element with transparent background (button / nav tab / scroll arrow / marker checkbox / sticker CTA) so interactive controls match the hand-made imagery instead of breaking genre with a CSS rectangle. The research drawer enforces these via the new `ui-element` role + `minPngSequences` / `minUiRasters` envelope fields; waivable only when the brief explicitly rejects motion or interactivity.",
+  "description": "Drives the RASTER-HEAVY part of a WHOLE-PAGE scrapbook build for raster-collage aesthetics that CSS cannot reach - vaporwave, internetcore, cottagecore, dreamcore, weirdcore, liminalcore, Y2K, lo-fi, mixtape-cover, zine, mood-board, lookbook, Tumblr-grade. Scrapbook is NOT an owns-surface family and NOT an iframe - it is a build MODE: the same way you build any app/website, except the surfaces are raster cutouts instead of CSS, the layout is freeform/overlapping instead of a clean grid, and it is animated + maximalist. The caller first builds the REAL index.html in scrapbook mode (shell-scrapbook-substrate + style-raster-cutout + a named aesthetic) with cutout slots marked `<img data-medium=\"raster-foreground\">`; this orchestrator then commits a core aesthetic + IMAGE INVENTORY + motion/interaction register, cost-gates the user, and scaffolds the passes that COMMISSION every cutout (co-dispatching visual-orchestrator per inventory entry - the heaviest co-dispatch of any family) and COMPOSE them onto the real page (freeform/animated/maximalist). It writes NO runtime.html and creates NO iframe; the real page is the artefact. Inherits simulation-orchestrator's discipline (research-then-passes shape, hand-off split, single final QA+lens gate). PNG sequences substitute for transparent GIFs (frame-by-frame, sprite-sheet-animated); handcrafted raster headline strips are commissioned via visual-orchestrator. Two raster-richness minimums every interactive page commits by default: ≥1 PNG-sequence 'key visual' that loops like a transparent GIF (the live twitch a static collage misses) and ≥1 raster UI element with transparent background (button / nav tab / scroll arrow / sticker CTA) so controls match the hand-made imagery instead of breaking genre with a CSS rectangle. The research drawer enforces these via the `ui-element` role + `minPngSequences` / `minUiRasters` envelope fields; waivable only when the brief explicitly rejects motion or interactivity. interactive-polish-orchestrator runs LAST on the real page for the living touches.",
   "triggers": [
     {
       "mode": "chat",
       "title": "Raster-collage / scrapbook / internet-aesthetic piece",
-      "rule": "User wants a raster-heavy collage piece anchored to a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / internetcore / weirdcore) - where the aesthetic LIVES in the imagery and CSS alone cannot reach it. Top-level Claude scaffolds the app shell with `<iframe class=\"scrapbook-mount\" data-scrapbook=...>` slot, then dispatches scrapbook-experience-orchestrator. Same shape as simulation-orchestrator - one consistent flow.",
-      "ruleSource": "editor/kinds/capabilities.py - 'Raster-collage / scrapbook / internet-aesthetic: dispatch scrapbook-experience-orchestrator FIRST'"
+      "rule": "User wants a raster-heavy collage piece anchored to a named internet-aesthetic core (vaporwave / cottagecore / dreamcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / internetcore / weirdcore) - where the aesthetic LIVES in the imagery and CSS alone cannot reach it. Top-level Claude builds the REAL index.html in scrapbook mode (shell-scrapbook-substrate + style-raster-cutout + the aesthetic) with cutouts marked `<img data-medium=\"raster-foreground\">` - NO iframe - then dispatches scrapbook-experience-orchestrator to commission the cutouts + compose them onto the real page.",
+      "ruleSource": "editor/kinds/capabilities.py - 'Raster-collage / scrapbook / internet-aesthetic: build the WHOLE PAGE in scrapbook mode (NOT an iframe)'"
     }
   ],
   "dispatches": {
@@ -24,8 +24,7 @@
       "scrapbook-composition-author",
       "scrapbook-typography-author",
       "scrapbook-motion-author",
-      "scrapbook-interactions-author",
-      "scrapbook-runtime-composer"
+      "scrapbook-interactions-author"
     ],
     "collaborators": [
       "visual-orchestrator"
@@ -38,16 +37,13 @@
   },
   "skills": [],
   "nodeKinds": {
-    "container": [
-      "scrapbook-experience"
-    ],
+    "container": [],
     "agent_overrides": [
       "sb_research_*",
       "sb_composition_*",
       "sb_typography_*",
       "sb_motion_*",
       "sb_interactions_*",
-      "sb_runtime_*",
       "cp_sb_gate_*"
     ]
   },

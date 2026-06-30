@@ -776,17 +776,20 @@ KINDS = {
                     "leaks, ≤50ms hover response, touch-action correctness)."
                 ),
             },
+            # DEPRECATED as of v4.0: scrapbook is a whole-page build mode, so there
+            # is no iframe runtime.html. The real source/<branch>/index.html is the
+            # artefact; the composition/typography/motion/interactions passes edit it
+            # directly. Kept registered for back-compat with any pre-v4 scaffold.
             "sb_runtime_": {
                 "outputsRoot": "source/{prototype}/scrapbooks/{sbId}/runtime.html",
                 "completion": {"requires": [
                     "files: runtime.html exists, non-empty",
                 ]},
                 "notes": (
-                    "Composed runtime - inlines composition + typography + "
-                    "motion + interactions; wires Google Fonts; sets pacing. "
-                    "§8.7 crux - 3-draft remix on pacing axis (calm-browse "
-                    "/ scroll-revelation / interactive-discovery). Full lens "
-                    "trio - this IS the composed user-facing artefact."
+                    "DEPRECATED (v4.0) - no iframe runtime under whole-page mode. "
+                    "Formerly: composed runtime inlining composition + typography "
+                    "+ motion + interactions. The real index.html is now the "
+                    "artefact; the passes edit it directly. Kept for back-compat."
                 ),
             },
 
@@ -2387,16 +2390,16 @@ KINDS = {
         ),
     },
 
-    # ── scrapbook-experience (v3.3 - sixth sibling of simulation/interactive/narrative/game)
-    # The user-facing artefact container for one raster-heavy collage piece.
-    # Aesthetic categories: vaporwave / internetcore / cottagecore / dreamcore /
-    # weirdcore / Y2K / lo-fi / mixtape / zine / mood-board / lookbook / hybrid.
-    # The composition drawer co-dispatches visual-orchestrator per
-    # IMAGE INVENTORY entry - this is the most visual-orchestrator-heavy container
-    # in the system. PNG sequences substitute for transparent GIFs (each frame
-    # = one visual-orchestrator sub-dispatch). See `scrapbook-experience-orchestrator.md`.
+    # ── scrapbook-experience (DEPRECATED as of v4.0 - kept registered for back-compat only)
+    # Scrapbook is now a whole-page BUILD MODE, not an owns-surface iframe container.
+    # The real source/<branch>/index.html (built via shell-scrapbook-substrate +
+    # style-raster-cutout + the aesthetic) IS the artefact; the scrapbook orchestrator
+    # commissions cutouts + composes them onto the real page and creates NO iframe and
+    # NO runtime.html. This container kind is no longer created by the orchestrator;
+    # it remains registered so any pre-v4 scaffold still renders. See
+    # `scrapbook-experience-orchestrator.md` (§"Scrapbook is a BUILD MODE").
     "scrapbook-experience": {
-        "title":        "Scrapbook experience (live iframe)",
+        "title":        "Scrapbook experience (DEPRECATED - whole-page build mode now)",
         "category":     "container",
         "inputs": {
             "sbId":              {"type": "text",   "userEditable": False, "required": True},

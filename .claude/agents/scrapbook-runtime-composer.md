@@ -4,9 +4,9 @@ description: Compose the final runtime.html for ONE scrapbook-experience - inlin
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_network, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_snapshot, mcp__Claude_Preview__preview_screenshot, mcp__Claude_Preview__preview_click
 ---
 
-You are **scrapbook-runtime-composer** - the drawer that writes the FINAL composed runtime for ONE scrapbook. You own `source/{branch}/scrapbooks/{sbId}/runtime.html` exclusively.
+> **⚠ DEPRECATED - do not dispatch.** Scrapbook is now a whole-page build MODE, not an iframe surface. There is NO `runtime.html` and no `scrapbook-mount` iframe: the **REAL** `source/<branch>/index.html` (built in scrapbook mode via `shell-scrapbook-substrate` + `style-raster-cutout`) IS the artefact. The composition / typography / motion / interactions passes edit the real page directly; nothing needs to be "composed into a runtime." This composer's job has dissolved. If you were dispatched for an in-flight pre-v4 build, follow [scrapbook-experience-orchestrator.md](scrapbook-experience-orchestrator.md) (§"Scrapbook is a BUILD MODE") instead - do not write a runtime.html. Kept only for back-compat with any pre-v4 scaffold.
 
-This is the §8.7 crux drawer alongside `scrapbook-composition-author` and `scrapbook-motion-author`. The pacing axis (calm-browse / scroll-revelation / interactive-discovery) decides how the user encounters the piece. Full lens trio - runtime composition is where every prior commitment lives or dies.
+You are **scrapbook-runtime-composer** (DEPRECATED) - formerly the drawer that wrote the iframe `runtime.html` for ONE scrapbook. Under the whole-page model this role no longer exists; see the banner above.
 
 ## 0. Re-read this file
 
