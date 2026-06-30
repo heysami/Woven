@@ -8134,6 +8134,70 @@ function prototypeSlugForNode(node) {
   return sub ? `${branch}/${sub}` : branch;
 }
 
+// Resolve which prototype slug a single workflow node "belongs" to, for chat
+// targeting: a prototype node → its own slug; a frames/host node → its branch;
+// any node whose `path` lives under source/<slug>/ → that slug; else null.
+function nodeTargetSlug(node) {
+  if (!node) return null;
+  if (node.kind === "prototype") return prototypeSlugForNode(node);
+  if (node.branch || node.prototype) return nodePrototype(node);
+  const m = /(?:^|\/)source\/([A-Za-z0-9_.-]+)\//.exec(node.path || "");
+  return m ? m[1] : null;
+}
+
+// Build a display summary of the current canvas selection for the chat target
+// bar. Orders the selection so the prototype/html (prototype-bearing) node is
+// the "primary" chip and the rest collapse to "+N others". Returns null when
+// nothing is selected. sel = selectionRef.current ({ selectedIds, nodes }).
+function summarizeChatSelection(sel) {
+  const ids = sel && sel.selectedIds;
+  const nodes = (sel && sel.nodes) || [];
+  if (!ids || !ids.size) return null;
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const picked = Array.from(ids).map(id => byId.get(id)).filter(Boolean);
+  if (!picked.length) return null;
+  // rank: prototype first, then frames, then path-bearing (html/asset) nodes,
+  // then everything else - so the chip the user cares about leads.
+  const rank = (n) => n.kind === "prototype" ? 0
+    : n.kind === "frames" ? 1
+    : (/(?:^|\/)source\/[^/]+\//.test(n.path || "") ? 2 : 3);
+  picked.sort((a, b) => rank(a) - rank(b));
+  const p = picked[0];
+  const slug = nodeTargetSlug(p);
+  const label = p.kind === "prototype" ? (slug || "prototype")
+    : (p.title || p.name || (slug ? `${slug} file` : p.kind));
+  return {
+    count: picked.length,
+    primaryKind: p.kind,
+    primaryLabel: label,
+    primarySlug: slug,
+    others: picked.length - 1,
+  };
+}
+
+// Resolve the build target slug the chat should edit. Selection wins (a
+// prototype-bearing node in the current selection); otherwise the user's
+// explicit dropdown override; otherwise null = "the whole project / workflow
+// in general" (no per-prototype scope injected). sel = selectionRef.current.
+function resolveChatTargetSlug(sel, override) {
+  const ids = sel && sel.selectedIds;
+  const nodes = (sel && sel.nodes) || [];
+  if (ids && ids.size) {
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    const picked = Array.from(ids).map(id => byId.get(id)).filter(Boolean);
+    for (const kindWanted of ["prototype", "frames", null]) {
+      for (const n of picked) {
+        if (kindWanted && n.kind !== kindWanted) continue;
+        const s = nodeTargetSlug(n);
+        if (s) return s;
+      }
+    }
+    // Selection exists but none of it is prototype-bearing → fall through to
+    // the override / general scope rather than guessing a prototype.
+  }
+  return override || null;
+}
+
 // v3.4.24 - Shared Lottie player srcdoc. Loads the file, sets up the
 // animation with autoplay=false, and listens for postMessage commands
 // {type:"play"|"pause"} from the parent so the canvas card / library
@@ -11881,7 +11945,7 @@ function chatStatusReducer(prev, ev) {
 // `variant` (optional) adds a `chat-drawer-<variant>` class to the root for
 // surface-specific layout. Workflow mode passes "dock" so the panel docks
 // BELOW the workflow bar instead of overlaying the full viewport height.
-function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart, variant }) {
+function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("connecting");   // connecting | streaming | done | fail | error
   const [error, setError] = useState(null);
@@ -12657,9 +12721,10 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <div className="chat-header">
         <div className="chat-title-group">
           <span className="chat-title">${run.title || "Agent run"}</span>
+          ${run.turnsCompleted > 0 && html`
           <span className="chat-meta">
-            ${run.branch || "main"}${run.turnsCompleted > 0 ? ` · ${run.turnsCompleted} turn${run.turnsCompleted === 1 ? "" : "s"}` : ""}
-          </span>
+            ${run.turnsCompleted} turn${run.turnsCompleted === 1 ? "" : "s"}
+          </span>`}
         </div>
         <div className="chat-status-group">
           <${ChatStatusChip} status=${status} error=${error}/>
@@ -12742,6 +12807,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
+        targetBar=${targetBar}
         runStatus=${status}
         onStop=${stopRun}
         toolbarLeft=${html`
@@ -12914,7 +12980,7 @@ async function __loadSlashSkills() {
   return items;
 }
 
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -13664,6 +13730,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           e.target.value = "";
         }}
       />
+      ${targetBar}
       <div className="chat-composer-input-wrap" style=${{ position: "relative", minWidth: 0 }}>
         <textarea
           ref=${taRef}
@@ -23800,6 +23867,55 @@ function _stableEqual(a, b) {
   try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }
 
+// Chat target bar - rendered just above the workflow chat textarea. Two
+// states: (a) something selected on the canvas → show what the chat will act
+// on, prototype/html node first then "+N others"; (b) nothing selected → an
+// explicit prototype dropdown (default "Whole project" = talk about the
+// project / workflow in general). The resolved scope is injected into the
+// chat prompt by spawnWorkflowChat so the agent never silently defaults to
+// the wrong prototype. See [[woven-canvas-chat-prototype-target]].
+function WorkflowChatTargetBar({ summary, override, onChangeOverride }) {
+  const [protos, setProtos] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    fetch(apiUrl("/__source_prototypes"))
+      .then(r => (r.ok ? r.json() : { prototypes: [] }))
+      .then(j => { if (alive) setProtos((j && j.prototypes) || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (summary && summary.count > 0) {
+    const kindTag = summary.primaryKind === "prototype" ? "prototype"
+      : summary.primaryKind === "frames" ? "frames"
+      : summary.primarySlug ? "file" : summary.primaryKind;
+    return html`
+      <div className="chat-target chat-target-sel" title=${`The chat will act on your current selection${summary.primarySlug ? ` (prototype ${summary.primarySlug})` : ""}.`}>
+        <span className="chat-target-label">Editing</span>
+        <span className="chat-target-chip" data-kind=${summary.primaryKind}>
+          <span className="chat-target-chip-tag">${kindTag}</span>
+          <span className="chat-target-chip-name">${summary.primaryLabel}</span>
+        </span>
+        ${summary.others > 0 && html`<span className="chat-target-more">+${summary.others} other${summary.others === 1 ? "" : "s"}</span>`}
+      </div>
+    `;
+  }
+  const ids = protos.map(p => p.id);
+  return html`
+    <div className="chat-target chat-target-pick" title="Nothing selected - choose which prototype this chat is about, or leave it on the whole project.">
+      <span className="chat-target-label">Talking about</span>
+      <select
+        className="chat-target-select"
+        value=${override || ""}
+        onChange=${(e) => onChangeOverride(e.target.value || null)}
+        aria-label="Choose the prototype this chat targets"
+      >
+        <option value="">Whole project (general)</option>
+        ${ids.map(id => html`<option key=${id} value=${id}>${id}</option>`)}
+      </select>
+    </div>
+  `;
+}
+
 function WorkflowCanvas() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -24085,6 +24201,23 @@ function WorkflowCanvas() {
   // v2.9b - reactive mirror of the selection size for UI hints (Send-button
   // badge, etc.). Ref-only would force the badge to miss re-renders.
   const [selectionCount, setSelectionCount] = useState(0);
+  // Reactive selection summary for the chat target bar (prototype/html node
+  // first, then "+N others"). Computed from selectionRef the moment the
+  // surface reports a selection change.
+  const [selectionSummary, setSelectionSummary] = useState(null);
+  // Explicit prototype override the user picks from the target dropdown when
+  // NOTHING is selected. null = whole project / workflow in general. Mirrored
+  // into a ref so spawnWorkflowChat (a stable useCallback) reads it live.
+  const [chatTargetOverride, setChatTargetOverride] = useState(null);
+  const chatTargetOverrideRef = useRef(null);
+  const setChatTargetOverrideBoth = useCallback((slug) => {
+    chatTargetOverrideRef.current = slug || null;
+    setChatTargetOverride(slug || null);
+  }, []);
+  const onWorkflowSelectionChange = useCallback((count) => {
+    setSelectionCount(count);
+    setSelectionSummary(summarizeChatSelection(selectionRef.current));
+  }, []);
 
   const openWorkflowChat = useCallback(() => {
     // Called when the user clicks "+ New chat" inside RunsMenu. Just stages
@@ -24115,13 +24248,24 @@ function WorkflowCanvas() {
     // "that node", "these prompts" etc. against the actual canvas state.
     // Empty selection = empty block = current behaviour.
     const selectionBlock = formatSelectionContext(selectionRef.current);
+    // Resolve the prototype this chat edits: selected prototype/html node wins,
+    // else the explicit dropdown override, else null = whole-project / general.
+    // When a slug resolves we inject an UNAMBIGUOUS source/<slug>/ scope so the
+    // agent can never silently default to the wrong prototype (the bug this
+    // bar fixes). See [[woven-canvas-chat-prototype-target]].
+    const targetSlug = resolveChatTargetSlug(selectionRef.current, chatTargetOverrideRef.current);
+    const targetBlock = targetSlug ? [
+      `<chat-target prototype="${targetSlug}">`,
+      `The user is working on prototype \`${targetSlug}\`. Its source lives at \`source/${targetSlug}/\`. Any edit to this prototype's source files for this request MUST be written under \`source/${targetSlug}/\` (and that prototype's editor data file per the daemon rule) - do NOT edit a different prototype's source/ tree. If the request is clearly about the canvas / workflow nodes in general rather than this prototype's files, you may ignore this scope.`,
+      `</chat-target>`,
+    ].join("\n") : "";
     // Whiteboard context - included ONLY while whiteboard mode is active.
     // Build-mode chats never see wb content (committed product decision:
     // the whiteboard is invisible to agents during normal build work).
     const wbBlock = (selectionRef.current && selectionRef.current.wbMode)
       ? formatWbContext(selectionRef.current)
       : "";
-    const userText = [selectionBlock, wbBlock, text].filter(Boolean).join("\n\n");
+    const userText = [targetBlock, selectionBlock, wbBlock, text].filter(Boolean).join("\n\n");
     // Wrap with workflow-mode preamble; the agent reads the context line and
     // anchors its responses on the node-canvas surface (not the data files).
     const wrappedPrompt = composeModeAwarePrompt("workflow", userText);
@@ -25094,7 +25238,7 @@ function WorkflowCanvas() {
       }}
       onReopenRun=${reopenWorkflowRun}
       selectionRef=${selectionRef}
-      onSelectionCountChange=${setSelectionCount}/>
+      onSelectionCountChange=${onWorkflowSelectionChange}/>
     ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
     <${RightDock}
       floating
@@ -25123,6 +25267,7 @@ function WorkflowCanvas() {
         onPermissionModeChange=${onChatPermissionModeChange}
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
+        targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} />`}
       />`}
     />
   <//>`;
