@@ -2,7 +2,7 @@
   "mcpServers": {
     "chrome": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"]
+      "args": ["-y", "chrome-devtools-mcp@latest", "--headless", "--isolated"]
     },
     "figma": {
       "command": "npx",

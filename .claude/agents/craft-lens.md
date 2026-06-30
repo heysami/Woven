@@ -44,7 +44,9 @@ reportPath:     "source/main/QUALITY_REPORT.json"  (or QUALITY_REPORT_im.json fo
 === END ENVELOPE ===
 ```
 
-`componentKind` is always `runtime` now: you judge the whole assembled runtime, not a single drawer's output. `artefactPath` is the assembled `source/<branch>/<family-dir>/<slotId>/runtime.html`. Prefer `runtimeUrl` for live checks (fps, console, network, input latency) - it is the running assembled piece; fall back to `preview_start` on `artefactPath` if `runtimeUrl` is absent.
+`componentKind` is always `runtime` now: you judge the whole assembled runtime, not a single drawer's output. `artefactPath` is the assembled `source/<branch>/<family-dir>/<slotId>/runtime.html`. Prefer `runtimeUrl` for live checks (fps, console, network, input latency) - it is the running assembled piece.
+
+**The `preview_*` tools are often absent here - use `/__qa/run` instead.** This runtime frequently has no Claude Preview MCP and the chrome-devtools-mcp handshake races a timeout (`preview_start` → "No such tool available"). That is NOT a reason to skip checks or pass off plumbing. The daemon's own headless QA drives real Chrome via Playwright with no MCP: `curl -fsS "$TH_DAEMON_URL/__qa/run?mode=render&page=<runtime source path>&project=$TH_PROJECT_ID"` returns captured frames + `consoleErrors` + `pageErrors`. **Read the returned `idleFrames[].path` PNGs** for the visual checks and use its console/error fields for the craft checks. Only use `preview_*` if actually connected. A craft verdict that never loaded a real rendered frame is invalid.
 
 You read **only** these inputs plus your own playbook. Do NOT read other slots, other lenses' verdicts, the PRD, the editor source, or anything else.
 

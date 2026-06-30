@@ -46,7 +46,9 @@ reportPath:     "source/main/QUALITY_REPORT.json"
 === END ENVELOPE ===
 ```
 
-`componentKind` is always `runtime` now: you always judge the whole assembled runtime, the user-facing artefact. Use `runtimeUrl` to load and drive the running piece (fall back to `preview_start` on `artefactPath`).
+`componentKind` is always `runtime` now: you always judge the whole assembled runtime, the user-facing artefact. Use `runtimeUrl` to load and drive the running piece.
+
+**The `preview_*` tools are often absent here - use `/__qa/run` instead.** This runtime frequently has no Claude Preview MCP and the chrome-devtools-mcp handshake races a timeout (`preview_start` → "No such tool available"). That is NOT a reason to skip the judgment. The daemon's own headless QA drives real Chrome via Playwright with no MCP: `curl -fsS "$TH_DAEMON_URL/__qa/run?mode=interactive&node=<containerId>&project=$TH_PROJECT_ID"` (or `mode=render&page=...`) captures frames and simulates input. **Read the returned `idleFrames[].path` PNGs with the Read tool** to judge whether the concept actually lands. Only use `preview_*` if actually connected. A concept verdict written without looking at a real rendered frame is invalid.
 
 You read **only** these inputs plus your own playbook. Do NOT read the PRD beyond what's in the envelope, do not read other slots, do not read other lenses' verdicts.
 

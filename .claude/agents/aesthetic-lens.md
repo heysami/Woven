@@ -46,7 +46,15 @@ referenceUrls:  ["https://...","https://..."]   # from creativeBrief.references 
 === END ENVELOPE ===
 ```
 
-`componentKind` is always `runtime` now: you judge the whole composed frame, not a single drawer's output. Screenshot the running piece via `runtimeUrl` (fall back to `preview_start` on `artefactPath`). Read `artefactPaths` source only for technical/style antiPattern greps and audio-graph inspection.
+`componentKind` is always `runtime` now: you judge the whole composed frame, not a single drawer's output. Read `artefactPaths` source only for technical/style antiPattern greps and audio-graph inspection.
+
+**How you actually get the screenshot (READ THIS - the `preview_*` tools are often absent here).** This runtime frequently has NO Claude Preview MCP and the chrome-devtools-mcp handshake races a timeout, so `preview_start` / `preview_screenshot` may return "No such tool available." That is NOT a reason to skip the visual judgment or pass off plumbing. Your PRIMARY screenshot path is the daemon's own headless QA, which drives real Chrome via Playwright and needs no MCP:
+
+```bash
+curl -fsS "$TH_DAEMON_URL/__qa/run?mode=render&page=<the runtime's source path>&project=$TH_PROJECT_ID"   # or node=<containerId>
+```
+
+Then **open the returned `idleFrames[].path` PNGs with the Read tool and judge the actual pixels** - that IS your screenshot. Use `preview_screenshot` only if it is actually connected; otherwise everywhere this doc says "screenshot / preview_screenshot / preview_eval", get the frame from `/__qa/run` instead. A verdict written without having LOOKED at a real rendered frame is invalid - never pass a runtime off HTTP-200 / clean-console plumbing.
 
 You read **only** these inputs plus your own playbook. Do NOT read the PRD, the editor source, other slots, other lenses' verdicts, or the wider project.
 

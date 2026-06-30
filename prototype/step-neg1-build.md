@@ -175,9 +175,19 @@ Standard source-write per `docs/agents/subagents/1-source.md`:
 
 `prototype.json` is written per the AGENTS.md schema (frames / arrows / lanes / entities) - same flow as the prior pipeline, the Step -1 ask doesn't change it.
 
-## Phase D - Render-verify
+## Phase D - Render-verify (VISUAL confirmation is mandatory, not plumbing)
 
-Standard: every authored HTML opens and renders without console errors, navigation works, demo data is non-undefined. Fix any errors before Phase E. Screenshot or eval-snapshot to confirm clean state.
+**HTTP 200 + a clean console is NECESSARY but NOT SUFFICIENT.** "index returned 200, styles.css 200, no console errors" is plumbing - it does not prove the page actually rendered the intended content. A page can 200 with clean console and still paint a blank wash (CSS @imports resolved to nothing, JS bailed silently, content container empty). You MUST look at the pixels.
+
+For EVERY authored page, verify visually through the daemon's headless QA - which works without any MCP/preview tool (it drives real Chrome via Playwright itself):
+
+```bash
+curl -fsS "$TH_DAEMON_URL/__qa/run?mode=render&page=source/<branch>/<file>.html&project=$TH_PROJECT_ID"
+```
+
+Then **READ the captured frame PNGs it returns** (the `idleFrames[].path` images - open them with the Read tool) and confirm with your own eyes: the page shows the intended content, the layout is composed (not a blank/unstyled wash - `/__qa/run` flags `blank`, but you still LOOK), and the load-bearing text (nav, titles, buttons) is comfortably readable. Optionally add `&judge=<what should be on screen>` for a vision-LLM "did the right thing render?" check. A page that is `blank`, half-painted, or visibly broken is a FAIL even if it 200'd cleanly - fix it before Phase E.
+
+Do NOT reach for `preview_start` / the Chrome MCP first: those tools are frequently absent in this runtime (the daemon spawn often has no preview MCP and the chrome-devtools-mcp handshake races a timeout), and a missing tool is NOT a reason to skip verification or to fall back to plumbing-only. `/__qa/run` is the path that always works here; use it, read the frames, and never report "verified" off HTTP status alone.
 
 ## Phase E - Post-build orchestrator dispatch
 

@@ -4195,6 +4195,45 @@ def _history_sweep_orphans(project_root: str) -> int:
         removed += 1
     return removed
 
+# Orphaned automation-browser reaper. chrome-devtools-mcp (puppeteer "Chrome for
+# Testing") and Playwright launch real browsers; when their launcher (the MCP
+# server / a QA run) dies, the browser reparents to init (ppid 1) and lingers
+# forever - visible windows pile up across runs. Such a process is ALWAYS leaked
+# (no live owner) and ALWAYS lives under an automation cache dir, so reaping
+# ppid==1 processes whose argv points at the puppeteer / ms-playwright caches is
+# safe: the user's real Chrome lives in /Applications and is never matched, and an
+# in-flight browser still has a live parent (ppid != 1) so it is never touched.
+_AUTOMATION_BROWSER_MARKERS = ("/.cache/puppeteer/", "/ms-playwright/")
+
+def _sweep_orphan_automation_browsers() -> int:
+    """Kill orphaned (ppid==1) puppeteer/playwright browsers leaked by dead MCP
+    servers or QA runs. Best-effort; never raises. macOS/Linux only."""
+    if not sys.platform.startswith(("darwin", "linux")):
+        return 0
+    try:
+        out = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,command="],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10
+        ).stdout.decode("utf-8", "replace")
+    except Exception:
+        return 0
+    killed = 0
+    for line in out.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid_s, ppid_s, cmd = parts
+        if ppid_s != "1":                       # only true orphans (launcher dead)
+            continue
+        if not any(m in cmd for m in _AUTOMATION_BROWSER_MARKERS):
+            continue
+        try:
+            os.kill(int(pid_s), signal.SIGTERM)
+            killed += 1
+        except Exception:
+            pass
+    return killed
+
 def _history_run_snapshot_before(project_root: str):
     """Snapshot the bounded scope to .history/<id>/before/. Returns the
     pending entry id + the captured rows (for diffing on finish).
@@ -4207,6 +4246,14 @@ def _history_run_snapshot_before(project_root: str):
         n = _history_sweep_orphans(project_root)
         if n:
             print(f"[history] swept {n} orphaned snapshot dir(s) in {project_root}", flush=True)
+    except Exception:
+        pass
+    # Reap orphaned automation browsers (Chrome for Testing / Playwright) leaked
+    # by prior runs whose MCP server or QA process died. Same self-healing shape.
+    try:
+        b = _sweep_orphan_automation_browsers()
+        if b:
+            print(f"[mcp] reaped {b} orphaned automation browser(s)", flush=True)
     except Exception:
         pass
     eid = _history_new_id()
@@ -8378,6 +8425,14 @@ def _evict_base_url(upstream=None):
 
 def _build_child_env(agent_id: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
     env = dict(os.environ)
+    # MCP startup headroom. chrome-devtools-mcp (npx cold-resolve + a real Chrome
+    # launch) can take many seconds to finish its initialize/tools-list handshake;
+    # the CLI's default MCP startup timeout often expires first, so the server is
+    # dropped (its tools never register) even though it kept running and opened a
+    # browser - the "launched but No such tool available" race. Give the handshake
+    # room so the chrome tools actually register. Only set when the user hasn't.
+    env.setdefault("MCP_TIMEOUT", "60000")
+    env.setdefault("MCP_TOOL_TIMEOUT", "120000")
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
     if not preserve or preserve == "0":
         for k in _HOST_LEAK_ENV_VARS:
