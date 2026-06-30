@@ -1,6 +1,6 @@
 ---
 name: art-director-orchestrator
-description: PRE-BUILD art-direction orchestrator - the ONE orchestrator that runs BEFORE /prototype writes source, not after. Generates a real raster NORTH-STAR PLATE (or a small candidate set) of the intended total visual world - UI chrome AND imagery composed together as one frame - then VISUALLY INSPECTS the pixels and composes an `art-direction-contract.json` that becomes the single source of truth every downstream step reads: the /prototype build (tokens / layout / type / components / motion), the illustration / photography / visual orchestrators (palette + register + material), material-orchestrator (material character), and the final aesthetic-lens gate (cross-register coherence diff). The contract captures DESIGN PRINCIPLES extracted from the plate - composition, rhythm, colour ratios, value structure, material logic, the visual ingredients - NOT a pixel target; the prototype must inherit the plate's design DNA, never replicate its literal subject / layout / copy. Also RECONCILES the contract to the plate the model ACTUALLY rendered: matches authored typography to the observed letterform construction (width / weight / axis - e.g. swaps a static `Archivo Black` for a condensed/expanded variant when the plate reads that way), and, when the image model is image-to-image capable, crops + bg-removes the items the plate depicts into reference images the downstream generators condition on so shipped assets track the approved sample. HARD-GATED on raster image generation: if no image-gen model is wired, this orchestrator FAILS and does not run (the build falls back to today's text-only aesthetic). Surfaces the plate(s) for human approve / steer / regenerate BEFORE any build tokens are spent. Cold-isolated per project.
+description: PRE-BUILD art-direction orchestrator - the ONE orchestrator that runs BEFORE /prototype writes source, not after. Generates a real raster NORTH-STAR PLATE (or a small candidate set) of the intended total visual world - UI chrome AND imagery composed together as one frame - then VISUALLY INSPECTS the pixels and composes an `art-direction-contract.json` that becomes the single source of truth every downstream step reads: the /prototype build (tokens / layout / type / components / motion), the illustration / photography / visual orchestrators (palette + register + material), material-orchestrator (material character), and the final aesthetic-lens gate (cross-register coherence diff). The contract captures DESIGN PRINCIPLES extracted from the plate - composition, rhythm, colour ratios, value structure, material logic, the visual ingredients - NOT a pixel target; the prototype must inherit the plate's design DNA, never replicate its literal subject / layout / copy. Also RECONCILES the contract to the plate the model ACTUALLY rendered: matches authored typography to the observed letterform construction (width / weight / axis - e.g. swaps a static `Archivo Black` for a condensed/expanded variant when the plate reads that way), and, AFTER the user picks a plate at the cost gate and when the image model is image-to-image capable, crops + bg-removes the items the CHOSEN plate depicts into reference images the downstream generators condition on so shipped assets track the approved sample (no cropping happens before the pick). HARD-GATED on raster image generation: if no image-gen model is wired, this orchestrator FAILS and does not run (the build falls back to today's text-only aesthetic). Surfaces the plate(s) for human approve / steer / regenerate BEFORE any build tokens are spent. Cold-isolated per project.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 ---
 
@@ -168,19 +168,21 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
   },
 
   "itemReferences": [
-    // §3.2 - ONE entry per concrete ITEM the plate depicts that maps to a planned image
-    // slot (a specific sticker, the chrome star, a mascot, an album object). Produced by
-    // detect(self-inspect)→crop→rembg from the plate. POPULATED ONLY when the project's
-    // image model is image-to-image capable (provider=openai, gpt-image-1 family); EMPTY
-    // otherwise - downstream keeps the text path. Rides the existing v3.6 reference channel.
+    // LEAVE THIS [] IN PHASE B. It is populated ONLY in §4.5 - AFTER the user picks a
+    // plate at the §4 gate, and ONLY from the CHOSEN plate. Cropping in Phase B (before
+    // the pick) wastes work on a plate the user may reject and spends before the cost gate
+    // the orchestrator exists to honour. POPULATED ONLY when the project image model is
+    // i2i-capable (provider=openai, any gpt-image-* incl. the default gpt-image-2); stays [] otherwise (text path).
+    // Shape of each entry once §4.5 fills it (refs live under source/ - the only tree the
+    // gen endpoint writes AND the only tree downstream i2i can read as input_path):
     {
       "itemId": "sticker-chrome-star",
-      "refPath": "workflow/artdirection/refs/sticker-chrome-star.png",   // cropped + bg-removed, AS the plate drew it
-      "matchesSlots": ["sticker-chrome-star", "merch-charm"],            // slot ids / intents the downstream enricher binds this ref to
+      "refPath": "source/<branch>/_artdir_refs/sticker-chrome-star.png",  // cropped + bg-removed, AS the plate drew it
+      "matchesSlots": ["sticker-chrome-star", "merch-charm"],             // slot ids / intents the downstream enricher binds this ref to
       "bboxNote": "top-right chrome star in north-star-2.png",
       "instruction": "downstream sets this as refImagePath / input_path so the generated asset matches the plate's own rendering, not a text re-description"
     }
-    // ... one per depicted item that maps to a slot; [] when the model is not i2i-capable
+    // ... one per depicted item that maps to a slot; [] when not i2i-capable OR pre-pick
   ],
 
   "surfaceContracts": {
@@ -216,28 +218,11 @@ The image model draws the headline in whatever letterforms it invents - frequent
 2. **RESOLVE** `authored.typography.familyResolution` to the web-available family + variant/axis that realises that construction. If the named family has no matching axis, switch to the sibling that does: a static `Archivo Black` has no width axis, so a condensed-tall plate resolves to `Archivo` variable at high weight + reduced width (`wght 800 / wdth 75`), or `Archivo Narrow`; an extended plate resolves to `Archivo Expanded`. Same logic for round / italic / high-contrast reads - pick the variant, not the abstract name.
 3. If no web font matches the observed construction, say so in `constructionMatch` and pick the nearest - **never silently keep the standard-width family** while the plate ships condensed. The scale / tracking / line-height / case stay authored; only the family + variant is now construction-bound.
 
-### 3.2 Crop the plate's own items as reference images for downstream gen
+### 3.2 Item-reference crops are DECLARED here, PRODUCED after the gate (§4.5)
 
-When the plate depicts a concrete ITEM that a planned image slot will also render (a specific sticker, the chrome star, a mascot, an album object), do not make the downstream generator re-invent it from a text description - hand it the plate's own rendering as a reference image so the shipped asset tracks the approved sample closely.
+When the plate depicts a concrete ITEM that a planned image slot will also render (a specific sticker, the chrome star, a mascot, an album object), the downstream generator can take the plate's own rendering of that item as an i2i reference instead of re-inventing it from text - so the shipped asset tracks the approved sample.
 
-**GATED on an image-to-image-capable model.** This rides the same channel as the v3.6 character-reference path: provider `openai`, gpt-image-1 family (any other model 400s on an input image). Check the committed `imageModel`; if it is **not** i2i-capable, skip §3.2 entirely and leave `itemReferences: []` - downstream keeps the text path, nothing breaks.
-
-For each depicted item that maps to a slot:
-
-1. **Detect** - you already inspected the plate in §3, so name the item's bounding box in plate pixels from that inspection. You are the detector; no separate endpoint is needed.
-2. **Crop** tight to the item:
-   ```bash
-   python3 -c "from PIL import Image; Image.open('workflow/artdirection/north-star-<chosen>.png').crop((L,T,R,B)).save('/tmp/<itemId>.png')"
-   ```
-3. **Background-remove** through the existing transform route (same URL as generation):
-   ```bash
-   curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
-     "skill":"rembg","provider":"local","model":"u2net",
-     "input_path":"/tmp/<itemId>.png","output":"workflow/artdirection/refs/<itemId>.png"}'
-   ```
-4. **Record** it in the contract's `itemReferences[]` with the slot ids / intents it binds to.
-
-This is producer-only: downstream already consumes it end-to-end - the illustration / photography enricher copies `refPath` into the slot's `refImagePath`, `visual-orchestrator` carries it on the skill node (`refImagePath` / `refMode`), and `raster-foreground` POSTs it as `input_path` to the i2i edit endpoint. You add no new plumbing. A human can adjust any crop bound at the §4 gate before the build spends image budget.
+**But do NOT crop anything in Phase B.** Cropping is real work (file writes + a rembg call) and must not run before the user has picked a plate - it would spend on the agent's *recommended* plate, which the user may reject, and it would spend *before* the §4 cost gate this orchestrator exists to honour. So here in Phase B you only **note in prose** which depicted items look like good i2i references (and on which plate), as part of your steer summary at the gate. Leave `itemReferences: []` in the contract. The crops are produced in **§4.5, after the pick, from the CHOSEN plate only** - and only when the image model is i2i-capable. If the model is not i2i-capable, there is nothing to note and §4.5 is skipped entirely.
 
 ## 4. Phase C - human steerage gate (§12.5) - BEFORE the build spends anything
 
@@ -278,6 +263,29 @@ Wait for `[decision:art_direction_<projectId>] <value> - <label>`:
 - `reject` → `runStatus: error` with a benign `runError`; the build proceeds text-only as today.
 
 A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never fall back to `<decision-request>`. Approval covers THIS build pass.
+
+## 4.5 Phase C.5 - produce item-reference crops from the CHOSEN plate (AFTER approval only)
+
+Runs ONLY after the §4 gate returned `plate-<n>` (a real pick). Skip entirely on `steer` (re-runs the gate) and `reject`. Skip entirely when the project image model is not i2i-capable (provider `openai`, gpt-image-1 family - any other model 400s on an input image). When skipped, `itemReferences` stays `[]` and downstream keeps the text path - nothing breaks.
+
+This is the producer step for `itemReferences[]`. It operates on the **chosen** plate (`platePath`), never on a candidate the user didn't pick. For each item the chosen plate depicts that maps to a planned image slot:
+
+1. **Detect** - you already inspected the plate, so name the item's bounding box in plate pixels from that inspection. You are the detector; no separate endpoint is needed.
+2. **Crop** tight to the item, writing UNDER `source/` (the gen endpoint only reads/writes there):
+   ```bash
+   python3 -c "from PIL import Image; Image.open('$TH_PROJECT_ROOT/workflow/artdirection/north-star-<chosen>.png').crop((L,T,R,B)).save('$TH_PROJECT_ROOT/source/<branch>/_artdir_refs/<itemId>.raw.png')"
+   ```
+3. **Background-remove** via the transform route. **Both `input_path` and `output` are project-root-relative and MUST be under `source/`** (`editor/serve.py` - output must start with `source/`, input is `_safe_join`'d from project root); there is no `/tmp` and no `workflow/` write path here:
+   ```bash
+   curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+     "skill":"rembg","provider":"local","model":"u2net",
+     "input_path":"source/<branch>/_artdir_refs/<itemId>.raw.png",
+     "output":"source/<branch>/_artdir_refs/<itemId>.png"}'
+   ```
+4. **Verify the crop landed on the right item** before trusting it - a bad bbox wastes the reference. Read back one or two of the `.png` outputs and confirm they show the intended item cleanly; re-crop with a corrected bbox if not.
+5. **Patch** the contract's `itemReferences[]` with each item's `{ itemId, refPath: "source/<branch>/_artdir_refs/<itemId>.png", matchesSlots, bboxNote }`, then re-write `workflow/art-direction-contract.json`.
+
+`source/<branch>/_artdir_refs/` is the right home: it is the only tree the gen endpoint can write, AND the only tree downstream `raster-foreground` can read as `input_path` (same `source/` constraint) - so the ref is born where i2i needs it. This is producer-only; downstream already consumes it end-to-end (the enricher copies `refPath` into `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`). No new plumbing.
 
 ## 5. Phase D - scaffold + commit (the node MUST render on the canvas AND be wired)
 
@@ -379,7 +387,9 @@ The contract is only half the fix. The other half is letting `aesthetic-lens` **
 | Step | Node / file | Who | runStatus |
 |---|---|---|---|
 | §2 | `ad_plate_<projectId>_<n>` (via visual-orchestrator) | YOU co-dispatch | `done` |
-| §3 | `workflow/art-direction-contract.json` | YOU | - |
+| §3 | `workflow/art-direction-contract.json` (`itemReferences: []` at this point) | YOU | - |
+| §4 | `<direction-options>` gate - user picks the plate | USER decides | - |
+| §4.5 | item-reference crops from the CHOSEN plate → `source/<branch>/_artdir_refs/*.png` + patch `itemReferences[]` (AFTER the pick; i2i-capable models only) | YOU | - |
 | §5 | `ad_contract_<projectId>` image asset node (renders the plate, edge-wired plates→contract→prototype) | YOU | `done` |
 | §6 | (hand-off envelope) | YOU | - |
 | Later | `/prototype` build reads the contract | CALLER | own scope |
