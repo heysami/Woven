@@ -63,6 +63,7 @@ This is the photography analogue of visual-orchestrator (FIRST-style). Chat-Clau
 - **At least one slot will resolve to raster-photo medium.** Either explicitly (img tag with `data-medium="raster-photo"`) or because the surrounding aesthetic demands photography (recipe-editorial-magazine, recipe-lookbook, aesthetic-coastal-grandmother, aesthetic-dark-academia, aesthetic-cottagecore-with-photos, etc.). The trigger rule in the manifest enumerates which prototype.md slugs naturally call photography.
 - **An image-gen model is configured.** Photography enrichment writes prompts that need a downstream generator. Without one, the enrichment nodes go nowhere. Verify by `GET /__capabilities` - if no `image-gen` skill is registered, abort.
 - **Explicit user request.** "Use Helmut Newton flash for the hero photos" / "make the photography GenZ flash" / "Chrome Hearts editorial throughout" / "Tillmans candid for the gallery" - explicit style-name in the user prompt always triggers this orchestrator.
+- **The product is about a person or people.** An artist, musician, founder, creator, performer, author, team, or character: a human subject ALWAYS warrants real photography, even if the HTML author created no explicit raster-photo slot (in which case see §1.2 - you flag the missing human slot rather than ratifying a personless build).
 
 ### 1.1 Input shape
 
@@ -78,6 +79,15 @@ find "$TH_PROJECT_ROOT/source/<branch>" -name '*.html' -print0 \
 ```
 
 For each candidate, capture: `slotId` (derive from path + position), `hostFile`, `slotLineNumber`, surrounding aesthetic context (the parent section's class names + the project's committed prototype style/aesthetic from `workflow/prototype-commit.json`).
+
+### 1.2 The human subject is a DUTY, not just a slot you happen to find
+
+You are not only a slot-filler. Before enriching, read the brief: **is the product about a person or people** (artist, musician, founder, creator, performer, author, team, character)? If yes, a real human must be represented, prominently - and a real, vibe-matched photograph is the medium that makes a human read as authentic.
+
+- **A human / portrait slot already exists** → enrich it as the HERO photographic priority, not an afterthought behind product / scene / prop shots.
+- **The subject is human but NO human slot exists in the source** (the HTML author missed it - the realistic failure) → do NOT silently proceed with only the product / scene / prop slots you found. Flag it back to the caller: *"this is a [artist / founder] product with no human-imagery slot; the hero should carry a real [press portrait / candid] of [subject] - add the slot and I'll fill it."* Ratifying the personless build is the bug to catch (an artist's site shipping with a wordmark + mascot and zero human pixels).
+
+And **"real human photography" never means "boring stock headshot."** The §2 style pick for a human slot MUST be vibe-matched to the committed aesthetic - flash-glam, editorial-fashion, documentary-candid, golden-hour, whatever the register is - the same decision-tree discipline as any other photographic slot, applied to the person. A neutral-grey-background corporate headshot on an expressive brief is as wrong as a personless hero.
 
 ### Envelope (chat-Claude hands you)
 

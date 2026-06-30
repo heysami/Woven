@@ -23,6 +23,19 @@ Same rule as everything else: inherited from genre, applied top-down, leaning on
 
 The corollary that matters: **the rarer the decoration, the more weight each instance carries.** One ornament in a sparse design is loud and intentional. Five identical ornaments dilute each other. Restraint is the master move.
 
+### When the product is about a person, the person is not optional
+
+The "default to no graphics" rule is overridden by ONE subject: people. If the product is about a person or people - an artist, musician, founder, creator, performer, author, team, character, or any brand whose identity IS a human - then a real human image is **content, not decoration**, and it must appear, prominently. Scaffold a real human-imagery slot at the hero (and usually an about / press / bio section too):
+
+```html
+<img data-slot="hero-portrait" data-medium="raster-photo"
+     alt="<who the person is, described as a photographic subject>">
+```
+
+Use human-descriptive alt text so the photography pass classifies it correctly and fills it with a real, vibe-matched photograph. The failure to avoid: a person-centred product whose hero is a logo / wordmark / mascot / product shot and **zero human pixels** (a music-artist page whose hero is a chrome wordmark + a worm mascot has dropped its own subject). Do not substitute a placeholder rectangle or an illustrated stand-in for a real human when the aesthetic is photographic.
+
+The representation matches the genre: a photographic aesthetic → real photography in that register (Y2K-flash-glam, editorial, candid, golden-hour, etc.); an illustration-only aesthetic (corporate-memphis, anime, pixel) → the human rendered in that register. What is never acceptable is the human being absent.
+
 ### Position rules - also genre-inherited
 
 - **Brand mark**: top-left, fixed size, never moves (almost universal).
