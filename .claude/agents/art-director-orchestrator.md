@@ -66,13 +66,15 @@ If `imageGenSkills` is empty → abort per §1.
 
 The plate is a **finished-product key visual of the intended total world**: a single composed frame showing UI chrome and imagery *together* in their final relationship - the way an art director paints one hero frame before the team builds the system. Not a moodboard collage; not a single isolated illustration. It must answer in pixels: *what does this whole product look and feel like when the chrome and the magic share one frame?*
 
-- **Default: ONE plate.** This honours "generate 1 image as the UI direction."
-- **Recommended when `tensionAxis` is non-null: a CANDIDATE SET of 2-3 plates** that diverge *only* on that axis (e.g. confident-restrained chrome ↔ glow-saturated chrome). This turns a polarising direction from an accident into a visible, steerable choice - the failure that motivated this orchestrator. Cap at 3; cost is a few image calls, paid once, before the expensive build.
+- **ONE plate is the default when the direction is already committed.** If `committedAesthetic` is non-null OR `dsRef` is set, the user has already picked the look (a design-library recipe/aesthetic + recolor, or a committed design system). Divergence at that point is noise - it produces near-identical plates the user has to re-choose between for nothing. Generate a SINGLE plate that realises the committed direction and surface it for approve / steer / regenerate. Do NOT fan out to a candidate set just to populate the gate.
+- **A CANDIDATE SET of 2-3 plates only when the direction is genuinely open** - i.e. `committedAesthetic` is null AND `dsRef` is null (no library pick happened), most clearly when `tensionAxis` is non-null. Then give the user a real *box of visual choices*: diverge *only* on `tensionAxis` when it is set (e.g. confident-restrained chrome ↔ glow-saturated chrome), else on the next most load-bearing variable (palette temperature, value key, focal density). This turns a polarising, undecided direction from an accident into a visible, steerable choice - the failure that motivated this orchestrator. Cap at 3. The candidates must diverge *meaningfully*; if the only divergences you can find are cosmetic, that is the signal the direction is actually committed - fall back to ONE plate.
+- **Override:** an explicit user request for a single key visual always forces ONE plate; an explicit request to "show me options" forces the set even when a direction is committed.
+- Cost is a few image calls, paid once, before the expensive build - cheap relative to what the contract anchors.
 
 Co-dispatch `visual-orchestrator` per plate (same mechanism as `ms-concept-frames-author §2`):
 
 ```bash
-curl -fsS -X POST "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+curl -fsS -X POST "$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
   "addNodes": [{"id": "ad_plate_<projectId>_<n>", "kind": "agent", "name": "visual-orchestrator",
     "text": "intent: <plate brief - see below>\nmedium-hint: raster-photo\naspect: <match the product surface: 9:16 for mobile, 16:10 for desktop>\nresolution: <hi-res>\noutputPath: workflow/artdirection/north-star-<n>.png\nstyleCue: <verbatim>"}]}'
 curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ad_plate_<projectId>_<n>/run?project=$TH_PROJECT_ID" -d '{}'
@@ -185,41 +187,84 @@ Write to `workflow/art-direction-contract.json`. This file is the deliverable ev
 
 ## 4. Phase C - human steerage gate (§12.5) - BEFORE the build spends anything
 
-This is the cost gate the whole orchestrator earns. Surface the plate(s) and the contract for approve / steer / regenerate **before** `/prototype` builds source.
+This is the cost gate the whole orchestrator earns. Surface the plate(s) and the contract for pick / steer / regenerate **before** `/prototype` builds source.
+
+**Emit `<direction-options>`, NOT `<decision-request>`.** This is load-bearing: the chat only renders inline images (and palette chips + type samples) from `<direction-options>`'s per-`<opt>` `<image>` / `<palette>` children. A `<decision-request>`'s `<summary>`/`<details>` body is never parsed - any plate image you put there is **silently discarded**, which is exactly the "the gate shows no visual" failure. One `<opt>` per generated plate; the card renders the plate image, palette chips, and type sample natively. The plate `src` is the on-disk path (`workflow/artdirection/north-star-<n>.png`) - the daemon serves it.
 
 ```xml
-<decision-request id="art_direction_<projectId>" requires="value">
-  <summary>Art direction: <N> north-star plate(s) generated. Proposed contract: <moodWords>, palette <hex list>, type <display/body>, <focalStrategy>.</summary>
-  <details>
-    <attach each plate image; show the extracted palette + ratios + the authored type/component/motion summary>
-    This is the look the whole app will be BUILT from - chrome and imagery from one source.
-    Cost so far: <N> image-gen calls. The build has not started.
-  </details>
-  <option value="approve">Approve - build everything from this contract.</option>
-  <option value="pick">Pick a candidate - say which plate (when a set was generated).</option>
-  <option value="steer">Steer - adjust palette / type / register / which axis, I regenerate the plate.</option>
-  <option value="reject">Reject - skip art direction, build from the text-only committed aesthetic.</option>
-</decision-request>
+<direction-options id="art_direction_<projectId>" prompt="Art direction: pick the north-star plate the whole app gets built from - chrome and imagery from one source. Cost so far: <N> image-gen call(s); the build has not started.">
+  <!-- ONE <opt> per plate you generated. The card renders <image> + <palette> chips + the type sample. -->
+  <opt value="plate-1" recommended>
+    <label>Candidate 1 - <2-4 word handle for this direction></label>
+    <image src="workflow/artdirection/north-star-1.png" alt="North-star plate 1"/>
+    <palette><up to 6 extracted hexes, space-separated, focal/accent LAST></palette>
+    <display font="<display family>"><a 2-4 word display sample in this plate's register></display>
+    <body font="<body family>"><a short body sample></body>
+    <vibe><moodWords - what the plate actually evokes></vibe>
+    <why><one line: the value structure + focal strategy this candidate commits></why>
+  </opt>
+  <opt value="plate-2">
+    <label>Candidate 2 - <handle></label>
+    <image src="workflow/artdirection/north-star-2.png" alt="North-star plate 2"/>
+    <palette><hexes></palette>
+    <display font="<family>"><sample></display>
+    <body font="<family>"><sample></body>
+    <vibe><moodWords></vibe>
+    <why><how it diverges from candidate 1 - name the axis (tensionAxis / palette / value key / density)></why>
+  </opt>
+  <!-- ...one <opt> per remaining plate (cap 3)... -->
+  <opt value="steer"><label>Steer - adjust palette / type / register / the divergence axis; I regenerate the plate(s)</label></opt>
+  <opt value="reject"><label>Reject - skip art direction, build from the text-only committed aesthetic</label></opt>
+</direction-options>
 ```
 
-`reject` → `runStatus: error` with a benign `runError`; the build proceeds as today. `steer` → regenerate the plate with the correction and re-gate (this is cheap and the point). Approval covers THIS build pass.
+Wait for `[decision:art_direction_<projectId>] <value> - <label>`:
+- `plate-<n>` → that plate is the chosen candidate. Set `platePath` / the contract's `platePath` + `candidatesConsidered` accordingly and proceed to §5.
+- `steer` → regenerate the plate(s) with the user's correction and re-emit this gate (cheap, and the point).
+- `reject` → `runStatus: error` with a benign `runError`; the build proceeds text-only as today.
 
-## 5. Phase D - scaffold + commit
+A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never fall back to `<decision-request>`. Approval covers THIS build pass.
 
-Commit the contract node + container with `runStatus: done`:
+## 5. Phase D - scaffold + commit (the node MUST render on the canvas AND be wired)
 
-```jsonc
-{
-  "id": "ad_contract_<projectId>",
-  "kind": "art-direction",
-  "title": "Art direction contract",
-  "projectId": "<project>",
-  "platePath": "workflow/artdirection/north-star-<chosen>.png",
-  "boundTo": { "documentSetId": "<branch>" },
-  "runStatus": "done",
-  "outputs": { "contractPath": "workflow/art-direction-contract.json" }
-}
+Two failures to avoid, both of which made the canvas show a blank, disconnected node:
+
+1. **The node kind must render the plate.** `kind: "art-direction"` (and `folder` / `section`) have **no thumbnail renderer** - the node draws empty. Commit the contract as a real **image asset node** (`kind: "asset"`, `assetKind: "image"`, `path` = the chosen plate). The canvas asset-node card renders any served `path` as a thumbnail; the daemon serves `workflow/artdirection/…png`. This is the ONLY kind that shows the picture.
+2. **The node must be edge-wired, not orphaned.** Without edges the node floats free of the prototype chain - which is why it looked like "something happened but nothing connected." Add edges: each plate node → the contract node, and the contract node → the prototype node.
+
+Use the **race-safe append** route (`POST /__workflow/nodes/add`) - it appends under the project lock without clobbering concurrent writers, and is idempotent on re-POST.
+
+```bash
+# Discover the prototype node id to wire the contract into the build chain.
+PROTO_ID=$(curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(next((n['id'] for n in d.get('nodes',[]) if n.get('kind')=='prototype'), ''))")
+
+curl -fsS -X POST "$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+  "addNodes": [{
+    "id": "ad_contract_<projectId>",
+    "kind": "asset",
+    "assetKind": "image",
+    "title": "Art direction - north-star plate",
+    "path": "workflow/artdirection/north-star-<chosen>.png",
+    "projectId": "<project>",
+    "platePath": "workflow/artdirection/north-star-<chosen>.png",
+    "contractPath": "workflow/art-direction-contract.json",
+    "boundTo": { "documentSetId": "<branch>" },
+    "runStatus": "done",
+    "outputs": { "contractPath": "workflow/art-direction-contract.json" }
+  }],
+  "addEdges": [
+    { "from": "ad_plate_<projectId>_1", "to": "ad_contract_<projectId>" },
+    { "from": "ad_plate_<projectId>_2", "to": "ad_contract_<projectId>" }
+    // ...one per plate node you created in §2...
+    // PLUS, only if PROTO_ID is non-empty, append: { "from": "ad_contract_<projectId>", "to": "<PROTO_ID>" }
+  ]
+}'
 ```
+
+Emit the `ad_contract_<projectId>` → `<PROTO_ID>` edge only when `PROTO_ID` resolved (the prototype node may not exist yet at pre-build time; if it doesn't, the contract still renders its plate, and the build wires the contract by reading `workflow/art-direction-contract.json` regardless). Duplicate ids/edges are skipped, so re-running is safe.
+
+`platePath` + `contractPath` stay on the node so downstream lookups keep working; the visible difference is purely that the node now draws the plate and connects into the graph.
 
 ## 6. Phase E - hand off (who consumes the contract)
 
@@ -250,7 +295,7 @@ When `mode == "revise"`, a contract already exists and the user has just approve
 1. Read `priorContractPath`. Treat its `extracted` + `authored` + `crossSurfaceContract` as **the established law** - you are extending it, not re-deriving it. The chrome already shipped against it; gratuitous churn re-breaks the app.
 2. Generate ONE new plate that places the **new** surface into the EXISTING world (reuse the established palette/material/type - the plate's job here is to prove the new surface can live in the current frame, not to redesign).
 3. Inspect it, then emit the contract with `contractVersion` bumped (+1) and a new/updated `surfaceContracts["<newContainerId>"]` entry. Keep `extracted`/`authored` stable unless the new surface genuinely forces a small, named change - and if it does, record it in a `revisionNotes` array ("raised glow accent ratio 0.10→0.15 so the game surface and the chrome share a focal energy") so the caller knows what shifted and can re-touch the chrome.
-4. Surface the revised plate at the §4 gate as usual (approve/steer). On approval, the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
+4. Surface the revised plate at the §4 `<direction-options>` gate as usual (pick/steer). On approval, the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
 
 This is why the contract is **versioned, not write-once**: as soon as an owns-surface can be added after the build (and it always can), reconciliation requires a living contract.
 
@@ -280,7 +325,7 @@ The contract is only half the fix. The other half is letting `aesthetic-lens` **
 |---|---|---|---|
 | §2 | `ad_plate_<projectId>_<n>` (via visual-orchestrator) | YOU co-dispatch | `done` |
 | §3 | `workflow/art-direction-contract.json` | YOU | - |
-| §5 | `ad_contract_<projectId>` container | YOU | `done` |
+| §5 | `ad_contract_<projectId>` image asset node (renders the plate, edge-wired plates→contract→prototype) | YOU | `done` |
 | §6 | (hand-off envelope) | YOU | - |
 | Later | `/prototype` build reads the contract | CALLER | own scope |
 | Later | asset orchestrators read `crossSurfaceContract` | OTHER | own scope |
