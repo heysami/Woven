@@ -102,17 +102,22 @@ The user can always override the seeded proposal in their reply - buildPolicy se
 
 ## Phase A.7 - Pre-build art direction (run ONLY when `art-director-orchestrator` was approved at A.5)
 
-This is the one orchestrator that runs **before** source is written. Dispatch it immediately after the A.5 reply, before Phase B:
+This is the one orchestrator that runs **before** source is written. It runs as a TWO-DISPATCH flow because **the art-director is a subagent and a subagent cannot render the approval gate** - its output is a tool-result, not chat markup. So YOU (this build thread, the main loop) own emitting the gate. Dispatch immediately after the A.5 reply, before Phase B, with `mode='plate'`:
 
 ```
 Task(subagent_type: "art-director-orchestrator",
-     description: "Generate north-star plate + art-direction contract",
-     prompt: "<envelope: committedDirection, committedAesthetic slug or null, brief, styleCue, successFeel, sensoryTargets, antiPatterns, the brief's unresolved tensionAxis if any, imageGenSkills from GET /__capabilities, dsRef if a DS is locked, mode='create', AND approvedOwnsSurface=[every orchestrator in the A.5-approved roster whose manifest directionImpact=='owns-surface' - game-experience / simulation / motion-studio / interactive-media / narrative-experience / scrapbook-experience / scene-3d - each as {id, containerId, oneLine}]>")
+     description: "Generate north-star plate(s) + return the approval gate",
+     prompt: "<envelope: committedDirection, committedAesthetic slug or null, brief, styleCue, successFeel, sensoryTargets, antiPatterns, the brief's unresolved tensionAxis if any, imageGenSkills from GET /__capabilities, dsRef if a DS is locked, mode='plate', AND approvedOwnsSurface=[every orchestrator in the A.5-approved roster whose manifest directionImpact=='owns-surface' - game-experience / simulation / motion-studio / interactive-media / narrative-experience / scrapbook-experience / scene-3d - each as {id, containerId, oneLine}]>")
 ```
+
+The `mode='plate'` dispatch generates the plate(s), commits the plate node(s) to the canvas, and **returns a `gateBlock`** (a `<direction-options>` XML card) in its hand-off. It writes NO contract. **You then:**
+1. **Emit `gateBlock` verbatim into the chat** - paste the XML exactly as returned. Do NOT paraphrase it as prose or a file path; only the real `<direction-options>` card renders the plate image, palette, and type sample. (Pasting prose with a path is the exact "agent says the plate is ready but nothing shows" bug.)
+2. **Wait** for `[decision:art_direction_<projectId>] <value>`.
+3. On `plate-<n>` → re-dispatch art-director `mode='finalize'`, `chosenPlate=<n>` (a fresh top-level Task - reliable; this is the dispatch that writes `art-direction-contract.json` + item crops + the contract node). On `steer` → re-dispatch `mode='plate'` with the correction; emit the new gate. On `reject` → proceed to Phase B with no contract.
 
 **Pass `approvedOwnsSurface` from the A.5 roster.** This is what makes the choice precede the contract: art-director composes each approved owns-surface region INTO the north-star plate and writes a binding `surfaceContracts[<containerId>]` sub-brief for it, so when that orchestrator builds in Phase E its register is a translation of the app's DNA, not an independent pick. With the roster known here, no contract revision is needed for THIS build (revision is only for owns-surface added in a later turn - see Phase E's late-add note).
 
-It generates the north-star plate(s), surfaces them for the user's approve/pick/steer/reject (its own §12.5 gate - this is a real stop-and-ask; honour it before proceeding), and on approval commits `workflow/art-direction-contract.json`. **Block on its hand-off before Phase B/C** - the contract is an input to Phase B.5 and Phase C.
+The `mode='finalize'` dispatch commits `workflow/art-direction-contract.json` (+ item crops + the contract node). **Block on the finalize hand-off before Phase B/C** - the contract is an input to Phase B.5 and Phase C. The approve/pick/steer/reject gate is a real stop-and-ask; honour it (you emit it, per the steps above) before proceeding.
 
 Failure / skip handling (do not stall the build):
 - It returns `runStatus: error` "no image-gen model" → it should never have been pre-ticked; proceed to Phase B with no contract (text-only aesthetic, as today).

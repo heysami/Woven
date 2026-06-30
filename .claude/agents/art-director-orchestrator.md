@@ -52,7 +52,11 @@ antiPatterns:        ["<verbatim>"]
 tensionAxis:         "<the unresolved choice in the brief, if any - e.g. 'how loud is the chrome vs the glow'>"  | null
 imageGenSkills:      ["raster-photo-imagen", "raster-foreground-flux", ...]   # MUST be non-empty
 dsRef:               { id, version } | null    # if a design system is already committed, honour its tokens
-mode:                "create" | "revise"       # revise = a contract already exists and an owns-surface was added (§6.5)
+mode:                "plate" | "finalize" | "revise"
+                     #   plate    = generate plate(s) + commit plate node(s) + inspect, then RETURN the gate block (§2-§4). Default first dispatch. Writes NO contract.
+                     #   finalize = the caller re-dispatched you after the user picked: author+write the contract + crops + contract node (§4.5-§5). Requires chosenPlate.
+                     #   revise   = a contract already exists and an owns-surface was added (§6.5) - same plate→gate→finalize split, bumping the prior contract.
+chosenPlate:         <n> | null    # set by the caller on the mode=finalize dispatch - the plate-<n> the user picked at the gate
 priorContractPath:   "workflow/art-direction-contract.json" | null   # set when mode=revise
 approvedOwnsSurface: [{ id: "game-experience-orchestrator", containerId: "game-experience", oneLine: "feed-and-light-up playable care surface" }, ...]  | []
 === END ENVELOPE ===
@@ -71,14 +75,22 @@ The plate is a **finished-product key visual of the intended total world**: a si
 - **Override:** an explicit user request for a single key visual always forces ONE plate; an explicit request to "show me options" forces the set even when a direction is committed.
 - Cost is a few image calls, paid once, before the expensive build - cheap relative to what the contract anchors.
 
-Co-dispatch `visual-orchestrator` per plate (same mechanism as `ms-concept-frames-author §2`):
+**Generate each plate DIRECTLY via `/__asset_generate` - do NOT co-dispatch visual-orchestrator.** Co-dispatching another orchestrator as a workflow node and `/run`-ing it from inside this subagent stalls (nested dispatch is unreliable in a subagent session). Generate the raster yourself in one call. **The endpoint only writes under `source/`** (`editor/serve.py` - output must start with `source/`), so generate there, then copy to the canonical served planning path `workflow/artdirection/`, then commit the plate as a real **image asset node** so it actually appears on the canvas (not a false "it's on canvas" claim):
 
 ```bash
+# 1. generate (output MUST be under source/)
+curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+  "skill":"generate-image","provider":"openai","model":"<the project image model>",
+  "aspect":"<16:10 desktop | 9:16 mobile>","prompt":"<the full plate brief - see below>",
+  "output":"source/<branch>/_artdir/north-star-<n>.png"}'
+# 2. copy to the canonical served planning location (servable: translate_path roots project-relative GETs at the project)
+cp "$TH_PROJECT_ROOT/source/<branch>/_artdir/north-star-<n>.png" "$TH_PROJECT_ROOT/workflow/artdirection/north-star-<n>.png"
+# 3. commit the plate as an image asset node on the canvas NOW (race-safe append) - so the user sees it immediately
 curl -fsS -X POST "$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
-  "addNodes": [{"id": "ad_plate_<projectId>_<n>", "kind": "agent", "name": "visual-orchestrator",
-    "text": "intent: <plate brief - see below>\nmedium-hint: raster-photo\naspect: <match the product surface: 9:16 for mobile, 16:10 for desktop>\nresolution: <hi-res>\noutputPath: workflow/artdirection/north-star-<n>.png\nstyleCue: <verbatim>"}]}'
-curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ad_plate_<projectId>_<n>/run?project=$TH_PROJECT_ID" -d '{}'
-# poll until bytes exist; one retry with a correction on failure; no plate after retry → runError (cannot inspect blind)
+  "addNodes": [{"id":"ad_plate_<projectId>_<n>","kind":"asset","assetKind":"image",
+    "title":"North-star plate <n>","path":"workflow/artdirection/north-star-<n>.png",
+    "projectId":"<project>","runStatus":"done"}]}'
+# on a generation failure: one retry with a corrected prompt; still no bytes → runError (cannot inspect blind)
 ```
 
 **Plate brief** merges, in order: (1) the product surface drawn as a real screen - representative chrome (a header, primary content, one primary action, nav hinted) at true scale; (2) the hero imagery in its actual relationship to that chrome; (3) **for each entry in `approvedOwnsSurface`, compose that surface INTO the frame** in its real relationship to the chrome (e.g. a playable game panel sitting inside the home screen, a cinematic scene bleeding behind the nav) - so the plate shows the owns-surface region and the chrome as ONE composition, not the chrome alone; (4) the brief's `styleCue` + `sensoryTargets` as the visual register; (5) composition law - "one composed frame, edge to edge, no device mockup frame, no browser chrome, real words not lorem"; (6) negatives - no watermark, no stock-dashboard UI, no collage, no letterbox.
@@ -228,11 +240,13 @@ When the plate depicts a concrete ITEM that a planned image slot will also rende
 
 **But do NOT crop anything in Phase B.** Cropping is real work (file writes + a rembg call) and must not run before the user has picked a plate - it would spend on the agent's *recommended* plate, which the user may reject, and it would spend *before* the §4 cost gate this orchestrator exists to honour. So here in Phase B you only **note in prose** which depicted items look like good i2i references (and on which plate), as part of your steer summary at the gate. Leave `itemReferences: []` in the contract. The crops are produced in **§4.6, after the pick, from the CHOSEN plate only** - and only when the image model is i2i-capable. If the model is not i2i-capable, there is nothing to note and §4.6 is skipped entirely.
 
-## 4. Phase C - human steerage gate (§12.5) - BEFORE the build spends anything
+## 4. Phase C - human steerage gate (§12.5) - emitted by the CALLER, not you
 
-This is the cost gate the whole orchestrator earns. Surface the plate(s) and the contract for pick / steer / regenerate **before** `/prototype` builds source.
+This is the cost gate the whole orchestrator earns. **You are a subagent - you CANNOT render this gate yourself.** A subagent's output is returned to the caller as a tool result; the chat only renders an interactive `<direction-options>` card from the **main loop's** output stream. If you "emit" the gate from here it is swallowed and the user sees nothing (or, worse, you fall back to describing the plate in prose with a file path, which renders no image) - that is the exact "agent says the plate is ready but nothing shows" failure. This is the same split motion-studio uses for its concept-plate gate: the subagent returns the gate, **the caller surfaces it.**
 
-**Emit `<direction-options>`, NOT `<decision-request>`.** This is load-bearing: the chat only renders inline images (and palette chips + type samples) from `<direction-options>`'s per-`<opt>` `<image>` / `<palette>` children. A `<decision-request>`'s `<summary>`/`<details>` body is never parsed - any plate image you put there is **silently discarded**, which is exactly the "the gate shows no visual" failure. One `<opt>` per generated plate; the card renders the plate image, palette chips, and type sample natively. The plate `src` is the on-disk path (`workflow/artdirection/north-star-<n>.png`) - the daemon serves it.
+So: **do not emit the gate. RETURN the `<direction-options>` block below verbatim in your Phase E hand-off** (field `gateBlock`). The caller pastes it into the chat as-is, where it renders; the caller waits for the pick and then re-dispatches you with `mode: "finalize"` + `chosenPlate`.
+
+**The block must be `<direction-options>`, NOT `<decision-request>`.** The chat only renders inline images + palette chips + type samples from `<direction-options>`'s per-`<opt>` `<image>` / `<palette>` children; a `<decision-request>` body is never parsed and any image in it is silently discarded. One `<opt>` per plate you generated. The plate `src` is the on-disk path `workflow/artdirection/north-star-<n>.png` - the daemon serves project-relative paths (`translate_path` roots them at the project), so it resolves.
 
 ```xml
 <direction-options id="art_direction_<projectId>" prompt="Art direction: pick the north-star plate the whole app gets built from - chrome and imagery from one source. Cost so far: <N> image-gen call(s); the build has not started.">
@@ -261,18 +275,18 @@ This is the cost gate the whole orchestrator earns. Surface the plate(s) and the
 </direction-options>
 ```
 
-Wait for `[decision:art_direction_<projectId>] <value> - <label>`:
-- `plate-<n>` → that plate is the chosen candidate. Proceed to §4.5 (author the contract from THIS plate), then §4.6 (its item crops), then §5.
-- `steer` → regenerate the plate(s) with the user's correction and re-emit this gate (cheap, and the point). Author NO contract; nothing is committed.
-- `reject` → `runStatus: error` with a benign `runError`; the build proceeds text-only as today. Author NO contract.
+**The CALLER** (not you) waits for `[decision:art_direction_<projectId>] <value>` and acts:
+- `plate-<n>` → re-dispatches YOU with `mode: "finalize"`, `chosenPlate: <n>` → you run §4.5 + §4.6 + §5.
+- `steer` → re-dispatches YOU with `mode: "plate"` + the correction → you regenerate the plate(s) and return a fresh gate. Nothing was committed.
+- `reject` → the build proceeds text-only as today; you are not re-dispatched.
 
-A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never fall back to `<decision-request>`. Approval covers THIS build pass.
+In your `mode: "plate"` dispatch you STOP after returning the `gateBlock`. You author NO contract and crop NOTHING - those happen only in the `mode: "finalize"` dispatch, after the pick. A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never `<decision-request>`. Approval covers THIS build pass.
 
-## 4.5 Phase C.5 - author + write the contract from the CHOSEN plate (AFTER the pick only)
+## 4.5 Phase C.5 - (mode: finalize) author + write the contract from the CHOSEN plate
 
-Runs ONLY after the §4 gate returned `plate-<n>`. **This is the first time anything is written to disk for the direction.** Author the full contract (the §3 schema) from the chosen plate - `extracted` read off ITS pixels, `authored` harmonised with IT, `platePath` = the chosen plate, `candidatesConsidered` = the set you generated, `itemReferences: []` (filled next in §4.6). Write it to `workflow/art-direction-contract.json`. The per-candidate previews you held in Phase B were only to render the gate; the committed contract belongs to the plate the user actually chose. On `steer` / `reject` this phase never runs, so no stale contract is left on disk.
+Runs in the `mode: "finalize"` dispatch (the caller re-dispatched you with `chosenPlate: <n>` after the user picked). **This is the first time anything is written to disk for the direction.** Author the full contract (the §3 schema) from the chosen plate - `extracted` read off ITS pixels, `authored` harmonised with IT, `platePath` = the chosen plate, `candidatesConsidered` = the set you generated, `itemReferences: []` (filled next in §4.6). Write it to `workflow/art-direction-contract.json`. Because finalize only ever runs after a `plate-<n>` pick, no stale contract is ever left on disk for a steered/rejected direction.
 
-## 4.6 Phase C.6 - produce item-reference crops from the CHOSEN plate (AFTER §4.5 only)
+## 4.6 Phase C.6 - (mode: finalize) produce item-reference crops from the CHOSEN plate (AFTER §4.5)
 
 Runs ONLY after §4.5 wrote the contract. Skip entirely when the project image model is not i2i-capable (provider `openai`, gpt-image-1 family - any other model 400s on an input image). When skipped, `itemReferences` stays `[]` and downstream keeps the text path - nothing breaks.
 
@@ -295,9 +309,9 @@ This is the producer step for `itemReferences[]`. It operates on the **chosen** 
 
 `source/<branch>/_artdir_refs/` is the right home: it is the only tree the gen endpoint can write, AND the only tree downstream `raster-foreground` can read as `input_path` (same `source/` constraint) - so the ref is born where i2i needs it. This is producer-only; downstream already consumes it end-to-end (the enricher copies `refPath` into `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`). No new plumbing.
 
-## 5. Phase D - scaffold + commit (the node MUST render on the canvas AND be wired)
+## 5. Phase D - (mode: finalize) wire the contract node into the build chain
 
-Two failures to avoid, both of which made the canvas show a blank, disconnected node:
+Runs in the `mode: "finalize"` dispatch, after §4.5/§4.6. The plate image node(s) `ad_plate_<projectId>_<n>` already exist on the canvas (you committed them in §2 at generation time, so the user saw the plate at the gate). This phase adds the **contract** node and the edges. Two failures to avoid:
 
 1. **The node kind must render the plate.** `kind: "art-direction"` (and `folder` / `section`) have **no thumbnail renderer** - the node draws empty. Commit the contract as a real **image asset node** (`kind: "asset"`, `assetKind: "image"`, `path` = the chosen plate). The canvas asset-node card renders any served `path` as a thumbnail; the daemon serves `workflow/artdirection/…png`. This is the ONLY kind that shows the picture.
 2. **The node must be edge-wired, not orphaned.** Without edges the node floats free of the prototype chain - which is why it looked like "something happened but nothing connected." Add edges: each plate node → the contract node, and the contract node → the prototype node.
@@ -336,13 +350,30 @@ Emit the `ad_contract_<projectId>` → `<PROTO_ID>` edge only when `PROTO_ID` re
 
 `platePath` + `contractPath` stay on the node so downstream lookups keep working; the visible difference is purely that the node now draws the plate and connects into the graph.
 
-## 6. Phase E - hand off (who consumes the contract)
+## 6. Phase E - hand off
 
-This orchestrator's value is entirely in what reads it. The hand-off envelope tells the caller to wire every downstream step to the contract:
+There are TWO hand-off shapes, one per mode.
+
+**`mode: "plate"` hand-off (the gate the caller must surface).** You generated the plate(s) and committed the plate node(s); now you hand the gate to the caller to render. The caller emits `gateBlock` verbatim, waits for the pick, and re-dispatches you `mode: "finalize"`:
 
 ```jsonc
 {
   "orchestrator": "art-director-orchestrator",
+  "mode": "plate",
+  "projectId": "<project>",
+  "platesGenerated": ["workflow/artdirection/north-star-1.png", "..."],
+  "gateBlock": "<the FULL <direction-options>…</direction-options> XML from §4, ready to paste>",
+  "callerMustDo": "Emit gateBlock verbatim into the chat (do NOT paraphrase it as prose or a file path - that renders no image). On [decision:art_direction_<projectId>] plate-<n> → re-dispatch art-director with mode:'finalize', chosenPlate:<n>. On steer → re-dispatch mode:'plate' with the correction. On reject → build text-only.",
+  "note": "No contract written, nothing cropped - that is the finalize dispatch's job, after the pick."
+}
+```
+
+**`mode: "finalize"` hand-off (what consumes the contract).** After the pick, you wrote the contract + crops + contract node. This hand-off tells the caller to wire every downstream step to the contract:
+
+```jsonc
+{
+  "orchestrator": "art-director-orchestrator",
+  "mode": "finalize",
   "projectId": "<project>",
   "branch": "<branch>",
   "contractPath": "workflow/art-direction-contract.json",
@@ -365,8 +396,8 @@ When `mode == "revise"`, a contract already exists and the user has just approve
 
 1. Read `priorContractPath`. Treat its `extracted` + `authored` + `crossSurfaceContract` as **the established law** - you are extending it, not re-deriving it. The chrome already shipped against it; gratuitous churn re-breaks the app.
 2. Generate ONE new plate that places the **new** surface into the EXISTING world (reuse the established palette/material/type - the plate's job here is to prove the new surface can live in the current frame, not to redesign).
-3. Inspect it and prepare (in memory) the revised contract: `contractVersion` bumped (+1) and a new/updated `surfaceContracts["<newContainerId>"]` entry. Keep `extracted`/`authored` stable unless the new surface genuinely forces a small, named change - and if it does, record it in a `revisionNotes` array ("raised glow accent ratio 0.10→0.15 so the game surface and the chrome share a focal energy") so the caller knows what shifted and can re-touch the chrome.
-4. Surface the revised plate at the §4 `<direction-options>` gate FIRST (pick/steer). **Only on approval** do you write the bumped contract to `workflow/art-direction-contract.json` (overwriting the prior version) - never before the pick, exactly as the create-mode §4.5 rule. Then the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
+3. Generate + commit the revise plate node, inspect it, and **RETURN the gate block to the caller** exactly as `mode: "plate"` does (§4) - you cannot surface the gate yourself. Prepare (in memory, carried in the hand-off) the revised contract: `contractVersion` bumped (+1) and a new/updated `surfaceContracts["<newContainerId>"]` entry. Keep `extracted`/`authored` stable unless the new surface genuinely forces a small, named change - and if it does, record it in a `revisionNotes` array ("raised glow accent ratio 0.10→0.15 so the game surface and the chrome share a focal energy").
+4. The caller surfaces the revised plate at the gate, waits for the pick, and re-dispatches you `mode: "finalize"`. **Only then** do you write the bumped contract to `workflow/art-direction-contract.json` (overwriting the prior version) - never before the pick, exactly as the create-path §4.5 rule. Then the newly-added owns-surface orchestrator reads the bumped contract; if `revisionNotes` is non-empty, the caller re-touches the affected chrome tokens.
 
 This is why the contract is **versioned, not write-once**: as soon as an owns-surface can be added after the build (and it always can), reconciliation requires a living contract.
 
@@ -392,15 +423,15 @@ The contract is only half the fix. The other half is letting `aesthetic-lens` **
 
 ## 10. Quick reference - who commits what
 
-| Step | Node / file | Who | runStatus |
+| Step | Node / file | Who | mode |
 |---|---|---|---|
-| §2 | `ad_plate_<projectId>_<n>` (via visual-orchestrator) | YOU co-dispatch | `done` |
-| §3 | per-candidate gate preview held in memory (NO file written) | YOU | - |
-| §4 | `<direction-options>` gate - user picks the plate | USER decides | - |
-| §4.5 | author + write `workflow/art-direction-contract.json` from the CHOSEN plate (`itemReferences: []`) - AFTER the pick | YOU | - |
-| §4.6 | item-reference crops from the CHOSEN plate → `source/<branch>/_artdir_refs/*.png` + patch `itemReferences[]` (AFTER §4.5; i2i-capable models only) | YOU | - |
-| §5 | `ad_contract_<projectId>` image asset node (renders the plate, edge-wired plates→contract→prototype) | YOU | `done` |
-| §6 | (hand-off envelope) | YOU | - |
+| §2 | generate plate(s) DIRECT via `/__asset_generate` → `source/<branch>/_artdir/` → cp `workflow/artdirection/` → commit `ad_plate_<projectId>_<n>` image node on canvas | YOU | plate |
+| §3 | per-candidate gate preview held in memory (NO file written) | YOU | plate |
+| §4 | RETURN `gateBlock` in hand-off → **CALLER emits** `<direction-options>` → user picks | CALLER emits / USER decides | plate |
+| §4.5 | author + write `workflow/art-direction-contract.json` from the CHOSEN plate (`itemReferences: []`) | YOU | finalize |
+| §4.6 | item-reference crops → `source/<branch>/_artdir_refs/*.png` + patch `itemReferences[]` (i2i-capable models only) | YOU | finalize |
+| §5 | `ad_contract_<projectId>` image asset node, edge-wired plates→contract→prototype | YOU | finalize |
+| §6 | (hand-off envelope, one shape per mode) | YOU | both |
 | Later | `/prototype` build reads the contract | CALLER | own scope |
 | Later | asset orchestrators read `crossSurfaceContract` | OTHER | own scope |
 | Final | aesthetic-lens diffs runtime vs contract | OTHER | own scope |
