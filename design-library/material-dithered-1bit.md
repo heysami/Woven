@@ -4,6 +4,8 @@ name: 1-bit Dither (Obra Dinn / Game Boy threshold)
 family: digital
 category: digital-effect
 surfaceFinish: matte
+scope: medium
+fxStack: [dither]
 transparency: opaque
 pairsPrototypes: [style-pixel-bitmap, aesthetic-pixel-game-boy-mono, aesthetic-web-brutalism, aesthetic-corporate-grunge]
 images:

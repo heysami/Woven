@@ -4,6 +4,8 @@ name: Pixel Bitmap (integer-grid surface)
 family: digital
 category: digital-effect
 surfaceFinish: matte
+scope: both
+fxStack: [pixelate]
 transparency: opaque
 pairsPrototypes: [style-pixel-bitmap, aesthetic-pixel-nes-mario, aesthetic-pixel-snes-jrpg, aesthetic-pixel-game-boy-mono, aesthetic-pc-98]
 images:

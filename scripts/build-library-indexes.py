@@ -139,6 +139,14 @@ def build_index(lib):
             entry["family"] = fm["family"]
         if fm.get("surfaceFinish"):
             entry["surfaceFinish"] = fm["surfaceFinish"]
+        # material scope axis: object (per-element, default) | medium (whole-frame
+        # process - subsumes live render slots) | both. fxStack = ordered live
+        # fx-engine ids (editor/tools/_shared/fx.js) that express the material as a
+        # composite stack; the drawer attaches starting params at dispatch.
+        if prefix == "material":
+            entry["scope"] = fm.get("scope", "object")
+            if fm.get("fxStack"):
+                entry["fxStack"] = fm["fxStack"]
         # shader-family stack metadata (the source/filter + blend + layer contract)
         for k in ("defaultBlend", "animated", "needsSource", "stackable"):
             if fm.get(k):

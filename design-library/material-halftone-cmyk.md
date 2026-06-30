@@ -4,6 +4,8 @@ name: Halftone CMYK (newspaper / comic process)
 family: analog
 category: print
 surfaceFinish: matte
+scope: medium
+fxStack: [halftone]
 transparency: opaque
 pairsPrototypes: [aesthetic-corporate-grunge, style-raster-cutout, aesthetic-acid-design, aesthetic-y2k-memphis-loud, recipe-newspaper-of-record]
 images:

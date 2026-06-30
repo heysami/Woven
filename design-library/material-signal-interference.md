@@ -4,6 +4,8 @@ name: Signal Interference (hum bars, sync errors, vertical hold drift)
 family: digital
 category: digital-effect
 surfaceFinish: glossy
+scope: medium
+fxStack: [crt, slice]
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cassette-futurism, aesthetic-atompunk, aesthetic-cyberpunk, recipe-terminal-on-web, style-dense-mono-dark]
 images:

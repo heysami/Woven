@@ -4,6 +4,8 @@ name: VHS Distortion (chromatic aberration + scanlines + bleed)
 family: analog
 category: film
 surfaceFinish: glossy
+scope: medium
+fxStack: [crt, chromatic-aberration, slice]
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cassette-futurism, aesthetic-cyberpunk, aesthetic-y2k-myspace, aesthetic-acid-graphics]
 images:

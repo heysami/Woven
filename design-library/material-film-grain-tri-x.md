@@ -4,6 +4,8 @@ name: Film Grain - Tri-X 400 (B&W, coarse grain)
 family: analog
 category: film
 surfaceFinish: matte
+scope: medium
+fxStack: [fractal-noise]
 transparency: opaque
 pairsPrototypes: [recipe-editorial-magazine, aesthetic-dark-academia, aesthetic-corporate-grunge, aesthetic-vaporwave, aesthetic-cottagegoth]
 images:

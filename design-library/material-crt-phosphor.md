@@ -4,6 +4,8 @@ name: CRT Phosphor (raster scan with subpixel RGB)
 family: digital
 category: digital-effect
 surfaceFinish: glossy
+scope: medium
+fxStack: [crt]
 transparency: opaque
 pairsPrototypes: [aesthetic-cassette-futurism, aesthetic-atompunk, aesthetic-vaporwave, aesthetic-cyberpunk, style-pixel-bitmap]
 images:

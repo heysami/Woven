@@ -4,6 +4,8 @@ name: VHS-Frutiger (Frutiger Aero with VHS distortion)
 family: hybrid
 category: digital-effect
 surfaceFinish: glossy
+scope: both
+fxStack: [crt, chromatic-aberration]
 transparency: translucent
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-y2k-myspace, aesthetic-cassette-futurism]
 images:

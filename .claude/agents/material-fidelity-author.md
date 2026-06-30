@@ -28,7 +28,9 @@ elementHash:        "<hash from orchestrator>"
 hostFile:           "source/<branch>/<file>"
 selector:           "<CSS selector to apply material to>"
 materialId:         "<library materialId>"
-implementationStrategy: "css | svg | webgl | raster | video | hybrid"
+scope:              "object | medium | both"
+implementationStrategy: "css | svg | webgl | raster | video | fx-composite | hybrid"
+fxStack:            [ /* live fx ids + starting params - present when strategy==fx-composite */ ]
 reactiveBehaviorsEnabled: ["light", "highlight", "depth", "parallax"]
 reactiveBudget:     "subtle | rich | theatrical"
 permissionGates:    ["gyro"]  | []
@@ -123,6 +125,19 @@ Then write CSS that uses the resulting raster as a layer atop the element (typic
 ### 3.5 Video texture path (if `implementationStrategies.video` is non-empty)
 
 For materials that need a looping video texture (CineStill grain, datamosh, signal interference). Generate the looping mp4 via the `video` skill (or commission it through visual-orchestrator's video drawer). Underlay it under the element with `position: absolute; mix-blend-mode: screen; opacity: 0.3-0.5`.
+
+### 3.5.1 fx-composite path (PREFERRED when the entry carries `fxStack`)
+
+Medium materials (riso / halftone / VHS / CRT / dither / datamosh / grain) and tough digital materials map to a live fx-engine composite stack instead of bespoke GLSL. The library entry's `fxStack` is an ordered list of LIVE fx ids (`editor/tools/_shared/fx.js`); the canonical id + param reference is `editor/prompts/logic/runtime.md` "Illustrative shaders". This is the DEFAULT for any material that has a non-empty `fxStack` - the fx effects are already debugged, live-tunable, and ship a `bake()` standalone twin, so you reuse rather than re-author.
+
+Two surfaces, one kernel:
+
+- **App-node / live render slot** (the globe is a composer/scene-3d/simulation node): do NOT write CSS. Wire the `fxStack` as a layer/comp effect stack on that node (the same shape `pe_shader.fxStack` carries for the shader skill). The orchestrator co-dispatched you back to the slot's builder; bake the stack into the slot's own post chain so it composites with the generated pixels.
+- **Prototype `<canvas>` / baked surface**: emit the fx engine's `bake()` standalone output for the stack, mount it as the slot's render/overlay. No composer dependency at runtime.
+
+Attach starting params per element from the runtime.md reference, then tune (e.g. `crt` scanline strength, `halftone` cell size, `riso-print` registration shift). Honour `prefers-reduced-motion` by freezing animated fx at a static frame.
+
+**Fallback:** if `fxStack` is empty/absent on a medium material (e.g. `scanned-glass`), drop to the entry's `implementationStrategies.webgl` / `.raster` exactly as §3.3 / §3.4 - fx-composite is reuse-first, GLSL is the escape hatch.
 
 ### 3.6 JS reactive bootstrap
 
@@ -228,6 +243,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/mat_<elementHash>/commit?proje
 
 - **You do not pick the material.** The orchestrator chose it; you implement.
 - **You do not invent shaders not in the library.** If you need code beyond what the library entry provides, follow the `references[]` link + adapt with attribution in a code comment.
+- **You do not hand-author GLSL when the entry carries an `fxStack`.** Reuse the live fx composite (§3.5.1) - it is already debugged + bakeable. Bespoke GLSL is the escape hatch for materials with no live fx equivalent, not the default.
 - **You do not write reactive behaviours outside `reactiveBudget`.** Subtle = no gyro, no scroll. Period.
 - **You do not bypass `prefers-reduced-motion`.** Every animated material has a static-rest fallback. The fallback MUST still visually read as the same material (just frozen) - paper still looks like paper, glass still looks like glass.
 - **You do not edit any source HTML.** The host page's `<link>` / `<script>` tag for composite was wired by the orchestrator on its first run; you only append to the composite.

@@ -4,6 +4,7 @@ name: Scanned Glass (digital glass on analog paper substrate)
 family: hybrid
 category: glass
 surfaceFinish: glossy
+scope: both
 transparency: translucent
 pairsPrototypes: [aesthetic-cottagegoth, aesthetic-dark-academia, recipe-editorial-magazine]
 images:

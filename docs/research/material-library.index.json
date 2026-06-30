@@ -47,53 +47,11 @@
     "recipe-terminal-on-web": {
       "default": "ascii-art-surface",
       "alternatives": [
-        "ascii-art-surface",
         "monospace-code-grid",
         "rgb-channel-split",
         "schematic-pcb-trace",
         "signal-interference",
         "wireframe-3d-line"
-      ]
-    },
-    "aesthetic-cassette-futurism": {
-      "default": "brushed-aluminum",
-      "alternatives": [
-        "brushed-aluminum",
-        "crt-phosphor",
-        "film-grain-cinestill-800t",
-        "iso-line-drawing",
-        "schematic-pcb-trace",
-        "signal-interference",
-        "vhs-distortion",
-        "vhs-frutiger",
-        "wireframe-3d-line"
-      ]
-    },
-    "aesthetic-atompunk": {
-      "default": "cad-blueprint",
-      "alternatives": [
-        "cad-blueprint",
-        "crt-phosphor",
-        "iso-line-drawing",
-        "schematic-pcb-trace",
-        "signal-interference",
-        "wireframe-3d-line"
-      ]
-    },
-    "aesthetic-corporate-grunge": {
-      "default": "denim",
-      "alternatives": [
-        "denim",
-        "dithered-1bit",
-        "film-grain-tri-x",
-        "halftone-cmyk",
-        "pencil-graphite",
-        "photocopy-xerox",
-        "risograph-glass",
-        "risograph",
-        "silkscreen",
-        "torn-edge",
-        "weathered-leather"
       ]
     },
     "aesthetic-web-brutalism": {
@@ -123,64 +81,6 @@
         "silk"
       ]
     },
-    "aesthetic-frutiger-aero": {
-      "default": "chromatic-aberration-lens",
-      "alternatives": [
-        "chromatic-aberration-lens",
-        "frosted-glass",
-        "glossy-plastic-aqua",
-        "liquid-glass"
-      ]
-    },
-    "aesthetic-frutiger-dark-aero": {
-      "default": "chromatic-aberration-lens",
-      "alternatives": [
-        "chromatic-aberration-lens",
-        "frosted-glass",
-        "liquid-glass"
-      ]
-    },
-    "aesthetic-vaporwave": {
-      "default": "crt-phosphor",
-      "alternatives": [
-        "crt-phosphor",
-        "datamosh-compression-smear",
-        "film-grain-cinestill-800t",
-        "film-grain-tri-x",
-        "frosted-glass",
-        "rgb-channel-split",
-        "signal-interference",
-        "silk",
-        "vhs-distortion",
-        "vhs-frutiger",
-        "wireframe-3d-line"
-      ]
-    },
-    "aesthetic-y2k-futurism": {
-      "default": "chrome-mirror",
-      "alternatives": [
-        "chrome-mirror",
-        "chrome-on-velvet",
-        "datamosh-compression-smear",
-        "frosted-glass",
-        "glossy-plastic-aqua",
-        "liquid-glass",
-        "rgb-channel-split",
-        "silk"
-      ]
-    },
-    "aesthetic-cinematic": {
-      "default": "chromatic-aberration-lens",
-      "alternatives": [
-        "chromatic-aberration-lens"
-      ]
-    },
-    "recipe-bento-marketing": {
-      "default": "chromatic-aberration-lens",
-      "alternatives": [
-        "chromatic-aberration-lens"
-      ]
-    },
     "aesthetic-bioluminescent-deep": {
       "default": "bioluminescent-membrane",
       "alternatives": []
@@ -190,6 +90,19 @@
       "alternatives": [
         "paper-construction",
         "volumetric-cloud"
+      ]
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "brushed-aluminum",
+      "alternatives": [
+        "crt-phosphor",
+        "film-grain-cinestill-800t",
+        "iso-line-drawing",
+        "schematic-pcb-trace",
+        "signal-interference",
+        "vhs-distortion",
+        "vhs-frutiger",
+        "wireframe-3d-line"
       ]
     },
     "aesthetic-dieselpunk": {
@@ -232,6 +145,16 @@
         "iso-line-drawing",
         "plotter-pen-line",
         "schematic-pcb-trace",
+        "wireframe-3d-line"
+      ]
+    },
+    "aesthetic-atompunk": {
+      "default": "cad-blueprint",
+      "alternatives": [
+        "crt-phosphor",
+        "iso-line-drawing",
+        "schematic-pcb-trace",
+        "signal-interference",
         "wireframe-3d-line"
       ]
     },
@@ -289,26 +212,46 @@
         "pencil-graphite"
       ]
     },
-    "aesthetic-luxury-cinematic-dark": {
-      "default": "smoked-obsidian-glass",
+    "aesthetic-cinematic": {
+      "default": "chromatic-aberration-lens",
+      "alternatives": []
+    },
+    "recipe-bento-marketing": {
+      "default": "chromatic-aberration-lens",
+      "alternatives": []
+    },
+    "aesthetic-frutiger-aero": {
+      "default": "chromatic-aberration-lens",
       "alternatives": [
-        "smoked-obsidian-glass",
-        "volumetric-light-shaft"
+        "frosted-glass",
+        "glossy-plastic-aqua",
+        "liquid-glass"
       ]
     },
-    "aesthetic-urbling": {
-      "default": "chrome-mirror",
+    "aesthetic-frutiger-dark-aero": {
+      "default": "chromatic-aberration-lens",
       "alternatives": [
-        "chrome-mirror",
-        "chrome-on-velvet"
+        "frosted-glass",
+        "liquid-glass"
       ]
     },
     "aesthetic-frutiger-chromecore": {
       "default": "chrome-mirror",
       "alternatives": [
-        "chrome-mirror",
         "frosted-glass",
         "glossy-plastic-aqua"
+      ]
+    },
+    "aesthetic-y2k-futurism": {
+      "default": "chrome-mirror",
+      "alternatives": [
+        "chrome-on-velvet",
+        "datamosh-compression-smear",
+        "frosted-glass",
+        "glossy-plastic-aqua",
+        "liquid-glass",
+        "rgb-channel-split",
+        "silk"
       ]
     },
     "style-holographic": {
@@ -318,32 +261,10 @@
         "dispersion-prism-glass"
       ]
     },
-    "recipe-editorial-magazine": {
-      "default": "film-grain-cinestill-800t",
+    "aesthetic-urbling": {
+      "default": "chrome-mirror",
       "alternatives": [
-        "film-grain-cinestill-800t",
-        "film-grain-tri-x",
-        "hand-architect-sketch",
-        "marble",
-        "marker-stroke-frame",
-        "scanned-glass"
-      ]
-    },
-    "aesthetic-y2k-memphis-loud": {
-      "default": "halftone-cmyk",
-      "alternatives": [
-        "halftone-cmyk",
-        "marker-stroke-frame"
-      ]
-    },
-    "aesthetic-coastal-grandmother": {
-      "default": "corduroy",
-      "alternatives": [
-        "corduroy",
-        "linen-weave",
-        "paper-with-watercolor",
-        "silk",
-        "watercolor-wash"
+        "chrome-on-velvet"
       ]
     },
     "aesthetic-cottagecore": {
@@ -357,6 +278,30 @@
         "vellum-translucency",
         "watercolor-wash",
         "wood-grain-walnut"
+      ]
+    },
+    "aesthetic-coastal-grandmother": {
+      "default": "corduroy",
+      "alternatives": [
+        "linen-weave",
+        "paper-with-watercolor",
+        "silk",
+        "watercolor-wash"
+      ]
+    },
+    "aesthetic-vaporwave": {
+      "default": "crt-phosphor",
+      "alternatives": [
+        "datamosh-compression-smear",
+        "film-grain-cinestill-800t",
+        "film-grain-tri-x",
+        "frosted-glass",
+        "rgb-channel-split",
+        "signal-interference",
+        "silk",
+        "vhs-distortion",
+        "vhs-frutiger",
+        "wireframe-3d-line"
       ]
     },
     "style-pixel-bitmap": {
@@ -397,6 +342,21 @@
         "vhs-frutiger"
       ]
     },
+    "aesthetic-corporate-grunge": {
+      "default": "denim",
+      "alternatives": [
+        "dithered-1bit",
+        "film-grain-tri-x",
+        "halftone-cmyk",
+        "pencil-graphite",
+        "photocopy-xerox",
+        "risograph-glass",
+        "risograph",
+        "silkscreen",
+        "torn-edge",
+        "weathered-leather"
+      ]
+    },
     "style-liquid-glass": {
       "default": "dispersion-prism-glass",
       "alternatives": [
@@ -433,11 +393,14 @@
       "default": "filament-strand-ribbon",
       "alternatives": []
     },
-    "style-serif-warm-paper": {
-      "default": "hand-architect-sketch",
+    "recipe-editorial-magazine": {
+      "default": "film-grain-cinestill-800t",
       "alternatives": [
+        "film-grain-tri-x",
         "hand-architect-sketch",
-        "vellum-translucency"
+        "marble",
+        "marker-stroke-frame",
+        "scanned-glass"
       ]
     },
     "aesthetic-positivity-kawaii": {
@@ -462,6 +425,12 @@
         "torn-edge"
       ]
     },
+    "aesthetic-y2k-memphis-loud": {
+      "default": "halftone-cmyk",
+      "alternatives": [
+        "marker-stroke-frame"
+      ]
+    },
     "recipe-newspaper-of-record": {
       "default": "halftone-cmyk",
       "alternatives": [
@@ -476,12 +445,10 @@
       "default": "hand-architect-sketch",
       "alternatives": []
     },
-    "style-doodle": {
-      "default": "marker-stroke-frame",
+    "style-serif-warm-paper": {
+      "default": "hand-architect-sketch",
       "alternatives": [
-        "marker-stroke-frame",
-        "pencil-graphite",
-        "watercolor-wash"
+        "vellum-translucency"
       ]
     },
     "aesthetic-vaporwave (Japanese gloss element)": {
@@ -499,6 +466,13 @@
     "aesthetic-vaporwave (the marble bust!)": {
       "default": "marble",
       "alternatives": []
+    },
+    "style-doodle": {
+      "default": "marker-stroke-frame",
+      "alternatives": [
+        "pencil-graphite",
+        "watercolor-wash"
+      ]
     },
     "aesthetic-zine-type-wall": {
       "default": "marker-stroke-frame",
@@ -604,6 +578,12 @@
       "default": "smoked-obsidian-glass",
       "alternatives": []
     },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "smoked-obsidian-glass",
+      "alternatives": [
+        "volumetric-light-shaft"
+      ]
+    },
     "recipe-neo-grotesque-portfolio": {
       "default": "smoked-obsidian-glass",
       "alternatives": []
@@ -643,6 +623,7 @@
       "category": "metal",
       "family": "digital",
       "surfaceFinish": "metallic-iridescent",
+      "scope": "object",
       "oneLine": "A full-bleed substrate woven from interlocked chrome rings with an anodized",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -658,6 +639,10 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "ascii"
+      ],
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "recipe-terminal-on-web",
@@ -670,6 +655,7 @@
       "category": "emissive-edge",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte near-black body whose EDGE carries a thin scattering glow - the planet-limb optic applied to surfaces: dark mass, luminous rim, void beyond.",
       "pairsPrototypes": [
         "aesthetic-cosmic-horizon",
@@ -683,6 +669,7 @@
       "category": "organic-emissive",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A translucent organic tissue that reacts to light: inverted - it IS the light source; subsurface glow pulses slowly from within, falling off into true black with no ambient fill.",
       "pairsPrototypes": [
         "aesthetic-bioluminescent-deep",
@@ -696,6 +683,7 @@
       "category": "metal",
       "family": "digital",
       "surfaceFinish": "semi-gloss",
+      "scope": "object",
       "oneLine": "A semi-gloss surface that reacts to light: yes - anisotropic highlight perpendicular to brush direction.",
       "pairsPrototypes": [
         "aesthetic-cassette-futurism",
@@ -710,6 +698,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "aesthetic-bauhaus",
@@ -726,6 +715,7 @@
       "category": "ceramic",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy surface that reacts to light: yes - sharp specular sweep.",
       "pairsPrototypes": [
         "style-skeuomorphism (porcelain mascot)",
@@ -738,6 +728,7 @@
       "category": "ink",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface (translucent).",
       "pairsPrototypes": [
         "aesthetic-dark-academia",
@@ -751,6 +742,10 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "both",
+      "fxStack": [
+        "chromatic-aberration"
+      ],
       "oneLine": "A glossy surface that reacts to light: yes - CA peaks at high-contrast luminance transitions.",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -766,6 +761,7 @@
       "category": "metal",
       "family": "digital",
       "surfaceFinish": "metallic",
+      "scope": "object",
       "oneLine": "A metallic surface that reacts to light: yes - environment reflection, hue shift with angle.",
       "pairsPrototypes": [
         "aesthetic-frutiger-chromecore",
@@ -781,6 +777,7 @@
       "category": "metal",
       "family": "hybrid",
       "surfaceFinish": "metallic (chrome) on matte (velvet)",
+      "scope": "object",
       "oneLine": "A metallic (chrome) on matte (velvet) surface that reacts to light: yes - strong.",
       "pairsPrototypes": [
         "aesthetic-urbling",
@@ -795,6 +792,7 @@
       "category": "fabric",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: yes - directional pile reflects per-rib and deforms: yes.",
       "pairsPrototypes": [
         "aesthetic-cottagecore",
@@ -808,6 +806,10 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "medium",
+      "fxStack": [
+        "crt"
+      ],
       "oneLine": "A glossy surface that reacts to light: yes - phosphor glow blooms with viewing angle.",
       "pairsPrototypes": [
         "aesthetic-cassette-futurism",
@@ -823,6 +825,11 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "pixel-sort",
+        "slice"
+      ],
       "oneLine": "A matte surface and deforms: yes - frame motion stretches old pixels along predicted vectors.",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -839,6 +846,7 @@
       "category": "fabric",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface and deforms: yes - soft drape.",
       "pairsPrototypes": [
         "aesthetic-y2k-myspace",
@@ -852,6 +860,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy transparent surface that reacts to light: yes - refraction SPLITS into spectral rainbow at edges and thick sections (chromatic dispersion), casting small caustic rainbows onto surfaces behind.",
       "pairsPrototypes": [
         "style-holographic",
@@ -867,6 +876,10 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "dither"
+      ],
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "style-pixel-bitmap",
@@ -881,6 +894,7 @@
       "category": "fabric",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface and deforms: yes - squashes on press.",
       "pairsPrototypes": [
         "style-skeuomorphism (poker felt",
@@ -895,6 +909,7 @@
       "category": "emissive-fiber",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "Hundreds-to-thousands of 1px luminous strands traveling together as one silk",
       "pairsPrototypes": [
         "style-silk-chrome-flow",
@@ -909,6 +924,10 @@
       "category": "film",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "fractal-noise"
+      ],
       "oneLine": "A matte surface that reacts to light: yes - bright lights bloom with red halation.",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -923,6 +942,10 @@
       "category": "film",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "fractal-noise"
+      ],
       "oneLine": "A matte surface that reacts to light: yes - grain heavier in shadows.",
       "pairsPrototypes": [
         "recipe-editorial-magazine",
@@ -938,6 +961,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy surface (translucent) that reacts to light: yes - top-edge specular highlight, tinted by substrate beneath.",
       "pairsPrototypes": [
         "style-glassmorphism",
@@ -956,6 +980,7 @@
       "category": "plastic",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy surface that reacts to light: yes - single top-half specular gloss and deforms: minor on press (inner shadow grows).",
       "pairsPrototypes": [
         "aesthetic-frutiger-aero",
@@ -970,6 +995,10 @@
       "category": "print",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "halftone"
+      ],
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "aesthetic-corporate-grunge",
@@ -985,6 +1014,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: subtle - paper grain breathes under raking light.",
       "pairsPrototypes": [
         "recipe-warm-restraint",
@@ -1001,6 +1031,7 @@
       "category": "ink",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface (translucent).",
       "pairsPrototypes": [
         "aesthetic-anti-design",
@@ -1015,6 +1046,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "aesthetic-bauhaus",
@@ -1030,6 +1062,7 @@
       "category": "fabric",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface and deforms: yes - fabric drapes.",
       "pairsPrototypes": [
         "style-skeuomorphism (iOS Game Center linen)",
@@ -1044,6 +1077,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy surface (transparent) that reacts to light: yes - specular highlight tracks tilt/pointer; chromatic edge and deforms: minor on press.",
       "pairsPrototypes": [
         "style-liquid-glass",
@@ -1060,6 +1094,7 @@
       "category": "stone",
       "family": "analog",
       "surfaceFinish": "glossy (polished) or matte (honed)",
+      "scope": "object",
       "oneLine": "A glossy (polished) or matte (honed) surface that reacts to light: yes - soft sheen.",
       "pairsPrototypes": [
         "aesthetic-dark-academia",
@@ -1074,6 +1109,7 @@
       "category": "ink",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "Thick, imperfect marker/crayon strokes used as CONTAINMENT - each item in a",
       "pairsPrototypes": [
         "style-doodle",
@@ -1089,6 +1125,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: yes via subtle tint shift on elevation.",
       "pairsPrototypes": [
         "style-material-m3",
@@ -1103,6 +1140,7 @@
       "category": "clay",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: yes - inset highlight + dark inset shadow and deforms: minor on press (squash).",
       "pairsPrototypes": [
         "style-claymorphism",
@@ -1117,6 +1155,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "recipe-devtools-marketing",
@@ -1131,6 +1170,11 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "pixel-sort",
+        "pixelate"
+      ],
       "oneLine": "A matte surface and deforms: yes (tiles re-index, palette swaps).",
       "pairsPrototypes": [
         "style-pixel-bitmap",
@@ -1146,6 +1190,7 @@
       "category": "paper",
       "family": "hybrid",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "Paper as BUILT VOLUME, not surface texture: stacked sheets of colored stock",
       "pairsPrototypes": [
         "aesthetic-sculptural-minimal",
@@ -1161,6 +1206,7 @@
       "category": "paper",
       "family": "hybrid",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface (translucent (washes)) and deforms: yes.",
       "pairsPrototypes": [
         "aesthetic-cottagecore",
@@ -1173,6 +1219,7 @@
       "category": "paper",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface and deforms: yes - curls dramatically at corners.",
       "pairsPrototypes": [
         "aesthetic-dark-academia",
@@ -1186,6 +1233,7 @@
       "category": "leather",
       "family": "analog",
       "surfaceFinish": "semi-gloss",
+      "scope": "object",
       "oneLine": "A semi-gloss surface that reacts to light: yes - per-pebble micro-highlight and deforms: yes - bends.",
       "pairsPrototypes": [
         "style-skeuomorphism (leather wallet)",
@@ -1199,6 +1247,7 @@
       "category": "ink",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface (translucent) that reacts to light: yes - graphite glints at angle.",
       "pairsPrototypes": [
         "style-doodle",
@@ -1213,6 +1262,11 @@
       "category": "print",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "posterize",
+        "dither"
+      ],
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "aesthetic-corporate-grunge",
@@ -1228,6 +1282,10 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "both",
+      "fxStack": [
+        "pixelate"
+      ],
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "style-pixel-bitmap",
@@ -1243,6 +1301,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface.",
       "pairsPrototypes": [
         "aesthetic-swiss-modernist",
@@ -1258,6 +1317,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy transparent panel of vertical half-cylinder ribs - each rib acts as a",
       "pairsPrototypes": [
         "style-liquid-glass",
@@ -1272,6 +1332,11 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "both",
+      "fxStack": [
+        "channel-mixer",
+        "chromatic-aberration"
+      ],
       "oneLine": "A matte surface that reacts to light: yes - displacement amount can react to pointer / tilt.",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -1288,6 +1353,10 @@
       "category": "glass",
       "family": "hybrid",
       "surfaceFinish": "matte",
+      "scope": "both",
+      "fxStack": [
+        "riso-print"
+      ],
       "oneLine": "A matte surface (translucent) that reacts to light: minimal.",
       "pairsPrototypes": [
         "aesthetic-acid-design",
@@ -1301,6 +1370,10 @@
       "category": "print",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "medium",
+      "fxStack": [
+        "riso-print"
+      ],
       "oneLine": "A matte surface (translucent (per ink layer)).",
       "pairsPrototypes": [
         "aesthetic-acid-design",
@@ -1316,6 +1389,7 @@
       "category": "glass",
       "family": "hybrid",
       "surfaceFinish": "glossy",
+      "scope": "both",
       "oneLine": "A glossy surface (translucent) that reacts to light: yes.",
       "pairsPrototypes": [
         "aesthetic-cottagegoth",
@@ -1329,6 +1403,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: minor - gold pads catch raking light.",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -1345,6 +1420,11 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "medium",
+      "fxStack": [
+        "crt",
+        "slice"
+      ],
       "oneLine": "A glossy surface that reacts to light: yes - interference modulates with content luminance and deforms: yes (frame skew, scroll, sync loss).",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -1361,6 +1441,7 @@
       "category": "fabric",
       "family": "analog",
       "surfaceFinish": "semi-gloss",
+      "scope": "object",
       "oneLine": "A semi-gloss surface that reacts to light: yes - anisotropic lustre and deforms: yes - flowing drape.",
       "pairsPrototypes": [
         "aesthetic-y2k-futurism",
@@ -1375,6 +1456,11 @@
       "category": "print",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "both",
+      "fxStack": [
+        "halftone",
+        "posterize"
+      ],
       "oneLine": "A matte surface (opaque (ink layer)).",
       "pairsPrototypes": [
         "aesthetic-acid-design",
@@ -1389,6 +1475,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A dark, smoky, glossy glass solid - cube, shard, blob - whose whole job is to",
       "pairsPrototypes": [
         "aesthetic-monochrome-pop-poster",
@@ -1403,6 +1490,7 @@
       "category": "leather",
       "family": "analog",
       "surfaceFinish": "semi-gloss",
+      "scope": "object",
       "oneLine": "A semi-gloss surface that reacts to light: yes - soft specular sweep and deforms: yes.",
       "pairsPrototypes": [
         "style-skeuomorphism",
@@ -1415,6 +1503,7 @@
       "category": "clay",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: yes - dual highlight + shadow and deforms: yes (raised ↔ pressed).",
       "pairsPrototypes": [
         "style-neumorphism",
@@ -1429,6 +1518,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "glossy",
+      "scope": "object",
       "oneLine": "A glossy surface (translucent) that reacts to light: yes - but lighter than full glass; substrate shows through more.",
       "pairsPrototypes": [
         "style-glassmorphism",
@@ -1442,6 +1532,7 @@
       "category": "digital-effect",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface and deforms: yes.",
       "pairsPrototypes": [
         "style-raster-cutout",
@@ -1456,6 +1547,7 @@
       "category": "glass",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface (translucent).",
       "pairsPrototypes": [
         "style-serif-warm-paper",
@@ -1470,6 +1562,12 @@
       "category": "film",
       "family": "analog",
       "surfaceFinish": "glossy",
+      "scope": "medium",
+      "fxStack": [
+        "crt",
+        "chromatic-aberration",
+        "slice"
+      ],
       "oneLine": "A glossy surface and deforms: yes - tape head distortion bands.",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -1485,6 +1583,11 @@
       "category": "digital-effect",
       "family": "hybrid",
       "surfaceFinish": "glossy",
+      "scope": "both",
+      "fxStack": [
+        "crt",
+        "chromatic-aberration"
+      ],
       "oneLine": "A glossy surface (translucent) that reacts to light: yes and deforms: yes - VHS tracking bars.",
       "pairsPrototypes": [
         "aesthetic-vaporwave",
@@ -1498,6 +1601,7 @@
       "category": "organic-volume",
       "family": "digital",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte volumetric mass (translucent at wisps) that reacts to light: yes - silver-lining rim where lit, soft self-shadowed underbelly; and deforms: yes - billows and drifts continuously, edges never hold a fixed silhouette.",
       "pairsPrototypes": [
         "aesthetic-surreal-dream-stage",
@@ -1513,6 +1617,7 @@
       "category": "light-volume",
       "family": "digital",
       "surfaceFinish": "n/a (light, not surface)",
+      "scope": "object",
       "oneLine": "Light treated as a MATERIAL occupying air: soft parallel shafts entering a",
       "pairsPrototypes": [
         "aesthetic-sculptural-minimal",
@@ -1528,6 +1633,7 @@
       "category": "wash",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface (translucent (multiple washes)).",
       "pairsPrototypes": [
         "aesthetic-cottagecore",
@@ -1541,6 +1647,7 @@
       "category": "leather",
       "family": "analog",
       "surfaceFinish": "matte",
+      "scope": "object",
       "oneLine": "A matte surface that reacts to light: minor specular at non-worn areas and deforms: yes - creases at handle points.",
       "pairsPrototypes": [
         "aesthetic-dark-academia",
@@ -1556,6 +1663,7 @@
       "category": "digital-effect",
       "family": "digital",
       "surfaceFinish": "matte (or glowing)",
+      "scope": "object",
       "oneLine": "A matte (or glowing) surface (transparent) that reacts to light: yes - lines can glow with bloom.",
       "pairsPrototypes": [
         "aesthetic-cyberpunk",
@@ -1572,6 +1680,7 @@
       "category": "wood",
       "family": "analog",
       "surfaceFinish": "semi-gloss (varnished) or matte (raw)",
+      "scope": "object",
       "oneLine": "A semi-gloss (varnished) or matte (raw) surface that reacts to light: yes - anisotropic along grain.",
       "pairsPrototypes": [
         "style-skeuomorphism (library-as-wood-shelf)",

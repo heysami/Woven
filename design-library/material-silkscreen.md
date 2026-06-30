@@ -4,6 +4,8 @@ name: Silkscreen / Serigraphy (textile + poster print)
 family: analog
 category: print
 surfaceFinish: matte
+scope: both
+fxStack: [halftone, posterize]
 transparency: opaque (ink layer)
 pairsPrototypes: [aesthetic-acid-design, aesthetic-bauhaus, aesthetic-constructivism, aesthetic-corporate-grunge]
 images:

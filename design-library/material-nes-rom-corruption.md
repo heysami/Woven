@@ -4,6 +4,8 @@ name: NES ROM Corruption (palette-flipped sprites, garbled tile data)
 family: digital
 category: digital-effect
 surfaceFinish: matte
+scope: medium
+fxStack: [pixel-sort, pixelate]
 transparency: opaque
 pairsPrototypes: [style-pixel-bitmap, aesthetic-pixel-nes-mario, aesthetic-pixel-arcade, aesthetic-cyberpunk, aesthetic-acid-graphics]
 images:

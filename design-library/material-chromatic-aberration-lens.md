@@ -4,6 +4,8 @@ name: Lens Chromatic Aberration (radial RGB split toward corners)
 family: digital
 category: digital-effect
 surfaceFinish: glossy
+scope: both
+fxStack: [chromatic-aberration]
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-cinematic, recipe-bento-marketing, aesthetic-frutiger-aero, aesthetic-frutiger-dark-aero]
 images:

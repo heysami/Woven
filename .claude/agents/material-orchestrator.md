@@ -59,8 +59,20 @@ For each element, decide **which material from the library applies**. The librar
 | Body text | Type material - letterpress emboss / ink-bleed / monospace-code |
 | Image / video bg | Media texture - film-grain / VHS / JPEG-corruption / halftone / datamosh |
 | Decorative shape | Shape material - risograph / silkscreen / holographic-foil |
+| **Live render slot** | **Generated surface that paints its own pixels - see §1.2** |
 
 Capture per element: `elementId` (or derive from selector), `hostFile`, `selectorString`, role-category, `materialIdsApplicable` (from library decision tree).
+
+### 1.1.1 ALSO enumerate live render slots
+
+The grep above finds DOM chrome. It does NOT find surfaces that render their own pixels - a generated globe, a simulation, a scene-3d hero, a shader field. These are exactly where a **medium material** (scanline / halftone / riso / grain - see §1.2) has to land, and the chrome-class grep walks straight past them. Enumerate them separately:
+
+```bash
+find "$TH_PROJECT_ROOT/source/<branch>" -name '*.html' -print0 \
+  | xargs -0 grep -nE '<canvas|data-medium="(shader|3d|particle)"|class="[^"]*(scene3d|sim-|simulation|runtime-frame)[^"]*"|<iframe[^>]*(scene3d|simulation|runtime)'
+```
+
+A live render slot is NOT a CSS-material target. You do not paint backdrop-filter onto a WebGL globe - it owns its own renderer and the right place for the material is **inside that slot's own post chain**. Capture each as `{slotId, hostFile, selector, renderKind: "canvas|scene3d|simulation|shader|particle", builderHint}` and route it per §2.1 - you record a directive and co-dispatch back to the slot's builder; you never author a render-slot material as DOM CSS.
 
 ### Envelope
 
@@ -90,7 +102,34 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"  # presen
 - **rich** - pointer + scroll-driven parallax + hover lift, gyro behind one user-gesture gate on mobile
 - **theatrical** - every material reactive on every input; gyro + pointer + scroll wired everywhere
 
+## 1.2 The scope axis - object material vs medium material
+
+Every library entry now carries `index.entries[<materialId>].scope`:
+
+- **`object`** (default, 47 entries) - a property of ONE thing. Glass, clay, chrome bezel, leather, ceramic, foam. Per-element; lands as CSS / SVG-filter / GLSL on its selector. Never touches a live render slot. This is the path the rest of this file already describes.
+- **`medium`** (12 entries) - a property of the SURFACE the whole image was printed / captured / displayed on. Riso, halftone-CMYK, xerox, film-grain, VHS, dither, CRT phosphor, datamosh, signal-interference, NES-ROM-corruption, ASCII. The physical truth is that everything went through the same drum / film / tube AT ONCE - so a medium material that decorates the chrome but exempts the generated globe reads as two different print runs and breaks instantly. Medium materials MUST subsume the live render slots from §1.1.1.
+- **`both`** (7 entries) - resolves by assignment. One card OR the whole sheet (riso-glass, scanned-glass, chromatic-aberration-lens, rgb-channel-split, pixel-bitmap, silkscreen, vhs-frutiger). Disambiguate by whether the committed aesthetic wants the process frame-wide or confined to one surface.
+
+**The single decision that drives everything below:** is the committed material `object` or `medium`?
+
+- `object` → Phase A assigns per element, exactly as today.
+- `medium` → you do NOT paint individual chrome elements. You commit ONE frame-wide process directive (§2.1) and route every live render slot to bake the SAME process into its own post chain. Chrome and globe end up on one shared kernel - no per-element CSS, no double-stack.
+
+When `artContract` is present, `artContract.crossSurfaceContract.materialDirective` already committed which register applies; read its `scope` first and skip the re-derivation.
+
+## 2.1 Medium materials apply via fxStack, not bespoke CSS
+
+A medium material carries `index.entries[<materialId>].fxStack` - an ordered list of LIVE fx-engine ids (`editor/tools/_shared/fx.js`) that express it as a composite stack (e.g. `vhs-distortion → [crt, chromatic-aberration, slice]`, `risograph → [riso-print]`, `halftone-cmyk → [halftone]`). This is the identical bridge the shader library already uses (`pe_shader.fxStack`), and it is the PREFERRED implementation for medium + tough materials because the fx effects are already debugged, live-tunable, and ship a `bake()` standalone twin - so the same kernel runs in a live app-node globe AND in a baked prototype `<canvas>`. The drawer attaches starting params at dispatch; frontmatter carries ids only.
+
+Routing a medium material:
+
+1. **Whole-frame application.** Commit the fxStack as one top-most composited process pass over the assembled frame (the late pass), parameterised by the committed material. Riso over everything, halftone over everything, scanlines over everything - globe included.
+2. **Live render slots (§1.1.1).** For each, do NOT author DOM CSS. Record a `renderSurfaceMaterial: { materialId, fxStack }` directive into `material-plan.json` and CO-DISPATCH back to that slot's builder (scene-3d / simulation / shader orchestrator) so it bakes the same fxStack into the slot's OWN post chain. Per-surface and whole-frame share one kernel - so pick ONE: a whole-frame pass OR per-surface bakes, never both over the same pixels (they stack and over-process). Whole-frame is the default for a true single-display material; per-surface is correct only when one readout wears the process and its neighbours do not.
+3. **No live fx id?** If a medium material has an empty/absent `fxStack` (e.g. `scanned-glass`), fall back to the entry's `implementationStrategies` (GLSL / raster) exactly as an object material would - fx-composite is reuse-first, GLSL is the escape hatch.
+
 ## 2. Phase A - Material assignment per element
+
+> Applies to `object` materials (and `both` materials resolved to per-element). For `medium` materials, jump to §2.1 routing - you assign ONE frame-wide directive, not N per-element nodes.
 
 For each enumerated element:
 
@@ -116,7 +155,9 @@ For each enumerated element:
   "hostFile": "source/<branch>/<file>",
   "selector": "<CSS selector>",
   "materialId": "<library materialId>",
-  "implementationStrategy": "css | svg | webgl | raster | video | hybrid",
+  "scope": "object | medium | both",                                         # from index.entries[materialId].scope
+  "implementationStrategy": "css | svg | webgl | raster | video | fx-composite | hybrid",
+  "fxStack": [ /* live fx ids + starting params - present when strategy==fx-composite */ ],
   "reactiveBehaviorsEnabled": ["light", "highlight", "depth", "parallax"],   # subset of library entry
   "implementation": {
     "cssRules": "<verbatim CSS to inject>",
@@ -190,9 +231,17 @@ For each approved material assignment:
     "compositeCSSPath": "source/<branch>/_material/composite.css",
     "compositeJSPath":  "source/<branch>/_material/composite.js",
     "shaderModules":    ["<paths>"],
-    "rasterTextures":   ["<paths>"]
+    "rasterTextures":   ["<paths>"],
+    "scopeCommitted":   "object | medium | both",
+    "wholeFramePass":   { "materialId": "<id>", "fxStack": [/* ids+params */] } | null,   # medium → top-most process pass
+    "renderSurfaceMaterials": [                                                            # medium → routed to slot builders
+      { "slotId": "<id>", "renderKind": "scene3d|simulation|shader|particle", "materialId": "<id>", "fxStack": [/* */], "coDispatchedBuilder": "<orchestrator>" }
+    ]
   }
 }
+// INVARIANT: wholeFramePass XOR renderSurfaceMaterials over the same pixels - a frame-wide
+// pass AND per-slot bakes would double-process. Whole-frame is the default for a single-display
+// material; per-surface only when one readout wears the process and its neighbours do not.
 ```
 
 ### Hand-off envelope

@@ -4,6 +4,8 @@ name: Film Grain - CineStill 800T (tungsten, halation, neon glow)
 family: analog
 category: film
 surfaceFinish: matte
+scope: medium
+fxStack: [fractal-noise]
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-vaporwave, aesthetic-cassette-futurism, recipe-editorial-magazine]
 images:

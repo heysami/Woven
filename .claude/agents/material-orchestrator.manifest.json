@@ -23,7 +23,9 @@
     ],
     "collaborators": [
       "visual-orchestrator",
-      "shader"
+      "shader",
+      "scene-3d-orchestrator",
+      "simulation-orchestrator"
     ],
     "lenses": [
       "craft-lens",

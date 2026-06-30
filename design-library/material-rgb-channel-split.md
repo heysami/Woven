@@ -4,6 +4,8 @@ name: RGB Channel Split (intentional large-displacement chromatic split)
 family: digital
 category: digital-effect
 surfaceFinish: matte
+scope: both
+fxStack: [channel-mixer, chromatic-aberration]
 transparency: opaque
 pairsPrototypes: [aesthetic-cyberpunk, aesthetic-acid-graphics, aesthetic-vaporwave, aesthetic-y2k-futurism, aesthetic-acid-design, recipe-terminal-on-web]
 images:

@@ -4,6 +4,8 @@ name: Risograph-Glass (frosted glass under riso grain)
 family: hybrid
 category: glass
 surfaceFinish: matte
+scope: both
+fxStack: [riso-print]
 transparency: translucent
 pairsPrototypes: [aesthetic-acid-design, aesthetic-corporate-grunge, aesthetic-y2k-myspace]
 images:

@@ -4,6 +4,8 @@ name: Risograph (limited-palette spot-color print)
 family: analog
 category: print
 surfaceFinish: matte
+scope: medium
+fxStack: [riso-print]
 transparency: translucent (per ink layer)
 pairsPrototypes: [aesthetic-acid-design, aesthetic-acid-graphics, aesthetic-corporate-grunge, aesthetic-y2k-myspace, aesthetic-corporate-memphis]
 images:

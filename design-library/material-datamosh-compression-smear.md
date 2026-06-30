@@ -4,6 +4,8 @@ name: Datamosh (codec interpolation failure)
 family: digital
 category: digital-effect
 surfaceFinish: matte
+scope: medium
+fxStack: [pixel-sort, slice]
 transparency: opaque
 pairsPrototypes: [aesthetic-vaporwave, aesthetic-cyberpunk, aesthetic-acid-design, aesthetic-y2k-futurism, aesthetic-dreamcore, aesthetic-weirdcore]
 images:

@@ -4,6 +4,8 @@ name: Photocopy / Xerox (toner crush)
 family: analog
 category: print
 surfaceFinish: matte
+scope: medium
+fxStack: [posterize, dither]
 transparency: opaque
 pairsPrototypes: [aesthetic-corporate-grunge, aesthetic-cottagegoth, aesthetic-web-brutalism, aesthetic-acid-graphics, aesthetic-curly-girly]
 images:

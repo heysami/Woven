@@ -4,6 +4,8 @@ name: ASCII Art Surface (text-as-pixel)
 family: digital
 category: digital-effect
 surfaceFinish: matte
+scope: medium
+fxStack: [ascii]
 transparency: opaque
 pairsPrototypes: [recipe-terminal-on-web, aesthetic-web-brutalism]
 images:
