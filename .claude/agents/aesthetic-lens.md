@@ -69,6 +69,7 @@ The committed creative brief gives you the standard. The **assembled runtime** i
 | Check | Severity | How to verify |
 |---|---|---|
 | **Focal point is legible** | warn | The screenshot shows ONE clear focal point. If the eye doesn't know where to land (uniform busy field or uniform empty field), warn. |
+| **Load-bearing text is comfortably readable** | fail | In the screenshot, can you read the buttons, nav items, titles/headings, and important body text **comfortably at a glance** - not "does it pass a ratio", just "would a person read this without straining"? Accent-on-accent buttons, a title in a mid-value accent over a busy/gradient ground, nav lost in imagery = fail. A perceptual judgment, NOT a WCAG check; loud decoration is fine, the elements the user must read to navigate must stay legible. Ignore decorative/incidental text. |
 | **Edge tension is intentional** | warn | Content doesn't fill to the absolute edges accidentally; if it does, the breathing room reads as intentional density. Crops that look like accidental clipping = warn. |
 | **Type tone matches the brief** | warn (when component has typography) | If the brief commits to a display family vibe (e.g. "warm serif display, mono body") and the artefact uses defaults (system-ui, Inter) - warn. |
 | **Palette derives from the project DS** | warn | Colors come from CSS custom properties (`var(--accent)`, `var(--surface-2)`) sourced from the active DS - not hand-picked hex. Hex literals in source for hero colors = warn (unless the brief explicitly says raw palette). |
