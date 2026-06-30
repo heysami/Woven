@@ -69,6 +69,8 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"   # prese
 
 **When `artContract` is non-null** it is authoritative over the bare aesthetic-slug default: every composed prompt MUST hit `artContract.crossSurfaceContract.imageryRegister` and pull palette from `crossSurfaceContract.sharedPaletteHexes`, so the illustrations land in the same world as the chrome the build derived from the same contract. The decision-tree lookup below still selects the library styleId, but bias toward the candidate matching the contract's register and bake the shared palette + material read into `colorHint` / `materialHint`. If `artContract` is null, behave exactly as before.
 
+**Item-reference binding (`artContract.itemReferences[]`).** When the contract carries `itemReferences[]` (the art director cropped + bg-removed the items the north-star plate actually depicts - §3.2 of art-director-orchestrator), check each illustrative slot against every entry's `matchesSlots`. On a match, set `outputs.refImagePath` = the entry's `refPath` and `outputs.refMode` = `"subject"` on that slot's `pe_illust` node, and write the `promptForRasterForeground` as a reference-aware prompt (preserve the item AS the plate drew it; recompose only scene/scale per the slot's role) rather than describing it cold. This makes the generated asset track the approved plate sample instead of a fresh text interpretation. `itemReferences` is only ever populated when the project image model is i2i-capable, so the downstream `refImagePath` path is always valid when present.
+
 If `imageGenSkills` is empty → `runStatus: error` per §1 abort rule.
 
 ## 2. Phase A - Library-driven style pick per slot
@@ -102,14 +104,16 @@ For each enumerated illustrative slot - same algorithm as `photography-orchestra
     "materialHint":  "<from library - '3D soft clay sculpture' / 'watercolor on cold-press paper'>",
     "lineHint":      "<from library - 'no line' / '1.5pt black stroke' / 'sketchy hand-drawn'>",
     "colorHint":     "<from library - 'pastel palette' / '3-color riso' / 'muted earth'>",
-    "roleHint":      "<library role - subject / mascot / spot / decoration / typography>"
+    "roleHint":      "<library role - subject / mascot / spot / decoration / typography>",
+    "refImagePath":  "<artContract.itemReferences[].refPath when this slot matched - else omit>",
+    "refMode":       "<'subject' when refImagePath set - else omit>"
   },
   "runStatus": "done",
   "text": "<envelope: slot location, surrounding aesthetic, library styleId chosen + why>"
 }
 ```
 
-`runStatus: done` on commit - this node is data. Visual-orchestrator reads `pe_illust_<slotId>.outputs.promptForRasterForeground` when scaffolding the raster-foreground drawer.
+`runStatus: done` on commit - this node is data. Visual-orchestrator reads `pe_illust_<slotId>.outputs.promptForRasterForeground` when scaffolding the raster-foreground drawer, and (when present) copies `outputs.refImagePath` / `outputs.refMode` onto the skill node so the slot generates from the plate's own item crop.
 
 ## 3. Phase B - User steerage interrupt (§12.5)
 
@@ -161,7 +165,7 @@ Scaffold `pe_illust_<slotId>` nodes with `runStatus: done`. Container:
   "stylesUsed": ["<styleId1>", ...],
   "categoriesUsed": ["3D", "flat-vector", ...],
   "containerNode": "illust_<projectId>",
-  "nextStep": "Caller proceeds to dispatch visual-orchestrator. When visual-orchestrator scaffolds a raster-foreground drawer for slot S, it MUST read pe_illust_S.outputs.promptForRasterForeground and pass that prompt verbatim. Missing pe_illust_S → visual-orchestrator falls back to default un-enriched prompt."
+  "nextStep": "Caller proceeds to dispatch visual-orchestrator. When visual-orchestrator scaffolds a raster-foreground drawer for slot S, it MUST read pe_illust_S.outputs.promptForRasterForeground and pass that prompt verbatim, AND copy pe_illust_S.outputs.refImagePath / refMode (when present) onto the skill node so the slot generates i2i from the plate's item crop. Missing pe_illust_S → visual-orchestrator falls back to default un-enriched prompt."
 }
 ```
 

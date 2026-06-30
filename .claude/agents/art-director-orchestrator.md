@@ -1,6 +1,6 @@
 ---
 name: art-director-orchestrator
-description: PRE-BUILD art-direction orchestrator - the ONE orchestrator that runs BEFORE /prototype writes source, not after. Generates a real raster NORTH-STAR PLATE (or a small candidate set) of the intended total visual world - UI chrome AND imagery composed together as one frame - then VISUALLY INSPECTS the pixels and composes an `art-direction-contract.json` that becomes the single source of truth every downstream step reads: the /prototype build (tokens / layout / type / components / motion), the illustration / photography / visual orchestrators (palette + register + material), material-orchestrator (material character), and the final aesthetic-lens gate (cross-register coherence diff). The contract captures DESIGN PRINCIPLES extracted from the plate - composition, rhythm, colour ratios, value structure, material logic, the visual ingredients - NOT a pixel target; the prototype must inherit the plate's design DNA, never replicate its literal subject / layout / copy. HARD-GATED on raster image generation: if no image-gen model is wired, this orchestrator FAILS and does not run (the build falls back to today's text-only aesthetic). Surfaces the plate(s) for human approve / steer / regenerate BEFORE any build tokens are spent. Cold-isolated per project.
+description: PRE-BUILD art-direction orchestrator - the ONE orchestrator that runs BEFORE /prototype writes source, not after. Generates a real raster NORTH-STAR PLATE (or a small candidate set) of the intended total visual world - UI chrome AND imagery composed together as one frame - then VISUALLY INSPECTS the pixels and composes an `art-direction-contract.json` that becomes the single source of truth every downstream step reads: the /prototype build (tokens / layout / type / components / motion), the illustration / photography / visual orchestrators (palette + register + material), material-orchestrator (material character), and the final aesthetic-lens gate (cross-register coherence diff). The contract captures DESIGN PRINCIPLES extracted from the plate - composition, rhythm, colour ratios, value structure, material logic, the visual ingredients - NOT a pixel target; the prototype must inherit the plate's design DNA, never replicate its literal subject / layout / copy. Also RECONCILES the contract to the plate the model ACTUALLY rendered: matches authored typography to the observed letterform construction (width / weight / axis - e.g. swaps a static `Archivo Black` for a condensed/expanded variant when the plate reads that way), and, when the image model is image-to-image capable, crops + bg-removes the items the plate depicts into reference images the downstream generators condition on so shipped assets track the approved sample. HARD-GATED on raster image generation: if no image-gen model is wired, this orchestrator FAILS and does not run (the build falls back to today's text-only aesthetic). Surfaces the plate(s) for human approve / steer / regenerate BEFORE any build tokens are spent. Cold-isolated per project.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 ---
 
@@ -91,8 +91,8 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
 
 **Read each plate with the Read tool and LOOK at it.** You are the art director reviewing the comp. Record what is *actually in the pixels*, then author the system that harmonises with it. The contract has two halves and the split is load-bearing:
 
-- **`extracted`** - read OFF the pixels. Palette, ratios, value structure, light model, material read, composition. Tractable from a raster.
-- **`authored`** - DECIDED to be consistent with the plate, because a raster cannot tell you a type scale or an easing curve. Typography, component style, motion, spacing. These are *coherent with* the plate, not OCR'd from it.
+- **`extracted`** - read OFF the pixels. Palette, ratios, value structure, light model, material read, composition, AND the *construction* of the type the plate actually rendered (width, weight, stroke contrast, case, slant, roundness - §3.1). Tractable from a raster.
+- **`authored`** - DECIDED to be consistent with the plate, because a raster cannot tell you a type *scale* or an easing curve. Component style, motion, spacing, the modular scale. These are *coherent with* the plate, not OCR'd from it. **Typography is the hybrid case**: the *scale / tracking / line-height / case* are authored, but the *family + variant/axis* MUST match the construction you observed in `extracted.typeConstruction` (§3.1) - the family name is no longer a free authored pick when the plate renders the letterforms in front of you.
 
 ```jsonc
 {
@@ -122,6 +122,11 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
       "focalStrategy": "single hero glow per view",
       "edgeTreatment": "content floats on the ground, rarely boxed",
       "density": "calm"
+    },
+    "typeConstruction": {                       // §3.1 - OBSERVED from the plate's rendered text, not the brief's words
+      "display": "<what the model actually drew for the headline: width (condensed/normal/extended), weight, stroke contrast (mono/high), case, slant, roundness - e.g. 'very heavy, tall + condensed, near-mono stroke, all-caps, upright'>",
+      "body": "<same, observed from the plate's body / label text>",
+      "note": "the TARGET authored.typography.familyResolution must match - the letterforms in the pixels, not the family the brief named"
     }
   },
 
@@ -135,7 +140,9 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
       "lineHeight": { "body": 1.6, "display": 1.1 },
       "tracking": "<per role>",
       "caseUsage": "<sentence case body, title display, etc.>",
-      "rhythmNote": "<the typographic rhythm the plate implies>"
+      "rhythmNote": "<the typographic rhythm the plate implies>",
+      "familyResolution": "<the concrete web-available family + variant/axis that REALISES extracted.typeConstruction - e.g. 'Archivo variable @ wght 800 / wdth 75', 'Archivo Narrow', 'Archivo Expanded' - NOT the static Archivo Black when the plate reads condensed (§3.1)>",
+      "constructionMatch": "<one line: how familyResolution matches the observed construction; if you could not find an exact web font, say so and name the nearest>"
     },
     "componentStyle": {
       "cornerRadius": "<token>",
@@ -159,6 +166,22 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
     "materialDirective": "<the single material logic material-orchestrator applies to UI surfaces>",
     "antiPatterns": ["<verbatim from brief + any the plate review surfaced>"]
   },
+
+  "itemReferences": [
+    // §3.2 - ONE entry per concrete ITEM the plate depicts that maps to a planned image
+    // slot (a specific sticker, the chrome star, a mascot, an album object). Produced by
+    // detect(self-inspect)→crop→rembg from the plate. POPULATED ONLY when the project's
+    // image model is image-to-image capable (provider=openai, gpt-image-1 family); EMPTY
+    // otherwise - downstream keeps the text path. Rides the existing v3.6 reference channel.
+    {
+      "itemId": "sticker-chrome-star",
+      "refPath": "workflow/artdirection/refs/sticker-chrome-star.png",   // cropped + bg-removed, AS the plate drew it
+      "matchesSlots": ["sticker-chrome-star", "merch-charm"],            // slot ids / intents the downstream enricher binds this ref to
+      "bboxNote": "top-right chrome star in north-star-2.png",
+      "instruction": "downstream sets this as refImagePath / input_path so the generated asset matches the plate's own rendering, not a text re-description"
+    }
+    // ... one per depicted item that maps to a slot; [] when the model is not i2i-capable
+  ],
 
   "surfaceContracts": {
     // ONE entry per approvedOwnsSurface member, keyed by its containerId. This is the
@@ -184,6 +207,37 @@ Plates live under `workflow/artdirection/` - they are **planning artefacts, neve
 ```
 
 Write to `workflow/art-direction-contract.json`. This file is the deliverable everything downstream reads.
+
+### 3.1 Match typography to the construction the plate ACTUALLY rendered
+
+The image model draws the headline in whatever letterforms it invents - frequently a taller / more condensed / heavier interpretation than the family the brief named. The contract used to lock the abstract family (`Archivo Black`) while the plate, and every baked-lettering asset that inherits the plate's DNA (album covers, stickers, posters), shipped a condensed-and-tall variant. The chrome web-font then rendered standard-width and the aesthetic-lens flagged the two type surfaces as incoherent - when the condensed read was the better one all along. Close that:
+
+1. **OBSERVE** the rendered construction into `extracted.typeConstruction` - width, weight, stroke contrast, case, slant, roundness - for both the display and body text the plate shows. You are already looking at the pixels; read the letterforms, not the brief's words.
+2. **RESOLVE** `authored.typography.familyResolution` to the web-available family + variant/axis that realises that construction. If the named family has no matching axis, switch to the sibling that does: a static `Archivo Black` has no width axis, so a condensed-tall plate resolves to `Archivo` variable at high weight + reduced width (`wght 800 / wdth 75`), or `Archivo Narrow`; an extended plate resolves to `Archivo Expanded`. Same logic for round / italic / high-contrast reads - pick the variant, not the abstract name.
+3. If no web font matches the observed construction, say so in `constructionMatch` and pick the nearest - **never silently keep the standard-width family** while the plate ships condensed. The scale / tracking / line-height / case stay authored; only the family + variant is now construction-bound.
+
+### 3.2 Crop the plate's own items as reference images for downstream gen
+
+When the plate depicts a concrete ITEM that a planned image slot will also render (a specific sticker, the chrome star, a mascot, an album object), do not make the downstream generator re-invent it from a text description - hand it the plate's own rendering as a reference image so the shipped asset tracks the approved sample closely.
+
+**GATED on an image-to-image-capable model.** This rides the same channel as the v3.6 character-reference path: provider `openai`, gpt-image-1 family (any other model 400s on an input image). Check the committed `imageModel`; if it is **not** i2i-capable, skip §3.2 entirely and leave `itemReferences: []` - downstream keeps the text path, nothing breaks.
+
+For each depicted item that maps to a slot:
+
+1. **Detect** - you already inspected the plate in §3, so name the item's bounding box in plate pixels from that inspection. You are the detector; no separate endpoint is needed.
+2. **Crop** tight to the item:
+   ```bash
+   python3 -c "from PIL import Image; Image.open('workflow/artdirection/north-star-<chosen>.png').crop((L,T,R,B)).save('/tmp/<itemId>.png')"
+   ```
+3. **Background-remove** through the existing transform route (same URL as generation):
+   ```bash
+   curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+     "skill":"rembg","provider":"local","model":"u2net",
+     "input_path":"/tmp/<itemId>.png","output":"workflow/artdirection/refs/<itemId>.png"}'
+   ```
+4. **Record** it in the contract's `itemReferences[]` with the slot ids / intents it binds to.
+
+This is producer-only: downstream already consumes it end-to-end - the illustration / photography enricher copies `refPath` into the slot's `refImagePath`, `visual-orchestrator` carries it on the skill node (`refImagePath` / `refMode`), and `raster-foreground` POSTs it as `input_path` to the i2i edit endpoint. You add no new plumbing. A human can adjust any crop bound at the §4 gate before the build spends image budget.
 
 ## 4. Phase C - human steerage gate (§12.5) - BEFORE the build spends anything
 
@@ -277,11 +331,12 @@ This orchestrator's value is entirely in what reads it. The hand-off envelope te
   "branch": "<branch>",
   "contractPath": "workflow/art-direction-contract.json",
   "platePath": "workflow/artdirection/north-star-<chosen>.png",
-  "nextStep": "Caller now builds source via /prototype, but the build reads workflow/art-direction-contract.json as the AUTHORITATIVE design source, outranking the generic recipe/aesthetic template (the existing aesthetic-authority rule): step-tokens reads `extracted.palette` + `authored.spacing` + `authored.typography`; step-layout/step-optical read `extracted.composition`; step-components reads `authored.componentStyle`; step-motion reads `authored.motionCharacter`; step-content honours `extracted.moodWords`. THEN the asset orchestrators read `crossSurfaceContract`: illustration/photography/visual match `imageryRegister` + `sharedPaletteHexes`; material-orchestrator applies `materialDirective` + `reactiveBudget` to UI surfaces (not just imagery). The final aesthetic-lens gate diffs the assembled runtime against this contract for cross-register coherence - the check that was missing.",
+  "nextStep": "Caller now builds source via /prototype, but the build reads workflow/art-direction-contract.json as the AUTHORITATIVE design source, outranking the generic recipe/aesthetic template (the existing aesthetic-authority rule): step-tokens reads `extracted.palette` + `authored.spacing` + `authored.typography` (USE `authored.typography.familyResolution` as the actual @font-face/@import family + variant/axis, not the abstract display name - it matches the plate's rendered construction per §3.1); step-layout/step-optical read `extracted.composition`; step-components reads `authored.componentStyle`; step-motion reads `authored.motionCharacter`; step-content honours `extracted.moodWords`. THEN the asset orchestrators read `crossSurfaceContract`: illustration/photography/visual match `imageryRegister` + `sharedPaletteHexes`; material-orchestrator applies `materialDirective` + `reactiveBudget` to UI surfaces (not just imagery). When `itemReferences[]` is non-empty, the illustration/photography enrichers bind each matched slot's `refImagePath` to the item's `refPath` (§3.2) so the slot generates from the plate's own pixels. The final aesthetic-lens gate diffs the assembled runtime against this contract for cross-register coherence - the check that was missing.",
   "wiringRequired": [
     "capabilities.py: add a pre-build hard-rule - if art-director is in the approved roster, dispatch it BEFORE step-stack; thread contractPath into the /prototype build envelope",
-    "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template",
+    "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template. step-tokens binds the display/body font from authored.typography.familyResolution (the construction-matched variant), not the abstract family name",
     "illustration/photography/visual/material orchestrators: read crossSurfaceContract.sharedPaletteHexes + imageryRegister + materialDirective when the contract exists",
+    "illustration/photography enrichers + visual-orchestrator: when itemReferences[] is non-empty, set each matched slot's refImagePath to the item's refPath - this rides the EXISTING v3.6 reference/input_path channel (raster-foreground already POSTs input_path to the i2i edit endpoint), so no new gen plumbing is required",
     "owns-surface orchestrators (game/sim/motion-studio/interactive-media/narrative/scrapbook/scene-3d): their research step reads surfaceContracts[<theirContainerId>] (falling back to crossSurfaceContract) and commits a register that is a TRANSLATION of it, never an independent pick",
     "aesthetic-lens: when a contract exists, score cross-register coherence (chrome vs imagery vs owns-surface) against it, not only per-slot conformance"
   ]

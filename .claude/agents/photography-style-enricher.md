@@ -134,6 +134,8 @@ Compose `negativePrompt` by concatenating:
 1. Library §4 universal negative-keyword list
 2. The styleId's `avoidKeywords` (style-specific avoids)
 
+**Item-reference case.** If the node already carries `outputs.refImagePath` (photography-orchestrator bound this slot to an `art-direction-contract.json` `itemReferences[]` crop - the plate's own rendering of this item), compose `promptForRasterPhoto` as a reference-aware edit: name the reference as Image 1, command identity preservation (the depicted item as the plate drew it), and change ONLY scene/framing/light per `slotIntent`. Preserve `refImagePath` + `refMode: "subject"` in the outputs you write back. Still append the color-graded baseline tail. When no `refImagePath` is present, compose normally.
+
 ## 4. Output - write to the pe_photo node
 
 PATCH the orchestrator-scaffolded `pe_photo_<slotId>` node with:
@@ -149,6 +151,8 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/pe_photo_<slotId>/commit?proje
       "lensHint":             "<from library>",
       "lightingHint":         "<from library>",
       "moodHint":             "<from library>",
+      "refImagePath":         "<preserve if the node carried one - else omit>",
+      "refMode":              "<'subject' when refImagePath set - else omit>",
       "colorGradeBaseline":   "<which tail was appended - e.g. Subtly / Color / Cinematically / Boldly with palette / Restored>",
       "primaryStyleId":       "<chosen>",
       "secondaryStyleId":     "<chosen or null>",

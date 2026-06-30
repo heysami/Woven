@@ -110,6 +110,13 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"   # prese
 # same contract. Bias the library style pick toward the contract's register;
 # bake the shared palette + light model into lightingHint / moodHint.
 # If null, behave exactly as before.
+#
+# Item-reference binding: when artContract.itemReferences[] is present, check each
+# photo slot against every entry's matchesSlots. On a match, set
+# pe_photo_<slotId>.outputs.refImagePath = entry.refPath and refMode = "subject",
+# and phrase promptForRasterPhoto as reference-aware (preserve the depicted item as
+# the plate drew it; recompose scene per the slot). itemReferences is only populated
+# when the image model is i2i-capable, so refImagePath is always valid when present.
 ```
 
 If `imageGenSkills` is empty → `runStatus: error` per §1 abort rule.
@@ -158,14 +165,16 @@ For each enumerated photographic slot:
     "filmStockHint": "<from library entry - Portra 400 / Tri-X / etc.>",
     "lensHint":      "<from library - 35mm f/1.4 / medium-format 80mm / etc.>",
     "lightingHint":  "<from library>",
-    "moodHint":      "<from library>"
+    "moodHint":      "<from library>",
+    "refImagePath":  "<artContract.itemReferences[].refPath when this slot matched - else omit>",
+    "refMode":       "<'subject' when refImagePath set - else omit>"
   },
   "runStatus": "done",                          // this node IS the enrichment; nothing to dispatch
   "text": "<envelope: which slot in which file, what aesthetic surrounded it, which library styleId was picked + why>"
 }
 ```
 
-Note the `runStatus: done` on commit - this node is data, not a dispatch trigger. Visual-orchestrator reads `pe_photo_<slotId>.outputs.promptForRasterPhoto` when it scaffolds the raster-photo drawer for that slot.
+Note the `runStatus: done` on commit - this node is data, not a dispatch trigger. Visual-orchestrator reads `pe_photo_<slotId>.outputs.promptForRasterPhoto` when it scaffolds the raster-photo drawer for that slot, and (when present) copies `outputs.refImagePath` / `outputs.refMode` onto the skill node so the slot generates i2i from the plate's item crop.
 
 ## 3. Phase B - User steerage interrupt (§12.5)
 
@@ -221,7 +230,7 @@ Return as your final text:
   "enrichmentCount": <N>,
   "stylesUsed": ["<styleId1>", ...],
   "containerNode": "photo_<projectId>",
-  "nextStep": "Caller proceeds to dispatch visual-orchestrator. When visual-orchestrator scaffolds a raster-photo drawer for slot S, it MUST read pe_photo_S.outputs.promptForRasterPhoto and pass that prompt to the image generator verbatim. If pe_photo_S does not exist for a given raster-photo slot, visual-orchestrator falls back to its default un-enriched prompt."
+  "nextStep": "Caller proceeds to dispatch visual-orchestrator. When visual-orchestrator scaffolds a raster-photo drawer for slot S, it MUST read pe_photo_S.outputs.promptForRasterPhoto and pass that prompt to the image generator verbatim, AND copy pe_photo_S.outputs.refImagePath / refMode (when present) onto the skill node so the slot generates i2i from the plate's item crop. If pe_photo_S does not exist for a given raster-photo slot, visual-orchestrator falls back to its default un-enriched prompt."
 }
 ```
 

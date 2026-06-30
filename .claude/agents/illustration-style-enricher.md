@@ -80,6 +80,8 @@ Compose `negativePrompt`:
 1. Library §4 universal negative-keyword list
 2. Style-specific `avoidKeywords`
 
+**Item-reference case.** If the node already carries `outputs.refImagePath` (the illustration-orchestrator bound this slot to an `art-direction-contract.json` `itemReferences[]` crop - the plate's own rendering of this item), do NOT describe the subject cold. Compose `promptForRasterForeground` as a reference-aware edit: name the reference as Image 1, command identity preservation (shape, palette, material as the plate drew it), and change ONLY scene/scale/pose per `slotIntent` + the slot's role. Preserve `refImagePath` + `refMode: "subject"` in the outputs you write back (do not drop them). When no `refImagePath` is present, compose normally per above.
+
 ## 4. Output - patch the pe_illust node
 
 ```bash
@@ -93,6 +95,8 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/pe_illust_<slotId>/commit?proj
       "lineHint":                  "<from library>",
       "colorHint":                 "<from library>",
       "roleHint":                  "<from library>",
+      "refImagePath":              "<preserve if the node carried one - else omit>",
+      "refMode":                   "<'subject' when refImagePath set - else omit>",
       "primaryStyleId":            "<chosen>",
       "secondaryStyleId":          "<chosen or null>",
       "decisionTreeRow":           "<verbatim row from library §3 used>",
