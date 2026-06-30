@@ -10215,8 +10215,26 @@ class H(http.server.SimpleHTTPRequestHandler):
     # in-flight edits or another writer's nodes the way a GET→mutate→POST
     # of the full graph would.
     #
-    # Body: { "addNodes": [ {id, kind, x, y, ...} ], "addEdges": [ {from, to} ] }
+    # Body: { "addNodes": [ {id, kind, x, y, ...} ], "addEdges": [ {from, to} ],
+    #         "placement"?: "anchor"|"below"|"right", "anchorId"?: "<node id>" }
     # Existing ids / duplicate edges are skipped (idempotent on re-POST).
+    #
+    # PLACEMENT (overlap avoidance). Without `placement`, x/y are written
+    # verbatim (legacy behaviour - the caller already computed absolute
+    # coords). With `placement` set, the caller instead sends its batch in
+    # RELATIVE coords (its own layout around origin 0,0, the agent already
+    # knows its batch footprint) and the daemon resolves an origin against
+    # the LIVE graph and translates the whole batch by it - so a batch never
+    # lands on top of pre-existing nodes no matter what coords it carried:
+    #   "below" : drop the batch under everything, left-aligned to the
+    #             existing extent (origin = minX, maxY+GAP).
+    #   "right" : drop it to the right of everything, top-aligned
+    #             (origin = maxX+GAP, minY).
+    #   "anchor": place it right-of the `anchorId` node, top-aligned, then
+    #             slide the whole batch RECTANGLE down (single AABB sweep,
+    #             not per-node) until it clears existing nodes. Falls back to
+    #             "below" when anchorId is missing/unknown.
+    # section/table nodes never block placement (children float inside them).
     def _workflow_nodes_add(self, qs):
         try:
             project_root = resolve_project_root(qs)
@@ -10253,6 +10271,65 @@ class H(http.server.SimpleHTTPRequestHandler):
                 wf_nodes = wf.get("nodes") or []
                 wf_edges = wf.get("edges") or []
                 existing_ids = {n.get("id") for n in wf_nodes if isinstance(n, dict)}
+
+                # ── resolve batch placement (overlap avoidance) ──────────
+                # Translate the incoming batch so it never overlaps existing
+                # nodes. dx/dy are the offset applied to every node's x/y;
+                # they stay 0 when no `placement` is requested (legacy: write
+                # caller-supplied absolute coords verbatim).
+                def _box(n):
+                    def _f(v, d):
+                        try: return float(v if v not in (None, "") else d)
+                        except Exception: return float(d)
+                    return (_f(n.get("x"), 0), _f(n.get("y"), 0),
+                            _f(n.get("w"), 280), _f(n.get("h"), 200))
+                GAP = 48.0
+                dx = dy = 0.0
+                placement = body.get("placement")
+                anchor_id = body.get("anchorId")
+                if placement in ("anchor", "below", "right"):
+                    # bbox of the nodes we will actually add (relative coords)
+                    bxs = [_box(nn) for nn in add_nodes
+                           if isinstance(nn, dict)
+                           and isinstance(nn.get("id"), str) and nn.get("id")
+                           and isinstance(nn.get("kind"), str) and nn.get("kind")
+                           and nn.get("id") not in existing_ids]
+                    if bxs:
+                        bminx = min(b[0] for b in bxs)
+                        bminy = min(b[1] for b in bxs)
+                        bmaxx = max(b[0] + b[2] for b in bxs)
+                        bmaxy = max(b[1] + b[3] for b in bxs)
+                        bw, bh = bmaxx - bminx, bmaxy - bminy
+                        anchor = None
+                        ext = []
+                        for n in wf_nodes:
+                            if not isinstance(n, dict): continue
+                            if anchor_id and n.get("id") == anchor_id: anchor = n
+                            if n.get("kind") in ("section", "table"): continue
+                            ext.append(_box(n))
+                        ox = oy = 0.0
+                        if placement == "anchor" and anchor is not None:
+                            ax, ay, aw, ah = _box(anchor)
+                            ox, oy = ax + aw + GAP, ay
+                            PAD = 24.0
+                            def _hits(rx, ry):
+                                return any(rx < e[0] + e[2] + PAD and rx + bw + PAD > e[0]
+                                           and ry < e[1] + e[3] + PAD and ry + bh + PAD > e[1]
+                                           for e in ext)
+                            guard = 0
+                            while _hits(ox, oy) and guard < 200:
+                                oy += 56.0; guard += 1
+                        elif ext:
+                            minx = min(e[0] for e in ext)
+                            miny = min(e[1] for e in ext)
+                            maxx = max(e[0] + e[2] for e in ext)
+                            maxy = max(e[1] + e[3] for e in ext)
+                            if placement == "right":
+                                ox, oy = maxx + GAP, miny
+                            else:  # "below", or "anchor" with no/unknown anchor
+                                ox, oy = minx, maxy + GAP
+                        dx, dy = ox - bminx, oy - bminy
+
                 added_ids = []
                 for nn in add_nodes:
                     if not isinstance(nn, dict): continue
@@ -10263,10 +10340,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     entry = dict(nn)
                     entry["id"] = nid
                     entry["kind"] = kind
-                    try: entry["x"] = float(nn.get("x", 0))
-                    except Exception: entry["x"] = 0.0
-                    try: entry["y"] = float(nn.get("y", 0))
-                    except Exception: entry["y"] = 0.0
+                    try: entry["x"] = float(nn.get("x", 0)) + dx
+                    except Exception: entry["x"] = dx
+                    try: entry["y"] = float(nn.get("y", 0)) + dy
+                    except Exception: entry["y"] = dy
                     wf_nodes.append(entry)
                     existing_ids.add(nid)
                     added_ids.append(nid)
