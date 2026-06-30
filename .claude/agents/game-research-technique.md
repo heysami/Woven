@@ -131,6 +131,13 @@ Runtime crux multi-draft? **No** - pacing is fixed (action-time, no meditative /
 
 The orchestrator reads this and only flags drawers as multi-draft when you said yes. Default: no multi-draft. Opt-in only.
 
+### 2.8 - Chrome strategy (HUD framing)
+
+The overlay drawer needs to know HOW to frame the HUD. Default is a minimal edge-peek (score in a corner, progress at an edge - never a boxed panel). But when paradigm is `2d-side` / `2d-topdown` / `iconographic-physics` AND the committed aesthetic is **pixel-art / retro / 8-bit / 16-bit-JRPG / sci-fi-HUD**, a framed panel is the IDIOM, not a violation - and the right tool is the **slice9 raster 9-slice system** (see `game-experience-orchestrator.md` §1.3), NOT hand-rolled SVG rects. slice9 is no longer part of the default DS, so the overlay drawer copies it into the project itself.
+
+- **`chromeStrategy: minimal-peek`** (default) - edge-of-stage score / progress / hint, no boxed panel.
+- **`chromeStrategy: slice9`** - framed panels via `border-image`. Commit a `s9Skin`: `8bit | snes | scifi | cozy` (pre-generated procedural atlases under `editor/default-design-system/assets/slice9/<skin>/`) or `ornate:<one-line brief>` (the overlay/runtime drawer mints it via the `slice9-frame` node). NEVER pick slice9 for a non-pixel / non-retro aesthetic - it reads as broken layout there.
+
 ## 3. Recipe
 
 1. **Read upstream** - the envelope + the project's `workflow/creative-brief.json` if it exists.
@@ -185,6 +192,10 @@ The orchestrator reads this and only flags drawers as multi-draft when you said 
 ## Juice register
 **<restrained / paced / juicy / juice-overload>** - <one sentence>
 
+## Chrome strategy
+**<minimal-peek | slice9>** - <one sentence>
+<!-- if slice9: --> s9Skin: <8bit | snes | scifi | cozy | ornate:brief>
+
 ## Multi-draft recommendation
 <§2.7 block - yes/no for world, feedback, runtime>
 
@@ -219,4 +230,4 @@ State which.
 - **You do not pick a paradigm without justifying it against the objective.** A score-climbing infinite runner is poorly served by `iconographic-physics`; a soft-body toy is poorly served by `3d-environment`.
 - **You do not silently accept a vague juice register.** If `juiceRegister: any` AND `successFeel` doesn't imply a register, push back via `runError`.
 
-End with: `"game_research_<gameId>: paradigm=<X>, physics=<engine>, objective=<shape>, juice=<register>, multi-draft=<cruxes> - research.md committed."`
+End with: `"game_research_<gameId>: paradigm=<X>, physics=<engine>, objective=<shape>, juice=<register>, chrome=<minimal-peek|slice9>, multi-draft=<cruxes> - research.md committed."`

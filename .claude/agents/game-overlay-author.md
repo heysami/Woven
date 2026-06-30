@@ -16,6 +16,16 @@ The §8.3 aesthetic lens will block you if your overlay:
 - Has a settings cog / menu button in the corner (= frame, not peek - that belongs in the host app shell outside the slot).
 - Sits over more than ~12% of the slot's surface area at any one time during play.
 
+**The slice9 carve-out (ONE exception to "never box").** When `research.md` committed `chromeStrategy: slice9` (paradigm `2d-*` / `iconographic-physics` + a pixel-art / retro / 8-bit / 16-bit-JRPG / sci-fi-HUD aesthetic), a FRAMED panel is the genuine idiom, not a violation - a boxed score window IS how retro games read. In that mode only, the aesthetic lens permits a slice9-framed score panel and win/lose card. The carve-out is narrow:
+- It applies ONLY when research committed slice9. For `chromeStrategy: minimal-peek` (the default) the no-box rules above are absolute.
+- The frame is the slice9 `border-image` system, NEVER a hand-rolled rounded `<rect>` (which still fails as "box, not peek").
+- The control hint + ambient score still fade; the panel is for the score/objective readout and the end-card, not a permanent top bar.
+
+**Consuming slice9 (it is NOT in the DS bundle).** slice9 was severed from the default design system, so pull the pieces into the game yourself (see `game-experience-orchestrator.md` §1.3):
+1. Copy `editor/default-design-system/components/slice9.css` + `editor/default-design-system/themes/slice9.css` into `source/{branch}/games/{gameId}/`.
+2. Copy the committed skin folder `editor/default-design-system/assets/slice9/<s9Skin>/` (e.g. `snes`) alongside - or, for `s9Skin: ornate:<brief>`, mint a new atlas via the `slice9-frame` node first.
+3. In the overlay markup, set `data-theme="slice9" data-s9-skin="<s9Skin>"` on the framed container and use the canonical role classes (`.card` / `.btn`) so `themes/slice9.css` binds the frame. Fix the `--s9f-*` url() paths to resolve relative to the copied `components/slice9.css`.
+
 ## 0. Re-read this file
 
 ```bash
@@ -36,6 +46,9 @@ objectiveSerialize: "<from objective.js: { score, streak, progress, gameState, h
 styleCue:      "<verbatim>"
 sensoryVisual: "<verbatim>"
 dsTokens:      "<from active DS - primary type / accent / monospace>"
+
+chromeStrategy: "minimal-peek" | "slice9"   # from research.md §2.8 (default minimal-peek)
+s9Skin:         "<8bit | snes | scifi | cozy | ornate:brief>"  # only when chromeStrategy=slice9
 
 iterationOuter: 1..5
 priorVerdicts:  []

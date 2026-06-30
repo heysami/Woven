@@ -134,6 +134,16 @@ The runtime drawer's text envelope (which you scaffold in §4) MUST instruct the
 
 The runtime drawer's scaffolded `text` field (set in §4) includes these seven rules verbatim. The hand-off envelope (§5.2) surfaces a `hostPageGuidance` block for the chat caller.
 
+## 1.3 Retro / pixel-art chrome - the slice9 9-slice option (reference, not default)
+
+When the committed aesthetic is **pixel-art / retro / 8-bit / 16-bit-JRPG / sci-fi-HUD** and the piece wants framed HUD chrome (a score panel, a win/lose card, a button), the idiomatic treatment is the **slice9 raster 9-slice system** rather than hand-rolled SVG rects. slice9 is NO LONGER part of the default design system (it was deliberately severed - the neutral template must not advertise a game-UI skin), so a game that wants it must pull the pieces in itself:
+
+- **The mechanism** lives at `editor/default-design-system/components/slice9.css` (aesthetic-agnostic `border-image` binding) + `editor/default-design-system/themes/slice9.css` (binds an atlas to `.card`/`.btn`/`.input` + the `data-s9-skin` switch). Copy both into the project's `source/<branch>/` and add the `data-theme="slice9"` (+ optional `data-s9-skin="snes|scifi|cozy"`) attributes - do NOT rely on the DS bundle's `all.css`, which no longer imports them.
+- **Procedural skins** (8-bit, SNES, sci-fi, cozy) are pre-generated atlases under `assets/slice9/<skin>/` (drawn by `tools/slice9-gen.py`); copy the chosen `<skin>/` folder alongside.
+- **Ornate skins** (gold filigree, carved stone) the procedural generator cannot draw are minted by the **`slice9-frame` node** (a single workflow node, pathway A) or the `slice9-frame-author` agent, to the same hollow-frame geometry contract.
+
+This is a REFERENCE for `game-research-technique` (which may name slice9 as the chrome strategy when paradigm is `2d-*` + the aesthetic is pixel/retro) and `game-overlay-author` (the consumer - a slice9-framed panel is allowed for a pixel game, the one carve-out to the "never box the world" rule, since a framed HUD panel IS the retro idiom). It is NOT a default - non-pixel games keep the minimal edge-peek HUD.
+
 ## 2. Phase A - Research (ONE researcher: tech stack)
 
 The research pass is **a single dispatch**. There is no fleet, no synthesiser. The tech-stack researcher (`game-research-technique`) picks the paradigm + render strategy + physics engine + tick rate + input modalities + objective shape + juice register in one pass and writes `research.md` directly.
@@ -272,7 +282,7 @@ If you stall at step 5 (one input builder errors), only that one node shows `err
 { "id": "game_overlay_<gameId>", "kind": "agent",
   "name": "game-overlay-author",
   "title": "Overlay · <gameId>",
-  "text": "<envelope: minimal-peek HUD (score, progress, control hint) + DS tokens + edge-of-stage placement + must-not-box-the-world rule>",
+  "text": "<envelope: minimal-peek HUD (score, progress, control hint) + DS tokens + edge-of-stage placement + must-not-box-the-world rule + chromeStrategy/s9Skin from research.md §2.8 (slice9-framed panel allowed only when committed - §1.3)>",
   "gameId": "<gameId>", "branch": "<branch>", "w": 320, "h": 220 },
 
 { "id": "game_runtime_<gameId>", "kind": "agent",
