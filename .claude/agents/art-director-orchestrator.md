@@ -80,9 +80,14 @@ The plate is a **finished-product key visual of the intended total world**: a si
 ```bash
 # 1. generate (output MUST be under source/)
 curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
-  "skill":"generate-image","provider":"openai","model":"<the project image model>",
+  "skill":"generate-image","provider":"openai",
   "aspect":"<16:10 desktop | 9:16 mobile>","prompt":"<the full plate brief - see below>",
   "output":"source/<branch>/_artdir/north-star-<n>.png"}'
+# OMIT "model" so the daemon applies the user-default image model. NEVER hardcode
+# gpt-image-1 / guess from memory: the default is surfaced at GET /__capabilities
+# `defaultImageModel` (and the capabilities preamble's "Image generation DEFAULT"
+# row) - currently {id: gpt-image-2, provider: openai}. Set "model" only if the
+# user named a specific one for this project.
 # 2. copy to the canonical served planning location (servable: translate_path roots project-relative GETs at the project)
 cp "$TH_PROJECT_ROOT/source/<branch>/_artdir/north-star-<n>.png" "$TH_PROJECT_ROOT/workflow/artdirection/north-star-<n>.png"
 # 3. commit the plate as an image asset node on the canvas NOW (race-safe append) - so the user sees it immediately

@@ -41,7 +41,7 @@ _PROTOCOL_ROOT = os.path.dirname(_EDITOR_DIR)
 _MEDIA_MODELS_PATH = os.path.join(_EDITOR_DIR, "prompts", "media-models.js")
 
 def _parse_media_models() -> dict:
-    out = {"providers": [], "skills": [], "imageModels": [], "textModels": []}
+    out = {"providers": [], "skills": [], "imageModels": [], "textModels": [], "defaultImageModel": None}
     if not os.path.isfile(_MEDIA_MODELS_PATH):
         return out
     try:
@@ -88,13 +88,32 @@ def _parse_media_models() -> dict:
         if mid in seen_model_ids: continue
         seen_model_ids.add(mid)
         caps = [c.strip().strip('"') for c in caps_str.split(",") if c.strip()]
+        # `default: true` marks the user-default image model (the one agents must
+        # use when told "use the user-default image model"). Dropping it forced
+        # agents to GUESS the default - the bug where one fell back to gpt-image-1
+        # off a non-existent memory note when the real default is gpt-image-2.
+        is_default = bool(re.search(r"default:\s*true", m.group(0)))
         out["imageModels"].append({
             "id":         mid,
             "provider":   prov,
             "label":      label,
             "caps":       caps,
             "integrated": (integ == "true") if integ else None,
+            "default":    is_default,
         })
+        # Only an actual image model can be the image default (this regex also
+        # matches text/video/3d model objects, which carry their own default:true).
+        if is_default and not out.get("defaultImageModel") and any(c in caps for c in ("t2i", "i2i", "inpaint")):
+            out["defaultImageModel"] = {"id": mid, "provider": prov}
+
+    # Fallback: if no model carried `default: true` (parser miss / config drift),
+    # mirror the daemon's own dispatch default (model = model or "gpt-image-2")
+    # so the field is never null and agents never have to guess.
+    if not out.get("defaultImageModel") and out["imageModels"]:
+        _pref = next((im for im in out["imageModels"] if im["id"] == "gpt-image-2"), None) \
+                or next((im for im in out["imageModels"] if im.get("integrated")), None) \
+                or out["imageModels"][0]
+        out["defaultImageModel"] = {"id": _pref["id"], "provider": _pref["provider"]}
 
     # Skills: EVERY entry in the `const SKILLS = [ ... ];` array. The previous
     # implementation scanned the whole file for `{ id: "..." }` blocks and kept
@@ -438,6 +457,10 @@ def get_capabilities() -> dict:
         "summary":         "Canonical catalog of what this app supports. If the user asks about something not listed here, it genuinely isn't integrated.",
         "providers":       _parse_media_models().get("providers", []),
         "imageModels":     _parse_media_models().get("imageModels", []),
+        # The user-default image model (the `default: true` row in media-models.js).
+        # Agents told to "use the user-default image model" MUST read THIS, never
+        # guess. Currently {id: "gpt-image-2", provider: "openai"}.
+        "defaultImageModel": _parse_media_models().get("defaultImageModel"),
         "skills":          _parse_media_models().get("skills", []),
         "subagents":       _scan_subagents(),
         "endpoints":       _daemon_endpoints(),
@@ -730,11 +753,19 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 "3d":    "3D generation",
                 "lottie": "Lottie animation",
             }
+            # When the user hasn't set an explicit IMAGE default, fall back to the
+            # media-models.js `default: true` model (gpt-image-2) rather than a vague
+            # "Auto - pick any provider". A vague row is exactly what made an agent
+            # GUESS and fall back to gpt-image-1 off a non-existent memory note.
+            _img_default = _parse_media_models().get("defaultImageModel") or {}
             rows = []
             for cap_key, cap_label in _CAP_LABELS.items():
                 row = defaults.get(cap_key)
                 if not row:
-                    rows.append(f"  • {cap_label:24s}  (Auto - pick any ✓ KEY provider that supports this skill)")
+                    if cap_key == "image" and _img_default.get("id"):
+                        rows.append(f"  • {cap_label:24s}  DEFAULT: {_img_default['provider']} · {_img_default['id']} (media-models.js default; use THIS, do not guess)")
+                    else:
+                        rows.append(f"  • {cap_label:24s}  (Auto - pick any ✓ KEY provider that supports this skill)")
                     continue
                 pieces = []
                 if row.get("provider"): pieces.append(row["provider"])
