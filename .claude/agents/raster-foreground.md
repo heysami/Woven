@@ -27,7 +27,7 @@ You are Subagent 1.V.raster-foreground.
 ```jsonc
 { "assetId": "<id>",
   "promptText": "<the imaging prompt you'd send to `generate-image` to reproduce this asset>",
-  "params": { "aspect": "1:1", "model": "gpt-image-1", "transparent": true },
+  "params": { "aspect": "1:1", "transparent": true },
   "skillCode": null,
   "slotEditDiff": "<optional html mutation>" }
 ```
@@ -42,17 +42,18 @@ When a `reference` block was passed (v3.6 character link), generate WITH the ref
    curl -sS -X POST "${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}" \
      -H 'Content-Type: application/json' \
      --data-binary @- <<JSON
-   { "skill": "generate-image", "provider": "openai", "model": "gpt-image-1",
+   { "skill": "generate-image", "provider": "openai",
      "prompt": "<your prompt>", "aspect": "1:1",
      "output": "source/${TH_BRANCH}/images/<assetId>.png" }
    JSON
    ```
-   - **(v3.6) Reference / character-link variant** - add `"input_path": "<referenceImagePath>"` (the anchor's path the orchestrator handed you). The daemon promotes the call to its image-to-image edit endpoint so the anchor's identity carries through. This path ONLY works on `provider: "openai"` + `model: "gpt-image-1"` (the orchestrator already pinned them); any other model 400s with an input image, so do not switch models here.
+   **Do NOT hardcode `model`** - OMIT it so the daemon uses the user's committed Image-generation default (surfaced in the capabilities preamble; currently the OpenAI flagship `gpt-image-2`). Hardcoding `gpt-image-1` overrides the user's choice and pins a model that deprecates Oct 2026 - that is a bug. Only set `model` when the user explicitly named one for this slot.
+   - **(v3.6) Reference / character-link variant** - add `"input_path": "<referenceImagePath>"` (the anchor's path the orchestrator handed you). The daemon promotes the call to its image-to-image edit endpoint so the anchor's identity carries through. Requires an i2i-capable OpenAI model; the default `gpt-image-2` is i2i-capable (as are `gpt-image-1.5` / `gpt-image-1`), so still OMIT `model` and let the default apply - do NOT pin `gpt-image-1`. (Only non-OpenAI providers / `dall-e-*` 400 on an input image.)
      ```bash
      curl -sS -X POST "${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}" \
        -H 'Content-Type: application/json' \
        --data-binary @- <<JSON
-     { "skill": "generate-image", "provider": "openai", "model": "gpt-image-1",
+     { "skill": "generate-image", "provider": "openai",
        "prompt": "<your character-consistency edit prompt>", "aspect": "1:1",
        "input_path": "<referenceImagePath>",
        "output": "source/${TH_BRANCH}/images/<assetId>.png" }

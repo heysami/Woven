@@ -24,7 +24,7 @@ You are Subagent 1.V.raster-photo.
 ```jsonc
 { "assetId": "<id>",
   "promptText": "<the imaging prompt; emphasise camera + lighting + atmosphere + DOF>",
-  "params": { "aspect": "<picked-from-bbox>", "model": "gpt-image-1" },
+  "params": { "aspect": "<picked-from-bbox>" },
   "skillCode": null }
 ```
 
@@ -33,8 +33,8 @@ When a `reference` block was passed (v3.6 character link), generate WITH the ref
 **Pipeline**:
 1. Compose a photographic prompt - camera angle, lens, lighting, atmosphere, time of day, depth of field.
    - **(v3.6) If `reference` is present**, write a consistency EDIT prompt instead: name the reference as Image 1, preserve the subject's identity / geometry, and change only the scene, framing, lighting, or weather to this slot's `intent`. Template: `docs/research/imagegen-playbook.md` "character consistency" / "lighting-weather".
-2. POST to `${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}` - **the `?project=${TH_PROJECT_ID}` query param is mandatory**; the daemon 400s without it in workspace mode. Body: `{ "skill": "generate-image", "provider": "openai", "model": "gpt-image-1", "prompt": "...", "aspect": "<closest from 1:1/3:2/16:9/2:3/9:16>", "output": "source/${TH_BRANCH}/images/<assetId>.png" }`.
-   - **(v3.6) Reference / character-link variant** - add `"input_path": "<referenceImagePath>"` to the body. The daemon promotes the call to its image-to-image edit endpoint so the anchor's identity carries through. Works ONLY on `provider: "openai"` + `model: "gpt-image-1"` (already pinned by the orchestrator); any other model 400s with an input image.
+2. POST to `${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}` - **the `?project=${TH_PROJECT_ID}` query param is mandatory**; the daemon 400s without it in workspace mode. Body: `{ "skill": "generate-image", "provider": "openai", "prompt": "...", "aspect": "<closest from 1:1/3:2/16:9/2:3/9:16>", "output": "source/${TH_BRANCH}/images/<assetId>.png" }`. **Do NOT hardcode `model`** - OMIT it so the daemon uses the user's committed Image-generation default (surfaced in the capabilities preamble; currently the OpenAI flagship `gpt-image-2`). Hardcoding `gpt-image-1` overrides the user's choice and pins a model that deprecates Oct 2026 - that is a bug. Only set `model` when the user explicitly named one for this slot.
+   - **(v3.6) Reference / character-link variant** - add `"input_path": "<referenceImagePath>"` to the body. The daemon promotes the call to its image-to-image edit endpoint so the anchor's identity carries through. Requires an i2i-capable OpenAI model; the default `gpt-image-2` is i2i-capable (as are `gpt-image-1.5` / `gpt-image-1`), so still OMIT `model` and let the default apply - do NOT pin `gpt-image-1`. (Only non-OpenAI providers / `dall-e-*` 400 on an input image.)
 3. RETURN `promptText` to the orchestrator so the prompt node gets populated.
 
 The skill node value is `generate-image` (registered in `editor/prompts/media-models.js`).

@@ -32,7 +32,7 @@ Use `${TH_DAEMON_URL}` + `${TH_PROJECT_ID}` as-is - both are set on every spawn;
 ```bash
 curl -sS -X POST "${TH_DAEMON_URL}/__asset_generate?project=${TH_PROJECT_ID}" \
   -H 'Content-Type: application/json' --data-binary @- <<JSON
-{ "skill": "slice9-frame", "provider": "openai", "model": "gpt-image-1",
+{ "skill": "slice9-frame", "provider": "openai",
   "prompt": "<role-specific ornate frame description - material, palette, motif>", "aspect": "1:1",
   "output": "<assetRoot>/slice9/${skinId}/<role>.png" }
 JSON
