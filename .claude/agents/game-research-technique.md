@@ -138,6 +138,24 @@ The overlay drawer needs to know HOW to frame the HUD. Default is a minimal edge
 - **`chromeStrategy: minimal-peek`** (default) - edge-of-stage score / progress / hint, no boxed panel.
 - **`chromeStrategy: slice9`** - framed panels via `border-image`. Commit a `s9Skin`: `8bit | snes | scifi | cozy` (pre-generated procedural atlases under `editor/default-design-system/assets/slice9/<skin>/`) or `ornate:<one-line brief>` (the overlay/runtime drawer mints it via the `slice9-frame` node). NEVER pick slice9 for a non-pixel / non-retro aesthetic - it reads as broken layout there.
 
+### 2.9 - Visual asset strategy (sprite vs procedural)
+
+The world drawer needs to know WHAT it draws its entities from. For `2d-side` / `2d-topdown` (and `iconographic-physics` when the entities are depictive characters, not abstract shapes), this is a first-class committed decision - the same weight as chrome strategy - because it changes the whole asset pipeline the world + orchestrator run. Do NOT leave it to the world drawer to improvise; commit it here so the orchestrator can propagate it and the world drawer consumes a plan instead of inventing one.
+
+- **`spriteStrategy: procedural`** (default) - entities are drawn from shape primitives, vector paths, or canvas geometry (circles, capsules, hand-rolled paths). Right for abstract / minimal / geometric aesthetics, `iconographic-physics`, and any world whose subjects are not recognisable characters. Zero image-gen cost.
+- **`spriteStrategy: raster-sprite`** - one or more entities are recognisable, articulated characters (a walker, a creature, a mascot, a vehicle) whose motion reads better as **redrawn frames** than as transformed shapes. When you pick this, commit a **sprite inventory** (below). Only pick it when the aesthetic wants depictive characters AND an image-gen model is wired - with no image model, fall back to `procedural` and say so.
+
+**The sprite pipeline (why this is not just "commission N plates").** A walk / idle / attack loop is the SAME subject across frames; N independent generations drift (proportions and identity wander frame to frame). The wired primitive that solves this is the **`animated-sprite` node** (`medium: "animated-sprite"`) - it takes ONE base plate, redraws the subject pose-by-pose with subject-preserving i2i, and packs a strip-sheet PNG + a TexturePacker/Aseprite-compatible atlas JSON in a single node, so frames hold identity. It is **scaffolded, not dispatched** (there is no `animated-sprite` Task subagent - see `visual-orchestrator.md` §368 and `game-experience-orchestrator.md` §1.4). Output lands at `source/<branch>/sprites/animated-sprite-<nodeId>.png` (+ atlas JSON). Static backgrounds / tiles / one-pose props are NOT sprites - they stay ordinary `raster-foreground` plates.
+
+**The sprite inventory** - for each animated entity, commit:
+- `entity` - what it is (e.g. "player fox", "hopping enemy", "collectable coin")
+- `basePlate` - the one reference plate the cycle is redrawn from (a `raster-foreground` plate; generate it first)
+- `cycles[]` - the animation states, from the supported set: `idle | walk | run | jump | attack | hit | turn | blink | spin` (each is one loop; a coin might be only `spin`, a player might be `idle + walk + jump`)
+- per cycle: `frameCount` + `frameRate` + grid dims (cols×rows)
+- `loop` semantics (seamless-return vs play-once)
+
+NEVER pick `raster-sprite` for a world whose entities are abstract shapes (a pinball, a paper plane silhouette, particle-field motes) - a sprite sheet there is wasted budget and reads worse than a clean procedural draw.
+
 ## 3. Recipe
 
 1. **Read upstream** - the envelope + the project's `workflow/creative-brief.json` if it exists.
@@ -196,6 +214,16 @@ The overlay drawer needs to know HOW to frame the HUD. Default is a minimal edge
 **<minimal-peek | slice9>** - <one sentence>
 <!-- if slice9: --> s9Skin: <8bit | snes | scifi | cozy | ornate:brief>
 
+## Sprite strategy
+**<procedural | raster-sprite>** - <one sentence>
+<!-- if raster-sprite: sprite inventory, one block per animated entity -->
+<!--
+- entity: <player fox>
+  basePlate: <plates/player.png>
+  cycles: [ {state: idle, frameCount: 4, frameRate: 6, grid: 4x1, loop: seamless},
+            {state: walk, frameCount: 8, frameRate: 12, grid: 4x2, loop: seamless} ]
+-->
+
 ## Multi-draft recommendation
 <§2.7 block - yes/no for world, feedback, runtime>
 
@@ -230,4 +258,4 @@ State which.
 - **You do not pick a paradigm without justifying it against the objective.** A score-climbing infinite runner is poorly served by `iconographic-physics`; a soft-body toy is poorly served by `3d-environment`.
 - **You do not silently accept a vague juice register.** If `juiceRegister: any` AND `successFeel` doesn't imply a register, push back via `runError`.
 
-End with: `"game_research_<gameId>: paradigm=<X>, physics=<engine>, objective=<shape>, juice=<register>, chrome=<minimal-peek|slice9>, multi-draft=<cruxes> - research.md committed."`
+End with: `"game_research_<gameId>: paradigm=<X>, physics=<engine>, objective=<shape>, juice=<register>, chrome=<minimal-peek|slice9>, sprite=<procedural|raster-sprite>, multi-draft=<cruxes> - research.md committed."`

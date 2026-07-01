@@ -33,6 +33,9 @@ paradigm:        "2d-side" | "2d-topdown" | "3d-environment" | "iconographic-phy
 renderStrategy:  "<from research.md §2.1>"
 ambientMotion:   "<from research.md §Living-world contract - what's always moving>"
 
+spriteStrategy:  "procedural" | "raster-sprite"     # from research.md §2.9
+spriteInventory: "<from research.md §Sprite strategy - per-entity basePlate + cycles[], only when raster-sprite>"
+
 objectiveContract:  "<verbatim from objective.js - what bodies must exist, what regions exist>"
 
 # Project style propagation
@@ -182,15 +185,25 @@ Boot the world with the peak entity count from research's performance budget. `p
 
 ## 4. Collaboration with visual-orchestrator
 
-If the world needs hero plates / sprite sheets / texture atlases (always for `2d-side` and `2d-topdown`; often for `3d-environment`), dispatch `visual-orchestrator` per asset:
+If the world needs hero plates / backgrounds / texture atlases (always for `2d-side` and `2d-topdown`; often for `3d-environment`), dispatch `visual-orchestrator` per asset:
 
 ```
 Task(subagent_type: "visual-orchestrator",
-     description: "Sprite sheet for game:<gameId>",
+     description: "Plate for game:<gameId>",
      prompt: "<one-line intent inheriting styleCue verbatim>. Output: source/<branch>/games/<gameId>/plates/<assetId>.png")
 ```
 
-**For an ANIMATED sprite cycle** (a character walk / idle / attack / blink loop - the same subject across frames, not a static plate), do NOT commission N separate plates and hope they match. Ask visual-orchestrator for a single base plate, then have it record an `animated-sprite` node (`medium: "animated-sprite"`) wired to that plate: the node redraws the subject pose-by-pose with subject-preserving i2i and packs a strip PNG + atlas JSON, so the frames hold identity. Load the resulting sheet + atlas in `world.html` and step frames in `onFrame`. Static plates / backgrounds / tiles stay the per-asset dispatch above.
+### 4.1 Animated sprites - CONSUME the committed inventory (do NOT improvise)
+
+Whether the world uses raster sprites is a research-committed decision, not yours to invent. Read `spriteStrategy` + `spriteInventory` from the envelope (research.md §2.9):
+
+- **`spriteStrategy: procedural`** - draw entities from shape primitives / vector paths / canvas geometry. No sprite nodes. Skip the rest of this section.
+- **`spriteStrategy: raster-sprite`** - the inventory lists each animated entity with its `basePlate` + `cycles[]`. For each entry:
+  1. Ensure the `basePlate` exists (an ordinary `raster-foreground` plate under `plates/`; commission it via the §4 dispatch first if missing).
+  2. Scaffold ONE `animated-sprite` node (`medium: "animated-sprite"`) wired to that base plate - do NOT commission N separate plates per frame and hope they match (they drift). The node redraws the subject pose-by-pose with subject-preserving i2i and packs a strip-sheet PNG + a TexturePacker/Aseprite-compatible atlas JSON in a single node, so the frames hold identity. This is **scaffold, not a Task dispatch** (there is no `animated-sprite` subagent - see `visual-orchestrator.md` §368 / `game-experience-orchestrator.md` §1.4); gate it on the base plate existing, not on an anchor file.
+  3. The sheet lands at `source/<branch>/sprites/animated-sprite-<nodeId>.png` (+ atlas JSON). Load sheet + atlas in `world.html` and step frames in `onFrame` (advance the frame index by the cycle's `frameRate`, blit the atlas cell for the current pose; pick the cycle - idle / walk / run / jump / attack / hit / turn / blink / spin - from `state`).
+
+If the inventory names a cycle the primitive does not support, or the base plate can't be generated (no image-gen model), ship the world with a procedural fallback for that entity and note it in `// Known issues:`. Static backgrounds / tiles / one-pose props are NOT sprites - they stay the per-asset dispatch above.
 
 For 3D surface textures, use the tileable contract from `editor/kinds/3D_CAPABILITIES.md §2.1` ("Seamless tileable texture … FLAT top-down, even diffuse lighting, no shadows, no vignette, exact square" → `source/<branch>/games/<gameId>/textures/<name>.png`). For Meshy hero meshes (when wired), commission the `3d-gen` skill the same way with output `models/<name>.glb` - keep its baked PBR map set on load (`GLTFLoader`, do not re-flatten; §2.3), and for a rigged character variant (`meshy/*-anim`) drive `gltf.animations` with an `AnimationMixer`.
 

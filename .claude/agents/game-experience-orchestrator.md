@@ -144,6 +144,16 @@ When the committed aesthetic is **pixel-art / retro / 8-bit / 16-bit-JRPG / sci-
 
 This is a REFERENCE for `game-research-technique` (which may name slice9 as the chrome strategy when paradigm is `2d-*` + the aesthetic is pixel/retro) and `game-overlay-author` (the consumer - a slice9-framed panel is allowed for a pixel game, the one carve-out to the "never box the world" rule, since a framed HUD panel IS the retro idiom). It is NOT a default - non-pixel games keep the minimal edge-peek HUD.
 
+## 1.4 Animated sprites for 2D games - the sprite strategy (reference, not default)
+
+The 2D counterpart to §1.3's chrome decision: for `2d-side` / `2d-topdown` (and depictive `iconographic-physics`), the world's entities are drawn either from shape primitives (`spriteStrategy: procedural`, the default) OR from redrawn raster frames (`spriteStrategy: raster-sprite`). When entities are recognisable, articulated characters (a walker, a creature, a mascot), redrawn frames read far better than transformed shapes - and the wired primitive that produces them is the **`animated-sprite` node**, NOT N independent plate generations (which drift in identity frame to frame).
+
+- **The mechanism** is the `animated-sprite` node (`medium: "animated-sprite"`, defined in `editor/app.js`): it takes ONE base plate wired to its input port, redraws the subject pose-by-pose with subject-preserving i2i via its `edit`-port authoring, and packs a strip-sheet PNG + a TexturePacker/Aseprite-compatible atlas JSON in a single node. Output lands at `source/<branch>/sprites/animated-sprite-<nodeId>.png` (+ atlas JSON). Supported cycles: `idle | walk | run | jump | attack | hit | turn | blink | spin`.
+- **Scaffold, not dispatch.** There is no `animated-sprite` Task subagent. Like `visual-orchestrator` §368, the sprite is a NODE wired to a base image; nothing lands at a single per-slot `outputPath`, so it is gated on the base plate existing, not on an anchor file. The base plate is an ordinary `raster-foreground` plate generated first.
+- **Static backgrounds / tiles / one-pose props are NOT sprites** - they stay ordinary per-asset `raster-foreground` plates.
+
+This is a REFERENCE for `game-research-technique` (which commits `spriteStrategy` + the sprite inventory in `research.md` §2.9 when paradigm is `2d-*` + entities are depictive + an image-gen model is wired) and `game-world-builder` (the consumer - it reads the committed inventory, scaffolds one `animated-sprite` node per entry wired to its base plate, and steps frames in `onFrame`). It is NOT a default - abstract-shape worlds (pinball, paper-plane silhouette, particle motes) keep `procedural`. Hard-gated on an image-gen model exactly like the art-direction pipeline: no image model → `procedural` fallback.
+
 ## 2. Phase A - Research (ONE researcher: tech stack)
 
 The research pass is **a single dispatch**. There is no fleet, no synthesiser. The tech-stack researcher (`game-research-technique`) picks the paradigm + render strategy + physics engine + tick rate + input modalities + objective shape + juice register in one pass and writes `research.md` directly.
@@ -252,7 +262,7 @@ If you stall at step 5 (one input builder errors), only that one node shows `err
 { "id": "game_world_<gameId>", "kind": "agent",
   "name": "game-world-builder",
   "title": "World · <gameId>",
-  "text": "<envelope: paradigm + render strategy + creative brief style cue + objective contract + ambient motion brief>",
+  "text": "<envelope: paradigm + render strategy + creative brief style cue + objective contract + ambient motion brief + spriteStrategy + sprite inventory from research.md §2.9 (when raster-sprite: scaffold one animated-sprite node per entity wired to its base plate - §1.4)>",
   "gameId": "<gameId>", "branch": "<branch>", "w": 320, "h": 260 },
 
 { "id": "game_physics_<gameId>", "kind": "agent",
