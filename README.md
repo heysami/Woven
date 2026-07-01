@@ -264,22 +264,22 @@ Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work, gener
 
 ## 11. The final prototype
 
-After the agent finishes the run, the workflow canvas fills out with every step that produced the prototype: a column of **Prompt** nodes (one per illustrated subject: Totoro himself, soot sprites, Chibi-Totoro, the Catbus…), each feeding a **Generate image** node, then a **Remove background** node that pipes the cleaned PNG into the final page rendering on the right. The chat drawer streams the agent's tool calls live (Read / Write / Bash) as it scaffolds files into `source/`. The right-most frame is the live phone-mockup of the Ghibli-themed Totoro feeder app, sitting inside the canvas alongside the assets that built it.
+After the run finishes (marked **Done** at 28 turns), the workflow canvas holds every step that produced the app: a column of **Generate image** nodes (one per painted asset: Totoro under the camphor tree, the pantry shelf, the ambient leaf borders, each food cutout…), with **Remove background** nodes cleaning the food sprites into transparent PNGs, all feeding the live phone-mockup of **Totoro's Wood** on the right. The chat drawer records how it was built and can be reopened to continue the same session.
 
-![Final prototype · Totoro feeder app on the workflow canvas](docs/screenshots/09-final-prototype.png)
+![Final prototype · Totoro's Wood on the workflow canvas](docs/screenshots/09-final-prototype.png)
 
-From here you can switch to the **Prototype viewer** (the right-side nav-rail button) to browse the full app in browser-style tabs outside the canvas, or re-run any individual asset node (the **▶ Run** control on the node) to regenerate a single illustration without redoing the whole flow.
+The chat summary shows the discipline the build followed. The palette (`#f4ece0 / #fbf6ec / #3a3128 / #8a7d6b / #e3d6c2 / #5b8c6e`), Fraunces display + Inter body, and a cream-humanist × cottagecore register were **locked from the approved art-direction plate** and held immutable through the build. The orchestrators ran in order: **art-director** (north-star plate + contract) → **illustration** (committed the Ghibli watercolor register, rejecting the 3D-mascot default) → **visual** (12 painted assets + the ambient-leaves loop) → **game-experience** (the playable feed loop) → **interactive-polish** (staggered chrome settle, watery meter rise, journal reveal). Click **▶ Run** on any node to regenerate a single asset without redoing the flow.
 
 ### What the agent generated from a single prompt
 
-The one-line prompt, *"create a ghibli themed mobile app to feed totoro"*, produced a four-tab app named **Mori**, with a watercolor Ghibli palette, soft-rain weather chip, and consistent illustration style across every screen:
+The one-line prompt, *"build a ghibli themed mobile app to feed totoro"*, produced a four-tab app — **Wood · Feed · Pantry · Journal** — with a hand-painted watercolor palette carried across every screen:
 
-| Glade · feed Totoro | Forage · gather food | Friends · forest companions |
+| Wood · visit Totoro | Pantry · what you've gathered | Journal · your days together |
 | :---: | :---: | :---: |
-| ![Glade tab](docs/screenshots/10-app-glade.png) | ![Forage tab](docs/screenshots/11-app-forage.png) | ![Friends tab](docs/screenshots/12-app-friends.png) |
-| Totoro idles in a rainy clearing; three stat bars (**Fullness · Happiness · Trust**) drive a food picker (Acorn the favourite, Sun berry, Mushroom, Leaf roll) with live counts and a hint that O-Totoro loves acorns most. | A list of refilling foraging spots (**Camphor tree hollow · Rain meadow · Root cellar**) with painted location thumbnails and a "Resting · Back in 2h" cooldown on the cellar. Spots regrow over time. | A grid of Ghibli companions (**Chibi-Totoro · Soot sprites · Catbus · Mei**) each with a Here-now / Away presence chip; Catbus and Mei unlock as trust climbs. |
+| ![Wood tab](docs/screenshots/10-app-wood.png) | ![Pantry tab](docs/screenshots/11-app-pantry.png) | ![Journal tab](docs/screenshots/12-app-journal.png) |
+| Totoro dozes under the great camphor tree; two meters (a **heart** at 72, an **acorn** at 48) sit above a **Feed Totoro** button, with the line "He stirs when you visit. Bring him something from the pantry." | **The Pantry** — *six days of small kindnesses.* A grid of gathered foods (**Acorns · Forest berries · Oak leaves · Brown mushroom · Dango**) with live counts and a *favorite* tag on the ones Totoro loves most. | **Journal** — a settling-in timeline that writes itself as you play: *A sprout woke up · The first acorn · A small friend came by · We waited out the rain*, each with a soft-grey soot-sprite or acorn glyph. |
 
-Bottom-tab navigation, the **Mori** wordmark, and the **Soft rain** weather chip carry across every screen. The agent inferred a consistent design system (cream background, sage green accent, hand-drawn icons) from the single prompt and applied it uniformly.
+The fourth tab, **Feed**, is the playable loop: drag a food from your pantry onto Totoro and his meters respond. Bottom-tab navigation, the warm-paper background, sage-green accent, and watercolor illustration style carry across every screen, all inferred from the single prompt.
 
 ---
 
