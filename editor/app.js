@@ -28810,6 +28810,9 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
             e.stopPropagation();
             if (!t.enabled) return;
             clearTip();
+            // Direct-action tools (e.g. Send to Figma) fire on click instead of
+            // opening a popover form.
+            if (t.direct) { setOpenTool(null); if (t.onClick) t.onClick(); return; }
             setOpenTool(prev => prev === t.id ? null : t.id);
           }}
           aria-label=${t.tip}
@@ -30044,7 +30047,7 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
   // Position: anchored above the host iframe. Same geometry as the asset
   // bar, just relative to the iframe rect instead of the node rect.
   const BAR_HEIGHT = 32, BAR_GAP = 8;
-  const BAR_WIDTH  = 4 * 28 + 3 * 4 + 8;
+  const BAR_WIDTH  = 5 * 28 + 4 * 4 + 8; // 5 buttons (28px) + 4 gaps (4px) + 8px padding
   const barLeft = rect.left;
   const barTop  = rect.top - BAR_HEIGHT - BAR_GAP;
   const popoverTop = barTop + BAR_HEIGHT + 6;
@@ -30082,6 +30085,19 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
     { id: "remix",  icon: html`<${Icon.Spark}/>`,
       tip: `Quick remix - export this ${tagLabel} + spawn a Remix iterator wired to it`,
       enabled: true },
+    // Fires immediately (no popover) - opens the Send to Figma modal scoped to
+    // this single element via its CSS selector path. Unavailable on browser
+    // hosts: their page lives in an opaque cross-origin iframe we can't read.
+    { id: "figma",  icon: html`<${Icon.Figma}/>`,
+      tip: isBrowserHost
+        ? "Send to Figma isn't available on a web page - fork or remix it into an HTML asset first"
+        : `Send this ${tagLabel} to Figma as editable layers`,
+      enabled: !isBrowserHost, direct: true,
+      onClick: () => runSendToFigmaForNode(
+        hostNodeId,
+        (hostNode && (hostNode.label || hostNode.title)) || tagLabel,
+        { selector: pickedElement.path || "" }
+      ) },
   ];
   const bar = html`
     <div
@@ -30111,6 +30127,9 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
             e.stopPropagation();
             if (!t.enabled) return;
             clearTip();
+            // Direct-action tools (e.g. Send to Figma) fire on click instead of
+            // opening a popover form.
+            if (t.direct) { setOpenTool(null); if (t.onClick) t.onClick(); return; }
             setOpenTool(prev => prev === t.id ? null : t.id);
           }}
           aria-label=${t.tip}
@@ -30819,10 +30838,17 @@ function ExportPromptHost() {
    relay; the Woven Bridge plugin in Figma Desktop picks it up and rebuilds it
    as editable layers. Requires the prototype/asset to be open on the canvas
    (we read the live rendered document) and the plugin to be connected. */
-function runSendToFigmaForNode(nodeId, nodeLabel) {
+function runSendToFigmaForNode(nodeId, nodeLabel, opts) {
+  opts = opts || {};
   try {
     window.dispatchEvent(new CustomEvent("th:figma-send", {
-      detail: { nodeId, nodeLabel: nodeLabel || "" },
+      detail: {
+        nodeId,
+        nodeLabel: nodeLabel || "",
+        // When set, scope the send to a single picked element inside the node's
+        // iframe (CSS selector path from pick-mode) instead of the whole page.
+        selector: opts.selector || "",
+      },
     }));
   } catch (e) {
     uiAlert(`Send to Figma failed: ${e.message || e}`);
@@ -30836,7 +30862,7 @@ function findRenderedNodeIframe(nodeId) {
   );
 }
 
-function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
+function FigmaSendModal({ nodeId, nodeLabel, selector, onClose }) {
   const [phase, setPhase] = useState("idle");   // idle|working|done|error
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
@@ -30885,11 +30911,32 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
       }
       let doc;
       try { doc = iframe.contentDocument; } catch { doc = null; }
-      const rootEl = doc && doc.body;
-      if (!rootEl) {
+      if (!doc || !doc.body) {
         throw new Error("Could not read the rendered page (cross-origin or still loading).");
       }
-      setStep("Converting page...");
+      // Element-scoped send: resolve the picked element by its CSS selector
+      // path and hand it (not doc.body) to the walker. Fall back with a clear
+      // error if the element is no longer in the live DOM (host reloaded/edited).
+      let rootEl = doc.body;
+      const singleElement = !!selector;
+      const restoreClasses = [];
+      if (singleElement) {
+        let el = null;
+        try { el = doc.querySelector(selector); } catch {}
+        if (!el) {
+          throw new Error("Could not find the selected element in the live page - it may have changed. Re-pick it and try again.");
+        }
+        rootEl = el;
+        // Strip the pick-mode highlight (red outline + box-shadow / blue hover)
+        // so it does not bleed into the exported Figma layers. Restored after.
+        for (const cls of ["th-pick-selected", "th-pick-hover"]) {
+          if (rootEl.classList && rootEl.classList.contains(cls)) {
+            rootEl.classList.remove(cls);
+            restoreClasses.push(cls);
+          }
+        }
+      }
+      setStep(singleElement ? "Converting element..." : "Converting page...");
       // Load the design-system component rules so flex/block subtrees that match
       // them are tagged for the plugin to swap into bound Figma instances.
       // meta.dsRef is an OBJECT ({ id, ... }); the map is keyed by its id string.
@@ -30904,9 +30951,18 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         const rj = await rr.json().catch(() => ({}));
         if (rj && Array.isArray(rj.rules)) componentRules = rj.rules;
       } catch {}
-      const scene = await window.WovenFigma.domToScene(rootEl, {
-        name: nodeLabel || nodeId || "Woven export", componentRules, dsRef,
-      });
+      let scene;
+      try {
+        scene = await window.WovenFigma.domToScene(rootEl, {
+          name: nodeLabel || nodeId || "Woven export", componentRules, dsRef, singleElement,
+        });
+      } finally {
+        // Re-apply the pick highlight we stripped so the on-canvas selection
+        // still reads while the modal is open.
+        for (const cls of restoreClasses) {
+          try { rootEl.classList.add(cls); } catch {}
+        }
+      }
       setStep("Sending to the daemon...");
       const r = await fetch(apiUrl("/__figma_send"), {
         method: "POST",
@@ -30939,7 +30995,8 @@ function FigmaSendModal({ nodeId, nodeLabel, onClose }) {
         </div>
         <div className="modal-body">
           <p className="modal-hint" style=${{ marginTop: 0 }}>
-            Rebuilds this page as editable Figma layers. Needs the <strong>Woven Bridge</strong>
+            Rebuilds ${selector ? "the selected element" : "this page"} as editable Figma layers.
+            Needs the <strong>Woven Bridge</strong>
             plugin running and connected in Figma Desktop
             (editor/tools/figma-bridge - see its README).
           </p>
@@ -30974,7 +31031,7 @@ function FigmaSendPromptHost() {
     const onPrompt = (ev) => {
       const d = ev.detail || {};
       if (!d.nodeId) return;
-      setTarget({ nodeId: d.nodeId, nodeLabel: d.nodeLabel || "" });
+      setTarget({ nodeId: d.nodeId, nodeLabel: d.nodeLabel || "", selector: d.selector || "" });
     };
     window.addEventListener("th:figma-send", onPrompt);
     return () => window.removeEventListener("th:figma-send", onPrompt);
@@ -30983,6 +31040,7 @@ function FigmaSendPromptHost() {
   return html`<${FigmaSendModal}
     nodeId=${target.nodeId}
     nodeLabel=${target.nodeLabel}
+    selector=${target.selector}
     onClose=${() => setTarget(null)}
   />`;
 }

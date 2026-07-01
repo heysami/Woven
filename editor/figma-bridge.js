@@ -1012,19 +1012,37 @@
       fills: [],
       children: []
     };
-    var rootBg = solidPaint(parseColor(win.getComputedStyle(rootEl).backgroundColor));
-    // Default page surface to white when the body has no explicit background.
-    root.fills.push(rootBg || { type: "SOLID", color: { r: 1, g: 1, b: 1 } });
+    if (opts.singleElement) {
+      // Scope: send ONE picked element (pick-mode) instead of the whole page.
+      // Walk the element ITSELF (not its children) as the sole child of a
+      // transparent wrapper frame - this keeps the element's own border /
+      // padding / radius / shadow / text, which a plain children-walk would
+      // drop (that path sizes the root to the element and keeps only its bg).
+      var only = walk(rootEl, rootRect, win, pending);
+      if (only) {
+        only.sizing = { h: "FIXED", v: "FIXED" };   // keep the element's measured box
+        root.children.push(only);
+      }
+      root.layout = { mode: "VERTICAL", gap: 0, crossGap: 0,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        primaryAlign: "MIN", counterAlign: "MIN", wrap: false };
+      root.hug = false;                 // wrapper is fixed to the element's box
+      // root.fills stays empty -> transparent wrapper (the element paints itself)
+    } else {
+      var rootBg = solidPaint(parseColor(win.getComputedStyle(rootEl).backgroundColor));
+      // Default page surface to white when the body has no explicit background.
+      root.fills.push(rootBg || { type: "SOLID", color: { r: 1, g: 1, b: 1 } });
 
-    var kids = [];
-    for (var i = 0; i < rootEl.children.length; i++) kids.push(rootEl.children[i]);
-    for (var j = 0; j < kids.length; j++) {
-      var n = walk(kids[j], rootRect, win, pending);
-      if (n) root.children.push(n);
+      var kids = [];
+      for (var i = 0; i < rootEl.children.length; i++) kids.push(rootEl.children[i]);
+      for (var j = 0; j < kids.length; j++) {
+        var n = walk(kids[j], rootRect, win, pending);
+        if (n) root.children.push(n);
+      }
+      decideLayout(win.getComputedStyle(rootEl), root);
+      root.hug = false;                 // the page frame is fixed-size, never hug
+      assignChildSizing(root);
     }
-    decideLayout(win.getComputedStyle(rootEl), root);
-    root.hug = false;                 // the page frame is fixed-size, never hug
-    assignChildSizing(root);
 
     // Resolve all deferred image fills concurrently.
     return Promise.all(pending.map(function (job) {
