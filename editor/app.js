@@ -12829,21 +12829,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
 
   if (!run) return null;
 
-  // v3.16 - thread-kind badge shown beside the chat title. Three states, only
-  // two visible: "Setup" (full-tier freeform - the heavy initialise chat that
-  // routes + decides), "Subagent" (a node-agent drawer run), and the scoped
-  // iteration chat which is the NORMAL everyday chat and shows NO badge. Other
-  // run kinds (edits-apply, regenerate, …) are background and get no badge.
-  const threadBadge = (() => {
-    if (run.kind === "node-agent")
-      return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
-    if (run.kind === "freeform") {
-      if ((run.tier || "full") === "scoped") return null;  // normal iteration chat - hidden
-      return { label: "Setup", cls: "setup", title: "Setup chat: carries the full routing + capabilities context (heavier). It hands off to a lighter, scoped chat once the build is standing." };
-    }
-    return null;
-  })();
-
   const stopRun = async () => {
     try { await fetch(apiUrl(`/__run/${encodeURIComponent(run.runId)}/stop`), { method: "POST" }); } catch {}
     onStop && onStop();
@@ -12854,10 +12839,6 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <div className="chat-drawer-resize-handle" onMouseDown=${onResizeStart}/>
       <div className="chat-header">
         <div className="chat-title-group">
-          ${threadBadge && html`<span
-            className=${"chat-thread-badge chat-thread-badge-" + threadBadge.cls}
-            title=${threadBadge.title}
-          >${threadBadge.label}</span>`}
           <span className="chat-title">${run.title || "Agent run"}</span>
           ${run.turnsCompleted > 0 && html`
           <span className="chat-meta">
@@ -24077,7 +24058,28 @@ function _stableEqual(a, b) {
 // project / workflow in general). The resolved scope is injected into the
 // chat prompt by spawnWorkflowChat so the agent never silently defaults to
 // the wrong prototype. See [[woven-canvas-chat-prototype-target]].
-function WorkflowChatTargetBar({ summary, override, onChangeOverride }) {
+// v3.16 - thread-kind badge for the "Editing / Talking about" target bar.
+// Three states, only two visible: "Setup" (full-tier freeform = the heavy
+// initialise chat that routes + decides), "Subagent" (a node-agent drawer run),
+// and the scoped iteration chat which is the NORMAL everyday chat and shows NO
+// badge. Other run kinds are background and get none.
+function threadKindBadge(run) {
+  if (!run) return null;
+  if (run.kind === "node-agent")
+    return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
+  if (run.kind === "freeform") {
+    if ((run.tier || "full") === "scoped") return null;  // normal iteration chat - hidden
+    return { label: "Setup", cls: "setup", title: "Setup chat: carries the full routing + capabilities context (heavier). It hands off to a lighter, scoped chat once the build is standing." };
+  }
+  return null;
+}
+
+function WorkflowChatTargetBar({ summary, override, onChangeOverride, run }) {
+  const badge = threadKindBadge(run);
+  const badgeEl = badge && html`<span
+    className=${"chat-thread-badge chat-thread-badge-" + badge.cls}
+    title=${badge.title}
+  >${badge.label}</span>`;
   const [protos, setProtos] = useState([]);
   useEffect(() => {
     let alive = true;
@@ -24093,6 +24095,7 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride }) {
       : summary.primarySlug ? "file" : summary.primaryKind;
     return html`
       <div className="chat-target chat-target-sel" title=${`The chat will act on your current selection${summary.primarySlug ? ` (prototype ${summary.primarySlug})` : ""}.`}>
+        ${badgeEl}
         <span className="chat-target-label">Editing</span>
         <span className="chat-target-chip" data-kind=${summary.primaryKind}>
           <span className="chat-target-chip-tag">${kindTag}</span>
@@ -24105,6 +24108,7 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride }) {
   const ids = protos.map(p => p.id);
   return html`
     <div className="chat-target chat-target-pick" title="Nothing selected - choose which prototype this chat is about, or leave it on the whole project.">
+      ${badgeEl}
       <span className="chat-target-label">Talking about</span>
       <select
         className="chat-target-select"
@@ -25470,7 +25474,7 @@ function WorkflowCanvas() {
         onPermissionModeChange=${onChatPermissionModeChange}
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
-        targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} />`}
+        targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} run=${w.run} />`}
       />`}
     />
   <//>`;
