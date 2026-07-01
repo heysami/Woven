@@ -79236,12 +79236,14 @@ function WorkflowSettingsDialog({ onClose }) {
     { id: "api", label: "API keys" },
     { id: "install", label: "Things to install" },
     { id: "figma", label: "Send to Figma" },
+    { id: "orchestrators", label: "Orchestrators" },
     { id: "sendkey", label: "Preferences" },
   ];
   const subByTab = {
     api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
+    orchestrators: "Toggle which orchestrators auto-dispatch · pick each one's default model",
     sendkey: "Editor preferences · saved in this browser, applies live",
   };
 
@@ -79285,6 +79287,8 @@ function WorkflowSettingsDialog({ onClose }) {
             <${WorkflowBrowserSetupSection}/>
           ` : tab === "figma" ? html`
             <${WorkflowFigmaSection}/>
+          ` : tab === "orchestrators" ? html`
+            <${OrchestratorsLanding} scopeLabel="workspace"/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}
