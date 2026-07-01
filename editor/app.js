@@ -19373,10 +19373,13 @@ function ModelSetupCliPicker({ onRefresh, onBack }) {
    listed as integrated in window.TH_MEDIA but absent from this map fall
    back to the provider.hint string. */
 const ONBOARDING_ASSET_PROVIDERS = [
-  { id: "fal",       covers: "image · video · 3D · background removal · upscale" },
-  { id: "quiver",    covers: "vector SVG" },
-  { id: "openai",    covers: "raster image (gpt-image-2) · text models" },
-  { id: "anthropic", covers: "Claude text models · vision-based describe" },
+  { id: "fal",        covers: "image · video · 3D · background removal · upscale" },
+  { id: "quiver",     covers: "vector SVG" },
+  { id: "openai",     covers: "raster image (gpt-image-2) · text models" },
+  { id: "anthropic",  covers: "Claude text models · vision-based describe" },
+  { id: "elevenlabs", covers: "audio - voiceover · sound effects · music" },
+  { id: "meshy",      covers: "3D - text/image to textured .glb" },
+  { id: "exa",        covers: "web search (Research assistant)" },
 ];
 
 /* Slim inline row for one provider in the onboarding "Asset providers"

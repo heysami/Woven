@@ -24,7 +24,7 @@
     anthropic: {
       id: "anthropic",
       label: "Anthropic",
-      hint: "Claude Opus 4.8 · Sonnet 4.6 · Haiku 4.5 (text models for `llm` / `describe`)",
+      hint: "Claude Opus 4.8 · Sonnet 5 · Haiku 4.5 (text models for `llm` / `describe`)",
       envKey: "TH_ANTHROPIC_API_KEY",
       docsUrl: "https://console.anthropic.com/settings/keys",
       integrated: true,
@@ -173,7 +173,7 @@
   //   • Sora 2 - deprecated April 26, 2026, API shutdown Sept 24, 2026 (skipped).
   // Sources: OpenAI deprecation announcement (May 2026), fal.ai model docs
   //   (Luma Ray 2, Veo 3.1, Kling 2.5/2.6, Hailuo 2.3, Ideogram V3,
-  //   Seedance 2.0), anthropic.com (Claude 4.6 / 4.7 / 4.8 / Haiku 4.5).
+  //   Seedance 2.0), anthropic.com (Opus 4.6 / 4.7 / 4.8 · Sonnet 5 · Haiku 4.5).
   //
   // Image-generation models. provider points into PROVIDERS; integrated:true
   // models can be selected on a skill node. Non-integrated rows are reserved
@@ -210,7 +210,7 @@
 
   // Text models for the LLM / describe skills. Both OpenAI + Anthropic share
   // /__llm_run dispatch; daemon picks renderer by `provider`. Refreshed June
-  // 2026 with current Anthropic flagship IDs (Opus 4.8 · Sonnet 4.6 · Haiku 4.5).
+  // 2026 with current Anthropic flagship IDs (Opus 4.8 · Sonnet 5 · Haiku 4.5).
   // Sonnet 4.5 + Haiku 4.5 (2025-09 / 2025-10 dated) still respond via the
   // dated alias but show up as legacy.
   const TEXT_MODELS = [
@@ -232,7 +232,8 @@
     { id: "claude-opus-4-8",       provider: "anthropic", label: "claude-opus-4.8",    hint: "Anthropic · top reasoning",   caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-7",       provider: "anthropic", label: "claude-opus-4.7",    hint: "Anthropic · prior opus",      caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-6",       provider: "anthropic", label: "claude-opus-4.6",    hint: "Anthropic · 1M context",      caps: ["text", "vision"], integrated: true },
-    { id: "claude-sonnet-4-6",     provider: "anthropic", label: "claude-sonnet-4.6",  hint: "Anthropic · current sonnet",  caps: ["text", "vision"], integrated: true },
+    { id: "claude-sonnet-5",       provider: "anthropic", label: "claude-sonnet-5",    hint: "Anthropic · current sonnet",  caps: ["text", "vision"], integrated: true },
+    { id: "claude-sonnet-4-6",     provider: "anthropic", label: "claude-sonnet-4.6",  hint: "Anthropic · prior sonnet",    caps: ["text", "vision"], integrated: true },
     { id: "claude-haiku-4-5",      provider: "anthropic", label: "claude-haiku-4.5",   hint: "Anthropic · fast + cheap",    caps: ["text", "vision"], integrated: true },
     // opencode (sst/opencode) is a third agent CLI. It's multi-provider and
     // manages its own auth + default model, so it's a cliOnly sentinel like the
