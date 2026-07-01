@@ -3026,6 +3026,181 @@ def _normalize_build_policy(raw):
     return {"imagery": imagery, "polish": polish, "orchestrators": orch}
 
 
+# ── Orchestration pipeline manifest (pipeline.json) ─────────────────────────
+# Locked at the orchestrator-plan gate: the picked orchestrators are expanded
+# from these STATIC templates into <project>/pipeline.json - the durable flow
+# ledger the right-rail "Orchestration Plan" tab renders and every resumed run
+# reads first. Each step carries kind (build/gate/qa/lens) + status
+# (pending/in_progress/done/fail/blocked) + optional verdict provenance.
+#
+# Two enforcement rules live in _pipeline_step:
+#   1. the final lens gate (id "gate-final") cannot go `done` while sibling
+#      gate/qa/lens rows in its phase are still outstanding;
+#   2. a lens/qa verdict authored by the builder itself (no independent cold
+#      judge) is rejected - recorded as selfIssued + blocked, never done.
+_PIPELINE_GATE_KINDS = {"gate", "qa", "lens"}
+# Verdict authors that do NOT count as an independent cold judge for a lens/qa
+# row. The main build/chat agent grading its own work is the exact failure the
+# ledger exists to stop.
+_PIPELINE_NON_INDEPENDENT = {"", "claude", "self", "chat", "builder", "agent", "main"}
+
+
+def _pstep(sid, title, kind="build"):
+    return {"id": sid, "title": title, "kind": kind, "status": "pending"}
+
+
+def _pipeline_final_gate():
+    """The independent QA+lens trio + the commit gate every runtime-producing
+    orchestrator ends with. gate-final is what the completion guard blocks on."""
+    return [
+        _pstep("qa-render",      "Render QA (not-blank, no errors)", "qa"),
+        _pstep("lens-craft",     "craft-lens",     "lens"),
+        _pstep("lens-aesthetic", "aesthetic-lens", "lens"),
+        _pstep("lens-concept",   "concept-lens",   "lens"),
+        _pstep("gate-final",     "Final QA+lens gate -> commit", "lens"),
+    ]
+
+
+_PIPELINE_TEMPLATES = {
+    "art-director-orchestrator": {"title": "Art direction", "steps": [
+        _pstep("plate",      "North-star plate(s) generated"),
+        _pstep("gate-plate", "Plate pick", "gate"),
+        _pstep("contract",   "art-direction-contract.json"),
+        _pstep("refs",       "Reference crops i2i (when i2i-capable)"),
+    ]},
+    "game-experience-orchestrator": {"title": "Game experience", "steps": [
+        _pstep("research",       "Tech-stack research"),
+        _pstep("gate-research",  "Research approval", "gate"),
+        _pstep("world",          "World builder"),
+        _pstep("physics",        "Physics"),
+        _pstep("input",          "Input"),
+        _pstep("feedback",       "Feedback / juice"),
+        _pstep("loop",           "Master loop"),
+        _pstep("objective",      "Objective"),
+        _pstep("overlay",        "Overlay HUD"),
+        _pstep("runtime",        "Runtime composer"),
+        _pstep("qa-interactive", "Interactive play-through", "qa"),
+    ] + _pipeline_final_gate()},
+    "interactive-media-orchestrator": {"title": "Interactive media", "steps": [
+        _pstep("research",      "Tech-stack research"),
+        _pstep("gate-research", "Research approval", "gate"),
+        _pstep("input",         "Input module(s)"),
+        _pstep("mapping",       "Input->output mapping"),
+        _pstep("output",        "Output module(s)"),
+        _pstep("runtime",       "Runtime composer"),
+    ] + _pipeline_final_gate()},
+    "simulation-orchestrator": {"title": "Simulation", "steps": [
+        _pstep("research", "Tech-stack research"),
+        _pstep("entities", "Entities schema"),
+        _pstep("scene",    "Scene builder"),
+        _pstep("loop",     "Loop"),
+        _pstep("controls", "Controls"),
+        _pstep("overlay",  "Overlay"),
+        _pstep("runtime",  "Runtime composer"),
+    ] + _pipeline_final_gate()},
+    "narrative-experience-orchestrator": {"title": "Narrative experience", "steps": [
+        _pstep("research", "Research fleet"),
+        _pstep("build",    "Tier builders"),
+        _pstep("runtime",  "Runtime composer"),
+    ] + _pipeline_final_gate()},
+    "motion-studio-orchestrator": {"title": "Motion studio", "steps": [
+        _pstep("research",     "Technique research"),
+        _pstep("storyboard",   "Storyboard"),
+        _pstep("plates",       "Concept plates"),
+        _pstep("gate-plate",   "Concept-plate review", "gate"),
+        _pstep("scenes",       "Scene assets"),
+        _pstep("motion",       "Motion engine"),
+        _pstep("interactions", "Interactions"),
+        _pstep("runtime",      "Runtime composer"),
+    ] + _pipeline_final_gate()},
+    "scene-3d-orchestrator": {"title": "3D scene", "steps": [
+        _pstep("research",    "Tech + subsystem decomposition"),
+        _pstep("subsystems",  "Subsystem builders (fan-out)"),
+        _pstep("interaction", "Interaction layer"),
+        _pstep("runtime",     "Runtime composer"),
+    ] + _pipeline_final_gate()},
+    "scrapbook-experience-orchestrator": {"title": "Scrapbook", "steps": [
+        _pstep("research",     "Aesthetic + image inventory"),
+        _pstep("gate-cost",    "Cost gate", "gate"),
+        _pstep("composition",  "Composition (cutouts)"),
+        _pstep("typography",   "Typography"),
+        _pstep("motion",       "Motion"),
+        _pstep("interactions", "Interactions"),
+        _pstep("runtime",      "Runtime composer"),
+    ] + _pipeline_final_gate()},
+    "app-node-orchestrator": {"title": "App nodes", "steps": [
+        _pstep("decompose", "Slot decomposition + scaffold"),
+        _pstep("slots",     "Slot authors (fan-out)"),
+    ] + _pipeline_final_gate()},
+    "visual-orchestrator": {"title": "Visual assets", "steps": [
+        _pstep("slots",     "Enumerate + classify slots"),
+        _pstep("assets",    "Per-medium asset drawers"),
+        _pstep("qa-render", "Asset render QA", "qa"),
+    ]},
+    "photography-orchestrator": {"title": "Photography enrich", "steps": [
+        _pstep("enrich", "Per-slot photo-style enrichment")]},
+    "illustration-orchestrator": {"title": "Illustration enrich", "steps": [
+        _pstep("enrich", "Per-slot illustration enrichment")]},
+    "shader-orchestrator": {"title": "Shader enrich", "steps": [
+        _pstep("enrich", "Per-slot shader-stack enrichment")]},
+    "creative-visual-orchestrator": {"title": "Creative promotion", "steps": [
+        _pstep("promote",   "Promote flat slots -> compositions"),
+        _pstep("qa-render", "Render QA", "qa"),
+    ]},
+    "material-orchestrator": {"title": "Material fidelity", "steps": [
+        _pstep("elements",  "Per-element material drawers"),
+        _pstep("qa-render", "Render QA", "qa"),
+    ]},
+    "interactive-polish-orchestrator": {"title": "Interactive polish", "steps": [
+        _pstep("research",        "Polish site survey"),
+        _pstep("gate-pick",       "Polish research pick", "gate"),
+        _pstep("drawers",         "Polish drawers (fan-out)"),
+        _pstep("runtime-compose", "Polish runtime compose"),
+        _pstep("qa-render",       "Render QA", "qa"),
+    ]},
+}
+
+
+def _pipeline_template_phase(orch_id):
+    """A fresh phase dict for a picked orchestrator. Unknown ids get a generic
+    research->build->final-gate phase so enforcement always applies."""
+    t = _PIPELINE_TEMPLATES.get(orch_id)
+    if t:
+        return {"id": orch_id, "orchestrator": orch_id, "title": t["title"],
+                "steps": [dict(s) for s in t["steps"]]}
+    return {"id": orch_id, "orchestrator": orch_id,
+            "title": orch_id.replace("-orchestrator", "").replace("-", " ").title(),
+            "steps": [_pstep("research", "Research"), _pstep("build", "Build")] + _pipeline_final_gate()}
+
+
+def _pipeline_assemble(orchestrators):
+    """Build phases[] from the picked orchestrator ids. A base 'Prototype build'
+    phase is always present; art-director (pre-build) floats to the front."""
+    picks = [o for o in (orchestrators or []) if isinstance(o, str) and o.strip()]
+    phases = []
+    if "art-director-orchestrator" in picks:
+        phases.append(_pipeline_template_phase("art-director-orchestrator"))
+    phases.append({"id": "prototype", "orchestrator": None, "title": "Prototype build", "steps": [
+        _pstep("build",     "Source (tokens/layout/components/content)"),
+        _pstep("qa-render", "Render QA", "qa"),
+    ]})
+    for o in picks:
+        if o != "art-director-orchestrator":
+            phases.append(_pipeline_template_phase(o))
+    return phases
+
+
+def _pipeline_outstanding(manifest):
+    """Gate/qa/lens rows across all phases not yet done - what a global
+    completion check blocks on."""
+    out = []
+    for ph in (manifest.get("phases") or []):
+        for s in (ph.get("steps") or []):
+            if s.get("kind") in _PIPELINE_GATE_KINDS and s.get("status") != "done":
+                out.append({"phaseId": ph.get("id"), "stepId": s.get("id"), "title": s.get("title")})
+    return out
+
+
 def _project_paths(project_root: str) -> dict:
     """Per-project derived paths. v3.1 - branches deprecated; `merges`
     retained for legacy callers but no longer used."""
@@ -9031,6 +9206,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             m = re.match(rf"^/__workflow/node/({_NID})/size$", parsed.path)
             if m:
                 return self._workflow_node_size(qs, m.group(1))
+            if parsed.path == "/__pipeline/step":
+                return self._pipeline_step(qs)
             m_dec = re.match(r"^/__decision/([A-Za-z0-9_.-]{1,80})$", parsed.path)
             if m_dec:
                 return self._decision_save(qs, m_dec.group(1))
@@ -9117,6 +9294,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._capabilities(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__logic_guide":
             return self._logic_guide(urllib.parse.parse_qs(parsed.query))
+        # Orchestration pipeline ledger - the locked flow + a computed complete
+        # flag the build agent queries before it is allowed to report done.
+        if url_path == "/__pipeline":
+            return self._pipeline_get(urllib.parse.parse_qs(parsed.query))
         # Visual-QA endpoints. Let an agent verify a node's interactive piece
         # by node-id (no hand-pasted URL): resolve the bakedPath to the same
         # runtime URL an iframe loads, then run editor/tools/qa/visual_qa.py.
@@ -11053,7 +11234,158 @@ class H(http.server.SimpleHTTPRequestHandler):
                                extra={"decisionId": decision_id, "values": values}):
             with open(abs_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
+        # The orchestrator-plan pick is the LOCK moment: freeze the picked
+        # orchestrators into pipeline.json (the durable flow ledger). Non-fatal
+        # - a pipeline failure must not block the decision itself.
+        if decision_id == "orchestrator-plan":
+            try:
+                self._pipeline_lock(project_root, values)
+            except Exception:
+                pass
         return self._reply(200, {"ok": True, "path": rel, "values": values})
+
+    # ── Orchestration pipeline ledger (pipeline.json) ───────────────────
+    def _pipeline_write(self, project_root, rel, abs_path, manifest, label):
+        with _history_bracket(project_root, [rel], kind="workflow-op",
+                              label=f"Pipeline: {label}", source="workflow"):
+            with open(abs_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2)
+
+    def _pipeline_lock(self, project_root, orchestrators):
+        """Freeze the picked orchestrators into <project>/pipeline.json. Called
+        from the orchestrator-plan decision. Idempotent: re-locking preserves
+        any existing step status/verdict so re-picking never wipes progress."""
+        rel = "pipeline.json"
+        abs_path = _safe_join(project_root, rel)
+        prior = {}
+        if os.path.exists(abs_path):
+            try:
+                with open(abs_path, encoding="utf-8") as f:
+                    old = json.load(f)
+                for ph in (old.get("phases") or []):
+                    for s in (ph.get("steps") or []):
+                        prior[(ph.get("id"), s.get("id"))] = s
+            except Exception:
+                prior = {}
+        phases = _pipeline_assemble(orchestrators)
+        for ph in phases:
+            for s in ph["steps"]:
+                p = prior.get((ph["id"], s["id"]))
+                if p:
+                    for k in ("status", "verdict", "verdictBy", "selfIssued", "artifacts"):
+                        if k in p:
+                            s[k] = p[k]
+        manifest = {
+            "version": 1,
+            "lockedAt": int(time.time()),
+            "orchestrators": [o for o in orchestrators if isinstance(o, str)],
+            "phases": phases,
+        }
+        self._pipeline_write(project_root, rel, abs_path, manifest, "locked")
+        return manifest
+
+    # ── POST /__pipeline/step ───────────────────────────────────────────
+    # Body: { phaseId, stepId, status?, verdict?, verdictBy?, artifacts? }.
+    # Atomically patches ONE step in pipeline.json and enforces the two ledger
+    # rules: (1) a lens/qa verdict must come from an INDEPENDENT cold judge - a
+    # builder self-grading is rejected (selfIssued + blocked, 409); (2) the
+    # final gate (gate-final) cannot go done while sibling gate/qa/lens rows in
+    # its phase are outstanding (409 with the outstanding list).
+    def _pipeline_step(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        phase_id   = (body.get("phaseId") or "").strip()
+        step_id    = (body.get("stepId") or "").strip()
+        status     = (body.get("status") or "").strip()
+        verdict    = body.get("verdict")
+        verdict_by = (body.get("verdictBy") or "").strip()
+        if not phase_id or not step_id:
+            return self._reply(400, {"error": "phaseId and stepId required"})
+        if status and status not in {"pending", "in_progress", "done", "fail", "blocked"}:
+            return self._reply(400, {"error": f"invalid status: {status!r}"})
+        rel = "pipeline.json"
+        abs_path = _safe_join(project_root, rel)
+        if not os.path.exists(abs_path):
+            return self._reply(404, {"error": "no pipeline.json (not locked yet)"})
+        with open(abs_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+        phase = next((p for p in manifest.get("phases", []) if p.get("id") == phase_id), None)
+        if not phase:
+            return self._reply(404, {"error": f"unknown phase: {phase_id}"})
+        step = next((s for s in phase.get("steps", []) if s.get("id") == step_id), None)
+        if not step:
+            return self._reply(404, {"error": f"unknown step: {phase_id}/{step_id}"})
+        kind = step.get("kind", "build")
+
+        # Guard 2 - a lens/qa row going `done` needs an independent cold judge.
+        if status == "done" and kind in ("lens", "qa") and (verdict is not None or verdict_by):
+            if verdict_by.lower() in _PIPELINE_NON_INDEPENDENT:
+                step["status"] = "blocked"
+                step["selfIssued"] = True
+                if verdict is not None:
+                    step["verdict"] = verdict
+                step["verdictBy"] = verdict_by or "self"
+                self._pipeline_write(project_root, rel, abs_path, manifest, f"{phase_id}/{step_id} self-cert blocked")
+                return self._reply(409, {
+                    "error": "self-issued verdict rejected",
+                    "detail": f"a {kind} row needs an independent cold judge, not '{verdict_by or 'self'}'",
+                    "step": {"phaseId": phase_id, "stepId": step_id, "status": "blocked", "selfIssued": True},
+                })
+
+        # Guard 1 - the final gate cannot close while siblings are outstanding.
+        if status == "done" and step_id == "gate-final":
+            outstanding = [{"stepId": s.get("id"), "title": s.get("title"), "status": s.get("status")}
+                           for s in phase.get("steps", [])
+                           if s.get("id") != "gate-final"
+                           and s.get("kind") in _PIPELINE_GATE_KINDS
+                           and s.get("status") != "done"]
+            if outstanding:
+                step["status"] = "blocked"
+                self._pipeline_write(project_root, rel, abs_path, manifest, f"{phase_id}/gate-final blocked")
+                return self._reply(409, {
+                    "error": "final gate blocked - outstanding gates",
+                    "outstanding": outstanding,
+                })
+
+        # Apply the patch.
+        if status:
+            step["status"] = status
+        if verdict is not None:
+            step["verdict"] = verdict
+        if verdict_by:
+            step["verdictBy"] = verdict_by
+            step["selfIssued"] = (kind in ("lens", "qa")) and (verdict_by.lower() in _PIPELINE_NON_INDEPENDENT)
+        if isinstance(body.get("artifacts"), list):
+            step["artifacts"] = [str(a) for a in body["artifacts"]]
+        self._pipeline_write(project_root, rel, abs_path, manifest, f"{phase_id}/{step_id} -> {status or 'patched'}")
+        return self._reply(200, {"ok": True, "step": step, "complete": not _pipeline_outstanding(manifest)})
+
+    # ── GET /__pipeline - the manifest + a computed complete flag ────────
+    def _pipeline_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        abs_path = _safe_join(project_root, "pipeline.json")
+        if not os.path.exists(abs_path):
+            return self._reply(200, {"locked": False, "complete": False, "phases": []})
+        try:
+            with open(abs_path, encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            return self._reply(500, {"error": f"pipeline.json unreadable: {e}"})
+        outstanding = _pipeline_outstanding(manifest)
+        return self._reply(200, {"locked": True, "complete": not outstanding,
+                                 "outstanding": outstanding, "manifest": manifest})
 
     # ── POST /__workflow/node/<id>/status (v2.1) ────────────────────────
     # Body: { runStatus?, text?, runError?, output? }. Atomically updates a

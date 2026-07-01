@@ -4460,6 +4460,61 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, var(--border));
   color: var(--text);
 }
+/* Orchestration Plan tab - the locked pipeline.json rendered as phases -> steps.
+   Survives connection severance because the state lives on disk, not in context. */
+.th-plan { display: flex; flex-direction: column; }
+.th-plan-summary { padding: 8px 10px 10px; border-bottom: 1px solid var(--border); }
+.th-plan-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.th-plan-bar-fill {
+  height: 100%;
+  background: var(--accent, oklch(72% 0.16 50));
+  transition: width 0.3s ease;
+}
+.th-plan-summary-text {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.th-plan-fail { color: var(--danger); }
+.th-plan-orchs { color: var(--text-faint); }
+.th-plan-err { margin-top: 6px; color: var(--danger); font-size: 11px; }
+.th-plan-orch {
+  padding: 0 8px 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+.th-plan-row { grid-template-columns: auto auto 1fr auto; }
+.th-plan-kind {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.th-plan-kind-gate { color: var(--accent, oklch(72% 0.16 50)); border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 40%, var(--border)); }
+.th-plan-kind-qa,
+.th-plan-kind-lens { color: var(--text); border-color: var(--border-strong, var(--border)); }
+.th-plan-verdict {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.th-plan-by { color: var(--text-faint); }
+.th-plan-by.is-self { color: var(--danger); font-weight: 600; }
+
 .th-tasks-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
 .th-tasks-group-head {
   display: flex;
@@ -26634,7 +26689,8 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 
 /* Steer input: the "steer" option opens this freeform panel instead of firing a
    bare submit, so the user says WHAT to steer before anything is sent. */
-.chat-direction-opt.is-steering {
+.chat-direction-opt.is-steering,
+.chat-decision-opt.is-steering {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
 }

@@ -10207,16 +10207,104 @@ function chatRowsToEvents(rows) {
 // first. Keeps the open cost bounded; anything beyond is reported, not hidden.
 const TASKS_PANEL_RUN_CAP = 40;
 
-/* TasksSubagentsPanel - the second right-rail panel. On open it hydrates each
-   run's transcript (/__chat?runId=…) and lists every subagent dispatch + Task,
-   grouped by run, newest first, FINISHED ones included. Runs with neither are
-   omitted. Read-only over existing endpoints (no daemon change needed). */
+/* OrchestrationPlanView - the first Tasks-panel tab. Reads the project's locked
+   pipeline.json (frozen at the orchestrator-plan gate) and renders the whole
+   committed flow as phases -> steps with a live done / pending / fail state.
+   The plan lives ON DISK, so it survives connection severance: on resume the
+   truth of what is still owed is HERE, not reconstructed from vanished context.
+   Read-only over the statically-served project file; polls so status advances
+   as the build progresses. */
+const PLAN_DOT = { done: "done", in_progress: "live", pending: "waiting", blocked: "waiting", fail: "fail" };
+const PLAN_KIND_LABEL = { build: "build", gate: "gate", qa: "QA", lens: "lens" };
+
+function OrchestrationPlanView() {
+  const [plan, setPlan] = useState(undefined); // undefined = loading, null = none
+  const [err, setErr]   = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch(apiUrl("/pipeline.json") + "?t=" + Date.now(), { cache: "no-store" });
+        if (r.status === 404) { if (!cancelled) { setPlan(null); setErr(null); } return; }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const j = await r.json();
+        if (!cancelled) { setPlan(j && Array.isArray(j.phases) ? j : null); setErr(null); }
+      } catch (e) {
+        if (!cancelled) setErr(e.message || String(e));
+      }
+    };
+    load();
+    const timer = setInterval(load, 4000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
+  if (plan === undefined) return html`<div className="runs-empty">Loading…</div>`;
+  if (!plan) return html`
+    <div className="runs-empty">
+      No orchestration plan yet. It is locked in when you pick the orchestrators
+      at the plan gate, then tracks every build step and gate as the run proceeds.
+      ${err && html`<div className="th-plan-err">${err}</div>`}
+    </div>`;
+
+  const phases   = plan.phases || [];
+  const allSteps = phases.flatMap(p => p.steps || []);
+  const doneN    = allSteps.filter(s => s.status === "done").length;
+  const failN    = allSteps.filter(s => s.status === "fail" || s.status === "blocked").length;
+  const totalN   = allSteps.length;
+  const pct      = totalN ? Math.round(100 * doneN / totalN) : 0;
+
+  return html`
+    <div className="th-plan">
+      <div className="th-plan-summary">
+        <div className="th-plan-bar"><div className="th-plan-bar-fill" style=${{ width: pct + "%" }}/></div>
+        <div className="th-plan-summary-text">
+          ${doneN}/${totalN} done${failN ? html` · <span className="th-plan-fail">${failN} blocked</span>` : ""}
+          ${plan.orchestrators?.length ? html`<span className="th-plan-orchs"> · ${plan.orchestrators.length} orchestrators</span>` : ""}
+        </div>
+      </div>
+      ${phases.map(ph => {
+        const steps = ph.steps || [];
+        const d = steps.filter(s => s.status === "done").length;
+        return html`
+          <div className="th-tasks-group th-plan-phase" key=${ph.id}>
+            <div className="th-tasks-group-head th-plan-phase-head">
+              <span className="th-tasks-group-title">${ph.title || ph.id}</span>
+              <span className="runs-row-age">${d}/${steps.length}</span>
+            </div>
+            ${ph.orchestrator && html`<div className="th-plan-orch">${ph.orchestrator}</div>`}
+            ${steps.map(s => {
+              const gated = s.kind === "gate" || s.kind === "qa" || s.kind === "lens";
+              return html`
+                <div className="th-tasks-row th-plan-row" key=${s.id} title=${s.title || s.id}>
+                  <span className="runs-row-dot" data-status=${PLAN_DOT[s.status] || "waiting"}/>
+                  <span className=${"th-plan-kind th-plan-kind-" + (s.kind || "build")}>${PLAN_KIND_LABEL[s.kind] || s.kind || "build"}</span>
+                  <span className="th-tasks-row-main">
+                    <span className="th-tasks-row-label">${s.title || s.id}</span>
+                    ${gated && (s.verdict || s.verdictBy) && html`
+                      <span className="th-plan-verdict">
+                        ${s.verdict ? s.verdict + " " : ""}
+                        ${s.verdictBy && html`<span className=${"th-plan-by" + (s.selfIssued ? " is-self" : "")}>· ${s.selfIssued ? "self-certified" : s.verdictBy}</span>`}
+                      </span>`}
+                  </span>
+                  <span className="th-tasks-row-state">${s.status || "pending"}</span>
+                </div>`;
+            })}
+          </div>`;
+      })}
+    </div>`;
+}
+
+/* TasksSubagentsPanel - the second right-rail panel. Three tabs: Orchestration
+   Plan (the locked pipeline.json), Subagents, and Tasks. Subagents + Tasks
+   hydrate each run's transcript (/__chat) and list every dispatch + Task,
+   grouped by run, newest first, FINISHED ones included. Read-only. */
 function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagent, embedded }) {
   // Per-run extracted { subagents, tasks }, keyed by runId.
   const [byRun, setByRun] = useState({});
   const [loading, setLoading] = useState(true);
-  // "all" | "subagents" | "tasks" - which kinds to show.
-  const [filter, setFilter] = useState("all");
+  // "plan" | "subagents" | "tasks" - which view is active. Defaults to the
+  // orchestration plan so a resumed run lands on "what's still owed" first.
+  const [filter, setFilter] = useState("plan");
 
   const capped = (runs || []).slice(0, TASKS_PANEL_RUN_CAP);
   const overflow = Math.max(0, (runs || []).length - capped.length);
@@ -10264,12 +10352,14 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
                        : s === "in_progress" ? "live"
                        : "waiting";
 
+  // Subagents + Tasks are single-kind views now (the "All" tab is gone), so
+  // each shows exactly its own kind.
   const groups = capped
     .map(r => ({ run: r, ...(byRun[r.runId] || { subagents: [], tasks: [] }) }))
     .map(g => ({
       ...g,
-      subagents: filter === "tasks" ? [] : g.subagents,
-      tasks:     filter === "subagents" ? [] : g.tasks,
+      subagents: filter === "subagents" ? g.subagents : [],
+      tasks:     filter === "tasks" ? g.tasks : [],
     }))
     .filter(g => g.subagents.length || g.tasks.length);
 
@@ -10284,11 +10374,11 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
       ref=${embedded ? undefined : panelRef}
       style=${!embedded && railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
-        <span>Tasks & subagents</span>
+        <span>Orchestration</span>
         <span className="th-tasks-count">${totalAgents} agent${totalAgents===1?'':'s'} · ${totalTasks} task${totalTasks===1?'':'s'}</span>
       </div>
-      <div className="th-tasks-filter" role="tablist" aria-label="Filter">
-        ${[["all","All"],["subagents","Subagents"],["tasks","Tasks"]].map(([k, lbl]) => html`
+      <div className="th-tasks-filter" role="tablist" aria-label="View">
+        ${[["plan","Orchestration Plan"],["subagents","Subagents"],["tasks","Tasks"]].map(([k, lbl]) => html`
           <button
             key=${k}
             role="tab"
@@ -10299,11 +10389,12 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
         `)}
       </div>
       <div className="th-rail-panel-body">
-        ${loading && groups.length === 0 && html`<div className="runs-empty">Loading…</div>`}
-        ${!loading && groups.length === 0 && html`
-          <div className="runs-empty">No ${filter === "all" ? "subagents or tasks" : filter} yet. They appear here once an agent dispatches a subagent or creates a task.</div>
+        ${filter === "plan" && html`<${OrchestrationPlanView} />`}
+        ${filter !== "plan" && loading && groups.length === 0 && html`<div className="runs-empty">Loading…</div>`}
+        ${filter !== "plan" && !loading && groups.length === 0 && html`
+          <div className="runs-empty">No ${filter} yet. They appear here once an agent dispatches a subagent or creates a task.</div>
         `}
-        ${groups.map(g => html`
+        ${filter !== "plan" && groups.map(g => html`
           <div className="th-tasks-group" key=${g.run.runId}>
             <button
               className="th-tasks-group-head"
@@ -10343,7 +10434,7 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
             `)}
           </div>
         `)}
-        ${overflow > 0 && html`<div className="th-tasks-overflow">+ ${overflow} older run${overflow===1?'':'s'} not shown</div>`}
+        ${filter !== "plan" && overflow > 0 && html`<div className="th-tasks-overflow">+ ${overflow} older run${overflow===1?'':'s'} not shown</div>`}
       </div>
     </div>
   `;
@@ -15421,12 +15512,18 @@ function parseQuestionForms(text) {
         }
         const lbl  = (om[2] || "").replace(/\s+/g, " ").trim();
         if (!lbl) continue;
+        // A "steer" option (or any <option … input>) opens a freeform input on
+        // click instead of submitting immediately - so the user types WHAT to
+        // steer before sending, rather than firing a bare "steer" that makes
+        // the agent ask back. Mirrors the <direction-options> steer behaviour.
+        const needsInput = ovM[1].toLowerCase() === "steer" || /\binput\b/i.test(oattrs);
         opts.push({
           value:   ovM[1],
           label:   lbl,
           preview: pM ? pM[1] : null,  // optional: path or inline HTML
           group:   gM ? gM[1] : null,  // optional: required when groupBy is set
           checked,                     // optional: pre-ticked in multi-select
+          needsInput,                  // optional: opens a steer textarea on click
         });
       }
       if (id && opts.length > 0) {
@@ -15761,6 +15858,11 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
+  // Which "steer"-style option is expanded for freeform input (its value), and
+  // the text typed into it. Clicking a needsInput option opens this panel
+  // instead of submitting; the message is sent only on confirm.
+  const [steerOpen, setSteerOpen] = useState(null);
+  const [steerText, setSteerText] = useState("");
   const key = `decision:${decision.id}`;
   // `answered` may be a string (legacy single-pick) or an array (v2.2 multi).
   // Normalise to an array for rendering; preserve the shape on send.
@@ -15823,7 +15925,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   // For multi-select / grouped, an explicit Send button submits.
   const isSinglePick = !isMulti && !decision.groupBy;
 
-  const submit = async (overridePicks) => {
+  const submit = async (overridePicks, extra) => {
     const picks = overridePicks || localPicks;
     if (!runId || isAnswered || busy || picks.length === 0) return;
     setBusy(true); setError(null); setWarning(null);
@@ -15832,7 +15934,10 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     const values = picks.slice();
     const labels = picks.map(v => optsByValue.get(v)?.label || v);
     // User-message format: `[decision:<id>] v1,v2,v3 - label1; label2; label3`
-    const text = `[decision:${decision.id}] ${values.join(",")} - ${labels.join("; ")}`;
+    // A steer option appends the freeform detail: `... - label: <detail>`.
+    const detail = (extra || "").trim();
+    const text = `[decision:${decision.id}] ${values.join(",")} - ${labels.join("; ")}`
+      + (detail ? `: ${detail}` : "");
     try {
       const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
         method: "POST",
@@ -15867,6 +15972,14 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   };
 
   const pickAndMaybeSubmit = (opt) => {
+    if (opt.needsInput) {
+      // Steer-style option: open the freeform panel instead of submitting.
+      // Toggle closed if it's already open for this option.
+      if (isAnswered || busy || processEnded) return;
+      setSteerText("");
+      setSteerOpen(v => v === opt.value ? null : opt.value);
+      return;
+    }
     if (isSinglePick) {
       // Single-pick: skip the localPicks dance, submit immediately so the
       // single-click UX is preserved.
@@ -15885,7 +15998,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     return html`
       <button
         key=${opt.value}
-        className=${"chat-decision-opt" + (finalPicked ? " is-picked" : "") + (opt.preview ? " has-preview" : "")}
+        className=${"chat-decision-opt" + (finalPicked ? " is-picked" : "") + (opt.preview ? " has-preview" : "") + (opt.needsInput && steerOpen === opt.value ? " is-steering" : "")}
         disabled=${busy || isAnswered || processEnded}
         onClick=${() => pickAndMaybeSubmit(opt)}
         title=${opt.label}>
@@ -15918,6 +16031,35 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
           `)
         : html`<div className="chat-decision-options">${renderOptions(decision.options)}</div>`
       }
+      ${steerOpen && !isAnswered && (() => {
+        const opt = decision.options.find(o => o.value === steerOpen);
+        if (!opt) return null;
+        return html`
+          <div className="chat-direction-steer-panel">
+            <textarea
+              className="chat-direction-steer-input"
+              placeholder="What should I adjust? e.g. drop the entrance settle, logo breathe only, skip parallax"
+              value=${steerText}
+              autoFocus
+              disabled=${busy || isAnswered || processEnded}
+              onInput=${(e) => setSteerText(e.target.value)}
+              onKeyDown=${(e) => {
+                if (e.key === "Escape") { e.preventDefault(); setSteerOpen(null); }
+                else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit([opt.value], steerText); }
+              }}
+            ></textarea>
+            <div className="chat-direction-steer-actions">
+              <span className="chat-direction-steer-hint">⌘↵ to send · Esc to cancel</span>
+              <button type="button" className="chat-direction-steer-cancel"
+                disabled=${busy}
+                onClick=${() => setSteerOpen(null)}>Cancel</button>
+              <button type="button" className="chat-direction-steer-send"
+                disabled=${busy || isAnswered || processEnded || !steerText.trim()}
+                onClick=${() => submit([opt.value], steerText)}>Send steer</button>
+            </div>
+          </div>
+        `;
+      })()}
       ${!isSinglePick && !isAnswered && html`
         <div className="chat-decision-submit-row">
           <button
