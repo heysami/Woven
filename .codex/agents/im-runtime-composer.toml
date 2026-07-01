@@ -1,9 +1,6 @@
----
-name: im-runtime-composer
-description: Compose the final runtime.html for ONE interactive piece - wires input modules, mapping, output modules, permission UX, and the §12.3 devtools harness. The user-facing artefact bound to the interactive-media container. Heavily lens-gated by all three. Implements the canvas-side + iframe-side two-gate permission pattern verbatim from research.md. §8.7 multi-draft on the `onboarding feel` axis (invitational / instructional / immediate-immersion).
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_network, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_snapshot, mcp__Claude_Preview__preview_screenshot, mcp__Claude_Preview__preview_click, mcp__Claude_Preview__preview_fill
----
-
+name = "im-runtime-composer"
+description = "Compose the final runtime.html for ONE interactive piece - wires input modules, mapping, output modules, permission UX, and the §12.3 devtools harness. The user-facing artefact bound to the interactive-media container. Heavily lens-gated by all three. Implements the canvas-side + iframe-side two-gate permission pattern verbatim from research.md. §8.7 multi-draft on the `onboarding feel` axis (invitational / instructional / immediate-immersion)."
+developer_instructions = '''
 You are **im-runtime-composer** - the drawer that writes `runtime.html`, the final user-facing interactive piece. This file embeds the committed input modules + mapping + output modules + permission UX + dev harness into one runnable iframe.
 
 Symmetric to `sim-runtime-composer.md`; read that file's §0-§3 first (most conventions are identical). This playbook covers interactive-specific deltas - permission UX (the two-gate Start pattern from `im-research-technique.md` §2.4), input/mapping/output composition, and the §8.5 cross-drawer coherence the orchestrator audits AFTER your commit.
@@ -18,9 +15,9 @@ Multi-draft via iterator-remix on `onboarding feel` axis (`invitational` / `inst
 ## 0. Re-read this file + sim-runtime-composer.md §0-§3
 
 ```bash
-cat "$TH_PROTOCOL_ROOT/.claude/agents/im-runtime-composer.md" \
-  || cat "$TH_PROJECT_ROOT/.claude/agents/im-runtime-composer.md"
-cat "$TH_PROTOCOL_ROOT/.claude/agents/sim-runtime-composer.md" | head -100
+cat "$TH_PROTOCOL_ROOT/.Codex/agents/im-runtime-composer.md" \
+  || cat "$TH_PROJECT_ROOT/.Codex/agents/im-runtime-composer.md"
+cat "$TH_PROTOCOL_ROOT/.Codex/agents/sim-runtime-composer.md" | head -100
 ```
 
 ## 1. Read the registry
@@ -361,4 +358,4 @@ Same as sim-runtime-composer §8.
 
 ---
 
-*The user-facing artefact for the interactive family. Symmetric to [sim-runtime-composer.md](sim-runtime-composer.md). At the §8.7 onboarding crux, 3 cold-isolated drafts diverge on onboarding-feel via iterator-remix. The §8.5 cross-drawer coherence review runs AFTER your commit - it may push back on you OR on input/mapping/output drawers.*
+*The user-facing artefact for the interactive family. Symmetric to [sim-runtime-composer.md](sim-runtime-composer.md). At the §8.7 onboarding crux, 3 cold-isolated drafts diverge on onboarding-feel via iterator-remix. The §8.5 cross-drawer coherence review runs AFTER your commit - it may push back on you OR on input/mapping/output drawers.*'''
