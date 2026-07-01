@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none" stroke="oklch(40% 0.15 140)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Publish orchestrator - a friendly rocket taking a prototype live on the internet">
+  <!-- launch spark -->
+  <path d="M124 26v8M120 30h8" stroke-width="2.5" stroke="oklch(72% 0.13 60)"/>
+  <!-- fins -->
+  <path d="M62 72l-15 18 16-4z" fill="oklch(94% 0.05 140)"/>
+  <path d="M98 72l15 18-16-4z" fill="oklch(94% 0.05 140)"/>
+  <!-- fuselage -->
+  <path d="M60 58Q60 30 80 22Q100 30 100 58L100 80Q100 86 94 86L66 86Q60 86 60 80Z" fill="#fff"/>
+  <!-- nose tip -->
+  <circle cx="80" cy="25" r="2.5" fill="oklch(72% 0.13 60)" stroke="none"/>
+  <!-- porthole window = face -->
+  <circle cx="80" cy="56" r="15" fill="oklch(94% 0.05 140)"/>
+  <circle cx="80" cy="56" r="10" fill="#fff"/>
+  <circle cx="76" cy="54" r="2.2" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <circle cx="84" cy="54" r="2.2" fill="oklch(40% 0.15 140)" stroke="none"/>
+  <path d="M77 59q3 3 6 0"/>
+  <ellipse cx="64" cy="68" rx="3.3" ry="1.9" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <ellipse cx="96" cy="68" rx="3.3" ry="1.9" fill="oklch(88% 0.07 25)" stroke="none"/>
+  <!-- exhaust flame (going live) -->
+  <path d="M73 88q3 9 7 9q4 0 7-9" stroke-width="2.5" stroke="oklch(72% 0.13 60)"/>
+</svg>
