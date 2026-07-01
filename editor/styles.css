@@ -3734,6 +3734,81 @@ button {
   justify-self: end;
 }
 
+/* Prototype-card overflow (⋯) menu. Collapses the thumbnail / star / duplicate /
+   rename / delete actions into ONE trigger + a dropdown, so they stop overlapping
+   as corner pills on small grid cards. The dropdown is position:fixed (the card +
+   card-thumb both clip with overflow:hidden), placed via inline top/right from the
+   trigger's bounding rect. */
+.workflow-library-menu { position: relative; display: inline-flex; flex: 0 0 auto; }
+.workflow-library-menu-corner {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+}
+.workflow-library-menu-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  line-height: 0;
+  flex: 0 0 auto;
+}
+.workflow-library-menu-btn svg { display: block; }
+.workflow-library-menu-btn:hover,
+.workflow-library-menu-btn.is-open { color: var(--text); background: var(--surface-2); }
+.workflow-library-menu-btn.has-state { color: var(--accent); }
+/* Grid variant - a legible pill floating over the (possibly busy) thumbnail. */
+.workflow-library-menu-corner .workflow-library-menu-btn {
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(2px);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.workflow-library-menu-corner .workflow-library-menu-btn:hover,
+.workflow-library-menu-corner .workflow-library-menu-btn.is-open { background: #fff; }
+/* Hover-reveal, but stay visible while the menu is open OR the prototype carries
+   persistent state (is thumbnail / starred) so that state reads at scan distance. */
+.workflow-library-item-generated .workflow-library-menu-btn,
+.workflow-library-card-generated .workflow-library-menu-btn {
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.workflow-library-item-generated:hover .workflow-library-menu-btn,
+.workflow-library-item-generated:focus-within .workflow-library-menu-btn,
+.workflow-library-card-generated:hover .workflow-library-menu-btn,
+.workflow-library-card-generated:focus-within .workflow-library-menu-btn,
+.workflow-library-menu-btn.is-open,
+.workflow-library-menu-btn.has-state { opacity: 1; }
+
+.workflow-library-menu-pop {
+  position: fixed;
+  z-index: 200;
+  min-width: 170px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.workflow-library-menu-pop .popover-item svg { display: block; }
+.workflow-library-menu-pop .popover-item.is-on { color: var(--accent); }
+.workflow-library-menu-pop .popover-item.is-on svg path,
+.workflow-library-menu-pop .popover-item.is-on svg rect,
+.workflow-library-menu-pop .popover-item.is-on svg circle { stroke: var(--accent); }
+.workflow-library-menu-pop .workflow-library-menu-danger:hover { color: var(--danger, #c0392b); }
+.workflow-library-menu-pop .workflow-library-menu-danger:hover svg path { stroke: var(--danger, #c0392b); }
+
 /* Phase 3.5a - Prototype door (full-page iframe of source/<prototype>/). */
 .proto-door {
   position: fixed;
@@ -7394,10 +7469,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: 1920px;
   height: 1440px;
   max-width: none;
-  /* Scale 0.055 = 105.6/1920, sized for a ~105px-wide thumb (2-col grid in
-     the ~220px Library). Fits the whole 1920×1440 page inside the thumb.
-     If the Library aside ever changes width, JS will compute the right
-     scale and apply it as a CSS variable (--th-thumb-scale) - see below. */
+  /* Scale 0.055 = 105.6/1920 is only the FALLBACK (2-col grid in the ~220px
+     Library). WorkflowLibrary measures a real thumb with a ResizeObserver and
+     sets --th-thumb-scale = thumbWidth/1920 on the .workflow-library root, so
+     the iframe thumbs track the panel on column drag-resize + window resize -
+     matching how <img>/<video> asset thumbs flex via object-fit. */
   transform: scale(var(--th-thumb-scale, 0.055));
   transform-origin: top left;
   pointer-events: none;

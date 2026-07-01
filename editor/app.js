@@ -46438,6 +46438,59 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // (fires after any successful Run) and th:library-refresh (manual nudges).
   const [starredProtos, setStarredProtos] = useState(() => getStarredPrototypesSync());
   const [thumbProto, setThumbProto] = useState(() => getThumbnailPrototypeSync());
+  // Prototype-card overflow (⋯) menu. Holds { id, top, right } for the one open
+  // menu (only one at a time) or null. Collapses the per-card thumbnail / star /
+  // duplicate / rename / delete actions - which used to overlap as corner pills -
+  // into a single dropdown. Positioned fixed (the card + thumb both clip with
+  // overflow:hidden, so an absolute dropdown would be cut off).
+  const [protoMenu, setProtoMenu] = useState(null);
+  const toggleProtoMenu = useCallback((e, id) => {
+    e.stopPropagation();
+    // Read the rect BEFORE setState - e.currentTarget can be nulled by the time
+    // the (possibly deferred) updater runs.
+    const r = e.currentTarget.getBoundingClientRect();
+    const pos = { id, top: Math.round(r.bottom + 4), right: Math.round(Math.max(8, window.innerWidth - r.right)) };
+    setProtoMenu(prev => (prev && prev.id === id) ? null : pos);
+  }, []);
+  useEffect(() => {
+    if (!protoMenu) return;
+    const close = () => setProtoMenu(null);
+    const onKey = (e) => { if (e.key === "Escape") setProtoMenu(null); };
+    // inner clicks stopPropagation, so document mousedown only fires for outside;
+    // scroll uses capture so any ancestor scroller closes the (fixed) menu.
+    document.addEventListener("mousedown", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [protoMenu]);
+  // Prototype / HTML iframe thumbnails render the page at native 1920x1440 and
+  // shrink it via transform:scale(var(--th-thumb-scale)). Unlike <img>/<video>
+  // asset thumbs (object-fit:cover, natively fluid), that scale is a FIXED number
+  // with a 0.055 fallback, so the iframe thumbs did not track the panel when the
+  // library column is resized. Measure a real thumb and set the scale to
+  // width/1920 on the panel root - every card inherits the CSS var, and the
+  // ResizeObserver re-fires on column drag-resize + window resize.
+  const libRef = useRef(null);
+  useEffect(() => {
+    const root = libRef.current;
+    if (!root) return;
+    const apply = () => {
+      const thumb = root.querySelector(".workflow-library-card-thumb");
+      const w = thumb ? thumb.clientWidth : 0;
+      if (w > 0) root.style.setProperty("--th-thumb-scale", (w / 1920).toFixed(4));
+    };
+    apply();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [outputsView, tab, extraProtos, htmlPages, dsPages]);
   const reload = useCallback(async () => {
     try {
       const [a, p, gr, pr, hp, st, tb] = await Promise.all([
@@ -46604,6 +46657,68 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // existing draggable row; grid shows a scaled-down iframe thumbnail and
   // the path label beneath. Both forms share the same drag payload + delete
   // handler, so the user gets the same affordance in either view.
+  // Prototype-card action menu (⋯). One button that opens a dropdown of the five
+  // per-prototype actions, replacing the overlapping corner pills. `corner` places
+  // the trigger over the grid card's top-right; list view drops it inline. Deep
+  // (branch) prototypes only expose thumbnail + star (no local duplicate/rename/
+  // delete), matching the prior !isDeep gating.
+  const renderProtoMenu = (p, corner) => {
+    const isDeep = p.depth > 1;
+    const starred = starredProtos.some(sp => sp && sp.id === p.id);
+    const isThumb = isPathThumbnailSync(p.id);
+    const open = !!(protoMenu && protoMenu.id === p.id);
+    const item = (fn) => (e) => { e.stopPropagation(); setProtoMenu(null); fn(); };
+    return html`
+      <div
+        className=${"workflow-library-menu" + (corner ? " workflow-library-menu-corner" : "")}
+        onClick=${(e) => e.stopPropagation()}
+        onMouseDown=${(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className=${"workflow-library-menu-btn" + (open ? " is-open" : "") + ((isThumb || starred) ? " has-state" : "")}
+          title="Prototype actions - thumbnail, star, duplicate, rename, delete"
+          aria-label="Prototype actions"
+          aria-haspopup="menu"
+          aria-expanded=${open ? "true" : "false"}
+          onClick=${(e) => toggleProtoMenu(e, p.id)}
+          onMouseDown=${(e) => e.stopPropagation()}
+          draggable=${false}
+          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
+        ><${Icon.More}/></button>
+        ${open && html`
+          <div
+            className="workflow-library-menu-pop"
+            role="menu"
+            style=${{ top: protoMenu.top + "px", right: protoMenu.right + "px" }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          >
+            <button className=${"popover-item" + (isThumb ? " is-on" : "")} role="menuitem"
+              onClick=${item(() => setProjectThumbnail(isThumb ? "" : p.id))}>
+              <${Icon.Image}/><span>${isThumb ? "Clear thumbnail" : "Set as thumbnail"}</span>
+            </button>
+            <button className=${"popover-item" + (starred ? " is-on" : "")} role="menuitem"
+              onClick=${item(() => togglePrototypeStar(p.id, !starred))}>
+              <${Icon.Star}/><span>${starred ? "Unstar" : "Star"}</span>
+            </button>
+            ${!isDeep && html`<button className="popover-item" role="menuitem"
+              onClick=${item(() => duplicatePrototype(p))}>
+              <${Icon.Copy}/><span>Duplicate</span>
+            </button>`}
+            ${!isDeep && html`<button className="popover-item" role="menuitem"
+              onClick=${item(() => renamePrototype(p))}>
+              <${Icon.Pen}/><span>Rename</span>
+            </button>`}
+            ${!isDeep && html`<button className="popover-item workflow-library-menu-danger" role="menuitem"
+              onClick=${item(() => deletePrototype(p))}>
+              <${Icon.Trash}/><span>Delete</span>
+            </button>`}
+          </div>
+        `}
+      </div>
+    `;
+  };
+
   const renderHtmlItem = (p, view) => {
     const isThumb = isPathThumbnailSync(p.path);
     return view === "grid"
@@ -46780,7 +46895,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
   };
 
   return html`
-    <aside className="workflow-library">
+    <aside className="workflow-library" ref=${libRef}>
       ${assetSel.size > 0 && html`
         <${WorkflowBulkDeleteBar} count=${assetSel.size} onDelete=${() => deleteAssets(assetSel)} onClear=${clearAssetSel}/>
       `}
@@ -47460,58 +47575,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                       <span className="workflow-library-item-label">${p.label}</span>
                       <span className="workflow-library-item-id">${p.id}</span>
                       <div className="workflow-library-item-actions">
-                      <button
-                        type="button"
-                        className=${"workflow-library-thumb-btn" + (isThumb ? " is-on" : "")}
-                        title=${isThumb ? "Unset - clear the project-list thumbnail" : "Set as project-list thumbnail"}
-                        aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
-                        aria-pressed=${isThumb ? "true" : "false"}
-                        onClick=${(e) => { e.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.id); }}
-                        onMouseDown=${(e) => e.stopPropagation()}
-                        draggable=${false}
-                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                      ><${Icon.Image}/></button>
-                      <button
-                        type="button"
-                        className=${"workflow-library-star-btn" + (starred ? " is-on" : "")}
-                        title=${starred ? "Unstar - remove from the projects landing" : "Star - surface this prototype on the projects landing"}
-                        aria-label=${starred ? "Unstar prototype" : "Star prototype"}
-                        aria-pressed=${starred ? "true" : "false"}
-                        onClick=${(e) => { e.stopPropagation(); togglePrototypeStar(p.id, !starred); }}
-                        onMouseDown=${(e) => e.stopPropagation()}
-                        draggable=${false}
-                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                      ><${Icon.Star}/></button>
-                      ${!isDeep && html`<button
-                        type="button"
-                        className="workflow-library-dup-btn"
-                        title="Duplicate this prototype - local copy, no LLM, renames all references"
-                        aria-label="Duplicate prototype"
-                        onClick=${(e) => { e.stopPropagation(); duplicatePrototype(p); }}
-                        onMouseDown=${(e) => e.stopPropagation()}
-                        draggable=${false}
-                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                      ><${Icon.Copy}/></button>`}
-                      ${!isDeep && html`<button
-                        type="button"
-                        className="workflow-library-rename-btn"
-                        title="Rename this prototype - repoints its folder, canvas data, stars, and workflow nodes"
-                        aria-label="Rename prototype"
-                        onClick=${(e) => { e.stopPropagation(); renamePrototype(p); }}
-                        onMouseDown=${(e) => e.stopPropagation()}
-                        draggable=${false}
-                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                      ><${Icon.Pen}/></button>`}
-                      ${!isDeep && html`<button
-                        type="button"
-                        className="workflow-library-del-btn"
-                        title="Delete this prototype - moves to source/.trash/ (recoverable)"
-                        aria-label="Delete prototype"
-                        onClick=${(e) => { e.stopPropagation(); deletePrototype(p); }}
-                        onMouseDown=${(e) => e.stopPropagation()}
-                        draggable=${false}
-                        onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                      ><${Icon.Trash}/></button>`}
+                        ${renderProtoMenu(p, false)}
                       </div>
                     </div>
                   `;
@@ -47544,58 +47608,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                           sandbox="allow-scripts allow-same-origin"
                           scrolling="no"
                         />
-                        <button
-                          type="button"
-                          className=${"workflow-library-thumb-btn workflow-library-thumb-btn-corner" + (isThumb ? " is-on" : "")}
-                          title=${isThumb ? "Unset - clear the project-list thumbnail" : "Set as project-list thumbnail"}
-                          aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
-                          aria-pressed=${isThumb ? "true" : "false"}
-                          onClick=${(e) => { e.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.id); }}
-                          onMouseDown=${(e) => e.stopPropagation()}
-                          draggable=${false}
-                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                        ><${Icon.Image}/></button>
-                        <button
-                          type="button"
-                          className=${"workflow-library-star-btn workflow-library-star-btn-corner" + (starred ? " is-on" : "")}
-                          title=${starred ? "Unstar - remove from the projects landing" : "Star - surface this prototype on the projects landing"}
-                          aria-label=${starred ? "Unstar prototype" : "Star prototype"}
-                          aria-pressed=${starred ? "true" : "false"}
-                          onClick=${(e) => { e.stopPropagation(); togglePrototypeStar(p.id, !starred); }}
-                          onMouseDown=${(e) => e.stopPropagation()}
-                          draggable=${false}
-                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                        ><${Icon.Star}/></button>
-                        ${!isDeep && html`<button
-                          type="button"
-                          className="workflow-library-dup-btn workflow-library-dup-btn-corner"
-                          title="Duplicate this prototype - local copy, no LLM, renames all references"
-                          aria-label="Duplicate prototype"
-                          onClick=${(e) => { e.stopPropagation(); duplicatePrototype(p); }}
-                          onMouseDown=${(e) => e.stopPropagation()}
-                          draggable=${false}
-                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                        ><${Icon.Copy}/></button>`}
-                        ${!isDeep && html`<button
-                          type="button"
-                          className="workflow-library-rename-btn workflow-library-rename-btn-corner"
-                          title="Rename this prototype - repoints its folder, canvas data, stars, and workflow nodes"
-                          aria-label="Rename prototype"
-                          onClick=${(e) => { e.stopPropagation(); renamePrototype(p); }}
-                          onMouseDown=${(e) => e.stopPropagation()}
-                          draggable=${false}
-                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                        ><${Icon.Pen}/></button>`}
-                        ${!isDeep && html`<button
-                          type="button"
-                          className="workflow-library-del-btn workflow-library-del-btn-corner"
-                          title="Delete this prototype - moves to source/.trash/ (recoverable)"
-                          aria-label="Delete prototype"
-                          onClick=${(e) => { e.stopPropagation(); deletePrototype(p); }}
-                          onMouseDown=${(e) => e.stopPropagation()}
-                          draggable=${false}
-                          onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
-                        ><${Icon.Trash}/></button>`}
+                        ${renderProtoMenu(p, true)}
                       </div>
                       <div className="workflow-library-card-label">${p.label}</div>
                     </div>
