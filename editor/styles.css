@@ -7656,7 +7656,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   text-transform: uppercase;
   color: var(--text-muted);
   line-height: 1.2;
+  /* Truncate when the bar (capped inline to the section's on-screen width) is
+     narrower than the title. min-width:0 lets this flex item shrink below its
+     content width; the icon buttons stay full-size (see the > button rule). */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* The bar caps its width to the section (inline max-width); the title truncates,
+   but every trailing icon button must stay visible - never shrink them. */
+.workflow-node-section-bar > button { flex: 0 0 auto; }
 .workflow-node-section-title-input {
   background: transparent;
   border: 0;
@@ -26548,6 +26558,65 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border: 1px solid color-mix(in oklab, oklch(60% 0.2 25) 30%, transparent);
   border-radius: 4px;
 }
+
+/* Steer input: the "steer" option opens this freeform panel instead of firing a
+   bare submit, so the user says WHAT to steer before anything is sent. */
+.chat-direction-opt.is-steering {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.chat-direction-steer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--accent) 5%, var(--surface));
+}
+.chat-direction-steer-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+.chat-direction-steer-input:focus { outline: none; border-color: var(--accent); }
+.chat-direction-steer-input:disabled { opacity: 0.55; cursor: not-allowed; }
+.chat-direction-steer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-direction-steer-hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-right: auto;
+}
+.chat-direction-steer-cancel,
+.chat-direction-steer-send {
+  appearance: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+}
+.chat-direction-steer-cancel { background: var(--surface); color: var(--text-muted); }
+.chat-direction-steer-cancel:hover:not(:disabled) { color: var(--text); border-color: var(--text-faint); }
+.chat-direction-steer-send { background: var(--accent-strong); color: var(--accent-ink); border-color: transparent; }
+.chat-direction-steer-send:hover:not(:disabled) { filter: brightness(1.06); }
+.chat-direction-steer-send:disabled,
+.chat-direction-steer-cancel:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
 
 /* v2.6 - pipeline DAG mini-SVG shown on the wizard review screen. Replaces
    the misleading linear "A → B → C → …" arrow chain with the actual graph

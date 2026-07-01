@@ -15523,8 +15523,12 @@ function parseQuestionForms(text) {
         const image = images.length ? images[0] : null;
         const badge   = pull("badge")?.inner   || "";
         if (!label) continue;
+        // "steer" (or any <opt … input>) opens a freeform input instead of
+        // submitting on click - so the user types WHAT to steer before sending,
+        // rather than firing a bare "steer" that makes the agent ask back.
+        const needsInput = value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs);
         opts.push({
-          value, recommended,
+          value, recommended, needsInput,
           label, axes, vibe, why, palette,
           display, body: bodyTxt, image, images, badge,
         });
@@ -15941,6 +15945,11 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
 function DirectionOptionsCard({ direction, runId, answered, onAnswered, processEnded }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Which "steer"-style option is expanded for freeform input (its value), and
+  // the text typed into it. Clicking a needsInput option opens this panel
+  // instead of submitting; the message is sent only on confirm.
+  const [steerOpen, setSteerOpen] = useState(null);
+  const [steerText, setSteerText] = useState("");
   const key = `decision:${direction.id}`;
   const isAnswered = !!answered;
   // Lazy-load Google Fonts referenced by every option's <display> / <body>.
@@ -15950,10 +15959,12 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
       if (opt.body?.font)    ensureGoogleFontFamily(opt.body.font);
     });
   }, [direction]);
-  const submit = async (opt) => {
+  const submit = async (opt, extra) => {
     if (!runId || isAnswered || busy) return;
     setBusy(true); setError(null);
-    const text = `[decision:${direction.id}] ${opt.value} - ${opt.label}`;
+    const detail = (extra || "").trim();
+    const text = `[decision:${direction.id}] ${opt.value} - ${opt.label}`
+      + (detail ? `: ${detail}` : "");
     try {
       const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
         method: "POST",
@@ -16003,9 +16014,16 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
             <button
               key=${opt.value}
               type="button"
-              className=${"chat-direction-opt" + (picked ? " is-picked" : "") + (opt.recommended ? " is-recommended" : "")}
+              className=${"chat-direction-opt" + (picked ? " is-picked" : "") + (opt.recommended ? " is-recommended" : "") + (opt.needsInput && steerOpen === opt.value ? " is-steering" : "")}
               disabled=${busy || isAnswered || processEnded}
-              onClick=${() => submit(opt)}
+              onClick=${() => {
+                if (opt.needsInput) {
+                  setSteerText("");
+                  setSteerOpen(v => v === opt.value ? null : opt.value);
+                } else {
+                  submit(opt);
+                }
+              }}
               title=${opt.label}
             >
               ${opt.palette?.length > 0 && html`
@@ -16120,6 +16138,35 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
           `;
         })}
       </div>
+      ${steerOpen && (() => {
+        const opt = direction.options.find(o => o.value === steerOpen);
+        if (!opt) return null;
+        return html`
+          <div className="chat-direction-steer-panel">
+            <textarea
+              className="chat-direction-steer-input"
+              placeholder="What should I adjust? e.g. warmer palette, denser panels, quieter glitch"
+              value=${steerText}
+              autoFocus
+              disabled=${busy || isAnswered || processEnded}
+              onInput=${(e) => setSteerText(e.target.value)}
+              onKeyDown=${(e) => {
+                if (e.key === "Escape") { e.preventDefault(); setSteerOpen(null); }
+                else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(opt, steerText); }
+              }}
+            ></textarea>
+            <div className="chat-direction-steer-actions">
+              <span className="chat-direction-steer-hint">⌘↵ to send · Esc to cancel</span>
+              <button type="button" className="chat-direction-steer-cancel"
+                disabled=${busy}
+                onClick=${() => setSteerOpen(null)}>Cancel</button>
+              <button type="button" className="chat-direction-steer-send"
+                disabled=${busy || isAnswered || processEnded || !steerText.trim()}
+                onClick=${() => submit(opt, steerText)}>Send steer</button>
+            </div>
+          </div>
+        `;
+      })()}
       ${error && html`<div className="chat-direction-error">${error}</div>`}
     </div>
   `;
@@ -75992,7 +76039,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
       <!-- Section-style header tab: the drag handle (same as a section), with an
            editable title + close. Always visible so it's easy to grab. -->
       <div className="workflow-node-section-bar"
-        style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%" }}
+        style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%", maxWidth: (totalW / invZoom) + "px" }}
         onMouseDown=${onGripDown}
         onDoubleClick=${(e) => { e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current && titleInputRef.current.focus(), 0); }}>
         ${editingTitle
@@ -76099,7 +76146,7 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
     >
       <div
         className="workflow-node-section-bar"
-        style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%" }}
+        style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%", maxWidth: (w / invZoom) + "px" }}
         onMouseDown=${onHandleDown}
         onDoubleClick=${(e) => { e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current?.focus(), 0); }}
       >
