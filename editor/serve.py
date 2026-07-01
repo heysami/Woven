@@ -6770,7 +6770,11 @@ class RunState:
                  # auto-dispatch after THIS node completes cleanly (set from
                  # the /run `chain` query param). See __init__ for the full
                  # rationale.
-                 "chain_rest")
+                 "chain_rest",
+                 # v3.16 - preamble tier for a freeform chat ("full" = setup /
+                 # initialise, "scoped" = cheap iterate); None for node-agent /
+                 # system runs. Surfaced to the UI for the thread-kind badge.
+                 "tier")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
