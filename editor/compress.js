@@ -36,20 +36,23 @@
     webp:   "https://esm.sh/@jsquash/webp@1.5.0",
     oxipng: "https://esm.sh/@jsquash/oxipng@2.3.0",
   };
-  // ffmpeg.wasm is loaded from its UMD build (NOT esm.sh): the ESM build spins
-  // up a Worker whose sub-imports don't resolve through esm.sh ("Failed to fetch
-  // dynamically imported module"). We load only the @ffmpeg/ffmpeg UMD bundle
-  // (exposes FFmpegWASM.FFmpeg) and drive it directly - @ffmpeg/util is skipped
-  // because its UMD bundle throws "Object.defineProperty called on non-object"
-  // on execution here, and all we need from it (toBlobURL + fetchFile) is two
-  // trivial fetch helpers, inlined below. The worker chunk (814.ffmpeg.js) is
-  // handed to load() as a SAME-ORIGIN blob via classWorkerURL (a Worker script
-  // can't be loaded cross-origin straight from a CDN).
+  // ffmpeg.wasm, loaded entirely from CDN with no vendoring. The pieces and why
+  // each is loaded the way it is (each worked around a distinct failure):
+  //  - MAIN thread FFmpeg class: the @ffmpeg/ffmpeg UMD bundle, executed via the
+  //    shadowed-eval loader (esm.sh's ESM build fails to fetch its worker sub-
+  //    imports; @ffmpeg/util throws Object.defineProperty-on-non-object, so we
+  //    skip it and inline its two helpers below).
+  //  - WORKER: a Worker script must be same-origin, so it can't point at a CDN;
+  //    we hand load() a blob via classWorkerURL. A blob worker is forced to
+  //    {type:"module"}, and the UMD worker's import() path is a dead stub
+  //    ("Cannot find module"), so we must use the ESM worker - but that has
+  //    relative imports (./const.js, ./errors.js) that a blob can't resolve.
+  //    Fix: assemble ONE self-contained module by inlining those two leaf deps
+  //    (buildWorkerBlobURL below).
+  //  - CORE: the module worker loads it via import(coreURL).default, so it needs
+  //    the ES-module core (the umd core fails there).
   var FFMPEG_UMD  = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd";
-  // ESM core (NOT umd): passing classWorkerURL makes ffmpeg spawn a MODULE
-  // worker, which has no importScripts and loads the core via `import(coreURL)`
-  // -> it needs the ES-module core (export default createFFmpegCore). Feeding
-  // it the umd core there fails with "Cannot find module <blob>".
+  var FFMPEG_ESM  = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/esm";
   var FFMPEG_CORE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
 
   // The two @ffmpeg/util helpers we actually use, inlined (see note above).
@@ -167,6 +170,31 @@
   }
 
   // ── Video ─────────────────────────────────────────────────────────────────
+  // Assemble the ESM worker + its two leaf deps into ONE self-contained module
+  // blob, so a {type:"module"} blob worker has no relative imports to resolve.
+  // worker.js pulls only from ./const.js and ./errors.js (both plain leaf
+  // modules with no imports of their own), so inlining them and dropping the two
+  // import statements yields an equivalent single module.
+  var _workerBlob = null;
+  async function buildWorkerBlobURL() {
+    if (_workerBlob) return _workerBlob;
+    async function txt(u) {
+      var r = await fetch(u);
+      if (!r.ok) throw new Error("failed to fetch " + u + " (HTTP " + r.status + ")");
+      return r.text();
+    }
+    var parts = await Promise.all([
+      txt(FFMPEG_ESM + "/const.js"),
+      txt(FFMPEG_ESM + "/errors.js"),
+      txt(FFMPEG_ESM + "/worker.js"),
+    ]);
+    var workerBody = parts[2].replace(
+      /^[ \t]*import\s*\{[^}]*\}\s*from\s*["']\.\/(?:const|errors)\.js["'];?[ \t]*$/gm, "");
+    var combined = parts[0] + "\n" + parts[1] + "\n" + workerBody;
+    _workerBlob = URL.createObjectURL(new Blob([combined], { type: "text/javascript" }));
+    return _workerBlob;
+  }
+
   var _ff = null; // { ff } singleton (core is ~30MB - load once, reuse)
   async function ffmpeg() {
     if (_ff) return _ff;
@@ -175,11 +203,11 @@
       throw new Error("ffmpeg UMD loaded but is missing the FFmpeg constructor");
     }
     var ff = new FFmpegWASM.FFmpeg();
-    // classWorkerURL: same-origin blob of the UMD worker chunk (a cross-origin
-    // Worker script from a CDN is blocked by the browser). core/wasm likewise
-    // wrapped as blobs so they load same-origin.
+    // classWorkerURL: same-origin blob of the self-contained ESM worker. core +
+    // wasm likewise wrapped as blobs so they load same-origin (import(coreURL)
+    // inside the module worker, then locateFile picks up the wasm blob).
     await ff.load({
-      classWorkerURL: await toBlobURL(FFMPEG_UMD + "/814.ffmpeg.js", "text/javascript"),
+      classWorkerURL: await buildWorkerBlobURL(),
       coreURL: await toBlobURL(FFMPEG_CORE + "/ffmpeg-core.js", "text/javascript"),
       wasmURL: await toBlobURL(FFMPEG_CORE + "/ffmpeg-core.wasm", "application/wasm"),
     });
