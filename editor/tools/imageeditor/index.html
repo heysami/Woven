@@ -437,7 +437,9 @@ const TOOLS = [
 ];
 let tool = 'brush';
 const opt = { size:32, color:'#5b8cff', opacity:1, fill:true, tolerance:32,
-  strength:0.5, range:'mid' };
+  strength:0.5, range:'mid',
+  // custom brush tip: 'round' (default) | shape id | 'image'
+  tip:'round', spacing:0.22, tintImage:true, followAngle:false };
 
 // ── View transform ─────────────────────────────────────────────────────────
 let zoom = 1;
@@ -976,6 +978,108 @@ function strokeSeg(l,a,b){
   ctx.restore();
 }
 
+// ── Custom brush tips (stamp brushes) ───────────────────────────────────────
+//    A stamp brush builds a small tinted/loaded "tip" canvas and repeatedly
+//    stamps it along the stroke path at `spacing` intervals. Shapes inherit the
+//    current brush colour; images optionally keep their own colours.
+const STAMP_TIPS = [
+  {id:'round',    name:'Round (default)'},
+  {id:'star',     name:'Star'},
+  {id:'sparkle',  name:'Sparkle'},
+  {id:'heart',    name:'Heart'},
+  {id:'square',   name:'Square'},
+  {id:'triangle', name:'Triangle'},
+  {id:'splatter', name:'Splatter'},
+  {id:'image',    name:'Custom image…'},
+];
+let stampImg=null;                       // loaded HTMLImageElement/canvas (untinted source)
+let stampCache={ key:'', canvas:null };  // memoised tip render
+let stampAccum=0;                        // distance carried between segments
+
+function drawShapeTip(cx,id,S){
+  const c=S/2, r=S/2*0.94;
+  cx.beginPath();
+  if(id==='square'){ cx.rect(S*0.08,S*0.08,S*0.84,S*0.84); }
+  else if(id==='triangle'){ cx.moveTo(c,S*0.06); cx.lineTo(S*0.94,S*0.9); cx.lineTo(S*0.06,S*0.9); cx.closePath(); }
+  else if(id==='heart'){
+    cx.moveTo(c,S*0.86);
+    cx.bezierCurveTo(S*0.04,S*0.54, S*0.14,S*0.1, c,S*0.32);
+    cx.bezierCurveTo(S*0.86,S*0.1, S*0.96,S*0.54, c,S*0.86);
+  }
+  else { // star / sparkle
+    const pts=id==='sparkle'?4:5, inner=id==='sparkle'?r*0.3:r*0.42;
+    for(let i=0;i<pts*2;i++){
+      const ang=-Math.PI/2 + i*Math.PI/pts, rad=(i%2)?inner:r;
+      const x=c+Math.cos(ang)*rad, y=c+Math.sin(ang)*rad;
+      i?cx.lineTo(x,y):cx.moveTo(x,y);
+    }
+    cx.closePath();
+  }
+  cx.fill();
+}
+
+// Build (or reuse) the tip stamp at the current size/colour. Returns a canvas.
+function buildStamp(){
+  const S=Math.max(4, Math.round(opt.size));
+  const key=[opt.tip,S,opt.color,opt.tintImage?1:0].join('|');
+  if(stampCache.key===key && stampCache.canvas) return stampCache.canvas;
+  const cv=newCanvas(S,S), cx=cv.getContext('2d');
+  cx.clearRect(0,0,S,S);
+  if(opt.tip==='image'){
+    if(stampImg && stampImg.width){
+      const iw=stampImg.width, ih=stampImg.height, sc=Math.min(S/iw,S/ih);
+      const dw=iw*sc, dh=ih*sc;
+      cx.drawImage(stampImg,(S-dw)/2,(S-dh)/2,dw,dh);
+      if(opt.tintImage){ // keep image alpha, replace colour with brush colour
+        cx.globalCompositeOperation='source-in';
+        cx.fillStyle=opt.color; cx.fillRect(0,0,S,S);
+        cx.globalCompositeOperation='source-over';
+      }
+    }
+  } else if(opt.tip==='splatter'){
+    cx.fillStyle=opt.color;
+    // deterministic cluster of dots so the stamp is stable across dabs
+    const blobs=[[.5,.5,.34],[.24,.32,.12],[.74,.28,.1],[.7,.72,.14],[.28,.74,.09],[.86,.56,.06],[.14,.56,.07]];
+    for(const [bx,by,br] of blobs){ cx.beginPath(); cx.arc(bx*S,by*S,br*S,0,7); cx.fill(); }
+  } else {
+    cx.fillStyle=opt.color;
+    drawShapeTip(cx,opt.tip,S);
+  }
+  stampCache={ key, canvas:cv };
+  return cv;
+}
+
+// Stamp the tip once, centred at (x,y), rotated to `ang` when followAngle is on.
+function stampDab(l,x,y,ang){
+  const cv=buildStamp(), S=cv.width;
+  const ctx=l.canvas.getContext('2d');
+  ctx.save();
+  applySelClip(ctx);
+  ctx.globalAlpha=opt.opacity;
+  if(tool==='eraser') ctx.globalCompositeOperation='destination-out';
+  ctx.translate(x,y);
+  if(opt.followAngle) ctx.rotate(ang||0);
+  ctx.drawImage(cv,-S/2,-S/2);
+  ctx.restore();
+}
+
+function stampSpacingPx(){ return Math.max(1, opt.size*Math.max(0.02,opt.spacing)); }
+
+// Walk a segment, dropping stamps every `spacing`, carrying leftover distance.
+function stampSeg(l,a,b){
+  const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
+  if(len<1e-4) return;
+  const ang=Math.atan2(dy,dx), sp=stampSpacingPx();
+  let t=0;
+  while(true){
+    const need=sp-stampAccum;
+    if(t+need>len){ stampAccum+=(len-t); break; }
+    t+=need; stampAccum=0;
+    stampDab(l, a[0]+dx*(t/len), a[1]+dy*(t/len), ang);
+  }
+}
+const usesStampTip=()=> tool==='brush' && opt.tip!=='round';
+
 function drawShape(l, x0,y0,x1,y1,kind){
   const ctx=l.canvas.getContext('2d');
   ctx.save();
@@ -1259,7 +1363,10 @@ function onDown(e){
   if(tool==='dodge'||tool==='burn'){ painting=true; lastP=[x,y]; dodgeBurnDab(l,x,y,tool); render(); return; }
   if(tool==='smudge'){ painting=true; lastP=[x,y]; smudgeSample(l,x,y); return; }
   // brush / eraser
-  painting=true; lastP=[x,y]; strokeDot(l,x,y); render();
+  painting=true; lastP=[x,y];
+  if(usesStampTip()){ stampAccum=0; stampDab(l,x,y,0); }
+  else strokeDot(l,x,y);
+  render();
 }
 function onMove(e){
   // cursor ring for brush/eraser
@@ -1284,7 +1391,9 @@ function onMove(e){
     }
     lastP=[x,y]; render(); return;
   }
-  strokeSeg(l,lastP,[x,y]); strokeDot(l,x,y); lastP=[x,y]; render();
+  if(usesStampTip()){ stampSeg(l,lastP,[x,y]); }
+  else { strokeSeg(l,lastP,[x,y]); strokeDot(l,x,y); }
+  lastP=[x,y]; render();
 }
 function onUp(e){
   if(!painting) return;
@@ -1921,6 +2030,20 @@ function buildOpts(){
   if(usesOpac){
     add('<div class="row"><label>Opacity</label><input type="range" id="optOpac" min="0" max="100" value="'+Math.round(opt.opacity*100)+'"><span class="val" id="optOpacV">'+Math.round(opt.opacity*100)+'%</span></div>');
   }
+  if(tool==='brush'){
+    add('<div class="row"><label>Tip</label><select id="optTip">'+
+      STAMP_TIPS.map(t=>'<option value="'+t.id+'"'+(opt.tip===t.id?' selected':'')+'>'+t.name+'</option>').join('')+
+    '</select></div>');
+    if(opt.tip!=='round'){
+      add('<div class="row"><label>Spacing</label><input type="range" id="optSpace" min="2" max="120" value="'+Math.round(opt.spacing*100)+'"><span class="val" id="optSpaceV">'+Math.round(opt.spacing*100)+'%</span></div>');
+      add('<div class="row"><label>Follow path</label><input type="checkbox" id="optFollow"'+(opt.followAngle?' checked':'')+'></div>');
+    }
+    if(opt.tip==='image'){
+      add('<div class="row"><label>Image</label><button class="btn" id="optStampLoad">'+(stampImg?'Replace…':'Load…')+'</button></div>');
+      add('<div class="row"><label>Tint w/ color</label><input type="checkbox" id="optTint"'+(opt.tintImage?' checked':'')+'></div>');
+      if(!stampImg) add('<div class="hint">Load a PNG (transparent background works best) to stamp it along the stroke.</div>');
+    }
+  }
   if(tool==='bucket'){
     add('<div class="row"><label>Tolerance</label><input type="range" id="optTol" min="0" max="128" value="'+opt.tolerance+'"><span class="val" id="optTolV">'+opt.tolerance+'</span></div>');
   }
@@ -1961,6 +2084,25 @@ function buildOpts(){
   if($('optFill')) $('optFill').onchange=e=>{ opt.fill=e.target.value==='1'; };
   if($('optStr')) $('optStr').oninput=e=>{ opt.strength=(+e.target.value)/100; $('optStrV').textContent=e.target.value+'%'; };
   if($('optRange')) $('optRange').onchange=e=>{ opt.range=e.target.value; };
+  if($('optTip')) $('optTip').onchange=e=>{ opt.tip=e.target.value; if(opt.tip==='image'&&!stampImg) loadStampImage(); else buildOpts(); };
+  if($('optSpace')) $('optSpace').oninput=e=>{ opt.spacing=(+e.target.value)/100; $('optSpaceV').textContent=e.target.value+'%'; };
+  if($('optFollow')) $('optFollow').onchange=e=>{ opt.followAngle=e.target.checked; };
+  if($('optTint')) $('optTint').onchange=e=>{ opt.tintImage=e.target.checked; stampCache.key=''; };
+  if($('optStampLoad')) $('optStampLoad').onclick=()=>loadStampImage();
+}
+
+// Prompt for a brush image, load it as the stamp source, refresh the panel.
+function loadStampImage(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    const url=URL.createObjectURL(f), img=new Image();
+    img.onload=()=>{ stampImg=img; opt.tip='image'; stampCache.key=''; buildOpts(); URL.revokeObjectURL(url); };
+    img.onerror=()=>{ toast('Could not load that image'); URL.revokeObjectURL(url); };
+    img.src=url;
+  };
+  inp.click();
 }
 
 function buildLayers(){
