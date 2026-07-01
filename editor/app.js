@@ -9746,7 +9746,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
             onClick=${() => { onStartNewChat(); setActive(null); }}
             title="Start a new chat with the agent (no edits required)"
           >
-            <span className="runs-new-chat-plus">+</span>
+            <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
             <span className="runs-new-chat-label">New chat</span>
           </button>
         `}
@@ -12728,7 +12728,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         </div>
         <div className="chat-status-group">
           <${ChatStatusChip} status=${status} error=${error}/>
-          <button className="chat-action chat-action-close" onClick=${handleClose} title="Close (run keeps going)">×</button>
+          <button className="chat-action chat-action-close" onClick=${handleClose} title="Close (run keeps going)"><${Icon.X}/></button>
         </div>
       </div>
       ${!collapsed && html`
@@ -23350,7 +23350,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                             : "Create a new project")
                     }
                     onClick=${() => { if (setupNeeded) return; setNewMenuOpen(false); setCreating(true); setErr(null); }}>
-                    <span style=${{ fontSize: 16, lineHeight: 1 }}>+</span>
+                    <${Icon.Plus}/>
                     <span>New project</span>
                   </button>
                   <button

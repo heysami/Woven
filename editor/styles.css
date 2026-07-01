@@ -1962,6 +1962,21 @@ button {
   border: 1px solid var(--border); border-radius: 8px; resize: vertical;
 }
 .sysadd-input:focus, .sysadd-textarea:focus { outline: none; border-color: var(--accent); }
+/* When .sysadd-input is a <select> (e.g. the Publish "Which prototype?" picker):
+   appearance:none + a CSS chevron so the arrow isn't flush to the right edge.
+   Scoped to select so text inputs/textareas keep their plain look. Chevron tip
+   ~12px in to balance the 11px left padding; padding-right clears it. */
+select.sysadd-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  cursor: pointer;
+}
 .sysadd-input-sub { font-size: 12px; }
 .sysadd-chiprow { display: flex; flex-wrap: wrap; gap: 6px; }
 .sysadd-chip, .sysadd-radio {
@@ -1996,6 +2011,9 @@ button {
 .sysadd-btn-cancel, .sysadd-btn-go {
   padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer;
   border: 1px solid transparent;
+  /* Center the icon + label on one axis - the inline Globe SVG used to sit on
+     the text baseline and hang low. gap replaces the literal markup space. */
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
 .sysadd-btn-cancel { background: transparent; color: var(--text); border-color: var(--border); }
 .sysadd-btn-cancel:hover:not(:disabled) { background: var(--surface-2); }
@@ -4342,6 +4360,12 @@ body[data-panel-resizing="true"] .dock-tile-grip { cursor: grabbing; }
   min-height: 38px;
   align-items: center;
   padding-right: 40px;
+  /* Zero the vertical padding the base .th-rail-panel head carries (10px 12px):
+     otherwise the head grows to ~48px and its content centre drops BELOW the
+     grip/close (absolute, top:8px + 22px = 19px centre). With no v-padding the
+     head sits at min-height 38px and its content centres at 19px too. */
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .dock-grid:not([data-count="1"]) .dock-tile .th-rail-panel-embedded .runs-panel-head { padding-left: 40px; }
 .dock-grid:not([data-count="1"]) .dock-tile[data-kind="thread"] .chat-header { padding-left: 38px; }
@@ -12306,10 +12330,20 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .chat-target-select {
   font: inherit;
   font-size: 11px;
-  padding: 2px 22px 2px 8px;
+  /* appearance:none + a CSS chevron so the right spacing is controllable - the
+     native arrow sits flush to the edge regardless of padding. Chevron tip ~10px
+     from the right, matching the ~9px left padding; padding-right clears it. */
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 2px 24px 2px 9px;
   border: 1px solid var(--border, #e0e0e0);
   border-radius: 6px;
-  background: var(--surface, #fff);
+  background-color: var(--surface, #fff);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: 4px 4px, 4px 4px;
+  background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
   color: var(--text, #222);
   cursor: pointer;
   max-width: 220px;
@@ -17178,10 +17212,20 @@ a.ds-badge:hover, button.ds-badge:hover {
 .editor-proto-switch {
   height: 26px;
   max-width: 180px;
-  padding: 0 6px;
+  /* appearance:none + CSS chevron so the arrow isn't jammed against the right
+     edge (native arrow ignores padding). Chevron tip ~10px in, balancing the
+     left padding; padding-right clears it. */
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0 26px 0 10px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: var(--surface-2);
+  background-color: var(--surface-2);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: 4px 4px, 4px 4px;
+  background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
   color: var(--text);
   font-family: var(--font-sans);   /* native <select> defaults to the system font otherwise */
   font-size: 12px;
@@ -17766,6 +17810,11 @@ a.ds-badge:hover, button.ds-badge:hover {
 .popover {
   position: absolute;
   background: var(--surface);
+  /* Pair the surface bg with an explicit text color. Without it, loose popover
+     text (e.g. the GitHub username) inherited the landing page's light color and
+     rendered near-white on the light surface - illegible. popover-item/-title
+     set their own colors, so they're unaffected. */
+  color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
@@ -20919,10 +20968,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 1;
 }
+/* SVG plus (geometrically centered - the old text "+" glyph sat above the
+   circle's optical centre). Slightly bolder stroke to keep the chunky look. */
+.runs-new-chat-plus svg { display: block; width: 12px; height: 12px; stroke-width: 2; }
 .runs-new-chat-label { font-size: 12.5px; }
 .runs-new-chat-hint {
   font-family: var(--font-mono);
@@ -21576,6 +21625,11 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
+  /* Center content (text label or SVG glyph) both axes - the close × used to
+     sit high because the button had no vertical centering. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .chat-action:hover { background: var(--surface-3); color: var(--text); }
 .chat-action-stop {
@@ -21583,7 +21637,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   color: var(--danger);
 }
 .chat-action-stop:hover { background: var(--danger-soft); border-color: color-mix(in oklab, var(--danger) 35%, transparent); }
-.chat-action-close { font-size: 16px; line-height: 1; }
+.chat-action-close svg { display: block; width: 14px; height: 14px; }
 
 .chat-body {
   overflow-y: auto;
