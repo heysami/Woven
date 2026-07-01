@@ -3253,18 +3253,12 @@ def _chrome_screenshot(url: str, out_png: str, width: int = 1280, height: int = 
 
 
 # ── Template-DS sample previews (static PNG snapshots) ───────────────────
-# The Capabilities "Template Design System" gallery used to mount 20 live
-# iframes (10 UI styles × 2 surfaces) - each one a full DS boot (all.css +
-# style overlay + fonts + JS runtime). That's the slow landing. Instead each
-# sample is rasterised ONCE to a PNG under default-design-system/previews/ and
-# the landing renders a plain <img>. The capture is client-side: the editor
-# already boots each sample live, so it html2canvas-pro's that frame and POSTs
-# the bytes to /__ds_save_preview (see DefaultLibraryLanding in app.js). No
-# headless Chrome, no server-side render. A snapshot only goes stale after a DS
-# template / style / token-default change, which is when the user re-bakes.
-DS_PREVIEWS_DIR = os.path.join(DEFAULT_DS_DIR, "previews")
-_DS_SNAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
-_DS_SNAP_VIEW_RE = re.compile(r"^[a-z0-9-]{1,20}$")
+# The Capabilities "Template Design System" gallery renders 20 committed PNGs
+# (10 UI styles × 2 surfaces) from default-design-system/previews/ as plain
+# <img>s - served through the read-only /__default_ds/ static route. They're
+# generated offline (headless boot in scratchpad/dsgen), not written by the
+# daemon, so a snapshot only goes stale after a DS template / style / token-
+# default change, which is when the previews get regenerated + re-committed.
 
 
 def _capture_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
@@ -8790,8 +8784,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._design_system_save(qs)
             if parsed.path == "/__ds_proposals":
                 return self._ds_proposals_save(qs)
-            if parsed.path == "/__ds_save_preview":
-                return self._ds_save_preview(qs)
             if parsed.path == "/__upload_font":
                 return self._upload_font_post(qs)
             if parsed.path == "/__delete_font":
@@ -13188,32 +13180,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
-
-    # ── POST /__ds_save_preview?id=<sid>&view=<view> ──────────────────────
-    # Save ONE static PNG snapshot for the Capabilities "Template Design System"
-    # gallery. The client rasterises each sample in-browser with html2canvas-pro
-    # (the same DS boot it shows live) and POSTs the PNG bytes here; we just write
-    # it to previews/<id>-<view>.png. No headless Chrome, no server-side render -
-    # the gallery then serves a plain <img> of the saved file.
-    def _ds_save_preview(self, qs):
-        sid = (qs.get("id", [""])[0] or "").strip()
-        view = (qs.get("view", [""])[0] or "").strip()
-        if not (_DS_SNAP_ID_RE.match(sid) and _DS_SNAP_VIEW_RE.match(view)):
-            return self._reply(400, {"error": "bad id/view"})
-        png_bytes = self._read_png_body()
-        if not png_bytes:
-            return self._reply(400, {"error": "no PNG body"})
-        try:
-            os.makedirs(DS_PREVIEWS_DIR, exist_ok=True)
-            out_png = os.path.join(DS_PREVIEWS_DIR, sid + "-" + view + ".png")
-            tmp_png = out_png + ".tmp"
-            with open(tmp_png, "wb") as f:
-                f.write(png_bytes)
-            os.replace(tmp_png, out_png)
-        except OSError as e:
-            return self._reply(500, {"error": "write failed: " + str(e)})
-        return self._reply(200, {"ok": True, "bytes": len(png_bytes),
-                                 "file": "previews/%s-%s.png" % (sid, view)})
 
     # ── Phase 4a - BYOK media config + asset generation ──────────────────
     # GET  /__media_config            → masked config status (has_key/last_test_*)

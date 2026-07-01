@@ -18949,20 +18949,15 @@ function dsStyleSampleChips(p) {
   return chips;
 }
 
-/* One scaled, non-interactive preview thumbnail. The page renders at a fixed
-   logical desktop size (1280×800) and is CSS-scaled to fill the card; a
-   ResizeObserver keeps the scale exact as the column resizes. The chosen UI
-   STYLE overlay (data-theme = styleId, the full all.css bundle, the dark class
-   when requested, and the style's JS runtime if it ships one) is injected into
-   the iframe head on load - the same mechanism the live customizer uses. */
 /* Inject the full DS bundle (all.css) + style overlay (data-theme) + optional
    JS-backed style runtime + fonts + the computed custom-token <style> into a
-   sample iframe's document. The SINGLE source of truth for "boot a DS sample",
-   used by DsTuneThumb for both the live preview and its self-heal rasterise, so
-   the saved static PNG matches the live boot exactly.
-   onAllCssLoad (optional) re-runs the caller once all.css lands - the live
-   thumbnail uses it to keep its custom <style> last in the cascade; the
-   rasteriser waits instead. */
+   sample iframe's document, rendered at a fixed logical desktop size (1280×800).
+   The SINGLE source of truth for "boot a DS sample". The Capabilities gallery
+   now serves committed static PNGs, so at runtime this is unused; it stays as
+   the exact boot the OFFLINE preview generator drives (scratchpad/dsgen) so a
+   regenerated snapshot matches the live design system precisely.
+   onAllCssLoad (optional) re-runs the caller once all.css lands to keep the
+   custom <style> last in the cascade; the generator waits instead. */
 function dsInjectSampleHead(doc, { custom, dark, styleId, js }, onAllCssLoad) {
   if (!doc || !doc.head) return;
   custom = custom || {};
@@ -19011,99 +19006,19 @@ function dsInjectSampleHead(doc, { custom, dark, styleId, js }, onAllCssLoad) {
   doc.head.appendChild(style);   // re-append → keep last so it wins the cascade
 }
 
-function DsTuneThumb({ file, custom, dark, styleId, js, sampleId, view }) {
-  const LOGICAL_W = 1280, LOGICAL_H = 800;
-  const wrapRef = useRef(null);
-  const iframeRef = useRef(null);
-  const [scale, setScale] = useState(0.28);
-  // Prefer the pre-rendered PNG snapshot (near-instant). If it's missing we fall
-  // back to the live iframe boot AND self-heal: once the iframe has settled we
-  // html2canvas it, save the PNG, then flip back to <img>. So a missing preview
-  // fixes itself on first view - no button, no headless Chrome. `healed` is the
-  // post-capture cache-buster that loads the freshly saved file.
-  const hasSnap = !!(sampleId && view);
-  const [imgFailed, setImgFailed] = useState(false);
-  const [healed, setHealed] = useState(0);
-  const healTriedRef = useRef(false);
-  useEffect(() => { setImgFailed(false); healTriedRef.current = false; }, [sampleId, view]);
-  const useImg = hasSnap && !imgFailed;
-
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(entries => {
-      for (const e of entries) { const w = e.contentRect.width; if (w) setScale(w / LOGICAL_W); }
-    });
-    ro.observe(wrap);
-    return () => ro.disconnect();
-  }, []);
-
-  const apply = useCallback(() => {
-    const ifr = iframeRef.current;
-    let doc;
-    try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
-    if (!doc || !doc.head) return;
-    // Boot the sample (all.css + style overlay + JS runtime + fonts + tokens).
-    // The shared helper re-runs this on all.css load to keep our <style> last.
-    dsInjectSampleHead(doc, { custom, dark, styleId, js }, () => { try { apply(); } catch {} });
-    try { const w = ifr.contentWindow; if (w && typeof w.__renderTokenDocs === "function") w.__renderTokenDocs(); } catch {}
-    try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
-  }, [custom, dark, styleId, js]);
-
-  // Re-apply when the style changes after the frame is already loaded.
-  useEffect(() => { apply(); }, [apply]);
-
-  // Self-heal: when the iframe fallback is showing (PNG missing), rasterise the
-  // settled frame with html2canvas-pro ONCE and POST it to /__ds_save_preview,
-  // then flip back to <img>. Captures the already-rendered iframe (no extra
-  // boot). Silent on failure (e.g. endpoint absent before a daemon restart) -
-  // it just stays on the live iframe and retries on the next full page load.
-  const selfHeal = useCallback(async () => {
-    if (healTriedRef.current || useImg || !hasSnap) return;
-    healTriedRef.current = true;
-    const ifr = iframeRef.current;
-    let doc;
-    try { doc = ifr && ifr.contentDocument; } catch { doc = null; }
-    if (!doc || !doc.body || typeof window.html2canvas !== "function") return;
-    try {
-      if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
-      await new Promise(r => setTimeout(r, js ? 1100 : 500));
-      try { const w = ifr.contentWindow; if (w && w.__analog && typeof w.__analog.refresh === "function") w.__analog.refresh(); } catch {}
-      const canvas = await window.html2canvas(doc.documentElement, {
-        width: LOGICAL_W, height: LOGICAL_H, windowWidth: LOGICAL_W, windowHeight: LOGICAL_H,
-        backgroundColor: null, useCORS: true, allowTaint: false, logging: false, scale: 1,
-      });
-      const dataUrl = canvas && canvas.toDataURL ? canvas.toDataURL("image/png") : "";
-      if (!dataUrl || dataUrl.length < 200) return;
-      const r = await fetch(apiUrl("/__ds_save_preview?id=" + encodeURIComponent(sampleId) + "&view=" + encodeURIComponent(view)), {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }),
-      });
-      if (r.ok) { setHealed(Date.now()); setImgFailed(false); }
-    } catch {}
-  }, [useImg, hasSnap, sampleId, view, js]);
-
-  const onFrameLoad = useCallback(() => { apply(); selfHeal(); }, [apply, selfHeal]);
-
+function DsTuneThumb({ dark, sampleId, view }) {
+  // Just a static PNG snapshot. The previews live committed under
+  // default-design-system/previews/<id>-<view>.png (generated offline - see
+  // scratchpad/dsgen or regenerate with the same headless boot). No live iframe,
+  // no self-heal, no rasterise-on-view: the gallery is plain <img>s so it opens
+  // instantly instead of booting 20 design-system iframes.
   return html`
-    <div ref=${wrapRef} className=${"deflib-thumb" + (dark ? " is-dark" : "")}>
-      ${useImg ? html`
-        <img
-          className="deflib-thumb-img"
-          alt="Style preview"
-          loading="lazy"
-          src=${apiUrl("/__default_ds/previews/" + sampleId + "-" + view + ".png") + (healed ? ("?v=" + healed) : "")}
-          onError=${() => setImgFailed(true)}/>
-      ` : html`
-        <iframe
-          ref=${iframeRef}
-          className="deflib-thumb-frame"
-          title="Style preview"
-          loading="lazy"
-          scrolling="no"
-          style=${{ width: LOGICAL_W + "px", height: LOGICAL_H + "px", transform: "scale(" + scale + ")" }}
-          src=${apiUrl("/__default_ds/" + file)}
-          onLoad=${onFrameLoad}/>
-      `}
+    <div className=${"deflib-thumb" + (dark ? " is-dark" : "")}>
+      <img
+        className="deflib-thumb-img"
+        alt="Style preview"
+        loading="lazy"
+        src=${apiUrl("/__default_ds/previews/" + sampleId + "-" + view + ".png")}/>
     </div>
   `;
 }
@@ -19122,30 +19037,14 @@ function DefaultLibraryLanding() {
   const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
 
   // Each style sample rides its OWN tuning (colour / font / type scale / space
-  // scale), chosen to reinforce its style - so every row reads differently while
-  // still matching its style's character. Fold each preset's `tune` patch over
-  // the shared defaults through buildDsCustomization (exactly what the live
-  // customizer does); samples with no tune (Default) ride the base tokens.
-  const sampleCustoms = useMemo(() => {
-    const base = dsDefaultSettings();
-    const m = {};
-    for (const p of DS_STYLE_SAMPLES) {
-      if (!p.tune) { m[p.id] = buildDsCustomization(base); continue; }
-      // Resolve the named palette (role set or Coolors) into role colours, the
-      // same way the customizer's picker does, then fold it + the rest of the
-      // tune over the defaults.
-      const roles = p.tune.paletteName ? dsSamplePaletteRoles(p.tune.paletteName) : null;
-      m[p.id] = buildDsCustomization({ ...base, ...p.tune, ...(roles || {}) });
-    }
-    return m;
-  }, []);
+  // scale) - baked into its committed preview PNG at generation time (the
+  // headless boot folds each preset's `tune` over the defaults through
+  // buildDsCustomization, exactly what the live customizer does). Nothing to
+  // compute here at render: the rows are just <img>s of those snapshots.
 
-  // Static PNG snapshots make the gallery near-instant; the iframe boot is a
-  // fallback only (a cell shows the live iframe ONLY when its PNG is missing).
-  // Missing snapshots SELF-HEAL: each DsTuneThumb rasterises its own settled
-  // iframe via html2canvas-pro and saves the PNG (see DsTuneThumb.selfHeal), so
-  // the gallery converges to plain <img> on its own - no button, no headless
-  // Chrome. Two surfaces per style: landing + the design system.
+  // Each row shows two committed static PNG snapshots (landing + the design
+  // system). They're plain <img>s so the gallery opens instantly. The `custom`
+  // tokens are still computed for the "Try customisation" live preview below.
   return html`
     <div className="ref-root">
       <${SystemSectionHead}
@@ -19172,11 +19071,11 @@ function DefaultLibraryLanding() {
             <div className="deflib-row-note">${preset.note}</div>
             <div className="deflib-grid">
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="templates/landing.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="landing"/>
+                <${DsTuneThumb} dark=${preset.dark} sampleId=${preset.id} view="landing"/>
                 <figcaption className="deflib-cap">Landing page</figcaption>
               </figure>
               <figure className="deflib-cell">
-                <${DsTuneThumb} file="gallery.html" custom=${sampleCustoms[preset.id]} dark=${preset.dark} styleId=${preset.styleId} js=${preset.js} sampleId=${preset.id} view="gallery"/>
+                <${DsTuneThumb} dark=${preset.dark} sampleId=${preset.id} view="gallery"/>
                 <figcaption className="deflib-cap">Design system</figcaption>
               </figure>
             </div>

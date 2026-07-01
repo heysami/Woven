@@ -1290,8 +1290,7 @@ button {
   background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .deflib-thumb.is-dark { background: #16171b; }
-.deflib-thumb-frame { position: absolute; top: 0; left: 0; transform-origin: top left; border: 0; pointer-events: none; }
-/* Pre-rendered PNG snapshot (the fast path); same 1280:800 frame as the iframe. */
+/* Committed pre-rendered PNG snapshot, filling the 1280:800 card. */
 .deflib-thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; pointer-events: none; }
 .deflib-head-actions { display: inline-flex; align-items: center; gap: 8px; }
 .deflib-regen-note { margin-left: 10px; font-weight: 400; font-size: 12px; opacity: 0.6; }
