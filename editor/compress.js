@@ -64,19 +64,28 @@
     return _mods[url];
   }
 
-  // Inject a classic <script> once and resolve when it has loaded. Used for the
-  // ffmpeg UMD bundle (which publishes a global rather than ESM exports).
-  var _scripts = {};
-  function loadScriptOnce(url) {
-    if (_scripts[url]) return _scripts[url];
-    _scripts[url] = new Promise(function (res, rej) {
-      var s = document.createElement("script");
-      s.src = url; s.async = true;
-      s.onload = function () { res(); };
-      s.onerror = function () { rej(new Error("failed to load " + url)); };
-      document.head.appendChild(s);
-    });
-    return _scripts[url];
+  // Load a UMD bundle and return its browser global, robustly. A plain <script>
+  // tag lets the UMD wrapper's own environment detection run against the host
+  // page - and the Woven editor exposes module/exports/define shims, which
+  // divert the export to a CommonJS/AMD branch instead of window (symptom:
+  // "failed to expose its globals"). So we fetch the source and execute it with
+  // module/exports/define shadowed to undefined, forcing the wrapper's plain
+  // `self.<Global> = ...` branch. Memoised per URL.
+  var _umd = {};
+  function loadUmdGlobal(url, globalName) {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    if (!_umd[url]) {
+      _umd[url] = (async function () {
+        var resp = await fetch(url);
+        if (!resp.ok) throw new Error("failed to fetch " + url + " (HTTP " + resp.status + ")");
+        var code = await resp.text();
+        // module/exports/define -> undefined inside; `self`/`window` stay real.
+        (new Function("module", "exports", "define", code))();
+        if (!window[globalName]) throw new Error(globalName + " was not exposed by " + url);
+        return window[globalName];
+      })();
+    }
+    return _umd[url];
   }
 
   function loadImageEl(src) {
@@ -144,11 +153,10 @@
   var _ff = null; // { ff, util } singleton (core is ~30MB - load once, reuse)
   async function ffmpeg() {
     if (_ff) return _ff;
-    await loadScriptOnce(FFMPEG_UMD + "/ffmpeg.js");
-    await loadScriptOnce(FFMPEG_UTIL);
-    var FFmpegWASM = window.FFmpegWASM, FFmpegUtil = window.FFmpegUtil;
+    var FFmpegWASM = await loadUmdGlobal(FFMPEG_UMD + "/ffmpeg.js", "FFmpegWASM");
+    var FFmpegUtil = await loadUmdGlobal(FFMPEG_UTIL, "FFmpegUtil");
     if (!FFmpegWASM || !FFmpegWASM.FFmpeg || !FFmpegUtil || !FFmpegUtil.toBlobURL) {
-      throw new Error("ffmpeg UMD failed to expose its globals");
+      throw new Error("ffmpeg UMD loaded but is missing FFmpeg/toBlobURL");
     }
     var toBlobURL = FFmpegUtil.toBlobURL;
     var ff = new FFmpegWASM.FFmpeg();
