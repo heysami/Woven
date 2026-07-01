@@ -562,6 +562,36 @@ If ANY apply -> STOP and fetch them first (do not reconstruct them from memory):
 returns the authoritative `full`-tier routing blocks (mental-model + plan-gate + every enabled orchestrator hard-rule). Treat what it returns as binding."""
 
 
+# The scoped-iteration framing that REPLACES the stripped routing in the
+# `scoped` tier (v3.16). A scoped thread is the CHEAP follow-on chat: the
+# prototype already exists, its genre / design-system / aesthetic are already
+# committed, and the orchestration routing decision is already made. So it
+# drops the same ~21K of routing prose the slim leaf drops, but - unlike a
+# leaf - it keeps the full app-capabilities surface (it edits real files, it
+# can regen an asset, add a page, run QA). The stub tells it to iterate in
+# place and NOT re-decide direction, and names the fetch path for the rare
+# case where the user asks for a whole new medium / family / prototype.
+def _scoped_iteration_stub(prototype: Optional[str] = None) -> str:
+    scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
+    slug = prototype or "<slug>"
+    return f"""
+
+## You are the SCOPED ITERATION thread - the prototype already exists, iterate in place
+
+This is the lighter, cheaper follow-on chat. The setup/initialise thread already did the expensive work: it decided the direction, committed the genre / design-system / aesthetic, dispatched the orchestrator, and scaffolded the build. Your job is to ITERATE on what exists, not to re-decide it.
+
+- The prototype lives under {scope}. Default every read / edit / write there. To see what is already committed (genre, tokens, structure), Read {scope} and its `DESIGN.md` / `data.js` - do NOT re-run a direction pick or re-commit a genre. The look is locked; honour it.
+- The orchestrator-routing rules (which family builds an image / sim / game / narrative, the mental-model, the plan-gate) are deliberately NOT in this preamble. That decision is already made for prototype `{slug}`. Your correct default is to make the requested change now.
+- Full app capabilities (image / video / audio gen, 3D, the verify gate, fonts, node kinds, asset endpoints) ARE above and stay live - use them to iterate (regen an asset, add a section, wire a node, run QA before you claim done).
+
+You need the full routing rules ONLY IF the user now asks to do one of these - apply the test literally:
+  - build a WHOLE NEW medium / family the prototype does not already have (a new sim / game / narrative / interactive surface), or
+  - start a NEW prototype from scratch (a different `source/<slug>/`).
+If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP and fetch them first:
+  `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
+returns the authoritative `full`-tier routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build so they know this scoped thread is about to do heavier work.)"""
+
+
 def _wired_provider_ids() -> set:
     """Return the set of provider ids that have at least one wired dispatch
     entry in the daemon. Providers in the catalog but NOT in any dispatch
@@ -689,7 +719,7 @@ def _local_tool_availability() -> dict:
     return out
 
 
-def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full") -> str:
+def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes - not the full catalog - so the agent
     knows what EXISTS without burning 3KB of tokens. For details the agent
@@ -1992,6 +2022,14 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
         return _preamble + LEAF_ROUTER_STUB
+    # v3.16 - SCOPED tier: the cheap follow-on iteration chat. Same routing
+    # strip as slim (the prototype is committed, routing is decided), but keeps
+    # the full app-capabilities surface and swaps in the iterate-in-place stub
+    # (named to the committed prototype slug) instead of the leaf stub.
+    if tier == "scoped":
+        _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
+        _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
+        return _preamble + _scoped_iteration_stub(prototype)
     # v3.12 - append manifest-carried hard rules for orchestrators added after
     # ship time (not covered by the static prose above). Appended AFTER the
     # strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.

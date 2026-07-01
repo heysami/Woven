@@ -8237,12 +8237,12 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
     '})();</script></body></html>';
 }
 
-async function triggerRun({ branch, agentId, kind, prompt, title, meta, model }) {
+async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier }) {
   const project = activeProjectId();
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model }),
+    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model, tier }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -9991,23 +9991,51 @@ function RightRailDock({ mode }) {
   }, [chatWidth]);
 
   // ── Chat run lifecycle ──
+  // v3.16 - carries the pending SCOPED-thread context (tier + prototype slug)
+  // from a <handoff-card> click through to the isNew shell's first submit,
+  // where spawnChat reads it. Cleared after one spawn so it never leaks into a
+  // later, unrelated new chat.
+  const pendingScopedRef = useRef(null);
   const openChat = useCallback(() => {
+    pendingScopedRef.current = null;
     setChatRun({ runId: null, isNew: true, title: "Chat", kind: "freeform", branch, agentId: pickAgentIdForChat() });
     setChatRunFinished(false);
   }, []);
+  // v3.16 - open a fresh, cheaper SCOPED chat bound to a committed prototype.
+  // Fired by the <handoff-card> "continue in a lighter chat" button (via the
+  // woven:continue-scoped window event). The old setup thread is NOT killed -
+  // it stays in the runs list, reopenable - this just makes the lighter chat
+  // the active one, per the "keep it open, just nudge" behaviour.
+  const openScopedChat = useCallback((prototype) => {
+    const slug = prototype || branch || "main";
+    pendingScopedRef.current = { tier: "scoped", branch: slug };
+    setChatRun({ runId: null, isNew: true, title: "Iterate", kind: "freeform", branch: slug, tier: "scoped", agentId: pickAgentIdForChat() });
+    setChatRunFinished(false);
+  }, []);
+  useEffect(() => {
+    const on = (e) => openScopedChat(e && e.detail && e.detail.prototype);
+    window.addEventListener("woven:continue-scoped", on);
+    return () => window.removeEventListener("woven:continue-scoped", on);
+  }, [openScopedChat]);
   const reopenRun = useCallback((run) => {
     if (!run) return;
     setChatRun(run);
     setChatRunFinished(!!run.done || !!run.turnDone);
   }, []);
   const spawnChat = useCallback(async (text) => {
+    // v3.16 - honour a pending SCOPED handoff (set by openScopedChat). Read +
+    // clear it so this one spawn goes out on the cheaper tier bound to the
+    // committed prototype; every later new chat falls back to the full setup tier.
+    const scoped = pendingScopedRef.current;
+    pendingScopedRef.current = null;
     const wrappedPrompt = composeModeAwarePrompt(mode === "workflow" ? "workflow" : "editor", text);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
     const agentDefault = getDefaultForCapability("agent");
     const run = await triggerRun({
-      branch, agentId: pickAgentIdForChat(), kind: "freeform",
+      branch: (scoped && scoped.branch) || branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode,
       model: agentDefault && agentDefault.model || undefined,
+      tier: (scoped && scoped.tier) || undefined,
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -12801,6 +12829,21 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
 
   if (!run) return null;
 
+  // v3.16 - thread-kind badge shown beside the chat title. Three states, only
+  // two visible: "Setup" (full-tier freeform - the heavy initialise chat that
+  // routes + decides), "Subagent" (a node-agent drawer run), and the scoped
+  // iteration chat which is the NORMAL everyday chat and shows NO badge. Other
+  // run kinds (edits-apply, regenerate, …) are background and get no badge.
+  const threadBadge = (() => {
+    if (run.kind === "node-agent")
+      return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
+    if (run.kind === "freeform") {
+      if ((run.tier || "full") === "scoped") return null;  // normal iteration chat - hidden
+      return { label: "Setup", cls: "setup", title: "Setup chat: carries the full routing + capabilities context (heavier). It hands off to a lighter, scoped chat once the build is standing." };
+    }
+    return null;
+  })();
+
   const stopRun = async () => {
     try { await fetch(apiUrl(`/__run/${encodeURIComponent(run.runId)}/stop`), { method: "POST" }); } catch {}
     onStop && onStop();
@@ -12811,6 +12854,10 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <div className="chat-drawer-resize-handle" onMouseDown=${onResizeStart}/>
       <div className="chat-header">
         <div className="chat-title-group">
+          ${threadBadge && html`<span
+            className=${"chat-thread-badge chat-thread-badge-" + threadBadge.cls}
+            title=${threadBadge.title}
+          >${threadBadge.label}</span>`}
           <span className="chat-title">${run.title || "Agent run"}</span>
           ${run.turnsCompleted > 0 && html`
           <span className="chat-meta">
@@ -15364,6 +15411,13 @@ const DECISION_REQUEST_RE_G = /<decision-request\b([^>]*)>([\s\S]*?)<\/decision-
 // natively. Submit semantics match <decision-request> (single-pick, POSTs
 // `[decision:<id>] <value> - <label>` as the next user message).
 const DIRECTION_OPTIONS_RE_G = /<direction-options\b([^>]*)>([\s\S]*?)<\/direction-options>/gi;
+// v3.16 - the two-phase setup/iterate markers the FULL-tier setup chat emits.
+// <init-card> is informational (no action - it just announces "you are in the
+// heavier setup chat"). <handoff-card> carries a "continue in a lighter chat"
+// button that opens a cheaper SCOPED thread bound to the committed prototype.
+// Both carry an optional prototype="<slug>" attr; body is the message text.
+const INIT_CARD_RE_G        = /<init-card\b([^>]*)>([\s\S]*?)<\/init-card>/gi;
+const HANDOFF_CARD_RE_G     = /<handoff-card\b([^>]*)>([\s\S]*?)<\/handoff-card>/gi;
 const INLINE_SVG_RE_G       = /<svg\b[\s\S]*?<\/svg>/gi;
 const INLINE_HTML_RE_G      = /(?:<!doctype html\b|<html\b)[\s\S]*?<\/html>/gi;
 const FENCE_RE_G            = /```[\s\S]*?```/g;
@@ -15395,9 +15449,11 @@ function parseQuestionForms(text) {
   const hasForm      = text.includes("<question-form");
   const hasDecision  = text.includes("<decision-request");
   const hasDirection = text.includes("<direction-options");
+  const hasInit      = text.includes("<init-card");
+  const hasHandoff   = text.includes("<handoff-card");
   const hasSvg       = !looksLikeDiff && /<svg\b/i.test(text);
   const hasHtml      = !looksLikeDiff && /<(?:html\b|!doctype html\b)/i.test(text);
-  if (!hasForm && !hasDecision && !hasDirection && !hasSvg && !hasHtml) {
+  if (!hasForm && !hasDecision && !hasDirection && !hasInit && !hasHandoff && !hasSvg && !hasHtml) {
     return { segments: [{ kind: "text", text }] };
   }
 
@@ -15424,6 +15480,8 @@ function parseQuestionForms(text) {
   if (hasForm)      collect(QUESTION_FORM_RE_G,     "form");
   if (hasDecision)  collect(DECISION_REQUEST_RE_G,  "decision");
   if (hasDirection) collect(DIRECTION_OPTIONS_RE_G, "direction");
+  if (hasInit)      collect(INIT_CARD_RE_G,         "init");
+  if (hasHandoff)   collect(HANDOFF_CARD_RE_G,      "handoff");
   if (hasSvg)       collect(INLINE_SVG_RE_G,        "svg");
   if (hasHtml)      collect(INLINE_HTML_RE_G,       "html");
 
@@ -15635,6 +15693,15 @@ function parseQuestionForms(text) {
       } else {
         segments.push({ kind: "text", text: c.m[0] });
       }
+    } else if (c.kind === "init" || c.kind === "handoff") {
+      // v3.16 - two-phase setup/iterate markers. Both carry an optional
+      // prototype="<slug>" attr and a plain-text message body. init is purely
+      // informational; handoff renders a button that opens a scoped chat.
+      const cardAttrs = c.m[1] || "";
+      const protoM = /prototype\s*=\s*["']([^"']+)["']/i.exec(cardAttrs);
+      const prototype = protoM ? protoM[1] : null;
+      const message = (c.m[2] || "").replace(/\s+/g, " ").trim();
+      segments.push({ kind: c.kind, [c.kind]: { prototype, message }, raw: c.m[0] });
     } else if (c.kind === "svg") {
       segments.push({ kind: "preview", lang: "svg", content: c.m[0] });
     } else if (c.kind === "html") {
@@ -16579,6 +16646,42 @@ function CopyMsgButton({ text }) {
   ><${copied ? Icon.Check : Icon.Copy}/></button>`;
 }
 
+// v3.16 - Two-phase setup/iterate cards. InitCard is a passive banner the
+// setup (full-tier) chat emits when it recognises a new-prototype build.
+// HandoffCard is the call-to-action the setup chat emits at commit; its button
+// opens a cheaper SCOPED chat bound to the committed prototype (via the
+// woven:continue-scoped window event the right-rail host listens for). The
+// setup chat is NOT killed - this only nudges, per "keep it open".
+function InitCard({ init }) {
+  const proto = init && init.prototype;
+  const msg = (init && init.message)
+    || "This is the setup chat: it carries the full capability and routing context to decide direction and build. Once the prototype is standing, it hands you off to a lighter, cheaper chat.";
+  return html`<div className="chat-phase-card chat-phase-init" role="note">
+    <span className="chat-phase-ico"><${Icon.Spark}/></span>
+    <div className="chat-phase-body">
+      <div className="chat-phase-head">Setup chat${proto ? html` · ${proto}` : null}</div>
+      <div className="chat-phase-msg">${msg}</div>
+    </div>
+  </div>`;
+}
+
+function HandoffCard({ handoff }) {
+  const proto = handoff && handoff.prototype;
+  const msg = (handoff && handoff.message)
+    || "Setup is done. Continue in a lighter chat scoped to this prototype: it is much cheaper per message. You can keep using this chat too.";
+  const go = () => {
+    try { window.dispatchEvent(new CustomEvent("woven:continue-scoped", { detail: { prototype: proto || null } })); } catch {}
+  };
+  return html`<div className="chat-phase-card chat-phase-handoff" role="note">
+    <span className="chat-phase-ico"><${Icon.Bolt}/></span>
+    <div className="chat-phase-body">
+      <div className="chat-phase-head">Continue in a lighter chat${proto ? html` · ${proto}` : null}</div>
+      <div className="chat-phase-msg">${msg}</div>
+      <button type="button" className="chat-phase-btn" onClick=${go}>Continue in a lighter chat</button>
+    </div>
+  </div>`;
+}
+
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
   switch (block.kind) {
     case "text": {
@@ -16630,6 +16733,15 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
               onAnswered=${onAnswered}
               processEnded=${processEnded}
             />`;
+          }
+          if (seg.kind === "init") {
+            // v3.16 - informational "you are in the heavier setup chat" banner.
+            return html`<${InitCard} key=${`init${i}`} init=${seg.init}/>`;
+          }
+          if (seg.kind === "handoff") {
+            // v3.16 - "continue in a lighter chat" call-to-action. The button
+            // opens a scoped thread bound to the committed prototype.
+            return html`<${HandoffCard} key=${`ho${i}`} handoff=${seg.handoff}/>`;
           }
           // Question-form segment - render as an interactive card. The
           // answers map tracks per-form-key picks so a re-render of the

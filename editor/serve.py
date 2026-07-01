@@ -6394,6 +6394,7 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
         "branch":  branch,
         "agentId": state.agent_id,
         "kind":    state.kind,
+        "tier":    getattr(state, "tier", None),   # v3.16 - setup vs scoped badge
         "title":   state.title,
         "startedAt": state.started_at,
         "seq":     seq,
@@ -6536,6 +6537,7 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                             "agentId":        rec.get("agentId") or "claude",
                             "branch":         rec.get("branch") or "main",
                             "kind":           rec.get("kind") or "freeform",
+                            "tier":           rec.get("tier"),   # v3.16
                             "title":          rec.get("title") or "",
                             "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
                             "done":           False,
@@ -6776,6 +6778,11 @@ class RunState:
         self.agent_id = agent_id
         self.branch = branch
         self.kind = kind
+        # v3.16 - preamble tier for a freeform chat: "full" (the setup /
+        # initialise thread) or "scoped" (the cheap follow-on). None for
+        # node-agent / system runs (their badge comes from `kind`). Surfaced to
+        # the UI so the chat header can badge Setup vs Subagent vs (scoped=none).
+        self.tier = None
         self.title = title
         # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
@@ -8290,6 +8297,37 @@ Read it from there; do NOT copy these files into the project:
 Useful env vars set on every spawn: `TH_PROJECT_ROOT` (your cwd as an \
 absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 `TH_PROJECT_ID` (the workspace id of the active project).
+"""
+
+
+# v3.16 - The two-phase setup/iterate contract, appended to the FULL-tier
+# interactive chat spawn (the setup thread) ONLY - never to orchestrator /
+# planner / leaf spawns, and never to a `scoped` follow-on chat. It makes the
+# expensive-vs-cheap split VISIBLE to the user at both ends via two chat cards
+# the frontend renders distinctly:
+#   <init-card>     - emitted ONCE, up front, when this turn is a new-prototype
+#                     build (initialisation). Tells the user they are in the
+#                     heavier setup chat and why.
+#   <handoff-card>  - emitted ONCE, at commit (an orchestrator hand-off has
+#                     returned + its build graph is scaffolded, OR the request
+#                     turned out to be a lightweight edit needing no new
+#                     routing). Offers the user a lighter scoped chat to
+#                     continue in. The setup chat stays usable; this only nudges.
+# Both are plain text markers the daemon passes through untouched; only the
+# editor parses them. Emit each AT MOST ONCE per thread.
+SETUP_THREAD_CONTRACT = """
+
+## Setup vs iterate - make the two phases visible to the user (v3.16)
+
+You are the SETUP (initialise) chat. This chat carries the full routing + capabilities catalog, so it is the EXPENSIVE one - right for deciding direction and standing a prototype up, wasteful for small follow-up edits. Two markers make that split clear to the user. They are UI cards, not prose - emit each on its own line, at most once per thread, and keep writing normally around them.
+
+1. **At the START, once you have determined this request is a NEW prototype build (an initialisation)** - i.e. you are about to route to an orchestrator / the `/prototype` skill / write fresh `source/` - announce it up front so the user knows why this chat is heavier:
+   `<init-card prototype="<slug>">Setting up a new prototype. This is the setup chat: it carries the full capability + routing context to decide direction and build. Once it is standing, I will hand you off to a lighter, cheaper chat to iterate in.</init-card>`
+   (Skip this card entirely if the request is NOT a new build - e.g. a question, or a tiny tweak to something already committed.)
+
+2. **At COMMIT** - the moment the build is standing (an orchestrator hand-off returned and its node graph is scaffolded, OR you have finished the fresh source), OR the moment you realise the request was only a light edit to an already-committed prototype that never needed the setup weight - offer the lighter chat:
+   `<handoff-card prototype="<slug>">Setup is done. Continue in a lighter chat - it is scoped to this prototype and much cheaper per message. You can keep using this chat too; the lighter one is just the better place to iterate.</handoff-card>`
+   Replace `<slug>` with the active prototype slug (your Active-prototype-scope block names it; use `main` if none was given). After the handoff card, wrap up briefly - do not keep doing heavy work in this thread once the build is committed.
 """
 
 
@@ -22274,6 +22312,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "agentId": s.agent_id,
                 "branch": s.branch,
                 "kind": s.kind,
+                "tier": getattr(s, "tier", None),  # v3.16
                 "title": s.title,
                 "startedAt": s.started_at,
                 "done": s.done,
@@ -22884,6 +22923,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "agentId": state.agent_id,
             "branch": state.branch,
             "kind": state.kind,
+            "tier": getattr(state, "tier", None),  # v3.16
             "title": state.title,
             "startedAt": state.started_at,
             "done": state.done,
@@ -23115,6 +23155,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Resolve the permission mode (per-run override > daemon default).
         # For Claude Code in -p mode this MUST be set or every tool auto-denies.
         permission_mode = (body.get("permissionMode") or defs.get("permission_default") or "").strip()
+        # v3.16 - Preamble tier for THIS interactive chat. Default "full" (the
+        # setup/initialise thread - it carries all routing to decide direction).
+        # The frontend passes tier="scoped" when the user continues in the
+        # lighter follow-on chat spawned from a <handoff-card>: that thread is
+        # committed to one prototype, so it drops the ~27K of routing prose and
+        # only carries the app-capabilities surface. Anything unrecognised
+        # falls back to "full" so a bad value never silently under-scopes.
+        _chat_tier = (body.get("tier") or "full").strip()
+        if _chat_tier not in ("full", "scoped"):
+            _chat_tier = "full"
         spawn_args = list(defs["args"])
         # v2.45 / v3.8.1 - Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -23204,9 +23254,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             # integrated (the Quiver AI case). See kinds/capabilities.py.
             try:
                 from kinds.capabilities import capabilities_preamble
-                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble()
+                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=branch)
             except Exception:
                 pass
+            # v3.16 - Only the FULL-tier setup thread carries the two-phase
+            # setup/iterate contract (it emits the <init-card> + <handoff-card>
+            # the editor renders). A `scoped` follow-on chat is past that point
+            # and must NOT re-announce setup or re-offer a handoff.
+            if _chat_tier != "scoped":
+                sys_prompt = sys_prompt + SETUP_THREAD_CONTRACT
             if _mcp_config_spawn_args():
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
@@ -23239,9 +23295,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 )
             try:
                 from kinds.capabilities import capabilities_preamble
-                codex_sys_bits.append(capabilities_preamble())
+                codex_sys_bits.append(capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=branch))
             except Exception:
                 pass
+            # v3.16 - same two-phase contract for codex/opencode setup threads.
+            if _chat_tier != "scoped":
+                codex_sys_bits.append(SETUP_THREAD_CONTRACT)
             codex_sys_bits.append(
                 "\n## Subagent dispatch on this runtime\n\n"
                 f"You are running on the {_runtime_label}, which has no native "
@@ -23352,6 +23411,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = permission_mode or None
+        state.tier = _chat_tier   # v3.16 - "full" (setup) | "scoped" (iterate)
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
@@ -23418,6 +23478,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "agentId": agent_id,
             "branch": branch,
             "kind": kind,
+            "tier": _chat_tier,   # v3.16 - so the chat header can badge Setup vs scoped
             "title": title,
         })
 
