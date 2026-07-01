@@ -170,24 +170,34 @@ Step 1 only covers the **agent's text model**. To unlock image generation, video
 
 Each row shows what the provider covers and lets you paste a key inline, no need to leave the page:
 
-| Provider     | Covers                                                              | Where to get a key                                       |
-| ------------ | ------------------------------------------------------------------- | -------------------------------------------------------- |
-| **fal.ai**   | image · video · 3D · background removal · upscale (one key, many skills) | https://fal.ai/dashboard/keys                       |
-| **Quiver AI**| vector SVG generation                                              | https://docs.quiver.ai/getting-started/quickstart        |
-| **OpenAI**   | raster image (`gpt-image-2`) · text models                          | https://platform.openai.com/api-keys                     |
-| **Anthropic**| Claude text models · vision-based describe                          | https://console.anthropic.com/settings/keys              |
+| Provider      | Covers                                                              | Where to get a key                                       |
+| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------- |
+| **fal.ai**    | image · video · 3D · background removal · upscale (one key, many skills) | https://fal.ai/dashboard/keys                       |
+| **Quiver AI** | vector SVG generation                                              | https://docs.quiver.ai/getting-started/quickstart        |
+| **OpenAI**    | raster image (`gpt-image-2`) · text models                          | https://platform.openai.com/api-keys                     |
+| **Anthropic** | Claude text models · vision-based describe                          | https://console.anthropic.com/settings/keys              |
+| **ElevenLabs**| audio - voiceover · sound effects · music (one key, all three)      | https://elevenlabs.io/app/settings/api-keys              |
+| **Meshy**     | 3D - text/image to textured `.glb`                                  | https://docs.meshy.ai/                                   |
+| **Exa**       | web search for the Research assistant                               | https://dashboard.exa.ai/api-keys                        |
 
-These are **optional**. Projects can still be created without them; you just won't be able to run the matching skill nodes (image-generate, video-gen, svg-gen, etc.) until the key is in place. You can always come back later via the **gear icon** in the top-right.
+These are **optional**. Projects can still be created without them; you just won't be able to run the matching skill nodes (image-generate, video-gen, svg-gen, audio-gen, 3D, web-search, etc.) until the key is in place. You can always come back later via the **gear icon** in the top-right. A handful of additional providers (xAI, BFL, Recraft, Leonardo, Higgsfield, and more) are available from that same Settings panel.
 
 ---
 
 ## 7. Step 3 · review orchestrators
 
-**Step 3** is a new, optional review step. Orchestrators dispatch whole families of subagents for richer artefacts (photography, illustration, simulations, 3D scenes, motion studios, and so on). Each row has a toggle, so you can turn off any family you don't want auto-dispatched - you can still invoke them by name later.
+**Step 3** is an optional review step. Orchestrators dispatch whole families of subagents for richer artefacts. The editor ships **17** of them, auto-discovered from their manifests, so the list stays current as new ones land:
+
+- **Art direction & assets** - Art Director, Visual, Photography, Illustration, Illustrative shaders, Creative visual, Material
+- **Immersive & interactive** - Simulation, Narrative experience, Game experience, Interactive media, Motion Studio, Scrapbook experience
+- **3D** - Scene 3D, Hero 3D
+- **Polish & ship** - Interactive polish, Publish
+
+Each row has a toggle, so you can turn off any family you don't want auto-dispatched - you can still invoke them by name later.
 
 ![Onboarding · Step 3 · orchestrators](docs/screenshots/03c-onboarding-orchestrators.png)
 
-Rows whose pipeline depends on a key you haven't set in Step 2 are shown as **limited** with a short note about what's missing. Nothing here blocks project creation; if in doubt, leave the defaults and click **Next →**.
+Rows whose pipeline depends on a key you haven't set in Step 2 (photography and illustration need an image model; audio-bearing families need an audio key) are shown as **limited** with a short note about what's missing. Nothing here blocks project creation; if in doubt, leave the defaults and click **Next →**.
 
 ---
 
