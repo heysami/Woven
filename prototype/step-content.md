@@ -41,6 +41,21 @@ All copy in one prototype shares one register. If panel titles are terse-technic
 | Bloomberg / finance | Nominal phrases, abbreviations, numbers without commentary |
 | Read.cv / portfolio | Restrained, precise, plainspoken, third-person bio |
 
+### Address the audience, never the build team
+
+Every string speaks TO the person using the product, about THEIR world. It never answers the instruction that commissioned the build, never narrates the page to the reader, never describes a feature to a "development team". This is the single most common copywriting failure in generated prototypes: the copy reads like a reply to the brief instead of like the product.
+
+| Write this (to the reader) | Not this (to the build team / instruction) |
+|---|---|
+| "Ship when the data says ship." | "A clean, modern landing page for a developer-analytics SaaS." |
+| "Your last run flagged 3 regressions." | "This dashboard displays the user's key metrics." |
+| "Start free. No card." | "Below you will find the pricing section." |
+| "Welcome back, Mara." | "Welcome to our website." |
+
+Banned as final copy: instruction-echo, meta-narration ("This section showcases…"), spec/stakeholder address, and lorem/`[BRACKETED TODO]`. Name the benefit, not the mechanism.
+
+**When an `art-direction-contract.json` exists, its `voice` block is authoritative** - write `voice.audience` in `voice.toneWords`, obey `voice.addressPrinciple`, and treat `voice.copyAntiPatterns` as hard bans. The genre voice table above is the fallback when no contract is present.
+
 ### Specificity at every leaf
 
 - **Named entities, not "Item 1".** Real-sounding people, projects, branches, IDs, slugs.

@@ -189,6 +189,23 @@ The contract has two halves and the split is load-bearing:
     "antiPatterns": ["<verbatim from brief + any the plate review surfaced>"]
   },
 
+  "voice": {
+    // The COPY half of the single source of truth - the sibling of the visual halves above.
+    // The plate already renders REAL WORDS (composition law §2 #5: "real words not lorem"), so
+    // that copy is your sample: OBSERVE the register it implies, then author the binding rule
+    // (§3.3). step-content reads this; the final QA gate runs a copywriting pass against it.
+    "audience": "<who the shipped copy SPEAKS TO, in their own terms - the real end reader / persona / customer (e.g. 'a touring musician's fans deciding whether to buy a ticket'), NOT 'the development team', 'the client', or 'whoever wrote the brief'>",
+    "toneWords": ["<3-5 words for the voice the plate's real copy implies - e.g. 'warm', 'plainspoken', 'a little cocky'>"],
+    "addressPrinciple": "Copy is addressed TO the audience and talks about THEIR world. It NEVER answers the build brief, narrates the product to whoever commissioned it, or describes a feature to a 'development team'. Ship the line the reader should see: 'Ship when the data says ship.' - NOT 'This is a landing page for a developer-analytics SaaS.'",
+    "copyAntiPatterns": [
+      "instruction-echo - restating the brief/prompt back as copy ('A clean, modern dashboard that displays your key metrics')",
+      "meta-narration - copy that describes the page to the reader ('This section showcases...', 'Below you will find...', 'Welcome to our website')",
+      "spec / dev-team address - talking to the builder or stakeholder instead of the actual user",
+      "lorem / placeholder / [BRACKETED TODO] shipped as final copy",
+      "feature-listing where a benefit is owed - naming the mechanism, not what it does for the reader"
+    ]
+  },
+
   "itemReferences": [
     // LEAVE THIS [] IN PHASE B. It is populated only in the mode=finalize dispatch, AFTER the
     // pick, by the §4.5 crop pass (crop FIRST, then author this contract from the crops in §4.6).
@@ -256,6 +273,16 @@ The image model draws the headline in whatever letterforms it invents - frequent
 The plate's own rendering of the **human subject**, the **UI sample**, and the **key items** are the references that most improve the build: the subject crop is the i2i identity reference for the hero/portrait photos, the UI crop is the composition/component ground-truth, and item crops keep generated assets on the approved sample. These are far more valuable than discrete text stickers - do not let the easy-to-box text objects crowd them out.
 
 **But do NOT crop anything in Phase B.** Cropping is real work (file writes + rembg) and must not run before the pick - it would spend on the agent's *recommended* plate, which the user may reject, before the §4 cost gate. So in Phase B you only **note in prose** which regions (subject / UI / items) look reference-worthy, as part of your steer summary at the gate. Leave `itemReferences: []`. The crops are produced in **§4.5, after the pick, from the CHOSEN plate** - and the contract is then authored in §4.6 GROUNDED in those crops (crop first, so the contract is an observation, not a glance).
+
+### 3.3 Voice: copy speaks to the AUDIENCE, not the build team
+
+The contract governs the copy register too, not only the visuals - because the same failure that stitches two visual halves together also ships copy that answers the *instruction* instead of addressing the *reader*. The tell: shipped strings that read like a reply to the brief ("A clean, modern landing page for a developer-analytics tool", "This section showcases the key features") instead of product copy a real person is meant to read ("Ship when the data says ship."). Copy that narrates the build to a development team is the copywriting equivalent of a personless plate.
+
+You already have the sample: the plate was generated with **real words, not lorem** (§2 composition law #5). So, same motion as §3.1's typography reconciliation - OBSERVE, then author:
+
+1. **OBSERVE** the register the plate's rendered copy implies (terse/warm/cocky/measured) → `voice.toneWords`, and name the real end reader the product serves → `voice.audience` (the fan, the buyer, the operator - never "the development team" / "the client" / "whoever wrote the brief").
+2. **AUTHOR** `voice.addressPrinciple` (copy talks TO that audience about THEIR world, never back at the brief) and `voice.copyAntiPatterns` (instruction-echo, meta-narration, dev-team/spec address, lorem, mechanism-not-benefit).
+3. This binds downstream: **step-content** writes every leaf against `voice` (audience + tone + budgets), and the **final QA gate runs a copywriting pass** - any string that answers the instruction rather than the reader is a fail, the copy sibling of the aesthetic-lens's cross-register diff.
 
 ## 4. Phase C - human steerage gate (§12.5) - emitted by the CALLER, not you
 
@@ -399,7 +426,7 @@ There are TWO hand-off shapes, one per mode.
   "branch": "<branch>",
   "contractPath": "workflow/art-direction-contract.json",
   "platePath": "workflow/artdirection/north-star-<chosen>.png",
-  "nextStep": "Caller now builds source via /prototype, but the build reads workflow/art-direction-contract.json as the AUTHORITATIVE design source, outranking the generic recipe/aesthetic template (the existing aesthetic-authority rule): step-tokens reads `extracted.palette` + `authored.spacing` + `authored.typography` (USE `authored.typography.familyResolution` as the actual @font-face/@import family + variant/axis, not the abstract display name - it matches the plate's rendered construction per §3.1); step-layout/step-optical read `extracted.composition`; step-components reads `authored.componentStyle`; step-motion reads `authored.motionCharacter`; step-content honours `extracted.moodWords`. THEN the asset orchestrators read `crossSurfaceContract`: illustration/photography enrichers carry the `imageryRegister` + palette CHARACTER + `colorUsePrinciple` (NOT the full `sharedPaletteHexes` jammed into every asset); visual-orchestrator's step 3.5 assigns each slot its role-appropriate palette SUBSET + weight by size/position so the page balances (small→accent, large→dominant/neutral); material-orchestrator applies `materialDirective` + `reactiveBudget` to UI surfaces (not just imagery). For `itemReferences[]` entries with a non-empty `matchesSlots` (role subject/item/recurring-decoration), the illustration/photography enrichers bind each matched slot's `refImagePath` to the entry's `refPath` (§3.2) so the slot generates from the plate's own pixels - the `subject` crop especially makes the hero/portrait photos the SAME person as the plate. The `role:'ui'` entry (matchesSlots empty) is the composition ground-truth: step-layout/step-components should view it as the target for chrome layout + component treatment, and the final aesthetic-lens diffs the assembled runtime against this contract for cross-register coherence - the check that was missing.",
+  "nextStep": "Caller now builds source via /prototype, but the build reads workflow/art-direction-contract.json as the AUTHORITATIVE design source, outranking the generic recipe/aesthetic template (the existing aesthetic-authority rule): step-tokens reads `extracted.palette` + `authored.spacing` + `authored.typography` (USE `authored.typography.familyResolution` as the actual @font-face/@import family + variant/axis, not the abstract display name - it matches the plate's rendered construction per §3.1); step-layout/step-optical read `extracted.composition`; step-components reads `authored.componentStyle`; step-motion reads `authored.motionCharacter`; step-content honours `extracted.moodWords` AND writes every copy leaf against `voice` (address the `audience` in `toneWords`, obey `addressPrinciple`, avoid `copyAntiPatterns` - copy talks to the reader, never answers the brief or the dev team). THEN the asset orchestrators read `crossSurfaceContract`: illustration/photography enrichers carry the `imageryRegister` + palette CHARACTER + `colorUsePrinciple` (NOT the full `sharedPaletteHexes` jammed into every asset); visual-orchestrator's step 3.5 assigns each slot its role-appropriate palette SUBSET + weight by size/position so the page balances (small→accent, large→dominant/neutral); material-orchestrator applies `materialDirective` + `reactiveBudget` to UI surfaces (not just imagery). For `itemReferences[]` entries with a non-empty `matchesSlots` (role subject/item/recurring-decoration), the illustration/photography enrichers bind each matched slot's `refImagePath` to the entry's `refPath` (§3.2) so the slot generates from the plate's own pixels - the `subject` crop especially makes the hero/portrait photos the SAME person as the plate. The `role:'ui'` entry (matchesSlots empty) is the composition ground-truth: step-layout/step-components should view it as the target for chrome layout + component treatment, and the final aesthetic-lens diffs the assembled runtime against this contract for cross-register coherence - the check that was missing - AND runs a copywriting pass against `voice`: any shipped string that answers the build instruction, narrates the page, or addresses a development team rather than speaking to `voice.audience` is a fail (the copy sibling of the cross-register diff).",
   "wiringRequired": [
     "capabilities.py: add a pre-build hard-rule - if art-director is in the approved roster, dispatch it BEFORE step-stack; thread contractPath into the /prototype build envelope",
     "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template. step-tokens binds the display/body font from authored.typography.familyResolution (the construction-matched variant), not the abstract family name",
