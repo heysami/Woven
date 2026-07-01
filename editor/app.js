@@ -12727,7 +12727,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           </span>`}
         </div>
         <div className="chat-status-group">
-          <${ChatStatusChip} status=${status} error=${error}/>
+          ${!isNew && html`<${ChatStatusChip} status=${status} error=${error}/>`}
           <button className="chat-action chat-action-close" onClick=${handleClose} title="Close (run keeps going)"><${Icon.X}/></button>
         </div>
       </div>
@@ -12748,7 +12748,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
                 onAnswered=${(id, payload) => setAnswers(prev => ({ ...prev, [id]: payload }))}
                 processEnded=${processEnded}
               />`)}
-          ${(status === "streaming" || status === "connecting") && html`
+          ${!isNew && (status === "streaming" || status === "connecting") && html`
             <div className="chat-streaming-dots" aria-label="Agent is thinking">
               <span/><span/><span/>
             </div>
@@ -13820,7 +13820,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           </div>
         `}
         <div className="chat-composer-inbox-actions">
-          ${(runStatus === "streaming" || runStatus === "connecting") && onStop && html`
+          ${!isNew && (runStatus === "streaming" || runStatus === "connecting") && onStop && html`
             <button
               className="chat-composer-stop"
               type="button"
