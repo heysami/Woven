@@ -36,8 +36,15 @@
     webp:   "https://esm.sh/@jsquash/webp@1.5.0",
     oxipng: "https://esm.sh/@jsquash/oxipng@2.3.0",
   };
-  var FFMPEG_PKG  = "https://esm.sh/@ffmpeg/ffmpeg@0.12.15";
-  var FFMPEG_UTIL = "https://esm.sh/@ffmpeg/util@0.12.2";
+  // ffmpeg.wasm is loaded from its UMD build via a <script> tag (NOT esm.sh):
+  // the ESM build spins up a Worker whose sub-imports don't resolve through
+  // esm.sh (fails with "Failed to fetch dynamically imported module"), and a
+  // worker script must be same-origin so it can't point straight at a CDN.
+  // The UMD build exposes window.FFmpegWASM / window.FFmpegUtil, and its
+  // worker chunk (814.ffmpeg.js) is handed to load() as a same-origin blob via
+  // classWorkerURL - the documented multi-file pattern.
+  var FFMPEG_UMD  = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd";
+  var FFMPEG_UTIL = "https://unpkg.com/@ffmpeg/util@0.12.2/dist/umd/index.js";
   var FFMPEG_CORE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
 
   var RASTER = { png: 1, jpg: 1, jpeg: 1, webp: 1 };
@@ -55,6 +62,21 @@
   function load(url) {
     if (!_mods[url]) _mods[url] = import(url);
     return _mods[url];
+  }
+
+  // Inject a classic <script> once and resolve when it has loaded. Used for the
+  // ffmpeg UMD bundle (which publishes a global rather than ESM exports).
+  var _scripts = {};
+  function loadScriptOnce(url) {
+    if (_scripts[url]) return _scripts[url];
+    _scripts[url] = new Promise(function (res, rej) {
+      var s = document.createElement("script");
+      s.src = url; s.async = true;
+      s.onload = function () { res(); };
+      s.onerror = function () { rej(new Error("failed to load " + url)); };
+      document.head.appendChild(s);
+    });
+    return _scripts[url];
   }
 
   function loadImageEl(src) {
@@ -122,14 +144,23 @@
   var _ff = null; // { ff, util } singleton (core is ~30MB - load once, reuse)
   async function ffmpeg() {
     if (_ff) return _ff;
-    var mod  = await load(FFMPEG_PKG);
-    var util = await load(FFMPEG_UTIL);
-    var ff = new mod.FFmpeg();
+    await loadScriptOnce(FFMPEG_UMD + "/ffmpeg.js");
+    await loadScriptOnce(FFMPEG_UTIL);
+    var FFmpegWASM = window.FFmpegWASM, FFmpegUtil = window.FFmpegUtil;
+    if (!FFmpegWASM || !FFmpegWASM.FFmpeg || !FFmpegUtil || !FFmpegUtil.toBlobURL) {
+      throw new Error("ffmpeg UMD failed to expose its globals");
+    }
+    var toBlobURL = FFmpegUtil.toBlobURL;
+    var ff = new FFmpegWASM.FFmpeg();
+    // classWorkerURL: same-origin blob of the UMD worker chunk (a cross-origin
+    // Worker script from a CDN is blocked by the browser). core/wasm likewise
+    // wrapped as blobs so they load same-origin.
     await ff.load({
-      coreURL: await util.toBlobURL(FFMPEG_CORE + "/ffmpeg-core.js", "text/javascript"),
-      wasmURL: await util.toBlobURL(FFMPEG_CORE + "/ffmpeg-core.wasm", "application/wasm"),
+      classWorkerURL: await toBlobURL(FFMPEG_UMD + "/814.ffmpeg.js", "text/javascript"),
+      coreURL: await toBlobURL(FFMPEG_CORE + "/ffmpeg-core.js", "text/javascript"),
+      wasmURL: await toBlobURL(FFMPEG_CORE + "/ffmpeg-core.wasm", "application/wasm"),
     });
-    _ff = { ff: ff, util: util };
+    _ff = { ff: ff, util: FFmpegUtil };
     return _ff;
   }
 
