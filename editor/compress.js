@@ -46,7 +46,11 @@
   // handed to load() as a SAME-ORIGIN blob via classWorkerURL (a Worker script
   // can't be loaded cross-origin straight from a CDN).
   var FFMPEG_UMD  = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd";
-  var FFMPEG_CORE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+  // ESM core (NOT umd): passing classWorkerURL makes ffmpeg spawn a MODULE
+  // worker, which has no importScripts and loads the core via `import(coreURL)`
+  // -> it needs the ES-module core (export default createFFmpegCore). Feeding
+  // it the umd core there fails with "Cannot find module <blob>".
+  var FFMPEG_CORE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
 
   // The two @ffmpeg/util helpers we actually use, inlined (see note above).
   async function toBlobURL(url, mimeType) {
