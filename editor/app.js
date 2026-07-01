@@ -46491,6 +46491,11 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // into a single dropdown. Positioned fixed (the card + thumb both clip with
   // overflow:hidden, so an absolute dropdown would be cut off).
   const [protoMenu, setProtoMenu] = useState(null);
+  // The open popup is portaled to <body> (the library aside has
+  // transform: translateZ(0), which would trap a position:fixed popup inside
+  // the aside and its overflow would clip it). This ref points at the live
+  // popup so the outside-click handler can tell inside-clicks from outside.
+  const protoPopRef = useRef(null);
   const toggleProtoMenu = useCallback((e, id) => {
     e.stopPropagation();
     // Read the rect BEFORE setState - e.currentTarget can be nulled by the time
@@ -46502,15 +46507,20 @@ function WorkflowLibrary({ tab = "nodes" }) {
   useEffect(() => {
     if (!protoMenu) return;
     const close = () => setProtoMenu(null);
+    // The popup is portaled to <body>, so its React stopPropagation can't reliably
+    // block this native document listener - guard by ref instead. The trigger
+    // button lives in-tree and stops its own mousedown, so a click there toggles.
+    const onDown = (e) => {
+      if (protoPopRef.current && protoPopRef.current.contains(e.target)) return;
+      setProtoMenu(null);
+    };
     const onKey = (e) => { if (e.key === "Escape") setProtoMenu(null); };
-    // inner clicks stopPropagation, so document mousedown only fires for outside;
-    // scroll uses capture so any ancestor scroller closes the (fixed) menu.
-    document.addEventListener("mousedown", close);
+    document.addEventListener("mousedown", onDown);
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     window.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", close);
+      document.removeEventListener("mousedown", onDown);
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
       window.removeEventListener("keydown", onKey);
@@ -46709,12 +46719,13 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // the trigger over the grid card's top-right; list view drops it inline. Deep
   // (branch) prototypes only expose thumbnail + star (no local duplicate/rename/
   // delete), matching the prior !isDeep gating.
-  const renderProtoMenu = (p, corner) => {
-    const isDeep = p.depth > 1;
-    const starred = starredProtos.some(sp => sp && sp.id === p.id);
-    const isThumb = isPathThumbnailSync(p.id);
-    const open = !!(protoMenu && protoMenu.id === p.id);
-    const item = (fn) => (e) => { e.stopPropagation(); setProtoMenu(null); fn(); };
+  // Generic card overflow (⋯) menu. `menuId` is the open-state key; `items` is a
+  // list of { icon, label, onClick, on?, danger? }. The popup is PORTALED to
+  // <body> so it escapes the aside's transform/overflow (see protoPopRef).
+  const renderCardMenu = (menuId, corner, opts) => {
+    const items = (opts && opts.items) || [];
+    const open = !!(protoMenu && protoMenu.id === menuId);
+    const run = (fn) => (e) => { e.stopPropagation(); setProtoMenu(null); fn && fn(); };
     return html`
       <div
         className=${"workflow-library-menu" + (corner ? " workflow-library-menu-corner" : "")}
@@ -46723,47 +46734,67 @@ function WorkflowLibrary({ tab = "nodes" }) {
       >
         <button
           type="button"
-          className=${"workflow-library-menu-btn" + (open ? " is-open" : "") + ((isThumb || starred) ? " has-state" : "")}
-          title="Prototype actions - thumbnail, star, duplicate, rename, delete"
-          aria-label="Prototype actions"
+          className=${"workflow-library-menu-btn" + (open ? " is-open" : "") + (opts && opts.hasState ? " has-state" : "")}
+          title=${(opts && opts.title) || "Actions"}
+          aria-label=${(opts && opts.title) || "Actions"}
           aria-haspopup="menu"
           aria-expanded=${open ? "true" : "false"}
-          onClick=${(e) => toggleProtoMenu(e, p.id)}
+          onClick=${(e) => toggleProtoMenu(e, menuId)}
           onMouseDown=${(e) => e.stopPropagation()}
           draggable=${false}
           onDragStart=${(e) => { e.stopPropagation(); e.preventDefault(); }}
         ><${Icon.More}/></button>
-        ${open && html`
+        ${open && protoMenu && createPortal(html`
           <div
+            ref=${protoPopRef}
             className="workflow-library-menu-pop"
             role="menu"
             style=${{ top: protoMenu.top + "px", right: protoMenu.right + "px" }}
             onMouseDown=${(e) => e.stopPropagation()}
           >
-            <button className=${"popover-item" + (isThumb ? " is-on" : "")} role="menuitem"
-              onClick=${item(() => setProjectThumbnail(isThumb ? "" : p.id))}>
-              <${Icon.Image}/><span>${isThumb ? "Clear thumbnail" : "Set as thumbnail"}</span>
-            </button>
-            <button className=${"popover-item" + (starred ? " is-on" : "")} role="menuitem"
-              onClick=${item(() => togglePrototypeStar(p.id, !starred))}>
-              <${Icon.Star}/><span>${starred ? "Unstar" : "Star"}</span>
-            </button>
-            ${!isDeep && html`<button className="popover-item" role="menuitem"
-              onClick=${item(() => duplicatePrototype(p))}>
-              <${Icon.Copy}/><span>Duplicate</span>
-            </button>`}
-            ${!isDeep && html`<button className="popover-item" role="menuitem"
-              onClick=${item(() => renamePrototype(p))}>
-              <${Icon.Pen}/><span>Rename</span>
-            </button>`}
-            ${!isDeep && html`<button className="popover-item workflow-library-menu-danger" role="menuitem"
-              onClick=${item(() => deletePrototype(p))}>
-              <${Icon.Trash}/><span>Delete</span>
-            </button>`}
+            ${items.map((it, i) => html`
+              <button
+                key=${i}
+                type="button"
+                className=${"popover-item" + (it.on ? " is-on" : "") + (it.danger ? " workflow-library-menu-danger" : "")}
+                role="menuitem"
+                onClick=${run(it.onClick)}
+              >${it.icon}<span>${it.label}</span></button>
+            `)}
           </div>
-        `}
+        `, document.body)}
       </div>
     `;
+  };
+
+  const renderProtoMenu = (p, corner) => {
+    const isDeep = p.depth > 1;
+    const starred = starredProtos.some(sp => sp && sp.id === p.id);
+    const isThumb = isPathThumbnailSync(p.id);
+    const items = [
+      { icon: html`<${Icon.Image}/>`, label: isThumb ? "Clear thumbnail" : "Set as thumbnail",
+        on: isThumb, onClick: () => setProjectThumbnail(isThumb ? "" : p.id) },
+      { icon: html`<${Icon.Star}/>`, label: starred ? "Unstar" : "Star",
+        on: starred, onClick: () => togglePrototypeStar(p.id, !starred) },
+    ];
+    if (!isDeep) {
+      items.push({ icon: html`<${Icon.Copy}/>`,  label: "Duplicate", onClick: () => duplicatePrototype(p) });
+      items.push({ icon: html`<${Icon.Pen}/>`,   label: "Rename",    onClick: () => renamePrototype(p) });
+      items.push({ icon: html`<${Icon.Trash}/>`, label: "Delete", danger: true, onClick: () => deletePrototype(p) });
+    }
+    return renderCardMenu(p.id, corner, { items, hasState: isThumb || starred, title: "Prototype actions" });
+  };
+
+  // Same overflow menu for the HTML-pages section, so its cards match the
+  // prototype cards instead of the old thumbnail + × pair.
+  const renderHtmlMenu = (p, corner) => {
+    const isThumb = isPathThumbnailSync(p.path);
+    const items = [
+      { icon: html`<${Icon.Image}/>`, label: isThumb ? "Clear thumbnail" : "Set as thumbnail",
+        on: isThumb, onClick: () => setProjectThumbnail(isThumb ? "" : p.path) },
+      { icon: html`<${Icon.Trash}/>`, label: "Delete", danger: true, onClick: () => deleteHtml(p.path) },
+    ];
+    return renderCardMenu("html:" + p.path, corner, { items, hasState: isThumb, title: "Page actions" });
   };
 
   const renderHtmlItem = (p, view) => {
@@ -46788,25 +46819,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
               scrolling="no"
               title=${p.label}
             />
-            <button
-              type="button"
-              className=${"workflow-library-thumb-btn workflow-library-thumb-btn-corner" + (isThumb ? " is-on" : "")}
-              title=${isThumb ? "Unset - clear the project-list thumbnail" : "Set as project-list thumbnail"}
-              aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
-              aria-pressed=${isThumb ? "true" : "false"}
-              onClick=${(ev) => { ev.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.path); }}
-              onMouseDown=${(ev) => ev.stopPropagation()}
-              draggable=${false}
-              onDragStart=${(ev) => { ev.stopPropagation(); ev.preventDefault(); }}
-            ><${Icon.Image}/></button>
+            ${renderHtmlMenu(p, true)}
           </div>
           <div className="workflow-library-card-label">${p.label}</div>
-          <button
-            className="workflow-library-card-del"
-            title=${"Delete " + p.path + " from disk"}
-            onClick=${(ev) => { ev.stopPropagation(); deleteHtml(p.path); }}
-            onMouseDown=${(ev) => ev.stopPropagation()}
-          >×</button>
         </div>
       `
     : html`
@@ -46824,23 +46839,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
           <span className="workflow-library-item-glyph"><${Icon.NotesDoc}/></span>
           <span className="workflow-library-item-label">${p.label}</span>
           <span className="workflow-library-item-id">${p.branch}</span>
-          <button
-            type="button"
-            className=${"workflow-library-thumb-btn" + (isThumb ? " is-on" : "")}
-            title=${isThumb ? "Unset - clear the project-list thumbnail" : "Set as project-list thumbnail"}
-            aria-label=${isThumb ? "Clear project thumbnail" : "Set as project thumbnail"}
-            aria-pressed=${isThumb ? "true" : "false"}
-            onClick=${(ev) => { ev.stopPropagation(); setProjectThumbnail(isThumb ? "" : p.path); }}
-            onMouseDown=${(ev) => ev.stopPropagation()}
-            draggable=${false}
-            onDragStart=${(ev) => { ev.stopPropagation(); ev.preventDefault(); }}
-          ><${Icon.Image}/></button>
-          <button
-            className="workflow-library-item-del"
-            title=${"Delete " + p.path + " from disk"}
-            onClick=${(ev) => { ev.stopPropagation(); deleteHtml(p.path); }}
-            onMouseDown=${(ev) => ev.stopPropagation()}
-          >×</button>
+          <div className="workflow-library-item-actions">
+            ${renderHtmlMenu(p, false)}
+          </div>
         </div>
       `;
   };
