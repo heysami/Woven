@@ -31285,7 +31285,7 @@ const WORKFLOW_ALIGN_ACTIONS = [
    bottom-center of the viewport, above the chat dock, so it's reachable from
    anywhere on the canvas. Delete is destructive of the node (not the file on
    disk) and confirms before acting; Clear drops the selection. */
-function WorkflowBulkDeleteBar({ count, onDelete, onClear }) {
+function WorkflowBulkDeleteBar({ count, onDelete, onClear, onCompress, compressible }) {
   const [busy, setBusy] = useState(false);
   const doDelete = async () => {
     if (busy) return;
@@ -31296,9 +31296,187 @@ function WorkflowBulkDeleteBar({ count, onDelete, onClear }) {
     <div className="workflow-bulk-bar" onMouseDown=${(e) => e.stopPropagation()}>
       <span className="workflow-bulk-bar-count">${count} selected</span>
       <button className="workflow-bulk-bar-btn" onClick=${onClear} disabled=${busy}>Clear</button>
+      ${onCompress && html`
+      <button
+        className="workflow-bulk-bar-btn"
+        onClick=${onCompress}
+        disabled=${busy || !compressible}
+        title=${compressible ? "Compress the selected images & videos" : "No compressible images or videos in the selection"}
+      ><${Icon.Package}/> Compress${compressible ? ` (${compressible})` : ""}</button>`}
       <button className="workflow-bulk-bar-btn is-danger" onClick=${doDelete} disabled=${busy}>
         <${Icon.Trash}/> ${busy ? "Deleting…" : "Delete"}
       </button>
+    </div>
+  `, document.body);
+}
+
+/* WorkflowCompressModal - the compression tool's confirm/scope popup. Two modes:
+   • scope.paths is an array  -> a fixed selection (from the bulk bar); no scope
+                                 radios, just the quality preset.
+   • scope.paths is null      -> whole library (global "Compress" button); the
+                                 user picks rasters / videos / both.
+   Compression runs client-side via window.WovenCompress (open-source WASM
+   codecs); this modal only picks WHAT + the quality, calls onRun(paths, preset,
+   onProgress), streams progress, and shows the savings. Originals are pinned by
+   onRun before each overwrite, so versioning is preserved. */
+function WorkflowCompressModal({ scope, rasters, videos, onRun, onClose }) {
+  const fmt = (b) => {
+    if (!b) return "0 B";
+    const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0, n = Math.abs(b);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+  };
+  const WC = window.WovenCompress;
+  const fixed = Array.isArray(scope && scope.paths);
+  // Split the effective set into raster/video path lists.
+  const [selRasters, selVideos] = useMemo(() => {
+    if (fixed) {
+      const r = [], v = [];
+      for (const p of scope.paths) {
+        if (WC && WC.isRaster(p)) r.push(p);
+        else if (WC && WC.isVideo(p)) v.push(p);
+      }
+      return [r, v];
+    }
+    return [rasters || [], videos || []];
+  }, [fixed, scope, rasters, videos]);
+
+  const [medium, setMedium] = useState("both"); // rasters | videos | both (whole-library only)
+  const [preset, setPreset] = useState("balanced");
+  const [busy, setBusy] = useState(false);
+  const [prog, setProg] = useState(null);   // live progress tally
+  const [result, setResult] = useState(null); // final tally
+
+  // Which paths this run will touch, given the chosen medium.
+  const targets = useMemo(() => {
+    if (fixed) return [...selRasters, ...selVideos];
+    if (medium === "rasters") return [...selRasters];
+    if (medium === "videos") return [...selVideos];
+    return [...selRasters, ...selVideos];
+  }, [fixed, medium, selRasters, selVideos]);
+  const hasVideo = targets.some(p => WC && WC.isVideo(p));
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
+
+  const run = async () => {
+    if (busy || !targets.length) return;
+    setBusy(true); setResult(null);
+    setProg({ total: targets.length, done: 0, ok: 0, skipped: 0, failed: 0, before: 0, after: 0, current: null });
+    try {
+      const r = await onRun(targets, preset, (p) => setProg(p));
+      setResult(r);
+    } catch (e) {
+      setResult({ total: targets.length, done: targets.length, ok: 0, skipped: 0,
+                  failed: targets.length, before: 0, after: 0,
+                  errors: [String(e && e.message ? e.message : e)] });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pct = prog && prog.total ? Math.round((prog.done / prog.total) * 100) : 0;
+  const saved = result ? (result.before - result.after) : 0;
+  const savedPct = result && result.before ? Math.round((saved / result.before) * 100) : 0;
+
+  return createPortal(html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div className="modal modal-narrow workflow-compress-modal" role="dialog" aria-modal="true" aria-label="Compress assets">
+        <div className="modal-head">
+          <div className="modal-title"><${Icon.Package}/> Compress assets</div>
+          <button className="modal-x" onClick=${onClose} disabled=${busy} aria-label="Close">×</button>
+        </div>
+
+        ${!result && html`
+        <div className="modal-body workflow-compress-body">
+          ${!fixed && html`
+          <div className="workflow-compress-field">
+            <div className="workflow-compress-label">What to compress</div>
+            <div className="workflow-compress-scope" role="radiogroup">
+              ${[["rasters", `Images (${selRasters.length})`, !selRasters.length],
+                 ["videos", `Videos (${selVideos.length})`, !selVideos.length],
+                 ["both", `Both (${selRasters.length + selVideos.length})`, !(selRasters.length + selVideos.length)]
+                ].map(([val, lab, dis]) => html`
+                <label key=${val} className=${"workflow-compress-chip" + (medium === val ? " is-active" : "") + (dis ? " is-disabled" : "")}>
+                  <input type="radio" name="cz-medium" value=${val} checked=${medium === val}
+                    disabled=${dis} onChange=${() => setMedium(val)} />
+                  ${lab}
+                </label>`)}
+            </div>
+          </div>`}
+
+          ${fixed && html`
+          <div className="workflow-compress-note">
+            ${selRasters.length} image${selRasters.length === 1 ? "" : "s"} and ${selVideos.length} video${selVideos.length === 1 ? "" : "s"} selected.
+          </div>`}
+
+          <div className="workflow-compress-field">
+            <div className="workflow-compress-label">Quality</div>
+            <div className="workflow-compress-scope" role="radiogroup">
+              ${["high", "balanced", "aggressive"].map(k => html`
+                <label key=${k} className=${"workflow-compress-chip" + (preset === k ? " is-active" : "")}>
+                  <input type="radio" name="cz-preset" value=${k} checked=${preset === k}
+                    onChange=${() => setPreset(k)} />
+                  ${WC && WC.presets[k] ? WC.presets[k].label : k}
+                </label>`)}
+            </div>
+            <div className="workflow-compress-hint">
+              ${preset === "high" ? "Gentle - best fidelity, smallest savings."
+                : preset === "aggressive" ? "Maximum shrink - some visible quality loss."
+                : "Recommended - strong savings, near-invisible loss."}
+            </div>
+          </div>
+
+          <div className="workflow-compress-fineprint">
+            <div>Images use MozJPEG / libwebp / OxiPNG; videos use ffmpeg (H.264 / VP9). All open-source, run in your browser.</div>
+            <div>The original of every versioned asset is <strong>pinned</strong> first, so you can always revert from its version history.</div>
+            ${hasVideo && html`<div>Video compression downloads the ffmpeg engine (~30&nbsp;MB) on first use and can take a while per clip.</div>`}
+          </div>
+
+          ${busy && prog && html`
+          <div className="workflow-compress-progress">
+            <div className="workflow-compress-progress-bar"><div style=${{ width: pct + "%" }}></div></div>
+            <div className="workflow-compress-progress-text">
+              ${prog.done} / ${prog.total}${prog.current ? " · " + prog.current.split("/").pop() : ""}
+            </div>
+          </div>`}
+        </div>
+
+        <div className="modal-foot">
+          <button className="tbtn" onClick=${onClose} disabled=${busy}>Cancel</button>
+          <button className="tbtn tbtn-primary" onClick=${run} disabled=${busy || !targets.length}>
+            ${busy ? "Compressing…" : `Compress ${targets.length} asset${targets.length === 1 ? "" : "s"}`}
+          </button>
+        </div>`}
+
+        ${result && html`
+        <div className="modal-body workflow-compress-body">
+          <div className="workflow-compress-result">
+            <div className="workflow-compress-result-headline">
+              ${saved > 0
+                ? html`Saved <strong>${fmt(saved)}</strong> (${savedPct}%)`
+                : html`No size reduction`}
+            </div>
+            <div className="workflow-compress-result-rows">
+              <div><span>Compressed</span><span>${result.ok}</span></div>
+              <div><span>Unchanged (no gain)</span><span>${result.skipped}</span></div>
+              ${result.failed > 0 && html`<div className="is-fail"><span>Failed</span><span>${result.failed}</span></div>`}
+              <div><span>Before → After</span><span>${fmt(result.before)} → ${fmt(result.after)}</span></div>
+            </div>
+            ${result.errors && result.errors.length > 0 && html`
+              <details className="workflow-compress-errors">
+                <summary>${result.errors.length} error${result.errors.length === 1 ? "" : "s"}</summary>
+                <ul>${result.errors.slice(0, 20).map((e, i) => html`<li key=${i}>${e}</li>`)}</ul>
+              </details>`}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="tbtn tbtn-primary" onClick=${onClose}>Done</button>
+        </div>`}
+      </div>
     </div>
   `, document.body);
 }
@@ -46635,6 +46813,78 @@ function WorkflowLibrary({ tab = "nodes" }) {
     reload();
     if (failed) uiAlert(failed + " of " + list.length + " deletes failed.");
   }, [clearAssetSel, reload]);
+  // Compression tool. `compressOpen` holds the open modal's scope:
+  //   null                       - closed
+  //   { paths: [...] }           - a fixed selection (bulk-bar "Compress")
+  //   { paths: null }            - the whole library (global "Compress" button;
+  //                                the modal offers rasters / videos / both)
+  const [compressOpen, setCompressOpen] = useState(null);
+  // Compress the given asset paths IN PLACE with the open-source WASM codecs
+  // (window.WovenCompress). For each file we FIRST pin the asset node's current
+  // version (so the pre-compression original stays restorable + eviction-proof),
+  // then re-encode client-side and write the smaller bytes back over the SAME
+  // path via /__write_binary - the watcher then snapshots the compressed bytes
+  // as a new active version (versioning is preserved for free). A re-encode that
+  // came out no smaller is discarded, so a file never grows. Reports progress
+  // via onProgress and returns a { ok, skipped, failed, before, after } tally.
+  const compressAssets = useCallback(async (paths, preset, onProgress) => {
+    const WC = window.WovenCompress;
+    const list = Array.from(paths || []).filter(p => WC && WC.canCompress(p));
+    const sizeByPath = new Map((assets || []).map(a => [a.path, a.size || 0]));
+    const r = { total: list.length, done: 0, ok: 0, skipped: 0, failed: 0,
+                before: 0, after: 0, errors: [], current: null };
+    for (const path of list) {
+      const before = sizeByPath.get(path) || 0;
+      r.current = path;
+      if (onProgress) onProgress({ ...r });
+      try {
+        // Pin the original version first. Best-effort: a library file with no
+        // asset node returns pinned=false and we carry on (the .history undo
+        // ring still covers the overwrite).
+        try {
+          await fetch(apiUrl("/__assets/pin_current"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path }),
+          });
+        } catch (_e) {}
+        const base = apiUrl("/" + path);
+        const src = base + (base.includes("?") ? "&" : "?") + "_cz=" + Date.now();
+        const out = WC.isVideo(path)
+          ? await WC.compressVideo(src, path, preset)
+          : await WC.compressImage(src, path, preset);
+        if (before && out.after >= before) {
+          // No gain - keep the original bytes.
+          r.skipped++; r.before += before; r.after += before;
+        } else {
+          const res = await fetch(apiUrl("/__write_binary"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path, dataUrl: out.dataUrl }),
+          });
+          if (!res.ok) throw new Error("write failed (HTTP " + res.status + ")");
+          r.ok++; r.before += before; r.after += out.after;
+          window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
+        }
+      } catch (e) {
+        r.failed++;
+        r.errors.push(path + ": " + (e && e.message ? e.message : String(e)));
+      }
+      r.done++; r.current = null;
+      if (onProgress) onProgress({ ...r });
+    }
+    reload();
+    return r;
+  }, [assets, reload]);
+  // Paths eligible for compression, split by medium (raster vs video). Drives
+  // the global-button counts and the modal's scope options.
+  const compressible = useMemo(() => {
+    const WC = window.WovenCompress;
+    const rasters = [], videos = [];
+    if (WC) for (const a of (assets || [])) {
+      if (WC.isRaster(a.path)) rasters.push(a.path);
+      else if (WC.isVideo(a.path)) videos.push(a.path);
+    }
+    return { rasters, videos };
+  }, [assets]);
   // HTML pages share the same delete endpoint (any source/* file works) -
   // it walks to the path and removes the file. Used by the per-card × on
   // the HTML pages library section.
@@ -46902,7 +47152,22 @@ function WorkflowLibrary({ tab = "nodes" }) {
   return html`
     <aside className="workflow-library" ref=${libRef}>
       ${assetSel.size > 0 && html`
-        <${WorkflowBulkDeleteBar} count=${assetSel.size} onDelete=${() => deleteAssets(assetSel)} onClear=${clearAssetSel}/>
+        <${WorkflowBulkDeleteBar}
+          count=${assetSel.size}
+          onDelete=${() => deleteAssets(assetSel)}
+          onClear=${clearAssetSel}
+          onCompress=${() => setCompressOpen({ paths: Array.from(assetSel) })}
+          compressible=${Array.from(assetSel).filter(p => window.WovenCompress && window.WovenCompress.canCompress(p)).length}
+        />
+      `}
+      ${compressOpen && html`
+        <${WorkflowCompressModal}
+          scope=${compressOpen}
+          rasters=${compressible.rasters}
+          videos=${compressible.videos}
+          onRun=${compressAssets}
+          onClose=${() => setCompressOpen(null)}
+        />
       `}
       ${(tab === "protos" || tab === "visual") && html`
       <div className="workflow-library-head">
@@ -46924,6 +47189,14 @@ function WorkflowLibrary({ tab = "nodes" }) {
               title="Thumbnail grid view"
             ><span className="workflow-library-viewtoggle-glyph">▦</span></button>
           </div>
+          ${tab === "visual" && (compressible.rasters.length + compressible.videos.length) > 0 && html`
+            <button
+              type="button"
+              className="workflow-library-compress-btn"
+              onClick=${() => setCompressOpen({ paths: null })}
+              title="Compress raster & video assets with open-source codecs"
+            ><${Icon.Package}/> Compress</button>
+          `}
       </div>
       `}
       ${tab === "nodes" ? html`

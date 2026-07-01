@@ -8554,6 +8554,80 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
 .workflow-bulk-bar-btn.is-danger { border-color: #fecaca; color: #dc2626; }
 .workflow-bulk-bar-btn.is-danger:hover:not([disabled]) { background: #fef2f2; }
 .workflow-bulk-bar-btn.is-danger svg { width: 14px; height: 14px; }
+.workflow-bulk-bar-btn svg { width: 14px; height: 14px; }
+
+/* ── Compression tool ─────────────────────────────────────────────────────── */
+/* Global "Compress" button in the visual-library head (opposite the view toggle). */
+.workflow-library-compress-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: 600 11.5px var(--font-sans); cursor: pointer; letter-spacing: 0;
+  text-transform: none; color: var(--text-muted);
+  padding: 5px 10px; border-radius: 7px;
+  border: 1px solid var(--border-strong); background: transparent;
+}
+.workflow-library-compress-btn:hover { background: var(--surface-2); color: var(--text); }
+.workflow-library-compress-btn svg { width: 14px; height: 14px; }
+
+.workflow-compress-modal { width: 460px; }
+.workflow-compress-modal .modal-title { display: inline-flex; align-items: center; gap: 8px; }
+.workflow-compress-modal .modal-title svg { width: 16px; height: 16px; }
+.workflow-compress-field { display: grid; gap: 7px; }
+.workflow-compress-label {
+  font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.workflow-compress-scope { display: flex; flex-wrap: wrap; gap: 7px; }
+.workflow-compress-chip {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font: 500 12.5px var(--font-sans); color: var(--text);
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: transparent;
+  user-select: none;
+}
+.workflow-compress-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
+.workflow-compress-chip:hover:not(.is-disabled) { background: var(--surface-2); }
+.workflow-compress-chip.is-active {
+  border-color: var(--accent); color: var(--accent-text, var(--accent));
+  background: var(--accent-soft);
+}
+.workflow-compress-chip.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.workflow-compress-hint { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.workflow-compress-note { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+.workflow-compress-fineprint {
+  display: grid; gap: 5px;
+  font-size: 11.5px; color: var(--text-muted); line-height: 1.5;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.workflow-compress-fineprint strong { color: var(--text); font-weight: 600; }
+.workflow-compress-progress { display: grid; gap: 6px; }
+.workflow-compress-progress-bar {
+  height: 6px; border-radius: 999px; overflow: hidden; background: var(--surface-3);
+}
+.workflow-compress-progress-bar > div {
+  height: 100%; background: var(--accent); border-radius: 999px;
+  transition: width 0.2s ease;
+}
+.workflow-compress-progress-text {
+  font: 500 11.5px var(--font-mono); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.workflow-compress-result { display: grid; gap: 12px; }
+.workflow-compress-result-headline { font-size: 15px; color: var(--text); }
+.workflow-compress-result-headline strong { font-weight: 700; }
+.workflow-compress-result-rows { display: grid; gap: 4px; }
+.workflow-compress-result-rows > div {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 12.5px; color: var(--text-muted);
+  padding: 5px 0; border-bottom: 1px solid var(--border);
+}
+.workflow-compress-result-rows > div:last-child { border-bottom: 0; }
+.workflow-compress-result-rows > div.is-fail span { color: #dc2626; }
+.workflow-compress-result-rows > div > span:last-child { color: var(--text); font-weight: 600; }
+.workflow-compress-errors { font-size: 11.5px; color: var(--text-muted); }
+.workflow-compress-errors summary { cursor: pointer; }
+.workflow-compress-errors ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px; }
+.workflow-compress-errors li { word-break: break-word; }
 
 /* Floating "convert" chip - appears below a selection of text carriers (text /
    text box / sticky note / prompt node) and flips them between those kinds.

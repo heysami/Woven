@@ -8944,6 +8944,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._local_install()
             if parsed.path == "/__assets/delete":
                 return self._asset_delete(qs)
+            if parsed.path == "/__assets/pin_current":
+                return self._asset_pin_current(qs)
             if parsed.path == "/__prompts":
                 return self._prompt_save(qs)
             m = re.match(r"^/__prompts/([a-z0-9][a-z0-9-]{0,60})/delete$", parsed.path)
@@ -11666,6 +11668,70 @@ class H(http.server.SimpleHTTPRequestHandler):
             self._versioning_persist(project_root, project_id, wf_path, wf,
                                      f"Pin v={vid[:8]} pinned={version['pinned']}")
             return self._reply(200, {"ok": True, "pinned": version["pinned"]})
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        finally:
+            release()
+
+    # ── POST /__assets/pin_current ─────────────────────────────────────────
+    def _asset_pin_current(self, qs):
+        """Pin the CURRENTLY-ACTIVE version of whatever asset node references
+        `path`. Called by the compression tool right before it overwrites the
+        file in place, so the pre-compression (original) bytes stay restorable
+        AND eviction-proof past the 20-unpinned cap. Best-effort: a library file
+        with no asset node - or a node with no version yet - returns
+        pinned=false (the project .history undo ring still covers the overwrite);
+        the caller treats that as a non-fatal skip, not an error."""
+        try:
+            project_root, project_id, wf_path, wf, release = self._versioning_open(qs)
+        except _VersioningHTTPError as e:
+            return self._reply(e.status, e.body)
+        try:
+            body = self._versioning_body()
+            rel = (body.get("path") or "").strip()
+            if not rel or rel.startswith("/") or ".." in rel.split("/"):
+                return self._reply(400, {"error": "invalid path"})
+            want = rel.lstrip("/")
+            try:
+                from kinds.versioning import asset_files
+            except Exception:
+                asset_files = None
+            # Map path -> asset node by exact match against the node's declared
+            # files (same indexing snapshot_changed_assets uses), with a
+            # node.path / node.paths[] fallback for legacy nodes.
+            node = None
+            for n in (wf.get("nodes") or []):
+                if not isinstance(n, dict) or n.get("kind") != "asset":
+                    continue
+                files = []
+                if asset_files:
+                    try: files = [str(f).lstrip("/") for f in asset_files(n)]
+                    except Exception: files = []
+                if not files:
+                    if n.get("path"): files.append(str(n["path"]).lstrip("/"))
+                    for p in (n.get("paths") or []):
+                        if isinstance(p, str): files.append(p.lstrip("/"))
+                if want in files:
+                    node = n
+                    break
+            if not node:
+                return self._reply(200, {"ok": True, "pinned": False,
+                                         "reason": "no asset node references this path"})
+            avid = node.get("activeVersionId")
+            version = next((v for v in (node.get("versions") or [])
+                            if isinstance(v, dict) and v.get("id") == avid), None)
+            if not version:
+                return self._reply(200, {"ok": True, "pinned": False,
+                                         "reason": "asset node has no active version yet"})
+            if version.get("pinned"):
+                return self._reply(200, {"ok": True, "pinned": True, "already": True,
+                                         "nodeId": node.get("id"), "versionId": avid})
+            version["pinned"] = True
+            self._versioning_persist(
+                project_root, project_id, wf_path, wf,
+                f"Pin original before compress: {node.get('title') or node.get('id')} v={str(avid)[:8]}")
+            return self._reply(200, {"ok": True, "pinned": True,
+                                     "nodeId": node.get("id"), "versionId": avid})
         except _VersioningHTTPError as e:
             return self._reply(e.status, e.body)
         finally:

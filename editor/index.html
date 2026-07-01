@@ -148,6 +148,9 @@
   <!-- Woven -> Figma bridge: pure DOM-to-scene walker (window.WovenFigma).
        Loaded before app.js, which owns the UI + daemon glue. -->
   <script src="figma-bridge.js"></script>
+  <!-- Client-side asset compression (window.WovenCompress). jSquash + ffmpeg.wasm
+       codecs lazy-load from a CDN at first use; this script only defines the API. -->
+  <script src="compress.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
