@@ -204,6 +204,11 @@ MAX_BYTES = 20 * 1024 * 1024  # 20 MB - annotated screenshots can be chunky
 # share the same keys; mode 0600 so it isn't world-readable.
 MEDIA_CONFIG_DIR  = os.path.expanduser("~/.test-harness")
 MEDIA_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "media-config.json")
+# Per-capability provider defaults + per-orchestrator model overrides persist
+# here so they survive a daemon restart (the editor still re-POSTs current
+# localStorage on load, which keeps these files fresh).
+DEFAULT_PROVIDERS_PATH   = os.path.join(MEDIA_CONFIG_DIR, "default-providers.json")
+ORCHESTRATOR_MODELS_PATH = os.path.join(MEDIA_CONFIG_DIR, "orchestrator-models.json")
 
 # Aspect ratio → OpenAI gpt-image-1 size mapping. The model accepts a small
 # fixed set: 1024×1024, 1536×1024, 1024×1536, or "auto". Unknown aspect strings
@@ -240,6 +245,33 @@ def _media_config_save(cfg):
         json.dump(cfg, f, indent=2)
     try: os.chmod(MEDIA_CONFIG_PATH, 0o600)
     except Exception: pass
+
+
+def _persist_json_load(path) -> dict:
+    """Load a small daemon-side config dict, or {} if missing/corrupt."""
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _persist_json_save(path, data) -> None:
+    """Write a small daemon-side config dict with the same 0700/0600 posture
+    as media-config. Best-effort - never raises into the request handler."""
+    try:
+        os.makedirs(MEDIA_CONFIG_DIR, exist_ok=True)
+        try: os.chmod(MEDIA_CONFIG_DIR, 0o700)
+        except Exception: pass
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        try: os.chmod(path, 0o600)
+        except Exception: pass
+    except Exception:
+        pass
 
 
 # ── User Testing capability flag + local whisper.cpp provisioning ────────────
@@ -472,9 +504,9 @@ def _media_resolve_openai_key():
 # surface them to every agent ("for image-gen, prefer openai gpt-image-2
 # unless the user names something else"). The editor POSTs the current
 # localStorage value here on page load AND on every Settings change so the
-# cache stays current. No persistence - restart loses it and the next editor
-# load re-syncs.
-_DEFAULT_PROVIDERS: dict = {}
+# cache stays current. Persisted to DEFAULT_PROVIDERS_PATH so a daemon restart
+# keeps the picks even before an editor tab re-syncs.
+_DEFAULT_PROVIDERS: dict = _persist_json_load(DEFAULT_PROVIDERS_PATH)
 
 def _default_providers_get() -> dict:
     return dict(_DEFAULT_PROVIDERS)
@@ -488,8 +520,9 @@ def _default_providers_get() -> dict:
 # browser localStorage is source of truth, the editor re-POSTs to
 # /__orchestrator_models on load + on every change, no disk persistence. The
 # capabilities preamble reads this so the dispatching agent passes `model:` to
-# the Task tool per orchestrator.
-_ORCHESTRATOR_MODELS: dict = {}
+# the Task tool per orchestrator. Persisted to ORCHESTRATOR_MODELS_PATH so a
+# daemon restart keeps the overrides even before an editor tab re-syncs.
+_ORCHESTRATOR_MODELS: dict = _persist_json_load(ORCHESTRATOR_MODELS_PATH)
 
 def _orchestrator_models_get() -> dict:
     return dict(_ORCHESTRATOR_MODELS)
@@ -10538,6 +10571,28 @@ class H(http.server.SimpleHTTPRequestHandler):
         # user's personal /prototype skill used to override visual-orchestrator
         # by telling the agent to use placeholder rectangles instead.
         spawn_args += ["--disable-slash-commands"]
+        # v3.x - ENFORCE the user's per-orchestrator model override (Capabilities
+        # tab) for a DIRECT node-agent run (▶ Run on an orchestrator node). The
+        # Task-tool dispatch path runs in the agent's own harness and cannot be
+        # steered from here - it is guided by the preamble's per-orchestrator
+        # block instead - but this direct spawn otherwise ignored the override
+        # entirely (no --model was ever passed). Match any override id that
+        # appears in the node id/title, then map to the CLI's model aliases
+        # (same mapping the claude-CLI arg builder uses).
+        try:
+            _orch_over = _orchestrator_models_get()
+            if _orch_over:
+                _hay = f"{node_id or ''} {title or ''}".lower()
+                _pick = next((row for oid, row in _orch_over.items()
+                              if oid.lower() in _hay), None)
+                _omodel = ((_pick or {}).get("model") or "").lower()
+                if _omodel:
+                    if "opus" in _omodel:     spawn_args += ["--model", "opus"]
+                    elif "sonnet" in _omodel: spawn_args += ["--model", "sonnet"]
+                    elif "haiku" in _omodel:  spawn_args += ["--model", "haiku"]
+                    else:                     spawn_args += ["--model", _omodel]
+        except Exception:
+            pass
         spawn_args += _mcp_config_spawn_args()
         # v3.1 - Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
         # *.html write until the agent has called Task with
@@ -13254,6 +13309,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if entry.get("provider"):
                 cleaned[cap] = entry
         _DEFAULT_PROVIDERS = cleaned
+        _persist_json_save(DEFAULT_PROVIDERS_PATH, cleaned)
         return self._reply(200, {"ok": True, "defaults": cleaned})
 
     def _orchestrator_models_set(self):
@@ -13286,6 +13342,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if entry.get("model"):
                 cleaned[oid.strip()] = entry
         _ORCHESTRATOR_MODELS = cleaned
+        _persist_json_save(ORCHESTRATOR_MODELS_PATH, cleaned)
         return self._reply(200, {"ok": True, "orchestratorModels": cleaned})
 
     def _media_config_test(self, qs):
@@ -13537,6 +13594,37 @@ class H(http.server.SimpleHTTPRequestHandler):
             print(f"[asset-gen audit] {output!r}: medium NOT classified by visual-orchestrator. "
                   f"Caller should dispatch visual-orchestrator () first.",
                   flush=True)
+        # v3.x - ENFORCE the user's per-capability default (Settings) when the
+        # caller omits provider/model, instead of only advising the agent via
+        # the capabilities preamble. So an agent that forgets to forward the
+        # setting still lands on the user's chosen default rather than a
+        # hardcoded fallback. Map the fine-grained `medium` to the six default
+        # buckets (agent/image/video/svg/3d/lottie); fall back to the skill
+        # name when medium is unclassified.
+        if not provider or not model:
+            _s = skill.lower()
+            if medium in ("vector-icon", "vector-mark"):
+                _cap = "svg"
+            elif medium == "video":
+                _cap = "video"
+            elif medium == "3d":
+                _cap = "3d"
+            elif medium == "lottie":
+                _cap = "lottie"
+            elif medium in ("raster-foreground", "raster-photo", "shader",
+                            "particle-2d", "particle-gl"):
+                _cap = "image"
+            else:
+                _cap = ("video" if "video" in _s
+                        else "3d" if "3d" in _s
+                        else "lottie" if "lottie" in _s
+                        else "svg" if "svg" in _s
+                        else "image")
+            _ud = _default_providers_get().get(_cap) or {}
+            if not provider and _ud.get("provider"):
+                provider = _ud["provider"]
+            if not model and _ud.get("model"):
+                model = _ud["model"]
         # Append an audit entry so we can grep call sites later.
         # v3.1 - bounded rotation: when the file exceeds 1 MB, rename it to
         # .asset-gen-audit.jsonl.prev and start a fresh one. Two-file
@@ -13608,29 +13696,43 @@ class H(http.server.SimpleHTTPRequestHandler):
             prompt = (body.get("prompt") or "").strip()
             if not prompt:
                 return self._reply(400, {"error": "prompt required for generate skills"})
-            # Phase 8 - generate-image with an input image. Currently only
-            # OpenAI's gpt-image-1 family supports image-to-image; everyone
-            # else gets a 400 telling them to pick a different model. This
-            # used to SILENTLY DROP the input image - Blend / Remix would
-            # call generate-image with input_path set and the daemon ignored
-            # it, producing a text-only result.
+            # Phase 8 - generate-image with an input image (image-to-image).
+            # Only OpenAI gpt-image models consume an input reference today; this
+            # used to SILENTLY DROP the input image (Blend / Remix produced a
+            # text-only result).
             raw_uri = body.get("input_data_uri")
             in_path = (body.get("input_path") or "").strip()
             if raw_uri or in_path:
-                # Higgsfield DoP video + the video-chain skill are image→video:
+                # Higgsfield DoP video + the video-chain skill are image-to-video:
                 # an input frame IS the (first clip's) start frame, so it's
                 # allowed here (resolved to a start-frame data URI in the
                 # dispatch branch below).
                 _hf_video = (
                     skill == "video-chain"
                     or (provider == "higgsfield" and skill == "video-gen"))
-                if not _hf_video and (provider != "openai" or not (model or "").startswith("gpt-image")):
-                    return self._reply(400, {
-                        "error":
-                            f"This skill ({skill}, {model}) doesn't accept an input image. " +
-                            "Use OpenAI gpt-image-1 / gpt-image-1-mini for image-to-image, " +
-                            "or wire to a transform skill (rembg / upscale / etc.).",
-                    })
+                if not _hf_video:
+                    # i2i needs an OpenAI gpt-image model. If the caller omitted
+                    # `model` (relying on the default), fill it from the CONFIGURED
+                    # default image model (media-models.js `default: true`) instead
+                    # of rejecting. Never hardcode a model id, and never force the
+                    # agent to hand-pick one - that is what steered callers to the
+                    # deprecated gpt-image-1.
+                    if provider == "openai" and not model:
+                        try:
+                            from kinds.capabilities import _parse_media_models
+                            _dflt = (_parse_media_models() or {}).get("defaultImageModel") or {}
+                        except Exception:
+                            _dflt = {}
+                        if _dflt.get("provider") == "openai" and _dflt.get("id"):
+                            model = _dflt["id"]
+                    if provider != "openai" or not model.startswith("gpt-image"):
+                        return self._reply(400, {
+                            "error":
+                                "image-to-image needs an OpenAI gpt-image model. Set "
+                                "provider=openai and omit `model` to use the configured "
+                                "default image model, or wire a transform skill "
+                                "(rembg / upscale / etc.).",
+                        })
                 if isinstance(raw_uri, str) and raw_uri.startswith("data:"):
                     input_data_uri = raw_uri
                 elif in_path:
