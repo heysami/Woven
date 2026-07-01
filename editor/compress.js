@@ -36,16 +36,29 @@
     webp:   "https://esm.sh/@jsquash/webp@1.5.0",
     oxipng: "https://esm.sh/@jsquash/oxipng@2.3.0",
   };
-  // ffmpeg.wasm is loaded from its UMD build via a <script> tag (NOT esm.sh):
-  // the ESM build spins up a Worker whose sub-imports don't resolve through
-  // esm.sh (fails with "Failed to fetch dynamically imported module"), and a
-  // worker script must be same-origin so it can't point straight at a CDN.
-  // The UMD build exposes window.FFmpegWASM / window.FFmpegUtil, and its
-  // worker chunk (814.ffmpeg.js) is handed to load() as a same-origin blob via
-  // classWorkerURL - the documented multi-file pattern.
+  // ffmpeg.wasm is loaded from its UMD build (NOT esm.sh): the ESM build spins
+  // up a Worker whose sub-imports don't resolve through esm.sh ("Failed to fetch
+  // dynamically imported module"). We load only the @ffmpeg/ffmpeg UMD bundle
+  // (exposes FFmpegWASM.FFmpeg) and drive it directly - @ffmpeg/util is skipped
+  // because its UMD bundle throws "Object.defineProperty called on non-object"
+  // on execution here, and all we need from it (toBlobURL + fetchFile) is two
+  // trivial fetch helpers, inlined below. The worker chunk (814.ffmpeg.js) is
+  // handed to load() as a SAME-ORIGIN blob via classWorkerURL (a Worker script
+  // can't be loaded cross-origin straight from a CDN).
   var FFMPEG_UMD  = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd";
-  var FFMPEG_UTIL = "https://unpkg.com/@ffmpeg/util@0.12.2/dist/umd/index.js";
   var FFMPEG_CORE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+
+  // The two @ffmpeg/util helpers we actually use, inlined (see note above).
+  async function toBlobURL(url, mimeType) {
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error("failed to fetch " + url + " (HTTP " + resp.status + ")");
+    return URL.createObjectURL(new Blob([await resp.arrayBuffer()], { type: mimeType }));
+  }
+  async function fetchFile(url) {
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error("failed to fetch " + url + " (HTTP " + resp.status + ")");
+    return new Uint8Array(await resp.arrayBuffer());
+  }
 
   var RASTER = { png: 1, jpg: 1, jpeg: 1, webp: 1 };
   // Video containers we can round-trip while PRESERVING the extension (so the
@@ -150,15 +163,13 @@
   }
 
   // ── Video ─────────────────────────────────────────────────────────────────
-  var _ff = null; // { ff, util } singleton (core is ~30MB - load once, reuse)
+  var _ff = null; // { ff } singleton (core is ~30MB - load once, reuse)
   async function ffmpeg() {
     if (_ff) return _ff;
     var FFmpegWASM = await loadUmdGlobal(FFMPEG_UMD + "/ffmpeg.js", "FFmpegWASM");
-    var FFmpegUtil = await loadUmdGlobal(FFMPEG_UTIL, "FFmpegUtil");
-    if (!FFmpegWASM || !FFmpegWASM.FFmpeg || !FFmpegUtil || !FFmpegUtil.toBlobURL) {
-      throw new Error("ffmpeg UMD loaded but is missing FFmpeg/toBlobURL");
+    if (!FFmpegWASM || !FFmpegWASM.FFmpeg) {
+      throw new Error("ffmpeg UMD loaded but is missing the FFmpeg constructor");
     }
-    var toBlobURL = FFmpegUtil.toBlobURL;
     var ff = new FFmpegWASM.FFmpeg();
     // classWorkerURL: same-origin blob of the UMD worker chunk (a cross-origin
     // Worker script from a CDN is blocked by the browser). core/wasm likewise
@@ -168,7 +179,7 @@
       coreURL: await toBlobURL(FFMPEG_CORE + "/ffmpeg-core.js", "text/javascript"),
       wasmURL: await toBlobURL(FFMPEG_CORE + "/ffmpeg-core.wasm", "application/wasm"),
     });
-    _ff = { ff: ff, util: FFmpegUtil };
+    _ff = { ff: ff };
     return _ff;
   }
 
@@ -179,9 +190,9 @@
     var e = extOf(path);
     if (!VIDEO[e]) throw new Error("unsupported video container ." + e);
     var api = await ffmpeg();
-    var ff = api.ff, util = api.util;
+    var ff = api.ff;
     var inName = "in." + e, outName = "out." + e;
-    await ff.writeFile(inName, await util.fetchFile(src));
+    await ff.writeFile(inName, await fetchFile(src));
     var args;
     if (e === "webm") {
       args = ["-i", inName, "-c:v", "libvpx-vp9", "-crf", String(p.crf + 3), "-b:v", "0",
