@@ -4890,7 +4890,30 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .th-comment-reply-author { font-weight: 600; color: var(--text-muted); margin-right: 5px; }
 .th-comment-reply-text { color: var(--text); word-break: break-word; }
-.th-comment-actions { display: flex; gap: 4px; margin-top: 6px; }
+.th-comment-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+/* Labelled comment actions - icon + text so it's always clear what a button
+   does (icon-only buttons must carry a tooltip; these carry a visible label
+   too). Mirrors the clarity of the prototype-node share panel. */
+.th-comment-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.th-comment-act svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.th-comment-act:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.th-comment-act.is-primary { color: var(--success, #16A34A); border-color: color-mix(in oklab, var(--success, #16A34A) 35%, var(--border)); }
+.th-comment-act.is-primary:hover { background: color-mix(in oklab, var(--success, #16A34A) 12%, var(--surface)); }
+.th-comment-act-danger:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
 .th-comment-replybox { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .th-comment-replyinput {
   width: 100%;
@@ -4920,6 +4943,18 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 }
 .th-comment-send:hover { filter: brightness(0.95); }
 .th-comment-send:disabled { opacity: 0.5; cursor: default; }
+/* Per-comment select checkbox + the "Send to agent" footer - parity with the
+   prototype-node share panel (WorkflowCommentsPanel). */
+.th-comment-select { flex: 0 0 auto; margin: 0 1px 0 0; accent-color: var(--accent); cursor: pointer; }
+.th-comments-agent-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+.th-comments-agent-footer .th-comment-send { align-self: center; }
 /* New-comment composer at the top of the panel body. */
 .th-comment-compose {
   display: flex;

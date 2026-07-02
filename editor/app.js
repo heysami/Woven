@@ -9569,7 +9569,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartCh
     if (w.kind === "thread")   return renderThread(w);
     if (w.kind === "subagent") return html`<${SubagentPanel} agent=${w.agent} runTitle=${w.runTitle} />`;
     if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} />`;
-    if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} />`;
+    if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     if (w.kind === "git")      return html`<${GitPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     return null;
   };
@@ -11010,12 +11010,17 @@ function formatIsoAge(iso) {
    existing POST ops. Available in both editor + workflow modes via the rail, so
    the editor finally has access to the people-comment stream. Read-only over
    existing endpoints - no daemon change needed. */
-function CommentsPanel({ railTop, panelRef, embedded }) {
+function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
   const [comments, setComments] = useState(null);   // null = loading
   const [filter, setFilter] = useState("open");
   const [err, setErr] = useState(null);
   const [replyFor, setReplyFor] = useState(null);   // commentId with an open composer
   const [replyText, setReplyText] = useState("");
+  // Multi-select for "Send to agent" (parity with WorkflowCommentsPanel's
+  // per-prototype share panel). Host-only - guests can't dispatch the editor
+  // agent. `sel` maps commentId → true; `busy` guards the dispatch.
+  const [sel, setSel] = useState({});
+  const [busy, setBusy] = useState(false);
   // New-comment composer.
   const [protos, setProtos] = useState([]);         // host: prototypes to target
   const [draftProto, setDraftProto] = useState("");
@@ -11069,7 +11074,9 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
     } catch (e) { flashErr(String(e.message || e)); }
   };
   const isResolved = (c) => c.status === "done" || c.status === "archived";
+  const isArchived = (c) => c.status === "archived";
   const toggleResolve = (c) => cop({ op: "status", prototype: c.prototype, commentId: c.id, status: isResolved(c) ? "open" : "done" });
+  const toggleArchive = (c) => cop({ op: "status", prototype: c.prototype, commentId: c.id, status: isArchived(c) ? "open" : "archived" });
   const del = async (c) => { if (await uiConfirm("Delete this comment? This can't be undone.")) cop({ op: "delete", prototype: c.prototype, commentId: c.id }); };
   const sendReply = (c) => {
     const t = replyText.trim();
@@ -11085,6 +11092,76 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
     // host picks a target prototype.
     cop(liveMode ? { op: "add", text: t } : { op: "add", prototype: draftProto, text: t });
     setDraft("");
+  };
+
+  // ── Send selected to agent ────────────────────────────────────────
+  // Mirrors WorkflowCommentsPanel.sendToAgent, but this rail panel spans the
+  // whole project, so selected comments are grouped BY PROTOTYPE and the built
+  // prompt names each prototype's source root. Host-only (guests have no agent).
+  const selectedIds = Object.keys(sel).filter(id => sel[id]);
+  const sendToAgent = async () => {
+    const chosen = (comments || []).filter(c => sel[c.id]);
+    if (!chosen.length || busy || liveMode) return;
+    setBusy(true);
+    try {
+      const byProto = {};
+      chosen.forEach(c => { (byProto[c.prototype || "-"] = byProto[c.prototype || "-"] || []).push(c); });
+      const slugs = Object.keys(byProto).sort();
+      const lines = [
+        "Process reviewer comments across "
+          + (slugs.length === 1 ? `the prototype rooted at \`source/${slugs[0]}/\`.` : `${slugs.length} prototypes.`),
+        "",
+        "Each comment below was pinned to a SPECIFIC ELEMENT in the running prototype",
+        "by a reviewer (via the share link). For each one:",
+        "  • Locate the element - the CSS selector is relative to the listed page's DOM;",
+        "    the tag + text snippet are fallbacks if the selector has drifted.",
+        "  • Apply the requested change in place, scoped as tightly as possible.",
+        "  • Stay inside the design system vocabulary (no new tokens / primitive classes).",
+        "  • Do NOT edit share/comments.json - comment lifecycle belongs to the user.",
+        "",
+      ];
+      slugs.forEach(slug => {
+        lines.push(`### Prototype \`source/${slug}/\``);
+        byProto[slug].forEach((c, i) => {
+          lines.push(`COMMENT ${i + 1} - ${(c.author && c.author.name) || "Anonymous"} on \`${c.page || "index.html"}\``);
+          if (c.anchor && (c.anchor.selector || c.anchor.tag)) {
+            lines.push(`  Element: ${c.anchor.selector || "(selector unavailable)"}`
+              + (c.anchor.tag ? `  <${c.anchor.tag}>` : "")
+              + (c.anchor.text ? `  text: "${c.anchor.text.slice(0, 80)}"` : ""));
+          }
+          lines.push(`  Request: ${c.text}`);
+          if (c.shot) {
+            lines.push("  (A screenshot of the page at comment time is attached to this comment"
+              + ", possibly with the reviewer's freehand annotations drawn on it.)");
+          }
+          const nAtt = (c.attachments || []).length;
+          if (nAtt) {
+            lines.push(`  (The reviewer attached ${nAtt} reference image${nAtt > 1 ? "s" : ""}`
+              + `: ${c.attachments.map(a => a.name || "image").join(", ")}.)`);
+          }
+          (c.replies || []).forEach(r => {
+            lines.push(`  ↳ ${(r.author && r.author.name) || "Anonymous"}: ${r.text}`);
+          });
+          lines.push("");
+        });
+      });
+      lines.push("After every change is applied, summarize what was edited per comment.");
+      const body = lines.join("\n");
+      // Stamp processed per-prototype (matches the endpoint's prototype-scoped ops).
+      for (const slug of slugs) {
+        await cop({ op: "processed", prototype: slug, commentIds: byProto[slug].map(c => c.id) });
+      }
+      setSel({});
+      if (onStartChatWithPrompt) await onStartChatWithPrompt(body);
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  };
+  const selectOpen = () => {
+    const opens = (comments || []).filter(c => !isResolved(c));
+    const all = opens.length > 0 && opens.every(c => sel[c.id]);
+    const next = {};
+    if (!all) opens.forEach(c => { next[c.id] = true; });
+    setSel(next);
   };
 
   const list = comments || [];
@@ -11140,9 +11217,15 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
             ${groups[slug].map(c => html`
               <div className=${"th-comment" + (isResolved(c) ? " is-resolved" : "")} key=${c.id}>
                 <div className="th-comment-head">
+                  ${!liveMode && html`
+                    <input type="checkbox" className="th-comment-select" checked=${!!sel[c.id]}
+                      title="Select for the agent"
+                      onChange=${(e) => setSel(s => ({ ...s, [c.id]: e.target.checked }))}/>
+                  `}
                   <span className="th-comment-avatar">${authorName(c.author).slice(0, 1).toUpperCase()}</span>
                   <span className="th-comment-author">${authorName(c.author)}</span>
                   <span className="th-comment-age">${formatIsoAge(c.createdAt)}</span>
+                  ${c.processedAt && html`<span className="sv-status-chip processed" title=${"Sent to agent " + c.processedAt}>processed</span>`}
                 </div>
                 <div className="th-comment-text">${c.text}</div>
                 ${(c.page || (c.anchor && c.anchor.text)) && html`
@@ -11177,10 +11260,21 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
                   </div>
                 `)}
                 <div className="th-comment-actions">
-                  <button className="th-icon-btn" title="Reply" onClick=${() => { setReplyFor(replyFor === c.id ? null : c.id); setReplyText(""); }}><${Icon.Forward}/></button>
+                  <button className="th-comment-act" title="Reply to this comment"
+                    onClick=${() => { setReplyFor(replyFor === c.id ? null : c.id); setReplyText(""); }}>
+                    <${Icon.Forward}/><span>Reply</span></button>
                   ${!liveMode && html`
-                    <button className=${"th-icon-btn" + (isResolved(c) ? "" : " is-primary")} title=${isResolved(c) ? "Reopen" : "Mark resolved"} onClick=${() => toggleResolve(c)}><${Icon.Check}/></button>
-                    <button className="th-icon-btn is-danger" title="Delete comment" onClick=${() => del(c)}><${Icon.Trash}/></button>
+                    <button className=${"th-comment-act" + (isResolved(c) ? "" : " is-primary")}
+                      title=${isResolved(c) ? "Reopen this comment" : "Mark this comment resolved"}
+                      onClick=${() => toggleResolve(c)}>
+                      <${Icon.Check}/><span>${isResolved(c) ? "Reopen" : "Resolve"}</span></button>
+                    <button className=${"th-comment-act" + (isArchived(c) ? " is-primary" : "")}
+                      title=${isArchived(c) ? "Move this comment back to open" : "Archive this comment"}
+                      onClick=${() => toggleArchive(c)}>
+                      <${Icon.Block}/><span>${isArchived(c) ? "Unarchive" : "Archive"}</span></button>
+                    <button className="th-comment-act th-comment-act-danger" title="Delete this comment"
+                      onClick=${() => del(c)}>
+                      <${Icon.Trash}/><span>Delete</span></button>
                   `}
                 </div>
                 ${replyFor === c.id && html`
@@ -11196,6 +11290,17 @@ function CommentsPanel({ railTop, panelRef, embedded }) {
           </div>
         `)}
       </div>
+      ${!liveMode && html`
+        <div className="th-comments-agent-footer">
+          <button className="th-tasks-filter-btn" onClick=${selectOpen}>Select open</button>
+          <span style=${{ flex: 1 }}></span>
+          <button className="th-comment-send"
+            disabled=${selectedIds.length === 0 || busy}
+            title="Send the selected comments to the editor agent - it applies each requested change to the prototype source"
+            onClick=${sendToAgent}
+          >${busy ? "Dispatching…" : `Send ${selectedIds.length || ""} to agent`}</button>
+        </div>
+      `}
     </div>
   `;
   return embedded ? __node : createPortal(__node, document.body);
@@ -30603,26 +30708,23 @@ function WorkflowNodeStagePill({ nodeId }) {
   const wrapEl   = document.querySelector(".workflow-canvas-wrap");
   const wrapRect = wrapEl ? wrapEl.getBoundingClientRect()
                           : { left: 0, right: window.innerWidth, top: 0 };
-  // If no rect yet, fall back to the wrap's top-right corner so the user
-  // can still hit Save / Revert. Otherwise anchor by the right edge 6px
-  // left of where the badge would sit (rect.right - 32), clamping inside
-  // the wrap when the node bleeds past it.
-  let pillRight, pillTop;
+  // Anchor the pill to the RIGHT of the select badge so it no longer grows
+  // leftward into the node's other floating chrome. The badge occupies
+  // rect.right - 32 .. rect.right, so the pill's left edge sits 6px past the
+  // badge's right edge. Fall back to the wrap's top-left when there's no rect
+  // yet so the user can still hit Save / Revert.
+  let pillLeft, pillTop;
   if (rect) {
-    const idealBadgeLeft = rect.right - 32;
-    pillRight = Math.max(
-      window.innerWidth - idealBadgeLeft + SLACK,
-      window.innerWidth - wrapRect.right + SLACK,
-    );
-    pillTop = Math.max(rect.top - 40 - nodeFloatingBarClearance(nodeId), wrapRect.top + SLACK);
+    pillLeft = rect.right + SLACK;
+    pillTop  = Math.max(rect.top - 40 - nodeFloatingBarClearance(nodeId), wrapRect.top + SLACK);
   } else {
-    pillRight = window.innerWidth - wrapRect.right + SLACK;
-    pillTop   = wrapRect.top + SLACK;
+    pillLeft = wrapRect.left + SLACK;
+    pillTop  = wrapRect.top + SLACK;
   }
   const pillStyle = {
     position: "fixed",
-    top:   pillTop   + "px",
-    right: pillRight + "px",
+    top:  pillTop  + "px",
+    left: pillLeft + "px",
     zIndex: 40,
   };
   const onSaveClick = (e) => {
