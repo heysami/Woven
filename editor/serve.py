@@ -8454,35 +8454,18 @@ absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 """
 
 
-# v3.16 - The two-phase setup/iterate contract, appended to the FULL-tier
-# interactive chat spawn (the setup thread) ONLY - never to orchestrator /
-# planner / leaf spawns, and never to a `scoped` follow-on chat. It makes the
-# expensive-vs-cheap split VISIBLE to the user at both ends via two chat cards
-# the frontend renders distinctly:
-#   <init-card>     - emitted ONCE, up front, when this turn is a new-prototype
-#                     build (initialisation). Tells the user they are in the
-#                     heavier setup chat and why.
-#   <handoff-card>  - emitted ONCE, at commit (an orchestrator hand-off has
-#                     returned + its build graph is scaffolded, OR the request
-#                     turned out to be a lightweight edit needing no new
-#                     routing). Offers the user a lighter scoped chat to
-#                     continue in. The setup chat stays usable; this only nudges.
-# Both are plain text markers the daemon passes through untouched; only the
-# editor parses them. Emit each AT MOST ONCE per thread.
-SETUP_THREAD_CONTRACT = """
-
-## Setup vs iterate - make the two phases visible to the user (v3.16)
-
-You are the SETUP (initialise) chat. This chat carries the full routing + capabilities catalog, so it is the EXPENSIVE one - right for deciding direction and standing a prototype up, wasteful for small follow-up edits. Two markers make that split clear to the user. They are UI cards, not prose - emit each on its own line, at most once per thread, and keep writing normally around them.
-
-1. **At the START, once you have determined this request is a NEW prototype build (an initialisation)** - i.e. you are about to route to an orchestrator / the `/prototype` skill / write fresh `source/` - announce it up front so the user knows why this chat is heavier:
-   `<init-card prototype="<slug>">Setting up a new prototype. This is the setup chat: it carries the full capability + routing context to decide direction and build. Once it is standing, I will hand you off to a lighter, cheaper chat to iterate in.</init-card>`
-   (Skip this card entirely if the request is NOT a new build - e.g. a question, or a tiny tweak to something already committed.)
-
-2. **At COMMIT** - the moment the build is standing (an orchestrator hand-off returned and its node graph is scaffolded, OR you have finished the fresh source), OR the moment you realise the request was only a light edit to an already-committed prototype that never needed the setup weight - offer the lighter chat:
-   `<handoff-card prototype="<slug>">Setup is done. Continue in a lighter chat - it is scoped to this prototype and much cheaper per message. You can keep using this chat too; the lighter one is just the better place to iterate.</handoff-card>`
-   Replace `<slug>` with the active prototype slug (your Active-prototype-scope block names it; use `main` if none was given). After the handoff card, wrap up briefly - do not keep doing heavy work in this thread once the build is committed.
-"""
+# v3.19 - Intentionally empty. This used to append a "setup vs iterate" contract
+# to the setup-path chat, but ANY workflow/cost prose here competes with the real
+# build workflow (PROTOTYPE.md + the injected context block) and skipped Step -1
+# (the racingcar regression). The setup->normal handoff affordance will be
+# reintroduced as a ROLE transition, not a cost note. See SETUP_THREAD_CONTRACT.
+# The setup path deliberately appends NO extra contract to the agent prompt.
+# The build workflow lives ONLY in PROTOTYPE.md + the injected context block;
+# anything added here (cost framing, init/handoff sequencing) competes with that
+# workflow and skips Step -1 (the racingcar regression). Kept as an empty string
+# so the two append sites below are a harmless no-op until the setup->normal role
+# transition is redesigned as a role affordance (not a cost note).
+SETUP_THREAD_CONTRACT = ""
 
 
 # Appended to the system prompt when AGENT_MCP_CONFIG is wired in. Tells the
@@ -10991,7 +10974,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # (~69% less preamble, ~25K fewer tokens) unless the node id itself
             # names an orchestrator. project_root is now threaded so the full
             # tier (orchestrator node) also respects the disable list.
-            _tier = "full" if "orchestrator" in (node_id or "").lower() else "slim"
+            _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
             sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
         except Exception:
             pass
@@ -23345,9 +23328,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         # committed to one prototype, so it drops the ~27K of routing prose and
         # only carries the app-capabilities surface. Anything unrecognised
         # falls back to "full" so a bad value never silently under-scopes.
-        _chat_tier = (body.get("tier") or "full").strip()
-        if _chat_tier not in ("full", "scoped"):
-            _chat_tier = "full"
+        # v3.19 - paths are named by ROLE. NORMAL is the untargeted default (the
+        # everyday chat); it escalates into the setup routing on demand for a
+        # genuine new build. SCOPED is chosen by the frontend when the chat
+        # targets an existing prototype. SETUP is reached via node-agent
+        # orchestrator spawns / the on-demand routing fetch, not as a freeform
+        # default. Legacy "full" maps to setup; anything unrecognised -> normal.
+        _chat_tier = (body.get("tier") or "normal").strip()
+        if _chat_tier == "full":
+            _chat_tier = "setup"
+        if _chat_tier not in ("setup", "normal", "scoped"):
+            _chat_tier = "normal"
         # v3.16 - the prototype slug this chat is scoped to (the selected
         # prototype in the workflow target bar). Used ONLY to name the scoped
         # preamble's iterate-in-place stub; `branch` semantics are untouched.

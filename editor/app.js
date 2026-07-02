@@ -10011,15 +10011,19 @@ function RightRailDock({ mode }) {
     setChatRun({ runId: null, isNew: true, title: "Chat", kind: "freeform", branch, agentId: pickAgentIdForChat() });
     setChatRunFinished(false);
   }, []);
-  // v3.16 - open a fresh, cheaper SCOPED chat bound to a committed prototype.
-  // Fired by the <handoff-card> "continue in a lighter chat" button (via the
-  // woven:continue-scoped window event). The old setup thread is NOT killed -
-  // it stays in the runs list, reopenable - this just makes the lighter chat
-  // the active one, per the "keep it open, just nudge" behaviour.
+  // v3.19 - open the fresh handoff chat on the NORMAL path. The handoff can fire
+  // right after the orchestration plan / plate - BEFORE any source/<slug>/ is
+  // written - so landing in `scoped` would hand the agent a false "the prototype
+  // already exists, iterate in place" premise. `normal` is the everyday path and
+  // makes no such claim; once the build has actually produced source/<slug>/ and
+  // the user selects or previews it, it becomes `scoped` on its own via the
+  // targetSlug rule. (Names below stay `*Scoped*` for continuity; the tier is
+  // normal.) The old setup thread is NOT killed - it stays reopenable; this just
+  // makes the lighter chat the active one.
   const openScopedChat = useCallback((prototype) => {
     const slug = prototype || branch || "main";
-    pendingScopedRef.current = { tier: "scoped", branch: slug };
-    setChatRun({ runId: null, isNew: true, title: "Iterate", kind: "freeform", branch: slug, tier: "scoped", agentId: pickAgentIdForChat() });
+    pendingScopedRef.current = { tier: "normal", branch: slug };
+    setChatRun({ runId: null, isNew: true, title: "Continue", kind: "freeform", branch: slug, tier: "normal", agentId: pickAgentIdForChat() });
     setChatRunFinished(false);
   }, []);
   useEffect(() => {
@@ -24207,11 +24211,13 @@ function threadKindBadge(run) {
   if (run.kind === "node-agent")
     return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
   if (run.kind === "freeform") {
-    // Only badge once the tier is KNOWN to be full. A fresh isNew shell (before
-    // the run spawns) and historical runs predating the tier field carry no
-    // tier yet - stay silent rather than assume Setup. scoped = normal = none.
-    if (run.tier === "full")
-      return { label: "Setup", cls: "setup", title: "Setup chat: carries the full routing + capabilities context (heavier). It hands off to a lighter, scoped chat once the build is standing." };
+    // Paths are named by role. NORMAL (the everyday default) and SCOPED (editing
+    // an existing prototype) show NO badge. Only the SETUP path badges - and
+    // that is reached on a new build, not as the untargeted default. A fresh
+    // isNew shell (no tier yet) and historical runs predating the field stay
+    // silent. "full" is the legacy name for the setup path.
+    if (run.tier === "setup" || run.tier === "full")
+      return { label: "Setup", cls: "setup", title: "Setup: a new prototype build - carries the full routing catalog." };
     return null;
   }
   return null;
@@ -24669,13 +24675,14 @@ function WorkflowCanvas() {
     // v3.16 - if this chat targets an EXISTING prototype (a prototype/frames
     // node is selected, or the dropdown picks one), it is iteration, not setup:
     // spawn on the cheap `scoped` tier (routing stripped, ~15.4K vs 42K) named
-    // to that prototype. A whole-project / general chat (no target) stays full,
-    // since it may be a brand-new build that still needs the routing catalog.
+    // to that prototype. A whole-project / general chat (no target) is NORMAL -
+    // the everyday path; it escalates into the setup routing on demand only when
+    // the user asks for a genuine new build (see _normal_general_stub).
     const run = await triggerRun({
       branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode: chatPermissionMode,
       model: agentDefault && agentDefault.model || undefined,
-      tier: targetSlug ? "scoped" : undefined,
+      tier: targetSlug ? "scoped" : "normal",
       prototype: targetSlug || undefined,
     });
     setChatRun(run);

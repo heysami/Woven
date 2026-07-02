@@ -663,7 +663,7 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
 
 ## You are the SCOPED ITERATION thread - the prototype already exists, iterate in place
 
-This is the lighter, cheaper follow-on chat. The setup/initialise thread already did the expensive work: it decided the direction, committed the genre / design-system / aesthetic, dispatched the orchestrator, and scaffolded the build. Your job is to ITERATE on what exists, not to re-decide it.
+The prototype already exists. Setup already decided the direction, committed the genre / design-system / aesthetic, dispatched the orchestrator, and scaffolded the build. Your job is to ITERATE on what exists, not to re-decide it.
 
 - The prototype lives under {scope}. Default every read / edit / write there. To see what is already committed (genre, tokens, structure), Read {scope} and its `DESIGN.md` / `data.js` - do NOT re-run a direction pick or re-commit a genre. The look is locked; honour it.
 {ds_line}
@@ -675,7 +675,27 @@ You need the full routing rules ONLY IF the user now asks to do one of these - a
   - start a NEW prototype from scratch (a different `source/<slug>/`).
 If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP and fetch them first:
   `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
-returns the authoritative `full`-tier routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build so they know this scoped thread is about to do heavier work.)"""
+returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build.)"""
+
+
+def _normal_general_stub() -> str:
+    """The NORMAL path: the project's everyday chat. Light preamble - the app
+    capabilities stay live, but the orchestrator-routing catalog is stripped
+    (like scoped/leaf). Unlike scoped it is NOT bound to one prototype. It
+    carries NO build-workflow prose (that lives in PROTOTYPE.md, injected via
+    the workflow-mode context block) and NO cost framing. Its only job is the
+    on-demand escalation into the SETUP path when the request is a new build."""
+    return """
+
+## You are the NORMAL working chat - the project's everyday thread
+
+Act on the request now with the app capabilities above. The orchestrator-routing catalog (the per-family build rules and the plan-gate) is not loaded here, because most everyday requests - a question, a canvas / node operation, a whiteboard edit, a small change to something that already exists - never need it.
+
+Escalate to the SETUP path ONLY IF the user now asks to build a NEW prototype / website / app / page / dashboard from scratch (a genuine new `source/<slug>/` build). Apply the test literally. When it IS a new build:
+  - fetch the routing catalog on demand - `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID` - and treat what it returns as binding, and
+  - follow `PROTOTYPE.md` for the build itself (it owns the workflow, starting with the Step -1 direction pick).
+If it is NOT a new build, do not fetch anything - just make the requested change now.
+"""
 
 
 def _wired_provider_ids() -> set:
@@ -974,7 +994,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # the occasional co-dispatch) and points at /__capabilities for the
     # descriptions. Full tier (orchestrators + main chat - the agents that
     # actually pick a drawer) keeps the descriptions.
-    if tier == "slim":
+    if tier in ("slim", "leaf"):
         _names = ", ".join(sa["name"] for sa in caps["subagents"][:100])
         subagent_lines = (
             f"  {_names}\n"
@@ -2102,25 +2122,42 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # is None - see the import-failure fallback above).
     if enabled_orchestrators is not None:
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
-    # v3.14 - LEAF tier: drop ALL routing (every orchestrator block + the
-    # mental-model + plan-gate framing) and hand back the slim preamble + the
-    # router stub. A leaf is past the routing decision; it never dispatches a
-    # sibling. Returns BEFORE the dynamic hard-rule append (that's routing too).
-    if tier == "slim":
+    # v3.19 - paths are named by ROLE, not by preamble weight. Accept the legacy
+    # cost-names as aliases so runs / callers created before the rename still
+    # resolve: "full" was the setup path, "slim" was the leaf path.
+    if tier == "full":
+        tier = "setup"
+    elif tier == "slim":
+        tier = "leaf"
+    # LEAF path: a pseudo-subagent (one node-agent builder). Drop ALL routing
+    # (every orchestrator block + the mental-model + plan-gate framing) and hand
+    # back the stripped preamble + the router stub. A leaf is past the routing
+    # decision; it never dispatches a sibling. Returns BEFORE the dynamic
+    # hard-rule append (that's routing too).
+    if tier == "leaf":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
         return _preamble + LEAF_ROUTER_STUB
-    # v3.16 - SCOPED tier: the cheap follow-on iteration chat. Same routing
-    # strip as slim (the prototype is committed, routing is decided), but keeps
-    # the full app-capabilities surface and swaps in the iterate-in-place stub
-    # (named to the committed prototype slug) instead of the leaf stub.
+    # SCOPED path: editing an existing prototype. Same routing strip as leaf
+    # (the prototype is committed, routing is decided), but keeps the full
+    # app-capabilities surface and swaps in the iterate-in-place stub (named to
+    # the committed prototype slug).
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
         return _preamble + _scoped_iteration_stub(prototype, project_root=project_root)
-    # v3.12 - append manifest-carried hard rules for orchestrators added after
-    # ship time (not covered by the static prose above). Appended AFTER the
-    # strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
+    # NORMAL path: the project's everyday chat, the untargeted default. Same
+    # routing strip as scoped (routing is fetched on demand only when the user
+    # asks for a genuine new build), but NOT bound to one prototype - a general
+    # project-wide stub with the escalation pointer into the setup path.
+    if tier == "normal":
+        _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
+        _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
+        return _preamble + _normal_general_stub()
+    # SETUP path (default): a new prototype build. Keeps the full routing
+    # catalog. v3.12 - append manifest-carried hard rules for orchestrators
+    # added after ship time (not covered by the static prose above). Appended
+    # AFTER the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
     return _preamble
 
