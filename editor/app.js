@@ -10266,7 +10266,7 @@ function OrchestrationPlanView() {
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await fetch(apiUrl("/pipeline.json") + "?t=" + Date.now(), { cache: "no-store" });
+        const r = await fetch(apiUrl("/pipeline.json?t=" + Date.now()), { cache: "no-store" });
         if (r.status === 404) { if (!cancelled) { setPlan(null); setErr(null); } return; }
         if (!r.ok) throw new Error("HTTP " + r.status);
         const j = await r.json();
@@ -37058,9 +37058,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const base = dot > 0 ? oldPath.slice(0, dot) : oldPath;
       const ext  = dot > 0 ? oldPath.slice(dot)    : "";
       const newPath = `${base}-fork-${stamp}${ext}`;
-      const project = activeProjectId();
       try {
-        const r = await fetch(apiUrl("/__copy_file") + "?project=" + encodeURIComponent(project), {
+        const r = await fetch(apiUrl("/__copy_file"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ from: oldPath, to: newPath }),
