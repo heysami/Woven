@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "library": "location-archetype",
+  "sourceDoc": "docs/research/location-archetype-library.md",
+  "note": "WHERE catalogue for immersive-place scene-3d. Pick one archetypeId, then read its full entry in the sourceDoc. Register (photoreal | stylized-<family>) is orthogonal - see immersive-world-study.md.",
+  "totalEntries": 6,
+  "registers": {
+    "photoreal": "fable5 lineage - PBR/IBL/soft-shadow/macro-meso-micro",
+    "stylizedFamilies": [
+      "stylized-painterly-impressionist",
+      "stylized-cel-lit-anime",
+      "stylized-moebius-lineart-minimal",
+      "stylized-sumi-e-ink",
+      "stylized-retro-pixel-neon",
+      "stylized-comic-ink-grotesque",
+      "stylized-moody-atmospheric-indie"
+    ]
+  },
+  "decisionTree": {
+    "landscape / valley / forest / desert / meadow / mountains": "outdoor-natural",
+    "room / hall / studio / gallery / temple / any interior": "indoor-architectural",
+    "ocean / sea / lagoon / shoreline above water / horizon": "sea-surface",
+    "reef / dive / submerged / kelp / deep / sunken ruin": "underwater",
+    "dream / impossible geometry / floating islands / invented space": "surreal-dreamscape",
+    "space / planet / nebula / orbital / alien sky": "cosmic-space"
+  },
+  "entries": [
+    {
+      "archetypeId": "outdoor-natural",
+      "oneLine": "Forests, alpine valleys, meadows, deserts, coastlines - the fable5 register.",
+      "tags": ["outdoor", "terrain", "vegetation", "sun", "wide-range"],
+      "subsystemSet": ["terrain", "foliage-scatter", "sky-atmosphere", "wind-motion", "water-margin?"]
+    },
+    {
+      "archetypeId": "indoor-architectural",
+      "oneLine": "Rooms, halls, studios, interiors - bounded space, portal light, dust shafts.",
+      "tags": ["indoor", "bounded", "portal-light", "props", "dust-shaft"],
+      "subsystemSet": ["room-shell", "props-dressing", "window-shaft", "dust-motes"]
+    },
+    {
+      "archetypeId": "sea-surface",
+      "oneLine": "Above-water seascapes - ocean, lagoon, shoreline, horizon-dominant.",
+      "tags": ["water", "ocean", "horizon", "sun-glint", "gerstner"],
+      "subsystemSet": ["ocean-surface", "sky-atmosphere", "spray-particles", "horizon-landmass?"]
+    },
+    {
+      "archetypeId": "underwater",
+      "oneLine": "Submerged worlds - reefs, kelp, deep zones - volumetric depth is the medium.",
+      "tags": ["underwater", "depth-fog", "caustics", "god-rays", "buoyant"],
+      "subsystemSet": ["depth-fog-medium", "caustics-projector", "god-ray-shafts", "particulate-drift", "reef-scatter", "buoyant-hero?"]
+    },
+    {
+      "archetypeId": "surreal-dreamscape",
+      "oneLine": "Impossible geometry, floating islands, dream logic - coherent-but-unreal.",
+      "tags": ["surreal", "dream", "floating", "emissive", "negative-space"],
+      "subsystemSet": ["dream-forms", "gradient-void", "drift-particles", "emissive-accents", "soft-shadow-ground?"]
+    },
+    {
+      "archetypeId": "cosmic-space",
+      "oneLine": "Space vistas, planetary surfaces, nebulae, orbital scenes, alien skies.",
+      "tags": ["space", "planet", "nebula", "starfield", "high-contrast"],
+      "subsystemSet": ["celestial-body", "starfield", "nebula-clouds", "atmosphere-rim", "particle-drift?"]
+    }
+  ]
+}
