@@ -8454,20 +8454,6 @@ absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 """
 
 
-# v3.19 - Intentionally empty. This used to append a "setup vs iterate" contract
-# to the setup-path chat, but ANY workflow/cost prose here competes with the real
-# build workflow (PROTOTYPE.md + the injected context block) and skipped Step -1
-# (the racingcar regression). The setup->normal handoff affordance will be
-# reintroduced as a ROLE transition, not a cost note. See SETUP_THREAD_CONTRACT.
-# The setup path deliberately appends NO extra contract to the agent prompt.
-# The build workflow lives ONLY in PROTOTYPE.md + the injected context block;
-# anything added here (cost framing, init/handoff sequencing) competes with that
-# workflow and skips Step -1 (the racingcar regression). Kept as an empty string
-# so the two append sites below are a harmless no-op until the setup->normal role
-# transition is redesigned as a role affordance (not a cost note).
-SETUP_THREAD_CONTRACT = ""
-
-
 # Appended to the system prompt when AGENT_MCP_CONFIG is wired in. Tells the
 # agent the routing policy: built-in WebFetch / WebSearch are primary; the
 # MCP servers are escalation paths. Without this guidance the agent reaches
@@ -23472,12 +23458,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                 sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=_chat_proto)
             except Exception:
                 pass
-            # v3.16 - Only the FULL-tier setup thread carries the two-phase
-            # setup/iterate contract (it emits the <init-card> + <handoff-card>
-            # the editor renders). A `scoped` follow-on chat is past that point
-            # and must NOT re-announce setup or re-offer a handoff.
-            if _chat_tier != "scoped":
-                sys_prompt = sys_prompt + SETUP_THREAD_CONTRACT
             if _mcp_config_spawn_args():
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
@@ -23514,9 +23494,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                 codex_sys_bits.append(capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=_chat_proto))
             except Exception:
                 pass
-            # v3.16 - same two-phase contract for codex/opencode setup threads.
-            if _chat_tier != "scoped":
-                codex_sys_bits.append(SETUP_THREAD_CONTRACT)
             codex_sys_bits.append(
                 "\n## Subagent dispatch on this runtime\n\n"
                 f"You are running on the {_runtime_label}, which has no native "
