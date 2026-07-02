@@ -24632,16 +24632,6 @@ function WorkflowCanvas() {
     });
     setChatRunFinished(false);
   }, [branch]);
-  // v3.19 - the <handoff-card> "Continue in a working thread" button dispatches
-  // woven:continue-scoped. WorkflowCanvas is the workflow-mode surface (the
-  // editor-mode RightRailDock has its own copy); without this listener the button
-  // was DEAD in workflow mode - nothing was listening. Open a fresh chat shell +
-  // flag the next spawn as the handoff working thread.
-  useEffect(() => {
-    const on = () => { pendingHandoffRef.current = true; openWorkflowChat(); };
-    window.addEventListener("woven:continue-scoped", on);
-    return () => window.removeEventListener("woven:continue-scoped", on);
-  }, [openWorkflowChat]);
   const reopenWorkflowRun = useCallback((run) => {
     // Called when the user clicks an existing run in the RunsMenu list.
     // The run's history streams in via SSE; no preamble is sent (the
@@ -24708,6 +24698,21 @@ function WorkflowCanvas() {
     setChatRunFinished(false);
     return run;
   }, [branch, chatPermissionMode]);
+  // v3.19 - the <handoff-card> "Continue in a working thread" button dispatches
+  // woven:continue-scoped. WorkflowCanvas is the workflow-mode surface (the
+  // editor-mode RightRailDock has its own copy); without a listener here the
+  // button was DEAD in workflow mode. Opening an empty shell was not enough
+  // either - the working thread must START the build. So SPAWN it with a kickoff:
+  // the handoff flag forces NORMAL (so Role A fires), and the agent reads
+  // pipeline.json and drives the locked plan to completion.
+  useEffect(() => {
+    const on = () => {
+      pendingHandoffRef.current = true;
+      spawnWorkflowChat("Build this prototype now: drive the locked plan (pipeline.json) to completion, running each orchestrator and gate in the order the plan lists.");
+    };
+    window.addEventListener("woven:continue-scoped", on);
+    return () => window.removeEventListener("woven:continue-scoped", on);
+  }, [spawnWorkflowChat]);
   const handleWorkflowChatComplete = useCallback(({ status }) => {
     setChatRunFinished(status === "done" || status === "error" || status === "fail");
     if (status === "done") {
