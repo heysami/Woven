@@ -23169,6 +23169,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         _chat_tier = (body.get("tier") or "full").strip()
         if _chat_tier not in ("full", "scoped"):
             _chat_tier = "full"
+        # v3.16 - the prototype slug this chat is scoped to (the selected
+        # prototype in the workflow target bar). Used ONLY to name the scoped
+        # preamble's iterate-in-place stub; `branch` semantics are untouched.
+        # Falls back to branch so a scoped handoff (which carries branch=slug)
+        # still names the right prototype.
+        _chat_proto = (body.get("prototype") or branch or "main").strip() or "main"
         spawn_args = list(defs["args"])
         # v2.45 / v3.8.1 - Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -23258,7 +23264,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # integrated (the Quiver AI case). See kinds/capabilities.py.
             try:
                 from kinds.capabilities import capabilities_preamble
-                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=branch)
+                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=_chat_proto)
             except Exception:
                 pass
             # v3.16 - Only the FULL-tier setup thread carries the two-phase
@@ -23299,7 +23305,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 )
             try:
                 from kinds.capabilities import capabilities_preamble
-                codex_sys_bits.append(capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=branch))
+                codex_sys_bits.append(capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=_chat_proto))
             except Exception:
                 pass
             # v3.16 - same two-phase contract for codex/opencode setup threads.

@@ -8237,12 +8237,12 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
     '})();</script></body></html>';
 }
 
-async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier }) {
+async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype }) {
   const project = activeProjectId();
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model, tier }),
+    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model, tier, prototype }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -24484,10 +24484,17 @@ function WorkflowCanvas() {
     // Other agentId backends (xai, openai-gpt) can pick it up too once the
     // daemon honors them.
     const agentDefault = getDefaultForCapability("agent");
+    // v3.16 - if this chat targets an EXISTING prototype (a prototype/frames
+    // node is selected, or the dropdown picks one), it is iteration, not setup:
+    // spawn on the cheap `scoped` tier (routing stripped, ~15.4K vs 42K) named
+    // to that prototype. A whole-project / general chat (no target) stays full,
+    // since it may be a brand-new build that still needs the routing catalog.
     const run = await triggerRun({
       branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode: chatPermissionMode,
       model: agentDefault && agentDefault.model || undefined,
+      tier: targetSlug ? "scoped" : undefined,
+      prototype: targetSlug || undefined,
     });
     setChatRun(run);
     setChatRunFinished(false);
