@@ -269,8 +269,11 @@ For each kept asset, edit `slot.file` to make the slot machine-readable for the 
 2. **For raster slots** that are currently `<div class="img-placeholder">`: leave the placeholder div in place - the asset drawer (or Run pipeline) swaps to `<img src="<outputPath>">` once the file exists. Don't pre-swap; broken `<img>` against a missing file is worse than the placeholder.
 3. **For motion slots** that are currently `<div class="motion-placeholder">`: append `data-slot="<assetId>"` and leave the placeholder.
 4. **For inline-SVG slots** (vector-mark / vector-icon Pathway-B): nothing to annotate - the asset drawer writes the SVG directly into the slot file.
+5. **For canvas-runtime slots** (`shader` / `3d` / `particle-gl` / `particle-2d` Pathway-B): leave the placeholder in place and annotate `data-slot`. Unlike raster (passive `<img src>` swap), these have NO passive linkback and NO host mount runtime in a built page - the drawer's `slotEditDiff` is the ONLY thing that makes them run, and it MUST inline a self-contained mount (`<canvas>` + inline `<script>` carrying the shader/scene source; `3d` also adds a `<head>` importmap). A canvas slot left as a bare `data-shader` / `data-three` attribute is DEAD in the shipped page (the runtime is editor-only, and `file://` cannot `fetch` the source). See `1V-shader.md` §6 / `1V-3d.md` §6.
 
 Edits are minimal: one attribute per slot. No restructuring.
+
+**Commit the medium and keep it.** Once a slot is classified `shader` vs `3d` (vs raster / vector / …) it STICKS - record it in `visual-plan.json` and dispatch that drawer; do not let a later step silently re-route a `shader` slot to raster or vice-versa. Divergence between the planned slot and the shipped asset (a `shader` slot that ends up an inert `<img>`, or a canvas that never mounts) is the exact failure this contract exists to prevent.
 
 ### Step 5 - Dispatch 1.V.\* per asset (parallel, or in waves when linked)
 
@@ -348,8 +351,9 @@ Before reporting done:
 2. Open `workflow/visual-plan.json` and verify every `assets[i].nodeIds.*` exists in `workflow/workflow.json`.
 3. Confirm no asset node was removed that wasn't in your namespace. `diff` the previous `workflow.json` if available.
 4. Confirm slot files compile - open one or two of the touched HTML files in the dev server, no red console errors.
+5. **For every `shader` / `3d` / `particle-gl` slot: confirm it actually MOUNTS, not just that a file exists.** Open the touched page and verify the `<canvas>` renders pixels (non-blank) with no WebGL/module console errors - the raster check "does `<img src>` point at the file?" is structurally blind to canvas mediums, so a canvas asset can pass file-existence and still ship dead. If the slot is still a bare `data-shader` / `data-three` attribute with no inline mount `<script>` (or a `3d` page has no `importmap`), the drawer's `slotEditDiff` was dropped or incomplete - re-dispatch it with explicit `MUST RETURN a self-contained slotEditDiff` framing. Test by opening the file directly (`file://`), not only through the dev server, since the shipped artifact must run standalone.
 
-If any node trio is malformed or any slot file breaks, **fix before reporting done**.
+If any node trio is malformed, any slot file breaks, or any canvas slot fails to mount, **fix before reporting done**.
 
 ## Self-audit
 

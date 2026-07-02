@@ -13,7 +13,9 @@ pipeline=["prompt","shader-skill"]
 nodeIds: { prompt, skill, asset }
 ```
 
-Slot is typically a `<div data-shader="…">` or a `<canvas data-webgl="…">`. The runtime (Open Design Workflow surface, or a small inline mount loop you generate alongside) compiles your fragment shader against the standard fullscreen-triangle vertex shader and binds `iResolution` / `iTime` / `iMouse` uniforms (shadertoy-compatible).
+Slot is typically a `<div data-shader="…">` or a `<canvas data-webgl="…">`.
+
+**You ship the runtime, not just the shader.** There is NO host mount loop in a built prototype - `window.mountShader` and the editor's canvas runtime exist ONLY inside the editor app, never in the page a user opens. A prototype "opens by double-clicking" (`file://`), so the mount cannot `fetch()` the `.glsl` either. Therefore the shader is DEAD unless YOUR `slotEditDiff` inlines a self-contained mount: the `<canvas>` + an inline `<script>` that carries the fragment source as a string, compiles it against the standard fullscreen-triangle vertex shader, binds `iResolution` / `iTime` / `iMouse` (shadertoy-compatible), and drives a rAF loop. Self-contained per slot is the contract - do not rely on any shared/global runtime, and do not fight the page's existing scripts.
 
 ## Output
 
@@ -27,9 +29,11 @@ Slot is typically a `<div data-shader="…">` or a `<canvas data-webgl="…">`. 
     "uniforms": ["iResolution", "iTime"],
     "performance": "background" | "hero"
   },
-  "slotEditDiff": "<diff or null>"
+  "slotEditDiff": "<REQUIRED - the self-contained canvas + inline mount script (see §6)>"
 }
 ```
+
+`skillCode` (the raw `.glsl` at `outputPath`) is the editable source-of-truth the editor + re-runs read. But it is NOT what makes the page work - `slotEditDiff` is, because it inlines that same source into a running mount. `slotEditDiff` is REQUIRED for this medium; a shader asset with `slotEditDiff: null` ships a dead canvas and fails self-audit.
 
 ## Recipe
 
@@ -118,19 +122,23 @@ const vec3 SURFACE = vec3(0.97, 0.97, 0.97);
 
 Hardcoding palette in the shader is acceptable; the alternative (passing tokens as uniforms) requires runtime plumbing this medium doesn't have.
 
-### 6. Output file + slot diff
+### 6. Output file + self-contained mount (REQUIRED)
 
-Write the shader source to `slot.outputPath` (e.g. `assets/shaders/hero-aurora.glsl`). The slot itself stays a `<div data-shader="hero-aurora">` or `<canvas data-webgl="hero-aurora">`; the runtime mount loop reads `data-shader`, fetches the `.glsl`, compiles, and runs.
+Two writes, both mandatory:
 
-If the slot isn't already declared with the right data attribute, emit a diff:
+**(a) The editable source.** Write the shader source to `slot.outputPath` (e.g. `assets/shaders/hero-aurora.glsl`). This is what the editor's asset-controls and a re-run read to regenerate. It does NOT run on its own.
+
+**(b) The self-contained mount.** Emit a `slotEditDiff` that replaces the slot with a `<canvas>` plus an inline `<script>` that carries the SAME fragment source (inlined as a string - no `fetch`, the page opens via `file://`) and a minimal WebGL bootstrap. Nothing external, nothing global. This is what actually renders in the shipped page.
 
 ```jsonc
 "slotEditDiff": {
   "file": "<slot.file>",
-  "find": "<div class=\"hero-bg\">",
-  "replace": "<div class=\"hero-bg\" data-shader=\"hero-aurora\">"
+  "find": "<div class=\"hero-bg\"></div>",
+  "replace": "<canvas class=\"hero-bg\" data-shader=\"hero-aurora\"></canvas>\n<script>\n(function(){\n  var cvs=document.currentScript.previousElementSibling;\n  var gl=cvs.getContext('webgl');if(!gl)return;\n  var FRAG=`<PASTE THE EXACT FRAGMENT SOURCE FROM outputPath HERE>`;\n  var VERT='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';\n  function sh(t,s){var o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}\n  var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VERT));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FRAG));gl.linkProgram(pr);gl.useProgram(pr);\n  var b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);\n  var lp=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(lp);gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0);\n  var uR=gl.getUniformLocation(pr,'iResolution'),uT=gl.getUniformLocation(pr,'iTime'),uM=gl.getUniformLocation(pr,'iMouse');\n  var mx=0,my=0;cvs.addEventListener('pointermove',function(e){var r=cvs.getBoundingClientRect();mx=(e.clientX-r.left);my=(r.height-(e.clientY-r.top));});\n  function size(){var r=cvs.getBoundingClientRect();cvs.width=r.width*devicePixelRatio;cvs.height=r.height*devicePixelRatio;gl.viewport(0,0,cvs.width,cvs.height);}\n  addEventListener('resize',size);size();\n  var reduce=matchMedia('(prefers-reduced-motion:reduce)').matches,vis=true;\n  document.addEventListener('visibilitychange',function(){vis=!document.hidden;});\n  var t0=performance.now();\n  function frame(now){requestAnimationFrame(frame);if(!vis)return;var t=reduce?0:(now-t0)/1000;\n    gl.uniform3f(uR,cvs.width,cvs.height,cvs.width/cvs.height);gl.uniform1f(uT,t);gl.uniform4f(uM,mx,my,0,0);\n    gl.drawArrays(gl.TRIANGLES,0,3);}\n  requestAnimationFrame(frame);\n})();\n</script>"
 }
 ```
+
+Adapt the template to the slot's real markup (tag, classes, `id`). Keep it a background: give the `<canvas>` the same CSS box the placeholder had (usually `position:absolute;inset:0;width:100%;height:100%;z-index:0`) so UI on top still reads. If your fragment uses the shadertoy `mainImage` signature, append a `void main(){mainImage(gl_FragColor,gl_FragCoord.xy);}` wrapper to `FRAG`. Under `prefers-reduced-motion` the loop freezes `iTime` at 0 (a still frame) rather than stopping - a blank canvas is worse than a static one.
 
 ## Self-audit
 
@@ -141,7 +149,10 @@ If the slot isn't already declared with the right data attribute, emit a diff:
 - [ ] No `dFdx` / `dFdy` (WebGL1 needs the `OES_standard_derivatives` extension; assume unavailable).
 - [ ] Loops bounded by compile-time constants (no `while(true)`).
 - [ ] Final `gl_FragColor.a` is `1.0` unless the slot explicitly composites (rare).
-- [ ] Shader is written to `slot.outputPath`. If the slot wasn't declared with `data-shader`, I emitted a diff.
+- [ ] Shader is written to `slot.outputPath` (editable source).
+- [ ] `slotEditDiff` inlines a self-contained `<canvas>` + `<script>` mount with the fragment source pasted in - NOT a `data-shader` attribute pointing at an external runtime that does not ship. The page must render the shader when opened directly via `file://` (no `fetch`, no host runtime, no external `<script src>`).
+- [ ] The inlined `FRAG` string is byte-identical to what I wrote at `outputPath` (no drift between source and shipped copy).
+- [ ] Canvas is positioned as a background (behind UI) and freezes `iTime` under `prefers-reduced-motion`.
 - [ ] Adjustable controls exposed via the asset-controls shim (tint/accent color, speed, scale, intensity - 3-6 knobs), per `../asset-controls-contract.md`. Each `apply(v)` writes the matching uniform.
 
 ## Don't
