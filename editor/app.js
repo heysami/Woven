@@ -24613,6 +24613,10 @@ function WorkflowCanvas() {
     setSelectionSummary(summarizeChatSelection(selectionRef.current));
   }, []);
 
+  // v3.19 - set by the <handoff-card> button so the NEXT spawn is forced onto the
+  // NORMAL tier (the working/build thread reads pipeline.json via Role A; it must
+  // not be scoped even if a prototype is selected). One-shot.
+  const pendingHandoffRef = useRef(false);
   const openWorkflowChat = useCallback(() => {
     // Called when the user clicks "+ New chat" inside RunsMenu. Just stages
     // the empty drawer shell; the first user-sent message hits
@@ -24628,6 +24632,16 @@ function WorkflowCanvas() {
     });
     setChatRunFinished(false);
   }, [branch]);
+  // v3.19 - the <handoff-card> "Continue in a working thread" button dispatches
+  // woven:continue-scoped. WorkflowCanvas is the workflow-mode surface (the
+  // editor-mode RightRailDock has its own copy); without this listener the button
+  // was DEAD in workflow mode - nothing was listening. Open a fresh chat shell +
+  // flag the next spawn as the handoff working thread.
+  useEffect(() => {
+    const on = () => { pendingHandoffRef.current = true; openWorkflowChat(); };
+    window.addEventListener("woven:continue-scoped", on);
+    return () => window.removeEventListener("woven:continue-scoped", on);
+  }, [openWorkflowChat]);
   const reopenWorkflowRun = useCallback((run) => {
     // Called when the user clicks an existing run in the RunsMenu list.
     // The run's history streams in via SSE; no preamble is sent (the
@@ -24647,7 +24661,13 @@ function WorkflowCanvas() {
     // When a slug resolves we inject an UNAMBIGUOUS source/<slug>/ scope so the
     // agent can never silently default to the wrong prototype (the bug this
     // bar fixes). See [[woven-canvas-chat-prototype-target]].
-    const targetSlug = resolveChatTargetSlug(selectionRef.current, chatTargetOverrideRef.current);
+    // v3.19 - a handoff-opened chat is the working/build thread: force NORMAL and
+    // skip prototype targeting (Role A drives pipeline.json) even if a prototype
+    // is selected. One-shot flag set by the <handoff-card> button; nulling
+    // targetSlug makes the tier resolve to "normal" and prototype to undefined.
+    const handoff = pendingHandoffRef.current;
+    pendingHandoffRef.current = false;
+    const targetSlug = handoff ? null : resolveChatTargetSlug(selectionRef.current, chatTargetOverrideRef.current);
     const targetBlock = targetSlug ? [
       `<chat-target prototype="${targetSlug}">`,
       `The user is working on prototype \`${targetSlug}\`. Its source lives at \`source/${targetSlug}/\`. Any edit to this prototype's source files for this request MUST be written under \`source/${targetSlug}/\` (and that prototype's editor data file per the daemon rule) - do NOT edit a different prototype's source/ tree. If the request is clearly about the canvas / workflow nodes in general rather than this prototype's files, you may ignore this scope.`,
