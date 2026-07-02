@@ -22715,7 +22715,7 @@ function SharesLanding({ onCountChange }) {
                   </span>`}
               ${s.urlChanged && html`
                 <span className="shares-url-changed" title=${"Previous URL: " + (s.prevUrl || "-") + " - quick-tunnel URLs change on every restart. Copy + resend the new link."}>
-                  ⚠ URL changed
+                  ⚠ Need refresh
                 </span>
               `}
             </div>
