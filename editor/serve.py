@@ -23175,6 +23175,40 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Falls back to branch so a scoped handoff (which carries branch=slug)
         # still names the right prototype.
         _chat_proto = (body.get("prototype") or branch or "main").strip() or "main"
+        # v3.17 - Design-system read discipline for the "Active prototype scope"
+        # block below. A full-tier chat editing an existing (starred, non-main)
+        # prototype is iteration too; without this it edits styles from a single-
+        # file read and hallucinates tokens / class names. Resolve the DS the
+        # prototype is bound to (if any) and tell the agent to read the token +
+        # component sources before authoring style. Mirrors the scoped-tier stub.
+        _ds_scope_note = ""
+        try:
+            from kinds.capabilities import _resolve_ds_binding
+            _dsb = _resolve_ds_binding(project_root, branch)
+            if _dsb:
+                _ds_reads = ", ".join(
+                    f"`{p}`" for p in (_dsb.get("designMd"), _dsb.get("stylesCss"), _dsb.get("allCss")) if p
+                )
+                _ds_scope_note = (
+                    f" This prototype is bound to design system `{_dsb['id']}` "
+                    f"(`design-systems/{_dsb['id']}/`); its pages @import that DS's "
+                    f"stylesheet, so the real token + class vocabulary lives there. "
+                    f"BEFORE writing or changing any CSS / class name / markup, Read "
+                    f"the DS sources ({_ds_reads}) together with "
+                    f"`source/{branch}/styles.css` and the page you are editing, and "
+                    f"use ONLY the `--tokens` and class names those files define - "
+                    f"do not invent tokens / class names or hardcode a value when a "
+                    f"matching DS token exists."
+                )
+            else:
+                _ds_scope_note = (
+                    f" Before writing or changing any CSS / class name / markup, Read "
+                    f"`source/{branch}/styles.css` (and any stylesheet the page "
+                    f"@imports) plus the page you are editing, so you reuse the tokens "
+                    f"+ class names that already exist rather than inventing them."
+                )
+        except Exception:
+            _ds_scope_note = ""
         spawn_args = list(defs["args"])
         # v2.45 / v3.8.1 - Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -23253,6 +23287,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     f"`source/{branch}/`. Other `source/<slug>/` subtrees in "
                     "this project belong to sibling prototypes - leave them "
                     "alone unless the user asks for a cross-prototype change."
+                    + _ds_scope_note
                 )
             # v3.5 - onboarding cut. Discovery + orchestrator hooks removed.
             # The capabilities preamble (appended below) is the only thing
@@ -23302,6 +23337,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "prototype. Default every file read, edit, and write to "
                     f"that subtree unless the user explicitly names a "
                     f"different prototype."
+                    + _ds_scope_note
                 )
             try:
                 from kinds.capabilities import capabilities_preamble

@@ -12507,6 +12507,22 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   white-space: nowrap;
 }
 .chat-target-more { opacity: 0.8; }
+/* Preview-inferred target: a "previewing" tag + a compact affordance to fall
+   back to whole-project when the inferred prototype is wrong. */
+.chat-target-preview .chat-target-chip-tag { background: var(--accent, #1f9d57); }
+.chat-target-clear {
+  font: inherit;
+  font-size: 10px;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text-muted, #666);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chat-target-clear:hover { border-color: var(--accent, #1f9d57); color: var(--text, #222); }
 .chat-target-select {
   font: inherit;
   font-size: 11px;

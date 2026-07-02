@@ -571,9 +571,94 @@ returns the authoritative `full`-tier routing blocks (mental-model + plan-gate +
 # can regen an asset, add a page, run QA). The stub tells it to iterate in
 # place and NOT re-decide direction, and names the fetch path for the rare
 # case where the user asks for a whole new medium / family / prototype.
-def _scoped_iteration_stub(prototype: Optional[str] = None) -> str:
+def _resolve_ds_binding(project_root: Optional[str], prototype: Optional[str]) -> Optional[dict]:
+    """Resolve the design system a prototype is bound to, from disk.
+
+    Returns {"id", "designMd", "stylesCss", "allCss"} where the *_ paths are
+    the repo-relative style sources that exist on disk (so the stub can name
+    exactly what to Read), or None when no DS is committed / resolvable.
+
+    Resolution order:
+      1. `meta.dsRef` in the prototype's editor data file
+         (`editor/<prototype>.data.js`, else `editor/data.js`) - the canonical
+         binding. dsRef is either `{ id: "...", version: "..." }` or a bare
+         string id.
+      2. Fallback: exactly one directory under `design-systems/` on disk (a
+         single-DS project whose data file predates dsRef, or wasn't parsed).
+    Only returns a binding whose `design-systems/<id>/` actually exists, so the
+    stub never tells the agent to Read a path that isn't there.
+    """
+    if not project_root:
+        return None
+    try:
+        ds_id = None
+        # 1. Parse meta.dsRef from the editor data file.
+        candidates = []
+        if prototype:
+            candidates.append(os.path.join(project_root, "editor", f"{prototype}.data.js"))
+        candidates.append(os.path.join(project_root, "editor", "data.js"))
+        for path in candidates:
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    txt = f.read()
+            except Exception:
+                continue
+            # dsRef: { id: "main", ... }  OR  "dsRef": {"id":"main"}
+            m = re.search(r'dsRef["\']?\s*:\s*\{[^}]*?\bid["\']?\s*:\s*["\']([A-Za-z0-9_.\-]+)["\']', txt)
+            if not m:
+                # dsRef: "main"  (bare-string form)
+                m = re.search(r'dsRef["\']?\s*:\s*["\']([A-Za-z0-9_.\-]+)["\']', txt)
+            if m:
+                ds_id = m.group(1)
+                break
+        # 2. Fallback: a single design-systems/<id>/ directory.
+        ds_root = os.path.join(project_root, "design-systems")
+        if not ds_id and os.path.isdir(ds_root):
+            dirs = [d for d in os.listdir(ds_root)
+                    if os.path.isdir(os.path.join(ds_root, d)) and not d.startswith(".")]
+            if len(dirs) == 1:
+                ds_id = dirs[0]
+        if not ds_id:
+            return None
+        ds_dir = os.path.join(ds_root, ds_id)
+        if not os.path.isdir(ds_dir):
+            return None
+        out = {"id": ds_id, "designMd": None, "stylesCss": None, "allCss": None}
+        for key, fname in (("designMd", "DESIGN.md"), ("stylesCss", "styles.css"), ("allCss", "all.css")):
+            if os.path.isfile(os.path.join(ds_dir, fname)):
+                out[key] = f"design-systems/{ds_id}/{fname}"
+        return out
+    except Exception:
+        return None
+
+
+def _scoped_iteration_stub(prototype: Optional[str] = None,
+                           project_root: Optional[str] = None) -> str:
     scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
     slug = prototype or "<slug>"
+    # v3.17 - Style-source discipline. The #1 iteration failure mode is the
+    # agent editing markup/CSS after reading ONLY the one file it's changing,
+    # then inventing class names / CSS variables that don't exist (hallucinated
+    # styles). A prototype's visual vocabulary lives in TWO places: its own
+    # `source/<slug>/styles.css`, and - when a design system is committed - the
+    # DS token + component sheet it @imports. Name both, and require reading
+    # them BEFORE authoring any style.
+    ds = _resolve_ds_binding(project_root, prototype)
+    if ds:
+        ds_reads = ", ".join(f"`{p}`" for p in (ds.get("designMd"), ds.get("stylesCss"), ds.get("allCss")) if p)
+        ds_line = (
+            f"- This prototype is BOUND to design system `{ds['id']}` (`design-systems/{ds['id']}/`). "
+            f"Its pages @import that DS's stylesheet, so the real token + class vocabulary lives there, NOT only in the prototype's own CSS. "
+            f"BEFORE you write or change ANY CSS / class name / markup, Read the DS sources - {ds_reads} - together with `source/{slug}/styles.css` (and the specific page you are editing). "
+            f"Use ONLY the CSS custom properties (`--token`) and utility / component class names those files actually define. Do NOT invent tokens or class names, and do NOT hardcode a colour / size / font when a matching DS token exists - reuse it. If the DS genuinely lacks something the change needs, add it to the DS sheet (or the prototype's own styles.css) as a real rule rather than inlining a magic value."
+        )
+    else:
+        ds_line = (
+            f"- Before you write or change ANY CSS / class name / markup, Read `source/{slug}/styles.css` (and any stylesheet the page @imports) plus the specific page you are editing, so you reuse the tokens + class names that already exist. "
+            f"Do NOT invent CSS custom properties or class names, and do NOT hardcode a value when a matching `--token` is already defined - the #1 iteration bug is styles hallucinated from a single-file read. If nothing fits, add a real rule to `styles.css` rather than inlining a magic value."
+        )
     return f"""
 
 ## You are the SCOPED ITERATION thread - the prototype already exists, iterate in place
@@ -581,6 +666,7 @@ def _scoped_iteration_stub(prototype: Optional[str] = None) -> str:
 This is the lighter, cheaper follow-on chat. The setup/initialise thread already did the expensive work: it decided the direction, committed the genre / design-system / aesthetic, dispatched the orchestrator, and scaffolded the build. Your job is to ITERATE on what exists, not to re-decide it.
 
 - The prototype lives under {scope}. Default every read / edit / write there. To see what is already committed (genre, tokens, structure), Read {scope} and its `DESIGN.md` / `data.js` - do NOT re-run a direction pick or re-commit a genre. The look is locked; honour it.
+{ds_line}
 - The orchestrator-routing rules (which family builds an image / sim / game / narrative, the mental-model, the plan-gate) are deliberately NOT in this preamble. That decision is already made for prototype `{slug}`. Your correct default is to make the requested change now.
 - Full app capabilities (image / video / audio gen, 3D, the verify gate, fonts, node kinds, asset endpoints) ARE above and stay live - use them to iterate (regen an asset, add a section, wire a node, run QA before you claim done).
 
@@ -2029,7 +2115,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype)
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root)
     # v3.12 - append manifest-carried hard rules for orchestrators added after
     # ship time (not covered by the static prose above). Appended AFTER the
     # strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.

@@ -8193,9 +8193,19 @@ function resolveChatTargetSlug(sel, override) {
       }
     }
     // Selection exists but none of it is prototype-bearing → fall through to
-    // the override / general scope rather than guessing a prototype.
+    // the override / preview / general scope rather than guessing a prototype.
   }
-  return override || null;
+  // "__general__" is the explicit "force whole project" pick the preview chip
+  // offers - it beats the active preview and resolves to no scope.
+  if (override === "__general__") return null;
+  // Explicit dropdown override beats an implicit preview.
+  if (override) return override;
+  // v3.17 - nothing selected, no override: fall back to the prototype the user
+  // is actively PREVIEWING (the last iframe they clicked into / navigated). So
+  // "make the header bigger" targets the page you're looking at without having
+  // to first select its node. See [[woven-canvas-chat-prototype-target]].
+  if (sel && sel.activePreview && sel.activePreview.slug) return sel.activePreview.slug;
+  return null;
 }
 
 // v3.4.24 - Shared Lottie player srcdoc. Loads the file, sets up the
@@ -24207,7 +24217,7 @@ function threadKindBadge(run) {
   return null;
 }
 
-function WorkflowChatTargetBar({ summary, override, onChangeOverride, run }) {
+function WorkflowChatTargetBar({ summary, override, onChangeOverride, activePreviewSlug, run }) {
   const badge = threadKindBadge(run);
   const badgeEl = badge && html`<span
     className=${"chat-thread-badge chat-thread-badge-" + badge.cls}
@@ -24239,14 +24249,38 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride, run }) {
     `;
   }
   const ids = protos.map(p => p.id);
+  // v3.17 - nothing selected, but the user is actively previewing a prototype
+  // (clicked into / navigated its live iframe) AND hasn't explicitly overridden
+  // the target: show it as the edit target, the same shape as a selection chip,
+  // so "make the header bigger" clearly lands on the page they're looking at.
+  // A dropdown pick still wins (it sets `override`), so the chip carries a
+  // "switch to whole project" affordance for when the inferred target is wrong.
+  if (activePreviewSlug && !override) {
+    return html`
+      <div className="chat-target chat-target-sel chat-target-preview" title=${`The chat will edit the prototype you're previewing (${activePreviewSlug}). Select a node or pick from the menu to change it.`}>
+        ${badgeEl}
+        <span className="chat-target-label">Editing</span>
+        <span className="chat-target-chip" data-kind="prototype">
+          <span className="chat-target-chip-tag">previewing</span>
+          <span className="chat-target-chip-name">${activePreviewSlug}</span>
+        </span>
+        <button
+          type="button"
+          className="chat-target-clear"
+          title="Talk about the whole project instead"
+          onClick=${() => onChangeOverride("__general__")}
+        >Whole project</button>
+      </div>
+    `;
+  }
   return html`
     <div className="chat-target chat-target-pick" title="Nothing selected - choose which prototype this chat is about, or leave it on the whole project.">
       ${badgeEl}
       <span className="chat-target-label">Talking about</span>
       <select
         className="chat-target-select"
-        value=${override || ""}
-        onChange=${(e) => onChangeOverride(e.target.value || null)}
+        value=${override && override !== "__general__" ? override : ""}
+        onChange=${(e) => onChangeOverride(e.target.value || (activePreviewSlug ? "__general__" : null))}
         aria-label="Choose the prototype this chat targets"
       >
         <option value="">Whole project (general)</option>
@@ -24554,6 +24588,21 @@ function WorkflowCanvas() {
     chatTargetOverrideRef.current = slug || null;
     setChatTargetOverride(slug || null);
   }, []);
+  // v3.17 - reactive mirror of the prototype the user is actively PREVIEWING
+  // (last iframe they clicked into / navigated). WorkflowSurface owns the live
+  // signal + writes it into selectionRef for chat-spawn; this copy just drives
+  // the target bar so it can show "Editing <slug>" when nothing is selected.
+  const [activePreviewSlug, setActivePreviewSlug] = useState(null);
+  const onActivePreviewChange = useCallback((slug) => {
+    setActivePreviewSlug(slug);
+    // Clicking into a DIFFERENT preview is fresh target intent: drop a stale
+    // override (a prior dropdown pick or the forced-general toggle) so the
+    // previewed prototype becomes the target. A same-slug re-interaction leaves
+    // an explicit pick untouched.
+    if (slug && chatTargetOverrideRef.current && chatTargetOverrideRef.current !== slug) {
+      setChatTargetOverrideBoth(null);
+    }
+  }, [setChatTargetOverrideBoth]);
   const onWorkflowSelectionChange = useCallback((count) => {
     setSelectionCount(count);
     setSelectionSummary(summarizeChatSelection(selectionRef.current));
@@ -25585,7 +25634,8 @@ function WorkflowCanvas() {
       }}
       onReopenRun=${reopenWorkflowRun}
       selectionRef=${selectionRef}
-      onSelectionCountChange=${onWorkflowSelectionChange}/>
+      onSelectionCountChange=${onWorkflowSelectionChange}
+      onActivePreviewChange=${onActivePreviewChange}/>
     ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
     <${RightDock}
       floating
@@ -25614,7 +25664,7 @@ function WorkflowCanvas() {
         onPermissionModeChange=${onChatPermissionModeChange}
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
-        targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} run=${w.run} />`}
+        targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} activePreviewSlug=${activePreviewSlug} run=${w.run} />`}
       />`}
     />
   <//>`;
@@ -32781,7 +32831,7 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
   `, document.body);
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onLibResizeStart }) {
+function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onActivePreviewChange, onLibResizeStart }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -33343,6 +33393,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       selectionRef.current = {
         selectedIds: new Set(selectedNodeIds),
         nodes:       data?.nodes || [],
+        // v3.17 - preserve the active-preview target across selection rebuilds
+        // so the chat target bar can fall back to the previewed prototype when
+        // nothing is selected.
+        activePreview: activePreviewRef.current,
         // Whiteboard context for chat-spawn. wbMode gates whether the
         // <whiteboard> block enters the first message at all - in build
         // mode whiteboard content is deliberately invisible to agents.
@@ -42690,6 +42744,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setIframeStates(s => (s[protoId] && s[protoId].pathname === state.pathname && s[protoId].hash === state.hash) ? s : { ...s, [protoId]: state });
   }, []);
 
+  // v3.17 - "active preview": the prototype the user is currently LOOKING AT /
+  // interacting with in its live iframe, even if its node isn't formally
+  // selected. Drives the chat target bar so "make the header bigger" edits the
+  // page you're previewing without first clicking the node. Fed by genuine user
+  // interaction (a click inside the iframe, or a navigation to another page).
+  // Kept in a ref (read by spawnWorkflowChat via selectionRef) + bubbled up as a
+  // reactive slug so the target bar re-renders. See [[woven-canvas-chat-prototype-target]].
+  const activePreviewRef = useRef(null);   // { protoId, slug, pathname }
+  const markActivePreview = useCallback((protoId, state) => {
+    const node = (data?.nodes || []).find(n => n.id === protoId);
+    const slug = node ? (nodePrototype(node) || prototypeSlugForNode(node)) : null;
+    if (!slug) return;
+    const pathname = (state && state.pathname) || null;
+    const prev = activePreviewRef.current;
+    if (prev && prev.protoId === protoId && prev.slug === slug && prev.pathname === pathname) return;
+    const next = { protoId, slug, pathname };
+    activePreviewRef.current = next;
+    // Mirror into the selection ref the chat-spawn reads, WITHOUT waiting for the
+    // selection effect to re-run (which only fires on selection changes).
+    if (selectionRef && selectionRef.current) selectionRef.current.activePreview = next;
+    if (onActivePreviewChange) onActivePreviewChange(slug);
+  }, [data?.nodes, selectionRef, onActivePreviewChange]);
+
   // App-node floating-panel extents (CSS px) reported by each tool on select.
   // Drives the iframe break-out geometry + the layer-port coordinate origin.
   const [appNodeLayout, setAppNodeLayout] = useState({});
@@ -44801,6 +44878,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onIframeState=${(state) => reportIframeState(n.id, state)}
+                onPreviewActivate=${(state) => markActivePreview(n.id, state)}
                 onExpose=${(lockedState, assets) => exposePrototype(n.id, lockedState, assets)}
                 onZoom=${(livePath) => openZoomForPrototype(n, livePath)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
@@ -55566,7 +55644,7 @@ const PROTO_DEVICE_PRESETS = [
   { id: "mobile",  label: "Mobile",  w: 390,  h: 844,  Icon: Icon.Phone,   rotatable: true  },
 ];
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, onToggleUserTesting, userTestingOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onPreviewActivate, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, onToggleUserTesting, userTestingOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = nodePrototype(node);
@@ -55781,6 +55859,11 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // scroll in place for snapshot-only changes.
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
+  // v3.17 - stable handle to onPreviewActivate so the nav-tracking effect (which
+  // wires iframe listeners once) can call the LATEST callback without listing it
+  // as a dep and re-wiring on every parent render.
+  const onPreviewActivateRef = useRef(onPreviewActivate);
+  onPreviewActivateRef.current = onPreviewActivate;
   const NAV_HISTORY_LIMIT = 30;
   // Bump on every captureChange so the Back / Forward chrome buttons can
   // re-render with their fresh enabled / disabled state. Refs alone don't
@@ -55817,6 +55900,10 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       const next = snapshotState();
       if (!next) return;
       const hist = navHistRef.current;
+      // The first real snapshot (iframe load) is NOT a user navigation - don't
+      // let it hijack the active-preview target away from a proto the user is
+      // actually working in.
+      const isInitial = !hist.current;
       if (suppressNavTrackRef.current) {
         // Our own Back/Forward triggered this - adopt as current, don't push.
         suppressNavTrackRef.current = false;
@@ -55843,9 +55930,25 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           hash:     trackedWin.location.hash || "",
         };
         onIframeState && onIframeState(state);
+        // v3.17 - a genuine in-iframe navigation ("we open which html file") is
+        // an active-preview signal too, so opening a sub-page retargets the chat
+        // even without a click on the node.
+        if (!isInitial) onPreviewActivateRef.current && onPreviewActivateRef.current(state);
       } catch {}
     };
     const scheduleClickCapture = () => {
+      // v3.17 - a click INSIDE the iframe means the user is actively working in
+      // this preview: make it the chat target even if its node isn't selected.
+      // Fired synchronously (not after the 250ms settle) so the target bar
+      // reflects the preview the instant the user touches it.
+      try {
+        if (onPreviewActivateRef.current && trackedWin && trackedWin.location) {
+          onPreviewActivateRef.current({
+            pathname: trackedWin.location.pathname,
+            hash:     trackedWin.location.hash || "",
+          });
+        }
+      } catch {}
       // Click handlers commonly mutate DOM synchronously OR after a frame
       // (async route fetches, animations); 250ms is the empirical floor that
       // catches both without feeling laggy.
