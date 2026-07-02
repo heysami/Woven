@@ -24269,7 +24269,7 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride, activePrev
           className="chat-target-clear"
           title="Talk about the whole project instead"
           onClick=${() => onChangeOverride("__general__")}
-        >Whole project</button>
+        >Switch to general</button>
       </div>
     `;
   }
