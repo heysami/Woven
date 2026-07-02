@@ -683,18 +683,23 @@ def _normal_general_stub() -> str:
     capabilities stay live, but the orchestrator-routing catalog is stripped
     (like scoped/leaf). Unlike scoped it is NOT bound to one prototype. It
     carries NO build-workflow prose (that lives in PROTOTYPE.md, injected via
-    the workflow-mode context block) and NO cost framing. Its only job is the
-    on-demand escalation into the SETUP path when the request is a new build."""
+    the workflow-mode context block) and NO cost framing. Its jobs: the
+    on-demand escalation into the SETUP build path when the request is a new
+    build, and the two thread-phase UI cards (init / handoff) that tell the
+    user a build has started and when they can move to a working thread."""
     return """
 
 ## You are the NORMAL working chat - the project's everyday thread
 
 Act on the request now with the app capabilities above. The orchestrator-routing catalog (the per-family build rules and the plan-gate) is not loaded here, because most everyday requests - a question, a canvas / node operation, a whiteboard edit, a small change to something that already exists - never need it.
 
-Escalate to the SETUP path ONLY IF the user now asks to build a NEW prototype / website / app / page / dashboard from scratch (a genuine new `source/<slug>/` build). Apply the test literally. When it IS a new build:
+Escalate to the SETUP path ONLY IF the user now asks to build a NEW `source/*` artefact from scratch - a website / app / page / dashboard, OR a game / simulation / interactive or reactive experience / narrative piece (a game or simulation is a prototype too, not a page). Apply the test literally. When it IS a new build:
   - fetch the routing catalog on demand - `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID` - and treat what it returns as binding, and
   - follow `PROTOTYPE.md` for the build itself (it owns the workflow, starting with the Step -1 direction pick).
-If it is NOT a new build, do not fetch anything - just make the requested change now.
+  - make the thread phase visible with two UI cards - the ONLY signal the user has that a fresh build has started and, later, that they can move to a separate working thread. These are UI signals ONLY: they never change the build order (PROTOTYPE.md owns that) and they never precede or replace a workflow step.
+      - At the very start, INSIDE the same reply as your Step -1 direction pick (never before it, never instead of it), include `<init-card prototype="<slug>">Setting up your prototype. This is the setup thread; once it is standing you can continue in a separate working thread to iterate.</init-card>`.
+      - Once the build is standing (source written, or an orchestrator hand-off returned and its node graph scaffolded), include `<handoff-card prototype="<slug>">Setup is done. Continue in a working thread to iterate on this prototype - this thread stays available too.</handoff-card>`.
+If it is NOT a new build, do not fetch anything and do not emit any card - just make the requested change now.
 """
 
 
@@ -2163,20 +2168,21 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:
-    """v3.14 - the routing-only doc a LEAF fetches on demand via
-    `/__capabilities?section=orchestrators` (the escalation path named in
-    LEAF_ROUTER_STUB). It is the contiguous routing region of the full-tier
-    preamble - mental-model + plan-gate + every ENABLED orchestrator hard-rule
-    (the project's disable list is honoured because we slice the full preamble
-    AFTER its disabled-orchestrator strip). Dynamic manifest hard-rules are
-    appended too, so a leaf gets exactly what the dispatch-capable spawns see."""
-    full = capabilities_preamble(project_root, tier="full")
+    """the routing-only doc fetched on demand via
+    `/__capabilities?section=orchestrators` - the escalation path a leaf agent
+    (LEAF_ROUTER_STUB) or a normal chat that hits a new build (_normal_general_stub)
+    takes. It is the contiguous routing region of the setup-tier preamble -
+    mental-model + plan-gate + every ENABLED orchestrator hard-rule (the project's
+    disable list is honoured because we slice the preamble AFTER its
+    disabled-orchestrator strip). Dynamic manifest hard-rules are appended too, so
+    the caller gets exactly what the dispatch-capable spawns see."""
+    full = capabilities_preamble(project_root, tier="setup")
     start = full.find("## THE MENTAL MODEL FOR THE ORCHESTRATOR FAMILY")
     if start == -1:
         return full  # framing changed - hand back everything rather than guess
     end_anchor = full.find("END-OF-WORK GATE")
     end = full.rfind("\n## ", start, end_anchor) + 1 if end_anchor != -1 else -1
     region = full[start:end] if end > 0 else full[start:]
-    header = ("# Orchestrator routing rules (full tier, fetched on demand)\n"
-              "# You are a leaf that hit a routing trigger. These are authoritative.\n\n")
+    header = ("# Orchestrator routing rules (setup routing, fetched on demand)\n"
+              "# You hit a new-build / routing trigger. These are authoritative.\n\n")
     return header + region.rstrip() + "\n"

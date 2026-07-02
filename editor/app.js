@@ -10019,7 +10019,7 @@ function RightRailDock({ mode }) {
   // the user selects or previews it, it becomes `scoped` on its own via the
   // targetSlug rule. (Names below stay `*Scoped*` for continuity; the tier is
   // normal.) The old setup thread is NOT killed - it stays reopenable; this just
-  // makes the lighter chat the active one.
+  // makes the new working thread the active one.
   const openScopedChat = useCallback((prototype) => {
     const slug = prototype || branch || "main";
     pendingScopedRef.current = { tier: "normal", branch: slug };
@@ -10037,9 +10037,9 @@ function RightRailDock({ mode }) {
     setChatRunFinished(!!run.done || !!run.turnDone);
   }, []);
   const spawnChat = useCallback(async (text) => {
-    // v3.16 - honour a pending SCOPED handoff (set by openScopedChat). Read +
-    // clear it so this one spawn goes out on the cheaper tier bound to the
-    // committed prototype; every later new chat falls back to the full setup tier.
+    // honour a pending handoff (set by openScopedChat). Read + clear it so this
+    // one spawn goes out on the handoff tier (normal); every later new chat
+    // falls back to the untargeted default (also normal).
     const scoped = pendingScopedRef.current;
     pendingScopedRef.current = null;
     const wrappedPrompt = composeModeAwarePrompt(mode === "workflow" ? "workflow" : "editor", text);
@@ -15535,10 +15535,10 @@ const DECISION_REQUEST_RE_G = /<decision-request\b([^>]*)>([\s\S]*?)<\/decision-
 // natively. Submit semantics match <decision-request> (single-pick, POSTs
 // `[decision:<id>] <value> - <label>` as the next user message).
 const DIRECTION_OPTIONS_RE_G = /<direction-options\b([^>]*)>([\s\S]*?)<\/direction-options>/gi;
-// v3.16 - the two-phase setup/iterate markers the FULL-tier setup chat emits.
-// <init-card> is informational (no action - it just announces "you are in the
-// heavier setup chat"). <handoff-card> carries a "continue in a lighter chat"
-// button that opens a cheaper SCOPED thread bound to the committed prototype.
+// Thread-phase markers the setup thread emits during a new build. <init-card>
+// is informational (it announces a build has started). <handoff-card> carries a
+// "continue in a working thread" button that opens a normal thread to iterate on
+// the built prototype.
 // Both carry an optional prototype="<slug>" attr; body is the message text.
 const INIT_CARD_RE_G        = /<init-card\b([^>]*)>([\s\S]*?)<\/init-card>/gi;
 const HANDOFF_CARD_RE_G     = /<handoff-card\b([^>]*)>([\s\S]*?)<\/handoff-card>/gi;
@@ -15818,9 +15818,9 @@ function parseQuestionForms(text) {
         segments.push({ kind: "text", text: c.m[0] });
       }
     } else if (c.kind === "init" || c.kind === "handoff") {
-      // v3.16 - two-phase setup/iterate markers. Both carry an optional
-      // prototype="<slug>" attr and a plain-text message body. init is purely
-      // informational; handoff renders a button that opens a scoped chat.
+      // Thread-phase markers. Both carry an optional prototype="<slug>" attr and
+      // a plain-text message body. init is purely informational; handoff renders
+      // a button that opens a normal working thread.
       const cardAttrs = c.m[1] || "";
       const protoM = /prototype\s*=\s*["']([^"']+)["']/i.exec(cardAttrs);
       const prototype = protoM ? protoM[1] : null;
@@ -16770,16 +16770,16 @@ function CopyMsgButton({ text }) {
   ><${copied ? Icon.Check : Icon.Copy}/></button>`;
 }
 
-// v3.16 - Two-phase setup/iterate cards. InitCard is a passive banner the
-// setup (full-tier) chat emits when it recognises a new-prototype build.
-// HandoffCard is the call-to-action the setup chat emits at commit; its button
-// opens a cheaper SCOPED chat bound to the committed prototype (via the
-// woven:continue-scoped window event the right-rail host listens for). The
-// setup chat is NOT killed - this only nudges, per "keep it open".
+// Thread-phase cards. InitCard is a passive banner the setup thread emits (in
+// the same reply as its Step -1 direction pick) when it recognises a new build,
+// so the user knows a build has started. HandoffCard is the call-to-action the
+// setup thread emits once the build is standing; its button opens a working
+// thread (via the woven:continue-scoped window event the right-rail host listens
+// for). The setup thread is NOT killed - this only offers the move.
 function InitCard({ init }) {
   const proto = init && init.prototype;
   const msg = (init && init.message)
-    || "This is the setup chat: it carries the full capability and routing context to decide direction and build. Once the prototype is standing, it hands you off to a lighter, cheaper chat.";
+    || "Setting up your prototype. This is the setup thread; once it is standing you can continue in a separate working thread to iterate.";
   return html`<div className="chat-phase-card chat-phase-init" role="note">
     <span className="chat-phase-ico"><${Icon.Spark}/></span>
     <div className="chat-phase-body">
@@ -16792,16 +16792,16 @@ function InitCard({ init }) {
 function HandoffCard({ handoff }) {
   const proto = handoff && handoff.prototype;
   const msg = (handoff && handoff.message)
-    || "Setup is done. Continue in a lighter chat scoped to this prototype: it is much cheaper per message. You can keep using this chat too.";
+    || "Setup is done. Continue in a working thread to iterate on this prototype. This thread stays available too.";
   const go = () => {
     try { window.dispatchEvent(new CustomEvent("woven:continue-scoped", { detail: { prototype: proto || null } })); } catch {}
   };
   return html`<div className="chat-phase-card chat-phase-handoff" role="note">
     <span className="chat-phase-ico"><${Icon.Bolt}/></span>
     <div className="chat-phase-body">
-      <div className="chat-phase-head">Continue in a lighter chat${proto ? html` · ${proto}` : null}</div>
+      <div className="chat-phase-head">Continue in a working thread${proto ? html` · ${proto}` : null}</div>
       <div className="chat-phase-msg">${msg}</div>
-      <button type="button" className="chat-phase-btn" onClick=${go}>Continue in a lighter chat</button>
+      <button type="button" className="chat-phase-btn" onClick=${go}>Continue in a working thread</button>
     </div>
   </div>`;
 }
@@ -16863,8 +16863,8 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
             return html`<${InitCard} key=${`init${i}`} init=${seg.init}/>`;
           }
           if (seg.kind === "handoff") {
-            // v3.16 - "continue in a lighter chat" call-to-action. The button
-            // opens a scoped thread bound to the committed prototype.
+            // "continue in a working thread" call-to-action. The button opens a
+            // normal thread to iterate on the built prototype.
             return html`<${HandoffCard} key=${`ho${i}`} handoff=${seg.handoff}/>`;
           }
           // Question-form segment - render as an interactive card. The
@@ -24201,11 +24201,10 @@ function _stableEqual(a, b) {
 // project / workflow in general). The resolved scope is injected into the
 // chat prompt by spawnWorkflowChat so the agent never silently defaults to
 // the wrong prototype. See [[woven-canvas-chat-prototype-target]].
-// v3.16 - thread-kind badge for the "Editing / Talking about" target bar.
-// Three states, only two visible: "Setup" (full-tier freeform = the heavy
-// initialise chat that routes + decides), "Subagent" (a node-agent drawer run),
-// and the scoped iteration chat which is the NORMAL everyday chat and shows NO
-// badge. Other run kinds are background and get none.
+// thread-kind badge for the "Editing / Talking about" target bar. Only two
+// badges show: "Setup" (a setup-tier freeform build chat) and "Subagent" (a
+// node-agent drawer run). The normal and scoped chats show NO badge. Other run
+// kinds are background and get none.
 function threadKindBadge(run) {
   if (!run) return null;
   if (run.kind === "node-agent")

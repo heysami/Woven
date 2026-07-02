@@ -7376,7 +7376,7 @@ def _maybe_advance_build_chain(state):
     orchestrator pre-arms each builder's `text`, so advancing the chain needs
     no reasoning - just the next dispatch. Safe because the server is threaded
     (ReusableThreadingTCP) so the self-POST runs on another thread, and each
-    builder still spawns as a fresh slim-tier process (no nesting, no
+    builder still spawns as a fresh leaf-tier process (no nesting, no
     permission wall). Best-effort; never raises into the completion hook.
     """
     rest = list(getattr(state, "chain_rest", None) or [])
@@ -20314,8 +20314,9 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         v3.14 - `?section=orchestrators` returns the routing-only doc as plain
         markdown (mental-model + plan-gate + enabled orchestrator hard-rules).
-        This is the escalation path a LEAF agent (slim-tier preamble) fetches
-        when it hits a routing trigger - see LEAF_ROUTER_STUB in capabilities.py.
+        This is the escalation path a leaf agent, or a normal chat that hits a
+        new build, fetches on demand - see LEAF_ROUTER_STUB / _normal_general_stub
+        in capabilities.py.
         `?project=<id>` scopes it to that project's orchestrator disable list."""
         section = _qs_get(qs or {}, "section")
         if section == "orchestrators":
@@ -23332,11 +23333,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         # still names the right prototype.
         _chat_proto = (body.get("prototype") or branch or "main").strip() or "main"
         # v3.17 - Design-system read discipline for the "Active prototype scope"
-        # block below. A full-tier chat editing an existing (starred, non-main)
-        # prototype is iteration too; without this it edits styles from a single-
+        # block below. Any chat working on an existing (starred, non-main)
+        # prototype is iteration; without this it edits styles from a single-
         # file read and hallucinates tokens / class names. Resolve the DS the
         # prototype is bound to (if any) and tell the agent to read the token +
-        # component sources before authoring style. Mirrors the scoped-tier stub.
+        # component sources before authoring style. Mirrors the scoped stub.
         _ds_scope_note = ""
         try:
             from kinds.capabilities import _resolve_ds_binding
