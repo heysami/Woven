@@ -24197,8 +24197,12 @@ function threadKindBadge(run) {
   if (run.kind === "node-agent")
     return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
   if (run.kind === "freeform") {
-    if ((run.tier || "full") === "scoped") return null;  // normal iteration chat - hidden
-    return { label: "Setup", cls: "setup", title: "Setup chat: carries the full routing + capabilities context (heavier). It hands off to a lighter, scoped chat once the build is standing." };
+    // Only badge once the tier is KNOWN to be full. A fresh isNew shell (before
+    // the run spawns) and historical runs predating the tier field carry no
+    // tier yet - stay silent rather than assume Setup. scoped = normal = none.
+    if (run.tier === "full")
+      return { label: "Setup", cls: "setup", title: "Setup chat: carries the full routing + capabilities context (heavier). It hands off to a lighter, scoped chat once the build is standing." };
+    return null;
   }
   return null;
 }
