@@ -33393,10 +33393,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       selectionRef.current = {
         selectedIds: new Set(selectedNodeIds),
         nodes:       data?.nodes || [],
-        // v3.17 - preserve the active-preview target across selection rebuilds
-        // so the chat target bar can fall back to the previewed prototype when
-        // nothing is selected.
-        activePreview: activePreviewRef.current,
+        // v3.17 - carry the view-derived preview target across selection
+        // rebuilds (its own effect, below in render order, is the real owner and
+        // reconciles it right after) so the chat target bar can fall back to the
+        // previewed prototype when nothing is selected.
+        activePreview: (selectionRef.current && selectionRef.current.activePreview) || null,
         // Whiteboard context for chat-spawn. wbMode gates whether the
         // <whiteboard> block enters the first message at all - in build
         // mode whiteboard content is deliberately invisible to agents.
@@ -42744,28 +42745,32 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setIframeStates(s => (s[protoId] && s[protoId].pathname === state.pathname && s[protoId].hash === state.hash) ? s : { ...s, [protoId]: state });
   }, []);
 
-  // v3.17 - "active preview": the prototype the user is currently LOOKING AT /
-  // interacting with in its live iframe, even if its node isn't formally
-  // selected. Drives the chat target bar so "make the header bigger" edits the
-  // page you're previewing without first clicking the node. Fed by genuine user
-  // interaction (a click inside the iframe, or a navigation to another page).
-  // Kept in a ref (read by spawnWorkflowChat via selectionRef) + bubbled up as a
-  // reactive slug so the target bar re-renders. See [[woven-canvas-chat-prototype-target]].
-  const activePreviewRef = useRef(null);   // { protoId, slug, pathname }
-  const markActivePreview = useCallback((protoId, state) => {
-    const node = (data?.nodes || []).find(n => n.id === protoId);
-    const slug = node ? (nodePrototype(node) || prototypeSlugForNode(node)) : null;
-    if (!slug) return;
-    const pathname = (state && state.pathname) || null;
-    const prev = activePreviewRef.current;
-    if (prev && prev.protoId === protoId && prev.slug === slug && prev.pathname === pathname) return;
-    const next = { protoId, slug, pathname };
-    activePreviewRef.current = next;
-    // Mirror into the selection ref the chat-spawn reads, WITHOUT waiting for the
-    // selection effect to re-run (which only fires on selection changes).
-    if (selectionRef && selectionRef.current) selectionRef.current.activePreview = next;
-    if (onActivePreviewChange) onActivePreviewChange(slug);
-  }, [data?.nodes, selectionRef, onActivePreviewChange]);
+  // v3.17 - path of the prototype/html file open in the Preview view (the proto
+  // viewer's active tab). Reported up from WorkflowProtoViewer; null when the
+  // stage is empty.
+  const [protoViewerPath, setProtoViewerPath] = useState(null);
+  // The prototype the user is actively PREVIEWING - derived from the VIEW, not
+  // from sticky iframe interaction. Only the dedicated preview surfaces count:
+  // the zoom overlay (a full-screen preview of one page) or the Preview view
+  // (mainView === "proto", the proto viewer's active tab). On the plain node
+  // canvas this is null, so the chat target falls back to selection / general
+  // and never wrongly claims "previewing". See [[woven-canvas-chat-prototype-target]].
+  const activePreviewSlug = useMemo(() => {
+    const fromPath = (p) => {
+      const m = /(?:^|\/)source\/([A-Za-z0-9_.-]+)\//.exec(p || "");
+      return m ? m[1] : null;
+    };
+    if (zoomTarget) return zoomTarget.branch || fromPath(zoomTarget.filePath);
+    if (mainView === "proto" && protoViewerPath) return fromPath(protoViewerPath);
+    return null;
+  }, [zoomTarget, mainView, protoViewerPath]);
+  // Push the derived preview target into the selection ref the chat-spawn reads,
+  // and bubble the slug up so the target bar re-renders.
+  useEffect(() => {
+    if (selectionRef && selectionRef.current)
+      selectionRef.current.activePreview = activePreviewSlug ? { slug: activePreviewSlug } : null;
+    if (onActivePreviewChange) onActivePreviewChange(activePreviewSlug);
+  }, [activePreviewSlug, onActivePreviewChange, selectionRef]);
 
   // App-node floating-panel extents (CSS px) reported by each tool on select.
   // Drives the iframe break-out geometry + the layer-port coordinate origin.
@@ -44878,7 +44883,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onIframeState=${(state) => reportIframeState(n.id, state)}
-                onPreviewActivate=${(state) => markActivePreview(n.id, state)}
                 onExpose=${(lockedState, assets) => exposePrototype(n.id, lockedState, assets)}
                 onZoom=${(livePath) => openZoomForPrototype(n, livePath)}
                 onToggleCode=${() => setCodePanelNodeId(p => p === n.id ? null : n.id)}
@@ -46144,7 +46148,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             />
           `}
         </div>
-        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} onEditTab=${openZoomForViewerTab}/>`}
+        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} onEditTab=${openZoomForViewerTab} onActivePathChange=${setProtoViewerPath}/>`}
         <${RightNavRail}
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
@@ -46600,7 +46604,7 @@ function ProtoViewerFrame({ tab, src, isActive, zoom = 1, deviceVp = null, regis
    mounted afterwards - `active` only toggles CSS visibility - so tab
    iframes keep their state when the user hops back to the canvas.
    Open tabs persist to localStorage per project. */
-function WorkflowProtoViewer({ active, onEditTab }) {
+function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
   const lsKey = "th-proto-viewer:" + (activeProjectId() || "default");
   const [state, setState] = useState(() => {
     try {
@@ -46617,6 +46621,13 @@ function WorkflowProtoViewer({ active, onEditTab }) {
     return { tabs: [], activeId: null, zoom: 1, device: "desktop", landscape: false };
   });
   const { tabs, activeId } = state;
+  // v3.17 - report the active tab's path up so the chat target bar can scope
+  // the chat to the prototype/html file open in Preview mode. Null when there
+  // is no active tab (empty stage) - the caller resolves that to "general".
+  const activeTabPath = (tabs.find(t => t.id === activeId) || {}).path || null;
+  useEffect(() => {
+    if (onActivePathChange) onActivePathChange(activeTabPath);
+  }, [activeTabPath, onActivePathChange]);
   const zoom = (typeof state.zoom === "number" && state.zoom > 0) ? state.zoom : 1;
   const device = state.device || "desktop";
   const landscape = !!state.landscape;
@@ -55644,7 +55655,7 @@ const PROTO_DEVICE_PRESETS = [
   { id: "mobile",  label: "Mobile",  w: 390,  h: 844,  Icon: Icon.Phone,   rotatable: true  },
 ];
 
-function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onPreviewActivate, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, onToggleUserTesting, userTestingOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
+function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onIframeState, onExpose, onZoom, onToggleCode, codeOpen, onToggleComments, commentsOpen, onToggleUserTesting, userTestingOpen, hasPickedChild, allNodes, allEdges, onOpenCanvasFrames, onOpenPrototypeView, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const iframeRef = useRef(null);
   const branch = nodePrototype(node);
@@ -55859,11 +55870,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // scroll in place for snapshot-only changes.
   const navHistRef = useRef({ past: [], future: [], current: null });
   const suppressNavTrackRef = useRef(false);
-  // v3.17 - stable handle to onPreviewActivate so the nav-tracking effect (which
-  // wires iframe listeners once) can call the LATEST callback without listing it
-  // as a dep and re-wiring on every parent render.
-  const onPreviewActivateRef = useRef(onPreviewActivate);
-  onPreviewActivateRef.current = onPreviewActivate;
   const NAV_HISTORY_LIMIT = 30;
   // Bump on every captureChange so the Back / Forward chrome buttons can
   // re-render with their fresh enabled / disabled state. Refs alone don't
@@ -55900,10 +55906,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
       const next = snapshotState();
       if (!next) return;
       const hist = navHistRef.current;
-      // The first real snapshot (iframe load) is NOT a user navigation - don't
-      // let it hijack the active-preview target away from a proto the user is
-      // actually working in.
-      const isInitial = !hist.current;
       if (suppressNavTrackRef.current) {
         // Our own Back/Forward triggered this - adopt as current, don't push.
         suppressNavTrackRef.current = false;
@@ -55930,25 +55932,9 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           hash:     trackedWin.location.hash || "",
         };
         onIframeState && onIframeState(state);
-        // v3.17 - a genuine in-iframe navigation ("we open which html file") is
-        // an active-preview signal too, so opening a sub-page retargets the chat
-        // even without a click on the node.
-        if (!isInitial) onPreviewActivateRef.current && onPreviewActivateRef.current(state);
       } catch {}
     };
     const scheduleClickCapture = () => {
-      // v3.17 - a click INSIDE the iframe means the user is actively working in
-      // this preview: make it the chat target even if its node isn't selected.
-      // Fired synchronously (not after the 250ms settle) so the target bar
-      // reflects the preview the instant the user touches it.
-      try {
-        if (onPreviewActivateRef.current && trackedWin && trackedWin.location) {
-          onPreviewActivateRef.current({
-            pathname: trackedWin.location.pathname,
-            hash:     trackedWin.location.hash || "",
-          });
-        }
-      } catch {}
       // Click handlers commonly mutate DOM synchronously OR after a frame
       // (async route fetches, animations); 250ms is the empirical floor that
       // catches both without feeling laggy.
