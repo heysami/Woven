@@ -7540,7 +7540,7 @@ const EXT_TO_ASSET_KIND = {
   json: "lottie",
   mp4:  "video", webm: "video", mov: "video",
   mp3:  "audio", wav: "audio", ogg: "audio", m4a: "audio", aac: "audio", flac: "audio",
-  glb:  "3d", gltf: "3d", ply: "3d", splat: "3d", ksplat: "3d",
+  glb:  "3d", gltf: "3d", ply: "3d", splat: "3d", ksplat: "3d", spz: "3d",
   css:  "text", js: "text", txt: "text", md: "text",
 };
 // Logical output kind → file extension. The iterator nodes (remix / blend /

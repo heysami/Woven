@@ -153,6 +153,64 @@ await renderer.init();          // WebGPU init is ASYNC - gate the first frame o
   that is static and flat-lit still fails. The renderer never earns the pass;
   the light story + ambient motion do.
 
+### 1.5 `gaussian-splat` - captured/generated radiance fields via Spark
+
+A **Gaussian splat** is a captured or AI-generated radiance field (`.spz` / `.ply`)
+rendered as a `SplatMesh`, not built geometry. It is the **capture-realism**
+alternative to procedural building (§1.1-1.4): when the goal is an inhabitable
+PLACE at a fidelity procedural geometry can't reach, generate the world as a
+splat and render it. This is a **render route a subsystem can take** (a fourth
+alongside `3d` / `particle-gl` / `shader`), NOT an exclusive mode - so a scene
+can be **fully-splat**, **fully-procedural**, or **hybrid** (splat + procedural
+subsystems in the same scene). See `docs/research/immersive-world-study.md`
+(capture/splat register) for when to pick it.
+
+**Where splats come from:**
+- **World Labs Marble** (`text-to-world` / `image-to-world`, provider `worldlabs`,
+  `TH_WORLDLABS_API_KEY`) → an explorable WORLD `.spz` **+ a collider `.glb`** +
+  a `.world.json` manifest (see capabilities.py). The collider is the key to
+  interaction (below). Async ~5min.
+- **fal `image-to-ply`** (`tripo3d/triposplat`) → an **object** splat `.ply` (no
+  collider). Good for a splat *object* placed in a scene, not a whole world.
+- A user-supplied `.spz` / `.ply` asset.
+
+**Render lib: Spark** (`@sparkjsdev/spark`) - World Labs' own drop-in three.js
+splat renderer (native `.spz`, first-person + orbit nav, and - critically -
+correct **depth compositing between a `SplatMesh` and normal three.js meshes**).
+Pin it in the importmap alongside `three`:
+```
+"@sparkjsdev/spark": "https://esm.sh/@sparkjsdev/spark?external=three"
+```
+Add a `SparkRenderer` to the scene once, then `SplatMesh` objects render through
+the shared `renderer.render(scene, camera)` like any mesh. (mkkellogg's Splat Lab
+viewer stays for standalone `.ply/.splat/.ksplat`; Spark is the route for `.spz`
+and for splat↔mesh scenes.)
+
+**The combination rule (why splats compose with normal 3D):** load the Marble
+**collider `.glb`** (`<name>.collider.glb`) as an INVISIBLE mesh
+(`material.visible = false`, or a depth-only material) at the splat's transform.
+It gives the splat real geometry for: **raycasting** (click/hover the world),
+**physics/collision** (a character or prop rests on the splat floor), and
+**occlusion** (a procedural object correctly goes behind splat geometry). So the
+canonical hybrid is: `SplatMesh` (the look) + its invisible collider (the
+interaction) + procedural `3d`/`particle-gl` subsystems (the dynamic, relightable,
+animated parts) all under the shared renderer/camera.
+
+**Pillar bookkeeping (immersive-world-study §3):** a splat **bakes** P1 (light
+transport), P2 (surface detail), P3 (nothing-bare), P4 (distance) into the
+capture - that is the whole appeal, instant realism. The runtime must still
+supply **P6 motion** (camera navigation + any procedural motion layered on top)
+and, in a hybrid, **coherence**: match `toneMapping`/exposure/white-balance so
+procedural meshes sit believably inside the splat (the AR-compositing problem).
+
+**Limits (state them, don't hide them):** splats are **static** and **not
+relightable** (lighting is frozen at capture - a procedural light won't relight
+the splat; put dynamic-lit content in procedural subsystems). `.spz` files are
+large (budget the loading veil; ~200-500k splats is the mobile ceiling). DOM/UI
+sits over the canvas with the usual z / pointer-events rules (§1.0 contract).
+No-WebGL / reduced-motion fallback: the `.world.json` thumbnail or pano as a
+static poster.
+
 ## 2. Texture policy - "if the style permits, the object gets a texture"
 
 Untextured default-gray `MeshStandardMaterial` on a hero object is the 3D

@@ -111,6 +111,8 @@ The assembled runtime composes every asset into ONE frame, so inter-asset cohere
 
 **Register-awareness:** `photoreal` scores against physical plausibility (PBR surfaces, atmospheric perspective, macro-meso-micro). `stylized-<family>` scores against that family's recipe (immersive-world-study §5) - a cel-lit scene SHOULD have banded flat shading and hard-soft edges; do NOT fail it for "not photoreal". In both, the pillar still must hold (a stylized scene still may not have dead-black shadows or a bare near-field).
 
+**Splat-awareness (`gaussian-splat` subsystems - immersive-world-study §7):** a splat **bakes** P1/P2/P3/P4 into the capture, so do NOT fault a splat for "baked/frozen lighting", "no runtime shadows", or "can't relight" - that is expected and correct. What you DO judge on a splat/hybrid scene: (a) **P6** - camera navigation works and something moves (a static splat with a dead camera fails); (b) **hybrid coherence** - if procedural meshes are composited with a splat, they must sit believably in it (matched exposure/tone/white-balance, no obviously-pasted-on look) and occlude correctly at the collider boundary (no z-fighting, no procedural object floating through splat geometry); (c) the color-script/composition still reads. Judge a splat on presence + integration, never on "it isn't procedurally lit".
+
 | Check (pillar) | Severity | How to verify |
 |---|---|---|
 | **P1 - No dead/black shadows** | block | Sample shadowed regions of the render (darkest 15% of pixels that are in-scene, not letterbox). They must carry chroma (sky-blue / bounce-green / warm-cool tint), not desaturated near-black. A scene whose shadows are gray-black = lighting failed = block. |

@@ -101,7 +101,8 @@ Keep it ≤5-6; if more, merge or push back. Routing rule: plan as the existing 
 [
   { "sysId": "<stable-id>",                    // → s3d_subsystem_<sceneId>_<sysId>
     "role": "lead" | "support" | "ambient",
-    "renderRoute": "3d" | "particle-gl" | "shader",   // the EXISTING drawer this PLANS as…
+    "renderRoute": "3d" | "particle-gl" | "shader" | "gaussian-splat",   // the EXISTING drawer this PLANS as…
+    "splatSource": "worldlabs-generate" | "uploaded-asset" | "fal-object",  // gaussian-splat ONLY: where the .spz/.ply comes from
     "routeNote": "<the real implementation detail s3d-subsystem-author draws - geometry, sim model, params>",
     "materialIds": ["<design-library id>", ...],       // [] if pure shader/particle
     "handles": ["<entityId>", ...],            // objects exposed for host-driven callers / interaction
@@ -112,6 +113,8 @@ Keep it ≤5-6; if more, merge or push back. Routing rule: plan as the existing 
 Decomposition cookbook (route + recipe live in `3D_CAPABILITIES.md`): hero/product object → `3d` + physical material ·
 grass/vegetation → instanced `3d` · cloth/fabric → verlet on `particle-gl` or vertex-shader sim · water → `shader`
 (gerstner/FBM) or `particle-gl` · smoke/fluid/dense field → `particle-gl` (GPGPU) · volumetric light → billboard shafts (`3d`/`shader`).
+
+**`gaussian-splat` route (immersive-place capture register - `3D_CAPABILITIES.md` §1.5 + `immersive-world-study.md` §7).** When the place is best CAPTURED rather than built - a whole explorable world at a fidelity procedural geometry can't reach - a subsystem takes `renderRoute: gaussian-splat` with a `splatSource`: `worldlabs-generate` (Marble `.spz` WORLD + collider `.glb`, the default for a place), `fal-object` (an object splat), or `uploaded-asset`. It renders via **Spark**. A splat **bakes** pillars P1-P4; the runtime supplies P6 (camera nav) + coherence. Decompose per the **combination rule**: a scene may be **fully-splat** (one lead `gaussian-splat` subsystem you navigate), or **hybrid** - a `gaussian-splat` subsystem (environment or object) PLUS procedural `3d`/`particle-gl` subsystems that carry the dynamic/animated/relightable content and interact with the splat through its collider mesh (raycast/physics/occlusion). Commit which subsystems are splat vs procedural and note the interaction (collider). Prefer `marble-1.0-draft` for the research/preview pass (~20x cheaper), a full model for the final. HARD-GATED: `worldlabs-generate` requires `TH_WORLDLABS_API_KEY` - if absent, say so and fall back to the procedural build (no splat without the key).
 ```
 
 ## 2. Refuse-early checks

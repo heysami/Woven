@@ -124,6 +124,50 @@ Each is a coherent way to be stunning without photorealism. Pick ONE per scene. 
 5. **Light-temperature logic** - warm key + cool fill (or the consistent inverse). Never temperature-incoherent.
 6. **Distance legibility** - outline/detail weight thins with distance; near-field is where density and craft live.
 
+## 7. The capture/splat register (a THIRD way to reach immersive-place)
+
+Beside `photoreal` (build it procedurally) and `stylized` (art-direct it), there
+is a capture route: **generate the world as a Gaussian splat** and render it.
+Use it as the "just-in-case the procedural build can't reach the fidelity"
+channel, or whenever a real captured/generated radiance field is simply the
+faster path to presence. It is not a separate archetype - it is a **render
+strategy** available to any archetype, expressed as a subsystem `renderRoute:
+gaussian-splat` (see `3D_CAPABILITIES.md` §1.5).
+
+**Where it comes from:** World Labs **Marble** (`text-to-world` / `image-to-world`,
+provider `worldlabs`) generates an explorable WORLD `.spz` + a **collider `.glb`**;
+fal `image-to-ply` generates an **object** splat. Rendered with **Spark**
+(`@sparkjsdev/spark`).
+
+**How the six pillars change** - a splat **bakes** four of them:
+- **P1 light transport, P2 surface detail, P3 nothing-bare, P4 distance** are all
+  captured into the splat. This is the appeal: instant, coherent realism no
+  procedural budget can match. Do NOT try to "add lighting" to a splat - it is
+  frozen; a procedural light will not relight it.
+- **P5 color script** still applies at the composition level (tone/exposure/grade
+  over the whole frame, and choosing/prompting the capture to match the palette).
+- **P6 motion** is the runtime's job: the splat itself is static, so presence
+  comes from **camera navigation** (first-person / orbit) plus any procedural
+  motion layered on top (particles, a moving character, drifting fog).
+
+**Fully-splat vs hybrid (the combination):** the real power is that a splat
+**composes with normal 3D**. Load Marble's collider mesh invisibly and normal
+objects **raycast / collide / are occluded by** the splat. So:
+- *fully-splat* - one lead `gaussian-splat` subsystem you navigate (a captured place).
+- *hybrid* - a splat environment (or a splat object) + procedural subsystems: a
+  real animated character walking a captured street, relightable props on a
+  captured table, particles drifting through a captured forest. The splat is the
+  static, hyper-real backdrop; procedural subsystems carry everything dynamic,
+  animated, or relightable. The hard part is **coherence** - match the procedural
+  renderer's tone/exposure/white-balance to the splat so the two read as one
+  place (the AR-compositing problem), and use the collider so depth/occlusion is
+  correct at the boundary.
+
+**When NOT to use it:** when the world must be dynamic/relightable/animated
+throughout (a splat can't), when file-size/mobile budget is tight, or when the
+brief wants a stylized register a capture can't express - then build procedurally
+(§3-§5). Splat and procedural are not rivals; pick per subsystem and combine.
+
 ---
 
-*Companions: `spline-grade-3d-study.md` (the object-hero track), `location-archetype-library.md` (the WHERE catalogue this doctrine is applied through), `editor/kinds/3D_CAPABILITIES.md` (render routes + budgets). Read by: `s3d-research-technique` (§0), `s3d-subsystem-author` + `s3d-runtime-composer` (when immersionMode=immersive-place), and the `aesthetic-lens` immersive realism block.*
+*Companions: `spline-grade-3d-study.md` (the object-hero track), `location-archetype-library.md` (the WHERE catalogue this doctrine is applied through), `editor/kinds/3D_CAPABILITIES.md` (render routes + budgets, incl. §1.5 the gaussian-splat/Spark route). Read by: `s3d-research-technique` (§0), `s3d-subsystem-author` + `s3d-runtime-composer` (when immersionMode=immersive-place), and the `aesthetic-lens` immersive realism block.*

@@ -443,6 +443,14 @@ function selectSplat(id){
 
 function addSplat(url){
   if (!url) return;
+  // .spz (World Labs Marble worlds) are read by Spark, not by this tool's
+  // mkkellogg viewer (pinned 0.4.7). They render in a scene-3d gaussian-splat
+  // subsystem (Spark) where camera nav + collider interaction with normal 3D
+  // objects live. Guard here so a Marble .spz doesn't fail silently.
+  if ((url || '').toLowerCase().split('?')[0].endsWith('.spz')){
+    toast('.spz worlds render via the Spark route in a 3D scene (scene-3d gaussian-splat subsystem), not standalone here.');
+    return;
+  }
   const sp = { id: uid(), src: url, name: nameOf(url), format: 'auto',
                position:[0,0,0], rotation:[0,0,0], scale:[1,1,1], visible:true, alphaThreshold:1 };
   model.splats.push(sp);

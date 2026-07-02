@@ -352,6 +352,11 @@ _PROVIDER_ENV_KEYS = {
     "nanobanana":  "TH_GEMINI_API_KEY",
     "leonardo":    "TH_LEONARDO_API_KEY",
     "meshy":       "TH_MESHY_API_KEY",
+    # World Labs Marble - text/image → explorable 3D WORLD as a Gaussian splat
+    # (.spz) + collider mesh. Async REST (generate → poll operation → download).
+    # Auth header WLT-Api-Key; credits at platform.worldlabs.ai. See
+    # _worldlabs_generate_world. Docs: https://docs.worldlabs.ai/api
+    "worldlabs":   "TH_WORLDLABS_API_KEY",
     "elevenlabs":  "TH_ELEVENLABS_API_KEY",
     "imagerouter": "TH_IMAGEROUTER_API_KEY",
     "quiver":      "TH_QUIVER_API_KEY",
@@ -867,6 +872,142 @@ def _fal_image_to_3d(api_key, model, input_abs_path, options, want_ply):
             raise RuntimeError("fal: no mesh url in response (keys: "
                                + str(list(payload.keys()) if isinstance(payload, dict) else "?") + ")")
     return _download_bytes(url, timeout=300)
+
+
+# ── World Labs Marble (text/image → explorable 3D WORLD as a Gaussian splat) ──
+# Async like Meshy: POST /marble/v1/worlds:generate returns an operation; poll
+# GET /marble/v1/operations/{id} until done; the completed operation's `response`
+# IS the World object (world_id, world_marble_url, assets). The Gaussian splat
+# lives at assets.splats.spz_urls (a map variant→url); the collider used for
+# occlusion / physics / raycast against normal 3D objects is
+# assets.mesh.collider_mesh_url (.glb). Auth header: WLT-Api-Key. Request shapes
+# per docs/api/world-generation-examples; data_base64 source per the OpenAPI
+# spec (fields: data_base64 + extension). Docs: https://docs.worldlabs.ai/api
+_WORLDLABS_BASE = "https://api.worldlabs.ai"
+
+
+def _worldlabs_request(api_key, path, body=None, method="POST", timeout=120):
+    """One HTTP call to api.worldlabs.ai. body=None for GET polls."""
+    url = f"{_WORLDLABS_BASE}{path}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url, method=method,
+        headers={"WLT-Api-Key": api_key, "Content-Type": "application/json"},
+        data=data,
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _worldlabs_poll(api_key, operation_id, timeout_total=1800, interval=10):
+    """Poll a Marble world-generation operation until done:true. Returns the
+    completed operation dict; raises on error/timeout. Marble jobs run ~5min
+    (draft) and longer for higher tiers; the daemon holds the request open, the
+    same async pattern as _meshy_poll / Higgsfield."""
+    deadline = time.time() + timeout_total
+    last = None
+    while time.time() < deadline:
+        last = _worldlabs_request(api_key, f"/marble/v1/operations/{operation_id}",
+                                  None, method="GET", timeout=60)
+        if isinstance(last, dict) and last.get("done"):
+            err = last.get("error")
+            if err:
+                raise RuntimeError(f"worldlabs operation failed: {err}")
+            return last
+        time.sleep(interval)
+    raise RuntimeError(f"worldlabs operation timed out after {timeout_total}s "
+                       f"(operation {operation_id})")
+
+
+def _worldlabs_pick_spz(world):
+    """assets.splats.spz_urls is a map variant→url; prefer a high/full variant."""
+    assets = (world or {}).get("assets") or {}
+    urls = ((assets.get("splats") or {}).get("spz_urls")) or {}
+    if isinstance(urls, str) and urls:
+        return urls
+    if isinstance(urls, dict) and urls:
+        for k in urls:
+            if any(t in str(k).lower() for t in ("high", "full", "hi")):
+                return urls[k]
+        return next(iter(urls.values()))
+    raise RuntimeError("worldlabs: no spz_urls in world assets (keys: "
+                       + str(list(assets.keys())) + ")")
+
+
+def _worldlabs_generate_world(api_key, prompt, model, options, *, input_abs=None,
+                              project_root=None, output=None, timeout_total=1800):
+    """Marble world generation. Returns the .spz bytes (written to `output` by the
+    caller) and, beside it, saves the collider .glb + a .world.json manifest
+    (world_marble_url / thumbnail / pano / ids). text-to-world uses the prompt;
+    image-to-world sends the input image as base64 (+ optional options.text_prompt)."""
+    opts = options if isinstance(options, dict) else {}
+    mdl = model or "marble-1.1"
+    if input_abs:
+        with open(input_abs, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        ext = (os.path.splitext(input_abs)[1] or ".png").lstrip(".").lower()
+        wp = {"type": "image",
+              "image_prompt": {"source": "data_base64", "data_base64": b64, "extension": ext}}
+        txt = (prompt or opts.get("text_prompt") or "").strip()
+        if txt:
+            wp["text_prompt"] = txt
+        if opts.get("is_pano"):
+            wp["is_pano"] = opts["is_pano"]
+    else:
+        if not (prompt or "").strip():
+            raise RuntimeError("worldlabs text-to-world needs a prompt")
+        wp = {"type": "text", "text_prompt": prompt.strip()}
+
+    gen_body = {"model": mdl, "world_prompt": wp}
+    if opts.get("display_name"):
+        gen_body["display_name"] = str(opts["display_name"])[:64]
+    if opts.get("seed") is not None:
+        gen_body["seed"] = opts["seed"]
+
+    op = _worldlabs_request(api_key, "/marble/v1/worlds:generate", gen_body, timeout=120)
+    op_id = op.get("operation_id") if isinstance(op, dict) else None
+    if not op_id:
+        raise RuntimeError(f"worldlabs: no operation_id from generate ({op})")
+    if not op.get("done"):
+        op = _worldlabs_poll(api_key, op_id, timeout_total=timeout_total)
+
+    world = op.get("response") if isinstance(op, dict) else None
+    # Completed operation.response IS the World; if only a world_id came back,
+    # fetch the full World for its assets.
+    if isinstance(world, dict) and not world.get("assets") and world.get("world_id"):
+        world = _worldlabs_request(api_key, f"/marble/v1/worlds/{world['world_id']}",
+                                   None, method="GET", timeout=60)
+    if not isinstance(world, dict):
+        raise RuntimeError(f"worldlabs: no world in completed operation ({op})")
+
+    spz_url = _worldlabs_pick_spz(world)
+    spz_bytes = _download_bytes(spz_url, timeout=600)
+
+    # Sidecars beside the .spz: collider mesh (occlusion/physics/raycast for
+    # normal 3D objects in a hybrid scene) + a .world.json manifest.
+    if project_root and output:
+        try:
+            stem = os.path.splitext(_safe_join(project_root, output))[0]
+            assets = world.get("assets") or {}
+            collider = (assets.get("mesh") or {}).get("collider_mesh_url")
+            if collider:
+                try:
+                    with open(stem + ".collider.glb", "wb") as cf:
+                        cf.write(_download_bytes(collider, timeout=300))
+                except Exception:
+                    pass
+            with open(stem + ".world.json", "w", encoding="utf-8") as mf:
+                json.dump({
+                    "provider": "worldlabs", "model": mdl,
+                    "world_id": world.get("world_id"),
+                    "world_marble_url": world.get("world_marble_url"),
+                    "thumbnail_url": assets.get("thumbnail_url"),
+                    "pano_url": (assets.get("imagery") or {}).get("pano_url"),
+                    "spz_url": spz_url, "collider_mesh_url": collider,
+                }, mf, indent=2)
+        except Exception:
+            pass
+    return spz_bytes
 
 
 def _fal_generate_lottie(api_key, prompt, model, aspect, options):
@@ -1870,6 +2011,11 @@ _GENERATE_DISPATCH = {
     # returns resp.read(). Requires TH_ELEVENLABS_API_KEY. Without this entry
     # the audio-gen skill got `no renderer for skill='audio-gen'` 400s.
     ("audio-gen",      "elevenlabs"): "elevenlabs_audio",
+    # World Labs Marble - text → explorable 3D WORLD as a Gaussian splat (.spz)
+    # + collider .glb. Async (generate → poll operation → download); the renderer
+    # holds the request open. Requires TH_WORLDLABS_API_KEY. Out feeds Splat Lab
+    # / a gaussian-splat scene-3d subsystem. (image → world is a transform below.)
+    ("text-to-world",  "worldlabs"): "worldlabs_world",
 }
 _TRANSFORM_DISPATCH = {
     ("rembg",   "local"): "local_rembg",
@@ -1884,6 +2030,10 @@ _TRANSFORM_DISPATCH = {
     ("image-to-glb", "fal"):   "fal_image_to_3d",
     ("image-to-ply", "sam3d"): "sam3d_convert",
     ("image-to-glb", "sam3d"): "sam3d_convert",
+    # World Labs Marble - image (photo / render / pano) → explorable 3D WORLD as
+    # a Gaussian splat (.spz) + collider .glb. Same async renderer as the
+    # text→world generate entry above; here the input image drives the world.
+    ("image-to-world", "worldlabs"): "worldlabs_world",
 }
 
 
@@ -13820,6 +13970,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except urllib.error.HTTPError as e:
                     ok = e.code not in (401, 403)
                     if not ok: detail = {"status": e.code, "hint": "exa rejected the key"}
+            elif provider == "worldlabs":
+                # Cheapest valid call: GET remaining API credits. 200 → key works,
+                # 401/403 → bad key. Never spends credits (no world generated).
+                try:
+                    req = urllib.request.Request(
+                        "https://api.worldlabs.ai/marble/v1/credits",
+                        headers={"WLT-Api-Key": api_key},
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read())
+                    ok = isinstance(data, dict)
+                except urllib.error.HTTPError as e:
+                    ok = e.code not in (401, 403)
+                    if not ok: detail = {"status": e.code, "hint": "world labs rejected the key"}
             else:
                 # No specific test for other providers yet - saving the key counts.
                 ok = True
@@ -14289,6 +14453,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # quick, music can take a couple of minutes (renderer sets
                     # its own per-mode timeout).
                     bytes_ = _elevenlabs_generate_audio(api_key, prompt, model, aspect, options)
+                elif provider == "worldlabs" and skill == "text-to-world":
+                    # Marble text → 3D world (.spz + collider .glb). Async; the
+                    # renderer submits, polls the operation, downloads the splat,
+                    # and writes the collider + .world.json sidecars beside output.
+                    bytes_ = _worldlabs_generate_world(api_key, prompt, model, options,
+                                                       project_root=project_root, output=output)
                 elif provider == "fal":
                     bytes_ = _fal_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "quiver" and skill == "svg-gen":
@@ -14317,6 +14487,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                     sam_opts = dict(options or {})
                     sam_opts["format"] = "mesh" if skill == "image-to-glb" else "splat"
                     bytes_ = _sam3d_convert(api_key, input_abs, sam_opts)
+                elif provider == "worldlabs" and skill == "image-to-world":
+                    # Marble image → 3D world (.spz + collider .glb). Needs a
+                    # file-backed image (sent as base64). Same async renderer.
+                    if not input_abs:
+                        return self._reply(400, {"error":
+                            "image-to-world needs a file-backed image (input_path), not a data URI."})
+                    bytes_ = _worldlabs_generate_world(api_key, "", model, options,
+                                                       input_abs=input_abs,
+                                                       project_root=project_root, output=output)
                 else:
                     return self._reply(400, {"error": f"unhandled transform provider: {provider}"})
         except urllib.error.HTTPError as e:

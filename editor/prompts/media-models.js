@@ -111,6 +111,15 @@
       integrated: false,
       testable: false, // no free endpoint; the endpoint URL is user-provided
     },
+    worldlabs: {
+      id: "worldlabs",
+      label: "World Labs (Marble)",
+      hint: "text/image/video → explorable 3D WORLD as Gaussian splat .spz + collider mesh · async ~5min · credit-based (platform.worldlabs.ai)",
+      envKey: "TH_WORLDLABS_API_KEY",
+      docsUrl: "https://docs.worldlabs.ai/api",
+      integrated: true,
+      testable: true, // GET /marble/v1/credits is a cheap key-validation call
+    },
     elevenlabs: {
       id: "elevenlabs",
       label: "ElevenLabs",
@@ -430,6 +439,34 @@
       output: "3d",
       pathwayBExt: "glb",
       hasModelDropdown: false,
+      hasAspect: false,
+    },
+    {
+      id: "text-to-world",
+      label: "Text → 3D world (splat)",
+      hint: "prompt → explorable 3D WORLD as Gaussian splat .spz + collider .glb (World Labs Marble · async ~5min · credits). Out feeds Splat Lab / a gaussian-splat scene-3d subsystem.",
+      glyph: "❖",
+      pathway: "A",
+      provider: "worldlabs",
+      model: "marble-1.1",
+      inputs: ["prompt"],
+      output: "3d",
+      pathwayBExt: "spz",
+      hasModelDropdown: false,   // fixed provider (like image-to-ply); model overridable via the request `model` param (marble-1.1 | marble-1.1-plus | marble-1.0 | marble-1.0-draft - draft is ~20x cheaper for previews)
+      hasAspect: false,
+    },
+    {
+      id: "image-to-world",
+      label: "Image → 3D world (splat)",
+      hint: "asset (photo / render / pano) → explorable 3D WORLD as Gaussian splat .spz + collider .glb (World Labs Marble · async ~5min · credits). Out feeds Splat Lab / a gaussian-splat scene-3d subsystem.",
+      glyph: "❖",
+      pathway: "A",
+      provider: "worldlabs",
+      model: "marble-1.1",
+      inputs: ["asset"],
+      output: "3d",
+      pathwayBExt: "spz",
+      hasModelDropdown: false,   // fixed provider (like image-to-ply); model overridable via the request `model` param (marble-1.1 | marble-1.1-plus | marble-1.0 | marble-1.0-draft - draft is ~20x cheaper for previews)
       hasAspect: false,
     },
     {
