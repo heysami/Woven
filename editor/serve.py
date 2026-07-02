@@ -7662,6 +7662,23 @@ def _drain_stdout(state: "RunState") -> None:
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
+                        # v3.19 - promote NORMAL -> SETUP for the badge when this
+                        # run starts a build. The decide phase runs on the normal
+                        # tier (untargeted default) and escalates; _drain_stdout
+                        # is the only run-aware place that sees its output. When a
+                        # turn's result carries a build marker (the Step -1
+                        # direction pick, the init-card, or the orchestration
+                        # roster gate), flip the persisted tier so the chat badges
+                        # "Setup". Promote only FROM normal, once - never touch
+                        # scoped / leaf / already-setup. The build (handed-off)
+                        # thread never emits these markers, so it stays normal.
+                        if (ev.get("label") == "done"
+                                and getattr(state, "tier", None) == "normal"):
+                            _res = ev.get("result") or ""
+                            if ("<direction-options" in _res
+                                    or "<init-card" in _res
+                                    or "orchestrator-plan" in _res):
+                                state.tier = "setup"
                         # v4.0 - verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
                         # so the process-exit hook in `finally` wouldn't fire until
