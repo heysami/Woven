@@ -11013,6 +11013,7 @@ function formatIsoAge(iso) {
 function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
   const [comments, setComments] = useState(null);   // null = loading
   const [filter, setFilter] = useState("open");
+  const [query, setQuery] = useState("");           // free-text search across comments
   const [err, setErr] = useState(null);
   const [replyFor, setReplyFor] = useState(null);   // commentId with an open composer
   const [replyText, setReplyText] = useState("");
@@ -11165,7 +11166,23 @@ function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
   };
 
   const list = comments || [];
-  const visible = list.filter(c => filter === "all" ? true : filter === "resolved" ? isResolved(c) : !isResolved(c));
+  // Free-text search over comment text, author, page/prototype location, the
+  // anchored element text, and every reply - so a query finds a comment by any
+  // words a reviewer used anywhere in the thread.
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (c) => {
+    if (!q) return true;
+    const hay = [
+      c.text,
+      c.author && c.author.name,
+      c.page,
+      c.prototype,
+      c.anchor && c.anchor.text,
+      ...(c.replies || []).map(r => (r.text || "") + " " + ((r.author && r.author.name) || "")),
+    ].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  };
+  const visible = list.filter(c => (filter === "all" ? true : filter === "resolved" ? isResolved(c) : !isResolved(c)) && matchesQuery(c));
   // Group by prototype, newest comment first within each group.
   const groups = {};
   for (const c of visible) (groups[c.prototype || "-"] = groups[c.prototype || "-"] || []).push(c);
@@ -11192,6 +11209,10 @@ function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
             onClick=${() => setFilter(k)}>${lbl}</button>
         `)}
       </div>
+      <div className="th-comments-searchrow">
+        <input className="shares-search" type="search" placeholder="Search comments…"
+          value=${query} onInput=${(e) => setQuery(e.target.value)}/>
+      </div>
       <div className="th-rail-panel-body">
         ${err && html`<div className="shares-error-banner">${err}</div>`}
         <div className="th-comment-compose">
@@ -11208,7 +11229,10 @@ function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
           <button className="th-comment-send" disabled=${!draft.trim() || (!liveMode && !draftProto)} onClick=${addComment}>Add comment</button>
         </div>
         ${comments === null && html`<div className="runs-empty">Loading…</div>`}
-        ${comments !== null && visible.length === 0 && html`
+        ${comments !== null && visible.length === 0 && q && html`
+          <div className="runs-empty">No comments match “${query.trim()}”.</div>
+        `}
+        ${comments !== null && visible.length === 0 && !q && html`
           <div className="runs-empty">No ${filter === "all" ? "" : filter + " "}comments yet. Reviewers on a shared prototype (and guests in a live session) leave comments here - they're for people, not the AI.</div>
         `}
         ${groupKeys.map(slug => html`

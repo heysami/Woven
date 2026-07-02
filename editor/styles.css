@@ -4852,6 +4852,13 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
+.th-comments-searchrow {
+  display: flex;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.th-comments-searchrow .shares-search { flex: 1; min-width: 0; }
 .th-comments-group { margin-bottom: 10px; }
 .th-comments-group-head {
   font-family: var(--font-mono);
