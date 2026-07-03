@@ -16197,15 +16197,31 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
     const detail = (extra || "").trim();
     const text = `[decision:${direction.id}] ${opt.value} - ${opt.label}`
       + (detail ? `: ${detail}` : "");
+    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
     try {
-      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      // Try the live-process channel first. Single-shot agents (codex,
+      // opencode) EXIT right after emitting this card, so their run has
+      // already ended and /user-message 409s ("finished" / needsResume);
+      // respawn via /resume carrying the same pick. Mirrors the reroute
+      // ChatComposer.dispatch() does for a typed reply to an ended run -
+      // without it the card is a dead end for every non-Claude agent.
+      let r = await postTo("user-message");
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${r.status}`);
+        const m = String(j.error || "").toLowerCase();
+        const needsResume = j.needsResume || r.status === 404 || r.status === 410
+          || m.includes("finished") || m.includes("not running")
+          || m.includes("exited") || m.includes("not found");
+        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
+        r = await postTo("resume");
+        if (!r.ok) {
+          const j2 = await r.json().catch(() => ({}));
+          throw new Error(j2.error || `HTTP ${r.status}`);
+        }
       }
       try {
         await fetch(apiUrl(`/__decision/${encodeURIComponent(direction.id)}`), {
@@ -16247,7 +16263,7 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
               key=${opt.value}
               type="button"
               className=${"chat-direction-opt" + (picked ? " is-picked" : "") + (opt.recommended ? " is-recommended" : "") + (opt.needsInput && steerOpen === opt.value ? " is-steering" : "")}
-              disabled=${busy || isAnswered || processEnded}
+              disabled=${busy || isAnswered}
               onClick=${() => {
                 if (opt.needsInput) {
                   setSteerText("");
@@ -16380,7 +16396,7 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
               placeholder="What should I adjust? e.g. warmer palette, denser panels, quieter glitch"
               value=${steerText}
               autoFocus
-              disabled=${busy || isAnswered || processEnded}
+              disabled=${busy || isAnswered}
               onInput=${(e) => setSteerText(e.target.value)}
               onKeyDown=${(e) => {
                 if (e.key === "Escape") { e.preventDefault(); setSteerOpen(null); }
@@ -16393,7 +16409,7 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                 disabled=${busy}
                 onClick=${() => setSteerOpen(null)}>Cancel</button>
               <button type="button" className="chat-direction-steer-send"
-                disabled=${busy || isAnswered || processEnded || !steerText.trim()}
+                disabled=${busy || isAnswered || !steerText.trim()}
                 onClick=${() => submit(opt, steerText)}>Send steer</button>
             </div>
           </div>
