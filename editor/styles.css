@@ -21490,9 +21490,11 @@ a.ds-badge:hover, button.ds-badge:hover {
      its right-edge chrome (close ×, Send) lands off-screen. */
   position: fixed;
   top: 0;
-  /* Dock to the LEFT of the right icon nav rail so the rail's buttons (and the
-     drawer's own right-edge chrome - close ×, Send) never sit under each other. */
-  right: var(--th-right-rail-w, 44px);
+  /* Chat lives on the LEFT now: dock to the RIGHT of the left icon rail so
+     the rail's buttons and the drawer's chrome never sit under each other
+     (the exact mirror of the old right-rail inset). */
+  left: var(--th-right-rail-w, 44px);
+  right: auto;
   bottom: 0;
   width: min(var(--workflow-chat-width, 644px), calc(100vw - var(--th-right-rail-w, 44px)));
   max-width: calc(100vw - var(--th-right-rail-w, 44px));
@@ -21525,7 +21527,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -3px;
+  right: -3px;   /* drawer is left-docked now - resize from its RIGHT edge */
+  left: auto;
   width: 6px;
   cursor: col-resize;
   background: transparent;

@@ -32274,7 +32274,8 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
       const body = composeWithAttachments(v);
       if (onStartChatWithPrompt) await onStartChatWithPrompt(body);
       // No setText("") - once the chat starts, this whole component
-      // unmounts because chatActive flips true (see WorkflowSurface).
+      // unmounts because the LEFT chat panel takes over (chatExists /
+      // leftPanel === "chat" in WorkflowSurface's render guard).
     } finally { setBusy(false); }
   };
   const onKeyDown = (e) => {
@@ -45883,7 +45884,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 }}/>
             `}
           </div>
-          ${empty && !chatActive && !wbMode && html`
+          ${empty && !chatActive && !chatExists && leftPanel !== "chat" && !wbMode && html`
             <${WorkflowEmptyComposer}
               onStartChatWithPrompt=${onStartChatWithPrompt}
             />
@@ -81837,7 +81838,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     const startW = parseInt(getComputedStyle(root).getPropertyValue("--workflow-chat-width"), 10) || 644;
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const onMove = (ev) => {
-      const w = Math.max(360, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
+      const w = Math.max(360, Math.min(window.innerWidth * 0.7, startW + (ev.clientX - startX)));
       root.style.setProperty("--workflow-chat-width", w + "px");
     };
     const onUp = () => {
