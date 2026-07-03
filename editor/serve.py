@@ -208,6 +208,7 @@ MEDIA_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "media-config.json")
 # localStorage on load, which keeps these files fresh).
 DEFAULT_PROVIDERS_PATH   = os.path.join(MEDIA_CONFIG_DIR, "default-providers.json")
 ORCHESTRATOR_MODELS_PATH = os.path.join(MEDIA_CONFIG_DIR, "orchestrator-models.json")
+SUBAGENT_MODELS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "subagent-models.json")
 
 # Aspect ratio → OpenAI gpt-image-1 size mapping. The model accepts a small
 # fixed set: 1024×1024, 1536×1024, 1024×1536, or "auto". Unknown aspect strings
@@ -530,6 +531,19 @@ _ORCHESTRATOR_MODELS: dict = _persist_json_load(ORCHESTRATOR_MODELS_PATH)
 
 def _orchestrator_models_get() -> dict:
     return dict(_ORCHESTRATOR_MODELS)
+
+
+# ── Per-SUBAGENT model overrides (finer-grained sibling of the map above) ────
+# Keyed by subagent NAME (craft-lens, s3d-subsystem-author, raster-photo, ...)
+# → {provider, model}. A subagent row beats its owning orchestrator's row,
+# which beats the global agent default. Same lifecycle as the orchestrator
+# map: browser localStorage is source of truth, the editor re-POSTs to
+# /__subagent_models on load + on every change; persisted so a daemon restart
+# keeps the overrides even before an editor tab re-syncs.
+_SUBAGENT_MODELS: dict = _persist_json_load(SUBAGENT_MODELS_PATH)
+
+def _subagent_models_get() -> dict:
+    return dict(_SUBAGENT_MODELS)
 
 
 def _guess_image_mime(path):
@@ -5206,6 +5220,47 @@ def _orch_override_model_for_node(node_id, title):
     oid = next((k for k in over if k.lower() in hay), None) or _orch_for_node(node_id)
     return ((over.get(oid) or {}).get("model") or "").strip() if oid else ""
 
+
+# Generic role suffixes on subagent names that scaffolded node ids do NOT
+# carry (node `s3d_subsystem_hero` ↔ subagent `s3d-subsystem-author`).
+_SUBAGENT_NAME_SUFFIXES = ("-author", "-technique", "-builder", "-composer",
+                           "-enricher", "-promoter")
+
+
+def _subagent_override_model_for_node(node_id, title, prompt_text=""):
+    """The per-SUBAGENT override model that applies to THIS node, or '' when
+    none. Finer-grained than the per-orchestrator override: keys are subagent
+    NAMES. A node matches (a) by id/title - scaffolded ids carry the drawer
+    identity in underscore form at a segment boundary (craft_lens_...,
+    s3d_subsystem_..., sim_loop_...), suffix-stripped per the tuple above; or
+    (b) by the node's envelope text, which names the drawer spec it follows
+    ("... per s3d-subsystem-author.md"). Longest matching name wins, so a
+    short key can never steal a longer, more specific one."""
+    over = _subagent_models_get()
+    if not over:
+        return ""
+    # Leading space = segment boundary, so 'im_input' can't hit 'sim_input'.
+    id_hay = (" " + f"{node_id or ''} {title or ''}".lower().replace("-", "_"))
+    text_hay = (prompt_text or "").lower()
+    best_name, best_len = None, 0
+    for name, row in over.items():
+        model = ((row or {}).get("model") or "").strip()
+        if not model:
+            continue
+        key = (name or "").lower().strip()
+        if not key:
+            continue
+        stem = key
+        for suf in _SUBAGENT_NAME_SUFFIXES:
+            if stem.endswith(suf):
+                stem = stem[: -len(suf)]
+                break
+        id_form = " " + stem.replace("-", "_")
+        if (id_form.strip() != "" and id_form in id_hay) or (key in text_hay):
+            if len(key) > best_len:
+                best_name, best_len = name, len(key)
+    return ((over.get(best_name) or {}).get("model") or "").strip() if best_name else ""
+
 # In-memory run registry. Runs are ephemeral; if the daemon dies the user
 # re-issues. No SQLite. Map run_id → RunState.
 RUNS: dict = {}
@@ -9571,6 +9626,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._default_providers_set()
             if parsed.path == "/__orchestrator_models":
                 return self._orchestrator_models_set()
+            if parsed.path == "/__subagent_models":
+                return self._subagent_models_set()
             if parsed.path == "/__asset_generate":
                 return self._asset_generate(qs)
             if parsed.path == "/__llm_run":
@@ -11277,12 +11334,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         # for_node resolves the owning orchestrator from the node id (a drawer like
         # `sim_scene_x`, a lens `craft_lens_sim_x_1`, a gate `cp_sim_gate_x`), so
         # the override reaches the whole subagent tree, not just the orchestrator's
-        # own node. Precedence: per-orchestrator override > the user's GLOBAL
+        # own node. Precedence: per-SUBAGENT override (matched on the node id /
+        # title / envelope text) > per-orchestrator override > the user's GLOBAL
         # agent-model (Settings) > the CLI's own default. All go through
         # _agent_model_spawn_args so alias mapping + CLI-default-sentinel handling
         # + opencode-skip are identical everywhere - nothing hardcodes a model.
         try:
-            _omodel = _orch_override_model_for_node(node_id, title)
+            _omodel = (_subagent_override_model_for_node(node_id, title, prompt_text)
+                       or _orch_override_model_for_node(node_id, title))
             _model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
             if not _model_args:
                 _model_args = _agent_model_spawn_args(agent_id, defs, _agent_default_model())
@@ -14253,6 +14312,39 @@ class H(http.server.SimpleHTTPRequestHandler):
         _ORCHESTRATOR_MODELS = cleaned
         _persist_json_save(ORCHESTRATOR_MODELS_PATH, cleaned)
         return self._reply(200, {"ok": True, "orchestratorModels": cleaned})
+
+    def _subagent_models_set(self):
+        """POST /__subagent_models
+        Body: { "<subagent-name>": {provider, model}, ... }
+        Mirrors localStorage["th.editor.subagent-models.v1"] into the daemon
+        cache. Finer-grained sibling of /__orchestrator_models: a subagent row
+        beats its owning orchestrator's row on every spawn path."""
+        global _SUBAGENT_MODELS
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return self._reply(400, {"error": "empty body"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON", "detail": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        cleaned: dict = {}
+        for sid, row in body.items():
+            if not isinstance(sid, str) or not sid.strip():
+                continue
+            if not isinstance(row, dict):
+                continue
+            entry = {}
+            for k in ("provider", "model"):
+                v = row.get(k)
+                if isinstance(v, str) and v.strip():
+                    entry[k] = v.strip()
+            if entry.get("model"):
+                cleaned[sid.strip()] = entry
+        _SUBAGENT_MODELS = cleaned
+        _persist_json_save(SUBAGENT_MODELS_PATH, cleaned)
+        return self._reply(200, {"ok": True, "subagentModels": cleaned})
 
     def _media_config_test(self, qs):
         provider = (_qs_get(qs, "provider") or "openai").strip()

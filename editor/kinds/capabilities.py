@@ -926,6 +926,32 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     except Exception:
         pass
 
+    # Per-SUBAGENT model overrides - finer-grained than the per-orchestrator
+    # rows above (Orchestrators tab → expand a card → model dropdown per
+    # subagent chip). A subagent row BEATS its orchestrator's row.
+    subagent_models_block = ""
+    try:
+        _sub_models = _editor_import()._subagent_models_get()
+        if _sub_models:
+            _srows = []
+            for sid in sorted(_sub_models.keys()):
+                row = _sub_models[sid] or {}
+                model = row.get("model")
+                if not model:
+                    continue
+                _srows.append(f"  • {sid:36s}  → dispatch with model: {model}")
+            if _srows:
+                subagent_models_block = (
+                    "\n\n**Per-SUBAGENT model overrides THIS RUN** - the user pinned these "
+                    "specific subagents to a model. Whenever you (or an orchestrator you dispatch) "
+                    "call the Task tool with one of these subagent_types, pass `model:` set to the "
+                    "id below. These rows BEAT the per-orchestrator rows above; subagents not "
+                    "listed follow their orchestrator's row, then the Chat / agent default.\n"
+                    + "\n".join(_srows)
+                )
+    except Exception:
+        pass
+
     tools = _local_tool_availability()
     tool_status = (
         f"  • rembg          {'✓ INSTALLED' if tools.get('rembg') else '⚠ NOT INSTALLED - pip install rembg'}\n"
@@ -1082,7 +1108,7 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 **Do not refuse the user with "no raster provider available" if ANY of those conditions hold.** Dispatch the relevant orchestrator and let it route through the available path - `/__asset_generate` already knows how to pick API vs CLI vs local fallback per skill.
 
 **Default models per capability THIS RUN** - the user picked these in Settings → API keys → "Default models per capability". When the user hasn't named a specific provider/model in their request, **use the USER DEFAULT row for that capability**. Do not override based on training-data familiarity (e.g. don't pick `fal-ai/flux-pro` just because FLUX is well-known when the user has set OpenAI gpt-image-2 as the Image-generation default). Override only when the user explicitly names a different provider/model in the current request.
-{defaults_block}{orchestrator_models_block}
+{defaults_block}{orchestrator_models_block}{subagent_models_block}
 
 **Local tool availability THIS RUN**:
 {tool_status}

@@ -7345,6 +7345,55 @@ if (typeof window !== "undefined") {
     }
   } catch {}
 }
+/* ────────── Per-SUBAGENT model overrides ──────────
+   Finer-grained sibling of the per-orchestrator map above: pin ONE dispatched
+   subagent (craft-lens → haiku, s3d-subsystem-author → opus, ...) regardless
+   of which orchestrator fans it out. Keyed by subagent NAME → { provider,
+   model }; absent / null means "inherit" (the owning orchestrator's override,
+   else the agent-capability default). Same storage tier + daemon-sync shape:
+   localStorage is source of truth, re-POSTed to /__subagent_models on load +
+   change; the daemon applies it on node spawns (beats the orchestrator row)
+   and surfaces it in the capabilities preamble for Task-tool dispatch. */
+const SUBAGENT_MODELS_KEY = "th.editor.subagent-models.v1";
+function loadSubagentModels() {
+  try { return JSON.parse(localStorage.getItem(SUBAGENT_MODELS_KEY) || "{}"); }
+  catch { return {}; }
+}
+function getSubagentModel(name) {
+  const all = loadSubagentModels();
+  const v = all && all[name];
+  if (!v || !v.model) return null;
+  return v;
+}
+function saveSubagentModel(name, value) {
+  const cur = loadSubagentModels();
+  const next = { ...cur };
+  if (value && value.model) next[name] = value;
+  else delete next[name];               // null / empty model → clear the override
+  try { localStorage.setItem(SUBAGENT_MODELS_KEY, JSON.stringify(next)); } catch {}
+  try { window.dispatchEvent(new CustomEvent("th:subagent-models-changed", { detail: next })); } catch {}
+  try { syncSubagentModelsToDaemon(next); } catch {}
+  return next;
+}
+function syncSubagentModelsToDaemon(map) {
+  try {
+    fetch("/__subagent_models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(map || {}),
+    }).catch(() => {});
+  } catch {}
+}
+// Boot-time push - a daemon restart (cache lost) re-receives the saved picks.
+if (typeof window !== "undefined") {
+  try {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => syncSubagentModelsToDaemon(loadSubagentModels()), { once: true });
+    } else {
+      syncSubagentModelsToDaemon(loadSubagentModels());
+    }
+  } catch {}
+}
 /* The model choices a per-orchestrator override can pick from. Orchestrator
    drawers dispatch as Claude Task-tool subagents (the only CLI whose subagent
    path the daemon supports today - see _pickAutoForCapability), so the menu
@@ -21917,6 +21966,45 @@ function OrchestratorModelSelect({ orchestratorId, disabled }) {
   `;
 }
 
+// Per-SUBAGENT model override - one compact dropdown per subagent chip in the
+// card's expanded "Subagents" section. "Inherit" (empty) follows the owning
+// orchestrator's override, else the global agent default. The pick is GLOBAL
+// per subagent name (craft-lens appears on many cards; they all show + set the
+// same value, kept in sync via the th:subagent-models-changed event).
+function SubagentModelSelect({ name, disabled }) {
+  const [override, setOverride] = useState(() => getSubagentModel(name));
+  useEffect(() => {
+    const on = () => setOverride(getSubagentModel(name));
+    window.addEventListener("th:subagent-models-changed", on);
+    return () => window.removeEventListener("th:subagent-models-changed", on);
+  }, [name]);
+  const choices = useMemo(() => listOrchestratorModelChoices(), []);
+  const current = (override && override.model) || "";
+  return html`
+    <label
+      className="subagent-chip-model"
+      data-active=${current ? "true" : "false"}
+      title=${disabled
+        ? "Enable this orchestrator to set subagent models"
+        : "Model this subagent runs on wherever it is dispatched. ‘Inherit’ follows the orchestrator's model, then the agent default."}
+      onClick=${(e) => e.stopPropagation()}
+    >
+      <select
+        className="subagent-chip-model-select"
+        value=${current}
+        disabled=${disabled}
+        onChange=${(e) => {
+          const id = e.target.value;
+          saveSubagentModel(name, id ? { provider: "anthropic", model: id } : null);
+        }}
+      >
+        <option value="">Inherit</option>
+        ${choices.map(m => html`<option key=${m.id} value=${m.id}>${m.label || m.id}</option>`)}
+      </select>
+    </label>
+  `;
+}
+
 function OrchestratorCard({ orchestrator, busy, onToggle }) {
   const p = orchestrator;
   const [expanded, setExpanded] = useState(false);
@@ -22003,7 +22091,10 @@ function OrchestratorCard({ orchestrator, busy, onToggle }) {
             <div key=${g.key} className="orchestrator-dispatch-group">
               <div className="orchestrator-dispatch-group-title">${g.label} <span className="orchestrator-dispatch-count">${g.items.length}</span></div>
               <div className="orchestrator-chip-row">
-                ${g.items.map(name => html`<code key=${name} className="orchestrator-chip orchestrator-chip-agent">${name}</code>`)}
+                ${g.items.map(name => html`<span key=${name} className="orchestrator-chip-wrap">
+                  <code className="orchestrator-chip orchestrator-chip-agent">${name}</code>
+                  <${SubagentModelSelect} name=${name} disabled=${!p.enabled}/>
+                </span>`)}
               </div>
             </div>
           `)}

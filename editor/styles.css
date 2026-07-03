@@ -1575,6 +1575,43 @@ button {
   border: 1px solid var(--border);
 }
 .orchestrator-chip-agent    { background: oklch(94% 0.04 250); border-color: oklch(85% 0.07 250); color: oklch(40% 0.15 250); }
+/* Per-subagent model override - chip + a compact "Inherit"/model select fused
+   into one pill. The select stays visually quiet until it carries an override
+   (data-active), matching the card-level model dropdown's accent language. */
+.orchestrator-chip-wrap {
+  display: inline-flex; align-items: stretch;
+}
+.orchestrator-chip-wrap .orchestrator-chip {
+  border-top-right-radius: 0; border-bottom-right-radius: 0;
+}
+.subagent-chip-model {
+  display: inline-flex; align-items: center;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.subagent-chip-model:hover { border-color: var(--border-strong); }
+.subagent-chip-model-select {
+  border: 0; background: transparent;
+  font-size: 10px; color: var(--text-faint);
+  font-family: var(--font-mono);
+  cursor: pointer; max-width: 110px;
+  padding: 0;
+}
+.subagent-chip-model-select:focus { outline: none; }
+.subagent-chip-model:has(.subagent-chip-model-select:disabled) {
+  opacity: 0.45; cursor: default;
+}
+.subagent-chip-model[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.subagent-chip-model[data-active="true"] .subagent-chip-model-select {
+  color: var(--accent-text);
+}
 .orchestrator-chip-skill    { background: oklch(94% 0.04 295); border-color: oklch(85% 0.07 295); color: oklch(42% 0.16 295); }
 .orchestrator-chip-kind     { background: var(--accent-soft);  border-color: oklch(85% 0.05 174); color: var(--accent-text); }
 .orchestrator-chip-override { background: oklch(96% 0.06 80);  border-color: oklch(85% 0.10 75); color: oklch(45% 0.13 65); }
