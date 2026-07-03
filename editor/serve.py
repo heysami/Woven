@@ -20088,13 +20088,20 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Phase 4c - library: project asset listing + delete ─────────────
     # Surfaces every generated file under source/<branch>/{images,svg,video,
-    # models,shaders,viz,audio}/ as a draggable library item. Delete removes
-    # the file from disk (destructive - the user is in control of their own
-    # source tree). Newest first.
-    _LIB_ASSET_SUBDIRS = ("images", "svg", "video", "models", "shaders", "viz", "audio", "fonts")
+    # models,shaders,viz,audio,_artdir}/ as a draggable library item. Delete
+    # removes the file from disk (destructive - the user is in control of their
+    # own source tree). Newest first.
+    #
+    # `_artdir` holds the art-director-orchestrator's north-star plates (the
+    # gen endpoint can only write under source/, so plates land in
+    # source/<branch>/_artdir/ before being copied to workflow/artdirection/
+    # for canvas serving). Without _artdir in the scan the plates showed on the
+    # canvas but never in the left-panel visual library.
+    _LIB_ASSET_SUBDIRS = ("images", "svg", "video", "models", "shaders", "viz", "audio", "fonts", "_artdir")
     _LIB_KIND_FOR_DIR  = {
         "images": "image", "svg": "svg", "video": "video", "models": "3d",
         "shaders": "shader", "viz": "viz", "audio": "audio", "fonts": "font",
+        "_artdir": "image",
     }
     # Extension → asset kind. Wins over the folder-derived default
     # in `_LIB_KIND_FOR_DIR`. Background: skill outputs (shader / threejs /
