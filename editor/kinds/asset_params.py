@@ -32,7 +32,7 @@ shader_compile.py. No daemon/network/three.js dependency.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
 

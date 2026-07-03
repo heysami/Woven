@@ -690,15 +690,11 @@
       hasAspect: false,
     },
     {
-      // v3.4.1 - Real video output. The previous "video-gen" definition
-      // silently produced HTML motion pieces because no video API was
-      // wired in; that was misleading - picking a skill called "Video"
-      // should produce video. Now:
+      // Real video output (.mp4).
       //   • pathwayAFallback dispatches to fal's image-to-video / text-to-
-      //     video endpoints first when the fal key is present. The output
-      //     extension is `.mp4`. Other providers (Replicate Veo / Runway
-      //     Gen-3 / Pika / Luma) can be slotted in here later - they all
-      //     return mp4 bytes.
+      //     video endpoints when the fal key is present. Other providers
+      //     (Replicate Veo / Runway Gen-3 / Pika / Luma) can be slotted in
+      //     here later - they all return mp4 bytes.
       //   • If NO video provider key is configured, the agent STOPs and
       //     surfaces the limitation in chat (matching the universal
       //     refinement-constraints contract). It does NOT silently fall
@@ -709,15 +705,10 @@
       hint: "prompt → .mp4 (requires a video-gen API key - fal / replicate / runway / pika)",
       glyph: "🎬",
       pathway: "A",
-      // v3.4.6 - defaultModel is the CRITICAL field that was missing.
-      // Without it, freshly-dropped video-gen nodes had empty model + empty
-      // provider, so Run failed with "Cannot resolve provider for model "
-      // (note the trailing blank). The dropdown also showed the first
-      // option visually but never fired onChange unless the user
-      // explicitly re-picked → looked saved, wasn't.
-      // v3.4.7 (June 2026) - Switched default from the deprecated
-      // `fal-ai/luma-dream-machine` bare endpoint to Veo 3.1 (current sota,
-      // native audio). The bare luma endpoint returns "deprecated" errors.
+      // defaultModel is REQUIRED: without it a freshly-dropped video-gen node
+      // has empty model + empty provider, so Run fails with "Cannot resolve
+      // provider for model " (trailing blank) - and the dropdown shows the
+      // first option without ever firing onChange, so it looks saved but isn't.
       defaultModel: "fal-ai/veo3.1",
       provider:     "fal",  // belt-and-suspenders: provider resolves even if VIDEO_MODELS isn't loaded yet
       pathwayAFallback: { provider: "fal", model: "fal-ai/veo3.1", ext: "mp4" },
@@ -758,14 +749,13 @@
       hasAspect: true,
     },
     {
-      // v3.4.40 - Hyperframes-flavored motion piece. The OLD "video-gen"
-      // → "Motion (HTML)" intent now authors files using the Hyperframes
+      // Hyperframes-flavored motion piece, authored to the Hyperframes
       // composition model (https://github.com/heygen-com/hyperframes):
       // a single HTML file with a #stage root, clip elements timed via
       // data-start / data-duration, and a paused GSAP timeline exposed
       // on window.__timelines so the file is BOTH a Hyperframes-render
-      // target AND plays standalone in the browser. Same constraints
-      // (no video API), same single-file output.
+      // target AND plays standalone in the browser. No video API needed;
+      // single-file output.
       id: "motion-gen",
       label: "Motion (HTML)",
       hint: "prompt → .html (looping motion piece authored as a Hyperframes composition - plays in-browser, renders to video via Hyperframes)",

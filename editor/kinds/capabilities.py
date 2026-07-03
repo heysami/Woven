@@ -31,6 +31,19 @@ _EDITOR_DIR = os.path.dirname(_HERE)
 _PROTOCOL_ROOT = os.path.dirname(_EDITOR_DIR)
 
 
+def _editor_import(module: str = "serve"):
+    """Import a top-level editor/ module (serve by default) with _EDITOR_DIR
+    on sys.path. Deliberately lazy - call it inside functions, never at module
+    load: serve imports this package back (see the recursion note in
+    _live_provider_availability), and tests import kinds.* without the daemon
+    present."""
+    import sys
+    import importlib
+    if _EDITOR_DIR not in sys.path:
+        sys.path.insert(0, _EDITOR_DIR)
+    return importlib.import_module(module)
+
+
 # ── 1. Image-gen providers + skills ── parsed from prompts/media-models.js ──
 # media-models.js is a JS file the frontend loads synchronously. We parse it
 # with regexes (not a JS interpreter) to avoid runtime dependency on node.
@@ -41,7 +54,7 @@ _PROTOCOL_ROOT = os.path.dirname(_EDITOR_DIR)
 _MEDIA_MODELS_PATH = os.path.join(_EDITOR_DIR, "prompts", "media-models.js")
 
 def _parse_media_models() -> dict:
-    out = {"providers": [], "skills": [], "imageModels": [], "textModels": [], "defaultImageModel": None}
+    out = {"providers": [], "skills": [], "imageModels": [], "defaultImageModel": None}
     if not os.path.isfile(_MEDIA_MODELS_PATH):
         return out
     try:
@@ -88,10 +101,8 @@ def _parse_media_models() -> dict:
         if mid in seen_model_ids: continue
         seen_model_ids.add(mid)
         caps = [c.strip().strip('"') for c in caps_str.split(",") if c.strip()]
-        # `default: true` marks the user-default image model (the one agents must
-        # use when told "use the user-default image model"). Dropping it forced
-        # agents to GUESS the default - the bug where one fell back to gpt-image-1
-        # off a non-existent memory note when the real default is gpt-image-2.
+        # `default: true` marks the user-default image model; surface it so
+        # agents read the default from here instead of guessing one.
         is_default = bool(re.search(r"default:\s*true", m.group(0)))
         out["imageModels"].append({
             "id":         mid,
@@ -115,19 +126,10 @@ def _parse_media_models() -> dict:
                 or out["imageModels"][0]
         out["defaultImageModel"] = {"id": _pref["id"], "provider": _pref["provider"]}
 
-    # Skills: EVERY entry in the `const SKILLS = [ ... ];` array. The previous
-    # implementation scanned the whole file for `{ id: "..." }` blocks and kept
-    # only those matching a `modelsFilter`/`modelKind`/`provider:"local"`/
-    # `pathwayBExt` heuristic - which silently dropped 15 of the 21 skills
-    # (every Pathway-B skill: shader, viz, html-page, svg-gen, threejs,
-    # lottie-gen, canvas-gen, motion-gen, plus audio-gen / video-gen /
-    # video-chain / pose-subject / slice9-frame / upscale / 3d-gen). The
-    # `[^}]{0,800}` brace match also truncated on the first nested `}`. Result:
-    # `/__capabilities` reported 6 skills while the app actually has 21, so the
-    # catalog read as "not updated". Fix: isolate the SKILLS array and treat
-    # each `id:` in it as a skill (no heuristic - membership in the array IS the
-    # definition), slicing each object's block so label/hint/output/pathway are
-    # captured even past long inline comments.
+    # Skills: EVERY entry in the `const SKILLS = [ ... ];` array. Membership in
+    # the SKILLS array IS the definition - no heuristic filter here, and do not
+    # re-filter downstream. Each object's block is sliced by `id:` position so
+    # label/hint/output/pathway are captured even past long inline comments.
     skills_section = re.search(r"const\s+SKILLS\s*=\s*\[(.+?)\n\s*\];", src, re.DOTALL)
     if skills_section:
         sect = skills_section.group(1)
@@ -266,7 +268,7 @@ def _node_kinds() -> list:
 
 
 # ── 5. Harness-local custom skills ── <workspace>/.harness-skills/<slug>/SKILL.md ──
-# v3.12 - Skills the user uploaded via landing → System → Custom skills.
+# Skills the user uploaded via landing → System → Custom skills.
 # These are workspace-level docs, NOT loaded by the Claude CLI's own skill
 # loader (spawned agents run with cwd = project root, away from the skills
 # dir) - so the way an agent "has" one of these skills is by Reading its
@@ -337,7 +339,7 @@ def _scan_harness_skills() -> list:
 
 
 # ── 6. MCP servers ── .claude/mcp-catalog.json (display) ∪ mcp-config.json (runtime) ──
-# v3.12 - Surfaces BOTH catalog-described servers and servers the user wired
+# Surfaces BOTH catalog-described servers and servers the user wired
 # manually into mcp-config.json without a catalog entry (those get a minimal
 # synthesized row so they're never invisible to agents).
 
@@ -391,24 +393,35 @@ def _mcp_server_inventory() -> list:
 
 
 # ── 7. Dynamic orchestrator hard-rules ── manifest `hardRule` injection ──
-# v3.12 - The per-orchestrator "## … dispatch <X> FIRST" prose for the
-# SHIPPED families is static text inside capabilities_preamble (and the
-# SECTIONS list in _strip_disabled_orchestrator_blocks knows their headers).
-# Orchestrators added AFTER ship time (e.g. by a System-tab agent thread)
-# carry their own rule in the manifest instead:
+# The per-orchestrator "## … dispatch <X> FIRST" prose for the SHIPPED
+# families is static text inside capabilities_preamble (headers listed in
+# _ORCHESTRATOR_SECTIONS below). Orchestrators added AFTER ship time (e.g.
+# by a System-tab agent thread) carry their own rule in the manifest instead:
 #     "hardRule": { "header": "Foo pieces: dispatch foo-orchestrator FIRST",
 #                   "body":   "<markdown body>" }
 # Those are appended to the preamble here - only when enabled for the
 # project - so a new orchestrator surfaces in every spawn's capabilities
 # without editing this file.
 
-_STATIC_HARD_RULE_IDS = {
-    "visual-orchestrator", "photography-orchestrator", "illustration-orchestrator",
-    "creative-visual-orchestrator", "material-orchestrator", "simulation-orchestrator",
-    "interactive-media-orchestrator", "narrative-experience-orchestrator",
-    "game-experience-orchestrator", "scrapbook-experience-orchestrator",
-    "motion-studio-orchestrator", "interactive-polish-orchestrator",
-}
+# Each SHIPPED orchestrator's hard-rule block in the setup preamble, as
+# (id, header) pairs. _strip_disabled_orchestrator_blocks slices disabled
+# blocks out by these headers; _STATIC_HARD_RULE_IDS derives from the ids.
+_ORCHESTRATOR_SECTIONS = [
+    ("visual-orchestrator",               "## Image creation: dispatch visual-orchestrator FIRST"),
+    ("photography-orchestrator",          "## Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator"),
+    ("illustration-orchestrator",         "## Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator"),
+    ("creative-visual-orchestrator",      "## Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator"),
+    ("material-orchestrator",             "## Material fidelity: dispatch material-orchestrator AFTER visual + creative-visual, BEFORE polish"),
+    ("simulation-orchestrator",           "## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST"),
+    ("interactive-media-orchestrator",    "## Interactive piece: dispatch interactive-media-orchestrator FIRST"),
+    ("narrative-experience-orchestrator", "## Immersive narrative: dispatch narrative-experience-orchestrator FIRST"),
+    ("game-experience-orchestrator",      "## Game-like immersive piece: dispatch game-experience-orchestrator FIRST"),
+    ("scrapbook-experience-orchestrator", "## Raster-collage / scrapbook / internet-aesthetic: build the WHOLE PAGE in scrapbook mode (NOT an iframe)"),
+    ("motion-studio-orchestrator",        "## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST"),
+    ("interactive-polish-orchestrator",   "## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA)"),
+]
+
+_STATIC_HARD_RULE_IDS = [i for i, _ in _ORCHESTRATOR_SECTIONS]
 
 
 def _dynamic_hard_rule_sections(enabled_ids: Optional[set]) -> str:
@@ -416,10 +429,7 @@ def _dynamic_hard_rule_sections(enabled_ids: Optional[set]) -> str:
     `hardRule` and whose id is NOT covered by the static preamble prose.
     enabled_ids=None means "all enabled" (no project context)."""
     try:
-        import sys
-        if _EDITOR_DIR not in sys.path:
-            sys.path.insert(0, _EDITOR_DIR)
-        import orchestrators as _pl
+        _pl = _editor_import("orchestrators")
         manifests = _pl._scan_manifests()
     except Exception:
         return ""
@@ -447,60 +457,46 @@ def get_capabilities() -> dict:
     """Aggregate every source into one snapshot. Cheap enough to call per
     request - file I/O against a handful of small files. No caching.
 
-    v3.5 - Also includes live availability (which providers have keys,
-    which local tools are installed) so agents curling /__capabilities
-    mid-session get the truth, not just the integrable list. Without
-    this, agents could see "OpenAI is integrated" and assume it'd work
-    when the key isn't actually configured."""
+    Also includes live availability (which providers have keys, which local
+    tools are installed) so agents curling /__capabilities mid-session get
+    the truth, not just the integrable list."""
+    media = _parse_media_models()
     return {
         "version":         "1",
         "summary":         "Canonical catalog of what this app supports. If the user asks about something not listed here, it genuinely isn't integrated.",
-        "providers":       _parse_media_models().get("providers", []),
-        "imageModels":     _parse_media_models().get("imageModels", []),
+        "providers":       media.get("providers", []),
+        "imageModels":     media.get("imageModels", []),
         # The user-default image model (the `default: true` row in media-models.js).
         # Agents told to "use the user-default image model" MUST read THIS, never
         # guess. Currently {id: "gpt-image-2", provider: "openai"}.
-        "defaultImageModel": _parse_media_models().get("defaultImageModel"),
-        "skills":          _parse_media_models().get("skills", []),
+        "defaultImageModel": media.get("defaultImageModel"),
+        "skills":          media.get("skills", []),
         "subagents":       _scan_subagents(),
         "endpoints":       _daemon_endpoints(),
         "kinds":           _node_kinds(),
-        # v3.12 - workspace-level custom skills + MCP inventory. Both are
-        # user-mutable from the landing System tab (skill upload / MCP add),
-        # re-scanned per call so additions surface without a daemon restart.
+        # Workspace-level custom skills + MCP inventory. Both are user-mutable
+        # from the landing System tab (skill upload / MCP add), re-scanned per
+        # call so additions surface without a daemon restart.
         "harnessSkills":   _scan_harness_skills(),
         "mcpServers":      _mcp_server_inventory(),
-        # v3.5 - live state. Re-probed on every call (no caching).
+        # Live state. Re-probed on every call (no caching).
         "providerAvailability": _live_provider_availability(),
         "localTools":           _local_tool_availability(),
     }
 
 
 def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
-    """v3.3 - Remove the hard-rule block for any orchestrator not in `enabled_ids`.
+    """Remove the hard-rule block for any orchestrator not in `enabled_ids`.
 
-    Each orchestrator's hard-rule block is a markdown section starting with one of
-    the SECTIONS headers below; it runs until the next `\n## ` heading (or EOF).
-    We remove `[start_of_section .. start_of_next_section)` for disabled IDs.
+    Each orchestrator's hard-rule block is a markdown section starting with one
+    of the _ORCHESTRATOR_SECTIONS headers; it runs until the next `\n## `
+    heading (or EOF). We remove `[start_of_section .. start_of_next_section)`
+    for disabled IDs.
 
     Conservative: if a section header isn't found, leave the text alone - the
     preamble is the source of truth and any inconsistency between this
     filter's known headers and the actual prose surfaces as a no-op."""
-    SECTIONS = [
-        ("## Image creation: dispatch visual-orchestrator FIRST",                      "visual-orchestrator"),
-        ("## Photography art-direction: dispatch photography-orchestrator BEFORE visual-orchestrator", "photography-orchestrator"),
-        ("## Illustration art-direction: dispatch illustration-orchestrator BEFORE visual-orchestrator", "illustration-orchestrator"),
-        ("## Creative-visual promotion: dispatch creative-visual-orchestrator AFTER visual-orchestrator", "creative-visual-orchestrator"),
-        ("## Material fidelity: dispatch material-orchestrator AFTER visual + creative-visual, BEFORE polish", "material-orchestrator"),
-        ("## Live view, 3D, real-world map, or living system: dispatch simulation-orchestrator FIRST", "simulation-orchestrator"),
-        ("## Interactive piece: dispatch interactive-media-orchestrator FIRST",        "interactive-media-orchestrator"),
-        ("## Immersive narrative: dispatch narrative-experience-orchestrator FIRST",   "narrative-experience-orchestrator"),
-        ("## Game-like immersive piece: dispatch game-experience-orchestrator FIRST",  "game-experience-orchestrator"),
-        ("## Raster-collage / scrapbook / internet-aesthetic: build the WHOLE PAGE in scrapbook mode (NOT an iframe)", "scrapbook-experience-orchestrator"),
-        ("## Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST", "motion-studio-orchestrator"),
-        ("## Interactive polish: dispatch interactive-polish-orchestrator LAST (before QA)", "interactive-polish-orchestrator"),
-    ]
-    for header_marker, orchestrator_id in SECTIONS:
+    for orchestrator_id, header_marker in _ORCHESTRATOR_SECTIONS:
         if orchestrator_id in enabled_ids:
             continue
         start = text.find(header_marker)
@@ -513,7 +509,7 @@ def _strip_disabled_orchestrator_blocks(text: str, enabled_ids: set) -> str:
     return text
 
 
-# ── v3.14 Leaf tier ── slim preamble for per-node drawer / lens spawns ──────
+# ── Leaf tier ── slim preamble for per-node drawer / lens spawns ────────────
 # A LEAF agent (a drawer building one slot, a lens judging one artifact) is
 # dispatched per-node and is already PAST the routing decision - it never
 # dispatches a sibling orchestrator. So the 21K of orchestrator-routing prose
@@ -563,7 +559,7 @@ returns the authoritative `full`-tier routing blocks (mental-model + plan-gate +
 
 
 # The scoped-iteration framing that REPLACES the stripped routing in the
-# `scoped` tier (v3.16). A scoped thread is the CHEAP follow-on chat: the
+# `scoped` tier. A scoped thread is the CHEAP follow-on chat: the
 # prototype already exists, its genre / design-system / aesthetic are already
 # committed, and the orchestration routing decision is already made. So it
 # drops the same ~21K of routing prose the slim leaf drops, but - unlike a
@@ -638,7 +634,7 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
                            project_root: Optional[str] = None) -> str:
     scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
     slug = prototype or "<slug>"
-    # v3.17 - Style-source discipline. The #1 iteration failure mode is the
+    # Style-source discipline. The #1 iteration failure mode is the
     # agent editing markup/CSS after reading ONLY the one file it's changing,
     # then inventing class names / CSS variables that don't exist (hallucinated
     # styles). A prototype's visual vocabulary lives in TWO places: its own
@@ -718,13 +714,11 @@ def _wired_provider_ids() -> set:
     tables so adding new entries automatically widens it.
     """
     try:
-        import sys, os
-        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if _editor_dir not in sys.path:
-            sys.path.insert(0, _editor_dir)
-        from serve import _GENERATE_DISPATCH, _TRANSFORM_DISPATCH, _LLM_DISPATCH
+        _serve = _editor_import()
         out = set()
-        for (_skill, provider) in list(_GENERATE_DISPATCH.keys()) + list(_TRANSFORM_DISPATCH.keys()) + list(_LLM_DISPATCH.keys()):
+        for (_skill, provider) in (list(_serve._GENERATE_DISPATCH.keys())
+                                   + list(_serve._TRANSFORM_DISPATCH.keys())
+                                   + list(_serve._LLM_DISPATCH.keys())):
             if provider:
                 out.add(provider)
         return out
@@ -736,33 +730,19 @@ def _live_provider_availability() -> list:
     """For each WIRED provider (one with at least one dispatch-table entry),
     return {id, label, status} where status is "key" / "cli (...)" / "none".
 
-    v3.5 - Filtered to wired providers only. The catalog used to list every
-    provider in PROVIDERS regardless of whether the daemon could actually
-    dispatch them; agents saw "Recraft / BFL / Leonardo / Meshy" etc. and
-    might pick one only to hit "no renderer" 400s. Now the preamble only
-    advertises providers with at least one renderer, derived live from the
-    daemon's dispatch tables.
+    Filtered to wired providers only (derived live from the daemon's dispatch
+    tables) - advertising an unwired provider invites "no renderer" 400s.
     """
     rows = []
     try:
-        import sys, os
-        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if _editor_dir not in sys.path:
-            sys.path.insert(0, _editor_dir)
-        from serve import (
-            _media_config_load, _PROVIDER_ENV_KEYS,
-            detect_agent_bin,
-        )
-        cfg = _media_config_load()
-        claude_cli_installed = detect_agent_bin("claude") is not None
-        codex_cli_installed  = detect_agent_bin("codex") is not None
+        _serve = _editor_import()
+        cfg = _serve._media_config_load()
+        claude_cli_installed = _serve.detect_agent_bin("claude") is not None
+        codex_cli_installed  = _serve.detect_agent_bin("codex") is not None
         # CRITICAL: read providers from _parse_media_models() directly, NOT
-        # via get_capabilities(). get_capabilities() now embeds the result
-        # of THIS function in its payload, so calling it from here creates
-        # infinite recursion → stack overflow → daemon crash. Bug shipped
-        # in 49f9de9 and caught when the editor first hit /__capabilities
-        # after a daemon restart. The underlying parse is what we actually
-        # need anyway.
+        # via get_capabilities(). get_capabilities() embeds the result of
+        # THIS function in its payload, so calling it from here recurses
+        # infinitely and crashes the daemon.
         wired = _wired_provider_ids()
         providers_list = _parse_media_models().get("providers", [])
         # Filter to providers that ARE wired in the daemon's dispatch tables.
@@ -772,7 +752,7 @@ def _live_provider_availability() -> list:
             if not pid:
                 continue
             settings = cfg.get(pid, {}) if isinstance(cfg.get(pid), dict) else {}
-            env_key  = _PROVIDER_ENV_KEYS.get(pid) or ""
+            env_key  = _serve._PROVIDER_ENV_KEYS.get(pid) or ""
             has_key  = bool(settings.get("api_key")) or bool(os.environ.get(env_key) or "")
             if has_key:
                 status = "key"
@@ -793,10 +773,10 @@ def _local_tool_availability() -> dict:
     ImageMagick (compositing). Agents check these to know whether the
     raster-foreground pipeline actually completes locally.
 
-    v3.5 - Calls importlib.invalidate_caches() before find_spec so a tool
-    installed mid-session (e.g. `pip install rembg` after the daemon
-    started) is detected without a daemon restart. shutil.which scans
-    PATH each call so it's already fresh.
+    Calls importlib.invalidate_caches() before find_spec so a tool installed
+    mid-session (e.g. `pip install rembg` after the daemon started) is
+    detected without a daemon restart. shutil.which scans PATH each call so
+    it's already fresh.
     """
     out = {}
     try:
@@ -843,7 +823,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     knows what EXISTS without burning 3KB of tokens. For details the agent
     can `curl /__capabilities`.
 
-    v3.14 - `tier` controls how much routing the spawn carries:
+    `tier` controls how much routing the spawn carries:
       - "full"  (default): dispatch-capable spawns - main chat loop + orchestrators.
         Carries every orchestrator hard-rule (they route, they need them).
       - "slim": LEAF spawns - per-node drawers / lenses. Drops the ~21K of
@@ -852,17 +832,17 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         escalation on a closed checklist + a `?section=orchestrators` fetch.
         App-capabilities + verify gates are kept (a leaf needs those).
 
-    v3.3 - `project_root` lets the preamble respect the project's orchestrator
+    `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
     orchestrators are stripped out before return so spawned agents in that project
     do not see "dispatch <X>-orchestrator FIRST" cues for off orchestrators.
 
-    v3.5 - Embeds LIVE availability (which providers have keys configured, which
+    Embeds LIVE availability (which providers have keys configured, which
     local tools are installed) so the agent doesn't have to guess and doesn't
     bail out with "no provider is wired up" when keys are actually present."""
     caps = get_capabilities()
     provider_line = ", ".join(p["label"] for p in caps["providers"][:20])
-    # v3.5 - Live availability block. ✓ key / CLI fallback / ⚠ none - explicit so
+    # Live availability block. ✓ key / CLI fallback / ⚠ none - explicit so
     # the agent doesn't try to introspect env vars (where keys aren't) and
     # then conclude nothing works.
     avail_rows = _live_provider_availability()
@@ -877,21 +857,12 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     else:
         availability_lines = "  (availability probe failed - assume providers configurable; check via GET /__media_config)"
 
-    # v3.6 - Per-capability default providers, synced from the editor's
-    # localStorage to the daemon via POST /__default_providers. When the user
-    # has set "OpenAI gpt-image-2" as the Image-generation default in Settings,
-    # this block surfaces that to the spawned agent so it doesn't pick a
-    # different provider based on training-data familiarity (the studio bug
-    # where the agent went to fal-ai/flux-pro even though OpenAI was set as
-    # default for image gen).
+    # Per-capability default providers, synced from the editor's localStorage
+    # to the daemon via POST /__default_providers. Agents must read the default
+    # from here - never pick a provider from training-data familiarity.
     defaults_block = ""
     try:
-        import sys, os
-        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if _editor_dir not in sys.path:
-            sys.path.insert(0, _editor_dir)
-        from serve import _default_providers_get
-        defaults = _default_providers_get()
+        defaults = _editor_import()._default_providers_get()
         if defaults:
             _CAP_LABELS = {
                 "agent": "Chat / agent",
@@ -901,10 +872,9 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 "3d":    "3D generation",
                 "lottie": "Lottie animation",
             }
-            # When the user hasn't set an explicit IMAGE default, fall back to the
-            # media-models.js `default: true` model (gpt-image-2) rather than a vague
-            # "Auto - pick any provider". A vague row is exactly what made an agent
-            # GUESS and fall back to gpt-image-1 off a non-existent memory note.
+            # When the user hasn't set an explicit IMAGE default, fall back to
+            # the media-models.js `default: true` model rather than a vague
+            # "Auto - pick any provider" row.
             _img_default = _parse_media_models().get("defaultImageModel") or {}
             rows = []
             for cap_key, cap_label in _CAP_LABELS.items():
@@ -924,20 +894,15 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     except Exception:
         pass
 
-    # v3.13 - Per-orchestrator model overrides, synced from the editor's
-    # Orchestrators landing tab (localStorage → POST /__orchestrator_models).
-    # The agent-capability default above governs the whole spawn; these rows
-    # name orchestrators the user wants run on a DIFFERENT model. When you
-    # dispatch one of these orchestrators' subagent drawers via the Task tool,
-    # pass `model: <id>` so the drawer runs on the user's chosen model.
+    # Per-orchestrator model overrides, synced from the editor's Orchestrators
+    # landing tab (localStorage → POST /__orchestrator_models). The
+    # agent-capability default above governs the whole spawn; these rows name
+    # orchestrators the user wants run on a DIFFERENT model. When you dispatch
+    # one of these orchestrators' subagent drawers via the Task tool, pass
+    # `model: <id>` so the drawer runs on the user's chosen model.
     orchestrator_models_block = ""
     try:
-        import sys, os
-        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if _editor_dir not in sys.path:
-            sys.path.insert(0, _editor_dir)
-        from serve import _orchestrator_models_get
-        _orch_models = _orchestrator_models_get()
+        _orch_models = _editor_import()._orchestrator_models_get()
         if _orch_models:
             _orows = []
             for oid in sorted(_orch_models.keys()):
@@ -965,21 +930,16 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         f"  • glslang        {'✓ INSTALLED - shaders are compile-checked' if tools.get('glslang') else '⚠ NOT INSTALLED - brew install glslang'}\n"
         f"  • shader-verify  {'✓ INSTALLED - shaders are render-checked' if tools.get('shader_verify') else '⚠ NOT INSTALLED (optional headless render check)'}"
     )
-    # v3.10 - LOCAL FONT LIBRARY. Fonts the user uploaded (custom / licensed
-    # faces the CDNs don't carry) are collected under design-systems/<ds>/fonts/.
-    # Embed the live list when we have project context so the agent proposes
-    # from the user's own collection FIRST instead of defaulting to the same
-    # ten Google Fonts every time. Without project context, fall back to
-    # pointing at GET /__fonts.
+    # LOCAL FONT LIBRARY. Fonts the user uploaded (custom / licensed faces the
+    # CDNs don't carry) are collected under design-systems/<ds>/fonts/. Embed
+    # the live list when we have project context so the agent proposes from
+    # the user's own collection FIRST instead of defaulting to the same ten
+    # Google Fonts every time. Without project context, fall back to pointing
+    # at GET /__fonts.
     font_lines = ""
     try:
         if project_root:
-            import sys, os
-            _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            if _editor_dir not in sys.path:
-                sys.path.insert(0, _editor_dir)
-            from serve import _list_local_fonts
-            _font_rows = _list_local_fonts(project_root)
+            _font_rows = _editor_import()._list_local_fonts(project_root)
             if _font_rows:
                 font_lines = "\n".join(
                     f"  • '{r['family']}'  ({r['format']}, ds={r['ds']}) - stylesheet: {r['cssUrl']}"
@@ -991,21 +951,13 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         pass
     if not font_lines:
         font_lines = "  (no project context at preamble build time - enumerate with GET $TH_DAEMON_URL/__fonts?project=$TH_PROJECT_ID)"
-    # v3.9 - cap bumped from 60 to 100: the agent catalogue crossed 60 with the
-    # motion-studio family (7) + the photography / illustration / creative-visual /
-    # material families; at 60 the alphabetical tail (sim-*, vector-*, video,
-    # visual-orchestrator) was silently dropped from the preamble.
-    # v3.3 - cap bumped from 30 to 60 to fit the simulation + interactive-media
-    # orchestrator families (14 sim + 11 im + 3 lenses + the pre-existing visual
-    # family + housekeeping = ~42 today, leaving headroom).
-    # v3.15 - The subagent catalogue is the single largest line-item in the
-    # preamble (94 drawers × 140-char desc ≈ 4K tokens) and it ships to EVERY
-    # spawn. A leaf agent does NOT route (it builds/judges one thing), so the
-    # full descriptions are dead weight on the highest-volume agent type. Slim
-    # tier therefore carries names only (so it still knows what EXISTS, e.g. for
-    # the occasional co-dispatch) and points at /__capabilities for the
-    # descriptions. Full tier (orchestrators + main chat - the agents that
-    # actually pick a drawer) keeps the descriptions.
+    # Subagent slice cap is 100: the catalogue is ~94 drawers today, and a
+    # lower cap silently drops the alphabetical tail from the preamble.
+    # Slim/leaf tier carries names only: a leaf builds/judges one thing and
+    # rarely dispatches, so the full descriptions (~4K tokens) are dead weight
+    # on the highest-volume agent type - it fetches /__capabilities when it
+    # needs a drawer's purpose. Full tier (orchestrators + main chat, the
+    # agents that actually pick a drawer) keeps the descriptions.
     if tier in ("slim", "leaf"):
         _names = ", ".join(sa["name"] for sa in caps["subagents"][:100])
         subagent_lines = (
@@ -1020,23 +972,16 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     endpoint_lines = "\n".join(
         f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
     )
-    # v3.3 - Resolve which orchestrators are enabled for this project. On import
+    # Resolve which orchestrators are enabled for this project. On import
     # failure or no project context, default to "all enabled" (the safest
     # fallback - the agent sees every orchestrator rule, never silently misses one).
     enabled_orchestrators = None
     try:
-        # Late import - capabilities.py is sometimes imported before orchestrators
-        # in tests/tooling, so avoid a top-level circular risk.
-        import sys, os
-        _editor_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if _editor_dir not in sys.path:
-            sys.path.insert(0, _editor_dir)
-        import orchestrators as _pl
-        enabled_orchestrators = _pl.enabled_orchestrator_ids(project_root)
+        enabled_orchestrators = _editor_import("orchestrators").enabled_orchestrator_ids(project_root)
     except Exception:
         pass
 
-    # v3.12 - workspace custom skills (uploaded via landing → System → Custom
+    # Workspace custom skills (uploaded via landing → System → Custom
     # skills). These are NOT auto-loaded by the CLI's skill loader (cwd is the
     # project root, not the workspace), so the contract is: when a request
     # matches a skill's description, Read its SKILL.md and follow it.
@@ -1054,7 +999,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     else:
         custom_skills_block = ""
 
-    # v3.12 - MCP server inventory (catalog + manually wired config entries).
+    # MCP server inventory (catalog + manually wired config entries).
     # The detailed when-to-use routing lives in the MCP routing prompt the
     # daemon appends when a config exists; this block is the capabilities-level
     # truth so "do you have <X> MCP?" is answerable even mid-session.
@@ -1384,7 +1329,7 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
      #      It is NOT a code fix and does NOT go to the proposer.
      #   2. For the CODE-fixable failures, dispatch `solution-proposer` (Task) ONCE with the lens
      #      failures[] + builderNodes[]. It is cognitive-only: it writes FIX_PROPOSALS.json - a
-     #      fixPlan[] of { targetDrawer, targetFile, rootCause, proposedFix } - and STRICTLY writes
+     #      fixPlan[] of {{ targetDrawer, targetFile, rootCause, proposedFix }} - and STRICTLY writes
      #      no code and generates no assets (it diagnoses the remedy, the drawer applies it). If it
      #      finds a failure that actually needs asset generation it flags route:"asset-generation"
      #      and you route that one per step 1.
@@ -2147,9 +2092,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # is None - see the import-failure fallback above).
     if enabled_orchestrators is not None:
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
-    # v3.19 - paths are named by ROLE, not by preamble weight. Accept the legacy
-    # cost-names as aliases so runs / callers created before the rename still
-    # resolve: "full" was the setup path, "slim" was the leaf path.
+    # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"
     elif tier == "slim":
@@ -2180,9 +2123,9 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
         return _preamble + _normal_general_stub()
     # SETUP path (default): a new prototype build. Keeps the full routing
-    # catalog. v3.12 - append manifest-carried hard rules for orchestrators
-    # added after ship time (not covered by the static prose above). Appended
-    # AFTER the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
+    # catalog. Append manifest-carried hard rules for orchestrators added
+    # after ship time (not covered by the static prose above). Appended AFTER
+    # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
     return _preamble
 

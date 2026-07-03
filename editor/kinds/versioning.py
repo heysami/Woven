@@ -75,10 +75,6 @@ def make_ulid() -> str:
 
 # ── Path helpers ───────────────────────────────────────────────────────────
 
-def workflow_dir(project_root: str) -> str:
-    return os.path.join(project_root, WORKFLOW_DIRNAME)
-
-
 def runs_dir(project_root: str, node_id: Optional[str] = None,
              version_id: Optional[str] = None,
              composition_id: Optional[str] = None) -> str:
@@ -95,10 +91,6 @@ def view_dir(project_root: str, node_id: str, version_id: str,
         project_root, WORKFLOW_DIRNAME, VIEWS_DIRNAME,
         node_id, version_id, composition_id,
     )
-
-
-def source_root(project_root: str) -> str:
-    return os.path.join(project_root, SOURCE_DIRNAME)
 
 
 # ── Asset node introspection ───────────────────────────────────────────────
@@ -138,7 +130,7 @@ def is_asset(node: Dict[str, Any]) -> bool:
 
 VERSIONABLE_KINDS = ("asset", "prototype", "design-system")
 
-# v3.2 - Deferral state for scope-level (prototype / design-system) snapshots.
+# Deferral state for scope-level (prototype / design-system) snapshots.
 # Maps `abs(project_root)` → { nodeId → file_mtime_observed }. Populated by
 # snapshot_changed_assets() when a multi-file scope is still in flight; the
 # watcher calls flush_pending_scope_snapshots() on every tick to revisit
@@ -964,23 +956,13 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
         except Exception:
             return 0.0
 
-    # v3.2 - Scope-level quiescence debounce. For multi-file scopes
-    # (prototype, design-system) the agent's edit burst typically writes
-    # 5-20 files spread across several seconds (HTML, then CSS, then a few
-    # images, then a tweak). The watcher's 0.25s debounce was way too short
-    # - every file write past 250ms became its own snapshot, producing the
-    # "21 versions in 5 minutes" pattern the user reported.
-    #
-    # New rule for prototype/design-system: don't snapshot until the LATEST
-    # mtime in the scope is at least SCOPE_QUIESCENCE_SEC old (default 15s).
-    # If the latest mtime is more recent, the burst is still in flight -
-    # record the node in `_PENDING_SCOPE_SNAPSHOTS` so a subsequent watcher
-    # tick can re-attempt the snapshot even if no NEW file writes arrived
-    # in the interim. Without this, a burst that ends without further edits
-    # would never get snapshotted at all.
-    # Single-file asset nodes keep the original behaviour (the 1s clock-
-    # skew check below) because a single file's snapshot is already 1:1
-    # with the write event.
+    # Scope-level quiescence debounce: multi-file scopes (prototype /
+    # design-system) are written in bursts spread over several seconds, so
+    # don't snapshot until the scope's LATEST mtime is SCOPE_QUIESCENCE_SEC
+    # old. A still-hot scope is parked in `_PENDING_SCOPE_SNAPSHOTS` so a
+    # later watcher tick re-attempts once quiet (else a burst that ends with
+    # no further writes would never snapshot). Single-file asset nodes keep
+    # the 1s clock-skew check below (their snapshot is 1:1 with the write).
     SCOPE_QUIESCENCE_SEC = 15.0
     now_wall = _t.time()
     project_key = os.path.abspath(project_root)
@@ -1020,7 +1002,7 @@ def snapshot_changed_assets(project_root: str, workflow: Dict[str, Any],
             text = up.get("output") if isinstance(up.get("output"), str) else (up.get("text") or "")
             consumed[from_id] = {"outputHash": hash_text(text)}
 
-        # v3.1 - auto-derive sub-asset pins from edges when no manifest exists.
+        # Auto-derive sub-asset pins from edges when no manifest exists.
         sub_pins, sub_mounts = _auto_sub_assets_from_edges(workflow, nid, nodes_by_id)
         try:
             v = snapshot_asset(project_root, node,
@@ -1074,7 +1056,7 @@ def snapshot_asset_by_output_path(project_root: str, workflow: Dict[str, Any],
         if up.get("kind") == "asset": continue
         text = up.get("output") if isinstance(up.get("output"), str) else (up.get("text") or "")
         consumed[from_id] = {"outputHash": hash_text(text)}
-    # v3.1 - auto-derive sub-asset pins from edges.
+    # Auto-derive sub-asset pins from edges.
     sub_pins, sub_mounts = _auto_sub_assets_from_edges(workflow, target.get("id"))
     v = snapshot_asset(project_root, target,
                        consumed_versions=consumed,
@@ -1100,11 +1082,8 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
     producer = nodes_by_id.get(producer_node_id)
     if not producer: return created
 
-    # Find downstream versionable nodes. v3.2 - was `is_asset(n)`, which
-    # silently skipped prototype + design-system children even though both
-    # are in VERSIONABLE_KINDS. Producer-completion (
-    # ds-builder, etc.) snapshots now cover all three kinds, matching the
-    # file-watcher's `snapshot_changed_assets` coverage.
+    # Find downstream versionable nodes (asset + prototype + design-system,
+    # matching the file-watcher's `snapshot_changed_assets` coverage).
     downstream_asset_ids: List[str] = []
     for e in (workflow.get("edges") or []):
         from_ref = (e.get("from") or "")
@@ -1162,7 +1141,7 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
             search_dirs.append("source")
             manifest = read_manifest(project_root, search_dirs)
             sub_pins, sub_mounts = resolve_sub_assets(workflow, asset_id, manifest)
-            # v3.1 - fallback when no manifest: walk THIS asset's upstream
+            # Fallback when no manifest: walk THIS asset's upstream
             # edges and treat any asset upstream as a sub-asset. Without
             # this, compositions[].consumedSubVersions is always empty
             # because no subagent emits MANIFEST.json today.

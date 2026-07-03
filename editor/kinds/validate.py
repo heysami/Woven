@@ -13,7 +13,7 @@ Called at three points with three modes:
 import glob
 import os
 
-from .registry import KINDS, kind_contract
+from .registry import kind_contract
 
 
 # ── Violation types ─────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ def _resolve_path_template(template, node, project_root):
         "variant":  node.get("variant")  or "",
         "dsId":     node.get("dsId")     or "main",
         "id":       node.get("id")       or "",
-        # v3.3 - simulation + interactive-media + narrative-experience families.
+        # Simulation + interactive-media + narrative-experience families.
         # The orchestrator sets these on each component node when it scaffolds.
         "simId":    node.get("simId")    or "",
         "imId":     node.get("imId")     or "",
@@ -163,7 +163,7 @@ def _check_files_exist(node, contract, project_root):
                         viols.append(_violation(FILE_MISSING,
                             f"no .{ext} files in {left}", path=left))
         # outputs.X set / non-empty / in {a, b, c}
-        # v3.3 - value-membership assertions are the truthfulness floor for
+        # Value-membership assertions are the truthfulness floor for
         # lens-gated completion (see docs/features/simulation-and-interactive-
         # orchestrators.md §12.4). A lens drawer commits outputs.verdict = "pass"
         # or "fail"; the component contract requires outputs.lensVerdict

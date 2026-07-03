@@ -163,12 +163,6 @@ KINDS = {
         ),
         "perIdOverrides": {
             # ──────────────────────────────────────────────────────────────────
-            # v3.5 - Onboarding cut. The guided-new-project pipeline (research,
-            # PRD, DS, source-scaffold, brainstorm, coherence-pass, vision-verify)
-            # was removed wholesale. The visual / simulation / interactive /
-            # narrative orchestrators stay; their drawer overrides + per-id wildcards
-            # are below. Chat dispatches orchestrators directly via Path A/B in
-            # capabilities.py - no bp_*_build harness intermediary anymore.
             # Wildcard keys end in "_" per kind_contract's longest-prefix-match.
             # Node-id convention: <family>_<component>_<assetId>
             #   sim_scene_warehouse_floor       (NOT sim_warehouse_floor_scene)
@@ -439,7 +433,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 - NARRATIVE-EXPERIENCE orchestrator (the poetic cousin of sim).
+            # NARRATIVE-EXPERIENCE orchestrator (the poetic cousin of sim).
             # See docs/features/simulation-and-interactive-orchestrators.md
             # (narrative addendum). Mirrors sim's contract shape with three
             # substitutions: spine (scripted timeline) instead of loop,
@@ -548,7 +542,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 - GAME-EXPERIENCE orchestrator (the fifth sibling).
+            # GAME-EXPERIENCE orchestrator (the fifth sibling).
             # See docs/features/game-experience-orchestrator.md.
             # Inherits simulation-orchestrator's contract shape with three
             # substitutions: objective (goal/score/win-condition) is first-
@@ -687,7 +681,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 - SCRAPBOOK-EXPERIENCE orchestrator (the sixth sibling).
+            # SCRAPBOOK-EXPERIENCE orchestrator (the sixth sibling).
             # See docs/features/scrapbook-experience-orchestrator.md.
             # Inherits simulation-orchestrator's contract shape with two
             # distinctives: (1) the composition drawer co-dispatches
@@ -802,7 +796,7 @@ KINDS = {
             },
 
             # ──────────────────────────────────────────────────────────────────
-            # v3.3 - INTERACTIVE-POLISH orchestrator (the seventh sibling - POST-PASS).
+            # INTERACTIVE-POLISH orchestrator (the seventh sibling - POST-PASS).
             # See docs/features/interactive-polish-orchestrator.md.
             # Unlike the other six orchestrators, this runs LAST in the pipeline:
             # after another primary orchestrator's build phase (or after chat-Claude
@@ -1094,7 +1088,7 @@ KINDS = {
             "compatibleShells": {"type": "array", "required": True},
         },
         "outputsRoot":  "source/{prototype}/_ds_brainstorm/{variant}/",
-        # v2.50 - idTemplate: when the reconciler finds an orphan variant
+        # idTemplate: when the reconciler finds an orphan variant
         # folder on disk that has no matching node, auto-heal substitutes
         # {variant} here to build the new node id. Without this, auto-heal
         # would have to hardcode the prefix per kind - exactly the
@@ -1571,7 +1565,7 @@ KINDS = {
     },
 
     # ── composer ─────────────────────────────────────────────────────────
-    # v3.4.37 - Responsive layered canvas. Each wired asset becomes a
+    # Responsive layered canvas. Each wired asset becomes a
     # layer inside an aspect-ratio frame; per-layer state carries
     # opacity, anchor (12 modes incl. stretch/fill), offset, sizing.
     # Output is a rendered HTML view that downstream prototype/HTML
@@ -1635,7 +1629,7 @@ KINDS = {
     },
 
     # ── spline-3d ─────────────────────────────────────────────────────────
-    # v4.0 - Inline 3D scene editor (three.js), rendered DIRECTLY as a node
+    # Inline 3D scene editor (three.js), rendered DIRECTLY as a node
     # like composer / vector-editor - no more run-a-skill-to-spawn-an-asset
     # two-step. The editor (editor/tools/spline3d/index.html) is embedded in an
     # iframe; the scene autosaves to a JSON sidecar at
@@ -2034,7 +2028,7 @@ KINDS = {
     },
 
     # ── formatted-text ───────────────────────────────────────────────────
-    # v3.4.37 - Rich text node. The body is edited in-place via
+    # Rich text node. The body is edited in-place via
     # contentEditable, and the user can select a range to apply a
     # typography level from a wired Typography node. A plain Prompt
     # wired to `text-in` overwrites the body when its content changes.
@@ -2060,7 +2054,7 @@ KINDS = {
     },
 
     # ── mermaid ──────────────────────────────────────────────────────────
-    # v3.4.38 - Mermaid diagram node. The body renders via the mermaid.js
+    # Mermaid diagram node. The body renders via the mermaid.js
     # CDN bundle pinned in editor/index.html. Source code is stored
     # inline on the node, edited via a tailored code panel (same </>
     # affordance as the asset code panel) that surfaces a diagram-type
@@ -2086,7 +2080,7 @@ KINDS = {
         "notes": "User-driven. Renders Mermaid source via the CDN bundle in editor/index.html.",
     },
 
-    # ── simulation (v3.3 - live iframe for runnable simulation) ──────────
+    # ── simulation (live iframe for runnable simulation) ─────────────────
     # See docs/features/simulation-and-interactive-orchestrators.md §6.4.
     # Mirrors `prototype` shape; the component drawers that produce the
     # files this container points at are agent-kind per-id overrides
@@ -2126,7 +2120,7 @@ KINDS = {
         ),
     },
 
-    # ── interactive-media (v3.3 - live iframe for TouchDesigner-grade pieces)
+    # ── interactive-media (live iframe for TouchDesigner-grade pieces) ───
     # See docs/features/simulation-and-interactive-orchestrators.md §7.4.
     "interactive-media": {
         "title":        "Interactive media (live iframe)",
@@ -2165,7 +2159,7 @@ KINDS = {
         ),
     },
 
-    # ── hero-3d (v1.0 - live iframe for Spline-grade 3D hero scenes) ──────
+    # ── hero-3d (live iframe for Spline-grade 3D hero scenes) ────────────
     # The escalation container above the plain `3d` drawer trio. Routed by
     # visual-orchestrator's `3d-hero` classification or direct dispatch.
     # See `hero-3d-orchestrator.md` + docs/research/spline-grade-3d-study.md.
@@ -2205,7 +2199,7 @@ KINDS = {
         ),
     },
 
-    # ── scene-3d (v1.0 - the SHARED WebGL render layer) ──────────────────
+    # ── scene-3d (the SHARED WebGL render layer) ─────────────────────────
     # Symmetric to visual-orchestrator but for 3D. Built by
     # scene-3d-orchestrator via a per-SUBSYSTEM fan-out (research → N parallel
     # s3d_subsystem_ chunks each rendering standalone → interaction → runtime).
@@ -2256,7 +2250,7 @@ KINDS = {
         ),
     },
 
-    # ── narrative-experience (v3.3 - poetic cousin of `simulation`) ──────
+    # ── narrative-experience (poetic cousin of `simulation`) ─────────────
     # The user-facing artefact container for one immersive walk-into-this-
     # place piece. Mirrors `simulation` shape with three substitutions:
     # spine (scripted timeline) instead of loop, camera-as-narrator instead
@@ -2318,7 +2312,7 @@ KINDS = {
         ),
     },
 
-    # ── game-experience (v3.3 - fifth sibling of simulation/interactive/narrative)
+    # ── game-experience (fifth sibling of simulation/interactive/narrative)
     # The user-facing artefact container for one game-like immersive piece.
     # Same shape as `simulation` with three substitutions: objective (goal /
     # score / win-condition) is first-class; physics is its own engine module;
@@ -2460,7 +2454,7 @@ KINDS = {
         ),
     },
 
-    # ── interactive-polish (v3.3 - seventh sibling; POST-PASS orchestrator) ────
+    # ── interactive-polish (seventh sibling; POST-PASS orchestrator) ─────
     # Different shape from the other six: runs LAST in the pipeline, after
     # another primary orchestrator's build phase (or after chat-Claude has
     # hand-written source), BEFORE Step-8 QA. Reads existing source,

@@ -1,4 +1,4 @@
-"""Routing-pattern smoke test for the v3.0 asset-versioning endpoints.
+"""Routing-pattern smoke test for the asset-versioning endpoints.
 
 Validates that every URL we promise in docs/features/asset-versioning.md §7.2
 matches one of the regex patterns in serve.py's do_POST / do_DELETE. Doesn't

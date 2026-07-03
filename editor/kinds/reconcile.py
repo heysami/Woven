@@ -35,10 +35,10 @@ ABANDONED_STAGING  = "ABANDONED_STAGING"
 COHERENCE_NOT_RUN  = "COHERENCE_NOT_RUN"
 DATA_DRIFT         = "DATA_DRIFT"      # any block-severity entry in COHERENCE_REPORT.json
 KIND_MIGRATION     = "KIND_MIGRATION"  # node's kind disagrees with registry's declared kind for that id
-ORPHAN_ASSET_NO_PROTOTYPE_EDGE = "ORPHAN_ASSET_NO_PROTOTYPE_EDGE"  # v3.1 - asset has no edge to prototype
-ORPHAN_PROTOTYPE_FOLDER        = "ORPHAN_PROTOTYPE_FOLDER"        # v3.2 - source/<slug>/index.html on disk, no Prototype node
-PROTOTYPE_FOLDER_SETTLE        = "PROTOTYPE_FOLDER_SETTLE"        # v3.9 - eager pending Prototype node; index.html now landed → flip to done
-PROTOTYPE_FOLDER_ABANDON       = "PROTOTYPE_FOLDER_ABANDON"       # v3.9 - eager pending Prototype node whose folder lost all artifacts → remove
+ORPHAN_ASSET_NO_PROTOTYPE_EDGE = "ORPHAN_ASSET_NO_PROTOTYPE_EDGE"  # asset has no edge to prototype
+ORPHAN_PROTOTYPE_FOLDER        = "ORPHAN_PROTOTYPE_FOLDER"        # source/<slug>/index.html on disk, no Prototype node
+PROTOTYPE_FOLDER_SETTLE        = "PROTOTYPE_FOLDER_SETTLE"        # eager pending Prototype node; index.html now landed → flip to done
+PROTOTYPE_FOLDER_ABANDON       = "PROTOTYPE_FOLDER_ABANDON"       # eager pending Prototype node whose folder lost all artifacts → remove
 
 
 def _load_workflow(project_root):
@@ -149,17 +149,9 @@ def _detect_lying_status(workflow, project_root, drifts):
         if not isinstance(n, dict): continue
         kind = n.get("kind")
         if not kind: continue
-        # v2.50 - DO NOT touch agent-kind nodes. They own their own lifecycle:
-        # the subprocess completion hook flips runStatus on exit, and the
-        # editor's client-side polling state machine (WorkflowAgentNode) drives
-        # the downstream target upgrade (clear the asset's "Generating…"
-        # pending state + promote asset/html → prototype on done+file-exists).
-        # If the reconciler flips an agent to "done" out-of-band, the client
-        # reloads, sees "done", and EARLY-RETURNS before running settleTargets
-        # - stranding the asset at "Generating…" even though the file is on
-        # disk. That's the stuck-prototype bug. Agent status is the client's
-        # job, not the reconciler's. (The client also self-heals an orphaned
-        # agent whose runId is gone after a daemon restart.)
+        # DO NOT flip agent-kind status: agents own their lifecycle (subprocess
+        # completion hook + the editor's client-side polling drive the
+        # downstream target upgrade); an out-of-band flip strands the asset.
         if kind == "agent": continue
         contract = kind_contract(kind, n.get("id"))
         if not contract: continue
@@ -332,9 +324,9 @@ def _detect_abandoned_staging(workflow, project_root, drifts):
 
 def _detect_kind_migration(workflow, project_root, drifts):
     """Detect nodes whose `kind` disagrees with the registry's declared kind
-    for that id. v2.50 - when bs_html_* / bp_prd_* / etc. migrate from
-    skill·llm to agent kind in the scaffolder, existing projects' workflow.json
-    keeps the old kind. This drift surfaces those so they can auto-heal.
+    for that id. When a node id's registry-declared kind changes (e.g.
+    skill·llm → agent), existing projects' workflow.json keeps the old kind.
+    This drift surfaces those so they can auto-heal.
 
     The signal: the per-id override declares an outputsRoot AND a completion
     contract that only makes sense for one dispatch shape (agent). If the
@@ -465,13 +457,6 @@ def _detect_coherence(workflow, project_root, drifts):
                 })
 
 
-# v3.5 - `_detect_premature_stage` deleted. It mapped onboarding stage
-# letters (A/B/C/.../J) to bp_*_build / bp_prd_* / bs_html_* / etc. node id
-# prefixes for the guided-onboarding flow. Both the flow and the bp_*
-# preambles are gone; nothing writes `.onboarding-pending` anymore, so this
-# detector had no inputs to act on. Removed wholesale.
-
-
 _VISUAL_ASSET_KINDS = ("image", "svg", "video", "audio", "3d", "shader")
 _SOURCE_WRITE_ASSET_KINDS = ("html", "html-set", "markdown", "text")
 
@@ -486,18 +471,15 @@ def _asset_target_port(assetKind: str) -> str:
 
 
 def _detect_orphan_asset_no_prototype_edge(workflow, project_root, drifts):
-    """v4.0 - auto-wire an asset to a prototype ONLY when there is an EXPLICIT
+    """Auto-wire an asset to a prototype ONLY when there is an EXPLICIT
     relationship between them. An asset belongs to a prototype when it was
     exposed FROM that prototype (`asset.boundTo.node` points at the prototype)
     or it is listed in that prototype's `exposedAssets[]` (by id or path).
-
-    The pre-v4.0 rule wired ANY unwired asset to the prototype whenever exactly
-    one prototype existed - so a standalone asset the user created (never
-    associated with the prototype) got force-wired, and the edge re-appeared
-    every time the user deleted it. It also did nothing with 2+ prototypes.
-    Keying off the explicit binding fixes both: unrelated assets are left
-    alone, and each exposed asset re-wires to ITS prototype regardless of how
-    many prototypes exist.
+    Keying off the explicit binding matters: wiring ANY unwired asset to a
+    lone prototype force-wires standalone assets (the edge re-appears after
+    every user delete) and does nothing with 2+ prototypes; the explicit
+    binding leaves unrelated assets alone and re-wires each exposed asset to
+    ITS prototype regardless of how many prototypes exist.
 
     Routing branches by assetKind:
       • image/svg/video/audio/3d/shader → prototype.visual-assets
@@ -726,15 +708,12 @@ def _autoheal_lying_status(workflow, drift):
     return False
 
 
-# v3.5 - `_autoheal_premature_stage` deleted along with its detector.
-
-
 def _now_iso():
     import datetime
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-# v3.2 - Prototype-folder auto-detection.
+# Prototype-folder auto-detection.
 # When the agent (or a freeform Write) drops `source/<slug>/index.html` on
 # disk, the user expects a live Prototype node to appear on the canvas
 # WITHOUT dragging one in from the library. This detector + autoheal pair
@@ -749,7 +728,7 @@ _PROTOTYPE_FOLDER_SKIP_NAMES = {
     "_staging", "_tmp", ".staging", ".trash",
 }
 
-# v3.9 - "is this folder a prototype build in progress?" A prototype's entry
+# "Is this folder a prototype build in progress?" A prototype's entry
 # is index.html, but an agent typically writes it LAST (tokens → styles.css →
 # data.js → component JS → finally index.html), or writes other pages first
 # in a multi-HTML build. So a freshly-created slug folder can hold real build
@@ -800,18 +779,18 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     whole build lifecycle:
 
       • `source/<slug>/index.html` exists, no Prototype node covers the slug
-        → ORPHAN_PROTOTYPE_FOLDER (mount a done node). [v3.2]
+        → ORPHAN_PROTOTYPE_FOLDER (mount a done node).
       • `source/<slug>/` has build artifacts (any .html page, or the
         styles.css / data.js skeleton) but NO index.html yet, and no node
         covers the slug → ORPHAN_PROTOTYPE_FOLDER with `building: True`
         (mount an eager *pending* node so the canvas shows the build the
-        moment it starts, complete with the "working" badge). [v3.9]
+        moment it starts, complete with the "working" badge).
       • index.html has since landed for a slug already covered by an eager
         pending/running node → PROTOTYPE_FOLDER_SETTLE (flip it to done so
-        the iframe renders and the badge stops). [v3.9]
+        the iframe renders and the badge stops).
       • an eager pending node whose folder vanished or lost every artifact
         (build abandoned before index.html) → PROTOTYPE_FOLDER_ABANDON
-        (remove it, so we never leave a forever-"building" creature). [v3.9]
+        (remove it, so we never leave a forever-"building" creature).
 
     This makes the per-prototype subfolder convention feel automatic: the
     agent writes `source/<slug>/...`, the user sees a Prototype node appear
@@ -827,7 +806,7 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     # duplicate prototype_<slug> siblings every reconcile tick, and worse, to
     # respawn one immediately after the user deletes it (the canonical-field
     # node still exists, so the slug stays "orphaned" in this detector's eyes).
-    # v3.9 - also remember the covering node so we can settle / abandon eager
+    # Also remember the covering node so we can settle / abandon eager
     # pending nodes (keyed by canonical slug → node).
     slug_to_node = {}
     for n in nodes:
@@ -971,13 +950,13 @@ def _autoheal_orphan_prototype_folder(workflow, drift):
     while new_id in existing_ids:
         new_id = f"{base}_{i}"
         i += 1
-    # v3.2 - Default node size matches the prototype's natural viewport
+    # Default node size matches the prototype's natural viewport
     # aspect ratio (1440×900 → 16:10). The iframe scale-to-fit transform in
     # the frontend renders the prototype at its natural viewport size and
     # CSS-scales to fit the node body - but choosing a node size with the
     # same aspect means no letterbox. 720×482 = 16:10 (with +32 title bar
     # → 720×450 body region, which has the same 16:10 ratio as 1440×900).
-    # v3.9 - eager "building" mount. The folder has artifacts but no
+    # Eager "building" mount. The folder has artifacts but no
     # index.html yet, so render a pending node (the frontend shows a
     # "Building…" placeholder + the working badge) instead of a 404 iframe.
     # PROTOTYPE_FOLDER_SETTLE flips it to done once index.html lands.
@@ -1140,7 +1119,7 @@ def apply_versioning_migration(project_root):
       1. If no versions exist yet AND the canonical file is on disk → synthesize v0.
       2. Walk workflow/runs/<nodeId>/ and append any orphan version dirs that
          aren't already in versions[] (recovers snapshots whose entries were
-         stomped by a stale /__workflow POST race before v3.0 fixed it).
+         lost to a since-fixed /__workflow POST write race).
 
     Returns a list of {nodeId, action} entries describing what changed.
     """
@@ -1156,7 +1135,7 @@ def apply_versioning_migration(project_root):
     actions = []
     for n in nodes:
         if not isinstance(n, dict): continue
-        # v3.0 - versioning covers asset, prototype, design-system kinds.
+        # Versioning covers asset, prototype, design-system kinds.
         if not _vsn.is_versionable(n): continue
         try:
             if _vsn.migrate_legacy_asset(project_root, n):
@@ -1215,7 +1194,7 @@ def reconcile(project_root):
     try: _detect_orphan_asset_no_prototype_edge(wf, project_root, drifts)
     except Exception as e: drifts.append({"type":"reconciler_error","detail":str(e),"phase":"orphan_asset_prototype"})
 
-    # v3.2 - Detect source/<slug>/index.html with no Prototype node referencing
+    # Detect source/<slug>/index.html with no Prototype node referencing
     # it. Must run BEFORE the asset-no-prototype-edge detector noticed nothing
     # to wire to (because there WAS no prototype yet); the autoheal in the
     # same loop creates the prototype, and the asset-edge detector will fire
