@@ -46615,10 +46615,13 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // (image / svg / shader thumbs), so the user usually wants to scan the
   // grid first; the list view is the secondary, name-driven mode.
   const [outputsView, setOutputsView] = useState("grid");
-  // Multi-select for bulk delete of visual assets (moved here off the canvas
-  // nodes). Holds selected asset PATHS; a floating bulk-delete bar appears when
-  // non-empty (reuses WorkflowBulkDeleteBar). Cleared on tab switch + pruned to
-  // live paths after any reload so a deleted/renamed file can't linger selected.
+  // Multi-select for bulk delete of visual assets AND generated HTML pages
+  // (moved here off the canvas nodes). Holds selected PATHS; a floating
+  // bulk-delete bar appears when non-empty (reuses WorkflowBulkDeleteBar).
+  // Cleared on tab switch + pruned to live paths after any reload so a
+  // deleted/renamed file can't linger selected. Both kinds delete through the
+  // same /__assets/delete endpoint (deleteHtml IS deleteAsset), so one shared
+  // selection set + one bar covers both panels.
   const [assetSel, setAssetSel] = useState(() => new Set());
   const toggleAssetSel = useCallback((path) => {
     if (!path) return;
@@ -46735,15 +46738,17 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // Reset the bulk selection when the user switches library panels.
   useEffect(() => { clearAssetSel(); }, [tab, clearAssetSel]);
   // Prune selected paths that no longer exist after a reload (deleted/renamed).
+  // Live set spans BOTH selectable kinds: visual assets + generated HTML pages.
   useEffect(() => {
     setAssetSel(prev => {
       if (!prev.size) return prev;
       const live = new Set((assets || []).map(a => a.path));
+      for (const p of (htmlPagesRaw || [])) if (p && p.path) live.add(p.path);
       let drift = false;
       for (const p of prev) if (!live.has(p)) { drift = true; break; }
       return drift ? new Set(Array.from(prev).filter(p => live.has(p))) : prev;
     });
-  }, [assets]);
+  }, [assets, htmlPagesRaw]);
   // Visual-asset sub-grouping. Splits the flat `assets` list into
   // three buckets the user asked for:
   //   • scenes      - webgl/shader/dataviz/particles/3D scene HTMLs
@@ -47023,7 +47028,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
     ? html`
         <div
           key=${p.path}
-          className=${"workflow-library-card workflow-library-card-deletable workflow-library-card-generated" + (isThumb ? " is-thumbnail" : "")}
+          className=${"workflow-library-card workflow-library-card-deletable workflow-library-card-generated" + (isThumb ? " is-thumbnail" : "") + (assetSel.has(p.path) ? " is-selected" : "")}
           draggable=${true}
           onDragStart=${(e) => {
             e.dataTransfer.effectAllowed = "copy";
@@ -47032,6 +47037,11 @@ function WorkflowLibrary({ tab = "nodes" }) {
           }}
           title=${"Drag onto canvas - " + p.path + "\n(generated HTML page; not a registered prototype)"}
         >
+          <label className="workflow-library-sel" title="Select for bulk delete"
+            onMouseDown=${(ev) => ev.stopPropagation()} onClick=${(ev) => ev.stopPropagation()}>
+            <input type="checkbox" checked=${assetSel.has(p.path)}
+              onChange=${(ev) => { ev.stopPropagation(); toggleAssetSel(p.path); }}/>
+          </label>
           <div className="workflow-library-card-thumb workflow-library-card-thumb-html">
             <iframe
               src=${"/" + p.path + location.search}
@@ -47047,7 +47057,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
     : html`
         <div
           key=${p.path}
-          className=${"workflow-library-item workflow-library-item-deletable workflow-library-item-generated" + (isThumb ? " is-thumbnail" : "")}
+          className=${"workflow-library-item workflow-library-item-deletable workflow-library-item-generated" + (isThumb ? " is-thumbnail" : "") + (assetSel.has(p.path) ? " is-selected" : "")}
           draggable=${true}
           onDragStart=${(e) => {
             e.dataTransfer.effectAllowed = "copy";
@@ -47056,6 +47066,11 @@ function WorkflowLibrary({ tab = "nodes" }) {
           }}
           title=${"Drag onto canvas - " + p.path + "\n(generated HTML page; not a registered prototype)"}
         >
+          <label className="workflow-library-sel" title="Select for bulk delete"
+            onMouseDown=${(ev) => ev.stopPropagation()} onClick=${(ev) => ev.stopPropagation()}>
+            <input type="checkbox" checked=${assetSel.has(p.path)}
+              onChange=${(ev) => { ev.stopPropagation(); toggleAssetSel(p.path); }}/>
+          </label>
           <span className="workflow-library-item-glyph"><${Icon.NotesDoc}/></span>
           <span className="workflow-library-item-label">${p.label}</span>
           <span className="workflow-library-item-id">${p.branch}</span>
