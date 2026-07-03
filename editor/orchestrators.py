@@ -200,3 +200,21 @@ def direction_impact_map() -> dict:
         if oid:
             out[oid] = str(m.get("directionImpact") or "fills-slots")
     return out
+
+
+def render_layer_map() -> dict:
+    """Map orchestrator id -> the owns-surface HOST families it can fold into
+    as a subordinate render layer (manifest `renderLayerFor`).
+
+    Consulted by the pipeline reconciler: an owns-surface picked ALONGSIDE one
+    of its declared hosts (e.g. scene-3d next to narrative-experience) is an
+    ESCALATION of that host's scene, not a second whole-app - so it must fold
+    into the host instead of demoting the host out of the `whole` resolution.
+    Only ids that declare the field appear in the map."""
+    out: dict = {}
+    for m in _scan_manifests():
+        oid = m.get("id")
+        hosts = m.get("renderLayerFor")
+        if oid and isinstance(hosts, list):
+            out[oid] = [str(h) for h in hosts if isinstance(h, str) and h]
+    return out

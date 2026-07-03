@@ -5,6 +5,14 @@
   "version": "v1.0",
   "defaultEnabled": true,
   "directionImpact": "owns-surface",
+  "renderLayerFor": [
+    "narrative-experience-orchestrator",
+    "simulation-orchestrator",
+    "game-experience-orchestrator",
+    "interactive-media-orchestrator",
+    "motion-studio-orchestrator",
+    "hero-3d-orchestrator"
+  ],
   "subagentName": "scene-3d-orchestrator",
   "playbookPath": ".claude/agents/scene-3d-orchestrator.md",
 

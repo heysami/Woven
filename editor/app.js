@@ -15971,7 +15971,10 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
         const r2 = await fetch(apiUrl(`/__decision/${encodeURIComponent(decision.id)}`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ values, labels }),
+          // runId lets the daemon recover this thread's ORIGINAL brief (its
+          // first user message) onto pipeline.json at the orchestrator-plan
+          // lock, so the build thread can sanity-check plan against intent.
+          body: JSON.stringify({ values, labels, runId }),
         });
         if (!r2.ok) {
           const j = await r2.json().catch(() => ({}));
@@ -24386,7 +24389,7 @@ function WorkflowCanvas() {
   useEffect(() => {
     const on = () => {
       pendingHandoffRef.current = true;
-      spawnWorkflowChat("Build this prototype now: drive the locked plan (pipeline.json) to completion, running each orchestrator and gate in the order the plan lists.");
+      spawnWorkflowChat("Build this prototype now: drive the locked plan (pipeline.json) to completion, running each orchestrator and gate in the order the plan lists. pipeline.json may carry `brief` (the user's original request, verbatim) - it is the intent authority: if the locked plan's shape contradicts the brief's explicit experiential intent (e.g. the brief asks for an immersive piece but the plan boxed it into a section), pause and ask the user which to follow before driving on.");
     };
     window.addEventListener("woven:continue-scoped", on);
     return () => window.removeEventListener("woven:continue-scoped", on);

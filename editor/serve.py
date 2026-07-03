@@ -3330,6 +3330,40 @@ _RECONCILE_RESOLUTIONS = ("whole", "section", "separate")
 _PAGE_BUILD_IMPACTS    = ("fills-slots", "imposes-register")
 
 
+def _run_first_user_prompt(project_root, run_id):
+    """The FIRST user_message text of a run, mode-context wrapper stripped -
+    the user's original brief, recovered from the project chat log at plan-lock
+    time so the ledger can carry the intent verbatim (the plan's prose is a
+    digest of it, and digests drift). None when the run/log is missing."""
+    if not run_id or not re.match(r"^[A-Za-z0-9_-]{4,64}$", str(run_id)):
+        return None
+    path = _chat_jsonl_path(project_root)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    ev = json.loads(line)
+                except Exception:
+                    continue
+                if ev.get("runId") != run_id or ev.get("type") != "user_message":
+                    continue
+                data = ev.get("data")
+                text = (data.get("text") if isinstance(data, dict) else "") or ""
+                text = text.strip()
+                if not text:
+                    return None
+                # composeModeAwarePrompt prefixes "[Context: ...]" guidance,
+                # separated from the user's words by the first blank line.
+                if text.startswith("[Context:") and "\n\n" in text:
+                    text = text.split("\n\n", 1)[1].strip()
+                return text[:4000] or None
+    except OSError:
+        return None
+    return None
+
+
 def _orch_impacts():
     """orchestrator id -> directionImpact, from the manifests. Empty on failure
     (reconciliation then degrades to a no-op, never a crash)."""
@@ -3340,14 +3374,29 @@ def _orch_impacts():
         return {}
 
 
-def _reconcile_choices(owns, multi):
+def _orch_render_layers():
+    """orchestrator id -> host families it folds into (manifest `renderLayerFor`).
+    Empty on failure - folding then degrades to the plain multi conflict."""
+    try:
+        import orchestrators as _pl
+        return _pl.render_layer_map()
+    except Exception:
+        return {}
+
+
+def _reconcile_choices(primary, multi, folded=None):
     """The archetype options the gate offers, tailored to the conflict shape.
-    `whole` is offered only for a single owns-surface pick (two surfaces cannot
-    both BE the app)."""
-    lead = owns[0].replace("-orchestrator", "").replace("-", " ")
+    `whole` is offered only when a single PRIMARY owns-surface remains after
+    folding (two peer surfaces cannot both BE the app; a folded render layer
+    rides inside its host, so it never suppresses `whole`)."""
+    lead = primary[0].replace("-orchestrator", "").replace("-", " ")
+    fold = ""
+    if folded:
+        subs = ", ".join(s.replace("-orchestrator", "").replace("-", " ") for s in folded)
+        fold = f" ({subs} builds INSIDE it as its render layer)"
     choices = []
     if not multi:
-        choices.append({"id": "whole", "label": f"The whole app IS the {lead}",
+        choices.append({"id": "whole", "label": f"The whole app IS the {lead}{fold}",
             "detail": "Drop the website page-build enrichers; the prototype becomes just the shell that hosts the runtime."})
     choices.append({"id": "section", "label": "A bound section of the site",
         "detail": "Keep both. The surface nests under the prototype and inherits the app's DNA via the art-direction contract (art-director required)."})
@@ -3359,25 +3408,45 @@ def _reconcile_choices(owns, multi):
 def _pipeline_reconcile(picks, resolution=None):
     """Classify the roster's archetype coherence. Returns the `reconciliation`
     block stored on pipeline.json. `required` is True whenever an owns-surface
-    family is present and no valid resolution has been chosen yet."""
+    family is present and no valid resolution has been chosen yet.
+
+    FOLDING: an owns-surface that declares itself a render layer FOR another
+    picked owns-surface (scene-3d ticked next to narrative / sim / game / im /
+    motion-studio) is an ESCALATION of that host's scene, not a second
+    whole-app. It folds into the host - so the user asking for MORE immersion
+    by ticking scene-3d can never demote the host out of the `whole` option
+    (the exact failure that turned an immersive brief into a boxed section)."""
     impacts = _orch_impacts()
     owns = [o for o in picks if impacts.get(o) == "owns-surface"]
     page = [o for o in picks if impacts.get(o, "fills-slots") in _PAGE_BUILD_IMPACTS]
     res  = resolution if resolution in _RECONCILE_RESOLUTIONS else None
     if not owns:
         return {"required": False, "resolved": None, "conflict": None,
-                "ownsSurface": [], "pageBuild": page, "choices": [], "note": ""}
-    multi = len(owns) > 1
-    # `whole` is meaningless for two owns-surface families - downgrade to section.
+                "ownsSurface": [], "primary": [], "folded": {},
+                "pageBuild": page, "choices": [], "note": ""}
+    layers = _orch_render_layers()
+    folded = {}
+    for o in owns:
+        host = next((h for h in (layers.get(o) or []) if h in owns and h != o), None)
+        if host:
+            folded[o] = host
+    primary = [o for o in owns if o not in folded]
+    multi = len(primary) > 1
+    # `whole` is meaningless for two PEER owns-surface families - downgrade to section.
     if res == "whole" and multi:
         res = None
     conflict = "multi-whole-app" if multi else "owns-surface-x-page-build"
     note = ("Two surfaces that each own a whole feel were picked - they cannot both BE the app."
             if multi else
             "An owns-surface family was picked alongside the website build - decide what kind of app this is.")
+    for s, h in folded.items():
+        note += (f" {s.replace('-orchestrator', '')} folds into"
+                 f" {h.replace('-orchestrator', '')} as its render layer"
+                 " (a scene escalation, not a second surface).")
     return {"required": res is None, "resolved": res, "conflict": conflict,
-            "ownsSurface": owns, "pageBuild": page,
-            "choices": _reconcile_choices(owns, multi), "note": note}
+            "ownsSurface": owns, "primary": primary, "folded": folded,
+            "pageBuild": page,
+            "choices": _reconcile_choices(primary or owns, multi, folded), "note": note}
 
 
 def _pipeline_assemble(orchestrators, resolution=None):
@@ -3394,10 +3463,14 @@ def _pipeline_assemble(orchestrators, resolution=None):
                        parentId) and binds to the art-direction contract.
       - separate    -> owns-surface phases are marked `deferred:true` (their own
                        build in a later turn).
+    A FOLDED render layer (reconciliation.folded) never gets its own phase - its
+    host phase carries `renderLayers` and the build driver threads each entry's
+    directive into the host orchestrator's dispatch brief.
     Returns (phases, reconciliation)."""
     picks = [o for o in (orchestrators or []) if isinstance(o, str) and o.strip()]
     rec   = _pipeline_reconcile(picks, resolution)
     owns  = set(rec["ownsSurface"])
+    folded = rec.get("folded") or {}
     res   = rec["resolved"]
     drop_page = (res == "whole")
 
@@ -3414,6 +3487,10 @@ def _pipeline_assemble(orchestrators, resolution=None):
     for o in picks:
         if o == "art-director-orchestrator":
             continue
+        # A folded render layer builds INSIDE its host phase (renderLayers
+        # below) - never as its own top-level surface phase.
+        if o in folded:
+            continue
         is_owns = o in owns
         # `whole` app: the website enrichers have no page to enrich - drop them.
         if drop_page and not is_owns and impacts.get(o, "fills-slots") in _PAGE_BUILD_IMPACTS:
@@ -3429,6 +3506,16 @@ def _pipeline_assemble(orchestrators, resolution=None):
                 ph["deferred"] = True
             elif res == "whole":
                 ph["role"] = "whole-app"
+        subs = [s for s, h in folded.items() if h == o]
+        if subs:
+            # The build driver threads each directive into the HOST
+            # orchestrator's dispatch brief; the host co-dispatches the layer.
+            ph["renderLayers"] = [{
+                "orchestrator": s,
+                "directive": ("user-escalated render layer: commit the 3d-environment "
+                              "paradigm and co-dispatch " + s + " host-driven from this "
+                              "orchestrator; never dispatch it as its own surface"),
+            } for s in subs]
         phases.append(ph)
 
     # `section` needs the contract to bind to - flag when art-director is absent.
@@ -11665,7 +11752,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         # pipeline failure must not block the decision itself.
         if decision_id == "orchestrator-plan":
             try:
-                self._pipeline_lock(project_root, values)
+                # Carry the user's ORIGINAL brief onto the ledger: an explicit
+                # `brief` in the body wins (prose-commit path); else recover it
+                # from the locking run's first user_message (card-Send path
+                # passes `runId`). Best-effort - a missing brief never blocks.
+                brief = (body.get("brief") or "").strip() if isinstance(body.get("brief"), str) else ""
+                if not brief:
+                    brief = _run_first_user_prompt(project_root, body.get("runId")) or ""
+                self._pipeline_lock(project_root, values, brief=brief or None)
             except Exception:
                 pass
         # The surface-reconciliation pick resolves the archetype (whole / section
@@ -11685,18 +11779,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(abs_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2)
 
-    def _pipeline_lock(self, project_root, orchestrators, resolution=None):
+    def _pipeline_lock(self, project_root, orchestrators, resolution=None, brief=None):
         """Freeze the picked orchestrators into <project>/pipeline.json. Called
         from the orchestrator-plan decision (roster) and the surface-reconciliation
         decision (archetype resolution). Idempotent: re-locking preserves any
         existing step status/verdict so re-picking never wipes progress, AND
         preserves a prior archetype resolution when the owns-surface set is
         unchanged (a plain roster edit must not silently drop the reconciliation
-        the user already answered)."""
+        the user already answered). `brief` is the user's original build request
+        verbatim - persisted on the ledger as the intent authority the build
+        thread sanity-checks the plan's shape against (a locked plan is a digest
+        of the brief, and digests drift); preserved across re-locks."""
         rel = "pipeline.json"
         abs_path = _safe_join(project_root, rel)
         prior = {}
         prior_rec = None
+        prior_brief = None
         if os.path.exists(abs_path):
             try:
                 with open(abs_path, encoding="utf-8") as f:
@@ -11705,8 +11803,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                     for s in (ph.get("steps") or []):
                         prior[(ph.get("id"), s.get("id"))] = s
                 prior_rec = old.get("reconciliation")
+                prior_brief = old.get("brief")
             except Exception:
-                prior, prior_rec = {}, None
+                prior, prior_rec, prior_brief = {}, None, None
         # Carry a previously-answered archetype resolution forward on a plain
         # roster re-lock (no explicit resolution passed), but only while the
         # owns-surface set is identical - changing which surface is in play
@@ -11732,6 +11831,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             "reconciliation": rec,
             "phases": phases,
         }
+        kept_brief = (brief or "").strip() or (prior_brief or "").strip()
+        if kept_brief:
+            manifest["brief"] = kept_brief
         self._pipeline_write(project_root, rel, abs_path, manifest, "locked")
         return manifest
 
