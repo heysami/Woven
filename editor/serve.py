@@ -7911,6 +7911,16 @@ def _drain_stdout(state: "RunState") -> None:
             try:
                 frame = json.loads(line)
             except Exception:
+                # codex re-prints its FINAL assistant message to stdout as
+                # plain (non-JSON) text, but its authoritative streamed content
+                # already arrives on stderr (parsed by _CodexStderrParser). If
+                # we surfaced these stdout lines they'd double-emit the whole
+                # turn AND shred any multi-line block (e.g. a <direction-options>
+                # card) into one `raw` event per line, which the client can
+                # never reassemble into the interactive widget. Drop them for
+                # codex; stderr is the single source of truth.
+                if state.agent_id == "codex":
+                    continue
                 # Some CLIs print non-JSON header lines. Keep them as raw text
                 # so the user can see something even if the parser is wrong.
                 state.append("agent", {"type": "raw", "text": line})
@@ -8177,6 +8187,15 @@ class _CodexStderrParser:
     _ROLE_MARKERS = {"user", "codex", "thinking"}
     # Reserved bare-tokens that AREN'T tool names (handled separately).
     _RESERVED_NON_TOOL = {"user", "codex", "thinking"}
+    # Codex's built-in tool markers. A bare lowercase token opens a new tool
+    # call ONLY when it's one of these. Any OTHER lone word - a heading or
+    # fenced-block word inside catted file output (e.g. "done", "chromatic"
+    # from a design-library doc) - is content, not a phantom tool. Codex
+    # routes all shell work through `exec`, so this set is small and stable.
+    _TOOL_MARKERS = {
+        "exec", "apply_patch", "read_file", "write_file",
+        "update_plan", "web_search", "search", "view_image", "mcp",
+    }
     # Status line: "succeeded in 0ms" / "failed in 200ms" / "exited 1 in 0ms"
     # - with optional trailing ":" when more output follows.
     _STATUS_RX = re.compile(r"^\s*(succeeded|failed|exited(?:\s+\d+)?)\s+in\s+\d+ms(:?)\s*$")
@@ -8271,7 +8290,7 @@ class _CodexStderrParser:
                 else:  # thinking
                     self.state = "thinking"
                 return events, raw
-            if stripped not in self._RESERVED_NON_TOOL:
+            if stripped in self._TOOL_MARKERS:
                 # New tool starting - flush previous, open new.
                 ev = self._flush_tool()
                 if ev:
