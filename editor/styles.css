@@ -270,8 +270,9 @@ button {
 .th-left-rail {
   position: fixed;
   left: 0;
-  top: 0;          /* full height, flush to the top - the exact mirror of the
-                      right host; only the PANEL starts below the 44px bar */
+  top: var(--toolbar-h, 44px);   /* below the FULL-WIDTH top bar - the same
+                                    pattern as .app / .workflow-body: the bar
+                                    spans all columns, rails start under it */
   bottom: 0;
   display: flex;
   flex-direction: column;
@@ -4267,17 +4268,14 @@ select.sysadd-input {
 .ut-screen,
 .dev-view {
   padding-right: calc(var(--th-right-rail-w, 44px) + var(--dev-dock-w, 0px));
-  /* Mirror on the left: the thin left rail reserves its width on the whole
-     view (the top bar included, so "Projects" clears the rail)... */
-  padding-left: var(--th-right-rail-w, 44px);
 }
-/* ...but the open chat PANEL reserves its width on the BODY only - the panel
-   sits below the 44px top bar (same rule as .right-dock-floating), so pushing
-   the bar too would just shove "Projects / All prototypes" under the centered
-   view-switcher pills. */
+/* App-wide bar/rail pattern: the top bar spans the FULL width (no left
+   reserve on the view root, so it covers the rail column too - no dead
+   corner), and the BODY alone clears the rail + the open chat panel, both of
+   which sit below the bar. */
 .ut-screen-body,
 .dev-view-scroll {
-  padding-left: var(--dev-left-chat-w, 0px);
+  padding-left: calc(var(--th-right-rail-w, 44px) + var(--dev-left-chat-w, 0px));
 }
 .th-right-rail-btn {
   appearance: none;
