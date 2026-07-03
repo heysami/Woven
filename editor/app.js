@@ -9385,7 +9385,7 @@ function dockSlot(i, count) {
    ChatDrawer's wiring stays in App; tasks/comments/git render their embedded
    panels here. The left edge resizes the whole dock; the column/row dividers
    resize the panes. Only polls /__runs while a tasks tile is open. */
-function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating, hidden }) {
+function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onOpenTask, onStartChatWithPrompt, onClose, onSwap, onResizeStart, onColResize, onRowResize, floating, hidden }) {
   const [runs, setRuns] = useState([]);
   // Drag-to-swap state: dragId = the tile being dragged by its grip; overId =
   // the tile currently under the pointer (the swap target). Tile rects are
@@ -9448,7 +9448,8 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartCh
   const tileBody = (w) => {
     if (w.kind === "thread")   return renderThread(w);
     if (w.kind === "subagent") return html`<${SubagentPanel} agent=${w.agent} runTitle=${w.runTitle} />`;
-    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} />`;
+    if (w.kind === "task")     return html`<${TaskPanel} task=${w.task} runTitle=${w.runTitle} />`;
+    if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} onOpenTask=${onOpenTask} />`;
     if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     if (w.kind === "git")      return html`<${GitPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     return null;
@@ -9664,12 +9665,18 @@ function RightRailDock({ mode }) {
   const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
-  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
   const openWindow = useCallback((descOrKind) => {
     const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
-      if (desc.kind === "subagent") {
+      if (desc.kind === "task") {
+        // A task detail tile - keyed by the task id; reopening refreshes it.
+        const wid = "w_task_" + (desc.task?.id || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], task: desc.task, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "task", task: desc.task, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind === "subagent") {
         const wid = "w_sub_" + (desc.agent?.id || "x");
         const at = prev.findIndex(w => w.id === wid);
         if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
@@ -9948,6 +9955,7 @@ function RightRailDock({ mode }) {
       onStartChatWithPrompt=${spawnChat}
       onOpenRun=${reopenRun}
       onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+      onOpenTask=${(task, run) => openWindow({ kind: "task", task, runTitle: run?.title || run?.kind })}
       renderThread=${(w) => html`<${ChatDrawer}
         key=${w.id}
         run=${w.run}
@@ -10059,6 +10067,7 @@ function extractRunTasks(events) {
       const m = resultText(resultById.get(d.id)).match(/Task #(\d+)/);
       const id = m ? m[1] : String(seq);
       const t = { id, subject: inp.subject || inp.description || "Task",
+                  description: inp.description || "",
                   activeForm: inp.activeForm || "", status: "pending" };
       if (!byId.has(id)) order.push(id);
       byId.set(id, t);
@@ -10207,7 +10216,7 @@ function OrchestrationPlanView() {
    Plan (the locked pipeline.json), Subagents, and Tasks. Subagents + Tasks
    hydrate each run's transcript (/__chat) and list every dispatch + Task,
    grouped by run, newest first, FINISHED ones included. Read-only. */
-function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagent, embedded }) {
+function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagent, onOpenTask, embedded }) {
   // Per-run extracted { subagents, tasks }, keyed by runId.
   const [byRun, setByRun] = useState({});
   const [loading, setLoading] = useState(true);
@@ -10332,14 +10341,20 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
               </div>
             `)}
             ${g.tasks.map(t => html`
-              <div className="th-tasks-row" key=${t.id} title=${t.subject}>
+              <button
+                className="th-tasks-row th-tasks-row-btn"
+                key=${t.id}
+                onClick=${() => onOpenTask && onOpenTask(t, g.run)}
+                title=${`Open this task's detail in a panel\n${t.subject}`}
+              >
                 <span className="runs-row-dot" data-status=${taskDot(t.status)}/>
                 <${Icon.Check}/>
                 <span className="th-tasks-row-main">
                   <span className="th-tasks-row-label">${t.subject}</span>
                 </span>
                 <span className="th-tasks-row-state">${t.status || "pending"}</span>
-              </div>
+                <span className="th-tasks-row-go" aria-hidden="true"><${Icon.Chev}/></span>
+              </button>
             `)}
           </div>
         `)}
@@ -10356,6 +10371,44 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
    rail list. The payload is a snapshot taken at click time (frozen prompt +
    result); a still-running subagent shows its prompt and a "no result yet"
    placeholder until reopened. Always embedded in the dock. */
+/* TaskPanel - the task detail tile (dock kind "task"), mirror of
+   SubagentPanel: opened by clicking a task row in Tasks & subagents. Shows
+   the task's subject / status / active form / description + owning run. */
+function TaskPanel({ task, runTitle }) {
+  const t = task || {};
+  const dot = t.status === "completed" ? "done"
+            : t.status === "in_progress" ? "live"
+            : t.status === "cancelled" ? "fail" : "waiting";
+  return html`
+    <div className="th-rail-panel th-rail-panel-embedded th-subagent-panel">
+      <div className="runs-panel-head th-subagent-head">
+        <span className="runs-row-dot" data-status=${dot}/>
+        <${Icon.Check}/>
+        <span className="th-subagent-head-main">
+          <span className="th-tasks-row-type">task${t.id ? ` #${t.id}` : ""}</span>
+          <span className="th-subagent-head-label">${t.subject || "Task"}</span>
+        </span>
+        <span className="th-tasks-row-state">${t.status || "pending"}</span>
+      </div>
+      <div className="th-rail-panel-body th-subagent-body">
+        ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
+        ${t.activeForm && html`
+          <div className="th-tasks-agent-sec">
+            <div className="th-tasks-agent-sec-h">While active</div>
+            <div className="th-subagent-run">${t.activeForm}</div>
+          </div>`}
+        ${t.description && t.description !== t.subject && html`
+          <div className="th-tasks-agent-sec">
+            <div className="th-tasks-agent-sec-h">Description</div>
+            <pre className="th-tasks-agent-pre th-subagent-pre">${t.description}</pre>
+          </div>`}
+        ${!t.activeForm && (!t.description || t.description === t.subject) && html`
+          <div className="th-subagent-run">No further detail recorded - the task carries only its subject and status.</div>`}
+      </div>
+    </div>
+  `;
+}
+
 function SubagentPanel({ agent, runTitle }) {
   const a = agent || {};
   const state = a.error ? "failed" : a.done ? "done" : "running";
@@ -24062,14 +24115,20 @@ function WorkflowCanvas() {
   const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
-  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
   const openWindow = useCallback((descOrKind) => {
     // Callers pass either a kind string (rail buttons) or a descriptor object
     // ({ kind, run }) - normalise so desc.kind is always defined.
     const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
-      if (desc.kind === "subagent") {
+      if (desc.kind === "task") {
+        // A task detail tile - keyed by the task id; reopening refreshes it.
+        const wid = "w_task_" + (desc.task?.id || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], task: desc.task, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "task", task: desc.task, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind === "subagent") {
         // A subagent detail tile - keyed by the subagent id so each opens its
         // own pane; reopening the same one refreshes its frozen snapshot.
         const wid = "w_sub_" + (desc.agent?.id || "x");
@@ -25431,6 +25490,7 @@ function WorkflowCanvas() {
       onStartChatWithPrompt=${spawnWorkflowChat}
       onOpenRun=${reopenWorkflowRun}
       onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+      onOpenTask=${(task, run) => openWindow({ kind: "task", task, runTitle: run?.title || run?.kind })}
       renderThread=${(w) => html`<${ChatDrawer}
         key=${w.id}
         run=${w.run}
@@ -83494,7 +83554,7 @@ function App() {
   const dockRowRef   = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
 
   // Serialise windows for persistence (threads keep only their runId).
-  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
 
   const openWindow = useCallback((descOrKind) => {
     // Callers pass either a kind string (rail buttons) or a descriptor object
@@ -83502,7 +83562,13 @@ function App() {
     const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
       let next;
-      if (desc.kind === "subagent") {
+      if (desc.kind === "task") {
+        // A task detail tile - keyed by the task id; reopening refreshes it.
+        const wid = "w_task_" + (desc.task?.id || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], task: desc.task, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "task", task: desc.task, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind === "subagent") {
         // A subagent detail tile - keyed by the subagent id so each opens its
         // own pane; reopening the same one refreshes its frozen snapshot.
         const wid = "w_sub_" + (desc.agent?.id || "x");
@@ -84368,6 +84434,7 @@ function App() {
           }
         }}
         onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+      onOpenTask=${(task, run) => openWindow({ kind: "task", task, runTitle: run?.title || run?.kind })}
         renderThread=${(w) => html`<${ChatDrawer}
           key=${w.id}
           run=${w.run}
