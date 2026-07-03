@@ -9369,21 +9369,6 @@ function formatRunAge(ts) {
   if (sec < 86400) return `${Math.floor(sec/3600)}h ago`;
   return `${Math.floor(sec/86400)}d ago`;
 }
-/* RightNavRail - right-edge icon nav rail (the mirror of the left workflow
-   nav rail). Icon-only buttons with tooltips that open to their LEFT; clicking
-   an icon opens a FULL-HEIGHT panel that docks just left of the rail. Two
-   entries today - Agent runs (the chat-history list that used to live as a
-   dropdown in the top bar) and Tasks & subagents (every subagent dispatch +
-   harness task across all runs, finished ones included) - and shaped to hold
-   more later (add another <HoverTip> + panel case).
-
-   Polls /__runs while the runs panel is open so live runs update their status
-   dots; a slower background poll keeps the live pulse on the icon fresh while
-   the panel is closed. The tasks panel mounts lazily (TasksSubagentsPanel) and
-   reads each run's transcript on open.
-
-   Pass `hidden` (workflow fullscreen) to unmount the rail + its panel entirely. */
-
 /* dockSlot - map a window's index + the open-window count to its CSS-grid
    placement, producing the quadrant progression the user asked for:
      1 → full · 2 → two cols · 3 → left full + right top/bottom · 4 → 4 quadrants.
@@ -9504,18 +9489,15 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onStartCh
   `;
 }
 
-function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden }) {
-  // Which panel is open ("runs" | "tasks" | null).
-  const [active, setActive] = useState(null);
+/* LeftChatRunsList - the agent-runs history list (the right rail's old runs
+   panel, relocated left). "+ New chat" on top, then the run rows with status
+   dot / age / delete. Rendered INLINE as the left chat panel's resting state
+   (clicking the chat icon shows THIS list first - picking a run or + New chat
+   is what opens a thread), and inside LeftChatRunsBar's dropdown for switching
+   runs while a thread is open. */
+function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
   const [runs, setRuns] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  // Measured top of the rail so the fixed full-height panel aligns with it even
-  // when something (e.g. the DS-proposal banner) pushes the toolbar down. Falls
-  // back to the CSS top (var(--toolbar-h)) until measured.
-  const [railTop, setRailTop] = useState(null);
-  const railRef = useRef(null);
-  const panelRef = useRef(null);
-
   const reload = useCallback(async () => {
     try {
       const r = await fetch(apiUrl("/__runs"));
@@ -9523,17 +9505,14 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
       const j = await r.json();
       // Filter to the active project - the daemon returns runs from every one.
       const proj = activeProjectId();
-      const list = (j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj);
-      setRuns(list);
+      setRuns((j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj));
     } catch {
       setRuns([]);
     } finally {
       setLoaded(true);
     }
   }, []);
-
   // Delete a run - stop it if live, then purge its chat history server-side.
-  // Optimistically drops it from the list, then reconciles via reload().
   const deleteRun = useCallback(async (r) => {
     const label = r.title || r.kind || "this run";
     if (!(await uiConfirm(`Delete run "${label}"?\nThis stops it if running and removes its chat history.`))) return;
@@ -9550,172 +9529,154 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
       reload();
     }
   }, [reload]);
-
-  // Fast poll while the panel is open so live dots tick without manual refresh.
+  // Fast poll while visible so live dots tick without a manual refresh.
   useEffect(() => {
-    if (active !== "runs") return;
     reload();
     const t = setInterval(reload, 2000);
     return () => clearInterval(t);
-  }, [active, reload]);
-
-  // Slow background poll (+ one initial fetch) so the icon's live pulse stays
-  // accurate even with the panel closed - the rail is always on screen.
-  useEffect(() => {
-    reload();
-    const t = setInterval(reload, 6000);
-    return () => clearInterval(t);
   }, [reload]);
-
-  // Off-click closes the open panel. Clicks inside the rail (toggles) or the
-  // portaled panel (rows, refresh) count as "inside" so a row click fires
-  // before the panel tears down.
-  useEffect(() => {
-    if (!active) return;
-    const off = (e) => {
-      const inRail  = railRef.current  && railRef.current.contains(e.target);
-      const inPanel = panelRef.current && panelRef.current.contains(e.target);
-      if (!inRail && !inPanel) setActive(null);
-    };
-    document.addEventListener("mousedown", off);
-    return () => document.removeEventListener("mousedown", off);
-  }, [active]);
-
-  // Esc closes the panel (matches the rest of the editor's popover convention).
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (e) => { if (e.key === "Escape") setActive(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active]);
-
-  // Let any caller open a rail panel by name via a CustomEvent, without lifting
-  // this state up.
-  useEffect(() => {
-    const onOpen = (e) => {
-      const which = e?.detail?.panel;
-      // Overlays (pickers) toggle the rail's own active panel; tiling kinds
-      // (tasks / comments / git) open a dock window via the App-level callback.
-      if (which === "runs") setActive(which);
-      else if (which === "tasks" || which === "comments" || which === "git") onOpenWindow && onOpenWindow(which);
-    };
-    window.addEventListener("th:open-rail-panel", onOpen);
-    return () => window.removeEventListener("th:open-rail-panel", onOpen);
-  }, [onOpenWindow]);
-
-  // rAF-track the rail's top while the panel is open so it stays glued to the
-  // rail through banner show/hide, resize, scroll. Cheap (no-op when closed).
-  useEffect(() => {
-    if (!active) { setRailTop(null); return; }
-    let raf = 0; let last = null;
-    const tick = () => {
-      const el = railRef.current;
-      if (el) {
-        const t = Math.round(el.getBoundingClientRect().top);
-        if (last !== t) { last = t; setRailTop(t); }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [active]);
-
-  if (hidden) return null;
-
-  // "Live" = an agent process actively processing (not done with its turn).
-  const liveCount = runs.filter(r => !r.done && !r.turnDone).length;
-
-  const panel = active === "runs" ? createPortal(html`
-    <div
-      className="th-rail-panel"
-      ref=${panelRef}
-      style=${railTop != null ? { top: railTop + "px" } : null}>
-      <div className="runs-panel-head">
-        <span>Agent runs</span>
-        <button className="runs-refresh" onClick=${reload} title="Refresh">↻</button>
-      </div>
-      <div className="th-rail-panel-body">
-        ${onStartNewChat && html`
-          <button
-            className="runs-new-chat"
-            onClick=${() => { onStartNewChat(); setActive(null); }}
-            title="Start a new chat with the agent (no edits required)"
-          >
-            <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
-            <span className="runs-new-chat-label">New chat</span>
-          </button>
-        `}
-        ${runs.length === 0 && html`
-          <div className="runs-empty">
-            ${loaded
-              ? "No runs yet. Click + New chat above, or Submit on a pending edit."
-              : "Loading…"}
+  return html`
+    <div className="left-chat-runs-list">
+      ${onStartNewChat && html`
+        <button
+          type="button"
+          className="runs-new-chat"
+          onClick=${() => { onAfterPick && onAfterPick(); onStartNewChat(); }}
+          title="Start a new chat with the agent"
+        >
+          <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
+          <span className="runs-new-chat-label">New chat</span>
+        </button>
+      `}
+      ${runs.length === 0 && html`
+        <div className="runs-empty">${loaded ? "No runs yet. Click + New chat above." : "Loading…"}</div>
+      `}
+      ${runs.map(r => {
+        const isLive    = !r.done && !r.turnDone;
+        const isWaiting = !r.done &&  r.turnDone;
+        const intentionalStop = r.stopReason === "completed-orchestrator"
+                              || r.stopReason === "user-stop";
+        const succeeded = r.exitCode === 0 || r.exitCode == null || intentionalStop;
+        const status = isLive    ? "live"
+                     : isWaiting ? "waiting"
+                     : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
+                     : "fail";
+        return html`
+          <div className="runs-row-wrap" key=${r.runId}>
+            <button
+              className="runs-row"
+              onClick=${() => { onAfterPick && onAfterPick(); onOpenRun && onOpenRun(r); }}
+              title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
+            >
+              <span className="runs-row-dot" data-status=${status}/>
+              <span className="runs-row-title">${r.title || r.kind}</span>
+              <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
+            </button>
+            <button
+              className="runs-row-del"
+              title="Delete this run"
+              aria-label=${`Delete run ${r.title || r.kind}`}
+              onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
+            >
+              <${Icon.Trash}/>
+            </button>
           </div>
-        `}
-        ${runs.map(r => {
-          // Three visual states: live (mid-turn), waiting (turn done, agent
-          // dormant on stdin), ended (subprocess exited).
-          const isLive    = !r.done && !r.turnDone;
-          const isWaiting = !r.done &&  r.turnDone;
-          const intentionalStop = r.stopReason === "completed-orchestrator"
-                                || r.stopReason === "user-stop";
-          const succeeded = r.exitCode === 0 || r.exitCode == null || intentionalStop;
-          const status = isLive    ? "live"
-                       : isWaiting ? "waiting"
-                       : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
-                       : "fail";
-          const statusLabel = isLive ? "live"
-                            : isWaiting ? "ready"
-                            : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
-                            : "fail";
-          return html`
-            <div className="runs-row-wrap" key=${r.runId}>
-              <button
-                className="runs-row"
-                onClick=${() => { onOpenRun(r); setActive(null); }}
-                title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
-              >
-                <span className="runs-row-dot" data-status=${status} title=${statusLabel}/>
-                <span className="runs-row-title">${r.title || r.kind}</span>
-                <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
-              </button>
-              <button
-                className="runs-row-del"
-                title="Delete this run"
-                aria-label=${`Delete run ${r.title || r.kind}`}
-                onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
-              >
-                <${Icon.Trash}/>
-              </button>
-            </div>
-          `;
-        })}
-      </div>
+        `;
+      })}
     </div>
-  `, document.body) : null;
+  `;
+}
 
-  return html`<${React.Fragment}>
-    <nav className="th-right-rail" ref=${railRef} aria-label="Panels">
-      <${HoverTip}
-        placement="left"
-        className=${"th-right-rail-btn" + (active === "runs" ? " is-active" : "")}
-        ariaLabel=${liveCount > 0 ? `${liveCount} run${liveCount===1?'':'s'} active - open agent runs` : "Open agent runs"}
-        tip=${liveCount > 0
-          ? `Agent runs - ${liveCount} active · ${runs.length} total`
-          : (runs.length > 0 ? `Agent runs - ${runs.length} in this session` : "Agent runs - chat history")}
-        onClick=${() => setActive(a => a === "runs" ? null : "runs")}
+/* LeftChatRunsBar - slim header above an OPEN chat thread: Runs toggle (drops
+   down the same LeftChatRunsList to switch threads), + New chat, and a
+   collapse button that closes the whole left chat panel. */
+function LeftChatRunsBar({ onOpenRun, onStartNewChat, onCollapse }) {
+  const [open, setOpen] = useState(false);
+  const [runs, setRuns] = useState([]);
+  const wrapRef = useRef(null);
+  // Slow poll for the toggle's live pulse + count; the dropdown list polls
+  // itself fast while open.
+  useEffect(() => {
+    let dead = false;
+    const load = async () => {
+      try {
+        const r = await fetch(apiUrl("/__runs"));
+        const j = r.ok ? await r.json() : { runs: [] };
+        const proj = activeProjectId();
+        if (!dead) setRuns((j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj));
+      } catch {}
+    };
+    load();
+    const t = setInterval(load, 6000);
+    return () => { dead = true; clearInterval(t); };
+  }, []);
+  // Off-click / Esc close the dropdown (editor popover convention).
+  useEffect(() => {
+    if (!open) return;
+    const off = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", off);
+    window.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", off); window.removeEventListener("keydown", key); };
+  }, [open]);
+  const liveCount = runs.filter(r => !r.done && !r.turnDone).length;
+  return html`
+    <div className="left-chat-runs" ref=${wrapRef}>
+      <button
+        type="button"
+        className=${"left-chat-runs-toggle" + (open ? " is-open" : "")}
+        onClick=${() => setOpen(o => !o)}
+        title=${liveCount > 0 ? `Agent runs - ${liveCount} active · ${runs.length} total` : `Agent runs - ${runs.length} in this session`}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Comment}/>
           ${liveCount > 0 && html`<span className="runs-pulse" aria-label="${liveCount} live"/>`}
         </span>
-      <//>
+        <span>Runs</span>
+        <span className="left-chat-runs-count">${runs.length}</span>
+      </button>
+      ${onStartNewChat && html`
+        <button type="button" className="left-chat-runs-new" onClick=${() => { setOpen(false); onStartNewChat(); }} title="Start a new chat with the agent">
+          <${Icon.Plus}/><span>New chat</span>
+        </button>
+      `}
+      ${onCollapse && html`
+        <button type="button" className="left-chat-runs-collapse" onClick=${onCollapse} title="Collapse the chat panel" aria-label="Collapse the chat panel">×</button>
+      `}
+      ${open && html`
+        <div className="left-chat-runs-pop">
+          <${LeftChatRunsList} onOpenRun=${onOpenRun} onStartNewChat=${onStartNewChat} onAfterPick=${() => setOpen(false)}/>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* RightNavRail - right-edge icon nav rail. The agent-runs entry moved LEFT
+   (LeftChatRunsBar above the left chat panel); this rail now holds only the
+   tiling-dock panel openers - tasks & subagents, comments, git. */
+function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden }) {
+  // Let any caller open a dock panel by name via a CustomEvent, without
+  // lifting state up. (The old "runs" overlay moved to the left chat panel.)
+  useEffect(() => {
+    const onOpen = (e) => {
+      const which = e?.detail?.panel;
+      if (which === "tasks" || which === "comments" || which === "git") onOpenWindow && onOpenWindow(which);
+    };
+    window.addEventListener("th:open-rail-panel", onOpen);
+    return () => window.removeEventListener("th:open-rail-panel", onOpen);
+  }, [onOpenWindow]);
+
+  if (hidden) return null;
+
+  return html`<${React.Fragment}>
+    <nav className="th-right-rail" aria-label="Panels">
       <${HoverTip}
         placement="left"
         className=${"th-right-rail-btn" + (openKinds?.includes("tasks") ? " is-active" : "")}
         ariaLabel="Open tasks & subagents"
         tip="Tasks & subagents - every dispatch + to-do across runs, finished included"
-        onClick=${() => { setActive(null); onOpenWindow && onOpenWindow("tasks"); }}
+        onClick=${() => { onOpenWindow && onOpenWindow("tasks"); }}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Bot}/>
@@ -9726,7 +9687,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
         className=${"th-right-rail-btn" + (openKinds?.includes("comments") ? " is-active" : "")}
         ariaLabel="Open comments"
         tip="Comments - reviewer & live-guest feedback across the project (not AI build comments)"
-        onClick=${() => { setActive(null); onOpenWindow && onOpenWindow("comments"); }}
+        onClick=${() => { onOpenWindow && onOpenWindow("comments"); }}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.User}/>
@@ -9737,14 +9698,13 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
         className=${"th-right-rail-btn th-right-rail-btn-git" + (openKinds?.includes("git") ? " is-active" : "")}
         ariaLabel="Open git & GitHub"
         tip="Git - commit, push, pull & history for this project"
-        onClick=${() => { setActive(null); onOpenWindow && onOpenWindow("git"); }}
+        onClick=${() => { onOpenWindow && onOpenWindow("git"); }}
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.Branch}/>
         </span>
       <//>
     </nav>
-    ${panel}
   <//>`;
 }
 
@@ -9868,8 +9828,12 @@ function RightRailDock({ mode }) {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--dev-dock-w", (dockWindows.length > 0 ? chatWidth : 0) + "px");
-    return () => root.style.removeProperty("--dev-dock-w");
-  }, [chatWidth, dockWindows.length]);
+    root.style.setProperty("--dev-left-chat-w", (leftChatOpen ? chatWidth : 0) + "px");
+    return () => {
+      root.style.removeProperty("--dev-dock-w");
+      root.style.removeProperty("--dev-left-chat-w");
+    };
+  }, [chatWidth, dockWindows.length, leftChatOpen]);
   const startChatResize = useCallback((e) => {
     e.preventDefault();
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
@@ -9982,6 +9946,8 @@ function RightRailDock({ mode }) {
   return html`<div className="right-rail-dock-host">
     ${leftChatOpen && html`
       <div className="left-chat-floating">
+        ${chatRun && html`<${LeftChatRunsBar} onOpenRun=${reopenRun} onStartNewChat=${openChat} onCollapse=${() => setLeftChatOpen(false)}/>`}
+        <div className="left-chat-thread">
         ${chatRun ? html`<${ChatDrawer}
           key="left-chat"
           run=${chatRun}
@@ -9993,12 +9959,8 @@ function RightRailDock({ mode }) {
           permissionMode=${permissionMode}
           onPermissionModeChange=${onPermissionModeChange}
           onStartNewChat=${spawnChat}
-        />` : html`<div className="left-chat-empty">
-          <button type="button" className="runs-new-chat" onClick=${openChat}>
-            <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
-            <span className="runs-new-chat-label">New chat</span>
-          </button>
-        </div>`}
+        />` : html`<${LeftChatRunsList} onOpenRun=${reopenRun} onStartNewChat=${openChat}/>`}
+        </div>
       </div>
     `}
     <${RightNavRail}
@@ -24262,17 +24224,24 @@ function WorkflowCanvas() {
     // prototype viewer's frame is ALWAYS interactive, unlike canvas node
     // iframes, and otherwise eats the drag (same trap as node drags).
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
+    // With the CHAT panel active the column is sized by --workflow-chat-width
+    // (its own persisted width - chat needs more room than the library's
+    // resting LIB_MIN), so the drag drives chatWidth instead of libWidth.
+    const isChat = e.currentTarget.closest(".workflow-body")?.getAttribute("data-left-panel") === "chat";
     const startX = e.clientX;
-    const startW = libWidth;
+    const startW = isChat ? chatWidthRef.current : libWidth;
     const onMove = (ev) => {
-      const w = Math.max(LIB_MIN, Math.min(window.innerWidth * 0.5, startW + (ev.clientX - startX)));
-      setLibWidth(w);
+      const dx = ev.clientX - startX;
+      if (isChat) setChatWidth(Math.max(CHAT_MIN, Math.min(window.innerWidth * 0.7, startW + dx)));
+      else setLibWidth(Math.max(LIB_MIN, Math.min(window.innerWidth * 0.5, startW + dx)));
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       try { document.body.removeAttribute("data-panel-resizing"); } catch {}
-      // No persist: the library deliberately re-opens at LIB_MIN next load.
+      // Library width deliberately re-opens at LIB_MIN next load; the chat
+      // width persists (same key the old right drawer used).
+      if (isChat) { try { localStorage.setItem("th-workflow-chat-width", String(chatWidthRef.current)); } catch {} }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -25430,7 +25399,7 @@ function WorkflowCanvas() {
       chatBusy=${!!chatRun && !chatRunFinished}
       chatExists=${!!chatRun}
       chatOpenTick=${chatOpenTick}
-      chatPanel=${chatRun ? html`<${ChatDrawer}
+      chatPanel=${!chatRun ? null : html`<${ChatDrawer}
         key="left-chat"
         run=${chatRun}
         variant="tile"
@@ -25443,12 +25412,7 @@ function WorkflowCanvas() {
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
         targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} activePreviewSlug=${activePreviewSlug} run=${chatRun} />`}
-      />` : html`<div className="left-chat-empty">
-        <button type="button" className="runs-new-chat" onClick=${openWorkflowChat}>
-          <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
-          <span className="runs-new-chat-label">New chat</span>
-        </button>
-      </div>`}
+      />`}
       fullscreen=${fullscreen}
       setFullscreen=${setFullscreen}
       onOpenWindow=${openWindow}
@@ -33496,7 +33460,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     if (!chatOpenTick) return;
     toggleWbMode(false);
-    setMainView("canvas");
+    // Deliberately does NOT force mainView back to "canvas": in the prototype
+    // viewer the chat opens as a side column beside the preview (the proto
+    // grid shows the chat column via data-left-panel="chat").
     setLeftPanel("chat");
   }, [chatOpenTick]);
   const onRailPanel = useCallback((which) => {
@@ -44111,6 +44077,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         data-chat-active=${chatActive ? "true" : "false"}
         data-view=${mainView}
         data-left-panel=${mainView === "canvas" && wbMode ? "whiteboard"
+                          : leftPanel === "chat" ? "chat"
                           : mainView === "canvas" && leftPanel ? leftPanel : "none"}
       >
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
@@ -44119,7 +44086,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "chat" ? " is-active" : "") + (chatBusy ? " is-busy" : "")}
             ariaLabel="Agent chat"
             tip="Agent chat - run and steer the build"
-            onClick=${() => { onRailPanel("chat"); if (!chatExists && onOpenNewChat) onOpenNewChat(); }}
+            onClick=${() => onRailPanel("chat")}
           ><${Icon.Comment}/><//>
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
@@ -44186,18 +44153,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             />
           ` : html`
             <div className=${"workflow-left-chat" + (leftPanel === "chat" ? "" : " is-hidden")}>
-              ${chatPanel}
+              ${chatExists && html`<${LeftChatRunsBar} onOpenRun=${onReopenRun} onStartNewChat=${onOpenNewChat} onCollapse=${() => setLeftPanel(null)}/>`}
+              <div className="left-chat-thread">
+                ${chatExists
+                  ? chatPanel
+                  : html`<${LeftChatRunsList} onOpenRun=${onReopenRun} onStartNewChat=${onOpenNewChat}/>`}
+              </div>
             </div>
             ${leftPanel !== "chat" && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
           `}
-          <${WorkflowSectionsBar}
-            sections=${(data.nodes || []).filter(n => n.kind === "section")}
-            wrapRef=${wrapRef}
-            setPan=${setPan}
-            setZoom=${setZoom}
-            onPick=${(id) => setSelectedNodeIds(new Set([id]))}
-          />
-          <${WorkflowMiniMap} nodes=${data.nodes || []} extraBounds=${wbItems.map(wbItemBBox)} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan} setZoom=${setZoom}/>
+          ${(wbMode || leftPanel !== "chat") && html`
+            <${WorkflowSectionsBar}
+              sections=${(data.nodes || []).filter(n => n.kind === "section")}
+              wrapRef=${wrapRef}
+              setPan=${setPan}
+              setZoom=${setZoom}
+              onPick=${(id) => setSelectedNodeIds(new Set([id]))}
+            />
+            <${WorkflowMiniMap} nodes=${data.nodes || []} extraBounds=${wbItems.map(wbItemBBox)} pan=${pan} zoom=${zoom} wrapRef=${wrapRef} setPan=${setPan} setZoom=${setZoom}/>
+          `}
         </div>
         <div className="workflow-resize-handle workflow-resize-handle-lib" onMouseDown=${onLibResizeStart}/>
         <div
@@ -84277,15 +84251,25 @@ function App() {
         view=${view} setView=${setView}
         chatOpen=${leftChatOpen}
         onToggleChat=${() => {
-          // First option on the rail: open the left chat panel (seeding a
-          // new-chat shell when none exists yet); click again to collapse.
-          if (leftChatOpen) { setLeftChatOpen(false); return; }
-          setLeftChatOpen(true);
-          if (!chatRun) openNewChat();
+          // First option on the rail: toggle the left chat panel. With no
+          // focused run the panel shows the RUNS LIST first - picking a run
+          // or + New chat is what opens a thread (never auto-spawned).
+          setLeftChatOpen(v => !v);
         }}
       />`}
       ${!embedMode && leftChatOpen && html`
         <div className="app-left-chat">
+          ${chatRun && html`<${LeftChatRunsBar}
+            onOpenRun=${(run) => {
+              setChatRun(run);
+              setLastRun(run);
+              setRunFinished(!!run.done);
+              saveSettings({ lastRunId: run.runId });
+            }}
+            onStartNewChat=${openNewChat}
+            onCollapse=${() => setLeftChatOpen(false)}
+          />`}
+          <div className="left-chat-thread">
           ${chatRun ? html`<${ChatDrawer}
             key="left-chat"
             run=${chatRun}
@@ -84298,12 +84282,16 @@ function App() {
             onPermissionModeChange=${onPermissionModeChange}
             onStartNewChat=${spawnFromComposer}
             selectionCount=${editorSelectionCount}
-          />` : html`<div className="left-chat-empty">
-            <button type="button" className="runs-new-chat" onClick=${openNewChat}>
-              <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
-              <span className="runs-new-chat-label">New chat</span>
-            </button>
-          </div>`}
+          />` : html`<${LeftChatRunsList}
+            onOpenRun=${(run) => {
+              setChatRun(run);
+              setLastRun(run);
+              setRunFinished(!!run.done);
+              saveSettings({ lastRunId: run.runId });
+            }}
+            onStartNewChat=${openNewChat}
+          />`}
+          </div>
         </div>
       `}
       ${!embedMode && html`<${RightNavRail}
