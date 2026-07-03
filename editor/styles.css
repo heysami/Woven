@@ -4515,6 +4515,58 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-plan-by { color: var(--text-faint); }
 .th-plan-by.is-self { color: var(--danger); font-weight: 600; }
 
+/* Archetype reconciliation - the gate the ledger blocks on when an owns-surface
+   family collides with the page build ("a game AND a website"). */
+.th-plan-reconcile {
+  margin: 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--danger) 8%, transparent);
+}
+.th-plan-reconcile-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--danger);
+  letter-spacing: 0.01em;
+}
+.th-plan-reconcile-body {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.th-plan-reconcile-choices {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.th-plan-reconcile-choices b { color: var(--text); }
+.th-plan-reconciled {
+  margin: 8px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.th-plan-reconciled b { color: var(--text); }
+.th-plan-arche {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.th-plan-arche-unresolved { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border)); }
+.th-plan-arche-bound { color: var(--accent, oklch(72% 0.16 50)); border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 40%, var(--border)); }
+.th-plan-arche-deferred { color: var(--text-faint); }
+.th-plan-arche-whole { color: var(--text); border-color: var(--border-strong, var(--border)); }
+
 .th-tasks-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
 .th-tasks-group-head {
   display: flex;

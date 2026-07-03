@@ -181,3 +181,22 @@ def enabled_orchestrator_ids(project_root: Optional[str] = None) -> set:
     blocks should be included in the per-spawn system prompt?"""
     reg = get_registry(project_root)
     return {p["id"] for p in reg["orchestrators"] if p.get("enabled")}
+
+
+def direction_impact_map() -> dict:
+    """Map every orchestrator id -> its manifest `directionImpact`.
+
+    The archetype classifier the pipeline reconciler consults. Values seen in
+    the manifests: `owns-surface` (embeds a self-contained full-feel runtime -
+    game / sim / motion / narrative / scrapbook / scene-3d / interactive-media),
+    `sets-direction` (art-director, pre-build), `fills-slots` /
+    `imposes-register` (page-build enrichers), `none`. An orchestrator with no
+    declared impact defaults to `fills-slots` (a page enricher - the safe,
+    non-archetype-claiming assumption). Read from the manifests so the taxonomy
+    can't drift out of sync with a hardcoded list in serve.py."""
+    out: dict = {}
+    for m in _scan_manifests():
+        oid = m.get("id")
+        if oid:
+            out[oid] = str(m.get("directionImpact") or "fills-slots")
+    return out

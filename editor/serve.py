@@ -3323,27 +3323,141 @@ def _pipeline_template_phase(orch_id):
             "steps": [_pstep("research", "Research"), _pstep("build", "Build")] + _pipeline_final_gate()}
 
 
-def _pipeline_assemble(orchestrators):
-    """Build phases[] from the picked orchestrator ids. A base 'Prototype build'
-    phase is always present; art-director (pre-build) floats to the front."""
+# ── Archetype reconciliation ────────────────────────────────────────────
+# An "owns-surface" orchestrator (game / sim / motion / narrative / scrapbook /
+# scene-3d / interactive-media) embeds a self-contained runtime that owns a whole
+# surface with its OWN feel - picking one is choosing what KIND of app this is,
+# not adding a slot. The base "Prototype build" phase is ALWAYS a website/app
+# shell. So the instant an owns-surface family lands in the roster the plan is
+# ambiguous ("a game AND a website") and must NOT be a flat peer concatenation -
+# it must be reconciled: is the owns-surface the WHOLE app, a bound SECTION of
+# the site, or a SEPARATE artifact? That is the `surface-reconciliation` gate.
+# Detection lives HERE in code (not agent prose) so the ledger itself carries the
+# unresolved flag and blocks until the archetype is chosen.
+_RECONCILE_RESOLUTIONS = ("whole", "section", "separate")
+_PAGE_BUILD_IMPACTS    = ("fills-slots", "imposes-register")
+
+
+def _orch_impacts():
+    """orchestrator id -> directionImpact, from the manifests. Empty on failure
+    (reconciliation then degrades to a no-op, never a crash)."""
+    try:
+        import orchestrators as _pl
+        return _pl.direction_impact_map()
+    except Exception:
+        return {}
+
+
+def _reconcile_choices(owns, multi):
+    """The archetype options the gate offers, tailored to the conflict shape.
+    `whole` is offered only for a single owns-surface pick (two surfaces cannot
+    both BE the app)."""
+    lead = owns[0].replace("-orchestrator", "").replace("-", " ")
+    choices = []
+    if not multi:
+        choices.append({"id": "whole", "label": f"The whole app IS the {lead}",
+            "detail": "Drop the website page-build enrichers; the prototype becomes just the shell that hosts the runtime."})
+    choices.append({"id": "section", "label": "A bound section of the site",
+        "detail": "Keep both. The surface nests under the prototype and inherits the app's DNA via the art-direction contract (art-director required)."})
+    choices.append({"id": "separate", "label": "A separate artifact",
+        "detail": "Build the page now; the owns-surface becomes its own build in another turn - not stitched into this one."})
+    return choices
+
+
+def _pipeline_reconcile(picks, resolution=None):
+    """Classify the roster's archetype coherence. Returns the `reconciliation`
+    block stored on pipeline.json. `required` is True whenever an owns-surface
+    family is present and no valid resolution has been chosen yet."""
+    impacts = _orch_impacts()
+    owns = [o for o in picks if impacts.get(o) == "owns-surface"]
+    page = [o for o in picks if impacts.get(o, "fills-slots") in _PAGE_BUILD_IMPACTS]
+    res  = resolution if resolution in _RECONCILE_RESOLUTIONS else None
+    if not owns:
+        return {"required": False, "resolved": None, "conflict": None,
+                "ownsSurface": [], "pageBuild": page, "choices": [], "note": ""}
+    multi = len(owns) > 1
+    # `whole` is meaningless for two owns-surface families - downgrade to section.
+    if res == "whole" and multi:
+        res = None
+    conflict = "multi-whole-app" if multi else "owns-surface-x-page-build"
+    note = ("Two surfaces that each own a whole feel were picked - they cannot both BE the app."
+            if multi else
+            "An owns-surface family was picked alongside the website build - decide what kind of app this is.")
+    return {"required": res is None, "resolved": res, "conflict": conflict,
+            "ownsSurface": owns, "pageBuild": page,
+            "choices": _reconcile_choices(owns, multi), "note": note}
+
+
+def _pipeline_assemble(orchestrators, resolution=None):
+    """Build phases[] from the picked orchestrator ids, RECONCILED by archetype.
+
+    A base 'Prototype build' phase is always present; art-director (pre-build)
+    floats to the front. When owns-surface families are present the phase set is
+    shaped by the reconciliation resolution:
+      - unresolved  -> owns-surface phases carry `unresolved:true` (the ledger is
+                       provisional; the build + completion guards block on it).
+      - whole       -> the owns-surface IS the app: page-build enrichers are
+                       dropped; the prototype phase is the shell that hosts it.
+      - section     -> the owns-surface nests under the prototype (boundSurface,
+                       parentId) and binds to the art-direction contract.
+      - separate    -> owns-surface phases are marked `deferred:true` (their own
+                       build in a later turn).
+    Returns (phases, reconciliation)."""
     picks = [o for o in (orchestrators or []) if isinstance(o, str) and o.strip()]
+    rec   = _pipeline_reconcile(picks, resolution)
+    owns  = set(rec["ownsSurface"])
+    res   = rec["resolved"]
+    drop_page = (res == "whole")
+
     phases = []
     if "art-director-orchestrator" in picks:
         phases.append(_pipeline_template_phase("art-director-orchestrator"))
-    phases.append({"id": "prototype", "orchestrator": None, "title": "Prototype build", "steps": [
+    phases.append({"id": "prototype", "orchestrator": None,
+                   "title": "Prototype build (app/site shell)" if owns else "Prototype build",
+                   "steps": [
         _pstep("build",     "Source (tokens/layout/components/content)"),
         _pstep("qa-render", "Render QA", "qa"),
     ]})
+    impacts = _orch_impacts()
     for o in picks:
-        if o != "art-director-orchestrator":
-            phases.append(_pipeline_template_phase(o))
-    return phases
+        if o == "art-director-orchestrator":
+            continue
+        is_owns = o in owns
+        # `whole` app: the website enrichers have no page to enrich - drop them.
+        if drop_page and not is_owns and impacts.get(o, "fills-slots") in _PAGE_BUILD_IMPACTS:
+            continue
+        ph = _pipeline_template_phase(o)
+        if is_owns:
+            if rec["required"]:
+                ph["unresolved"] = True                       # provisional - gate not answered
+            elif res == "section":
+                ph["boundSurface"] = True
+                ph["parentId"]     = "prototype"
+            elif res == "separate":
+                ph["deferred"] = True
+            elif res == "whole":
+                ph["role"] = "whole-app"
+        phases.append(ph)
+
+    # `section` needs the contract to bind to - flag when art-director is absent.
+    if res == "section" and "art-director-orchestrator" not in picks:
+        rec["needsArtDirector"] = True
+        rec["note"] = (rec.get("note", "") +
+                       " No art-director in the roster - add it so the bound surface inherits the app's DNA "
+                       "instead of forking into a second look.").strip()
+    return phases, rec
 
 
 def _pipeline_outstanding(manifest):
     """Gate/qa/lens rows across all phases not yet done - what a global
-    completion check blocks on."""
+    completion check blocks on. An unresolved archetype reconciliation is itself
+    an outstanding blocker: the build cannot be 'complete' while it is undecided
+    whether this is a game, a website, or a game-in-a-website."""
     out = []
+    rec = manifest.get("reconciliation")
+    if isinstance(rec, dict) and rec.get("required"):
+        out.append({"phaseId": None, "stepId": "surface-reconciliation",
+                    "title": "Archetype reconciliation (whole / section / separate)"})
     for ph in (manifest.get("phases") or []):
         for s in (ph.get("steps") or []):
             if s.get("kind") in _PIPELINE_GATE_KINDS and s.get("status") != "done":
@@ -11413,11 +11527,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(abs_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
         # The orchestrator-plan pick is the LOCK moment: freeze the picked
-        # orchestrators into pipeline.json (the durable flow ledger). Non-fatal
-        # - a pipeline failure must not block the decision itself.
+        # orchestrators into pipeline.json (the durable flow ledger). If the
+        # roster mixes an owns-surface family with the page build the lock writes
+        # reconciliation.required=true and the owns-surface phases stay provisional
+        # until the surface-reconciliation gate is answered. Non-fatal - a
+        # pipeline failure must not block the decision itself.
         if decision_id == "orchestrator-plan":
             try:
                 self._pipeline_lock(project_root, values)
+            except Exception:
+                pass
+        # The surface-reconciliation pick resolves the archetype (whole / section
+        # / separate) and RE-LOCKS the ledger with that resolution, using the
+        # roster already frozen at orchestrator-plan time.
+        elif decision_id == "surface-reconciliation":
+            try:
+                self._pipeline_reconcile_resolve(project_root, values[0])
             except Exception:
                 pass
         return self._reply(200, {"ok": True, "path": rel, "values": values})
@@ -11429,13 +11554,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(abs_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2)
 
-    def _pipeline_lock(self, project_root, orchestrators):
+    def _pipeline_lock(self, project_root, orchestrators, resolution=None):
         """Freeze the picked orchestrators into <project>/pipeline.json. Called
-        from the orchestrator-plan decision. Idempotent: re-locking preserves
-        any existing step status/verdict so re-picking never wipes progress."""
+        from the orchestrator-plan decision (roster) and the surface-reconciliation
+        decision (archetype resolution). Idempotent: re-locking preserves any
+        existing step status/verdict so re-picking never wipes progress, AND
+        preserves a prior archetype resolution when the owns-surface set is
+        unchanged (a plain roster edit must not silently drop the reconciliation
+        the user already answered)."""
         rel = "pipeline.json"
         abs_path = _safe_join(project_root, rel)
         prior = {}
+        prior_rec = None
         if os.path.exists(abs_path):
             try:
                 with open(abs_path, encoding="utf-8") as f:
@@ -11443,9 +11573,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                 for ph in (old.get("phases") or []):
                     for s in (ph.get("steps") or []):
                         prior[(ph.get("id"), s.get("id"))] = s
+                prior_rec = old.get("reconciliation")
             except Exception:
-                prior = {}
-        phases = _pipeline_assemble(orchestrators)
+                prior, prior_rec = {}, None
+        # Carry a previously-answered archetype resolution forward on a plain
+        # roster re-lock (no explicit resolution passed), but only while the
+        # owns-surface set is identical - changing which surface is in play
+        # re-opens the gate.
+        if resolution is None and isinstance(prior_rec, dict) and prior_rec.get("resolved"):
+            impacts   = _orch_impacts()
+            new_owns  = {o for o in (orchestrators or []) if impacts.get(o) == "owns-surface"}
+            prev_owns = set(prior_rec.get("ownsSurface") or [])
+            if new_owns and new_owns == prev_owns:
+                resolution = prior_rec.get("resolved")
+        phases, rec = _pipeline_assemble(orchestrators, resolution)
         for ph in phases:
             for s in ph["steps"]:
                 p = prior.get((ph["id"], s["id"]))
@@ -11457,10 +11598,31 @@ class H(http.server.SimpleHTTPRequestHandler):
             "version": 1,
             "lockedAt": int(time.time()),
             "orchestrators": [o for o in orchestrators if isinstance(o, str)],
+            "reconciliation": rec,
             "phases": phases,
         }
         self._pipeline_write(project_root, rel, abs_path, manifest, "locked")
         return manifest
+
+    def _pipeline_reconcile_resolve(self, project_root, resolution):
+        """Re-lock the ledger with an archetype resolution (whole / section /
+        separate) from the surface-reconciliation gate. Reads the roster already
+        frozen in pipeline.json so the resolution reshapes the SAME picks; no-op
+        if there is no locked ledger or the resolution is not recognised."""
+        if resolution not in _RECONCILE_RESOLUTIONS:
+            return None
+        abs_path = _safe_join(project_root, "pipeline.json")
+        if not os.path.exists(abs_path):
+            return None
+        try:
+            with open(abs_path, encoding="utf-8") as f:
+                cur = json.load(f)
+        except Exception:
+            return None
+        roster = [o for o in (cur.get("orchestrators") or []) if isinstance(o, str)]
+        if not roster:
+            return None
+        return self._pipeline_lock(project_root, roster, resolution=resolution)
 
     # ── POST /__pipeline/step ───────────────────────────────────────────
     # Body: { phaseId, stepId, status?, verdict?, verdictBy?, artifacts? }.

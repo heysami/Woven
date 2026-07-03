@@ -10294,6 +10294,14 @@ function OrchestrationPlanView() {
   const failN    = allSteps.filter(s => s.status === "fail" || s.status === "blocked").length;
   const totalN   = allSteps.length;
   const pct      = totalN ? Math.round(100 * doneN / totalN) : 0;
+  const rec      = plan.reconciliation;
+  // Archetype flag shown on a phase head (owns-surface families only).
+  const PHASE_FLAG = ph =>
+    ph.unresolved              ? { cls: "unresolved", label: "archetype unresolved" }
+    : ph.boundSurface          ? { cls: "bound",      label: "bound section" }
+    : ph.deferred              ? { cls: "deferred",   label: "deferred - own build" }
+    : ph.role === "whole-app"  ? { cls: "whole",      label: "whole app" }
+    : null;
 
   return html`
     <div className="th-plan">
@@ -10304,13 +10312,33 @@ function OrchestrationPlanView() {
           ${plan.orchestrators?.length ? html`<span className="th-plan-orchs"> · ${plan.orchestrators.length} orchestrators</span>` : ""}
         </div>
       </div>
+      ${rec && rec.required && html`
+        <div className="th-plan-reconcile" role="alert">
+          <div className="th-plan-reconcile-head">Archetype unresolved - build blocked</div>
+          <div className="th-plan-reconcile-body">
+            ${rec.note || "An owns-surface family was picked alongside the website build."}
+            ${" "}Is this the whole app, a bound section, or a separate artifact? The build waits for the reconciliation gate in chat.
+          </div>
+          ${rec.choices?.length ? html`
+            <ul className="th-plan-reconcile-choices">
+              ${rec.choices.map(c => html`<li key=${c.id}><b>${c.label}</b>${c.detail ? html` - ${c.detail}` : ""}</li>`)}
+            </ul>` : ""}
+        </div>`}
+      ${rec && !rec.required && rec.resolved && html`
+        <div className="th-plan-reconciled">
+          Archetype: <b>${rec.resolved === "whole" ? "whole app is the surface"
+            : rec.resolved === "section" ? "surface is a bound section" : "surface is a separate build"}</b>
+          ${rec.needsArtDirector ? html` · <span className="th-plan-fail">add art-director to bind it</span>` : ""}
+        </div>`}
       ${phases.map(ph => {
+        const flag = PHASE_FLAG(ph);
         const steps = ph.steps || [];
         const d = steps.filter(s => s.status === "done").length;
         return html`
           <div className="th-tasks-group th-plan-phase" key=${ph.id}>
             <div className="th-tasks-group-head th-plan-phase-head">
               <span className="th-tasks-group-title">${ph.title || ph.id}</span>
+              ${flag && html`<span className=${"th-plan-arche th-plan-arche-" + flag.cls}>${flag.label}</span>`}
               <span className="runs-row-age">${d}/${steps.length}</span>
             </div>
             ${ph.orchestrator && html`<div className="th-plan-orch">${ph.orchestrator}</div>`}
