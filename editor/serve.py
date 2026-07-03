@@ -6872,16 +6872,32 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         # Also rehydrate permission_mode from the persisted `spawned` event -
         # it MUST be restored after a daemon restart, or /resume spawns launch
         # with no bypass flags and every Edit / Write hits a permission prompt.
+        # tier / prototype / model matter just as much: without them /resume
+        # rebuilds the system prompt at the default (setup) tier without the
+        # prototype scope, which cache-busts the whole session and swaps the
+        # routing rules mid-thread.
         permission_mode = None
+        tier = first.get("tier")   # stamped on every persisted line
+        prototype = None
+        model = None
+        chain = None
         for rec in run_lines:
             data = rec.get("data") or {}
             # Capture session_id from any agent frame that carries it
             if isinstance(data, dict) and data.get("sessionId") and not session_id:
                 session_id = data["sessionId"]
-            # Capture permission_mode from the initial spawn event
-            if isinstance(data, dict) and data.get("label") == "spawned" \
-                    and data.get("permissionMode") and permission_mode is None:
-                permission_mode = data["permissionMode"]
+            # Capture spawn parameters from the initial spawn event
+            if isinstance(data, dict) and data.get("label") == "spawned":
+                if data.get("permissionMode") and permission_mode is None:
+                    permission_mode = data["permissionMode"]
+                if data.get("tier") and not tier:
+                    tier = data["tier"]
+                if data.get("prototype") and prototype is None:
+                    prototype = data["prototype"]
+                if data.get("model") and model is None:
+                    model = data["model"]
+                if data.get("chain") and chain is None:
+                    chain = data["chain"]
             if rec.get("type") == "__finish":
                 done = True
                 ec = data.get("exitCode") if isinstance(data, dict) else None
@@ -6917,6 +6933,23 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         # Fall back to the daemon default if the spawn event predates the
         # permissionMode field (old runs from before that field landed).
         state.permission_mode = permission_mode or AGENT_DEFS.get(agent_id, {}).get("permission_default")
+        state.tier = tier or None
+        state.prototype = prototype or None
+        state.model = model or None
+        state.chain_rest = list(chain) if chain else []
+        # A daemon restart mid build-chain loses the auto-dispatch of the
+        # remaining builders (the completion hook fires on process exit, which
+        # already happened). A CLEAN exit (0) advanced the chain before the
+        # restart, so only a non-clean end means the tail was dropped.
+        # Surface that in the transcript instead of stalling silently.
+        if chain and done and exit_code != 0:
+            seq += 1
+            events.append({"type": "status", "data": {
+                "label": "chain-dropped",
+                "detail": ("daemon restarted mid build-chain; remaining nodes "
+                           "not auto-dispatched: " + ", ".join(chain)),
+                "chain": list(chain),
+            }, "seq": seq})
         with RUNS_LOCK:
             RUNS[run_id] = state
         return state
@@ -7029,6 +7062,11 @@ class RunState:
                  # initialise, "scoped" = cheap iterate); None for node-agent /
                  # system runs. Surfaced to the UI for the thread-kind badge.
                  "tier",
+                 # prototype slug the chat's scoped preamble was built for
+                 # (body.prototype at spawn, falling back to branch). Stored so
+                 # /resume can rebuild the SAME system prompt - a different
+                 # prompt cache-busts the whole resumed session.
+                 "prototype",
                  # Chosen default model (Settings > Agent model), stored so a
                  # codex/opencode resume (a fresh spawn) re-applies the same
                  # --model instead of silently reverting to the CLI default on
@@ -7046,6 +7084,8 @@ class RunState:
         # node-agent / system runs (their badge comes from `kind`). Surfaced to
         # the UI so the chat header can badge Setup vs Subagent vs (scoped=none).
         self.tier = None
+        # prototype slug the scoped preamble was built for; set by _run_create.
+        self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
         self.model = None
         self.title = title
@@ -8617,6 +8657,173 @@ def _mcp_routing_prompt() -> str:
     )
 
 
+def _chat_ds_scope_note(project_root: str, branch: str) -> str:
+    """Design-system read discipline for the "Active prototype scope" block.
+    Any chat working on an existing (starred, non-main) prototype is
+    iteration; without this it edits styles from a single-file read and
+    hallucinates tokens / class names. Resolve the DS the prototype is bound
+    to (if any) and tell the agent to read the token + component sources
+    before authoring style. Mirrors the scoped stub."""
+    try:
+        from kinds.capabilities import _resolve_ds_binding
+        _dsb = _resolve_ds_binding(project_root, branch)
+        if _dsb:
+            _ds_reads = ", ".join(
+                f"`{p}`" for p in (_dsb.get("designMd"), _dsb.get("stylesCss"), _dsb.get("allCss")) if p
+            )
+            return (
+                f" This prototype is bound to design system `{_dsb['id']}` "
+                f"(`design-systems/{_dsb['id']}/`); its pages @import that DS's "
+                f"stylesheet, so the real token + class vocabulary lives there. "
+                f"BEFORE writing or changing any CSS / class name / markup, Read "
+                f"the DS sources ({_ds_reads}) together with "
+                f"`source/{branch}/styles.css` and the page you are editing, and "
+                f"use ONLY the `--tokens` and class names those files define - "
+                f"do not invent tokens / class names or hardcode a value when a "
+                f"matching DS token exists."
+            )
+        return (
+            f" Before writing or changing any CSS / class name / markup, Read "
+            f"`source/{branch}/styles.css` (and any stylesheet the page "
+            f"@imports) plus the page you are editing, so you reuse the tokens "
+            f"+ class names that already exist rather than inventing them."
+        )
+    except Exception:
+        return ""
+
+
+def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: str) -> str:
+    """System prompt for an interactive project chat on the claude runtime.
+
+    Used by BOTH the initial spawn (_run_create) and /resume (_run_resume) so
+    a resumed chat gets a byte-identical prompt. A resume that rebuilds this
+    differently (a different tier, a missing scope block) cache-busts the
+    entire resumed session AND changes the routing rules mid-thread - the
+    root cause of "a stopped chat needs way more turns/tokens afterwards".
+    """
+    sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
+    if WORKSPACE_DIR and project_root != INSTALL_ROOT:
+        sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
+    # When the spawn carries a non-default branch slug (the user is editing a
+    # specific starred prototype), tell the agent which `source/<slug>/`
+    # subtree is "active" so file reads/writes default to that subtree. Only
+    # emitted for non-"main" slugs so legacy single-prototype projects keep
+    # their current behavior verbatim. The phrasing matches AGENTS.md /
+    # PROTOTYPE.md "scope" vocabulary the agent already knows.
+    if branch and branch != "main":
+        sys_prompt = sys_prompt + (
+            "\n\n## Active prototype scope\n\n"
+            f"The user is currently editing the `source/{branch}/` "
+            "prototype. Default every file read, edit, and write to "
+            f"that subtree unless the user explicitly names a different "
+            "prototype. When a relative file path is ambiguous (e.g. "
+            "`index.html`), resolve it under "
+            f"`source/{branch}/`. Other `source/<slug>/` subtrees in "
+            "this project belong to sibling prototypes - leave them "
+            "alone unless the user asks for a cross-prototype change."
+            + _chat_ds_scope_note(project_root, branch)
+        )
+    # capabilities catalog: compact list of integrated providers + subagents +
+    # endpoints + node kinds so the agent doesn't answer "I don't have X" for
+    # features that ARE integrated. See kinds/capabilities.py.
+    try:
+        from kinds.capabilities import capabilities_preamble
+        sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype)
+    except Exception:
+        pass
+    if _mcp_config_spawn_args():
+        sys_prompt = sys_prompt + _mcp_routing_prompt()
+    return sys_prompt
+
+
+def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
+                         branch: str, tier: str, prototype: str) -> str:
+    """Harness preamble body for the argv-prompt runtimes (codex / opencode),
+    which have no --append-system-prompt flag: the caller prepends this to
+    the user prompt. Shared by the initial spawn (_run_create) AND the fake
+    resume (_run_resume_codex) - a resume without it drops every harness
+    rule (capabilities, dispatch bridge, output discipline) on the floor."""
+    _runtime_label = "Codex CLI" if agent_id == "codex" else "opencode CLI"
+    _write_tool = "apply_patch" if agent_id == "codex" else "the write/edit tool"
+    bits = [QUESTION_FORM_SYSTEM_PROMPT]
+    if WORKSPACE_DIR and project_root != INSTALL_ROOT:
+        bits.append(WORKSPACE_LAYOUT_PROMPT)
+    if branch and branch != "main":
+        bits.append(
+            "\n## Active prototype scope\n\n"
+            f"The user is currently editing the `source/{branch}/` "
+            "prototype. Default every file read, edit, and write to "
+            f"that subtree unless the user explicitly names a "
+            f"different prototype."
+            + _chat_ds_scope_note(project_root, branch)
+        )
+    try:
+        from kinds.capabilities import capabilities_preamble
+        bits.append(capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype))
+    except Exception:
+        pass
+    bits.append(
+        "\n## Subagent dispatch on this runtime\n\n"
+        f"You are running on the {_runtime_label}, which has no native "
+        "`Task` tool. Wherever the capabilities preamble or any subagent "
+        "spec instructs you to dispatch a planner subagent via the Task "
+        "tool, instead run this shell command:\n\n"
+        "```\n"
+        "curl -N -s -X POST "
+        f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+        "-H 'content-type: application/json' "
+        "-d '{\"type\":\"<orchestrator-id>\",\"brief\":\"<plain text brief>\"}'\n"
+        "```\n\n"
+        "The daemon streams the planner's progress as Server-Sent "
+        "Events. The connection stays open (with heartbeats) for the "
+        "full duration of the planner run - minutes to tens of "
+        "minutes is normal. Events you'll see:\n"
+        "  • `event: planner-dispatched` - first; carries `runId`\n"
+        "  • `event: agent` - agent text / tool calls / tool results\n"
+        "  • `event: planner-done` - last; carries the synthesized "
+        "    `output` you treat as the Task return value\n\n"
+        "Wait for the `planner-done` event to arrive, then parse its "
+        "`data:` JSON and use the `output` field. If your connection "
+        "drops before `planner-done` arrives, do NOT re-dispatch: the "
+        "planner keeps running; re-fetch its result with\n"
+        f"`curl -s 'http://127.0.0.1:{PORT}/__dispatch_planner/result"
+        f"?project={project_id}&runId=<runId>'`\n"
+        "(poll it until `done` is true). The endpoint is "
+        "reentrant - a planner that needs nested subagent dispatch "
+        "will use the same curl pattern, and the daemon picks the "
+        "best runtime for each level."
+    )
+    bits.append(
+        "\n## Chat output discipline\n\n"
+        f"When you call {_write_tool} (or any file-write tool), do NOT "
+        "echo the patch body or file contents into the chat. The tool "
+        "call itself records the change; printing the diff into chat "
+        "creates noise that's hard to read and may misrender. "
+        "Instead: emit ONE short sentence describing what you "
+        "changed (e.g. \"Added the maximalist hero shell + sticker "
+        "collage to source/hyperpop-artist/index.html\"), then call "
+        "the tool. After the tool returns, summarise the result in a "
+        "sentence or two - not a recap of the file contents.\n\n"
+        "Apply the same discipline to Read / Bash output: don't paste "
+        "the entire file or command output back into chat unless the "
+        "user explicitly asks. Summarise."
+    )
+    return "\n\n".join(p.strip() for p in bits if p and p.strip())
+
+
+def _normalize_chat_tier(raw) -> str:
+    """Map a persisted/requested chat tier onto the values
+    capabilities_preamble accepts for interactive chats. Legacy "full" =
+    setup; anything unrecognised falls back to normal (never silently
+    escalates a thread to the 3x-bigger setup preamble)."""
+    t = (raw or "normal").strip() if isinstance(raw, str) else "normal"
+    if t == "full":
+        t = "setup"
+    if t not in ("setup", "normal", "scoped", "leaf"):
+        t = "normal"
+    return t
+
+
 # System agent threads (landing → System tab → Orchestrators /
 # Design library). These spawns deliberately INVERT the project-agent
 # policy: cwd is the WORKSPACE/INSTALL ROOT, permissions default to full
@@ -9624,6 +9831,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._project_trash_list()
         if url_path == "/__runs":
             return self._runs_list(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__dispatch_planner/result":
+            return self._dispatch_planner_result(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__system_runs":
             return self._system_runs_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__chat":
@@ -11025,9 +11234,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             # names an orchestrator. project_root is now threaded so the full
             # tier (orchestrator node) also respects the disable list.
             _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
+            _node_tier = _tier   # recorded on the RunState below for resume weight
             sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
         except Exception:
-            pass
+            _node_tier = None
         sys_prompt += "\n\n" + system_prompt
         spawn_args += ["--append-system-prompt", sys_prompt]
         # The agent's workspace is the PROJECT, not the editor installation.
@@ -11058,6 +11268,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = permission_mode
+        state.tier = _node_tier   # leaf (drawer) or setup (orchestrator node)
         state.modifying = True
         # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
@@ -11082,6 +11293,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             "branch": branch,
             "kind": "node-agent",
             "nodeId": node_id,
+            "tier": _node_tier,
+            # remaining build-chain at spawn: persisted so a daemon restart
+            # mid-chain is at least VISIBLE after rehydrate (the in-memory
+            # chain_rest dies with the process table).
+            "chain": list(chain_rest or []),
             "promptPreview": prompt_text[:240],
         })
         with RUNS_LOCK:
@@ -14755,7 +14971,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "The daemon routes the nested dispatch to whichever LLM is "
                 "available and streams its events back as SSE. Parse the "
                 "final `planner-done` event's `output` field and treat it the "
-                "way the spec would have treated a Task tool return value.\n"
+                "way the spec would have treated a Task tool return value. "
+                "If the connection drops before `planner-done`, do NOT "
+                "re-dispatch - the planner keeps running; poll "
+                "`GET /__dispatch_planner/result?project=<id>&runId=<runId>` "
+                "until `done` is true and use its `output`.\n"
                 "===== END RUNTIME NOTE =====\n"
             )
             caps_block = ""
@@ -14856,27 +15076,33 @@ class H(http.server.SimpleHTTPRequestHandler):
         with state.lock:
             state.waiters.add(waker)
         last_seen = -1
+        # A dropped caller must NOT lose the planner's result: the subprocess
+        # keeps running, so keep draining until done and PERSIST the output
+        # (planner_output event -> chat.jsonl) even when the socket is gone.
+        # The caller re-fetches via GET /__dispatch_planner/result?runId=
+        # instead of re-running a multi-minute planner from scratch.
+        client_gone = False
         try:
             while True:
                 with state.lock:
                     pending = state.events[last_seen + 1:]
                     is_done = state.done
                 for ev in pending:
-                    if not _write_sse(ev["type"], ev["data"]):
-                        return  # client gone
+                    if not client_gone and not _write_sse(ev["type"], ev["data"]):
+                        client_gone = True
                     last_seen = ev["seq"]
                 if is_done:
                     break
                 fired = waker.wait(timeout=25)
                 waker.clear()
-                if not fired:
+                if not fired and not client_gone:
                     # Heartbeat - keeps the connection alive across long
                     # planner runs without producing visible output.
                     try:
                         self.wfile.write(b": heartbeat\n\n")
                         self.wfile.flush()
                     except Exception:
-                        return
+                        client_gone = True
             # Synthesize the final output: concatenate every text_delta from
             # the agent event stream. Tool calls / results are visible in
             # the events themselves; the `output` field is the planner's
@@ -14891,17 +15117,68 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if d.get("type") == "text_delta":
                     chunks.append(d.get("delta") or "")
             output = "".join(chunks).strip()
-            _write_sse("planner-done", {
+            payload = {
                 "runId": run_id,
                 "type": planner_type,
                 "runtime": agent_id,
                 "exitCode": state.exit_code,
                 "output": output,
                 "error": None if state.exit_code in (None, 0) else f"exit {state.exit_code}",
-            })
+            }
+            state.append("planner_output", payload)
+            if not client_gone:
+                _write_sse("planner-done", payload)
         finally:
             with state.lock:
                 state.waiters.discard(waker)
+
+    def _dispatch_planner_result(self, qs):
+        """GET /__dispatch_planner/result?project=<id>&runId=<id>
+
+        Re-fetch a planner's synthesized output after a dropped SSE
+        connection. The planner subprocess keeps running when its caller
+        disconnects and its transcript persists in chat.jsonl, so the result
+        is a read, never a re-run. Returns { runId, done, exitCode, output }
+        with output=null while the planner is still working (poll)."""
+        run_id = (_qs_get(qs, "runId") or "").strip()
+        if not run_id:
+            return self._reply(400, {"error": "runId required"})
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        if not state:
+            try:
+                project_root = resolve_project_root(qs)
+                state = _rehydrate_run_from_jsonl(run_id, project_root)
+            except Exception:
+                state = None
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        with state.lock:
+            events = list(state.events)
+            done = state.done
+            exit_code = state.exit_code
+        output = None
+        for ev in reversed(events):
+            if ev.get("type") == "planner_output":
+                output = (ev.get("data") or {}).get("output")
+                break
+        if output is None and done:
+            # Planner finished but its handler died before persisting (e.g.
+            # daemon restarted mid-run): synthesize from the text deltas.
+            chunks = []
+            for ev in events:
+                if ev.get("type") != "agent":
+                    continue
+                d = ev.get("data") or {}
+                if d.get("type") == "text_delta":
+                    chunks.append(d.get("delta") or "")
+            output = "".join(chunks).strip()
+        return self._reply(200, {
+            "runId": run_id,
+            "done": done,
+            "exitCode": exit_code,
+            "output": output,
+        })
 
     def _llm_run(self, qs):
         """Phase 4c - text-output skills. Body:
@@ -23298,51 +23575,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # targets an existing prototype. SETUP is reached via node-agent
         # orchestrator spawns / the on-demand routing fetch, not as a freeform
         # default. Legacy "full" maps to setup; anything unrecognised -> normal.
-        _chat_tier = (body.get("tier") or "normal").strip()
-        if _chat_tier == "full":
-            _chat_tier = "setup"
-        if _chat_tier not in ("setup", "normal", "scoped"):
-            _chat_tier = "normal"
+        _chat_tier = _normalize_chat_tier(body.get("tier"))
         # the prototype slug this chat is scoped to (the selected
         # prototype in the workflow target bar). Used ONLY to name the scoped
         # preamble's iterate-in-place stub; `branch` semantics are untouched.
         # Falls back to branch so a scoped handoff (which carries branch=slug)
         # still names the right prototype.
         _chat_proto = (body.get("prototype") or branch or "main").strip() or "main"
-        # Design-system read discipline for the "Active prototype scope"
-        # block below. Any chat working on an existing (starred, non-main)
-        # prototype is iteration; without this it edits styles from a single-
-        # file read and hallucinates tokens / class names. Resolve the DS the
-        # prototype is bound to (if any) and tell the agent to read the token +
-        # component sources before authoring style. Mirrors the scoped stub.
-        _ds_scope_note = ""
-        try:
-            from kinds.capabilities import _resolve_ds_binding
-            _dsb = _resolve_ds_binding(project_root, branch)
-            if _dsb:
-                _ds_reads = ", ".join(
-                    f"`{p}`" for p in (_dsb.get("designMd"), _dsb.get("stylesCss"), _dsb.get("allCss")) if p
-                )
-                _ds_scope_note = (
-                    f" This prototype is bound to design system `{_dsb['id']}` "
-                    f"(`design-systems/{_dsb['id']}/`); its pages @import that DS's "
-                    f"stylesheet, so the real token + class vocabulary lives there. "
-                    f"BEFORE writing or changing any CSS / class name / markup, Read "
-                    f"the DS sources ({_ds_reads}) together with "
-                    f"`source/{branch}/styles.css` and the page you are editing, and "
-                    f"use ONLY the `--tokens` and class names those files define - "
-                    f"do not invent tokens / class names or hardcode a value when a "
-                    f"matching DS token exists."
-                )
-            else:
-                _ds_scope_note = (
-                    f" Before writing or changing any CSS / class name / markup, Read "
-                    f"`source/{branch}/styles.css` (and any stylesheet the page "
-                    f"@imports) plus the page you are editing, so you reuse the tokens "
-                    f"+ class names that already exist rather than inventing them."
-                )
-        except Exception:
-            _ds_scope_note = ""
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -23401,44 +23640,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         wants_orchestration = False
         include_views       = False
         if agent_id == "claude":
-            sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
-            if WORKSPACE_DIR and project_root != INSTALL_ROOT:
-                sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
-            # When the spawn carries a non-default branch slug
-            # (the user is editing a specific starred prototype), tell the
-            # agent which `source/<slug>/` subtree is "active" so file
-            # reads/writes default to that subtree. Only emitted for non-
-            # "main" slugs so legacy single-prototype projects keep their
-            # current behavior verbatim. The phrasing matches AGENTS.md /
-            # PROTOTYPE.md "scope" vocabulary the agent already knows.
-            if branch and branch != "main":
-                sys_prompt = sys_prompt + (
-                    "\n\n## Active prototype scope\n\n"
-                    f"The user is currently editing the `source/{branch}/` "
-                    "prototype. Default every file read, edit, and write to "
-                    f"that subtree unless the user explicitly names a different "
-                    "prototype. When a relative file path is ambiguous (e.g. "
-                    "`index.html`), resolve it under "
-                    f"`source/{branch}/`. Other `source/<slug>/` subtrees in "
-                    "this project belong to sibling prototypes - leave them "
-                    "alone unless the user asks for a cross-prototype change."
-                    + _ds_scope_note
-                )
-            # onboarding cut. Discovery + orchestrator hooks removed.
-            # The capabilities preamble (appended below) is the only thing
-            # the agent reads beyond QUESTION_FORM_SYSTEM_PROMPT.
-            # capabilities catalog. Every spawn (orchestrator,
-            # freeform, discovery) gets a compact list of integrated
-            # providers + subagents + endpoints + node kinds, so the agent
-            # doesn't answer "I don't have X" for features that ARE
-            # integrated (the Quiver AI case). See kinds/capabilities.py.
-            try:
-                from kinds.capabilities import capabilities_preamble
-                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=_chat_proto)
-            except Exception:
-                pass
-            if _mcp_config_spawn_args():
-                sys_prompt = sys_prompt + _mcp_routing_prompt()
+            # Shared with /resume via _chat_system_prompt so a resumed chat
+            # rebuilds this byte-identically (see that helper's docstring).
+            sys_prompt = _chat_system_prompt(project_root, branch, _chat_tier, _chat_proto)
             spawn_args += ["--append-system-prompt", sys_prompt]
         elif agent_id in ("codex", "opencode"):
             # Codex chats get the SAME capabilities preamble as Claude
@@ -23454,77 +23658,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             # tool access for the curl-dispatch bridge, and benefits from the
             # same capabilities preamble + output discipline. Only the
             # runtime-name and write-tool wording differ.
-            _runtime_label = "Codex CLI" if agent_id == "codex" else "opencode CLI"
-            _write_tool = "apply_patch" if agent_id == "codex" else "the write/edit tool"
-            codex_sys_bits = [QUESTION_FORM_SYSTEM_PROMPT]
-            if WORKSPACE_DIR and project_root != INSTALL_ROOT:
-                codex_sys_bits.append(WORKSPACE_LAYOUT_PROMPT)
-            if branch and branch != "main":
-                codex_sys_bits.append(
-                    "\n## Active prototype scope\n\n"
-                    f"The user is currently editing the `source/{branch}/` "
-                    "prototype. Default every file read, edit, and write to "
-                    f"that subtree unless the user explicitly names a "
-                    f"different prototype."
-                    + _ds_scope_note
-                )
-            try:
-                from kinds.capabilities import capabilities_preamble
-                codex_sys_bits.append(capabilities_preamble(project_root=project_root, tier=_chat_tier, prototype=_chat_proto))
-            except Exception:
-                pass
-            codex_sys_bits.append(
-                "\n## Subagent dispatch on this runtime\n\n"
-                f"You are running on the {_runtime_label}, which has no native "
-                "`Task` tool. Wherever the capabilities preamble or any subagent "
-                "spec instructs you to dispatch a planner subagent via the Task "
-                "tool, instead run this shell command:\n\n"
-                "```\n"
-                "curl -N -s -X POST "
-                f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
-                "-H 'content-type: application/json' "
-                "-d '{\"type\":\"<orchestrator-id>\",\"brief\":\"<plain text brief>\"}'\n"
-                "```\n\n"
-                "The daemon streams the planner's progress as Server-Sent "
-                "Events. The connection stays open (with heartbeats) for the "
-                "full duration of the planner run - minutes to tens of "
-                "minutes is normal. Events you'll see:\n"
-                "  • `event: planner-dispatched` - first; carries `runId`\n"
-                "  • `event: agent` - agent text / tool calls / tool results\n"
-                "  • `event: planner-done` - last; carries the synthesized "
-                "    `output` you treat as the Task return value\n\n"
-                "Wait for the `planner-done` event to arrive, then parse its "
-                "`data:` JSON and use the `output` field. The endpoint is "
-                "reentrant - a planner that needs nested subagent dispatch "
-                "will use the same curl pattern, and the daemon picks the "
-                "best runtime for each level."
-            )
-            # Suppress patch echo. Codex tends to narrate the FULL
-            # contents of every apply_patch call into chat as plain text
-            # before/around the tool call itself (the renderer layer also
-            # guards against HTML inside diffs misrendering as a preview).
-            # This preamble note stops the echo at the source: the tool
-            # call is the work; the chat narration should be one short
-            # human-readable line, not the diff body.
-            codex_sys_bits.append(
-                "\n## Chat output discipline\n\n"
-                f"When you call {_write_tool} (or any file-write tool), do NOT "
-                "echo the patch body or file contents into the chat. The tool "
-                "call itself records the change; printing the diff into chat "
-                "creates noise that's hard to read and may misrender. "
-                "Instead: emit ONE short sentence describing what you "
-                "changed (e.g. \"Added the maximalist hero shell + sticker "
-                "collage to source/hyperpop-artist/index.html\"), then call "
-                "the tool. After the tool returns, summarise the result in a "
-                "sentence or two - not a recap of the file contents.\n\n"
-                "Apply the same discipline to Read / Bash output: don't paste "
-                "the entire file or command output back into chat unless the "
-                "user explicitly asks. Summarise."
-            )
             # The preamble is prepended to the user prompt rather than passed via
             # a flag - neither codex `exec` nor opencode `run` has an
-            # --append-system-prompt equivalent. Mirrors `_dispatch_planner_via_codex`.
-            codex_preamble = "\n\n".join(p.strip() for p in codex_sys_bits if p and p.strip())
+            # --append-system-prompt equivalent. Shared with _run_resume_codex
+            # via _codex_chat_preamble (a resume without it loses every rule).
+            codex_preamble = _codex_chat_preamble(
+                agent_id, project_root, project_id, branch, _chat_tier, _chat_proto)
             prompt_text = (
                 "===== HARNESS PREAMBLE =====\n"
                 + codex_preamble
@@ -23580,7 +23719,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = permission_mode or None
-        state.tier = _chat_tier   # "full" (setup) | "scoped" (iterate)
+        state.tier = _chat_tier   # "setup" | "normal" | "scoped"
+        state.prototype = _chat_proto   # scoped-preamble target; re-used on resume
         state.model = agent_model or None   # Settings > Agent model; re-applied on resume
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
@@ -23615,6 +23755,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             "branch": branch,
             "kind": kind,
             "permissionMode": permission_mode or None,
+            # Persisted so a daemon-restart rehydrate + /resume can rebuild
+            # the SAME spawn: same preamble tier + scope, same model.
+            "tier": _chat_tier,
+            "prototype": _chat_proto,
+            "model": agent_model or None,
             "promptPreview": prompt_text[:240],
         })
         # For freeform chats, the prompt IS the user's first message - echo it
@@ -24026,11 +24171,31 @@ class H(http.server.SimpleHTTPRequestHandler):
                     lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
                 # status / thinking_delta / usage - skip; transcript noise.
         transcript = "\n\n".join(lines).strip()
+        # Cap the replayed transcript. Every codex stop+resume re-prepends the
+        # WHOLE history to a fresh argv prompt (no prompt cache), so repeated
+        # stops grow the prompt superlinearly. Keep the tail - the recent
+        # turns are what a follow-up needs.
+        _TRANSCRIPT_CAP = 80_000
+        if len(transcript) > _TRANSCRIPT_CAP:
+            transcript = ("(earlier turns omitted to keep the prompt bounded)\n\n"
+                          + transcript[-_TRANSCRIPT_CAP:])
+        # Re-attach the harness preamble the original spawn carried - without
+        # it the resumed agent loses the capabilities catalog, the dispatch
+        # bridge, and the output discipline, and burns turns rediscovering
+        # them (or violating them).
+        preamble = _codex_chat_preamble(
+            state.agent_id, state.project_root, state.project_id,
+            state.branch,
+            _normalize_chat_tier(getattr(state, "tier", None)),
+            (getattr(state, "prototype", None) or state.branch or "main"))
         # Compose the resume prompt. Frame it explicitly so codex knows the
         # prior conversation is context, not instructions to repeat.
         if transcript:
             new_prompt = (
-                "You are continuing a previous conversation. Below is the "
+                "===== HARNESS PREAMBLE =====\n"
+                + preamble
+                + "\n===== END HARNESS PREAMBLE =====\n\n"
+                + "You are continuing a previous conversation. Below is the "
                 "transcript so far; the previous agent process exited before "
                 "the user could reply, so resume from where it left off.\n\n"
                 "===== PRIOR CONVERSATION =====\n"
@@ -24039,7 +24204,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 f"USER (new message): {text}"
             )
         else:
-            new_prompt = text
+            new_prompt = (
+                "===== HARNESS PREAMBLE =====\n"
+                + preamble
+                + "\n===== END HARNESS PREAMBLE =====\n\n"
+                + "===== USER REQUEST =====\n"
+                + text
+            )
         # Spawn fresh codex with the combined prompt. Re-apply the chosen model
         # (codex resume is a fresh process; without this the 2nd message reverts
         # to the CLI default). The prompt stays the trailing positional argv.
@@ -24172,15 +24343,20 @@ class H(http.server.SimpleHTTPRequestHandler):
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
-            sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
-            if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
-                sys_prompt = sys_prompt + WORKSPACE_LAYOUT_PROMPT
-            # resumed agents also get the capabilities catalog.
-            try:
-                from kinds.capabilities import capabilities_preamble
-                sys_prompt = sys_prompt + "\n\n" + capabilities_preamble()
-            except Exception:
-                pass
+            # Re-attach the MCP servers the original spawn had; without this
+            # a resumed chat's MCP tool calls all fail and it burns turns
+            # working around them.
+            spawn_args += _mcp_config_spawn_args()
+            # Rebuild the SAME system prompt as the original spawn (same tier,
+            # same prototype scope, same DS note). Sending a different
+            # --append-system-prompt on --resume cache-busts the entire
+            # session history and, worse, swaps a scoped iterate thread onto
+            # the setup-tier routing rules mid-conversation - the "stop then
+            # resume = way more tokens and redo" failure. tier/prototype are
+            # restored by _rehydrate_run_from_jsonl after a daemon restart.
+            _tier = _normalize_chat_tier(getattr(state, "tier", None))
+            _proto = (getattr(state, "prototype", None) or state.branch or "main")
+            sys_prompt = _chat_system_prompt(state.project_root, state.branch, _tier, _proto)
             spawn_args += ["--append-system-prompt", sys_prompt]
         spawn_args += ["--resume", state.session_id]
         # Re-apply the chosen default model so a resume keeps (or, if the setting
