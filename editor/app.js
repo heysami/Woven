@@ -12953,7 +12953,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
                 </div>`)
               : tasks.map(t => html`
                 <div className="chat-active-agent" key=${t.id} data-status=${t.status} title=${t.subject}>
-                  <span className="chat-active-task-mark" data-status=${t.status} aria-hidden="true">${taskMark(t.status)}</span>
+                  ${t.status === "in_progress"
+                    ? html`<span className="chat-active-agent-spin" aria-hidden="true"/>`
+                    : html`<span className="chat-active-task-mark" data-status=${t.status} aria-hidden="true">${taskMark(t.status)}</span>`}
                   <span className="chat-active-agent-task">${t.status === "in_progress" && t.activeForm ? t.activeForm : t.subject}</span>
                 </div>`)}
           </div>
@@ -13684,13 +13686,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }).slice(0, 12);
   })();
 
-  // Detect a `/` at the START of the textarea - that's the signal to open
-  // the menu. We deliberately do NOT trigger on `/` mid-message to avoid
-  // hijacking the user typing a path like "src/foo.ts".
-  const updateSlashMenu = (newText) => {
-    // `/` must be the first non-whitespace character; query is everything
-    // after it up to the next whitespace.
-    const m = /^\s*\/([A-Za-z0-9_:.-]*)$/.exec(newText);
+  // Detect a `/` token AT THE CARET - anywhere in the message, as long as the
+  // slash starts a word (preceded by start-of-text or whitespace), matching
+  // how agent harnesses surface slash commands mid-composition. A slash glued
+  // to a word ("src/foo.ts") never triggers; a no-match query renders zero
+  // rows, which releases Enter/Tab back to normal typing.
+  const slashStartRef = useRef(-1);   // index of the `/` the open menu tracks
+  const updateSlashMenu = (newText, caret) => {
+    const at = typeof caret === "number" ? caret : newText.length;
+    const m = /(^|\s)\/([A-Za-z0-9_:.-]*)$/.exec(newText.slice(0, at));
     if (m) {
       if (!slashOpen) {
         // First open - kick off the skill load if we haven't already.
@@ -13698,8 +13702,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           setSlashSkills(items);
         });
       }
+      slashStartRef.current = at - m[2].length - 1;
       setSlashOpen(true);
-      setSlashQuery(m[1]);
+      setSlashQuery(m[2]);
       setSlashIndex(0);
       return;
     }
@@ -13708,20 +13713,28 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
 
   const insertSlashSkill = (sk) => {
     if (!sk) return;
-    // Replace the entire `/query` prefix with the item's insertText (skills:
-    // `/foo `; orchestrators: `@id `; library: `design-library/<file> - `).
-    // The trailing space / dash gives the user a cursor position to type
-    // their args from. Falls back to `invocation + " "` for legacy items.
-    const next = sk.insertText || (sk.invocation + " ");
-    setText(next);
+    // Replace ONLY the `/query` token the menu tracks (it can sit anywhere in
+    // the message now) with the item's insertText (skills: `/foo `;
+    // orchestrators: `@id `; library: `design-library/<file> - `). The
+    // trailing space / dash gives the user a cursor position to type their
+    // args from. Falls back to `invocation + " "` for legacy items.
+    const ins = sk.insertText || (sk.invocation + " ");
+    const start = Math.max(0, slashStartRef.current);
+    const end = start + 1 + slashQuery.length;
+    let pos = 0;
+    setText(cur => {
+      const before = cur.slice(0, start);
+      const after = cur.slice(Math.min(end, cur.length));
+      pos = (before + ins).length;
+      return before + ins + after;
+    });
     setSlashOpen(false);
-    // Refocus the textarea so the user can keep typing.
+    // Refocus the textarea so the user can keep typing at the insert point.
     if (taRef.current) {
       taRef.current.focus();
-      try {
-        const pos = next.length;
-        taRef.current.setSelectionRange(pos, pos);
-      } catch { /* setSelectionRange not supported on all browsers - fine */ }
+      setTimeout(() => {
+        try { taRef.current.setSelectionRange(pos, pos); } catch {}
+      }, 0);
     }
   };
 
@@ -13884,7 +13897,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           placeholder=${placeholder}
           rows=${1}
           disabled=${busy}
-          onInput=${(e) => { setText(e.target.value); updateSlashMenu(e.target.value); }}
+          onInput=${(e) => { setText(e.target.value); updateSlashMenu(e.target.value, e.target.selectionStart); }}
           onKeyDown=${onKeyDown}
           onPaste=${onPaste}
           onBlur=${() => {
