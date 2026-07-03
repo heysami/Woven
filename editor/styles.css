@@ -4254,7 +4254,9 @@ select.sysadd-input {
    width; the floating dock is position:fixed and anchors to the viewport. */
 .right-rail-dock-host {
   position: fixed;
-  top: 0;
+  top: var(--toolbar-h, 44px);   /* below the full-width top bar - the same
+                                    bar/rail grammar as .app / .workflow-body
+                                    and the .th-left-rail mirror */
   right: 0;
   bottom: 0;
   display: flex;
