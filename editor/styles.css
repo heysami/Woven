@@ -236,6 +236,8 @@ button {
 }
 .app > .app-left-chat {
   grid-area: leftchat;
+  position: relative;   /* containing block for the inset:0 runs overlay -
+                           without it the overlay escapes to the viewport */
   display: flex;
   flex-direction: column;
   width: clamp(320px, 26vw, 460px);

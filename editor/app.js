@@ -9719,13 +9719,11 @@ function RightRailDock({ mode }) {
   // collapses the whole panel.
   const [runsOverlay, setRunsOverlay] = useState(false);
   const onChatIconClick = useCallback(() => {
-    if (!leftChatOpen) { setLeftChatOpen(true); setRunsOverlay(true); return; }
-    if (runsOverlay) {
-      setRunsOverlay(false);
-      if (!chatRun) setLeftChatOpen(false);
-      return;
-    }
-    setRunsOverlay(true);
+    if (!leftChatOpen) { setLeftChatOpen(true); setRunsOverlay(!!chatRun); return; }
+    // No thread beneath: the panel IS the runs list - the icon just toggles
+    // the panel. With a thread open, the icon toggles the runs OVERLAY on top.
+    if (!chatRun) { setLeftChatOpen(false); setRunsOverlay(false); return; }
+    setRunsOverlay(o => !o);
   }, [leftChatOpen, runsOverlay, chatRun]);
   useEffect(() => {
     const root = document.documentElement;
@@ -9907,7 +9905,7 @@ function RightRailDock({ mode }) {
           permissionMode=${permissionMode}
           onPermissionModeChange=${onPermissionModeChange}
           onStartNewChat=${spawnChat}
-        />` : null}
+        />` : html`<${LeftChatRunsList} onOpenRun=${reopenRun} onStartNewChat=${openChat}/>`}
         </div>
         ${runsOverlay && html`
           <div className="left-chat-runs-overlay">
@@ -33449,15 +33447,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // it - never bounce to the canvas) with the runs list on top.
       toggleWbMode(false);
       setLeftPanel("chat");
-      setRunsOverlay(true);
+      setRunsOverlay(chatExists);   // list shows inline when no thread yet
       return;
     }
-    if (runsOverlay) {
-      setRunsOverlay(false);
-      if (!chatExists) setLeftPanel(null);
-      return;
-    }
-    setRunsOverlay(true);
+    // No thread beneath: the panel IS the runs list - the icon just toggles
+    // the panel. With a thread open, the icon toggles the runs OVERLAY on top.
+    if (!chatExists) { setLeftPanel(null); setRunsOverlay(false); return; }
+    setRunsOverlay(o => !o);
   }, [leftPanel, runsOverlay, chatExists, toggleWbMode]);
   // The thread's own close (ChatDrawer ×) collapses the whole panel - the
   // WorkflowCanvas onClose dispatches this after clearing chatRun.
@@ -44154,7 +44150,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             />
           ` : html`
             <div className=${"workflow-left-chat" + (leftPanel === "chat" ? "" : " is-hidden")}>
-              <div className="left-chat-thread">${chatExists ? chatPanel : null}</div>
+              <div className="left-chat-thread">
+                ${chatExists
+                  ? chatPanel
+                  : html`<${LeftChatRunsList} onOpenRun=${onReopenRun} onStartNewChat=${onOpenNewChat}/>`}
+              </div>
               ${runsOverlay && html`
                 <div className="left-chat-runs-overlay">
                   <${LeftChatRunsList}
@@ -83573,13 +83573,11 @@ function App() {
   // collapses the whole panel.
   const [runsOverlay, setRunsOverlay] = useState(false);
   const onChatIconClick = useCallback(() => {
-    if (!leftChatOpen) { setLeftChatOpen(true); setRunsOverlay(true); return; }
-    if (runsOverlay) {
-      setRunsOverlay(false);
-      if (!chatRun) setLeftChatOpen(false);
-      return;
-    }
-    setRunsOverlay(true);
+    if (!leftChatOpen) { setLeftChatOpen(true); setRunsOverlay(!!chatRun); return; }
+    // No thread beneath: the panel IS the runs list - the icon just toggles
+    // the panel. With a thread open, the icon toggles the runs OVERLAY on top.
+    if (!chatRun) { setLeftChatOpen(false); setRunsOverlay(false); return; }
+    setRunsOverlay(o => !o);
   }, [leftChatOpen, runsOverlay, chatRun]);
 
   // Publish dock geometry as CSS custom properties for the .app grid + dock.
@@ -84285,7 +84283,15 @@ function App() {
             onPermissionModeChange=${onPermissionModeChange}
             onStartNewChat=${spawnFromComposer}
             selectionCount=${editorSelectionCount}
-          />` : null}
+          />` : html`<${LeftChatRunsList}
+            onOpenRun=${(run) => {
+              setChatRun(run);
+              setLastRun(run);
+              setRunFinished(!!run.done);
+              saveSettings({ lastRunId: run.runId });
+            }}
+            onStartNewChat=${openNewChat}
+          />`}
           </div>
           ${runsOverlay && html`
             <div className="left-chat-runs-overlay">
