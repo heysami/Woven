@@ -7,8 +7,8 @@ const { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback, useR
 const { createRoot, createPortal } = ReactDOM;
 const h = React.createElement;
 const html = htm.bind(h);
-// v3.1 - project-level branches deprecated. window.EDITOR_DATA now comes
-// directly from editor/data.js (no bootstrap shim, no per-branch sidecar).
+// window.EDITOR_DATA comes directly from editor/data.js (no bootstrap shim,
+// no per-branch sidecar).
 //
 // THREE failure modes to distinguish:
 //   1. No ?project= in the URL (and workspace mode) → not an error; this is
@@ -45,7 +45,7 @@ if (!window.EDITOR_DATA || !window.EDITOR_DATA.meta) {
   }
 }
 const D = window.EDITOR_DATA;
-// v3.4.31 / v3.7 - Per-prototype editor scope.
+// Per-prototype editor scope.
 //
 // A project hosts one OR MORE prototypes under source/<slug>/. The
 // projects-landing surfaces every starred prototype with its own
@@ -57,11 +57,10 @@ const D = window.EDITOR_DATA;
 // daemon when ?prototype=<slug> is present), with editor/data.js as a
 // legacy fallback for single-prototype projects.
 //
-// Backward compat: the URL param + meta keys + workflow-node field
-// were called "branch" pre-v3.7 (a residue of project-level branches,
-// which were deprecated in v3.1 but the vocabulary lingered). We still
-// READ the old keys so existing projects/workflow.json files keep
-// working; we WRITE the new keys going forward.
+// Compatibility: the persisted URL param + meta keys + workflow-node
+// field are also named "branch"; they hold the prototype slug. We READ
+// the "branch" keys so existing projects/workflow.json files keep
+// working; we WRITE the "prototype" keys going forward.
 (() => {
   if (!D || !D.meta) return;
   let urlSlug = null;
@@ -108,12 +107,11 @@ const D = window.EDITOR_DATA;
   if (!D.meta.sourceEntry) D.meta.sourceEntry = "index.html";
 })();
 
-// Read the prototype slug off a workflow node, accepting both the new
-// `prototype` field and the legacy `branch` field. Pre-v3.7 nodes (every
-// node on disk before this rename) carry `branch`; new nodes write
-// `prototype`. Falls back to "main" so call sites can skip null-checks.
-// This is the canonical reader - every `(node.branch || "main")` site
-// in the codebase should route through here.
+// Read the prototype slug off a workflow node, accepting both the
+// `prototype` field and the legacy `branch` field (older nodes on disk
+// carry `branch`; new nodes write `prototype`). Falls back to "main" so
+// call sites can skip null-checks. This is the canonical reader - every
+// `(node.branch || "main")` site in the codebase should route through here.
 function nodePrototype(node) {
   if (!node) return "main";
   return node.prototype || node.branch || "main";
@@ -197,7 +195,7 @@ function buildFramesRegenPrompt(branch) {
 // Apply the layout sidecar (if loaded by data.js) BEFORE the editor reads
 // frame positions or grid meta. EDITOR_LAYOUT shapes:
 //   new:    { positions: { [frameId]: { col, row } }, meta: { defaultFrame: {w,h}, canvasGap } }
-//   legacy: { [frameId]: { col, row } }              - pre-v3.2 flat map
+//   legacy: { [frameId]: { col, row } }              - older flat map
 // Mutating D in place is intentional - applyModelEdits reads from D and
 // clones shallowly, so anything we set here flows into the model without
 // an explicit layout edit. This keeps in-memory layoutEdits empty on a
@@ -431,6 +429,34 @@ function runSetupScriptWithRetry(iframeEl, script) {
 // chars so the selector parses regardless.
 const escAttr = (s) => (typeof CSS !== "undefined" && CSS.escape) ? CSS.escape(String(s)) : String(s).replace(/(["\\])/g, "\\$1");
 
+// HTML entity escaper for generated markup - covers text nodes AND both
+// quote styles of attribute values.
+const escapeHtml = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// Transient error-banner state: flash(msg) shows the message, then clears it
+// after `ms`. Returns [msg, flash, setMsg] - the raw setter is for callers
+// that clear the banner at the start of an operation.
+function useFlash(ms = 6000) {
+  const [msg, setMsg] = useState(null);
+  const flash = useCallback((m) => { setMsg(String(m)); setTimeout(() => setMsg(null), ms); }, [ms]);
+  return [msg, flash, setMsg];
+}
+
+// Build an error message from a failed daemon JSON response: both the
+// daemon-level error AND the upstream provider's own message (e.g.
+// "invalid_image_format" or "image too large") must surface.
+function combineProviderError(j, status) {
+  let msg = j.error || `HTTP ${status}`;
+  if (j.detail) {
+    const inner = (j.detail && j.detail.error && j.detail.error.message)
+      || (j.detail && j.detail.message)
+      || (typeof j.detail === "string" ? j.detail : null)
+      || JSON.stringify(j.detail).slice(0, 400);
+    if (inner) msg += " - " + inner;
+  }
+  return typeof msg === "string" ? msg : JSON.stringify(msg);
+}
+
 // Comment keys look like `entity:User`, `field:User.email`, `frame:home`, `ia:library`.
 // IDs from prototype.json can contain `:` or `.`, so split only on the *first*
 // separator to keep the rest of the ID intact.
@@ -641,12 +667,10 @@ const Icon = {
   // Phase 5a - branch-doc toolbar icons.
   NotesDoc: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5h5M5.5 7.5h5M5.5 10h3"/></svg>`,
   Brand:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="5" height="5" rx="0.6"/><rect x="8.5" y="2.5" width="5" height="5" rx="0.6"/><rect x="2.5" y="8.5" width="5" height="5" rx="0.6"/><path d="M9.5 11.5h3M11 9.5v4"/></svg>`,
-  // v2.50 - TE icon sweep: replacements for emoji/dingbat glyphs across the UI.
   Spark:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.4 4.2L13.5 8l-4.1 1.8L8 14l-1.4-4.2L2.5 8l4.1-1.8z"/></svg>`,
   Bot:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 5V3M6 9h.01M10 9h.01M6.5 11.5h3"/><path d="M2.5 8.5v2M13.5 8.5v2"/></svg>`,
-  // v3.2 - Proper gear (Tabler-shaped): outer toothed ring + inner hub.
-  // Was rendered as a center circle + 8 radial spokes which read as a SUN,
-  // not a gear (gears have rectangular teeth, not radial spokes).
+  // Gear (Tabler-shaped): outer toothed ring + inner hub. Rectangular teeth,
+  // not radial spokes - spokes read as a sun.
   Gear:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M9.5 1.7l.5 1.6 1.5.6 1.4-.7 1 1-.7 1.4.6 1.5 1.6.5v1.4l-1.6.5-.6 1.5.7 1.4-1 1-1.4-.7-1.5.6-.5 1.6H6.5l-.5-1.6-1.5-.6-1.4.7-1-1 .7-1.4-.6-1.5-1.6-.5V7.3l1.6-.5.6-1.5-.7-1.4 1-1 1.4.7 1.5-.6.5-1.6z"/><circle cx="8" cy="8" r="2.2"/></svg>`,
   User:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>`,
   Image:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><circle cx="6" cy="6.5" r="1"/><path d="M3 11l3-2.5 2.5 2 2-1.5L13 11.5"/></svg>`,
@@ -654,8 +678,7 @@ const Icon = {
   Moon:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg>`,
   Film:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M2.5 6h11M2.5 10h11M6 3v10M10 3v10"/></svg>`,
   // Motion: keyframe diamonds on two timeline tracks (the After-Effects /
-  // GSAP-timeline metaphor) - used by the motion-gen skill ("Motion (HTML)")
-  // which previously fell through SKILL_ICON to its raw 🎞 emoji glyph.
+  // GSAP-timeline metaphor) - used by the motion-gen skill ("Motion (HTML)").
   Motion:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 5h3M10 5h3.5M2.5 11h1.5M8.5 11h5"/><path d="M7.5 3.5L9 5 7.5 6.5 6 5z"/><path d="M5.5 9.5L7 11l-1.5 1.5L4 11z"/></svg>`,
   Music:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 12V4l7-1.5V10.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="10.5" r="1.5"/></svg>`,
   Shader:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 6h11M2.5 9.5h11M6 2.5v11"/></svg>`,
@@ -668,8 +691,7 @@ const Icon = {
   ExportBox:() => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2v8M5 5l3-3 3 3"/><path d="M3 10v3a1 1 0 001 1h8a1 1 0 001-1v-3"/></svg>`,
   ImportBox:() => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 10V2M5 7l3 3 3-3"/><path d="M3 10v3a1 1 0 001 1h8a1 1 0 001-1v-3"/></svg>`,
   // Download: down-arrow into a baseline tray - distinct from ImportBox's
-  // full box. Per-node Export buttons use this (the share glyph took over
-  // the box-with-up-arrow read).
+  // full box. Used by the per-node Export buttons.
   Download: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2.5v7M4.5 6.5L8 9.5l3.5-3"/><path d="M3 13h10"/></svg>`,
   // Figma mark (monochrome, currentColor fill). Used by the per-node "Send to
   // Figma" action - the export-to-Figma sibling of Download.
@@ -678,8 +700,8 @@ const Icon = {
   // bottom-right corner - the per-project "export folder destination" mark
   // for the toolbar Exports button.
   FolderUp: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M1.8 4.4a.9.9 0 01.9-.9h2.7l1.3 1.4h3.7a.9.9 0 01.9.9V8.2"/><path d="M1.8 6.2v5a.9.9 0 00.9.9h4.5"/><path d="M12 15v-4M10.4 12.6L12 11l1.6 1.6"/></svg>`,
-  // Share: three connected nodes - the canonical share affordance. Replaces
-  // the comment glyph on the prototype node's share toggle.
+  // Share: three connected nodes - the canonical share affordance (the
+  // prototype node's share toggle).
   Share:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="12" cy="3.8" r="1.9"/><circle cx="12" cy="12.2" r="1.9"/><circle cx="4" cy="8" r="1.9"/><path d="M5.7 7.1l4.6-2.4M5.7 8.9l4.6 2.4"/></svg>`,
   Check:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8.5l3.5 3.5L13 5"/></svg>`,
   Circle:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="5.5"/></svg>`,
@@ -689,8 +711,6 @@ const Icon = {
   Package:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8l5.5 2.9v6.6L8 14.2l-5.5-2.9V4.7z"/><path d="M2.5 4.7L8 7.6l5.5-2.9M8 7.6v6.6"/></svg>`,
   // Expand: four corner arrows pointing outward - "unfold this node".
   Expand:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 6V2.5H6M14 6V2.5h-3.5M2.5 10v3.5H6M14 10v3.5h-3.5"/></svg>`,
-  // v2.51 - TE icon sweep, round 2: the last emoji holdouts in node chrome
-  // (audit shield, zoom magnifier, strict lock, rembg scissors, eye preview).
   Search:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="7" cy="7" r="4.2"/><path d="M10 10l3.5 3.5"/></svg>`,
   Shield:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8l5 1.8v3.6c0 3.4-2.3 5.4-5 6.5-2.7-1.1-5-3.1-5-6.5V3.6z"/><path d="M6 8l1.4 1.4L10.5 6.3"/></svg>`,
   Lock:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>`,
@@ -701,34 +721,31 @@ const Icon = {
   Alert:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2.5l6 10.5H2z"/><path d="M8 6.5v3M8 11.2v.01"/></svg>`,
   Shuffle:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 4h2.5c1.6 0 2.4 1.2 3.5 2.8M2 12h2.5c1.6 0 2.4-1.2 3.5-2.8"/><path d="M11 4l-2.4 3.6M11 12L8.6 8.4"/><path d="M11 2.5L13.5 4 11 5.5M11 10.5L13.5 12 11 13.5"/></svg>`,
   Loop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4 7a4 4 0 016.4-2.3M12 9a4 4 0 01-6.4 2.3"/><path d="M10 3.2l.6 1.9-1.9.5M6 12.8l-.6-1.9 1.9-.5"/></svg>`,
-  // v3.4.x - Wave: sine-wave glyph used by the quick-refine/remix/fork rule chips
+  // Wave: sine-wave glyph used by the quick-refine/remix/fork rule chips
   // for the "free" state (lock → free → encourage cycle). Reads as "loose / can vary"
   // visually without leaning on the ~ tilde character.
   Wave:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 9c1.2-3 2.5-3 3.5 0s2.3 3 3.5 0 2.3-3 3.5 0"/></svg>`,
   Star:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.7 3.9 4.3.4-3.2 2.8 1 4.2L8 11.6 4.2 13.3l1-4.2L2 6.3l4.3-.4z"/></svg>`,
   Code:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4L2 8l4 4M10 4l4 4-4 4"/></svg>`,
-  // v3.1 - clarified node-toolbar icons.
   // OpenExt: arrow leaving a box (standard "open in new tab" affordance).
-  //   Used by Prototype node's "Open in editor" button, replacing the ambiguous
-  //   "⋯" text glyph that read like a kebab menu.
+  //   Used by Prototype node's "Open in editor" button.
   // List:    bulleted list with three rows (manage-list affordance).
-  //   Used by Prototype node's "Manage exposed assets" button, replacing the
-  //   Grid square that read like a generic content tile in small sizes.
+  //   Used by Prototype node's "Manage exposed assets" button.
   OpenExt:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M11 8.5V13a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1h4.5"/><path d="M9 2.5h4.5V7M13.5 2.5L8 8"/></svg>`,
   List:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="3.5" cy="4" r="0.7" fill="currentColor"/><circle cx="3.5" cy="8" r="0.7" fill="currentColor"/><circle cx="3.5" cy="12" r="0.7" fill="currentColor"/><path d="M6.5 4h7M6.5 8h7M6.5 12h7"/></svg>`,
-  // v3.2 - PickEl: crosshair-in-frame (classic element-inspector affordance).
+  // PickEl: crosshair-in-frame (classic element-inspector affordance).
   // Mounted as a floating badge OUTSIDE the top-right of selected prototype +
   // HTML asset nodes; click enters pick mode where the user picks a
   // sub-element inside the iframe for copy/paste/delete operations.
   PickEl:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 5.5V3a.5.5 0 01.5-.5h2.5M13.5 5.5V3a.5.5 0 00-.5-.5h-2.5M2.5 10.5V13a.5.5 0 00.5.5h2.5M13.5 10.5V13a.5.5 0 01-.5.5h-2.5"/><circle cx="8" cy="8" r="1.4"/><path d="M8 5.6V4M8 12V10.4M5.6 8H4M12 8h-1.6"/></svg>`,
-  // v3.5 - browser-style chevrons for prototype + html-asset iframe back /
+  // Browser-style chevrons for prototype + html-asset iframe back /
   // forward nav. Single chevron at the canonical 1.5pt stroke, matching the
   // rest of this icon set so the bar reads as one family.
   Home:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 7.5L8 3l5.5 4.5M4 6.7V13h8V6.7M6.5 13V9.5h3V13"/></svg>`,
   Pin:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M9.5 2.5l4 4M10 6l-5 1.5L3 9l4 4 1.5-2L10 6M6.5 9.5L3.5 12.5"/></svg>`,
   Back:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M10 4L6 8l4 4"/></svg>`,
   Forward:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4l4 4-4 4"/></svg>`,
-  // v3.9 - device-preview presets for the prototype node bar. Same line family.
+  // Device-preview presets for the prototype node bar. Same line family.
   Monitor:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></svg>`,
   Tablet:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="4" y="2" width="8" height="12" rx="1.2"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/></svg>`,
   Phone:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="5" y="1.5" width="6" height="13" rx="1.4"/><path d="M7 12.5h2"/></svg>`,
@@ -737,7 +754,7 @@ const Icon = {
   Bolt:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8.5 2L4 9h3.5l-.5 5L12 7H8.5z"/></svg>`,
 };
 
-// v2.51 - skill glyphs live as plain strings in media-models.js (a data-only
+// Skill glyphs live as plain strings in media-models.js (a data-only
 // global with no access to Icon/html). Map each skill id → a line-SVG icon here
 // so the Workflow skill nodes + library match the rest of the icon set. Unknown
 // skills fall back to the data file's `glyph` string, so new skills still render.
@@ -809,14 +826,12 @@ const ONBOARDING_SCOPE_PRESETS = [
     desc: "End-to-end: PRD + DS + 9 design mockups + final prototype + design brief.",
     stages: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
     glyph: html`<${Icon.Spark}/>`,
-    // v3.5 - "recommended" removed. The end-to-end path is still the most
-    // ambitious option, but it's also the alpha-feature path and shouldn't
-    // be steered into by default. The "Alpha feature" badge below makes the
-    // status explicit; users pick on capability, not on a nudge.
+    // No "recommended" nudge here: this is the alpha-feature path and
+    // shouldn't be steered into by default - users pick on capability.
   },
 ];
 
-// v2.6 - canonical stage-name registry (mirror of editor/prompts/stages.py).
+// Canonical stage-name registry (mirror of editor/prompts/stages.py).
 // Single source of truth for human-readable labels - wizard, mini-DAG, chat
 // narration all read from here. When adding/renaming a stage, update the
 // Python module in lockstep.
@@ -837,7 +852,7 @@ const stageShort  = (code) => (ONBOARDING_STAGE_NAMES[code]?.short) || code;
 const stageTitle  = (code) => (ONBOARDING_STAGE_NAMES[code]?.title) || code;
 const stagesChain = (codes, sep = " → ") => {
   if (!codes || codes.length === 0) return "no automation";
-  // v2.15 - H2 (Realign PRD) is auto-paired with H; insert it in the display
+  // H2 (Realign PRD) is auto-paired with H; insert it in the display
   // chain so the wizard preset card text matches the actual scaffolded DAG.
   const expanded = [];
   for (const c of codes) {
@@ -856,14 +871,14 @@ const ONBOARDING_CUSTOM_TOGGLES = [
   { id: "quickDesigns",  label: "Generate design mockups (3×3)",  stagesIfOn: ["E", "F", "G"]  },
   { id: "updateDs",      label: "Update DS based on PRD",         stagesIfOn: ["H"]            },
   { id: "buildPrototype",label: "Build a final prototype",        stagesIfOn: ["I"]            },
-  // v2.8 - optional design brief at project root. Only meaningful when a
+  // optional design brief at project root. Only meaningful when a
   // prototype is built; the wizard surfaces it as disabled when buildPrototype
   // is off. Default ON when the user picks Build a prototype.
   { id: "designBrief",   label: "Generate a design brief (DESIGN_BRIEF.html)", stagesIfOn: ["J"], requires: "buildPrototype" },
 ];
 
 /* ────────── Endless canvas: pan + zoom ────────── */
-// v3.4.4 - Module-level helper. Lights the global canvas-interacting flag
+// Module-level helper. Lights the global canvas-interacting flag
 // for a short window (default 140ms) so any rAF-driven chrome (asset bar,
 // badges, picked-element bar) skips its rect query during the brief
 // wheel-zoom or trackpad-pan event. The drag-pan handler manages the flag
@@ -881,7 +896,7 @@ function pulseInteractingFlag(ms = 140) {
   }, ms);
 }
 
-// v3.x - Resolve the element that a forwarded wheel should actually scroll
+// Resolve the element that a forwarded wheel should actually scroll
 // inside a (same-origin) node iframe. Chrome pins the wheel target to whatever
 // was under the pointer at the last pointer-MOVE; right after a click-select
 // the iframe was still pointer-events:none, so plain wheels land on the parent
@@ -946,7 +961,7 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   const [pan, setPan] = useState({ x: initial.x, y: initial.y });
   const [zoom, setZoom] = useState(initial.z);
   const [panning, setPanning] = useState(false);
-  // v3.4.14 - Refs that always carry the latest committed pan/zoom. The wheel
+  // Refs that always carry the latest committed pan/zoom. The wheel
   // handler reads from these instead of closure-captured `pan` / `zoom` so a
   // burst of trackpad events (or 120Hz wheel devices) can't operate on stale
   // values between React commits. Updated in a useEffect so they reflect what
@@ -956,16 +971,12 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   const zoomRef = useRef(zoom);
   useEffect(() => { panRef.current  = pan;  }, [pan]);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  // v3.4.14 - Imperative-only transform writes on the canvas element. React's
-  // render USED to write `style.transform` declaratively (style={{transform:
-  // ...}} on the .workflow-canvas div), but that races with the imperative
-  // wheel-pan/zoom path: a pending React render carrying stale pan/zoom can
-  // fire AFTER a fresh imperative write and overwrite it, producing the
-  // two-position flicker the user reported. Fix: drop the inline style prop
-  // from the JSX (callers render `<div className="workflow-canvas">` without
-  // a transform style), and write the transform here in a useLayoutEffect so
-  // both paths funnel through the same imperative write. useLayoutEffect
-  // (not useEffect) runs synchronously before paint, so the canvas is never
+  // Imperative-only transform writes on the canvas element. Callers must NOT
+  // set a declarative transform style on the canvas div - a pending React
+  // render carrying stale pan/zoom would race the imperative wheel-pan/zoom
+  // path and overwrite a fresh write (two-position flicker). All paths funnel
+  // through this useLayoutEffect write instead; useLayoutEffect (not
+  // useEffect) runs synchronously before paint, so the canvas is never
   // visibly mounted at the wrong position. Same lookup as the wheel/drag
   // handlers - supports both `.workflow-canvas` (workflow view) and
   // `.canvas` (editor / flow / state-machine views).
@@ -1020,7 +1031,7 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
     clamp();
     return () => el.removeEventListener("scroll", clamp, { passive: true });
   }, []);
-  // v3.4.2 - Expose pan/zoom-in-progress as a global flag + body attribute
+  // Expose pan/zoom-in-progress as a global flag + body attribute
   // so portaled chrome (asset action bar, picked-element bar, select
   // badge) can skip its per-frame `getBoundingClientRect` polling during
   // the gesture. With many nodes, those rAF loops force layout flushes
@@ -1039,28 +1050,17 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
     };
   }, [panning]);
 
-  // v3.4.14 - Wheel/trackpad pan + zoom path, now imperative-first to match
-  // the mouse-drag path (see v3.4.13 below). The previous setPan-on-every-
-  // wheel-event approach caused two visible flickers during trackpad pan +
-  // momentum:
-  //   1. Stale closures. The handler captured `pan`/`zoom`; useEffect deps
-  //      `[pan, zoom, ...]` re-bound it after every commit. At trackpad-
-  //      momentum rates (~120 events/sec) multiple events fire between
-  //      paints, all using the SAME captured pan → only the last delta
-  //      applies; effective pan jumps in chunks. Combined with (2), the
-  //      visual was two positions alternating per frame.
-  //   2. Render storm. setPan re-rendered WorkflowSurface every event, and
-  //      a sibling sync effect (`useEffect([pan, zoom], setData(...))` in
-  //      WorkflowSurface) cascaded into a parent re-render → so each wheel
-  //      event triggered TWO React commits, racing each other to write
-  //      `style.transform`.
-  // Fix: read latest pan/zoom from refs (never stale), track the live
-  // imperative position in a local `imp` var, write `style.transform`
-  // directly to the canvas element on every event, and commit React state
-  // ONCE after the burst settles (debounced). useEffect deps drop `pan`
-  // and `zoom` so the listener isn't rebound mid-burst.
+  // Wheel/trackpad pan + zoom path - imperative-first, matching the
+  // mouse-drag path. Do NOT setPan per wheel event: at trackpad-momentum
+  // rates (~120 events/sec) the re-render storm + stale closure-captured
+  // pan produce chunked jumps and two-position flicker. Instead: read
+  // latest pan/zoom from refs (never stale), track the live imperative
+  // position in a local `imp` var, write `style.transform` directly to the
+  // canvas element on every event, and commit React state ONCE after the
+  // burst settles (debounced). useEffect deps deliberately omit `pan` and
+  // `zoom` so the listener isn't rebound mid-burst.
   useEffect(() => {
-    // v3.5 - `interactive: false` disables the wheel pan/zoom path entirely.
+    // `interactive: false` disables the wheel pan/zoom path entirely.
     // Used by the embedded editor (?embed=1 inside the Canvas-frames workflow
     // node) so its surface stays static; the workflow canvas owns pan/zoom
     // for the whole composition.
@@ -1187,7 +1187,7 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       } else {
         imp = { x: imp.x - e.deltaX, y: imp.y - e.deltaY, z: imp.z };
       }
-      // v3.4.4 - Pulse the interacting flag so portaled chrome (asset bar,
+      // Pulse the interacting flag so portaled chrome (asset bar,
       // badges) skip their rAF rect queries during this event. Same reason
       // as drag-pan: avoid layout flushes piling up on top of paint cost.
       pulseInteractingFlag();
@@ -1295,29 +1295,20 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   }, []);
 
   useEffect(() => {
-    // v3.5 - skip the mouse-drag pan path entirely when interactive=false
+    // Skip the mouse-drag pan path entirely when interactive=false
     // (embedded editor). Same intent as the wheel-pan early-return above.
     if (!interactive) return;
     const el = wrapRef.current; if (!el) return;
     let dragging = false, sx = 0, sy = 0, spx = 0, spy = 0;
-    // v3.4.13 - Pure imperative pan path. No React state updates during the
-    // drag itself; the imperative style.transform write IS the visual feed-
-    // back, and there's no React reconciliation happening between frames.
-    // Previously the rAF-throttled setPan kept firing during pan, which:
-    //   (a) re-rendered WorkflowCanvas every frame → every node child
-    //       re-reconciled (no React.memo on the node components) → frame
-    //       budget blown with many nodes → visible stutter.
-    //   (b) made React's render write style.transform from 1-frame-stale
-    //       pan state, stomping the imperative writes intermittently.
-    // Removing setPan from the hot path eliminates BOTH sources. One final
-    // setPan commits on mouseup so React state agrees with the DOM resting
-    // position. Same pattern Figma / tldraw use for canvas panning.
+    // Pure imperative pan path: do NOT touch React state during the drag -
+    // per-frame setPan re-renders every (un-memoised) node AND stomps the
+    // imperative transform with 1-frame-stale values (stutter + flicker).
+    // One final setPan commits on mouseup so state matches the DOM.
     let pendingPan = null;
-    // v3.4.5b - Look for both `.canvas` (editor / flow / state-machine views)
-    // AND `.workflow-canvas` (workflow view) - the workflow div uses its own
-    // class. Without both selectors, the imperative pan path silently no-ops
-    // in workflow mode and pan still goes through React setState on every
-    // mousemove → jitter persists. This was the actual root cause.
+    // Look for both `.canvas` (editor / flow / state-machine views) AND
+    // `.workflow-canvas` (workflow view). Without both selectors the
+    // imperative pan path silently no-ops in workflow mode and pan falls
+    // back to React setState per mousemove (jitter).
     const findCanvas = () =>
          el.querySelector(":scope > .workflow-canvas")
       || el.querySelector(":scope > .canvas")
@@ -1348,14 +1339,9 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       const nx = spx + (e.clientX - sx);
       const ny = spy + (e.clientY - sy);
       pendingPan = { x: nx, y: ny };
-      // v3.4.13 - Imperative paint, NO setPan during drag. Previously a
-      // rAF-throttled setPan fired ~60×/sec → WorkflowCanvas re-rendered
-      // → every node child re-reconciled (none are memoised) → frame
-      // budget blown + React's render kept stomping the imperative
-      // style.transform with state-derived (1-frame-stale) values.
-      // Both jitter sources fixed by NOT touching React state during
-      // the drag - the imperative write owns the DOM transform until
-      // mouseup commits the final position with a single setPan.
+      // Imperative paint - the imperative write owns the DOM transform
+      // until mouseup commits the final position with a single setPan
+      // (see the no-React-state-during-drag rule above).
       writeTransform(nx, ny);
     };
     const onUp = () => {
@@ -1567,7 +1553,6 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
             <span>Clone</span>
           </button>
         `}
-        ${/* v3.1 - promote-frame-to-main button removed (project branches deprecated). */ null}
       </div>
       <div className="frame-body" style=${{ width: frameW, height: frameH }}>
         ${frameNeedsPlaceholder(frame)
@@ -3063,6 +3048,40 @@ function DSFontsPanel({ scope }) {
 }
 
 /* Prototype pane - tokens + primitives extracted live from source/. */
+/* Shared comment affordance for the DS / State-machine / Timeline / Grid
+   views. Comments read from the materialised model so newly-added ones
+   render immediately; submit queues a generic annotation edit keyed by the
+   target's stable id. CommentBtn is the inline trigger used on every
+   swatch / row / card - a compact button whose indicator lights when the
+   key already has comments. `baseClass` sets the button's CSS family
+   ("ds-comment" / "view-comment"); `opts.hidden` renders no button at all
+   (embed mode). Views with bespoke comment routing (Entities) keep their
+   own implementations. */
+function useCommentAffordance(model, setEdits, baseClass, opts) {
+  const [commentAt, setCommentAt] = useState(null);
+  const commentsOf = (key) => (model?.commentsByTarget?.[key]) || [];
+  const openComment = (key, label) => setCommentAt({ key, label });
+  const submitComment = (text) => {
+    if (!text.trim() || !commentAt) { setCommentAt(null); return; }
+    setEdits && setEdits(es => [...es, { target: "annotation", kind: "comment", key: commentAt.key, text: text.trim() }]);
+    setCommentAt(null);
+  };
+  const hidden = !!(opts && opts.hidden);
+  const CommentBtn = ({ k, label, className }) => {
+    if (hidden) return null;
+    const has = commentsOf(k).length > 0;
+    return html`
+      <button type="button"
+              className=${baseClass + (has ? " has-comments" : "") + (className ? " " + className : "")}
+              title=${has ? commentsOf(k).join("\n\n") : "Comment for the LLM"}
+              onClick=${(ev) => { ev.stopPropagation(); openComment(k, label); }}>
+        <${Icon.Comment}/>
+      </button>
+    `;
+  };
+  return { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn };
+}
+
 function DSViewPrototype({ model, setEdits, hasContent }) {
   if (!hasContent) {
     return html`
@@ -3078,31 +3097,8 @@ function DSViewPrototype({ model, setEdits, hasContent }) {
   const t = D.tokens;
   const [active, setActive] = useState("overview");
   const scrollRef = useRef(null);
-  // Comments - read from the materialised model so newly-added ones render
-  // immediately. addComment queues a generic annotation edit keyed by the
-  // target's stable id; the indicator dot lights when commentsOf(key) > 0.
-  const commentsOf = (key) => (model?.commentsByTarget?.[key]) || [];
-  const [commentAt, setCommentAt] = useState(null);
-  const openComment = (key, label) => setCommentAt({ key, label });
-  const submitComment = (text) => {
-    if (!text.trim() || !commentAt) { setCommentAt(null); return; }
-    setEdits && setEdits(es => [...es, { target: "annotation", kind: "comment", key: commentAt.key, text: text.trim() }]);
-    setCommentAt(null);
-  };
-  // Inline comment trigger used across every DS swatch / row / card. Renders
-  // a compact 💬 button in the corner; if there's a comment already, a dot
-  // pulses next to it so the indicator is visible without opening anything.
-  const CommentBtn = ({ k, label, className }) => {
-    const has = commentsOf(k).length > 0;
-    return html`
-      <button type="button"
-              className=${"ds-comment" + (has ? " has-comments" : "") + (className ? " " + className : "")}
-              title=${has ? commentsOf(k).join("\n\n") : "Comment for the LLM"}
-              onClick=${(ev) => { ev.stopPropagation(); openComment(k, label); }}>
-        <${Icon.Comment}/>
-      </button>
-    `;
-  };
+  const { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn } =
+    useCommentAffordance(model, setEdits, "ds-comment");
 
   // Live primitive extraction - pulls outerHTML from a rendered source instance so
   // the DS preview can't drift from the actual rendered markup. Each primitive variant
@@ -5304,7 +5300,7 @@ function IAView({ model, setEdits }) {
     const frame = frames.find(f => f.id === fromId); if (!frame) return;
     if (target !== "root" && target !== ROOT_ID) {
       // Don't allow dropping a node onto its own descendant. Cycle-safe: a
-      // malformed parent chain (frameA.parent → frameB → frameA) used to spin
+      // malformed parent chain (frameA.parent → frameB → frameA) would spin
       // forever here; the `seen` set bails as soon as we revisit a node.
       const isDescendant = (anc, dec) => {
         const seen = new Set();
@@ -5954,7 +5950,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
   // cloned model frames - Canvas needs the post-migration shape to render.
   const frames = model?.frames || D.frames;
   const arrows = model?.arrows || D.arrows;
-  // v3.5 - Canvas-frames workflow node embeds this view with ?embed=1.
+  // Canvas-frames workflow node embeds this view with ?embed=1.
   // The workflow canvas owns pan/zoom for the whole composition; the embed
   // should stay locked so the user can't accidentally pan or zoom the inner
   // surface (which would desync it from the outer workflow zoom and break
@@ -6109,7 +6105,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
   const [selectedFrames, setSelectedFrames] = useState(() => new Set());
   const DRAG_THRESHOLD = 5;
 
-  // v3.4.37 - Mirror the currently-picked frame into the parent's selection
+  // Mirror the currently-picked frame into the parent's selection
   // ref so spawnFromComposer can include a <selected-frame> block in the
   // editor-mode chat prompt. Mirrors `selected` first (single-click pick,
   // the inspector target); falls back to the first member of selectedFrames
@@ -6591,12 +6587,11 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
         onClose=${() => setPopoverAt(null)}
       />
       <${InspectorPanel} picked=${picked} tool=${tool} edits=${edits} onStyle=${onStyle} onMove=${onMove}/>
-      ${/* v3.6 - the MiniMap moved into the docked CanvasToolsPanel (2nd left
-            panel), mirroring workflow mode; the zoom indicator now lives in the
-            minimap's corner (like workflow), so the old floating ZoomPill is
-            gone here. In embed mode the panel is suppressed, so the minimap is
-            absent there too - the workflow node that hosts the embed already
-            shows its own minimap. */ ""}
+      ${/* the MiniMap lives in the docked CanvasToolsPanel (2nd left
+            panel), mirroring workflow mode, with the zoom indicator in the
+            minimap's corner. In embed mode the panel is suppressed, so the
+            minimap is absent there too - the workflow node that hosts the
+            embed already shows its own minimap. */ ""}
       ${cloneMode && html`
         <div className="clone-mode-banner" onClick=${(e) => e.stopPropagation()}>
           <${Icon.Copy}/>
@@ -6684,7 +6679,7 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta, setZoom, setPan }) {
   const vy = (-pan.y) / zoom;
   const vww = vw / zoom;
   const vhh = vh / zoom;
-  // v3.5 - union with the current viewport so the minimap stays addressable
+  // union with the current viewport so the minimap stays addressable
   // when the user pans past the frames. Without this, the viewport indicator
   // clips against the minimap edge (or disappears entirely) and there's no
   // way to tell which direction the world sits in.
@@ -6846,7 +6841,7 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan, setZoom, extraBoun
   const vy = (-pan.y) / zoom;
   const vww = vw / zoom;
   const vhh = vh / zoom;
-  // v3.5 - union with the current viewport so the minimap stays addressable
+  // union with the current viewport so the minimap stays addressable
   // when the user pans past the nodes. Without this, panning out of bounds
   // moves the viewport indicator off the minimap entirely (its left/top
   // become negative - relative to the node-only bounding box - so the chip
@@ -7213,7 +7208,7 @@ function saveChatQueue(runId, queue) {
   } catch {}
 }
 
-/* v3.4 - Default-provider-per-capability map. The user picks ONE
+/* Default-provider-per-capability map. The user picks ONE
    provider+model combo per generation capability (agent / image / video /
    svg / 3d / lottie); spawned nodes inherit those defaults but each
    action-bar popover exposes the same dropdowns so they're still
@@ -7244,7 +7239,7 @@ function saveDefaultProviders(patch) {
   try { localStorage.setItem(DEFAULTS_KEY, JSON.stringify(next)); } catch {}
   // Broadcast so any popover currently open re-reads the new default.
   try { window.dispatchEvent(new CustomEvent("th:default-providers-changed", { detail: next })); } catch {}
-  // v3.6 - Sync to daemon so the capabilities preamble can surface these
+  // Sync to daemon so the capabilities preamble can surface these
   // defaults to spawned chat agents. localStorage stays source of truth; the
   // daemon caches in-process and re-receives on every editor load.
   try { syncDefaultProvidersToDaemon(next); } catch {}
@@ -7283,7 +7278,7 @@ function getDefaultForCapability(cap) {
   if (!v || !v.provider) return null;
   return v;
 }
-/* v3.5 - Which CLI (`claude` / `codex` / `opencode`) the chat spawn should use,
+/* Which CLI (`claude` / `codex` / `opencode`) the chat spawn should use,
    based on the user's agent-capability default. Falls back to "claude" so the
    historical default keeps working when no preference is saved. The daemon
    side of this is keyed on the same agentId - see AGENT_DEFS in serve.py. */
@@ -7296,7 +7291,7 @@ function pickAgentIdForChat() {
   } catch {}
   return "claude";
 }
-/* ────────── Per-orchestrator model overrides (v3.13) ──────────
+/* ────────── Per-orchestrator model overrides ──────────
    The agent-capability default (above) picks ONE model for the whole spawn -
    the main chat agent AND, by inheritance, every orchestrator's dispatched
    subagent drawers. This map lets the user break that single knob per
@@ -7363,7 +7358,7 @@ function listOrchestratorModelChoices() {
 /* Pull the per-capability model lists from the media catalog. svg / video /
    3d / lottie aren't first-class lists in the catalog (yet) so we synthesize
    them from the providers' capability tags. */
-/* v3.4 - Derive the right `{ext, assetKind, path}` triple for an auto-
+/* Derive the right `{ext, assetKind, path}` triple for an auto-
    spawned downstream asset based on the skill that produces it. The media
    catalog already records each skill's real output via `pathwayBExt`
    (svg / html / json / png) and `pathwayAFallback.ext` for the pre-fall-
@@ -7434,7 +7429,7 @@ function pickAssetSpawnDefaults(skillSpec, branch, stamp) {
   }
   const slug = skill.id || "asset";
   const path = `source/${branch}/${assetSubdirForKind(assetKind)}/${slug}-${stamp}.${ext}`;
-  // v4.0 - persist the generating media-model id as the node's MEDIUM. assetKind
+  // persist the generating media-model id as the node's MEDIUM. assetKind
   // is the storage/embed type (a shader scene is an .html → assetKind "html"),
   // but the PRODUCTION medium is the skill (shader / viz / …). Without this, an
   // agent later wired to the node only sees assetKind=html and makes CSS instead
@@ -7442,11 +7437,10 @@ function pickAssetSpawnDefaults(skillSpec, branch, stamp) {
   return { assetKind, ext, path, mediaModel: skill.id || null };
 }
 
-/* Per-kind output subdirectory under source/<branch>/. Previously every
-   spawned asset landed in `images/` regardless of kind, which meant remix
-   HTML alts wrote to `source/main/images/foo.html` instead of a sensible
-   `source/main/_remix/foo.html` - and the orchestrator-scaffolded asset
-   sinks (which expect _remix/) found nothing on disk to point at. */
+/* Per-kind output subdirectory under source/<branch>/. Kind matters:
+   remix HTML alts must land in `source/main/_remix/` (not `images/`)
+   because the orchestrator-scaffolded asset sinks expect _remix/ and
+   find nothing on disk otherwise. */
 function assetSubdirForKind(assetKind) {
   switch (assetKind) {
     case "html":   return "_remix";   // html alts/remixes land beside the orchestrator's _remix/ subdir
@@ -7461,7 +7455,7 @@ function assetSubdirForKind(assetKind) {
   }
 }
 
-/* v3.4 - Kind-only variant of pickAssetSpawnDefaults for iterator nodes.
+/* Kind-only variant of pickAssetSpawnDefaults for iterator nodes.
    Iterators (remix / blend / repeat) don't have a single skill spec; their
    output kind is set on the iterator node itself (`outputKind` field) and
    propagates from upstream's output. This helper takes that kind + a slug
@@ -7481,7 +7475,7 @@ function listModelsForCapability(cap) {
   const providers = M.providers || {};
   if (cap === "agent") return (M.textModels || []).filter(m => m.integrated !== false);
   if (cap === "image") return (M.imageModels || []).filter(m => m.integrated !== false);
-  // v3.4.1 - Video catalog now has integrated rows (fal video models).
+  // Video catalog now has integrated rows (fal video models).
   if (cap === "video") return (M.videoModels || []).filter(m => m.integrated !== false);
   // Audio catalog (ElevenLabs tts / sfx / music).
   if (cap === "audio") return (M.audioModels || []).filter(m => m.integrated !== false);
@@ -7638,7 +7632,7 @@ function markAutoProtoFired() {
 }
 // Per-project view-mode memory. The editor's toolbar tabs (Canvas / Prototype /
 // User flow / IA / Design system / Entities / State machine / Timeline / Grid)
-// live in App's `view` state, which used to always boot to "canvas". Instead we
+// live in App's `view` state. We
 // remember the last tab the user was on *per project* in localStorage, so
 // project A reopens on Prototype while project B reopens on Canvas. Keyed by the
 // same activeProjectId() used everywhere else; value is validated on read so a
@@ -7724,7 +7718,7 @@ function useActiveProjectLabel() {
   return label;
 }
 
-// v3.4.30 - Starred prototypes (cross-component cache + event bus).
+// Starred prototypes (cross-component cache + event bus).
 // One per-project list of prototype slugs the user has bookmarked. The
 // daemon owns persistence (<project>/.starred-prototypes.json); we
 // memoise the resolved list in `window.__TH_STARRED` keyed by project
@@ -7782,7 +7776,7 @@ async function togglePrototypeStar(slug, want) {
     return null;
   }
 }
-// v3.5.x - Project thumbnail. Parallel to starred-prototypes but capped
+// Project thumbnail. Parallel to starred-prototypes but capped
 // at ONE target per project: which HTML file under source/ should render
 // as the live preview on the projects landing card. Works for BOTH
 // prototype index pages (source/<slug>/index.html) AND ad-hoc HTML pages
@@ -8038,7 +8032,7 @@ function resolveChatTargetSlug(sel, override) {
   if (override === "__general__") return null;
   // Explicit dropdown override beats an implicit preview.
   if (override) return override;
-  // v3.17 - nothing selected, no override: fall back to the prototype the user
+  // nothing selected, no override: fall back to the prototype the user
   // is actively PREVIEWING (the last iframe they clicked into / navigated). So
   // "make the header bigger" targets the page you're looking at without having
   // to first select its node. See [[woven-canvas-chat-prototype-target]].
@@ -8046,7 +8040,7 @@ function resolveChatTargetSlug(sel, override) {
   return null;
 }
 
-// v3.4.24 - Shared Lottie player srcdoc. Loads the file, sets up the
+// Shared Lottie player srcdoc. Loads the file, sets up the
 // animation with autoplay=false, and listens for postMessage commands
 // {type:"play"|"pause"} from the parent so the canvas card / library
 // grid / chooser can drive playback based on selection / hover state.
@@ -8131,7 +8125,7 @@ async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, t
 // We fold a one-paragraph context preamble into the first user message so
 // the agent biases its responses correctly. Subsequent turns inherit the
 // stance via Claude Code's own context window.
-// v2.9 - selection-context block. When the user has nodes selected on the
+// selection-context block. When the user has nodes selected on the
 // workflow canvas and starts a chat, prepend a structured summary of those
 // nodes so the agent can resolve "this", "that node", "these prompts" etc.
 // against canvas state instead of guessing or having to ask. Returns "" for
@@ -8228,7 +8222,7 @@ function formatWbContext({ wb, selectedWbIds } = {}) {
   ].join("\n");
 }
 
-// v3.4.37 - Editor-mode equivalent of formatSelectionContext. When the user
+// Editor-mode equivalent of formatSelectionContext. When the user
 // is in editor mode and picks a frame on the canvas (CanvasView's `selected`),
 // mirrors that into a `<selected-frame>` block so the agent can resolve "this
 // frame", "this screen", "this page" against editor/data.js + source/.
@@ -8371,7 +8365,7 @@ function useHistory({ onAfterRestore } = {}) {
       return;
     }
     if (onlyWorkflow) {
-      // v3.2 - Undo/redo demands DISK-AUTHORITATIVE state. The regular
+      // Undo/redo demands DISK-AUTHORITATIVE state. The regular
       // th:workflow-reload listener merges (adds fresh nodes/edges from
       // disk; preserves anything in memory that disk lacks) to protect
       // subagent-added trios from being clobbered. But for undo/redo,
@@ -8487,11 +8481,9 @@ function fmtHistoryAgo(ts) {
 }
 
 function historySourceGlyph(entry) {
-  // v2.50 - returns an Icon vnode (rendered in-place via ${...}); replaces
-  // the old emoji 🤖/⚙️/🎨/👤 with the consistent line-icon set.
+  // Returns an Icon vnode (rendered in-place via ${...}).
   const s = entry && entry.source;
   if (s === "agent")    return html`<${Icon.Bot}/>`;
-  // v3.2 - was Gear (which is the Settings glyph after the gear redraw).
   // Workflow-source history entries are canvas mutations (node drag, field
   // edit, edge add); Flow reads as "workflow graph" - semantically right.
   if (s === "workflow") return html`<${Icon.Flow}/>`;
@@ -8519,7 +8511,7 @@ function HistoryButton({ history, open, onOpen, onClose }) {
       `${remainUndo} undo · ${remainRedo} redo\n` +
       (latestLabel ? `Latest: ${latestLabel}\n` : "") +
       `⌘Z / ⌘⇧Z`;
-  // v3.2 - Split into three independently clickable buttons (undo, redo,
+  // Split into three independently clickable buttons (undo, redo,
   // open-panel). The previous version painted the arrows inside the same
   // button as the clock, so they were decorative - users instinctively
   // tried to click them. Each button is now its own tap target with its
@@ -8631,7 +8623,7 @@ function useAgents() {
     }
   }, []);
   useEffect(() => { reload(); }, [reload]);
-  // v3.4.48 - Listen for explicit "agents changed" dispatches so the
+  // Listen for explicit "agents changed" dispatches so the
   // wizard's refresh link can keep every consumer (CliIndicator,
   // AgentPicker, etc.) in sync. Without this, refreshing in the wizard
   // updated mediaCfg but the top-right CLI pill stayed at "not installed"
@@ -8650,14 +8642,12 @@ function useAgents() {
    whole poll cycle otherwise). The endpoint is the cheapest GET the daemon
    exposes - returns a tiny JSON describing single/workspace mode - so this is
    safe to run every few seconds across every mounted topbar. */
-// Daemon-status model (v3.5 - evidence-based, not silence-based).
+// Daemon-status model: evidence-based, not silence-based.
 //
-// EARLIER BUG: the badge was computed from "is the LAST OK stamp older than
-// STALE_MS?" - i.e. "have we heard from the daemon recently?" That inferred
-// "down" from SILENCE. With the SSE heartbeat at 25s and the threshold at
-// 15-40s, the badge oscillated to "down" in every quiet gap even though the
-// daemon was perfectly healthy + actively running subprocesses. Silence is
-// not failure.
+// Do NOT infer "down" from silence ("is the LAST OK stamp older than
+// STALE_MS?") - with an SSE heartbeat at 25s and a 15-40s threshold the
+// badge oscillates to "down" in every quiet gap even though the daemon is
+// healthy and actively running subprocesses. Silence is not failure.
 //
 // CURRENT MODEL: only positive evidence flips state. We track TWO stamps:
 //   - __thLastDaemonOkAt   - most recent successful same-origin response
@@ -8768,7 +8758,7 @@ function useDaemonStatus() {
   return { status, lastOk };
 }
 
-/* v3.4.51 - Popup with serve.py restart instructions, opened from the
+/* Popup with serve.py restart instructions, opened from the
    DaemonIndicator chip when the daemon is unreachable. Replaces the
    permanent "daemon-down-banner" which ate page real estate on the
    projects landing only (every other surface didn't have room for it).
@@ -8812,7 +8802,7 @@ function DaemonDownDialog({ onClose }) {
    a glance whether their writes will land. */
 function DaemonIndicator({ compact }) {
   const { status, lastOk } = useDaemonStatus();
-  // v3.4.51 - When the daemon is down, clicking the chip opens the
+  // When the daemon is down, clicking the chip opens the
   // restart-instructions popup. Dialog state lives here so every surface
   // that mounts DaemonIndicator (landing, workflow toolbar, editor
   // toolbar) gets the same click-to-explain behavior without each
@@ -8866,7 +8856,7 @@ function DaemonIndicator({ compact }) {
 /* Status chip showing whether the user's picked CLI is reachable. Drives the
    "this run is using $0 because no API key is set, so we fall back to the
    CLI" expectation - green when CLI is present, amber when missing.
-   v3.5 - Reflects the agent-capability default. If the user picked OpenAI
+   Reflects the agent-capability default. If the user picked OpenAI
    as their default agent provider, this shows Codex (not Claude). If no
    default is picked, prefers the native CLI of whichever provider's key is
    configured; falls back to "whichever CLI is on PATH" as a last resort. */
@@ -8926,9 +8916,9 @@ function CliIndicator({ compact }) {
   const installHint = meta.installHint;
   const keyName = meta.keyName;
   const installed = !!(target && target.available);
-  // v3.6 - Three-state pill. `loggedIn` is what /__agents now reports; null
-  // (unknown - e.g. older daemon, unsupported CLI) is treated as "don't
-  // warn", same as before. Distinct from `installed` so a working binary
+  // Three-state pill. `loggedIn` comes from /__agents; null (unknown -
+  // e.g. older daemon, unsupported CLI) is treated as "don't warn".
+  // Distinct from `installed` so a working binary
   // that's never been authed surfaces as "needs login" rather than masquerading
   // as a fully working install.
   const loginKnown = !!target && target.loggedIn !== undefined && target.loggedIn !== null;
@@ -8999,7 +8989,7 @@ function useMediaConfig() {
   }, [reload]);
   const providers = (config && config.providers) || {};
   const hasAnyKey = Object.values(providers).some(p => p && (p.has_key || p.saved || p.from_env));
-  // v3.5 - `hasCli` is true when ANY supported CLI is available so the
+  // `hasCli` is true when ANY supported CLI is available so the
   // "no model configured" pill clears as soon as Codex/opencode login alone is set up.
   const hasCli = !!(config && (config.claude_cli_available || config.codex_cli_available || config.opencode_cli_available));
   return { config, loaded, hasAnyKey, hasCli, configured: hasAnyKey || hasCli, reload };
@@ -9047,7 +9037,7 @@ function ModelStatusIndicator({ onOpenSettings, compact }) {
   </button>`;
 }
 
-/* v3.4.41 - Hook (not a pill) that polls /__local_status for every
+/* Hook (not a pill) that polls /__local_status for every
    LOCAL_PACKAGES entry flagged required:true (rembg today) and exposes
    { loaded, allRequiredInstalled, missing }. Used by the projects-landing
    setup-card gate so the empty state stays open until every required
@@ -9199,7 +9189,7 @@ function PermissionModePicker({ value, onChange, compact, openUp }) {
   `;
 }
 
-/* v3.11 - Chat view mode: how much of the agent's working activity (tool
+/* Chat view mode: how much of the agent's working activity (tool
    cards, agent grids, thinking blocks) stays visible in the transcript.
    - "auto" (default): activity streams normally while the agent is reading /
      writing, then collapses into a compact "n steps" row once the turn
@@ -9847,7 +9837,7 @@ function RightRailDock({ mode }) {
   }, [chatWidth]);
 
   // ── Chat run lifecycle ──
-  // v3.16 - carries the pending SCOPED-thread context (tier + prototype slug)
+  // carries the pending SCOPED-thread context (tier + prototype slug)
   // from a <handoff-card> click through to the isNew shell's first submit,
   // where spawnChat reads it. Cleared after one spawn so it never leaks into a
   // later, unrelated new chat.
@@ -9857,7 +9847,7 @@ function RightRailDock({ mode }) {
     setChatRun({ runId: null, isNew: true, title: "Chat", kind: "freeform", branch, agentId: pickAgentIdForChat() });
     setChatRunFinished(false);
   }, []);
-  // v3.19 - open the fresh handoff chat on the NORMAL path. The handoff can fire
+  // open the fresh handoff chat on the NORMAL path. The handoff can fire
   // right after the orchestration plan / plate - BEFORE any source/<slug>/ is
   // written - so landing in `scoped` would hand the agent a false "the prototype
   // already exists, iterate in place" premise. `normal` is the everyday path and
@@ -10495,7 +10485,7 @@ function ShareMenuButton() {
   const [nodes, setNodes] = useState([]);    // /__workflow nodes
   const [reachable, setReachable] = useState(true);
   const [busy, setBusy] = useState({});
-  const [err, setErr] = useState(null);
+  const [err, flashErr] = useFlash();
   const [copiedId, setCopiedId] = useState(null);
   const [pos, setPos] = useState(null);      // anchored dropdown position
   const btnRef = useRef(null);
@@ -10551,7 +10541,6 @@ function ShareMenuButton() {
     return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
 
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
   const setB = (k, v) => setBusy(b => { const n = { ...b }; if (v) n[k] = true; else delete n[k]; return n; });
   const liveOp = async (id, action, body) => {
     setB(id, true);
@@ -10905,7 +10894,7 @@ function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
   const [comments, setComments] = useState(null);   // null = loading
   const [filter, setFilter] = useState("open");
   const [query, setQuery] = useState("");           // free-text search across comments
-  const [err, setErr] = useState(null);
+  const [err, flashErr] = useFlash(5000);
   const [replyFor, setReplyFor] = useState(null);   // commentId with an open composer
   const [replyText, setReplyText] = useState("");
   // Multi-select for "Send to agent" (parity with WorkflowCommentsPanel's
@@ -10951,7 +10940,6 @@ function CommentsPanel({ railTop, panelRef, embedded, onStartChatWithPrompt }) {
     return () => clearInterval(t);
   }, [reload]);
 
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 5000); };
   const cop = async (body) => {
     try {
       const url = liveMode ? "/live/api/comments" : apiUrl("/__share_comments");
@@ -11275,7 +11263,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const [st, setSt] = useState(null);        // /__git/status, null = loading
   const [gh, setGh] = useState(null);        // /__github/status {configured,signedIn,login,avatar}
   const [commits, setCommits] = useState(null);
-  const [err, setErr] = useState(null);
+  const [err, flashErr, setErr] = useFlash();
   const [note, setNote] = useState(null);    // transient success line
   const [busy, setBusy] = useState("");       // current in-flight op key
   const [msg, setMsg] = useState("");         // commit message (seeded from draft)
@@ -11324,7 +11312,6 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
     return () => { clearInterval(t); if (devTimer.current) clearTimeout(devTimer.current); if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [reload, loadGh]);
 
-  const flashErr = (m) => { setErr(String(m)); setTimeout(() => setErr(null), 6000); };
   const flashNote = (m) => { setNote(String(m)); setTimeout(() => setNote(null), 4000); };
 
   // Find an active live session so commits credit guests as Co-authored-by.
@@ -12041,7 +12028,7 @@ function runIsFailed(run) {
   return true;
 }
 
-// v3.5.3 - single source of truth for the drawer's status state machine.
+// single source of truth for the drawer's status state machine.
 // Maps (previous status, one SSE-shaped event) → next status. Used by the
 // live SSE consumer AND folded over hydrated /__chat history so a drawer
 // opened on an already-finished (or paused-between-turns) run lands on the
@@ -12103,7 +12090,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
-  // v3.11 - Chat view mode: "auto" collapses finished turns' tool/thinking
+  // Chat view mode: "auto" collapses finished turns' tool/thinking
   // activity into a compact "n steps" row; "always" keeps everything
   // expanded. Sticky across sessions via localStorage (user preference,
   // not thread state).
@@ -12113,12 +12100,12 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     try { localStorage.setItem(CHAT_VIEW_MODE_KEY, v); } catch {}
   };
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
-  // Phase 4 / v2.2 onboarding - a clicked DecisionRequestCard sends a
-  // user-message shaped `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
+  // A clicked DecisionRequestCard sends a user-message shaped
+  // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
   // On reload/replay we scan past user_message events for that prefix so the
   // card re-renders in its "Sent ✓" state instead of inviting a second click.
-  // v2.2: comma-list values become an array; single-value stays a string for
-  // legacy compatibility with single-pick cards.
+  // Comma-list values become an array; single-value stays a string for
+  // compatibility with single-pick cards.
   const harvestDecisionFromUserMessage = (text) => {
     if (typeof text !== "string") return null;
     const m = /^\[decision:([A-Za-z0-9_.-]{1,80})\]\s+([^\s-]+)/.exec(text.trim());
@@ -12141,21 +12128,19 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // High-water mark of consumed seq ids. Persists across sseEpoch bumps so
   // re-opening the SSE doesn't replay events we've already shown.
   const lastIdRef = useRef(-1);
-  // v2.50 - set of seq ids already rendered, so the hydrate-then-tail flow
+  // Set of seq ids already rendered, so the hydrate-then-tail flow
   // (history fetch + live SSE) can dedupe if the jsonl flushed concurrently
   // with our read and the SSE replays an overlapping seq. Reset on cold mount.
   const _seenSeqRef = useRef(new Set());
-  // v3.4.37 - Per-runId events + answers cache. Switching between threads
-  // (RunsMenu → click another run → click back) used to always blank the
-  // drawer to "Waiting for the agent…" while /__chat re-hydrated; we cache
-  // the rendered state per runId so revisits are instant. Cache lives in
-  // a ref (no re-render on writes), keyed by runId, scoped to this drawer
-  // instance - it dies with the component (memory bounded).
+  // Per-runId events + answers cache so thread revisits (RunsMenu →
+  // another run → back) render instantly instead of blanking while /__chat
+  // re-hydrates. Lives in a ref (no re-render on writes), keyed by runId,
+  // scoped to this drawer instance - it dies with the component.
   const eventsCacheRef = useRef(new Map());
   // Track the runId we last reset state for so we can tell apart "fresh
   // run" from "same run, new SSE epoch."
   const prevRunIdRef = useRef(null);
-  // v3.5.1 - Whether the SSE useEffect has completed at least one open for
+  // Whether the SSE useEffect has completed at least one open for
   // the CURRENT runId. The "seed status from run.done" path runs only on the
   // first open; subsequent epoch bumps (post-error reconnect, post-/resume)
   // would otherwise re-stomp the freshly-set "streaming" status using the
@@ -12163,11 +12148,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // Reset to false whenever the runId actually changes (cold-mount of a
   // different chat thread), via the prevRunIdRef branch below.
   const sseHadFirstOpenRef = useRef(false);
-  // stick-to-bottom tracking. The previous "check threshold AFTER commit" was
-  // backwards: by then, the new event had already pushed the user >80px off
-  // the bottom and auto-scroll never fired. Instead: assume sticky until the
-  // user explicitly scrolls up; unstick on user scroll, re-stick when they
-  // reach the bottom on their own. Standard chat-UI pattern.
+  // Stick-to-bottom tracking: assume sticky until the user explicitly
+  // scrolls up; unstick on user scroll, re-stick when they reach the bottom
+  // on their own (standard chat-UI pattern). Don't check a threshold AFTER
+  // commit - by then the new event has already pushed the user off the
+  // bottom and auto-scroll never fires.
   const stickRef = useRef(true);
 
   // run.isNew = true means "drawer is open for a new chat, but no run has been
@@ -12188,26 +12173,22 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     // Cold mount (different runId): reset everything. Same runId with a new
     // sseEpoch (post-resume): keep events + lastIdRef, just open a new SSE.
     //
-    // v3.4.37 - Before blanking the drawer, consult the per-runId cache so
-    // that revisits to a thread render instantly (no empty → hydrated flicker,
-    // no abort-race "failed to load" if the user clicks fast). The cache is
-    // populated on every event update below. Live SSE still tails after the
-    // last cached seq so any events that landed while we were elsewhere come
-    // in normally.
-    //
-    // v3.4.38 - `cacheHit` short-circuits the /__chat re-fetch below. Without
-    // this, switching to a cached chat painted twice: cached events first,
-    // then the hydrate fetch overwrote them ~50ms later. Cache always reflects
-    // what the SSE most recently delivered, so it's authoritative for this
-    // drawer's lifetime; live SSE picks up from cached.lastSeq with no gap.
+    // Before blanking the drawer, consult the per-runId cache so revisits
+    // to a thread render instantly (no empty → hydrated flicker, no
+    // abort-race "failed to load" on fast clicks). The cache is populated on
+    // every event update below and always reflects what the SSE most
+    // recently delivered, so it's authoritative for this drawer's lifetime:
+    // `cacheHit` also short-circuits the /__chat re-fetch (a re-fetch would
+    // repaint the same events ~50ms later). Live SSE still tails after
+    // cached.lastSeq so events that landed while we were elsewhere come in
+    // normally.
     let cacheHit = false;
-    // v3.5.3 - same runId, new sseEpoch = a post-send / post-resume reconnect
-    // (not a cold mount). The historical short-circuit below must NOT run in
-    // that case: after /resume the daemon has rehydrated the run into RUNS
-    // with done=false, but the `run` PROP still carries the stale
-    // historical:true / done:true snapshot - so the one-shot hydrate branch
-    // would fetch /__chat once and never open an SSE tail, and the agent's
-    // reply landed in the jsonl with nobody listening until a page refresh.
+    // Same runId, new sseEpoch = a post-send / post-resume reconnect (not a
+    // cold mount). The historical short-circuit below must NOT run in that
+    // case: after /resume the daemon has the run live (done=false) but the
+    // `run` PROP still carries a stale historical:true / done:true snapshot,
+    // and the one-shot hydrate branch would never open an SSE tail - the
+    // agent's reply would land in the jsonl with nobody listening.
     const isEpochBump = prevRunIdRef.current === run.runId;
     if (prevRunIdRef.current !== run.runId) {
       const cached = eventsCacheRef.current.get(run.runId);
@@ -12218,10 +12199,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         // If the cached run ended terminally, seed the status from the cache
         // so the drawer doesn't briefly show "connecting" before the run flags
         // get re-applied. A live SSE tail can still flip back to streaming.
-        // v3.5.2 - distinguish failure (exitCode != 0, no intentional stop)
-        // from clean done so the chip and downstream send-routing reflect the
-        // actual subprocess outcome. Without this the user saw a green "DONE"
-        // pill on a run the dropdown rendered as "FAIL".
+        // Distinguish failure (exitCode != 0, no intentional stop) from
+        // clean done so the chip and downstream send-routing reflect the
+        // actual subprocess outcome (no green "DONE" pill on a failed run).
         setStatus(runIsFailed(run) ? "fail" : (run.done || run.turnDone ? "done" : "streaming"));
         lastIdRef.current = typeof cached.lastSeq === "number" ? cached.lastSeq : -1;
         _seenSeqRef.current = new Set(
@@ -12236,14 +12216,12 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         lastIdRef.current = -1;
         _seenSeqRef.current = new Set();
       }
-      // v3.4.39 - Pre-seed completedRef with the run's *already-terminal*
-      // status (if any) so the post-effect doesn't re-fire onRunComplete
-      // on a chat that finished long ago. Without this, reopening a done
-      // chat invoked handleRunComplete → bumped every iframe src → the
-      // editor's frames visibly flashed every time the user clicked back
-      // into a thread. The callback should only fire on a *live* terminal
-      // transition the SSE delivers during this mount; if status is going
-      // to land at "done" on first paint, treat it as already-fired.
+      // Pre-seed completedRef with the run's *already-terminal* status (if
+      // any). onRunComplete must only fire on a *live* terminal transition
+      // the SSE delivers during this mount - re-firing it for a chat that
+      // finished long ago bumps every iframe src and visibly flashes the
+      // editor's frames on every thread revisit. If status will land at
+      // "done" on first paint, treat it as already-fired.
       completedRef.current = (run.done || run.turnDone) ? "done" : false;
       prevRunIdRef.current = run.runId;
       // Allow seed-from-done on the upcoming first open for this new runId.
@@ -12258,17 +12236,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     // done. The composer reads `processEnded` from the same status, so a
     // historical run automatically renders read-only.
     //
-    // v3.5.1 - `historical: true` is sticky on the parent's polled snapshot
-    // even after /resume kicks off a fresh live process for the run. Without
-    // the `run.done !== false` guard, every Send to a previously-rehydrated
-    // chat went through the read-only historical IIFE: one-shot hydrate, no
-    // SSE tail, agent's reply landed in jsonl with no one listening - the
-    // user had to close+reopen the drawer to force a fresh hydrate that
-    // picked it up. If the daemon now reports the run as live (`done` is
-    // explicitly `false`), drop out of the historical branch into the normal
-    // SSE flow so the agent's reply streams in.
+    // `historical: true` is sticky on the parent's polled snapshot even
+    // after /resume kicks off a fresh live process for the run - hence the
+    // `run.done !== false` guard: when the daemon reports the run as live
+    // (`done` explicitly `false`), drop out of the historical branch into
+    // the normal SSE flow so the agent's reply streams in instead of landing
+    // in the jsonl with no one listening.
     if (run.historical && run.done !== false && !isEpochBump) {
-      // v3.4.38 - Cache hit on a historical run: no need to re-fetch /__chat
+      // Cache hit on a historical run: no need to re-fetch /__chat
       // (the cache has every event we ever rendered and historical runs never
       // get new ones). Just return the cleanup; status was already seeded above.
       if (cacheHit) {
@@ -12327,21 +12302,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       return () => { cancelled = true; ctl.abort(); };
     }
     (async () => {
-      // v2.50 - hydrate persisted history FIRST, then tail the live SSE.
-      // Previously the live SSE was the ONLY source of messages: on a cold
-      // mount it reset events to [] then opened the stream asynchronously,
-      // and if a re-render fired the effect cleanup (ctl.abort()) before the
-      // first reader.read() resolved, the initial flush was lost and the
-      // drawer showed empty - "click again and it shows" was the second
-      // mount winning the race. Reading /__chat (the persisted jsonl) is a
-      // one-shot fetch that can't lose a streaming flush, so it's the
-      // reliable floor. The live SSE then only tails events AFTER the last
-      // persisted seq - no gap, no duplicates.
+      // Hydrate persisted history FIRST, then tail the live SSE. The SSE
+      // alone can lose its initial flush when an effect cleanup aborts it
+      // before the first reader.read() resolves; reading /__chat (the
+      // persisted jsonl) is a one-shot fetch that can't lose a streaming
+      // flush, so it's the reliable floor. The live SSE then only tails
+      // events AFTER the last persisted seq - no gap, no duplicates.
       //
-      // v3.4.38 - On a cache hit, skip the hydrate fetch. The cache already
-      // holds every event the SSE delivered (the cache-write effect runs on
-      // every events change), so the fetch can only return a stale subset
-      // and cause a visible flash when setEvents(evs) overwrites the cache.
+      // On a cache hit, skip the hydrate fetch. The cache already holds
+      // every event the SSE delivered (the cache-write effect runs on every
+      // events change), so the fetch can only return a stale subset and
+      // cause a visible flash when setEvents(evs) overwrites the cache.
       // Jump straight to the SSE tail with after=cached.lastSeq.
       try {
         if (cacheHit) {
@@ -12376,18 +12347,15 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               }
             }
             if (Object.keys(seeded).length) setAnswers(prev => ({ ...seeded, ...prev }));
-            // v3.5.3 - replay the status state machine over the hydrated
-            // history. Not every caller passes lifecycle flags on the run
-            // object (WorkflowAgentChatDialog hands ChatDrawer a bare
+            // Replay the status state machine over the hydrated history.
+            // Not every caller passes lifecycle flags on the run object
+            // (WorkflowAgentChatDialog hands ChatDrawer a bare
             // { runId, branch, agentId }), and the daemon's /__stream closes
-            // silently with ZERO events when the run is already done - so
-            // without this the drawer sat at "connecting" forever on a
-            // finished or paused-between-turns run: streaming dots below
-            // "finished · exit 0", composer treating the agent as mid-turn,
-            // and every reply silently parked in the send-queue instead of
-            // dispatched. Folding the SAME reducer the live SSE uses lands
-            // the drawer on exactly the status it would have reached had it
-            // watched the run live.
+            // silently with ZERO events when the run is already done -
+            // without this fold the drawer sits at "connecting" forever on
+            // a finished run. Folding the SAME reducer the live SSE uses
+            // lands the drawer on exactly the status it would have reached
+            // had it watched the run live.
             setStatus(prev => (prev === "error" ? prev : evs.reduce(chatStatusReducer, prev)));
             // Same reason-harvest as the live path: if the hydrated history
             // ended on an error, label it (banner is gated on status==="error",
@@ -12403,40 +12371,36 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         if (e?.name === "AbortError") return;
       }
       if (cancelled) return;
-      // v2.50 - seed status from the run's authoritative done/turnDone flags
-      // BEFORE opening the live tail. The turn-completion marker (the agent's
-      // `result` → `end` frame) is delivered by the live SSE in real time but
-      // is NOT reliably in the persisted jsonl, and opening the tail at
-      // after=<maxHistSeq> skips any completion event that already streamed.
-      // Without this, a run whose turn finished while the drawer was closed
-      // re-opens stuck at "connecting/streaming" → the composer stays disabled
-      // → the user had to Stop then reply. The run object (from /__runs)
-      // carries the real lifecycle flags; trust them as the floor. A live
-      // tail event (new turn) will flip back to "streaming" on its own.
+      // Seed status from the run's authoritative done/turnDone flags BEFORE
+      // opening the live tail. The turn-completion marker (the agent's
+      // `result` → `end` frame) is delivered by the live SSE in real time
+      // but is NOT reliably in the persisted jsonl, and opening the tail at
+      // after=<maxHistSeq> skips any completion event that already streamed
+      // - so a run whose turn finished while the drawer was closed would
+      // re-open stuck at "connecting/streaming" with the composer disabled.
+      // The run object (from /__runs) carries the real lifecycle flags;
+      // trust them as the floor. A live tail event flips back to
+      // "streaming" on its own.
       //
-      // v3.5.1 - Only seed-from-done on the INITIAL mount. Subsequent epoch
-      // bumps (caused by /resume or post-error SSE reconnects in ChatComposer)
-      // would otherwise stomp the "streaming" status that onSent / onResumed
-      // just set - because the `run` prop carries the stale done=true flag
-      // until the next /__runs poll. Tracking via a ref keeps the first-mount
-      // safety net while letting recovery flows succeed.
-      // v3.5.2 - pick "fail" instead of "done" when the run carries a non-zero
-      // exit code so the chip matches the dropdown's verdict on initial open.
+      // Only seed-from-done on the INITIAL mount: subsequent epoch bumps
+      // (/resume or post-error SSE reconnects in ChatComposer) would stomp
+      // the "streaming" status that onSent / onResumed just set, because
+      // the `run` prop carries a stale done=true flag until the next
+      // /__runs poll. Pick "fail" instead of "done" on a non-zero exit code
+      // so the chip matches the dropdown's verdict on initial open.
       if ((run.done || run.turnDone) && !sseHadFirstOpenRef.current) {
         const seed = runIsFailed(run) ? "fail" : "done";
         setStatus(prev => (prev === "error" ? prev : seed));
       }
       sseHadFirstOpenRef.current = true;
-      // v3.5.4 - auto-reconnect the live tail. A per-turn API failure
+      // Auto-reconnect the live tail. A per-turn API failure
       // (result.subtype=error_during_execution) makes Claude Code retry the
       // turn IN-PROCESS: the daemon never sets state.done, so the run keeps
-      // producing under the same runId. But the browser's fetch/SSE can still
-      // drop on a long-lived tail (proxy idle cap, network blip, a 19MB turn).
-      // Before this loop, a dropped tail went sticky on "Stream error" and the
-      // drawer never re-subscribed - new events piled up server-side with no
-      // listener, so the UI froze until a manual refresh re-hydrated. Now, on
-      // an unexpected drop we confirm via /__runs that the run is still live
-      // and reconnect from lastIdRef (dedup via _seenSeqRef keeps it gapless).
+      // producing under the same runId - but the browser's fetch/SSE can
+      // still drop on a long-lived tail (proxy idle cap, network blip, a
+      // huge turn). On an unexpected drop, confirm via /__runs that the run
+      // is still live and reconnect from lastIdRef (dedup via _seenSeqRef
+      // keeps it gapless) instead of going sticky on "Stream error".
       let _reconnects = 0;
       const _MAX_RECONNECTS = 8;
       while (true) {
@@ -12483,15 +12447,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             setStatus(prev => chatStatusReducer(prev, ev));
           },
         });
-        // v3.5.3 - readSSE resolved CLEANLY. The daemon only ends /__stream
-        // when state.done is true and every event has been flushed, so a
-        // clean close while we still think we're connecting/streaming means
-        // the run is over and the terminal `end` frame either already arrived
-        // in the hydrate above or was never written (daemon killed mid-run).
-        // Without this floor, a finished run whose stream closed with zero
-        // new events (after=<lastSeq> replays nothing) left the drawer stuck
-        // on the thinking dots with the composer disabled - and Send then
-        // queued the reply forever instead of dispatching it via /resume.
+        // readSSE resolved CLEANLY. The daemon only ends /__stream when
+        // state.done is true and every event has been flushed, so a clean
+        // close while we still think we're connecting/streaming means the
+        // run is over and the terminal `end` frame either already arrived in
+        // the hydrate above or was never written (daemon killed mid-run).
+        // Floor the status to "done" - otherwise a finished run whose stream
+        // closes with zero new events leaves the drawer stuck on the
+        // thinking dots with the composer disabled.
         if (!cancelled) {
           setStatus(prev => (prev === "connecting" || prev === "streaming") ? "done" : prev);
         }
@@ -12543,7 +12506,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // Fire onRunComplete the first time we cross into a terminal status. Fires
   // again on a future per-turn done if the user has replied and the agent
   // wrapped another turn - completedRef holds the last-known terminal state so
-  // we don't re-fire on every render. v3.5.2 - "fail" counts as terminal too.
+  // we don't re-fire on every render. "fail" counts as terminal too.
   useEffect(() => {
     if (status === "done" || status === "error" || status === "fail") {
       if (completedRef.current !== status) {
@@ -12576,7 +12539,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // When a new run starts, snap back to sticky so its first events scroll in.
   useEffect(() => { stickRef.current = true; }, [run?.runId]);
 
-  // v3.4.37 - Persist the current runId's rendered state into the per-runId
+  // Persist the current runId's rendered state into the per-runId
   // cache after every event/answers update so a later run-switch back to this
   // thread hydrates instantly from the cache (instead of blanking → fetching).
   // Skip the new-chat shell (no runId yet); skip when there's nothing yet.
@@ -12606,7 +12569,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // tool_use ↔ tool_result by id, groups parallel-Agent dispatches.
   const blocks = useMemo(() => buildBlocks(events), [events]);
 
-  // v3.11 - Apply the chat view mode. In "auto", activity blocks (tool
+  // Apply the chat view mode. In "auto", activity blocks (tool
   // cards, agent grids, thinking) that belong to a FINISHED turn are DROPPED
   // entirely - the finished turn shows only its conversational output (text,
   // answer cards), not how the agent got there. The in-flight turn's activity
@@ -12665,7 +12628,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return null;
   }, [blocks, viewMode, status]);
 
-  // v3.12 - Running subagents, surfaced in a sticky strip just above the
+  // Running subagents, surfaced in a sticky strip just above the
   // composer so the user can watch live dispatches without scrolling up to
   // find the agent_grid in the transcript. A subagent is "running" while its
   // Agent tool_use has no paired tool_result yet; we only show the strip while
@@ -12801,7 +12764,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // decision in App. We only check WRITE-flavoured tools (Write/Edit/
   // MultiEdit/NotebookEdit) - Read/Glob/Grep are read-only, Bash is opaque
   // (and rare enough that we let the user F5 manually if needed).
-  // v3.4.38 - Also collect the *paths* the agent wrote to so the parent
+  // Also collect the *paths* the agent wrote to so the parent
   // can decide between a full page reload (only needed when editor/data.js
   // or design-systems/* meta changes - those load once at boot via
   // <script src>) and a lightweight iframe refresh (enough for any source/*
@@ -12983,7 +12946,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         onSent=${() => {
           // Snap back to sticky so the user sees the agent's reply.
           stickRef.current = true;
-          // v3.5.1 - UNCONDITIONALLY bump the SSE epoch on every send. The
+          // UNCONDITIONALLY bump the SSE epoch on every send. The
           // SSE consumer in an already-open drawer has been silently dying
           // in too many edge cases (post-`end` socket close, daemon
           // resume/turn-done state drift, mid-stream network blips) - and
@@ -13010,7 +12973,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
    resets state.turn_done so the chip flips back to streaming. Disabled
    while the agent is mid-turn (status === "streaming" / "connecting").
    Cmd/Ctrl+Enter sends; plain Enter inserts a newline. */
-// v3.x - Slash-command menu cache. Shared across ChatComposer mounts so the
+// Slash-command menu cache. Shared across ChatComposer mounts so the
 // /__cc_skills / /__orchestrators / /__prototype_catalog fetches happen once
 // per page session. Lives at module scope - React state would re-fetch on
 // every mount.
@@ -13328,22 +13291,20 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   //                 drawer, same event log - just a new process under it.
   //   default     → live run, Send hits /user-message.
   //
-  // v3.5.1 - When the chat is currently showing a stream error we ALSO route
-  // through /resume, even if no `end` event has been logged yet. The previous
-  // shape (status=error but locked=false → /user-message) would POST to a
-  // process that's likely dead, the daemon returned 4xx, the composer caught
-  // and surfaced the error, and onSent never fired - so the SSE-reconnect /
-  // status-clear path in the parent never ran. /resume always respawns and
-  // gets us back to a known-good state.
-  // v3.5.2 - same treatment for "fail" status: the run exited non-zero and
-  // a reply must respawn the CLI via /resume. (In practice processEnded is
-  // already true here so locked covers it, but routing on status too closes
-  // the brief render window where events have rendered "fail" but the
+  // When the chat is currently showing a stream error we ALSO route
+  // through /resume, even if no `end` event has been logged yet - POSTing
+  // /user-message to a likely-dead process 4xxes without ever firing
+  // onSent, so the parent's SSE-reconnect / status-clear path never runs.
+  // /resume always respawns and gets us back to a known-good state.
+  // Same treatment for "fail" status: the run exited non-zero and a reply
+  // must respawn the CLI via /resume. (In practice processEnded is already
+  // true here so locked covers it, but routing on status too closes the
+  // brief render window where events have rendered "fail" but the
   // processEnded memo hasn't recomputed yet.)
   const isResuming = (locked && !isNew)
                    || (!isNew && (runStatus === "error" || runStatus === "fail"));
 
-  // `canSend` no longer ANDs `!disabled` - while the agent is mid-turn, Send
+  // `canSend` deliberately does NOT AND `!disabled` - while the agent is mid-turn, Send
   // is still active and the click ENQUEUES the message into the local
   // `queue` (Claude-Code-style). `wouldQueue` is the disambiguator used by
   // the button label / tooltip.
@@ -13377,23 +13338,21 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       //     prior turn but the most-recent resume is still alive. Recovery:
       //     retry via /user-message.
       //
-      // This used to be a one-way handoff; v3.5.1 makes it bidirectional so
-      // the client→daemon state-machine drift that follows multi-resume
-      // sessions can't strand the user on a page that requires a refresh.
+      // The handoff is bidirectional so the client→daemon state-machine
+      // drift that follows multi-resume sessions can't strand the user on a
+      // page that requires a refresh.
       const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: body }),
       });
-      // v3.5.3 - converge, don't one-shot. While a stopped subprocess is mid
-      // shutdown the daemon's two guards flip on DIFFERENT requests: there's a
-      // cross-request race where /resume still says "run is still active"
-      // (is_live not yet False) and, a beat later, /user-message says "run
-      // already finished" (done just flipped True). A single user-message↔
-      // resume handoff loses that race - the 2nd endpoint can reject too, and
-      // the old code then threw the raw 409 straight at the user. Both errors
-      // are transient: once the subprocess is fully reaped, /resume is the
-      // settled-state endpoint and wins. So we reroute on the daemon's signal
+      // Converge, don't one-shot. While a stopped subprocess is mid
+      // shutdown the daemon's two guards flip on DIFFERENT requests: /resume
+      // can still say "run is still active" (is_live not yet False) and, a
+      // beat later, /user-message can say "run already finished" (done just
+      // flipped True) - a single handoff loses that race. Both errors are
+      // transient: once the subprocess is fully reaped, /resume is the
+      // settled-state endpoint and wins. So reroute on the daemon's signal
       // and retry until it settles (bounded), only throwing on a real error.
       //   • wantResume  - process is gone / finished → continue on /resume
       //   • wantUserMsg - a live process is still attached → /user-message
@@ -13431,23 +13390,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       if (!r.ok) throw new Error(lastErr || `HTTP ${r.status}`);
       const usedResume = ep === "resume";
       const didFallback = ep !== startEp;
-      // v3.5.1 - ALWAYS bump SSE after any send while the chat wasn't already
-      // actively streaming. The bug this catches:
-      //   1. The daemon's run finished a turn → emits `end` → its `_run_stream`
-      //      loop sees `state.done && not have_more` → breaks → closes the SSE.
-      //   2. The client's status flips to "done" via the `end` handler.
-      //   3. /resume is later called → daemon resets state.done=False and
-      //      appends new events → BUT the client's SSE socket is already
-      //      closed, so nothing reaches the UI until a page refresh runs a
-      //      fresh hydrate.
-      // Even routing directly to /user-message (when the daemon's most-recent
-      // resume left it `turnDone:true, done:false` and the previous SSE may
-      // have closed) is exposed to the same staleness. Bump unconditionally
-      // unless we're sending mid-stream to a confirmed-live SSE. The reconnect
-      // is cheap: it deduplicates against `_seenSeqRef` and tails from
-      // `lastIdRef.current` so the UI never replays events it has already
-      // rendered. Skipping mid-stream bumps avoids unnecessary thrash during
-      // a live agent turn.
+      // ALWAYS bump SSE after any send while the chat wasn't already
+      // actively streaming: once a turn ends the daemon closes the SSE, so
+      // a later /resume (or a /user-message on a turnDone run) appends
+      // events that nothing is listening to until a refresh. Bump
+      // unconditionally unless we're sending mid-stream to a confirmed-live
+      // SSE - the reconnect is cheap (dedupes against `_seenSeqRef`, tails
+      // from `lastIdRef.current`), and skipping mid-stream bumps avoids
+      // thrash during a live agent turn.
       const sseProbablyStale = runStatus !== "streaming";
       const needBump = usedResume || didFallback || sseProbablyStale;
       if (needBump && onResumed) onResumed();
@@ -13981,7 +13931,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                         ? "Start new chat  ⌘/Ctrl+Enter"
                         : (isResuming ? "Resume conversation  ⌘/Ctrl+Enter" : "Send  ⌘/Ctrl+Enter")))
                 : "Type something first or attach an image";
-              // v2.9b - selection context only attaches on a new chat's first
+              // selection context only attaches on a new chat's first
               // turn (spawnWorkflowChat path). Subsequent turns reuse the
               // existing run, so the badge would be misleading.
               if (isNew && selectionCount > 0) {
@@ -14051,14 +14001,14 @@ function buildBlocks(events) {
       resultById.set(ev.data.toolUseId, ev.data);
     }
   }
-  // v3.1 - `system/thinking_tokens` events stream a running count while the
+  // `system/thinking_tokens` events stream a running count while the
   // model is thinking. Rendering each one as a raw frame floods the chat
   // with JSON noise (the user reported "I hate this"). Strategy: collapse
   // them into ONE rolling progress block that only renders if it's still
   // the most recent event - i.e. the model is still in the thinking phase.
   // The moment a text_delta / tool_use / status / etc. arrives, the
   // progress block disappears (because that event is later).
-  // v3.1 - match thinking_tokens whether daemon delivered it as the
+  // match thinking_tokens whether daemon delivered it as the
   // structured `{type:"system", subtype:"thinking_tokens"}` event (current)
   // OR as the legacy raw envelope `{type:"raw", subtype:"thinking_tokens",
   // frame:{estimated_tokens}}`. Older run logs still have the raw shape
@@ -14074,7 +14024,7 @@ function buildBlocks(events) {
     if (d.type === "raw" && d.frame) return d.frame;
     return d;
   };
-  // v3.2 - task_progress is the same shape as thinking_tokens: streams while
+  // task_progress is the same shape as thinking_tokens: streams while
   // a subagent is mid-tool-use. Suppress raw form, surface as one rolling
   // chip per parent tool block (handled below).
   const isTaskProgressEv = (d) => !!d && (
@@ -14095,7 +14045,7 @@ function buildBlocks(events) {
     }
     return d;
   };
-  // v3.2 - catch-all: any OTHER `{type:"system"}` or raw envelope of a
+  // catch-all: any OTHER `{type:"system"}` or raw envelope of a
   // system subtype is SDK chatter (perms, mcp_status, post_tool_use diags,
   // turn_heartbeat, etc.). Silently drop. Whitelist whatever turns out to
   // be user-actionable later.
@@ -14202,7 +14152,7 @@ function buildBlocks(events) {
         blocks.push({ kind: "error", data: d, key: `e-${i}` });
         continue;
       }
-      // v3.1 - Suppress every thinking_tokens frame inline (canonical
+      // Suppress every thinking_tokens frame inline (canonical
       // {type:"system",subtype:"thinking_tokens"} AND the legacy raw
       // envelope {type:"raw",subtype:"thinking_tokens"} buffered in older
       // run logs). MUST run BEFORE the `d.type === "raw"` catch-all below,
@@ -14212,7 +14162,7 @@ function buildBlocks(events) {
       if (isThinkingTokensEv(d)) {
         continue;
       }
-      // v3.2 - Same treatment for task_progress (subagent tool-use chatter)
+      // Same treatment for task_progress (subagent tool-use chatter)
       // and any other system noise (mcp_status, post_tool_use diagnostics,
       // heartbeats, etc.). The task_progress data is surfaced as a single
       // rolling chip at the end of buildBlocks; system noise is dropped.
@@ -14250,7 +14200,7 @@ function buildBlocks(events) {
     }
   }
   closeAll();
-  // v3.1 - Append the rolling thinking-tokens progress block IF the model
+  // Append the rolling thinking-tokens progress block IF the model
   // is still in the thinking phase (i.e. latestThinkingTokens is set and
   // it was the most recent meaningful event we saw).
   if (latestThinkingTokens) {
@@ -14260,7 +14210,7 @@ function buildBlocks(events) {
       key: `th-prog-${latestThinkingTokensIdx}`,
     });
   }
-  // v3.2 - Same for task_progress - subagent tool-use status streamed by
+  // Same for task_progress - subagent tool-use status streamed by
   // the SDK while a subagent is mid-action. Shows "<subagent> · <action>"
   // as one rolling chip that disappears the moment a real event arrives.
   if (latestTaskProgress) {
@@ -15056,7 +15006,7 @@ function FilePathLink({ path }) {
 function ToolResultPane({ result, compact, label }) {
   if (!result) return null;
   let txt = typeof result.content === "string" ? result.content : JSON.stringify(result.content, null, 2);
-  // v3.1 - image content parts from Read of a PNG/JPG, or any tool that
+  // image content parts from Read of a PNG/JPG, or any tool that
   // returns image-typed blocks (e.g. a Bash screenshot wrapped through
   // `display` / MCP browser tools). Daemon attaches them as `images: [{
   // mediaType, data } | { url }]` on the tool_result event.
@@ -15079,8 +15029,8 @@ function ToolResultPane({ result, compact, label }) {
             const src = img.url
               ? img.url
               : ("data:" + (img.mediaType || "image/png") + ";base64," + (img.data || ""));
-            // v3.5.1 - Click opens the in-page lightbox overlay (instead of
-            // a new tab). The lightbox is mounted once at the Root and
+            // Click opens the in-page lightbox overlay (not a new tab).
+            // The lightbox is mounted once at the Root and
             // listens for `th:chat-image-zoom`; we just fire the event.
             return html`<button
               key=${i}
@@ -15199,7 +15149,7 @@ function MultiEditCard({ toolUse, toolResult }) {
 }
 
 function ReadCard({ toolUse, toolResult }) {
-  // v3.1 - auto-expand when the result includes image content parts. The
+  // auto-expand when the result includes image content parts. The
   // user explicitly asked for "show the image"; collapsing it behind a
   // toggle defeats the point. Text-only reads still default to collapsed
   // so the chat scroll stays compact.
@@ -15237,7 +15187,7 @@ function ReadCard({ toolUse, toolResult }) {
 }
 
 function BashCard({ toolUse, toolResult }) {
-  // v3.1 - auto-expand when a Bash command returned image content (e.g. a
+  // auto-expand when a Bash command returned image content (e.g. a
   // `screencapture` piped through MCP, an `xdg-open` wrapper, or a tool
   // shim that emits image-typed parts). User-facing rule: if the agent
   // saw an image, the human should see it too - don't bury it behind a
@@ -15437,7 +15387,7 @@ function parseQuestionForms(text) {
   // detector would steal the SVG content out of a `​`​`​svg block, leaving
   // a dangling open fence that swallows the next heading.
   //
-  // v3.5 - Also skip inline preview detection when the text looks like a
+  // Also skip inline preview detection when the text looks like a
   // diff or patch (has `@@ -X,Y +A,B @@` hunk markers OR `diff --git` /
   // `*** Begin Patch` headers). Codex's apply_patch narration tends to
   // echo file content into the chat as text_delta; if the file content is
@@ -15534,7 +15484,7 @@ function parseQuestionForms(text) {
       };
       const id      = attr("id");
       const prompt  = attr("prompt");
-      // v2.2 - multi-select + grouped multi-pick attrs. multiSelect="true"
+      // multi-select + grouped multi-pick attrs. multiSelect="true"
       // turns radio buttons into checkboxes. groupBy="<key>" + per-option
       // group="<value>" partitions options into rows (e.g. one row per page
       // in the F-stage remix grid). picksPerGroup enforces exactly N picks
@@ -15555,7 +15505,7 @@ function parseQuestionForms(text) {
         if (!ovM) continue;
         const pM   = new RegExp(`preview\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
         const gM   = new RegExp(`group\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-        // v2.3 - `checked` (bare or ="true") pre-ticks the option in
+        // `checked` (bare or ="true") pre-ticks the option in
         // multi-select mode, so the agent can emit a recommended-by-default
         // proposal (e.g. the orchestrator-plan gate) the user edits + Sends.
         // Tokenise the attr string (name or name="value") so the literal word
@@ -15866,7 +15816,7 @@ function ensureDirectionFonts() {
   document.head.appendChild(link);
 }
 
-// v2.2 - preview helper. The orchestrator's <option preview="..."> may be
+// preview helper. The orchestrator's <option preview="..."> may be
 // (a) a project-relative path to an HTML page → iframe with src=apiUrl(path),
 // (b) an inline HTML snippet starting with "<" → iframe srcdoc,
 // (c) a path ending in .png/.jpg/.webp/.gif/.svg → <img>,
@@ -15911,13 +15861,13 @@ function DecisionOptionPreview({ preview, label }) {
 //     <option value="a" preview="source/main/_ds_brainstorm/a.html">Editorial Mono</option>
 //     ...
 //   </decision-request>
-// at decision points. v2.2 - three modes:
+// at decision points. Three modes:
 //   • single-pick  (default): instant submit on click, radio-style buttons.
 //   • multi-select (multiSelect="true"): checkboxes + Send button at bottom.
 //   • grouped multi-pick (groupBy="..." + per-option group="..."): one row
 //     per group, radio within row, picksPerGroup enforced (default 1).
 // All modes can carry per-option `preview` (HTML path / inline / image).
-// v2.3 - multi-select options may carry a bare `checked` attribute: the card
+// multi-select options may carry a bare `checked` attribute: the card
 // renders with those pre-ticked (the agent's recommended proposal), the user
 // edits the set and hits Send. Used by the mandatory orchestrator-plan gate
 // (<decision-request id="orchestrator-plan" multiSelect="true">).
@@ -15932,7 +15882,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   const [steerOpen, setSteerOpen] = useState(null);
   const [steerText, setSteerText] = useState("");
   const key = `decision:${decision.id}`;
-  // `answered` may be a string (legacy single-pick) or an array (v2.2 multi).
+  // `answered` may be a string (legacy single-pick) or an array (multi).
   // Normalise to an array for rendering; preserve the shape on send.
   const answeredArr = Array.isArray(answered) ? answered : (answered ? [answered] : []);
   const isAnswered = answeredArr.length > 0;
@@ -15940,7 +15890,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
 
   // Local pick state - single value or array of values depending on mode.
   // Initialise from answered so a reload-rehydrated card shows the prior pick.
-  // v2.3 - unanswered multi-select cards start with the agent's `checked`
+  // unanswered multi-select cards start with the agent's `checked`
   // proposal pre-ticked (orchestrator-plan gate UX: edit the roster, Send).
   const [localPicks, setLocalPicks] = useState(() => {
     if (answeredArr.length > 0) return answeredArr;
@@ -16736,7 +16686,7 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
             />`;
           }
           if (seg.kind === "init") {
-            // v3.16 - informational "you are in the heavier setup chat" banner.
+            // informational "you are in the heavier setup chat" banner.
             return html`<${InitCard} key=${`init${i}`} init=${seg.init}/>`;
           }
           if (seg.kind === "handoff") {
@@ -16767,7 +16717,7 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "thinking":
       return html`<div className="chat-row chat-assistant chat-thinking"><span className="chat-row-tag">thinking</span><div className="thinking-body"><${Markdown} text=${block.text}/></div></div>`;
     case "thinking_progress": {
-      // v3.1 - Rolling progress chip for `system/thinking_tokens` stream.
+      // Rolling progress chip for `system/thinking_tokens` stream.
       // Replaces all prior thinking_tokens events into ONE row; auto-vanishes
       // once a text_delta / tool_use / etc. arrives (handled in buildBlocks).
       const n = block.data && block.data.estimated_tokens;
@@ -16784,7 +16734,7 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       `;
     }
     case "task_progress": {
-      // v3.2 - Rolling progress chip for `system/task_progress` stream
+      // Rolling progress chip for `system/task_progress` stream
       // (subagent narrates its tool-use sequence: "Reading workflow.json",
       // "Editing source/foo.html", etc.). Replaces all prior frames; auto-
       // vanishes once a real event arrives (handled in buildBlocks).
@@ -16961,25 +16911,8 @@ function StateMachineView({ model, setEdits }) {
   const active = machines.find(m => m.id === activeId) || machines[0];
   const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas({ x: 80, y: 60, z: 1 });
   // Comments - same generic annotation pattern as DS / Timeline / Grid.
-  const commentsOf = (key) => (model?.commentsByTarget?.[key]) || [];
-  const [commentAt, setCommentAt] = useState(null);
-  const openComment = (key, label) => setCommentAt({ key, label });
-  const submitComment = (text) => {
-    if (!text.trim() || !commentAt) { setCommentAt(null); return; }
-    setEdits && setEdits(es => [...es, { target: "annotation", kind: "comment", key: commentAt.key, text: text.trim() }]);
-    setCommentAt(null);
-  };
-  const CommentBtn = ({ k, label, className }) => {
-    const has = commentsOf(k).length > 0;
-    return html`
-      <button type="button"
-              className=${"view-comment" + (has ? " has-comments" : "") + (className ? " " + className : "")}
-              title=${has ? commentsOf(k).join("\n\n") : "Comment for the LLM"}
-              onClick=${(ev) => { ev.stopPropagation(); openComment(k, label); }}>
-        <${Icon.Comment}/>
-      </button>
-    `;
-  };
+  const { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn } =
+    useCommentAffordance(model, setEdits, "view-comment");
   // Selected edge - { fromId, toId, on } from a click on the connector chip
   // or path. While selected, edit/delete tools render next to the chip.
   const [selectedEdge, setSelectedEdge] = useState(null);
@@ -17220,25 +17153,8 @@ Workflow 1. Delete this request file when done.
 function TimelineView({ model, setEdits }) {
   const embed = viewIsEmbed();
   const timelines = model.timelines || [];
-  const commentsOf = (key) => (model?.commentsByTarget?.[key]) || [];
-  const [commentAt, setCommentAt] = useState(null);
-  const submitComment = (text) => {
-    if (!text.trim() || !commentAt) { setCommentAt(null); return; }
-    setEdits && setEdits(es => [...es, { target: "annotation", kind: "comment", key: commentAt.key, text: text.trim() }]);
-    setCommentAt(null);
-  };
-  const CommentBtn = ({ k, label, className }) => {
-    if (embed) return null;
-    const has = commentsOf(k).length > 0;
-    return html`
-      <button type="button"
-              className=${"view-comment" + (has ? " has-comments" : "") + (className ? " " + className : "")}
-              title=${has ? commentsOf(k).join("\n\n") : "Comment for the LLM"}
-              onClick=${(ev) => { ev.stopPropagation(); setCommentAt({ key: k, label }); }}>
-        <${Icon.Comment}/>
-      </button>
-    `;
-  };
+  const { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn } =
+    useCommentAffordance(model, setEdits, "view-comment", { hidden: embed });
 
   // Parse "T+Nd|h|w|m" into hours. Anything unparseable falls back to position
   // by declaration order. Negative offsets allowed ("T-1d" for "1 day before").
@@ -17376,24 +17292,8 @@ this file anyway.
    is in state X?", "which fields are editable per role × per status?". */
 function GridView({ model, setEdits }) {
   const grids = model.grids || [];
-  const commentsOf = (key) => (model?.commentsByTarget?.[key]) || [];
-  const [commentAt, setCommentAt] = useState(null);
-  const submitComment = (text) => {
-    if (!text.trim() || !commentAt) { setCommentAt(null); return; }
-    setEdits && setEdits(es => [...es, { target: "annotation", kind: "comment", key: commentAt.key, text: text.trim() }]);
-    setCommentAt(null);
-  };
-  const CommentBtn = ({ k, label, className }) => {
-    const has = commentsOf(k).length > 0;
-    return html`
-      <button type="button"
-              className=${"view-comment" + (has ? " has-comments" : "") + (className ? " " + className : "")}
-              title=${has ? commentsOf(k).join("\n\n") : "Comment for the LLM"}
-              onClick=${(ev) => { ev.stopPropagation(); setCommentAt({ key: k, label }); }}>
-        <${Icon.Comment}/>
-      </button>
-    `;
-  };
+  const { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn } =
+    useCommentAffordance(model, setEdits, "view-comment");
 
   if (!grids.length) {
     const reqBody = `# Grid generation request
@@ -18362,7 +18262,7 @@ function dsDefaultSettings() {
   };
 }
 
-/* ────────── New-project form (v3.5 - onboarding cut) ──────────
+/* ────────── New-project form ──────────
    Simple modal: name input + Create button (Step 1). When the user opts into
    the bundled design system, a second, wider step (DsCustomizerStep) lets
    them retune colour / roundness / type / spacing against a live preview;
@@ -19690,7 +19590,7 @@ function OnboardingLocalToolRow({ pkg }) {
       const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}${force ? "&force=1" : ""}`));
       const j = await r.json();
       setStatus(prev => {
-        // v3.4.48 - Don't let a flaky probe downgrade a state we already
+        // Don't let a flaky probe downgrade a state we already
         // confirmed via /__local_install's server-side verify. First-time
         // `import rembg` after fresh install was occasionally exceeding the
         // probe's subprocess timeout, flipping the row back to "Install" even
@@ -19717,7 +19617,7 @@ function OnboardingLocalToolRow({ pkg }) {
       if (!j.ok) {
         setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
       } else {
-        // v3.4.48 - Trust the server's verify result authoritatively. The
+        // Trust the server's verify result authoritatively. The
         // install endpoint already ran `python -c "import pkg; print(version)"`
         // and confirmed importability - relying on a follow-up probe was racy
         // on fresh installs (see probe() above). Set installed:true here so
@@ -19728,7 +19628,7 @@ function OnboardingLocalToolRow({ pkg }) {
       // the just-confirmed installed:true state, so a slow/flaky probe can't
       // flip the button back to "Install".
       await probe();
-      // v3.4.41 - Notify useRequiredLocalSkills (the hook the projects-landing
+      // Notify useRequiredLocalSkills (the hook the projects-landing
       // setup-card gate consults) so the empty state can unmount the moment
       // the last required package finishes installing.
       try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
@@ -19736,7 +19636,7 @@ function OnboardingLocalToolRow({ pkg }) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
   };
-  // v3.4.48 - Manual re-check escape hatch. If the auto-detect ever lands
+  // Manual re-check escape hatch. If the auto-detect ever lands
   // wrong (slow first-import, daemon restart mid-install, etc.) the user can
   // re-run the probe without a page refresh. Also notifies the landing gate.
   const recheck = async () => {
@@ -19747,7 +19647,7 @@ function OnboardingLocalToolRow({ pkg }) {
     } finally { setRechecking(false); }
   };
   const installed = !!(status && status.installed);
-  // v3.4.45 - Just ONE small REQUIRED pill when missing. No row-wide red
+  // Just ONE small REQUIRED pill when missing. No row-wide red
   // border, no red background wash, no red reason box - those read as
   // "error" rather than "still to do". The pill alone tells the user
   // the package is required; the reason line below is plain muted text.
@@ -19975,7 +19875,7 @@ function OnboardingOrchestratorsSection({ mediaCfg }) {
   `;
 }
 
-/* v3.4.43 - Onboarding wizard, simplified.
+/* Onboarding wizard, simplified.
    One step visible at a time, pips at the top show the steps
    (Agent model · Asset keys · Orchestrators · Local skills · Done). The body
    for each step is just the section content - no big headlines, no paragraph
@@ -19985,7 +19885,7 @@ function OnboardingOrchestratorsSection({ mediaCfg }) {
    Step 1 collapses to a single button that opens a small install-
    instructions popup - no two-tile choice screen, no inline sub-picker. */
 function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
-  // v3.x - The agent CLI is the REQUIRED backend. A pasted API key only powers
+  // The agent CLI is the REQUIRED backend. A pasted API key only powers
   // "simple prompt" nodes (single-shot, no tools); agentic workflows - node
   // runs, chat, orchestrators - need a `claude` or `codex` CLI on PATH, because
   // the agent loop, file tools, and context compaction live in the CLI harness,
@@ -19998,7 +19898,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
   // A key-only user can still dismiss onboarding and use simple prompts - they
   // just finish in a degraded state with the agent CLI still missing.
   const canFinish  = (modelOk || hasKeyOnly) && skillsOk;
-  // v3.5 - Five pips now: 1 Model · 2 Asset keys · 3 Orchestrators · 4 Local
+  // Five pips now: 1 Model · 2 Asset keys · 3 Orchestrators · 4 Local
   // skills · 5 Done. Orchestrators is an optional review step (toggle the
   // dispatch families on/off, see which are limited by the keys set in step 2).
   // Step 5 is its own dedicated celebration so the user can press ← Back to
@@ -20203,7 +20103,7 @@ function OnboardingBrowserCard() {
   `;
 }
 
-/* v3.4.43 - Lightweight install-instructions popup opened from Step 1's CTA.
+/* Lightweight install-instructions popup opened from Step 1's CTA.
    Shows the two CLI install paths (Claude Code · Codex) as copy-paste blocks
    plus an "Or paste an API key" button that opens the existing Settings
    dialog. No inline form, no separate picker - one place, three commands,
@@ -20259,7 +20159,7 @@ function ModelInstallDialog({ onClose, onRefresh }) {
    card to enter the project (URL gets ?project=<id>), hover for rename/
    delete actions, big "+ New project" tile at the end. */
 // ─── SystemLanding ────────────────────────────────────────────────────────
-// v3.3 - System reference surface. Sidebar nav with 4 sections:
+// System reference surface. Sidebar nav with 4 sections:
 //   1. Orchestrators      - the new toggleable orchestrator registry
 //   2. Skills        - the 14 generator skills (Pathway A vendor API or B Claude-writes)
 //   3. Subagents     - every .claude/agents/*.md, grouped by family
@@ -20269,11 +20169,10 @@ function ModelInstallDialog({ onClose, onRefresh }) {
 // read-only reference; Orchestrators has its toggle. State lives here; sidebar
 // items show counts so the user knows the size of each surface before clicking.
 // ─── Workspace SYSTEM AGENT threads - shared infrastructure ────────────────
-// v3.13 - The system agent (cwd = the workspace repo itself, full permission
+// The system agent (cwd = the workspace repo itself, full permission
 // bypass, NONE of the project-agent confinement) edits the harness's own
 // building blocks: orchestrators, the design library, skills, MCP wiring.
-// Earlier (v3.12) each System-tab section carried a persistent "Agent
-// threads" panel with an always-on warning. That was loud. v3.13 redesigns:
+// Design rules (keep it quiet - no persistent always-on warning panels):
 //   • the warning + intake live INSIDE an "Add orchestrator" / "Add library
 //     entry" flow, surfaced only when the user opts in,
 //   • the intake gathers structure (what · how it's triggered · whether it
@@ -20281,9 +20180,9 @@ function ModelInstallDialog({ onClose, onRefresh }) {
 //     composes a brief and hands it to a system thread,
 //   • running / recent threads are reachable from ONE shared Bot icon button
 //     in the landing title row - shared across Orchestrators + Design library.
-// The run/persistence plumbing (scope:"system", /__system_runs,
-// .system-chats/<section>.jsonl) is unchanged from v3.12; the spawn + drawer
-// now live at ProjectsLanding so the header button can reach them.
+// The run/persistence plumbing is scope:"system", /__system_runs,
+// .system-chats/<section>.jsonl; the spawn + drawer live at
+// ProjectsLanding so the header button can reach them.
 
 function systemThreadStatus(r) {
   if (!r) return "done";
@@ -20751,7 +20650,7 @@ function SystemLanding({ onSpawnSystemThread }) {
   // Live counts for the sidebar - hydrate from /__capabilities (cheap GET).
   const [caps, setCaps]         = useState(null);
   const [orchestratorsData, setOrchestratorsData] = useState(null);
-  // v3.6 - design library catalog. Cheap GET; the daemon walks
+  // Design library catalog. Cheap GET; the daemon walks
   // INSTALL_ROOT/design-library/ each call so newly-dropped sample images
   // and edited frontmatter show up without restarting the server. (Endpoint
   // name `/__prototype_catalog` is kept for compatibility - the catalog
@@ -20772,7 +20671,7 @@ function SystemLanding({ onSpawnSystemThread }) {
     window.addEventListener("th:fonts-changed", refetch);
     return () => window.removeEventListener("th:fonts-changed", refetch);
   }, []);
-  // v3.12 - a system agent thread modified the harness (orchestrators /
+  // a system agent thread modified the harness (orchestrators /
   // library / skills / MCP). Re-pull every registry this tab renders.
   useEffect(() => {
     const refetch = () => {
@@ -20843,7 +20742,7 @@ function SystemLanding({ onSpawnSystemThread }) {
 
 
 // ─── SkillsLanding ────────────────────────────────────────────────────────
-// v3.3 - Skills inventory. Pulls from window.TH_MEDIA.skills (the canonical
+// Skills inventory. Pulls from window.TH_MEDIA.skills (the canonical
 // SKILLS array in editor/prompts/media-models.js) PLUS harness-local skills
 // surfaced via /__cc_skills. The harness deliberately DOES NOT read the
 // user's global ~/.claude/ install - agents spawned by the harness don't
@@ -20888,7 +20787,7 @@ function SkillsLanding() {
     }
   }, []);
   useEffect(() => { loadCcSkills(); }, [loadCcSkills]);
-  // v3.13 - refresh when a system-agent thread installs/edits a harness skill.
+  // refresh when a system-agent thread installs/edits a harness skill.
   useEffect(() => {
     window.addEventListener("th:system-changed", loadCcSkills);
     return () => window.removeEventListener("th:system-changed", loadCcSkills);
@@ -21156,7 +21055,7 @@ function CcSkillCard({ skill: sk, reload }) {
 
 
 // ─── PrototypeCatalogLanding ─────────────────────────────────────────────
-// v3.6 - The PROTOTYPE.md-backed design library, rendered as a browsable catalog.
+// The PROTOTYPE.md-backed design library, rendered as a browsable catalog.
 //
 // What this surface is. Woven prototypes commit a "genre" - a shell + style +
 // aesthetic + voice tuple - before any drawing happens (see PROTOTYPE.md
@@ -21428,7 +21327,7 @@ function PrototypeGenreCard({ item, category, onZoom }) {
 
 
 // ─── SubagentsLanding ─────────────────────────────────────────────────────
-// v3.3 - Subagents inventory. Read from /__capabilities (which scans
+// Subagents inventory. Read from /__capabilities (which scans
 // .claude/agents/*.md frontmatter). Grouped by family for navigation -
 // orchestrators / lenses / visual drawers / simulation / interactive / other -
 // since the flat 48-item list is hard to scan.
@@ -21562,7 +21461,7 @@ function SubagentsLanding({ caps }) {
 function McpLanding() {
   const [data, setData] = useState(null);
   const [openId, setOpenId] = useState(null);
-  // v3.12 - manual add/remove. The form POSTs /__mcp_catalog/add which
+  // manual add/remove. The form POSTs /__mcp_catalog/add which
   // writes BOTH files (runtime config + display catalog, source:"user");
   // remove unwires + drops user-added catalog entries.
   const [addOpen, setAddOpen] = useState(false);
@@ -21762,7 +21661,7 @@ function McpLanding() {
 
 
 // ─── NodeKindsLanding ─────────────────────────────────────────────────────
-// v3.3 - Node-kinds inventory. Fetches /__kinds/registry for the FULL
+// Node-kinds inventory. Fetches /__kinds/registry for the FULL
 // contracts (inputs/outputs/dispatch/fanOut/completion/notes), then groups
 // by category and renders an expandable detail block per kind.
 function NodeKindsLanding() {
@@ -21899,7 +21798,7 @@ function NodeKindsLanding() {
 
 
 // ─── OrchestratorsLanding ──────────────────────────────────────────────────────
-// v3.3 - Orchestrator registry surface. Fetches `/__orchestrators` (which aggregates
+// Orchestrator registry surface. Fetches `/__orchestrators` (which aggregates
 // `.claude/agents/*.manifest.json` + the project's disable state), renders one
 // card per orchestrator with description / triggers / dispatches / skills /
 // node-kinds, and a toggle that POSTs `/__orchestrators/disable` to persist.
@@ -21974,7 +21873,7 @@ function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread }) {
   `;
 }
 
-// v3.13 - Per-orchestrator LLM model override. One dropdown per card: the
+// Per-orchestrator LLM model override. One dropdown per card: the
 // model THIS orchestrator's dispatched drawers run on, independent of the
 // global agent-capability default. "Agent default" (empty value) clears the
 // override so the orchestrator follows whatever the chat agent uses. Stored
@@ -22163,7 +22062,7 @@ function OrchestratorCard({ orchestrator, busy, onToggle }) {
   `;
 }
 
-// v3.5.x - Per-project diamond field for landing cards that don't have a
+// Per-project diamond field for landing cards that don't have a
 // thumbnail prototype set yet. CSS+SVG diamond tile + JS-driven cursor
 // lighting via CSS custom properties (--mx, --my, --hover). WebGL is OUT:
 // a 21-project landing burns past the browser's per-page WebGL context cap
@@ -22243,7 +22142,7 @@ function LandingCardField({ seed, hostRef }) {
   return html`<div ref=${rootRef} className="landing-card-field" aria-hidden="true"/>`;
 }
 
-// v3.5.x - Thumbnail-iframe scale-to-fit. The iframe renders at a fixed
+// Thumbnail-iframe scale-to-fit. The iframe renders at a fixed
 // 1280×720 viewport so the page lays out as it would on desktop; this
 // effect measures the strip and writes a --thumb-scale CSS var so the
 // transform: scale(var(--thumb-scale)) fits the page into the strip's
@@ -22279,7 +22178,7 @@ function LandingCardThumbIframe({ src, title }) {
   `;
 }
 
-// v3.6 - Static thumbnail capture. The daemon screenshots the chosen page to
+// Static thumbnail capture. The daemon screenshots the chosen page to
 // <project>/.thumbnail.png when the thumbnail is set (headless Chrome at the
 // same 1280×720 viewport), so the landing renders one cheap <img> per card
 // instead of booting a whole page runtime in a live iframe. The iframe stays
@@ -22310,7 +22209,7 @@ function LandingCardThumbShot({ projectId, version, src, title }) {
 function SharesLanding({ onCountChange }) {
   const [data, setData] = useState(null);       // {shares, cloudflared, gatePort}
   const [busy, setBusy] = useState({});         // shareId → true while an op runs
-  const [err, setErr] = useState(null);
+  const [err, flashErr] = useFlash();
   const [copiedId, setCopiedId] = useState(null);
   const [query, setQuery] = useState("");       // free-text filter
   const [projectFilter, setProjectFilter] = useState("");  // "" = all projects
@@ -22330,7 +22229,6 @@ function SharesLanding({ onCountChange }) {
     return () => clearInterval(t);
   }, [reload]);
 
-  const flashErr = (msg) => { setErr(msg); setTimeout(() => setErr(null), 6000); };
   const op = async (id, action, body) => {
     setBusy((b) => ({ ...b, [id]: true }));
     try {
@@ -22356,10 +22254,9 @@ function SharesLanding({ onCountChange }) {
     // Copying the fresh URL acknowledges the "URL changed" warning.
     if (s.urlChanged) op(s.id, "ack_url");
   };
-  // Live-session / Go-Live management moved OUT of this landing tab into the
-  // top-bar Share menu (ShareMenuButton → Project tab) - its old home here was
-  // the wrong location. This tab now only manages the tunnels + links +
-  // comments for shared prototypes.
+  // Live-session / Go-Live management lives in the top-bar Share menu
+  // (ShareMenuButton → Project tab), NOT here. This tab only manages the
+  // tunnels + links + comments for shared prototypes.
 
   // Exclude the project's multiplayer transport share - it's not a published
   // prototype, it just hosts the live session (managed from the Share menu).
@@ -23022,7 +22919,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const [filter, setFilter] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [housekeepingOpen, setHousekeepingOpen] = useState(false);
-  // v3.3 - Top-level landing tabs. "projects" is the legacy default; "orchestrators"
+  // Top-level landing tabs. "projects" is the legacy default; "orchestrators"
   // surfaces the orchestrator registry (per .claude/agents/*.manifest.json).
   const [activeTab, setActiveTab] = useState("projects");
   // Share mode - count for the Shares tab chip. Seeded once on mount;
@@ -23034,7 +22931,7 @@ function ProjectsLanding({ info, projects, onReload }) {
       .catch(() => {});
   }, []);
 
-  // v3.13 - Workspace SYSTEM AGENT threads, lifted to the landing root so the
+  // Workspace SYSTEM AGENT threads, lifted to the landing root so the
   // shared Bot icon button in the title row and both System-tab section
   // "Add" buttons drive ONE drawer + thread list (threads are shared across
   // Orchestrators + Design library). See the SystemThreadsPanel→intake
@@ -23076,7 +22973,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   const openSystemThread = useCallback((run) => { setSystemRun(run); }, []);
   const onSystemRunComplete = useCallback(() => {
     fetchSystemThreads();
-    // v3.13 - always re-pull the System registries when a system thread
+    // always re-pull the System registries when a system thread
     // turn ends. The Write/Edit detector misses files the agent creates via
     // Bash (cat >, cp, mkdir), and a system thread's whole purpose is to
     // mutate the harness, so refetch unconditionally - the endpoints are
@@ -23084,20 +22981,20 @@ function ProjectsLanding({ info, projects, onReload }) {
     try { window.dispatchEvent(new CustomEvent("th:system-changed")); } catch {}
   }, [fetchSystemThreads]);
   const mediaCfg = useMediaConfig();
-  // v3.4.41 - Required local skills (rembg). The setup card stays open
+  // Required local skills (rembg). The setup card stays open
   // until every required skill is installed, even after the model is
   // configured - that way users who set up an API key but skipped rembg
   // still get nudged before they hit the cutout stage of an asset run.
   const localSkills = useRequiredLocalSkills();
   const setupNeeded = !mediaCfg.configured || !localSkills.allRequiredInstalled;
   const onboardingReady = mediaCfg.loaded && localSkills.loaded;
-  // v3.4.46 - Once the wizard mounts, keep it mounted until the user
+  // Once the wizard mounts, keep it mounted until the user
   // explicitly acknowledges completion (clicks "Got it" on the final
   // "✓ All set!" view). Without this, the moment the rembg install
   // succeeded the gate flipped and the wizard silently unmounted -
   // looked like a glitch, no celebration. The card now shows a clear
   // success state and waits for the user to dismiss it.
-  // v3.4.48 - wasNeededRef starts at false, NOT at the initial setupNeeded
+  // wasNeededRef starts at false, NOT at the initial setupNeeded
   // value. Pre-fix: on every page reload, the first render saw mediaCfg
   // and localSkills as un-loaded → setupNeeded = !undefined = true →
   // wasNeededRef captured true → after fetches resolved (setupNeeded → false),
@@ -23143,7 +23040,7 @@ function ProjectsLanding({ info, projects, onReload }) {
 
   const onWizardCreated = ({ id }) => {
     setCreating(false);
-    // v3.1 - Every fresh project lands in workflow mode. The editor mode is
+    // Every fresh project lands in workflow mode. The editor mode is
     // for navigating an EXISTING source/ tree; a brand-new project has no
     // pages yet, so landing in editor mode just shows a "missing index.html"
     // error and confuses the user. Workflow mode is the right starting
@@ -23246,7 +23143,7 @@ function ProjectsLanding({ info, projects, onReload }) {
     return then.toLocaleDateString();
   };
 
-  // v3.6 - Sort by lastActivity descending so the most recently touched
+  // Sort by lastActivity descending so the most recently touched
   // project lands on top. Projects with no activity stamp sink to the bottom
   // (Date.parse → NaN → 0). Tie-break on id for stable rendering.
   const sorted = [...projects].sort((a, b) => {
@@ -23340,7 +23237,7 @@ function ProjectsLanding({ info, projects, onReload }) {
     return () => window.removeEventListener("resize", update);
   }, [activeTab, projects.length]);
 
-// v3.5.x - Starred-list scroll affordance manager. Each .landing-card-stars-
+// Starred-list scroll affordance manager. Each .landing-card-stars-
   // list element needs:
   //   • .is-scrollable class when scrollHeight > clientHeight (drives the
   //     fade-at-bottom mask + flips overflow to auto so wheel works)
@@ -23522,7 +23419,7 @@ function ProjectsLanding({ info, projects, onReload }) {
             mediaCfg=${mediaCfg}
             localSkills=${localSkills}
             onRefresh=${() => {
-              // v3.4.50 - Dispatch BOTH change events so every consumer of
+              // Dispatch BOTH change events so every consumer of
               // useMediaConfig / useAgents re-polls - including the top-right
               // "NO MODEL CONFIGURED" pill (its own useMediaConfig instance)
               // and the CLI pill (its own useAgents instance). Just calling
@@ -23637,17 +23534,16 @@ function ProjectsLanding({ info, projects, onReload }) {
                             onClick=${(e) => {
                               e.stopPropagation();
                               if (!sp.exists) return;
-                              // v3.6 - Play from the landing always opens in a
+                              // Play from the landing always opens in a
                               // new tab. Earlier it replaced the landing in-
                               // place, which forced a full nav back through the
                               // shader-heavy landing every time the user wanted
                               // to compare prototypes.
-                              // v3.7 - Go straight to the source URL instead of
-                              // the editor's prototype-door view. The door
-                              // wrapped the same source in an iframe with a
-                              // back-chip + breadcrumb top bar; opening the
-                              // source directly drops that chrome so the
-                              // prototype is the only thing in the tab.
+                              // Go straight to the source URL, not the
+                              // editor's prototype-door view - opening the
+                              // source directly drops the door's back-chip +
+                              // breadcrumb chrome so the prototype is the
+                              // only thing in the tab.
                               const branchPath = sp.id.split("/").map(encodeURIComponent).join("/");
                               const src = new URL(`/source/${branchPath}/?project=${encodeURIComponent(p.id)}`, window.location.href);
                               window.open(src.toString(), "_blank", "noopener");
@@ -23780,7 +23676,7 @@ function hideBootVeil() {
 // latched at boot, push the URL, and fire `th:navigate` so <Root> re-derives
 // the view. Anything else falls back to a real document load - masked by the
 // boot veil so editor / prototype entry reads as a continuous loading state
-// rather than the old flash → blank → open beat.
+// rather than a flash → blank → open beat.
 function thNavigate(url) {
   const target = new URL(url, window.location.href).toString();
   if (!thIsClientNavSafe(target)) {
@@ -23878,7 +23774,7 @@ function PrototypeDoor() {
    Expose flow + asset / skill / prompt nodes + edges arrive in 3.5c/3.5d.
    The lock semantics (instance pinned to its prototype-internal page) plug
    in then too - for 3.5b each instance is just a free-floating iframe. */
-// v3.4.10 - Deprecated model ID live-resolution.
+// Deprecated model ID live-resolution.
 // Each row maps "model literal that no longer works at the provider's API"
 // → "the current replacement on the same provider that does the closest
 // thing." node.model is stored byte-identical to whatever the user picked,
@@ -23930,10 +23826,10 @@ function _modelWasDeprecated(raw) {
   return typeof raw === "string" && !!_DEPRECATED_MODEL_MIGRATIONS[raw];
 }
 
-// v2.33 - list of editable fields the user can mutate on each node kind.
+// list of editable fields the user can mutate on each node kind.
 // The reload-merge consults a saved-snapshot map for these fields; a field
 // is DIRTY iff React state differs from snapshot (user has unsaved edit).
-// v2.50 - derives from the kinds registry instead of hardcoding per-kind
+// derives from the kinds registry instead of hardcoding per-kind
 // keys. The registry is fetched once at canvas load into window.__thKindRegistry
 // (see WorkflowCanvas useEffect below). Falls back to the legacy hardcoded
 // list ONLY if the registry hasn't loaded yet (defensive - the canvas can
@@ -24038,7 +23934,7 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride, activePrev
     `;
   }
   const ids = protos.map(p => p.id);
-  // v3.17 - nothing selected, but the user is actively previewing a prototype
+  // nothing selected, but the user is actively previewing a prototype
   // (clicked into / navigated its live iframe) AND hasn't explicitly overridden
   // the target: show it as the edit target, the same shape as a selection chip,
   // so "make the header bigger" clearly lands on the page they're looking at.
@@ -24212,18 +24108,16 @@ function WorkflowCanvas() {
     window.addEventListener("th:chat-claim", onClaim);
     return () => window.removeEventListener("th:chat-claim", onClaim);
   }, []);
-  // Resizable panels: library (left) + chat (right). Minimums baked in:
-  // 240px for the library, 644px for the chat (~70% of the old floating
-  // drawer max width). The CHAT width persists to localStorage so the
-  // layout sticks across reloads; the LIBRARY always OPENS at min width
-  // (per user request) - dragging it wider lasts for the session only.
-  // Refs mirror the latest values for the mouseup-time persist write
-  // (avoids stale-closure capture).
+  // Resizable panels: library (left) + chat (right). The CHAT width
+  // persists to localStorage so the layout sticks across reloads; the
+  // LIBRARY always OPENS at min width - dragging it wider lasts for the
+  // session only. Refs mirror the latest values for the mouseup-time
+  // persist write (avoids stale-closure capture).
   const LIB_MIN      = 240;
   const CHAT_DEFAULT = 644;
-  // Drag floor - 2/3 of the old 500px floor, per user request: the chat
-  // header/composer/footer now truncate gracefully (title first), so a
-  // genuinely narrow chat column is usable. First-load default still 644px.
+  // Drag floor: the chat header/composer/footer truncate gracefully
+  // (title first), so a genuinely narrow chat column stays usable.
+  // First-load default is CHAT_DEFAULT.
   const CHAT_MIN     = 333;
   const [libWidth, setLibWidth] = useState(LIB_MIN);
   const [chatWidth, setChatWidth] = useState(() => {
@@ -24261,7 +24155,7 @@ function WorkflowCanvas() {
   }, [libWidth]);
   const startChatResize = useCallback((e) => {
     e.preventDefault();
-    // v3.5 - clear any canvas-node selection at the start of a chat-panel
+    // clear any canvas-node selection at the start of a chat-panel
     // resize drag. With a node selected, the wrap's pointer-events promotion
     // turns the iframe + body interactive, which competes with the 4px
     // resize handle near its right edge - the handle becomes hard to grab.
@@ -24304,7 +24198,7 @@ function WorkflowCanvas() {
       root.style.removeProperty("--workflow-chat-width");
     };
   }, [libWidth, chatWidth]);
-  // v2.50 - Truthfulness Principle 8 (status does not lie) applied to the
+  // Truthfulness Principle 8 (status does not lie) applied to the
   // chat surface. On mount, if the daemon has an active (non-done, non-error)
   // run for this project, auto-attach to it. Without this, reloading the
   // editor or navigating into workflow mode shows an empty chat drawer even
@@ -24356,12 +24250,12 @@ function WorkflowCanvas() {
     setChatPermissionMode(m);
     saveSettings({ permissionMode: m });
   }, []);
-  // v2.9 - selection-context injection. WorkflowSurface populates this ref
+  // selection-context injection. WorkflowSurface populates this ref
   // with { selectedIds: Set<string>, nodes: Node[] } on every selection
   // change; spawnWorkflowChat reads it at call time so the chat agent sees
   // what nodes the user is looking at when they start the conversation.
   const selectionRef = useRef({ selectedIds: new Set(), nodes: [] });
-  // v2.9b - reactive mirror of the selection size for UI hints (Send-button
+  // reactive mirror of the selection size for UI hints (Send-button
   // badge, etc.). Ref-only would force the badge to miss re-renders.
   const [selectionCount, setSelectionCount] = useState(0);
   // Reactive selection summary for the chat target bar (prototype/html node
@@ -24377,7 +24271,7 @@ function WorkflowCanvas() {
     chatTargetOverrideRef.current = slug || null;
     setChatTargetOverride(slug || null);
   }, []);
-  // v3.17 - reactive mirror of the prototype the user is actively PREVIEWING
+  // reactive mirror of the prototype the user is actively PREVIEWING
   // (last iframe they clicked into / navigated). WorkflowSurface owns the live
   // signal + writes it into selectionRef for chat-spawn; this copy just drives
   // the target bar so it can show "Editing <slug>" when nothing is selected.
@@ -24397,7 +24291,7 @@ function WorkflowCanvas() {
     setSelectionSummary(summarizeChatSelection(selectionRef.current));
   }, []);
 
-  // v3.19 - set by the <handoff-card> button so the NEXT spawn is forced onto the
+  // set by the <handoff-card> button so the NEXT spawn is forced onto the
   // NORMAL tier (the working/build thread reads pipeline.json via Role A; it must
   // not be scoped even if a prototype is selected). One-shot.
   const pendingHandoffRef = useRef(false);
@@ -24425,7 +24319,7 @@ function WorkflowCanvas() {
     setChatRunFinished(!!run.done || !!run.turnDone);
   }, []);
   const spawnWorkflowChat = useCallback(async (text) => {
-    // v2.9 - if the user has nodes selected on the canvas when they start the
+    // if the user has nodes selected on the canvas when they start the
     // chat, prepend a <selected-nodes> block so the agent can resolve "this",
     // "that node", "these prompts" etc. against the actual canvas state.
     // Empty selection = empty block = current behaviour.
@@ -24435,7 +24329,7 @@ function WorkflowCanvas() {
     // When a slug resolves we inject an UNAMBIGUOUS source/<slug>/ scope so the
     // agent can never silently default to the wrong prototype (the bug this
     // bar fixes). See [[woven-canvas-chat-prototype-target]].
-    // v3.19 - a handoff-opened chat is the working/build thread: force NORMAL and
+    // a handoff-opened chat is the working/build thread: force NORMAL and
     // skip prototype targeting (Role A drives pipeline.json) even if a prototype
     // is selected. One-shot flag set by the <handoff-card> button; nulling
     // targetSlug makes the tier resolve to "normal" and prototype to undefined.
@@ -24458,14 +24352,14 @@ function WorkflowCanvas() {
     // anchors its responses on the node-canvas surface (not the data files).
     const wrappedPrompt = composeModeAwarePrompt("workflow", userText);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
-    // v3.4 - Read the user's default agent model from settings, if any. The
+    // Read the user's default agent model from settings, if any. The
     // daemon's CLI invocation already maps "sonnet"/"opus"/"haiku" substrings
     // onto Claude CLI --model flags (see serve.py:868-872), so passing the
     // model id straight through is enough for Anthropic-family overrides.
     // Other agentId backends (xai, openai-gpt) can pick it up too once the
     // daemon honors them.
     const agentDefault = getDefaultForCapability("agent");
-    // v3.16 - if this chat targets an EXISTING prototype (a prototype/frames
+    // if this chat targets an EXISTING prototype (a prototype/frames
     // node is selected, or the dropdown picks one), it is iteration, not setup:
     // spawn on the cheap `scoped` tier (routing stripped, ~15.4K vs 42K) named
     // to that prototype. A whole-project / general chat (no target) is NORMAL -
@@ -24482,7 +24376,7 @@ function WorkflowCanvas() {
     setChatRunFinished(false);
     return run;
   }, [branch, chatPermissionMode]);
-  // v3.19 - the <handoff-card> "Continue in a working thread" button dispatches
+  // the <handoff-card> "Continue in a working thread" button dispatches
   // woven:continue-scoped. WorkflowCanvas is the workflow-mode surface (the
   // editor-mode RightRailDock has its own copy); without a listener here the
   // button was DEAD in workflow mode. Opening an empty shell was not enough
@@ -24505,7 +24399,7 @@ function WorkflowCanvas() {
     }
   }, []);
 
-  // v2.32 - per-node `lastInteractionAt` covers ANY user interaction with a
+  // per-node `lastInteractionAt` covers ANY user interaction with a
   // node (typing, button click, drag handle, anything inside the node's DOM
   // with data-node-id ancestor). The reload-merge skips editable-field pulls
   // for a node whose stamp is within 1.5s OR which currently owns focus.
@@ -24534,7 +24428,7 @@ function WorkflowCanvas() {
       window.removeEventListener("keydown",     handler, true);
     };
   }, []);
-  // v2.50 - Fetch the kinds registry once on mount and cache on window so
+  // Fetch the kinds registry once on mount and cache on window so
   // _editableFieldsForKind (and any other code) can consult the canonical
   // contract without each call making a network round-trip. The registry
   // is small (~22 KB) and stable per daemon process.
@@ -24574,7 +24468,7 @@ function WorkflowCanvas() {
     return () => { cancelled = true; };
   }, []);
 
-  // v2.50 - Deliverable 2: shared refs between SSE handler (G7 abort on
+  // Deliverable 2: shared refs between SSE handler (G7 abort on
   // disconnect) and the save loop (G2 single-flight). Declared here so
   // BOTH useEffects below close over the same refs.
   // - inFlightRef: true while a POST to /__workflow is on the wire
@@ -24586,7 +24480,7 @@ function WorkflowCanvas() {
   const inFlightRef    = useRef(false);
   const pendingDataRef = useRef(null);
   const saveAbortRef   = useRef(null);
-  // v3.2 - Set to true when the data change came from a history undo/redo
+  // Set to true when the data change came from a history undo/redo
   // restore (setData(fresh) inside the th:workflow-reload replace handler).
   // The debounced save effect checks this flag and bails out, resetting it.
   // Without this guard, every redo triggers a save 350ms later. That save
@@ -24617,7 +24511,7 @@ function WorkflowCanvas() {
   }
   useEffect(() => {
     let es = null;
-    // v2.50 - SSE listeners do three things now:
+    // SSE listeners do three things now:
     //   1. workflow-changed → trigger a workflow.json fetch + merge (as before)
     //   2. asset-changed    → dispatch th:asset-refresh with paths so iframe
     //                          cards auto-refresh when source/ or design-systems/
@@ -24666,7 +24560,7 @@ function WorkflowCanvas() {
       es.addEventListener("message", refreshLiveness);
       es.onopen = refreshLiveness;
       es.onerror = () => {
-        // v2.50 - G7: SSE just disconnected. Abort any in-flight save so it
+        // G7: SSE just disconnected. Abort any in-flight save so it
         // doesn't sit waiting on a dead connection (which would otherwise
         // hang for fetch's full timeout and false-positive as "daemon down").
         //
@@ -24701,8 +24595,7 @@ function WorkflowCanvas() {
   // a live session is active, poll a dirty-safe reload every few seconds so the
   // canvas always re-converges within a bounded window. The reload never
   // clobbers in-flight edits and is a no-op when already in sync; it's inert
-  // outside live sessions, so single-user editing never polls (the v2.30
-  // poll-removal stays in effect for the solo case).
+  // outside live sessions, so single-user editing never polls.
   useEffect(() => {
     const iv = setInterval(() => {
       try {
@@ -24717,10 +24610,8 @@ function WorkflowCanvas() {
     return () => clearInterval(iv);
   }, []);
 
-  // v3.5 - onboarding cut. The auto-spawn-orchestrator-on-marker-presence
-  // effect was deleted along with the guided new-project flow. Fresh
-  // projects drop into an empty canvas; the user starts a chat by clicking
-  // "+ New chat" or by adding a node from the library.
+  // Fresh projects drop into an empty canvas; the user starts a chat by
+  // clicking "+ New chat" or by adding a node from the library.
 
 
   useEffect(() => {
@@ -24802,7 +24693,7 @@ function WorkflowCanvas() {
             return next;
           }),
         };
-        // v3.4.10 - No on-load mutation. node.model stays byte-identical to
+        // No on-load mutation. node.model stays byte-identical to
         // disk; every READER resolves through _resolveLiveModel() which
         // returns the current catalog ID (deprecated → replacement, current
         // → unchanged). The chip displays the live ID; the dispatcher sends
@@ -24812,12 +24703,12 @@ function WorkflowCanvas() {
         // directly - `_resolveLiveModel(node.model)` is the only entry point.
         // See _DEPRECATED_MODEL_MIGRATIONS above.
         setData(sanitized);
-        // v2.33 - seed the saved-snapshot map from the initial disk read.
+        // seed the saved-snapshot map from the initial disk read.
         // Every editable field we track gets a baseline "last confirmed
         // saved value." The reload-merge uses this to decide if a field
         // is DIRTY (local ≠ snapshot → user has unsaved changes → skip
         // merge for this field). Causal, no time windows.
-        // v3.4.9 - Seed the snapshot from the RAW DISK values (j.nodes), not
+        // Seed the snapshot from the RAW DISK values (j.nodes), not
         // the post-sanitization / post-migration in-memory values. Reason:
         // the sanitization (stale-pending → null) and the deprecated-model
         // migration (gpt-image-1 → gpt-image-2 etc.) are unsaved changes
@@ -24847,7 +24738,7 @@ function WorkflowCanvas() {
           for (const f of Object.keys(dn)) {
             savedSnapshotRef.current.set(dn.id + "|" + f, _stableClone(dn[f]));
           }
-          // v3.4.8 - runStatus / runError are dirty-tracked too (Bug B).
+          // runStatus / runError are dirty-tracked too (Bug B).
           // Seed from RAW disk so a stale-pending → null sanitization
           // counts as dirty until the save flushes.
           savedSnapshotRef.current.set(dn.id + "|runStatus", _stableClone(dn.runStatus));
@@ -24876,8 +24767,7 @@ function WorkflowCanvas() {
     return () => { cancelled = true; };
   }, []);
 
-  // v2.33 - causal dirty tracking. Replaces v2.27/v2.30/v2.32's time-window
-  // heuristics. Map keyed by "${nodeId}|${fieldKey}" → JSON snapshot of the
+  // Causal dirty tracking (no time-window heuristics). Map keyed by "${nodeId}|${fieldKey}" → JSON snapshot of the
   // last value successfully persisted to the server. A field is "dirty" iff
   // local[field] differs from this snapshot. The reload-merge skips dirty
   // fields entirely (no merge can clobber an unsaved edit). The debounced
@@ -24903,16 +24793,16 @@ function WorkflowCanvas() {
   // daemon's wb merge doesn't restore items the user just deleted (agents
   // add wb items via POST /__workflow/wb between editor refetches).
   const deletedWbIdsRef = useRef(new Set());
-  // v2.34 - save-failure UX state. saveFailedAt is timestamp of the last
+  // save-failure UX state. saveFailedAt is timestamp of the last
   // failure; the canvas shows a persistent banner while it's set. Clears
   // when a save succeeds. Auto-retry runs from the catch handler with
-  // exponential backoff. Previously the catch swallowed errors silently
-  // and the user would lose in-memory state on refresh without warning.
+  // exponential backoff. Never swallow save errors silently - the user
+  // would lose in-memory state on refresh without warning.
   const [saveFailedAt, setSaveFailedAt] = useState(null);
   const saveAttemptRef = useRef(0);
   useEffect(() => {
     if (!loadedRef.current || !data) return;
-    // v3.2 - Skip the debounced save if this data update came from a
+    // Skip the debounced save if this data update came from a
     // history undo/redo restore. The data IS the disk state (we just
     // fetched it); re-POSTing it would (a) be wasteful and (b) cause the
     // daemon's history-bracket to record a new entry that prunes the
@@ -24972,7 +24862,7 @@ function WorkflowCanvas() {
           // instead of leaving the size permanently dirty.
           w: _stableClone(n.w),
           h: _stableClone(n.h),
-          // v3.4.8 - runStatus / runError participate in the snapshot so
+          // runStatus / runError participate in the snapshot so
           // dirty-tracking works for them too (Bug B). Once the save POST
           // returns 200, savedSnapshotRef gets bumped to the latest local
           // value, marking the field "clean" until the next client-side
@@ -24997,7 +24887,7 @@ function WorkflowCanvas() {
           signal,
         }).then(r => {
           if (!r.ok) {
-            // v2.50 - 503 from the daemon means "busy, retry shortly" - NOT
+            // 503 from the daemon means "busy, retry shortly" - NOT
             // "down". Use a tighter retry sequence for 503 specifically so
             // contention recovers quickly without flipping the banner.
             const err = new Error("HTTP " + r.status);
@@ -25056,7 +24946,7 @@ function WorkflowCanvas() {
             }, 60);
           }
         }).catch((err) => {
-          // v2.50 - abort errors from G7 (SSE-disconnect abort). In a live
+          // abort errors from G7 (SSE-disconnect abort). In a live
           // session the guest's proxied SSE reconnects on every change, so
           // "wait for the next user edit" stranded the just-aborted edit
           // (dirty forever until a manual edit/refresh). Re-attempt promptly
@@ -25067,10 +24957,10 @@ function WorkflowCanvas() {
             if (window.__thLiveActive) setTimeout(() => setForceSaveTick(t => t + 1), 300);
             return;
           }
-          // v2.34 - exponential backoff: 1s, 2s, 5s, 10s, then surface
+          // exponential backoff: 1s, 2s, 5s, 10s, then surface
           // the failure persistently. Each subsequent setData triggers
           // a fresh debounced save that resets attemptNum to 0.
-          // v2.50 - 503 (lock contention / queue full) retries at the
+          // 503 (lock contention / queue full) retries at the
           // shorter sequence so transient busy recovers without scaring
           // the user.
           const delays = (err && err.httpStatus === 503)
@@ -25120,7 +25010,7 @@ function WorkflowCanvas() {
         } catch {}
         setData(prev => {
           if (!prev) return fresh;
-          // v3.2 - When the caller requests a full replace (history undo/
+          // When the caller requests a full replace (history undo/
           // redo restore), skip the merge entirely. Disk is the truth;
           // anything in memory that disk lacks (e.g. a node the user
           // just undid into existence) should disappear. Also set the
@@ -25134,7 +25024,7 @@ function WorkflowCanvas() {
           }
           const memNodeIds = new Set((prev.nodes || []).map(n => n.id));
           const memEdgeKeys = new Set((prev.edges || []).map(e => `${e.from}→${e.to}`));
-          // v3.2.4 - Respect user deletes in flight. deletedIdsRef tracks
+          // Respect user deletes in flight. deletedIdsRef tracks
           // every id the user just removed but whose deletion hasn't
           // round-tripped the 350ms debounced save yet. Without this filter,
           // an SSE workflow-reload arriving during that window would pull
@@ -25158,12 +25048,12 @@ function WorkflowCanvas() {
           const addedEdges = (fresh.edges || []).filter(e =>
             !memEdgeKeys.has(`${e.from}→${e.to}`) && !edgeRefersToDeleted(e)
           );
-          // v2.1 - also merge daemon-owned status fields onto EXISTING nodes
+          // also merge daemon-owned status fields onto EXISTING nodes
           // so an orchestrator run's runStatus / runError / runRunId flips
           // appear live on the canvas. We only touch fields the daemon writes:
           // touching user-owned fields (position, wiring) here would clobber
           // in-flight edits before the debounced save flushes.
-          // v2.12a - also pull `output` (the LLM response from a skill
+          // also pull `output` (the LLM response from a skill
           // dispatch). It's daemon-authoritative + the previous behavior of
           // not syncing it let the frontend's debounced save effectively
           // erase responses by overwriting workflow.json with the cached
@@ -25195,7 +25085,7 @@ function WorkflowCanvas() {
               }
               return local;
             }
-            // v3.4.8 - Bug B: runStatus / runError are written by BOTH the
+            // Bug B: runStatus / runError are written by BOTH the
             // daemon (orchestrator agent runs flipping to "running" / "error")
             // AND the client (runRemix / runRepeater / quick-action spawns
             // setting "pending" → null on success). If the file watcher
@@ -25210,20 +25100,20 @@ function WorkflowCanvas() {
             const _dirtyError  = !_stableEqual(local.runError,  savedSnapshotRef.current.get(local.id + "|runError"));
             const dDaemon = {
               runRunId:  disk.runRunId,
-              // v2.20 - also pull `runId` (the canonical field WorkflowAgentNode
+              // also pull `runId` (the canonical field WorkflowAgentNode
               // reads to find the SSE-backed transcript). Daemon now writes both
               // names; the merge needs to surface `runId` too so the chat tab
               // on agent nodes
               // can fetch the conversation while the run is in flight.
               runId:     disk.runId,
               output:    disk.output,
-              // v3.9 - eager "building" prototype marker is daemon-authored:
+              // eager "building" prototype marker is daemon-authored:
               // the reconciler sets it on an eager mount and CLEARS it on
               // settle (index.html landed). Pull it so the body swaps the
               // "Building…" placeholder for the live iframe when the build
               // finishes. (undefined after settle → falsy → placeholder gone.)
               _building: disk._building,
-              // v3.0 - asset-versioning fields are daemon-authoritative. Without
+              // asset-versioning fields are daemon-authoritative. Without
               // these in dDaemon, the SSE reload after a /version/<vid>/pin
               // (or revert / branch / composition switch) leaves the picker
               // showing stale `pinned` / `activeVersionId` state until the
@@ -25237,8 +25127,8 @@ function WorkflowCanvas() {
               versions:        disk.versions,
               activeVersionId: disk.activeVersionId,
             };
-            // v2.33 - causal dirty tracking. Replaces all the time-window
-            // heuristics. A field is DIRTY iff React's value differs from
+            // Causal dirty tracking - no time-window heuristics. A field
+            // is DIRTY iff React's value differs from
             // the snapshot of what was last successfully saved. Dirty =
             // user has unsaved edits → skip merge for that field (no race
             // can clobber). Clean = local matches saved → safe to pull
@@ -25264,7 +25154,7 @@ function WorkflowCanvas() {
             // snapshotted on save (below) so a resize flips back to clean once
             // it persists and the next reload converges - same contract as x/y.
             pullField("x"); pullField("y"); pullField("w"); pullField("h");
-            // v3.4.8 - Bug B: conditional pull for runStatus / runError.
+            // Bug B: conditional pull for runStatus / runError.
             // Pull from disk ONLY when local matches the last-saved
             // snapshot (i.e. no client-side change is in flight). If local
             // diverges (we just set runStatus=null after a successful
@@ -25360,10 +25250,9 @@ function WorkflowCanvas() {
     return () => window.removeEventListener("th:workflow-reload", onReload);
   }, []);
 
-  // v2.30 - v2.1's chat-active 3-second poll AND v2.22's 5-second background
-  // poll are both removed. The SSE subscription above (`workflow-events`)
-  // fires `th:workflow-reload` whenever the server actually mutates
-  // workflow.json - no more periodic ticking, no more wasted GETs.
+  // No periodic polling here: the SSE subscription above
+  // (`workflow-events`) fires `th:workflow-reload` whenever the server
+  // actually mutates workflow.json.
 
   if (err) {
     return html`
@@ -25422,7 +25311,7 @@ function WorkflowCanvas() {
       onLibResizeStart=${startLibResize}
       onOpenNewChat=${openWorkflowChat}
       onStartChatWithPrompt=${async (text) => {
-        // v3.2 - Empty-canvas quick-start. Equivalent to clicking "+ New
+        // Empty-canvas quick-start. Equivalent to clicking "+ New
         // chat" in the Runs menu and immediately typing + sending - but
         // condensed to one keystroke from the empty-state input. Opens the
         // drawer shell (so the user sees their prompt + agent response
@@ -26034,7 +25923,7 @@ function workflowDtypeClass(dtype) {
   return dtype && WORKFLOW_DTYPES.includes(dtype) ? " workflow-dtype-" + dtype : "";
 }
 
-/* ───────────────────── Connector-spawn pipeline (v3.8) ─────────────────────
+/* ───────────────────── Connector-spawn pipeline ─────────────────────
    The "⊕ add connected node" feature. ONE declarative catalogue drives the
    whole pipeline so a NEW node kind only needs entries here to participate -
    and a kind with NO entry simply gets no ⊕ buttons (nothing breaks):
@@ -26657,9 +26546,9 @@ const WORKFLOW_NODE_FACTORY = {
     };
   },
   // ── Assistant family (agent-backed research / testing / interviewing) ────
-  // assistant-interview REPLACES the old iterator-refiner: instead of two
-  // simulated agents talking, one agent interviews the REAL user in a chat
-  // loop on the node, reusing the refiner's goal/focus/push-past construct.
+  // assistant-interview: one agent interviews the REAL user in a chat
+  // loop on the node (goal/focus/push-past construct) - deliberately NOT
+  // two simulated agents talking to each other.
   "assistant-interview": (p) => ({
     kind: "assistant-interview", w: 440, h: 560,
     goal:  p.goal  || "",
@@ -26890,10 +26779,10 @@ const WORKFLOW_CONNECT_DEFS = {
     // (and a Section's flattened text contents); an asset-input skill (rembg /
     // upscale / describe) accepts an asset (and a Section rasterised by the
     // Run executor); a text-output skill produces text-gen, everything else a
-    // generatable asset. The old code mapped EVERY non-text skill to the
-    // generate-image preset, so rembg/upscale/describe nodes advertised the
-    // wrong ports (prompt-in / asset-gen-out) and the menu offered wires the
-    // executor ignored.
+    // generatable asset. Don't map every non-text skill to the
+    // generate-image preset - rembg/upscale/describe nodes would advertise
+    // the wrong ports (prompt-in / asset-gen-out) and the menu would offer
+    // wires the executor ignores.
     resolve(node) {
       const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
       const spec = skills.find(s => s.id === node.skill);
@@ -26939,7 +26828,7 @@ const WORKFLOW_CONNECT_DEFS = {
       },
       // Asset-editing skills (inputs:["asset"]) - reachable from the ⊕ on an
       // image / section so "remove background / upscale / describe THIS image"
-      // is one click. These were previously unspawnable via the connector.
+      // is one click.
       {
         id: "skill-rembg", label: "Remove background", payload: { skill: "rembg" },
         provides: { out: { label: "Cutout", tags: ["asset-gen", "runnable"] } },
@@ -27026,7 +26915,7 @@ const WORKFLOW_CONNECT_DEFS = {
   "assistant-interview": {
     label: "Brief refinement assistant",
     // text-gen ONLY (a runtime producer) - no fixed text until the interview
-    // finishes; feeds prompt.in via text-gen, same as the old refiner did.
+    // finishes; feeds prompt.in via text-gen.
     provides: { out: { label: "Refined prompt", tags: ["text-gen"] } },
     accepts:  { in:  { label: "Seed prompt / context", tags: ["text", "section"] } },
   },
@@ -27046,7 +26935,7 @@ const WORKFLOW_CONNECT_DEFS = {
   "composer": {
     label: "Composer",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
-    // v4.0 - `edit` port: wire an Agent in to EDIT the composition (it rewrites
+    // `edit` port: wire an Agent in to EDIT the composition (it rewrites
     // the composer-<id>.json sidecar, which the node re-imports live).
     accepts:  { in:  { label: "Layer", tags: ["asset", "layer"] },
                 pos: { label: "Position", tags: ["position"] },
@@ -27570,7 +27459,7 @@ async function workflowCaptureProtoRaster(protoId) {
   return dataUri;
 }
 
-// v3.8 - Section containment. A node belongs to a section when its CENTER
+// Section containment. A node belongs to a section when its CENTER
 // lies inside the section's rect - the SAME rule moveSection uses for group
 // drag, so "what moves with the section" and "what flows through the
 // section's connector" never disagree. Sections don't nest.
@@ -27586,7 +27475,33 @@ function workflowSectionContainedNodes(section, nodes) {
   });
 }
 
-// v3.9 - Eager raster cache for iframe-backed cards (html assets / prototypes).
+// Snapshot the sub-graph spanned by a set of nodes: the picked nodes
+// (deep-cloned, order preserved), the edges INTERNAL to the set (shallow-
+// cloned), and the picked nodes' top-left origin (min numeric x/y; 0 when
+// none are numeric). `picked` is either the node array itself or a Set of
+// ids resolved against data.nodes. Shared core of the copy / duplicate /
+// save-group / save-section / custom-app snapshot paths.
+function pickSubgraph(data, picked) {
+  const nodes = Array.isArray(picked) ? picked : (data.nodes || []).filter(n => picked.has(n.id));
+  const idSet = new Set(nodes.map(n => n.id));
+  const edges = (data.edges || []).filter(e => {
+    const f = (e.from || "").split(".", 1)[0];
+    const t = (e.to   || "").split(".", 1)[0];
+    return idSet.has(f) && idSet.has(t);
+  }).map(e => ({ ...e }));
+  let minX = Infinity, minY = Infinity;
+  for (const n of nodes) {
+    if (typeof n.x === "number" && n.x < minX) minX = n.x;
+    if (typeof n.y === "number" && n.y < minY) minY = n.y;
+  }
+  return {
+    nodes: nodes.map(n => JSON.parse(JSON.stringify(n))),
+    edges,
+    origin: { x: Number.isFinite(minX) ? minX : 0, y: Number.isFinite(minY) ? minY : 0 },
+  };
+}
+
+// Eager raster cache for iframe-backed cards (html assets / prototypes).
 // html2canvas rasterises a LIVE React/JS card UNRELIABLY when fired on-demand
 // at Run time: it clones the doc but the clone can be mid-paint, so the same
 // card captures rich one moment and near-blank the next (and a heavy page can
@@ -27667,7 +27582,7 @@ function workflowScheduleCardWarm(iframe, key) {
   tick();
 }
 
-// v3.8 - Capture "whatever is seen inside" a section as a PNG data URI.
+// Capture "whatever is seen inside" a section as a PNG data URI.
 // html2canvas on the nodes layer (.workflow-canvas inside the workflow wrap),
 // cropped to the section's rect. CONTRARY to an earlier assumption here,
 // html2canvas does NOT ignore the capture root's pan/zoom transform: it
@@ -28093,14 +28008,14 @@ function scanIframeAssets(doc, opts) {
   return Array.from(seen.values());
 }
 
-/* v3.2 - Empty-canvas quick-start composer.
+/* Empty-canvas quick-start composer.
    Replaces the static "Your workflow is empty" placeholder with a real
    prompt input. Submitting opens a fresh workflow chat with the typed
    prompt already on its way - same shape as the global "New chat" flow
    minus the drawer-then-type round trip. Disappears the moment the
    project has any node OR an active chat (see render-site guard in
    WorkflowSurface). */
-/* v3.2 - Phase 2: Sub-element picker - install/teardown helpers.
+/* Phase 2: Sub-element picker - install/teardown helpers.
    Installs hover-highlight + click-capture inside an iframe's document.
    Calls `onPick(targetEl)` with the picked element on click. Returns a
    teardown fn that removes the injected style + listeners + classes.
@@ -28132,7 +28047,7 @@ function installPickOverlay(iframeEl, onPick) {
   `;
   doc.head.appendChild(style);
   doc.body.classList.add("th-pick-mode");
-  // v3.6.2 - Pause the saved patch script's MutationObserver while the
+  // Pause the saved patch script's MutationObserver while the
   // editor owns this doc. The initial apply already ran at load (the saved
   // state is visible); without the pause, every live edit to a property
   // that's also in the saved OPS gets re-overwritten on the next mutation
@@ -28307,7 +28222,7 @@ function installPickOverlay(iframeEl, onPick) {
   };
 }
 
-/* v3.4.x - Serialize an iframe document for /__html_save WITHOUT leaking
+/* Serialize an iframe document for /__html_save WITHOUT leaking
    pick-mode editing artifacts into the saved bytes. Without this, every
    Move / Reorder / Duplicate / Nudge / Replace / Paste-style save would
    bake the injected <style data-th-pick-style> block AND any lingering
@@ -28320,7 +28235,7 @@ function installPickOverlay(iframeEl, onPick) {
    survives the save.
 
    Mirrors zoomSerialize's clone-and-strip pattern (see app.js:26088). */
-/* v3.5.10 - Inject a tiny patch script at end-of-body so React-managed
+/* Inject a tiny patch script at end-of-body so React-managed
    prototypes don't revert the user's inspector edits on the next iframe
    load. Inputs:
      • html  - already-serialised HTML string (the live, post-React DOM
@@ -28339,7 +28254,7 @@ function installPickOverlay(iframeEl, onPick) {
 
    Existing patch blocks are replaced (we match on the `data-th-patch`
    attribute) so re-saves don't accumulate scripts. */
-/* v3.6.2 - Pull the OPS array back out of an existing patch block so a
+/* Pull the OPS array back out of an existing patch block so a
    re-save can MERGE instead of replace. Before this, every save wiped the
    prior block and wrote only the current session's ops - any edit persisted
    in an earlier save reverted on the next reload after an unrelated save. */
@@ -28394,7 +28309,7 @@ function _mergePatchOps(prior, fresh) {
   return _resolvePatchOpCancellations(merged).slice(-300);
 }
 
-/* v3.6.4 - Cancellation pass. The patch replay applies EVERY op on EVERY
+/* Cancellation pass. The patch replay applies EVERY op on EVERY
    mutation burst - it is not a one-shot sequence. So a `delete` aimed at an
    element a PRIOR op created (the duplicate's clone, the pasted insert, a
    replace's swap-in) fights that op forever: the delete removes the element,
@@ -28471,10 +28386,10 @@ function _injectInspectorPatch(html, ops, priorOps) {
   // pending ops leaves a stale (and possibly buggy, see commit history)
   // script in place. Strip is unconditional; re-inject is conditional.
   const stripPrior = (s) => s.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
-  // v3.6.2 - Merge with ops already persisted so a save never forgets
+  // Merge with ops already persisted so a save never forgets
   // edits committed by an earlier save.
   //
-  // v3.6.4 - `priorOps` (when given) is extracted from the ON-DISK file by
+  // `priorOps` (when given) is extracted from the ON-DISK file by
   // the caller and OVERRIDES extraction from `html`. `html` is the
   // serialized LIVE doc, whose embedded patch script is frozen at iframe
   // LOAD time - and since active editing suppresses iframe reloads, two
@@ -28495,7 +28410,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     'if(!OPS||!OPS.length)return;',
     'var applying=false;var mo=null;',
     'function $(s){try{return document.querySelector(s);}catch(_){return null;}}',
-    // v3.5.12 - Reorder owns its own element resolution because op.selector +
+    // Reorder owns its own element resolution because op.selector +
     // op.anchor become AMBIGUOUS once the move has been applied (the two
     // positional selectors resolve crossways - :nth-of-type(N) finds whoever
     // is currently at position N, which is now the OTHER element). Stable
@@ -28523,7 +28438,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  }',
     '  stamp();',
     '}',
-    // v3.6.3 - insert (pick-mode paste-as-sibling) + replace (Cmd+R) own
+    // insert (pick-mode paste-as-sibling) + replace (Cmd+R) own
     // their resolution: insert has an `anchor` instead of a selector, and
     // both are idempotency-keyed via data-th-ins / data-th-rep stamps that
     // ride INSIDE op.html (stamped on the live nodes before serialize), so
@@ -28544,11 +28459,11 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  var ns=Array.prototype.slice.call(t.childNodes);',
     '  if(ns.length){try{el2.replaceWith.apply(el2,ns);}catch(_){}}',
     '}',
-    // v3.6.5 - delete owns its resolution (like reorder/insert/replace):
+    // delete owns its resolution (like reorder/insert/replace):
     // the generic `$(op.selector) || return` below would bail before the
     // fingerprint fallback ever ran - and a MISSING selector is exactly
     // the case the fallback exists for.
-    // v3.6.6 - Shared identity-aware target resolution, used by delete,
+    // Shared identity-aware target resolution, used by delete,
     // style, and text. Resolution order:
     //   1. op.m {a,v} - a creator-op idempotency marker the target carried
     //      at edit time (data-th-ins / data-th-clone-of / data-th-rep).
@@ -28608,12 +28523,12 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  if(op.type==="nudge"){',
     '    if(typeof op.left==="number")el.style.left=op.left+"px";',
     '    if(typeof op.top==="number")el.style.top=op.top+"px";',
-    // v3.6.3 - duplicate idempotency is now a GLOBAL marker lookup, not an
-    // adjacency check. The old `el.nextElementSibling has the marker` test
-    // broke the moment any OTHER structural op (reorder, insert) moved
-    // something between the original and its clone - every observer burst
-    // re-cloned, runaway-multiplying the element hundreds of times. The
-    // marker value is op.key when present (new ops) or op.selector (ops
+    // Duplicate idempotency is a GLOBAL marker lookup, NOT an adjacency
+    // check - an `el.nextElementSibling has the marker` test breaks the
+    // moment any other structural op (reorder, insert) moves something
+    // between the original and its clone, and every observer burst then
+    // re-clones, runaway-multiplying the element. The marker value is
+    // op.key when present (new ops) or op.selector (ops
     // persisted by older saves - their replay-time stamps used the
     // selector as the value, so the global lookup still matches them).
     // Editor marker attributes are stripped from the clone subtree so a
@@ -28648,7 +28563,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     // Construct observer BEFORE first applyAll so the initial apply's
     // mutations also get drained.
     //
-    // v3.6.2 - `__TH_PATCH_PAUSE` is the editor's off-switch, checked ONLY
+    // `__TH_PATCH_PAUSE` is the editor's off-switch, checked ONLY
     // on observer re-fires (the initial arm() apply always runs so the
     // saved state stays visible). The pick-mode overlay + zoom overlay set
     // it on docs they edit; without it, the observer re-applies saved ops
@@ -28738,7 +28653,7 @@ function elementCssPath(el) {
   return parts.join(" > ");
 }
 
-/* v3.6.5 - Content fingerprint for delete ops: tag + sorted stable classes
+/* Content fingerprint for delete ops: tag + sorted stable classes
    + normalized text snippet. The patch replay verifies the positional
    selector resolves to an element matching this, falling back to a
    fingerprint search in the recorded parent - so a delete stays aimed at
@@ -28761,7 +28676,7 @@ function _elementDeleteFingerprint(el) {
   } catch { return null; }
 }
 
-/* v3.6.6 - Identity meta for a patch op's target: fingerprint + parent
+/* Identity meta for a patch op's target: fingerprint + parent
    selector + (when the element was created by another op) the creator's
    idempotency marker. The replay's resolveTarget prefers the marker, then
    the fingerprint-verified selector, then a fingerprint scan - so style /
@@ -28784,7 +28699,7 @@ function _patchTargetMeta(el) {
   return out;
 }
 
-/* v3.6.2 - Patch-grade selector for the post-mount patch script.
+/* Patch-grade selector for the post-mount patch script.
    elementCssPath's bare `tag:nth-of-type(N)` chains are positional ONLY -
    recorded against the live React DOM at edit time, they stop matching the
    moment the app re-renders with a different sibling composition (view
@@ -28836,7 +28751,7 @@ function elementPatchSelector(el) {
   return parts.join(" > ");
 }
 
-/* v3.3 - WorkflowAssetActionBar: floating horizontal action bar above a
+/* WorkflowAssetActionBar: floating horizontal action bar above a
    selected asset node. Four tools:
      1. Quick Refine  - opens a small text input, dispatches a chat run
                         with "update this asset" instructions.
@@ -28879,7 +28794,7 @@ function elementPatchSelector(el) {
    reason #2 (omit / 0 to skip). Bars anchor at `rect.top - 40` (32px chip
    + 8px gap), so the vertical bleed check is `rect.top - 40 < c.top`.
    Returns true when the bar should be hidden. */
-/* v3.x - prototype + asset nodes float their TITLE BAR flush above the node box
+/* prototype + asset nodes float their TITLE BAR flush above the node box
    (CSS: .workflow-node-proto > .workflow-node-bar and .workflow-node-asset-bar
    both anchor at `bottom: 100%`). The body-portaled top-row chrome (select
    badge, top-actions strip, asset action bar, stage pill) anchors at
@@ -28904,7 +28819,7 @@ function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   // so portaled components can read it without prop plumbing.
   if (document.body.getAttribute("data-wf-multi-select") === "true") return true;
   if (minNodeWidth && rect.width < minNodeWidth) return true;
-  // v3.5.4 - Only hide when the bar would be COMPLETELY off the canvas
+  // Only hide when the bar would be COMPLETELY off the canvas
   // viewport. The previous "any-pixel-of-bleed hides" rule killed the pick
   // badge + Save/Revert pill whenever a prototype node was wider than the
   // visible canvas area - the badge anchors near rect.right and the right
@@ -28936,35 +28851,13 @@ function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
 }
 
 function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
-  const [rect, setRect] = useState(null);
   const [openTool, setOpenTool] = useState(null);
   const [tip, setTip] = useState({ on: null, pos: null });
   const nodeId = node.id;
-  // rAF-tracked rect of the node container. v3.5.5 - no longer pauses on
-  // __thCanvasInteracting; the bar tracks the node through pan/zoom so it
-  // glides with the canvas instead of disappearing at gesture start and
-  // snapping back at gesture end. setRect every frame is cheap (React 18
-  // batches the render, the style object is the only thing that diffs).
-  useEffect(() => {
-    if (!selected) { setRect(null); return; }
-    let raf = 0;
-    let last = null;
-    const tick = () => {
-      const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        if (!last || last.top !== r.top || last.left !== r.left
-            || last.width !== r.width || last.height !== r.height) {
-          last = { top: r.top, left: r.left, width: r.width, height: r.height,
-                   right: r.right, bottom: r.bottom };
-          setRect(last);
-        }
-      } else if (last) { last = null; setRect(null); }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [nodeId, selected]);
+  // rAF-tracked rect of the node container - does NOT pause on
+  // __thCanvasInteracting, so the bar glides with the node through pan/zoom
+  // instead of disappearing at gesture start and snapping back at the end.
+  const rect = useTrackedNodeRect(nodeId, selected);
   // Walk the edge graph backwards from this asset's `in` port to find
   // any upstream prompt / skill node whose `text` field the user could
   // refine. BFS - first hit wins (closest ancestor).
@@ -29089,7 +28982,7 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
   // `rules` is forwarded verbatim so the surface can translate them into
   // explicit agent constraints (chat body) and remix-node fields.
   //
-  // v3.4.36 - Prototype nodes also use this bar (whole-prototype scope, not
+  // Prototype nodes also use this bar (whole-prototype scope, not
   // just a picked sub-element). Prototypes don't carry `path`; the source
   // folder is `source/<slug>/` where slug = branch[/subpath]. We forward
   // that folder path so the listeners can branch on host.kind and build a
@@ -29829,7 +29722,7 @@ function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges, onRunSki
   return createPortal(panel, document.body);
 }
 
-/* v3.3 - AssetActionPopover: the dropdown panel rendered by both
+/* AssetActionPopover: the dropdown panel rendered by both
    WorkflowAssetActionBar (selected asset node) and
    WorkflowPickedElementActionBar (picked sub-element). UI is identical;
    only the dispatch payload differs. The parent passes onSubmit so the
@@ -29842,7 +29735,7 @@ function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, on
   const initialN = 4;
   const [remixForm, setRemixForm] = useState(() => {
     const initialOutput = (node && (node.assetKind === "html" || node.assetKind === "html-set" || node.kind === "prototype")) ? "html" : "image";
-    // v3.4 - seed provider+model from the user's default for the initial
+    // seed provider+model from the user's default for the initial
     // capability. The AssetActionRemixProviderRow useEffect updates them
     // again if the user changes outputKind to a different capability.
     const initialCap = initialOutput === "image" ? "image" : "agent";
@@ -29857,7 +29750,7 @@ function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, on
       model:    (def && def.model)    || "",
     };
   });
-  // v3.3.3 - Grouped rules. Three buckets - `visual`, `layout`, `content`
+  // Grouped rules. Three buckets - `visual`, `layout`, `content`
   // - that match the dimensions that typically move together inside a
   // design system. Each cycles lock → free → encourage. Asset kind is a
   // separate pinned-lock chip (always rendered, never togglable) because
@@ -29961,12 +29854,12 @@ function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, on
           <div className="workflow-asset-action-rules-chips">
             ${RULE_KEYS.map(k => {
               const state = rules[k] || "lock";
-              // v3.4.x - Per-state icon component (SVG, not emoji) so the
+              // Per-state icon component (SVG, not emoji) so the
               // chip glyph reads with the rest of the icon set.
               const IconForState = state === "lock"      ? Icon.Lock
                                  : state === "encourage" ? Icon.Spark
                                                          : Icon.Wave;
-              // v3.4.x - Multi-line tooltip listing ALL three cycle states with
+              // Multi-line tooltip listing ALL three cycle states with
               // the current one marked. Uses the existing data-tip-host + tab-tip
               // pattern (styles.css :8929). The native `title` attr stays as a
               // fallback for keyboard-focus assistive tech and for users on
@@ -30065,7 +29958,7 @@ function AssetActionPopover({ tool, node, upstreamPromptNode, style, onClose, on
   `;
 }
 
-/* v3.3 - AssetActionRemixForm: the form inside the Quick Remix popover.
+/* AssetActionRemixForm: the form inside the Quick Remix popover.
    Mirrors the canonical Remix node fields (n, variants[], outputKind,
    dsRef, dsStrictness) at compact-form scale. */
 function AssetActionRemixForm({ form, setForm, firstInputRef }) {
@@ -30139,7 +30032,7 @@ function AssetActionRemixForm({ form, setForm, firstInputRef }) {
   `;
 }
 
-/* v3.4 - Provider + model dropdowns inside the Quick Remix popover.
+/* Provider + model dropdowns inside the Quick Remix popover.
    Seeded from the user's default-providers settings; the user can override
    per-call without changing the global default. The capability is derived
    from the form's outputKind so swapping output → image/html/text auto-
@@ -30210,7 +30103,7 @@ function allDsIds() {
   } catch { return []; }
 }
 
-/* v3.3 - WorkflowPickedElementActionBar: same 4 quick-action buttons as
+/* WorkflowPickedElementActionBar: same 4 quick-action buttons as
    the asset action bar, but scoped to the currently picked sub-element
    inside an iframe (pick-mode). Appears floating above the host iframe
    whenever `pickedElement` is set. Handlers operate on the sub-element:
@@ -30238,8 +30131,8 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
   const [openTool, setOpenTool] = useState(null);
   const [tip, setTip] = useState({ on: null, pos: null });
   const hostNodeId = pickedElement && pickedElement.nodeId;
-  // Track the host iframe's screen rect. v3.5.5 - no longer pauses on
-  // __thCanvasInteracting so the bar glides with the iframe through pan/zoom.
+  // Track the host iframe's screen rect - no pause on
+  // __thCanvasInteracting, so the bar glides with the iframe through pan/zoom.
   useEffect(() => {
     if (!hostNodeId) { setRect(null); return; }
     let raf = 0; let last = null;
@@ -30311,7 +30204,7 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
   };
   const clearTip = () => setTip({ on: null, pos: null });
   const tagLabel = pickedElement.tagName ? `<${pickedElement.tagName}>` : "element";
-  // v3.9 - Browser-node hosts: the picked element lives on a PUBLIC WEB
+  // Browser-node hosts: the picked element lives on a PUBLIC WEB
   // PAGE, not a source/ file - in-place tools (refine, upstream-prompt)
   // have nothing to write to. Copy (⌘C) / fork / remix only READ the
   // element + its CSS bundle, so they stay available.
@@ -30412,7 +30305,7 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
     if ((tool === "fork" || tool === "remix") && pickerIframeRef && pickerIframeRef.current && pickedDomRef && pickedDomRef.current) {
       try {
         const ifr = pickerIframeRef.current;
-        // v3.4 - Re-query live DOM by CSS path so we capture post-reload
+        // Re-query live DOM by CSS path so we capture post-reload
         // content if the host file changed since the pick (same fix as
         // copyPickedElement). Falls back to the cached ref if the live
         // tree no longer has a matching node.
@@ -30523,18 +30416,17 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
    pick mode for that node - dispatches `th:enter-pick-mode` so
    WorkflowSurface owns the single-pick-mode-at-a-time invariant. Badge
    listens for `th:pick-mode-changed` to flip its `is-active` style. */
-/* v3.2.1 - Portal-mounted to document.body to escape `.workflow-node`'s
+/* Portal-mounted to document.body to escape `.workflow-node`'s
    `overflow: hidden`. A rAF loop tracks the node's `[data-node-id=...]`
    bounding rect and positions the badge fixed at its top-right, offset
    above the node. This survives canvas pan/zoom because we read the
    screen-space rect every frame - the badge follows the node exactly. */
 
-/* v3.5.7 - Sibling component for the Save / Revert pill. Previously baked
-   into WorkflowNodeSelectBadge, which sharing its early-return on `!rect`
-   killed the pill whenever the badge's rAF hadn't ticked yet (initial
-   mount → no rect → return null → no pill ever). Splitting lets the pill
-   own its own pendingCount + rect tracking and render the moment there
-   are staged edits, regardless of badge state.
+/* Sibling component for the Save / Revert pill - deliberately SEPARATE
+   from WorkflowNodeSelectBadge: sharing the badge's early-return on
+   `!rect` kills the pill whenever the badge's rAF hasn't ticked yet. The
+   pill owns its own pendingCount + rect tracking and renders the moment
+   there are staged edits, regardless of badge state.
 
    Position: anchored by its RIGHT edge, ideal 6px left of the node's
    top-right corner. When the node bleeds past the canvas wrap, the pill
@@ -30585,7 +30477,7 @@ function WorkflowNodeStagePill({ nodeId }) {
   const wrapEl   = document.querySelector(".workflow-canvas-wrap");
   const wrapRect = wrapEl ? wrapEl.getBoundingClientRect()
                           : { left: 0, right: window.innerWidth, top: 0 };
-  // Anchor the pill to the RIGHT of the select badge so it no longer grows
+  // Anchor the pill to the RIGHT of the select badge so it can't grow
   // leftward into the node's other floating chrome. The badge occupies
   // rect.right - 32 .. rect.right, so the pill's left edge sits 6px past the
   // badge's right edge. Fall back to the wrap's top-left when there's no rect
@@ -30638,14 +30530,14 @@ function WorkflowNodeStagePill({ nodeId }) {
 }
 
 function WorkflowNodeSelectBadge({ nodeId, selected }) {
-  // v3.2.5 - Universal pick-mode. `active` is true when ANY node activated
+  // Universal pick-mode. `active` is true when ANY node activated
   // pick-mode, not just `nodeId`. The overlay now installs on every eligible
   // iframe, so every badge is a valid toggle-off - visually, every eligible
   // badge lights up so the user knows pick mode applies everywhere.
   // `originatorId` keeps the activator's id for the (subtle) toggle-target
   // semantics in the click handler.
   //
-  // v3.4.x - Initialize from window.__thPickModeNodeId so badges mounting
+  // Initialize from window.__thPickModeNodeId so badges mounting
   // AFTER pick-mode is already active pick up the canonical state. The
   // th:pick-mode-changed event only fires when the canonical state
   // CHANGES - a badge that arrived late never received it and showed OFF
@@ -30659,7 +30551,6 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   const [originatorId, setOriginatorId] = useState(() => {
     try { return window.__thPickModeNodeId || null; } catch { return null; }
   });
-  const [rect, setRect] = useState(null);
   const [tipPos, setTipPos] = useState(null);
   // Pending inspector edits count for THIS node. Re-derived from the
   // window-level digest dispatched by WorkflowSurface whenever the staging
@@ -30684,45 +30575,19 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
     window.addEventListener("th:pending-inspector-edits-changed", onPending);
     return () => window.removeEventListener("th:pending-inspector-edits-changed", onPending);
   }, [nodeId]);
-  // v3.2.2 - Visibility = selected OR pick-mode-active-for-this-node OR
+  // Visibility = selected OR pick-mode-active-for-this-node OR
   // there are pending inspector edits to Save/Revert. The pending case
   // keeps the badge + pill alive after the user exits pick mode so they
   // can still commit or discard.
   const visible = selected || active || pendingCount > 0;
-  // Poll the node's bounding rect each animation frame so the badge tracks
-  // pan/zoom/drag. v3.5.5 - no longer pauses during canvas-interacting;
-  // setRect runs every frame so the badge glides with the node instead of
-  // disappearing at gesture start and snapping back at gesture end.
-  useEffect(() => {
-    if (!visible) { setRect(null); return; }
-    let raf = 0;
-    let last = null;
-    const tick = () => {
-      // `.workflow-node` scopes the lookup to the actual node container -
-      // the badge itself ALSO carries data-node-id (so canvas-level
-      // closest("[data-node-id]") can resolve it back to its owning node),
-      // and a bare attribute selector would match the badge too.
-      const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
-      if (node) {
-        const r = node.getBoundingClientRect();
-        if (!last || last.top !== r.top || last.left !== r.left
-            || last.width !== r.width || last.height !== r.height) {
-          last = { top: r.top, left: r.left, width: r.width, height: r.height,
-                   right: r.right, bottom: r.bottom };
-          setRect(last);
-        }
-      } else if (last) {
-        last = null;
-        setRect(null);
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [nodeId, visible]);
+  // rAF-track the node's bounding rect so the badge follows pan/zoom/drag
+  // without pausing during canvas gestures. The hook scopes its lookup to
+  // `.workflow-node[data-node-id]` - the badge itself ALSO carries
+  // data-node-id, so a bare attribute selector would match the badge too.
+  const rect = useTrackedNodeRect(nodeId, visible);
   const onClick = (e) => {
     e.stopPropagation();
-    // v3.2.5 - Universal pick-mode toggle. While pick-mode is on globally,
+    // Universal pick-mode toggle. While pick-mode is on globally,
     // clicking ANY badge exits it (any badge can be the "off switch"). When
     // off, the clicked badge becomes the activator. Exit dispatches the
     // explicit th:exit-pick-mode that the surface already listens for.
@@ -30736,23 +30601,17 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // Skip on tiny nodes - a 32px chip + Save/Revert pill needs at least
   // ~60px of node width to read.
   if (rect.width < 60) return null;
-  // v3.5.5 - Anchor the badge at the node's natural top-right corner. The
-  // previous "clamp to canvas viewport" rule (v3.5.4) was meant to keep
-  // the chip reachable when a node extended past the chat-drawer, but it
-  // turned the badge into a free-floating chip that slid to the canvas
-  // edge while panning instead of staying glued to the node. Partial
+  // Anchor the badge at the node's natural top-right corner - do NOT
+  // clamp it to the canvas viewport (clamping turns the badge into a
+  // free-floating chip that slides to the canvas edge while panning
+  // instead of staying glued to the node). Partial
   // overlap with panels is fine - z-index keeps the chat-drawer / library
   // on top - and shouldHideNodeChrome hides the badge once it's fully off.
   const badgeLeft = rect.right - 32;
   const badgeTop  = rect.top - 40 - nodeFloatingBarClearance(nodeId);
-  // v3.5.6 - Badge and Save/Revert pill hide INDEPENDENTLY. Previously a
-  // single shouldHideNodeChrome early-return null'd the entire portal -
-  // when a wide prototype node bled past the canvas wrap, the pill went
-  // dark alongside the badge and the user lost the only way to commit /
-  // discard their staged inspector edits. Compute each visibility flag
-  // separately; the JSX further down assembles the portal from whichever
-  // pieces are visible, and the function only bails when EVERY piece is
-  // hidden.
+  // Badge and Save/Revert pill hide INDEPENDENTLY (per-piece visibility
+  // flags; bail only when EVERY piece is hidden) - the pill is the only
+  // way to commit/discard staged inspector edits.
   const badgeHidden = shouldHideNodeChrome(rect, badgeLeft, badgeLeft + 32, 60);
   const style = {
     position: "fixed",
@@ -30762,7 +30621,7 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
     // pill stays at 40 alongside the badge.
     zIndex: 40,
   };
-  // v3.4.x - Tooltip lists the full pick-mode op surface so the user knows
+  // Tooltip lists the full pick-mode op surface so the user knows
   // what's available without having to discover each shortcut. Mirrors the
   // keyboard map at WorkflowSurface.useEffect onKey (app.js:19553+):
   // Cmd+C copy · Cmd+V paste · Cmd+R replace · Cmd+D duplicate · ←↑→↓
@@ -30813,10 +30672,10 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // empty-canvas click → start marquee + clear selection. Stamping the
   // owning node's id here makes closest() resolve to the badge and the
   // wrap correctly keeps the node selected.
-  // v3.5.7 - Pill moved out to WorkflowNodeStagePill (sibling component).
-  // Badge is back to its plain shape: pick chip + tooltip only. Hide when
+  // The Save/Revert pill lives in WorkflowNodeStagePill (sibling
+  // component); this badge is pick chip + tooltip only. Hide when
   // shouldHideNodeChrome says the badge is fully off the canvas; the pill
-  // doesn't share this fate anymore - it tracks its own rect and renders
+  // doesn't share this fate - it tracks its own rect and renders
   // independently the moment pendingCount > 0.
   if (badgeHidden) return null;
   return createPortal(html`
@@ -31292,39 +31151,14 @@ function FigmaSendPromptHost() {
    WorkflowNodeSelectBadge; the canvas-interacting hide rule kicks in via the
    .workflow-node-top-actions CSS selector. */
 function WorkflowNodeTopActions({ nodeId, selected, actions }) {
-  const [rect, setRect] = useState(null);
   const [tipState, setTipState] = useState(null);
   // Submenu - an action carrying `menu: [{key,label,icon,onClick}]` opens a
   // dropdown anchored under its button instead of firing directly. Holds
   // { key, items, left, top } (screen coords of the anchor button) or null.
   const [menu, setMenu] = useState(null);
-  // v3.5.5 - Smooth tracking. rAF runs every frame; setRect fires when the
-  // rect changes (every frame during pan/zoom is fine - React 18 batches
-  // them and the render is cheap). No longer pauses on __thCanvasInteracting
-  // so the strip glides with the node.
-  useEffect(() => {
-    if (!selected) { setRect(null); return; }
-    let raf = 0;
-    let last = null;
-    const tick = () => {
-      const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
-      if (node) {
-        const r = node.getBoundingClientRect();
-        if (!last || last.top !== r.top || last.left !== r.left
-            || last.width !== r.width || last.height !== r.height) {
-          last = { top: r.top, left: r.left, width: r.width, height: r.height,
-                   right: r.right, bottom: r.bottom };
-          setRect(last);
-        }
-      } else if (last) {
-        last = null;
-        setRect(null);
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [nodeId, selected]);
+  // rAF-tracked rect - no pause on __thCanvasInteracting, so the strip
+  // glides with the node through pan/zoom.
+  const rect = useTrackedNodeRect(nodeId, selected);
   // Close the submenu on outside-click / Escape, and whenever the node
   // deselects. Listener only mounts while a menu is open.
   useEffect(() => {
@@ -31885,7 +31719,7 @@ function WorkflowConvertBar({ count, hasNodeEdges, onConvert }) {
   `, document.body);
 }
 
-/* v3.8 - Connector-spawn chrome. When EXACTLY ONE node is selected and its
+/* Connector-spawn chrome. When EXACTLY ONE node is selected and its
    kind has a WORKFLOW_CONNECT_DEFS entry, render a floating ⊕ button at the
    vertical middle of each side that has menu content (left = upstream
    sources, right = downstream consumers). Clicking opens a small popover:
@@ -31926,7 +31760,7 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
             }
           });
         }
-        // v3.6 - the floating asset CONTROLS (right) + INPUTS (left) panels are
+        // the floating asset CONTROLS (right) + INPUTS (left) panels are
         // body-portaled, not children of the node el, so the detached-frame
         // widening above never sees them. Without this the ⊕ spawn buttons
         // (rect.right + gap, z40) sit UNDER the controls panel (rect.right + gap,
@@ -32068,7 +31902,7 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
   `, document.body);
 }
 
-/* v3.2 - Toast for pick-mode element ops (copy / paste / delete).
+/* Toast for pick-mode element ops (copy / paste / delete).
    Portaled to document.body, fixed at bottom-center, auto-dismisses via
    the flashPickOp dwell timer in WorkflowSurface. Three visual variants:
    pending (spinner + neutral bg), done (check + accent), error (alert +
@@ -32091,7 +31925,7 @@ function WorkflowPickOpToast({ state }) {
   `, document.body);
 }
 
-/* v3.2 - Right-click context menu for the workflow canvas.
+/* Right-click context menu for the workflow canvas.
    Three actions: Copy (active when ≥1 node is selected), Paste (active
    when the in-session clipboard has something), Delete (active when
    ≥1 node is selected). Portaled to document.body so the menu escapes
@@ -32168,7 +32002,7 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
 function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  // v3.5 - same two-kind attachment model as ChatComposer (see app.js:8392).
+  // same two-kind attachment model as ChatComposer (see app.js:8392).
   // attachments = images bound to this single turn (→ /__attachment, land in
   // source/_attachments/). uploads = any files the user wants the agent to
   // use as long-lived project assets (→ /__upload, land in source/uploads/).
@@ -32649,8 +32483,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   //      moves the whole group by the same delta.
   const [selectedNodeIds, setSelectedNodeIds] = useState(() => new Set());
   const selectedNodeIdsRef = useRef(selectedNodeIds); selectedNodeIdsRef.current = selectedNodeIds;
-  // Bulk delete moved off the canvas nodes: it now lives in the left Visual
-  // Assets panel (multi-select rows → delete files). See WorkflowLibrary.
+  // Bulk delete lives in the left Visual Assets panel (multi-select rows
+  // → delete files), not on the canvas nodes. See WorkflowLibrary.
   // ── Whiteboard mode ──
   // Build (false, default) vs Whiteboard (true). Same canvas, same pan/zoom;
   // both node + whiteboard content stay visible in BOTH modes - the mode
@@ -32901,7 +32735,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const wbHandleDown = useCallback((e, id, handle) => {
     if (wbHandleDownRef.current) wbHandleDownRef.current(e, id, handle);
   }, []);
-  // v3.2 - Right-click context menu for canvas copy/paste/delete. Position
+  // Right-click context menu for canvas copy/paste/delete. Position
   // is in viewport (fixed) coords; world coords (for paste placement) are
   // computed at click time from the canvas wrap's bounding rect + pan/zoom.
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -32982,7 +32816,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!id) { setSelectedNodeIds(new Set()); return; }
     setSelectedNodeIds(prev => prev.has(id) ? prev : new Set([id]));
   }, []);
-  // v3.1 - lineage chip → focus upstream node. Listen for `th:focus-node`
+  // lineage chip → focus upstream node. Listen for `th:focus-node`
   // events dispatched by any lineage chip; pan the canvas to center the
   // matching node + select it. The chip lives multiple components away,
   // so the event bus is cleaner than prop-drilling a focusNode callback.
@@ -33104,7 +32938,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setTimeout(() => { setSelectedWbIds(new Set()); setSelectedNodeIds(new Set([id])); }, 0);
   }, [pan, zoom, wrapRef, setData, setSelectedNodeIds, setSelectedWbIds]);
 
-  // v2.4b - compute the set of node IDs connected to the selected node by
+  // compute the set of node IDs connected to the selected node by
   // walking data.edges. Then imperatively flag matching DOM nodes with
   // `data-connected="true"` so CSS can style them distinctly from the
   // selected one. Imperative (not props) so we don't have to thread a new
@@ -33122,7 +32956,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
     return set;
   }, [selectedNodeId, data?.edges]);
-  // v3.8 - Connector-spawn chrome data. Only when EXACTLY ONE node is
+  // Connector-spawn chrome data. Only when EXACTLY ONE node is
   // selected; kinds with no WORKFLOW_CONNECT_DEFS entry yield empty menus
   // and the host renders nothing (future kinds degrade gracefully).
   const connectorNode = useMemo(() => {
@@ -33175,7 +33009,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       else zone.removeAttribute("data-port-connected");
     }
   }, [data?.edges, data?.nodes]);
-  // v2.9 - mirror selection + nodes into the parent's ref so chat-spawn
+  // mirror selection + nodes into the parent's ref so chat-spawn
   // can read "what's selected right now" without re-plumbing state up.
   // The parent passes selectionRef only when it cares (workflow-mode chat
   // host); guard for absence so the component still works standalone.
@@ -33184,7 +33018,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       selectionRef.current = {
         selectedIds: new Set(selectedNodeIds),
         nodes:       data?.nodes || [],
-        // v3.17 - carry the view-derived preview target across selection
+        // carry the view-derived preview target across selection
         // rebuilds (its own effect, below in render order, is the real owner and
         // reconciles it right after) so the chat target bar can fall back to the
         // previewed prototype when nothing is selected.
@@ -33197,7 +33031,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         selectedWbIds: new Set(selectedWbIds),
       };
     }
-    // v2.9b - push the reactive count up so the parent can show UI hints
+    // push the reactive count up so the parent can show UI hints
     // (Send-button badge etc.). Cheap setState - only fires on change.
     if (onSelectionCountChange) onSelectionCountChange(selectedNodeIds.size);
     // Multi-select flag for body-portaled per-node chrome (top-action
@@ -33210,10 +33044,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch {}
   }, [selectedNodeIds, selectedWbIds, wbMode, data?.nodes, data?.wb, selectionRef, onSelectionCountChange]);
 
-  // v2.4b - same imperative pattern for data-selected. Most node kinds set
-  // this attribute via a `selected` prop already, but kinds added after
-  // v2.4 (skill=llm via WorkflowSkillNode's llm branch) do
-  // not. Setting it imperatively at the wrap level catches every kind
+  // Same imperative pattern for data-selected. Most node kinds set
+  // this attribute via a `selected` prop already, but some (skill=llm via
+  // WorkflowSkillNode's llm branch) do not.
+  // Setting it imperatively at the wrap level catches every kind
   // without per-component prop plumbing. When a component DOES set its own
   // data-selected via prop, this effect runs after the re-render and
   // converges to the same value - no correctness issue.
@@ -33452,7 +33286,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
-  // v3.6 - Left icon nav rail. Three icon-only entries:
+  // Left icon nav rail. Three icon-only entries:
   //   1. Nodes   - the buildable-node library panel (drag palette)
   //   2. Outputs - the generated-files library panel
   //   3. Prototype viewer - replaces the canvas with a pseudo-browser
@@ -33464,9 +33298,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     try {
       const v = localStorage.getItem("th-workflow-left-panel");
       if (v === "none") return null;
-      // v3.9 - "outputs" split into two panels ("protos" + "visual"); the
-      // old single key migrates to the prototypes panel. "library" is the
-      // new saved-prompts + node-groups panel.
+      // "outputs" is split into two panels ("protos" + "visual"); a
+      // persisted legacy "outputs" key migrates to the prototypes panel.
+      // "library" is the saved-prompts + node-groups panel.
       if (v === "outputs" || v === "protos") return "protos";
       if (v === "visual") return "visual";
       if (v === "library") return "library";
@@ -33543,7 +33377,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // tools (select, text, comment, sketch, export, import).
   // See docs/features/zoom-mode-plan.md.
   const [zoomTarget, setZoomTarget] = useState(null);
-  // v3.6 - Zoom mode is HOMED in the prototype viewer (rail icon 3). Every
+  // Zoom mode is HOMED in the prototype viewer (rail icon 3). Every
   // zoom entry point routes through here: switch the main view to the
   // prototype viewer, open/activate a tab for the target file (so closing
   // the overlay lands the user on the same page in the viewer, where the
@@ -33620,7 +33454,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // disk before we prompt to regenerate. See bug: "click canvas-frames →
     // 'doesn't exist' even though the editor shows them created."
     const spawnNode = (awaiting) => {
-      const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const id = workflowNewNodeId();
       const w = 800, h = 540;
       const px = typeof protoNode.x === "number" ? protoNode.x : 0;
       const py = typeof protoNode.y === "number" ? protoNode.y : 0;
@@ -33759,7 +33593,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const openPrototypeView = useCallback((protoNode, kind) => {
     if (!protoNode || !PROTOTYPE_VIEW_NODE[kind]) return;
     const branch = nodePrototype(protoNode);
-    const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const id = workflowNewNodeId();
     const w = 800, h = 540;
     const px = typeof protoNode.x === "number" ? protoNode.x : 0;
     const py = typeof protoNode.y === "number" ? protoNode.y : 0;
@@ -34943,13 +34777,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     let payload;
     try { payload = JSON.parse(raw); } catch { return; }
     const { x, y } = screenToWorld(e.clientX, e.clientY);
-    // v3.9 - Saved node group: fetch + instantiate the whole cluster (async),
+    // Saved node group: fetch + instantiate the whole cluster (async),
     // anchored so the group's top-left lands under the cursor.
     if (payload.kind === "node-group" && payload.slug) {
       placeNodeGroup(payload.slug, x, y);
       return;
     }
-    // v3.8 - ALL per-kind creation defaults live in WORKFLOW_NODE_FACTORY
+    // ALL per-kind creation defaults live in WORKFLOW_NODE_FACTORY
     // (the same factory the connector-spawn ⊕ menus use), so library drops
     // and ⊕ spawns can't drift. Unknown kinds are ignored, not errors -
     // a future library card whose kind has no factory entry simply no-ops.
@@ -34962,7 +34796,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       y: Math.round(y - (payload.kind === "section" ? 28 : 18)),
     };
     if (node.kind === "prototype") node.instanceId = id;
-    // Asset drops keep the composer affordance (v3.4.42): if the drop landed
+    // Asset drops keep the composer affordance: if the drop landed
     // over a composer (OR a composer is the current selection), also create
     // the edge so the new asset shows up as a layer immediately. Selection
     // wins because the user may have just clicked the composer to focus it
@@ -35124,7 +34958,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
   }, [_zSig, wrapRef]);
 
-  // v3.8 - Connector-spawn: create ONE node from a ⊕ menu item and wire it
+  // Connector-spawn: create ONE node from a ⊕ menu item and wire it
   // to the anchor. side "left" → new node feeds the anchor; side "right" →
   // the anchor feeds the new node. Placement: beside the anchor with a
   // collision-avoiding downward nudge. The spawn becomes the selection.
@@ -35157,7 +34991,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return newId;
   }, [setData]);
 
-  // v3.8 - Connector-spawn bundles: multi-node recipes (prompt → agent →
+  // Connector-spawn bundles: multi-node recipes (prompt → agent →
   // this asset, direction pack, builder/reader agents…). The bundle builds
   // its node/edge set inside the setData updater (so findFreeSpot sees the
   // freshest node list); an optional async `post` step runs after commit
@@ -35249,7 +35083,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
   }, [setData]);
 
-  // v3.9 - "Tidy" a section: pack its contained nodes into a left-to-right
+  // "Tidy" a section: pack its contained nodes into a left-to-right
   // grid (palette → typography → everything else, so a Materials section
   // reads top-down), then grow the section to fit. Heterogeneous node sizes
   // are row-packed (wrap when the next node would overflow the section's
@@ -35425,7 +35259,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
   }, [setData]);
 
-  // v3.2 - Bulk delete for the canvas selection. Wired into the Delete /
+  // Bulk delete for the canvas selection. Wired into the Delete /
   // Backspace key handler below and the right-click context menu.
   const deleteSelectedNodes = useCallback(() => {
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
@@ -35442,7 +35276,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const [exportsOpen, setExportsOpen]   = useState(false);
   const [runStates, setRunStates] = useState({});
 
-  // v3.2 - In-session clipboard for canvas node copy/paste. Lives in a ref
+  // In-session clipboard for canvas node copy/paste. Lives in a ref
   // (not state) because we never want it to trigger a re-render - paste
   // reads it on demand. Payload shape: { nodes: [...], edges: [...] }
   // where edges only include those internal to the selection (both
@@ -35460,23 +35294,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!sel.size) return 0;
     const picked = (data.nodes || []).filter(n => sel.has(n.id));
     if (!picked.length) return 0;
-    const pickedIdSet = new Set(picked.map(n => n.id));
-    const internalEdges = (data.edges || []).filter(e => {
-      const f = (e.from || "").split(".", 1)[0];
-      const t = (e.to   || "").split(".", 1)[0];
-      return pickedIdSet.has(f) && pickedIdSet.has(t);
-    });
-    let minX = Infinity, minY = Infinity;
-    for (const n of picked) {
-      if (typeof n.x === "number" && n.x < minX) minX = n.x;
-      if (typeof n.y === "number" && n.y < minY) minY = n.y;
-    }
-    if (!Number.isFinite(minX)) minX = 0;
-    if (!Number.isFinite(minY)) minY = 0;
+    const sub = pickSubgraph(data, picked);
     nodeClipboardRef.current = {
-      nodes: picked.map(n => JSON.parse(JSON.stringify(n))),
-      edges: internalEdges.map(e => ({ ...e })),
-      originX: minX, originY: minY, ts: Date.now(),
+      nodes: sub.nodes, edges: sub.edges,
+      originX: sub.origin.x, originY: sub.origin.y, ts: Date.now(),
     };
     return picked.length;
   }, [selectionRef, data]);
@@ -35793,7 +35614,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return () => { wbOsDropRef.current = null; };
   }, [screenToWorld, setData, wbAddImageFromFile, wbUploadAttachment, addAssetNodeAt]);
 
-  // v3.4.42 - Find a composer the user wants to receive a paste / drop.
+  // Find a composer the user wants to receive a paste / drop.
   // Priority:
   //   1. A composer in the current selection (user clicked it most recently).
   //   2. A composer under the world-space cursor (user has their mouse over
@@ -35845,7 +35666,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!nf || !nt) return null;
       return { from: `${nf}.${fromPort}`, to: `${nt}.${toPort}` };
     }).filter(Boolean);
-    // v3.4.42 - Auto-wire any newly-pasted ASSET nodes into the target
+    // Auto-wire any newly-pasted ASSET nodes into the target
     // composer (selected, else under cursor). Skip when the paste is
     // happening inside the composer itself (clip contains a composer
     // and the new asset is wired to that fresh composer via clip.edges
@@ -35885,7 +35706,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
   const hasNodeClipboard = useCallback(() => !!nodeClipboardRef.current, []);
 
-  // v3.9 - Instantiate a saved node group (Local library) at a world point.
+  // Instantiate a saved node group (Local library) at a world point.
   // Same id-remap + edge-rewrite + run-state-reset as paste, but the payload
   // comes from the server (workflow/groups/<slug>.json) instead of the
   // in-session clipboard. Called from onCanvasDrop on a kind:node-group drop.
@@ -35950,7 +35771,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return newNodes.length;
   }, [setData, selectionRef]);
 
-  // v3.9 - Save the current multi-selection as a reusable node group under
+  // Save the current multi-selection as a reusable node group under
   // workflow/groups/. Snapshots the selected nodes + the edges internal to
   // the selection (same shape as the copy clipboard), then POSTs it so it
   // shows up in Library → Local library on every session. Returns true on
@@ -35959,19 +35780,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
     const picked = (data.nodes || []).filter(n => sel.has(n.id));
     if (picked.length < 1) { uiAlert("Select at least one node to save as a group."); return false; }
-    const pickedIdSet = new Set(picked.map(n => n.id));
-    const internalEdges = (data.edges || []).filter(e => {
-      const f = (e.from || "").split(".", 1)[0];
-      const t = (e.to   || "").split(".", 1)[0];
-      return pickedIdSet.has(f) && pickedIdSet.has(t);
-    });
-    let minX = Infinity, minY = Infinity;
-    for (const n of picked) {
-      if (typeof n.x === "number" && n.x < minX) minX = n.x;
-      if (typeof n.y === "number" && n.y < minY) minY = n.y;
-    }
-    if (!Number.isFinite(minX)) minX = 0;
-    if (!Number.isFinite(minY)) minY = 0;
+    const sub = pickSubgraph(data, picked);
     const defaultTitle = `Group of ${picked.length}`;
     const title = await uiPrompt(`Save ${picked.length} node${picked.length === 1 ? "" : "s"} as a group.\nName (shown in Local library):`, defaultTitle);
     if (title == null) return false;
@@ -35980,9 +35789,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       || ("group-" + Date.now().toString(36));
     const payload = {
       slug, title: cleanTitle,
-      nodes: picked.map(n => JSON.parse(JSON.stringify(n))),
-      edges: internalEdges.map(e => ({ from: e.from, to: e.to })),
-      originX: minX, originY: minY,
+      nodes: sub.nodes,
+      edges: sub.edges.map(e => ({ from: e.from, to: e.to })),
+      originX: sub.origin.x, originY: sub.origin.y,
     };
     try {
       const r = await fetch(apiUrl("/__groups"), {
@@ -35996,7 +35805,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch (e) { uiAlert("Save failed: " + (e?.message || e)); return false; }
   }, [selectionRef, data]);
 
-  // v3.9 - One-click "save this whole section to Local library". Snapshots the
+  // One-click "save this whole section to Local library". Snapshots the
   // section frame ITSELF plus every node geometrically inside it (+ the edges
   // internal to that set), named after the section's title - no prompt. Dropping
   // the saved group back re-creates the frame with its contents (containment is
@@ -36009,12 +35818,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const contained = workflowSectionContainedNodes(section, nodes);
     if (!contained.length) return false;   // button is hidden when empty; silent guard
     const picked = [section, ...contained];
-    const pickedIdSet = new Set(picked.map(n => n.id));
-    const internalEdges = (data.edges || []).filter(e => {
-      const f = (e.from || "").split(".", 1)[0];
-      const t = (e.to   || "").split(".", 1)[0];
-      return pickedIdSet.has(f) && pickedIdSet.has(t);
-    });
+    const sub = pickSubgraph(data, picked);
+    // Origin treats a non-numeric x/y as 0 (it participates in the min),
+    // unlike the clipboard rule that skips it.
     const minX = Math.min(...picked.map(n => (typeof n.x === "number" ? n.x : 0)));
     const minY = Math.min(...picked.map(n => (typeof n.y === "number" ? n.y : 0)));
     const title = (section.title || "Section").trim() || "Section";
@@ -36022,8 +35828,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       || ("section-" + Date.now().toString(36));
     const payload = {
       slug, title,
-      nodes: picked.map(n => JSON.parse(JSON.stringify(n))),
-      edges: internalEdges.map(e => ({ from: e.from, to: e.to })),
+      nodes: sub.nodes,
+      edges: sub.edges.map(e => ({ from: e.from, to: e.to })),
       originX: Number.isFinite(minX) ? minX : 0,
       originY: Number.isFinite(minY) ? minY : 0,
     };
@@ -36090,11 +35896,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!section) { setConvertCfg(null); return; }
     const contained = workflowSectionContainedNodes(section, nodes);
     const ids = new Set(contained.map(n => n.id));
-    const internalEdges = (data.edges || []).filter(e => {
-      const f = (e.from || "").split(".", 1)[0];
-      const t = (e.to   || "").split(".", 1)[0];
-      return ids.has(f) && ids.has(t);
-    });
+    const sub = pickSubgraph(data, contained);
+    // Origin treats a non-numeric x/y as 0 (it participates in the min),
+    // unlike the clipboard rule that skips it.
     const minX = Math.min(...contained.map(n => (typeof n.x === "number" ? n.x : 0)));
     const minY = Math.min(...contained.map(n => (typeof n.y === "number" ? n.y : 0)));
     let newNode = {
@@ -36104,8 +35908,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       w: Math.max(520, section.w || 720), h: Math.max(360, section.h || 520),
       title: (section.title || "Custom app").trim() || "Custom app",
       subgraph: {
-        nodes: contained.map(n => JSON.parse(JSON.stringify(n))),
-        edges: internalEdges.map(e => ({ from: e.from, to: e.to })),
+        nodes: sub.nodes,
+        edges: sub.edges.map(e => ({ from: e.from, to: e.to })),
         originX: Number.isFinite(minX) ? minX : 0,
         originY: Number.isFinite(minY) ? minY : 0,
       },
@@ -36237,18 +36041,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!section) { cancelExpandCustomApp(appId); return; }
     const contained = workflowSectionContainedNodes(section, nodes);
     if (!contained.length) { uiAlert("Nothing inside the section to save."); return; }
-    const ids = new Set(contained.map(n => n.id));
-    const internalEdges = (data.edges || []).filter(e => {
-      const f = (e.from || "").split(".", 1)[0], t = (e.to || "").split(".", 1)[0];
-      return ids.has(f) && ids.has(t);
-    });
+    const sub = pickSubgraph(data, contained);
     const map = app._expandMap || {};
     const canvasToSub = new Map();
     for (const n of contained) canvasToSub.set(n.id, map[n.id] || ("n" + Math.random().toString(36).slice(2, 10)));
+    // Origin treats a non-numeric x/y as 0 (it participates in the min),
+    // unlike the clipboard rule that skips it.
     const minX = Math.min(...contained.map(n => (typeof n.x === "number" ? n.x : 0)));
     const minY = Math.min(...contained.map(n => (typeof n.y === "number" ? n.y : 0)));
-    const subNodes = contained.map(n => { const m = _stripExpandOwner(JSON.parse(JSON.stringify(n))); m.id = canvasToSub.get(n.id); return m; });
-    const subEdges = internalEdges.map(e => {
+    const subNodes = sub.nodes.map(n => { const m = _stripExpandOwner(n); m.id = canvasToSub.get(n.id); return m; });
+    const subEdges = sub.edges.map(e => {
       const f = workflowParseEdgeRef(e.from || ""), t = workflowParseEdgeRef(e.to || "");
       if (!f || !t || !canvasToSub.has(f.node) || !canvasToSub.has(t.node)) return null;
       return { from: canvasToSub.get(f.node) + "." + f.port, to: canvasToSub.get(t.node) + "." + t.port };
@@ -36318,7 +36120,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     })();
   }, [data, setData, cancelExpandCustomApp]);
 
-  // v3.4.32 - Duplicate selected nodes in-place (Cmd+D). Behaves like
+  // Duplicate selected nodes in-place (Cmd+D). Behaves like
   // copy-then-paste-at-+30/+30 but DOES NOT touch nodeClipboardRef, so
   // the user's previously-copied clipboard payload survives a duplicate
   // (matches Figma / Sketch behavior). Edges between the duplicated
@@ -36329,24 +36131,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!sel.size) return 0;
     const picked = (data.nodes || []).filter(n => sel.has(n.id));
     if (!picked.length) return 0;
-    const pickedIdSet = new Set(picked.map(n => n.id));
-    const internalEdges = (data.edges || []).filter(e => {
-      const f = (e.from || "").split(".", 1)[0];
-      const t = (e.to   || "").split(".", 1)[0];
-      return pickedIdSet.has(f) && pickedIdSet.has(t);
-    });
+    const sub = pickSubgraph(data, picked);
     const idMap = new Map();
     for (const n of picked) idMap.set(n.id, _freshNodeId());
     const DX = 30, DY = 30;                                   // "nearby" offset
-    const newNodes = picked.map(n => ({
-      ...JSON.parse(JSON.stringify(n)),
+    const newNodes = sub.nodes.map(n => ({
+      ...n,
       id: idMap.get(n.id),
       x: (typeof n.x === "number" ? n.x : 0) + DX,
       y: (typeof n.y === "number" ? n.y : 0) + DY,
       runStatus: undefined, runError: undefined, runRunId: undefined,
       runId: undefined, versions: [], activeVersionId: null, lastRunId: undefined,
     }));
-    const newEdges = internalEdges.map(e => {
+    const newEdges = sub.edges.map(e => {
       const fromId = (e.from || "").split(".", 1)[0];
       const fromPort = (e.from || "").split(".", 2)[1] || "out";
       const toId = (e.to || "").split(".", 1)[0];
@@ -36369,7 +36166,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return newNodes.length;
   }, [selectionRef, data, setData]);
 
-  // v3.2 - Phase 2: sub-element pick mode for prototype + HTML asset nodes.
+  // Phase 2: sub-element pick mode for prototype + HTML asset nodes.
   // Only ONE node can be in pick mode at a time (clicking another node's
   // select button moves the focus). `pickedElement` tracks the most
   // recent pick within the active node's iframe: { nodeId, path, outerHTML }.
@@ -36378,7 +36175,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Broadcast pick-mode changes so the select badges can update their
   // `is-active` style without prop drilling.
   //
-  // v3.4.x - ALSO mirror to window.__thPickModeNodeId so badges mounting
+  // ALSO mirror to window.__thPickModeNodeId so badges mounting
   // AFTER pick-mode is already active can read the canonical state on
   // mount. Without this mirror the badge's local `active` defaulted to
   // false for any badge that arrived late (newly-spawned node, virtualised
@@ -36602,12 +36399,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [spawnWebSnippet]);
-  // v3.3 - Quick-action listeners for WorkflowAssetActionBar. Each handler
+  // Quick-action listeners for WorkflowAssetActionBar. Each handler
   // owns the mutation or chat-dispatch so the popover can stay a pure
   // dispatch site. Wired into the same surface where setData / chat-spawn
   // live, so a fresh agent run is one event away from any selected asset.
   useEffect(() => {
-    // v3.3.1 - Kind-aware refine body. The naive single-template prompt
+    // Kind-aware refine body. A naive single-template prompt
     // ("update the file") fails predictably for raster assets where the
     // agent has no way to mutate pixel bytes without an image-gen API key.
     // The block below tells the agent (a) what kind of file this is, (b)
@@ -36615,7 +36412,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // (c) NEVER to change the file extension - the canvas node would
     // dangle pointing at the old path otherwise. The "extension lock" is
     // load-bearing: it keeps the canvas node and the file on disk paired.
-    // v3.3.3 - Format the (grouped) rule set into a constraint block the
+    // Format the (grouped) rule set into a constraint block the
     // agent reads. Each group is expanded into its constituent dimensions
     // so vague prompts like "make it nicer" still respect the user's
     // policy at the dimension level - e.g. "Visual style: KEEP unchanged"
@@ -36643,7 +36440,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
     const buildRefineBody = (path, kind, prompt, scopeNote, rules) => {
       const ext = ((path || "").match(/\.[a-z0-9]+$/i) || [""])[0].toLowerCase();
-      // v3.3.4 - Per-kind tool spectrum. Each entry lists the FULL menu of
+      // Per-kind tool spectrum. Each entry lists the FULL menu of
       // ways the agent can produce this asset - primary subagent, generic
       // model tools, MCPs, direct edits - in rough preference order. The
       // agent should try ALTERNATIVES before giving up. The previous "STOP
@@ -36729,7 +36526,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // file in place. Reuses the workflow-chat infrastructure the empty
     // composer already uses (onStartChatWithPrompt → triggerRun).
     //
-    // v3.4.36 - Prototype-scope refine. When the host is a prototype node,
+    // Prototype-scope refine. When the host is a prototype node,
     // the "asset" is the whole feature folder (source/<slug>/), not a
     // single file. We send a folder-scoped prompt that tells the agent to
     // walk every file under that folder and apply the user's refinement
@@ -36786,7 +36583,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const det = e && e.detail; if (!det) return;
       const origin = (data.nodes || []).find(n => n && n.id === det.nodeId);
       if (!origin) return;
-      // v3.4.36 - Prototype-scope fork: copy the whole source/<slug>/
+      // Prototype-scope fork: copy the whole source/<slug>/
       // folder to source/<slug>-fork-<stamp>/, then spawn a sibling
       // prototype node pointed at the new branch and dispatch the refine
       // against the clone. /__copy_file is single-file; we hand the actual
@@ -36818,7 +36615,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // where the new prototype will live on the canvas. The iframe will
         // 404 until the agent finishes copying; the iframe key is bumped
         // by the standard th:asset-refresh path once files land.
-        const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        const newId = workflowNewNodeId();
         setData(d => ({
           ...d,
           nodes: [...(d.nodes || []), {
@@ -36858,7 +36655,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         try { flashPickOp("error", "Fork failed: " + (err.message || err)); } catch {}
         return;
       }
-      const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const newId = workflowNewNodeId();
       setData(d => ({
         ...d,
         nodes: [...(d.nodes || []), {
@@ -36891,12 +36688,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const n = Math.max(1, Math.min(8, (f.n | 0) || 4));
       const variants = Array.isArray(f.variants) ? f.variants.slice(0, n) : [];
       while (variants.length < n) variants.push("");
-      const remixId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const remixId = workflowNewNodeId();
       const remixX = (origin.x || 0) + (origin.w || 320) + 80;
       const remixY = origin.y || 0;
       // Model default - image-gen for image outputs, gpt-4o for html / text.
       const outputKind = f.outputKind || "image";
-      // v3.4 - Per-call provider+model override from the popover wins; fall
+      // Per-call provider+model override from the popover wins; fall
       // back to the user's default for this capability; fall back to the
       // existing hard-coded defaults if neither is set.
       const capForKind = outputKind === "image" ? "image" : "agent";
@@ -36913,7 +36710,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           outputKind,
           dsRef: f.dsRef || null,
           dsStrictness: f.dsStrictness || "loose",
-          // v3.3.2 - persist user-set rules so the remix run handler can
+          // persist user-set rules so the remix run handler can
           // inject them into the per-variant system prompt later. The
           // existing runRemix path will pick these up on its next pass.
           rules: det.rules || null,
@@ -36922,7 +36719,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }));
       try { flashPickOp("done", "Remix node created - click Run to generate variants"); } catch {}
     };
-    // v3.3 - Picked-element-scope handlers. Same shape as the asset
+    // Picked-element-scope handlers. Same shape as the asset
     // handlers above but operate on a sub-element inside a picked host
     // iframe instead of the whole asset file.
     const onPickedRefine = (e) => {
@@ -37123,7 +36920,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // defined) so behavior is unaffected. The closure captures the latest
     // binding lazily.
   }, [data, setData, onStartChatWithPrompt]);
-  // v3.2.4 - While pick-mode is on, any mousedown OUTSIDE the picker iframe
+  // While pick-mode is on, any mousedown OUTSIDE the picker iframe
   // means the user has shifted focus away from "this exact sub-element".
   // Clear the picked target so the next Cmd+V routes to Path B (standalone
   // export to canvas) instead of pasting back as a sibling of the now-stale
@@ -37160,7 +36957,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [pickModeNodeId, pickedElement]);
-  // v3.2.5 - Universal pick-mode. While pick-mode is on (pickModeNodeId
+  // Universal pick-mode. While pick-mode is on (pickModeNodeId
   // is non-null), install the pick overlay on EVERY eligible iframe on the
   // canvas - prototype iframes AND HTML asset iframes - so the user can
   // hover/click sub-elements across any of them without first clicking
@@ -37218,7 +37015,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           if (teardown) teardowns.set(ifr, teardown);
         } catch (err) { console.error("[pick install]", err); }
       };
-      // v3.4.3 - Re-install on EVERY iframe load, not just the first one.
+      // Re-install on EVERY iframe load, not just the first one.
       // When the source file changes (Quick Refine, agent run, external
       // edit, etc.) the iframe reloads and its contentDocument is replaced
       // - the previously-installed overlay is attached to the now-detached
@@ -37273,7 +37070,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       clearInterval(intervalId);
       for (const [ifr, td] of teardowns) {
         try { td(); } catch {}
-        // v3.4.3 - Remove the persistent load listener we attached for
+        // Remove the persistent load listener we attached for
         // re-install-on-reload so it doesn't keep firing after pick-mode
         // exits.
         try { if (ifr.__thPickOnLoad) { ifr.removeEventListener("load", ifr.__thPickOnLoad); delete ifr.__thPickOnLoad; } } catch {}
@@ -37281,7 +37078,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       teardowns.clear();
       pickerIframeRef.current = null;
       pickedDomRef.current = null;
-      // v3.4.x - Belt-and-suspenders: sweep EVERY same-origin iframe in the
+      // Belt-and-suspenders: sweep EVERY same-origin iframe in the
       // DOM and strip the th-pick-mode class + injected style if either is
       // still present. The teardowns map catches the common case, but a
       // freshly-mounted iframe could have been installed-into between the
@@ -37328,7 +37125,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return null;
   }, [data]);
 
-  // v3.2 - Phase 2 toast/status state. `pickOpState` tracks the in-flight
+  // Phase 2 toast/status state. `pickOpState` tracks the in-flight
   // status of element copy/paste/delete so the UI can surface:
   //   • a spinner ring on the iframe during the network round-trip;
   //   • a transient toast confirming success / surfacing the error.
@@ -37383,7 +37180,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
   const copyPickedElement = useCallback(() => {
     if (!pickedElement || !pickedElement.outerHTML) return 0;
-    // v3.2.3 - Extract the CSS bundle (matched rules + :root tokens +
+    // Extract the CSS bundle (matched rules + :root tokens +
     // @font-face + same-origin link tags) at COPY TIME, while we still have
     // a live handle on the source iframe's contentDocument. This lets Path B
     // (standalone export) render the snippet with its original styling
@@ -37395,7 +37192,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     let cssBundle = null;
     let cleanOuter = pickedElement.outerHTML;
     try {
-      // v3.4.4 - THREE-step recovery of the live iframe + element, so copy
+      // THREE-step recovery of the live iframe + element, so copy
       // works even after the host file changed and React re-mounted the
       // iframe (which clears pickerIframeRef AND replaces the underlying
       // iframe element):
@@ -37413,7 +37210,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // pickedElement.outerHTML, and in that case we also surface a toast
       // so the user knows to re-pick.
       let ifr = pickerIframeRef.current;
-      // v3.4.5 - Also reject the cached ref if it's been DETACHED from the
+      // Also reject the cached ref if it's been DETACHED from the
       // live document. React re-mounts the iframe on nonce bumps (it's
       // the key change), the old `<iframe>` is removed from the DOM tree
       // but its `contentDocument` property still resolves to an orphan
@@ -37458,7 +37255,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         cleanClone.classList && cleanClone.classList.remove("th-pick-hover", "th-pick-selected");
         cleanClone.querySelectorAll && cleanClone.querySelectorAll(".th-pick-hover, .th-pick-selected")
           .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
-        // v3.2.4 - Absolutize relative URLs against the source page's base.
+        // Absolutize relative URLs against the source page's base.
         // The standalone export lives at source/<branch>/components/snippet-X
         // .html so relative paths like `assets/hero.png` would 404 there.
         // We rewrite to absolute URLs (same daemon origin) so the daemon
@@ -37524,7 +37321,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return 1;
   }, [pickedElement, resolveIframePath, flashPickOp]);
 
-  // v3.6.3 - Hoisted above pastePickedElement / replacePickedElement /
+  // Hoisted above pastePickedElement / replacePickedElement /
   // deletePickedElement: those callbacks now stage through stageInspectorEdit
   // and reference it in their deps arrays, which are evaluated at render -
   // declaring it below them would hit the const temporal dead zone.
@@ -37576,7 +37373,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       window.dispatchEvent(new CustomEvent("th:pending-inspector-edits-changed", { detail: { total, byNode } }));
     } catch {}
   }, []);
-  // v3.5.10 - stageInspectorEdit accepts an optional `op` record describing
+  // stageInspectorEdit accepts an optional `op` record describing
   // what just changed: { type: 'style'|'reorder'|'nudge'|'duplicate'|'delete',
   // selector: <css path>, ...op-specific fields }. The ops list rides on each
   // pendingInspectorEdits entry and gets serialised into a tiny patch script
@@ -37585,12 +37382,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // re-applies via the saved selectors → the user's edit survives). Style
   // edits without a selector still stage their doc (back-compat - applyStyle
   // already mutates inline style on the live DOM); they just don't get
-  // post-mount replay. That's the worst-case fallback for the old code path,
+  // post-mount replay. That's the worst-case fallback,
   // not a regression for callers that DO pass an op.
   const stageInspectorEdit = useCallback((ifr, doc, op) => {
     if (!ifr || !doc) return;
     const path = _resolveIframePathFor(ifr);
-    // v3.6.4 - Surface the failure instead of silently dropping the op.
+    // Surface the failure instead of silently dropping the op.
     // The DOM mutation has already happened by the time we're called, so a
     // silent return here means the user SEES their edit but it can never
     // be saved - e.g. when the iframe is showing a workflow/views/<…>
@@ -37617,7 +37414,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const pastePickedElement = useCallback(async () => {
     const clip = nodeClipboardRef.current;
     if (!clip || clip.type !== "html-element") return 0;
-    // v3.2.4 - In-flight guard. Two keyboard handlers can both invoke this
+    // In-flight guard. Two keyboard handlers can both invoke this
     // for a single Cmd+V (pick-mode capture + canvas-level bubble) - even
     // with stopPropagation, the same-window other-phase listener can still
     // race. Without this guard, Path A would fire AND Path B would fire,
@@ -37630,11 +37427,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // Path A: there's a picked target inside an iframe → insert as sibling
     if (pickedDomRef.current && pickerIframeRef.current) {
       const ifr = pickerIframeRef.current;
-      // v3.4.4 - Same three-step recovery as copyPickedElement: cached
+      // Same three-step recovery as copyPickedElement: cached
       // ref → host iframe by nodeId → re-query selector in live doc. This
       // makes Path A robust against iframe re-mounts (nonce bumps) that
       // happen between picking the target and pressing Cmd+V.
-      // v3.4.5 - also reject detached iframes (see copyPickedElement).
+      // also reject detached iframes (see copyPickedElement).
       let ifrLive = ifr;
       if (!ifrLive || !ifrLive.contentDocument || !document.body.contains(ifrLive)) {
         try {
@@ -37656,7 +37453,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       try {
         const doc = ifr.contentDocument;
         if (!doc) { flashPickOp("error", "Paste failed: iframe doc unavailable"); return 0; }
-        // v3.4.5 - Re-read the SOURCE element live at paste time, so the
+        // Re-read the SOURCE element live at paste time, so the
         // clipboard snapshot from copy time gets overridden by whatever
         // the source iframe currently shows. This means the user can
         // refine / edit the source between copy and paste and the latest
@@ -37675,7 +37472,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 clean.classList && clean.classList.remove("th-pick-hover", "th-pick-selected");
                 clean.querySelectorAll && clean.querySelectorAll(".th-pick-hover, .th-pick-selected")
                   .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
-                // v3.4.5d - Inline the SOURCE'S computed styles onto the
+                // Inline the SOURCE'S computed styles onto the
                 // clone before serialising. Without this, the inserted
                 // element inherits the DESTINATION'S stylesheets - which is
                 // why pasting into a prototype that has its own rules
@@ -37688,7 +37485,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 // same treatment.
                 try {
                   const srcWin = sourceIfr.contentWindow;
-                  // v3.6.6 - Strip the editor's pick-mode chrome BEFORE the
+                  // Strip the editor's pick-mode chrome BEFORE the
                   // computed-style read. The live source element wears
                   // .th-pick-hover/.th-pick-selected and the body wears
                   // .th-pick-mode at copy time, so the bake captured the
@@ -37750,7 +37547,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             }
           } catch {}
         }
-        // v3.6.3 - Paste is now STAGED like every other inspector op
+        // Paste is now STAGED like every other inspector op
         // (style / move / duplicate): mutate the live DOM, record a
         // replayable `insert` op, and let the Save/Revert pill commit.
         // The previous immediate POST gave the user no save affordance
@@ -37801,7 +37598,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const branch = nodePrototype((data.nodes || []).find(n => n.kind === "prototype"));
       const assetId = `n${stamp}`;
       const relPath = `source/${branch}/components/snippet-${stamp}.html`;
-      // v3.2.3 - Build the standalone document with the CSS bundle captured
+      // Build the standalone document with the CSS bundle captured
       // at copy time. This mirrors the zoom-mode export pattern: links +
       // inline matched-rule <style> + base body reset + the element wrapped
       // in a div that carries the inherited inline style fallback.
@@ -37840,11 +37637,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       const tx = lastCanvasCursorRef.current.x + 30;
       const ty = lastCanvasCursorRef.current.y + 30;
-      // v3.4.42 - If a composer is the paste target (selected or under
+      // If a composer is the paste target (selected or under
       // cursor), spawn the asset AND add an edge into it so the freshly
-      // pasted snippet shows up as a layer immediately. Previously this
-      // path just dropped the asset onto the canvas with no link, which
-      // is why "feedback says pasted but no layer appears."
+      // pasted snippet shows up as a layer immediately - without the link
+      // the toast says pasted but no layer appears.
       const composerTarget = _findComposerPasteTarget(tx, ty);
       setData(d => ({
         ...d,
@@ -37858,7 +37654,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ? [...(d.edges || []), { from: `${assetId}.out`, to: `${composerTarget.id}.in` }]
           : (d.edges || []),
       }));
-      // v3.4.5c - Re-link the clipboard to the SNIPPET asset we just spawned.
+      // Re-link the clipboard to the SNIPPET asset we just spawned.
       // The user's mental model after Path B is "this card IS my copied
       // element". So if they refine / edit the snippet and then Cmd+V again,
       // they expect to paste the modified snippet, not the original source.
@@ -37895,7 +37691,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, stageInspectorEdit]);
 
-  // v3.4.20 - Cmd+R: replace the currently picked element with the clipboard's
+  // Cmd+R: replace the currently picked element with the clipboard's
   // content. Same shape as pastePickedElement Path A (live-source re-read,
   // computed-style baking, three-step recovery against iframe re-mounts),
   // but uses `replaceWith` instead of `insertBefore` so the target gets
@@ -37971,7 +37767,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 // pastePickedElement Path A.
                 try {
                   const srcWin = sourceIfr.contentWindow;
-                  // v3.6.6 - Strip the editor's pick-mode chrome BEFORE the
+                  // Strip the editor's pick-mode chrome BEFORE the
                   // computed-style read. The live source element wears
                   // .th-pick-hover/.th-pick-selected and the body wears
                   // .th-pick-mode at copy time, so the bake captured the
@@ -38031,13 +37827,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // can produce multiple top-level nodes when the snippet has siblings;
         // replaceWith handles a variadic list of nodes so we pass them all.
         //
-        // v3.6.3 - Replace is now STAGED (Save/Revert pill) with a
+        // Replace is now STAGED (Save/Revert pill) with a
         // replayable `replace` op instead of an immediate POST - same
         // rationale as paste: the user gets a save affordance, and the
         // patch script re-applies the swap after React re-renders.
         const replaceSel = elementPatchSelector(targetEl);
         const repKey = "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-        // v3.6.4 - Creator markers of the REPLACED target, for the merge's
+        // Creator markers of the REPLACED target, for the merge's
         // cancellation pass (replacing a pasted/duplicated element rewrites
         // the creator op rather than persisting a fighting replace op).
         const cancelIns = targetEl.getAttribute && targetEl.getAttribute("data-th-ins");
@@ -38088,7 +37884,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!ifr) return 0;
     const doc = ifr.contentDocument;
     if (!doc) { flashPickOp("error", "Delete failed: iframe doc unavailable"); return 0; }
-    // v3.4 - Same re-query as copy/paste: if the iframe reloaded since pick,
+    // Same re-query as copy/paste: if the iframe reloaded since pick,
     // pickedDomRef.current is detached and `.remove()` would no-op on a
     // ghost element. Re-resolve via the saved CSS path so we delete from
     // the live tree and the file write reflects an actual removal.
@@ -38103,11 +37899,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const tagSnap = (targetEl.tagName || "").toLowerCase();
     flashPickOp("pending", `Deleting <${tagSnap}>…`);
     try {
-      // v3.6.3 - Delete is now STAGED (Save/Revert pill) with a replayable
+      // Delete is now STAGED (Save/Revert pill) with a replayable
       // `delete` op instead of an immediate POST - same rationale as
       // paste/replace. Selector captured BEFORE removal (the patch replays
       // against the fresh, pre-delete DOM).
-      // v3.6.4 - If the target was CREATED by an earlier op (pasted insert,
+      // If the target was CREATED by an earlier op (pasted insert,
       // duplicate clone, replace swap-in), capture its creator marker so
       // the merge's cancellation pass drops the creator op instead of
       // persisting a delete that fights it on every replay burst.
@@ -38115,7 +37911,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const cancelIns = targetEl.getAttribute && targetEl.getAttribute("data-th-ins");
       const cancelDup = targetEl.getAttribute && targetEl.getAttribute("data-th-clone-of");
       const cancelRep = targetEl.getAttribute && targetEl.getAttribute("data-th-rep");
-      // v3.6.5 - Content fingerprint + parent selector, captured BEFORE
+      // Content fingerprint + parent selector, captured BEFORE
       // removal. The replay verifies the positional selector against this
       // and falls back to a fingerprint search - positional :nth-child
       // breaks when surrounding ops change (cancelled duplicate, reorder),
@@ -38145,7 +37941,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [resolveIframePath, flashPickOp, stageInspectorEdit, pickedElement]);
 
-  // v3.4.32 - Arrow-key element movement.
+  // Arrow-key element movement.
   //
   // Two modes of "move" depending on the picked element's layout:
   //   • position: absolute / fixed → translate via inline left/top in 1px
@@ -38184,7 +37980,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const snapshot = Array.from(pendingInspectorEdits.values());
     if (snapshot.length === 0) return;
     flashPickOp("pending", `Saving ${snapshot.length} edit${snapshot.length === 1 ? "" : "s"}…`);
-    // v3.5.9 - Suppress the iframe auto-reload caused by our OWN write.
+    // Suppress the iframe auto-reload caused by our OWN write.
     // After a successful POST to /__html_save, the daemon's file watcher
     // dispatches th:asset-refresh for the same path. The prototype node's
     // asset-refresh listener bumps the iframe nonce → React re-mounts from
@@ -38210,7 +38006,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!curDoc || curDoc !== entry.doc) continue;
       const project = activeProjectId();
       let fullHtml = pickSerializeClean(entry.doc);
-      // v3.6.4 - Read the ON-DISK file's persisted ops as the merge base.
+      // Read the ON-DISK file's persisted ops as the merge base.
       // The live doc's embedded patch script is frozen at iframe-load time;
       // with reloads suppressed during editing it goes stale across
       // consecutive saves and the merge would drop the previous save's ops.
@@ -38220,7 +38016,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const pr = await fetch(pu + (pu.includes("?") ? "&" : "?") + "_pm=" + Date.now());
         if (pr.ok) priorOps = _extractPatchOps(await pr.text());
       } catch {}
-      // v3.5.10 - Inject a post-mount patch script so React-managed
+      // Inject a post-mount patch script so React-managed
       // prototypes don't revert the user's edits on the next iframe load.
       // The script:
       //   1. Waits for window.load + a 100ms tick so React has time to
@@ -38255,14 +38051,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // asset-refresh ever arrived (e.g. watcher quiet) - prevents a stale
     // marker from swallowing the next legitimate refresh on the same path.
     //
-    // v3.6.3 - Window widened 6s → 45s. The daemon's watcher echo is NOT
-    // fast: each scan walks every project's full tree (including the
-    // ever-growing workflow/runs snapshot copies), so the echo for a save
-    // lands 5-10+ seconds later on real workspaces. With a 6s cap the
-    // marker expired BEFORE the echo arrived, the echo hit the node iframe
-    // unsuppressed, and the reload wiped the user's in-progress pick-mode
-    // session - "while editing, it refreshes before I save". The marker is
-    // still consumed on first match, so 45s only governs the no-echo case.
+    // 45s window: the daemon's watcher echo is NOT fast - each scan walks
+    // every project's full tree, so the echo for a save can land 5-10+
+    // seconds later on real workspaces. A shorter cap lets the marker
+    // expire BEFORE the echo arrives; the unsuppressed echo then reloads
+    // the node iframe and wipes the user's in-progress pick-mode session.
+    // The marker is still consumed on first match, so 45s only governs the
+    // no-echo case.
     try {
       const paths = snapshot.map(e => e.path).filter(Boolean);
       setTimeout(() => {
@@ -38336,7 +38131,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return { el, doc, win };
   }, [pickedElement]);
 
-  // v3.4.45 - Shift+Cmd/Ctrl+C : copy the picked element as a PNG raster
+  // Shift+Cmd/Ctrl+C : copy the picked element as a PNG raster
   // to the SYSTEM clipboard so it pastes into Figma / Slack / any image-
   // aware destination. Uses the html2canvas-pro bundle loaded globally
   // in index.html (supports modern color functions like oklch). PNG is
@@ -38372,7 +38167,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [_resolvePickedLive, pickedElement, flashPickOp]);
 
-  // v3.4.45 - Opt+Cmd / Alt+Ctrl+C : copy the picked element's *style* into
+  // Opt+Cmd / Alt+Ctrl+C : copy the picked element's *style* into
   // the editor clipboard (not a system clipboard write). When pasted via
   // Cmd+V onto another picked target, the styles are applied as inline
   // declarations on that target - visual transplant without changing the
@@ -38393,7 +38188,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
       "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
       "border-top-left-radius", "border-top-right-radius", "border-bottom-left-radius", "border-bottom-right-radius",
-      // v3.6.6 - outline-* and cursor dropped from the copy set: at copy
+      // outline-* and cursor dropped from the copy set: at copy
       // time the picked element wears the picker's .th-pick-selected /
       // .th-pick-hover chrome (blue outline, crosshair cursor), so copying
       // them propagates editor chrome as if it were the design.
@@ -38402,7 +38197,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       "filter", "backdrop-filter", "mix-blend-mode", "isolation",
       "padding-top", "padding-right", "padding-bottom", "padding-left",
     ];
-    // v3.6.6 - Strip the picker chrome classes for the computed read (the
+    // Strip the picker chrome classes for the computed read (the
     // selected ring's box-shadow would otherwise bake into the copy), then
     // restore.
     const hadHover = el.classList && el.classList.contains("th-pick-hover");
@@ -38441,7 +38236,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return 1;
   }, [_resolvePickedLive, pickedElement, flashPickOp]);
 
-  // v3.4.45 - Apply a style-only clipboard to the picked target. Inlines
+  // Apply a style-only clipboard to the picked target. Inlines
   // each property via setProperty, then persists via _saveIframeHtml so
   // the change survives a reload (same pattern as nudge / duplicate).
   const pastePickedStyle = useCallback(async () => {
@@ -38457,7 +38252,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       for (const [prop, val] of entries) {
         try { el.style.setProperty(prop, val); } catch {}
       }
-      // v3.5.10 - Stage with an op record so the post-mount patch script
+      // Stage with an op record so the post-mount patch script
       // re-applies the style on the next iframe load (survives React revert).
       try {
         const ifr = pickerIframeRef.current;
@@ -38500,7 +38295,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const newTop  = readPx(el.style.top,  cs.top)  + dy;
     el.style.left = `${newLeft}px`;
     el.style.top  = `${newTop}px`;
-    // v3.5.10 - Stage with a nudge op record for post-mount replay.
+    // Stage with a nudge op record for post-mount replay.
     try {
       const ifr = pickerIframeRef.current;
       if (ifr) stageInspectorEdit(ifr, doc, {
@@ -38546,14 +38341,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const backward = (direction === "up" || direction === "left");
     let anchor = null;
     let position = null;
-    // v3.5.11 - Capture selectors BEFORE mutating. elementCssPath uses
+    // Capture selectors BEFORE mutating. elementCssPath uses
     // :nth-of-type(N); a move changes el's index AND can shift its anchor's
     // index (forward path moves the anchor under el's old position). Capture
     // first; on reload the replay script runs against pre-move React DOM, so
     // it MUST find el + anchor at their pre-move positions.
     const elSelectorPre     = elementPatchSelector(el);
     let   anchorSelectorPre = "";
-    // v3.5.12 - Selectors alone aren't identity-stable for reorder. After the
+    // Selectors alone aren't identity-stable for reorder. After the
     // first replay applies the move, the elements occupy each other's pre-move
     // :nth-of-type slots, so the SAME selectors now resolve crossways. Any
     // subsequent MutationObserver fire (next React update) would re-run
@@ -38586,7 +38381,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       try { next.setAttribute("data-th-rkey-sib", opKey); } catch {}
       parent.insertBefore(next, el);
     }
-    // v3.5.10 - Stage with a reorder op record. selector + anchor + position
+    // Stage with a reorder op record. selector + anchor + position
     // let the post-mount script re-apply the move against the post-React
     // DOM, even when React's render put the element back in its original
     // source order.
@@ -38615,7 +38410,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // pick-mode hover/selected classes from BOTH copies so the saved
     // HTML is clean of editor chrome.
     //
-    // v3.6.3 - Selector captured BEFORE the clone mounts (a same-class
+    // Selector captured BEFORE the clone mounts (a same-class
     // twin after the target would shift the disambiguation index), the
     // clone carries a unique data-th-clone-of key (the patch replay's
     // GLOBAL idempotency marker), and any editor marker attributes the
@@ -38641,7 +38436,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       elm.classList.remove("th-pick-hover");
       elm.classList.remove("th-pick-selected");
     });
-    // v3.5.10 - Stage with a duplicate op record for post-mount replay.
+    // Stage with a duplicate op record for post-mount replay.
     try {
       const ifr = pickerIframeRef.current;
       if (ifr) stageInspectorEdit(ifr, doc, {
@@ -38663,7 +38458,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       const cmd = e.metaKey || e.ctrlKey;
       if (cmd && (e.key === "c" || e.key === "C")) {
-        // v3.4.45 - Three flavors of copy in pick mode, all share C:
+        // Three flavors of copy in pick mode, all share C:
         //   Shift+Cmd/Ctrl+C → copy as PNG (system clipboard, raster)
         //   Opt+Cmd / Alt+Ctrl+C → copy STYLE only (editor clipboard)
         //   Cmd/Ctrl+C alone   → copy element HTML + CSS bundle
@@ -38685,7 +38480,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       } else if (cmd && (e.key === "v" || e.key === "V")) {
         const clip = nodeClipboardRef.current;
         if (clip && clip.type === "html-style") {
-          // v3.4.45 - style-only clipboard paths through pastePickedStyle
+          // style-only clipboard paths through pastePickedStyle
           // instead of the element-paste flow. The user pasted onto a
           // picked target; we apply the styles inline + save.
           pastePickedStyle();
@@ -38695,7 +38490,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           e.preventDefault(); e.stopPropagation();
         }
       } else if (cmd && (e.key === "r" || e.key === "R")) {
-        // v3.4.20 - Cmd+R = replace picked target with clipboard content.
+        // Cmd+R = replace picked target with clipboard content.
         // Browser refresh is suppressed UNCONDITIONALLY while pick-mode is
         // active so the user doesn't reload the page (losing all canvas
         // state) by reflex on a key they're now using for a canvas op.
@@ -38704,7 +38499,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         e.preventDefault(); e.stopPropagation();
         replacePickedElement();
       } else if (cmd && (e.key === "d" || e.key === "D")) {
-        // v3.4.32 - Cmd+D inside pick-mode duplicates the picked element
+        // Cmd+D inside pick-mode duplicates the picked element
         // in-place (inserts a deep clone immediately after the target).
         // Browser's "bookmark this page" default would otherwise fire.
         e.preventDefault(); e.stopPropagation();
@@ -38712,7 +38507,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         else flashPickOp("error", "Cmd+D: pick a target element first.");
       } else if (e.key === "ArrowUp" || e.key === "ArrowDown" ||
                  e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        // v3.4.32 - Arrow keys translate (abs/fixed) or reorder (in-flow).
+        // Arrow keys translate (abs/fixed) or reorder (in-flow).
         // Magnitude is 1px / 8px-with-shift for the translate branch;
         // reorder branch ignores magnitude (one sibling per press).
         if (!pickedElement) return;
@@ -38747,7 +38542,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       replacePickedElement, deletePickedElement, duplicatePickedElement,
       nudgePickedElement, reorderPickedElement, flashPickOp]);
 
-  // v3.2 - Window-level keyboard shortcuts for canvas copy/paste/delete.
+  // Window-level keyboard shortcuts for canvas copy/paste/delete.
   // Skips when the user is typing in any form field so in-field
   // copy/paste/backspace still works. Declared AFTER the callbacks above
   // so the dependency array references valid bindings at hook-call time
@@ -38795,7 +38590,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (cmd && (e.key === "d" || e.key === "D")) {
         // Pick-mode owns Cmd+D for in-iframe element duplication (see the
-        // v3.4.32 note below) - same back-off as the node-only path had.
+        // pick-mode back-off note below).
         if (pickModeNodeId) return;
         const n = (duplicateSelectedWbItems() || 0) + (duplicateSelectedNodes() || 0);
         if (n > 0) e.preventDefault();
@@ -38808,11 +38603,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // them (preventing keydown's default cancels the copy event).
         if (n > 0 && selectedWbIdsRef.current.size === 0) e.preventDefault();
       } else if (cmd && (e.key === "v" || e.key === "V")) {
-        // v3.2.2 - Two clipboard types share Cmd+V. pasteNodesFromClipboard
+        // Two clipboard types share Cmd+V. pasteNodesFromClipboard
         // is for the {nodes,edges} payload from copySelectedNodes; html-
         // element clipboards (from copyPickedElement) need pastePickedElement
         // which spawns a standalone HTML asset (Path B inside that callback).
-        // v3.2.4 - Back off entirely if pick-mode is on. The pick-mode
+        // Back off entirely if pick-mode is on. The pick-mode
         // capture-phase handler is the unambiguous owner of Cmd+V while
         // pick-mode is active (capture fires first + stops propagation);
         // letting this bubble-phase handler also fire would cause Path A
@@ -38828,8 +38623,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           if (n > 0) e.preventDefault();
         }
       }
-      // (Cmd+D / Delete are handled in the unified branch above -
-      // v3.4.32's pick-mode back-off note carries over there.)
+      // (Cmd+D / Delete are handled in the unified branch above - the
+      // pick-mode back-off note carries over there.)
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -38886,8 +38681,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const offsetY = ((sk.h || 200) - h) / 2;
       const branch = "main";
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-      // v3.4 - Mirror the skill's declared output extension + kind via
+      const newId = workflowNewNodeId();
+      // Mirror the skill's declared output extension + kind via
       // pickAssetSpawnDefaults so the auto-wired card matches the file
       // the skill actually writes (svg-gen → .svg / vector, lottie-gen →
       // .json / lottie, etc.) instead of always advertising .png + image.
@@ -38929,7 +38724,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setData(d => {
       const origin = (d.nodes || []).find(n => n.id === originId);
       if (!origin) return d;
-      newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      newId = workflowNewNodeId();
       const offsetX = (origin.w || 280) + 60;
       const branch = "main";
       let nextNode;
@@ -38945,7 +38740,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       } else if (kind === "asset") {
         const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
         const isHtml = opt.assetKind === "html";
-        // v3.4 - Derive the spawn path from opt.assetKind so callers that
+        // Derive the spawn path from opt.assetKind so callers that
         // supply only `assetKind: "vector"` (or lottie / html / video etc.)
         // get the correct extension by default instead of `.png`.
         const ak = opt.assetKind || "image";
@@ -39029,7 +38824,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
     const branch = "main";
     update(repeaterId, { status: "loading", error: null });
-    // v3.4.8 - see Bug A in runRemix. Hoist the spawned-card id map out of
+    // see Bug A in runRemix. Hoist the spawned-card id map out of
     // the try so the outer catch can sweep any cards still "pending" when
     // a SHARED pre-step throws before Promise.allSettled.
     const variantTargetIdsAll = {};
@@ -39434,8 +39229,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
       // Find the prompt node feeding the chain HEAD (the deepest skill).
       // For `prompt → genImg → rembg → repeater`, the prompt is upstream of
-      // genImg, not rembg. The old code only checked rembg's inputs and
-      // missed the prompt entirely.
+      // genImg, not rembg - checking only rembg's inputs misses the prompt
+      // entirely.
       let promptNode = null;
       for (const e of (cur.edges || [])) {
         const t = workflowParseEdgeRef(e.to);
@@ -39569,7 +39364,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             variantTargetPathsObj[i] = target.path;
           } else {
             const newId = "n" + Date.now().toString(36) + "-rp" + i + Math.random().toString(36).slice(2, 5);
-            // v3.4 - Derive ext + assetKind from the terminal upstream skill
+            // Derive ext + assetKind from the terminal upstream skill
             // so a repeater feeding off shader / video-gen / svg-gen / etc.
             // spawns variant cards with the correct extension instead of
             // always `.png` + `image`.
@@ -39617,7 +39412,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // sparse-keyed lookups so per-variant slots stay aligned by index).
       const variantTargetIds   = variantTargetIdsObj;
       const variantTargetPaths = variantTargetPathsObj;
-      // v3.4.8 - mirror onto the outer-scope sweep map so the catch can
+      // mirror onto the outer-scope sweep map so the catch can
       // clean any cards still on "pending" after a fatal shared-step error.
       for (const k of Object.keys(variantTargetIdsObj)) variantTargetIdsAll[k] = variantTargetIdsObj[k];
       // Commit eager spawn (newly created nodes) + mark pre-existing targets
@@ -39759,7 +39554,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (firstReject) throw firstReject.reason;
       update(repeaterId, { status: "done", error: null, ranAt: Date.now() });
     } catch (e) {
-      // v3.4.8 - Bug A: sweep orphan-pending variant cards (shared
+      // Bug A: sweep orphan-pending variant cards (shared
       // pre-step threw before per-variant Promise.allSettled started).
       const msg = String(e?.message || e);
       try {
@@ -39847,7 +39642,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
     const branch = "main";
     update(remixId, { status: "loading", error: null });
-    // v3.4.8 - spawned-card ids are hoisted OUT of the try-block so the
+    // spawned-card ids are hoisted OUT of the try-block so the
     // outer catch can sweep any cards still stuck on runStatus:"pending"
     // when a SHARED pre-step (describeImageRef, sourceHtml fetch) throws
     // before Promise.allSettled gets a chance to run. Without the sweep,
@@ -39893,7 +39688,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // API call completes. Sparse storage keyed by variant index `i` so
       // single-variant re-runs don't disturb the array indices used by
       // the all-variants case.
-      // v3.8 - REUSE-FIRST (same contract as the repeater's pre-pass): if
+      // REUSE-FIRST (same contract as the repeater's pre-pass): if
       // output-(i+1) is already wired to a matching target (asset card for
       // image/text/html output, prompt node otherwise), UPDATE that node in
       // place - write to its existing path - instead of spawning a duplicate
@@ -39930,7 +39725,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const offsetX = (rmx.w || 360) + 60;
         variantIds[i] = newId;
         if (effectiveKind === "image" || effectiveKind === "text") {
-          // v3.4 - Use the remix's effectiveKind to pick ext + assetKind so
+          // Use the remix's effectiveKind to pick ext + assetKind so
           // a remix whose output is html / text / etc. spawns the right
           // file kind instead of forcing `.png` + image.
           const remixSpawn = pickAssetSpawnDefaultsForKind(effectiveKind, "remix-" + stampBase, branch, i);
@@ -39944,14 +39739,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             runStatus: "pending",
           });
         } else if (effectiveKind === "html") {
-          // HTML remix alts deserve a bigger card AND a path under
+          // HTML remix alts need a bigger card AND a path under
           // source/<branch>/_remix/ (assetSubdirForKind handles this) so
           // the device-class probe on iframe load has room to lay the
           // page out and the orchestrator-scaffolded sinks find the file
-          // where they expect it. Previously this branch was unreachable
-          // (the if-chain above absorbed "html") so html remixes spawned
-          // 220×170 cards into source/main/images/ - too small to render
-          // a real layout and in the wrong directory.
+          // where they expect it.
           const remixSpawn = pickAssetSpawnDefaultsForKind("html", "remix-" + stampBase, branch, i);
           const path = remixSpawn.path;
           variantPaths[i] = path;
@@ -40275,7 +40067,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       update(remixId, { status: "done", error: null, ranAt: Date.now() });
     } catch (e) {
-      // v3.4.8 - Bug A: sweep orphan-pending variant cards. If a SHARED
+      // Bug A: sweep orphan-pending variant cards. If a SHARED
       // pre-step (describeImageRef for image branch, sourceHtml fetch for
       // html branch) threw before Promise.allSettled started, every
       // eagerly-spawned card is still on runStatus:"pending" and would
@@ -40386,7 +40178,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
       // Eager-spawn the destination node so the user sees it pulsing while
       // the LLM + writer run. Patched in place once bytes / text land.
-      // v3.8 - REUSE-FIRST (same contract as the repeater / remix pre-pass):
+      // REUSE-FIRST (same contract as the repeater / remix pre-pass):
       // if blend.out is already wired to a matching target (asset card for
       // file-backed output kinds, prompt node for text), UPDATE that node in
       // place - write to its existing path - instead of spawning a duplicate
@@ -40417,7 +40209,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         blendOutId = "n" + blendStamp + Math.random().toString(36).slice(2, 6);
         if (effectiveKind === "image" || effectiveKind === "vector" || effectiveKind === "svg"
             || effectiveKind === "lottie" || effectiveKind === "video" || effectiveKind === "3d") {
-          // v3.4 - Use kind-aware spawn defaults so blend output kinds like
+          // Use kind-aware spawn defaults so blend output kinds like
           // vector / lottie / video write the right extension instead of
           // forcing `.png`. effectiveKind === "image" still maps to .png.
           const blendSpawn = pickAssetSpawnDefaultsForKind(effectiveKind, "blend", branch, blendStamp);
@@ -40530,11 +40322,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         ? formatDsContextForPrompt(blend.dsRef, { outputKind: effectiveKind, strictness: blend.dsStrictness || "loose" })
         : "";
       const userMessage = (blendDsBlock ? blendDsBlock + "\n\n" : "") + inputBlocks.join("\n\n");
-      // Strict system instruction - the LLM was producing meta-commentary
-      // like "Both inputs are truncated - I'm working with what's visible.
-      // Here's the blend, weighted 60% toward Input 2…". This explicit
-      // gate refuses that framing AND tells it inputs are FULL (so it
-      // stops apologising for truncation that no longer exists).
+      // Strict system instruction - without it the LLM produces
+      // meta-commentary like "Both inputs are truncated - I'm working with
+      // what's visible. Here's the blend, weighted 60% toward Input 2…".
+      // This explicit gate refuses that framing AND tells it inputs are
+      // FULL.
       const systemInstruction =
         "You are a content blender. You receive N inputs, each with a numeric weight (heavier weights dominate) and an optional 'MUST RETAIN' directive naming what the user wants preserved from that input. Produce ONE blended output that combines them.\n\n" +
         "ABSOLUTE RULES:\n" +
@@ -40805,7 +40597,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }));
   }, [setData]);
 
-  // ── Assistant 3: Interviewing assistant (replaces the prompt refiner) ─────
+  // ── Assistant 3: Interviewing assistant ─────
   // The interview runs as a REAL streaming agent run via the standard agent
   // chat (WorkflowAgentChatDialog) - same infra every agent node uses, so it
   // streams, supports stop/resume, and never hangs on the slow one-shot path.
@@ -41316,7 +41108,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
         }
         else if (up.kind === "browser" && /^https?:\/\//i.test(up.url || "")) {
-          // v3.9 - web-browser node: pull the page's readable text through
+          // web-browser node: pull the page's readable text through
           // the daemon's extractor and feed it as prompt context.
           try {
             const r = await fetch(apiUrl("/__web_text?url=" + encodeURIComponent(up.url.trim())));
@@ -41375,7 +41167,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             }
           }
         } else if (up.kind === "section") {
-          // v3.8 - Section upstream: the COMBINATION of every node inside
+          // Section upstream: the COMBINATION of every node inside
           // the frame. Text-bearing nodes (prompts, skill outputs, palette /
           // typography / DS descriptors) flatten into one context block;
           // the first contained file-backed image asset covers an asset
@@ -41496,7 +41288,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
         }
       }
-      // v3.6 - an on-node reference image (the generate-image node's "ref image"
+      // an on-node reference image (the generate-image node's "ref image"
       // control) is the last-resort source, after a wired asset + a prompt badge.
       if (!assetInputPath && !assetInputDataUri
           && (skillSpec.id === "generate-image" || skillSpec.id === "pose-subject")
@@ -41547,7 +41339,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const down = nodeById[t.node];
         if (!down) continue;
         if (down.kind === "asset" && typeof down.path === "string" && down.path.startsWith("source/")) {
-          // v3.4.1 - split asset targets by kind. Text-kind assets are
+          // split asset targets by kind. Text-kind assets are
           // written via /__component_export (the endpoint accepts text
           // payloads now) - image-kind goes through the existing pathway.
           if (down.assetKind === "text") textAssetTargets.push({ path: down.path, node: down });
@@ -41586,7 +41378,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // field applies. Skipping the provider-required guard for them is
       // what lets the canvas Run button actually invoke Pathway B; the
       // optional pathwayAFallback brings its own provider/model.
-      // v3.4.1 - Video output → use videoModels catalog so dispatched
+      // Video output → use videoModels catalog so dispatched
       // model id matches what the daemon's video router expects.
       const allModels = skillSpec.modelKind === "text"
         ? (window.TH_MEDIA && window.TH_MEDIA.textModels) || []
@@ -41597,7 +41389,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 : (skillSpec.output === "audio"
                     ? (window.TH_MEDIA && window.TH_MEDIA.audioModels) || []
                     : (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [])));
-      // v3.4.10 - dispatch the LIVE model (deprecated → current via the
+      // dispatch the LIVE model (deprecated → current via the
       // _DEPRECATED_MODEL_MIGRATIONS map). The saved node.model is never
       // sent directly; the catalog is the source of truth.
       const rawSkillModel = skillSpec.model || skillNode.model || skillSpec.defaultModel || "";
@@ -41615,19 +41407,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
       // ── Text output ──────────────────────────────────────────────
       if (outputKind === "text") {
-        // v3.4.1 - Auto-spawn rules for text output:
+        // Auto-spawn rules for text output:
         //   • If a text-kind asset card is already wired, write the file
         //     AND patch any wired prompt nodes (both can be downstream).
         //   • If NO downstream target exists at all, auto-spawn a prompt
         //     node (existing behaviour - quickest path for chaining).
         //   • Users who explicitly want a file-backed text asset can use
-        //     the "+ output asset" button on the skill node now that
-        //     it's no longer image-only (see addOutputAsset gate fix).
+        //     the "+ output asset" button on the skill node (it supports
+        //     text kinds, not just image).
         if (promptTargets.length === 0 && textAssetTargets.length === 0) {
           // Auto-spawn a prompt text node to receive the generated text.
           // Same shape as the image auto-spawn above - pre-pick the new node
           // id so we can target the patch by id after the API call returns.
-          const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+          const newId = workflowNewNodeId();
           promptTargets.push(newId);
           setData(d => {
             const sk = (d.nodes || []).find(n => n.id === skillId);
@@ -41663,27 +41455,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             body: JSON.stringify(body),
           });
           const j = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            // Combine daemon-level error AND any upstream-provider detail.
-            // Previously the wrapper "openai API error" hid OpenAI's actual
-            // message; now both are shown so the user can see e.g.
-            // "invalid_image_format" or "image too large".
-            let msg = j.error || `HTTP ${r.status}`;
-            if (j.detail) {
-              const inner = (j.detail && j.detail.error && j.detail.error.message)
-                || (j.detail && j.detail.message)
-                || (typeof j.detail === "string" ? j.detail : null)
-                || JSON.stringify(j.detail).slice(0, 400);
-              if (inner) msg += " - " + inner;
-            }
-            throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-          }
+          if (!r.ok) throw new Error(combineProviderError(j, r.status));
           const text = (j.text || "").trim();
           setData(d => ({
             ...d,
             nodes: (d.nodes || []).map(n => promptTargets.includes(n.id) ? { ...n, text } : n),
           }));
-          // v3.4.1 - Also persist text to any text-kind asset cards wired
+          // Also persist text to any text-kind asset cards wired
           // downstream. /__component_export now accepts text payloads via
           // `content` (or legacy `html`), so the same write path works for
           // .md / .txt as it does for .html. Fire asset-refresh per path
@@ -41733,7 +41511,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // node creation reference the same location. The setData spawn is
         // async, but the path is decided here so the write proceeds in
         // parallel; the asset card appears next render.
-        // v3.4 - Derive ext + assetKind from the skill's declared output
+        // Derive ext + assetKind from the skill's declared output
         // instead of hard-coding `.png` + `image`. Every skill in the
         // media-models catalog carries `pathwayBExt` (svg / html / json /
         // png / etc.) - that's the file the skill actually writes. The
@@ -41748,7 +41526,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         setData(d => {
           const sk = (d.nodes || []).find(n => n.id === skillId);
           if (!sk) return d;
-          const newId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+          const newId = workflowNewNodeId();
           const offsetX = (sk.w || 280) + 60;
           const offsetY = ((sk.h || 200) - 170) / 2;
           return {
@@ -41766,11 +41544,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         });
       }
 
-      // v4.0 - the "Tool" pathway (a skill that dropped a static interactive
-      // HTML editor + spawned an asset card) was removed. Its only user, the
-      // Spline-style 3D editor, is now the first-class `spline-3d` node kind
-      // rendered directly on the canvas (WorkflowSpline3DNode). No skill Run
-      // step, no injected window.__SPLINE3D_* globals.
+      // There is no "Tool" pathway (a skill dropping a static interactive
+      // HTML editor + spawning an asset card): the Spline-style 3D editor
+      // is the first-class `spline-3d` node kind rendered directly on the
+      // canvas (WorkflowSpline3DNode). No skill Run step, no injected
+      // window.__SPLINE3D_* globals.
 
       // ── Pathway B (agent-written single-file HTML) ─────────────────
       // The skill spawns a one-shot Claude Code run with the skill's curated
@@ -41787,7 +41565,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const forceExt = (p) => p.replace(/\.[a-z0-9]+$/i, "." + (skillSpec.pathwayBExt || "html"));
         const htmlTargets = outputTargets.map(t => ({ ...t, path: forceExt(t.path) }));
         const outputPath = htmlTargets[0].path;
-        // v3.4.14 - Mark each connected asset card with runStatus:"pending"
+        // Mark each connected asset card with runStatus:"pending"
         // BEFORE the claude run starts. Without this the card eagerly tries
         // to load the (not-yet-written) target file, the daemon returns a
         // 404 HTML page, and the user sees "Lottie load failed: Unexpected
@@ -41885,7 +41663,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 if (t.node && t.node.id) idToNewPath.set(t.node.id, t.path);
               }
               if (idToNewPath.size) {
-                // v3.4.1 - Derive assetKind from the fallback extension via
+                // Derive assetKind from the fallback extension via
                 // EXT_TO_ASSET_KIND. The earlier hardcode (svg → image, else
                 // → html) was wrong: svg should be "vector", json should be
                 // "lottie", etc. Falls back to "html" only when the ext
@@ -41899,7 +41677,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     : n),
                 }));
               }
-              // v3.4.14 - fallback succeeded (Quiver, etc.) → file is on
+              // fallback succeeded (Quiver, etc.) → file is on
               // disk. Clear the pending state we set earlier so the asset
               // card flips to the live preview.
               clearPathwayBPending();
@@ -41950,7 +41728,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const start = Date.now();
           const maxMs = 30 * 60 * 1000;
           let finalState = null;
-          // v3.4.14 - Poll for BOTH (a) the run finishing AND (b) the
+          // Poll for BOTH (a) the run finishing AND (b) the
           // output file landing on disk. Claude typically writes the file
           // long before it finishes (verification, retries, polish all
           // happen after the write), so as soon as the file appears with
@@ -42014,7 +41792,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             if (t.node && t.node.id) idToNewPath.set(t.node.id, t.path);
           }
           if (idToNewPath.size) {
-            // v3.4.1 - Derive assetKind from the skill spec so svg-gen
+            // Derive assetKind from the skill spec so svg-gen
             // (.svg → vector) and lottie-gen (.json → lottie) don't get
             // clobbered to "html" after the post-write patch. Pathway-B
             // skills that genuinely produce HTML (shader/viz/threejs/etc.)
@@ -42071,7 +41849,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               }
             } catch { /* don't block on audit failure */ }
           }
-          // v3.4.14 - Final clear in case the file landed after the polling
+          // Final clear in case the file landed after the polling
           // loop exited but before HEAD-probe noticed (e.g. claude finished
           // in the same poll-tick as the write). Idempotent.
           clearPathwayBPending();
@@ -42090,7 +41868,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // Nodes whose card needs promotion (inline-SVG → file-backed) after a
       // successful inline_replace. Applied via setData once the loop completes.
       const promoteToFileBacked = [];
-      // v3.4.14 - Pathway A (image / video / etc.) same UX treatment as
+      // Pathway A (image / video / etc.) same UX treatment as
       // pathway B: mark every connected asset card as runStatus:"pending"
       // BEFORE the (often multi-second) /__asset_generate call so the card
       // shows the "Generating…" skeleton, not the file's 404 / broken-image
@@ -42134,7 +41912,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const outputPath = target.path;
         try {
           const hasRefImg = (wantsAsset || outputKind === "image") && !!(assetInputPath || assetInputDataUri);
-          // v3.6 - reference-image MODE shapes the prompt when generate-image
+          // reference-image MODE shapes the prompt when generate-image
           // runs with an attached image: "match style" / "keep subject" append
           // a directive; "edit"/unset stays raw img2img (today's behaviour).
           const refDirective = (hasRefImg && skillSpec.id === "generate-image")
@@ -42167,21 +41945,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             body: JSON.stringify(body),
           });
           const j = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            // Combine daemon-level error AND any upstream-provider detail.
-            // Previously the wrapper "openai API error" hid OpenAI's actual
-            // message; now both are shown so the user can see e.g.
-            // "invalid_image_format" or "image too large".
-            let msg = j.error || `HTTP ${r.status}`;
-            if (j.detail) {
-              const inner = (j.detail && j.detail.error && j.detail.error.message)
-                || (j.detail && j.detail.message)
-                || (typeof j.detail === "string" ? j.detail : null)
-                || JSON.stringify(j.detail).slice(0, 400);
-              if (inner) msg += " - " + inner;
-            }
-            throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-          }
+          if (!r.ok) throw new Error(combineProviderError(j, r.status));
           // If we asked for inline_replace and the daemon couldn't find the
           // SVG markup in source, surface that as a non-fatal warning - the
           // file was still written, but the prototype won't auto-show it.
@@ -42204,7 +41968,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
           skillWritten.push(outputPath);
           allWrittenPaths.push(outputPath);
-          // v3.4.14 - Per-target clear so multi-target runs flip each card
+          // Per-target clear so multi-target runs flip each card
           // to the live preview as ITS bytes land, not all-or-nothing at
           // the end of the loop.
           if (target.node && target.node.id) clearPathwayAPending(target.node.id);
@@ -42264,7 +42028,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         }
       }
       if (lastError) {
-        // v3.4.14 - any targets that never got their per-target error
+        // any targets that never got their per-target error
         // (because the break happened on an earlier target in the loop)
         // also need flipping out of "pending" so they don't sit forever
         // on the "Generating…" skeleton. Idempotent: only flips nodes
@@ -42508,7 +42272,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setIframeStates(s => (s[protoId] && s[protoId].pathname === state.pathname && s[protoId].hash === state.hash) ? s : { ...s, [protoId]: state });
   }, []);
 
-  // v3.17 - path of the prototype/html file open in the Preview view (the proto
+  // path of the prototype/html file open in the Preview view (the proto
   // viewer's active tab). Reported up from WorkflowProtoViewer; null when the
   // stage is empty.
   const [protoViewerPath, setProtoViewerPath] = useState(null);
@@ -42709,7 +42473,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const srcExt = extOf(src.path);
       const dstExt = extOf(targetNode.path);
       const formatChanged = srcExt && dstExt && srcExt !== dstExt;
-      // v3.4.19 - Detect KIND change (not just ext). The source asset card
+      // Detect KIND change (not just ext). The source asset card
       // carries its own assetKind ("video" / "lottie" / "html" / etc.) - if
       // it differs from the target's, the prototype's <img> needs to be
       // swapped for a <video> / <iframe> / <lottie-player> via the smart
@@ -42775,16 +42539,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             }
             return;
           }
-          // v3.4.22 - Capture rewritten HTML file paths for the refresh
+          // Capture rewritten HTML file paths for the refresh
           // dispatch below; lets the iframe handler match the actual
           // prototype HTML file, not just the asset path.
           var rewrittenHtmlPathsAO = (rj.files || []).map(f => f && f.path).filter(Boolean);
           // 3. Patch the asset card so it points at the new file + kind.
-          // v3.4.19 - assetKind tracks the SOURCE's kind, not hardcoded
+          // assetKind tracks the SOURCE's kind, not hardcoded
           // "image". Without this, a video pushed into an image card would
           // keep rendering as <img src=".mp4"> (broken) on the canvas
           // preview, even though the prototype HTML was correctly swapped.
-          // v3.4.25 - Also clear activeVersionId so the card's preview
+          // Also clear activeVersionId so the card's preview
           // falls through to node.path instead of the old version's
           // canonicalPaths[0] (which points at the original extension).
           // Without this, cross-kind pushes (e.g. wiring a video card →
@@ -42807,7 +42571,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
           // 4. Fire refresh on BOTH old and new paths so the iframe nonce
           // bumps regardless of which one the prototype currently listens on.
-          // v3.4.22 - also include the rewritten HTML file paths so the
+          // also include the rewritten HTML file paths so the
           // iframe handler matches even when its scope check is narrow.
           window.dispatchEvent(new CustomEvent("th:asset-refresh", {
             detail: {
@@ -42916,7 +42680,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [resolveReplaceTarget, data.nodes, updateNode]);
 
-  // v3.4.18 - Replace an exposed asset with a chosen library file.
+  // Replace an exposed asset with a chosen library file.
   // The "one-click" replace flow on a prototype's exposed asset card:
   //   1. user clicks ↺ on an exposed image card (bound to a prototype)
   //   2. a library chooser opens; user picks ANY asset (raster, svg, video,
@@ -43012,7 +42776,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
           return;
         }
-        // v3.4.22 - Capture the actual prototype HTML files the daemon
+        // Capture the actual prototype HTML files the daemon
         // rewrote. Including these in the refresh dispatch makes the
         // iframe handler match unambiguously (it doesn't have to rely on
         // the branchRoot wildcard) - even for prototypes whose iframe is
@@ -43024,7 +42788,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           .filter(Boolean);
       }
       // 3. Patch the asset card so it tracks the new bytes / extension / kind.
-      // v3.4.25 - Also clear activeVersionId. The asset card's preview
+      // Also clear activeVersionId. The asset card's preview
       // resolves to activeVersion.canonicalPaths[0] when set, NOT node.path,
       // so without this clear a cross-kind replace would keep displaying
       // the OLD extension's file (the user's "doesn't work for image →
@@ -43046,9 +42810,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         }
       }
       // 5. Refresh ALL the affected paths so the prototype iframe nonce
-      // bumps regardless of which one it was listening on. v3.4.22 adds
-      // the rewritten HTML file paths so the iframe handler matches even
-      // when its scope check is narrow.
+      // bumps regardless of which one it was listening on. Include the
+      // rewritten HTML file paths so the iframe handler matches even when
+      // its scope check is narrow.
       window.dispatchEvent(new CustomEvent("th:asset-refresh", {
         detail: {
           paths: [oldPath, newTargetPath, ...rewrittenHtmlPaths].filter(Boolean),
@@ -43066,7 +42830,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // file in /__assets; clicking a row calls replaceExposedAssetWithFile.
   const [replacePickerForAssetId, setReplacePickerForAssetId] = useState(null);
 
-  // v3.4.33 - Code panel docked to one node at a time. Tracks which
+  // Code panel docked to one node at a time. Tracks which
   // asset / prototype node has its source open. Click the </> toolbar
   // button to toggle. The panel renders at (node.x + node.w, node.y) so
   // it visually butts against the node's right edge. Single-file assets
@@ -43452,9 +43216,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // Build the target list - ONLY HTML outputs. Any imagery the agent
     // wants to show (hero art, banners, profiles, product close-ups,
     // illustrations, decorative shapes) MUST be authored inline inside
-    // these HTML files (inline <svg>, CSS shapes, gradients). Separate
-    // raster image files used to be spawned as their own asset cards and
-    // referenced via <img src="img-foo.png"> - that's intentionally gone:
+    // these HTML files (inline <svg>, CSS shapes, gradients). Deliberately
+    // NO separate raster asset cards referenced via <img src="img-foo.png">:
     // no visual node outside the HTML; every depicted image lives inside
     // the page source itself.
     const targets = [];
@@ -44104,7 +43867,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
   const empty = !data.nodes || data.nodes.length === 0;
 
-  // ── Canvas LOD (v3.9) - progressive loading + zoom-out placeholders ──
+  // ── Canvas LOD - progressive loading + zoom-out placeholders ──
   // World-space viewport rect, expanded by WORKFLOW_LOD_MARGIN_PX screen
   // px on every side. Heavy node components receive `lodVisible` and only
   // start loading their content (iframe src / <img> / <video> bytes) when
@@ -44276,7 +44039,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           onDragOver=${(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
           onDrop=${onCanvasDrop}
           onMouseMove=${(e) => {
-            // v3.2 - Track cursor in world coords for "paste under cursor"
+            // Track cursor in world coords for "paste under cursor"
             // placement. The wrap element is the canvas viewport; pan/zoom
             // map screen → world the same way the marquee code does.
             if (!lastCanvasCursorRef || !lastCanvasCursorRef.current) return;
@@ -44289,7 +44052,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             lastCanvasCursorRef.current.y = worldY;
           }}
           onContextMenu=${(e) => {
-            // v3.2 - Right-click context menu. If the user right-clicks on
+            // Right-click context menu. If the user right-clicks on
             // a node and that node isn't already in the selection, replace
             // selection with just that node so Copy/Delete operate on the
             // expected target. Then open menu at the click coords.
@@ -44414,7 +44177,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 && !(e.target.closest && e.target.closest('[data-wb-id="' + editingWbIdRef.current + '"]'))) {
               commitWbEditingNowRef.current && commitWbEditingNowRef.current();
             }
-            // v3.4.39 - A code panel docked to a host node carries
+            // A code panel docked to a host node carries
             // `data-host-node-id` (not `data-node-id`). Without this
             // branch the wrap's "empty canvas" path below ran for
             // clicks on the panel and called preventDefault - which
@@ -44442,13 +44205,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 // Already in selection - keep the set intact so the
                 // upcoming drag moves the whole group.
               } else {
-                // v3.5.1 - Defer the "fresh select" commit to mouseup so a
+                // Defer the "fresh select" commit to mouseup so a
                 // mousedown-into-drag doesn't flash the node as selected on
-                // the way out. The user explicitly asked for "select only on
-                // mouseup" - this makes HTML asset nodes feel identical to
-                // prototype nodes (whose iframe used to swallow the mousedown
-                // into the iframe content, accidentally producing the same
-                // behaviour). Mouseup ALWAYS commits selection - whether the
+                // the way out. Select only on mouseup - HTML asset nodes
+                // must feel identical to prototype nodes.
+                // Mouseup ALWAYS commits selection - whether the
                 // user clicked or dragged - so the dragged-node still ends
                 // up selected at rest. startNodeDrag's selection path is
                 // already suppressed by armSelectSuppression() below.
@@ -44473,7 +44234,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // Empty-canvas mousedown. Pan still wins for space/alt/middle -
             // we only initiate marquee for plain left-click.
             if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || spaceHeld) return;
-            // v3.5.1 - When the workflow is empty the WorkflowEmptyComposer
+            // When the workflow is empty the WorkflowEmptyComposer
             // mounts as a child of the canvas. Clicks on its textarea / inputs
             // bubble up as "empty-canvas" because they're not inside a
             // [data-node-id] ancestor. The preventDefault below would then
@@ -44886,7 +44647,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               />`;
             })()}
             ${pickedElement && pickedElement.nodeId && (() => {
-              // v3.4.x - Property inspector dock. Mounts when an element
+              // Property inspector dock. Mounts when an element
               // is picked inside any prototype / asset iframe. Sits to
               // the right of that owning node - same docking pattern as
               // the code panel. Reuses zoom-mode's PickedInspectorBody
@@ -44954,7 +44715,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     } else if (up.kind === "asset") {
                       summary.inputs.push({ kind: "asset", label: up.path || "asset", path: up.path, assetKind: up.assetKind });
                     } else if (up.kind === "composer") {
-                      // v3.4.43 - composer.out is treated like an HTML asset.
+                      // composer.out is treated like an HTML asset.
                       // The bake step (Bake button on the composer) writes a
                       // self-contained .html file to source/<branch>/composer-
                       // <id>.html and stamps node.bakedPath. Without a bake the
@@ -44987,8 +44748,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       // prompt as the distinct references they are. Same
                       // containment rule as the skill walk (app.js:32218); each
                       // input is labelled with the frame so their origin is
-                      // clear. (Previously a section wired into an agent was
-                      // silently dropped, then collapsed to one text block.)
+                      // clear - a section wired into an agent must never be
+                      // silently dropped or collapsed to one text block.
                       const inside = workflowSectionContainedNodes(up, data.nodes || []);
                       const secName = up.title || "Section";
                       for (const cn of inside) {
@@ -45019,9 +44780,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       // (palette / type / asset). Serialise the grid to a TSV
                       // block + expand the typed cells, exactly like the section
                       // branch above, and LABEL it as the Table node so the agent
-                      // connects the user's "the table" to this input. (Previously
-                      // a wired table had NO branch here and was silently dropped,
-                      // so the agent never saw what the user was pointing at.)
+                      // connects the user's "the table" to this input - a wired
+                      // table must never be silently dropped, or the agent never
+                      // sees what the user was pointing at.
                       const tblName = up.title || "Table";
                       const wbItems = Array.isArray(data.wb) ? data.wb : [];
                       const cells = wbItems.filter(it => it && it.cell && it.cell.tableId === up.id && it.type === "text" && (it.text || "").trim());
@@ -45081,7 +44842,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   if (f2.port === "folder-write" && down.kind === "prototype") summary.folderWrite = `source/${nodePrototype(down)}/`;
                   // Output dispatch - accept `output` (new) + legacy aliases.
                   if (f2.port === "output" || f2.port === "output-1" || f2.port === "output-2" || f2.port === "output-3" || f2.port === "file-out") {
-                    // v4.0 - contract-driven output. If the downstream kind's io
+                    // contract-driven output. If the downstream kind's io
                     // contract has an editTarget accept (composer / vector-editor /
                     // spline-3d), the agent's deliverable is to WRITE that node's
                     // canonical file per the contract's authoring schema - the node
@@ -45127,7 +44888,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       targetType = "text";
                       label = down.title || "text";
                     }
-                    // v4.0 - per-assetKind authoring (the assetWrite analogue of
+                    // per-assetKind authoring (the assetWrite analogue of
                     // editTarget's authoring). Without it the asset dispatch is
                     // medium-blind and a shader/3d node gets the same generic
                     // schema as an image → agent defaults to HTML/CSS.
@@ -45229,7 +44990,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   // reference-folder blocks later if a real use case shows up).
                   upstreamFolder = (up.path || "").trim();
                 } else if (up.kind === "section") {
-                  // v3.8 - Section wired into DS.in: expand every contained
+                  // Section wired into DS.in: expand every contained
                   // direction-bearing node as if it were wired directly.
                   for (const cn of workflowSectionContainedNodes(up, data.nodes || [])) {
                     if (cn.kind === "color-palette") {
@@ -45404,7 +45165,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onUnwireAsset=${(assetId) => {
-                  // v3.4.44 - Drop the edge(s) feeding this asset into this composer
+                  // Drop the edge(s) feeding this asset into this composer
                   // so the layer doesn't auto-respawn on the next useMemo cycle.
                   setData(d => ({
                     ...d,
@@ -45416,7 +45177,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   }));
                 }}
                 onBakeAutoCreateOutput=${(bakedPath) => {
-                  // v3.4.47 - If nothing is wired to this composer's .out
+                  // If nothing is wired to this composer's .out
                   // port, auto-spawn an asset card pointing at the baked
                   // file and wire composer.out → asset.in. Gives the user
                   // a visible, draggable output handle without manual
@@ -45427,7 +45188,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     const edges = d.edges || [];
                     const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id);
                     if (hasOut) return d;
-                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const assetId = workflowNewNodeId();
                     const cw = n.w || 520;
                     const newAsset = {
                       id: assetId, kind: "asset", assetKind: "html",
@@ -45463,7 +45224,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onBakeAutoCreateOutput=${(bakedPath) => {
-                  // v3.4.47 - Same auto-create-output pattern as composer:
+                  // Same auto-create-output pattern as composer:
                   // a formatted-text bake without any downstream wiring
                   // spawns an HTML asset card that points at the baked
                   // file so the user can chain it forward visually.
@@ -45471,7 +45232,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     const edges = d.edges || [];
                     const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id);
                     if (hasOut) return d;
-                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const assetId = workflowNewNodeId();
                     const fw = n.w || 380;
                     const newAsset = {
                       id: assetId, kind: "asset", assetKind: "html",
@@ -45555,7 +45316,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     const edges = d.edges || [];
                     const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id);
                     if (hasOut) return d;
-                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const assetId = workflowNewNodeId();
                     const fw = n.w || 720;
                     const newAsset = {
                       id: assetId, kind: "asset", assetKind: "svg",
@@ -45601,7 +45362,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     const edges = d.edges || [];
                     const hasOut = edges.some(e => (e.from || "").split(".", 1)[0] === n.id && (e.from || "").endsWith(".out"));
                     if (hasOut) return d;
-                    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const assetId = workflowNewNodeId();
                     const fw = n.w || 720;
                     const newAsset = {
                       id: assetId, kind: "asset", assetKind: "scene",
@@ -46032,7 +45793,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   `;
 }
 
-// v3.4.24 - Hover-controlled video thumbnail for the library grid. Starts
+// Hover-controlled video thumbnail for the library grid. Starts
 // paused so a wall of N thumbnails doesn't auto-loop in parallel. Hovering
 // the thumb (not the whole card; the user might brush past) plays the
 // video; leaving pauses it. Browsers require muted+playsInline for non-
@@ -46059,7 +45820,7 @@ function WorkflowLibraryHoverVideo({ src, alt }) {
   `;
 }
 
-// v3.4.24 - Hover-controlled Lottie thumbnail. Same pattern: the iframe's
+// Hover-controlled Lottie thumbnail. Same pattern: the iframe's
 // player starts with autoplay=false; we postMessage play/pause based on
 // the parent's hover state. The `key` prop on the iframe makes it remount
 // when fileUrl changes (so the right JSON loads).
@@ -46383,7 +46144,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
     return { tabs: [], activeId: null, zoom: 1, device: "desktop", landscape: false };
   });
   const { tabs, activeId } = state;
-  // v3.17 - report the active tab's path up so the chat target bar can scope
+  // report the active tab's path up so the chat target bar can scope
   // the chat to the prototype/html file open in Preview mode. Null when there
   // is no active tab (empty stage) - the caller resolves that to "general".
   const activeTabPath = (tabs.find(t => t.id === activeId) || {}).path || null;
@@ -46546,7 +46307,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
       return next;
     });
   }, []);
-  // v3.6 - zoom-mode integration. Every zoom entry point (node 🔍 buttons,
+  // zoom-mode integration. Every zoom entry point (node 🔍 buttons,
   // viewer Edit button) routes through WorkflowSurface.openZoomAt, which
   // dispatches this event so the target file is open + active as a viewer
   // tab. Closing the overlay then lands the user on that tab, where the
@@ -46805,19 +46566,19 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
   `;
 }
 
-// v3.9 - `tab` is controlled by the workflow nav rail. One of:
+// `tab` is controlled by the workflow nav rail. One of:
 //   "nodes"   - buildable node templates
 //   "app-nodes" - embedded app/editor nodes
 //   "library" - Local library: saved prompts + saved node groups
 //   "protos"  - Prototypes & HTML (sub-tabs: prototypes&designs / other HTMLs)
 //   "visual"  - Visual assets (image / svg / video / scenes)
-// (Legacy note: "outputs" used to combine protos + visual under one panel.)
-// the library no longer renders its own tab strip. Defaults to "nodes" so a
+// (Persisted legacy "outputs" keys map to "protos" - see the tab-key
+// migration.) The library renders no tab strip of its own. Defaults to "nodes" so a
 // bare <WorkflowLibrary/> still renders the palette.
 function WorkflowLibrary({ tab = "nodes" }) {
   const [assets, setAssets] = useState([]);
   const [savedPrompts, setSavedPrompts] = useState([]);
-  // v3.9 - Saved node groups (Local library). Each is a snapshot of a
+  // Saved node groups (Local library). Each is a snapshot of a
   // multi-node selection persisted server-side under workflow/groups/; the
   // canvas re-instantiates one when its card is dragged in (kind:node-group).
   const [savedGroups, setSavedGroups] = useState([]);
@@ -46847,7 +46608,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // Library panels (driven by the `tab` prop / nav rail) - see the header
   // comment above this component for the full list. The "protos" and "visual"
   // panels show generated files and share a list/grid view toggle (below).
-  // v3.1 - default to thumbnail grid. Asset cards lean on visual recognition
+  // default to thumbnail grid. Asset cards lean on visual recognition
   // (image / svg / shader thumbs), so the user usually wants to scan the
   // grid first; the list view is the secondary, name-driven mode.
   const [outputsView, setOutputsView] = useState("grid");
@@ -46861,7 +46622,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
     setAssetSel(prev => { const n = new Set(prev); if (n.has(path)) n.delete(path); else n.add(path); return n; });
   }, []);
   const clearAssetSel = useCallback(() => setAssetSel(new Set()), []);
-  // v3.9 - The "protos" panel has two sub-tabs:
+  // The "protos" panel has two sub-tabs:
   //   "designs" - Prototypes + Design-system pages (the registered/built UIs)
   //   "htmls"   - Other generated HTML pages / components
   // (Visual assets are now their own nav-rail panel, not a sub-tab here.)
@@ -46871,8 +46632,8 @@ function WorkflowLibrary({ tab = "nodes" }) {
   const [thumbProto, setThumbProto] = useState(() => getThumbnailPrototypeSync());
   // Prototype-card overflow (⋯) menu. Holds { id, top, right } for the one open
   // menu (only one at a time) or null. Collapses the per-card thumbnail / star /
-  // duplicate / rename / delete actions - which used to overlap as corner pills -
-  // into a single dropdown. Positioned fixed (the card + thumb both clip with
+  // duplicate / rename / delete actions into a single dropdown (corner
+  // pills overlap each other). Positioned fixed (the card + thumb both clip with
   // overflow:hidden, so an absolute dropdown would be cut off).
   const [protoMenu, setProtoMenu] = useState(null);
   // The open popup is portaled to <body> (the library aside has
@@ -46980,7 +46741,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
       return drift ? new Set(Array.from(prev).filter(p => live.has(p))) : prev;
     });
   }, [assets]);
-  // v3.4.27 - Visual-asset sub-grouping. Splits the flat `assets` list into
+  // Visual-asset sub-grouping. Splits the flat `assets` list into
   // three buckets the user asked for:
   //   • scenes      - webgl/shader/dataviz/particles/3D scene HTMLs
   //   • videoMotion - .mp4 etc + motion-gen HTML + lottie JSON (anything
@@ -47308,9 +47069,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // its own JS owns playback); lottie shows the player paused, playing
   // on hover. Falls back to the glyph for kinds that can't be previewed
   // (3d / shader source / viz raw / audio).
-  // v3.4.17 - Real previews for video / html / lottie so the library
+  // Real previews for video / html / lottie so the library
   // grid is visually scannable.
-  // v3.4.24 - Video + lottie default to PAUSED so a wall of thumbnails
+  // Video + lottie default to PAUSED so a wall of thumbnails
   // doesn't compete for attention. Hover activates playback (via the
   // wrapping <div onMouseEnter/Leave + a ref/postMessage handler). HTML
   // scenes keep their own animation since we can't pause their internal
@@ -48396,12 +48157,12 @@ function zoomSerialize(doc) {
 
 async function zoomSaveDoc(filePath, doc, ops) {
   let html = zoomSerialize(doc);
-  // v3.6.2 - Persist replayable op records as a post-mount patch script,
+  // Persist replayable op records as a post-mount patch script,
   // exactly like the workflow pick-mode staging path. Without this, zoom
   // saves on React-managed prototypes baked the rendered DOM into the file
   // but the app's own render wiped it on the next load - every zoom edit
   // looked like it "didn't work".
-  // v3.6.4 - Merge base comes from the ON-DISK file (fetched fresh), not
+  // Merge base comes from the ON-DISK file (fetched fresh), not
   // the serialized live doc: its embedded patch script is frozen at
   // overlay-open time and goes stale if another surface saved meanwhile.
   if (ops && ops.length) {
@@ -48592,7 +48353,7 @@ function zoomExtractCss(doc, root, inlineComputed) {
   const matchTargets = [...subtreeEls, ...ancestors];
   const GLOBAL_SEL_RE = /^(?:\s*(?:html|body|:root|\*)\s*)$/i;
   for (const sheet of Array.from(doc.styleSheets)) {
-    // v3.6.6 - Skip editor-injected sheets (pick-mode chrome, zoom edit
+    // Skip editor-injected sheets (pick-mode chrome, zoom edit
     // chrome). Their .th-pick-hover/.th-pick-selected rules MATCH a copied
     // element that's wearing the class at copy time, so the blue outline /
     // crosshair cursor shipped inside exports' CSS bundles.
@@ -48641,7 +48402,7 @@ function zoomExtractCss(doc, root, inlineComputed) {
     try {
       const cs = doc.defaultView.getComputedStyle(root);
       const decls = [];
-      // v3.6.6 - outline/cursor/user-select skipped: editor pick chrome.
+      // outline/cursor/user-select skipped: editor pick chrome.
       const SKIP_BAKE_PROP = /^(outline($|-)|cursor$|user-select$|-webkit-user-select$)/;
       for (let i = 0; i < cs.length; i++) {
         const k = cs[i];
@@ -48735,19 +48496,18 @@ function ZoomSlotPicker({ rect, onDelete, onDuplicate, onReplace, onSide, onDril
    Align in parent (justifySelf + alignSelf as L/C/R · T/M/B).
    Identical contract to the editor canvas's InspectorPanel.
 
-   v3.4.x - Extracted from ZoomInspectorPanel so the SAME body can render
-   inside zoom-mode's fixed-position aside (ZoomInspectorPanel below) AND
-   inside workflow-mode's docked panel (WorkflowPickedInspectorDock - sits
-   to the right of the host node like the code panel). The user asked
-   that both modes share content so updates propagate: this is that
-   shared content. Wrapper-specific positioning is the only difference.
+   Shared by zoom-mode's fixed-position aside (ZoomInspectorPanel below)
+   AND workflow-mode's docked panel (WorkflowPickedInspectorDock - sits
+   to the right of the host node like the code panel). Both modes must
+   share content so updates propagate: this is that shared content.
+   Wrapper-specific positioning is the only difference.
 
    Class names keep the legacy `zoom-inspector-*` prefix (instead of
    renaming to something neutral) because they're referenced from ~18 CSS
    rules in styles.css; renaming would be a 49-site rewrite for purely
    semantic cleanup. Both wrappers include this body and inherit those
    styles unchanged. */
-/* v3.4.x - Enumerate CSS custom properties declared on `:root` (or html
+/* Enumerate CSS custom properties declared on `:root` (or html
    selectors) anywhere in the iframe's stylesheets. Returns a flat map
    of { "--name": "<computed value>" }. Used by the inspector's color
    picker to surface design-system tokens as swatches with visual
@@ -48795,7 +48555,7 @@ function readIframeCssVars(doc) {
   return out;
 }
 
-/* v3.4.x - Classify a CSS variable's resolved value into a kind the
+/* Classify a CSS variable's resolved value into a kind the
    inspector can render. "color" → swatch preview. "gradient" → bar
    preview. "size" / "shadow" / "font" → text. "other" → fallthrough.
    Keep classification cheap (regex only); the inspector renders the
@@ -48811,7 +48571,7 @@ function classifyVarKind(rawVal) {
   return "other";
 }
 
-/* v3.4.x - Color-field component used by the augmented inspector body
+/* Color-field component used by the augmented inspector body
    for every color-bearing property (background, color, border-color).
    Renders a clickable swatch (shows the current color as a visual
    preview) + a text input for raw values. Clicking the swatch opens a
@@ -48843,7 +48603,7 @@ function PickedColorField({ label, value, inherited, cssVars, onChange }) {
     const next = draft.trim();
     if (next !== (value || "")) onChange(next);
   };
-  // v3.4.x - Swatch reflects the EFFECTIVE color: inline value if set
+  // Swatch reflects the EFFECTIVE color: inline value if set
   // (that's what the user explicitly chose), else the computed/inherited
   // value (so the user sees what the element actually looks like via CSS
   // class inheritance). Placeholder mirrors the same fallback: when no
@@ -48901,7 +48661,7 @@ function PickedColorField({ label, value, inherited, cssVars, onChange }) {
   `;
 }
 
-/* v3.4.x - Free-text field for shadows/filters (or any longer CSS
+/* Free-text field for shadows/filters (or any longer CSS
    property). Commits on blur or Cmd+Enter so the inspector doesn't
    thrash onStyle for every keystroke. */
 function PickedTextField({ label, value, inherited, placeholder, rows, className, onChange }) {
@@ -48911,7 +48671,7 @@ function PickedTextField({ label, value, inherited, placeholder, rows, className
     const next = draft.trim();
     if (next !== (value || "")) onChange(next);
   };
-  // v3.4.x - Prefer the inherited (computed) value as the placeholder
+  // Prefer the inherited (computed) value as the placeholder
   // so the user sees the element's CURRENT effective value even when
   // nothing's set inline. Falls back to the generic example placeholder
   // when both inline and inherited are empty.
@@ -49131,7 +48891,7 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
   // the Seg buttons render with no active highlight when the element
   // hasn't had this property set.
   const styleVal = (k) => (styles[k] || "");
-  // v3.4.x - Computed/inherited value lookup. The fields use this as a
+  // Computed/inherited value lookup. The fields use this as a
   // placeholder + the color swatches use it as a fallback so the user
   // sees the element's CURRENT effective value even when nothing's set
   // inline. Returns "" when not provided.
@@ -49377,7 +49137,7 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
   <//>`;
 }
 
-/* v3.4.x - Thin wrapper around PickedInspectorBody that supplies the
+/* Thin wrapper around PickedInspectorBody that supplies the
    zoom-mode aside positioning (fixed top-right via .zoom-inspector-panel
    CSS class). Existing callers still use this name - kept as an alias so
    the zoom-mode mount site at app.js:28426 doesn't need to change. */
@@ -49527,7 +49287,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   const iframeRef = useRef(null);
   const hostRef = useRef(null);
   // Initial fit-to-width. A 1920px stage rarely fits a laptop viewport at
-  // 100%, and opening at 1:1 used to show the prototype clipped at its
+  // 100%, and opening at 1:1 shows the prototype clipped at its
   // left edge (see the .zoom-iframe-host comment in styles.css). Open at
   // the largest scale that shows the full width instead - capped at 1 so
   // big displays still get native 1:1. The user can ⌘+wheel from there;
@@ -49738,7 +49498,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       const commit = () => {
         if (cancelled) return;
         docRef.current = doc;
-        // v3.6.2 - Pause the saved patch script's MutationObserver while
+        // Pause the saved patch script's MutationObserver while
         // zoom owns this doc (re-fires only; the initial arm() apply still
         // runs so the saved state is visible). Without this, editing a
         // property that's also in the saved OPS snaps right back.
@@ -49849,7 +49609,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       }
     };
     window.addEventListener("keydown", onKey);
-    // v3.6.5 - ALSO attach to the zoom iframe's document (and any nested
+    // ALSO attach to the zoom iframe's document (and any nested
     // imported docs). Clicking an element inside the iframe moves keyboard
     // focus INTO the iframe, and key events don't cross frame boundaries -
     // so the window listener alone left every shortcut (⌫ delete, ⌘D
@@ -49871,7 +49631,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     // at render time. The effect already re-runs on `dirty` changes (which
     // is what makes saveToDisk's identity change via useCallback), so the
     // closure picks up the freshest reference on the next re-attach.
-    // v3.6.5 - `ready` + `nestedDocBust` re-attach the in-iframe listeners
+    // `ready` + `nestedDocBust` re-attach the in-iframe listeners
     // after the iframe (re)loads and when imported nested docs register.
   }, [pendingComment, exportPanel, importPanel, slotPopoverAt, selectedId, tool, dirty, onClose, ready, nestedDocBust]);
 
@@ -49998,7 +49758,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         } else if (tool === "text") {
           const meta = _docMeta(el);
           const editSnap = snapshotBefore();
-          // v3.6.6 - Identity meta captured BEFORE the edit: the replay
+          // Identity meta captured BEFORE the edit: the replay
           // resolves against the fresh (pre-edit) DOM, so the fingerprint
           // must describe the element as it looks before the text changes.
           const preEditMeta = _patchTargetMeta(el);
@@ -50079,7 +49839,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // commits the current serialization, and dispatches a refresh event so
   // any other iframe rendering the same source file picks up the change
   // immediately (no browser refresh needed).
-  // v3.6.2 - Optional third arg `op`: a replayable patch-op record
+  // Optional third arg `op`: a replayable patch-op record
   // ({ type: 'style'|'text'|'reorder'|'duplicate'|'delete', selector, … })
   // that rides on the history entry. saveToDisk collects the ops of every
   // APPLIED entry (0..historyIdx - so undo naturally excludes them) and
@@ -50173,7 +49933,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       // (viewer tab, canvas node iframe) pick up the saved bytes NOW -
       // harmless while the zoom overlay covers them.
       window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: refreshedPaths } }));
-      // v3.6.3 - AFTER the synchronous dispatch above, mark the saved paths
+      // AFTER the synchronous dispatch above, mark the saved paths
       // as self-saved so the daemon watcher's echo (which can land 5-10+
       // seconds later) doesn't reload those iframes a SECOND time - by then
       // the user may have closed the overlay and be mid-edit in pick mode,
@@ -50313,7 +50073,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const snap = snapshotBefore();
     // Selector must be captured BEFORE removal - the patch script replays
     // it against the fresh (pre-delete) DOM on the next load.
-    // v3.6.4 - Creator markers captured for the merge's cancellation pass
+    // Creator markers captured for the merge's cancellation pass
     // (deleting a pasted/duplicated/replaced element drops the creator op
     // instead of persisting a delete that fights it on every replay burst).
     const patchSel = elementPatchSelector(el);
@@ -50350,7 +50110,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const snap = snapshotBefore();
     // Selector captured BEFORE the clone mounts - the clone is a same-class
     // twin and would otherwise shift the disambiguating index.
-    // v3.6.3 - Clone carries a unique data-th-clone-of key (the patch
+    // Clone carries a unique data-th-clone-of key (the patch
     // replay's GLOBAL idempotency marker) and is stripped of any editor
     // marker attributes the source carried.
     const patchSel = elementPatchSelector(el);
@@ -50414,7 +50174,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     if (!el) return;
     const meta = _docMeta(el);
     const snap = snapshotBefore();
-    // v3.4.x - Extended cssKeys list to match the augmented inspector
+    // Extended cssKeys list to match the augmented inspector
     // body's sections (Fill, Outline, Radius, Text, Shadow, Filter).
     // Only props PRESENT in nextStyles get touched - partial style edits
     // (just changing background) don't accidentally clear unrelated props.
@@ -50525,9 +50285,8 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     };
     const markup = renderMarkup();
     if (!markup) { showToast("Couldn't render markup for " + payload.kind); return; }
-    // v3.6.4 - Record a replayable op so slot inserts/replaces survive a
-    // React re-render on reload (previously these baked into the DOM only
-    // and silently reverted - "zoom mode still problematic"). The markup
+    // Record a replayable op so slot inserts/replaces survive a
+    // React re-render on reload (a DOM-only bake silently reverts). The markup
     // is cleaned of zoom ids + editor markers, then stamped with this op's
     // own idempotency key.
     const opKey = (isReplace ? "p" : "i") + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
@@ -50674,7 +50433,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       });
       if (!targetAgentId && setData && sourceNode) {
         // Spawn an agent node next to the source, attach this runId.
-        const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        const id = workflowNewNodeId();
         const w = 320, h = 220;
         const x = (sourceNode.x || 0) + (sourceNode.w || 720) + 80;
         const y = (sourceNode.y || 0);
@@ -50873,7 +50632,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       // auto-wired Remix. The user can drop a Remix / Repeater / Blend
       // onto the asset themselves if they want to iterate.
       if (setData && sourceNode) {
-        const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        const assetId = workflowNewNodeId();
         const assetX = (sourceNode.x || 0) + (sourceNode.w || 720) + 80;
         const assetY = (sourceNode.y || 0);
         setData(d => ({
@@ -51066,7 +50825,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       const height = intendedH || Math.max(80,  Math.round(hostRect.height || 300)) + "px";
       // Build the iframe in the iframe-host doc's context (createElement
       // on doc, not parent window) so it inherits the right ownerDocument.
-      // v3.2 - Prefer the active version's canonical path or composition
+      // Prefer the active version's canonical path or composition
       // view dir over the bare asset.path, so a versioned asset imports
       // the exact snapshot the user picked rather than the live file.
       // Falls back to asset.path when no versions exist.
@@ -51098,7 +50857,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         "; border: 0; display: block;"
       );
       iframe.setAttribute("data-zoom-import", asset.path);
-      // v3.6.4 - Record a replayable replace op so the import survives a
+      // Record a replayable replace op so the import survives a
       // React re-render on reload. The op html is the iframe's own markup
       // (stamped with the idempotency key), captured BEFORE replaceWith so
       // it carries no zoom ids.
@@ -51182,7 +50941,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   overlayChildren.push(html`
     <div key="bg" className="zoom-overlay-bg" onClick=${closeWithConfirm}/>
   `);
-  // v3.6 - Icon-only left rail (matches the workflow nav rail's design
+  // Icon-only left rail (matches the workflow nav rail's design
   // language): 34px ghost buttons, accent-tinted active state, hover
   // tooltips to the right via the shared tab-tip primitive. Labels moved
   // into the tooltips; the save button carries its unsaved-op count as a
@@ -51412,7 +51171,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       </div>
     `);
     overlayChildren.push((() => {
-      // v3.4.x - Compute the extra context the shared PickedInspectorBody
+      // Compute the extra context the shared PickedInspectorBody
       // wants (cssVars + tree + onNavigate), then mount.
       //   • cssVars - pulled from THE INNERMOST owning doc (so nested
       //     imported components see their own token block, not the
@@ -51443,7 +51202,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           ? Array.from(pickedEl.children).slice(0, 24).map(c => ({ label: labelFor(c), ref: c }))
           : [];
         tree = { parent: treeParent, children: treeChildren };
-        // v3.4.x - Computed-style snapshot for placeholders + swatch
+        // Computed-style snapshot for placeholders + swatch
         // fallback. Same shape the workflow dock provides. backgroundColor
         // (not background shorthand) keeps the placeholder readable.
         try {
@@ -52340,7 +52099,7 @@ function WorkflowDsAuditReportModal({ result, loading, branch, onClose, onRerun 
   `, document.body);
 }
 
-// v3.4.33 - Decides whether a node has a text representation worth
+// Decides whether a node has a text representation worth
 // surfacing as code. Excludes pure binary assets (raster images, video,
 // audio) by extension and by assetKind so we don't blow up the panel by
 // trying to render a megabyte of PNG bytes. Prototype nodes always
@@ -52566,7 +52325,7 @@ function UtBufferedTextarea({ value, commit, className, placeholder, rows }) {
 function UserTestingScreen({ slug, onClose, info }) {
   const cap = useUserTestingCapability();
   const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
+  const [err, flashErr, setErr] = useFlash();
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState({});            // participantId -> selected
   const [processing, setProcessing] = useState(false);
@@ -52575,7 +52334,6 @@ function UserTestingScreen({ slug, onClose, info }) {
   const [tab, setTab] = useState("objective");
   const [protos, setProtos] = useState([]);       // source/<slug>/ for the switcher
 
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -53041,7 +52799,7 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
   const slug = nodePrototype(node);
   const cap = useUserTestingCapability();
   const [data, setData] = useState(null);     // null = loading | { sessions, cloudflared, woven, gatePort, publishBase }
-  const [err, setErr] = useState(null);
+  const [err, flashErr, setErr] = useFlash();
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState({});         // participantId -> true
   const [processing, setProcessing] = useState(false);
@@ -53050,7 +52808,6 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
   const [panelW] = useState(360);
   const [hostRectH, setHostRectH] = useState(360);
 
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
 
   // ── Track host node height so the panel matches it (same as comments). ──
   useEffect(() => {
@@ -53460,12 +53217,11 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
   const [sel, setSel] = useState({});               // commentId → true
   const [busy, setBusy] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
-  const [err, setErr] = useState(null);
+  const [err, flashErr] = useFlash();
   const [copied, setCopied] = useState(null);   // which link's Copy flashed ✓ ("w" | "q")
   const [replyDrafts, setReplyDrafts] = useState({});
   const [panelW] = useState(340);
 
-  const flashErr = (m) => { setErr(m); setTimeout(() => setErr(null), 6000); };
 
   const refetch = useCallback(() => {
     fetch(apiUrl(`/__share_comments?prototype=${encodeURIComponent(slug)}`))
@@ -53855,7 +53611,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus }) {
   const isProto = node.kind === "prototype";
   const branch = isProto ? nodePrototype(node) : "";
 
-  // v3.4.35 - Asset path resolution for the code view.
+  // Asset path resolution for the code view.
   //
   // Asset nodes with `activeVersionId` keep their live bytes inside a
   // version snapshot (workflow/views/<nodeId>/<vid>/[<cid>/]<rel>) NOT
@@ -53981,10 +53737,10 @@ function WorkflowCodePanel({ node, onClose, zoom, focus }) {
     window.addEventListener("mouseup", onUp);
   }, [panelW, zoom]);
 
-  // v3.4.40 - Dock against the host node's ACTUAL rendered width. When
-  // the asset card is in auto-size mode, node.w is null (so the old
-  // `node.w || 360` fallback used to slap the panel against the wrong
-  // x - overlapping the asset card on the right side). A ResizeObserver
+  // Dock against the host node's ACTUAL rendered width, not a
+  // `node.w || 360` fallback: in auto-size mode node.w is null and the
+  // fallback slaps the panel against the wrong x, overlapping the asset
+  // card on the right side. A ResizeObserver
   // on the host node mirrors its live width into state so the panel
   // always sits flush against the right edge no matter how the card's
   // size mode changes underneath.
@@ -54242,7 +53998,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus }) {
   `;
 }
 
-/* v3.4.x - WorkflowPickedInspectorDock ─────────────────────────────────
+/* WorkflowPickedInspectorDock ─────────────────────────────────
    Docked property inspector for workflow-mode pick-mode. Sits to the
    right of the host node like WorkflowCodePanel; renders the SAME
    PickedInspectorBody content zoom-mode uses, so updates to the inspector
@@ -54343,7 +54099,7 @@ function WorkflowPickedInspectorDock({
       };
     } catch {}
     const rect = el.getBoundingClientRect();
-    // v3.4.x - Strip pick-mode editor chrome classes everywhere we surface
+    // Strip pick-mode editor chrome classes everywhere we surface
     // an element's label so they don't leak ("div.lane-block", not
     // "div.lane-block.th-pick-selected"). Same filter for parent + children.
     const labelFor = (n) => {
@@ -54377,14 +54133,14 @@ function WorkflowPickedInspectorDock({
       const compN = parseFloat(cs[computedKey]);
       return Number.isFinite(compN) ? Math.round(compN) : 0;
     };
-    // v3.4.x - Capture EVERY editable property the inspector body
+    // Capture EVERY editable property the inspector body
     // surfaces. Preference: inline style first (so we see exactly what
     // we'd write back), then computed style as a faint hint when unset.
     // We only return the inline value when present - that way the
     // inspector input shows "" when the user hasn't set the property,
     // which is the correct "I haven't touched this" state.
     const readInline = (k) => (el.style && el.style[k]) || "";
-    // v3.4.x - Build tree info: parent (one level up) + every direct
+    // Build tree info: parent (one level up) + every direct
     // child. Each entry carries a `ref` to the live DOM node so the
     // inspector's onNavigate can re-pick it. Skip <body>/<html> as the
     // parent (the user can't usefully pick those).
@@ -54420,7 +54176,7 @@ function WorkflowPickedInspectorDock({
         boxShadow:    readInline("boxShadow")    || "",
         filter:       readInline("filter")       || "",
       },
-      // v3.4.x - Computed-style snapshot. Used by the inspector body as
+      // Computed-style snapshot. Used by the inspector body as
       // placeholders + as the swatch fallback so the user sees the
       // element's CURRENT effective values (the painted result of any
       // CSS-class inheritance) even when nothing is set inline. Without
@@ -54431,7 +54187,7 @@ function WorkflowPickedInspectorDock({
       // `background-color` because the computed `background` shorthand
       // returns a long composite string that's noisy as a placeholder.
       computedStyles: (() => {
-        // v3.4.x - Strip the pick-mode highlight shadow + outline from
+        // Strip the pick-mode highlight shadow + outline from
         // the computed values so they don't leak into the inspector's
         // placeholders. Both come from installPickOverlay's injected
         // <style data-th-pick-style> block (app.js:15194-15196) - the
@@ -54469,13 +54225,13 @@ function WorkflowPickedInspectorDock({
   // empty/auto values remove the property, then saves the whole doc back
   // through /__html_save.
   //
-  // v3.4.x - cssKeys list expanded to cover the new sections (fill,
+  // cssKeys list expanded to cover the new sections (fill,
   // outline, radius, text/font, shadow, filter). Same write semantics -
   // empty value clears the property. The shared inspector body emits
   // values for all of these via PickedColorField + PickedTextField + the
   // sizing/align controls.
   const applyStyle = useCallback(async (nextStyles) => {
-    // v3.6.1 - Re-resolve BOTH the iframe and the element instead of
+    // Re-resolve BOTH the iframe and the element instead of
     // trusting the refs blindly. The read path (useMemo above) already
     // falls back to querySelector(pickedElement.path) when the cached
     // ref went stale (iframe reloaded after a source change, ref cleared
@@ -54516,7 +54272,7 @@ function WorkflowPickedInspectorDock({
       ["boxShadow",     "box-shadow"],
       ["filter",        "filter"],
     ];
-    // v3.5.10 - Track every style change in a styles map for the post-mount
+    // Track every style change in a styles map for the post-mount
     // patch script. Only the actually-applied props go in; "auto"/null/empty
     // are removals that we don't replay (the original source doesn't have
     // them so re-removal is a no-op).
@@ -54551,7 +54307,7 @@ function WorkflowPickedInspectorDock({
     } catch {}
   }, [pickerIframeRef, pickedDomRef, pickedElement, node.id, onSaveIframeHtml, onStageInspectorEdit]);
 
-  // v3.4.x - Re-pick a different element from the tree links. Updates
+  // Re-pick a different element from the tree links. Updates
   // pickedDomRef + dispatches th:element-picked so WorkflowSurface's
   // pickedElement state catches up. The CSS path is rebuilt here using
   // the same logic the pick overlay uses (elementCssPath).
@@ -54605,12 +54361,11 @@ function WorkflowPickedInspectorDock({
     setRefreshTick(t => t + 1);
   }, [picked, onMoveElement]);
 
-  // v3.5.3 - React-rendered banner suppressed per user request. The
-  // downstream pipeline handles React reconciliation; the inspector should
-  // not warn that DOM edits won't survive reload, since they do (via the
-  // pipeline) and the warning was added without the user's instruction.
-  // The variable is kept (false) so the conditional render below stays
-  // structurally unchanged.
+  // React-rendered banner stays suppressed: the downstream pipeline
+  // handles React reconciliation, so the inspector must not warn that DOM
+  // edits won't survive reload (they do, via the pipeline). The variable
+  // is kept (false) so the conditional render below stays structurally
+  // unchanged.
   const reactBanner = false;
 
   const left   = (node.x || 0) + hostRectW;
@@ -54664,7 +54419,7 @@ function WorkflowPickedInspectorDock({
 }
 
 // ─── Canvas LOD - progressive loading + zoom-out placeholders ─────────────
-// v3.9 - Two complementary perf gates for heavy node content (iframes,
+// Two complementary perf gates for heavy node content (iframes,
 // rasters, videos) on the workflow canvas:
 //
 //   1. PROGRESSIVE LOADING - a node's heavy content only starts loading
@@ -54695,8 +54450,7 @@ function WorkflowPickedInspectorDock({
 //   "full" - live and shown normally.
 const WORKFLOW_LOD_MARGIN_PX  = 400;
 // Zoom floors sit just above the wheel handler's 0.08 minimum - the veil
-// only takes over at the far end of the zoom range (user: "trigger the
-// placeholder 3x further than current one", v3.9.1; was 0.25 / 0.12).
+// only takes over at the far end of the zoom range.
 const WORKFLOW_LOD_EMBED_ZOOM = 0.085;
 const WORKFLOW_LOD_MEDIA_ZOOM = 0.04;
 
@@ -54756,7 +54510,7 @@ function WorkflowQuietFace({ glyph, name, sub, extra, fontFamily }) {
   `;
 }
 
-// v3.9.x - Lightweight LOD for the app-node EDITORS (composer / driven app-tool /
+// Lightweight LOD for the app-node EDITORS (composer / driven app-tool /
 // custom-app / vector / spline-3d). Before this they were the one family left out
 // of the zoom-out placeholder: zoomed far out they kept painting their full editor
 // chrome + live driven iframes, which read as visual noise and burned compositing.
@@ -54773,7 +54527,7 @@ function workflowAppNodeLodHidden(lodVisible, zoom) {
 }
 
 // ─── WorkflowSimOrInteractiveNode ─────────────────────────────────────────
-// v3.3 - Container renderer for the `simulation` + `interactive-media` kinds.
+// Container renderer for the `simulation` + `interactive-media` kinds.
 // Slim companion to WorkflowPrototypeNode: an iframe pointing at the
 // container's runtime.html, a lens-verdict badge in the title bar, an
 // iteration-count chip, a devtools toggle that flips `?devtools=1` on the
@@ -54803,7 +54557,7 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
 
   const branch  = nodePrototype(node);
-  // v3.3 - narrative-experience containers (`nxId`, `source/{slug}/narratives/{nxId}/`)
+  // narrative-experience containers (`nxId`, `source/{slug}/narratives/{nxId}/`)
   // join sim + interactive on this renderer; same iframe + lens-verdict chrome,
   // only path/ID/label differ. Future per-family chrome (e.g. narrative beat
   // counter) can fork from the `family` switch below.
@@ -55320,7 +55074,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           onLoad=${onIframeLoad}
           title=${cfg.label + ": " + protoSlug}
           style=${{
-            /* v3.5 - render the embedded editor at native pixel size, no
+            /* render the embedded editor at native pixel size, no
                scale-to-fit. The workflow-canvas transform already scales
                every node uniformly, so frames inside the embed now share
                the workflow canvas's zoom 1:1 - at 100% workflow zoom, an
@@ -55328,7 +55082,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
                body clips to the node bounds. */
             width:  "100%",
             height: "100%",
-            /* v3.5.1 - ALWAYS pointer-events: none on the canvas-frames
+            /* ALWAYS pointer-events: none on the canvas-frames
                iframe. The embedded editor's own pan/zoom is disabled
                (CanvasView reads ?embed=1 → useEndlessCanvas interactive:
                false), so when the iframe captured wheel/drag while
@@ -55364,7 +55118,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   `;
 }
 
-// v3.9 - quick device-preview presets for the prototype node bar. Each preset
+// quick device-preview presets for the prototype node bar. Each preset
 // is the iframe's NATURAL viewport (vw×vh); the node body CSS-scales to fit, so
 // switching device reflows the prototype through its real responsive
 // breakpoints instead of squashing it. Widths are the canonical desktop /
@@ -55449,7 +55203,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
       if (paths.length === 0) return;
-      // v3.2 - exposedAssets entries are objects ({id, path, intent}, see
+      // exposedAssets entries are objects ({id, path, intent}, see
       // reconcile.py autoheal). The previous check did
       // `paths.includes(exposedEntry)` which compared an object against
       // a list of strings → always false. Normalize to a path string.
@@ -55458,7 +55212,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         .map(p => (typeof p === "string" ? p : (p && p.path) || ""))
         .filter(Boolean);
 
-      // v3.2 - Compute every "scope path" this iframe should consider:
+      // Compute every "scope path" this iframe should consider:
       // (1) the prototype's canonical source root (source/<branch>/),
       //     covers any asset written inside the prototype regardless of
       //     whether the iframe is currently on the root or a sub-page;
@@ -55515,7 +55269,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         ? `source/${branch}/`
         : null;
 
-      // v3.5.9 - One-shot suppression for the iframe reload triggered by an
+      // One-shot suppression for the iframe reload triggered by an
       // inspector Save's own POST. commitInspectorEdits seeds the path on
       // window.__thInspectorSelfSavedPaths before writing; consuming the
       // marker here (delete after the match) means this single refresh
@@ -55549,7 +55303,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         return false;
       });
       if (!hit) return;
-      // v3.6.3 - Never yank the document out from under an ACTIVE editing
+      // Never yank the document out from under an ACTIVE editing
       // session. If pick-mode is on for this node, or the user has staged
       // inspector edits pending on it, a reload would wipe their in-memory
       // work ("while editing, it refreshes before I save"). Skip the bump;
@@ -55575,9 +55329,9 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // computation. pushState() navigations don't trigger popstate, so apps
   // using the History API for routing will go undetected here - known
   // limitation, hash-routing is the common case.
-  // v3.5.2 - Per-iframe back/forward with three signal sources so the user
+  // Per-iframe back/forward with three signal sources so the user
   // can step through every "screen" they saw, not only HTML-page changes:
-  //   1. URL changes via load / hashchange / popstate (handled previously).
+  //   1. URL changes via load / hashchange / popstate.
   //   2. SPA route changes via history.pushState / replaceState - the iframe's
   //      history object is patched so these silent calls fire a custom event
   //      our captureChange listener responds to.
@@ -55670,8 +55424,8 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     // Marker-based patching so re-running this effect (or onLoad after a
     // same-origin in-iframe navigation that keeps contentWindow alive)
     // doesn't wrap the wrapper. Each `localOrig*` const is captured by THIS
-    // patch's closure only - no outer-scope mutation chain that previously
-    // caused the wrapper to reference itself and stack-overflow.
+    // patch's closure only - an outer-scope mutation chain would make
+    // the wrapper reference itself and stack-overflow.
     const patchHistory = () => {
       if (!trackedWin || !trackedWin.history) return;
       const hist = trackedWin.history;
@@ -56118,7 +55872,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   const [manageOpen, setManageOpen] = useState(false);
   const [manageItems, setManageItems] = useState([]);
   const openManage = useCallback(() => {
-    // v3.2 - Two sources of truth for "what's exposed on this prototype":
+    // Two sources of truth for "what's exposed on this prototype":
     //   1. The DOM of the iframe's currently-loaded page (what's actually
     //      being rendered right now).
     //   2. The canvas edges - any asset node wired to this prototype's
@@ -56247,7 +56001,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     if (!barOverflow && overflowOpen) setOverflowOpen(false);
   }, [barOverflow, overflowOpen]);
 
-  // v3.9 - device preview. Switching device sets the iframe's natural viewport
+  // device preview. Switching device sets the iframe's natural viewport
   // (so responsive breakpoints fire) AND reshapes the node to that viewport's
   // aspect at the SAME on-canvas scale, so the embed fills the box with no
   // letterboxing and stays the size the user had it. The active preset is
@@ -56458,7 +56212,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           </div>
         </div>
       ` : (() => {
-        // v3.2 - render the iframe at the prototype's NATURAL viewport,
+        // render the iframe at the prototype's NATURAL viewport,
         // then CSS-scale to fit the node body. Without this, a prototype
         // designed for 1440×900 desktop renders into whatever the node's
         // current width × height is (often 720×480), which the prototype's
@@ -56470,8 +56224,8 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         const vp = node.viewport || {};
         const vw = (typeof vp.w === "number" && vp.w > 0) ? vp.w : 1440;
         const vh = (typeof vp.h === "number" && vp.h > 0) ? vp.h : 900;
-        // Body region is the FULL node box - the title bar no longer eats body
-        // space (it floats outside the box, above the embed). We compute scale
+        // Body region is the FULL node box - the title bar floats outside
+        // the box, above the embed, so it eats no body space. We compute scale
         // ourselves rather than letting CSS handle it because we want one
         // transform per render, not a recalc on every resize.
         const bodyW = Math.max(1, (node.w || 720));
@@ -56570,7 +56324,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         onMouseDown=${onResizeDown}
       />
       <${NodeVersioningChrome} node=${node} allNodes=${allNodes} allEdges=${allEdges} onChange=${onChange}/>
-      ${/* v3.4.x - Badge is now ALWAYS mounted (not gated on `selected`) so
+      ${/* Badge is ALWAYS mounted (not gated on `selected`) so
             when pick-mode is on globally, every prototype's badge can light
             up via its internal `visible = selected || active` logic. Without
             this, deselected prototypes had no badge in the DOM and the user
@@ -56641,7 +56395,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   v3.0 - Asset versioning client helpers + UI.
+   Asset versioning client helpers + UI.
    See docs/features/asset-versioning.md §6, §7.
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -56708,10 +56462,9 @@ const VersioningApi = {
     return fetch(apiUrl(`/__workflow/node/${nodeId}/version/${vid}`),
                  { method: "DELETE" }).then(r => r.json());
   },
-  // v3.0 - size endpoint wires drag-resize + autosize directly to the
-  // daemon. Previously these went through the debounced /__workflow POST,
-  // which meant size changes weren't SSE-broadcast and the daemon's
-  // dedicated /size endpoint sat unused.
+  // size endpoint wires drag-resize + autosize directly to the daemon's
+  // dedicated /size endpoint (not the debounced /__workflow POST) so size
+  // changes are SSE-broadcast.
   setSize(nodeId, body) {
     return fetch(apiUrl(`/__workflow/node/${nodeId}/size`),
                  { method: "POST", headers: { "Content-Type": "application/json" },
@@ -56727,14 +56480,12 @@ const VersioningApi = {
 // Resolves with a base64 dataURL or null; never rejects.
 async function captureAssetThumbnail(filePath, targetWidth = 320, kind = "html") {
   if (!filePath) return null;
-  // v3.2 - URL-assembly bug fix. The cache-bust check needs to run AFTER
-  // apiUrl() (which adds `?project=<id>` in workspace mode), not on the bare
-  // filePath. Previously this produced double-`?` URLs like
+  // The cache-bust check must run AFTER apiUrl() (which adds
+  // `?project=<id>` in workspace mode), not on the bare filePath -
+  // otherwise it produces double-`?` URLs like
   // `/source/wizard/index.html?project=mua?_thumb=123`, which the daemon
-  // parsed as project="mua?_thumb=123" (invalid) and fell back to the
-  // install root - every captured thumb was a screenshot of the daemon's
-  // 404 page. Users hit this in workspace mode, where apiUrl ALWAYS adds
-  // `?project=...`, so every single HTML/prototype thumb was broken.
+  // parses as an invalid project and serves its 404 page into every
+  // captured thumb.
   const baseUrl = apiUrl("/" + filePath.replace(/^\/+/, ""));
   const url = baseUrl + (baseUrl.includes("?") ? "&" : "?") + "_thumb=" + Date.now();
 
@@ -56832,11 +56583,10 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
       setPos({ right: window.innerWidth - r.left + 8, top: r.top + r.height / 2, placement: "left" });
       return;
     }
-    // v3.2 - Auto-flip to below the anchor when there's no room above
+    // Auto-flip to below the anchor when there's no room above
     // (e.g. top-nav buttons like HistoryButton at the top of the
-    // viewport). Previously the bubble was always rendered with
-    // `translate(-50%, -100%)` which pushed it off the top of the
-    // screen, where it got clipped by the viewport itself. Now we pick
+    // viewport) - an unconditional `translate(-50%, -100%)` pushes the
+    // bubble off the top of the screen where the viewport clips it. Pick
     // the side with more space and stash the placement on the bubble's
     // own state so the renderer translates accordingly.
     // The bubble's typical height (with multi-line tips wrapping at the
@@ -56921,7 +56671,7 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
   }
 
   // Default: button (the common case for toolbar actions).
-  // v3.2 - When `disabled` is true, wrap the button in a span that owns
+  // When `disabled` is true, wrap the button in a span that owns
   // the hover handlers. Browsers' user-agent stylesheet sets
   // `pointer-events: none` on disabled form controls in some configurations
   // (notably Chrome since the late-100 line and Safari 17+), which
@@ -57021,7 +56771,7 @@ function WorkflowVersionPicker({ node, allNodes, allEdges, onClose, onChange }) 
     ? compositions.filter(c => !c.pinned).length
     : 0;
 
-  // v3.0 - portal to document.body so the canvas's transform: scale/translate
+  // portal to document.body so the canvas's transform: scale/translate
   // doesn't apply to the modal. `position: fixed` would normally honor the
   // ancestor transform as a containing block - that's why the picker scaled
   // and translated with pan/zoom before. Mirrors WorkflowExposeDialog's
@@ -57167,7 +56917,7 @@ function VersionRow({ version, node, seq, isActive, isSelected, onSelect, onChan
               alt="thumb"
               loading="lazy"
               onError=${(e) => {
-                // v3.2 - broken / missing thumb file → fall back to the
+                // broken / missing thumb file → fall back to the
                 // empty-state placeholder rather than browser's "broken
                 // image" icon. Also clears the cached source so a re-render
                 // doesn't keep retrying.
@@ -57304,7 +57054,7 @@ function CompositionRow({ composition, node, version, isActive, onChange, onClos
    the port handles. Manages its own pickerOpen state. */
 function NodeVersioningChrome({ node, allNodes, allEdges, onChange }) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  // v3.1 - thumb capture for ALL versionable kinds. Previously asset-only.
+  // Thumb capture for ALL versionable kinds.
   // For prototype, capture source/index.html via the html iframe path.
   // For design-system, capture gallery.html. For asset, branch by assetKind
   // (image/svg → direct Image draw; html/html-set → iframe + html2canvas).
@@ -57319,7 +57069,7 @@ function NodeVersioningChrome({ node, allNodes, allEdges, onChange }) {
     const key = `${node.id}|${av}|${cid || ""}`;
     if (captureGuard.current.has(key)) return;
     captureGuard.current.add(key);
-    // v3.1 - bound the guard set so it doesn't grow unbounded across
+    // bound the guard set so it doesn't grow unbounded across
     // many version flips in a long session. Capped at 100; FIFO eviction.
     if (captureGuard.current.size > 100) {
       const first = captureGuard.current.values().next().value;
@@ -57336,12 +57086,11 @@ function NodeVersioningChrome({ node, allNodes, allEdges, onChange }) {
       path = (version.canonicalPaths && version.canonicalPaths[0]) || node.path;
       captureKind = aKind;
     } else if (node.kind === "prototype") {
-      // v3.2 - prototypes live under `source/<branch>/`. The previous
-      // code went straight to `source/index.html` (single-prototype era)
-      // which now 404s - every captured thumb came out as a 320×200
-      // screenshot of the daemon's "Error response 404" page.
-      // The branch slug drives both the iframe src and the snapshot path,
-      // so the same convention applies here.
+      // Prototypes live under `source/<branch>/` - a bare
+      // `source/index.html` 404s and the captured thumb becomes a
+      // screenshot of the daemon's error page. The branch slug drives both
+      // the iframe src and the snapshot path, so the same convention
+      // applies here.
       const branchSlug = (node.branch || "").trim() || "main";
       const entry = (node.sourceEntry || "index.html").replace(/^\/+/, "");
       path = `source/${branchSlug}/${entry}`;
@@ -57409,7 +57158,7 @@ function NodeVersioningChrome({ node, allNodes, allEdges, onChange }) {
    in 3.5d). When the bound prototype is orphaned (iframe navigated away
    from its locked state) the asset card dims to communicate "this preview
    no longer reflects what the prototype is showing." */
-/* v3.4 - WorkflowAssetTextPreview. Renders the first ~2 KB of a markdown
+/* WorkflowAssetTextPreview. Renders the first ~2 KB of a markdown
    / text file inline inside an asset card. Streams the file via fetch on
    mount; bails to onError when the file is missing. The bytes are shown
    as plain monospace (no markdown rendering yet) - enough to identify
@@ -57450,7 +57199,7 @@ function WorkflowAssetTextPreview({ src, onError }) {
   `;
 }
 
-/* v3.4 - Asset background-color picker. Replaces the native-only
+/* Asset background-color picker. Replaces the native-only
    `<input type="color">` (hex RGB only) with a small portaled popover that
    supports:
      • a native color input for hex (the visual baseline)
@@ -58019,9 +57768,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // Prompt inspector - opens via the 📜 chip when node.promptDebug is set
   // (i.e. the asset was the output of a remix / repeater / blend run).
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  // v3.0 - version picker drawer (two-pane: versions × compositions).
+  // version picker drawer (two-pane: versions × compositions).
   const [pickerOpen, setPickerOpen] = useState(false);
-  // v3.0 - thumbnail capture pipeline. Idempotent per (nodeId, vid, cid)
+  // thumbnail capture pipeline. Idempotent per (nodeId, vid, cid)
   // session-local key. WorkflowAssetNode renders its own dot strip + picker
   // (doesn't use NodeVersioningChrome), so this capture lives here. The
   // chrome handles prototype + design-system separately.
@@ -58035,7 +57784,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     const key = `${node.id}|${av}|${cid || ""}`;
     if (captureGuard.current.has(key)) return;
     captureGuard.current.add(key);
-    // v3.1 - bound the guard set so it doesn't grow unbounded across
+    // bound the guard set so it doesn't grow unbounded across
     // many version flips in a long session. Capped at 100; FIFO eviction.
     if (captureGuard.current.size > 100) {
       const first = captureGuard.current.values().next().value;
@@ -58055,7 +57804,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       } catch {}
     })();
   }, [node.id, node.activeVersionId, node.runStatus]);
-  // v3.4 - Inject node.bgColor into the asset's iframe content. Without
+  // Inject node.bgColor into the asset's iframe content. Without
   // this, setting bgColor only paints the body WRAPPER around the iframe;
   // the iframe (which loads the asset file) covers the wrapper with its
   // own body background and the user sees no change.
@@ -58342,7 +58091,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     let lastX = e.clientX, lastY = e.clientY;
     setCanvasDraggingSync(true);
     onDragStart && onDragStart();
-    // v3.0 - commit "custom" sizing once on drag-start so the adaptive
+    // commit "custom" sizing once on drag-start so the adaptive
     // sizing logic respects the user's explicit pick. Subsequent moves
     // only update w/h.
     if (!node.size || node.size.scale !== "custom") {
@@ -58361,7 +58110,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       window.removeEventListener("mousemove", onMv);
       window.removeEventListener("mouseup", onUp);
       window.removeEventListener("blur", onUp);
-      // v3.0 - commit final size to the dedicated /size endpoint on drag
+      // commit final size to the dedicated /size endpoint on drag
       // release. Frontend's debounced /__workflow POST also persists w/h,
       // but going through /size emits a workflow-changed SSE so co-viewers
       // see the new size immediately.
@@ -58372,7 +58121,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd, onChange, node.size, node.id, node.w, node.h]);
 
-  // v3.0 - "↺ Auto size" affordance. Calls the dedicated /size endpoint
+  // "↺ Auto size" affordance. Calls the dedicated /size endpoint
   // (broadcasts SSE so the canvas refreshes immediately) AND mirrors into
   // local React state for instant feedback before the round-trip lands.
   const onAutoSize = useCallback(() => {
@@ -58385,7 +58134,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // Cache-bust counter - bumped when a Phase-4 Run writes new bytes to this
   // asset's path so the <img> re-fetches instead of serving the stale copy.
   const [bust, setBust] = useState(0);
-  // v3.4.24 - Refs for selection-driven media playback. The effects that
+  // Refs for selection-driven media playback. The effects that
   // USE these (and reference `kind` / `fileSrc` in their deps) are declared
   // further down - after `kind` and `fileSrc` get computed - so React
   // doesn't trip a temporal-dead-zone error during render. Refs themselves
@@ -58462,7 +58211,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     let doc;
     try { doc = ifr.contentDocument; } catch { doc = null; }
     if (!doc || !doc.documentElement) return;
-    // v3.9 - warm the raster cache so this card is ready to be consumed as an
+    // warm the raster cache so this card is ready to be consumed as an
     // image (section connector → describe / rembg / upscale) the instant it's
     // linked, instead of racing an unreliable on-demand capture at Run time.
     // Keyed by content version so an edited / re-Run card re-warms.
@@ -58540,7 +58289,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     });
   }, [onChange, node.size, node.controls]);
 
-  // v3.5.2 - Per-iframe back/forward with pushState patching + DOM snapshots.
+  // Per-iframe back/forward with pushState patching + DOM snapshots.
   // Same shape as the prototype node version (see WorkflowPrototypeNode for
   // detailed comments). Three signal sources: URL events, pushState/
   // replaceState patches, delayed click captures for DOM-only changes.
@@ -58730,7 +58479,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     try { return htmlIframeRef.current && htmlIframeRef.current.contentWindow && htmlIframeRef.current.contentWindow.location.href; } catch { return null; }
   })();
   const canGoForward = navHistRef.current.future.some(e => e && e.url && e.url !== _curHrefForNav && e.url !== "about:blank");
-  // v3.3 - Long-running interactive HTML (a simulation runtime, an
+  // Long-running interactive HTML (a simulation runtime, an
   // interactive piece, a narrative experience runtime) owns its OWN state
   // and rAF loop inside the iframe. Auto-busting the iframe on every
   // asset-refresh event would remount it via the React `key` binding,
@@ -58761,7 +58510,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     if (_isLongRunningInteractive) return;   // skip listener entirely for sim/im/nx HTML
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
-      // v3.5.9 - Inspector-self-save suppression (see prototype-node handler
+      // Inspector-self-save suppression (see prototype-node handler
       // + commitInspectorEdits for the contract). One-shot: consume the
       // path so subsequent genuine refreshes still work.
       try {
@@ -58772,7 +58521,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         }
       } catch {}
       if (!paths.includes(node.path)) return;
-      // v3.6.3 - Same active-editing guard as the prototype-node handler:
+      // Same active-editing guard as the prototype-node handler:
       // never reload an iframe the user is editing in pick mode or that
       // has staged inspector edits pending - the reload wipes their work.
       try {
@@ -58815,7 +58564,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     window.addEventListener("blur", onUp);
   }, [zoom, onMove, onDragStart, onDragEnd]);
 
-  // ── Adaptive sizing - v3.0 asset-versioning.md §5 ──────────────────────
+  // ── Adaptive sizing - asset-versioning.md §5 ──────────────────────
   // Card size derives from node.size (naturalAspect + scale). Legacy nodes
   // with explicit node.w/h but no size.scale are treated as "custom" so their
   // saved geometry is preserved. Once size.scale === "custom" is written
@@ -58904,7 +58653,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // requests against an absolute path 404. This is a no-op for already-
   // relative paths (`source/...`) and inline:* paths.
   const rawPathLive = node.path || "";
-  // v3.4.x - Iframe ALWAYS loads from the live source path, regardless of
+  // Iframe ALWAYS loads from the live source path, regardless of
   // which version is active. Reasoning:
   //
   //   • Library thumbnails already do this - they iframe `/source/<path>` and
@@ -58927,10 +58676,9 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   //     INSPECT historical bytes textually) and by revert. The iframe just
   //     stops being where we read them.
   //
-  // Trade-off accepted: composition-switching no longer reflects visually
-  // in the iframe (the comment at the old code claimed it did, but the
-  // snapshot incompleteness made it broken for the multi-file-HTML case
-  // anyway). If we want composition-aware iframes back, the right fix is
+  // Trade-off accepted: composition-switching does not reflect visually
+  // in the iframe (snapshot incompleteness makes it broken for the
+  // multi-file-HTML case anyway). If we want composition-aware iframes, the right fix is
   // to make the snapshot include all sibling deps - but that's the OTHER
   // option from the diagnosis discussion; here we ship the simpler one.
   //
@@ -58973,7 +58721,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     : fileSrcRaw;
   const isStaleInline = isInlinePath && !isInlineSvg && !(isCanvasSnapshot && node.src);
 
-  // v3.4.24 - Selection-driven playback for media kinds (video + lottie).
+  // Selection-driven playback for media kinds (video + lottie).
   // Placed HERE (after `kind` and `fileSrc` are computed) so the dep arrays
   // can reference them without hitting a temporal-dead-zone error during
   // render. Both media types start PAUSED so a canvas full of media doesn't
@@ -59100,7 +58848,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     // the node scrolls/zooms into range.
     bodyContent = html`<${WorkflowLodVeil} zoom=${zoom} glyph=${glyph} label=${basename} mode="inline"/>`;
   } else if (kind === "image" || kind === "svg" || kind === "vector") {
-    // v3.4 - `vector` covers SVG files produced by svg-gen + Quiver. The
+    // `vector` covers SVG files produced by svg-gen + Quiver. The
     // browser renders SVG natively in <img>, same code path as image/svg.
     bodyContent = thumbState === "missing" ? html`
       <div className="workflow-node-asset-empty">
@@ -59119,7 +58867,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       />
     `;
   } else if (kind === "lottie") {
-    // v3.4 - Lottie JSON wrapped in a same-origin iframe loading a tiny
+    // Lottie JSON wrapped in a same-origin iframe loading a tiny
     // player document. We construct the player HTML inline + load the
     // JSON via fetch within the iframe; this keeps lottie-web off the
     // editor's main bundle while still rendering a live preview.
@@ -59142,7 +58890,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         />
       `;
   } else if (kind === "text") {
-    // v3.4 - Markdown / text output (llm, describe skills). Render the
+    // Markdown / text output (llm, describe skills). Render the
     // first ~2KB of the file inline as a monospace preview. Full content
     // available via the node's path / open-in-editor flow.
     bodyContent = thumbState === "missing" ? html`
@@ -59155,7 +58903,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       <${WorkflowAssetTextPreview} src=${fileSrc} onError=${() => setThumbState("missing")}/>
     `;
   } else if (kind === "video") {
-    // v3.4.24 - Video starts PAUSED; plays only when the card is selected.
+    // Video starts PAUSED; plays only when the card is selected.
     // The mediaRef + useEffect-on-selected combo lets the user scan the
     // canvas without N looping videos competing for attention. Hover
     // alone wouldn't work on touch / would fight node-drag, so selection
@@ -59507,7 +59255,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         </div>
       `}
       ${(() => {
-        // v3.0 - downstream lineage chips. One chip per upstream input on
+        // downstream lineage chips. One chip per upstream input on
         // the active version. See docs/features/asset-versioning.md §6.3.
         if (!node.activeVersionId) return null;
         const version = (node.versions || []).find(v => v && v.id === node.activeVersionId);
@@ -59550,7 +59298,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
               if (!diverged) return;
               try { await VersioningApi.revert(uid, pinnedSubVid); } catch {}
             };
-            // v3.1 - chip click focuses the upstream node. Dispatched via a
+            // chip click focuses the upstream node. Dispatched via a
             // custom event so we don't have to thread a focusNode prop
             // through 4+ layers; WorkflowSurface's listener pans + selects.
             const focusUpstream = (e) => {
@@ -59682,7 +59430,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onClose=${() => setPickerOpen(false)}
         onChange=${onChange}
       />`}
-      ${/* v3.4.x - Same change as the prototype-node badge mount: badge
+      ${/* Same change as the prototype-node badge mount: badge
             mounts whenever the asset is picker-eligible (HTML asset bound
             to a real file), regardless of `selected`. The badge's own
             visibility logic handles the actual hide/show. */ ""}
@@ -59950,7 +59698,7 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
    This lets one folder pointer feed multiple downstream nodes (e.g. one
    moodboard folder used as reference by both the DS generator and the
    Prototype generator) without retyping the path on each node. */
-/* v3.9 - Web-browser node. Embeds a PUBLIC website on the canvas.
+/* Web-browser node. Embeds a PUBLIC website on the canvas.
    - URL bar commits on Enter / Go; scheme defaults to https://.
    - Embedding strategy is probed via /__web_probe: sites that send
      X-Frame-Options / CSP frame-ancestors are re-served through the
@@ -60015,7 +59763,7 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
     clipTimerRef.current = setTimeout(() => setClipNote(null), 2600);
   };
 
-  // v3.9.1 - Element-pick support. The pick overlay (prototype/HTML nodes'
+  // Element-pick support. The pick overlay (prototype/HTML nodes'
   // select tool) needs a SAME-ORIGIN contentDocument; direct embeds are
   // cross-origin and silently can't participate. So when pick mode turns
   // on anywhere on the canvas, a direct-mode browser automatically reloads
@@ -61655,7 +61403,7 @@ function bumpLabel(prev) {
   return "v" + (parseInt(m[1], 10) + 1) + (m[2] || "");
 }
 
-/* v3.4.37 - Composer node.
+/* Composer node.
    Responsive layered canvas. Each wired asset becomes a layer inside an
    aspect-ratio frame; per-layer state carries opacity, anchor (12 modes),
    offset, and width/height overrides. Edges that terminate at composer.in
@@ -61787,7 +61535,7 @@ function _composerTileStyle(layer, url) {
   };
 }
 // ── Shared, io-contract-driven upstream-input resolver ──────────────────────
-// v4.0 - THE single way the frontend answers "what is wired into this node".
+// THE single way the frontend answers "what is wired into this node".
 // Mirrors the backend's kinds/io_resolve.py keying (read each upstream node's
 // io.provides contract, match the edge's from-port, normalise by resolve+tags)
 // so adding a node kind needs only its KIND_IO entry - no per-node edge walk.
@@ -62094,7 +61842,7 @@ function _composerAssetUrl(assetNode) {
     const outN = _customAppOutputNode(assetNode);
     return outN ? _composerAssetUrl(outN) : null;
   }
-  // v3.4.44 - formatted-text and composer nodes contribute a baked HTML
+  // formatted-text and composer nodes contribute a baked HTML
   // file path (set by their respective Bake buttons). Resolve those
   // through apiUrl so they render against the daemon-served source.
   if (WORKFLOW_BAKED_EDITABLE_KINDS.has(assetNode.kind) && assetNode.bakedPath) {
@@ -62111,7 +61859,7 @@ function _composerAssetUrl(assetNode) {
   if (ver) return apiUrl("/" + canon);
   return apiUrl("/" + canon);
 }
-// v3.4.44 - Human label for a composer layer. Asset = filename; baked
+// Human label for a composer layer. Asset = filename; baked
 // formatted-text / composer = its bakedPath filename; fallback = node id.
 function _composerLayerLabel(assetNode) {
   if (!assetNode) return null;
@@ -62143,7 +61891,7 @@ function _composerAssetKind(assetNode) {
     const outN = _customAppOutputNode(assetNode);
     return outN ? _composerAssetKind(outN) : "missing";
   }
-  // v3.4.44 - Baked text / composer compositions always render as iframes.
+  // Baked text / composer compositions always render as iframes.
   if (assetNode.kind === "formatted-text" || assetNode.kind === "composer") return "iframe";
   // Baked vector-editor outputs are SVG - render via <img> so they
   // scale crisply when used as a composer layer.
@@ -62166,7 +61914,7 @@ function _composerAssetKind(assetNode) {
   return "iframe";
 }
 
-/* v3.4.39 - Convert a viewport-px delta (from a mousemove event) into a
+/* Convert a viewport-px delta (from a mousemove event) into a
    canvas-space px delta for a given stage element. Stage is rendered with
    `aspect-ratio: canvasW/canvasH` so its rendered width on screen reflects
    the live zoom AND any maxWidth/maxHeight caps; dividing by it pulls every
@@ -62179,7 +61927,7 @@ function _composerScreenToCanvas(stageEl, dxScreen, dyScreen, canvasW, canvasH) 
   return { dx: dxScreen * sx, dy: dyScreen * sy };
 }
 
-/* v3.4.39 - Quick-align shortcuts. Snap an active layer to one of the 9
+/* Quick-align shortcuts. Snap an active layer to one of the 9
    canvas-grid positions (corners + edges + center), or stretch it to fill
    one axis / both. Resets offsets so the anchor lands cleanly on the
    chosen edge without leftover translation. The 3 stretch modes also
@@ -62211,20 +61959,20 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const stageRef = useRef(null);
 
-  // v3.4.44 - Resolve wired upstream LAYER SOURCES. Accept three kinds:
+  // Resolve wired upstream LAYER SOURCES. Accept three kinds:
   //   - asset      → renders as <img>/<video>/<iframe> via its versioned path
   //   - formatted-text → renders as <iframe> when the formatted-text has
   //     been baked (node.bakedPath). Without a bake the upstream carries
   //     no bytes the composer can render, so we skip it.
   //   - composer   → also via bakedPath, so composer → composer compounding
   //     is possible (after baking the upstream composer).
-  // v4.0 - resolved through the shared io-contract resolver (no bespoke walk).
+  // resolved through the shared io-contract resolver (no bespoke walk).
   // Layer sources = renderable assets + baked containers; `unbaked` containers
   // and non-asset inputs (text/agent edit) are excluded - matching the prior
   // per-kind walk exactly. .glb assets surface as `glb-import` (still an asset
   // node), preserved here for parity though the composer can't render them.
   const _composerInputsRaw = useUpstreamInputs(node, allNodes, allEdges);
-  // v4.1 - a wired Layer node IS a composer layer: expand it into its child
+  // a wired Layer node IS a composer layer: expand it into its child
   // asset (the asset wired into the Layer's in-port), carrying the layer's
   // spec (opacity/blend/visible) so "Layer = one composer layer" works.
   const _composerInputs = useMemo(() => {
@@ -62249,7 +61997,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     return m;
   }, [_composerInputs]);
 
-  // v4.1 - Wired Position node. Composer positioning is HTML/anchor-based by
+  // Wired Position node. Composer positioning is HTML/anchor-based by
   // default; when a Position is wired it can arrange the layers on a grid
   // instead. `node.positionMode` toggles between "html" (manual anchors) and
   // "grid" (position-driven); default = apply the wired position unless the
@@ -62259,12 +62007,11 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     [_composerInputs]
   );
   const _posActive = !!_posSpec && node.positionMode !== "html";
-  // v3.4.44 - Merge: layers state defines render ORDER + per-layer settings.
-  //   1. Drop layer entries whose edge is gone (orphans). Previously these
-  //      were preserved as "ghost" entries so a re-wire would restore their
-  //      settings - but users found it confusing, and `dropLayer` (×) was
-  //      effectively broken because removing from node.layers wouldn't
-  //      stick: the wiredAssetIds-driven append below kept re-adding it.
+  // Merge: layers state defines render ORDER + per-layer settings.
+  //   1. Drop layer entries whose edge is gone (orphans). Do NOT preserve
+  //      them as "ghost" entries: it reads as confusing, and `dropLayer`
+  //      (×) breaks because removing from node.layers doesn't stick - the
+  //      wiredAssetIds-driven append below keeps re-adding it.
   //   2. Append any wired asset not yet present in layers (new edge =
   //      new layer on top of the stack).
   const layers = useMemo(() => {
@@ -62445,7 +62192,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     };
   }, [_posActive, _posSpec, layers.length, canvasW, canvasH]);
   const [activeLayerIdx, setActiveLayerIdx] = useState(null);
-  // v3.4.39 - Live drag state (uncommitted offsets/sizing during a
+  // Live drag state (uncommitted offsets/sizing during a
   // mousemove). We mutate this ref inline on every frame and read it in
   // the layer style fn so the layer follows the cursor in real-time
   // without thrashing React state on every pixel. The final value is
@@ -62458,7 +62205,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     next[idx] = { ...next[idx], ...patch };
     onChange({ layers: next });
   };
-  // v3.4.39 - Apply an align preset to the active layer. Resets the
+  // Apply an align preset to the active layer. Resets the
   // axis-relevant offset / size fields so the layer cleanly snaps to the
   // chosen edge / center / stretch mode instead of carrying stale state.
   const applyAlign = (preset) => {
@@ -62469,7 +62216,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     if (preset.nullH) patch.height = null;
     updateLayer(activeLayerIdx, patch);
   };
-  // v3.4.41 - Measure the layer's CURRENT canvas-space rect (top-left
+  // Measure the layer's CURRENT canvas-space rect (top-left
   // x/y + width/height in canvas pixels) by reading its DOM rect on the
   // stage and dividing out the stage's screen-to-canvas scale factor.
   // Returns null when the stage / layer DOM isn't mounted yet.
@@ -62490,7 +62237,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       lh: lr.height * sy,
     };
   };
-  // v3.4.41 - Change a layer's ANCHOR without visually moving it. The
+  // Change a layer's ANCHOR without visually moving it. The
   // anchor decides which side of the canvas the offsets are measured
   // from. Naively swapping the anchor with the same offsets snaps the
   // layer (offsetX=0 with top-left means "pin top-left at 0,0" - totally
@@ -62537,7 +62284,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     else if (anchor.startsWith("bottom-")) oy = (ly + lh) - canvasH;
     else if (anchor.startsWith("middle-")) oy = (ly + lh / 2) - canvasH / 2;
     else if (anchor === "center")        oy = (ly + lh / 2) - canvasH / 2;
-    // v3.4.41 - Freeze the size when changing anchor on an auto-sized
+    // Freeze the size when changing anchor on an auto-sized
     // layer. Otherwise iframes / videos can re-layout to a slightly
     // different intrinsic width when the CSS rule shape changes
     // (transform present vs absent, different positioning anchors), and
@@ -62549,7 +62296,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     if (cur.height == null) patch.height = Math.round(lh);
     updateLayer(activeLayerIdx, patch);
   };
-  // v3.4.39 - Drag-to-move on the stage. Begins on layer mousedown; the
+  // Drag-to-move on the stage. Begins on layer mousedown; the
   // delta cursor→canvas pixels is rolled into offsetX/offsetY via a ref
   // (live preview) and committed to React state on mouseup. The anchor
   // mode decides the sign of the delta - stretch axes are immobile, so
@@ -62595,7 +62342,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     window.addEventListener("mouseup", onUp);
     setActiveLayerIdx(idx);
   };
-  // v3.4.39 - Drag-to-resize via a bottom-right corner handle. Like the
+  // Drag-to-resize via a bottom-right corner handle. Like the
   // move handler but writes into width/height instead. Naturally bounded
   // above 8 px to keep layers grabbable. Stretch axes ignore their side
   // of the drag - the size is owned by the canvas there.
@@ -62675,7 +62422,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     onChange({ layers: next });
     setActiveLayerIdx(tgt);
   };
-  // v3.4.44 - Delete-layer. Both removes the entry from node.layers AND
+  // Delete-layer. Both removes the entry from node.layers AND
   // removes the upstream edge - without the edge removal, useMemo's wired
   // append would just re-create the layer entry on the next render. The
   // parent surface owns edge state, so it provides `onUnwireAsset`.
@@ -62726,7 +62473,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, activeLayerIdx, layers, onChange]);
 
-  // v4.0 - Phase B (node-I/O framework). The composer's AGENT-EDITABLE
+  // Phase B (node-I/O framework). The composer's AGENT-EDITABLE
   // canonical representation is a JSON sidecar - NOT the baked presentation
   // HTML, which can't losslessly round-trip back to layers. Bake writes BOTH:
   // composer-<id>.html (downstream-consumable) and composer-<id>.json (the
@@ -62770,7 +62517,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     return () => window.removeEventListener("th:asset-refresh", onRefresh);
   }, [composerSidecarPath, onChange]);
 
-  // v3.4.43 - Bake. Serialize the current layer stack + canvas params
+  // Bake. Serialize the current layer stack + canvas params
   // into a self-contained HTML file written to source/<branch>/composer-
   // <nodeId>.html. The file mirrors the in-node preview: a relatively-
   // positioned .stage with absolutely-positioned .layer-N children
@@ -62783,7 +62530,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     try {
       const branch = bakeBranch;
       const outPath = `source/${branch}/composer-${node.id}.html`;
-      // v3.4.46 - Guard pX/pY against zero / NaN / infinite canvas dims
+      // Guard pX/pY against zero / NaN / infinite canvas dims
       // so a misconfigured canvas can't emit "Infinity%" or "NaN%" CSS
       // values that some downstream parsers (and html2canvas) choke on.
       const pX = (v) => {
@@ -62796,24 +62543,17 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         if (!Number.isFinite(n) || !Number.isFinite(canvasH) || canvasH <= 0) return "0%";
         return `${(n / canvasH) * 100}%`;
       };
-      // v3.4.46 - Shared HTML-attribute escaper. Without `&` → `&amp;`
-      // (and the other special chars) a perfectly-valid daemon URL like
-      // `…?project=mimiow&t=123` produces a malformed attribute that
-      // some downstream parsers silently truncate - the exact failure
-      // mode the user reported ("file is created but incomplete").
-      const attrEsc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
       const layerCss = [];
       const layerTags = [];
-      // v3.4.46 - Collected per-layer issues that didn't abort the bake
+      // Collected per-layer issues that didn't abort the bake
       // (unknown extension, missing URL, layer-level throw). Surfaced
       // in the toast on success/error so the user knows which layers
       // degraded vs which fully baked.
       const layerErrors = [];
-      // v3.4.46 - Per-layer try/catch. A bug in ONE layer (orphan asset,
-      // unknown anchor, mangled URL, missing field) used to abort the
-      // whole bake mid-loop, leaving a TRUNCATED HTML file on disk +
-      // the user staring at an error toast. Now each layer is best-
-      // effort: failures emit a small error tile and the loop continues
+      // Per-layer try/catch. A bug in ONE layer (orphan asset, unknown
+      // anchor, mangled URL, missing field) must not abort the whole bake
+      // mid-loop and leave a TRUNCATED HTML file on disk. Each layer is
+      // best-effort: failures emit a small error tile and the loop continues
       // so the rest of the composition still bakes successfully.
       for (let i = 0; i < layers.length; i++) {
         try {
@@ -62863,24 +62603,23 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           rules.push(`object-fit: ${_composerFitCss(layer.fit)}`);
           rules.push(`object-position: ${_composerObjectPosition(layer)}`);
           layerCss.push(`  .layer-${i} { ${rules.join("; ")}; }`);
-          // v3.4.46 - Pick the renderer by EXTENSION (path or URL) rather
+          // Pick the renderer by EXTENSION (path or URL) rather
           // than just by node.assetKind. Catches the "kind says image
           // but file is .mp4" mismatch users sometimes produce by
           // renaming a file without updating the asset card's kind.
           // Explicitly supports <audio> and <svg> (via <img>); falls
           // back to <iframe> for unknown extensions so the browser
-          // decides how to render. URL goes through attrEsc so query
-          // strings don't break the attribute (the most likely cause
-          // of the user's truncated-file report).
+          // decides how to render. URL goes through escapeHtml so query
+          // strings don't break the attribute.
           const url = _composerAssetUrl(assetNode);
           const label = _composerLayerLabel(assetNode) || assetNode.id;
-          const safeLabel = attrEsc(label);
+          const safeLabel = escapeHtml(label);
           if (!url) {
             layerErrors.push("layer #" + i + " (" + label + "): no resolvable asset URL - generate the asset or click Bake on the upstream node first");
             layerTags.push(`    <div class="layer-${i}" data-label="${safeLabel}" style="background:#222;color:#aaa;display:flex;align-items:center;justify-content:center;font:11px/1.3 monospace;padding:8px;text-align:center;">[missing source]<br/>${safeLabel}</div>`);
             continue;
           }
-          const safeUrl = attrEsc(url);
+          const safeUrl = escapeHtml(url);
           const cssUrl = _composerCssUrl(url);
           const ext = (() => {
             const pathExt = (() => {
@@ -62934,7 +62673,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
           layerErrors.push("layer #" + i + " threw during bake: " + msg);
           try {
             layerCss.push(`  .layer-${i} { position: absolute; top: 0; left: 0; width: 240px; height: 80px; background: #fee; border: 1px dashed #c33; opacity: 0.85; }`);
-            layerTags.push(`    <div class="layer-${i}" style="display:flex;align-items:center;justify-content:center;font:10px/1.3 monospace;color:#900;padding:6px;text-align:center;">[layer ${i} error] ${attrEsc(msg).slice(0, 100)}</div>`);
+            layerTags.push(`    <div class="layer-${i}" style="display:flex;align-items:center;justify-content:center;font:10px/1.3 monospace;color:#900;padding:6px;text-align:center;">[layer ${i} error] ${escapeHtml(msg).slice(0, 100)}</div>`);
           } catch {}
         }
       }
@@ -62975,7 +62714,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         "</html>",
         "",
       ].join("\n");
-      // v3.4.46 - Validate the HTML before posting. A truncated docHtml
+      // Validate the HTML before posting. A truncated docHtml
       // (e.g. missing </html>) is almost certainly a bug we want to
       // surface explicitly rather than write to disk and confuse the
       // user with a "successful" bake of a malformed file.
@@ -62988,10 +62727,10 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         body: JSON.stringify({ path: outPath, text: docHtml }),
       });
       if (!r.ok) {
-        // v3.4.46 - Surface both the JSON `.error` AND the raw text body
-        // if JSON parse fails. The user previously saw bare "HTTP 500"
-        // with no diagnostic; now they get the actual server message
-        // (e.g. "path escapes project root" / "permission denied").
+        // Surface both the JSON `.error` AND the raw text body if JSON
+        // parse fails, so the user gets the actual server message (e.g.
+        // "path escapes project root" / "permission denied") instead of a
+        // bare "HTTP 500".
         let detail = `HTTP ${r.status}`;
         try {
           const j = await r.json();
@@ -63001,7 +62740,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
         }
         throw new Error("Save failed: " + detail);
       }
-      // v4.0 - Phase B: also write the JSON sidecar - the agent-editable
+      // Phase B: also write the JSON sidecar - the agent-editable
       // canonical + re-import source. Lossless: the inline state verbatim.
       const sidecar = JSON.stringify({
         v: 1, layers, canvasW, canvasH,
@@ -63017,13 +62756,13 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       } catch {}
       const ts = new Date().toISOString();
       onChange({ bakedPath: outPath, bakedAt: ts });
-      // v3.4.47 - Auto-spawn an output asset card if nothing is wired to
+      // Auto-spawn an output asset card if nothing is wired to
       // .out yet. Lets the user chain downstream consumers visually
       // without having to manually drop an HTML asset card and configure
       // its path. The parent's onBakeAutoCreateOutput is idempotent so
       // re-bakes don't multiply asset nodes.
       try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(outPath); } catch {}
-      // v3.4.46 - When some layers degraded but the bake itself
+      // When some layers degraded but the bake itself
       // succeeded, surface the issue list as an inline warning on the
       // node. The user sees the file IS written + how many layers had
       // issues, with the full list available via tooltip.
@@ -63041,7 +62780,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [outPath] } })); } catch {}
       setTimeout(() => setBakeState(s => (s.phase === "done" || s.phase === "done-with-warnings") ? { phase: "idle", error: null } : s), 2500);
     } catch (err) {
-      // v3.4.46 - Include the layer-error list (if any) so the user can
+      // Include the layer-error list (if any) so the user can
       // tell whether the failure was a single bad layer or a wholesale
       // bake/write failure.
       const errs = layerErrors;
@@ -63184,9 +62923,9 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
             if (!assetNode) return null;
             const url = _composerAssetUrl(assetNode);
             const kind = _composerAssetKind(assetNode);
-            // v3.4.39 - use the live (drag-overridden) layer for paint so
+            // use the live (drag-overridden) layer for paint so
             // dragging is real-time without React state per frame.
-            // v4.1 - when a Position is active, grid geometry overrides the
+            // when a Position is active, grid geometry overrides the
             // manual anchor/offset/size.
             const liveLayer = _gridGeomFor ? { ...liveLayerAt(i), ..._gridGeomFor(i) } : liveLayerAt(i);
             const style = _composerLayerStyle(liveLayer, canvasW, canvasH);
@@ -64073,7 +63812,7 @@ function WorkflowVectorEditorNode({
     return !!(g && g.visible === false);
   }, [groupById]);
 
-  // v4.0 - Phase B (node-I/O framework). The vector editor's AGENT-EDITABLE
+  // Phase B (node-I/O framework). The vector editor's AGENT-EDITABLE
   // canonical is a JSON sidecar (vector-<id>.json) holding the shape model
   // verbatim - NOT the baked .svg, whose flattened primitives can't round-trip
   // back to the editor's shape objects. Bake writes both; an agent edits the
@@ -65024,7 +64763,7 @@ function WorkflowVectorEditorNode({
         const j = await r.json().catch(() => ({}));
         throw new Error(j.error || `HTTP ${r.status}`);
       }
-      // v4.0 - Phase B: also write the JSON sidecar (agent-editable canonical
+      // Phase B: also write the JSON sidecar (agent-editable canonical
       // + re-import source). Lossless: the shape model verbatim.
       const sidecar = JSON.stringify({
         v: 1, shapes, groups, canvasW, canvasH, background: node.background || null,
@@ -66604,7 +66343,7 @@ function _vecSerializeSvg(node) {
   const groupsArr = Array.isArray(node.groups) ? node.groups : [];
   const gById = {};
   for (const g of groupsArr) if (g && g.id) gById[g.id] = g;
-  const escAttr = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const escXmlAttr = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const defs = [];
   const body = [];
   // Wrap each contiguous group run in a <g>; skip a group entirely when
@@ -66618,7 +66357,7 @@ function _vecSerializeSvg(node) {
       if (gid) {
         const grp = gById[gid];
         if (grp && grp.visible === false) skipGid = gid;
-        else { body.push(`<g${grp && grp.name ? ` data-group="${escAttr(grp.name)}"` : ""}>`); openGid = gid; }
+        else { body.push(`<g${grp && grp.name ? ` data-group="${escXmlAttr(grp.name)}"` : ""}>`); openGid = gid; }
       }
     }
     if (skipGid && gid === skipGid) continue;
@@ -66695,7 +66434,6 @@ function _vecResolveFilterForBake(shape, defId) {
 // Emit one geometry element with the given paint props. Caller is
 // responsible for wrapping the per-shape group + iterating fills/strokes.
 function _vecSerializeShapeOne(shape, paints) {
-  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const common = [
     `fill="${paints.fill || "none"}"`,
     `stroke="${paints.stroke || "none"}"`,
@@ -66720,7 +66458,7 @@ function _vecSerializeShapeOne(shape, paints) {
   }
   if (shape.type === "text") {
     const fam = (VECTOR_FONT_FAMILIES.find(f => f.id === shape.fontFamily) || VECTOR_FONT_FAMILIES[0]).stack;
-    return `<text x="${shape.x}" y="${shape.y}" font-family='${fam.replace(/'/g, "&apos;")}' font-size="${shape.fontSize || 24}" font-weight="${shape.fontWeight || 400}" text-anchor="${shape.textAnchor || "start"}" ${common}${tr}>${esc(shape.content || "")}</text>`;
+    return `<text x="${shape.x}" y="${shape.y}" font-family='${fam.replace(/'/g, "&apos;")}' font-size="${shape.fontSize || 24}" font-weight="${shape.fontWeight || 400}" text-anchor="${shape.textAnchor || "start"}" ${common}${tr}>${escapeHtml(shape.content || "")}</text>`;
   }
   return "";
 }
@@ -67289,7 +67027,7 @@ function VectorPaintStack({ role, layers, onLayersChange }) {
   `;
 }
 
-/* v3.4.37 - Formatted text node.
+/* Formatted text node.
    contentEditable body for direct rich-text editing. A Typography node
    wired to typo-in surfaces a per-level button strip; the user selects
    a range and clicks a level to wrap it with that level's inline
@@ -67391,7 +67129,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
     commitHtml();
   };
 
-  // v3.4.44 - Bake. Snapshot the current contentEditable body into a
+  // Bake. Snapshot the current contentEditable body into a
   // standalone HTML file at source/<branch>/fmttext-<id>.html. Embeds
   // the wired typography's fonts as @import links + a body font-family
   // fallback so the baked file renders the same fonts standalone (and
@@ -67451,7 +67189,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
         throw new Error(j.error || `HTTP ${r.status}`);
       }
       onChange({ bakedPath: outPath, bakedAt: new Date().toISOString() });
-      // v3.4.47 - Same composer-style auto-output. If no edge from this
+      // Same composer-style auto-output. If no edge from this
       // formatted-text's .out exists, spawn an HTML asset card pointing
       // at bakedPath so downstream consumers can be chained visually
       // without manual asset-card setup.
@@ -67517,7 +67255,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
             `)}
           </div>
         `
-        /* v3.4.41 - Empty-state CTA. When no Typography node is wired into
+        /* Empty-state CTA. When no Typography node is wired into
            the left port, the user has no level picker - explain why and
            tell them what to do. The CTA replaces the typobar so it occupies
            the same slot (above the editor) without changing the editor's
@@ -67587,7 +67325,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
   `;
 }
 
-/* v4.0 - 3D editor node (kind: spline-3d). Renders the three.js scene editor
+/* 3D editor node (kind: spline-3d). Renders the three.js scene editor
    (editor/tools/spline3d/index.html) DIRECTLY in an iframe, as a DRIVEN VIEW:
    the NODE is the single source of truth. The iframe holds no localStorage; it
    announces `spline:ready`, the node pushes `spline:init {scene, imports}`, and
@@ -68766,7 +68504,7 @@ function spawnAppNodeOutput(setData, n, bakedPath, extraProps) {
       return { ...d, nodes: (d.nodes || []).map(nd =>
         nd.id === tgtId && nd.kind === "asset" ? { ...nd, path: bakedPath, assetKind, ...extraProps } : nd) };
     }
-    const assetId = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const assetId = workflowNewNodeId();
     const fw = n.w || 720;
     const newAsset = {
       id: assetId, kind: "asset", assetKind,
@@ -72280,7 +72018,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
   `;
 }
 
-/* v3.4.38 - Mermaid diagram node.
+/* Mermaid diagram node.
    Renders Mermaid source via the CDN bundle loaded in editor/index.html
    (window.mermaid). Source lives inline on node.code; node.diagramType
    is a hint used to pre-seed the textarea + drive the dropdown choice
@@ -72470,7 +72208,7 @@ function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize,
   `;
 }
 
-/* v3.4.38 - Mermaid code panel.
+/* Mermaid code panel.
    A tailored variant of the asset/prototype code panel. Reuses the same
    chrome / layout / save / reset / resize affordances, but the body is
    bound to node.code (inline state) instead of a file, and the toolbar
@@ -73423,7 +73161,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // Chat dialog state. The DS-generator's run is observed via the standard
   // agent-node chat dialog (WorkflowAgentChatDialog) - same UI as the agent
   // node. Opens via the 💬 Chat button; closes on Escape or backdrop click.
-  // We no longer maintain an inline streamEvents log on the canvas - the
+  // There is deliberately no inline streamEvents log on the canvas - the
   // chat dialog has more space and already handles pause / stop / attach.
   const [chatOpen, setChatOpen] = useState(false);
   // Single-docked-chat invariant. The per-node chat dialog and the top-level
@@ -73460,7 +73198,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   const dsId = (node.dsId || "main").toLowerCase();
   const spec = node.spec || {};
   const attachments = Array.isArray(spec.attachments) ? spec.attachments : [];
-  // v3.4.x - Default + floor heights raised so the body's seven sections
+  // Default + floor heights raised so the body's seven sections
   // (Genre · Token preference · Primitive preset · Additional brief ·
   // Reference folder · Individual attachments · Actions) all fit without
   // the user having to discover the auto-hide overflow scrollbar. The old
@@ -75152,7 +74890,7 @@ function applyDsFixes(content, audit) {
   return { patched, fixes };
 }
 
-// v3.6 - reference-image modes for the generate-image skill node. Beside the DS
+// reference-image modes for the generate-image skill node. Beside the DS
 // picker (which scopes a generation to a design system's tokens), a skill node
 // can now carry a reference IMAGE + a mode that shapes how the model uses it:
 // match its style, keep its subject, or raw edit. The reference can come from an
@@ -75352,10 +75090,9 @@ function workflowPosePromptForItem(frag) {
 // it too. This is the single durable, draggable artefact the generator outputs -
 // drag it onto the canvas and flip between poses, no generator needed.
 function workflowPoseAssetHtml(poses) {
-  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const labels = poses.map(p => p.label);
-  const imgs = poses.map((p, i) => `<img data-i="${i}" class="${i === 0 ? "on" : ""}" alt="${esc(p.label)}" src="${esc(p.url)}">`).join("\n    ");
-  const btns = poses.map((p, i) => `<button type="button" data-i="${i}" class="${i === 0 ? "on" : ""}">${esc(p.label)}</button>`).join("\n    ");
+  const imgs = poses.map((p, i) => `<img data-i="${i}" class="${i === 0 ? "on" : ""}" alt="${escapeHtml(p.label)}" src="${escapeHtml(p.url)}">`).join("\n    ");
+  const btns = poses.map((p, i) => `<button type="button" data-i="${i}" class="${i === 0 ? "on" : ""}">${escapeHtml(p.label)}</button>`).join("\n    ");
   return `<!doctype html><html><head><meta charset="utf-8">
 <style>
   html,body{margin:0;height:100%;background:#111;overflow:hidden;font-family:system-ui,sans-serif}
@@ -76582,7 +76319,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   const [attachError, setAttachError] = useState(null);
   const fileInputRef = useRef(null);
   const w = Math.max(320, node.w || 360);
-  // v3.4.x - Default + floor heights raised so the body's nine sections
+  // Default + floor heights raised so the body's nine sections
   // (Theme · Genre · Target audience · Emotion · Sample page · Imagery
   // subjects · Reference folder · Individual attachments · Actions) all
   // fit. The old default of 620 cut off "Individual attachments" and the
@@ -76954,7 +76691,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   `;
 }
 
-// v3.9 - "Someone's working in here." An agent run on a node is signalled by
+// "Someone's working in here." An agent run on a node is signalled by
 // the data-run-status pulse + top-right spinner (record-LED language). This
 // adds an abstract, anthropomorphic read that peeks out of a node's
 // bottom-left corner while an agent works on it. A SECTION is "working" when
@@ -77068,7 +76805,7 @@ function useWorkflowWorkingPaths() {
   return paths;
 }
 
-// v3.9.2 - the abstract geometric "worker". A FRAME of two CSS squares (a
+// the abstract geometric "worker". A FRAME of two CSS squares (a
 // FLAT fill square + a slightly-larger outline square) rotate 0↔45° -
 // alternating between reading as a box and a diamond, the outline LAGGING
 // the fill. INSIDE the box, a <canvas> runs a state machine (clipped to the
@@ -77759,7 +77496,7 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
         const a = workflowPortPosition(fn, fromRef.port, portCtx);
         const b = workflowPortPosition(tn, toRef.port, portCtx);
         const isSelected = selectedEdge === i;
-        // v2.4b - edge is "active" when its source OR target is the selected
+        // edge is "active" when its source OR target is the selected
         // node. CSS animates stroke-dashoffset on the active edges so the
         // user sees data-flow direction at a glance. Direction marker on
         // the path (data-direction) lets CSS pick the keyframe for fwd / rev.
@@ -78518,7 +78255,7 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
   `;
 }
 
-/* v3.4.18 - Replace exposed asset chooser.
+/* Replace exposed asset chooser.
    Modal that lists every file in /__assets (image / svg / video / lottie /
    html / 3d / shader / viz). User clicks a row to pick that file as the
    replacement for an exposed asset on a prototype. The parent then calls
@@ -78584,14 +78321,14 @@ function WorkflowReplaceAssetChooser({ targetNode, onCancel, onPick }) {
       return html`<img src=${fileUrl} loading="lazy" alt=""/>`;
     }
     if (item.kind === "video") {
-      // v3.4.24 - Hover-only playback in the chooser too.
+      // Hover-only playback in the chooser too.
       return html`<${WorkflowLibraryHoverVideo} src=${fileUrl} alt=${item.name}/>`;
     }
     if (item.kind === "html") {
       return html`<iframe src=${fileUrl} loading="lazy" scrolling="no" title=${item.name}/>`;
     }
     if (item.kind === "lottie") {
-      // v3.4.24 - Use the shared hover-controlled lottie wrapper so the
+      // Use the shared hover-controlled lottie wrapper so the
       // chooser's lottie rows also start paused and animate on hover.
       return html`<${WorkflowLibraryHoverLottie} fileUrl=${fileUrl} alt=${item.name}/>`;
     }
@@ -78836,13 +78573,13 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
   `, document.body);
 }
 
-/* v3.4 - Default providers per capability. Renders a row per capability
+/* Default providers per capability. Renders a row per capability
    (agent / image / video / svg / 3d / lottie) with two dropdowns: provider,
    then a model picker filtered to that provider. The chosen pair is saved
    to localStorage via saveDefaultProviders so popovers (Quick Refine /
    Quick Remix / chat dispatch) can inherit it. Each row also has a "-
    follow system" option that maps to null = no override. */
-/* v3.4.7 - Receives `mediaConfig` (from /__media_config) so each row can
+/* Receives `mediaConfig` (from /__media_config) so each row can
    show which providers are actually available (have keys configured),
    which fall back to the Claude CLI (anthropic with no key), and resolve
    the vague "follow system" placeholder to a NAMED model the user can
@@ -78878,7 +78615,7 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
   `;
 }
 
-/* v3.4.7 - A provider has a "key configured" when the media-config row for
+/* A provider has a "key configured" when the media-config row for
    its id is true / has saved set to true. The daemon's status payload uses
    `{ saved: true, ... }` per provider. CLI fallback applies to anthropic
    (Claude CLI) and openai (Codex CLI). */
@@ -78890,7 +78627,7 @@ function _providerHasKey(mediaConfig, providerId) {
 }
 function _providerAvailability(mediaConfig, providerId) {
   if (_providerHasKey(mediaConfig, providerId)) return { ok: true, source: "key" };
-  // v3.5 - Each provider has its native CLI counterpart:
+  // Each provider has its native CLI counterpart:
   //   anthropic ↔ Claude Code CLI (`claude`)
   //   openai    ↔ Codex CLI       (`codex`)
   // Prefer the native CLI; substitute the sibling CLI only as a last resort.
@@ -78961,7 +78698,7 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
       return { provider: m.provider, model: m.id, source: "key" };
     }
   }
-  // v3.5 - Image generation can also run via Codex CLI's built-in image
+  // Image generation can also run via Codex CLI's built-in image
   // tool (uses the user's `codex login` OAuth - no OpenAI API key needed).
   // Only fires when no key is configured for any provider in the catalog
   // for this cap, so paid keys still win. The daemon's _asset_generate
@@ -79522,7 +79259,7 @@ const LOCAL_PACKAGES = [
     hint: "background removal · github.com/danielgatis/rembg · ~170 MB ONNX model on first use",
     skills: "Remove background",
     docsUrl: "https://github.com/danielgatis/rembg",
-    // v3.4.41 - Marked required: rembg is the cutout step in the
+    // Marked required: rembg is the cutout step in the
     // raster-foreground asset pipeline (every character / mascot / isolated
     // subject runs through it). Foreground asset generation fails at the
     // cutout stage without it. OnboardingLocalToolRow / Section render a
@@ -79538,7 +79275,7 @@ const LOCAL_PACKAGES = [
     hint: "Cloudflare quick tunnels for Share mode · installed via Homebrew · no Cloudflare account needed",
     skills: "Share prototypes for review",
     docsUrl: "https://github.com/cloudflare/cloudflared",
-    // v3.4.x - Marked required. Installs via Homebrew; onboarding blocks
+    // Marked required. Installs via Homebrew; onboarding blocks
     // until present (needs Homebrew on the machine). The Shares tab +
     // prototype-node comments dock still degrade gracefully at runtime.
     required: true,
@@ -79551,7 +79288,7 @@ const LOCAL_PACKAGES = [
     hint: "GLSL reference compiler · brew install glslang · real shader compile errors (any shader, no browser)",
     skills: "Shader compile-check",
     docsUrl: "https://github.com/KhronosGroup/glslang",
-    // v3.4.x - Marked required. Installs via Homebrew; onboarding blocks until
+    // Marked required. Installs via Homebrew; onboarding blocks until
     // present. When present, the post-run shader lint compile-checks every
     // <script type=x-shader> block instead of falling back to the static lint.
     required: true,
@@ -79564,7 +79301,7 @@ const LOCAL_PACKAGES = [
     hint: "Headless Playwright + Chromium · runs the shader and checks it compiles AND isn't blank · ~150 MB browser",
     skills: "Shader render-check",
     docsUrl: "https://playwright.dev",
-    // v3.4.x - Marked required. The heaviest install (npm + a ~150 MB Chromium);
+    // Marked required. The heaviest install (npm + a ~150 MB Chromium);
     // needs Node.js on PATH and onboarding blocks until present. Catches what
     // glslang can't: JS-assembled shaders and compiles-but-renders-blank.
     required: true,
@@ -79731,7 +79468,7 @@ function WorkflowLocalPackageRow({ pkg }) {
     try {
       const r = await fetch(apiUrl(`/__local_status?package=${encodeURIComponent(pkg.id)}${force ? "&force=1" : ""}`));
       const j = await r.json();
-      // v3.4.48 - Don't let a flaky probe downgrade a state we already
+      // Don't let a flaky probe downgrade a state we already
       // confirmed via /__local_install's server-side verify. See the
       // OnboardingLocalToolRow probe for the full rationale.
       setStatus(prev => (prev && prev.installed && !(j && j.installed)) ? prev : j);
@@ -79755,11 +79492,11 @@ function WorkflowLocalPackageRow({ pkg }) {
       if (!j.ok) {
         setErr(j.verify_stderr || j.stderr || j.error || `HTTP ${r.status}`);
       } else {
-        // v3.4.48 - Trust the server's verify result; don't wait on a probe.
+        // Trust the server's verify result; don't wait on a probe.
         setStatus({ installed: true, version: j.version || "unknown" });
       }
       await probe();
-      // v3.4.41 - Notify useRequiredLocalSkills (consumed by the projects-
+      // Notify useRequiredLocalSkills (consumed by the projects-
       // landing setup-card gate) so installing rembg from Settings re-opens
       // the "+ New project" button immediately, no page reload required.
       try { window.dispatchEvent(new CustomEvent("th:local-skills-changed", { detail: { id: pkg.id } })); } catch {}
@@ -79768,7 +79505,7 @@ function WorkflowLocalPackageRow({ pkg }) {
     } finally { setBusy(false); }
   };
 
-  // v3.4.48 - Manual re-check button (see OnboardingLocalToolRow).
+  // Manual re-check button (see OnboardingLocalToolRow).
   const recheck = async () => {
     setRechecking(true);
     try {
@@ -79949,7 +79686,7 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
    - hasAspect          → renders an aspect dropdown
    The Run executor reads the same spec to assemble the API call.
    New skills slot in by editing media-models.js - no app.js change needed. */
-// v2.4 - small drawer for skill=llm nodes that fetches the daemon's
+// small drawer for skill=llm nodes that fetches the daemon's
 // composed-prompt preview and renders it. Edits to the node's `text` field
 // persist via the standard onChange hook (per resolved Q3). The "↻ Revert
 // to auto-compose" button just empties node.text so the next dispatch
@@ -80131,7 +79868,7 @@ function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, o
     window.addEventListener("mouseup", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
-  // v3.2 - Skill nodes have a fixed-shape body: header bar + model chip +
+  // Skill nodes have a fixed-shape body: header bar + model chip +
   // input/output tag row + Run button (+ optional addout, error). The
   // previous min h=80 was vestigial and let auto-scaffolded nodes (rembg
   // especially) render too short - the Run button got cropped because
@@ -80158,7 +79895,7 @@ function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, o
   const skillSpec = ((window.TH_MEDIA && window.TH_MEDIA.skills) || []).find(s => s.id === skillId);
   const aspects   = (window.TH_MEDIA && window.TH_MEDIA.aspects) || [];
   // Pick model list by skill kind. modelKind "text" → textModels,
-  // output "video" → videoModels (v3.4.1), output "3d" → models3d, otherwise
+  // output "video" → videoModels, output "3d" → models3d, otherwise
   // imageModels.
   const allModels = (() => {
     if (!skillSpec) return [];
@@ -80173,7 +79910,7 @@ function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, o
   // interviews the real user), rendered by WorkflowInterviewNode - not a skill
   // node. The old `iterator-refiner` 2-agent loop was removed.
 
-  // v2.4 - skill=llm gets a dedicated rendering with a prompt editor + the
+  // skill=llm gets a dedicated rendering with a prompt editor + the
   // preview drawer. The text-models skill registry isn't always populated
   // (TH_MEDIA may be empty before media is configured), so we handle llm
   // explicitly before the "unknown skill" fallback that would otherwise
@@ -80264,7 +80001,7 @@ function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, o
   // Resolve effective model + provider for this skill. For skills that fix
   // both (rembg, upscale), spec.provider/model win. For generate-image, the
   // user-selected node.model wins, with the skill's defaultModel as fallback.
-  // v3.4.10 - every value passes through _resolveLiveModel so a stored
+  // every value passes through _resolveLiveModel so a stored
   // deprecated string surfaces as its current catalog ID in the dropdown
   // value, in the dispatcher, and downstream. The saved node.model is left
   // alone; we just translate at every read.
@@ -80493,7 +80230,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
   const [applyErr, setApplyErr] = useState(null);
   const [runActive, setRunActive] = useState(false);
   useEffect(() => {
-    // v2.38 - kill polling for runs that are already in a TERMINAL state.
+    // kill polling for runs that are already in a TERMINAL state.
     // Previously every agent node with a `runId` field polled /__run/<id>
     // every 3.5s forever, even when the run was long done. With 4 agent
     // nodes (research / ds_update / proto_build / design_brief) all
@@ -80503,7 +80240,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
     // everything we need from disk; SSE will tell us if anything changes.
     const _isTerminal = node.runStatus === "done" || node.runStatus === "error" || node.runStatus === "skipped";
     const _hasUnsettledTargets = Array.isArray(node.pendingOutputIds) && node.pendingOutputIds.length > 0;
-    // v2.50 - only fully bail when terminal AND every downstream target is
+    // only fully bail when terminal AND every downstream target is
     // already settled. If the agent was flipped to a terminal status
     // OUT-OF-BAND (the completion hook, an earlier reconciler pass, or a
     // workflow reload) before the client ran settleTargets, the asset target
@@ -80688,7 +80425,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         }
       } catch {}
     };
-    // v2.50 - terminal-but-stuck recovery. The agent is already done/error
+    // terminal-but-stuck recovery. The agent is already done/error
     // (flipped out-of-band) yet still has pending targets. Run ONE settle of
     // the TARGETS only - keep the agent's terminal status, clear the asset's
     // "Generating…", and upgrade asset/html → prototype if the file is on
@@ -81378,7 +81115,7 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
   // wired downstream - the editor walks the array and dispatches each entry
   // into the matching target's patch surface.
   const allTargets = Array.isArray(wiredOutputs) ? wiredOutputs : [];
-  // v4.0 - split by how each output ACCEPTS work, from its io contract:
+  // split by how each output ACCEPTS work, from its io contract:
   //  • file targets (editTarget kinds: composer / vector / spline-3d) - the
   //    deliverable is a FILE the agent writes per the target's schema; the node
   //    re-imports it. Positive spec, no JSON return.
@@ -81821,8 +81558,8 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
   const hasStored = storedConvo.length > 0 && !node.runId;
   // Hide (do NOT remove) the wired-context preview card. The folding still
   // happens on Send via workflowComposeAgentPrompt() - the agent gets the full
-  // scope/inputs envelope - we just no longer surface the preview bubble. Flip
-  // SHOW_WIRED_CONTEXT_PREAMBLE back to true to restore it.
+  // scope/inputs envelope - only the preview bubble is unsurfaced. Flip
+  // SHOW_WIRED_CONTEXT_PREAMBLE to true to restore it.
   const SHOW_WIRED_CONTEXT_PREAMBLE = false;
   const showPreamble = SHOW_WIRED_CONTEXT_PREAMBLE
     && chatRun?.isNew && (previewLines.length > 0 || hasStored);
@@ -82754,8 +82491,8 @@ function EditorProtoSwitch() {
   `;
 }
 
-/* The Submit action no longer lives in the top nav (it's quiet now, matching
-   workflow mode). Instead it floats just below the nav, and ONLY when there is
+/* The Submit action stays out of the top nav (quiet, matching workflow
+   mode). It floats just below the nav, and ONLY when there is
    something to submit: pending edits AND no run in flight. When it would be
    disabled (no edits, or a run active) it hides entirely rather than greying
    out. */
@@ -83726,7 +83463,7 @@ function App() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, []);
-  // v3.4.37 - Editor-mode selection mirror, parallel to WorkflowCanvas's
+  // Editor-mode selection mirror, parallel to WorkflowCanvas's
   // selectionRef. CanvasView populates this ref with { frameId, frame,
   // sourceRoot, view } on every selection change; spawnFromComposer reads
   // it at call time so the chat agent sees which frame the user is looking
@@ -83751,7 +83488,7 @@ function App() {
         // project - edits-apply / fork / merge / regenerate / *-request
         // kinds are marked at spawn; freeform chats get promoted by the
         // daemon the moment a Write/Edit/MultiEdit/NotebookEdit tool_use is
-        // observed. A pure visualization or Q&A chat no longer freezes the
+        // observed. A pure visualization or Q&A chat must not freeze the
         // canvas, and edits happening in OTHER workspace projects never do.
         const proj = activeProjectId();
         setAgentBusy((j.runs || []).some(run =>
@@ -83796,7 +83533,7 @@ function App() {
     setLastRun(prev => (prev && prev.runId === runId) ? { ...prev, done: true } : prev);
     if (runId) saveSettings({ lastRunId: runId });
 
-    // v3.4.38 - Narrow the reload trigger to paths that boot once via
+    // Narrow the reload trigger to paths that boot once via
     // <script src>. Pre-fix this reloaded after EVERY chat that touched a
     // file, which blew away the React tree (including the chat drawer) and
     // made editor-mode chat feel jarring vs. workflow-mode chat (which has
@@ -83875,7 +83612,7 @@ function App() {
 
   // Free-form chat - separate from edits-apply. Opens an empty drawer shell;
   // the user's first composer send spawns a `kind: "freeform"` run.
-  // v3.4.31 - Sourced from the URL (?branch=<slug>) when set, then the
+  // Sourced from the URL (?branch=<slug>) when set, then the
   // active branch the bootstrap stamped onto D.meta, falling back to
   // "main" for legacy / single-prototype projects. This way the chat
   // panel tags new turns with whichever prototype the user is editing.
@@ -83896,7 +83633,7 @@ function App() {
     // Called by ChatComposer when isNew && user clicks Send. Wrap the user's
     // text with the editor-mode context envelope so the agent knows we're
     // talking about data/IA/source, not the workflow node canvas.
-    // v3.4.37 - if a frame is selected on the editor canvas, prepend a
+    // if a frame is selected on the editor canvas, prepend a
     // <selected-frame> block so "fix this screen" / "tweak this page" /
     // "make this frame purple" resolve to a real frame id + source path.
     const selectionBlock = formatEditorSelectionContext(editorSelectionRef.current);

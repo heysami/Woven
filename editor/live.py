@@ -115,7 +115,10 @@ def _canon(project_id):
 
 class _Waiter:
     """Per-SSE-connection waiter: a wake signal + an ordered queue of pending
-    (event_type, data) tuples. Same shape as serve.py's WorkflowWaiter."""
+    (event_type, data) tuples. Broadcasters call .push(event_type, data); the
+    SSE handler calls .wait() then .drain() to flush events. Thread-safe.
+    The CANONICAL implementation - serve.py aliases it as WorkflowWaiter
+    (serve imports live; the reverse would be a cycle)."""
     __slots__ = ("_signal", "_pending", "_lock")
 
     def __init__(self):

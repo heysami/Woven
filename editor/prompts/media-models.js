@@ -11,12 +11,13 @@
 //      via window.TH_MEDIA - no app.js change required for catalog-only adds.
 
 (function () {
+  // Provider API-key env vars live server-side in serve.py
+  // (_PROVIDER_ENV_KEYS) - the daemon resolves keys, never the browser.
   const PROVIDERS = {
     openai: {
       id: "openai",
       label: "OpenAI",
       hint: "gpt-image-2 · gpt-image-1.5 · gpt-4.1",
-      envKey: "TH_OPENAI_API_KEY",
       docsUrl: "https://platform.openai.com/api-keys",
       integrated: true,
       testable: true,
@@ -25,7 +26,6 @@
       id: "anthropic",
       label: "Anthropic",
       hint: "Claude Opus 4.8 · Sonnet 5 · Haiku 4.5 (text models for `llm` / `describe`)",
-      envKey: "TH_ANTHROPIC_API_KEY",
       docsUrl: "https://console.anthropic.com/settings/keys",
       integrated: true,
       testable: true,
@@ -34,7 +34,6 @@
       id: "fal",
       label: "fal.ai",
       hint: "FLUX · rembg · upscale · video · 3D (one key, many models)",
-      envKey: "TH_FAL_API_KEY",
       docsUrl: "https://fal.ai/dashboard/keys",
       integrated: true,
       testable: false, // fal has no free test endpoint; first real Run validates the key
@@ -43,7 +42,6 @@
       id: "xai",
       label: "xAI Grok Imagine",
       hint: "grok-imagine-image (2K)",
-      envKey: "TH_XAI_API_KEY",
       docsUrl: "https://console.x.ai/",
       integrated: false, // listed but not yet wired - surfaces in Settings as "coming soon"
       testable: false,
@@ -52,7 +50,6 @@
       id: "volcengine",
       label: "Volcengine Ark (Doubao)",
       hint: "Seedream image · Seedance video",
-      envKey: "TH_VOLCENGINE_API_KEY",
       docsUrl: "https://www.volcengine.com/docs/82379",
       integrated: false,
       testable: false,
@@ -61,7 +58,6 @@
       id: "bfl",
       label: "Black Forest Labs",
       hint: "FLUX 1.1 Pro / Pro / Dev / Schnell · direct",
-      envKey: "TH_BFL_API_KEY",
       docsUrl: "https://api.bfl.ai/",
       integrated: false,
       testable: false,
@@ -70,7 +66,6 @@
       id: "recraft",
       label: "Recraft",
       hint: "Vector SVG output · raster · brand-asset grade",
-      envKey: "TH_RECRAFT_API_KEY",
       docsUrl: "https://www.recraft.ai/docs",
       integrated: false,
       testable: false,
@@ -79,7 +74,6 @@
       id: "nanobanana",
       label: "Nano Banana (Gemini)",
       hint: "Google · text-to-image via Gemini",
-      envKey: "TH_GEMINI_API_KEY",
       docsUrl: "https://aistudio.google.com/apikey",
       integrated: false,
       testable: false,
@@ -88,7 +82,6 @@
       id: "leonardo",
       label: "Leonardo.ai",
       hint: "Phoenix · Kino XL · FLUX (async)",
-      envKey: "TH_LEONARDO_API_KEY",
       docsUrl: "https://app.leonardo.ai/api-access",
       integrated: false,
       testable: false,
@@ -97,7 +90,6 @@
       id: "meshy",
       label: "Meshy",
       hint: "text→3D · image→3D · textured .glb (async)",
-      envKey: "TH_MESHY_API_KEY",
       docsUrl: "https://docs.meshy.ai/",
       integrated: true,
       testable: false, // Meshy has no free test endpoint; first real Run validates the key
@@ -106,7 +98,6 @@
       id: "sam3d",
       label: "SAM 3D (splat)",
       hint: "image → 3D Gaussian splat .ply · self-hosted GPU service (Modal/RunPod). Set endpoint in media-config.json sam3d.endpoint; key optional.",
-      envKey: "TH_SAM3D_API_KEY",
       docsUrl: "https://github.com/facebookresearch/sam-3d-objects",
       integrated: false,
       testable: false, // no free endpoint; the endpoint URL is user-provided
@@ -115,7 +106,6 @@
       id: "worldlabs",
       label: "World Labs (Marble)",
       hint: "text/image/video → explorable 3D WORLD as Gaussian splat .spz + collider mesh · async ~5min · credit-based (platform.worldlabs.ai)",
-      envKey: "TH_WORLDLABS_API_KEY",
       docsUrl: "https://docs.worldlabs.ai/api",
       integrated: true,
       testable: true, // GET /marble/v1/credits is a cheap key-validation call
@@ -124,7 +114,6 @@
       id: "elevenlabs",
       label: "ElevenLabs",
       hint: "TTS · sound effects · music (one key, all three)",
-      envKey: "TH_ELEVENLABS_API_KEY",
       docsUrl: "https://elevenlabs.io/app/settings/api-keys",
       integrated: true,
       testable: false, // no free test endpoint; first real Run validates the key
@@ -133,7 +122,6 @@
       id: "imagerouter",
       label: "ImageRouter",
       hint: "Proxy - one key, dozens of backends",
-      envKey: "TH_IMAGEROUTER_API_KEY",
       docsUrl: "https://docs.imagerouter.io/",
       integrated: false,
       testable: false,
@@ -142,7 +130,6 @@
       id: "quiver",
       label: "Quiver AI",
       hint: "Vector-native SVG generation (arrow-1.1) - used by `svg-gen` when this key is configured",
-      envKey: "TH_QUIVER_API_KEY",
       docsUrl: "https://docs.quiver.ai/getting-started/quickstart",
       integrated: true,
       testable: false,
@@ -151,7 +138,6 @@
       id: "higgsfield",
       label: "Higgsfield",
       hint: "video (DoP image→video) · paste your key as KEY_ID:KEY_SECRET",
-      envKey: "TH_HIGGSFIELD_API_KEY",
       docsUrl: "https://cloud.higgsfield.ai/",
       integrated: true,
       // Higgsfield auths with `Authorization: Key KEY_ID:KEY_SECRET` (compound
@@ -163,7 +149,6 @@
       id: "exa",
       label: "Exa",
       hint: "Web search (exa.ai) for the Research assistant",
-      envKey: "TH_EXA_API_KEY",
       docsUrl: "https://dashboard.exa.ai/api-keys",
       integrated: true,
       testable: true, // /search with numResults:1 validates the key
