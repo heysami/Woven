@@ -251,73 +251,42 @@ button {
   min-height: 0;
   position: relative;
 }
-/* LeftChatRunsBar - the agent-runs history docked above the left chat (the
-   right rail's old runs panel, relocated). Toggle + count on the left, + New
-   chat on the right, dropdown reusing the .runs-row rows. */
-.left-chat-runs {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex: 0 0 auto;
-}
-.left-chat-runs-toggle {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.left-chat-runs-toggle:hover { border-color: var(--border-strong); color: var(--text); }
-.left-chat-runs-toggle.is-open { border-color: var(--accent); color: var(--text); }
-.left-chat-runs-toggle .th-right-rail-icon-wrap { position: relative; display: inline-flex; }
-.left-chat-runs-count {
-  font-size: 10.5px;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-}
-.left-chat-runs-new {
-  appearance: none;
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.left-chat-runs-new:hover { border-color: var(--border-strong); color: var(--text); }
-.left-chat-runs-new svg { width: 12px; height: 12px; }
-.left-chat-runs-pop {
+/* Runs OVERLAY - the agent-runs list shown ON TOP of the chat box when the
+   chat icon is clicked (the old right-rail runs popover, relocated left).
+   Picking a run / + New chat dismisses it and the thread shows beneath. */
+.left-chat-runs-overlay {
   position: absolute;
-  top: calc(100% + 4px);
-  left: 8px;
-  right: 8px;
-  max-height: 50vh;
-  overflow-y: auto;
-  z-index: 80;                     /* above the chat-drawer (60) */
+  inset: 0;
+  z-index: 70;                     /* above the chat-drawer (60) */
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
 }
-/* The runs list - the left panel's RESTING state (no focused run): the chat
-   icon opens THIS list first; picking a run / + New chat opens the thread.
-   Also reused inside LeftChatRunsBar's dropdown. */
+/* Left chat FAB - the way INTO the chat where no rail exists: preview mode
+   (nav rail collapsed) and the User testing / Development full-page views.
+   Pinned to the left edge under the toolbar; same tier as the floating panel
+   so it stays clickable above the full-page views. */
+.left-chat-fab {
+  position: fixed;
+  left: 10px;
+  top: calc(var(--toolbar-h, 48px) + 10px);
+  z-index: 9560;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+}
+.left-chat-fab:hover { color: var(--text); border-color: var(--border-strong); }
+.left-chat-fab svg { width: 16px; height: 16px; }
+/* The runs list - fills the runs overlay: + New chat on top, then the run
+   rows (status dot / title / age / delete). */
 .left-chat-runs-list {
   height: 100%;
   overflow-y: auto;
@@ -326,19 +295,7 @@ button {
   flex-direction: column;
   gap: 2px;
 }
-.left-chat-runs-pop .left-chat-runs-list { height: auto; padding: 0; }
-.left-chat-runs-collapse {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--text-faint);
-  font-size: 15px;
-  line-height: 1;
-  padding: 4px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.left-chat-runs-collapse:hover { background: var(--surface-2); color: var(--text); }
+
 .app > .ds-proposal-banner { grid-area: banner; }
 .app > .toolbar             { grid-area: toolbar; min-height: var(--toolbar-h); }
 .app > .editor-left-rail    { grid-area: leftrail; }
