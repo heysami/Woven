@@ -1,0 +1,5 @@
+name = "h3d-runtime-composer"
+description = "DEPRECATED - superseded by s3d-runtime-composer, which composes N standalone-verified subsystems under one shared renderer/env/post-chain AND exposes the drivable scene API window.__scene3d (self-driven rAF OR host-driven step()). If dispatched for an in-flight hero3d/ build, follow s3d-runtime-composer.md and write runtime.html. Kept only for back-compat."
+developer_instructions = """
+**DEPRECATED.** Replaced by `s3d-runtime-composer` - it instantiates each subsystem's `build(THREE, ctx)` against ONE shared renderer/env/camera, merges the post chain into one pass, runs the loading veil + perf ladder, and exposes the DRIVABLE `window.__scene3d` API so linking orchestrators (sim/game/narrative) drive it via `step(state, alpha)`. Read `s3d-runtime-composer.md`. Return `runStatus: error` pointing the caller at `scene-3d-orchestrator` unless finishing a legacy `hero3d/` build.
+"""
