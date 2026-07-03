@@ -217,7 +217,7 @@ export const LogicInputs = {
       smoothing: clamp(num(opts.audioSmoothing, 0.8), 0, 1),
     };
     let audioCtx = null, analyser = null, micStream = null, freqBuf = null, timeBuf = null;
-    let beatPrevLevel = 0;
+    let beatPrevLevel = 0, pitchFrame = 0;
     const sampleAudio = () => {
       if (!analyser) return;
       analyser.getByteFrequencyData(freqBuf);
@@ -252,8 +252,16 @@ export const LogicInputs = {
         let s = 0; for (let i = f0; i < f1; i++) s += freqBuf[i];
         audio.bands[k] = (s / (f1 - f0)) / 255;
       }
-      // Autocorrelation pitch estimate (Hz) from the time-domain buffer.
-      audio.pitch = audioCtx ? autoCorrelate(timeBuf, audioCtx.sampleRate) : 0;
+      // Autocorrelation pitch estimate (Hz) from the time-domain buffer. The
+      // ACF is by far the most expensive extraction here, and the consumer
+      // contract forces a read every frame (logicgraph's input-audio evaluator
+      // resolves ALL out-ports each tick, pitch included, so a lazy getter
+      // would be forced anyway) - so recompute only every AC_EVERY frames;
+      // voice pitch moves slowly relative to the frame rate and the last
+      // value holds in between.
+      if ((pitchFrame++ % AC_EVERY) === 0) {
+        audio.pitch = audioCtx ? autoCorrelate(timeBuf, audioCtx.sampleRate) : 0;
+      }
       // Beat = a sharp rise in level above the running floor.
       audio.beat = (audio.level - beatPrevLevel) > 0.12 && audio.level > 0.15;
       beatPrevLevel = beatPrevLevel * 0.86 + audio.level * 0.14;
@@ -450,10 +458,22 @@ export const LogicInputs = {
 
 // Autocorrelation pitch detector (Hz) over a Uint8 time-domain buffer.
 // Returns 0 when no confident pitch is found. Standard ACF approach.
+// Scratch buffers are module-level and reused across calls (this runs inside
+// the per-frame sample path, so per-call allocation is pure GC churn; JS is
+// single-threaded and the buffers are only live during the call, so sharing
+// them across attach() instances is safe). The ACF window is capped at
+// AC_WINDOW samples - a 512-sample max lag at typical 44.1/48kHz rates still
+// reaches below voice pitch, and it bounds the O(n^2) multiply-add cost.
+// AC_EVERY is the recompute stride sampleAudio uses (see the pitch note there).
+const AC_WINDOW = 512;
+const AC_EVERY = 3;
+let acSignal = null;                          // Float32Array(fftSize), lazily sized
+const acCorr = new Float32Array(AC_WINDOW);   // ACF accumulator, fixed cap
 function autoCorrelate(buf, sampleRate) {
   const SIZE = buf.length;
+  if (!acSignal || acSignal.length !== SIZE) acSignal = new Float32Array(SIZE);
+  const f = acSignal;
   let rms = 0;
-  const f = new Float32Array(SIZE);
   for (let i = 0; i < SIZE; i++) { f[i] = (buf[i] - 128) / 128; rms += f[i] * f[i]; }
   rms = Math.sqrt(rms / SIZE);
   if (rms < 0.01) return 0;  // too quiet to estimate
@@ -461,23 +481,25 @@ function autoCorrelate(buf, sampleRate) {
   let r1 = 0, r2 = SIZE - 1; const thres = 0.2;
   for (let i = 0; i < SIZE / 2; i++) { if (Math.abs(f[i]) < thres) { r1 = i; break; } }
   for (let i = 1; i < SIZE / 2; i++) { if (Math.abs(f[SIZE - i]) < thres) { r2 = SIZE - i; break; } }
-  const trimmed = f.slice(r1, r2);
-  const n = trimmed.length;
+  const n = Math.min(r2 - r1, AC_WINDOW);
   if (n < 2) return 0;
 
-  const c = new Float32Array(n);
+  // ACF over the trimmed window, indexed in place (no slice; the lag in
+  // samples is what sets the period, so sampleRate / T0 below is unchanged).
+  const c = acCorr;
   for (let lag = 0; lag < n; lag++) {
     let s = 0;
-    for (let i = 0; i < n - lag; i++) s += trimmed[i] * trimmed[i + lag];
+    for (let i = 0; i < n - lag; i++) s += f[r1 + i] * f[r1 + i + lag];
     c[lag] = s;
   }
   let d = 0; while (d < n - 1 && c[d] > c[d + 1]) d++;
   let maxVal = -1, maxPos = -1;
   for (let i = d; i < n; i++) { if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; } }
   if (maxPos <= 0) return 0;
-  // Parabolic interpolation around the peak for sub-sample accuracy.
+  // Parabolic interpolation around the peak for sub-sample accuracy. c is a
+  // fixed-size scratch, so entries at n and beyond are stale - guard the +1.
   let T0 = maxPos;
-  const x1 = c[maxPos - 1] || 0, x2 = c[maxPos], x3 = c[maxPos + 1] || 0;
+  const x1 = c[maxPos - 1] || 0, x2 = c[maxPos], x3 = (maxPos + 1 < n ? c[maxPos + 1] : 0);
   const a = (x1 + x3 - 2 * x2) / 2, b = (x3 - x1) / 2;
   if (a) T0 = maxPos - b / (2 * a);
   return T0 > 0 ? sampleRate / T0 : 0;

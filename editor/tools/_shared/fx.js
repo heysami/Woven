@@ -12,8 +12,8 @@
 //   chain.setTime(t);     // seconds, for time-based effects (uTime uniform)
 //   chain.dispose();      // free all GL resources
 //
-// Stateful, multi-pass effects (NEW - additive, separate from apply())
-// --------------------------------------------------------------------
+// Stateful, multi-pass effects (additive, separate from apply())
+// ---------------------------------------------------------------
 // apply()/applyToImageData() above are STATELESS: every effect is one fullscreen
 // pass and the two ping-pong FBOs are transient (reused, never read across
 // frames). Some effects (a Stam fluid solver, feedback trails, GPU particles)
@@ -70,13 +70,8 @@
 //   source is returned unchanged (cheap path, no GL work). A `custom` pass
 //   whose GLSL fails to compile is skipped with console.warn (never throws).
 //
-// Effect types (FX_TYPES)
-// -----------------------
-//   distortion: chromatic-aberration, directional-blur, displacement, slice
-//   pixel:      pixelate, dither, posterize, pixel-sort
-//   artistic:   ascii, crt, halftone, ink, edge-detect
-//   generative: particle-grid, pattern
-//   custom:     glsl-string fragment body
+// Effect types: see the FX_TYPES array directly below - it is the catalog
+// (grouped by category comments) and the single place new types register.
 //
 // =============================================================================
 
@@ -169,7 +164,7 @@ export const FX_LABELS = {
 // layer's source frame each tick, and binds it for these types. Depth = max
 // supported delay (60 frames) + 1 live slice. Baked into EFFECT_SPECS via the
 // `history` flag in fxProgramSpecs() so the standalone twin needs no import.
-export const FX_HISTORY_TYPES = new Set(['row-delay', 'cache-select', 'optical-flow']);
+const FX_HISTORY_TYPES = new Set(['row-delay', 'cache-select', 'optical-flow']);
 export const FX_HISTORY_DEPTH = 61;
 
 // ---------------------------------------------------------------------------
@@ -1184,7 +1179,7 @@ uniform float uDt;
 //   5. divergence- compute div of velocity
 //   6. pressure  - Jacobi solve x N (configurable iterations, default 24)
 //   7. gradient  - subtract pressure gradient (make velocity divergence-free)
-//   8. advectDye - advect dye by the (now divergence-free) velocity, then fade
+//   8. advectDye - advect dye by the divergence-free velocity, then fade
 //   9. display   - composite dye over the layer source by uIntensity
 const FLUID_SHADERS = {
   // Refresh dye from the live layer source so the flow stirs real content.
@@ -1689,23 +1684,13 @@ export function createFXChain() {
     return out.canvas;
   }
 
-  function sourceToCanvas(source) {
-    let w, h;
-    if (source instanceof ImageData) { w = source.width; h = source.height; }
-    else { w = source.width || source.videoWidth; h = source.height || source.videoHeight; }
-    const out = mk2DCanvas(w, h);
-    if (source instanceof ImageData) out.ctx.putImageData(source, 0, 0);
-    else out.ctx.drawImage(source, 0, 0);
-    return out.canvas;
-  }
+  // Cheap passthroughs live at module level (passthroughCanvas /
+  // passthroughImageData) and are shared with the no-WebGL2 stub chain.
+  function sourceToCanvas(source) { return passthroughCanvas(source); }
 
   function sourceToImageData(source) {
     if (source instanceof ImageData) return source;
-    const w = source.width || source.videoWidth;
-    const h = source.height || source.videoHeight;
-    const out = mk2DCanvas(w, h);
-    out.ctx.drawImage(source, 0, 0);
-    return out.ctx.getImageData(0, 0, w, h);
+    return passthroughImageData(source);
   }
 
   function resize(w, h) { ensureSize(w, h); }
@@ -1967,7 +1952,7 @@ export function createFXChain() {
     }
 
     // Read the output FBO into a 2D canvas (flip rows: GL is bottom-up).
-    return sfxReadToCanvas(ow, oh, opts.target);
+    return sfxReadToCanvas(ow, oh, opts.target, inst);
   }
 
   // Fluid solver pass orchestration (Stam stable-fluids on the GPU).
@@ -2116,22 +2101,39 @@ export function createFXChain() {
   }
 
   // bottom-up readPixels -> top-down 2D canvas (or provided target).
-  function sfxReadToCanvas(w, h, target) {
-    const px = new Uint8Array(w * h * 4);
+  // The readback scratch (px + flipped out + the ImageData + the fallback
+  // canvas) lives on the stateful instance, which already persists across
+  // frames - this runs once per frame per stateful layer, so the buffers must
+  // be reused, not reallocated. The ImageData WRAPS `out`, so the three renew
+  // together and only when the output size changes.
+  function sfxReadToCanvas(w, h, target, inst) {
+    let rb = inst._readback;
+    if (!rb || rb.w !== w || rb.h !== h) {
+      const out = new Uint8ClampedArray(w * h * 4);
+      rb = inst._readback = {
+        w, h,
+        px: new Uint8Array(w * h * 4),
+        out,
+        id: new ImageData(out, w, h),
+        canvas: null, ctx: null,
+      };
+    }
+    const px = rb.px, out = rb.out;
     gl.bindFramebuffer(gl.FRAMEBUFFER, sfxOutFBO.fbo);
     gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const out = new Uint8ClampedArray(w * h * 4);
     const rowBytes = w * 4;
     for (let y = 0; y < h; y++) {
       const src = (h - 1 - y) * rowBytes;
       out.set(px.subarray(src, src + rowBytes), y * rowBytes);
     }
-    const id = new ImageData(out, w, h);
     let cv, ctx;
     if (target && target.getContext) { cv = target; if (cv.width !== w) cv.width = w; if (cv.height !== h) cv.height = h; ctx = cv.getContext('2d'); }
-    else { const m = mk2DCanvas(w, h); cv = m.canvas; ctx = m.ctx; }
-    ctx.putImageData(id, 0, 0);
+    else {
+      if (!rb.canvas) { const m = mk2DCanvas(w, h); rb.canvas = m.canvas; rb.ctx = m.ctx; }
+      cv = rb.canvas; ctx = rb.ctx;
+    }
+    ctx.putImageData(rb.id, 0, 0);
     return cv;
   }
 

@@ -359,7 +359,7 @@ export const LogicGraph = {
       const st = handle != null ? (frame.streams && frame.streams[handle]) : null;
       const dets = (st && Array.isArray(st.detections)) ? st.detections : [];
       const present = dets.length > 0;
-      // Detection selector. Default `primary` = dets[0] (the legacy behavior).
+      // Detection selector. Default `primary` = dets[0].
       // With more than one detection present (e.g. detector=hand running two
       // hands) `hand` addresses a SPECIFIC one, so two vision-detect nodes can
       // read two different hands: `leftmost`/`rightmost` pick by on-screen x

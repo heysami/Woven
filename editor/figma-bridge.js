@@ -1093,6 +1093,5 @@
   window.WovenFigma = {
     version: SCENE_VERSION,
     domToScene: domToScene,
-    parseColor: parseColor // exported for tests
   };
 })();

@@ -131,6 +131,27 @@
     };
   };
 
+  // ── Pre-rendered gaze blob sprite - ONE radial gradient rasterised to an
+  // offscreen canvas, then drawImage'd per trail point with per-point alpha +
+  // scale (a createRadialGradient per point per frame is needless work in the
+  // rAF draw path). Colour and falloff are fixed constants, so the sprite
+  // builds once; key a rebuild here if either ever becomes configurable.
+  const GAZE_BLOB_R = 128;   // sprite radius px; trail radii scale down from it
+  let gazeBlobSprite = null;
+  const getGazeBlob = () => {
+    if (gazeBlobSprite) return gazeBlobSprite;
+    const c = document.createElement("canvas");
+    c.width = c.height = GAZE_BLOB_R * 2;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(GAZE_BLOB_R, GAZE_BLOB_R, 0, GAZE_BLOB_R, GAZE_BLOB_R, GAZE_BLOB_R);
+    grad.addColorStop(0, "rgba(225,74,42,1)");
+    grad.addColorStop(1, "rgba(225,74,42,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, GAZE_BLOB_R * 2, GAZE_BLOB_R * 2);
+    gazeBlobSprite = c;
+    return gazeBlobSprite;
+  };
+
   // ── Overlay canvas - draws cursor + gaze heat trail over the player surface.
   // Sample coords are in the IFRAME VIEWPORT space the testee recorded at
   // (meta.viewport when present, else the rrweb player's own width/height). We
@@ -187,17 +208,17 @@
             if (trailRef.current.length > 28) trailRef.current.shift();
           }
           const trail = trailRef.current;
+          const blob = getGazeBlob();
           for (let i = 0; i < trail.length; i++) {
             const pt = trail[i];
             pt.a *= 0.92;                       // fade the tail
             const r = 26 + 18 * (pt.conf || 1); // soft blob, scaled by confidence
-            const alpha = Math.max(0, pt.a) * 0.22 * (0.4 + 0.6 * (pt.conf || 1));
-            const grad = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, r);
-            grad.addColorStop(0, "rgba(225,74,42," + alpha.toFixed(3) + ")");
-            grad.addColorStop(1, "rgba(225,74,42,0)");
-            ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
+            // Sprite alpha is 1 at the centre; globalAlpha carries the per-point
+            // fade, so the composite matches the old per-point gradient exactly.
+            ctx.globalAlpha = Math.max(0, pt.a) * 0.22 * (0.4 + 0.6 * (pt.conf || 1));
+            ctx.drawImage(blob, pt.x - r, pt.y - r, r * 2, r * 2);
           }
+          ctx.globalAlpha = 1;
           // Drop fully-faded points off the head of the trail.
           while (trail.length && trail[0].a < 0.04) trail.shift();
         }
@@ -257,6 +278,8 @@
     const rafRef = useRef(0);               // playhead rAF handle (driven by us)
     const scaleRef = useRef(1);             // current wrapper CSS scale (fit)
     const fitRef = useRef(null);            // recompute-fit fn (set after build)
+    const wrapRef = useRef(null);           // cached .replayer-wrapper element
+    const wrapRectRef = useRef(null);       // cached player frame (getPlayerFrame)
     // Wall-clock anchors. The rrweb DOM stream can be SHORTER than the session
     // (the page goes static, or it ends early) - if we used the replayer's own
     // clock as master it would freeze the whole transport at the last DOM event.
@@ -364,11 +387,23 @@
         wrap.style.top = "0";
         wrap.style.transformOrigin = "top left";
         wrap.style.transform = "translate(" + offX + "px," + offY + "px) scale(" + scale + ")";
+        // The overlay's cached frame is stale the moment the transform changes -
+        // refresh the element cache, drop the rect (getPlayerFrame re-measures).
+        wrapRef.current = wrap;
+        wrapRectRef.current = null;
+        // rrweb resizes the wrapper on viewport meta events mid-replay; observing
+        // it routes those through fit too (observe() is a no-op when repeated).
+        ro.observe(wrap);
       };
       fitRef.current = fit;
       // Recompute on host resize.
       const ro = new ResizeObserver(fit);
       ro.observe(host);
+      // Ancestor scroll shifts the wrapper's viewport rect; the overlay
+      // remeasures its stage rect on the same event, so the cached wrapper rect
+      // must drop with it or the two drift apart.
+      const dropWrapRect = () => { wrapRectRef.current = null; };
+      window.addEventListener("scroll", dropWrapRect, true);
       // The wrapper + its iframe snapshot land asynchronously; fit once now and
       // again on the next frames so the first full snapshot is sized correctly.
       fit();
@@ -393,11 +428,14 @@
       return () => {
         stopRaf();
         try { ro.disconnect(); } catch {}
+        window.removeEventListener("scroll", dropWrapRect, true);
         clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
         try { replayer.off && replayer.off("finish", onFinish); } catch {}
         try { replayer.pause(); } catch {}
         fitRef.current = null;
         replayerRef.current = null;
+        wrapRef.current = null;
+        wrapRectRef.current = null;
       };
     }, [rrwebEvents]);
 
@@ -650,22 +688,32 @@
     // The rendered prototype rect for the overlay. Reads the ON-SCREEN scaled
     // `.replayer-wrapper` box + the recorded viewport (its unscaled CSS size) so
     // overlay coords (recorded iframe space) map onto the scaled replay. Called
-    // from the overlay's rAF; cheap DOM reads (getBoundingClientRect already
-    // reflects the CSS transform we applied).
+    // from the overlay's rAF (several times per frame), so the wrapper element +
+    // frame are CACHED - a querySelector + getBoundingClientRect per call
+    // thrashes layout. The fit path / host resize / scroll invalidate the cache;
+    // a disconnected wrapper (replayer rebuilt) forces a one-time re-query.
     const getPlayerFrame = useCallback(() => {
       const host = playerHostRef.current;
       if (!host) return null;
-      const wrap = host.querySelector(".replayer-wrapper");
+      let wrap = wrapRef.current;
+      if (!wrap || !wrap.isConnected) {
+        wrap = wrapRef.current = host.querySelector(".replayer-wrapper");
+        wrapRectRef.current = null;
+      }
       if (!wrap) return null;
-      const r = wrap.getBoundingClientRect();  // post-transform, on-screen px
-      if (!r.width || !r.height) return null;
-      // Recorded viewport = the wrapper's UNSCALED size. rrweb sets the wrapper's
-      // inline width/height (and the iframe matches); fall back to the rendered
-      // box divided by the current scale.
-      const scale = scaleRef.current || 1;
-      const vw = parseFloat(wrap.style.width) || (r.width / scale);
-      const vh = parseFloat(wrap.style.height) || (r.height / scale);
-      return { left: r.left, top: r.top, width: r.width, height: r.height, vw, vh };
+      let fr = wrapRectRef.current;
+      if (!fr) {
+        const r = wrap.getBoundingClientRect();  // post-transform, on-screen px
+        if (!r.width || !r.height) return null;  // not laid out yet; retry next call
+        // Recorded viewport = the wrapper's UNSCALED size. rrweb sets the wrapper's
+        // inline width/height (and the iframe matches); fall back to the rendered
+        // box divided by the current scale.
+        const scale = scaleRef.current || 1;
+        const vw = parseFloat(wrap.style.width) || (r.width / scale);
+        const vh = parseFloat(wrap.style.height) || (r.height / scale);
+        fr = wrapRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height, vw, vh };
+      }
+      return fr;
     }, []);
 
     // ── Keyboard: Space toggles play, arrows nudge 1s.

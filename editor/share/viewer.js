@@ -308,6 +308,14 @@
     const [busy, setBusy] = useState(false);
     const [editing, setEditing] = useState(false);
     const [editText, setEditText] = useState(c.text);
+    // Two-step inline delete confirm (no native confirm() dialogs). First
+    // click arms the button; it disarms itself after 4s if not confirmed.
+    const [armDelete, setArmDelete] = useState(false);
+    useEffect(() => {
+      if (!armDelete) return;
+      const t = setTimeout(() => setArmDelete(false), 4000);
+      return () => clearTimeout(t);
+    }, [armDelete]);
     const doReply = async () => {
       const t = replyText.trim();
       if (!t || busy) return;
@@ -397,7 +405,9 @@
           ${st !== "done" && html`<button className="sv-mini-btn" onClick=${() => onStatus(c, "done")}>✓ Done</button>`}
           ${st === "done" && html`<button className="sv-mini-btn" onClick=${() => onStatus(c, "open")}>Reopen</button>`}
           ${st !== "archived" && html`<button className="sv-mini-btn" onClick=${() => onStatus(c, "archived")}>Archive</button>`}
-          <button className="sv-mini-btn danger" onClick=${() => onDelete(c)}>Delete</button>
+          <button className="sv-mini-btn danger"
+            onClick=${() => { if (armDelete) { setArmDelete(false); onDelete(c); } else { setArmDelete(true); } }}
+          >${armDelete ? "Really delete?" : "Delete"}</button>
         </div>
       </div>
     `;
@@ -734,9 +744,7 @@
       await mutate("comments/" + c.id + "/edit", { text, author: identity });
     };
     const onStatus = (c, status) => mutate("comments/" + c.id + "/status", { status });
-    const onDelete = (c) => {
-      if (confirm("Delete this comment thread?")) mutate("comments/" + c.id + "/delete", {});
-    };
+    const onDelete = (c) => mutate("comments/" + c.id + "/delete", {});
 
     // Reset = reload the prototype iframe at its first page (index.html). Pure
     // navigation - touches no comments. onFrameLoad re-syncs the page chip and

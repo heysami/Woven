@@ -245,11 +245,9 @@
 
   window.WovenCompress = {
     presets: PRESETS,
-    presetKeys: ["high", "balanced", "aggressive"],
     canCompress: canCompress,
     isRaster: isRaster,
     isVideo: isVideo,
-    extOf: extOf,
     compressImage: compressImage,
     compressVideo: compressVideo,
   };
