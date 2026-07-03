@@ -10876,6 +10876,9 @@ function ShareMenuButton() {
           <div className="share-link-pending">
             <span className=${"shares-dot is-" + meta.dot}></span>
             <span>${status === "starting" ? "Starting…" : meta.label}</span>
+            ${o.onRegen && status !== "starting" && html`<button className="th-icon-btn" title="Start / regenerate the randomised URL" onClick=${o.onRegen}>
+              <${Icon.Refresh}/>
+            </button>`}
           </div>`}
       </div>`;
   };
@@ -54062,6 +54065,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                     <div className="share-link-pending">
                       <span className=${"shares-dot is-" + meta.dot}></span>
                       <span>${status === "starting" ? "Starting…" : meta.label}</span>
+                      ${isQuick && status !== "starting" && html`<button className="shares-btn" disabled=${shareBusy} onClick=${regenQuick} title="Start / regenerate the randomised URL">↻</button>`}
                     </div>`}
                 </div>`;
             };
