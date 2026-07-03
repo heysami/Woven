@@ -1,8 +1,8 @@
 """editor/kinds/reconcile.py - drift detection + auto-heal.
 
-See WORKFLOW_TRUTHFULNESS_PLAN.md §7. Walks the project on demand
-(invoked from /__kinds/reconcile and on every /__workflow GET) and
-returns a list of drifts plus a per-node lineage manifest.
+Walks the project on demand (invoked from /__kinds/reconcile and on
+every /__workflow GET) and returns a list of drifts plus a per-node
+lineage manifest.
 
 Two classes of drift:
 
@@ -820,8 +820,8 @@ def _detect_orphan_prototype_folder(workflow, project_root, drifts):
     if not os.path.isdir(source_dir):
         return
     nodes = workflow.get("nodes") or []
-    # v3.7 made `prototype` the canonical slug field (`branch` kept as fallback
-    # for legacy nodes - see app.js prototypeSlugForNode / line 110). A node
+    # `prototype` is the canonical slug field (`branch` kept as fallback for
+    # legacy nodes - see app.js prototypeSlugForNode). A node
     # carrying only `prototype` covers the slug just as fully as one carrying
     # only `branch`; reading only `branch` here causes the autoheal to spawn
     # duplicate prototype_<slug> siblings every reconcile tick, and worse, to

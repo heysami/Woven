@@ -158,8 +158,9 @@
       const sends = [];
       for (const line of lines) {
         const next = buf + line + "\n";
-        // UTF-8 worst case is 4x; use byte length via Blob for accuracy on
-        // the boundary check only when we approach the cap.
+        // Boundary check uses string length (UTF-16 code units) as a cheap
+        // proxy for bytes - accurate enough for these JSON event lines,
+        // which are overwhelmingly ASCII.
         if (next.length > MAX_CHUNK_BYTES && buf) {
           sends.push(postText(stream, buf));
           buf = line + "\n";

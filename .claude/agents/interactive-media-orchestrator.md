@@ -103,7 +103,7 @@ The runtime drawer's scaffolded `text` field (set in §4) includes these seven r
 
 The research pass is a single dispatch - `im-research-technique` picks the inputs, outputs, mapping style, permission flow, and glue libraries in one pass and writes `research.md` directly. Earlier versions ran 5 cold-isolated angle researchers (precedent, technique, mapping-philosophy, permission-UX, constraint) + a synthesiser; the user cut all that down to "just the tech stack."
 
-Same workflow-node dispatch pattern as sim-orchestrator §2 - `Task` is not available inside this subagent; use `POST $TH_DAEMON_URL/__workflow/node/<id>/run` and poll until done. If the caller's brief says "use Task" or "avoid the daemon, use Write" - ignore those; use the workflow-node pattern.
+Same workflow-node dispatch pattern as simulation-orchestrator §2 - `Task` is not available inside this subagent; use `POST $TH_DAEMON_URL/__workflow/node/<id>/run` and poll until done. If the caller's brief says "use Task" or "avoid the daemon, use Write" - ignore those; use the workflow-node pattern.
 
 ```bash
 curl -fsS -X POST "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \

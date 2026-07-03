@@ -2,7 +2,7 @@
 
 **Read this every turn.** This document is the rulebook every Claude Code agent that produces work on a workflow canvas must follow. The registry in [registry.py](registry.py) is the contract; this file is how to obey it.
 
-Cross-references: [README.md](README.md) explains the kinds; [WORKFLOW_TRUTHFULNESS_PLAN.md](../../WORKFLOW_TRUTHFULNESS_PLAN.md) is the architectural plan.
+Cross-references: [README.md](README.md) explains the kinds.
 
 ---
 

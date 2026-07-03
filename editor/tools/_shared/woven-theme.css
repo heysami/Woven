@@ -13,7 +13,8 @@
      <link rel="stylesheet" href="/editor/tools/_shared/woven-theme.css">
    then map the tool's local vars onto these, e.g.
      :root { --bg: var(--wv-bg); --panel: var(--wv-surface); --accent: var(--wv-accent); ... }
-   and/or use the .wv-* component classes below directly.
+   The native control kit below (sliders / checkboxes / colour swatches) and
+   the .wv-acc accordion apply automatically; everything else is tokens.
 
    NB: tools render a LIGHT chrome to match the editor. A 3D / pixel / canvas
    viewport may keep a dark *content* background - that's content, not chrome.
@@ -132,56 +133,6 @@
   --wv-shadow-lg: 0 12px 32px oklch(0% 0 0 / 0.55), 0 2px 0 oklch(0% 0 0 / 0.30);
 }
 
-/* ── Base component layer (opt-in via .wv-* classes) ───────────────────────── */
-
-.wv-panel {
-  background: var(--wv-surface);
-  border: 1px solid var(--wv-border);
-  border-radius: var(--wv-radius);
-  color: var(--wv-text);
-  font-family: var(--wv-font-sans);
-}
-
-.wv-panel-header {
-  display: flex; align-items: center; gap: var(--wv-gap);
-  padding: var(--wv-pad-xs) var(--wv-pad-sm);
-  border-bottom: 1px solid var(--wv-border);
-  font-family: var(--wv-font-mono);
-  font-size: 11px; font-weight: 700;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--wv-text-muted);
-}
-
-.wv-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 28px; padding: 0 10px;
-  background: var(--wv-surface-2);
-  border: 1px solid var(--wv-border);
-  border-radius: var(--wv-radius);
-  color: var(--wv-text);
-  font-family: var(--wv-font-sans);
-  font-size: 12px; font-weight: 500;
-  cursor: pointer;
-  transition: background 90ms ease, border-color 90ms ease, color 90ms ease;
-}
-.wv-btn:hover { border-color: var(--wv-border-strong); }
-.wv-btn[aria-pressed="true"], .wv-btn.is-active {
-  background: var(--wv-accent-soft);
-  border-color: var(--wv-accent);
-  color: var(--wv-accent-text);
-}
-.wv-btn-primary {
-  background: var(--wv-accent); border-color: var(--wv-accent);
-  color: var(--wv-text-on-accent);
-}
-.wv-btn-primary:hover { background: var(--wv-accent-strong); border-color: var(--wv-accent-strong); }
-.wv-btn-hot {
-  background: var(--wv-hot); border-color: var(--wv-hot);
-  color: var(--wv-text-on-accent);
-}
-.wv-btn-icon { width: 28px; padding: 0; }
-.wv-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
-
 /* ── Native control kit (applies to EVERY tool, no opt-in class needed) ──────
    The single source of truth so sliders / checkboxes / colour swatches read the
    same green across all tools instead of the browser's default blue. Sliders use
@@ -224,40 +175,6 @@ input[type="color"] {
 input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 3px; }
 input[type="color"]::-moz-color-swatch { border: 0; border-radius: 3px; }
-
-.wv-input, .wv-select {
-  height: 28px; padding: 0 8px;
-  background: var(--wv-surface);
-  border: 1px solid var(--wv-border);
-  border-radius: var(--wv-radius);
-  color: var(--wv-text);
-  font-family: var(--wv-font-sans); font-size: 12px;
-}
-.wv-input:focus, .wv-select:focus {
-  outline: none; border-color: var(--wv-accent);
-  box-shadow: 0 0 0 2px var(--wv-accent-soft);
-}
-
-.wv-row {
-  display: flex; align-items: center; gap: var(--wv-gap);
-  padding: var(--wv-pad-xs) var(--wv-pad-sm);
-  border-radius: var(--wv-radius);
-  color: var(--wv-text); font-size: 12px;
-  cursor: pointer;
-}
-.wv-row:hover { background: var(--wv-surface-2); }
-.wv-row.is-active { background: var(--wv-accent-soft); color: var(--wv-accent-text); }
-
-.wv-label {
-  font-family: var(--wv-font-mono); font-size: 10px; font-weight: 700;
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--wv-text-faint);
-}
-
-/* Hairline scrollbars in the Woven register */
-.wv-scroll { scrollbar-width: thin; scrollbar-color: var(--wv-border-strong) transparent; }
-.wv-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
-.wv-scroll::-webkit-scrollbar-thumb { background: var(--wv-border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
-.wv-scroll::-webkit-scrollbar-track { background: transparent; }
 
 /* ── Collapsible panel section ──────────────────────────────────────────────
    Native <details>-based accordion so a long right panel can collapse its

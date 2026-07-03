@@ -52,7 +52,7 @@ Your output paths:
 ### 2.1 - Enumerate pages
 
 If `scope: "whole project"`, walk `source/<branch>/**/*.html`. Skip:
-- Any `source/<branch>/simulations/<simId>/runtime.html` (sim-orchestrator owns its runtime).
+- Any `source/<branch>/simulations/<simId>/runtime.html` (simulation-orchestrator owns its runtime).
 - Any `source/<branch>/interactives/<imId>/runtime.html` (im-orchestrator owns).
 - Any `source/<branch>/narratives/<nxId>/runtime.html` (nx-orchestrator owns).
 - Any `source/<branch>/games/<gameId>/runtime.html` (game-orchestrator owns).

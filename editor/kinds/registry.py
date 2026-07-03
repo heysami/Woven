@@ -1,7 +1,7 @@
 """editor/kinds/registry.py - single source of truth for node-kind contracts.
 
-See WORKFLOW_TRUTHFULNESS_PLAN.md §3. Every per-kind fact (form fields,
-output shape, dispatch shape, fan-out, completion criteria) lives here.
+Every per-kind fact (form fields, output shape, dispatch shape, fan-out,
+completion criteria) lives here.
 The frontend renderer, server-side validator, reconciler drift checks,
 and orchestrator preamble all derive from this dict - no parallel
 sources of truth.
@@ -16,14 +16,6 @@ CRITICAL RULES (from §1 Principles + §4 AGENT_HARNESS):
     everything in the upstream folder per consumeFrom rules.
 """
 
-# ── STAGES - gone in v3.5 (onboarding cut) ──
-# The guided pipeline (A through J) was wired to bp_* preambles that no
-# longer exist. STAGES is now an empty list, kept only because /__kinds
-# legacy clients still read the key. `stage_pause_after` always returns
-# False. Both will be removed entirely once no client references remain.
-STAGES: list = []
-
-
 # Common dispatch shapes (for documentation in entries):
 #   none                   - no run (folder, prompt, asset, decoration)
 #   inline-server-call     - daemon makes an inline LLM call; small text only
@@ -36,7 +28,6 @@ STAGES: list = []
 # fields required at save are the structural ones (id, kind, x, y). This
 # preserves the manual-canvas-use principle (#11): drafts with empty
 # optional fields always persist.
-_EVERYTHING_OPTIONAL_AT_SAVE = True   # invariant constant; do not flip
 
 
 KINDS = {
@@ -499,7 +490,7 @@ KINDS = {
                     "Soundscape (ambient room-tone + optional voice tracks). "
                     "§8.7 crux - 3-draft remix on sonicRegister axis "
                     "(silence-dominant / room-tone-dominant / voice-led). "
-                    "Permission-gated via INTERACTIVITY_PIPELINE pattern "
+                    "Permission-gated via the two-gate pattern "
                     "(canvas-side gate + iframe-side Start)."
                 ),
             },
@@ -2322,8 +2313,8 @@ KINDS = {
             "3d-environment paradigm - how much freedom the user has is a "
             "property of how spine + camera-handling are written, not a "
             "separate enum. Permission UX gates ambient audio via the two-"
-            "gate pattern (canvas-side + iframe-side Start) inherited from "
-            "INTERACTIVITY_PIPELINE - audio context requires user gesture."
+            "gate pattern (canvas-side + iframe-side Start) - the audio "
+            "context requires a user gesture."
         ),
     },
 
@@ -2385,8 +2376,8 @@ KINDS = {
             "- ambient motion always plays. The overlay PEEKS at the edges "
             "(score corner, progress edge, control hint) - never frames the "
             "action. Permission UX gates audio (and gyro on mobile) via the "
-            "two-gate pattern (canvas-side + iframe-side Start) inherited "
-            "from INTERACTIVITY_PIPELINE - audio context requires user gesture."
+            "two-gate pattern (canvas-side + iframe-side Start) - the audio "
+            "context requires a user gesture."
         ),
     },
 
@@ -4087,36 +4078,9 @@ def kind_contract(node_kind: str, node_id: str = None):
     return base
 
 
-def stage_pause_after(code: str) -> bool:  # noqa: ARG001 - kept for API compat
-    """Legacy stage-pause check. STAGES list is empty post-v3.5, so always False."""
-    return False
-
-
-def editable_field_keys(node) -> list:
-    """Return the field keys this node's kind treats as user-editable.
-    The frontend's dirty-tracking machinery (savedSnapshotRef) consults this.
-    Mirrors the legacy app.js _editableFieldsForKind function but derived
-    from the registry - single source of truth (Principle 1)."""
-    if not isinstance(node, dict): return []
-    kind = node.get("kind")
-    if not kind: return []
-    contract = kind_contract(kind, node.get("id"))
-    if not contract: return []
-    out = []
-    for key, spec in (contract.get("inputs") or {}).items():
-        if isinstance(spec, dict) and spec.get("userEditable"):
-            # Dotted keys like "spec.genre" map to nested fields; the
-            # frontend's snapshot keys use the top-level field. Collapse
-            # spec.* → spec so the merge handles the whole spec object.
-            top = key.split(".", 1)[0]
-            if top not in out:
-                out.append(top)
-    return out
-
-
 def to_jsonable():
     """Return the registry as a plain JSON-serializable dict, for the
     /__kinds/registry endpoint and offline tooling."""
-    return {"KINDS": KINDS, "STAGES": STAGES,
+    return {"KINDS": KINDS,
             "ASSET_KIND_AUTHORING": ASSET_KIND_AUTHORING,
             "MEDIA_MODEL_AUTHORING": MEDIA_MODEL_AUTHORING}

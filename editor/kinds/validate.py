@@ -1,7 +1,6 @@
 """editor/kinds/validate.py - synchronous contract checks.
 
-See WORKFLOW_TRUTHFULNESS_PLAN.md §5. Called at three points with three
-modes:
+Called at three points with three modes:
 
   save:           PERMISSIVE - drafts always allowed. Only catches structural
                   errors (unknown kind, wrong field type on populated fields).

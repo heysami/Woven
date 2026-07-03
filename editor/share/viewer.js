@@ -129,9 +129,9 @@
   // Capture what the reviewer is currently looking at in the prototype iframe
   // and return it as a JPEG data URL (or null). The iframe is same-origin, so
   // html2canvas can render its document directly. We crop to the visible
-  // viewport (what they actually see) and draw a green box around the pinned
-  // element so the screenshot reads on its own in the inbox. Best-effort: any
-  // failure returns null and the comment posts without a screenshot.
+  // viewport (what they actually see); no annotation is baked in here - the
+  // freehand-stroke baking below handles markup. Best-effort: any failure
+  // returns null and the comment posts without a screenshot.
   const captureShot = async (frame, anchor) => {
     try {
       const win = frame && frame.contentWindow;
@@ -671,9 +671,8 @@
       setPosting(true);
       try {
         // Snapshot the page BEFORE tearing the composer down - this captures
-        // exactly what the reviewer is looking at, with the pinned element
-        // boxed. The composer/pins live in THIS document (not the iframe), so
-        // they don't bleed into the shot.
+        // exactly what the reviewer is looking at. The composer/pins live in
+        // THIS document (not the iframe), so they don't bleed into the shot.
         const shotRaw = await captureShot(iframeRef.current, d.anchor);
         // Bake any freehand strokes into the screenshot so the drawing + UI
         // ship as one raster (no strokes → the clean shot passes through).

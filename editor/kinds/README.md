@@ -2,8 +2,6 @@
 
 The single source of truth for every workflow node kind is [`registry.py`](registry.py). This README is the prose companion that explains _why_ each contract is shaped the way it is - read this to understand the system, read the registry to know exactly what fields exist and what's enforced.
 
-Authoritative cross-links: [WORKFLOW_TRUTHFULNESS_PLAN.md](../../WORKFLOW_TRUTHFULNESS_PLAN.md) (project root) is the architectural plan this directory implements.
-
 ## The ten principles
 
 Every contract here uphold these (from §1 of the plan):

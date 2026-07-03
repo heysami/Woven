@@ -1331,7 +1331,7 @@ The rule:
 | The payload is a cinematic PRESENTATION - full-bleed video/imagery + UI choreographed scene-by-scene, linear, no features (Apple-product-page / motionsites register) | `motion-studio-orchestrator` - **`mode=brainstorm` BEFORE writing any HTML** |
 | One or more images / icons / illustrations / ambient motion in an otherwise-CSS app | `visual-orchestrator` |
 
-A brief can pass MULTIPLE predicates - dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-orchestrator AND visual-orchestrator. The game-orchestrator builds the playable surface inside a `game-mount` iframe; visual-orchestrator fills the surrounding `<img>` slots.
+A brief can pass MULTIPLE predicates - dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-orchestrator AND visual-orchestrator. The game-experience-orchestrator builds the playable surface inside a `game-mount` iframe; visual-orchestrator fills the surrounding `<img>` slots.
 
 Per-slot builder cardinality varies by family. **The heavy families below list their FULL-tier builder set; the committed `buildTier` (simple / standard / full - see "Build tier" above) scopes it down, and the lens is NOT per-builder - it runs once at the final QA+lens gate (contract 3 above).**
 
@@ -1442,7 +1442,7 @@ Task(interactive-polish-orchestrator, …)   # IFF the gate passes (vaporwave is
 Each slot the agent writes in its HTML is the orchestrator's enumeration anchor:
 
 - **visual slot** → `<img src="images/<assetId>.png" alt="..." data-slot="<assetId>">` (visual-orchestrator reads `src` and walks the HTML for tag types it knows).
-- **sim slot** → `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" ...></iframe>` (sim-orchestrator finds every `<iframe>` whose class contains `sim-mount` or whose `data-sim` attribute is set).
+- **sim slot** → `<iframe class="sim-mount" data-sim="<simId>" data-paradigm-hint="<hint>" data-entities="<scale>" src="simulations/<simId>/runtime.html" ...></iframe>` (simulation-orchestrator finds every `<iframe>` whose class contains `sim-mount` or whose `data-sim` attribute is set).
 - **im slot** → `<iframe class="im-mount" data-im="<imId>" data-inputs="<csv>" data-outputs="<csv>" data-mapping="<style>" src="interactives/<imId>/runtime.html" allow="microphone; camera; gyroscope; accelerometer; midi" ...></iframe>`.
 - **nx slot** → `<iframe class="nx-mount" data-nx="<nxId>" data-paradigm-hint="<hint>" data-aesthetic="<register>" src="narratives/<nxId>/runtime.html" ...></iframe>`.
 - **game slot** → `<iframe class="game-mount" data-game="<gameId>" data-paradigm-hint="<hint>" data-objective="<one-line>" data-inputs="<csv>" data-juice="<register>" src="games/<gameId>/runtime.html" allow="gyroscope; accelerometer" ...></iframe>`.
@@ -1640,7 +1640,7 @@ If the brief touches even one of these, dispatch. Don't try to inline-render any
 
 Ask: *if I built this piece, would there be a map somewhere in it?*
 
-If **yes** → it is a simulation. Dispatch sim-orchestrator. **And the map must be a real map** (see HARD CHECK C). Examples:
+If **yes** → it is a simulation. Dispatch simulation-orchestrator. **And the map must be a real map** (see HARD CHECK C). Examples:
   - "birdwatch across Singapore" → yes, a map of Singapore is in there → sim
   - "track our fleet across Europe" → yes, map of Europe → sim
   - "monitor dengue mosquitoes" → yes, map of Singapore → sim
@@ -1693,7 +1693,7 @@ This is non-negotiable. If the brief involves a real place, you do **NOT**:
 
 The reason: the user said "Singapore" / "London" / "the Atlantic" because they expect to **recognise** it. A hand-rolled silhouette doesn't look like the place; it looks like Claude's best guess at the place. That's the bzzzzz failure mode - user asked for Singapore, got an outline that didn't look like Singapore.
 
-What sim-orchestrator does instead: the tech-stack researcher's §2.0 REAL-WORLD CHECK mandates real map library candidates (MapLibre / Mapbox / Leaflet / deck.gl for region-scale, globe.gl / three-globe / Cesium for planet-scale) and the chosen library renders the actual tile data, GeoJSON boundaries, satellite imagery, or terrain mesh - not Claude's hallucinated approximation.
+What simulation-orchestrator does instead: the tech-stack researcher's §2.0 REAL-WORLD CHECK mandates real map library candidates (MapLibre / Mapbox / Leaflet / deck.gl for region-scale, globe.gl / three-globe / Cesium for planet-scale) and the chosen library renders the actual tile data, GeoJSON boundaries, satellite imagery, or terrain mesh - not Claude's hallucinated approximation.
 
 **Always real map. Never your own.**
 
@@ -1752,11 +1752,11 @@ Task(subagent_type: "simulation-orchestrator",
 ### Do NOT do any of these:
 
 - ❌ **Skipping the app shell because "it's just a sim."** That's the fly bug. The user typed *"generate a globe monitoring system for billionaire private jets"*, the simulation got built at `source/main/simulations/billionaire-jets-globe/runtime.html`, but no `source/main/index.html` was scaffolded. The editor's default view (`source/<prototype>/index.html`) showed 404 - the sim existed but the user couldn't reach it because there was no app to host it. Always scaffold the index.html shell, even when the brief sounds like "just the sim."
-- ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts" → the dashboard chrome scaffolds fine but the map IS a sim-placeholder. Dispatch sim-orchestrator for that slot; don't hand-render the map. (mememem bug.)
-- ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → the sim surface is a slot. Dispatch sim-orchestrator.
-- ❌ "Should I build a sim or just a dashboard?" → dispatch sim-orchestrator; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim) per the hard checks above.
+- ❌ "Let me scaffold a static dashboard with a hand-rolled SVG map and charts" → the dashboard chrome scaffolds fine but the map IS a sim-placeholder. Dispatch simulation-orchestrator for that slot; don't hand-render the map. (mememem bug.)
+- ❌ "I'll write a `<canvas>` with the agents drawn each rAF tick" → the sim surface is a slot. Dispatch simulation-orchestrator.
+- ❌ "Should I build a sim or just a dashboard?" → dispatch simulation-orchestrator; it picks the paradigm (2d-spatial-map / 3d-environment / iconographic-anim) per the hard checks above.
 - ❌ "What paradigm - 2D map or 3D?" → research picks. User steers at the §12.5 interrupt.
-- ❌ Writing entity / loop / scene / overlay / runtime files directly → sim-orchestrator orchestrates the drawers.
+- ❌ Writing entity / loop / scene / overlay / runtime files directly → simulation-orchestrator orchestrates the drawers.
 
 ### Decision rule (no judgement involved):
 
@@ -2062,7 +2062,7 @@ Polish does NOT auto-fire when the committed slug is one of these, OR when the c
 
 Any slug NOT in this list is treated as expressive - polish auto-fires (subject to the DS gate above). Common expressive examples that DO auto-polish: `recipe-aurora-marketing`, `recipe-brutalist-web`, `recipe-editorial-magazine`, `recipe-y2k-memphis-loud`, `recipe-terminal-on-web`, `aesthetic-vaporwave`, `aesthetic-y2k-*`, `aesthetic-cottagecore`, `aesthetic-dreamcore`, `aesthetic-cyberpunk`, `aesthetic-glitch-*`, `aesthetic-acid-*`, `aesthetic-frutiger-*`, `aesthetic-pixel-*`, `style-glassmorphism`, `style-liquid-glass`, `style-claymorphism`, `style-neumorphism`, `style-holographic`, `style-skeuomorphism`, `style-neubrutalism`, `style-doodle`, `style-aurorism`, `style-raster-cutout`.
 
-### What polish-orchestrator does - when it DOES fire
+### What interactive-polish-orchestrator does - when it DOES fire
 
 The orchestrator identifies SITES + TYPES of opportunity (where in the source could be enriched, and with what category: microanimation / pointer / scroll / hover / shader). **The drawers decide WHAT the specific improvement looks like.** Polish is a craft decision - if the orchestrator pre-decided, the drawers would rubber-stamp and quality would drop.
 
@@ -2079,7 +2079,7 @@ Task(subagent_type: "interactive-polish-orchestrator",
      prompt: "prototype=<prototype>, projectRoot=<absolute>, scope=whole project. The committed genre is <X>. The committed styleCue is <verbatim>. The dsRef status is <none | id@version>. Primary orchestrators that ran: <list>. Primary slots committed: <list of {{family, id}}>. Polish register: any (research picks per genre). Walk every source/<prototype>/*.html, identify enrichment sites, commit the polish register, scaffold + dispatch only the drawers whose opportunity type has sites, write integration-instructions.md describing the minimal <link>/<script> edits per host page. Return hand-off envelope with siteMap + expected sub-dispatches.")
 ```
 
-### After polish-orchestrator returns
+### After interactive-polish-orchestrator returns
 
 Read its hand-off envelope. For each host page in `pagesInScope`:
 
@@ -2095,17 +2095,17 @@ Then run Step-8 QA.
 
 - ❌ **Auto-dispatch polish when `meta.dsRef` is set.** The DS owns the design language. (Explicit user request still overrides - but then thread the user's intent into the orchestrator prompt so it polishes WITH the DS tokens, not around them.)
 - ❌ **Auto-dispatch polish on a restrained-register genre.** See deny list above. The restraint IS the polish. A polished Swiss-modernist data table is the regression, not the feature.
-- ❌ **Dispatch polish-orchestrator FIRST.** It needs source to operate on. Dispatching before any source exists = `runError: scope is empty`.
+- ❌ **Dispatch interactive-polish-orchestrator FIRST.** It needs source to operate on. Dispatching before any source exists = `runError: scope is empty`.
 - ❌ **Polish the iframe contents** of a primary orchestrator's slot (sim's runtime.html, game's runtime.html). The polish orchestrator skips these by design; the primary orchestrators own their own motion + interactions. (Scrapbook is the exception - it is NOT an iframe; it's the whole real page, so polish DOES run on it for the living touches, after the scrapbook composition pass.)
 - ❌ **Pre-commit the polish behavior in your prompt.** "Add a halftone shader to the hero" is the WRONG level of instruction - let the orchestrator decide if a shader is even appropriate, then let the drawer pick the specific effect. The right prompt is "polish this site".
-- ❌ **Edit host pages yourself BEFORE polish-orchestrator returns the integration-instructions.md.** The orchestrator needs to walk the source first to identify sites; editing pre-emptively breaks its survey.
+- ❌ **Edit host pages yourself BEFORE interactive-polish-orchestrator returns the integration-instructions.md.** The orchestrator needs to walk the source first to identify sites; editing pre-emptively breaks its survey.
 - ❌ **Skip the QA after polish.** Polish files are loaded into the host page - a broken polish file can break the host page. Step-8 QA verifies the polished state isn't worse than the baseline.
 - ❌ **Re-dispatch polish on top of polish.** Polish is idempotent for a single polishId, but stacking two passes = the second sees the first's `_polish/<polishId>/composite.css` already loaded + may think "richly polished already" + commit zero sites. To re-polish, dispatch with a NEW polishId (e.g. `main-polish-v2`).
 - ❌ **Silently skip without telling the user.** When the gate skips polish (DS or restrained register), surface the one-line notification verbatim per the trigger table. The user should know polish was a deliberate skip, not an oversight.
 
 ### Why the gate (the principle)
 
-The polish pass is what separates "the build is technically correct" from "the piece feels alive" - **when the genre asks for it**. Visual-orchestrator placed an image; sim-orchestrator built a working sim; narrative-orchestrator crafted a felt-state. On expressive registers (vaporwave, editorial spreads, claymorphism cards, brutalist web), polish adds the small living touches - the breath on the logo, the cursor spotlight, the card peek, the print-grain shader - that make a finished page hum.
+The polish pass is what separates "the build is technically correct" from "the piece feels alive" - **when the genre asks for it**. Visual-orchestrator placed an image; simulation-orchestrator built a working sim; narrative-experience-orchestrator crafted a felt-state. On expressive registers (vaporwave, editorial spreads, claymorphism cards, brutalist web), polish adds the small living touches - the breath on the logo, the cursor spotlight, the card peek, the print-grain shader - that make a finished page hum.
 
 But the same touches APPLIED to a restrained register undo it. A Swiss-modernist data table doesn't want subtle idle motion - restraint IS the felt-state. Linear's product UI doesn't want background tints following the cursor - its precision is the polish. A DS-bound prototype already commits its motion + hover + token vocabulary in `design-systems/<id>/styles.css`; polish bolted on top is a second voice talking over the first.
 

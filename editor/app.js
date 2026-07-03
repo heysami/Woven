@@ -847,164 +847,6 @@ const stagesChain = (codes, sep = " → ") => {
   return expanded.map(stageShort).join(sep);
 };
 
-// v2.6 - fixed (col, row) layout for the full orchestration DAG. Filtering
-// to a chosen scope's subset re-ranks columns left so unused stages don't
-// leave gaps. Row 0 is the "main spine" (PRD-side flow); row 1 is the
-// "DS branch" that runs in parallel.
-// v2.6c - added INFRA pseudo-codes "_research" + "_brief" so the DAG mirrors
-// the scaffolder accurately. They're not real stage codes (the user can't
-// pick them by code), but they're inserted between A and B/C whenever any
-// non-Blank scope runs - same gate as the scaffolder + the `runResearch`
-// option that controls whether _research actually appears.
-const STAGE_LAYOUT = {
-  A:                 { col: 0,  row: 0 },
-  "_research":       { col: 1,  row: 0, short: "Research",    infra: true },
-  // v2.10 - refiner is a TRIO (seed → refiner → output); render all three so
-  // the DAG accurately mirrors the scaffolder.
-  "_brief_seed":     { col: 2,  row: 0, short: "Brief seed",  infra: true },
-  "_brief_refine":   { col: 3,  row: 0, short: "Brief refine",infra: true },
-  "_brief_output":   { col: 4,  row: 0, short: "Brief out",   infra: true },
-  B:                 { col: 5,  row: 0 },
-  C:                 { col: 5,  row: 1 },
-  D:                 { col: 6,  row: 1 },
-  E:                 { col: 7,  row: 0 },
-  F:                 { col: 8,  row: 0 },
-  G:                 { col: 9,  row: 0 },
-  H:                 { col: 10, row: 1 },
-  H2:                { col: 11, row: 0 },
-  I:                 { col: 12, row: 0 },
-  J:                 { col: 13, row: 0 },
-};
-// Primary edges of the full graph (subset-filtered before render). Keep this
-// in lockstep with the scaffolder in editor/serve.py (_scaffold_workflow_for_stages).
-const STAGE_EDGES = [
-  ["A","_research"],
-  ["_research","_brief_seed"],
-  ["_brief_seed","_brief_refine"],
-  ["_brief_refine","_brief_output"],
-  ["_brief_output","B"], ["_brief_output","C"],
-  ["C","D"],
-  ["B","E"], ["D","E"],
-  ["E","F"], ["F","G"],
-  ["G","H"], ["D","H"],
-  ["G","H2"], ["H","H2"],
-  ["G","I"], ["H2","I"],
-  ["I","J"],
-];
-
-function StagesDAG({ stages, runResearch = true }) {
-  if (!stages || stages.length === 0) {
-    return html`<code className="wizard-review-stages-empty">no automation</code>`;
-  }
-  // v2.6c - synth-augment the chosen subset with the infra pseudo-codes
-  // (_research, _brief) that always run for non-Blank scopes. The brief
-  // refiner runs whenever any stage runs; research runs only if the user
-  // hasn't opted out (runResearch=false).
-  const augmented = new Set(stages);
-  if (stages.length > 0) {
-    if (runResearch) augmented.add("_research");
-    augmented.add("_brief_seed");
-    augmented.add("_brief_refine");
-    augmented.add("_brief_output");
-  }
-  // v2.15 - H2 (Realign PRD) is auto-scaffolded whenever H is in scope; it's
-  // not a user-pickable stage so the wizard preset cards don't list it, but
-  // the DAG should render it to mirror the actual graph.
-  if (augmented.has("H")) augmented.add("H2");
-  const set = augmented;
-  const placed = Array.from(set)
-    .filter(c => STAGE_LAYOUT[c])
-    .map(c => ({ code: c, ...STAGE_LAYOUT[c] }));
-  if (placed.length === 0) {
-    return html`<code className="wizard-review-stages-empty">${stagesChain(stages)}</code>`;
-  }
-  // Compact columns: rename original cols 0..N to consecutive 0..M so gaps
-  // (skipped stages between included ones) close up.
-  const usedCols = Array.from(new Set(placed.map(p => p.col))).sort((a,b) => a-b);
-  const colMap = new Map(usedCols.map((c, i) => [c, i]));
-  const usedRows = Array.from(new Set(placed.map(p => p.row))).sort((a,b) => a-b);
-  const rowMap = new Map(usedRows.map((r, i) => [r, i]));
-  const nodes = placed.map(p => ({
-    code:  p.code,
-    short: p.short || stageShort(p.code),  // infra nodes carry their own short
-    infra: !!p.infra,
-    cx: colMap.get(p.col),
-    cy: rowMap.get(p.row),
-  }));
-  // Filter edges to those whose both endpoints survived the subset filter.
-  // v2.15 - when H2 mediates between G and I, drop the direct G→I shortcut
-  // so the DAG mirrors how the scaffolder wired the stages.
-  const edges = STAGE_EDGES
-    .filter(([a,b]) => set.has(a) && set.has(b))
-    .filter(([a,b]) => !(set.has("H2") && a === "G" && b === "I"))
-    .map(([a,b]) => ({ from: a, to: b }));
-
-  // Geometry. v2.6c - compressed from the v2.6 baseline (86×22 / 28 gap)
-  // because we added 2 infra columns. Now 72×20, 14px col gap, 8.5px font.
-  // Total Full-guided width ≈ 11×72 + 10×14 = 932px - preserveAspectRatio
-  // scales-to-fit in the wizard row (~670px) which keeps labels readable.
-  const BOX_W = 72, BOX_H = 20, COL_GAP = 14, ROW_GAP = 14;
-  const numCols = colMap.size;
-  const numRows = Math.max(1, rowMap.size);
-  const width  = numCols * BOX_W + (numCols - 1) * COL_GAP;
-  const height = numRows * BOX_H + (numRows - 1) * ROW_GAP;
-  const xOf = (cx) => cx * (BOX_W + COL_GAP);
-  const yOf = (cy) => cy * (BOX_H + ROW_GAP);
-  const cxOf = (cx) => xOf(cx) + BOX_W / 2;
-  const cyOf = (cy) => yOf(cy) + BOX_H / 2;
-  const nodeByCode = new Map(nodes.map(n => [n.code, n]));
-
-  // v2.6 - fit the DAG inside the wizard row width. preserveAspectRatio
-  // "xMidYMid meet" scales the SVG down if its natural size exceeds the
-  // container while keeping labels readable. The wrapper sets max-width: 100%.
-  return html`
-    <svg
-      className="wizard-stages-dag"
-      viewBox=${`0 0 ${width} ${height}`}
-      preserveAspectRatio="xMinYMid meet"
-      style=${{ maxWidth: "100%", height: "auto", width: `${width}px` }}
-      role="img"
-      aria-label=${`Pipeline: ${stagesChain(stages)}`}>
-      <defs>
-        <marker id="stages-dag-arrow" viewBox="0 0 10 10" refX="9" refY="5"
-                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
-        </marker>
-      </defs>
-      ${edges.map(e => {
-        const a = nodeByCode.get(e.from);
-        const b = nodeByCode.get(e.to);
-        if (!a || !b) return null;
-        const x1 = xOf(a.cx) + BOX_W;
-        const y1 = cyOf(a.cy);
-        // End the path 3px BEFORE the box's left edge so the arrowhead has
-        // breathing room and doesn't bleed into the destination's label.
-        const x2 = xOf(b.cx) - 3;
-        const y2 = cyOf(b.cy);
-        const dx = Math.max(6, (x2 - x1) / 2);
-        const d  = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-        return html`<path key=${`${e.from}-${e.to}`} d=${d}
-          className="wizard-stages-dag-edge"
-          fill="none" markerEnd="url(#stages-dag-arrow)"/>`;
-      })}
-      ${nodes.map(n => {
-        // Infra nodes get no code prefix ("Research" not "_research · Research")
-        // and a distinct styling so the user reads them as "always-on glue,
-        // not picked stages."
-        const label = n.infra ? n.short : `${n.code} · ${n.short}`;
-        return html`
-          <g key=${n.code} transform=${`translate(${xOf(n.cx)}, ${yOf(n.cy)})`}>
-            <rect width=${BOX_W} height=${BOX_H} rx="4"
-                  className=${"wizard-stages-dag-box" + (n.infra ? " is-infra" : "")}/>
-            <text x=${BOX_W / 2} y=${BOX_H / 2 + 3} textAnchor="middle"
-                  className=${"wizard-stages-dag-label" + (n.infra ? " is-infra" : "")}>${label}</text>
-          </g>
-        `;
-      })}
-    </svg>
-  `;
-}
-
 // Custom-scope toggles. Each maps to a stage (or stage cluster). The dialog
 // emits a synthetic `{ id: "custom", stages: [...] }` after the user resolves
 // the toggles, so the rest of the flow doesn't need to know about Custom.
@@ -7918,10 +7760,6 @@ function getStarredPrototypesSync() {
   const proj = activeProjectId();
   if (!proj) return [];
   return _starredCache()[proj] || [];
-}
-function isPrototypeStarredSync(slug) {
-  if (!slug) return false;
-  return getStarredPrototypesSync().some(s => s && s.id === slug);
 }
 async function togglePrototypeStar(slug, want) {
   if (!slug) return null;
@@ -19653,28 +19491,6 @@ function DsSchemeCheck({ label, checked, disabled, onToggle }) {
   `;
 }
 
-/* One colour control row: swatch + native picker + hex field + reset-to-default. */
-function DsColorRow({ label, value, fallback, onChange, onReset }) {
-  const current = value || fallback;
-  const isCustom = !!value && value.toUpperCase() !== fallback.toUpperCase();
-  return html`
-    <div className="dscz-color-row">
-      <label className="dscz-color-swatch" style=${{ background: current }}>
-        <input type="color" value=${current} onInput=${(e) => onChange(e.target.value.toUpperCase())}/>
-      </label>
-      <div className="dscz-color-meta">
-        <span className="dscz-color-label">${label}</span>
-        <input className="dscz-color-hex" type="text" spellCheck="false" value=${current}
-          onInput=${(e) => {
-            const v = e.target.value.trim();
-            if (/^#?[0-9a-fA-F]{6}$/.test(v)) onChange((v[0] === "#" ? v : "#" + v).toUpperCase());
-          }}/>
-      </div>
-      ${isCustom && html`<button type="button" className="dscz-reset" onClick=${onReset}>reset</button>`}
-    </div>
-  `;
-}
-
 /* Compact swatch + hex used inside the two-column Light/Dark rows. */
 function DsMiniColor({ value, fallback, onChange, onReset }) {
   const current = value || fallback;
@@ -19707,77 +19523,6 @@ function DsColorRowLD({ label, light, lightFb, dark, darkFb, onLight, onResetLig
             <span className="dscz-ld-tag">Dark</span>
             <${DsMiniColor} value=${dark} fallback=${darkFb} onChange=${onDark} onReset=${onResetDark}/>
           </div>`}
-      </div>
-    </div>
-  `;
-}
-
-function ModelSetupCliPicker({ onRefresh, onBack }) {
-  const { agents, loaded, reload: reloadAgents } = useAgents();
-  const claude = (agents || []).find(a => a.id === "claude");
-  const codex  = (agents || []).find(a => a.id === "codex");
-  const opencode = (agents || []).find(a => a.id === "opencode");
-  const rows = [
-    {
-      id: "claude",
-      label: "Claude Code",
-      ok: !!(claude && claude.available),
-      version: claude && claude.version,
-      bin: claude && claude.bin,
-      install: "npm install -g @anthropic-ai/claude-code",
-      hint: "Once installed, sign in once with `claude login` so the daemon can shell out without an API key.",
-      docs: "https://docs.claude.com/en/docs/claude-code/quickstart",
-    },
-    {
-      id: "codex",
-      label: "Codex",
-      ok: !!(codex && codex.available),
-      version: codex && codex.version,
-      bin: codex && codex.bin,
-      install: "npm install -g @openai/codex",
-      hint: "Provided as an alternate agent - log in via `codex login` once installed.",
-      docs: "https://github.com/openai/codex",
-    },
-    {
-      id: "opencode",
-      label: "opencode",
-      ok: !!(opencode && opencode.available),
-      version: opencode && opencode.version,
-      bin: opencode && opencode.bin,
-      install: "brew install sst/tap/opencode   # or: npm i -g opencode-ai",
-      // opencode is a multi-provider harness: it manages auth AND the model in
-      // its own config, so the guide is install -> auth login -> pick a model.
-      hint: "Then run `opencode auth login` to connect a provider (Anthropic, OpenAI, etc.), and `opencode models` to pick the default model. Woven shells out to it for text-output runs.",
-      docs: "https://opencode.ai/docs/",
-    },
-  ];
-  return html`
-    <div className="model-setup-cli">
-      <div className="model-setup-cli-head">
-        <div className="model-setup-cli-title">Pick a CLI to connect</div>
-        <div className="model-setup-cli-sub">Install the binary, sign in once in a terminal, then refresh. The daemon detects it via PATH.</div>
-      </div>
-      ${rows.map(r => html`
-        <div key=${r.id} className=${"model-setup-cli-row" + (r.ok ? " is-ready" : "")}>
-          <div className="model-setup-cli-row-head">
-            <span className="model-setup-cli-dot" data-ok=${r.ok}/>
-            <span className="model-setup-cli-name">${r.label}</span>
-            <span className="model-setup-cli-state">${r.ok ? ("ready" + (r.version ? " · " + String(r.version).split(/\s+/)[0] : "")) : (loaded ? "not on PATH" : "checking…")}</span>
-          </div>
-          ${!r.ok && html`
-            <div className="model-setup-cli-install">
-              <code>${r.install}</code>
-              <div className="model-setup-cli-hint">${r.hint} <a href=${r.docs} target="_blank" rel="noopener">docs ↗</a></div>
-            </div>
-          `}
-          ${r.ok && html`
-            <div className="model-setup-cli-hint">Detected at <code>${r.bin || "-"}</code>. The editor will shell out to this binary for every text-output run.</div>
-          `}
-        </div>
-      `)}
-      <div className="model-setup-cli-actions">
-        <button className="tbtn" onClick=${onBack}>← Back</button>
-        <button className="tbtn tbtn-primary" onClick=${async () => { await reloadAgents(); await onRefresh(); }}>I've installed it · refresh</button>
       </div>
     </div>
   `;
@@ -24882,7 +24627,6 @@ function WorkflowCanvas() {
     //      workflow-events-connected handshake) refreshes
     //      window.__thLastDaemonOkAt so the daemon-down badge doesn't
     //      false-positive when application fetches are slow under load.
-    // See WORKFLOW_TRUTHFULNESS_PLAN.md Deliverable 1.
     const refreshLiveness = () => {
       try { window.__thLastDaemonOkAt = Date.now(); } catch {}
     };
@@ -27739,21 +27483,6 @@ async function workflowDraftPromptFromAsset(anchor, promptId, { updateNode }) {
   } catch {
     updateNode(promptId, { text: fallback });
   }
-}
-
-// Project a line from the rectangle's center toward (towardX, towardY) and
-// return the point where it exits the rectangle. Used for binding lines:
-// asset-rect → prototype-rect endpoints land on the *facing* side of each
-// rectangle (right edge when the partner is to the right, top edge when it's
-// above, etc.) rather than emerging from inside.
-function workflowRectExit(cx, cy, halfW, halfH, towardX, towardY) {
-  const dx = towardX - cx;
-  const dy = towardY - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  const adx = Math.abs(dx) || 0.0001;
-  const ady = Math.abs(dy) || 0.0001;
-  const t = Math.min(halfW / adx, halfH / ady);
-  return { x: cx + dx * t, y: cy + dy * t };
 }
 
 // Map source subfolder → asset kind, aligned with OPEN_DESIGN_MIGRATION_PLAN.md
@@ -31119,14 +30848,6 @@ function slugifyBucketName(label) {
   if (typeof label !== "string") label = "";
   let s = label.replace(/[^A-Za-z0-9._\- ]+/g, "-").replace(/^[\s-]+|[\s-]+$/g, "");
   return s || "asset";
-}
-
-// Mirror of editor/exports.py::timestamp - YYYYMMDD-HHMMSS local.
-function bucketTimestamp() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`
-       + `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
 // LocalStorage key for the persistent "Allow override" toggle. Once the user
@@ -37660,26 +37381,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return () => { try { document.body.removeAttribute("data-pick-op-pending"); } catch {} };
   }, [pickOpState]);
 
-  // v3.5.3 - React-managed-page guard disabled by user request.
-  //
-  // Background: an earlier commit (397a34a) added a per-element guard that
-  // BLOCKED every structural op (Move / Reorder / Duplicate / Paste / Delete
-  // / Replace / Nudge / Paste-style) on React-rendered elements, with a
-  // "won't survive reload" error toast pointing at the App source instead.
-  // The user explicitly does not want this - their downstream reconciliation
-  // pipeline handles persistence into the App source, so every op should be
-  // allowed to attempt the DOM mutation as it did before 397a34a.
-  //
-  // The function is preserved (every caller still passes through it) but
-  // always returns false now → no block, no error toast. Callers continue
-  // to execute their op as if the element is non-React, which is exactly
-  // the pre-397a34a behaviour the user wants restored. If the React-source
-  // sync ever needs to re-engage, flipping the early-return back to the
-  // zoomIsReactManaged() check at this single call site re-enables it.
-  const _isPickedReactManaged = useCallback((/* opLabel */) => {
-    return false;
-  }, []);
-
   const copyPickedElement = useCallback(() => {
     if (!pickedElement || !pickedElement.outerHTML) return 0;
     // v3.2.3 - Extract the CSS bundle (matched rules + :root tokens +
@@ -37928,7 +37629,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const project = activeProjectId();
     // Path A: there's a picked target inside an iframe → insert as sibling
     if (pickedDomRef.current && pickerIframeRef.current) {
-      if (_isPickedReactManaged("Paste")) return 0;
       const ifr = pickerIframeRef.current;
       // v3.4.4 - Same three-step recovery as copyPickedElement: cached
       // ref → host iframe by nodeId → re-query selector in live doc. This
@@ -38193,7 +37893,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } finally {
       pastePickedElement._inFlight = false;
     }
-  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, _isPickedReactManaged, stageInspectorEdit]);
+  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, stageInspectorEdit]);
 
   // v3.4.20 - Cmd+R: replace the currently picked element with the clipboard's
   // content. Same shape as pastePickedElement Path A (live-source re-read,
@@ -38215,7 +37915,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       flashPickOp("error", "Cmd+R: pick a target element first (click one in the iframe).");
       return 0;
     }
-    if (_isPickedReactManaged("Replace")) return 0;
     // Same-element check: if the picked target IS the clipboard's source,
     // a "replace" would copy the element onto itself. That's almost never
     // the user's intent. Flash a hint instead of doing the no-op.
@@ -38382,14 +38081,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } finally {
       replacePickedElement._inFlight = false;
     }
-  }, [pickedElement, resolveIframePath, flashPickOp, _isPickedReactManaged, stageInspectorEdit]);
+  }, [pickedElement, resolveIframePath, flashPickOp, stageInspectorEdit]);
 
   const deletePickedElement = useCallback(async () => {
     const ifr = pickerIframeRef.current;
     if (!ifr) return 0;
     const doc = ifr.contentDocument;
     if (!doc) { flashPickOp("error", "Delete failed: iframe doc unavailable"); return 0; }
-    if (_isPickedReactManaged("Delete")) return 0;
     // v3.4 - Same re-query as copy/paste: if the iframe reloaded since pick,
     // pickedDomRef.current is detached and `.remove()` would no-op on a
     // ghost element. Re-resolve via the saved CSS path so we delete from
@@ -38445,7 +38143,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       flashPickOp("error", "Delete failed: " + (err.message || err));
       return 0;
     }
-  }, [resolveIframePath, flashPickOp, _isPickedReactManaged, stageInspectorEdit, pickedElement]);
+  }, [resolveIframePath, flashPickOp, stageInspectorEdit, pickedElement]);
 
   // v3.4.32 - Arrow-key element movement.
   //
@@ -38751,7 +38449,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!clip || clip.type !== "html-style") return 0;
     const { el, doc } = _resolvePickedLive();
     if (!el || !doc) { flashPickOp("error", "Pick a target element first, then paste style."); return 0; }
-    if (_isPickedReactManaged("Paste style")) return 0;
     if (pastePickedStyle._inFlight) return 0;
     pastePickedStyle._inFlight = true;
     try {
@@ -38782,12 +38479,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } finally {
       pastePickedStyle._inFlight = false;
     }
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
 
   const nudgePickedElement = useCallback(async (dx, dy) => {
     const { el, doc, win } = _resolvePickedLive();
     if (!el || !doc) return 0;
-    if (_isPickedReactManaged("Nudge")) return 0;
     const cs = win.getComputedStyle(el);
     const pos = cs.position;
     if (pos !== "absolute" && pos !== "fixed") return 0;
@@ -38816,7 +38512,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch {}
     flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
     return 1;
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
 
   const reorderPickedElement = useCallback(async (direction) => {
     // direction: "up" | "down" | "left" | "right"
@@ -38824,7 +38520,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!el || !doc) return 0;
     const parent = el.parentElement;
     if (!parent) return 0;
-    if (_isPickedReactManaged("Move")) return 0;
     const cs = win.getComputedStyle(el);
     // Sticky / inline / table-row-group etc. - bail out rather than guess.
     if (cs.position === "absolute" || cs.position === "fixed") return 0;
@@ -38907,14 +38602,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch {}
     flashPickOp("done", `Moved ${direction}`);
     return 1;
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
 
   const duplicatePickedElement = useCallback(async () => {
     const { el, doc } = _resolvePickedLive();
     if (!el || !doc) return 0;
     const parent = el.parentElement;
     if (!parent) return 0;
-    if (_isPickedReactManaged("Duplicate")) return 0;
     const tagSnap = (el.tagName || "").toLowerCase();
     flashPickOp("pending", `Duplicating <${tagSnap}>…`);
     // deep clone preserves nested markup + inline styles. We strip the
@@ -38958,7 +38652,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch {}
     flashPickOp("done", `Duplicated <${tagSnap}> - staged; click Save on the node pill to persist`);
     return 1;
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp, _isPickedReactManaged]);
+  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
 
   // Keyboard shortcuts active only while pickModeNodeId is set. Capture
   // phase so they beat the canvas-level copy/paste/delete handler.
@@ -45209,7 +44903,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onSaveIframeHtml=${_saveIframeHtml}
                 onStageInspectorEdit=${stageInspectorEdit}
                 onMoveElement=${reorderPickedElement}
-                isReactManaged=${_isPickedReactManaged}
                 onClose=${() => { setPickedElement(null); }}
               />`;
             })()}
@@ -48682,24 +48375,6 @@ function zoomMirrorFontLoaders(parentDoc, nestedDoc) {
   });
 }
 
-// v3.5.3 - React-managed detection neutralised per user request. The user's
-// downstream reconciliation pipeline handles persistence into the App source,
-// so every structural op (Move / Reorder / Duplicate / Paste / Delete / etc.)
-// in zoom-mode AND pick-mode should attempt the DOM mutation as it did
-// before commit 397a34a. Both helpers now return false unconditionally;
-// every caller that gated on them is implicitly re-enabled. The function
-// shape + name + signature are preserved so flipping the React guard back on
-// is a single-line change here if the workflow ever changes. The footer
-// "React-managed page" warning chip (driven by isReactPage → zoomDocHasReact)
-// also goes silent because zoomDocHasReact returns false now.
-function zoomIsReactManaged(/* el */) {
-  return false;
-}
-
-function zoomDocHasReact(/* doc */) {
-  return false;
-}
-
 function zoomSerialize(doc) {
   if (!doc || !doc.documentElement) return "";
   const clone = doc.documentElement.cloneNode(true);
@@ -49824,7 +49499,6 @@ function ZoomSlotPopover({ at, picked, onPick, onClose }) {
 function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onRevealInCode, onSwitchTarget }) {
   const [tool, setTool] = useState("select");
   const [ready, setReady] = useState(false);
-  const [isReactPage, setIsReactPage] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectionRect, setSelectionRect] = useState(null);
   const [hoverRect, setHoverRect] = useState(null);
@@ -50073,7 +49747,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         // Capture the on-disk state at load time. Discard reverts to this
         // exact serialization; opHistory's snapshots compose on top of it.
         savedHtmlRef.current = zoomSerialize(doc);
-        setIsReactPage(zoomDocHasReact(doc));
         setReady(true);
         setDirty(false);
         setOpHistory([]);
@@ -50323,7 +49996,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           }
           if (tool === "import") setImportPanel({ zid });
         } else if (tool === "text") {
-          if (zoomIsReactManaged(el)) { showToast("Can't edit text on a React-managed node - DOM mutation would be reverted on next render"); return; }
           const meta = _docMeta(el);
           const editSnap = snapshotBefore();
           // v3.6.6 - Identity meta captured BEFORE the edit: the replay
@@ -50636,7 +50308,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el) return;
-    if (zoomIsReactManaged(el)) { showToast("Can't delete a React-managed node"); return; }
     const meta = _docMeta(el);
     const label = zoomElementLabel(el);
     const snap = snapshotBefore();
@@ -50674,7 +50345,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el || !el.parentElement) return;
-    if (zoomIsReactManaged(el)) { showToast("Can't duplicate a React-managed node"); return; }
     const meta = _docMeta(el);
     const label = zoomElementLabel(el);
     const snap = snapshotBefore();
@@ -50713,7 +50383,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el) return;
-    if (zoomIsReactManaged(el)) { showToast("Can't restyle a React-managed node"); return; }
     const meta = _docMeta(el);
     const label = zoomElementLabel(el);
     const snap = snapshotBefore();
@@ -50743,7 +50412,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el) return;
-    if (zoomIsReactManaged(el)) { showToast("Can't restyle a React-managed node"); return; }
     const meta = _docMeta(el);
     const snap = snapshotBefore();
     // v3.4.x - Extended cssKeys list to match the augmented inspector
@@ -50799,7 +50467,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el || !el.parentElement) return;
-    if (zoomIsReactManaged(el)) { showToast("Can't reorder a React-managed node"); return; }
     const meta = _docMeta(el);
     const snap = snapshotBefore();
     const sib = direction === "prev" ? el.previousElementSibling : el.nextElementSibling;
@@ -50834,7 +50501,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el) return;
-    if (zoomIsReactManaged(el)) { showToast("Can't insert into a React-managed node"); return; }
     const meta = _docMeta(el);
     const snap = snapshotBefore();
     const isReplace = !!(slotPopoverAt && slotPopoverAt.action === "replace");
@@ -51319,10 +50985,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     if (!doc || !selectedId) return;
     const el = doc.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
     if (!el || !el.parentElement) { showToast("Import failed - selection lost"); return; }
-    if (zoomIsReactManaged(el)) {
-      showToast("Can't import into a React-managed node - DOM swap would be reverted on next render");
-      return;
-    }
     setBusy(true);
     try {
       const snap = snapshotBefore();
@@ -51894,11 +51556,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     <footer key="foot" className="zoom-footer">
       <div className="zoom-footer-meta">
         <span className="zoom-footer-path">${filePath}</span>
-        ${isReactPage && html`
-          <span className="zoom-footer-warn" title="React-rendered prototypes will revert DOM mutations on next render. Comment / Sketch / Export still work.">
-            ⚠ React-managed page · structural edits may not persist
-          </span>
-        `}
       </div>
       <div className="zoom-footer-actions">
         ${tool === "sketch" && html`
@@ -54600,13 +54257,12 @@ function WorkflowCodePanel({ node, onClose, zoom, focus }) {
      • pickedDomRef      - ref → live DOM element
      • onSaveIframeHtml(doc, label) - persists doc back to /__html_save
      • onMoveElement(direction) - calls reorderPickedElement with up/down/left/right
-     • isReactManaged(opLabel) - true + flashes a toast if picked is React-rendered
      • onClose           - close the dock
 */
 function WorkflowPickedInspectorDock({
   node, zoom, pickedElement,
   pickerIframeRef, pickedDomRef,
-  onSaveIframeHtml, onStageInspectorEdit, onMoveElement, isReactManaged,
+  onSaveIframeHtml, onStageInspectorEdit, onMoveElement,
   onClose,
 }) {
   // Refresh tick - bumps whenever we mutate styles so the inspector
@@ -54819,7 +54475,6 @@ function WorkflowPickedInspectorDock({
   // values for all of these via PickedColorField + PickedTextField + the
   // sizing/align controls.
   const applyStyle = useCallback(async (nextStyles) => {
-    if (isReactManaged && isReactManaged("Inspector style change")) return;
     // v3.6.1 - Re-resolve BOTH the iframe and the element instead of
     // trusting the refs blindly. The read path (useMemo above) already
     // falls back to querySelector(pickedElement.path) when the cached
@@ -54894,7 +54549,7 @@ function WorkflowPickedInspectorDock({
         await onSaveIframeHtml(doc, "Inspector style");
       }
     } catch {}
-  }, [pickerIframeRef, pickedDomRef, pickedElement, node.id, onSaveIframeHtml, onStageInspectorEdit, isReactManaged]);
+  }, [pickerIframeRef, pickedDomRef, pickedElement, node.id, onSaveIframeHtml, onStageInspectorEdit]);
 
   // v3.4.x - Re-pick a different element from the tree links. Updates
   // pickedDomRef + dispatches th:element-picked so WorkflowSurface's
@@ -57792,150 +57447,6 @@ function WorkflowAssetTextPreview({ src, onError }) {
   }, [src]);
   return html`
     <pre className="workflow-node-asset-text-preview">${text}</pre>
-  `;
-}
-
-/* v3.4.3 - Kind chip in the asset card bar. Shows the ACTUAL assetKind
-   (Image / SVG / HTML / Lottie / Video / Text / 3D) instead of leaving
-   the user to guess from the path. Hover-tip explains the file format. */
-function WorkflowAssetKindChip({ kind, path }) {
-  const LABELS = {
-    image:  "Image",
-    svg:    "SVG",
-    vector: "Vector",
-    html:   "HTML",
-    "html-set": "HTML",
-    lottie: "Lottie",
-    video:  "Video",
-    text:   "Text",
-    "3d":   "3D",
-    audio:  "Audio",
-  };
-  const label = LABELS[kind] || (kind ? kind.toUpperCase() : "?");
-  const ext = (path || "").match(/\.([a-z0-9]+)$/i);
-  const tip = `Asset kind: ${label}${ext ? " (." + ext[1].toLowerCase() + ")" : ""}`;
-  return html`
-    <span
-      className=${"workflow-node-asset-kind-chip workflow-node-asset-kind-chip-" + (kind || "unknown").replace(/[^a-z0-9-]/gi, "")}
-      title=${tip}
-      onMouseDown=${(e) => e.stopPropagation()}
-    >${label}</span>
-  `;
-}
-
-/* v3.4.3 - Model chip in the asset card bar. Shows which model was/will
-   be used to produce this asset's bytes, with an inline dropdown for
-   per-asset override. Resolution order:
-     1. `node.model` - explicit user override, if set
-     2. upstream skill's `node.model` - what the wired generator uses
-     3. upstream skill spec's `defaultModel`
-   When the user picks a new value, it's written to `node.model` so the
-   override survives across re-runs. */
-function WorkflowAssetModelChip({ node, allNodes, allEdges, onChange }) {
-  // Walk one edge backward to find the producing skill (the immediate
-  // upstream node connected to this asset's `in` port).
-  const upstreamSkill = useMemo(() => {
-    if (!allEdges || !allNodes) return null;
-    for (const e of allEdges) {
-      const t = (e.to || "").split(".", 1)[0];
-      if (t !== node.id) continue;
-      const f = (e.from || "").split(".", 1)[0];
-      const fn = allNodes.find(n => n && n.id === f);
-      if (fn && fn.kind === "skill") return fn;
-    }
-    return null;
-  }, [node.id, allNodes, allEdges]);
-  const skillCatalog = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
-  const skillSpec = upstreamSkill ? skillCatalog.find(s => s && s.id === upstreamSkill.skill) || {} : null;
-  // Model in priority order - node override > upstream node model > skill default.
-  // v3.4.10 - every raw value is resolved through _resolveLiveModel so a
-  // deprecated string saved on the node (e.g. fal-ai/luma-dream-machine,
-  // gpt-image-1) DISPLAYS + DISPATCHES as the live catalog ID. The catalog
-  // is the source of truth - node.model is a hint that gets translated.
-  const rawModel = node.model
-                || (upstreamSkill && upstreamSkill.model)
-                || (skillSpec && skillSpec.defaultModel)
-                || "";
-  const effectiveModel = _resolveLiveModel(rawModel);
-  const wasDeprecated = _modelWasDeprecated(rawModel);
-  // Build the list of models the user can switch to. If we know the
-  // upstream skill's output kind, narrow to that catalog (image / text /
-  // video); otherwise show all integrated models.
-  const M = window.TH_MEDIA || {};
-  const candidates = useMemo(() => {
-    if (!skillSpec) return [];
-    if (skillSpec.modelKind === "text") return (M.textModels || []).filter(m => m.integrated !== false);
-    if (skillSpec.output === "video")   return (M.videoModels || []).filter(m => m.integrated !== false);
-    if (skillSpec.output === "3d")      return (M.models3d || []).filter(m => m.integrated !== false);
-    if (skillSpec.output === "audio")   return (M.audioModels || []).filter(m => m.integrated !== false);
-    if (skillSpec.output === "image")   return (M.imageModels || []).filter(m => m.integrated !== false);
-    return [];
-  }, [skillSpec, M.textModels, M.imageModels, M.videoModels, M.models3d, M.audioModels]);
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && ref.current.contains(e.target)) return;
-      setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
-  const shortLabel = (() => {
-    if (!effectiveModel) return "auto";
-    const found = candidates.find(c => c.id === effectiveModel);
-    if (found) return found.label || found.id;
-    // Strip provider prefix for compactness (`fal-ai/luma-dream-machine` → `luma-dream-machine`)
-    return effectiveModel.split("/").pop();
-  })();
-  // v3.4.10 - surface the live → saved translation in the tooltip so users
-  // can tell the chip is showing the catalog's current ID rather than what's
-  // literally on disk (it doesn't say "I'm hiding the fact your save is
-  // deprecated"; it's transparent).
-  const deprecationNote = wasDeprecated
-    ? `  (live · saved value \`${rawModel}\` was deprecated → resolved to \`${effectiveModel}\`)` : "";
-  const tip = node.model
-    ? `Override: ${effectiveModel}${deprecationNote} - click to change. Clear override to follow upstream skill.`
-    : upstreamSkill
-      ? `Following upstream ${skillSpec ? skillSpec.label : "skill"}: ${effectiveModel || "(no model)"}${deprecationNote}. Click to override per-asset.`
-      : `No upstream skill wired. Click to set a model anyway (used if a skill is wired later).`;
-  return html`
-    <span
-      ref=${ref}
-      className=${"workflow-node-asset-model-chip" + (node.model ? " has-override" : "")}
-      title=${tip}
-      onMouseDown=${(e) => e.stopPropagation()}
-    >
-      <button
-        type="button"
-        className="workflow-node-asset-model-chip-btn"
-        onClick=${(e) => { e.stopPropagation(); setOpen(o => !o); }}
-      >${shortLabel}</button>
-      ${open && html`
-        <div className="workflow-node-asset-model-chip-menu" onClick=${(e) => e.stopPropagation()}>
-          ${node.model && html`
-            <button
-              type="button"
-              className="workflow-node-asset-model-chip-clear"
-              onClick=${() => { onChange && onChange({ model: null }); setOpen(false); }}
-            >- Clear override (follow upstream) -</button>
-          `}
-          ${candidates.length === 0 && html`
-            <div className="workflow-node-asset-model-chip-empty">No upstream skill wired - wire one to pick a model.</div>
-          `}
-          ${candidates.map(c => html`
-            <button
-              key=${c.id}
-              type="button"
-              className=${"workflow-node-asset-model-chip-item" + (c.id === effectiveModel ? " is-current" : "")}
-              title=${c.hint || c.id}
-              onClick=${() => { onChange && onChange({ model: c.id }); setOpen(false); }}
-            >${c.label || c.id}</button>
-          `)}
-        </div>
-      `}
-    </span>
   `;
 }
 
@@ -62134,17 +61645,6 @@ function detectIteratorKind(upstreamNode) {
   if (upstreamNode.kind === "prototype") return "image";
   if (upstreamNode.kind === "prompt")    return looksLikeHtml(upstreamNode.text) ? "html" : "text";
   return "image";
-}
-// Blend-aware detector. Aggregates the kinds of N upstream inputs into a
-// single output kind: any image dominates (the user is clearly compositing
-// visuals), else if any input is HTML the blend is HTML (text inputs get
-// folded into the page), else text. Empty / unwired inputs are ignored.
-function detectBlendKind(upstreamNodes) {
-  const kinds = (upstreamNodes || []).filter(Boolean).map(detectIteratorKind);
-  if (kinds.includes("image")) return "image";
-  if (kinds.includes("html"))  return "html";
-  if (kinds.length === 0)      return "image";
-  return "text";
 }
 
 function bumpLabel(prev) {
@@ -67178,28 +66678,6 @@ function _vecSerializeSvg(node) {
   return lines.join("\n");
 }
 
-function _vecResolvePaintForBake(spec, defId) {
-  if (spec == null || spec === "none" || spec === "") return { paintAttr: "none" };
-  if (typeof spec === "string") return { paintAttr: spec };
-  if (typeof spec === "object" && spec.type === "linear") {
-    const angle = Number.isFinite(spec.angle) ? spec.angle : 0;
-    const rad = (angle * Math.PI) / 180;
-    const cx = 0.5, cy = 0.5;
-    const dx = Math.cos(rad) / 2;
-    const dy = Math.sin(rad) / 2;
-    const stops = (spec.stops || []).map((s, i) => {
-      const off = s.offset != null ? s.offset : (i / Math.max(1, spec.stops.length - 1));
-      const op  = s.opacity != null ? ` stop-opacity="${s.opacity}"` : "";
-      return `<stop offset="${off}" stop-color="${s.color || "#000"}"${op}/>`;
-    }).join("");
-    return {
-      paintAttr: `url(#${defId})`,
-      defText: `<linearGradient id="${defId}" x1="${cx - dx}" y1="${cy - dy}" x2="${cx + dx}" y2="${cy + dy}">${stops}</linearGradient>`,
-    };
-  }
-  return { paintAttr: "none" };
-}
-
 function _vecResolveFilterForBake(shape, defId) {
   const blur = +shape.blur || 0;
   const sh = shape.shadow;
@@ -69610,84 +69088,34 @@ const SPEC_NODE_DEFS = {
   "effect": {
     glyph: "✲", label: "Effect", canonical: (b, id) => `source/${b}/effect-${id}.json`,
     source: (b, id) => `source/${b}/effect-${id}.js`,
-    fields: [
-      { key: "type", label: "Type", type: "select", options: [
-        "chromatic-aberration","directional-blur","displacement","slice",
-        "pixelate","dither","posterize","pixel-sort",
-        "ascii","crt","halftone","ink","edge-detect",
-        "particle-grid","pattern","fluid","face-morph","custom"] },
-      { key: "intensity", label: "Intensity", type: "range", min: 0, max: 1, step: 0.01 },
-      { key: "params", label: "Params", type: "object" },
-      { key: "glsl", label: "Custom GLSL (type=custom)", type: "textarea" },
-    ],
   },
   "position": {
     glyph: "⊞", label: "Position", canonical: (b, id) => `source/${b}/position-${id}.json`,
     source: (b, id) => `source/${b}/position-${id}.js`,
-    fields: [
-      { key: "mode", label: "Mode", type: "select", options: [
-        "single","grid","instances","physics","shatter","boids","drawn","text-ink","text-outline","rope","rope-ink","camera-feed","grid-3d","scatter-3d","surface"] },
-      { key: "params", label: "Params", type: "object" },
-    ],
   },
   "trigger": {
     glyph: "◇", label: "Trigger", canonical: (b, id) => `source/${b}/trigger-${id}.json`,
     source: (b, id) => `source/${b}/trigger-${id}.js`,
-    fields: [
-      { key: "source", label: "Source", type: "select", options: [
-        "none","mouse-click","hover","position","timeline","audio","camera"] },
-      { key: "params", label: "Params", type: "object" },
-      { key: "impacts", label: "Impacts", type: "impacts" },
-    ],
   },
   "layer": {
     glyph: "▤", label: "Layer", canonical: (b, id) => `source/${b}/layer-${id}.json`,
     source: (b, id) => `source/${b}/layer-${id}.js`,
-    fields: [
-      { key: "name", label: "Name", type: "text" },
-      { key: "z", label: "Z", type: "number" },
-      { key: "opacity", label: "Opacity", type: "range", min: 0, max: 1, step: 0.01 },
-      { key: "blend", label: "Blend", type: "select", options: ["normal","multiply","screen","overlay"] },
-      { key: "feedback", label: "Feedback", type: "range", min: 0, max: 1, step: 0.01 },
-      { key: "visible", label: "Visible", type: "checkbox" },
-    ],
   },
   "layer-group": {
     glyph: "▦", label: "Layer group", canonical: (b, id) => `source/${b}/group-${id}.json`,
     source: (b, id) => `source/${b}/group-${id}.js`,
-    fields: [
-      { key: "name", label: "Name", type: "text" },
-      { key: "z", label: "Z", type: "number" },
-      { key: "opacity", label: "Opacity", type: "range", min: 0, max: 1, step: 0.01 },
-      { key: "blend", label: "Blend", type: "select", options: ["normal","multiply","screen","overlay"] },
-      { key: "visible", label: "Visible", type: "checkbox" },
-    ],
   },
   "number-generator": {
     glyph: "#", label: "Number", canonical: (b, id) => `source/${b}/number-${id}.json`,
     source: (b, id) => `source/${b}/number-${id}.js`,
-    fields: [
-      { key: "sub", label: "Type", type: "select", options: ["constant","algorithmic","random","pixel-map"] },
-      { key: "params", label: "Params", type: "object" },
-      { key: "vector", label: "Per-instance", type: "checkbox" },
-    ],
   },
   "timeline": {
     glyph: "⧖", label: "Timeline", canonical: (b, id) => `source/${b}/timeline-${id}.json`,
     source: (b, id) => `source/${b}/timeline-${id}.js`,
-    fields: [
-      { key: "duration", label: "Duration", type: "number" },
-      { key: "loop", label: "Loop", type: "checkbox" },
-    ],
   },
   "sketch": {
     glyph: html`<${Icon.Code}/>`, label: "Sketch", canonical: (b, id) => `source/${b}/sketch-${id}.json`,
     source: (b, id) => `source/${b}/sketch-${id}.js`,
-    fields: [
-      // The sketch's body lives in its source module (controls + draw); the Code
-      // tab edits it. `controls` is the schema the panel + param: ports read.
-      { key: "controls", label: "Controls", type: "object" },
-    ],
   },
 };
 
@@ -70683,7 +70111,6 @@ for (const [kind, def] of Object.entries(LOGIC_NODE_DEFS)) {
     canonical: (b, id) => `source/${b}/logic-${id}.json`,
     source: (b, id) => `source/${b}/logic-${id}.js`,
     logic: true,
-    fields: [],
   };
 }
 
@@ -74761,12 +74188,6 @@ function _dsRootBlock(css) {
   const m = css.match(/:root\s*\{([\s\S]*?)\}/);
   return m ? m[1] : "";
 }
-function _dsVar(rootBlock, name) {
-  if (!rootBlock) return null;
-  const re = new RegExp("--" + name.replace(/^--/, "") + "\\s*:\\s*([^;]+);", "i");
-  const m = rootBlock.match(re);
-  return m ? m[1].trim() : null;
-}
 function _dsGenreKeywords(genre) {
   return (genre || "").toLowerCase();
 }
@@ -78663,161 +78084,6 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
       })()}
     </div>
   `;
-}
-
-/* A whiteboard table: a grid of cells. Holds no content itself - other wb
-   items + workflow nodes bind to its cells (see the wb-table helpers + the
-   reconcile effect). When NOT selected the whole body is a move target (the
-   canvas hit-test grabs it like any box). When selected, the cell layer goes
-   live: drag to rubber-band a cell range, the boundary strips resize rows /
-   columns, and the end buttons append. Merge / split / insert / delete / move
-   live in the right-click menu. A grip at the top-left re-enables moving the
-   selected table. */
-function WorkflowWbTable({ item, selected, zoom, tableSel, onOp, onCellSelect, onCellMenu }) {
-  const z = Math.round(item.z || 0);
-  const cols = wbTableCols(item), rows = wbTableRows(item);
-  // Fill: "white" (paper), "none" (transparent), or a colour token rendered as
-  // a soft tint. Line: a real colour token (or "none"), used at full strength -
-  // a clean, chosen line rather than a muddy auto-derived shade.
-  const fillTok = item.fill || "white";
-  const cellBg = fillTok === "none" ? "transparent"
-               : fillTok === "white" ? "#fff"
-               : `color-mix(in oklab, ${wbColorCSS(fillTok)} 16%, #fff)`;
-  // Line colour is AUTOMATIC from the fill (clean light grey for white/none,
-  // else the fill's own hue at full strength).
-  const cellBorder = (fillTok === "white" || fillTok === "none")
-    ? "color-mix(in oklab, var(--wb-gray) 50%, #fff)"
-    : wbColorCSS(fillTok);
-  const selBg = `color-mix(in oklab, var(--accent) 20%, var(--surface))`;
-  const rootRef = useRef(null);
-  // Prefix sums (relative to the table's top-left) for cell geometry.
-  const colX = useMemo(() => { const a = [0]; for (const w of cols) a.push(a[a.length - 1] + w); return a; }, [cols]);
-  const rowY = useMemo(() => { const a = [0]; for (const h of rows) a.push(a[a.length - 1] + h); return a; }, [rows]);
-  const totalW = colX[colX.length - 1], totalH = rowY[rowY.length - 1];
-  const px = (v) => v / Math.max(zoom, 0.1);   // world px for a constant on-screen size
-  const HW = px(7), GRIP = px(15), PLUS = px(18), line = px(1);
-
-  const covered = (r, c) => { const m = wbTableMergeAt(item, r, c); return m && !(m.r === r && m.c === c); };
-  const span = (r, c) => { const m = wbTableMergeAt(item, r, c); return { rs: m ? m.rs : 1, cs: m ? m.cs : 1 }; };
-
-  // world cell (r,c) under a screen point, using a rect captured at gesture start.
-  const cellAtClient = (cx, cy, rect) => {
-    const wx = (cx - rect.left) / Math.max(zoom, 0.1);
-    const wy = (cy - rect.top) / Math.max(zoom, 0.1);
-    let c = cols.length - 1; for (let i = 0; i < cols.length; i++) { if (wx < colX[i + 1]) { c = i; break; } }
-    let r = rows.length - 1; for (let i = 0; i < rows.length; i++) { if (wy < rowY[i + 1]) { r = i; break; } }
-    return { r: Math.max(0, Math.min(r, rows.length - 1)), c: Math.max(0, Math.min(c, cols.length - 1)) };
-  };
-
-  // Rubber-band cell selection (only when the table is already selected).
-  const onCellDown = (e) => {
-    if (!selected || e.button !== 0) return;
-    e.stopPropagation(); e.preventDefault();
-    const rect = rootRef.current.getBoundingClientRect();
-    const a = cellAtClient(e.clientX, e.clientY, rect);
-    let range = { r0: a.r, c0: a.c, r1: a.r, c1: a.c };
-    onCellSelect && onCellSelect(item.id, range);
-    const onMove = (ev) => {
-      const f = cellAtClient(ev.clientX, ev.clientY, rect);
-      range = { r0: a.r, c0: a.c, r1: f.r, c1: f.c };
-      onCellSelect && onCellSelect(item.id, range);
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  // Drag a row/column boundary to resize the row/column before it.
-  const onBoundaryDown = (e, axis, index) => {
-    e.stopPropagation(); e.preventDefault();
-    const startX = e.clientX, startY = e.clientY;
-    const orig = axis === "col" ? cols[index] : rows[index];
-    const onMove = (ev) => {
-      const d = axis === "col"
-        ? (ev.clientX - startX) / Math.max(zoom, 0.1)
-        : (ev.clientY - startY) / Math.max(zoom, 0.1);
-      onOp && onOp(item.id, axis === "col" ? "resizeCol" : "resizeRow",
-        axis === "col" ? { c: index, size: orig + d } : { r: index, size: orig + d });
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  const selRange = (selected && tableSel && tableSel.tableId === item.id) ? wbTableNormRange(tableSel) : null;
-
-  return html`
-    <div ref=${rootRef} className="workflow-wb-item workflow-wb-table" data-wb-id=${item.id}
-      data-selected=${selected ? "true" : "false"}
-      style=${{ left: item.x + "px", top: item.y + "px", width: totalW + "px", height: totalH + "px", zIndex: z }}
-      onContextMenu=${(e) => {
-        e.preventDefault(); e.stopPropagation();
-        const rect = rootRef.current.getBoundingClientRect();
-        const cc = cellAtClient(e.clientX, e.clientY, rect);
-        onCellMenu && onCellMenu(item.id, cc.r, cc.c, e.clientX, e.clientY);
-      }}>
-      <!-- cells (clipped to a rounded frame so the table corners round like a
-           node; bound items live OUTSIDE this wrap so they're never clipped) -->
-      <div className="workflow-wb-table-cellwrap" style=${{ borderRadius: "10px" }}>
-        ${rows.map((_, r) => cols.map((__, c) => {
-          if (covered(r, c)) return null;
-          const sp = span(r, c);
-          const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
-          return html`<div key=${"c" + r + "_" + c}
-            className="workflow-wb-table-cell"
-            style=${{
-              left: colX[c] + "px", top: rowY[r] + "px",
-              width: (colX[c + sp.cs] - colX[c]) + "px",
-              height: (rowY[r + sp.rs] - rowY[r]) + "px",
-              background: isSel ? selBg : cellBg,
-              borderColor: cellBorder, borderWidth: line + "px",
-            }}/>`;
-        }))}
-      </div>
-      <!-- cell interaction layer (only live when selected) -->
-      ${selected && html`<div className="workflow-wb-table-hit"
-        style=${{ inset: 0 }} onMouseDown=${onCellDown}/>`}
-      <!-- column resize strips -->
-      ${selected && cols.map((_, i) => html`<div key=${"cb" + i}
-        className="workflow-wb-table-colgrip"
-        style=${{ left: (colX[i + 1] - HW / 2) + "px", top: 0, width: HW + "px", height: totalH + "px" }}
-        title="Drag to resize column"
-        onMouseDown=${(e) => onBoundaryDown(e, "col", i)}/>`)}
-      <!-- row resize strips -->
-      ${selected && rows.map((_, i) => html`<div key=${"rb" + i}
-        className="workflow-wb-table-rowgrip"
-        style=${{ left: 0, top: (rowY[i + 1] - HW / 2) + "px", width: totalW + "px", height: HW + "px" }}
-        title="Drag to resize row"
-        onMouseDown=${(e) => onBoundaryDown(e, "row", i)}/>`)}
-      <!-- append column / row -->
-      <!-- Add column at the TOP-RIGHT, add row at the BOTTOM-LEFT - off the
-           left/right mid edges so they don't collide with the section-style
-           connectors that live there. -->
-      ${selected && html`<button type="button" className="workflow-wb-table-add"
-        title="Add column"
-        style=${{ left: (totalW - PLUS) + "px", top: (-(PLUS) - px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
-        onMouseDown=${(e) => e.stopPropagation()}
-        onClick=${(e) => { e.stopPropagation(); onOp && onOp(item.id, "insertCol", { at: cols.length }); }}>+</button>`}
-      ${selected && html`<button type="button" className="workflow-wb-table-add"
-        title="Add row"
-        style=${{ left: "0px", top: (totalH + px(4)) + "px", width: PLUS + "px", height: PLUS + "px", fontSize: px(13) + "px" }}
-        onMouseDown=${(e) => e.stopPropagation()}
-        onClick=${(e) => { e.stopPropagation(); onOp && onOp(item.id, "insertRow", { at: rows.length }); }}>+</button>`}
-      <!-- move grip (re-enables moving a selected table) - sits just inside the
-           top-left so the canvas hit-test grabs the table when dragged. It does
-           NOT stop propagation, so mousedown bubbles to the canvas move gesture. -->
-      ${selected && html`<div className="workflow-wb-table-movegrip"
-        title="Drag to move table"
-        style=${{ left: px(2) + "px", top: px(2) + "px", width: GRIP + "px", height: GRIP + "px" }}>
-        <svg viewBox="0 0 16 16" width="100%" height="100%"><path d="M8 1.5 9.6 3.4 H6.4 Z M8 14.5 6.4 12.6 H9.6 Z M1.5 8 3.4 6.4 V9.6 Z M14.5 8 12.6 9.6 V6.4 Z M6.5 6.5h3v3h-3z" fill="var(--text-faint)"/></svg>
-      </div>`}
-    </div>`;
 }
 
 /* Right-click menu for a table cell / cell-range. Fixed-positioned in
@@ -83008,86 +82274,6 @@ function DocViewerModal({ title, name, text, path, onReload, onClose }) {
         </div>
       </div>
     </div>
-  `;
-}
-
-/* DS badge in the toolbar. Shows meta.dsRef state: "Built · v<label>" when
-   the DS is loaded (window.EDITOR_DS_<id> populated by /__ds_bootstrap),
-   "Missing" when meta.dsRef points at an unbuilt DS, or "No DS" when
-   meta.dsRef itself is unset. The badge is a hint, not a gate - Workflow 1
-   enforcement lives in the orchestrator playbook (docs/agents/workflows/1-regenerate.md). */
-function DesignSystemBadge({ dsRef, onOpenDsView }) {
-  // Re-render when the th:ds-refresh event fires (e.g. after a DS write).
-  // The bootstrap script populates window.EDITOR_DS_<id> at boot, but POST
-  // /__design_system from this session shouldn't require a full page reload
-  // to update the badge - we re-fetch the DS via the per-DS GET on demand.
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const onR = () => setTick(t => t + 1);
-    window.addEventListener("th:ds-refresh", onR);
-    return () => window.removeEventListener("th:ds-refresh", onR);
-  }, []);
-  // Live-fetch state for the "missing in bootstrap but present on disk" case.
-  // Happens when the DS was written by an agent after page load - bootstrap
-  // snapshot is stale, but /__design_system reads the live file system.
-  const [liveDs, setLiveDs] = useState(null);
-  useEffect(() => {
-    if (!dsRef || !dsRef.id) return;
-    const wnd = (typeof window !== "undefined") ? window["EDITOR_DS_" + dsRef.id] : null;
-    if (wnd) return;  // bootstrap had it; no need to re-fetch
-    let aborted = false;
-    fetch(apiUrl("/__design_system?id=" + encodeURIComponent(dsRef.id)))
-      .then(r => r.ok ? r.json() : null)
-      .then(j => { if (!aborted && j && j.exists) setLiveDs(j); })
-      .catch(() => {});
-    return () => { aborted = true; };
-  }, [dsRef && dsRef.id, tick]);
-
-  if (!dsRef || !dsRef.id) {
-    return html`
-      <button type="button" className="ds-badge ds-badge-unset"
-        onClick=${() => onOpenDsView && onOpenDsView()}
-        title="No design system referenced. meta.dsRef is unset - Workflow 1 will refuse to run until you build one (Workflow 0). Click to open the Design system view.">
-        <span className="ds-badge-glyph">◐</span>
-        <span className="ds-badge-label">No DS</span>
-      </button>
-    `;
-  }
-  const bootstrapped = (typeof window !== "undefined") ? window["EDITOR_DS_" + dsRef.id] : null;
-  const ds = bootstrapped || liveDs;
-  const refVersion = dsRef.version || "";
-  const refShort = refVersion ? refVersion.slice(0, 8) : "";
-  if (!ds) {
-    return html`
-      <button type="button"
-        className="ds-badge ds-badge-missing"
-        onClick=${() => onOpenDsView && onOpenDsView()}
-        title=${"meta.dsRef = " + dsRef.id + (refVersion ? "@" + refShort : "") + " - but design-systems/" + dsRef.id + "/ is not on disk. Run Workflow 0 to build it. Click to open the Design system view."}
-      >
-        <span className="ds-badge-glyph">◐</span>
-        <span className="ds-badge-id">${dsRef.id}</span>
-        <span className="ds-badge-state">missing</span>
-      </button>
-    `;
-  }
-  const liveVersion = ds.version || (ds.meta && ds.meta.version) || "";
-  const liveShort = liveVersion ? liveVersion.slice(0, 8) : "";
-  const stale = refVersion && liveVersion && refVersion !== liveVersion;
-  const label = ds.label || (ds.meta && ds.meta.label) || "v1";
-  return html`
-    <button
-      type="button"
-      className=${"ds-badge ds-badge-built" + (stale ? " ds-badge-stale" : "")}
-      onClick=${() => onOpenDsView && onOpenDsView()}
-      title=${"design-systems/" + dsRef.id + "/ · " + label + " · " + liveShort +
-              (stale ? " (project pinned at " + refShort + " - regen recommended)" : "") +
-              " · click to open in the Design system view"}
-    >
-      <span className="ds-badge-glyph">◐</span>
-      <span className="ds-badge-id">${dsRef.id}</span>
-      <span className="ds-badge-version">${label}</span>
-      ${stale && html`<span className="ds-badge-stale-dot" title="Project pinned at older DS version; regen recommended">●</span>`}
-    </button>
   `;
 }
 

@@ -41,15 +41,14 @@
    • cursor / gaze sample `t` are ms SINCE t0.
    • rrweb events keep native epoch-ms timestamps; subtract t0 to get ms-since-
      t0. rrweb-player's getMetaData().startTime is the first event's epoch-ms.
-   • The PLAYHEAD this runtime tracks (playMs) is ms-since-t0. We derive it from
-     the replayer's own time (replayer.getCurrentTime() + rrwebStart - t0) so
-     cursor, gaze, and audio all align to the same clock as the DOM replay.
-     rrweb.Replayer emits NO per-frame time event, so we run our own rAF loop
-     while playing that reads getCurrentTime() and advances the playhead.
-   • AUDIO SYNC: audio.currentTime (seconds) === playMs/1000. We keep audio
-     slaved to the rrweb replayer: on a > tolerance drift we hard-seek audio to
-     the replayer time; play/pause drives both together. The replayer is the
-     master clock (it owns the DOM frames the researcher is reading).
+   • The PLAYHEAD this runtime tracks (playMs) is ms-since-t0, advanced by a
+     WALL-CLOCK rAF loop (anchor + real elapsed) - NOT by the replayer's own
+     clock. The rrweb DOM stream can be shorter than the session and the
+     replayer's clock freezes at its last event, so the wall clock is the
+     master: the replayer follows the playhead and holds its last frame past
+     its own end. Cursor, gaze, and audio all align to the same playhead.
+   • AUDIO SYNC: audio.currentTime (seconds) tracks the playhead; on a
+     > tolerance drift we hard-seek audio; play/pause drives both together.
    • SCALING: rrweb.Replayer renders into `.replayer-wrapper` at the RECORDED
      viewport size and does NOT auto-fit (rrweb-player used to). We CSS-scale
      the wrapper to fit `.rv-player-host` (transform: scale, origin top-left)
@@ -433,7 +432,7 @@
       // time (after init), and they are stable, so the closure stays correct.
     }, [stopRaf]);
 
-    // ── Audio control - slaved to the rrweb player (the master clock).
+    // ── Audio control - kept in step with the wall-clock playhead.
     const playAudio = useCallback(() => {
       const a = audioRef.current;
       if (a && a.src) { a.play().catch(() => {}); }

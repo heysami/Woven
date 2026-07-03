@@ -494,11 +494,6 @@ def _resolve_provider_key(provider):
     return None
 
 
-def _media_resolve_openai_key():
-    # Back-compat shim - older code paths still call this name.
-    return _resolve_provider_key("openai")
-
-
 # ── Per-capability default providers (synced from browser localStorage) ─────
 # The editor stores the user's per-capability provider/model picks in
 # localStorage["th.editor.default-providers.v1"] - pure browser state, never
@@ -4084,31 +4079,6 @@ def _v31_migrate_data_js(project_root: str) -> bool:
     return applied
 
 
-def _write_registry(reg: dict, project_root: str = None) -> None:
-    """v3.1 - branches deprecated. The "registry" file is now just a stub
-    bootstrap shim that document.write's the single editor/data.js carrying
-    the project's EDITOR_DATA. Kept for backward compat so old data.js
-    upgrade paths don't crash; `reg` is ignored (it described branch
-    listings that no longer exist).
-
-    The actual project data is in editor/data.js (formerly
-    editor/branches/main.js), written by Workflow 1 / orchestrator / user."""
-    if project_root is None:
-        project_root = DEFAULT_PROJECT_ROOT
-    # No-op in v3.1 - the editor/data.js file IS the project data file now,
-    # not a bootstrap shim. Leave it untouched if it already exists; create
-    # an empty placeholder if it doesn't (so `_load_registry` can re-read).
-    registry = _project_paths(project_root)["registry"]
-    if os.path.isfile(registry):
-        return
-    os.makedirs(os.path.dirname(registry), exist_ok=True)
-    with open(registry, "w", encoding="utf-8") as f:
-        f.write("// editor/data.js - project data (v3.1; branches deprecated).\n"
-                "// This file carries window.EDITOR_DATA directly. Workflow 1\n"
-                "// writes it after parsing source/.\n"
-                "window.EDITOR_DATA = { meta: {}, frames: [], primitives: [], entities: [] };\n")
-
-
 def _safe_join(base: str, *parts: str) -> str:
     """Join parts under base and refuse anything resolving outside it."""
     p = os.path.abspath(os.path.join(base, *parts))
@@ -4116,58 +4086,6 @@ def _safe_join(base: str, *parts: str) -> str:
         raise ValueError(f"refusing path outside {base}: {p}")
     return p
 
-
-def _branch_source_dir(slug: str = "main", project_root: str = None) -> str:
-    """v3.1 - branches deprecated. Always returns source/. The slug arg is
-    kept for ABI compat; ignored."""
-    if project_root is None:
-        project_root = DEFAULT_PROJECT_ROOT
-    return _project_paths(project_root)["source_dir"]
-
-
-def _branch_data_file(slug: str = "main", project_root: str = None) -> str:
-    """v3.1 - branches deprecated. Always returns editor/data.js."""
-    if project_root is None:
-        project_root = DEFAULT_PROJECT_ROOT
-    return os.path.join(_project_paths(project_root)["editor_dir"], "data.js") \
-        if "editor_dir" in _project_paths(project_root) \
-        else _safe_join(project_root, "editor", "data.js")
-
-
-# ── Onboarding workflow scaffold ─────────────────────────────────────────────
-# Phase 2 of the onboarding orchestration plan. Given the chosen stages
-# (subset of A..I), emit a workflow.json with exactly the nodes the agent
-# will run, laid out left-to-right column-by-column. Layout is deterministic
-# so users see the same shape every time.
-#
-# Position math (world coords, single column per stage):
-#   x = COL_X[stage] (base for first node in the stage's column)
-#   y = stacked downward within the stage
-#   w/h = per-kind defaults
-ONBOARDING_COL_W = 340
-ONBOARDING_COL_GAP = 60
-def _ob_col_x(stage_idx: int) -> int:
-    return stage_idx * (ONBOARDING_COL_W + ONBOARDING_COL_GAP)
-
-# Per-kind default sizes (world units).
-# Heights here MUST fit the node's whole body - header + fields + the
-# bottom action row (Run / Setup loop / Build). If a kind has its own
-# renderer that uses a `Math.max(MIN_H, …)` floor, set the scaffold
-# default >= that floor so newly-seeded nodes don't snap up on first
-# render (which would also shift sibling node positions on the canvas).
-_OB_SIZE = {
-    "folder":            {"w": 280, "h": 140},
-    "prompt":            {"w": 340, "h": 220},
-    "skill":             {"w": 340, "h": 220},
-    "agent":             {"w": 360, "h": 280},
-    "ds-brainstorm":     {"w": 320, "h": 360},
-    "assistant-interview": {"w": 440, "h": 560},
-    "assistant-research":  {"w": 420, "h": 460},
-    "assistant-testing":   {"w": 440, "h": 500},
-    "iterator-remix":    {"w": 360, "h": 420},
-    "iterator-repeater": {"w": 360, "h": 400},
-    "iterator-blend":    {"w": 380, "h": 440},
-}
 
 # v2.19 - exported scaffolder defaults that the daemon's /run gate compares
 # against to detect "orchestrator hasn't customized this yet" state. Kept at
@@ -4207,44 +4125,6 @@ REMIX_VARIANT_DEFAULTS = [
     "decorative rule break, off-center alignment for at least one section. "
     "Push toward a print-feature read.",
 ]
-
-
-def _ob_node(*, id, kind, col, row, title=None, **extra):
-    """Build a workflow node dict. `col` is stage column index (0-based),
-    `row` is the vertical slot within the column (0-based, top to bottom)."""
-    size = _OB_SIZE.get(kind, {"w": 320, "h": 200})
-    base = {
-        "id": id,
-        "kind": kind,
-        "x": _ob_col_x(col),
-        "y": row * (size["h"] + 40),
-        "w": size["w"],
-        "h": size["h"],
-        "runStatus": "queued",
-    }
-    if title is not None:
-        # Prompt + agent + skill all surface a top-line title in their UI.
-        base["title"] = title
-        base["name"]  = title
-    base.update(extra)
-    return base
-
-def _copytree(src: str, dst: str) -> list:
-    """Copy src/* → dst (creating dst). Returns relative paths copied."""
-    os.makedirs(dst, exist_ok=False)
-    copied = []
-    for name in os.listdir(src):
-        s = os.path.join(src, name)
-        d = os.path.join(dst, name)
-        if os.path.isdir(s):
-            shutil.copytree(s, d)
-            for root, _, files in os.walk(d):
-                for f in files:
-                    copied.append(os.path.relpath(os.path.join(root, f), dst))
-        else:
-            shutil.copy2(s, d)
-            copied.append(name)
-    return copied
 
 
 # ── Undo / redo history ──────────────────────────────────────────────────────
@@ -4350,63 +4230,6 @@ def _history_prune_entry(project_root: str, entry: dict) -> None:
         return
     if os.path.isdir(d):
         shutil.rmtree(d, ignore_errors=True)
-
-def _history_record(project_root: str, *, kind: str, label: str, source: str,
-                    before_paths, after_paths, extra=None) -> dict:
-    """Append a new history entry. before_paths / after_paths are iterables of
-    rel paths to capture; usually they're the same set (the union of files
-    touched by the change). Returns the entry dict.
-
-    On append:
-      - If cursor < latest, the redo tail is dropped (pruned from disk + index).
-      - If the resulting stack exceeds HISTORY_MAX_ENTRIES, the oldest entry
-        is dropped.
-    """
-    with HISTORY_LOCK:
-        idx = _history_load_index(project_root)
-        # Drop the redo tail.
-        if idx["cursor"] < len(idx["entries"]) - 1:
-            for stale in idx["entries"][idx["cursor"] + 1:]:
-                _history_prune_entry(project_root, stale)
-            idx["entries"] = idx["entries"][:idx["cursor"] + 1]
-        eid = _history_new_id()
-        edir = _safe_join(_history_dir(project_root), eid)
-        bdir = os.path.join(edir, "before")
-        adir = os.path.join(edir, "after")
-        os.makedirs(bdir, exist_ok=True)
-        os.makedirs(adir, exist_ok=True)
-        before_rows = _history_capture_paths(project_root, before_paths, bdir)
-        after_rows  = _history_capture_paths(project_root, after_paths, adir)
-        # If neither side captured anything, drop the entry - empty events
-        # would clutter the stack.
-        any_touched = any(r["existed"] for r in before_rows + after_rows)
-        if not any_touched:
-            shutil.rmtree(edir, ignore_errors=True)
-            return None
-        entry = {
-            "id": eid,
-            "kind": kind,
-            "label": label,
-            "source": source,
-            "timestamp": time.time(),
-            "before": before_rows,
-            "after": after_rows,
-        }
-        if extra:
-            entry.update(extra)
-        # Write per-entry meta first (so a crash before index save doesn't
-        # orphan the entry's files invisibly).
-        with open(os.path.join(edir, "meta.json"), "w", encoding="utf-8") as f:
-            json.dump(entry, f, indent=2, sort_keys=True)
-        idx["entries"].append(entry)
-        idx["cursor"] = len(idx["entries"]) - 1
-        # Ring-buffer prune: drop oldest until <= MAX.
-        while len(idx["entries"]) > HISTORY_MAX_ENTRIES:
-            old = idx["entries"].pop(0)
-            _history_prune_entry(project_root, old)
-            idx["cursor"] -= 1
-        _history_save_index(project_root, idx)
-        return entry
 
 def _history_restore(project_root: str, entry: dict, direction: str) -> list:
     """Restore the entry's `before/` (direction='before') or `after/`
@@ -5317,8 +5140,7 @@ _DELETED_RUN_IDS: set = set()
 #
 # v2.50 - waiters now carry a per-event queue so the daemon can multiplex
 # multiple SSE event types (workflow-changed, asset-changed) on the same
-# subscription. Each event carries optional JSON data. See Deliverable 1
-# of WORKFLOW_TRUTHFULNESS_PLAN.md.
+# subscription. Each event carries optional JSON data.
 class WorkflowWaiter:
     """Per-SSE-connection waiter. Holds a wake signal and an ordered queue
     of pending events to send. Broadcasters call .push(event_type, data);
@@ -6123,7 +5945,6 @@ def _live_dispatch_run(project_id, node_id, author):
 # deletion), broadcasts an `asset-changed` SSE event with the project-relative
 # paths. Catches writes that bypass /commit - chat agents, manual file edits,
 # orchestrator drops - so the canvas auto-refreshes without manual reload.
-# See WORKFLOW_TRUTHFULNESS_PLAN.md Deliverable 1 / Principle 10.
 FILE_WATCHER_INTERVAL_SEC = 1.0
 FILE_WATCHER_DEBOUNCE_SEC = 0.25
 FILE_WATCHER_THREAD = None
@@ -6435,8 +6256,8 @@ def _workflow_lock(project_id: str) -> threading.Lock:
         return lk
 
 
-# v2.50 - Deliverable 2 concurrency guardrails (G3 lock timeout, G5 semaphore,
-# G6 request-ID correlation). See WORKFLOW_TRUTHFULNESS_PLAN.md §9 / §11 D2.
+# Concurrency guardrails: lock timeout, per-project semaphore, request-ID
+# correlation.
 class LockTimeoutError(Exception):
     """Raised when the per-project workflow lock can't be acquired within
     the timeout window. The endpoint should translate this into a 503 with
@@ -6475,10 +6296,6 @@ def _request_semaphore(project_id: str) -> threading.BoundedSemaphore:
             REQUEST_SEMAPHORES[project_id] = sem
         return sem
 
-class SemaphoreBusyError(Exception):
-    """Per-project semaphore is full. Endpoint should 503."""
-    pass
-
 
 class _VersioningHTTPError(Exception):
     """Carry an HTTP status + JSON body up through the versioning endpoints.
@@ -6491,20 +6308,6 @@ class _VersioningHTTPError(Exception):
         self.status = status
         self.body = body
         super().__init__(body.get("error") if isinstance(body, dict) else str(body))
-
-@contextlib.contextmanager
-def _project_request_slot(project_id: str, timeout_sec: float = 5.0):
-    """Bounded concurrency per project. Returns 503 if the project is
-    already running REQUEST_SEMAPHORE_CAP requests."""
-    sem = _request_semaphore(project_id)
-    acquired = sem.acquire(timeout=timeout_sec)
-    if not acquired:
-        raise SemaphoreBusyError(f"project {project_id!r} has > {REQUEST_SEMAPHORE_CAP} concurrent ops")
-    try:
-        yield
-    finally:
-        try: sem.release()
-        except ValueError: pass        # already released; tolerate
 
 
 def _new_request_id() -> str:
@@ -9789,8 +9592,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._branch_doc(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__screenshot/jobs":
             return self._screenshot_poll(urllib.parse.parse_qs(parsed.query))
-        if url_path == "/__upload/list":
-            return self._upload_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__workflow":
             return self._workflow_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__design_system":
@@ -9827,8 +9628,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._git_status(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/log":
             return self._git_log(urllib.parse.parse_qs(parsed.query))
-        if url_path == "/__git/branches":
-            return self._git_branches(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/diff":
             return self._git_diff(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__github/status":
@@ -10604,9 +10403,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # v2.31 - serialize the WHOLE read-modify-write under the per-project lock
         # so concurrent /status POSTs can't write their stale snapshot AFTER our
         # write and revert the user's edit.
-        # v2.50 - bounded by a per-project semaphore (cap 3) AND a 2s lock
-        # acquire timeout. On timeout/queue-full, return 503 with retry hint so
-        # the frontend distinguishes "busy" from "down". See WORKFLOW_TRUTHFULNESS_PLAN.md §11 D2.
+        # Bounded by a per-project semaphore (cap 3) AND a 2s lock acquire
+        # timeout. On timeout/queue-full, return 503 with retry hint so the
+        # frontend distinguishes "busy" from "down".
         project_id = os.path.basename(project_root.rstrip("/"))
         _sem = _request_semaphore(project_id)
         if not _sem.acquire(timeout=5.0):
@@ -11917,9 +11716,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # v2.31 - serialize this read-modify-write block under the per-project
         # lock so concurrent /__workflow saves and other /status POSTs don't
         # write stale snapshots that revert the user's edit.
-        # v2.50 - bounded by per-project semaphore (G5) + 2s acquire timeout
-        # (G3). 503 + retry hint on contention so "busy" doesn't false-positive
-        # as "daemon down". See WORKFLOW_TRUTHFULNESS_PLAN.md §11 D2.
+        # Bounded by per-project semaphore + 2s acquire timeout. 503 + retry
+        # hint on contention so "busy" doesn't false-positive as "daemon down".
         project_id = os.path.basename(project_root.rstrip("/"))
         _sem = _request_semaphore(project_id)
         if not _sem.acquire(timeout=5.0):
@@ -12077,8 +11875,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         finally:
           _sem.release()
 
-    # ── POST /__workflow/node/<id>/commit - D4 atomic producer ───────────
-    # Implements WORKFLOW_TRUTHFULNESS_PLAN.md §6 and Rule 6 of AGENT_HARNESS.md.
+    # ── POST /__workflow/node/<id>/commit - atomic producer ──────────────
+    # Implements Rule 6 of kinds/AGENT_HARNESS.md.
     # Body shape:
     #   { outputs: {...}, files: [{relPath, content | contentBase64}, ...],
     #     runStatus: "done"|"error"|"running", runError?: "...",
@@ -17749,17 +17547,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
-    # GET /__git/branches?project=<id>  → {current, branches:[{name,current,…}]}
-    def _git_branches(self, qs):
-        try:
-            root = resolve_project_root(qs, require_explicit=True)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-        try:
-            return self._reply(200, _gitops.branches(root))
-        except Exception as e:
-            return self._reply(500, {"error": str(e)})
-
     # GET /__git/diff?project=<id>&kind=working|commit|conflict|range[&path=&sha=&a=&b=]
     # Read-only compare view: uncommitted changes, a single commit, a conflicted
     # file's three sides, or a branch-vs-branch range. Agent resolution is
@@ -20619,8 +20406,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         (workflow / runs / history) and reads NO files. Returns in <5ms
         regardless of load. The frontend uses this as its canonical
         "daemon up" signal so application-traffic slowness no longer
-        false-positives as "daemon down". See WORKFLOW_TRUTHFULNESS_PLAN.md
-        Deliverable 1 / Guardrail G1."""
+        false-positives as "daemon down"."""
         return self._reply(200, {
             "ok":   True,
             "ts":   time.time(),
@@ -23325,51 +23111,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             "files":   written,
             "skipped": skipped,
         })
-
-    def _upload_list(self, qs):
-        """GET /__upload/list?branch=<slug>[&project=<id>]
-        Lists every file under `source/<branch>/uploads/`. Returns
-        `{ branch, files: [{ name, path, bytes, mtime }] }` newest-first."""
-        try:
-            project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
-
-        branch = _qs_prototype(qs).strip().lower()
-        if not SLUG_OK.match(branch):
-            return self._reply(400, {"error": "invalid branch slug", "slug": branch})
-
-        try:
-            uploads_dir = _safe_join(project_root, "source", branch, "uploads")
-        except ValueError as e:
-            return self._reply(400, {"error": f"path resolution failed: {e}"})
-
-        if not os.path.isdir(uploads_dir):
-            return self._reply(200, {"branch": branch, "files": []})
-
-        files = []
-        try:
-            for name in os.listdir(uploads_dir):
-                if name.startswith("."):
-                    continue
-                p = os.path.join(uploads_dir, name)
-                try:
-                    st = os.stat(p)
-                except OSError:
-                    continue
-                if not stat.S_ISREG(st.st_mode):
-                    continue
-                files.append({
-                    "name":  name,
-                    "path":  f"uploads/{name}",
-                    "bytes": st.st_size,
-                    "mtime": st.st_mtime,
-                })
-        except OSError as e:
-            return self._reply(500, {"error": f"listdir failed: {e}"})
-
-        files.sort(key=lambda r: r["mtime"], reverse=True)
-        return self._reply(200, {"branch": branch, "files": files})
 
     def _upload_delete(self, qs):
         """POST /__upload/delete?branch=<slug>&name=<filename>[&project=<id>]

@@ -267,7 +267,7 @@ Why this works: if you stall at step 3 (say loop and overlay error out), only th
   "x": <auto>, "y": <auto>, "w": 320, "h": 240 },
 
 { "id": "sim_scene_<simId>",     "kind": "agent",
-  "name": "sim-3d-scene-builder",          // or sim-2d-spatial- / sim-2d-isometric- / sim-iconographic-anim- / sim-text-art- per paradigm
+  "name": "sim-2d-spatial-scene-builder",  // or sim-2d-isometric- / sim-iconographic-anim- / sim-text-art- per paradigm; 3d-environment scaffolds NO scene node - it links scene-3d-orchestrator (see paradigm list)
   "title": "Scene · <simId>",
   "text": "<envelope: paradigm=<...> + render strategy + creative brief style cue + entities.js contract>",
   "simId": "<simId>", "branch": "<branch>", ... },

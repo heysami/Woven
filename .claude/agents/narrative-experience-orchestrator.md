@@ -153,7 +153,7 @@ The five angles, with what makes each distinct from simulation's:
 - **`nx-research-emotional-register`** - what emotional palette / pacing / restraint matches the brief's `successFeel`? Quote successFeel verbatim and pick an emotional vocabulary that earns it. This is the highest-weighted concept-lens angle (analogous to mapping-philosophy for interactive).
 - **`nx-research-technique`** - three.js scene graph, scroll/timeline libraries (GSAP ScrollTrigger / Theatre.js / Lenis), WebAudio room-tone synthesis, optional audio narration with crossfade, font-loading for poetic captions, scroll-snapping vs free-scroll, prefers-reduced-motion fallback.
 - **`nx-research-pacing`** - what timing and progressive-reveal patterns work? (Slow first beat → punctuated reveals → quiet close. Or: immediate-arrival → discovery-driven exploration → user-paced linger.) Brief-fit on pacing carries half of concept-lens.
-- **`nx-research-constraint`** - perf (three.js scene budget, audio context lifecycle), accessibility (screen-reader narration of poetic captions, keyboard-only camera advance), reduced-motion (scene becomes a static plate with captions, audio still plays at low volume), audio autoplay rules (gated behind user gesture as INTERACTIVITY_PIPELINE requires), mobile/desktop trade-offs.
+- **`nx-research-constraint`** - perf (three.js scene budget, audio context lifecycle), accessibility (screen-reader narration of poetic captions, keyboard-only camera advance), reduced-motion (scene becomes a static plate with captions, audio still plays at low volume), audio autoplay rules (gated behind user gesture via the two-gate permission pattern), mobile/desktop trade-offs.
 
 Synthesiser dispatched after all 5 return:
 
