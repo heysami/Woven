@@ -9488,7 +9488,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._export_asset(qs)
             if parsed.path == "/__share/create":
                 return self._share_create(qs)
-            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url|thumbnail)$", parsed.path)
+            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url|refresh_url|thumbnail)$", parsed.path)
             if m_share:
                 return self._share_op(m_share.group(1), m_share.group(2), qs)
             m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
@@ -18204,6 +18204,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(500, {"error": str(e)})
         elif op == "ack_url":
             _shares.share_update(share_id, {"prevUrl": ""})
+        elif op == "refresh_url":
+            # User clicked ↻ Refresh - mint a fresh randomised URL and clear the
+            # "Need refresh" badge in one step (the old link stops working).
+            try:
+                _shares.refresh_quick(share_id)
+            except Exception as e:
+                return self._reply(500, {"error": str(e)})
         fresh = _shares.share_get(share_id)
         return self._reply(200, {"ok": True,
                                  "share": _shares.share_summary(fresh) if fresh else None})

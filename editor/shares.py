@@ -306,6 +306,10 @@ class _Tunnel:
         self.started_at = time.time()
         self.stopping   = False
         self.log_tail   = []   # last ~30 log lines for error reporting
+        # True when this (re)start was a user-initiated link refresh - the new
+        # URL is then treated as already acknowledged, so it does NOT raise the
+        # "Need refresh" badge (the user just did the refresh it was asking for).
+        self.user_refresh = False
 
 
 TUNNELS = {}                  # {share_id: _Tunnel}
@@ -335,7 +339,12 @@ def _tunnel_reader(t):
                     if rec is not None:
                         patch = {"lastUrl": t.url, "lastStartedAt": _now_iso()}
                         old = (rec.get("lastUrl") or "").strip()
-                        if old and old != t.url:
+                        if t.user_refresh:
+                            # User just refreshed the link on purpose - this URL
+                            # is already "the current one", so clear any pending
+                            # change flag instead of raising it.
+                            patch["prevUrl"] = ""
+                        elif old and old != t.url:
                             patch["prevUrl"] = old
                             patch["lastUrlChangedAt"] = _now_iso()
                         share_update(t.share_id, patch)
@@ -358,8 +367,9 @@ def _tunnel_reader(t):
         print(f"[share] tunnel for {t.share_id} failed: {t.error}", flush=True)
 
 
-def _quick_start(share_id):
-    """Spawn (or reuse) the per-share quick cloudflared tunnel → gate port."""
+def _quick_start(share_id, *, user_refresh=False):
+    """Spawn (or reuse) the per-share quick cloudflared tunnel → gate port.
+    user_refresh=True marks the new URL as already acknowledged (see _Tunnel)."""
     if GATE_PORT is None:
         raise RuntimeError("share gate server not started")
     binary = find_cloudflared()
@@ -378,6 +388,7 @@ def _quick_start(share_id):
             stdin=subprocess.DEVNULL,
         )
         t = _Tunnel(share_id, proc)
+        t.user_refresh = user_refresh
         TUNNELS[share_id] = t
     threading.Thread(target=_tunnel_reader, args=(t,), daemon=True,
                      name=f"share-tunnel-{share_id}").start()
@@ -433,6 +444,20 @@ def set_modes(share_id, *, quick=None, woven=None):
         share_update(share_id, {"lastStartedAt": _now_iso()})
     elif _woven_active_count() == 0:
         _woven_tunnel_stop()
+    return share_get(share_id)
+
+
+def refresh_quick(share_id):
+    """User-initiated link refresh: restart the quick tunnel to mint a fresh
+    randomised URL and mark it acknowledged, so the "Need refresh" badge clears
+    (the user just performed the refresh the badge was asking for). The old link
+    stops working, exactly like the ↻ regenerate did before."""
+    rec = share_get(share_id)
+    if rec is None:
+        raise ValueError(f"unknown share: {share_id}")
+    _quick_stop(share_id)
+    _persist_modes(share_id, True, share_modes(rec)["woven"])
+    _quick_start(share_id, user_refresh=True)
     return share_get(share_id)
 
 

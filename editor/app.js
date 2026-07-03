@@ -10857,7 +10857,7 @@ function ShareMenuButton() {
       <div className="share-link-block">
         <div className="share-link-label" style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span>${label}</span>
-          ${o.changed && html`<span className="shares-url-changed" title="This randomised URL changed since you last copied it - copy & resend it; the old link is dead">⚠ changed</span>`}
+          ${o.changed && html`<span className="shares-url-changed" title="This randomised URL changed since you last copied it - copy & resend it; the old link is dead">⚠ Need refresh</span>`}
         </div>
         ${url ? html`
           <div className="th-live-link">
@@ -10897,7 +10897,7 @@ function ShareMenuButton() {
         ${s.wovenOn && modeLinkRow("Stable link", s.id + ":w", s.wovenUrl, s.wovenStatus)}
         ${s.quickOn && modeLinkRow("Randomised URL", s.id + ":q", s.quickUrl, s.quickStatus, {
           changed: s.urlChanged,
-          onRegen: async () => { await tunnelOp(s.id, "update", { quickOn: false }); await tunnelOp(s.id, "update", { quickOn: true }); },
+          onRegen: async () => { await tunnelOp(s.id, "refresh_url"); },
           onAck: () => { if (s.urlChanged) tunnelOp(s.id, "ack_url"); },
         })}
         ${!s.quickOn && !s.wovenOn && html`<div className="th-live-hint">Turn on a link above to publish a URL.</div>`}
@@ -54040,11 +54040,9 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
           <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} wovenAvail=${wovenAvail} busy=${shareBusy || !cloudflared}
             onToggle=${(which, on) => shareOp("update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
           ${(() => {
-            // Mint a fresh randomised URL in one click (restart just the quick tunnel).
-            const regenQuick = async () => {
-              await shareOp("update", { quickOn: false });
-              await shareOp("update", { quickOn: true });
-            };
+            // Mint a fresh randomised URL in one click (restart the quick tunnel)
+            // and clear the "Need refresh" badge in the same step.
+            const regenQuick = async () => { await shareOp("refresh_url"); };
             const linkBlock = (label, key, url, status) => {
               const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
               const isQuick = key === "q";
@@ -54052,7 +54050,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                 <div key=${"link-" + key} className="share-link-block" style=${{ marginTop: "5px" }}>
                   <div className="share-link-label" style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <span>${label}</span>
-                    ${isQuick && share.urlChanged && html`<span className="shares-url-changed" title="This randomised URL changed since you last copied it - copy & resend it; the old link is dead">⚠ changed</span>`}
+                    ${isQuick && share.urlChanged && html`<span className="shares-url-changed" title="This randomised URL changed since you last copied it - copy & resend it; the old link is dead">⚠ Need refresh</span>`}
                   </div>
                   ${url ? html`
                     <div className="workflow-comments-share-url">
