@@ -12810,11 +12810,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .chat-slash-menu {
   position: absolute;
   bottom: calc(100% + 6px);
-  /* Anchor to the RIGHT of the composer (chat drawer is right-aligned), so
-     when the popover grows past the composer width it grows LEFTWARD into
-     the drawer interior - not rightward off the viewport. */
-  right: 0;
-  left: auto;
+  /* Anchor to the LEFT of the composer - the chat lives in the LEFT panel on
+     every surface now, so a popover wider than the composer must grow
+     RIGHTWARD into the page interior, not leftward off the viewport. */
+  left: 0;
+  right: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
