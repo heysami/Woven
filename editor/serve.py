@@ -22628,6 +22628,13 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         if kind == "scene-3d":
             sid = node.get("sceneId") or (node.get("inputs") or {}).get("sceneId") or ""
+            if not sid:
+                # Scaffolds sometimes omit the sceneId field; the container
+                # node id convention is s3d_<sceneId> (see kinds/registry.py),
+                # so derive it rather than silently exposing zero controls.
+                nid = node.get("id") or ""
+                if nid.startswith("s3d_"):
+                    sid = nid[len("s3d_"):]
             if sid:
                 add_glob("source/*/scene3d/%s/runtime.html" % sid)
                 add_glob("source/*/scene3d/%s/subsystems/*.js" % sid)
