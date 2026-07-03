@@ -9919,13 +9919,19 @@ function RightRailDock({ mode }) {
         `}
       </div>
     `}
-    <button
-      type="button"
-      className="left-chat-fab"
-      title="Agent chat - click for the runs list"
-      aria-label="Agent chat"
-      onClick=${onChatIconClick}
-    ><${Icon.Comment}/></button>
+    <nav className="th-left-rail" aria-label="Chat">
+      <${HoverTip}
+        placement="right"
+        className=${"th-right-rail-btn" + (leftChatOpen ? " is-active" : "")}
+        ariaLabel="Agent chat"
+        tip="Agent chat - runs list + thread"
+        onClick=${onChatIconClick}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.Comment}/>
+        </span>
+      <//>
+    </nav>
     <${RightNavRail}
       onStartNewChat=${openChat}
       onStartChatWithPrompt=${spawnChat}
@@ -44075,19 +44081,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                           : leftPanel === "chat" ? "chat"
                           : mainView === "canvas" && leftPanel ? leftPanel : "none"}
       >
-        ${mainView === "proto" && html`
-          <button
-            type="button"
-            className="left-chat-fab"
-            title="Agent chat - click for the runs list"
-            aria-label="Agent chat"
-            onClick=${onChatIconClick}
-          ><${Icon.Comment}/></button>
-        `}
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
           <${HoverTip}
             placement="right"
-            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "chat" ? " is-active" : "") + (chatBusy ? " is-busy" : "")}
+            className=${"workflow-nav-rail-btn workflow-nav-rail-btn-chat" + (!wbMode && leftPanel === "chat" ? " is-active" : "") + (chatBusy ? " is-busy" : "")}
             ariaLabel="Agent chat"
             tip="Agent chat - run and steer the build"
             onClick=${onChatIconClick}

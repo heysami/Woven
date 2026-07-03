@@ -262,29 +262,24 @@ button {
   display: flex;
   flex-direction: column;
 }
-/* Left chat FAB - the way INTO the chat where no rail exists: preview mode
-   (nav rail collapsed) and the User testing / Development full-page views.
-   Pinned to the left edge under the toolbar; same tier as the floating panel
-   so it stays clickable above the full-page views. */
-.left-chat-fab {
+/* Left rail for the standalone views (User testing / Development) - the
+   mirror of .th-right-rail: a thin full-height icon rail pinned to the LEFT
+   edge, holding the chat entry. Same button styling as the right rail. */
+.th-left-rail {
   position: fixed;
-  left: 10px;
-  top: calc(var(--toolbar-h, 48px) + 10px);
-  z-index: 9560;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
+  left: 0;
+  top: var(--toolbar-h, 44px);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  border: 1px solid var(--border);
+  gap: 6px;
+  padding: 10px 0;
+  width: var(--th-right-rail-w, 44px);
   background: var(--surface);
-  color: var(--text-muted);
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+  border-right: 1px solid var(--border);
+  z-index: 9550;
 }
-.left-chat-fab:hover { color: var(--text); border-color: var(--border-strong); }
-.left-chat-fab svg { width: 16px; height: 16px; }
 /* The runs list - fills the runs overlay: + New chat on top, then the run
    rows (status dot / title / age / delete). */
 .left-chat-runs-list {
@@ -4269,8 +4264,16 @@ select.sysadd-input {
 .ut-screen,
 .dev-view {
   padding-right: calc(var(--th-right-rail-w, 44px) + var(--dev-dock-w, 0px));
-  /* Mirror on the left: the floating left chat panel reserves its width the
-     same way, so the page shifts beside it instead of sitting underneath. */
+  /* Mirror on the left: the thin left rail reserves its width on the whole
+     view (the top bar included, so "Projects" clears the rail)... */
+  padding-left: var(--th-right-rail-w, 44px);
+}
+/* ...but the open chat PANEL reserves its width on the BODY only - the panel
+   sits below the 44px top bar (same rule as .right-dock-floating), so pushing
+   the bar too would just shove "Projects / All prototypes" under the centered
+   view-switcher pills. */
+.ut-screen-body,
+.dev-view-scroll {
   padding-left: var(--dev-left-chat-w, 0px);
 }
 .th-right-rail-btn {
@@ -5688,9 +5691,14 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
    lives in the top SurfaceNav now), keeping only the viewer and the right rail.
    Mirrors the fullscreen-canvas collapse below. */
 .workflow-body[data-view="proto"] {
-  grid-template-columns: 0 0 0 1fr var(--th-right-rail-w, 44px);
+  grid-template-columns: 48px 0 0 1fr var(--th-right-rail-w, 44px);
 }
-.workflow-body[data-view="proto"] .workflow-nav-rail,
+/* The nav rail STAYS in preview - collapsed to its chat entry only (every
+   other panel is canvas-scoped). Same rail, same button, no floating chrome. */
+.workflow-body[data-view="proto"] .workflow-nav-rail-btn:not(.workflow-nav-rail-btn-chat),
+.workflow-body[data-view="proto"] .workflow-nav-rail-sep {
+  display: none;
+}
 .workflow-body[data-view="proto"] .workflow-library,
 .workflow-body[data-view="proto"] .workflow-resize-handle-lib {
   visibility: hidden;
@@ -6088,7 +6096,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
    but show the chat column + its drag handle beside the preview - opening the
    chat from preview mode must NOT bounce the user back to the canvas. */
 .workflow-body[data-view="proto"][data-left-panel="chat"] {
-  grid-template-columns: 0 min(var(--workflow-chat-width, 644px), 60vw) 4px 1fr var(--th-right-rail-w, 44px);
+  grid-template-columns: 48px min(var(--workflow-chat-width, 644px), 60vw) 4px 1fr var(--th-right-rail-w, 44px);
 }
 .workflow-body[data-view="proto"][data-left-panel="chat"] .workflow-resize-handle-lib {
   visibility: visible;
@@ -6100,8 +6108,9 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
    (above the z-9500 full-screen views, below the z-9600 surface nav). */
 .left-chat-floating {
   position: fixed;
-  left: 0;
-  top: var(--toolbar-h, 48px);
+  left: var(--th-right-rail-w, 44px);   /* docks right of .th-left-rail */
+  top: var(--toolbar-h, 44px);   /* sit below the top nav row - same rule as
+                                    .right-dock-floating, never cover it */
   bottom: 0;
   width: min(var(--workflow-chat-width, 644px), 60vw);
   z-index: 9550;
