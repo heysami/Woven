@@ -223,13 +223,32 @@ button {
   /* Far-left `leftrail` track holds the editor's vertical icon rail
      (EditorLeftRail: view switcher + canvas tools). It is `auto`, so it
      collapses to 0 when the rail isn't rendered (embed mode). */
-  grid-template-columns: auto 1fr var(--th-dock-w, 0px) auto;
+  /* `leftchat` track holds the LEFT chat panel (chat's home after the move
+     off the right dock - the dock keeps tasks/comments/git/subagent tiles).
+     `auto`, so it collapses to 0 when the panel isn't rendered. */
+  grid-template-columns: auto auto 1fr var(--th-dock-w, 0px) auto;
   grid-template-rows: auto auto 1fr;
   grid-template-areas:
-    "banner   banner banner banner"
-    "toolbar  toolbar toolbar toolbar"
-    "leftrail view   dock   rightrail";
+    "banner   banner   banner banner banner"
+    "toolbar  toolbar  toolbar toolbar toolbar"
+    "leftrail leftchat view   dock   rightrail";
   height: 100vh;
+}
+.app > .app-left-chat {
+  grid-area: leftchat;
+  position: relative;              /* .chat-drawer-tile is inset:0 absolute */
+  width: clamp(320px, 26vw, 460px);
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+/* Shared empty state for every left chat panel host - shown when the panel is
+   open but no run is focused yet; reuses the runs-panel "+ New chat" button. */
+.left-chat-empty {
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
 }
 .app > .ds-proposal-banner { grid-area: banner; }
 .app > .toolbar             { grid-area: toolbar; min-height: var(--toolbar-h); }
@@ -4118,7 +4137,20 @@ select.sysadd-input {
   border-right: 1px solid var(--border);
   min-height: 0;
 }
+/* Live pulse on the rail's chat button while the agent is mid-turn - the
+   same "something is running" cue the runs icon uses, so a busy build stays
+   visible even with the chat panel collapsed. */
+.workflow-nav-rail-btn.is-busy::after {
+  content: "";
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: th-git-pulse 1.6s ease-in-out infinite;
+}
 .workflow-nav-rail-btn {
+  position: relative;
   appearance: none;
   width: 34px;
   height: 34px;
@@ -5982,6 +6014,37 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   background: var(--surface);
   border-right: 1px solid var(--border);
   overflow: hidden;
+}
+/* Left chat panel (workflow mode) - lives in the library column when the
+   "chat" rail option is active. Stays MOUNTED (display:none) while other
+   panels show so the ChatDrawer keeps its SSE stream + composer state. */
+.workflow-left-chat {
+  flex: 1;
+  min-height: 0;
+  position: relative;              /* .chat-drawer-tile is inset:0 absolute */
+  display: flex;
+  flex-direction: column;
+}
+.workflow-left-chat.is-hidden { display: none; }
+/* Chat needs more room than the node library's resting width - widen the
+   column while the chat panel is the active one (still user-resizable). */
+.workflow-body[data-left-panel="chat"] .workflow-library-col {
+  min-width: 340px;
+}
+/* Floating left chat panel for the standalone views (User testing /
+   Development) that mount RightRailDock - the mirror of the floating right
+   dock, pinned to the LEFT edge. Same z tier as .right-rail-dock-host
+   (above the z-9500 full-screen views, below the z-9600 surface nav). */
+.left-chat-floating {
+  position: fixed;
+  left: 0;
+  top: var(--toolbar-h, 48px);
+  bottom: 0;
+  width: clamp(320px, 26vw, 460px);
+  z-index: 9550;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
 }
 .workflow-root[data-fullscreen="true"] .workflow-library-col {
   visibility: hidden;

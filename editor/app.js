@@ -9813,7 +9813,11 @@ function RightRailDock({ mode }) {
       return next;
     });
   }, []);
-  useEffect(() => { if (chatRun) openWindow({ kind: "thread", run: chatRun }); }, [chatRun, openWindow]);
+  // Route the focused chat into the floating LEFT chat panel instead of
+  // tiling a dock thread window - the standalone views mirror the editor/
+  // workflow "chat lives left" layout. Dock stays for tasks/comments/git.
+  const [leftChatOpen, setLeftChatOpen] = useState(false);
+  useEffect(() => { if (chatRun) setLeftChatOpen(true); }, [chatRun]);
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--dock-col-split", dockColSplit + "%");
@@ -9976,6 +9980,27 @@ function RightRailDock({ mode }) {
   // normal flow at the top-LEFT (and the z-9500 .ut-screen covers it entirely).
   // z sits above .ut-screen (9500) but below .surface-nav (9600).
   return html`<div className="right-rail-dock-host">
+    ${leftChatOpen && html`
+      <div className="left-chat-floating">
+        ${chatRun ? html`<${ChatDrawer}
+          key="left-chat"
+          run=${chatRun}
+          variant="tile"
+          onClose=${() => setLeftChatOpen(false)}
+          onStop=${() => {}}
+          onRunComplete=${handleComplete}
+          onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error" || status === "fail")}
+          permissionMode=${permissionMode}
+          onPermissionModeChange=${onPermissionModeChange}
+          onStartNewChat=${spawnChat}
+        />` : html`<div className="left-chat-empty">
+          <button type="button" className="runs-new-chat" onClick=${openChat}>
+            <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
+            <span className="runs-new-chat-label">New chat</span>
+          </button>
+        </div>`}
+      </div>
+    `}
     <${RightNavRail}
       onStartNewChat=${openChat}
       onStartChatWithPrompt=${spawnChat}
@@ -24161,7 +24186,12 @@ function WorkflowCanvas() {
       return next;
     });
   }, []);
-  useEffect(() => { if (chatRun) openWindow({ kind: "thread", run: chatRun }); }, [chatRun, openWindow]);
+  // Route the focused chat into the LEFT chat panel (the first rail option
+  // in WorkflowSurface) instead of tiling a dock thread window. The dock
+  // stays for tasks / comments / git / subagent tiles; chatOpenTick tells
+  // the surface "a chat spawned or was reopened - show the panel".
+  const [chatOpenTick, setChatOpenTick] = useState(0);
+  useEffect(() => { if (chatRun) setChatOpenTick(t => t + 1); }, [chatRun]);
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--dock-col-split", dockColSplit + "%");
@@ -25398,6 +25428,27 @@ function WorkflowCanvas() {
       onCloseHistory=${() => setHistoryOpen(false)}
       chatActive=${dockWindows.length > 0}
       chatBusy=${!!chatRun && !chatRunFinished}
+      chatExists=${!!chatRun}
+      chatOpenTick=${chatOpenTick}
+      chatPanel=${chatRun ? html`<${ChatDrawer}
+        key="left-chat"
+        run=${chatRun}
+        variant="tile"
+        onClose=${() => setChatRun(null)}
+        onStop=${() => {}}
+        onRunComplete=${handleWorkflowChatComplete}
+        onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error" || status === "fail")}
+        permissionMode=${chatPermissionMode}
+        onPermissionModeChange=${onChatPermissionModeChange}
+        onStartNewChat=${spawnWorkflowChat}
+        selectionCount=${selectionCount}
+        targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} activePreviewSlug=${activePreviewSlug} run=${chatRun} />`}
+      />` : html`<div className="left-chat-empty">
+        <button type="button" className="runs-new-chat" onClick=${openWorkflowChat}>
+          <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
+          <span className="runs-new-chat-label">New chat</span>
+        </button>
+      </div>`}
       fullscreen=${fullscreen}
       setFullscreen=${setFullscreen}
       onOpenWindow=${openWindow}
@@ -32550,7 +32601,7 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
   `, document.body);
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onActivePreviewChange, onLibResizeStart }) {
+function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onActivePreviewChange, onLibResizeStart, chatPanel, chatOpenTick, chatExists }) {
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -33399,6 +33450,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (v === "visual") return "visual";
       if (v === "library") return "library";
       if (v === "app-nodes") return "app-nodes";
+      if (v === "chat") return "chat";
       return "nodes";
     } catch { return "nodes"; }
   });
@@ -33437,6 +33489,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:wf-mainview", h);
     return () => window.removeEventListener("th:wf-mainview", h);
   }, []);
+  // A chat spawn / reopen (chatOpenTick bump from WorkflowCanvas) opens the
+  // LEFT chat panel - the chat's home after the move off the right dock.
+  // Mirrors onRailPanel's "asking for the panel" semantics: always opens,
+  // never toggles closed; from proto view / whiteboard it returns to Build.
+  useEffect(() => {
+    if (!chatOpenTick) return;
+    toggleWbMode(false);
+    setMainView("canvas");
+    setLeftPanel("chat");
+  }, [chatOpenTick]);
   const onRailPanel = useCallback((which) => {
     // Panel icons always land in Build mode - the whiteboard rail icon is
     // the only way in, so Nodes/Outputs double as the way back out.
@@ -44054,6 +44116,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
           <${HoverTip}
             placement="right"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "chat" ? " is-active" : "") + (chatBusy ? " is-busy" : "")}
+            ariaLabel="Agent chat"
+            tip="Agent chat - run and steer the build"
+            onClick=${() => { onRailPanel("chat"); if (!chatExists && onOpenNewChat) onOpenNewChat(); }}
+          ><${Icon.Comment}/><//>
+          <div className="workflow-nav-rail-sep"/>
+          <${HoverTip}
+            placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && wbMode ? " is-active" : "")}
             ariaLabel="Whiteboard"
             tip="Whiteboard - draw, annotate, paste images"
@@ -44115,7 +44185,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               lastEyedrop=${lastEyedrop}
             />
           ` : html`
-            <${WorkflowLibrary} tab=${leftPanel || "nodes"}/>
+            <div className=${"workflow-left-chat" + (leftPanel === "chat" ? "" : " is-hidden")}>
+              ${chatPanel}
+            </div>
+            ${leftPanel !== "chat" && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
           `}
           <${WorkflowSectionsBar}
             sections=${(data.nodes || []).filter(n => n.kind === "section")}
@@ -82508,9 +82581,20 @@ const EDITOR_TOOL_TABS = [
    (tab-tip-right) since the rail hugs the left edge. Views that carry their own
    left panel (User flow's .flow-nav, IA's .ia-sitemap-wrap) render inside the
    `view` grid cell, to the right of this rail - no overlap. */
-function EditorLeftRail({ view, setView }) {
+function EditorLeftRail({ view, setView, chatOpen, onToggleChat }) {
   return html`
     <div className="editor-left-rail">
+      ${onToggleChat && html`
+        <div className="elr-group">
+          <button
+            className="tab tab-icon"
+            data-active=${!!chatOpen}
+            onClick=${onToggleChat}
+            aria-label="Agent chat"
+            title="Agent chat"
+          ><${Icon.Comment}/><span className="tab-tip tab-tip-right">Agent chat</span></button>
+        </div>
+      `}
       <div className="elr-group">
         ${EDITOR_VIEW_TABS.map(v => html`
           <button
@@ -83490,27 +83574,21 @@ function App() {
     });
   }, []);
 
-  // Rehydrate the open-window set on mount: singletons immediately, thread
-  // tiles after matching their runId against /__runs (dropping vanished runs).
-  // Runs once; openWindow dedups so the lastRunId restore can't double-add.
+  // Rehydrate the open-window set on mount: singleton panels only. Saved
+  // thread tiles are NOT restored into the dock anymore - chat lives in the
+  // LEFT panel now, and the existing lastRunId restore re-seeds chatRun
+  // (which opens that panel) on its own.
   useEffect(() => {
     const saved = loadDock().windows;
     if (!Array.isArray(saved) || !saved.length) return;
     saved.filter(w => w && w.kind && w.kind !== "thread").forEach(w => openWindow({ kind: w.kind }));
-    const ids = saved.filter(w => w && w.kind === "thread" && w.runId).map(w => w.runId);
-    if (!ids.length) return;
-    (async () => {
-      try {
-        const r = await fetch(apiUrl("/__runs"));
-        const j = r.ok ? await r.json() : { runs: [] };
-        const byId = new Map((j.runs || []).map(rn => [rn.runId, rn]));
-        ids.forEach(id => { const run = byId.get(id); if (run) openWindow({ kind: "thread", run }); });
-      } catch {}
-    })();
   }, [openWindow]);
 
-  // Mirror the focused chat into a thread window so every open path tiles it.
-  useEffect(() => { if (chatRun) openWindow({ kind: "thread", run: chatRun }); }, [chatRun, openWindow]);
+  // Route the focused chat into the LEFT chat panel (first option on the
+  // editor's left rail) instead of tiling a dock thread window. The dock
+  // stays for tasks / comments / git / subagent tiles.
+  const [leftChatOpen, setLeftChatOpen] = useState(false);
+  useEffect(() => { if (chatRun) setLeftChatOpen(true); }, [chatRun]);
 
   // Publish dock geometry as CSS custom properties for the .app grid + dock.
   useEffect(() => {
@@ -84197,7 +84275,37 @@ function App() {
       ${!embedMode && html`<${FloatingSubmit} editsCount=${edits.length} runActive=${runActive} onSubmit=${submit}/>`}
       ${!embedMode && html`<${EditorLeftRail}
         view=${view} setView=${setView}
+        chatOpen=${leftChatOpen}
+        onToggleChat=${() => {
+          // First option on the rail: open the left chat panel (seeding a
+          // new-chat shell when none exists yet); click again to collapse.
+          if (leftChatOpen) { setLeftChatOpen(false); return; }
+          setLeftChatOpen(true);
+          if (!chatRun) openNewChat();
+        }}
       />`}
+      ${!embedMode && leftChatOpen && html`
+        <div className="app-left-chat">
+          ${chatRun ? html`<${ChatDrawer}
+            key="left-chat"
+            run=${chatRun}
+            variant="tile"
+            onClose=${() => setLeftChatOpen(false)}
+            onStop=${() => {}}
+            onRunComplete=${handleRunComplete}
+            onStatusChange=${({ status }) => setRunFinished(status === "done" || status === "error" || status === "fail")}
+            permissionMode=${permissionMode}
+            onPermissionModeChange=${onPermissionModeChange}
+            onStartNewChat=${spawnFromComposer}
+            selectionCount=${editorSelectionCount}
+          />` : html`<div className="left-chat-empty">
+            <button type="button" className="runs-new-chat" onClick=${openNewChat}>
+              <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
+              <span className="runs-new-chat-label">New chat</span>
+            </button>
+          </div>`}
+        </div>
+      `}
       ${!embedMode && html`<${RightNavRail}
         onStartNewChat=${openNewChat}
         onStartChatWithPrompt=${spawnFromComposer}
