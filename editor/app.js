@@ -8249,10 +8249,18 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
 
 async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype }) {
   const project = activeProjectId();
+  // Default the model from the user's agent-capability pick (Settings > Default
+  // models per capability > Chat/agent) when the caller didn't pass one, so every
+  // chat path honours the setting - not just the two sites that thread it through.
+  let effModel = model;
+  if (!effModel) { try { effModel = (getDefaultForCapability("agent") || {}).model || undefined; } catch {} }
+  // Drop the CLI-default sentinels (claude-default / codex-default /
+  // opencode-default) so the daemon omits --model and the CLI uses its own default.
+  if (effModel && /-default$/.test(effModel)) effModel = undefined;
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model, tier, prototype }),
+    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model: effModel, tier, prototype }),
   });
   let body = null;
   try { body = await res.json(); } catch {}

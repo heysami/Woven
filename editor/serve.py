@@ -5127,6 +5127,12 @@ AGENT_DEFS = {
         "permission_default": AGENT_PERMISSION_MODE_DEFAULT,
         "prompt_via_stdin": True,
         "stdin_format": "stream-json",   # newline-delimited JSON frames
+        # `model_flag` is the CLI's model-select flag. The chosen default model
+        # (Settings > Default models per capability > Chat/agent) is passed as the
+        # run's `model`; a blank/CLI-default-sentinel model omits the flag so the
+        # CLI uses its OWN configured default. Claude accepts a short alias or a
+        # full id (_agent_model_spawn_args maps full ids -> alias).
+        "model_flag": "--model",
     },
     "codex": {
         "bin": "codex",
@@ -5156,6 +5162,8 @@ AGENT_DEFS = {
         "permission_default": None,
         "prompt_via_stdin": False,
         "stdin_format": "argv",
+        # Codex takes `--model <id>`; the chosen model id is passed through verbatim.
+        "model_flag": "--model",
     },
     "opencode": {
         "bin": "opencode",
@@ -5182,11 +5190,110 @@ AGENT_DEFS = {
         "permission_default": None,
         "prompt_via_stdin": False,
         "stdin_format": "argv",
+        # opencode manages its own model in its own config (`opencode auth login`
+        # + config file); model_flag None = we never pass --model, it stays on its
+        # own configured default (skipped per the Settings picker too).
+        "model_flag": None,
     },
 }
 
 # Default agent for run-time fall-backs (chat composer with no explicit pick).
 AGENT_DEFAULT = "claude"
+
+
+# CLI-default sentinels from the media catalog (media-models.js). Picking one in
+# the Settings agent-model row means "use the CLI's own default" - so we omit the
+# --model flag entirely rather than passing the sentinel id (which is not a real
+# model and would make the CLI error).
+_CLI_DEFAULT_MODEL_SENTINELS = {"claude-default", "codex-default", "opencode-default"}
+
+
+def _agent_model_spawn_args(agent_id, defs, model):
+    """The `--model` flag pair to append at spawn for a chosen default model, or
+    [] when none is chosen / it's a CLI-default sentinel / the agent has no model
+    flag (opencode). A blank model means 'let the CLI use its own default'. For
+    Claude, map a full model id onto the short alias when possible (both are
+    accepted, the alias is more forgiving across CLI versions) - mirrors
+    _claude_cli_complete's mapping."""
+    model = (model or "").strip()
+    flag = defs.get("model_flag")
+    if not model or model in _CLI_DEFAULT_MODEL_SENTINELS or not flag:
+        return []
+    if agent_id == "claude":
+        m = model.lower()
+        if   "sonnet" in m: model = "sonnet"
+        elif "opus"   in m: model = "opus"
+        elif "haiku"  in m: model = "haiku"
+        # else pass the value through verbatim (a full id / a Custom entry)
+    return [flag, model]
+
+
+def _agent_default_model():
+    """The user's GLOBAL agent-capability default model (Settings > Default models
+    per capability > Chat/agent), from the synced default-providers cache. '' when
+    unset or a CLI-default sentinel, so callers fall through to the CLI's own
+    default. This is the single server-side source of truth for 'which model did
+    the user pick for agents', so no spawn path hardcodes one behind their back."""
+    try:
+        agent = (_default_providers_get() or {}).get("agent") or {}
+        m = (agent.get("model") or "").strip()
+        return "" if m in _CLI_DEFAULT_MODEL_SENTINELS else m
+    except Exception:
+        return ""
+
+
+# Which orchestrator owns a given family-token? Used to route a per-orchestrator
+# model override to EVERY drawer / lens / gate subagent the orchestrator fans
+# out, not just the orchestrator's own node. Keyed by the node-id family segment.
+_FAMILY_TO_ORCH = {
+    "sim":  "simulation-orchestrator",
+    "im":   "interactive-media-orchestrator",
+    "nx":   "narrative-experience-orchestrator",
+    "game": "game-experience-orchestrator",
+    "ms":   "motion-studio-orchestrator",
+    "s3d":  "scene-3d-orchestrator",
+    "sb":   "scrapbook-experience-orchestrator",
+}
+
+
+def _orch_for_node(node_id):
+    """Resolve a scaffolded drawer / lens / gate node id back to its OWNING
+    orchestrator id, so the user's per-orchestrator model override reaches every
+    subagent that orchestrator fans out. Segment-aware (splits on '_') so short
+    tokens never mis-match by substring (e.g. 'sim_' must NOT resolve as 'im_').
+    Returns None when the node has no owning orchestrator (a plain build node)."""
+    parts = (node_id or "").lower().split("_")
+    if not parts or not parts[0]:
+        return None
+    p0 = parts[0]
+    # lens nodes: {craft|aesthetic|concept}_lens_<family>_<slotId>_<iter>
+    if len(parts) >= 3 and parts[1] == "lens" and p0 in ("craft", "aesthetic", "concept"):
+        return _FAMILY_TO_ORCH.get(parts[2])
+    # family release-gate nodes: cp_<family>_gate_<slotId>
+    if p0 == "cp" and len(parts) >= 2:
+        return _FAMILY_TO_ORCH.get(parts[1])
+    # art-direction enrichment nodes: pe_photo_/pe_illust_/pe_shader_<slotId>
+    if p0 == "pe" and len(parts) >= 2:
+        return {"photo":  "photography-orchestrator",
+                "illust": "illustration-orchestrator",
+                "shader": "shader-orchestrator"}.get(parts[1])
+    if p0 == "cv":  return "creative-visual-orchestrator"       # cv_<slotId>
+    if p0 == "mat": return "material-orchestrator"              # mat_<elementHash>
+    # owns-surface drawer nodes: <family>_<component>_<slotId>
+    return _FAMILY_TO_ORCH.get(p0)
+
+
+def _orch_override_model_for_node(node_id, title):
+    """The per-orchestrator override model that applies to THIS node, or '' if
+    none. Matches the orchestrator's OWN node by name (id/title contains the
+    orchestrator id) AND every drawer/lens/gate it fans out (via _orch_for_node),
+    so the override propagates to the whole subagent tree, not just the top node."""
+    over = _orchestrator_models_get()
+    if not over:
+        return ""
+    hay = f"{node_id or ''} {title or ''}".lower()
+    oid = next((k for k in over if k.lower() in hay), None) or _orch_for_node(node_id)
+    return ((over.get(oid) or {}).get("model") or "").strip() if oid else ""
 
 # In-memory run registry. Runs are ephemeral; if the daemon dies the user
 # re-issues. No SQLite. Map run_id → RunState.
@@ -7083,7 +7190,12 @@ class RunState:
                  # v3.16 - preamble tier for a freeform chat ("full" = setup /
                  # initialise, "scoped" = cheap iterate); None for node-agent /
                  # system runs. Surfaced to the UI for the thread-kind badge.
-                 "tier")
+                 "tier",
+                 # Chosen default model (Settings > Agent model), stored so a
+                 # codex/opencode resume (a fresh spawn) re-applies the same
+                 # --model instead of silently reverting to the CLI default on
+                 # the second message. None/"" = CLI default.
+                 "model")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -7096,6 +7208,8 @@ class RunState:
         # node-agent / system runs (their badge comes from `kind`). Surfaced to
         # the UI so the chat header can badge Setup vs Subagent vs (scoped=none).
         self.tier = None
+        # Chosen default model (Settings > Agent model); set by _run_create.
+        self.model = None
         self.title = title
         # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
@@ -11083,26 +11197,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         # user's personal /prototype skill used to override visual-orchestrator
         # by telling the agent to use placeholder rectangles instead.
         spawn_args += ["--disable-slash-commands"]
-        # v3.x - ENFORCE the user's per-orchestrator model override (Capabilities
-        # tab) for a DIRECT node-agent run (▶ Run on an orchestrator node). The
-        # Task-tool dispatch path runs in the agent's own harness and cannot be
-        # steered from here - it is guided by the preamble's per-orchestrator
-        # block instead - but this direct spawn otherwise ignored the override
-        # entirely (no --model was ever passed). Match any override id that
-        # appears in the node id/title, then map to the CLI's model aliases
-        # (same mapping the claude-CLI arg builder uses).
+        # ENFORCE the user's per-orchestrator model override (Capabilities tab) for
+        # a daemon-spawned node run - the ▶ Run button AND, crucially, the
+        # build-driver's `POST /__workflow/node/<id>/run?chain=` fan-out, which is
+        # how EVERY drawer / lens / gate subagent is spawned. _orch_override_model_
+        # for_node resolves the owning orchestrator from the node id (a drawer like
+        # `sim_scene_x`, a lens `craft_lens_sim_x_1`, a gate `cp_sim_gate_x`), so
+        # the override reaches the whole subagent tree, not just the orchestrator's
+        # own node. Precedence: per-orchestrator override > the user's GLOBAL
+        # agent-model (Settings) > the CLI's own default. All go through
+        # _agent_model_spawn_args so alias mapping + CLI-default-sentinel handling
+        # + opencode-skip are identical everywhere - nothing hardcodes a model.
         try:
-            _orch_over = _orchestrator_models_get()
-            if _orch_over:
-                _hay = f"{node_id or ''} {title or ''}".lower()
-                _pick = next((row for oid, row in _orch_over.items()
-                              if oid.lower() in _hay), None)
-                _omodel = ((_pick or {}).get("model") or "").lower()
-                if _omodel:
-                    if "opus" in _omodel:     spawn_args += ["--model", "opus"]
-                    elif "sonnet" in _omodel: spawn_args += ["--model", "sonnet"]
-                    elif "haiku" in _omodel:  spawn_args += ["--model", "haiku"]
-                    else:                     spawn_args += ["--model", _omodel]
+            _omodel = _orch_override_model_for_node(node_id, title)
+            _model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
+            if not _model_args:
+                _model_args = _agent_model_spawn_args(agent_id, defs, _agent_default_model())
+            spawn_args += _model_args
         except Exception:
             pass
         spawn_args += _mcp_config_spawn_args()
@@ -23510,6 +23621,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         if agent_id not in AGENT_DEFS:
             return self._reply(400, {"error": f"unknown agentId: {agent_id}",
                                       "known": list(AGENT_DEFS.keys())})
+        # Optional default-model override (Settings > Agent model). Blank = the
+        # CLI's own configured default (no --model flag appended at spawn).
+        agent_model = (body.get("model") or "").strip()
         bin_path = detect_agent_bin(agent_id)
         if not bin_path:
             env_key = AGENT_BIN_ENV.get(agent_id, "")
@@ -23637,6 +23751,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
+            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
         elif agent_id == "codex":
             # v3.5 - Codex's permission flags are version-specific
             # (--full-auto / --approval-mode full-auto / a config key).
@@ -23645,7 +23760,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # so most versions just run without prompts; if a future error
             # shows codex blocking, add the right flag here based on the
             # empirical message.
-            pass
+            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability - see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
@@ -23842,6 +23957,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.bin_path = bin_path
         state.permission_mode = permission_mode or None
         state.tier = _chat_tier   # v3.16 - "full" (setup) | "scoped" (iterate)
+        state.model = agent_model or None   # Settings > Agent model; re-applied on resume
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
@@ -24300,8 +24416,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             )
         else:
             new_prompt = text
-        # Spawn fresh codex with the combined prompt.
-        spawn_args = list(defs["args"]) + [new_prompt]
+        # Spawn fresh codex with the combined prompt. Re-apply the chosen model
+        # (codex resume is a fresh process; without this the 2nd message reverts
+        # to the CLI default). The prompt stays the trailing positional argv.
+        spawn_args = (list(defs["args"])
+                      + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+                      + [new_prompt])
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
         try:
@@ -24439,6 +24559,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
             spawn_args += ["--append-system-prompt", sys_prompt]
         spawn_args += ["--resume", state.session_id]
+        # Re-apply the chosen default model so a resume keeps (or, if the setting
+        # changed, switches to) it rather than falling back to the CLI default.
+        spawn_args += _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
         # The agent's workspace is the PROJECT only - INSTALL_ROOT is NOT
         # added to --add-dir on resume either, mirroring the policy applied
         # on the initial spawn (see _run_create's _spawn_node_agent path).
