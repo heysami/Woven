@@ -295,7 +295,7 @@ class _Tunnel:
     `stopping` flags an intentional stop so the reader thread doesn't
     misreport a user-requested stop as an error."""
     __slots__ = ("share_id", "proc", "url", "state", "error",
-                 "started_at", "stopping", "log_tail")
+                 "started_at", "stopping", "log_tail", "user_refresh")
 
     def __init__(self, share_id, proc):
         self.share_id   = share_id
