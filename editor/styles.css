@@ -268,7 +268,8 @@ button {
 .th-left-rail {
   position: fixed;
   left: 0;
-  top: var(--toolbar-h, 44px);
+  top: 0;          /* full height, flush to the top - the exact mirror of the
+                      right host; only the PANEL starts below the 44px bar */
   bottom: 0;
   display: flex;
   flex-direction: column;
