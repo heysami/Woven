@@ -33458,7 +33458,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (v === "visual") return "visual";
       if (v === "library") return "library";
       if (v === "app-nodes") return "app-nodes";
-      if (v === "chat") return "chat";
+      // "chat" deliberately does NOT restore: it is a session surface, not a
+      // sticky panel preference - a fresh project (or reload) must not greet
+      // the user with an empty chat panel. A live run re-opens it via the
+      // auto-attach -> chatOpenTick path; otherwise the icon opens it.
+      if (v === "chat") return "nodes";
       return "nodes";
     } catch { return "nodes"; }
   });
