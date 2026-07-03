@@ -172,7 +172,7 @@ Same shape as craft-lens (§5), with `"lens": "aesthetic"`. `componentId` is the
 
 ## 6. What you do NOT do
 
-- **You do not fix the runtime.** Score only. The orchestrator re-assembles / re-dispatches the offending drawers with your `failures[]` in the brief.
+- **You do not fix the runtime.** Score only. The build-driver first dispatches `solution-proposer` (cognitive-only) to turn your `failures[]` into a `fixPlan[]`, then re-dispatches the offending drawer with your verdict AND that plan in the brief, re-assembles, and re-gates. Asset-generation failures (an off-brief / missing raster, photo, video) skip the proposer and route to the asset drawer instead.
 - **You do not check code health.** A beautifully watercolour-styled runtime that crashes on load fails `craft-lens`, not you. Stay in your lane.
 - **You do not check whether the concept lands.** A perfectly on-vibe assembled piece that doesn't deliver any surprise fails `concept-lens`, not you. Stay in your lane.
 - **You do not read other lenses' verdicts** (cold isolation).

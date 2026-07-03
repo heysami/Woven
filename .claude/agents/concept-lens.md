@@ -130,7 +130,7 @@ The lens always runs now (no skip path), so every dispatch commits a real scored
 
 ## 7. What you do NOT do
 
-- **You do not fix the runtime.** Score only. The orchestrator re-assembles / re-dispatches the offending drawers with your `failures[]` in the brief - that's how the loop refines (cap 3).
+- **You do not fix the runtime.** Score only. The build-driver first dispatches `solution-proposer` (cognitive-only) to turn your `failures[]` into a `fixPlan[]` (root cause + concrete remedy), then re-dispatches the offending drawer with your verdict AND that plan in the brief, re-assembles, and re-gates - that's how the loop refines (cap 3). Asset-generation failures skip the proposer and route to the asset drawer instead.
 - **You do not check code health.** Failing tests, console errors, broken paths are `craft-lens`'s territory.
 - **You do not check style coherence vs the brief's styleCue / sensoryTargets / antiPatterns.** That's `aesthetic-lens`'s territory.
 - **You do not read other lenses' verdicts** (cold isolation).

@@ -1377,8 +1377,21 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
      POST /run each in parallel ; poll all ; read verdicts from QUALITY_REPORT.json
      IF qa.verdict == pass AND count(lens verdict == pass) >= 2:
        POST /__workflow/node/<containerNode>/commit   outputs.lensVerdict=pass runStatus=done   ; BREAK
-     # else re-dispatch ONLY the responsible builder with the failing verdict in priorVerdicts,
-     #      re-run the composer to re-assemble, loop.
+     # else (FAIL) - PROPOSE the fix before you re-dispatch (do NOT hand the drawer a bare diagnosis):
+     #   1. CLASSIFY the failures. Any failure whose remedy is (re)GENERATING an asset - a raster /
+     #      photo / video / audio / lottie / 3d asset that is missing, blank, or off-brief, NOT a
+     #      code bug - routes to the ASSET path: re-dispatch that asset drawer / visual-orchestrator.
+     #      It is NOT a code fix and does NOT go to the proposer.
+     #   2. For the CODE-fixable failures, dispatch `solution-proposer` (Task) ONCE with the lens
+     #      failures[] + builderNodes[]. It is cognitive-only: it writes FIX_PROPOSALS.json - a
+     #      fixPlan[] of { targetDrawer, targetFile, rootCause, proposedFix } - and STRICTLY writes
+     #      no code and generates no assets (it diagnoses the remedy, the drawer applies it). If it
+     #      finds a failure that actually needs asset generation it flags route:"asset-generation"
+     #      and you route that one per step 1.
+     #   3. Re-dispatch ONLY each responsible builder with BOTH the failing verdict (priorVerdicts)
+     #      AND its solution-proposer fixPlan entry threaded into the brief; re-run the composer to
+     #      re-assemble; loop. (If solution-proposer errors, fall back to re-dispatching the drawer
+     #      with the raw failures[] - the pre-proposer behaviour.)
    IF not committed after 3: emit <decision-request id="cp_<family>_gate_<slotId>">  Accept / Push deeper / Replace  ; honour the pick.
    ```
 

@@ -3465,6 +3465,51 @@ def _pipeline_outstanding(manifest):
     return out
 
 
+# The fix-loop cap: a failing gate is re-attempted at most this many times before
+# the driver must escalate to the human accept/push/replace decision.
+_PIPELINE_GATE_CAP = 3
+
+
+def _pipeline_remediation(manifest):
+    """The loop's STATE MACHINE, computed from the ledger. When a lens/qa gate is
+    `fail`/`blocked`, this returns the single required next action the build-driver
+    MUST take, the attempt count, and whether the cap is hit - so the fix-loop is
+    ledger state the agent reads and cannot mark 'done' around, not doctrine it may
+    forget. The daemon cannot dispatch agents itself; it BLOCKS the gate (via
+    _pipeline_outstanding) and PRESCRIBES the step here - the chat build-driver
+    executes the actual solution-proposer + drawer re-dispatch. Returns the FIRST
+    failing phase (fix in pipeline order) or None when nothing is failing."""
+    for ph in (manifest.get("phases") or []):
+        failed = [s for s in (ph.get("steps") or [])
+                  if s.get("kind") in _PIPELINE_GATE_KINDS and s.get("status") in ("fail", "blocked")]
+        if not failed:
+            continue
+        iteration   = max((int(s.get("attempts") or 1) for s in failed), default=1)
+        cap_reached = iteration >= _PIPELINE_GATE_CAP
+        return {
+            "required":     True,
+            "phaseId":      ph.get("id"),
+            "orchestrator": ph.get("orchestrator"),
+            "iteration":    iteration,
+            "cap":          _PIPELINE_GATE_CAP,
+            "capReached":   cap_reached,
+            "failedSteps":  [{"stepId": s.get("id"), "kind": s.get("kind"),
+                              "verdict": s.get("verdict"), "title": s.get("title"),
+                              "attempts": int(s.get("attempts") or 1)} for s in failed],
+            "nextAction": (
+                f"Cap reached ({iteration}/{_PIPELINE_GATE_CAP}). Stop looping - emit "
+                f"<decision-request id='cp_{ph.get('id')}_gate'> Accept / Push deeper / Replace and honour the pick."
+                if cap_reached else
+                "Do NOT hand the drawer a bare diagnosis and do NOT re-post this gate as done. "
+                "1) Dispatch solution-proposer on the code-fixable failures (asset-generation failures route to the "
+                "asset drawer / visual-orchestrator instead). 2) Apply its FIX_PROPOSALS.json by re-dispatching the "
+                "responsible drawer(s) with priorVerdicts + the fixPlan entry in the brief. 3) Re-run the composer, "
+                "then re-post the failing gate rows. This gate stays blocked until it passes."
+            ),
+        }
+    return None
+
+
 def _project_paths(project_root: str) -> dict:
     """Per-project derived paths. v3.1 - branches deprecated; `merges`
     retained for legacy callers but no longer used."""
@@ -11626,11 +11671,15 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── POST /__pipeline/step ───────────────────────────────────────────
     # Body: { phaseId, stepId, status?, verdict?, verdictBy?, artifacts? }.
-    # Atomically patches ONE step in pipeline.json and enforces the two ledger
-    # rules: (1) a lens/qa verdict must come from an INDEPENDENT cold judge - a
-    # builder self-grading is rejected (selfIssued + blocked, 409); (2) the
-    # final gate (gate-final) cannot go done while sibling gate/qa/lens rows in
-    # its phase are outstanding (409 with the outstanding list).
+    # Atomically patches ONE step in pipeline.json and enforces the ledger rules:
+    # (1) a lens/qa verdict must come from an INDEPENDENT cold judge - a builder
+    # self-grading is rejected (selfIssued + blocked, 409); (2) the final gate
+    # (gate-final) cannot go done while sibling gate/qa/lens rows in its phase are
+    # outstanding (409 with the outstanding list); (3) a `fail` on a lens/qa row
+    # bumps its attempt counter and the response carries `remediation` - the
+    # ledger-computed next action (run solution-proposer -> re-dispatch the drawer
+    # -> re-gate, capped at 3) - so the fix-loop is driven by ledger state the
+    # driver reads, not doctrine it may skip.
     def _pipeline_step(self, qs):
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
@@ -11699,6 +11748,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Apply the patch.
         if status:
             step["status"] = status
+            # Count each failed attempt on a lens/qa row - this is the fix-loop's
+            # iteration counter, which _pipeline_remediation reads to enforce the cap.
+            if status == "fail" and kind in ("lens", "qa"):
+                step["attempts"] = int(step.get("attempts") or 0) + 1
         if verdict is not None:
             step["verdict"] = verdict
         if verdict_by:
@@ -11707,7 +11760,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         if isinstance(body.get("artifacts"), list):
             step["artifacts"] = [str(a) for a in body["artifacts"]]
         self._pipeline_write(project_root, rel, abs_path, manifest, f"{phase_id}/{step_id} -> {status or 'patched'}")
-        return self._reply(200, {"ok": True, "step": step, "complete": not _pipeline_outstanding(manifest)})
+        return self._reply(200, {"ok": True, "step": step,
+                                 "complete": not _pipeline_outstanding(manifest),
+                                 "remediation": _pipeline_remediation(manifest)})
 
     # ── GET /__pipeline - the manifest + a computed complete flag ────────
     def _pipeline_get(self, qs):
@@ -11725,7 +11780,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"pipeline.json unreadable: {e}"})
         outstanding = _pipeline_outstanding(manifest)
         return self._reply(200, {"locked": True, "complete": not outstanding,
-                                 "outstanding": outstanding, "manifest": manifest})
+                                 "outstanding": outstanding,
+                                 "remediation": _pipeline_remediation(manifest),
+                                 "manifest": manifest})
 
     # ── POST /__workflow/node/<id>/status (v2.1) ────────────────────────
     # Body: { runStatus?, text?, runError?, output? }. Atomically updates a

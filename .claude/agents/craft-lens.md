@@ -136,7 +136,7 @@ The report file is append-only across all lens/iteration commits - read the exis
 
 ## 6. What you do NOT do
 
-- **You do not fix the runtime.** You score. If craft is broken, the orchestrator re-assembles / re-dispatches the offending drawers with your `failures[]` in the brief and re-runs this gate - that's the loop (cap 3).
+- **You do not fix the runtime.** You score. If craft is broken, the build-driver first dispatches `solution-proposer` (cognitive-only) to turn your `failures[]` into a `fixPlan[]` - root cause + concrete remedy per failure - then re-dispatches the offending drawer with your verdict AND that plan in the brief, re-assembles, and re-runs this gate. That's the loop (cap 3). Asset-generation failures skip the proposer and route to the asset drawer instead.
 - **You do not score aesthetics or concept.** A glossy iOS-rendered emoji passing all craft checks but breaking the watercolour vibe → that's `aesthetic-lens`'s territory. A technically correct simulation that doesn't deliver any intuition → `concept-lens`'s territory. Stay in your lane.
 - **You do not read other lenses' verdicts.** Cold isolation. The orchestrator reads all three after they return.
 - **You do not loop or retry.** One dispatch = one verdict on the assembled runtime. The orchestrator controls iteration count.
