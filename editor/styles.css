@@ -253,17 +253,32 @@ button {
   min-height: 0;
   position: relative;
 }
-/* Runs OVERLAY - the agent-runs list shown ON TOP of the chat box when the
-   chat icon is clicked (the old right-rail runs popover, relocated left).
-   Picking a run / + New chat dismisses it and the thread shows beneath. */
-.left-chat-runs-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 70;                     /* above the chat-drawer (60) */
+/* Runs POPOVER - the agent-runs list as a true popover ON TOP of whatever is
+   beneath (canvas or the open chat box): the OLD right-rail panel's exact
+   geometry (fixed, 320px, full height under the top bar), docked just right
+   of the LEFT rail. Its width is its OWN - never the chat panel's. */
+.left-runs-pop {
+  position: fixed;
+  top: var(--toolbar-h, 44px);
+  left: var(--th-right-rail-w, 44px);
+  bottom: 0;
+  width: 320px;
+  max-width: calc(100vw - var(--th-right-rail-w, 44px));
+  z-index: 63;                     /* above the chat-drawer (60), like the old rail panel */
   background: var(--surface);
+  border-right: 1px solid var(--border-strong);
+  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
+.left-runs-pop .runs-panel-head { border-bottom: 1px solid var(--border); }
+.left-runs-pop .left-chat-runs-list { flex: 1; min-height: 0; height: auto; }
+/* The workflow nav rail is 48px wide (vs the 44px standalone/editor rails). */
+.workflow-root .left-runs-pop { left: 48px; }
+/* Standalone views (User testing / Development): sit above their z-9550
+   fixed chrome, beside the .th-left-rail. */
+.right-rail-dock-host .left-runs-pop { z-index: 9560; }
 /* Left rail for the standalone views (User testing / Development) - the
    mirror of .th-right-rail: a thin full-height icon rail pinned to the LEFT
    edge, holding the chat entry. Same button styling as the right rail. */
