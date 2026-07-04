@@ -44197,6 +44197,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                           : leftPanel === "chat" ? "chat"
                           : mainView === "canvas" && leftPanel ? leftPanel : "none"}
       >
+        ${runsOverlay && html`
+          <${LeftRunsPopover}
+            onOpenRun=${(r) => { setRunsOverlay(false); onReopenRun && onReopenRun(r); }}
+            onStartNewChat=${() => { setRunsOverlay(false); onOpenNewChat && onOpenNewChat(); }}
+            onClose=${() => setRunsOverlay(false)}
+          />
+        `}
         <nav className="workflow-nav-rail" aria-label="Workflow panels">
           <${HoverTip}
             placement="right"
@@ -44276,13 +44283,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   : html`<${LeftChatRunsList} onOpenRun=${onReopenRun} onStartNewChat=${onOpenNewChat}/>`}
               </div>
             </div>
-            ${runsOverlay && html`
-              <${LeftRunsPopover}
-                onOpenRun=${(r) => { setRunsOverlay(false); onReopenRun && onReopenRun(r); }}
-                onStartNewChat=${() => { setRunsOverlay(false); onOpenNewChat && onOpenNewChat(); }}
-                onClose=${() => setRunsOverlay(false)}
-              />
-            `}
             ${leftPanel !== "chat" && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
           `}
           ${(wbMode || leftPanel !== "chat") && html`
