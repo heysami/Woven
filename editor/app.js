@@ -9927,50 +9927,58 @@ function RightRailDock({ mode }) {
     window.addEventListener("mouseup", onUp);
   }, []);
 
-  // Floating dock width (reads --workflow-chat-width, same slot the workflow
-  // canvas uses). Persists across reloads.
-  const CHAT_DEFAULT = 644, CHAT_MIN = 333;
-  const [chatWidth, setChatWidth] = useState(() => {
+  // Panel widths. The left chat reads the shared chat slot
+  // (--workflow-chat-width / th-workflow-chat-width, same value the workflow
+  // canvas chat column persists); the floating dock has its OWN slot
+  // (settings.dock.width + --workflow-dock-width, shared with the editor App
+  // dock). Decoupled so resizing the dock never re-lays-out the chat.
+  const CHAT_DEFAULT = 644, CHAT_MIN = 333, DOCK_MIN = 360;
+  const [chatWidth] = useState(() => {
     try { const v = parseInt(localStorage.getItem("th-workflow-chat-width") || "0", 10); return v >= CHAT_MIN ? v : CHAT_DEFAULT; }
     catch { return CHAT_DEFAULT; }
   });
-  const chatWidthRef = useRef(chatWidth);
-  useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
+  const [dockWidth, setDockWidth] = useState(() => Number(loadDock().width) || CHAT_DEFAULT);
+  const dockWidthRef = useRef(dockWidth);
+  useEffect(() => { dockWidthRef.current = dockWidth; }, [dockWidth]);
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--workflow-chat-width", chatWidth + "px");
-    return () => root.style.removeProperty("--workflow-chat-width");
-  }, [chatWidth]);
+    root.style.setProperty("--workflow-dock-width", dockWidth + "px");
+    return () => {
+      root.style.removeProperty("--workflow-chat-width");
+      root.style.removeProperty("--workflow-dock-width");
+    };
+  }, [chatWidth, dockWidth]);
   // Reserve-width signal for full-page surfaces (Development / User testing) so
   // their content shrinks beside the dock instead of sitting under it. 0 when no
   // dock window is open, the live dock width when open (tracks resize).
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--dev-dock-w", (dockWindows.length > 0 ? chatWidth : 0) + "px");
+    root.style.setProperty("--dev-dock-w", (dockWindows.length > 0 ? dockWidth : 0) + "px");
     root.style.setProperty("--dev-left-chat-w", (leftChatOpen ? chatWidth : 0) + "px");
     return () => {
       root.style.removeProperty("--dev-dock-w");
       root.style.removeProperty("--dev-left-chat-w");
     };
-  }, [chatWidth, dockWindows.length, leftChatOpen]);
-  const startChatResize = useCallback((e) => {
+  }, [chatWidth, dockWidth, dockWindows.length, leftChatOpen]);
+  const startDockResize = useCallback((e) => {
     e.preventDefault();
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const startX = e.clientX;
-    const startW = chatWidth;
+    const startW = dockWidthRef.current;
     const onMove = (ev) => {
-      const w = Math.max(CHAT_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
-      setChatWidth(w);
+      const w = Math.max(DOCK_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
+      setDockWidth(w);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       try { document.body.removeAttribute("data-panel-resizing"); } catch {}
-      try { localStorage.setItem("th-workflow-chat-width", String(chatWidthRef.current)); } catch {}
+      try { saveDock({ width: dockWidthRef.current }); } catch {}
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [chatWidth]);
+  }, []);
 
   // ── Chat run lifecycle ──
   // carries the pending SCOPED-thread context (tier + prototype slug)
@@ -10113,7 +10121,7 @@ function RightRailDock({ mode }) {
       windows=${dockWindows}
       onClose=${closeWindow}
       onSwap=${swapWindows}
-      onResizeStart=${startChatResize}
+      onResizeStart=${startDockResize}
       onColResize=${startDockSplit("col")}
       onRowResize=${startDockSplit("row")}
       onStartChatWithPrompt=${spawnChat}
@@ -24308,8 +24316,8 @@ function WorkflowCanvas() {
   const [chatPermissionMode, setChatPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
 
   // ── Right tiling dock (workflow surface) ──────────────────────────────
-  // Same model as the editor App's dock, but floating (reuses the chat
-  // drawer's --workflow-chat-width slot + canvas-shrink margin). chatRun is
+  // Same model as the editor App's dock, but floating (its own
+  // --workflow-dock-width slot + canvas-shrink margin). chatRun is
   // the focused thread; a sync effect mirrors it into a thread window.
   const [dockWindows, setDockWindows]   = useState([]);
   // Fullscreen canvas mode lives HERE (not inside WorkflowSurface) so the
@@ -24443,10 +24451,17 @@ function WorkflowCanvas() {
       return v >= CHAT_MIN ? v : CHAT_DEFAULT;
     } catch { return CHAT_DEFAULT; }
   });
+  // Floating right dock width - its OWN slot (settings.dock.width, shared with
+  // the editor App's dock), decoupled from the chat width so dragging the
+  // dock's edge never re-lays-out the chat column, and vice versa.
+  const DOCK_MIN = 360;
+  const [dockWidth, setDockWidth] = useState(() => Number(loadDock().width) || CHAT_DEFAULT);
   const libWidthRef  = useRef(libWidth);
   const chatWidthRef = useRef(chatWidth);
+  const dockWidthRef = useRef(dockWidth);
   useEffect(() => { libWidthRef.current  = libWidth;  }, [libWidth]);
   useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
+  useEffect(() => { dockWidthRef.current = dockWidth; }, [dockWidth]);
   const startLibResize = useCallback((e) => {
     e.preventDefault();
     // Latch: iframes go pointer-transparent for the drag duration (CSS
@@ -24477,9 +24492,9 @@ function WorkflowCanvas() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [libWidth]);
-  const startChatResize = useCallback((e) => {
+  const startDockResize = useCallback((e) => {
     e.preventDefault();
-    // clear any canvas-node selection at the start of a chat-panel
+    // clear any canvas-node selection at the start of a dock-edge
     // resize drag. With a node selected, the wrap's pointer-events promotion
     // turns the iframe + body interactive, which competes with the 4px
     // resize handle near its right edge - the handle becomes hard to grab.
@@ -24493,35 +24508,39 @@ function WorkflowCanvas() {
     // body[data-panel-resizing] rule). The selection-clear above only
     // covers canvas node iframes; the prototype VIEWER's frame is always
     // interactive and was eating mousemove whenever the drag crossed it,
-    // making the chat resize stall/jump in prototype view.
+    // making the dock resize stall/jump in prototype view.
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const startX = e.clientX;
-    const startW = chatWidth;
+    const startW = dockWidthRef.current;
     const onMove = (ev) => {
-      const w = Math.max(CHAT_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
-      setChatWidth(w);
+      const w = Math.max(DOCK_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
+      setDockWidth(w);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       try { document.body.removeAttribute("data-panel-resizing"); } catch {}
-      try { localStorage.setItem("th-workflow-chat-width", String(chatWidthRef.current)); } catch {}
+      try { saveDock({ width: dockWidthRef.current }); } catch {}
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [chatWidth]);
+  }, []);
   // Publish widths as CSS custom properties on document.documentElement so
   // .workflow-body grid + .chat-drawer width + canvas margin can all read
-  // them. No wrapper div needed.
+  // them. No wrapper div needed. The dock gets its OWN var - chat and dock
+  // used to share --workflow-chat-width, which made either resize handle
+  // drag both panels at once.
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--workflow-lib-width",  libWidth  + "px");
     root.style.setProperty("--workflow-chat-width", chatWidth + "px");
+    root.style.setProperty("--workflow-dock-width", dockWidth + "px");
     return () => {
       root.style.removeProperty("--workflow-lib-width");
       root.style.removeProperty("--workflow-chat-width");
+      root.style.removeProperty("--workflow-dock-width");
     };
-  }, [libWidth, chatWidth]);
+  }, [libWidth, chatWidth, dockWidth]);
   // Truthfulness Principle 8 (status does not lie) applied to the
   // chat surface. On mount, if the daemon has an active (non-done, non-error)
   // run for this project, auto-attach to it. Without this, reloading the
@@ -25689,7 +25708,7 @@ function WorkflowCanvas() {
       windows=${dockWindows}
       onClose=${closeWindow}
       onSwap=${swapWindows}
-      onResizeStart=${startChatResize}
+      onResizeStart=${startDockResize}
       onColResize=${startDockSplit("col")}
       onRowResize=${startDockSplit("row")}
       onStartChatWithPrompt=${spawnWorkflowChat}

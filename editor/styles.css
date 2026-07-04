@@ -4375,10 +4375,12 @@ select.sysadd-input {
   display: flex;
   overflow: visible;
 }
-/* Floating variant (workflow surface): occupies the chat-drawer slot - a fixed
-   full-height panel docked left of the icon rail, sized by --workflow-chat-width
-   (same var the chat-resize handle drives). The workflow canvas reserves this
-   width via .workflow-body[data-chat-active] margin, so it shrinks to fit. */
+/* Floating variant (workflow surface): a fixed full-height panel docked left
+   of the icon rail, sized by --workflow-dock-width - the dock's OWN slot,
+   driven by its left-edge handle and persisted under settings.dock.width
+   (decoupled from --workflow-chat-width so dock and chat resize
+   independently). The workflow canvas reserves this width via
+   .workflow-body[data-chat-active] margin, so it shrinks to fit. */
 .right-dock-floating {
   position: fixed;
   top: 44px;   /* sit below the workflow toolbar (the .workflow-root 44px row) -
@@ -4386,7 +4388,7 @@ select.sysadd-input {
   right: var(--th-right-rail-w, 44px);
   bottom: 0;
   height: auto;
-  width: min(var(--workflow-chat-width, 644px), calc(100vw - var(--th-right-rail-w, 44px)));
+  width: min(var(--workflow-dock-width, 644px), calc(100vw - var(--th-right-rail-w, 44px)));
   max-width: calc(100vw - var(--th-right-rail-w, 44px));
   z-index: 60;
 }
@@ -5666,16 +5668,16 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .workflow-resize-handle:active {
   background: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 35%, transparent);
 }
-/* Reserve space on the right for the fixed chat panel when active so the
-   canvas doesn't render under it. */
+/* Reserve space on the right for the floating dock when open (data-chat-active
+   is set from dockWindows.length) so the canvas doesn't render under it. */
 .workflow-body[data-chat-active="true"] .workflow-canvas-wrap {
-  /* min(…, 100vw) mirrors the .chat-drawer width clamp - the reserved
-     margin must match the drawer's VISUAL width, not the raw var. */
-  margin-right: min(var(--workflow-chat-width, 644px), 100vw);
+  /* min(…, 100vw) mirrors the .right-dock-floating width clamp - the reserved
+     margin must match the dock's VISUAL width, not the raw var. */
+  margin-right: min(var(--workflow-dock-width, 644px), 100vw);
   transition: margin-right 0.12s ease;
 }
 .workflow-body[data-chat-active="true"] .workflow-proto-viewer {
-  margin-right: min(var(--workflow-chat-width, 644px), 100vw);
+  margin-right: min(var(--workflow-dock-width, 644px), 100vw);
   transition: margin-right 0.12s ease;
 }
 
