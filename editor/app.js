@@ -8141,6 +8141,10 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
 
 async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype }) {
   const project = activeProjectId();
+  // Default the runtime from the user's agent-capability pick when the caller
+  // didn't pass one - the server would otherwise fall back to its own
+  // AGENT_DEFAULT ("claude") regardless of the selected CLI.
+  const effAgentId = agentId || pickAgentIdForChat();
   // Default the model from the user's agent-capability pick (Settings > Default
   // models per capability > Chat/agent) when the caller didn't pass one, so every
   // chat path honours the setting - not just the two sites that thread it through.
@@ -8152,7 +8156,7 @@ async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, t
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId, kind, prompt, title, meta, project, model: effModel, tier, prototype }),
+    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -39501,7 +39505,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           let run;
           try {
             run = await triggerRun({
-              branch, agentId: "claude", kind: "freeform",
+              branch, agentId: pickAgentIdForChat(), kind: "freeform",
               prompt,
               title: cols === 1
                 ? `Repeater · variant ${cell.row + 1} of ${n}: ${cs.samplePage}`
@@ -42091,7 +42095,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           userText;
         try {
           const run = await triggerRun({
-            branch, agentId: "claude", kind: "freeform",
+            branch, agentId: pickAgentIdForChat(), kind: "freeform",
             prompt: fullPrompt,
             title: `${skillSpec.label} · ${userText.slice(0, 40)}`,
             permissionMode: "bypassPermissions",
@@ -43917,7 +43921,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     let run;
     try {
       run = await triggerRun({
-        branch, agentId: "claude", kind: "freeform",
+        branch, agentId: pickAgentIdForChat(), kind: "freeform",
         prompt: agentPrompt,
         title: `DS brainstorm · "${samplePage}"${imagerySubjects.length ? " + " + imagerySubjects.length + " img→base64" : ""}`,
         permissionMode: "bypassPermissions",
@@ -50846,7 +50850,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       }
       const runTitle = "Zoom feedback · " + (sourceNode?.branch || branch);
       const run = await triggerRun({
-        branch, agentId: "claude", kind: "freeform",
+        branch, agentId: pickAgentIdForChat(), kind: "freeform",
         prompt, title: runTitle,
       });
       if (!targetAgentId && setData && sourceNode) {
@@ -73791,7 +73795,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     setBuilding(true);
     try {
       const branch = "main";
-      const agentIdForRun = (loadSettings().agentId) || "claude";
+      const agentIdForRun = pickAgentIdForChat();
       const permissionMode = (loadSettings().permissionMode) || "bypassPermissions";
       const projectId = activeProjectId();
 
@@ -81292,7 +81296,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                   ? node.name
                   : ((_promptIn && _promptIn.text.trim().slice(0, 60)) || "Agent run");
                 const run = await triggerRun({
-                  branch, agentId: "claude", kind: "freeform",
+                  branch, agentId: pickAgentIdForChat(), kind: "freeform",
                   prompt: fullPrompt,
                   title: _runTitle.slice(0, 60),
                   permissionMode: "bypassPermissions",
@@ -81821,16 +81825,19 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     title: "Agent · " + (node.name || "Untitled"),
     kind: "freeform",
     branch,
-    agentId: "claude",
+    agentId: pickAgentIdForChat(),
   });
   // Resolve the run to show: the LIVE pointer (node.runId) if present, else the
   // DURABLE pointer (node.lastRunId) as a read-only historical run. lastRunId is
   // set on every Run/chat-send and never wiped, so the Chat button can always
   // recover the agent's thread from the persisted transcript - even after the
   // live run is evicted from the daemon's in-memory registry.
+  // Placeholder agentId while the /__run/<id> probe below is in flight - the
+  // probe replaces this with the run's REAL agentId, so the guess only has to
+  // be more likely right than a hardcoded "claude".
   const [chatRun, setChatRun] = useState(() => {
-    if (node.runId) return { runId: node.runId, branch, agentId: "claude" };
-    if (node.lastRunId) return { runId: node.lastRunId, branch, agentId: "claude", historical: true, done: true };
+    if (node.runId) return { runId: node.runId, branch, agentId: pickAgentIdForChat() };
+    if (node.lastRunId) return { runId: node.lastRunId, branch, agentId: pickAgentIdForChat(), historical: true, done: true };
     return _freshChatShell();
   });
 
@@ -81850,8 +81857,8 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     if (!eff) return;
     if (chatRun?.runId !== eff) {
       setChatRun(node.runId
-        ? { runId: eff, branch, agentId: "claude" }
-        : { runId: eff, branch, agentId: "claude", historical: true, done: true });
+        ? { runId: eff, branch, agentId: pickAgentIdForChat() }
+        : { runId: eff, branch, agentId: pickAgentIdForChat(), historical: true, done: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.runId, node.lastRunId]);
@@ -81894,7 +81901,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
           } catch (_e) {}
           if (cancelled) return;
           if (hasHistory) {
-            setChatRun({ runId: id, branch, agentId: "claude", historical: true, done: true });
+            setChatRun({ runId: id, branch, agentId: pickAgentIdForChat(), historical: true, done: true });
           } else if (node.runId) {
             // Truly gone - drop only the live pointer; lastRunId stays.
             setChatRun(_freshChatShell());
@@ -81913,7 +81920,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     });
     const title = (((node.name && node.name !== "Untitled agent") ? node.name : (userText || "").trim().slice(0, 60)) || "Agent chat");
     const run = await triggerRun({
-      branch, agentId: "claude", kind: "freeform",
+      branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: fullPrompt, title, permissionMode,
     });
     setChatRun(run);
@@ -83318,7 +83325,7 @@ function PublishModal({ onClose, onStarted }) {
         "Dispatch the publish-orchestrator. FIRST detect current state: is my GitHub linked, is a repo already connected for this project, and is there an existing publish.json? If I already published, UPDATE the existing repo / site rather than creating a new one. " +
         "Host: GitHub Pages for the static front end. Database backend (only if the app stores data): " + dbProvider + " (supabase = Postgres + auth + storage; cloudflare = D1 SQL + R2 files). If the app stores data, CLASSIFY first by reading this prototype's data model (source/<branch>/prototype.json: entities, fields, links/arrows): a simple website gets the BASIC shape (auth + a profile/preferences/files set, but TAILORED to this app's actual fields + content, never a blind template); a real multi-entity app gets a schema DERIVED from its OWN entities with the screens wired to real reads/writes so interactions persist. Both are derived from the prototype - do not blindly default to basic when it already has a rich entity graph. Use the connected " + dbProvider + " account (token host-side via /__providers); do not ask for a token in chat. " +
         "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
-      const run = await triggerRun({ branch: "main", agentId: "claude", kind: "freeform",
+      const run = await triggerRun({ branch: "main", agentId: pickAgentIdForChat(), kind: "freeform",
         prompt, title: mode === "collaborative" ? "Publish (work together)" : "Publish prototype" });
       if (onStarted) onStarted(run);
     } catch (e) {
