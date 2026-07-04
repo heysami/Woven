@@ -26774,7 +26774,7 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   background: var(--accent);
   color: oklch(100% 0 0);
 }
-.chat-decision-opt-label { flex: 1; }
+.chat-decision-opt-label { flex: 1 1 100%; }
 
 /* v2.2 - preview pane (HTML iframe / image / inline). Sits ABOVE the label
    row inside the option button. Fixed aspect so the grid stays readable. */
@@ -26786,8 +26786,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .chat-decision-opt-row {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  row-gap: 5px;
   padding: 4px 6px;
 }
 .chat-decision-opt-check {
