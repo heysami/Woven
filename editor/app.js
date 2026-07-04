@@ -7291,6 +7291,15 @@ function pickAgentIdForChat() {
   } catch {}
   return "claude";
 }
+/* The model PROVIDER the build fan-out runs on, derived from the same agent-
+   capability default pickAgentIdForChat() reads. The per-orchestrator/subagent
+   override dropdowns offer models of THIS provider (GPT when agent=codex,
+   Anthropic when agent=claude), and the server-side guard drops any stored
+   override whose provider doesn't match the runtime. Unset -> anthropic. */
+function getActiveAgentProvider() {
+  try { return (getDefaultForCapability("agent") || {}).provider || "anthropic"; }
+  catch { return "anthropic"; }
+}
 /* ────────── Per-orchestrator model overrides ──────────
    The agent-capability default (above) picks ONE model for the whole spawn -
    the main chat agent AND, by inheritance, every orchestrator's dispatched
@@ -7394,14 +7403,16 @@ if (typeof window !== "undefined") {
     }
   } catch {}
 }
-/* The model choices a per-orchestrator override can pick from. Orchestrator
-   drawers dispatch as Claude Task-tool subagents (the only CLI whose subagent
-   path the daemon supports today - see _pickAutoForCapability), so the menu
-   is the anthropic text tier: opus 4.8 / 4.7 / 4.6, sonnet 4.6, haiku 4.5.
-   The Task tool's `model:` param accepts these ids / their tier aliases. */
-function listOrchestratorModelChoices() {
+/* The model choices a per-orchestrator/subagent override can pick from, scoped
+   to the ACTIVE agent runtime's provider: GPT ids when the agent is codex,
+   Anthropic ids when claude. The build fan-out (drawers via _spawn_node_agent,
+   orchestrators via /__dispatch_planner) spawns on that runtime, and the daemon
+   drops any stored override whose provider != the runtime's. opencode manages
+   its own model, so its provider yields an empty list (Agent-default only). */
+function listOrchestratorModelChoices(filterProvider) {
   const M = (window.TH_MEDIA || {});
-  return (M.textModels || []).filter(m => m.provider === "anthropic" && !m.cliOnly && m.integrated !== false);
+  const prov = filterProvider || getActiveAgentProvider();
+  return (M.textModels || []).filter(m => m.provider === prov && !m.cliOnly && m.integrated !== false);
 }
 
 /* Pull the per-capability model lists from the media catalog. svg / video /
@@ -22007,7 +22018,8 @@ function OrchestratorModelSelect({ orchestratorId, disabled }) {
     window.addEventListener("th:orchestrator-models-changed", on);
     return () => window.removeEventListener("th:orchestrator-models-changed", on);
   }, [orchestratorId]);
-  const choices = useMemo(() => listOrchestratorModelChoices(), []);
+  const activeProvider = getActiveAgentProvider();
+  const choices = listOrchestratorModelChoices(activeProvider);
   const current = (override && override.model) || "";
   return html`
     <label
@@ -22025,7 +22037,8 @@ function OrchestratorModelSelect({ orchestratorId, disabled }) {
         disabled=${disabled}
         onChange=${(e) => {
           const id = e.target.value;
-          saveOrchestratorModel(orchestratorId, id ? { provider: "anthropic", model: id } : null);
+          const m = choices.find(c => c.id === id);
+          saveOrchestratorModel(orchestratorId, id ? { provider: (m && m.provider) || activeProvider, model: id } : null);
         }}
       >
         <option value="">Agent default</option>
@@ -22047,7 +22060,8 @@ function SubagentModelSelect({ name, disabled }) {
     window.addEventListener("th:subagent-models-changed", on);
     return () => window.removeEventListener("th:subagent-models-changed", on);
   }, [name]);
-  const choices = useMemo(() => listOrchestratorModelChoices(), []);
+  const activeProvider = getActiveAgentProvider();
+  const choices = listOrchestratorModelChoices(activeProvider);
   const current = (override && override.model) || "";
   return html`
     <label
@@ -22064,7 +22078,8 @@ function SubagentModelSelect({ name, disabled }) {
         disabled=${disabled}
         onChange=${(e) => {
           const id = e.target.value;
-          saveSubagentModel(name, id ? { provider: "anthropic", model: id } : null);
+          const m = choices.find(c => c.id === id);
+          saveSubagentModel(name, id ? { provider: (m && m.provider) || activeProvider, model: id } : null);
         }}
       >
         <option value="">Inherit</option>

@@ -5167,6 +5167,61 @@ def _agent_default_model():
         return ""
 
 
+# provider -> CLI runtime, and its inverse. The single server-side source of
+# truth for "which CLI should the build fan-out spawn on", mirroring the
+# client's pickAgentIdForChat() (app.js). The build fan-out (orchestrators via
+# /__dispatch_planner, drawers/lenses/gates via _spawn_node_agent) follows the
+# user's selected AGENT capability so codex/opencode builds don't silently run
+# on Claude. Unset / unknown -> claude (the safe default + back-compat).
+_PROVIDER_TO_AGENT = {"anthropic": "claude", "openai": "codex", "opencode": "opencode"}
+_AGENT_TO_PROVIDER = {v: k for k, v in _PROVIDER_TO_AGENT.items()}
+
+
+def _agent_default_runtime():
+    """The CLI runtime the build fan-out should spawn on, from the synced
+    default-providers 'agent' capability. Returns 'claude' | 'codex' |
+    'opencode', defaulting to 'claude' when unset/unknown."""
+    try:
+        prov = ((_default_providers_get() or {}).get("agent") or {}).get("provider") or ""
+        return _PROVIDER_TO_AGENT.get(prov.strip().lower(), "claude")
+    except Exception:
+        return "claude"
+
+
+def _provider_for_agent(agent_id):
+    """CLI runtime -> its model provider (claude->anthropic, codex->openai,
+    opencode->opencode). Used to gate a per-orchestrator/subagent model
+    override: an override model only applies when its stored provider matches
+    the runtime, so an opus id is never handed to codex nor a gpt id to claude."""
+    return _AGENT_TO_PROVIDER.get((agent_id or "").strip().lower(), "anthropic")
+
+
+def _codex_task_translation_note(project_id):
+    """The note that tells a codex/opencode subagent to dispatch nested Woven
+    subagents by POSTing /__dispatch_planner (neither CLI has Claude's native
+    Task tool). Shared by _dispatch_planner and _spawn_node_agent's non-claude
+    branch so the three copies can't drift."""
+    return (
+        "===== RUNTIME NOTE =====\n"
+        "The spec above was written for Claude Code's `Task` tool. You are "
+        "running on a non-Claude CLI runtime. Wherever the spec instructs you "
+        "to invoke `Task(subagent_type: \"<type>\", prompt: \"<brief>\")`, "
+        "instead run this shell command:\n\n"
+        "  curl -s -X POST "
+        f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+        "-H 'content-type: application/json' "
+        "-d '{\"type\": \"<type>\", \"brief\": \"<brief>\"}'\n\n"
+        "The daemon routes the nested dispatch to whichever LLM is available "
+        "and streams its events back as SSE. Parse the final `planner-done` "
+        "event's `output` field and treat it the way the spec would have "
+        "treated a Task tool return value. If the connection drops before "
+        "`planner-done`, do NOT re-dispatch - the planner keeps running; poll "
+        "`GET /__dispatch_planner/result?project=<id>&runId=<runId>` until "
+        "`done` is true and use its `output`.\n"
+        "===== END RUNTIME NOTE =====\n"
+    )
+
+
 # Which orchestrator owns a given family-token? Used to route a per-orchestrator
 # model override to EVERY drawer / lens / gate subagent the orchestrator fans
 # out, not just the orchestrator's own node. Keyed by the node-id family segment.
@@ -5208,17 +5263,25 @@ def _orch_for_node(node_id):
     return _FAMILY_TO_ORCH.get(p0)
 
 
-def _orch_override_model_for_node(node_id, title):
+def _orch_override_model_for_node(node_id, title, want_provider=None):
     """The per-orchestrator override model that applies to THIS node, or '' if
     none. Matches the orchestrator's OWN node by name (id/title contains the
     orchestrator id) AND every drawer/lens/gate it fans out (via _orch_for_node),
-    so the override propagates to the whole subagent tree, not just the top node."""
+    so the override propagates to the whole subagent tree, not just the top node.
+    When want_provider is given, the override is applied ONLY if its stored
+    provider matches the target runtime's provider (else '' - the caller falls
+    back to the agent default), so a stale gpt override never reaches claude."""
     over = _orchestrator_models_get()
     if not over:
         return ""
     hay = f"{node_id or ''} {title or ''}".lower()
     oid = next((k for k in over if k.lower() in hay), None) or _orch_for_node(node_id)
-    return ((over.get(oid) or {}).get("model") or "").strip() if oid else ""
+    if not oid:
+        return ""
+    row = over.get(oid) or {}
+    if want_provider and (row.get("provider") or "").strip().lower() != want_provider:
+        return ""
+    return (row.get("model") or "").strip()
 
 
 # Generic role suffixes on subagent names that scaffolded node ids do NOT
@@ -5227,7 +5290,7 @@ _SUBAGENT_NAME_SUFFIXES = ("-author", "-technique", "-builder", "-composer",
                            "-enricher", "-promoter")
 
 
-def _subagent_override_model_for_node(node_id, title, prompt_text=""):
+def _subagent_override_model_for_node(node_id, title, prompt_text="", want_provider=None):
     """The per-SUBAGENT override model that applies to THIS node, or '' when
     none. Finer-grained than the per-orchestrator override: keys are subagent
     NAMES. A node matches (a) by id/title - scaffolded ids carry the drawer
@@ -5235,7 +5298,9 @@ def _subagent_override_model_for_node(node_id, title, prompt_text=""):
     s3d_subsystem_..., sim_loop_...), suffix-stripped per the tuple above; or
     (b) by the node's envelope text, which names the drawer spec it follows
     ("... per s3d-subsystem-author.md"). Longest matching name wins, so a
-    short key can never steal a longer, more specific one."""
+    short key can never steal a longer, more specific one. When want_provider is
+    given, the matched override is applied ONLY if its stored provider matches
+    the target runtime's provider (else '' - caller falls back to the default)."""
     over = _subagent_models_get()
     if not over:
         return ""
@@ -5259,7 +5324,12 @@ def _subagent_override_model_for_node(node_id, title, prompt_text=""):
         if (id_form.strip() != "" and id_form in id_hay) or (key in text_hay):
             if len(key) > best_len:
                 best_name, best_len = name, len(key)
-    return ((over.get(best_name) or {}).get("model") or "").strip() if best_name else ""
+    if not best_name:
+        return ""
+    row = over.get(best_name) or {}
+    if want_provider and (row.get("provider") or "").strip().lower() != want_provider:
+        return ""
+    return (row.get("model") or "").strip()
 
 # In-memory run registry. Runs are ephemeral; if the daemon dies the user
 # re-issues. No SQLite. Map run_id → RunState.
@@ -11339,14 +11409,17 @@ class H(http.server.SimpleHTTPRequestHandler):
     # failure - caller passes error_dict to self._reply.
     def _spawn_node_agent(self, *, project_root, project_id, branch,
                           node_id, system_prompt, prompt_text, title,
-                          chain_rest=None):
-        agent_id = "claude"
+                          chain_rest=None, agent_id=None):
+        # The build fan-out follows the user's selected AGENT runtime unless the
+        # caller passes an explicit one, so codex/opencode drawers run their own
+        # CLI (with GPT/model overrides) instead of always spawning Claude.
+        agent_id = (agent_id or _agent_default_runtime())
         defs = AGENT_DEFS.get(agent_id)
         if not defs:
-            return None, (500, {"error": "claude agent not registered"})
+            return None, (500, {"error": f"agent not registered: {agent_id!r}"})
         bin_path = detect_agent_bin(agent_id)
         if not bin_path:
-            return None, (500, {"error": "claude binary not on PATH"})
+            return None, (500, {"error": f"{agent_id} binary not on PATH"})
         permission_mode = "bypassPermissions"
         spawn_args = list(defs["args"])
         # Claude Code 2.1.150 split bypass into two flags. The mode
@@ -11364,18 +11437,20 @@ class H(http.server.SimpleHTTPRequestHandler):
         # it yet" after running 4 hours: every Write/Edit/Bash that the
         # orchestrator subagents triggered queued behind a permission prompt the
         # user couldn't approve.
-        if permission_mode == "bypassPermissions":
-            spawn_args += [
-                "--allow-dangerously-skip-permissions",
-                "--dangerously-skip-permissions",
-            ]
-        elif defs.get("permission_flag"):
-            spawn_args += [defs["permission_flag"], permission_mode]
-        # Hide user-level slash commands (~/.claude/commands/). The
-        # daemon's capabilities preamble + Woven subagents (visual-orchestrator,
-        # raster-foreground, etc.) are the only image-pipeline path; a user's
-        # personal /prototype skill must not override visual-orchestrator.
-        spawn_args += ["--disable-slash-commands"]
+        # Claude-only permission-bypass + slash-command flags. codex/opencode
+        # reject these (codex exec is non-interactive by default). Mirrors the
+        # gating in _run_create.
+        if agent_id == "claude":
+            if permission_mode == "bypassPermissions":
+                spawn_args += [
+                    "--allow-dangerously-skip-permissions",
+                    "--dangerously-skip-permissions",
+                ]
+            elif defs.get("permission_flag"):
+                spawn_args += [defs["permission_flag"], permission_mode]
+            # Hide user-level slash commands (~/.claude/commands/) so a personal
+            # /prototype skill can't override visual-orchestrator.
+            spawn_args += ["--disable-slash-commands"]
         # ENFORCE the user's per-orchestrator model override (Capabilities tab) for
         # a daemon-spawned node run - the ▶ Run button AND, crucially, the
         # build-driver's `POST /__workflow/node/<id>/run?chain=` fan-out, which is
@@ -11389,23 +11464,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         # _agent_model_spawn_args so alias mapping + CLI-default-sentinel handling
         # + opencode-skip are identical everywhere - nothing hardcodes a model.
         try:
-            _omodel = (_subagent_override_model_for_node(node_id, title, prompt_text)
-                       or _orch_override_model_for_node(node_id, title))
+            _want_prov = _provider_for_agent(agent_id)
+            _omodel = (_subagent_override_model_for_node(node_id, title, prompt_text, want_provider=_want_prov)
+                       or _orch_override_model_for_node(node_id, title, want_provider=_want_prov))
             _model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
             if not _model_args:
                 _model_args = _agent_model_spawn_args(agent_id, defs, _agent_default_model())
             spawn_args += _model_args
         except Exception:
             pass
-        spawn_args += _mcp_config_spawn_args()
-        # Hook gate. PreToolUse on Write/Edit/MultiEdit blocks any
-        # *.html write until the agent has called Task with
-        # subagent_type='visual-orchestrator'. Soft preamble rules ("you MUST
-        # dispatch visual-orchestrator") were ignored; this is hard enforcement
-        # at the tool-call boundary.
-        _harness_settings = _ensure_harness_settings()
-        if _harness_settings:
-            spawn_args += ["--settings", _harness_settings]
+        # Claude-only: --mcp-config + the hook-gate --settings (PreToolUse blocks
+        # *.html writes until visual-orchestrator is dispatched). codex/opencode
+        # manage MCP via their own config and have no --settings flag.
+        if agent_id == "claude":
+            spawn_args += _mcp_config_spawn_args()
+            _harness_settings = _ensure_harness_settings()
+            if _harness_settings:
+                spawn_args += ["--settings", _harness_settings]
         # The per-node preamble IS the full system prompt for this run. Plus
         # the question-form protocol so <decision-request> / <question-form>
         # still parses if the subagent emits one. Workspace layout block too
@@ -11413,7 +11488,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
         if WORKSPACE_DIR and project_root != INSTALL_ROOT:
             sys_prompt += WORKSPACE_LAYOUT_PROMPT
-        if _mcp_config_spawn_args():
+        if agent_id == "claude" and _mcp_config_spawn_args():
             sys_prompt += _mcp_routing_prompt()
         # bake the capabilities catalog into the preamble so the
         # spawned subagent knows what the app supports (image providers,
@@ -11421,26 +11496,38 @@ class H(http.server.SimpleHTTPRequestHandler):
         # answer "I don't have <X>" for features that ARE integrated.
         try:
             from kinds.capabilities import capabilities_preamble
-            # a per-node spawn is a LEAF task by design (see the comment
-            # at the top of this fn: "no orchestrator preamble - the per-node
-            # preamble is the entire system prompt"). Orchestrators dispatch via
-            # the Task tool, never this path. So the leaf gets the SLIM tier
-            # (~69% less preamble, ~25K fewer tokens) unless the node id itself
-            # names an orchestrator. project_root is now threaded so the full
-            # tier (orchestrator node) also respects the disable list.
+            # a per-node spawn is a LEAF task by design unless the node id names
+            # an orchestrator; the leaf tier is ~25K tokens slimmer.
             _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
             _node_tier = _tier   # recorded on the RunState below for resume weight
             sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
         except Exception:
             _node_tier = None
         sys_prompt += "\n\n" + system_prompt
-        spawn_args += ["--append-system-prompt", sys_prompt]
-        # The agent's workspace is the PROJECT, not the editor installation.
-        # Spawned agents get NO write access to the editor install root:
-        # --add-dir grants WRITE too, so INSTALL_ROOT is never added (the Read
-        # tool still opens absolute paths for protocol docs). See AGENTS.md
-        # "Editor source is OFF LIMITS".
-        spawn_args += ["--add-dir", project_root]
+        # Delivery differs per runtime (mirrors _run_create): claude takes the
+        # preamble via --append-system-prompt + an explicit --add-dir write grant;
+        # codex/opencode have neither flag, so the preamble is PREPENDED to the
+        # prompt text (wrapped in delimiters) with the Task->curl translation note
+        # appended so a drawer that co-dispatches a nested subagent knows to POST
+        # /__dispatch_planner.
+        if agent_id == "claude":
+            spawn_args += ["--append-system-prompt", sys_prompt]
+            # Project-only write grant; INSTALL_ROOT is never added (editor
+            # source is off limits). Claude 2.1.150+ needs this even under bypass.
+            spawn_args += ["--add-dir", project_root]
+        else:
+            prompt_text = (
+                "===== HARNESS PREAMBLE =====\n"
+                + sys_prompt
+                + "\n\n" + _codex_task_translation_note(project_id)
+                + "\n===== END HARNESS PREAMBLE =====\n\n"
+                + "===== YOUR TASK =====\n"
+                + prompt_text
+            )
+        # codex/opencode take the prompt as the trailing positional argv (no
+        # stdin stream-json frame); the stdin write below is claude-only.
+        if not defs["prompt_via_stdin"]:
+            spawn_args.append(prompt_text)
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id)
@@ -15167,8 +15254,30 @@ class H(http.server.SimpleHTTPRequestHandler):
             caps_text = capabilities_preamble(project_root=project_root)
         except Exception:
             caps_text = ""
-        if claude_bin:
-            agent_id, bin_path = "claude", claude_bin
+        # Runtime: honor the user's selected AGENT when it can spawn here
+        # (claude/codex only - opencode has no planner spawn-shape yet) and is
+        # installed; else fall back to whichever IS installed so a build never
+        # dead-ends. This stops the old "always prefer claude" from overriding an
+        # explicit codex choice.
+        want = _agent_default_runtime()
+        avail = {"claude": claude_bin, "codex": codex_bin}
+        chosen = want if avail.get(want) else ("claude" if claude_bin else ("codex" if codex_bin else None))
+        if chosen is None:
+            return self._reply(502, {
+                "error": "no LLM runtime available - install Claude Code or Codex CLI",
+                "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex",
+            })
+        agent_id, bin_path, defs = chosen, avail[chosen], AGENT_DEFS[chosen]
+        # Per-orchestrator model override (keyed by planner_type) within the
+        # chosen runtime's provider; else the global agent model, but only when
+        # we DID NOT fall back to a different runtime (a fallback runtime's own
+        # default is safer than forcing a wrong-provider model id onto it).
+        _want_prov = _provider_for_agent(agent_id)
+        _omodel = _orch_override_model_for_node(planner_type, planner_type, want_provider=_want_prov)
+        if not _omodel and chosen == want:
+            _omodel = _agent_default_model()
+        _planner_model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
+        if agent_id == "claude":
             # Build the full system prompt: planner body PLUS capabilities
             # preamble PLUS question-form protocol. Order matters - the
             # planner spec is the primary instruction; capabilities is
@@ -15196,31 +15305,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "--append-system-prompt", sys_prompt,
             ]
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _planner_model_args
             stdin_pipe = subprocess.PIPE
             prompt_stdin = _claude_user_frame(brief)
             prompt_argv = None
-        elif codex_bin:
-            agent_id, bin_path = "codex", codex_bin
-            translation_note = (
-                "===== RUNTIME NOTE =====\n"
-                "The planner spec above was written for Claude Code's `Task` "
-                "tool. You are running on the Codex CLI runtime. Wherever the "
-                "spec instructs you to invoke `Task(subagent_type: \"<type>\", "
-                "prompt: \"<brief>\")`, instead run this shell command:\n\n"
-                "  curl -s -X POST "
-                f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
-                "-H 'content-type: application/json' "
-                "-d '{\"type\": \"<type>\", \"brief\": \"<brief>\"}'\n\n"
-                "The daemon routes the nested dispatch to whichever LLM is "
-                "available and streams its events back as SSE. Parse the "
-                "final `planner-done` event's `output` field and treat it the "
-                "way the spec would have treated a Task tool return value. "
-                "If the connection drops before `planner-done`, do NOT "
-                "re-dispatch - the planner keeps running; poll "
-                "`GET /__dispatch_planner/result?project=<id>&runId=<runId>` "
-                "until `done` is true and use its `output`.\n"
-                "===== END RUNTIME NOTE =====\n"
-            )
+        elif agent_id == "codex":
+            translation_note = _codex_task_translation_note(project_id)
             caps_block = ""
             if caps_text:
                 caps_block = (
@@ -15240,7 +15330,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # danger-full-access matches AGENT_DEFS["codex"]["args"] -
             # required so the planner can curl back to /__dispatch_planner
             # for nested subagent dispatch (workspace-write blocks network).
-            spawn_args = ["exec", "--sandbox", "danger-full-access"]
+            spawn_args = ["exec", "--sandbox", "danger-full-access"] + _planner_model_args
             stdin_pipe = None
             prompt_stdin = None
             prompt_argv = full_prompt
