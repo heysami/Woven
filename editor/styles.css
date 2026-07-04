@@ -4371,7 +4371,6 @@ select.sysadd-input {
   height: 100%;
   background: var(--surface);
   border-left: 1px solid var(--border-strong);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.06);
   display: flex;
   overflow: visible;
 }
