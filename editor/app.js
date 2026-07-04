@@ -8696,6 +8696,47 @@ function useAgents() {
   return { agents, loaded, reload };
 }
 
+/* Polls /__usage for live subscription-window usage per detected CLI
+   credential (session 5h + weekly + plan). The daemon serves this from a
+   stale-while-revalidate cache, so a slow vendor endpoint never blocks the
+   poll. We fetch lazily: nothing hits the network until `enable` flips true
+   (the user opens the usage popover), then we refresh on a slow interval so an
+   idle editor isn't calling Anthropic/OpenAI every minute. `refresh(true)`
+   forces a synchronous daemon-side re-fetch for the popover's refresh button. */
+function useUsage(enable) {
+  const [state, setState] = useState({ rows: [], stale: false, loading: false, loaded: false });
+  const reload = useCallback(async (force) => {
+    try {
+      const r = await fetch(apiUrl("/__usage" + (force ? "?force=1" : "")));
+      if (!r.ok) throw new Error("usage endpoint unavailable");
+      const j = await r.json();
+      setState({ rows: j.rows || [], stale: !!j.stale, loading: !!j.loading, loaded: true });
+    } catch {
+      setState(s => ({ ...s, loaded: true }));
+    }
+  }, []);
+  useEffect(() => {
+    if (!enable) return;
+    reload();
+    // While the popover is open, re-poll every 30s. The daemon's own 5-min
+    // cache means most of these are cache hits; the refresh happens in the
+    // background so the numbers keep ticking without hammering the vendor.
+    const t = setInterval(() => reload(false), 30000);
+    return () => clearInterval(t);
+  }, [enable, reload]);
+  return { ...state, reload };
+}
+
+/* Compact reset-countdown label for a usage window (epoch-ms resetsAt). */
+function fmtUsageReset(ms) {
+  if (!ms) return "";
+  const sec = Math.floor((ms - Date.now()) / 1000);
+  if (sec <= 0) return "resets now";
+  if (sec < 3600) return `resets in ${Math.max(1, Math.floor(sec / 60))}m`;
+  if (sec < 86400) return `resets in ${Math.floor(sec / 3600)}h`;
+  return `resets in ${Math.floor(sec / 86400)}d`;
+}
+
 /* Polls the daemon's /__workspace endpoint on a short interval so any surface
    can show whether `serve.py` is reachable. Uses AbortController + a 2s
    timeout so a hung socket flips to "down" promptly (default fetch hangs the
@@ -8930,6 +8971,18 @@ function CliIndicator({ compact }) {
     window.addEventListener("th:default-providers-changed", on);
     return () => window.removeEventListener("th:default-providers-changed", on);
   }, []);
+  // Subscription-usage popover. Lazily fetched: useUsage stays dormant until
+  // `usageOpen` flips true, so nothing calls the vendor usage endpoints until
+  // the user actually opens the popover.
+  const [usageOpen, setUsageOpen] = useState(false);
+  const usageRef = useRef(null);
+  const usage = useUsage(usageOpen);
+  useEffect(() => {
+    if (!usageOpen) return;
+    const off = (e) => { if (usageRef.current && !usageRef.current.contains(e.target)) setUsageOpen(false); };
+    document.addEventListener("mousedown", off);
+    return () => document.removeEventListener("mousedown", off);
+  }, [usageOpen]);
   if (!loaded) {
     return html`<span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true">
       <span className="cli-dot"/>
@@ -9003,17 +9056,88 @@ function CliIndicator({ compact }) {
   const labelText = ok
     ? meta.short
     : (needsLogin ? `${label} not signed in` : `${label} missing`);
-  return html`<span
-    className=${"cli-indicator cli-indicator-" + state}
-    title=${tooltip}
-    data-tip-host="true"
-    data-state=${state}
-    data-cli=${preferred}
-  >
-    <span className="cli-dot"/>
-    ${!compact && html`<span className="cli-label">${labelText}</span>`}
-    <span className="tab-tip">${tipShort}</span>
+  return html`<span className="cli-usage-host" ref=${usageRef}>
+    <span
+      className=${"cli-indicator cli-indicator-" + state + (usageOpen ? " is-open" : "")}
+      title=${tooltip}
+      data-tip-host="true"
+      data-state=${state}
+      data-cli=${preferred}
+      role="button"
+      tabIndex=${0}
+      onClick=${() => setUsageOpen(o => !o)}
+      onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUsageOpen(o => !o); } }}
+    >
+      <span className="cli-dot"/>
+      ${!compact && html`<span className="cli-label">${labelText}</span>`}
+      <span className="tab-tip">${tipShort}</span>
+    </span>
+    ${usageOpen && html`<${CliUsagePopover} usage=${usage} onClose=${() => setUsageOpen(false)}/>`}
   </span>`;
+}
+
+/* CliUsagePopover - the subscription-window meters that drop from the CLI
+   indicator. One card per detected credential source (auto-detected across
+   claude / codex / opencode - a user with several accounts gets several
+   cards). Each shows the session (5h) + weekly bars, any per-model or extra
+   rows, and a live reset countdown. Purely a read-out of /__usage; the daemon
+   does the reading. Mirrors the AgentPicker popover idiom. */
+function CliUsagePopover({ usage, onClose }) {
+  const rows = usage.rows || [];
+  const empty = usage.loaded && rows.length === 0 && !usage.loading;
+  return html`<div className="cli-usage-pop" role="dialog" aria-label="Subscription usage">
+    <div className="cli-usage-head">
+      <span className="cli-usage-title">Subscription usage</span>
+      <button
+        className="cli-usage-refresh"
+        title="Refresh from providers"
+        onClick=${(e) => { e.stopPropagation(); usage.reload(true); }}
+      >${Icon.Refresh ? html`<${Icon.Refresh}/>` : "Refresh"}</button>
+    </div>
+    ${!usage.loaded && html`<div className="cli-usage-msg">Reading usage…</div>`}
+    ${usage.loading && html`<div className="cli-usage-msg">Fetching from providers…</div>`}
+    ${empty && html`<div className="cli-usage-msg">No signed-in subscriptions detected. Sign in to a CLI (claude / codex / opencode) to see plan usage here.</div>`}
+    ${rows.map(row => html`<${CliUsageCard} key=${row.id} row=${row}/>`)}
+    ${usage.stale && rows.length > 0 && html`<div className="cli-usage-foot">Refreshing…</div>`}
+  </div>`;
+}
+
+function CliUsageCard({ row }) {
+  const windows = row.windows || [];
+  return html`<div className="cli-usage-card" data-runtime=${row.runtime}>
+    <div className="cli-usage-card-head">
+      <span className="cli-usage-dot" data-ok=${row.ok ? "1" : "0"}/>
+      <span className="cli-usage-runtime">${row.label}</span>
+      ${row.plan && html`<span className="cli-usage-plan">${row.plan}</span>`}
+    </div>
+    ${row.note && html`<div className="cli-usage-note">${row.note}</div>`}
+    ${windows.map(w => html`<${UsageMeter} key=${w.key} w=${w}/>`)}
+    ${row.credits && html`
+      <div className="cli-usage-line">
+        <span className="cli-usage-line-label">${row.credits.label}</span>
+        <span className="cli-usage-line-val">$${row.credits.usd} · ${row.credits.count} credits</span>
+      </div>`}
+    ${row.extra && html`
+      <div className="cli-usage-line">
+        <span className="cli-usage-line-label">${row.extra.label}</span>
+        <span className="cli-usage-line-val">$${row.extra.usedUsd}${row.extra.limitUsd ? " / $" + row.extra.limitUsd : ""}</span>
+      </div>`}
+  </div>`;
+}
+
+/* UsageMeter - one session/weekly bar. Amber past 75%, red past 90%. */
+function UsageMeter({ w }) {
+  const pct = Math.max(0, Math.min(100, Number(w.usedPct) || 0));
+  const level = pct >= 90 ? "high" : (pct >= 75 ? "mid" : "ok");
+  const reset = fmtUsageReset(w.resetsAt);
+  return html`<div className="cli-usage-meter">
+    <div className="cli-usage-meter-top">
+      <span className="cli-usage-meter-label">${w.label}</span>
+      <span className="cli-usage-meter-pct">${Math.round(pct)}%</span>
+    </div>
+    <div className="cli-usage-bar"><div className="cli-usage-bar-fill" data-level=${level} style=${{ width: pct + "%" }}/></div>
+    ${reset && html`<div className="cli-usage-meter-reset">${reset}</div>`}
+  </div>`;
 }
 
 /* Polls /__media_config once on mount so any surface can ask "is any model

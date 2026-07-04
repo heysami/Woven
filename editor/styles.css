@@ -15257,6 +15257,164 @@ a.ds-badge:hover, button.ds-badge:hover {
   50%      { opacity: 1; }
 }
 
+/* ── CLI subscription-usage popover ─────────────────────────────────────────
+   Drops from the CLI indicator (click). One card per detected subscription
+   (auto-detected across claude / codex / opencode). Mirrors the .agent-menu
+   elevation idiom so it sits in the same visual family as the agent picker. */
+.cli-usage-host {
+  position: relative;
+  display: inline-flex;
+}
+.cli-usage-host .cli-indicator { cursor: pointer; }
+.cli-usage-host .cli-indicator.is-open {
+  border-color: var(--border-strong);
+}
+.cli-usage-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 300px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 8px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+.cli-usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cli-usage-title {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.cli-usage-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.cli-usage-refresh:hover { background: var(--surface-2); color: var(--text); }
+.cli-usage-msg {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 4px;
+  line-height: 1.45;
+}
+.cli-usage-foot {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  text-align: center;
+}
+.cli-usage-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-2);
+}
+.cli-usage-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cli-usage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex: 0 0 7px;
+}
+.cli-usage-dot[data-ok="1"] { background: var(--ok, #16a34a); }
+.cli-usage-runtime {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cli-usage-plan {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.cli-usage-note {
+  font-size: 11px;
+  color: color-mix(in oklab, var(--warn, #b45309) 75%, var(--text-muted));
+  line-height: 1.4;
+}
+.cli-usage-meter { display: flex; flex-direction: column; gap: 3px; }
+.cli-usage-meter-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cli-usage-meter-label { font-size: 11px; color: var(--text-muted); }
+.cli-usage-meter-pct {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.cli-usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.cli-usage-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ok, #16a34a);
+  transition: width 0.3s ease;
+}
+.cli-usage-bar-fill[data-level="mid"]  { background: var(--warn, #b45309); }
+.cli-usage-bar-fill[data-level="high"] { background: var(--danger, #dc2626); }
+.cli-usage-meter-reset {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+.cli-usage-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+.cli-usage-line-label { color: var(--text-muted); }
+.cli-usage-line-val {
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Daemon status chip - same shape as .cli-indicator, but the "down" state is
    red (not amber): an unreachable serve.py means the editor's writes are
    failing silently, which is a harder failure than "CLI not installed". The

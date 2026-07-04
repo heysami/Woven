@@ -7544,6 +7544,526 @@ def _list_available_agents() -> list:
     return out
 
 
+# ── CLI subscription usage (openusage-parity) ───────────────────────────────
+# Surfaces how much of the user's *subscription window* is left for each
+# terminal-agent CLI, next to the CLI indicator. It reads the SAME local OAuth
+# credentials the CLIs already wrote (the files _agent_logged_in locates) and
+# calls each vendor's own usage endpoint - nothing leaves the machine except
+# the request the CLI itself makes. Modelled on robinebers/openusage (endpoints,
+# headers, and JSON shapes verified against its provider sources).
+#
+# IMPORTANT: these usage endpoints are undocumented/reverse-engineered. They can
+# change or rate-limit without notice, so every fetch degrades gracefully - a
+# dead endpoint yields a row with a `note` and no bars, never an exception that
+# breaks the indicator. Auto-detects EVERY credential source present (multiple
+# accounts across claude/codex/opencode each become their own row).
+#
+# Scope: session (5-hour) + weekly windows + plan name. NOT local-log spend
+# (that's a separate, heavier scan the user didn't ask for here).
+
+_USAGE_TTL_S = 300           # 5 min, matching openusage's refresh cadence
+_usage_cache = {"at": 0.0, "rows": [], "refreshing": False}
+_usage_lock = threading.Lock()
+
+# Claude OAuth (prod). client_id + scope are the values Claude Code itself uses
+# so a refresh_token grant is accepted. Verified against openusage ClaudeAuthStore.
+_CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+_CLAUDE_REFRESH_URL = "https://platform.claude.com/v1/oauth/token"
+_CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+_CLAUDE_SCOPES = ("user:profile user:inference user:sessions:claude_code "
+                  "user:mcp_servers user:file_upload")
+# Codex (ChatGPT backend). Verified against openusage CodexUsageClient.
+_CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+_CODEX_REFRESH_URL = "https://auth.openai.com/oauth/token"
+_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+
+_SESSION_MS = 5 * 60 * 60 * 1000        # 5-hour rolling window
+_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
+
+def _usage_http(method: str, url: str, headers: dict, data=None, timeout: int = 10):
+    """One HTTP call that never raises. Returns (status, body_bytes, headers)
+    with status=None on a transport failure. HTTPError (4xx/5xx) is captured so
+    a 401 can drive the token-refresh retry instead of blowing up."""
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        return resp.getcode(), resp.read(), dict(resp.headers)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read() or b""
+        except Exception:
+            body = b""
+        return e.code, body, dict(e.headers or {})
+    except Exception:
+        return None, b"", {}
+
+
+def _usage_json(body: bytes):
+    try:
+        return json.loads(body.decode("utf-8", "replace")) if body else None
+    except Exception:
+        return None
+
+
+def _reset_to_ms(value, now_ms):
+    """Normalise a reset marker (ISO-8601 string OR epoch seconds/ms) into epoch
+    ms for the client's countdown. Returns None when unparseable."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        t = value.strip()
+        if not t:
+            return None
+        try:
+            # Python 3.9's fromisoformat rejects a trailing 'Z'.
+            dt = _dt.datetime.fromisoformat(t.replace("Z", "+00:00"))
+            return int(dt.timestamp() * 1000)
+        except Exception:
+            return None
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not (n == n) or n in (float("inf"), float("-inf")):  # NaN/inf guard
+        return None
+    # < 1e10 → epoch seconds; otherwise already ms.
+    return int(n * 1000) if abs(n) < 1e10 else int(n)
+
+
+def _num(value):
+    try:
+        n = float(value)
+        return n if n == n else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_json_file(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.loads(f.read())
+    except Exception:
+        return None
+
+
+def _keychain_secret(service: str):
+    """Read a generic-password secret's VALUE from the macOS keychain (-w). May
+    surface a one-time OS auth prompt the first time python reads an item stored
+    by another binary; short timeout so a denied/ignored prompt can't hang the
+    daemon. Returns the secret string or None."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-w"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            out = (r.stdout or "").strip()
+            return out or None
+    except Exception:
+        pass
+    return None
+
+
+# ---- credential discovery: one dict per detected subscription source ----
+# Each source: {runtime, source, label, accessToken, refreshToken, expiresAt,
+#               scopes, plan, accountId, credFile(optional)}
+
+def _claude_credential_sources() -> list:
+    home = os.path.expanduser("~")
+    config_dir = (os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
+    out = []
+    seen_tokens = set()
+
+    def _add(blob, source, cred_file=None):
+        oauth = (blob or {}).get("claudeAiOauth") or {}
+        tok = (oauth.get("accessToken") or "").strip()
+        if not tok or tok in seen_tokens:
+            return
+        seen_tokens.add(tok)
+        out.append({
+            "runtime": "claude",
+            "source": source,
+            "label": "Claude",
+            "accessToken": tok,
+            "refreshToken": (oauth.get("refreshToken") or "").strip() or None,
+            "expiresAt": oauth.get("expiresAt"),
+            "scopes": oauth.get("scopes") or [],
+            "plan": _claude_plan(oauth),
+            "credFile": cred_file,
+        })
+
+    # File(s): honour CLAUDE_CONFIG_DIR, else ~/.claude.
+    cred_path = os.path.join(config_dir or os.path.join(home, ".claude"),
+                             ".credentials.json")
+    _add(_read_json_file(cred_path), "file", cred_path)
+    # Keychain (Claude Code's source of truth on recent macOS builds).
+    kc = _keychain_secret("Claude Code-credentials")
+    if kc:
+        _add(_usage_json(kc.encode("utf-8")), "keychain")
+    return out
+
+
+def _claude_plan(oauth) -> str:
+    sub = (oauth.get("subscriptionType") or "").strip()
+    if not sub:
+        return None
+    base = sub.replace("_", " ").title()
+    tier = (oauth.get("rateLimitTier") or "")
+    m = re.search(r"\d+x", tier)
+    return "%s %s" % (base, m.group(0)) if m else base
+
+
+def _codex_credential_sources() -> list:
+    home = os.path.expanduser("~")
+    codex_home = (os.environ.get("CODEX_HOME") or "").strip()
+    candidates = []
+    if codex_home:
+        candidates.append(os.path.join(codex_home, "auth.json"))
+    candidates.append(os.path.join(home, ".config", "codex", "auth.json"))
+    candidates.append(os.path.join(home, ".codex", "auth.json"))
+    out = []
+    seen_tokens = set()
+
+    def _add(blob, source):
+        tokens = (blob or {}).get("tokens") or {}
+        tok = (tokens.get("access_token") or "").strip()
+        if not tok or tok in seen_tokens:
+            return
+        seen_tokens.add(tok)
+        out.append({
+            "runtime": "codex",
+            "source": source,
+            "label": "Codex",
+            "accessToken": tok,
+            "refreshToken": (tokens.get("refresh_token") or "").strip() or None,
+            "accountId": (tokens.get("account_id") or "").strip() or None,
+            "plan": None,
+        })
+
+    for path in candidates:
+        _add(_read_json_file(path), path)
+    kc = _keychain_secret("Codex Auth")
+    if kc:
+        _add(_usage_json(kc.encode("utf-8")), "keychain")
+    return out
+
+
+def _opencode_credential_sources() -> list:
+    """opencode is BYO-key/multi-provider - no single subscription endpoint. We
+    only surface a live window when its auth.json carries an Anthropic OAuth
+    login (same shape/endpoint as Claude); otherwise a marker row so the user
+    sees it exists but knows there's no plan window to read."""
+    home = os.path.expanduser("~")
+    xdg = (os.environ.get("XDG_DATA_HOME") or "").strip() or os.path.join(home, ".local", "share")
+    out = []
+    for path in (os.path.join(xdg, "opencode", "auth.json"),
+                 os.path.join(home, ".local", "share", "opencode", "auth.json")):
+        blob = _read_json_file(path)
+        if not blob:
+            continue
+        anth = blob.get("anthropic") if isinstance(blob, dict) else None
+        tok = ""
+        refresh = None
+        if isinstance(anth, dict):
+            tok = (anth.get("access") or anth.get("accessToken") or "").strip()
+            refresh = (anth.get("refresh") or anth.get("refreshToken") or "").strip() or None
+        if tok:
+            out.append({
+                "runtime": "opencode", "source": path, "label": "opencode (Anthropic)",
+                "accessToken": tok, "refreshToken": refresh, "expiresAt": (anth or {}).get("expires"),
+                "scopes": [], "plan": None,
+            })
+        else:
+            out.append({"runtime": "opencode", "source": path, "label": "opencode",
+                        "accessToken": None, "note": "BYO key - no plan window"})
+        break
+    return out
+
+
+# ---- token refresh ----
+
+def _claude_refresh(refresh_token: str):
+    body = json.dumps({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": _CLAUDE_CLIENT_ID,
+        "scope": _CLAUDE_SCOPES,
+    }).encode("utf-8")
+    status, raw, _ = _usage_http(
+        "POST", _CLAUDE_REFRESH_URL,
+        {"Content-Type": "application/json"}, data=body, timeout=15)
+    if status and 200 <= status < 300:
+        j = _usage_json(raw) or {}
+        tok = (j.get("access_token") or "").strip()
+        if tok:
+            return tok, (j.get("refresh_token") or "").strip() or refresh_token, j.get("expires_in")
+    return None, None, None
+
+
+def _codex_refresh(refresh_token: str):
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "client_id": _CODEX_CLIENT_ID,
+        "refresh_token": refresh_token,
+    }).encode("utf-8")
+    status, raw, _ = _usage_http(
+        "POST", _CODEX_REFRESH_URL,
+        {"Content-Type": "application/x-www-form-urlencoded"}, data=body, timeout=15)
+    if status and 200 <= status < 300:
+        j = _usage_json(raw) or {}
+        tok = (j.get("access_token") or "").strip()
+        if tok:
+            return tok, (j.get("refresh_token") or "").strip() or refresh_token
+    return None, None
+
+
+def _claude_writeback(src: dict, access_token: str, refresh_token, expires_in):
+    """Persist a rotated Claude token back to the file it came from (file source
+    only - we don't write the keychain to avoid a second auth prompt). Best
+    effort; a failed write just means we refresh again next cycle."""
+    if src.get("source") != "file" or not src.get("credFile"):
+        return
+    blob = _read_json_file(src["credFile"]) or {}
+    oauth = blob.get("claudeAiOauth") or {}
+    oauth["accessToken"] = access_token
+    if refresh_token:
+        oauth["refreshToken"] = refresh_token
+    if expires_in:
+        oauth["expiresAt"] = int(time.time() * 1000 + float(expires_in) * 1000)
+    blob["claudeAiOauth"] = oauth
+    try:
+        with open(src["credFile"], "w", encoding="utf-8") as f:
+            f.write(json.dumps(blob))
+    except Exception:
+        pass
+
+
+# ---- per-runtime usage fetch → normalised row ----
+
+def _claude_fetch_usage(src: dict, now_ms: int) -> dict:
+    row = {"id": "claude:%s" % src["source"], "runtime": "claude",
+           "label": src.get("label") or "Claude", "plan": src.get("plan"),
+           "ok": False, "note": None, "windows": []}
+    scopes = src.get("scopes") or []
+    if scopes and "user:profile" not in scopes:
+        row["note"] = "Re-login for live usage (run `claude`)"
+        return row
+    token = src["accessToken"]
+
+    def _hit(tok):
+        return _usage_http("GET", _CLAUDE_USAGE_URL, {
+            "Authorization": "Bearer %s" % tok,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "claude-code/2.1.69",
+        }, timeout=10)
+
+    status, raw, _ = _hit(token)
+    if status in (401, 403) and src.get("refreshToken"):
+        tok, new_refresh, exp = _claude_refresh(src["refreshToken"])
+        if tok:
+            _claude_writeback(src, tok, new_refresh, exp)
+            status, raw, _ = _hit(tok)
+    if status == 429:
+        row["note"] = "Rate limited, try again shortly"
+        return row
+    if not status or not (200 <= status < 300):
+        row["note"] = "Usage unavailable"
+        return row
+    body = _usage_json(raw)
+    if not isinstance(body, dict):
+        row["note"] = "Usage unavailable"
+        return row
+
+    def _window(obj, key, label, period):
+        if not isinstance(obj, dict):
+            return
+        used = _num(obj.get("utilization"))
+        if used is None:
+            return
+        row["windows"].append({
+            "key": key, "label": label, "usedPct": used,
+            "resetsAt": _reset_to_ms(obj.get("resets_at"), now_ms),
+            "periodMs": period,
+        })
+
+    _window(body.get("five_hour"), "session", "Session", _SESSION_MS)
+    _window(body.get("seven_day"), "weekly", "Weekly", _WEEK_MS)
+    _window(body.get("seven_day_sonnet"), "weekly_sonnet", "Sonnet", _WEEK_MS)
+    # Newer per-model weekly limits live in a `limits[]` array (kind weekly_scoped).
+    for entry in (body.get("limits") or []):
+        if not isinstance(entry, dict) or entry.get("kind") != "weekly_scoped":
+            continue
+        model = ((entry.get("scope") or {}).get("model") or {}).get("display_name")
+        used = _num(entry.get("percent"))
+        if not model or used is None:
+            continue
+        row["windows"].append({
+            "key": "weekly_%s" % str(model).lower(), "label": str(model),
+            "usedPct": used, "resetsAt": _reset_to_ms(entry.get("resets_at"), now_ms),
+            "periodMs": _WEEK_MS,
+        })
+    extra = body.get("extra_usage")
+    if isinstance(extra, dict) and extra.get("is_enabled") and _num(extra.get("used_credits")) is not None:
+        used_usd = _num(extra.get("used_credits")) / 100.0
+        cap = _num(extra.get("monthly_limit"))
+        row["extra"] = {"label": "Extra usage", "usedUsd": round(used_usd, 2),
+                        "limitUsd": round(cap / 100.0, 2) if cap and cap > 0 else None}
+    row["ok"] = bool(row["windows"])
+    if not row["ok"] and not row["note"]:
+        row["note"] = "No usage data"
+    return row
+
+
+def _codex_fetch_usage(src: dict, now_ms: int) -> dict:
+    row = {"id": "codex:%s" % src["source"], "runtime": "codex",
+           "label": src.get("label") or "Codex", "plan": None,
+           "ok": False, "note": None, "windows": []}
+    token = src["accessToken"]
+
+    def _hit(tok):
+        headers = {"Authorization": "Bearer %s" % tok, "Accept": "application/json",
+                   "User-Agent": "OpenUsage"}
+        if src.get("accountId"):
+            headers["ChatGPT-Account-Id"] = src["accountId"]
+        return _usage_http("GET", _CODEX_USAGE_URL, headers, timeout=10)
+
+    status, raw, _ = _hit(token)
+    if status in (401, 403) and src.get("refreshToken"):
+        tok, _new = _codex_refresh(src["refreshToken"])
+        if tok:
+            status, raw, _ = _hit(tok)
+    if status == 429:
+        row["note"] = "Rate limited, try again shortly"
+        return row
+    if not status or not (200 <= status < 300):
+        row["note"] = "Usage unavailable"
+        return row
+    body = _usage_json(raw)
+    if not isinstance(body, dict):
+        row["note"] = "Usage unavailable"
+        return row
+
+    rate = body.get("rate_limit") or {}
+
+    def _window(obj, key, label, period):
+        if not isinstance(obj, dict):
+            return
+        used = _num(obj.get("used_percent"))
+        if used is None:
+            return
+        resets = _reset_to_ms(obj.get("reset_at"), now_ms)
+        if resets is None and _num(obj.get("reset_after_seconds")) is not None:
+            resets = now_ms + int(_num(obj.get("reset_after_seconds")) * 1000)
+        row["windows"].append({"key": key, "label": label, "usedPct": used,
+                               "resetsAt": resets, "periodMs": period})
+
+    _window(rate.get("primary_window"), "session", "Session", _SESSION_MS)
+    _window(rate.get("secondary_window"), "weekly", "Weekly", _WEEK_MS)
+    plan = body.get("plan_type")
+    if isinstance(plan, str) and plan.strip():
+        row["plan"] = {"pro": "Pro 20x", "prolite": "Pro 5x"}.get(
+            plan.lower(), plan.replace("_", " ").title())
+    credits = body.get("credits")
+    if isinstance(credits, dict):
+        bal = _num(credits.get("balance"))
+        if bal is not None:
+            n = max(0, int(bal))
+            row["credits"] = {"label": "Credits", "count": n, "usd": round(n * 0.04, 2)}
+    row["ok"] = bool(row["windows"])
+    if not row["ok"] and not row["note"]:
+        row["note"] = "No usage data"
+    return row
+
+
+def _opencode_fetch_usage(src: dict, now_ms: int) -> dict:
+    if not src.get("accessToken"):
+        return {"id": "opencode:%s" % src["source"], "runtime": "opencode",
+                "label": "opencode", "plan": None, "ok": False,
+                "note": src.get("note") or "BYO key - no plan window", "windows": []}
+    # opencode signed in with an Anthropic OAuth login → reuse the Claude path.
+    claude_src = dict(src)
+    claude_src["label"] = src.get("label") or "opencode (Anthropic)"
+    r = _claude_fetch_usage(claude_src, now_ms)
+    r["id"] = "opencode:%s" % src["source"]
+    r["runtime"] = "opencode"
+    r["label"] = claude_src["label"]
+    return r
+
+
+def _compute_subscription_rows() -> list:
+    """Fetch every detected subscription's live window. Runs the per-source
+    fetches concurrently (bounded) so N accounts don't serialise into N×10s."""
+    now_ms = int(time.time() * 1000)
+    jobs = []
+    for src in _claude_credential_sources():
+        jobs.append((_claude_fetch_usage, src))
+    for src in _codex_credential_sources():
+        jobs.append((_codex_fetch_usage, src))
+    for src in _opencode_credential_sources():
+        jobs.append((_opencode_fetch_usage, src))
+    rows = [None] * len(jobs)
+
+    def _run(i, fn, src):
+        try:
+            rows[i] = fn(src, now_ms)
+        except Exception:
+            rows[i] = {"id": "err:%d" % i, "runtime": src.get("runtime"),
+                       "label": src.get("label") or src.get("runtime"),
+                       "ok": False, "note": "Usage unavailable", "windows": []}
+
+    threads = []
+    for i, (fn, src) in enumerate(jobs):
+        t = threading.Thread(target=_run, args=(i, fn, src), daemon=True)
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join(timeout=20)
+    return [r for r in rows if r]
+
+
+def _subscription_usage(force: bool = False) -> dict:
+    """Stale-while-revalidate: return cached rows immediately and kick a
+    background refresh when stale, so the popover paints instantly and a chat
+    run is never blocked on these network calls. `force` triggers a synchronous
+    refresh (used by the client's explicit refresh button)."""
+    now = time.time()
+    with _usage_lock:
+        cached = list(_usage_cache["rows"])
+        age = now - _usage_cache["at"]
+        refreshing = _usage_cache["refreshing"]
+        fresh = age < _USAGE_TTL_S and _usage_cache["at"] > 0
+
+    if force or (not fresh and not cached):
+        rows = _compute_subscription_rows()
+        with _usage_lock:
+            _usage_cache["rows"] = rows
+            _usage_cache["at"] = time.time()
+        return {"rows": rows, "stale": False, "loading": False}
+
+    if not fresh and not refreshing:
+        with _usage_lock:
+            _usage_cache["refreshing"] = True
+
+        def _bg():
+            try:
+                rows = _compute_subscription_rows()
+                with _usage_lock:
+                    _usage_cache["rows"] = rows
+                    _usage_cache["at"] = time.time()
+            finally:
+                with _usage_lock:
+                    _usage_cache["refreshing"] = False
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+    return {"rows": cached, "stale": not fresh, "loading": bool(cached == [] and not fresh)}
+
+
 # ── stream-json normaliser ──────────────────────────────────────────────────
 # Claude Code's --output-format=stream-json emits one JSON object per line, of
 # shape (paraphrased):
@@ -10036,6 +10556,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Daemon JSON endpoints first - they take precedence over static files.
         if url_path == "/__agents":
             return self._agents_list()
+        if url_path == "/__usage":
+            return self._usage_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__healthz":
             return self._healthz()
         # web-browser node endpoints (probe / proxy / text-extract).
@@ -23090,6 +23612,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             "available": _list_available_agents(),
             "default": AGENT_DEFAULT,
         })
+
+    def _usage_list(self, qs):
+        """Live subscription-window usage per detected CLI credential. Cheap
+        (served from cache) unless ?force=1. Never blocks a run - a slow or dead
+        vendor endpoint just yields rows with a `note`."""
+        force = (_qs_get(qs, "force") or "").strip() in ("1", "true", "yes")
+        try:
+            payload = _subscription_usage(force=force)
+        except Exception as e:
+            return self._reply(200, {"rows": [], "stale": False,
+                                     "loading": False, "error": str(e)})
+        return self._reply(200, payload)
 
     def _runs_list(self, qs):
         """Lightweight registry of every run we know about. Lets the UI show a
