@@ -15777,15 +15777,28 @@ function QuestionFormCard({ form, runId, answered, onAnswered, processEnded }) {
     if (!runId || isAnswered) return;
     setBusy(true); setError(null);
     const text = formatFormAnswerProse(form, picks);
+    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
     try {
-      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      // /user-message first; respawn via /resume when the process has already
+      // exited (single-shot agents like codex end right after asking). Mirrors
+      // ChatComposer.dispatch().
+      let r = await postTo("user-message");
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${r.status}`);
+        const m = String(j.error || "").toLowerCase();
+        const needsResume = j.needsResume || r.status === 404 || r.status === 410
+          || m.includes("finished") || m.includes("not running")
+          || m.includes("exited") || m.includes("not found");
+        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
+        r = await postTo("resume");
+        if (!r.ok) {
+          const j2 = await r.json().catch(() => ({}));
+          throw new Error(j2.error || `HTTP ${r.status}`);
+        }
       }
       if (onAnswered) onAnswered(formKey, picks.slice());
     } catch (e) {
@@ -15796,7 +15809,8 @@ function QuestionFormCard({ form, runId, answered, onAnswered, processEnded }) {
   };
 
   const allAnswered = questions.every((q, i) => q.multiSelect ? true : picks[i] != null);
-  const disabled = busy || isAnswered || processEnded;
+  // processEnded intentionally omitted - an ended single-shot run resumes on submit.
+  const disabled = busy || isAnswered;
 
   return html`
     <div className="askq-card" data-answered=${isAnswered}>
@@ -15988,10 +16002,14 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     return count === picksPerGroup;
   });
   const flatComplete = decision.groupBy ? true : (localPicks.length >= minTotal && localPicks.length <= maxTotal);
-  const canSubmit = !busy && !isAnswered && !processEnded && groupedComplete && flatComplete && localPicks.length > 0;
+  // NB: processEnded does NOT gate submit. Single-shot agents (codex, opencode)
+  // exit right after emitting this gate, so the run is already ended when the
+  // card renders; submit() respawns via /resume carrying the pick. Gating on
+  // processEnded is what made the card a dead end for every non-Claude agent.
+  const canSubmit = !busy && !isAnswered && groupedComplete && flatComplete && localPicks.length > 0;
 
   const togglePick = (opt) => {
-    if (busy || isAnswered || processEnded) return;
+    if (busy || isAnswered) return;
     setLocalPicks(prev => {
       if (decision.groupBy) {
         // Radio within group: clicking an option replaces any prior pick in its group.
@@ -16025,15 +16043,29 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     const detail = (extra || "").trim();
     const text = `[decision:${decision.id}] ${values.join(",")} - ${labels.join("; ")}`
       + (detail ? `: ${detail}` : "");
+    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
     try {
-      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      // Try the live-process channel first; if the daemon says the process has
+      // exited / finished (the normal state for single-shot agents like codex,
+      // which quit right after emitting this gate), respawn via /resume carrying
+      // the same picks. Mirrors ChatComposer.dispatch() and DirectionOptionsCard.
+      let r = await postTo("user-message");
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${r.status}`);
+        const m = String(j.error || "").toLowerCase();
+        const needsResume = j.needsResume || r.status === 404 || r.status === 410
+          || m.includes("finished") || m.includes("not running")
+          || m.includes("exited") || m.includes("not found");
+        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
+        r = await postTo("resume");
+        if (!r.ok) {
+          const j2 = await r.json().catch(() => ({}));
+          throw new Error(j2.error || `HTTP ${r.status}`);
+        }
       }
       // Durability - non-fatal but surfaced.
       try {
@@ -16065,7 +16097,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     if (opt.needsInput) {
       // Steer-style option: open the freeform panel instead of submitting.
       // Toggle closed if it's already open for this option.
-      if (isAnswered || busy || processEnded) return;
+      if (isAnswered || busy) return;
       setSteerText("");
       setSteerOpen(v => v === opt.value ? null : opt.value);
       return;
@@ -16089,7 +16121,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
       <button
         key=${opt.value}
         className=${"chat-decision-opt" + (finalPicked ? " is-picked" : "") + (opt.preview ? " has-preview" : "") + (opt.needsInput && steerOpen === opt.value ? " is-steering" : "")}
-        disabled=${busy || isAnswered || processEnded}
+        disabled=${busy || isAnswered}
         onClick=${() => pickAndMaybeSubmit(opt)}
         title=${opt.label}>
         ${opt.preview && html`<${DecisionOptionPreview} preview=${opt.preview} label=${opt.label}/>`}
@@ -16131,7 +16163,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
               placeholder="What should I adjust? e.g. drop the entrance settle, logo breathe only, skip parallax"
               value=${steerText}
               autoFocus
-              disabled=${busy || isAnswered || processEnded}
+              disabled=${busy || isAnswered}
               onInput=${(e) => setSteerText(e.target.value)}
               onKeyDown=${(e) => {
                 if (e.key === "Escape") { e.preventDefault(); setSteerOpen(null); }
@@ -16144,7 +16176,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
                 disabled=${busy}
                 onClick=${() => setSteerOpen(null)}>Cancel</button>
               <button type="button" className="chat-direction-steer-send"
-                disabled=${busy || isAnswered || processEnded || !steerText.trim()}
+                disabled=${busy || isAnswered || !steerText.trim()}
                 onClick=${() => submit([opt.value], steerText)}>Send steer</button>
             </div>
           </div>
@@ -16163,7 +16195,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
       ${error && html`<div className="chat-decision-error">${error}</div>`}
       ${warning && html`<div className="chat-decision-warning">${warning}</div>`}
       ${isAnswered && html`<div className="chat-decision-status">Sent · agent will continue from here</div>`}
-      ${processEnded && !isAnswered && html`<div className="chat-decision-status">Run ended before a pick was sent.</div>`}
+      ${processEnded && !isAnswered && html`<div className="chat-decision-status">Run ended - sending a pick resumes it.</div>`}
     </div>
   `;
 }
@@ -16466,15 +16498,27 @@ function DirectionFormCard({ form, runId, answered, onAnswered, processEnded }) 
     // Prose phrasing matches what the agent expects from the discovery
     // RULE 2 branch - "Direction: <label>" (single question, single answer).
     const text = `Direction: ${picked.dir.id}`;
+    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
     try {
-      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/user-message`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      // /user-message first; respawn via /resume when the process has already
+      // exited (single-shot agents like codex). Mirrors ChatComposer.dispatch().
+      let r = await postTo("user-message");
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${r.status}`);
+        const m = String(j.error || "").toLowerCase();
+        const needsResume = j.needsResume || r.status === 404 || r.status === 410
+          || m.includes("finished") || m.includes("not running")
+          || m.includes("exited") || m.includes("not found");
+        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
+        r = await postTo("resume");
+        if (!r.ok) {
+          const j2 = await r.json().catch(() => ({}));
+          throw new Error(j2.error || `HTTP ${r.status}`);
+        }
       }
       if (onAnswered) onAnswered(formKey, [picked.dir.id]);
     } catch (e) {
@@ -16485,7 +16529,8 @@ function DirectionFormCard({ form, runId, answered, onAnswered, processEnded }) 
   };
 
   const answeredId = isAnswered && Array.isArray(answered) ? answered[0] : null;
-  const disabled = busy || isAnswered || processEnded;
+  // processEnded intentionally omitted - an ended single-shot run resumes on submit.
+  const disabled = busy || isAnswered;
 
   return html`
     <div className="direction-card" data-answered=${isAnswered}>
