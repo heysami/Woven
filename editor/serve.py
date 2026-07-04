@@ -8199,6 +8199,24 @@ class _CodexStderrParser:
     # Status line: "succeeded in 0ms" / "failed in 200ms" / "exited 1 in 0ms"
     # - with optional trailing ":" when more output follows.
     _STATUS_RX = re.compile(r"^\s*(succeeded|failed|exited(?:\s+\d+)?)\s+in\s+\d+ms(:?)\s*$")
+    # Codex ends a turn by echoing the whole applied patch to stderr as a git
+    # diff (and a "apply patch" / "patch: completed" summary + file list). That
+    # arrives as FREE assistant text in the `codex` state - not as an
+    # apply_patch tool marker - so without this guard the entire generated
+    # source (every "+ <html>" line) floods the chat box. When any of these
+    # preambles appears inside the codex assistant text, we switch to the
+    # `codex_diff` swallow state and drop the diff body until the next role /
+    # tool marker (which the top-of-feed marker check restores us out of). The
+    # assistant's own one-line summary that precedes the diff is kept.
+    _DIFF_START_RX = re.compile(
+        r"^(?:"
+        r"diff --git |--- |\+\+\+ |@@ |index [0-9a-f]{7}|"
+        r"new file mode |deleted file mode |old mode |new mode |"
+        r"similarity index |rename (?:from|to) |copy (?:from|to) |Binary files |"
+        r"\*\*\* (?:Begin Patch|End Patch|Add File|Update File|Delete File)|"
+        r"apply[ _]patch\b|patch: (?:completed|failed|succeeded)"
+        r")"
+    )
 
     def __init__(self):
         self.state = "pre_banner"
@@ -8307,7 +8325,19 @@ class _CodexStderrParser:
         if self.state == "codex":
             if not line.strip():
                 return events, raw
+            # Trailing git-diff / apply-patch echo of the applied source -
+            # swallow it (and everything after) so the raw HTML/CSS/JS never
+            # streams into the chat. The next role/tool marker exits us via
+            # the marker check at the top of feed().
+            if self._DIFF_START_RX.match(line):
+                self.state = "codex_diff"
+                return events, raw
             events.append({"type": "text_delta", "delta": line + "\n"})
+            return events, raw
+        if self.state == "codex_diff":
+            # Inside a swallowed diff body - drop every line until a marker
+            # flips us out. Diff lines are always prefixed (' ' / '+' / '-')
+            # or are diff headers, so none match _MARKER_RX above.
             return events, raw
         if self.state == "thinking":
             if not line.strip():
