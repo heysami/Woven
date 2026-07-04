@@ -11951,6 +11951,44 @@ function toolGlyph(name) {
   }
 }
 
+/* postRunReply - the ONE transport every interactive answer card uses to send
+   a reply back to its run (direction pick / decision / question-form / etc.).
+   POSTs the text to the live process via /user-message, and when the daemon
+   says the process has already exited - the NORMAL state for single-shot
+   agents like codex / opencode, which quit right after emitting a gate card -
+   respawns it via /resume carrying the same text. Bidirectional, so it also
+   recovers the reverse race (we thought the run was dead but a resume is live).
+   A miniature of ChatComposer.dispatch(); every card MUST route through here so
+   the codex "card is a dead end after the process exits" bug can't reappear one
+   component at a time. Throws Error(message) on a real (non-race) failure. */
+async function postRunReply(runId, text, { isResuming = false } = {}) {
+  if (!runId) throw new Error("no runId");
+  const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  let ep = isResuming ? "resume" : "user-message";
+  let r = await postTo(ep);
+  let lastErr = null;
+  for (let attempt = 0; !r.ok && attempt < 5; attempt++) {
+    const j = await r.json().catch(() => ({}));
+    lastErr = j.error || `HTTP ${r.status}`;
+    const m = String(j.error || "").toLowerCase();
+    const wantResume = j.needsResume || r.status === 404 || r.status === 410
+      || m.includes("finished") || m.includes("not running")
+      || m.includes("exited") || m.includes("not found") || m.includes("no such");
+    const wantUserMsg = m.includes("still active") || m.includes("use /user-message");
+    if (!wantResume && !wantUserMsg) throw new Error(lastErr);
+    if (wantUserMsg && ep !== "user-message") ep = "user-message";
+    else if (wantResume && ep !== "resume") ep = "resume";
+    else { await new Promise((res) => setTimeout(res, 200)); ep = "resume"; }
+    r = await postTo(ep);
+  }
+  if (!r.ok) throw new Error(lastErr || "reply failed");
+  return true;
+}
+
 /* AskUserQuestion card - Phase 1 finish-touch (precursor to Phase 2's full
    tool-card suite). When Claude Code calls the AskUserQuestion tool, its
    tool_use.input has shape:
@@ -12004,7 +12042,19 @@ function AskUserQuestionCard({ ev, runId, answered, onAnswered }) {
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || `HTTP ${r.status}`);
+        const m = String(j.error || "").toLowerCase();
+        const needsResume = j.needsResume || r.status === 404 || r.status === 410
+          || m.includes("finished") || m.includes("not running")
+          || m.includes("exited") || m.includes("not found");
+        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
+        // A tool_result can't be delivered to an exited process - its tool_use
+        // id is gone. If the run ended (Stop / crash), resume it with the
+        // answers as prose, exactly as typing them into the composer would.
+        const prose = answers.map(a => {
+          const v = Array.isArray(a.answer) ? a.answer.join(", ") : (a.answer ?? "");
+          return `${a.header || a.question}: ${v}`;
+        }).join("\n");
+        await postRunReply(runId, prose, { isResuming: true });
       }
       if (onAnswered) onAnswered(toolUseId, answers);
     } catch (e) {
@@ -15777,29 +15827,8 @@ function QuestionFormCard({ form, runId, answered, onAnswered, processEnded }) {
     if (!runId || isAnswered) return;
     setBusy(true); setError(null);
     const text = formatFormAnswerProse(form, picks);
-    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
     try {
-      // /user-message first; respawn via /resume when the process has already
-      // exited (single-shot agents like codex end right after asking). Mirrors
-      // ChatComposer.dispatch().
-      let r = await postTo("user-message");
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        const m = String(j.error || "").toLowerCase();
-        const needsResume = j.needsResume || r.status === 404 || r.status === 410
-          || m.includes("finished") || m.includes("not running")
-          || m.includes("exited") || m.includes("not found");
-        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
-        r = await postTo("resume");
-        if (!r.ok) {
-          const j2 = await r.json().catch(() => ({}));
-          throw new Error(j2.error || `HTTP ${r.status}`);
-        }
-      }
+      await postRunReply(runId, text);
       if (onAnswered) onAnswered(formKey, picks.slice());
     } catch (e) {
       setError(e.message || String(e));
@@ -16043,30 +16072,8 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     const detail = (extra || "").trim();
     const text = `[decision:${decision.id}] ${values.join(",")} - ${labels.join("; ")}`
       + (detail ? `: ${detail}` : "");
-    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
     try {
-      // Try the live-process channel first; if the daemon says the process has
-      // exited / finished (the normal state for single-shot agents like codex,
-      // which quit right after emitting this gate), respawn via /resume carrying
-      // the same picks. Mirrors ChatComposer.dispatch() and DirectionOptionsCard.
-      let r = await postTo("user-message");
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        const m = String(j.error || "").toLowerCase();
-        const needsResume = j.needsResume || r.status === 404 || r.status === 410
-          || m.includes("finished") || m.includes("not running")
-          || m.includes("exited") || m.includes("not found");
-        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
-        r = await postTo("resume");
-        if (!r.ok) {
-          const j2 = await r.json().catch(() => ({}));
-          throw new Error(j2.error || `HTTP ${r.status}`);
-        }
-      }
+      await postRunReply(runId, text);
       // Durability - non-fatal but surfaced.
       try {
         const r2 = await fetch(apiUrl(`/__decision/${encodeURIComponent(decision.id)}`), {
@@ -16229,32 +16236,8 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
     const detail = (extra || "").trim();
     const text = `[decision:${direction.id}] ${opt.value} - ${opt.label}`
       + (detail ? `: ${detail}` : "");
-    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
     try {
-      // Try the live-process channel first. Single-shot agents (codex,
-      // opencode) EXIT right after emitting this card, so their run has
-      // already ended and /user-message 409s ("finished" / needsResume);
-      // respawn via /resume carrying the same pick. Mirrors the reroute
-      // ChatComposer.dispatch() does for a typed reply to an ended run -
-      // without it the card is a dead end for every non-Claude agent.
-      let r = await postTo("user-message");
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        const m = String(j.error || "").toLowerCase();
-        const needsResume = j.needsResume || r.status === 404 || r.status === 410
-          || m.includes("finished") || m.includes("not running")
-          || m.includes("exited") || m.includes("not found");
-        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
-        r = await postTo("resume");
-        if (!r.ok) {
-          const j2 = await r.json().catch(() => ({}));
-          throw new Error(j2.error || `HTTP ${r.status}`);
-        }
-      }
+      await postRunReply(runId, text);
       try {
         await fetch(apiUrl(`/__decision/${encodeURIComponent(direction.id)}`), {
           method: "POST",
@@ -16498,28 +16481,8 @@ function DirectionFormCard({ form, runId, answered, onAnswered, processEnded }) 
     // Prose phrasing matches what the agent expects from the discovery
     // RULE 2 branch - "Direction: <label>" (single question, single answer).
     const text = `Direction: ${picked.dir.id}`;
-    const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
     try {
-      // /user-message first; respawn via /resume when the process has already
-      // exited (single-shot agents like codex). Mirrors ChatComposer.dispatch().
-      let r = await postTo("user-message");
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        const m = String(j.error || "").toLowerCase();
-        const needsResume = j.needsResume || r.status === 404 || r.status === 410
-          || m.includes("finished") || m.includes("not running")
-          || m.includes("exited") || m.includes("not found");
-        if (!needsResume) throw new Error(j.error || `HTTP ${r.status}`);
-        r = await postTo("resume");
-        if (!r.ok) {
-          const j2 = await r.json().catch(() => ({}));
-          throw new Error(j2.error || `HTTP ${r.status}`);
-        }
-      }
+      await postRunReply(runId, text);
       if (onAnswered) onAnswered(formKey, [picked.dir.id]);
     } catch (e) {
       setError(e.message || String(e));
