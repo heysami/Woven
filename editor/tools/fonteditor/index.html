@@ -318,23 +318,54 @@ async function populateGoogleFontList(){
   }
 }
 
+/* Resolve a Google-font family to a raw TTF/OTF url via Fontsource (the
+ * same API that feeds the datalist). Fontsource mirrors every Google font
+ * on jsDelivr with real per-weight TTF builds - the primary path, because
+ * Google's own CSS APIs only emit woff2 to modern browsers (fetch can't
+ * spoof User-Agent; it's a forbidden header) and opentype.js can't parse
+ * woff2. Picks the closest-to-400 weight, normal style, default subset. */
+async function fetchFontsourceTtfUrl(family){
+  const list = await fetch(
+    "https://api.fontsource.org/v1/fonts?family=" + encodeURIComponent(family.trim())
+  ).then(r=>{ if(!r.ok) throw new Error("lookup "+r.status); return r.json(); });
+  const rows = Array.isArray(list) ? list : [];
+  const hit = rows.find(f=>f && f.family && f.family.toLowerCase() === family.trim().toLowerCase()) || rows[0];
+  if(!hit || !hit.id) return null;
+  const meta = await fetch("https://api.fontsource.org/v1/fonts/" + hit.id)
+    .then(r=>{ if(!r.ok) throw new Error("meta "+r.status); return r.json(); });
+  const variants = meta.variants || {};
+  const weights = Object.keys(variants).map(Number).filter(n=>!isNaN(n));
+  if(!weights.length) return null;
+  const w = weights.sort((a,b)=>Math.abs(a-400)-Math.abs(b-400) || a-b)[0];
+  const byStyle = variants[String(w)] || {};
+  const st = byStyle.normal || byStyle[Object.keys(byStyle)[0]];
+  if(!st) return null;
+  const subset = st[meta.defSubset] || st.latin || st[Object.keys(st)[0]];
+  const url = subset && subset.url && (subset.url.ttf || subset.url.otf);
+  return url || null;
+}
+
 async function fetchGoogleFontUrl(family){
-  // Ask the CSS API for the regular weight; parse the woff2/ttf url from src.
+  try{
+    const url = await fetchFontsourceTtfUrl(family);
+    if(url) return url;
+  }catch(err){
+    console.warn("Fontsource lookup failed, falling back to Google CSS:", err.message);
+  }
+  // Fallback: parse a ttf/otf url out of the Google CSS APIs - works only
+  // for the few families whose css still references ttf without UA sniffing
+  // (fetch can't set User-Agent, so most families come back woff2-only).
   const css = await fetch(
-    "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family) + ":wght@400&display=swap",
-    { headers:{ "User-Agent":"Mozilla/5.0" } }
+    "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family) + ":wght@400&display=swap"
   ).then(r=>{ if(!r.ok) throw new Error("CSS "+r.status); return r.text(); });
-  // Prefer a truetype/opentype url (opentype.js can't parse woff2). Fall back to any url.
   let m = css.match(/url\((https:\/\/[^)]+\.(?:ttf|otf))\)/i);
   if(!m){
-    // try forcing the legacy css endpoint which serves ttf to old UAs
     const css2 = await fetch(
-      "https://fonts.googleapis.com/css?family=" + encodeURIComponent(family),
-      { headers:{ "User-Agent":"Mozilla/4.0" } }
+      "https://fonts.googleapis.com/css?family=" + encodeURIComponent(family)
     ).then(r=>r.text()).catch(()=> "");
     m = css2.match(/url\((https:\/\/[^)]+\.(?:ttf|otf))\)/i);
   }
-  if(!m) throw new Error("No TTF/OTF url for \""+family+"\" (Google may only offer woff2).");
+  if(!m) throw new Error("No TTF/OTF found for \""+family+"\" on Fontsource or Google.");
   return m[1];
 }
 
