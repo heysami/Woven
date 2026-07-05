@@ -197,7 +197,7 @@
           <span><i style="background:var(--accent)"></i>advance</span>
         </div>
         <div class="spacer" style="flex:1"></div>
-        <div id="editHint" class="">Drag anchors to edit (custom mode). Y-up, baseline = 0.</div>
+        <div id="editHint" class="">Drag anchors + square bezier handles. Double-click the outline to add a node; click a node, Delete to remove. Y-up, baseline = 0.</div>
       </div>
     </div>
 
@@ -685,25 +685,44 @@ function syncEditHeader(){
   document.getElementById("editNodesBtn").textContent = editState.nodeEdit ? "Done editing" : "Edit nodes";
 }
 
-/* Parse data -> list of absolute anchor nodes for the node editor.
- * We expose only on-curve anchor points (M / L / C-end / Q-end) as draggable.
- * Control handles are kept structurally; moving an anchor translates following
- * control points by the same delta (simple but useful). */
+/* Parse data -> anchors + control handles for the node editor.
+ * On-curve anchor points (M / L / C-end / Q-end) are draggable circles;
+ * moving an anchor translates its incoming control points by the same
+ * delta. Off-curve bezier control points (C: two, Q: one) are exposed as
+ * independently draggable square handles tethered to their anchors.
+ * Each anchor records its command start index (ci) + letter so add /
+ * delete can splice the token stream structurally. */
 function rebuildNodes(){
   const data = editState.data;
   editState.tokens = data ? (data.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g)||[]) : [];
   const toks = editState.tokens;
   const nodes = [];
-  let i=0; const num=()=>parseFloat(toks[i]);
+  const ctrls = [];
+  let i=0, prev=null;
   while(i<toks.length){
     const c=toks[i];
-    if(c==="M"||c==="L"){ nodes.push({ti:i+1, x:parseFloat(toks[i+1]), y:parseFloat(toks[i+2])}); i+=3; }
-    else if(c==="C"){ nodes.push({ti:i+5, cx1:i+1,cx2:i+3, x:parseFloat(toks[i+5]), y:parseFloat(toks[i+6])}); i+=7; }
-    else if(c==="Q"){ nodes.push({ti:i+3, cx1:i+1, x:parseFloat(toks[i+3]), y:parseFloat(toks[i+4])}); i+=5; }
+    if(c==="M"||c==="L"){
+      prev = {ci:i, cmd:c, ti:i+1, x:parseFloat(toks[i+1]), y:parseFloat(toks[i+2])};
+      nodes.push(prev); i+=3;
+    }
+    else if(c==="C"){
+      const n = {ci:i, cmd:c, ti:i+5, cx1:i+1, cx2:i+3, x:parseFloat(toks[i+5]), y:parseFloat(toks[i+6])};
+      // handle 1 tethers to the segment start (previous anchor), handle 2 to the endpoint
+      ctrls.push({ti:i+1, attach:[prev?prev.ti:null]});
+      ctrls.push({ti:i+3, attach:[i+5]});
+      nodes.push(n); prev=n; i+=7;
+    }
+    else if(c==="Q"){
+      const n = {ci:i, cmd:c, ti:i+3, cx1:i+1, x:parseFloat(toks[i+3]), y:parseFloat(toks[i+4])};
+      ctrls.push({ti:i+1, attach:[prev?prev.ti:null, i+3]});
+      nodes.push(n); prev=n; i+=5;
+    }
     else if(c==="Z"||c==="z"){ i+=1; }
     else { i+=1; }
   }
   editState.nodes = nodes;
+  editState.ctrls = ctrls;
+  editState.selNode = null;   // token indices shifted - stale selection is unsafe
 }
 
 function nodesToData(){
@@ -779,11 +798,27 @@ function drawCanvas(){
     }
   }
 
-  // node handles (only in node-edit mode)
+  // node handles (only in node-edit mode). Coordinates are read LIVE from
+  // the token stream (not the cached node.x/y) so control handles stay
+  // glued through anchor drags that translate them.
   if(editState.nodeEdit && editState.nodes.length){
+    const toks = editState.tokens;
+    const tx=(ti)=>u2sx(+toks[ti]), ty=(ti)=>u2sy(+toks[ti+1]);
+    // tether lines + square handles for the bezier control points
+    for(const ct of (editState.ctrls||[])){
+      const sx=tx(ct.ti), sy=ty(ct.ti);
+      ctx.strokeStyle=getCSS("--guide"); ctx.lineWidth=1;
+      for(const a of ct.attach){
+        if(a==null) continue;
+        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(tx(a),ty(a)); ctx.stroke();
+      }
+      ctx.fillStyle=(ct===dragCtrl)?getCSS("--good"):getCSS("--canvas-bg");
+      ctx.strokeStyle=getCSS("--accent"); ctx.lineWidth=1;
+      ctx.fillRect(sx-3.5,sy-3.5,7,7); ctx.strokeRect(sx-3.5,sy-3.5,7,7);
+    }
     for(const n of editState.nodes){
-      const sx=u2sx(n.x), sy=u2sy(n.y);
-      ctx.fillStyle = (n===dragNode)?getCSS("--good"):getCSS("--accent");
+      const sx=tx(n.ti), sy=ty(n.ti);
+      ctx.fillStyle = (n===dragNode||n===editState.selNode)?getCSS("--good"):getCSS("--accent");
       // Ring the handle with the light canvas surface so the colored dot pops
       // (was a hardcoded near-black ring tuned for the old dark canvas).
       ctx.strokeStyle=getCSS("--canvas-bg"); ctx.lineWidth=1.5;
@@ -794,28 +829,126 @@ function drawCanvas(){
 
 function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#888"; }
 
-/* ----- node dragging ----- */
-let dragNode=null;
+/* ----- node editing: drag anchors + handles, add on double-click,
+ * delete the selected anchor with Backspace/Delete ----- */
+let dragNode=null, dragCtrl=null;
+
+/* Remove one anchor's command from the token stream. Deleting an M
+ * promotes the next command's endpoint to the new subpath start (or
+ * drops a degenerate M-Z remnant outright). */
+function deleteNode(n){
+  const toks=editState.tokens;
+  if(n.cmd==="M"){
+    const j=n.ci+3, nc=toks[j];
+    if(nc==="L")      toks.splice(n.ci, 6,  "M", toks[j+1], toks[j+2]);
+    else if(nc==="C") toks.splice(n.ci, 10, "M", toks[j+5], toks[j+6]);
+    else if(nc==="Q") toks.splice(n.ci, 8,  "M", toks[j+3], toks[j+4]);
+    else {
+      let end=n.ci+3;
+      if(nc==="Z"||nc==="z") end+=1;
+      toks.splice(n.ci, end-n.ci);
+    }
+  } else {
+    toks.splice(n.ci, n.cmd==="C"?7 : n.cmd==="Q"?5 : 3);
+  }
+  editState.data = toks.join(" ");
+  rebuildNodes();
+  commitGlyph("custom");
+  drawCanvas();
+}
+
+/* Insert an anchor on the outline nearest to screen point (px,py).
+ * L splits exactly; C/Q split by de Casteljau at the sampled t, so the
+ * curve shape is preserved. Z closing segments are not splittable. */
+function addNodeAt(px,py){
+  const toks=editState.tokens;
+  const lerp=(a,b,t)=>({x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t});
+  let i=0, cur=null, start=null, best=null, bd=10*10;   // 10px pick radius
+  const consider=(ci,cmd,p0,pts)=>{
+    for(let s=1;s<48;s++){
+      const t=s/48;
+      let p;
+      if(cmd==="L") p=lerp(p0,pts[0],t);
+      else if(cmd==="Q"){ const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t); p=lerp(a,b,t); }
+      else { const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t), c2=lerp(pts[1],pts[2],t),
+                   d=lerp(a,b,t), e2=lerp(b,c2,t); p=lerp(d,e2,t); }
+      const dx=u2sx(p.x)-px, dy=u2sy(p.y)-py, d2=dx*dx+dy*dy;
+      if(d2<bd){ bd=d2; best={ci,cmd,t,p0,pts}; }
+    }
+  };
+  while(i<toks.length){
+    const c=toks[i];
+    if(c==="M"){ cur={x:+toks[i+1],y:+toks[i+2]}; start=cur; i+=3; }
+    else if(c==="L"){ const p1={x:+toks[i+1],y:+toks[i+2]}; if(cur) consider(i,"L",cur,[p1]); cur=p1; i+=3; }
+    else if(c==="C"){ const p1={x:+toks[i+1],y:+toks[i+2]}, p2={x:+toks[i+3],y:+toks[i+4]}, p3={x:+toks[i+5],y:+toks[i+6]};
+                      if(cur) consider(i,"C",cur,[p1,p2,p3]); cur=p3; i+=7; }
+    else if(c==="Q"){ const p1={x:+toks[i+1],y:+toks[i+2]}, p2={x:+toks[i+3],y:+toks[i+4]};
+                      if(cur) consider(i,"Q",cur,[p1,p2]); cur=p2; i+=5; }
+    else if(c==="Z"||c==="z"){ cur=start; i+=1; }
+    else i+=1;
+  }
+  if(!best) return false;
+  const R=(v)=>String(Math.round(v));
+  const {ci,cmd,t,p0,pts}=best;
+  if(cmd==="L"){
+    const m=lerp(p0,pts[0],t);
+    toks.splice(ci, 3, "L",R(m.x),R(m.y), "L",R(pts[0].x),R(pts[0].y));
+  } else if(cmd==="Q"){
+    const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t), m=lerp(a,b,t);
+    toks.splice(ci, 5, "Q",R(a.x),R(a.y),R(m.x),R(m.y), "Q",R(b.x),R(b.y),R(pts[1].x),R(pts[1].y));
+  } else {
+    const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t), c2=lerp(pts[1],pts[2],t),
+          d=lerp(a,b,t), e2=lerp(b,c2,t), m=lerp(d,e2,t);
+    toks.splice(ci, 7, "C",R(a.x),R(a.y),R(d.x),R(d.y),R(m.x),R(m.y),
+                       "C",R(e2.x),R(e2.y),R(c2.x),R(c2.y),R(pts[2].x),R(pts[2].y));
+  }
+  editState.data = toks.join(" ");
+  rebuildNodes();
+  commitGlyph("custom");
+  drawCanvas();
+  return true;
+}
+
 function setupCanvasInteraction(){
   const cv=document.getElementById("canvas");
   cv.addEventListener("pointerdown", e=>{
     if(!editState.nodeEdit) return;
     const r=cv.getBoundingClientRect();
     const px=e.clientX-r.left, py=e.clientY-r.top;
+    const toks=editState.tokens;
     let best=null, bd=12*12;
     for(const n of editState.nodes){
-      const dx=u2sx(n.x)-px, dy=u2sy(n.y)-py; const d=dx*dx+dy*dy;
+      const dx=u2sx(+toks[n.ti])-px, dy=u2sy(+toks[n.ti+1])-py; const d=dx*dx+dy*dy;
       if(d<bd){ bd=d; best=n; }
     }
-    if(best){ dragNode=best; cv.setPointerCapture(e.pointerId); drawCanvas(); }
+    if(best){
+      dragNode=best; editState.selNode=best;
+      best.x=+toks[best.ti]; best.y=+toks[best.ti+1];   // re-sync drag baseline
+      cv.setPointerCapture(e.pointerId); drawCanvas(); return;
+    }
+    // no anchor hit - try the bezier control handles
+    let bestC=null; bd=12*12;
+    for(const ct of (editState.ctrls||[])){
+      const dx=u2sx(+toks[ct.ti])-px, dy=u2sy(+toks[ct.ti+1])-py; const d=dx*dx+dy*dy;
+      if(d<bd){ bd=d; bestC=ct; }
+    }
+    if(bestC){ dragCtrl=bestC; cv.setPointerCapture(e.pointerId); drawCanvas(); return; }
+    // empty space: clear the selection
+    if(editState.selNode){ editState.selNode=null; drawCanvas(); }
   });
   cv.addEventListener("pointermove", e=>{
-    if(!dragNode) return;
+    if(!dragNode && !dragCtrl) return;
     const r=cv.getBoundingClientRect();
     const nx=Math.round(s2ux(e.clientX-r.left));
     const ny=Math.round(s2uy(e.clientY-r.top));
-    const dx=nx-dragNode.x, dy=ny-dragNode.y;
     const toks=editState.tokens;
+    if(dragCtrl){
+      toks[dragCtrl.ti]=String(nx); toks[dragCtrl.ti+1]=String(ny);
+      editState.data = toks.join(" ");
+      drawCanvas();
+      return;
+    }
+    const dx=nx-dragNode.x, dy=ny-dragNode.y;
     // move anchor
     toks[dragNode.ti]=String(nx); toks[dragNode.ti+1]=String(ny);
     // translate this node's own incoming control points (cx2 / cx1 for C, cx1 for Q) along
@@ -826,12 +959,30 @@ function setupCanvasInteraction(){
     drawCanvas();
   });
   cv.addEventListener("pointerup", e=>{
-    if(dragNode){
-      dragNode=null;
-      // committing node edits switches glyph to custom
+    if(dragNode||dragCtrl){
+      const sel=dragNode;
+      dragNode=null; dragCtrl=null;
+      // committing node edits switches glyph to custom. commitGlyph
+      // triggers a re-render path that rebuilds nodes - restore the
+      // selection by matching token index so Delete still works.
+      const selTi=sel?sel.ti:null;
       commitGlyph("custom");
+      if(selTi!=null) editState.selNode = (editState.nodes||[]).find(n=>n.ti===selTi) || null;
       drawCanvas();
     }
+  });
+  cv.addEventListener("dblclick", e=>{
+    if(!editState.nodeEdit) return;
+    const r=cv.getBoundingClientRect();
+    addNodeAt(e.clientX-r.left, e.clientY-r.top);
+  });
+  document.addEventListener("keydown", e=>{
+    if(!editState.nodeEdit || !editState.selNode) return;
+    if(e.key!=="Backspace" && e.key!=="Delete") return;
+    const t=e.target, tag=(t&&t.tagName||"").toLowerCase();
+    if(tag==="input"||tag==="textarea"||tag==="select"||(t&&t.isContentEditable)) return;
+    e.preventDefault();
+    deleteNode(editState.selNode);
   });
   window.addEventListener("resize", ()=>{ drawCanvas(); });
 }
