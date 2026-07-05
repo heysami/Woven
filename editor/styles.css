@@ -891,9 +891,9 @@ button {
   color: #f4f6f5;
   letter-spacing: -0.01em;
 }
-/* Diamond-W logo mark - green fill + green glow so the mark reads on the black header. */
+/* Woven loop-W logo mark (near-square) - green fill + green glow so the mark reads on the black header. */
 .landing-logo-mark {
-  width: 34px;
+  width: 22px;
   height: auto;
   display: block;
   fill: var(--accent);
