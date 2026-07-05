@@ -7515,6 +7515,18 @@ function assetSubdirForKind(assetKind) {
   }
 }
 
+/* An asset node that can be pasted INTO a prototype as a real media
+   element (img / video / audio) while pick-mode is active - the Cmd+C
+   asset-card → Cmd+V-at-picked-element flow. html/text/3d/lottie assets
+   are excluded: html iframes are pick-mode hosts themselves, and the rest
+   have no direct single-tag embed. */
+function workflowPasteableAssetNode(n) {
+  if (!n || n.kind !== "asset" || !(n.path || n.url)) return false;
+  const ext = String(n.path || n.url).split(".").pop().toLowerCase();
+  const kind = n.assetKind || EXT_TO_ASSET_KIND[ext] || "image";
+  return kind === "image" || kind === "vector" || kind === "video" || kind === "audio";
+}
+
 /* Kind-only variant of pickAssetSpawnDefaults for iterator nodes.
    Iterators (remix / blend / repeat) don't have a single skill spec; their
    output kind is set on the iterator node itself (`outputKind` field) and
@@ -38850,6 +38862,104 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return 1;
   }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
 
+  // Media asset nodes riding the canvas clipboard (Cmd+C on an asset
+  // card fills nodeClipboardRef via copySelectedNodes - {nodes,edges},
+  // no `type` field). These feed pasteAssetNodeIntoPicked below.
+  const _clipboardAssetNodes = useCallback(() => {
+    const clip = nodeClipboardRef.current;
+    if (!clip || clip.type || !Array.isArray(clip.nodes)) return [];
+    return clip.nodes.filter(workflowPasteableAssetNode);
+  }, []);
+
+  // Cmd+V with an ASSET NODE on the clipboard while pick-mode has a
+  // target: insert the asset into the prototype as a real media element
+  // (img / video / audio) right after the picked element, staged as an
+  // `insert` op like element-paste so the Save/Revert pill owns
+  // persistence. The src is written RELATIVE to the host page's path so
+  // the saved HTML stays portable (daemon, share export, publish alike).
+  const pasteAssetNodeIntoPicked = useCallback(() => {
+    const assets = _clipboardAssetNodes();
+    if (!assets.length) return 0;
+    const { el, doc } = _resolvePickedLive();
+    if (!el || !doc) { flashPickOp("error", "Pick a target element first, then paste the asset."); return 0; }
+    const parent = el.parentElement;
+    if (!parent) { flashPickOp("error", "Paste failed: target has no parent"); return 0; }
+    const ifr = pickerIframeRef.current;
+    const docPath = _resolveIframePathFor(ifr);
+    // Relative src from the host page's directory to the asset file -
+    // both live under source/<branch>/, so walking the common prefix is
+    // enough. Root-absolute fallback when the iframe isn't showing a
+    // source/ file (stageInspectorEdit flags that case to the user anyway).
+    const srcFor = (n) => {
+      if (!n.path) return n.url;
+      const a = String(n.path).replace(/^\/+/, "").split("/");
+      if (!docPath) return "/" + a.join("/");
+      const d = String(docPath).replace(/^\/+/, "").split("/");
+      d.pop();   // drop the html filename - we want its directory
+      let i = 0;
+      while (i < a.length - 1 && i < d.length && a[i] === d[i]) i++;
+      return "../".repeat(d.length - i) + a.slice(i).join("/");
+    };
+    // Anchor selector captured BEFORE inserting (same rule as
+    // element-paste: siblings inserted after the target must not shift
+    // its disambiguation index).
+    const anchorSel = elementPatchSelector(el);
+    const insKey = "i" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    const tmp = doc.createElement("div");
+    for (const n of assets) {
+      const ref = String(n.path || n.url);
+      const ext = ref.split(".").pop().toLowerCase();
+      const kind = n.assetKind || EXT_TO_ASSET_KIND[ext] || "image";
+      const src = srcFor(n);
+      let media;
+      if (kind === "video") {
+        media = doc.createElement("video");
+        media.setAttribute("src", src);
+        // setAttribute (not the .muted property) - the muted PROPERTY
+        // doesn't reflect to the attribute, so it wouldn't serialize.
+        ["autoplay", "loop", "muted", "playsinline"].forEach(a => media.setAttribute(a, ""));
+        media.style.maxWidth = "100%";
+      } else if (kind === "audio") {
+        media = doc.createElement("audio");
+        media.setAttribute("src", src);
+        media.setAttribute("controls", "");
+      } else {
+        media = doc.createElement("img");
+        media.setAttribute("src", src);
+        media.setAttribute("alt", n.title || ref.split("/").pop().replace(/\.[a-z0-9]+$/i, ""));
+        media.style.maxWidth = "100%";
+        media.style.height = "auto";
+      }
+      media.setAttribute("data-th-ins", insKey);
+      tmp.appendChild(media);
+    }
+    const stampedHtml = tmp.innerHTML;
+    // Insert live, advancing the anchor so multi-asset clipboards land
+    // in copy order (a fixed `el.nextSibling` anchor would reverse them).
+    let after = el, insertedCount = 0;
+    while (tmp.firstChild) {
+      const n = tmp.firstChild;
+      parent.insertBefore(n, after.nextSibling);
+      after = n;
+      insertedCount++;
+    }
+    doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(elm => {
+      elm.classList.remove("th-pick-hover");
+      elm.classList.remove("th-pick-selected");
+    });
+    try {
+      if (ifr) stageInspectorEdit(ifr, doc, {
+        type:     "insert",
+        anchor:   anchorSel,
+        position: "after",
+        html:     stampedHtml,
+        key:      insKey,
+      });
+    } catch {}
+    flashPickOp("done", `Pasted ${insertedCount} asset${insertedCount === 1 ? "" : "s"} - staged; click Save on the node pill to persist`);
+    return insertedCount;
+  }, [_clipboardAssetNodes, _resolvePickedLive, _resolveIframePathFor, stageInspectorEdit, flashPickOp]);
+
   // Keyboard shortcuts active only while pickModeNodeId is set. Capture
   // phase so they beat the canvas-level copy/paste/delete handler.
   useEffect(() => {
@@ -38859,6 +38969,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       const cmd = e.metaKey || e.ctrlKey;
       if (cmd && (e.key === "c" || e.key === "C")) {
+        // A MEDIA asset card selected on the canvas outranks the picked
+        // element: fall through (no preventDefault / no stop) so the
+        // canvas-level bubble handler runs copySelectedNodes and the card
+        // can then be Cmd+V'd into the prototype at the picked target.
+        // html assets do NOT fall through - their iframes host pick-mode
+        // themselves, so a picked element inside one keeps winning.
+        if (!e.shiftKey && !e.altKey) {
+          try {
+            const sel = (selectionRef && selectionRef.current) || {};
+            const ids = sel.selectedIds || new Set();
+            if (ids.size && (sel.nodes || []).some(n => ids.has(n.id) && workflowPasteableAssetNode(n))) return;
+          } catch {}
+        }
         // Three flavors of copy in pick mode, all share C:
         //   Shift+Cmd/Ctrl+C → copy as PNG (system clipboard, raster)
         //   Opt+Cmd / Alt+Ctrl+C → copy STYLE only (editor clipboard)
@@ -38888,6 +39011,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           e.preventDefault(); e.stopPropagation();
         } else if (clip && clip.type === "html-element") {
           pastePickedElement();
+          e.preventDefault(); e.stopPropagation();
+        } else if (_clipboardAssetNodes().length) {
+          // Cmd+C'd canvas ASSET card → insert into the prototype at
+          // the picked target as a real <img>/<video>/<audio>.
+          pasteAssetNodeIntoPicked();
           e.preventDefault(); e.stopPropagation();
         }
       } else if (cmd && (e.key === "r" || e.key === "R")) {
@@ -38941,6 +39069,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [pickModeNodeId, pickedElement, copyPickedElement, pastePickedElement,
       copyPickedAsPng, copyPickedStyle, pastePickedStyle,
       replacePickedElement, deletePickedElement, duplicatePickedElement,
+      _clipboardAssetNodes, pasteAssetNodeIntoPicked,
       nudgePickedElement, reorderPickedElement, flashPickOp]);
 
   // Window-level keyboard shortcuts for canvas copy/paste/delete.
