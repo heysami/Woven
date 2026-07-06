@@ -8952,6 +8952,11 @@ function DaemonIndicator({ compact }) {
   // Render as a button when interactive (down state), span otherwise - keeps
   // the markup clean while letting CSS keep one selector for the pill chrome.
   const interactive = !loading && !ok;
+  // Rail (compact) chip: a healthy daemon is the boring default - show
+  // nothing. The server icon only appears (red, clickable) when the daemon
+  // is actually down, so the rail stays quiet until it matters. The landing
+  // header pill keeps its always-on label form.
+  if (compact && !interactive) return null;
   const common = {
     className: cls,
     title: tooltip,
