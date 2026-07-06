@@ -636,6 +636,9 @@ const Icon = {
   Block:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 8h11M8 2.5v11"/></svg>`,
   Library:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 3v10M6 3v10M10 4l3 9M9.5 4l3-1"/></svg>`,
   Comment:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v6a1 1 0 01-1 1H7l-3 3v-3a1 1 0 01-1-1z"/></svg>`,
+  // Round speech bubble whose tail is the sharp bottom-right corner (miter
+  // join on purpose - the rest of the set rounds joins) + ellipsis dots.
+  CommentDots: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path strokeLinejoin="miter" d="M13.4 9A5.5 5.5 0 1 0 9 13.4L13.6 13.6Z"/><circle cx="5.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="10.5" cy="8" r=".9" fill="currentColor" stroke="none"/></svg>`,
   Text:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 4h10M8 4v9M5.5 13h5"/></svg>`,
   Pen:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 14l3-1 7-7-2-2-7 7-1 3z M9 4l3 3"/></svg>`,
   Move:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M2 8l2 2M2 8l2-2M14 8l-2 2M14 8l-2-2M8 14l-2-2M8 14l2-2"/></svg>`,
@@ -9804,7 +9807,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
         onClick=${() => { onOpenWindow && onOpenWindow("comments"); }}
       >
         <span className="th-right-rail-icon-wrap">
-          <${Icon.User}/>
+          <${Icon.CommentDots}/>
         </span>
       <//>
       <${HoverTip}
