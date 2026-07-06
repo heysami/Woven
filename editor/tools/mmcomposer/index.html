@@ -5520,20 +5520,33 @@ function bake(){
   // W2C: bake the logic-graph projection so the published piece reacts to real
   // input (the slim player loads logicgraph.js + W2D capture, contract §5.5).
   const logic=(WIRED.logic && typeof WIRED.logic==='object')?WIRED.logic:null;
-  // Inline the particle / 3D engine source as a plain script (defining the
-  // createPOPEngine / createScene3D globals the slimPlayer's hosts call) so a
-  // baked composition with particles/scene3d layers renders standalone. Empty if
-  // the source hasn't loaded yet - those layers then simply don't render (no crash).
+  // Inline the particle / 3D engine source as PLAIN JS inside the template's
+  // one <script> block (defining the createPOPEngine / createScene3D globals
+  // the slimPlayer's hosts call) so a baked composition with particles/scene3d
+  // layers renders standalone. Empty if the source hasn't loaded yet - those
+  // layers then simply don't render (no crash). It must NOT be wrapped in its
+  // own <script> element: the placeholder sits INSIDE an open script block, so
+  // a nested tag's </script> closes the outer block early and the whole baked
+  // page dies on "Unexpected token '<'" (black canvas). Any literal </script
+  // inside the sources gets the same guard-escape for the same reason.
+  const escCloseTag = s => String(s).replace(/<\/(script)/gi, '<\\/$1');
   const engines = (POP_ENGINE_SRC && SCENE3D_ENGINE_SRC)
-    ? ('<scr' + 'ipt>' + POP_ENGINE_SRC + '\n' + SCENE3D_ENGINE_SRC +
-       '\ntry{window.createPOPEngine=createPOPEngine;window.createScene3D=createScene3D;}catch(e){}</scr' + 'ipt>')
+    ? (escCloseTag(POP_ENGINE_SRC) + '\n' + escCloseTag(SCENE3D_ENGINE_SRC) +
+       '\ntry{window.createPOPEngine=createPOPEngine;window.createScene3D=createScene3D;}catch(e){}')
     : '';
+  // JSON payloads live inside the same script block: escape every `<` as
+  // the \\u003c escape (parses identically) so user content like a text layer reading
+  // "</script>" can't terminate the block either. Replacement is via thunk -
+  // String.replace treats $&/$'/$` in a string replacement as special
+  // patterns, which silently corrupts engine source or user JSON containing
+  // them.
+  const js = v => JSON.stringify(v).replace(/</g, '\\u003c');
   return BAKED_TEMPLATE
-    .replace('/*__CFG__*/','window.__MM_CFG__='+JSON.stringify(cfg)+';')
-    .replace('/*__ASSETS__*/','window.__MM_ASSETS__='+JSON.stringify(assets)+';')
-    .replace('/*__TOPFX__*/','window.__MM_TOPFX__='+JSON.stringify(topFx)+';')
-    .replace('/*__LOGIC__*/','window.__MM_LOGIC__='+JSON.stringify(logic)+';')
-    .replace('/*__ENGINES__*/', engines);
+    .replace('/*__CFG__*/', () => 'window.__MM_CFG__='+js(cfg)+';')
+    .replace('/*__ASSETS__*/', () => 'window.__MM_ASSETS__='+js(assets)+';')
+    .replace('/*__TOPFX__*/', () => 'window.__MM_TOPFX__='+js(topFx)+';')
+    .replace('/*__LOGIC__*/', () => 'window.__MM_LOGIC__='+js(logic)+';')
+    .replace('/*__ENGINES__*/', () => engines);
 }
 /* Serialize one effect for the baked player. Custom effects carry a precompiled
    fragment (`_frag`); built-ins carry just type/params/intensity and resolve

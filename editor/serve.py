@@ -5085,15 +5085,15 @@ def _codex_mcp_spawn_args() -> list:
 
 def _ensure_opencode_mcp_config():
     """Build the managed opencode config that carries AGENT_MCP_CONFIG's
-    servers in opencode's `"mcp"` shape, and return its absolute path (None
-    when no servers are wired / the write failed). Passed to opencode spawns
-    via the OPENCODE_CONFIG env var - opencode merges it with the user's
-    global config, but we still fold the global file in ourselves when it's
-    plain JSON so a replace-not-merge opencode version loses nothing (a
-    .jsonc global with comments is skipped - MCP entries only)."""
+    servers in opencode's `"mcp"` shape PLUS the harness permission grants,
+    and return its absolute path (None when the write failed). Passed to
+    opencode spawns via the OPENCODE_CONFIG env var - opencode merges it
+    with the user's global config, but we still fold the global file in
+    ourselves when it's plain JSON so a replace-not-merge opencode version
+    loses nothing (a .jsonc global with comments is skipped - MCP entries
+    only). Written even with no MCP servers wired: the permission block
+    below must reach every opencode spawn regardless."""
     servers = _mcp_servers_from_config()
-    if not servers:
-        return None
     merged = {"$schema": "https://opencode.ai/config.json"}
     for cand in ("~/.config/opencode/opencode.json",
                  "~/.config/opencode/opencode.jsonc"):
@@ -5113,6 +5113,29 @@ def _ensure_opencode_mcp_config():
         sargs = [a for a in ((spec or {}).get("args") or []) if isinstance(a, str)]
         mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True}
     merged["mcp"] = mcp
+    # Permission grant: the visual-QA engine (/__qa/run) writes its frame
+    # screenshots to tempfile.mkdtemp(prefix="woven-qa-") - OUTSIDE the
+    # project root, so opencode's non-interactive `run` mode auto-rejects
+    # every Read of them ("permission requested: external_directory ...;
+    # auto-rejecting"). That left opencode agents blind to the one artefact
+    # QA verdicts point at (they loop re-running QA instead - the
+    # testmmcomposer black-frame debugging stall). Allow-list the QA dirs.
+    # Both the symlinked and resolved tempdir spellings are granted (macOS
+    # /var -> /private/var). A user-set blanket string action wins.
+    try:
+        _tmp = tempfile.gettempdir().rstrip("/")
+        _qa_globs = sorted({os.path.join(t, "woven-qa-*", "*")
+                            for t in (_tmp, os.path.realpath(_tmp))})
+        perm = merged.get("permission") if isinstance(merged.get("permission"), dict) else {}
+        ext = perm.get("external_directory")
+        if not isinstance(ext, str):  # respect a user's blanket allow/deny/ask
+            ext = dict(ext) if isinstance(ext, dict) else {}
+            for _g in _qa_globs:
+                ext.setdefault(_g, "allow")
+            perm["external_directory"] = ext
+            merged["permission"] = perm
+    except Exception:
+        pass
     path = os.path.join(INSTALL_ROOT, ".opencode-config.json")
     # Skip-if-same to avoid disk churn at every spawn (mirrors
     # _ensure_harness_settings).
@@ -8757,6 +8780,63 @@ def _kill_run_tree(state: "RunState", grace: float = 3.0) -> None:
 
     threading.Thread(target=_escalate, daemon=True,
                      name=f"run-{state.run_id}-reaper").start()
+
+
+def _transcript_from_run_events(state: "RunState") -> str:
+    """Reconstruct a run's conversation as a plain-text transcript from its
+    event log. Used by the fake-resume paths (_run_resume_codex for the
+    argv-prompt single-shot agents, _run_resume_planner_claude for planner
+    runs whose sessions were never persisted): the rebuilt transcript is
+    prepended to the new user message so a fresh process can continue the
+    thread. Each event-log entry of type "agent" carries a normalised event
+    dict; we walk those and rebuild a transcript that reads naturally."""
+    lines = []
+    with state.lock:
+        events = list(state.events)
+    for ev in events:
+        t = ev.get("type")
+        d = ev.get("data") or {}
+        if t == "user_message":
+            u = (d.get("text") or "").strip()
+            if u:
+                lines.append(f"USER: {u}")
+        elif t == "agent":
+            dt = d.get("type")
+            if dt == "text_delta":
+                delta = (d.get("delta") or "").rstrip()
+                if delta:
+                    # Coalesce consecutive deltas into one ASSISTANT block.
+                    if lines and lines[-1].startswith("ASSISTANT: "):
+                        lines[-1] = lines[-1] + "\n" + delta
+                    else:
+                        lines.append(f"ASSISTANT: {delta}")
+            elif dt == "tool_use":
+                name = d.get("name") or "tool"
+                inp = d.get("input") or {}
+                cmd = inp.get("text") or inp.get("command") or json.dumps(inp)
+                lines.append(f"[TOOL CALL: {name}]\n{cmd}")
+            elif dt == "tool_result":
+                parts = d.get("content") or []
+                body_txt = ""
+                for p in parts:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        body_txt += (p.get("text") or "")
+                err = " (error)" if d.get("is_error") else ""
+                # Truncate large tool results so the prompt doesn't blow up.
+                if len(body_txt) > 4000:
+                    body_txt = body_txt[:4000] + "\n…(truncated)"
+                lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
+            # status / thinking_delta / usage - skip; transcript noise.
+    transcript = "\n\n".join(lines).strip()
+    # Cap the replayed transcript. Every stop+resume re-prepends the WHOLE
+    # history to a fresh prompt (no prompt cache), so repeated stops grow
+    # the prompt superlinearly. Keep the tail - the recent turns are what a
+    # follow-up needs.
+    _TRANSCRIPT_CAP = 80_000
+    if len(transcript) > _TRANSCRIPT_CAP:
+        transcript = ("(earlier turns omitted to keep the prompt bounded)\n\n"
+                      + transcript[-_TRANSCRIPT_CAP:])
+    return transcript
 
 
 def _drain_stdout(state: "RunState") -> None:
@@ -25502,6 +25582,123 @@ class H(http.server.SimpleHTTPRequestHandler):
     # replaces state.proc in-place so the chat drawer keeps streaming on
     # the same runId - the user perceives one continuous conversation, as
     # they would with any normal chat UI.
+    def _run_resume_planner_claude(self, state, run_id, text):
+        """Fake resume for CLAUDE-runtime planner runs. Planners spawn with
+        --no-session-persistence (their transcripts would otherwise litter
+        the session store), which means `claude --resume <sessionId>` can
+        NEVER find the conversation - the session file was never written. The
+        generic _run_resume path used to try it anyway, and every reply died
+        with "No conversation found with session ID" (the unclickable-planner
+        bug on testmmcomposer). So: rebuild the prior conversation as a
+        transcript (same approach as _run_resume_codex), re-attach the
+        planner's own system prompt (NOT the chat-tier prompt - rebuilding
+        the wrong prompt on resume is the resume-tier-balloon failure), and
+        spawn a fresh stream-json claude. The fresh spawn is drivable (stdin
+        PIPE), so follow-up replies while it lives go through /user-message
+        like any chat; only another process death lands back here. Planner
+        resumes stay on this path even then - the native --resume branch
+        would rebuild the CHAT-tier system prompt, not the planner spec,
+        which is exactly the resume-tier-balloon class of bug. The fresh
+        spawn still omits --no-session-persistence so the thread is at least
+        inspectable/recoverable from the session store."""
+        planner_type = str(getattr(state, "kind", "") or "").split(":", 1)[1].strip()
+        bin_path = state.bin_path or detect_agent_bin("claude")
+        if not bin_path:
+            return self._reply(500, {"error": "claude binary not found"})
+        # Rebuild the planner system prompt exactly as _dispatch_planner did.
+        planner_path = os.path.join(INSTALL_ROOT, ".claude", "agents", f"{planner_type}.md")
+        try:
+            with open(planner_path, "r", encoding="utf-8") as f:
+                planner_md = f.read()
+        except Exception as e:
+            return self._reply(500, {"error": f"could not re-read planner spec {planner_type!r}: {e}"})
+        planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
+        try:
+            from kinds.capabilities import capabilities_preamble
+            caps_text = capabilities_preamble(project_root=state.project_root)
+        except Exception:
+            caps_text = ""
+        sys_prompt_parts = [planner_body]
+        if caps_text:
+            sys_prompt_parts.append("# Live harness context for this planner run\n\n" + caps_text)
+        sys_prompt_parts.append(QUESTION_FORM_SYSTEM_PROMPT)
+        if WORKSPACE_DIR and state.project_root != INSTALL_ROOT:
+            sys_prompt_parts.append(WORKSPACE_LAYOUT_PROMPT)
+        if _mcp_config_spawn_args():
+            sys_prompt_parts.append(_mcp_routing_prompt())
+        sys_prompt = "\n\n".join(p.strip() for p in sys_prompt_parts if p and p.strip())
+        # Same model resolution as the original planner spawn.
+        _omodel = _orch_override_model_for_node(planner_type, planner_type,
+                                                want_provider=_provider_for_agent("claude"))
+        if not _omodel:
+            _omodel = _agent_default_model()
+        _model_args = _agent_model_spawn_args("claude", AGENT_DEFS["claude"], _omodel) if _omodel else []
+        spawn_args = [
+            "--print",
+            "--output-format", "stream-json",
+            "--input-format", "stream-json",
+            "--verbose",
+            "--disallowedTools", "AskUserQuestion",
+            # no --no-session-persistence: see docstring.
+            "--disable-slash-commands",
+            "--allow-dangerously-skip-permissions",
+            "--dangerously-skip-permissions",
+            "--add-dir", state.project_root,
+            "--append-system-prompt", sys_prompt,
+        ]
+        spawn_args += _mcp_config_spawn_args()
+        spawn_args += _model_args
+        transcript = _transcript_from_run_events(state)
+        if transcript:
+            first_msg = (
+                "You are continuing a previous run of this planner. The prior "
+                "process exited before the user could reply; below is the "
+                "transcript so far. Resume from where it left off - do NOT "
+                "redo work the transcript shows as already committed.\n\n"
+                "===== PRIOR CONVERSATION =====\n"
+                f"{transcript}\n"
+                "===== END PRIOR CONVERSATION =====\n\n"
+                f"USER (new message): {text}"
+            )
+        else:
+            first_msg = text
+        env = _build_child_env("claude", run_id,
+                               project_root=state.project_root, project_id=state.project_id)
+        try:
+            proc = subprocess.Popen(
+                [bin_path, *spawn_args],
+                cwd=state.project_root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                bufsize=1,
+                start_new_session=True,  # own process group so Stop can group-kill the whole tree
+            )
+        except Exception as e:
+            return self._reply(500, {"error": f"planner resume spawn failed: {type(e).__name__}: {e}"})
+        # Reset run lifecycle for the new process. Clear the dead session id
+        # so the drain captures the FRESH one off the new init frame (the
+        # capture is gated on `not state.session_id`).
+        state.proc = proc
+        state.session_id = None
+        state.done = False
+        state.exit_code = None
+        state.turn_done = False
+        state.append("status", {"label": "resumed", "agentId": "claude",
+                                "plannerFallback": True})
+        state.append("user_message", {"text": text})
+        try:
+            proc.stdin.write(_claude_user_frame(first_msg))
+            proc.stdin.flush()
+        except Exception as e:
+            state.append("error", {"message": f"failed to write resume prompt to stdin: {e}"})
+        threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
+                         name=f"run-{run_id}-stdout-resumed").start()
+        threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
+                         name=f"run-{run_id}-stderr-resumed").start()
+        return self._reply(200, {"ok": True, "agentId": "claude", "plannerFallback": True})
+
     def _run_resume_codex(self, state, run_id, text):
         """Fake resume for the argv-prompt single-shot agents (codex AND
         opencode): reconstruct prior conversation as a text transcript,
@@ -25522,55 +25719,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         bin_path = state.bin_path or detect_agent_bin(state.agent_id)
         if not bin_path:
             return self._reply(500, {"error": f"{state.agent_id} binary not on PATH"})
-        # Reconstruct the conversation. Each event-log entry of type "agent"
-        # carries a normalised event dict; we walk those and rebuild a
-        # transcript that reads naturally.
-        lines = []
-        with state.lock:
-            events = list(state.events)
-        for ev in events:
-            t = ev.get("type")
-            d = ev.get("data") or {}
-            if t == "user_message":
-                u = (d.get("text") or "").strip()
-                if u:
-                    lines.append(f"USER: {u}")
-            elif t == "agent":
-                dt = d.get("type")
-                if dt == "text_delta":
-                    delta = (d.get("delta") or "").rstrip()
-                    if delta:
-                        # Coalesce consecutive deltas into one ASSISTANT block.
-                        if lines and lines[-1].startswith("ASSISTANT: "):
-                            lines[-1] = lines[-1] + "\n" + delta
-                        else:
-                            lines.append(f"ASSISTANT: {delta}")
-                elif dt == "tool_use":
-                    name = d.get("name") or "tool"
-                    inp = d.get("input") or {}
-                    cmd = inp.get("text") or inp.get("command") or json.dumps(inp)
-                    lines.append(f"[TOOL CALL: {name}]\n{cmd}")
-                elif dt == "tool_result":
-                    parts = d.get("content") or []
-                    body_txt = ""
-                    for p in parts:
-                        if isinstance(p, dict) and p.get("type") == "text":
-                            body_txt += (p.get("text") or "")
-                    err = " (error)" if d.get("is_error") else ""
-                    # Truncate large tool results so the prompt doesn't blow up.
-                    if len(body_txt) > 4000:
-                        body_txt = body_txt[:4000] + "\n…(truncated)"
-                    lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
-                # status / thinking_delta / usage - skip; transcript noise.
-        transcript = "\n\n".join(lines).strip()
-        # Cap the replayed transcript. Every codex stop+resume re-prepends the
-        # WHOLE history to a fresh argv prompt (no prompt cache), so repeated
-        # stops grow the prompt superlinearly. Keep the tail - the recent
-        # turns are what a follow-up needs.
-        _TRANSCRIPT_CAP = 80_000
-        if len(transcript) > _TRANSCRIPT_CAP:
-            transcript = ("(earlier turns omitted to keep the prompt bounded)\n\n"
-                          + transcript[-_TRANSCRIPT_CAP:])
+        transcript = _transcript_from_run_events(state)
         # Re-attach the harness preamble the original spawn carried - without
         # it the resumed agent loses the capabilities catalog, the dispatch
         # bridge, and the output discipline, and burns turns rediscovering
@@ -25666,17 +25815,39 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not state:
                 return self._reply(404, {"error": "unknown runId", "runId": run_id,
                                           "hint": "tried to rehydrate from JSONL but the run wasn't found in any branch under the project"})
-        # Reject resume only when a LIVE process is attached - then the caller
-        # must write to its stdin via /user-message. A non-live run (cleanly
-        # finished, OR a history-rehydrated ghost with proc=None and possibly
-        # done=False) is exactly what resume exists for: re-spawn with --resume
+        # Reject resume while a process is still RUNNING. Two flavours:
+        #   • drivable (is_live: running + stdin pipe open, i.e. claude
+        #     stream-json) - the caller should write to /user-message instead.
+        #   • running but NOT drivable (codex/opencode: spawned with
+        #     stdin=DEVNULL, so is_live is False for their ENTIRE lifetime) -
+        #     nothing can take the message right now; the caller must wait or
+        #     Stop. Gating on is_live alone let a second resume land while the
+        #     first resumed process was still cold-starting, spawning TWO
+        #     agents on one runId that interleaved into the same event log
+        #     (the testmmcomposer 19:44 double-"continue"). poll() is the
+        #     duplicate guard; is_live only picks the error message.
+        # A non-live, non-running run (cleanly finished, OR a
+        # history-rehydrated ghost with proc=None and possibly done=False) is
+        # exactly what resume exists for: re-spawn with --resume
         # <session_id>. Gating on `done` alone stranded ghost mid-flight runs
         # (done=False + proc=None), which /user-message ALSO refuses - a
         # two-endpoint deadlock the user saw as "agent stdin not available".
         # See RunState.is_live.
-        if state.is_live:
+        _proc = state.proc
+        if _proc is not None and _proc.poll() is None:
+            if state.is_live:
+                return self._reply(409, {
+                    "error": "run is still active; use /user-message instead",
+                })
+            # NOTE: this error text must NOT contain the client reroute
+            # phrases ("still active", "use /user-message", "not running",
+            # "exited", "finished", "not found", "no such") - app.js
+            # dispatch()/postRunReply() match on those to flip endpoints, and
+            # this state is not a race to converge from: it must surface.
             return self._reply(409, {
-                "error": "run is still active; use /user-message instead",
+                "error": "agent is still working on the previous message - "
+                         "wait for it to complete or press Stop, then send again",
+                "busy": True,
             })
         # Codex/opencode resume. Neither has Claude's stream-json
         # --resume <session-id> protocol; each `codex exec` / `opencode run`
@@ -25688,6 +25859,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._run_resume_codex(state, run_id, text)
         if state.agent_id != "claude":
             return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})
+        # Planner runs spawn with --no-session-persistence, so their session
+        # transcript is NEVER on disk and `--resume <sessionId>` is
+        # guaranteed to fail ("No conversation found with session ID") no
+        # matter how many times the user retries. Route them through the
+        # transcript-rebuild fallback instead.
+        if str(getattr(state, "kind", "") or "").startswith("planner:"):
+            return self._run_resume_planner_claude(state, run_id, text)
         if not state.session_id:
             return self._reply(409, {
                 "error": "no session id captured for this run; cannot resume",
