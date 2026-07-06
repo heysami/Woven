@@ -1495,8 +1495,11 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         # replay) ride the same gate/tunnel; delegated wholesale to the
         # usertesting gate, which resolves its own token registry.
         if _UT is not None:
-            mut = re.match(r"^/([tr])/([a-f0-9]{32})(/.*)?$", parsed.path)
-            if mut and _UT.handle_get(self, mut.group(1), mut.group(2),
+            # Tolerant token match: links copied through chat apps / notes pick
+            # up invisible junk (zero-width spaces, %20) glued to the token and
+            # arrive uppercased by some autocorrects - accept and normalize.
+            mut = re.match(r"^/([tr])/([A-Fa-f0-9]{32})[^/]*(/.*)?$", parsed.path)
+            if mut and _UT.handle_get(self, mut.group(1), mut.group(2).lower(),
                                       mut.group(3) if mut.group(3) is not None else ""):
                 return
         rec, sub = self._route()
@@ -1607,8 +1610,9 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         # User Testing POST - /t/<token>/api/* (recording upload) and
         # /r/<token>/api/markers. Delegated before the /s/ route.
         if _UT is not None:
-            mut = re.match(r"^/([tr])/([a-f0-9]{32})(/.*)?$", parsed.path)
-            if mut and _UT.handle_post(self, mut.group(1), mut.group(2),
+            # Same tolerant token match as the GET route (copy-paste junk).
+            mut = re.match(r"^/([tr])/([A-Fa-f0-9]{32})[^/]*(/.*)?$", parsed.path)
+            if mut and _UT.handle_post(self, mut.group(1), mut.group(2).lower(),
                                        mut.group(3) if mut.group(3) is not None else ""):
                 return
         rec, sub = self._route()

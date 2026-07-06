@@ -131,10 +131,37 @@ def _redirect_slash(handler):
     handler.end_headers()
 
 
+def _send_dead_link_page(handler, reason):
+    """Human-readable 404 for page navigations - a study participant clicking a
+    dead or mangled link should never see raw JSON."""
+    body = ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"/>"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>"
+            "<title>Link not active</title><style>"
+            "body{font-family:-apple-system,'Segoe UI',sans-serif;background:#f7f7f5;"
+            "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}"
+            ".card{background:#fff;border-radius:12px;padding:40px 44px;max-width:420px;"
+            "box-shadow:0 8px 30px rgba(0,0,0,.08)}h1{font-size:20px;margin:0 0 10px}"
+            "p{color:#555;line-height:1.5;margin:0}</style></head><body><div class=\"card\">"
+            "<h1>This link is not active</h1><p>%s</p>"
+            "<p style=\"margin-top:12px\">Ask the person who sent it for a fresh link - "
+            "the copied one may be out of date or picked up stray characters in transit.</p>"
+            "</div></body></html>" % reason)
+    data = body.encode("utf-8")
+    handler.send_response(404)
+    handler.send_header("Content-Type", "text/html;charset=utf-8")
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Content-Length", str(len(data)))
+    handler.end_headers()
+    try:
+        handler.wfile.write(data)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
 class _UTGate:
     # ── GET ────────────────────────────────────────────────────────────
     def handle_get(self, handler, role, token, sub):
-        ctx = self._resolve(handler, role, token)
+        ctx = self._resolve(handler, role, token, page=sub in ("", "/"))
         if ctx is None:
             return True  # already replied (404)
         session, participant = ctx["session"], ctx["participant"]
@@ -269,14 +296,21 @@ class _UTGate:
         handler._send_json(404, {"error": "not found"}); return True
 
     # ── helpers ─────────────────────────────────────────────────────────
-    def _resolve(self, handler, role, token):
+    def _resolve(self, handler, role, token, page=False):
         ctx = _ut.resolve_token(token)
         if ctx is None:
-            handler._send_json(404, {"error": "unknown or revoked link"})
+            if page:
+                _send_dead_link_page(handler, "This test link is not active.")
+            else:
+                handler._send_json(404, {"error": "unknown or revoked link"})
             return None
         want = "testee" if role == "t" else "reviewer"
         if ctx.get("role") != want:
-            handler._send_json(404, {"error": "wrong link for this action"})
+            if page:
+                _send_dead_link_page(handler, "This link is the %s link - you opened it as %s."
+                                     % (ctx.get("role"), want))
+            else:
+                handler._send_json(404, {"error": "wrong link for this action"})
             return None
         return ctx
 
