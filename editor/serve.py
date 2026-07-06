@@ -21373,11 +21373,32 @@ class H(http.server.SimpleHTTPRequestHandler):
         # otherwise blocks pip entirely. Combined with --user the flag is
         # safe: installs only land in the per-user site dir, never touching
         # the brew-managed prefix. (PEP 668 itself recommends this exact
-        # combo as the escape hatch.) No-op on Pythons without the marker.
-        cmd = [sys.executable, "-m", "pip", "install",
-               "--user", "--break-system-packages", "--quiet", *packages]
+        # combo as the escape hatch.)
+        #
+        # BUT the flag is only known to pip >= 23.0.1. The fresh-install
+        # floor is stock macOS CLT Python 3.9 whose bundled pip is 21.2.4,
+        # where an always-on flag hard-fails with exit 2 "no such option:
+        # --break-system-packages" before anything installs (this was the
+        # "rembg refuses to install" fresh-install bug). Pass the flag only
+        # when the interpreter actually carries the PEP-668 marker - a
+        # markered Python always ships a flag-aware pip - and belt-and-braces
+        # retry without it if pip still rejects the option.
+        import sysconfig
+        pep668 = False
+        try:
+            pep668 = os.path.isfile(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED"))
+        except Exception:
+            pass
+        cmd = [sys.executable, "-m", "pip", "install", "--user", "--quiet"]
+        if pep668:
+            cmd.append("--break-system-packages")
+        cmd += packages
         try:
             r = subprocess.run(cmd, capture_output=True, timeout=600, check=False)
+            if (r.returncode != 0 and "--break-system-packages" in cmd
+                    and b"no such option: --break-system-packages" in (r.stderr or b"")):
+                cmd = [c for c in cmd if c != "--break-system-packages"]
+                r = subprocess.run(cmd, capture_output=True, timeout=600, check=False)
         except subprocess.TimeoutExpired:
             return self._reply(504, {"error": "pip install timed out after 10 minutes"})
         except Exception as e:
