@@ -17781,7 +17781,6 @@ function ProjectHomeButton({ info }) {
   return html`
     <button className="project-home-btn" onClick=${backToProjects} title="Back to projects">
       <span className="project-home-arrow">←</span>
-      <${Icon.Folder || (() => html`<span style=${{display:"inline-block",width:14}}>▣</span>`)}/>
       <span>Projects</span>
     </button>
   `;
@@ -24050,8 +24049,8 @@ function PrototypeDoor() {
   return html`
     <div className="proto-door">
       <div className="proto-door-bar">
-        <button className="proto-door-back" onClick=${backToProjects} title="Back to projects">
-          <span className="proto-door-back-arrow">←</span>
+        <button className="project-home-btn" onClick=${backToProjects} title="Back to projects">
+          <span className="project-home-arrow">←</span>
           <span>Projects</span>
         </button>
         <div className="proto-door-meta">
@@ -25590,7 +25589,10 @@ function WorkflowCanvas() {
     return html`
       <div className="workflow-door">
         <div className="workflow-door-bar">
-          <button className="proto-door-back" onClick=${backToProjects}>← Projects</button>
+          <button className="project-home-btn" onClick=${backToProjects}>
+            <span className="project-home-arrow">←</span>
+            <span>Projects</span>
+          </button>
           <div className="workflow-door-title">Workflow canvas</div>
         </div>
         <div className="workflow-door-empty">
@@ -25605,7 +25607,10 @@ function WorkflowCanvas() {
     return html`
       <div className="workflow-door">
         <div className="workflow-door-bar">
-          <button className="proto-door-back" onClick=${backToProjects}>← Projects</button>
+          <button className="project-home-btn" onClick=${backToProjects}>
+            <span className="project-home-arrow">←</span>
+            <span>Projects</span>
+          </button>
           <div className="workflow-door-title">Workflow canvas</div>
         </div>
         <div className="workflow-door-empty">
@@ -44405,8 +44410,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   return html`
     <div className="workflow-root" data-fullscreen=${fullscreen ? "true" : "false"}>
       <div className="workflow-bar">
-        <button className="proto-door-back" onClick=${backToProjects} title="Back to projects">
-          <span className="proto-door-back-arrow">←</span>
+        <button className="project-home-btn" onClick=${backToProjects} title="Back to projects">
+          <span className="project-home-arrow">←</span>
           <span>Projects</span>
         </button>
         <div className="workflow-door-title" title=${projectLabel}>${projectLabel || "Workflow canvas"}</div>
