@@ -4323,11 +4323,41 @@ select.sysadd-input {
 }
 .th-right-rail-status .daemon-indicator,
 .th-right-rail-status .cli-indicator {
+  position: relative;
   padding: 0;
   width: 26px;
   height: 26px;
   justify-content: center;
   border-radius: 50%;
+}
+/* Presence badge on the chip's bottom-right corner: a solid status dot
+   wrapped in a lighter halo ring of the same hue - green = online, amber =
+   needs attention, red = down. The surface-colored border lifts it off the
+   chip so the halo reads as a ring, not a smear. */
+.cli-presence {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 1.5px solid var(--surface);
+  pointer-events: none;
+}
+.daemon-indicator-ok .cli-presence,
+.cli-indicator-ok .cli-presence {
+  background: var(--ok, #16a34a);
+  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--ok, #16a34a) 30%, transparent);
+}
+.daemon-indicator-down .cli-presence {
+  background: var(--danger, #dc2626);
+  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--danger, #dc2626) 30%, transparent);
+}
+.cli-indicator-missing .cli-presence,
+.cli-indicator-needs-login .cli-presence {
+  background: var(--warn, #b45309);
+  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--warn, #b45309) 30%, transparent);
 }
 /* Compact (rail) indicators swap the dot for a role icon - server rack for
    the daemon, brain for the CLI - tinted by the same state palette the dots

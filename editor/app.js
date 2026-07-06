@@ -8937,7 +8937,7 @@ function DaemonIndicator({ compact }) {
   };
   const body = html`<${React.Fragment}>
     ${compact
-      ? html`<span className="cli-state-icon"><${Icon.Server}/></span>`
+      ? html`<span className="cli-state-icon"><${Icon.Server}/></span><span className="cli-presence" aria-hidden="true"/>`
       : html`<span className="cli-dot"/>`}
     ${!compact && html`<span className="cli-label">${label}</span>`}
     <span className="tab-tip">${tipShort}</span>
@@ -8982,7 +8982,7 @@ function CliIndicator({ compact }) {
   if (!loaded) {
     return html`<span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true">
       ${compact
-        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span>`
+        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span><span className="cli-presence" aria-hidden="true"/>`
         : html`<span className="cli-dot"/>`}
       ${!compact && html`<span className="cli-label">CLI…</span>`}
       <span className="tab-tip">Checking CLI…</span>
@@ -9067,7 +9067,7 @@ function CliIndicator({ compact }) {
       onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUsageOpen(o => !o); } }}
     >
       ${compact
-        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span>`
+        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span><span className="cli-presence" aria-hidden="true"/>`
         : html`<span className="cli-dot"/>`}
       ${!compact && html`<span className="cli-label">${labelText}</span>`}
       <span className="tab-tip">${tipShort}</span>
