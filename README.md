@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/woven-mark.svg" alt="Woven" width="280" />
+  <img src="docs/woven-mark.svg?v=2" alt="Woven" width="280" />
 </div>
 
 # Woven
