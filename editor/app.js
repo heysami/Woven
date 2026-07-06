@@ -8574,58 +8574,28 @@ function historySourceGlyph(entry) {
 // (↶ U+21B6, ↷ U+21B7) collapse to thin vertical strokes in many UI fonts.
 // React in the editor host expects camelCase SVG attrs - match the existing
 // `stroke` spread defined above at line ~390.
-const HistoryUndoGlyph = () => html`<svg viewBox="0 0 16 16" width="11" height="11" ...${stroke}><path d="M3 9c0-3 2.5-5 5.5-5S14 6 14 9"/><path d="M3 6v3h3"/></svg>`;
-const HistoryRedoGlyph = () => html`<svg viewBox="0 0 16 16" width="11" height="11" ...${stroke}><path d="M13 9c0-3-2.5-5-5.5-5S2 6 2 9"/><path d="M13 6v3h-3"/></svg>`;
-
-function HistoryButton({ history, open, onOpen, onClose }) {
-  const { entries, cursor, runActive, canUndo, canRedo } = history;
+/* History entry point - a single clock button that lives at the BOTTOM of
+   the right rail (both surfaces), opening the HistoryPanel. Undo/redo have
+   no dedicated toolbar buttons anymore: they stay reachable via ⌘Z / ⌘⇧Z
+   and the buttons inside the panel itself. */
+function HistoryClockButton({ history, open, onOpen, onClose }) {
+  const { entries, cursor, runActive } = history;
   const latestLabel = entries.length > 0 ? entries[Math.max(0, cursor)].label : null;
   const remainUndo = cursor + 1;
   const remainRedo = entries.length - 1 - cursor;
-  // Native-title kept for accessibility (screen readers, hover-with-delay
-  // fallback). The visible chip is the `.tab-tip` child below.
   const longTitle = runActive
     ? "Undo/redo locked - agent run in progress"
     : `History (${entries.length} of 20)\n` +
       `${remainUndo} undo · ${remainRedo} redo\n` +
       (latestLabel ? `Latest: ${latestLabel}\n` : "") +
       `⌘Z / ⌘⇧Z`;
-  // Split into three independently clickable buttons (undo, redo,
-  // open-panel). The previous version painted the arrows inside the same
-  // button as the clock, so they were decorative - users instinctively
-  // tried to click them. Each button is now its own tap target with its
-  // own tip; the trio is wrapped in a group so the existing
-  // `.tbtn-history` slot layout still hosts them.
-  const undoTip = !canUndo
-    ? (runActive ? "Undo locked - agent run in progress" : "Nothing to undo")
-    : `Undo${latestLabel ? ` - ${latestLabel}` : ""} (⌘Z)`;
-  const redoTip = !canRedo
-    ? (runActive ? "Redo locked - agent run in progress" : "Nothing to redo")
-    : "Redo (⌘⇧Z)";
-  return html`
-    <span className=${"tbtn-history-group" + (runActive ? " is-locked" : "")}>
-      <${HoverTip}
-        className=${"tbtn tbtn-history-step"}
-        disabled=${!canUndo}
-        onClick=${() => history.undo && history.undo()}
-        tip=${undoTip}
-        ariaLabel="Undo"
-      ><${HistoryUndoGlyph}/><//>
-      <${HoverTip}
-        className=${"tbtn tbtn-history-step"}
-        disabled=${!canRedo}
-        onClick=${() => history.redo && history.redo()}
-        tip=${redoTip}
-        ariaLabel="Redo"
-      ><${HistoryRedoGlyph}/><//>
-      <${HoverTip}
-        className=${"tbtn tbtn-history" + (open ? " is-open" : "")}
-        onClick=${() => open ? onClose() : onOpen()}
-        tip=${longTitle}
-        ariaLabel="Open history panel"
-      ><${Icon.Clock}/><//>
-    </span>
-  `;
+  return html`<${HoverTip}
+    placement="left"
+    className=${"th-right-rail-btn" + (open ? " is-active" : "")}
+    onClick=${() => open ? onClose() : onOpen()}
+    tip=${longTitle}
+    ariaLabel="Open history panel"
+  ><span className="th-right-rail-icon-wrap"><${Icon.Clock}/></span><//>`;
 }
 
 function HistoryPanel({ history, onClose }) {
@@ -9316,23 +9286,6 @@ function SettingsGearButton({ onClick, className }) {
   ><${Icon.Gear}/><//>`;
 }
 
-/* Top-bar Exports button - sibling of SettingsGearButton. Mounted
-   only on surfaces where there's an active project (editor toolbar +
-   workflow surface - never on the landing page, since there's nothing
-   to export-from without a project context). Opens WorkflowExportsDialog
-   scoped to the active project. The icon matches the per-asset Export
-   ⤓ glyph so the connection reads visually: "this is where the
-   destination for that button comes from." */
-function WorkflowExportsButton({ onClick, className }) {
-  return html`<${HoverTip}
-    className=${"workflow-toolbar-gear " + (className || "")}
-    ariaLabel="Exports"
-    tip="Exports · per-project folder"
-    onClick=${onClick}
-  ><${Icon.FolderUp}/><//>`;
-}
-
-
 const PERMISSION_MODE_OPTIONS = [
   { value: "bypassPermissions", label: "Auto - bypass",       short: "Auto",   hint: "Agent runs every tool with no prompts. Matches the migration plan default." },
   { value: "acceptEdits",       label: "Accept edits",        short: "Edits",  hint: "Auto-approve Read / Edit / Write. Block Bash, WebFetch, etc." },
@@ -9772,7 +9725,7 @@ function LeftRunsPopover({ onOpenRun, onStartNewChat, onClose }) {
 /* RightNavRail - right-edge icon nav rail. The agent-runs entry moved LEFT
    (the left chat panel's runs overlay); this rail now holds only the
    tiling-dock panel openers - tasks & subagents, comments, git. */
-function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden }) {
+function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden, statusArea }) {
   // Let any caller open a dock panel by name via a CustomEvent, without
   // lifting state up. (The old "runs" overlay moved to the left chat panel.)
   useEffect(() => {
@@ -9821,6 +9774,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
           <${Icon.Branch}/>
         </span>
       <//>
+      ${statusArea && html`<div className="th-right-rail-status">${statusArea}</div>`}
     </nav>
   <//>`;
 }
@@ -35709,7 +35663,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Phase 4a - settings dialog open state + per-skill run states.
   // runStates is keyed by skill node id; each entry holds { status, error, ranAt }.
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [exportsOpen, setExportsOpen]   = useState(false);
   const [runStates, setRunStates] = useState({});
 
   // In-session clipboard for canvas node copy/paste. Lives in a ref
@@ -44458,17 +44411,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         </button>
         <div className="workflow-door-title" title=${projectLabel}>${projectLabel || "Workflow canvas"}</div>
         <div className="workflow-bar-spacer"/>
-        <${DaemonIndicator}/>
-        <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
-        ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
-        <${HoverTip}
-          className="workflow-bar-fullscreen"
-          ariaLabel="Enter fullscreen - hides the top bar + library so only the canvas is visible. Press Esc or ⌘. to exit."
-          tip="Fullscreen canvas · ⌘."
-          onClick=${() => setFullscreen(true)}
-        >⛶<//>
-        <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)}/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
         <${PublishButton}/>
         <${ShareMenuButton}/>
@@ -44493,7 +44436,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         >⛶ Exit fullscreen</button>
       `}
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
-      ${exportsOpen  && html`<${WorkflowExportsDialog}  onClose=${() => setExportsOpen(false)}/>`}
       ${replacePickerForAssetId && html`<${WorkflowReplaceAssetChooser}
         targetNode=${(data.nodes || []).find(n => n.id === replacePickerForAssetId)}
         onCancel=${() => setReplacePickerForAssetId(null)}
@@ -46257,7 +46199,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           onOpenWindow=${onOpenWindow}
           onOpenUserTesting=${() => { const u = new URL(location.href); u.searchParams.set("view", "usertesting"); u.searchParams.delete("utproto"); thNavigate(u.toString()); }}
           openKinds=${openKinds}
-          hidden=${fullscreen}/>
+          hidden=${fullscreen}
+          statusArea=${html`<${React.Fragment}>
+            ${history && html`<${HistoryClockButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
+            <${DaemonIndicator} compact=${true}/>
+            <${CliIndicator} compact=${true}/>
+          <//>`}/>
       </div>
       ${zoomTarget && html`
         <${ZoomOverlay}
@@ -79614,11 +79561,16 @@ function WorkflowSettingsDialog({ onClose }) {
     .filter(pid => providers[pid].integrated)
     .sort((a, b) => (providers[a].label || a).localeCompare(providers[b].label || b));
 
+  // Exports is per-project (the folder the per-asset ⤓ Export drops
+  // bundles into), so its tab only exists when a project is active -
+  // on the landing there is nothing to export from and the tab hides.
+  const activeProject = activeProjectId();
   const TABS = [
     { id: "api", label: "API keys" },
     { id: "install", label: "Things to install" },
     { id: "figma", label: "Send to Figma" },
     { id: "orchestrators", label: "Orchestrators" },
+    ...(activeProject ? [{ id: "exports", label: "Exports" }] : []),
     { id: "sendkey", label: "Preferences" },
   ];
   const subByTab = {
@@ -79626,6 +79578,7 @@ function WorkflowSettingsDialog({ onClose }) {
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     orchestrators: "Toggle which orchestrators auto-dispatch · pick each one's default model",
+    exports: "Per-asset export destination · workspace.json · per-project",
     sendkey: "Editor preferences · saved in this browser, applies live",
   };
 
@@ -79671,6 +79624,8 @@ function WorkflowSettingsDialog({ onClose }) {
             <${WorkflowFigmaSection}/>
           ` : tab === "orchestrators" ? html`
             <${OrchestratorsLanding} scopeLabel="workspace"/>
+          ` : tab === "exports" && activeProject ? html`
+            <${WorkflowExportsSection} activeProjectId=${activeProject}/>
           ` : html`
             <${WorkflowSendKeySection}/>
           `}
@@ -79902,45 +79857,9 @@ const LOCAL_PACKAGES = [
   },
 ];
 
-/* Standalone Exports dialog - used to live inside WorkflowSettingsDialog
-   as a section; promoted to its own modal so it can be context-aware
-   without cluttering the API-keys / providers / local-skills surface.
-   From the editor toolbar → only the active project's row shows (one
-   thing to configure, no scroll, no mis-click). From the landing
-   toolbar → no active project; the full list shows so cross-project
-   setup is possible. Storage: workspace.json · per-project. */
-function WorkflowExportsDialog({ onClose }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  const active = activeProjectId();
-  return createPortal(html`
-    <div className="workflow-modal-backdrop" onMouseDown=${onClose}>
-      <div className="workflow-modal workflow-settings-modal" onMouseDown=${(e) => e.stopPropagation()}>
-        <div className="workflow-modal-head">
-          <div>
-            <div className="workflow-modal-title">Exports</div>
-          </div>
-          <button className="workflow-modal-close" onClick=${onClose}>×</button>
-        </div>
-        <div className="workflow-settings-body">
-          ${active
-            ? html`<${WorkflowExportsSection} activeProjectId=${active}/>`
-            : html`<div className="workflow-settings-section">
-                <span className="workflow-settings-localhint">
-                  This dialog configures the export folder for one project.
-                  Open a project from the landing page first.
-                </span>
-              </div>`}
-        </div>
-      </div>
-    </div>
-  `, document.body);
-}
-
 /* Per-project export folder picker - single row for the active project.
+   Hosted as the project-only "Exports" tab of WorkflowSettingsDialog
+   (the tab hides on the landing, where no project is active).
    Reads/writes /__export_config?project=<id>. The per-asset Export
    button on a node POSTs to /__export_asset using this stored folder. */
 function WorkflowExportsSection({ activeProjectId: activePid }) {
@@ -83116,11 +83035,9 @@ function FloatingSubmit({ editsCount, runActive, onSubmit }) {
 
 function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap, onSetFrameSize, agents, agentId, onAgentChange, runActive, lastRun, onReopenRun, onStartNewChat, workspaceInfo, projects, onReloadWorkspace, onUpdateFromSource, history, historyOpen, onOpenHistory, onCloseHistory }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [exportsOpen, setExportsOpen]   = useState(false);
   const [sizeDialogOpen, setSizeDialogOpen] = useState(false);
   return html`
     ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
-    ${exportsOpen  && html`<${WorkflowExportsDialog}  onClose=${() => setExportsOpen(false)}/>`}
     ${sizeDialogOpen && html`
       <${FrameSizeDialog}
         defaultFrame=${defaultFrame}
@@ -83147,11 +83064,7 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
       <div className="toolbar-mid"><${SurfaceNav}/></div>
       <div className="toolbar-right">
         <${BranchDocsButtons}/>
-        <${DaemonIndicator}/>
-        <${CliIndicator}/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)} compact=${true}/>
-        ${history && html`<${HistoryButton} history=${history} open=${historyOpen} onOpen=${onOpenHistory} onClose=${onCloseHistory}/>`}
-        <${WorkflowExportsButton} onClick=${() => setExportsOpen(true)} className="toolbar-gear"/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)} className="toolbar-gear"/>
         <button
           className="tbtn tbtn-update-source tbtn-icon-only"
@@ -84765,6 +84678,11 @@ function App() {
         }}
         onOpenWindow=${openWindow}
         openKinds=${openKinds}
+        statusArea=${html`<${React.Fragment}>
+          ${history && html`<${HistoryClockButton} history=${history} open=${historyOpen} onOpen=${() => { history.refresh(); setHistoryOpen(true); }} onClose=${() => setHistoryOpen(false)}/>`}
+          <${DaemonIndicator} compact=${true}/>
+          <${CliIndicator} compact=${true}/>
+        <//>`}
       />`}
       ${!embedMode && historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
       ${!embedMode && html`<${ScreenshotWorker}

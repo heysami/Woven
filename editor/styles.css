@@ -4325,6 +4325,47 @@ select.sysadd-input {
   justify-content: center;
   line-height: 0;
 }
+/* Status cluster pinned to the BOTTOM of the right rail: history clock +
+   daemon + CLI indicators (moved out of the top bars). Chips render
+   compact (dot-only); their hover tips and the CLI usage popover fly LEFT
+   and UP so nothing clips at the viewport's bottom-right corner. */
+.th-right-rail-status {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+}
+.th-right-rail-status .daemon-indicator,
+.th-right-rail-status .cli-indicator {
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  justify-content: center;
+  border-radius: 50%;
+}
+/* Inline .tab-tip chips fly LEFT of the anchor here - the default
+   below-the-anchor chip would clip at the viewport bottom. */
+.th-right-rail-status .tab-tip {
+  top: 50%;
+  left: auto;
+  right: calc(100% + 10px);
+  transform: translateY(-50%);
+}
+.th-right-rail-status .tab-tip::before {
+  top: 50%;
+  left: auto;
+  right: -3px;
+  transform: translateY(-50%) rotate(45deg);
+}
+/* CLI usage popover: anchor to the chip's bottom-left so it opens UP and
+   beside the rail instead of dropping below the viewport. */
+.th-right-rail-status .cli-usage-pop {
+  top: auto;
+  bottom: 0;
+  right: calc(100% + 10px);
+}
 
 /* Full-height panel that opens just left of the rail. Fixed so it starts below
    the top bar and runs to the viewport bottom regardless of the host layout. */
@@ -26233,7 +26274,10 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
 }
 .history-panel {
   position: fixed;
-  top: 52px; right: 12px;
+  /* Anchored bottom-right, beside the right rail - the clock trigger now
+     lives at the rail's bottom, so the panel opens up-left from it. */
+  top: auto; bottom: 12px;
+  right: calc(var(--th-right-rail-w, 44px) + 8px);
   z-index: 91;
   width: 340px; max-height: 80vh;
   display: flex; flex-direction: column;
