@@ -9887,6 +9887,34 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
   <//>`;
 }
 
+/* requestOpenChatRun - hand a freshly-dispatched run to the surface that hosts
+   the agent chat so it auto-opens attached to that run. Stash + event pair:
+   the sessionStorage stash survives the FULL RELOAD that navigating to the
+   Develop view does (?view=development is not client-nav-safe, so top-nav
+   Publish dispatches, reloads, and Develop's RightRailDock consumes the stash
+   on mount); the event reaches a dock that is already mounted (Publish pressed
+   on the Develop page itself). */
+const PENDING_CHAT_RUN_KEY = "th-pending-chat-run";
+function requestOpenChatRun(run) {
+  if (!run || !run.runId) return;
+  try { sessionStorage.setItem(PENDING_CHAT_RUN_KEY, JSON.stringify({ run, project: activeProjectId(), ts: Date.now() })); } catch {}
+  try { window.dispatchEvent(new CustomEvent("woven:open-chat-run", { detail: { run } })); } catch {}
+}
+/* Consume the stash: project-guarded (a stale entry must not open another
+   project's chat) and fresh only (2 min) so an abandoned handoff never
+   resurfaces a long-dead run on a later visit. */
+function takePendingChatRun() {
+  try {
+    const raw = sessionStorage.getItem(PENDING_CHAT_RUN_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(PENDING_CHAT_RUN_KEY);
+    const j = JSON.parse(raw);
+    if (j.project && j.project !== activeProjectId()) return null;
+    if (!j.ts || Date.now() - j.ts > 120000) return null;
+    return (j.run && j.run.runId) ? j.run : null;
+  } catch { return null; }
+}
+
 /* RightRailDock - the editor's right panel (rail + tiling dock + chat) bundled
    into ONE self-contained component so any standalone top-level view (User
    testing, Development) gets the SAME right panel that editor + workflow modes
@@ -10125,6 +10153,25 @@ function RightRailDock({ mode }) {
   // Truthfulness: on mount, attach to an already-running run for this project so
   // the panel never lies about a live agent (matches the workflow canvas).
   const didAttachRef = useRef(false);
+  // Publish handoff: a run dispatched by the Publish modal auto-opens the agent
+  // chat attached to that run (requestOpenChatRun). Consume the stash on mount
+  // (top-nav Publish → reload into the Develop view → this dock mounts after
+  // the dispatch) and listen live for the event (Publish from the Develop page,
+  // dock already mounted). Marks didAttachRef so the generic newest-live-run
+  // attach below never races or overrides the handed-off run.
+  useEffect(() => {
+    const take = (run) => {
+      if (!run || !run.runId) return;
+      try { sessionStorage.removeItem(PENDING_CHAT_RUN_KEY); } catch {}
+      didAttachRef.current = true;
+      setRunsOverlay(false);
+      reopenRun(run);
+    };
+    take(takePendingChatRun());
+    const on = (e) => take(e && e.detail && e.detail.run);
+    window.addEventListener("woven:open-chat-run", on);
+    return () => window.removeEventListener("woven:open-chat-run", on);
+  }, [reopenRun]);
   useEffect(() => {
     if (didAttachRef.current) return;
     if (chatRun) { didAttachRef.current = true; return; }
@@ -83909,7 +83956,8 @@ const DB_PROVIDERS = [
 ];
 
 // Toolbar entry point - sibling of ShareMenuButton. Opens the publish modal and,
-// once a run is dispatched, drops the user on the Development tab to watch it.
+// once a run is dispatched, drops the user on the Development tab with the
+// agent chat auto-opened on the publish run (requestOpenChatRun handoff).
 function PublishButton() {
   const [open, setOpen] = useState(false);
   // Publishing has its own top-level surface (?view=development) reachable from
@@ -83934,7 +83982,7 @@ function PublishButton() {
       </button>
       ${open && html`<${PublishModal}
         onClose=${() => setOpen(false)}
-        onStarted=${() => { setOpen(false); goDevelopment(); }}/>`}
+        onStarted=${(run) => { setOpen(false); requestOpenChatRun(run); goDevelopment(); }}/>`}
     <//>
   `;
 }
@@ -84544,7 +84592,7 @@ function DevelopmentView({ model, info }) {
                 </div>`)}
             </div>` : ""}`}
 
-      ${open && html`<${PublishModal} onClose=${() => setOpen(false)} onStarted=${() => { setOpen(false); reload(); }}/>`}
+      ${open && html`<${PublishModal} onClose=${() => setOpen(false)} onStarted=${(run) => { setOpen(false); requestOpenChatRun(run); reload(); }}/>`}
      </div>
      </div>
     </div>
