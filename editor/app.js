@@ -9812,6 +9812,9 @@ function LeftRunsPopover({ onOpenRun, onStartNewChat, onClose }) {
     const off = (e) => {
       if (ref.current && ref.current.contains(e.target)) return;
       if (e.target.closest && e.target.closest(".left-runs-toggle")) return;
+      // Clicks inside a uiConfirm/uiAlert dialog (e.g. the delete-run
+      // confirmation) portal outside this popover - keep the list open.
+      if (e.target.closest && e.target.closest(".modal-scrim")) return;
       onClose && onClose();
     };
     const key = (e) => { if (e.key === "Escape") onClose && onClose(); };
