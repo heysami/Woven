@@ -1,0 +1,28 @@
+/* ==========================================================================
+   Floating action button (FAB) - a button FIXED in the viewport, so it does
+   NOT scroll with content. That makes it the natural home for the WebGL shader
+   glass (glassmorphism / claymorphism): a viewport-fixed shader canvas stays
+   glued to it with zero lag while the page scrolls natively behind.
+
+   Two glass-button variants in the system:
+     · in-flow .btn   → CSS glass (backdrop-filter) - scrolls, native, no lag
+     · fixed   .fab   → WebGL shader glass (real dispersion-prism / soft-ui-foam)
+   ========================================================================== */
+.fab{
+  position:fixed; right:24px; bottom:24px; z-index:50;
+  width:56px; height:56px; border-radius:var(--radius-pill);
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--primary-surface); color:var(--on-primary);
+  border:1px solid transparent; box-shadow:var(--shadow-l);
+  cursor:pointer; transition:transform var(--ease), box-shadow var(--ease), background var(--ease);
+}
+.fab:hover{ transform:translateY(-1px); box-shadow:var(--shadow-xl); }
+.fab:active{ transform:translateY(0); }
+.fab .icon, .fab svg{ width:24px; height:24px; }
+.fab--s{ width:44px; height:44px; }
+.fab--s .icon, .fab--s svg{ width:20px; height:20px; }
+/* extended FAB with a label */
+.fab--label{ width:auto; padding:0 var(--space-base); gap:var(--space-2xs); font:var(--w-medium) var(--text-base)/1 var(--font); }
+/* a vertical stack of FABs anchored to the same corner */
+.fab-stack{ position:fixed; right:24px; bottom:24px; z-index:50; display:flex; flex-direction:column-reverse; gap:12px; align-items:flex-end; }
+.fab-stack .fab{ position:static; }

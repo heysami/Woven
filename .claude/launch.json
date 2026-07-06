@@ -28,32 +28,123 @@
       "name": "spline3d-preview",
       "runtimeExecutable": "/opt/homebrew/bin/python3",
       "runtimeArgs": [
-        "-m", "http.server", "4733",
-        "--directory", "/Users/sami/Documents/Woven/editor/tools/spline3d"
+        "-m",
+        "http.server",
+        "4733",
+        "--directory",
+        "/Users/sami/Documents/Woven/editor/tools/spline3d"
       ],
       "cwd": ".",
       "port": 4733
     },
     {
+      "name": "imageeditor-preview",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4738",
+        "--directory",
+        "/Users/sami/Documents/Woven/editor/tools/imageeditor"
+      ],
+      "cwd": ".",
+      "port": 4738
+    },
+    {
       "name": "materiallab-preview",
       "runtimeExecutable": "/opt/homebrew/bin/python3",
       "runtimeArgs": [
-        "-m", "http.server", "4734",
-        "--directory", "/Users/sami/Documents/Woven/editor/tools/materiallab"
+        "-m",
+        "http.server",
+        "4734",
+        "--directory",
+        "/Users/sami/Documents/Woven/editor/tools/materiallab"
       ],
       "cwd": ".",
       "port": 4734
     },
     {
+      "name": "ds-preview",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4736",
+        "--directory",
+        "/Users/sami/Documents/Woven/editor/default-design-system"
+      ],
+      "cwd": ".",
+      "port": 4736,
+      "url": "/gallery.html"
+    },
+    {
+      "name": "usertesting-testee",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4798",
+        "--directory",
+        "/Users/sami/Documents/Woven/editor/usertesting"
+      ],
+      "cwd": ".",
+      "port": 4798,
+      "url": "/testee.html"
+    },
+    {
+      "name": "fonteditor-preview",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4739",
+        "--directory",
+        "/Users/sami/Documents/Woven/editor/tools/fonteditor"
+      ],
+      "cwd": ".",
+      "port": 4739
+    },
+    {
       "name": "materiallab-root",
       "runtimeExecutable": "/opt/homebrew/bin/python3",
       "runtimeArgs": [
-        "-m", "http.server", "4735",
-        "--directory", "/Users/sami/Documents/Woven"
+        "-m",
+        "http.server",
+        "4735",
+        "--directory",
+        "/Users/sami/Documents/Woven"
       ],
       "cwd": ".",
       "port": 4735,
       "url": "/editor/tools/materiallab/index.html"
+    },
+    {
+      "name": "repo-root-static",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4741",
+        "--directory",
+        "/Users/sami/Documents/Woven"
+      ],
+      "cwd": ".",
+      "port": 4741,
+      "url": "/editor/index.html"
+    },
+    {
+      "name": "wovenweb-preview",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4790",
+        "--directory",
+        "/Users/sami/Documents/Woven IN USE/projects/wovenweb/source/main"
+      ],
+      "cwd": ".",
+      "port": 4790,
+      "url": "/motion/flow2-s1-ui.html"
     }
   ]
 }
