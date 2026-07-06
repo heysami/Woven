@@ -23907,27 +23907,27 @@ function ProjectsLanding({ info, projects, onReload }) {
                   <div className="landing-card-label">${p.label || p.id}</div>
                   <span className="landing-card-age" title=${"Last edited " + fmtActivity(p.lastActivity)}>${fmtActivity(p.lastActivity)}</span>
                   <div className="landing-card-actions">
-                    <button
+                    <${HoverTip}
                       className="landing-card-action"
-                      title="Rename"
-                      data-tip-host="true"
+                      tip="Rename"
+                      ariaLabel="Rename"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); setEditingId(p.id); setEditLabel(p.label || p.id); setErr(null); }}
-                    ><${Icon.Pen}/><span className="tab-tip">Rename</span></button>
-                    <button
+                    ><${Icon.Pen}/><//>
+                    <${HoverTip}
                       className="landing-card-action"
-                      title="Duplicate (local copy - no LLM, renames all references)"
-                      data-tip-host="true"
+                      tip="Duplicate"
+                      ariaLabel="Duplicate"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); duplicateProject(p.id, p.label); }}
-                    ><${Icon.Copy}/><span className="tab-tip">Duplicate</span></button>
-                    <button
+                    ><${Icon.Copy}/><//>
+                    <${HoverTip}
                       className="landing-card-action landing-card-action-danger"
-                      title="Delete (moves to .trash/)"
-                      data-tip-host="true"
+                      tip="Delete"
+                      ariaLabel="Delete"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); deleteProject(p.id, p.label); }}
-                    ><${Icon.Trash}/><span className="tab-tip">Delete</span></button>
+                    ><${Icon.Trash}/><//>
                   </div>
                 </div>
                 ${p.label && p.label !== p.id ? html`<div className="landing-card-id">${p.id}</div>` : null}
@@ -23969,13 +23969,10 @@ function ProjectsLanding({ info, projects, onReload }) {
                               ? html`<span className="landing-card-star-slug">${sp.id}</span>`
                               : null}
                           </button>
-                          <button
+                          <${HoverTip}
                             className="landing-card-star-edit"
-                            title=${sp.exists
-                              ? `Open Architecture on ${sp.path}`
-                              : `Try to open Architecture on ${sp.path} (file no longer on disk)`}
-                            aria-label="Open Architecture"
-                            data-tip-host="true"
+                            tip="Open Architecture"
+                            ariaLabel="Open Architecture"
                             onClick=${(e) => {
                               e.stopPropagation();
                               const url = new URL(window.location.href);
@@ -23985,7 +23982,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                               url.searchParams.delete("view");
                               thNavigate(url.toString());
                             }}
-                          ><${Icon.Canvas}/><span className="tab-tip">Open Architecture</span></button>
+                          ><${Icon.Canvas}/><//>
                         </li>
                       `)}
                     </ul>
@@ -47061,104 +47058,83 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
                     : "Preview as " + d.label + " (portrait, " + d.w + "×" + d.h + "). Click again to rotate.")
                 : "Preview as " + d.label + " - fill the stage.";
               return html`
-                <button
+                <${HoverTip}
                   key=${d.id}
-                  type="button"
                   className=${"workflow-proto-tool workflow-proto-device-btn"
                     + (isActive ? " is-active" : "") + (land ? " is-landscape" : "")}
-                  title=${tip}
-                  aria-label=${"Preview as " + d.label + (land ? " (landscape)" : "")}
-                  aria-pressed=${isActive ? "true" : "false"}
-                  data-tip-host="true"
+                  tip=${d.label + (d.rotatable && isActive ? " · rotate" : "")}
+                  ariaLabel=${"Preview as " + d.label + (land ? " (landscape)" : "")}
                   onClick=${() => setDevice(d)}
-                ><${d.Icon}/><span className="tab-tip">${d.label}${d.rotatable && isActive ? " · rotate" : ""}</span></button>
+                ><${d.Icon}/><//>
               `;
             })}
           </div>
           <div className="workflow-proto-zoom" role="group" aria-label="Zoom">
-            <button
-              type="button"
+            <${HoverTip}
               className="workflow-proto-tool"
-              title="Zoom out (⌘/Ctrl + scroll)"
-              aria-label="Zoom out"
-              data-tip-host="true"
+              tip="Zoom out"
+              ariaLabel="Zoom out"
               disabled=${zoom <= 0.25 + 1e-4}
               onClick=${() => zoomBy(-1)}
-            ><${Icon.Minus}/><span className="tab-tip">Zoom out</span></button>
-            <button
-              type="button"
+            ><${Icon.Minus}/><//>
+            <${HoverTip}
               className="workflow-proto-zoom-label"
-              title="Reset zoom to 100%"
-              aria-label=${"Zoom " + Math.round(zoom * 100) + " percent - click to reset"}
-              data-tip-host="true"
+              tip="Reset to 100%"
+              ariaLabel=${"Zoom " + Math.round(zoom * 100) + " percent - click to reset"}
               onClick=${resetZoom}
-            >${Math.round(zoom * 100)}%<span className="tab-tip">Reset to 100%</span></button>
-            <button
-              type="button"
+            >${Math.round(zoom * 100)}%<//>
+            <${HoverTip}
               className="workflow-proto-tool"
-              title="Zoom in (⌘/Ctrl + scroll)"
-              aria-label="Zoom in"
-              data-tip-host="true"
+              tip="Zoom in"
+              ariaLabel="Zoom in"
               disabled=${zoom >= 2 - 1e-4}
               onClick=${() => zoomBy(1)}
-            ><${Icon.Plus}/><span className="tab-tip">Zoom in</span></button>
+            ><${Icon.Plus}/><//>
           </div>
-          <button
-            type="button"
+          <${HoverTip}
             className="workflow-proto-tool"
-            title="Reset to prototype start - reload this tab's original entry page"
-            aria-label="Reset to prototype start"
-            data-tip-host="true"
+            tip="Prototype start"
+            ariaLabel="Reset to prototype start"
             onClick=${() => bumpNonce(activeTab.id)}
-          ><${Icon.Home}/><span className="tab-tip">Prototype start</span></button>
-          <button
-            type="button"
+          ><${Icon.Home}/><//>
+          <${HoverTip}
             className="workflow-proto-tool"
-            title="Back"
-            aria-label="Back"
-            data-tip-host="true"
+            tip="Back"
+            ariaLabel="Back"
             onClick=${() => activeNav && activeNav.goBack()}
-          ><${Icon.Back}/><span className="tab-tip">Back</span></button>
-          <button
-            type="button"
+          ><${Icon.Back}/><//>
+          <${HoverTip}
             className="workflow-proto-tool"
-            title="Forward"
-            aria-label="Forward"
-            data-tip-host="true"
+            tip="Forward"
+            ariaLabel="Forward"
             disabled=${!activeNav || !activeNav.canGoForward}
             onClick=${() => activeNav && activeNav.canGoForward && activeNav.goForward()}
-          ><${Icon.Forward}/><span className="tab-tip">Forward</span></button>
+          ><${Icon.Forward}/><//>
         `}
         ${activeTab && onEditTab && html`
-          <button
-            type="button"
+          <${HoverTip}
             className="workflow-proto-tool workflow-proto-tool-edit"
-            title="Edit this page - opens the zoom editing tools (select / text / comment / sketch / export / import)"
-            aria-label="Edit this page"
-            data-tip-host="true"
+            tip="Edit this page"
+            ariaLabel="Edit this page"
             onClick=${() => {
               const live = activeNav && activeNav.getCurrentPath && activeNav.getCurrentPath();
               onEditTab(live ? { ...activeTab, path: live } : activeTab);
             }}
-          ><${Icon.Pen}/><span className="tab-tip">Edit this page</span></button>
+          ><${Icon.Pen}/><//>
         `}
         ${activeTab && html`
-          <button
-            type="button"
+          <${HoverTip}
             className="workflow-proto-tool"
-            title="Reload the current page (keeps where you navigated to)"
-            aria-label="Reload current page"
-            data-tip-host="true"
+            tip="Reload page"
+            ariaLabel="Reload current page"
             onClick=${() => { if (!(activeNav && activeNav.reload && activeNav.reload())) bumpNonce(activeTab.id); }}
-          ><${Icon.Refresh}/><span className="tab-tip">Reload page</span></button>
-          <button
-            type="button"
+          ><${Icon.Refresh}/><//>
+          <${HoverTip}
             className="workflow-proto-tool"
-            title=${"Open " + activeTab.path + " in a real browser tab"}
-            aria-label="Open in browser tab"
-            data-tip-host="true"
+            tip="Open in browser"
+            ariaLabel="Open in browser tab"
             onClick=${() => { try { window.open(srcFor(activeTab), "_blank"); } catch {} }}
-          ><${Icon.OpenExt}/><span className="tab-tip">Open in browser</span></button>
+          ><${Icon.OpenExt}/><//>
         `}
       </div>
       <div className="workflow-proto-stage" ref=${stageRef}>
