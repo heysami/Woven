@@ -13566,36 +13566,11 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [slashQuery, setSlashQuery] = useState("");
   const [slashSkills, setSlashSkills] = useState(() => __slashSkillCache || []);
   const [slashIndex, setSlashIndex] = useState(0);
-  // Viewport-fixed anchor for the slash menu portal. The composer lives
-  // inside overflow:hidden panel columns (workflow library col, .app-left-
-  // chat), so an absolutely-positioned popover wider than the panel gets
-  // CLIPPED at the panel edge. Instead the menu portals to document.body
-  // (the share-menu pattern) and this rect pins it above the input wrap.
-  // Re-measured while open on every text change (the textarea autogrows,
-  // moving the anchor top) and on window resize.
+  // Viewport-fixed anchor for the slash menu portal - see the measuring
+  // useLayoutEffect below (it must be declared AFTER the textarea auto-grow
+  // effect so it measures the post-growth rect).
   const wrapRef = useRef(null);
   const [slashPos, setSlashPos] = useState(null);
-  useLayoutEffect(() => {
-    if (!slashOpen) { setSlashPos(null); return; }
-    const measure = () => {
-      const el = wrapRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      // Clamp left so the menu's max width (620px, or viewport minus margins
-      // on narrow screens) always fits - it grows rightward from the
-      // composer into the page interior, never off the right edge.
-      const maxW = Math.min(620, window.innerWidth - 32);
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - 16 - maxW));
-      setSlashPos({
-        left: Math.round(left),
-        bottom: Math.round(window.innerHeight - r.top + 6),
-        minWidth: Math.round(Math.min(r.width, maxW)),
-      });
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [slashOpen, text]);
   // Send-key preference (Enter-sends vs ⌘/Ctrl+Enter-sends), read live so a
   // change in onboarding/Settings takes effect without remounting the composer.
   const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
@@ -13784,6 +13759,42 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const next = Math.min(el.scrollHeight, 140);
     el.style.height = next + "px";
   }, [text]);
+
+  // Measure the slash menu's viewport-fixed anchor. The composer lives
+  // inside overflow:hidden panel columns (workflow library col, .app-left-
+  // chat), so an absolutely-positioned popover wider than the panel gets
+  // CLIPPED at the panel edge. Instead the menu portals to document.body
+  // (the share-menu pattern) and this rect pins it above the input wrap.
+  // Declared AFTER the auto-grow effect above so a text change measures the
+  // POST-growth rect (effects run in declaration order); the ResizeObserver
+  // catches anchor moves text can't see (panel drag-resize, window resize).
+  useLayoutEffect(() => {
+    if (!slashOpen) { setSlashPos(null); return; }
+    const measure = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      // Clamp left so the menu's max width (620px, or viewport minus margins
+      // on narrow screens) always fits - it grows rightward from the
+      // composer into the page interior, never off the right edge.
+      const maxW = Math.min(620, window.innerWidth - 32);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - 16 - maxW));
+      setSlashPos({
+        left: Math.round(left),
+        bottom: Math.round(window.innerHeight - r.top + 6),
+        minWidth: Math.round(Math.min(r.width, maxW)),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const ro = wrapRef.current && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(wrapRef.current);
+    return () => {
+      window.removeEventListener("resize", measure);
+      if (ro) ro.disconnect();
+    };
+  }, [slashOpen, text]);
 
   // Three modes:
   //   isNew=true  → fresh chat shell, Send spawns a brand-new run.
