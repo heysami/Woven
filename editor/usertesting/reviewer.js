@@ -863,7 +863,7 @@
     const segs = (transcript && Array.isArray(transcript.segments))
       ? transcript.segments.filter((s) => (s.text || "").trim()) : [];
     const engine = (transcript && transcript.engine) || "";
-    const full = (transcript && (transcript.full || "")).trim();
+    const full = ((transcript && transcript.full) || "").trim();
     return html`
       <div className="rv-transcript">
         <div className="rv-side-subhead">Voice transcript
