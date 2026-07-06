@@ -13882,7 +13882,11 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  /* Standard modal-scrim tier (matches .workflow-modal-backdrop). Was 100,
+     which lost to the z-500 .surface-nav pill - the nav floated ON TOP of
+     the open modal. Every modal scrim must sit at 9000+; the blocking
+     uiConfirm/uiPrompt .modal-scrim stays above all of them at 10050. */
+  z-index: 9000;
   background: oklch(0% 0 0 / 0.35);
   display: flex;
   align-items: center;
