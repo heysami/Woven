@@ -22216,14 +22216,12 @@ function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread }) {
 
   return html`
     <div className="orchestrators-root">
-      <${SystemSectionHead}
-        name="Orchestrators"
-        count=${data.count}
-        action=${onSpawnSystemThread && html`<${SystemAddBar} kind="orchestrators" onSpawn=${onSpawnSystemThread}/>`}
-        extra=${data.disabledIds && data.disabledIds.length > 0
-          ? html`<div className="sys-shead-extra">${data.disabledIds.length} disabled</div>`
-          : null}
-      />
+      ${(onSpawnSystemThread || (data.disabledIds && data.disabledIds.length > 0)) && html`
+        <header className="sys-shead">
+          ${onSpawnSystemThread && html`<div className="sys-shead-row"><div className="sys-shead-action"><${SystemAddBar} kind="orchestrators" onSpawn=${onSpawnSystemThread}/></div></div>`}
+          ${data.disabledIds && data.disabledIds.length > 0 && html`<div className="sys-shead-extra">${data.disabledIds.length} disabled</div>`}
+        </header>
+      `}
       <div className="orchestrators-grid">
         ${data.orchestrators.map(p => html`
           <${OrchestratorCard}
