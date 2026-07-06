@@ -18608,6 +18608,154 @@ function dsDefaultSettings() {
   };
 }
 
+/* ────────── First-run guided tour ──────────
+   Spotlight walkthrough shown ONCE, right after onboarding completes: the
+   landing leg points at "+ New project" and the create form; the canvas leg
+   (in WorkflowSurface) walks the rails, the surface pill and the two power
+   shortcuts. The stage persists in localStorage so the tour survives the
+   create-project navigation:
+     (unset)   → eligible - starts on the landing once setup is complete
+     "landing" → landing leg running
+     "canvas"  → canvas leg pending / running (set when the project is created)
+     "done"    → finished or skipped, never shows again
+   Replay from DevTools: localStorage.setItem("th-guide-tour","canvas") then
+   reload a project's workflow surface (or removeItem on an empty landing). */
+const GUIDE_TOUR_KEY = "th-guide-tour";
+function guideTourStage() {
+  try { return localStorage.getItem(GUIDE_TOUR_KEY); } catch { return "done"; }
+}
+function setGuideTourStage(v) {
+  try { localStorage.setItem(GUIDE_TOUR_KEY, v); } catch {}
+  try { window.dispatchEvent(new CustomEvent("th:guide-tour", { detail: v })); } catch {}
+}
+
+/* GuideTour - the spotlight overlay for ONE tour step. The parent owns the
+   step index and any enter/leave side effects (opening the search palette,
+   toggling fullscreen); this component only measures the step's targets,
+   dims everything else with four shutter strips - the hole itself stays
+   click-through so interactive steps (the create-project form) keep working -
+   and renders the explainer card beside the hole.
+   step: { targets: [selector…], pickFirst?, title, body, next?: false, hint? }
+   `targets` rects union into one hole; with `pickFirst` the first selector
+   that matches anything wins (ordered fallbacks). No match → centred card,
+   full-viewport dim that does NOT block clicks (target mid-mount). */
+function GuideTour({ step, index, count, onNext, onBack, onSkip }) {
+  const [rect, setRect] = useState(null);
+  const rectRef = useRef(null);
+  useEffect(() => {
+    rectRef.current = null;
+    setRect(null);
+    const measure = () => {
+      const sels = step.targets || [];
+      let els = [];
+      if (step.pickFirst) {
+        for (const sel of sels) {
+          const found = Array.from(document.querySelectorAll(sel));
+          if (found.length) { els = found; break; }
+        }
+      } else {
+        for (const sel of sels) els.push(...document.querySelectorAll(sel));
+      }
+      let r = null;
+      for (const el of els) {
+        const b = el.getBoundingClientRect();
+        if (!b || b.width <= 0 || b.height <= 0) continue;
+        r = r
+          ? { left: Math.min(r.left, b.left), top: Math.min(r.top, b.top),
+              right: Math.max(r.right, b.right), bottom: Math.max(r.bottom, b.bottom) }
+          : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+      }
+      // The viewport size rides along in the measured state so the strips are
+      // re-laid-out when the window resizes even if the hole itself didn't
+      // move (rendering from a live window.innerHeight alone goes stale - the
+      // component doesn't re-render unless this state changes).
+      let next = null;
+      const w = window.innerWidth, hgt = window.innerHeight;
+      if (r) {
+        const PAD = 7;
+        next = {
+          left:   Math.max(0, r.left - PAD),
+          top:    Math.max(0, r.top - PAD),
+          right:  Math.min(w,   r.right + PAD),
+          bottom: Math.min(hgt, r.bottom + PAD),
+          vw: w, vh: hgt,
+        };
+      }
+      const prev = rectRef.current;
+      const same = next === prev || (next && prev &&
+        Math.abs(next.left - prev.left) < 1 && Math.abs(next.top - prev.top) < 1 &&
+        Math.abs(next.right - prev.right) < 1 && Math.abs(next.bottom - prev.bottom) < 1 &&
+        next.vw === prev.vw && next.vh === prev.vh);
+      if (!same) { rectRef.current = next; setRect(next); }
+    };
+    measure();
+    // Slow poll + resize, NOT per-frame: targets mount async (modals, the
+    // search palette) and panels animate open, but chrome never moves fast.
+    const t = setInterval(measure, 240);
+    window.addEventListener("resize", measure);
+    return () => { clearInterval(t); window.removeEventListener("resize", measure); };
+  }, [step]);
+
+  const hole = rect;
+  const vw = hole ? hole.vw : window.innerWidth;
+  const vh = hole ? hole.vh : window.innerHeight;
+  // Card placement: beside the hole on the side with the most room. Holes
+  // hugging a viewport edge (the two icon rails) push the card sideways so it
+  // never covers the thing it points at.
+  const CARD_W = 296, CARD_H = 180, GAP = 14, M = 12;
+  const clampX = (x) => Math.max(M, Math.min(vw - CARD_W - M, Math.round(x)));
+  const clampY = (y) => Math.max(M, Math.min(vh - CARD_H - M, Math.round(y)));
+  let cardStyle;
+  if (!hole) {
+    cardStyle = { left: clampX(vw / 2 - CARD_W / 2) + "px", top: clampY(vh / 2 - CARD_H / 2) + "px" };
+  } else {
+    const spaceRight = vw - hole.right, spaceLeft = hole.left;
+    const spaceBelow = vh - hole.bottom, spaceAbove = hole.top;
+    if (hole.left < 72 && spaceRight >= CARD_W + GAP + M) {
+      cardStyle = { left: clampX(hole.right + GAP) + "px", top: clampY(hole.top) + "px" };
+    } else if (vw - hole.right < 72 && spaceLeft >= CARD_W + GAP + M) {
+      cardStyle = { left: clampX(hole.left - GAP - CARD_W) + "px", top: clampY(hole.top) + "px" };
+    } else if (spaceBelow >= CARD_H + GAP) {
+      cardStyle = { left: clampX((hole.left + hole.right) / 2 - CARD_W / 2) + "px", top: clampY(hole.bottom + GAP) + "px" };
+    } else if (spaceAbove >= CARD_H + GAP) {
+      cardStyle = { left: clampX((hole.left + hole.right) / 2 - CARD_W / 2) + "px", top: clampY(hole.top - GAP - CARD_H) + "px" };
+    } else if (spaceRight >= spaceLeft) {
+      cardStyle = { left: clampX(hole.right + GAP) + "px", top: clampY(hole.top) + "px" };
+    } else {
+      cardStyle = { left: clampX(hole.left - GAP - CARD_W) + "px", top: clampY(hole.top) + "px" };
+    }
+  }
+  const holeW = hole ? Math.max(0, hole.right - hole.left) : 0;
+  const holeH = hole ? Math.max(0, hole.bottom - hole.top) : 0;
+
+  return createPortal(html`
+    <div className="guide-tour">
+      ${hole ? html`
+        <div className="guide-tour-strip" style=${{ left: 0, top: 0, width: vw + "px", height: hole.top + "px" }}/>
+        <div className="guide-tour-strip" style=${{ left: 0, top: hole.bottom + "px", width: vw + "px", height: Math.max(0, vh - hole.bottom) + "px" }}/>
+        <div className="guide-tour-strip" style=${{ left: 0, top: hole.top + "px", width: hole.left + "px", height: holeH + "px" }}/>
+        <div className="guide-tour-strip" style=${{ left: hole.right + "px", top: hole.top + "px", width: Math.max(0, vw - hole.right) + "px", height: holeH + "px" }}/>
+        <div className="guide-tour-ring" style=${{ left: hole.left + "px", top: hole.top + "px", width: holeW + "px", height: holeH + "px" }}/>
+      ` : html`
+        <div className="guide-tour-strip guide-tour-strip-full"/>
+      `}
+      <div className="guide-tour-card" style=${cardStyle} role="dialog" aria-label=${step.title}>
+        <div className="guide-tour-count">Quick tour · ${index + 1} / ${count}</div>
+        <div className="guide-tour-title">${step.title}</div>
+        <div className="guide-tour-body">${step.body}</div>
+        <div className="guide-tour-actions">
+          <button type="button" className="guide-tour-skip" onClick=${onSkip}>Skip tour</button>
+          <div className="guide-tour-actions-spacer"/>
+          ${onBack && html`<button type="button" className="tbtn" onClick=${onBack}>Back</button>`}
+          ${step.next === false
+            ? html`<span className="guide-tour-hint">${step.hint || ""}</span>`
+            : html`<button type="button" className="tbtn tbtn-primary" onClick=${onNext}>${index + 1 >= count ? "Done" : "Next"}</button>`}
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
 /* ────────── New-project form ──────────
    Simple modal: name input + Create button (Step 1). When the user opts into
    the bundled design system, a second, wider step (DsCustomizerStep) lets
@@ -23431,6 +23579,36 @@ function ProjectsLanding({ info, projects, onReload }) {
   // True exactly when the onboarding setup card (ModelSetupCard) is on screen.
   // Reused to keep the Housekeeping trigger off the first-run / setup view.
   const onboardingCardShowing = projects.length === 0 && !creating && wizardOpen && onboardingReady;
+
+  // ── First-run guided tour, landing leg ──
+  // Starts exactly once: onboarding finished (setup complete + wizard
+  // dismissed), no projects yet, tour never run. Step 0 spotlights
+  // "+ New project"; step 1 the create form - it advances by the user's own
+  // click (the spotlight hole is click-through), and Next on step 0 opens the
+  // form too. Creating the project flips the stage to "canvas"
+  // (onWizardCreated) so the workflow surface picks the tour up after the
+  // navigation; Skip ends it for good.
+  const [tourStage, setTourStage] = useState(guideTourStage);
+  useEffect(() => {
+    const onStage = (e) => setTourStage(e.detail);
+    window.addEventListener("th:guide-tour", onStage);
+    return () => window.removeEventListener("th:guide-tour", onStage);
+  }, []);
+  useEffect(() => {
+    if (tourStage == null && activeTab === "projects" && onboardingReady && !setupNeeded && !wizardOpen && projects.length === 0)
+      setGuideTourStage("landing");
+  }, [tourStage, activeTab, onboardingReady, setupNeeded, wizardOpen, projects.length]);
+  const tourOpen = tourStage === "landing" && activeTab === "projects" && !setupNeeded && !wizardOpen;
+  const tourIdx = (creating || cloningGithub) ? 1 : 0;
+  const tourSteps = [
+    { targets: [".landing-empty .landing-new-btn", ".landing-new-split", ".landing-new-btn"], pickFirst: true,
+      title: "Create a project",
+      body: "Everything in Woven happens inside a project - its canvas, chat, prototypes and assets all live there. Start your first one." },
+    { targets: [".newproj-card, .dscz-card"], pickFirst: true,
+      title: "Name it",
+      body: "Give the project a name and hit Create. The other options can wait - all of this is changeable later.",
+      next: false, hint: "Name it, then Create" },
+  ];
   // Workspace DS list - needed for the wizard's "Pick from workspace" path.
   // Lazy-fetched only when the wizard opens (cheap GET, but no need to spam
   // the daemon on every landing render).
@@ -23455,6 +23633,9 @@ function ProjectsLanding({ info, projects, onReload }) {
 
   const onWizardCreated = ({ id }) => {
     setCreating(false);
+    // Hand the guided tour over to the workflow surface (the canvas leg
+    // reads the stage on mount, after the navigation below).
+    if (guideTourStage() === "landing") setGuideTourStage("canvas");
     // Every fresh project lands in workflow mode. The editor mode is
     // for navigating an EXISTING source/ tree; a brand-new project has no
     // pages yet, so landing in editor mode just shows a "missing index.html"
@@ -23464,7 +23645,11 @@ function ProjectsLanding({ info, projects, onReload }) {
   };
   // A cloned-from-GitHub project DOES have a source/ tree already, but we still
   // land in workflow mode for consistency with the wizard flow.
-  const onClonedCreated = ({ id }) => { setCloningGithub(false); openProject(id, "workflow"); };
+  const onClonedCreated = ({ id }) => {
+    setCloningGithub(false);
+    if (guideTourStage() === "landing") setGuideTourStage("canvas");
+    openProject(id, "workflow");
+  };
   // Close the New-project split dropdown on any outside click.
   useEffect(() => {
     if (!newMenuOpen) return;
@@ -23808,6 +23993,13 @@ function ProjectsLanding({ info, projects, onReload }) {
         onPermissionModeChange=${setSystemPermMode}
         onStartNewChat=${(text) => spawnSystemThread({ section: (systemRun && systemRun.section) || "orchestrators", prompt: text, title: text.slice(0, 60) })}
       />`, document.body)}
+      ${tourOpen && html`<${GuideTour}
+        step=${tourSteps[tourIdx]}
+        index=${tourIdx}
+        count=${tourSteps.length}
+        onNext=${() => { if (tourIdx === 0) { setCreating(true); setErr(null); } }}
+        onSkip=${() => setGuideTourStage("done")}
+      />`}
       <main className="landing-main">
         <div className="landing-main-inner">
 
@@ -33365,6 +33557,63 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+
+  // ── First-run guided tour, canvas leg ──
+  // Picks up the "canvas" stage the landing leg parked in localStorage right
+  // after the first project was created. Walks the left rail (chat /
+  // whiteboard+nodes / outputs), the right rail (panels, then history+status),
+  // the top surface pill (Canvas+Preview, the ⋯ overflow, the right cluster),
+  // then DEMONSTRATES the two power shortcuts by driving the real UI through
+  // each step's enter()/leave() - the search palette actually opens, the
+  // canvas actually goes fullscreen. Skip or Done stamps the stage "done".
+  const [tourIdx, setTourIdx] = useState(() => (!viewIsEmbed() && guideTourStage() === "canvas" ? 0 : -1));
+  const endTour = useCallback(() => { setTourIdx(-1); setGuideTourStage("done"); }, []);
+  const tourSteps = useMemo(() => [
+    { targets: [".workflow-nav-rail-btn-chat"],
+      title: "Chat",
+      body: "Your main build surface - describe what you want and the agent plans, asks and builds onto this canvas. Every run becomes a thread you can reopen here." },
+    { targets: ['.workflow-nav-rail [aria-label="Whiteboard"]', '.workflow-nav-rail [aria-label="Nodes"]', '.workflow-nav-rail [aria-label="App nodes"]'],
+      title: "Whiteboard & nodes",
+      body: "Sketch and annotate on the whiteboard, or drag buildable nodes and app nodes (browser, vector editor, composer) straight onto the canvas." },
+    { targets: ['.workflow-nav-rail [aria-label="Local library"]', '.workflow-nav-rail [aria-label="Prototypes & HTML"]', '.workflow-nav-rail [aria-label="Visual assets"]'],
+      title: "Outputs",
+      body: "Everything the builds produce lands here: saved prompts + node groups, prototypes + HTML pages, and every visual asset (images, SVG, video, scenes)." },
+    { targets: ['.th-right-rail [aria-label="Open tasks & subagents"]', '.th-right-rail [aria-label="Open comments"]', '.th-right-rail [aria-label="Open git & GitHub"]'],
+      title: "Agents, comments & git",
+      body: "Watch every agent task and subagent as it runs, read reviewer + guest comments, and commit / push / pull with git - each opens as a side panel." },
+    { targets: [".th-right-rail-status"],
+      title: "History & status",
+      body: "Version history for the whole project, plus the daemon and CLI health dots, live down here." },
+    { targets: [".surface-nav .surface-nav-seg:nth-child(1), .surface-nav .surface-nav-seg:nth-child(2)"],
+      title: "Canvas & Preview",
+      body: "Canvas is this node graph. Preview opens your built prototypes in a browser-like viewer - same project, two views of it." },
+    { targets: [".surface-nav-more, .surface-nav-more-pop", ".surface-nav"], pickFirst: true,
+      title: "More surfaces",
+      body: "The advanced surfaces live here: user Testing, Architecture (UX structure - flows, IA, entities) and Develop (turn the prototype into a real published app). Each earns its own tab once you use it.",
+      enter: () => { const b = document.querySelector(".surface-nav-more-btn"); if (b && b.getAttribute("aria-expanded") !== "true") b.click(); },
+      leave: () => { const b = document.querySelector(".surface-nav-more-btn"); if (b && b.getAttribute("aria-expanded") === "true") b.click(); } },
+    { targets: [".workflow-bar .workflow-toolbar-gear", ".workflow-bar .go-live-btn"],
+      title: "Settings, Publish & Share",
+      body: "Settings holds models, keys and preferences. Publish takes a prototype live on a real public URL. Share covers live co-editing, share links, exports and Figma." },
+    { targets: [".wf-pal"],
+      title: "Search everything",
+      body: html`<kbd>⌘K</kbd> jumps to any node or section (or adds one), <kbd>⌘F</kbd> finds text anywhere on the canvas. This is the real palette - try typing.`,
+      enter: () => { setPaletteTab("nodes"); setPaletteOpen(true); },
+      leave: () => setPaletteOpen(false) },
+    { targets: [".workflow-fullscreen-exit"],
+      title: "Fullscreen canvas",
+      body: html`<kbd>⌘.</kbd> hides all chrome so the canvas takes the whole viewport - it just happened. <kbd>Esc</kbd> (or <kbd>⌘.</kbd> again) brings everything back.`,
+      enter: () => setFullscreen(true),
+      leave: () => setFullscreen(false) },
+  ], [setFullscreen]);
+  // Drive the active step's side effects. The cleanup runs on step change AND
+  // when the tour ends (Skip / Done / unmount), so nothing stays toggled.
+  useEffect(() => {
+    if (tourIdx < 0 || tourIdx >= tourSteps.length) return;
+    const st = tourSteps[tourIdx];
+    try { st.enter && st.enter(); } catch {}
+    return () => { try { st.leave && st.leave(); } catch {} };
+  }, [tourIdx, tourSteps]);
   // Pan the canvas so a node's centre lands in the viewport centre, then
   // select it (deferred a tick so React absorbs the pan first) - mirrors the
   // th:focus-node handler above.
@@ -44542,6 +44791,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onFocusWb=${paletteFocusWb}
         onAddNode=${paletteAddNode}
       />
+      ${tourIdx >= 0 && tourIdx < tourSteps.length && html`<${GuideTour}
+        step=${tourSteps[tourIdx]}
+        index=${tourIdx}
+        count=${tourSteps.length}
+        onNext=${() => (tourIdx + 1 >= tourSteps.length ? endTour() : setTourIdx(tourIdx + 1))}
+        onBack=${tourIdx > 0 ? (() => setTourIdx(tourIdx - 1)) : null}
+        onSkip=${endTour}
+      />`}
       ${fullscreen && html`
         <button
           className="workflow-fullscreen-exit"

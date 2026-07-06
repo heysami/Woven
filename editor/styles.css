@@ -30257,3 +30257,61 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   border-color: var(--border);
   background: var(--surface-2);
 }
+
+/* ────────── First-run guided tour (GuideTour in app.js) ──────────
+   Four shutter strips dim everything except the spotlit hole (the hole is
+   real empty space, so interactive steps stay clickable); an accent ring
+   frames the hole and an explainer card sits beside it. z-index must clear
+   the search palette scrim (10080) so the shortcut-demo step can spotlight
+   the live palette; the portal hover-tips (99998) stay above. */
+.guide-tour { position: fixed; inset: 0; z-index: 11900; pointer-events: none; }
+.guide-tour-strip {
+  position: fixed;
+  background: oklch(20% 0.01 250 / 0.44);
+  pointer-events: auto;
+  transition: left .26s cubic-bezier(.2, .7, .25, 1), top .26s cubic-bezier(.2, .7, .25, 1),
+              width .26s cubic-bezier(.2, .7, .25, 1), height .26s cubic-bezier(.2, .7, .25, 1);
+}
+/* Target not mounted yet - soft full dim, but never trap clicks. */
+.guide-tour-strip-full { inset: 0; pointer-events: none; }
+.guide-tour-ring {
+  position: fixed; pointer-events: none;
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  transition: left .26s cubic-bezier(.2, .7, .25, 1), top .26s cubic-bezier(.2, .7, .25, 1),
+              width .26s cubic-bezier(.2, .7, .25, 1), height .26s cubic-bezier(.2, .7, .25, 1);
+}
+.guide-tour-card {
+  position: fixed; width: 296px; box-sizing: border-box; pointer-events: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 13px 14px 12px;
+  transition: left .26s cubic-bezier(.2, .7, .25, 1), top .26s cubic-bezier(.2, .7, .25, 1);
+}
+.guide-tour-count {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 7px;
+}
+.guide-tour-title { font: 700 13.5px/1.25 var(--font-sans); color: var(--text); margin-bottom: 5px; }
+.guide-tour-body  { font: 400 12.5px/1.55 var(--font-sans); color: var(--text-muted); }
+.guide-tour-body kbd {
+  font: 600 11px/1 var(--font-mono);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: 4px; padding: 2px 5px;
+  color: var(--text);
+}
+.guide-tour-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.guide-tour-actions-spacer { flex: 1 1 auto; }
+.guide-tour-skip {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: 500 11.5px/1 var(--font-sans);
+  color: var(--text-faint);
+}
+.guide-tour-skip:hover { color: var(--text-muted); text-decoration: underline; }
+.guide-tour-hint { font: 600 11.5px/1.3 var(--font-sans); color: var(--accent-text); }
