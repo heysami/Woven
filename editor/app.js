@@ -19857,12 +19857,16 @@ function OnboardingAssetProvidersSection({ mediaCfg, headless }) {
   `;
 }
 
+/* Once-per-page-load guard for the onboarding auto-installer - a failed
+   install must not retry every time Step 4 remounts. */
+const _autoInstallKicked = new Set();
+
 /* Slim onboarding row for one local package (rembg today, others later).
    Reuses the same /__local_status + /__local_install endpoints as the
    Settings-dialog version but fits the lighter setup-card aesthetic - no
    verbose hints, no install-output dump, just status + Install. Errors
    surface inline; success collapses the button to "✓ installed". */
-function OnboardingLocalToolRow({ pkg }) {
+function OnboardingLocalToolRow({ pkg, autoInstall }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [rechecking, setRechecking] = useState(false);
@@ -19919,6 +19923,20 @@ function OnboardingLocalToolRow({ pkg }) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
   };
+  // Onboarding auto-install: when the wizard's Step 4 mounts, required
+  // packages whose prereqs are present start installing on their own - the
+  // user watches the loading states instead of clicking four buttons.
+  // Missing-prereq rows (Homebrew / Node) stay manual with a hint. The
+  // module-level Set makes each package fire at most once per page load,
+  // so a failed install never retries in a loop and step re-entry is calm.
+  useEffect(() => {
+    if (!autoInstall || !pkg.required || busy) return;
+    if (!status || status.installed) return;
+    if (status.needsBrew || status.needsNode) return;
+    if (_autoInstallKicked.has(pkg.id)) return;
+    _autoInstallKicked.add(pkg.id);
+    install();
+  }, [autoInstall, status]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Manual re-check escape hatch. If the auto-detect ever lands
   // wrong (slow first-import, daemon restart mid-install, etc.) the user can
   // re-run the probe without a page refresh. Also notifies the landing gate.
@@ -19930,24 +19948,35 @@ function OnboardingLocalToolRow({ pkg }) {
     } finally { setRechecking(false); }
   };
   const installed = !!(status && status.installed);
+  const missingPrereq = !installed && status && (status.needsBrew || status.needsNode);
   // Just ONE small REQUIRED pill when missing. No row-wide red
   // border, no red background wash, no red reason box - those read as
   // "error" rather than "still to do". The pill alone tells the user
   // the package is required; the reason line below is plain muted text.
   const missingRequired = pkg.required && status && !installed;
-  const stateLabel = installed
+  const stateLabel = busy
+    ? "installing…"
+    : installed
     ? `✓ installed${status && status.version && status.version !== "unknown" ? " · v" + status.version : ""}`
-    : (status ? "not installed" : "checking…");
+    : (status
+        ? (status.needsBrew ? "needs Homebrew" : status.needsNode ? "needs Node.js" : "not installed")
+        : "checking…");
   return html`
-    <div className=${"onboarding-tool-row" + (installed ? " is-installed" : "")}>
+    <div className=${"onboarding-tool-row" + (installed ? " is-installed" : "") + (busy ? " is-installing" : "")}>
       <div className="onboarding-tool-row-head">
-        <span className="onboarding-tool-dot" data-ok=${installed}/>
+        <span className="onboarding-tool-dot" data-ok=${installed} data-busy=${busy}/>
         <span className="onboarding-tool-name">${pkg.label}</span>
-        ${missingRequired && html`<span className="onboarding-tool-required-badge" title=${pkg.requiredReason || "Required"}>REQUIRED</span>`}
+        ${missingRequired && !busy && html`<span className="onboarding-tool-required-badge" title=${pkg.requiredReason || "Required"}>REQUIRED</span>`}
         <span className="onboarding-tool-skills">covers: ${pkg.skills}</span>
-        <span className="onboarding-tool-state">${stateLabel}</span>
+        <span className="onboarding-tool-state">${busy && html`<span className="onboarding-tool-spin" aria-hidden="true"/>`}${stateLabel}</span>
       </div>
-      ${missingRequired && pkg.requiredReason && html`
+      ${busy && html`
+        <div className="onboarding-tool-required-reason">Installing automatically - this can take 1-3 minutes${pkg.id === "shader-verify" ? " (downloads a Chromium)" : pkg.id === "rembg" ? " (downloads the model on first use)" : ""}. You can keep going; the row flips green when it lands.</div>
+      `}
+      ${missingPrereq && html`
+        <div className="onboarding-tool-required-reason">Auto-install skipped - ${status.needsBrew ? html`this installs via Homebrew; get it from <a href="https://brew.sh" target="_blank" rel="noopener">brew.sh</a>` : html`this needs Node.js; get it from <a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>`} first, then hit Re-check.</div>
+      `}
+      ${missingRequired && pkg.requiredReason && !busy && !missingPrereq && html`
         <div className="onboarding-tool-required-reason">${pkg.requiredReason}</div>
       `}
       <div className="onboarding-tool-row-body">
@@ -19981,7 +20010,7 @@ function OnboardingLocalToolRow({ pkg }) {
    "skip for now" framing. The eyebrow flips between Required / Optional
    based on what's in LOCAL_PACKAGES so adding non-required packages later
    doesn't lie to the user. */
-function OnboardingLocalToolsSection({ headless } = {}) {
+function OnboardingLocalToolsSection({ headless, autoInstall } = {}) {
   const hasRequired = LOCAL_PACKAGES.some(p => p.required);
   return html`
     <div className=${"onboarding-local-tools" + (hasRequired ? " has-required" : "")}>
@@ -19996,7 +20025,7 @@ function OnboardingLocalToolsSection({ headless } = {}) {
           </div>
         </div>
       `}
-      ${LOCAL_PACKAGES.map(p => html`<${OnboardingLocalToolRow} key=${p.id} pkg=${p}/>`)}
+      ${LOCAL_PACKAGES.map(p => html`<${OnboardingLocalToolRow} key=${p.id} pkg=${p} autoInstall=${!!autoInstall}/>`)}
     </div>
   `;
 }
@@ -20252,7 +20281,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
 
         ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
         ${step === 3 && html`<${OnboardingOrchestratorsSection} mediaCfg=${mediaCfg}/>`}
-        ${step === 4 && html`<${OnboardingLocalToolsSection} headless=${true}/>`}
+        ${step === 4 && html`<${OnboardingLocalToolsSection} headless=${true} autoInstall=${true}/>`}
         ${step === 5 && html`
           <div className="model-setup-allset" data-ok=${allOk}>
             <div className="model-setup-allset-check">${allOk ? "✓" : canFinish ? "!" : "…"}</div>
@@ -20372,16 +20401,11 @@ function OnboardingBrowserCard() {
       <div className="model-setup-xcard-head">
         <span className="model-setup-xcard-glyph"><${Icon.Globe}/></span>
         <div className="model-setup-xcard-text">
-          <div className="model-setup-xcard-title">Browser use <span className="model-setup-choice-tag is-soft">optional</span></div>
-          <div className="model-setup-xcard-desc">Let the agent see + click a real browser - for testing prototypes and live research. It drives your own Chrome, so cookies and logins carry over.</div>
+          <div className="model-setup-xcard-title">Browser use <span className="model-setup-choice-tag is-soft">works out of the box</span></div>
+          <div className="model-setup-xcard-desc">The agent can see + click real pages. When a task needs a browser (Testing nodes, live research), Woven launches a private headless Chrome and wires the <strong>Chrome DevTools MCP</strong> automatically - nothing to install, nothing to start, and your own browser is never touched.</div>
         </div>
       </div>
-      <div className="model-setup-xcard-steps">
-        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">1</span><span>Start Chrome with remote debugging: <code>--remote-debugging-port=9222</code>.</span></div>
-        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">2</span><span>Run a Testing node (or any browser task) - Woven wires the <strong>Chrome DevTools MCP</strong> automatically.</span></div>
-        <div className="model-setup-xcard-step"><span className="model-setup-xcard-step-n">3</span><span>The agent screenshots + clicks your pages by sight.</span></div>
-      </div>
-      <div className="model-setup-xcard-foot">No extension needed. Claude Code only - Codex and opencode CLIs can't drive a browser yet.</div>
+      <div className="model-setup-xcard-foot">No setup needed. Works with Claude Code, Codex, and opencode.</div>
     </div>
   `;
 }

@@ -46,7 +46,7 @@ The **editor itself** has no build step; it ships as static HTML + pure-Python f
 
 ### Local skills the wizard installs (Step 4)
 
-On first run the onboarding wizard installs four local skills the asset / sharing / shader pipelines depend on. **All four are required gates**: the **+ New project** button stays disabled until every one is present. Each has a one-click install button on the onboarding card.
+On first run the onboarding wizard installs four local skills the asset / sharing / shader pipelines depend on. **All four are required gates**: the **+ New project** button stays disabled until every one is present. The wizard installs them **automatically** when its Step 4 opens - each row shows live install progress; a skill whose prerequisite is missing (Homebrew / Node.js) waits with a hint and a manual Install button instead.
 
 | Skill            | Installs via                          | Prereq    | Covers                                                                 |
 | ---------------- | ------------------------------------- | --------- | --------------------------------------------------------------------- |
@@ -205,7 +205,7 @@ Rows whose pipeline depends on a key you haven't set in Step 2 (photography and 
 
 The wizard's **Step 4 · Local skills** lists on-demand tools the daemon installs for you. **Four are required gates** (each shows a red **REQUIRED** badge until present) and the **+ New project** button stays disabled until all four are installed:
 
-| Skill            | Install button → runs            | Needs    | What breaks without it                                          |
+| Skill            | Auto-install runs                | Needs    | What breaks without it                                          |
 | ---------------- | -------------------------------- | -------- | -------------------------------------------------------------- |
 | **rembg**        | `pip3 install --user rembg`      | Python   | foreground asset generation falls over at the cutout stage (~170 MB model first run) |
 | **cloudflared**  | `brew install cloudflared`       | Homebrew | Share mode can't open a public review tunnel                   |
@@ -214,7 +214,7 @@ The wizard's **Step 4 · Local skills** lists on-demand tools the daemon install
 
 ![Onboarding · Step 4 · Local skills](docs/screenshots/03b-onboarding-local-skills.png)
 
-Click each **Install** button and give it a minute (`shader-verify` is the slowest, it pulls a Chromium). If you'd rather drop to a terminal, the commands above are exactly what the buttons run. The two Homebrew skills need **[Homebrew](https://brew.sh)** and `shader-verify` needs **[Node.js](https://nodejs.org)** already on your machine; install those first if the button reports the prereq is missing.
+Opening Step 4 **starts the installs automatically** - each row shows a spinner and flips green as it lands (`shader-verify` is the slowest, it pulls a Chromium; give it a minute or three). The commands above are exactly what runs under the hood. The two Homebrew skills need **[Homebrew](https://brew.sh)** and `shader-verify` needs **[Node.js](https://nodejs.org)** already on your machine; a row whose prerequisite is missing skips auto-install and shows a hint + manual **Install** button - install the prereq, then hit **Re-check**.
 
 A fifth skill, **whisper-cpp** (offline transcription for User Testing), is **optional**, install it later from the gear icon → Settings if you use that feature.
 

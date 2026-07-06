@@ -16613,6 +16613,27 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--ok, #16a34a);
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--ok, #16a34a) 25%, transparent);
 }
+/* Auto-install in flight: accent dot pulse + a small spinner beside the
+   "installing…" state label. */
+.onboarding-tool-dot[data-busy="true"] {
+  background: var(--accent);
+  animation: onboarding-tool-pulse 1.2s ease-in-out infinite;
+}
+@keyframes onboarding-tool-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 35%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 20%, transparent); }
+}
+.onboarding-tool-spin {
+  display: inline-block;
+  width: 10px; height: 10px;
+  margin-right: 6px;
+  border: 1.5px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: onboarding-tool-spin 0.7s linear infinite;
+}
+@keyframes onboarding-tool-spin { to { transform: rotate(360deg); } }
 .onboarding-tool-name { font-size: 13.5px; font-weight: 600; }
 .onboarding-tool-skills {
   font-size: 11.5px;

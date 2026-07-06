@@ -2496,7 +2496,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
-def _codex_cli_complete(messages, model=None, timeout=600):
+def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None):
     """One-shot completion via the Codex CLI's `exec` subcommand. Mirror of
     _claude_cli_complete for users who installed Codex (OpenAI's CLI) and
     signed in via `codex login` - no OPENAI_API_KEY needed.
@@ -2536,6 +2536,8 @@ def _codex_cli_complete(messages, model=None, timeout=600):
     # spawn + planner spawn + image-gen helper use, so behaviour is
     # consistent across every codex subprocess the daemon launches.
     args = [bin_path, "exec", "--sandbox", "danger-full-access"]
+    if extra_args:
+        args.extend(extra_args)
     if model:
         args.extend(["--model", model])
     args.append(flat)
@@ -2600,12 +2602,14 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
             raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
         return (result.stdout or "").rstrip("\n")
     # Codex path - codex exec runs with network (danger-full-access), so a web
-    # research prompt can still fetch pages; no chrome MCP for browser mode.
+    # research prompt can still fetch pages; browser mode gets the chrome MCP
+    # via -c mcp_servers overrides (same servers claude gets via --mcp-config).
     msgs = []
     if system and system.strip():
         msgs.append({"role": "system", "content": system})
     msgs.append({"role": "user", "content": prompt or "Proceed."})
-    return _codex_cli_complete(msgs, model=model, timeout=timeout)
+    extra = _codex_mcp_spawn_args() if tools == "browser" else None
+    return _codex_cli_complete(msgs, model=model, timeout=timeout, extra_args=extra)
 
 
 def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
@@ -5022,6 +5026,89 @@ def _mcp_config_spawn_args() -> list:
     if AGENT_MCP_CONFIG and os.path.isfile(AGENT_MCP_CONFIG):
         return ["--mcp-config", AGENT_MCP_CONFIG]
     return []
+
+
+def _mcp_servers_from_config() -> dict:
+    """The `mcpServers` dict from AGENT_MCP_CONFIG, `{}` when the file is
+    absent / unreadable / malformed. The single source of truth all three
+    CLI translations below read, so a server added via System → MCP (or a
+    hand-edit) reaches codex + opencode spawns too, not just claude."""
+    try:
+        with open(AGENT_MCP_CONFIG, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        servers = cfg.get("mcpServers")
+        return servers if isinstance(servers, dict) else {}
+    except Exception:
+        return {}
+
+
+def _codex_mcp_spawn_args() -> list:
+    """codex has no `--mcp-config`; its MCP servers live in config.toml under
+    `[mcp_servers.*]`. Translate AGENT_MCP_CONFIG into per-invocation
+    `-c mcp_servers.<id>.…=<toml>` overrides so nothing is written into the
+    user's (or the sanitised) CODEX_HOME. `-c` values parse as TOML;
+    json.dumps quoting is TOML-compatible for plain strings and string
+    arrays, which is all mcp-config.json carries."""
+    args = []
+    for sid, spec in _mcp_servers_from_config().items():
+        cmd = (spec or {}).get("command")
+        if not cmd or not isinstance(cmd, str):
+            continue
+        safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
+        args += ["-c", "mcp_servers.%s.command=%s" % (safe_id, json.dumps(cmd))]
+        sargs = (spec or {}).get("args") or []
+        sargs = [a for a in sargs if isinstance(a, str)]
+        args += ["-c", "mcp_servers.%s.args=[%s]"
+                 % (safe_id, ", ".join(json.dumps(a) for a in sargs))]
+    return args
+
+
+def _ensure_opencode_mcp_config():
+    """Build the managed opencode config that carries AGENT_MCP_CONFIG's
+    servers in opencode's `"mcp"` shape, and return its absolute path (None
+    when no servers are wired / the write failed). Passed to opencode spawns
+    via the OPENCODE_CONFIG env var - opencode merges it with the user's
+    global config, but we still fold the global file in ourselves when it's
+    plain JSON so a replace-not-merge opencode version loses nothing (a
+    .jsonc global with comments is skipped - MCP entries only)."""
+    servers = _mcp_servers_from_config()
+    if not servers:
+        return None
+    merged = {"$schema": "https://opencode.ai/config.json"}
+    for cand in ("~/.config/opencode/opencode.json",
+                 "~/.config/opencode/opencode.jsonc"):
+        try:
+            with open(os.path.expanduser(cand), "r", encoding="utf-8") as f:
+                user_cfg = json.load(f)
+            if isinstance(user_cfg, dict):
+                merged.update(user_cfg)
+                break
+        except Exception:
+            continue  # missing, or jsonc comments - harness entries only
+    mcp = merged.get("mcp") if isinstance(merged.get("mcp"), dict) else {}
+    for sid, spec in servers.items():
+        cmd = (spec or {}).get("command")
+        if not cmd or not isinstance(cmd, str) or sid in mcp:
+            continue  # a user-defined server with the same id wins
+        sargs = [a for a in ((spec or {}).get("args") or []) if isinstance(a, str)]
+        mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True}
+    merged["mcp"] = mcp
+    path = os.path.join(INSTALL_ROOT, ".opencode-config.json")
+    # Skip-if-same to avoid disk churn at every spawn (mirrors
+    # _ensure_harness_settings).
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            if json.load(f) == merged:
+                return path
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=2)
+    except OSError as e:
+        print(f"  [mcp] failed to write {path}: {e}", flush=True)
+        return None
+    return path
 
 AGENT_DEFS = {
     "claude": {
@@ -9470,7 +9557,7 @@ def _mcp_routing_prompt() -> str:
     return (
         "\n\n## Web + design tooling (MCP)\n\n"
         "You have built-in `WebFetch` and `WebSearch`, plus these MCP servers "
-        "exposed via `--mcp-config`:\n\n"
+        "wired into this run:\n\n"
         + "\n".join(bullets)
         + "\n\nDefault to `WebFetch` for any URL - it's faster, anonymous, no "
         "setup. Only escalate to a browser-driving MCP after `WebFetch` "
@@ -9945,6 +10032,14 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # room so the chrome tools actually register. Only set when the user hasn't.
     env.setdefault("MCP_TIMEOUT", "60000")
     env.setdefault("MCP_TOOL_TIMEOUT", "120000")
+    # opencode reads MCP servers from config files only (no CLI flag); point
+    # OPENCODE_CONFIG at the managed translation of mcp-config.json so
+    # opencode runs get the same chrome/figma servers claude gets. setdefault:
+    # a user-exported OPENCODE_CONFIG wins.
+    if agent_id == "opencode":
+        _oc_cfg = _ensure_opencode_mcp_config()
+        if _oc_cfg:
+            env.setdefault("OPENCODE_CONFIG", _oc_cfg)
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
     if not preserve or preserve == "0":
         for k in _HOST_LEAK_ENV_VARS:
@@ -12046,6 +12141,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
+        elif agent_id == "codex":
+            # Same MCP servers, codex's config-override surface. opencode
+            # needs no argv - _build_child_env points OPENCODE_CONFIG at the
+            # managed translation.
+            spawn_args += _codex_mcp_spawn_args()
         # The per-node preamble IS the full system prompt for this run. Plus
         # the question-form protocol so <decision-request> / <question-form>
         # still parses if the subagent emits one. Workspace layout block too
@@ -12057,7 +12157,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # constant for the tokyocar failure this prevents).
             sys_prompt += (WORKSPACE_LAYOUT_PROMPT if agent_id == "claude"
                            else WORKSPACE_LAYOUT_PROMPT_ARGV)
-        if agent_id == "claude" and _mcp_config_spawn_args():
+        if _mcp_servers_from_config():
             sys_prompt += _mcp_routing_prompt()
         # bake the capabilities catalog into the preamble so the
         # spawned subagent knows what the app supports (image providers,
@@ -15896,10 +15996,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 + "\n===== YOUR BRIEF =====\n"
                 + brief
             )
+            if _mcp_servers_from_config():
+                full_prompt += "\n" + _mcp_routing_prompt()
             # danger-full-access matches AGENT_DEFS["codex"]["args"] -
             # required so the planner can curl back to /__dispatch_planner
             # for nested subagent dispatch (workspace-write blocks network).
-            spawn_args = ["exec", "--sandbox", "danger-full-access"] + _planner_model_args
+            spawn_args = (["exec", "--sandbox", "danger-full-access"]
+                          + _codex_mcp_spawn_args() + _planner_model_args)
             stdin_pipe = None
             prompt_stdin = None
             prompt_argv = full_prompt
@@ -20799,6 +20902,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "version": self._binary_version(bin_path) if bin_path else None,
                 "path": bin_path,
             }
+            # Prereq signal for the onboarding auto-installer: a brew-installed
+            # binary can't auto-install without Homebrew on the machine.
+            if not bin_path and spec.get("brew"):
+                result["needsBrew"] = not bool(self._find_local_binary("brew"))
             if bin_path:
                 type(self)._LOCAL_STATUS_CACHE[pkg] = result
             return self._reply(200, result)
@@ -24554,6 +24661,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # so most versions just run without prompts; if a future error
             # shows codex blocking, add the right flag here based on the
             # empirical message.
+            spawn_args += _codex_mcp_spawn_args()
             spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability - see
