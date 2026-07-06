@@ -23883,9 +23883,9 @@ function ProjectsLanding({ info, projects, onReload }) {
                           <button
                             className="landing-card-star-edit"
                             title=${sp.exists
-                              ? `Open the editor on ${sp.path}`
-                              : `Try to open the editor on ${sp.path} (file no longer on disk)`}
-                            aria-label="Open editor"
+                              ? `Open Architecture on ${sp.path}`
+                              : `Try to open Architecture on ${sp.path} (file no longer on disk)`}
+                            aria-label="Open Architecture"
                             onClick=${(e) => {
                               e.stopPropagation();
                               const url = new URL(window.location.href);
@@ -82844,7 +82844,7 @@ function setWorkflowMainView(v) {
   try { window.dispatchEvent(new CustomEvent("th:wf-mainview", { detail: val })); } catch {}
 }
 
-/* ────────── Top-level surface switcher (Canvas / Preview / Testing / Editor) ──
+/* ────────── Top-level surface switcher (Canvas / Preview / Testing / Architecture) ──
    One segmented control, the single consistent top nav on every project-scoped
    surface. It swaps between:
      Canvas  → workflow surface, node graph     (?view=workflow, mode=canvas)
@@ -82887,7 +82887,7 @@ function SurfaceNav() {
     { label: "Canvas",  active: cur === "workflow" && wfMain === "canvas", onClick: () => toWorkflow("canvas") },
     { label: "Preview", active: cur === "workflow" && wfMain === "proto",  onClick: () => toWorkflow("proto") },
     ...(utEnabled ? [{ label: "Testing", active: cur === "usertesting", onClick: () => go("usertesting") }] : []),
-    { label: "Editor",  active: cur === "editor", onClick: () => go(null) },
+    { label: "Architecture", active: cur === "editor", onClick: () => go(null) },
     { label: "Develop", active: cur === "development", onClick: () => go("development") },
   ];
   return html`
@@ -83069,7 +83069,7 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
     <div className="toolbar">
       <div className="toolbar-left">
         <${ProjectHomeButton} info=${workspaceInfo}/>
-        <span className="toolbar-mode-label" title=${`Editor · ${D.meta.project}`}>Editor</span>
+        <span className="toolbar-mode-label" title=${`Architecture · ${D.meta.project}`}>Architecture</span>
         <${EditorProtoSwitch}/>
         <button
           className="tbtn frame-size-btn"
