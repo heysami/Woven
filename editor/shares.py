@@ -1483,17 +1483,14 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if os.path.isfile(abs_path):
                 return self._send_file(abs_path, cache=True)
             return self._send_json(404, {"error": "not found"})
-        # Live Session - the REAL editor (served at /s/<tok>/live/) makes
-        # root-absolute requests (/app.js, /__workflow, /__ds_bootstrap…).
-        # When the th_live cookie is present and this is NOT a /s/<tok>/ route,
-        # delegate to live.py's read-only, project-scoped proxy.
-        if _LIVE is not None and not parsed.path.startswith("/s/"):
-            tok = self._live_cookie()
-            if tok and _LIVE.handle_rooted(self, tok, parsed.path, parsed.query):
-                return
         # User Testing - /t/<token>/ (testee recorder) and /r/<token>/ (reviewer
         # replay) ride the same gate/tunnel; delegated wholesale to the
         # usertesting gate, which resolves its own token registry.
+        # MUST run BEFORE the live-cookie branch: a stale th_live cookie left
+        # by an earlier live-share session would otherwise hijack every
+        # user-testing link into the project-file proxy → JSON not-found for
+        # perfectly valid links (seen in the wild: Arc kept the cookie while
+        # Chrome/Safari/Edge did not, so the same link failed only in Arc).
         if _UT is not None:
             # Tolerant token match: links copied through chat apps / notes pick
             # up invisible junk (zero-width spaces, %20) glued to the token and
@@ -1501,6 +1498,14 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             mut = re.match(r"^/([tr])/([A-Fa-f0-9]{32})[^/]*(/.*)?$", parsed.path)
             if mut and _UT.handle_get(self, mut.group(1), mut.group(2).lower(),
                                       mut.group(3) if mut.group(3) is not None else ""):
+                return
+        # Live Session - the REAL editor (served at /s/<tok>/live/) makes
+        # root-absolute requests (/app.js, /__workflow, /__ds_bootstrap…).
+        # When the th_live cookie is present and this is NOT a /s/<tok>/ route,
+        # delegate to live.py's read-only, project-scoped proxy.
+        if _LIVE is not None and not parsed.path.startswith("/s/"):
+            tok = self._live_cookie()
+            if tok and _LIVE.handle_rooted(self, tok, parsed.path, parsed.query):
                 return
         rec, sub = self._route()
         if rec is None:
@@ -1602,18 +1607,19 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
     # ── POST ──────────────────────────────────────────────────────────
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
-        # Real-editor root-absolute writes (guest mode is read-only) → no-op.
-        if _LIVE is not None and not parsed.path.startswith("/s/"):
-            tok = self._live_cookie()
-            if tok and _LIVE.handle_rooted_post(self, tok, parsed.path):
-                return
         # User Testing POST - /t/<token>/api/* (recording upload) and
-        # /r/<token>/api/markers. Delegated before the /s/ route.
+        # /r/<token>/api/markers. MUST run before the live-cookie branch
+        # (stale th_live cookie hijack - see do_GET) and before the /s/ route.
         if _UT is not None:
             # Same tolerant token match as the GET route (copy-paste junk).
             mut = re.match(r"^/([tr])/([A-Fa-f0-9]{32})[^/]*(/.*)?$", parsed.path)
             if mut and _UT.handle_post(self, mut.group(1), mut.group(2).lower(),
                                        mut.group(3) if mut.group(3) is not None else ""):
+                return
+        # Real-editor root-absolute writes (guest mode is read-only) → no-op.
+        if _LIVE is not None and not parsed.path.startswith("/s/"):
+            tok = self._live_cookie()
+            if tok and _LIVE.handle_rooted_post(self, tok, parsed.path):
                 return
         rec, sub = self._route()
         if rec is None:
