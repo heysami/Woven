@@ -16,6 +16,35 @@ All writes are confined to the repo root; sources/targets can't escape via `..`.
 """
 from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
+# ─── Python version preflight ──────────────────────────────────────────────
+# The daemon targets Python 3.9+ (the floor matches stock macOS `python3`). On
+# an older interpreter the imports below fail with a cryptic traceback that
+# tells the user nothing. Catch it up front and print a plain message with the
+# fix. Kept in deliberately ancient-Python-safe syntax (no annotations, no
+# f-strings, no 3.9 features) so THIS check runs even when the rest wouldn't.
+import sys as _sys
+if _sys.version_info < (3, 9):
+    _v = ".".join(str(n) for n in _sys.version_info[:3])
+    _sys.stderr.write(
+        "\n"
+        "  Woven editor needs Python 3.9 or newer.\n"
+        "  This interpreter is Python " + _v + " (" + _sys.executable + ").\n"
+        "\n"
+        "  Install a newer Python, then relaunch. You don't have to remove the\n"
+        "  old one - just make a 3.9+ interpreter available:\n"
+        "    macOS   : system python3 is usually 3.9+; else `brew install python@3.12`\n"
+        "              or an installer from https://www.python.org/downloads/\n"
+        "    Windows : https://www.python.org/downloads/ (tick 'Add python.exe to PATH')\n"
+        "    Linux   : `sudo apt install python3` / `sudo dnf install python3`\n"
+        "\n"
+        "  If `python3` still points at the old one, run the new one explicitly:\n"
+        "    python3.12 editor/serve.py\n"
+        "\n"
+        "  Full setup notes: README, section 1.\n"
+        "\n"
+    )
+    raise SystemExit(1)
+
 import atexit
 import datetime as _dt
 import hashlib
