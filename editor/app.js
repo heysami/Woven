@@ -56470,15 +56470,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
     catch { return null; }
   }, []);
 
-  const openInEditor = useCallback(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("prototype", branch);
-    url.searchParams.delete("branch");
-    url.searchParams.delete("view");
-    url.searchParams.set("from", "workflow");   // editor's back button → workflow
-    window.open(url.toString(), "_blank", "noopener");
-  }, [branch]);
-
   // ⊕ → capture current iframe state + scan for assets + fan out around
   // the prototype. Re-Expose at a new screen replaces the prior set.
   const expose = useCallback(() => {
@@ -56762,13 +56753,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           // controls never spill past the node edge.
           const secondary = html`
             <${React.Fragment}>
-              <${HoverTip}
-                className="workflow-node-action"
-                tip="Open this prototype in the editor (new tab)"
-                ariaLabel="Open in editor"
-                onClick=${(e) => { e.stopPropagation(); openInEditor(); }}
-                onMouseDown=${(e) => e.stopPropagation()}
-              ><${Icon.OpenExt}/><//>
               ${onChange && html`
                 <${React.Fragment}>
                   ${linkedDsRef && html`<${WorkflowDsStrictnessToggle}
@@ -82934,27 +82918,88 @@ function setWorkflowMainView(v) {
 /* ────────── Top-level surface switcher (Canvas / Preview / Testing / Architecture) ──
    One segmented control, the single consistent top nav on every project-scoped
    surface. It swaps between:
-     Canvas  → workflow surface, node graph     (?view=workflow, mode=canvas)
-     Preview → workflow surface, Prototype viewer(?view=workflow, mode=proto)
-     Testing → user testing                     (?view=usertesting, if enabled)
-     Editor  → the design editor                (no ?view= → <App>)
+     Canvas       → workflow surface, node graph      (?view=workflow, mode=canvas)
+     Preview      → workflow surface, Prototype viewer(?view=workflow, mode=proto)
+     Testing      → user testing                      (?view=usertesting)
+     Architecture → the design editor                 (no ?view= → <App>)
+     Develop      → publish / development             (?view=development)
    Canvas and Preview are two MODES of the same workflow surface, so switching
    between them just flips the internal mode (no reload, the proto viewer's tabs
-   stay alive). Hidden inside embed iframes (?embed=1) - those are locked. */
+   stay alive). Canvas + Preview are ALWAYS tabs; the other three start life in
+   the ⋯ overflow menu and EARN a tab: Architecture once the prototype carries
+   any editor data (frames / entities / state machines / timelines), Testing
+   once the project has at least one study session, Develop once the project
+   has published (publish.json exists). The current surface always renders as a
+   tab even before it's earned, so you can see where you are. Hidden inside
+   embed iframes (?embed=1) - those are locked. */
 const SURFACE_DEFAULT = "editor";
+
+/* Remote promotion signals for SurfaceNav - session count + publish state.
+   Cached per project in sessionStorage so the pill doesn't reflow while the
+   two GETs are in flight on every surface switch / reload. */
+function useSurfacePromotions(active) {
+  const project = active ? (activeProjectId() || "") : "";
+  const key = "th-surface-promo:" + project;
+  const [promo, setPromo] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(key) || "null") || {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    Promise.all([
+      fetch(apiUrl("/__usertesting")).then(r => (r.ok ? r.json() : null)).catch(() => null),
+      fetch(apiUrl("/__publish")).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([ut, pub]) => {
+      if (!alive) return;
+      const next = {
+        testing: !!(ut && Array.isArray(ut.sessions) && ut.sessions.length),
+        develop: !!(pub && pub.exists),
+      };
+      setPromo(next);
+      try { sessionStorage.setItem(key, JSON.stringify(next)); } catch {}
+    });
+    return () => { alive = false; };
+  }, [project]);
+  return promo;
+}
+
 function SurfaceNav() {
-  const cap = useUserTestingCapability();
   const [wfMain, setWfMain] = useState(readWorkflowMainView);
   useEffect(() => {
     const h = (e) => setWfMain(e.detail === "proto" ? "proto" : "canvas");
     window.addEventListener("th:wf-mainview", h);
     return () => window.removeEventListener("th:wf-mainview", h);
   }, []);
-  if (viewIsEmbed()) return null;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+  // Close on click-out / Esc - popover discipline matching the other floating
+  // menus (sections bar, model chip, connector menus).
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e) => {
+      if (moreRef.current && moreRef.current.contains(e.target)) return;
+      setMoreOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setMoreOpen(false); };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [moreOpen]);
+  const embed = viewIsEmbed();
   const nav = thReadNav();
+  const promo = useSurfacePromotions(!embed && nav.hasProject);
+  if (embed) return null;
   if (!nav.hasProject) return null;          // never on the projects gallery
   const cur = nav.view || SURFACE_DEFAULT;
-  const utEnabled = !!(cap && cap.config && cap.config.enabled);
+  // Architecture earns its tab the moment the prototype carries any editor
+  // data. Flow / IA views derive from frames + arrows, so frames covers them.
+  const hasArch = !!(
+    (D.frames || []).length || (D.entities || []).length ||
+    (D.stateMachines || []).length || (D.timelines || []).length
+  );
   // Navigate to a top-level surface. Drops ?utproto so leaving the testing page
   // doesn't leak its prototype filter.
   const go = (view) => {
@@ -82970,13 +83015,17 @@ function SurfaceNav() {
     setWorkflowMainView(mode);
     if (cur !== "workflow") go("workflow");
   };
+  const optional = [
+    { label: "Testing",      active: cur === "usertesting", promoted: !!promo.testing, onClick: () => go("usertesting") },
+    { label: "Architecture", active: cur === "editor",      promoted: hasArch,         onClick: () => go(null) },
+    { label: "Develop",      active: cur === "development", promoted: !!promo.develop, onClick: () => go("development") },
+  ];
   const segs = [
     { label: "Canvas",  active: cur === "workflow" && wfMain === "canvas", onClick: () => toWorkflow("canvas") },
     { label: "Preview", active: cur === "workflow" && wfMain === "proto",  onClick: () => toWorkflow("proto") },
-    ...(utEnabled ? [{ label: "Testing", active: cur === "usertesting", onClick: () => go("usertesting") }] : []),
-    { label: "Architecture", active: cur === "editor", onClick: () => go(null) },
-    { label: "Develop", active: cur === "development", onClick: () => go("development") },
+    ...optional.filter(s => s.promoted || s.active),
   ];
+  const menu = optional.filter(s => !s.promoted && !s.active);
   return html`
     <div className="surface-nav" role="tablist" aria-label="Surface">
       ${segs.map(s => html`
@@ -82988,6 +83037,32 @@ function SurfaceNav() {
           onClick=${() => { if (!s.active) s.onClick(); }}
         >${s.label}</button>
       `)}
+      ${menu.length > 0 && html`
+        <div className="surface-nav-more" ref=${moreRef}>
+          <button
+            type="button"
+            className="surface-nav-seg surface-nav-more-btn"
+            aria-haspopup="menu"
+            aria-expanded=${moreOpen ? "true" : "false"}
+            aria-label="More surfaces"
+            title="More surfaces"
+            onClick=${() => setMoreOpen(o => !o)}
+          ><${Icon.More}/></button>
+          ${moreOpen && html`
+            <div className="surface-nav-more-pop" role="menu" aria-label="More surfaces">
+              ${menu.map(s => html`
+                <button
+                  key=${s.label}
+                  type="button"
+                  role="menuitem"
+                  className="surface-nav-more-item"
+                  onClick=${() => { setMoreOpen(false); s.onClick(); }}
+                >${s.label}</button>
+              `)}
+            </div>
+          `}
+        </div>
+      `}
     </div>
   `;
 }
