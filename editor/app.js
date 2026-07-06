@@ -46980,14 +46980,6 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
               disabled=${zoom >= 2 - 1e-4}
               onClick=${() => zoomBy(1)}
             ><${Icon.Plus}/></button>
-            <button
-              type="button"
-              className="workflow-proto-tool"
-              title="Reset zoom to 100%"
-              aria-label="Reset zoom to 100%"
-              disabled=${Math.abs(zoom - 1) < 1e-4}
-              onClick=${resetZoom}
-            ><${Icon.FitReset}/></button>
           </div>
           <button
             type="button"
