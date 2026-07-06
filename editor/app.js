@@ -16474,6 +16474,18 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
   const [steerText, setSteerText] = useState("");
   const key = `decision:${direction.id}`;
   const isAnswered = !!answered;
+  // A rendered, UNANSWERED direction pick IS the "user asked for a new
+  // prototype build" detection - broadcast it so the workflow surface can
+  // flip a first-time project into Preview mode (building empty state) while
+  // the build runs. The "does a prototype already exist" gate lives on the
+  // listener side (WorkflowSurface), so an answered card replayed from an old
+  // thread's history stays silent here and a stale unanswered one is ignored
+  // there once the first prototype exists.
+  useEffect(() => {
+    if (isAnswered) return;
+    try { window.dispatchEvent(new CustomEvent("th:proto-build-intent", { detail: { runId } })); } catch {}
+    // mount-only: the card appearing is the signal, not its re-renders
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   // Lazy-load Google Fonts referenced by every option's <display> / <body>.
   useEffect(() => {
     (direction.options || []).forEach(opt => {
@@ -33614,6 +33626,72 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     try { st.enter && st.enter(); } catch {}
     return () => { try { st.leave && st.leave(); } catch {} };
   }, [tourIdx, tourSteps]);
+
+  // ── First-build auto-preview ──
+  // The FIRST time a chat run starts a prototype build on a project that has
+  // no prototype yet, flip the surface into Preview mode so the user watches
+  // the prototype arrive instead of staring at the node graph. Two detection
+  // signals, one action:
+  //   1. th:proto-build-intent - an unanswered <direction-options> card
+  //      rendered in chat (the Step -1 pick = the user asked for a build).
+  //   2. A live run starts touching source/ paths (covers handoff builds and
+  //      reloads mid-build - workingPaths refills from /__runs).
+  // While the build runs the Preview viewer shows a "building" empty state
+  // (awaitingFirstProto); the moment the reconciler mounts the first
+  // prototype node, its page auto-opens as a viewer tab. Fires at most once
+  // per mount so a user who deliberately hops back to the canvas mid-build
+  // isn't yanked into Preview again.
+  const hasProtoNode = (data.nodes || []).some(n => n && n.kind === "prototype");
+  const hasProtoNodeRef = useRef(hasProtoNode); hasProtoNodeRef.current = hasProtoNode;
+  const [awaitingFirstProto, setAwaitingFirstProto] = useState(false);
+  const firstProtoPreviewFiredRef = useRef(false);
+  const beginFirstProtoPreview = useCallback(() => {
+    if (firstProtoPreviewFiredRef.current || hasProtoNodeRef.current) return;
+    firstProtoPreviewFiredRef.current = true;
+    setAwaitingFirstProto(true);
+    setWorkflowMainView("proto");
+  }, []);
+  useEffect(() => {
+    const on = () => beginFirstProtoPreview();
+    window.addEventListener("th:proto-build-intent", on);
+    return () => window.removeEventListener("th:proto-build-intent", on);
+  }, [beginFirstProtoPreview]);
+  useEffect(() => {
+    if (hasProtoNode || firstProtoPreviewFiredRef.current) return;
+    if (workingPaths.some(p => typeof p === "string" && p.startsWith("source/")))
+      beginFirstProtoPreview();
+  }, [workingPaths, hasProtoNode, beginFirstProtoPreview]);
+  // The prototype landed: open it as a tab, then clear the building state.
+  // th:proto-open-tab is the viewer's own open-tab channel (it's mounted -
+  // the switch above mounted it and it stays mounted). The node can
+  // auto-mount a beat before /__source_prototypes lists the page, so retry
+  // on a short poll instead of giving up on the first empty response.
+  useEffect(() => {
+    if (!awaitingFirstProto || !hasProtoNode) return;
+    let cancelled = false;
+    let tries = 0;
+    const attempt = async () => {
+      try {
+        const r = await fetch(apiUrl("/__source_prototypes"));
+        const j = r.ok ? await r.json() : null;
+        const protos = (j && j.prototypes) || [];
+        if (cancelled) return;
+        if (protos.length) {
+          const main = protos.find(p => p.id === "main") || protos[0];
+          window.dispatchEvent(new CustomEvent("th:proto-open-tab", {
+            detail: { path: main.path, label: main.label || main.id },
+          }));
+          setAwaitingFirstProto(false);
+          return;
+        }
+      } catch {}
+      if (cancelled) return;
+      if (++tries < 20) setTimeout(attempt, 1500);
+      else setAwaitingFirstProto(false);
+    };
+    attempt();
+    return () => { cancelled = true; };
+  }, [awaitingFirstProto, hasProtoNode]);
   // Pan the canvas so a node's centre lands in the viewport centre, then
   // select it (deferred a tick so React absorbs the pan first) - mirrors the
   // th:focus-node handler above.
@@ -46563,7 +46641,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             />
           `}
         </div>
-        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} onEditTab=${openZoomForViewerTab} onActivePathChange=${setProtoViewerPath}/>`}
+        ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} awaitingFirstProto=${awaitingFirstProto && !hasProtoNode} onEditTab=${openZoomForViewerTab} onActivePathChange=${setProtoViewerPath}/>`}
         <${RightNavRail}
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
@@ -47024,7 +47102,7 @@ function ProtoViewerFrame({ tab, src, isActive, zoom = 1, deviceVp = null, regis
    mounted afterwards - `active` only toggles CSS visibility - so tab
    iframes keep their state when the user hops back to the canvas.
    Open tabs persist to localStorage per project. */
-function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
+function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFirstProto }) {
   const lsKey = "th-proto-viewer:" + (activeProjectId() || "default");
   const [state, setState] = useState(() => {
     try {
@@ -47395,12 +47473,18 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
         `}
       </div>
       <div className="workflow-proto-stage" ref=${stageRef}>
-        ${tabs.length === 0 && html`
+        ${tabs.length === 0 && (awaitingFirstProto ? html`
+          <div className="workflow-proto-empty workflow-proto-empty-building">
+            <span className="workflow-proto-building-spin" aria-hidden="true"/>
+            <div className="workflow-proto-building-title">Building your first prototype</div>
+            <div className="workflow-proto-building-sub">Follow the steps in chat - it appears here the moment the first page lands.</div>
+          </div>
+        ` : html`
           <div className="workflow-proto-empty">
             <div>No tabs open.</div>
             <button type="button" className="workflow-proto-empty-btn" onClick=${openPicker}>+ Open a prototype</button>
           </div>
-        `}
+        `)}
         ${tabs.map(t => html`
           <${ProtoViewerFrame}
             key=${t.id + ":" + (nonces[t.id] || 0)}

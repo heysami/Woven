@@ -5995,6 +5995,30 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   background: var(--surface-2);
 }
 
+/* First-build "building" empty state - shown instead of "No tabs open" while
+   the first-ever prototype build runs (see awaitingFirstProto in app.js). The
+   tab auto-opens the moment source/<slug>/index.html lands. */
+.workflow-proto-empty-building { gap: 4px; }
+.workflow-proto-building-spin {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: proto-building-spin .8s linear infinite;
+  margin-bottom: 8px;
+}
+@keyframes proto-building-spin { to { transform: rotate(360deg); } }
+.workflow-proto-building-title { font: 600 13px/1.3 var(--font-sans); color: var(--text); }
+.workflow-proto-building-sub {
+  font: 400 12px/1.5 var(--font-sans);
+  color: var(--text-muted);
+  max-width: 340px;
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workflow-proto-building-spin { animation: none; }
+}
+
 /* "+" picker - dropdown panel listing prototypes + generated pages. */
 .workflow-proto-picker-backdrop {
   position: fixed;
