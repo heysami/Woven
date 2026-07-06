@@ -21827,7 +21827,7 @@ function SubagentsLanding({ caps }) {
 // server. Read-only: editing the catalog or the runtime config still happens
 // by editing the JSON files in .claude/. The card surfaces purpose,
 // when-to-use, the npx command the daemon spawns, requires-list, and a
-// first-call note (e.g. "start Chrome with --remote-debugging-port=9222").
+// first-call note (e.g. "first call cold-resolves the package").
 function McpLanding() {
   const [data, setData] = useState(null);
   const [openId, setOpenId] = useState(null);
@@ -22219,9 +22219,10 @@ function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread }) {
       <${SystemSectionHead}
         name="Orchestrators"
         count=${data.count}
-        desc=${html`Orchestrators dispatch families of subagents to produce complex artefacts (images, simulations, interactive pieces). Each is auto-discovered from its <code>.claude/agents/${"<name>"}.manifest.json</code>. Disabling one removes its hard-rule prompt from every spawned Claude session in this ${scopeLabel || "workspace"} - the agent stops auto-dispatching it, but you can still invoke it manually by subagent name.`}
         action=${onSpawnSystemThread && html`<${SystemAddBar} kind="orchestrators" onSpawn=${onSpawnSystemThread}/>`}
-        extra=${html`<div className="sys-shead-extra">scope: ${scopeLabel || "workspace"}${data.disabledIds && data.disabledIds.length > 0 ? ` · ${data.disabledIds.length} disabled` : ""}</div>`}
+        extra=${data.disabledIds && data.disabledIds.length > 0
+          ? html`<div className="sys-shead-extra">${data.disabledIds.length} disabled</div>`
+          : null}
       />
       <div className="orchestrators-grid">
         ${data.orchestrators.map(p => html`
@@ -23911,21 +23912,24 @@ function ProjectsLanding({ info, projects, onReload }) {
                     <button
                       className="landing-card-action"
                       title="Rename"
+                      data-tip-host="true"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); setEditingId(p.id); setEditLabel(p.label || p.id); setErr(null); }}
-                    ><${Icon.Pen}/></button>
+                    ><${Icon.Pen}/><span className="tab-tip">Rename</span></button>
                     <button
                       className="landing-card-action"
                       title="Duplicate (local copy - no LLM, renames all references)"
+                      data-tip-host="true"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); duplicateProject(p.id, p.label); }}
-                    ><${Icon.Copy}/></button>
+                    ><${Icon.Copy}/><span className="tab-tip">Duplicate</span></button>
                     <button
                       className="landing-card-action landing-card-action-danger"
                       title="Delete (moves to .trash/)"
+                      data-tip-host="true"
                       disabled=${busyId === p.id}
                       onClick=${(e) => { e.stopPropagation(); deleteProject(p.id, p.label); }}
-                    ><${Icon.Trash}/></button>
+                    ><${Icon.Trash}/><span className="tab-tip">Delete</span></button>
                   </div>
                 </div>
                 ${p.label && p.label !== p.id ? html`<div className="landing-card-id">${p.id}</div>` : null}
@@ -23973,6 +23977,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                               ? `Open Architecture on ${sp.path}`
                               : `Try to open Architecture on ${sp.path} (file no longer on disk)`}
                             aria-label="Open Architecture"
+                            data-tip-host="true"
                             onClick=${(e) => {
                               e.stopPropagation();
                               const url = new URL(window.location.href);
@@ -23982,7 +23987,7 @@ function ProjectsLanding({ info, projects, onReload }) {
                               url.searchParams.delete("view");
                               thNavigate(url.toString());
                             }}
-                          ><${Icon.Canvas}/></button>
+                          ><${Icon.Canvas}/><span className="tab-tip">Open Architecture</span></button>
                         </li>
                       `)}
                     </ul>
@@ -47066,8 +47071,9 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
                   title=${tip}
                   aria-label=${"Preview as " + d.label + (land ? " (landscape)" : "")}
                   aria-pressed=${isActive ? "true" : "false"}
+                  data-tip-host="true"
                   onClick=${() => setDevice(d)}
-                ><${d.Icon}/></button>
+                ><${d.Icon}/><span className="tab-tip">${d.label}${d.rotatable && isActive ? " · rotate" : ""}</span></button>
               `;
             })}
           </div>
@@ -47077,47 +47083,53 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
               className="workflow-proto-tool"
               title="Zoom out (⌘/Ctrl + scroll)"
               aria-label="Zoom out"
+              data-tip-host="true"
               disabled=${zoom <= 0.25 + 1e-4}
               onClick=${() => zoomBy(-1)}
-            ><${Icon.Minus}/></button>
+            ><${Icon.Minus}/><span className="tab-tip">Zoom out</span></button>
             <button
               type="button"
               className="workflow-proto-zoom-label"
               title="Reset zoom to 100%"
               aria-label=${"Zoom " + Math.round(zoom * 100) + " percent - click to reset"}
+              data-tip-host="true"
               onClick=${resetZoom}
-            >${Math.round(zoom * 100)}%</button>
+            >${Math.round(zoom * 100)}%<span className="tab-tip">Reset to 100%</span></button>
             <button
               type="button"
               className="workflow-proto-tool"
               title="Zoom in (⌘/Ctrl + scroll)"
               aria-label="Zoom in"
+              data-tip-host="true"
               disabled=${zoom >= 2 - 1e-4}
               onClick=${() => zoomBy(1)}
-            ><${Icon.Plus}/></button>
+            ><${Icon.Plus}/><span className="tab-tip">Zoom in</span></button>
           </div>
           <button
             type="button"
             className="workflow-proto-tool"
             title="Reset to prototype start - reload this tab's original entry page"
             aria-label="Reset to prototype start"
+            data-tip-host="true"
             onClick=${() => bumpNonce(activeTab.id)}
-          ><${Icon.Home}/></button>
+          ><${Icon.Home}/><span className="tab-tip">Prototype start</span></button>
           <button
             type="button"
             className="workflow-proto-tool"
             title="Back"
             aria-label="Back"
+            data-tip-host="true"
             onClick=${() => activeNav && activeNav.goBack()}
-          ><${Icon.Back}/></button>
+          ><${Icon.Back}/><span className="tab-tip">Back</span></button>
           <button
             type="button"
             className="workflow-proto-tool"
             title="Forward"
             aria-label="Forward"
+            data-tip-host="true"
             disabled=${!activeNav || !activeNav.canGoForward}
             onClick=${() => activeNav && activeNav.canGoForward && activeNav.goForward()}
-          ><${Icon.Forward}/></button>
+          ><${Icon.Forward}/><span className="tab-tip">Forward</span></button>
         `}
         ${activeTab && onEditTab && html`
           <button
@@ -47125,11 +47137,12 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
             className="workflow-proto-tool workflow-proto-tool-edit"
             title="Edit this page - opens the zoom editing tools (select / text / comment / sketch / export / import)"
             aria-label="Edit this page"
+            data-tip-host="true"
             onClick=${() => {
               const live = activeNav && activeNav.getCurrentPath && activeNav.getCurrentPath();
               onEditTab(live ? { ...activeTab, path: live } : activeTab);
             }}
-          ><${Icon.Pen}/></button>
+          ><${Icon.Pen}/><span className="tab-tip">Edit this page</span></button>
         `}
         ${activeTab && html`
           <button
@@ -47137,15 +47150,17 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange }) {
             className="workflow-proto-tool"
             title="Reload the current page (keeps where you navigated to)"
             aria-label="Reload current page"
+            data-tip-host="true"
             onClick=${() => { if (!(activeNav && activeNav.reload && activeNav.reload())) bumpNonce(activeTab.id); }}
-          ><${Icon.Refresh}/></button>
+          ><${Icon.Refresh}/><span className="tab-tip">Reload page</span></button>
           <button
             type="button"
             className="workflow-proto-tool"
             title=${"Open " + activeTab.path + " in a real browser tab"}
             aria-label="Open in browser tab"
+            data-tip-host="true"
             onClick=${() => { try { window.open(srcFor(activeTab), "_blank"); } catch {} }}
-          ><${Icon.OpenExt}/></button>
+          ><${Icon.OpenExt}/><span className="tab-tip">Open in browser</span></button>
         `}
       </div>
       <div className="workflow-proto-stage" ref=${stageRef}>
@@ -79230,9 +79245,9 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
   };
   return html`
     <div className="workflow-default-providers">
-      <div className="workflow-settings-section-group-head">Default models per capability</div>
+      <div className="workflow-settings-section-group-head">Default models</div>
       <div className="workflow-settings-section-group-sub">
-        Each row defaults to the best available option for that capability - a model whose API key is configured below, OR the matching CLI (Claude Code CLI for anthropic, Codex CLI for openai, opencode for opencode) when no key is set but the CLI is installed. Pick a different provider/model to override. ✓ = key configured, CLI = falls back to its native CLI, ⚠ = no key + no CLI (won't run until you paste a key).
+        ✓ key set · CLI = CLI fallback · ⚠ no key
       </div>
       ${CAPABILITY_KEYS.map(cap => html`
         <${WorkflowDefaultProviderRow}
@@ -79597,24 +79612,14 @@ function WorkflowBrowserSetupSection() {
         <span className="workflow-settings-skills">agent screenshots + clicks a real browser</span>
       </div>
       <div className="workflow-settings-hint">
-        For testing prototypes and live research the agent can drive your real Chrome through the
-        <strong>Chrome DevTools MCP</strong> - there is no extension to install. It reuses your
-        logged-in profile, cookies, and sessions; nothing is sent anywhere.
+        Works out of the box. When a task needs a browser (Testing nodes, live research), Woven
+        launches a private headless Chrome and wires the <strong>Chrome DevTools MCP</strong>
+        into the agent automatically - nothing to install, nothing to start, and your own
+        browser is never touched. The agent opens, screenshots, and clicks pages by sight.
       </div>
       <div className="workflow-settings-hint">
-        <strong>Setup</strong>
-        <ol>
-          <li>Start Chrome with remote debugging once:
-            <code>open -a "Google Chrome" --args --remote-debugging-port=9222</code>
-            (macOS; on Windows/Linux launch Chrome with the same
-            <code>--remote-debugging-port=9222</code> flag).</li>
-          <li>Run any browser task - e.g. a Testing assistant node with URLs. Woven wires the
-            Chrome DevTools MCP (<code>npx chrome-devtools-mcp</code>) into the agent automatically.</li>
-          <li>The agent opens, screenshots, and clicks your pages by sight.</li>
-        </ol>
         <span className="workflow-settings-localhint">
-          Claude Code CLI only - Codex and opencode CLIs can't drive a browser yet (they still do web research over
-          their built-in network). Needs Node / npx on PATH.
+          Works with Claude Code, Codex, and opencode. Needs Node / npx on PATH.
         </span>
       </div>
     </div>
@@ -79665,7 +79670,6 @@ function WorkflowSettingsDialog({ onClose }) {
     { id: "sendkey", label: "Preferences" },
   ];
   const subByTab = {
-    api: "~/.test-harness/media-config.json · mode 0600 · per-user, not per-project",
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     orchestrators: "Toggle which orchestrators auto-dispatch · pick each one's default model",
@@ -79679,7 +79683,7 @@ function WorkflowSettingsDialog({ onClose }) {
         <div className="workflow-modal-head">
           <div>
             <div className="workflow-modal-title">Settings</div>
-            <div className="workflow-modal-sub">${subByTab[tab]}</div>
+            ${subByTab[tab] && html`<div className="workflow-modal-sub">${subByTab[tab]}</div>`}
           </div>
           <button className="workflow-modal-close" onClick=${onClose}>×</button>
         </div>
