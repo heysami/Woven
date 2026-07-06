@@ -5525,18 +5525,20 @@ function bake(){
   // the slimPlayer's hosts call) so a baked composition with particles/scene3d
   // layers renders standalone. Empty if the source hasn't loaded yet - those
   // layers then simply don't render (no crash). It must NOT be wrapped in its
-  // own <script> element: the placeholder sits INSIDE an open script block, so
-  // a nested tag's </script> closes the outer block early and the whole baked
-  // page dies on "Unexpected token '<'" (black canvas). Any literal </script
-  // inside the sources gets the same guard-escape for the same reason.
+  // own script element: the placeholder sits INSIDE an open script block, so
+  // a nested tag's close tag ends the outer block early and the whole baked
+  // page dies on "Unexpected token '<'" (black canvas). Any literal script
+  // close tag inside the sources gets the same guard-escape for the same
+  // reason. (These comments spell it out rather than writing the tag - a
+  // literal one HERE would truncate THIS tool's own inline script block.)
   const escCloseTag = s => String(s).replace(/<\/(script)/gi, '<\\/$1');
   const engines = (POP_ENGINE_SRC && SCENE3D_ENGINE_SRC)
     ? (escCloseTag(POP_ENGINE_SRC) + '\n' + escCloseTag(SCENE3D_ENGINE_SRC) +
        '\ntry{window.createPOPEngine=createPOPEngine;window.createScene3D=createScene3D;}catch(e){}')
     : '';
   // JSON payloads live inside the same script block: escape every `<` as
-  // the \\u003c escape (parses identically) so user content like a text layer reading
-  // "</script>" can't terminate the block either. Replacement is via thunk -
+  // the \\u003c escape (parses identically) so user content like a text layer
+  // holding a script close tag can't terminate the block either. Replacement is via thunk -
   // String.replace treats $&/$'/$` in a string replacement as special
   // patterns, which silently corrupts engine source or user JSON containing
   // them.
