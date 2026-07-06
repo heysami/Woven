@@ -2496,7 +2496,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     return (result.stdout or "").rstrip("\n")
 
 
-def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None):
+def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None, cwd=None):
     """One-shot completion via the Codex CLI's `exec` subcommand. Mirror of
     _claude_cli_complete for users who installed Codex (OpenAI's CLI) and
     signed in via `codex login` - no OPENAI_API_KEY needed.
@@ -2552,6 +2552,7 @@ def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None):
         timeout=timeout,
         stdin=subprocess.DEVNULL,
         env=_cli_env,
+        cwd=cwd,
     )
     if result.returncode != 0:
         msg = (result.stderr or f"exit {result.returncode}").strip()[:600]
@@ -2572,44 +2573,63 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
                     agent can research the live web (Research assistant) - NO
                     paid Exa key needed.
     Returns the agent's final text. Picks the CLI from the chosen model's
-    provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI)."""
-    prov = "openai" if re.match(r"^(gpt|o\d|codex)", (model or "").lower()) else "anthropic"
-    if prov == "anthropic":
-        bin_path = detect_agent_bin("claude")
-        if not bin_path:
-            raise FileNotFoundError("claude")
-        args = [bin_path, "--print", "--output-format", "text",
-                "--no-session-persistence", "--disable-slash-commands"]
-        if system and system.strip():
-            args.extend(["--append-system-prompt", system.strip()])
-        if model:
-            args.extend(["--model", model])
-        if tools == "browser":
-            # No --add-dir: the agent reads the asset over its served URL.
-            mcp = _mcp_config_spawn_args()
-            if mcp:
-                args.extend(mcp)
+    provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI).
+
+    File-write containment: these subagents only ever RETURN text - any file
+    they write is debris by definition. Without an explicit cwd the CLI
+    inherits the DAEMON's working directory (the installed editor/ folder),
+    and a browser tester that saved screenshots with bare relative filenames
+    littered the install (chore_*.png in "Woven IN USE/editor/"). So every
+    run gets (a) a THROWAWAY scratch cwd, deleted on the way out, absorbing
+    any stray relative write, and (b) for the tool-bearing modes, a system
+    note that it has no file workspace at all."""
+    if tools in ("browser", "web"):
+        no_files_note = (
+            "You have NO file workspace: do not create, save, or write ANY file to disk "
+            "(no screenshots-to-disk, no scratch scripts, no notes, no temp files). View "
+            "screenshots inline via your tools and answer in text only.")
+        system = ((system or "").strip() + "\n\n" + no_files_note).strip()
+    scratch = tempfile.mkdtemp(prefix="woven-assistant-")
+    try:
+        prov = "openai" if re.match(r"^(gpt|o\d|codex)", (model or "").lower()) else "anthropic"
+        if prov == "anthropic":
+            bin_path = detect_agent_bin("claude")
+            if not bin_path:
+                raise FileNotFoundError("claude")
+            args = [bin_path, "--print", "--output-format", "text",
+                    "--no-session-persistence", "--disable-slash-commands"]
+            if system and system.strip():
+                args.extend(["--append-system-prompt", system.strip()])
+            if model:
+                args.extend(["--model", model])
+            if tools == "browser":
+                # No --add-dir: the agent reads the asset over its served URL.
+                mcp = _mcp_config_spawn_args()
+                if mcp:
+                    args.extend(mcp)
+                    args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
+            elif tools == "web":
+                # Claude Code ships WebSearch + WebFetch built in; bypassing
+                # permissions lets them run headless without a prompt.
                 args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
-        elif tools == "web":
-            # Claude Code ships WebSearch + WebFetch built in; bypassing
-            # permissions lets them run headless without a prompt.
-            args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
-        args.append(prompt or "Proceed.")
-        _cli_env = _guest_cli_env("claude")
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
-                                stdin=subprocess.DEVNULL, env=_cli_env)
-        if result.returncode != 0:
-            raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
-        return (result.stdout or "").rstrip("\n")
-    # Codex path - codex exec runs with network (danger-full-access), so a web
-    # research prompt can still fetch pages; browser mode gets the chrome MCP
-    # via -c mcp_servers overrides (same servers claude gets via --mcp-config).
-    msgs = []
-    if system and system.strip():
-        msgs.append({"role": "system", "content": system})
-    msgs.append({"role": "user", "content": prompt or "Proceed."})
-    extra = _codex_mcp_spawn_args() if tools == "browser" else None
-    return _codex_cli_complete(msgs, model=model, timeout=timeout, extra_args=extra)
+            args.append(prompt or "Proceed.")
+            _cli_env = _guest_cli_env("claude")
+            result = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
+                                    stdin=subprocess.DEVNULL, env=_cli_env, cwd=scratch)
+            if result.returncode != 0:
+                raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
+            return (result.stdout or "").rstrip("\n")
+        # Codex path - codex exec runs with network (danger-full-access), so a web
+        # research prompt can still fetch pages; browser mode gets the chrome MCP
+        # via -c mcp_servers overrides (same servers claude gets via --mcp-config).
+        msgs = []
+        if system and system.strip():
+            msgs.append({"role": "system", "content": system})
+        msgs.append({"role": "user", "content": prompt or "Proceed."})
+        extra = _codex_mcp_spawn_args() if tools == "browser" else None
+        return _codex_cli_complete(msgs, model=model, timeout=timeout, extra_args=extra, cwd=scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _codex_cli_generate_image(prompt, model, aspect, project_root, timeout=600):
