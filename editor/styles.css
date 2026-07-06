@@ -17934,6 +17934,39 @@ a.ds-badge:hover, button.ds-badge:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* Overflow (⋯) segment + its menu. Testing / Architecture / Develop start life
+   here and EARN a real tab (see SurfaceNav in app.js for the promotion
+   rules); the menu lists whatever hasn't been earned yet. */
+.surface-nav-more { position: relative; display: inline-flex; }
+.surface-nav-more-btn { padding: 4px 8px; }
+.surface-nav-more-btn svg { display: block; }
+.surface-nav-more-pop {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  min-width: 148px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 40;
+}
+.surface-nav-more-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.surface-nav-more-item:hover { background: var(--surface-2); }
+
 /* Editor-mode prototype switcher (in the toolbar, next to the Editor label). */
 .editor-proto-switch {
   height: 26px;
