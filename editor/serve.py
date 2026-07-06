@@ -10901,6 +10901,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
+        # User-testing links (/t/<token>/, /r/<token>/) belong to the GATE, not
+        # this port - anyone landing here followed a link built against the
+        # wrong origin. Bounce them to the gate instead of a dead 404.
+        m_ut = re.match(r"^/([tr])/([A-Fa-f0-9]{32})[^/]*(/.*)?$", url_path)
+        if m_ut and _shares.GATE_PORT:
+            self.send_response(307)
+            self.send_header("Location", "http://127.0.0.1:%d/%s/%s%s" % (
+                _shares.GATE_PORT, m_ut.group(1), m_ut.group(2).lower(),
+                m_ut.group(3) or "/"))
+            self.end_headers()
+            return
         # Daemon JSON endpoints first - they take precedence over static files.
         if url_path == "/__agents":
             return self._agents_list()

@@ -53734,8 +53734,14 @@ function UserTestingScreen({ slug, onClose, info }) {
   const copyLink = async (p, kind) => {
     const link = kind === "testee" ? testeeLink(p) : reviewerLink(p);
     if (!link) return;
-    try { await navigator.clipboard.writeText(link); } catch {}
-    const tag = `${p.id}:${kind}`; setCopied(tag); setTimeout(() => setCopied(c => c === tag ? null : c), 1400);
+    try {
+      await navigator.clipboard.writeText(link);
+      const tag = `${p.id}:${kind}`; setCopied(tag); setTimeout(() => setCopied(c => c === tag ? null : c), 1400);
+    } catch {
+      // Clipboard write can fail silently (unfocused document, denied
+      // permission) - never claim "Copied" then; surface the link instead.
+      await uiPrompt("Clipboard was blocked - copy this link manually:", link);
+    }
   };
 
   const toggleSel = (pid) => setSel(s => ({ ...s, [pid]: !s[pid] }));
@@ -54197,9 +54203,15 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
   const copyLink = async (p, kind) => {
     const link = kind === "testee" ? testeeLink(p) : reviewerLink(p);
     if (!link) return;
-    try { await navigator.clipboard.writeText(link); } catch {}
-    const tag = `${p.id}:${kind}`;
-    setCopied(tag); setTimeout(() => setCopied(c => c === tag ? null : c), 1400);
+    try {
+      await navigator.clipboard.writeText(link);
+      const tag = `${p.id}:${kind}`;
+      setCopied(tag); setTimeout(() => setCopied(c => c === tag ? null : c), 1400);
+    } catch {
+      // Clipboard write can fail silently (unfocused document, denied
+      // permission) - never claim "Copied" then; surface the link instead.
+      await uiPrompt("Clipboard was blocked - copy this link manually:", link);
+    }
   };
 
   // ── Selection + processing ────────────────────────────────────────
