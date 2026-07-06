@@ -26535,14 +26535,62 @@ function workflowMaybeInsertAssetBadge(nodes, fromRef, toRef) {
   if (!f || !t || f.port !== "out" || t.port !== "in") return nodes;
   const fromNode = (nodes || []).find(n => n.id === f.node);
   const toNode   = (nodes || []).find(n => n.id === t.node);
-  if (!fromNode || fromNode.kind !== "asset" || !toNode || toNode.kind !== "prompt") return nodes;
-  const fname = workflowAssetFileName(fromNode);
+  if (!fromNode || !toNode || toNode.kind !== "prompt") return nodes;
+  // Assets attach by filename; upstream PROMPT nodes attach by their token
+  // name (saved-prompt slug basename, else title/first line) - same badge
+  // mechanics, the token expands to the referenced prompt's text on Run.
+  const fname = fromNode.kind === "asset" ? workflowAssetFileName(fromNode)
+             : fromNode.kind === "prompt" ? workflowPromptTokenName(fromNode)
+             : "";
   if (!fname) return nodes;
   const token = "[" + fname + "]";
   const cur = typeof toNode.text === "string" ? toNode.text : "";
   if (cur.indexOf(token) !== -1) return nodes;
   const sep = !cur ? "" : (cur.endsWith("\n") || cur.endsWith(" ")) ? "" : " ";
   return nodes.map(n => n.id === toNode.id ? { ...n, text: cur + sep + token } : n);
+}
+
+// ── Prompt→prompt reference badges ──────────────────────────────────────
+// A prompt node wired into another prompt's `in` port attaches as an inline
+// [name] badge, exactly like assets do. The name is the saved-prompt slug's
+// basename for a library-linked node, else the node's title / first line.
+function workflowPromptTokenName(node) {
+  if (!node) return "";
+  if (typeof node.promptRef === "string" && node.promptRef) {
+    return node.promptRef.split("/").pop();
+  }
+  const t = (node.title || (typeof node.text === "string" ? node.text : "").split("\n")[0] || "").trim();
+  return t.slice(0, 60) || node.id || "prompt";
+}
+function workflowPromptAttachedPrompts(promptId, nodes, edges) {
+  const out = [];
+  for (const e of (edges || [])) {
+    const t = workflowParseEdgeRef(e.to);
+    if (!t || t.node !== promptId || t.port !== "in") continue;
+    const f = workflowParseEdgeRef(e.from);
+    if (!f) continue;
+    const up = (nodes || []).find(n => n.id === f.node);
+    if (up && up.kind === "prompt") out.push(up);
+  }
+  return out;
+}
+// Run-time text for a prompt node: every [name] token that matches a prompt
+// wired into its `in` port is replaced by that prompt's full text -
+// recursively, since a referenced prompt may reference others. Tokens with
+// no matching wire (asset badges, plain brackets) pass through untouched;
+// a reference cycle stops expanding and leaves the token literal.
+function workflowExpandPromptRefs(promptNode, nodes, edges, _seen) {
+  const text = promptNode && typeof promptNode.text === "string" ? promptNode.text : "";
+  if (!promptNode || text.indexOf("[") === -1) return text;
+  const attached = workflowPromptAttachedPrompts(promptNode.id, nodes, edges);
+  if (!attached.length) return text;
+  const seen = _seen || new Set();
+  seen.add(promptNode.id);
+  return text.replace(/\[([^\[\]\r\n]+)\]/g, (m, name) => {
+    const hit = attached.find(p => workflowPromptTokenName(p) === name);
+    if (!hit || seen.has(hit.id)) return m;
+    return workflowExpandPromptRefs(hit, nodes, edges, new Set(seen));
+  });
 }
 
 function workflowPortsCompatible(fromNode, fromPort, toNode, toPort) {
@@ -39648,7 +39696,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!f) continue;
       const n = (data.nodes || []).find(nn => nn.id === f.node);
       if (!n) continue;
-      if (n.kind === "prompt") inputs.prompts.push(n.text || "");
+      if (n.kind === "prompt") inputs.prompts.push(workflowExpandPromptRefs(n, data.nodes || [], data.edges || []));
       else if (n.kind === "asset") inputs.assets.push(n);
     }
     return inputs;
@@ -40246,7 +40294,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const up = (cur.nodes || []).find(nn => nn.id === f.node);
         if (up && up.kind === "prompt") { promptNode = up; break; }
       }
-      const basePrompt = (promptNode && promptNode.text) || "";
+      const basePrompt = promptNode ? workflowExpandPromptRefs(promptNode, cur.nodes || [], cur.edges || []) : "";
 
       // If the chain HEAD is a transform skill (rembg / upscale), it needs
       // an asset upstream of it. Walk for the asset feeding the head.
@@ -42113,7 +42161,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const up = nodeById[f.node];
         if (!up) continue;
         if (up.kind === "prompt") {
-          promptTexts.push(up.text || "");
+          // Prompt-reference [name] tokens expand to the referenced prompt's
+          // text; asset-badge tokens stay literal (resolved to a reference
+          // image just below).
+          promptTexts.push(workflowExpandPromptRefs(up, nodes, edges));
           // First inline [filename] badge that matches an asset wired into this
           // prompt becomes the downstream reference image (text + image).
           if (!badgeAssetNode) {
@@ -45298,6 +45349,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               wbSelectPointerDown(e, wbHitId);
               return;
             }
+            // The preventDefault below also suppresses the browser's
+            // default focus transfer, so a focused node editor (the prompt
+            // node's textarea, an asset path input, …) would keep its caret
+            // and read as still-active after the click-away. Blur it
+            // explicitly - the deselect must end editing too.
+            const ae = document.activeElement;
+            if (ae && ae !== document.body && typeof ae.blur === "function") ae.blur();
             // Stash starting coords in WORLD space. mousemove will compute
             // the rect; mouseup commits BOTH kinds (unified marquee).
             setMarquee({
@@ -45741,7 +45799,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 if (t && t.node === n.id) {
                   const f = workflowParseEdgeRef(e.from); if (!f) continue;
                   const up = (data.nodes || []).find(nn => nn.id === f.node); if (!up) continue;
-                  if (t.port === "system-in" && up.kind === "prompt") summary.system = up.text || "";
+                  if (t.port === "system-in" && up.kind === "prompt") summary.system = workflowExpandPromptRefs(up, data.nodes || [], data.edges || []);
                   if (t.port === "input" || t.port === "prompt-in") {
                     // Typed inputs: prompt text + any typed-direction node
                     // (palette / typography / asset / DS reference) wired
@@ -45749,7 +45807,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     // section in the agent's prompt, so the agent sees the
                     // input's STRUCTURE - not just its text representation.
                     if (up.kind === "prompt") {
-                      summary.inputs.push({ kind: "text", label: up.name || up.title || "input", text: up.text || "" });
+                      summary.inputs.push({ kind: "text", label: up.name || up.title || "input", text: workflowExpandPromptRefs(up, data.nodes || [], data.edges || []) });
                     } else if (up.kind === "color-palette") {
                       summary.inputs.push({ kind: "color-palette", label: up.name || "palette", swatches: up.swatches || [] });
                     } else if (up.kind === "typography") {
@@ -45993,7 +46051,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                attachedAssetNames=${new Set(workflowPromptAttachedAssets(n.id, data.nodes || [], data.edges || []).map(workflowAssetFileName))}
+                attachedAssetNames=${new Set([
+                  ...workflowPromptAttachedAssets(n.id, data.nodes || [], data.edges || []).map(workflowAssetFileName),
+                  ...workflowPromptAttachedPrompts(n.id, data.nodes || [], data.edges || []).map(workflowPromptTokenName),
+                ])}
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -60865,7 +60926,7 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
         className="workflow-port-zone workflow-port-zone-in"
         data-port-node=${node.id}
         data-port-side="in"
-        title="Receive text from an LLM / describe / agent - overwrites the textarea on Run"
+        title="Receive text: an LLM / describe / agent overwrites this node on Run; another text node wired in attaches as an inline [name] chip that expands to its text"
         onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}
       >
         <div className="workflow-port-dot"/>
