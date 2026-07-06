@@ -254,11 +254,14 @@
       </details>
 
       <details class="wv-acc" open>
-        <summary>Live blob <span class="tag">smooth · editable</span></summary>
+        <summary>Live blob <span class="tag">GPU · smooth · editable</span></summary>
         <div class="wv-acc-body">
         <div class="row"><button class="btn on full" id="b-liveblob"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><circle cx="12" cy="12" r="8"/></svg>Live blob from selected</button></div>
         <div class="row"><button class="btn ghost full" id="b-addball"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;vertical-align:-1px;margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>Add metaball</button></div>
-        <div class="empty" style="padding:6px 4px;font-size:11px">Fuses into a smooth liquid that stays editable - drag the dots to reshape. (Re-polygonised live, like the water.)</div>
+        <div class="field"><label>Blend</label><input type="range" id="b-blendk" min="0.05" max="1.2" step="0.01" value="0.35"/><span class="val" id="b-blendk-v">0.35</span></div>
+        <div class="field"><label>Ball size</label><input type="range" id="b-ballr" min="0.2" max="3" step="0.02" value="1"/><span class="val" id="b-ballr-v">1.00</span></div>
+        <div class="row"><button class="btn ghost full" id="b-bakeblob">Bake blob → mesh</button></div>
+        <div class="empty" style="padding:6px 4px;font-size:11px">Raymarched SDF on the GPU - the melt is perfectly smooth at any zoom. Boxes / cylinders / cones / tori keep their shape inside the blend; drag the dots to reshape, set per-dot colour via Material colour. <b>Bake</b> turns it into a real mesh for Export.</div>
         </div>
       </details>
 
@@ -990,11 +993,14 @@ function removeSelected() {
   select([]);
 }
 
-// ── Live Blob - smooth, EDITABLE metaball merge (the water mechanism) ───────
+// ── Live Blob - smooth, EDITABLE metaball merge, rendered on the GPU ────────
 // Unlike the baked CSG/SDF blobMerge (frozen + faceted), this keeps a LIVE
-// MarchingCubes field re-polygonised every frame from movable handle "dots".
-// Drag a dot → the blob flows; it's always smooth (sphere metaballs, hi-res MC)
-// and always editable. This is exactly how the liquid/water reads.
+// field of movable handle "dots". Drag a dot → the blob flows; always editable.
+// RENDERING is a raymarched SDF (see the GPU blob block below): the analytic
+// smooth-union is sphere-traced in a fragment shader, so the melt is perfectly
+// smooth at any zoom - no marching-cube blockiness. The MarchingCubes mesh
+// here is kept ONLY as the shadow caster + glb-export body, hidden from the
+// camera (colorWrite off). If the shader ever fails, it un-hides (old look).
 let liveBlob = null, blobDirty = true;   // dirty flag - only re-polygonise on change
 const BLOB_VOL = 9;   // world size of the live field cube (centred at origin-ish)
 const BLOB_CENTER = new THREE.Vector3(0, 0.8, 0);
@@ -1004,34 +1010,48 @@ function ensureLiveBlob() {
   const mc = new MarchingCubes(64, mat, true, false, 250000);
   mc.isolation = 46; mc.castShadow = mc.receiveShadow = true;
   mc.position.copy(BLOB_CENTER); mc.scale.setScalar(BLOB_VOL / 2);
+  if (!__blobGPU.failed) { mat.colorWrite = false; mat.depthWrite = false; }   // camera sees the raymarch instead
   scene.add(mc);
   liveBlob = { mc, sources: [], color: new THREE.Color('#8b93ff') };
   sims.push({ type: 'liveblob', mesh: mc, update: updateLiveBlob });
   return liveBlob;
 }
-function addBlobSource(pos, r, color) {
+// Map a scene object to its SDF source spec: unit-space params + a single
+// scale s (the "Ball size" knob scales the whole primitive uniformly).
+function blobSpecFor(o) {
+  const k = o.userData.kind, sc = o.scale, avg = (sc.x + sc.y + sc.z) / 3;
+  if (k === 'box') { const hx = 0.7 * sc.x, hy = 0.7 * sc.y, hz = 0.7 * sc.z, s = Math.max(hx, hy, hz); return { shape: 1, s, prm: [hx / s, hy / s, hz / s] }; }
+  if (k === 'cylinder') { const r = 0.85 * avg, h = 0.9 * sc.y, s = Math.max(r, h); return { shape: 2, s, prm: [r / s, h / s, 0] }; }
+  if (k === 'cone') { const r = 1.0 * avg, h = 0.9 * sc.y, s = Math.max(r, h); return { shape: 3, s, prm: [r / s, h / s, 0] }; }
+  if (k === 'torus') { const R = 0.9 * avg, rr = 0.35 * avg, s = R + rr; return { shape: 4, s, prm: [R / s, rr / s, 0] }; }
+  o.geometry.computeBoundingSphere();
+  const r = (o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 1) * Math.max(sc.x, sc.y, sc.z);
+  return { shape: 0, s: Math.max(0.3, r * (k === 'sphere' ? 1 : 0.8)), prm: [1, 0, 0] };
+}
+function addBlobSource(pos, r, color, shape, prm) {
   const lb = ensureLiveBlob();
+  const hex = color || '#' + lb.color.getHexString();
   const dot = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0x1a1f2e, depthTest: false }));
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(0.4), depthTest: false }));
   dot.renderOrder = 999; dot.position.copy(pos || new THREE.Vector3(0, 0.8, 0));
   dot.userData.isBlobDot = true; dot.userData.r = r || 1; dot.userData.vel = new THREE.Vector3();
+  dot.userData.shape = shape || 0; dot.userData.prm = prm || [1, 0, 0]; dot.userData.color = hex;
   dot.name = 'blob-source-' + (lb.sources.length + 1);
   scene.add(dot); objects.push(dot); lb.sources.push({ dot });
-  if (color) lb.color.set(color), lb.mc.material.color.copy(lb.color);
+  if (color && lb.sources.length === 1) { lb.color.set(color); lb.mc.material.color.copy(lb.color); }
   blobDirty = true; select([dot]); refresh();
 }
 function liveBlobFromSelected() {
-  const sel = selection.slice(); if (!sel.length) { flash('Select object(s) first'); return; }
-  let firstColor = null;
+  const sel = selection.filter(o => !o.userData.isBlobDot);
+  if (!sel.length) { flash('Select object(s) first'); return; }
   sel.forEach(o => {
-    o.geometry.computeBoundingSphere();
-    const r = (o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 1) * Math.max(o.scale.x, o.scale.y, o.scale.z);
-    if (!firstColor && o.material.color) firstColor = '#' + o.material.color.getHexString();
-    addBlobSource(o.getWorldPosition(new THREE.Vector3()), Math.max(0.5, r * 0.8), firstColor);
+    const spec = blobSpecFor(o);
+    const col = (o.material && o.material.color) ? '#' + o.material.color.getHexString() : null;
+    addBlobSource(o.getWorldPosition(new THREE.Vector3()), spec.s, col, spec.shape, spec.prm);
   });
   // remove the originals - they're now metaball sources
   sel.forEach(o => { detachFur(o); scene.remove(o); const i = objects.indexOf(o); if (i >= 0) objects.splice(i, 1); });
-  flash('Live blob · ' + sel.length + ' source' + (sel.length === 1 ? '' : 's') + ' - drag the dots'); refresh();
+  flash('Live blob · ' + sel.length + ' source' + (sel.length === 1 ? '' : 's') + ' - drag the dots, tune Blend'); refresh(); saveSoon();
 }
 function updateLiveBlob() {
   const lb = liveBlob; if (!lb) return;
@@ -1054,6 +1074,282 @@ function updateLiveBlob() {
     if (nx > 0 && nx < 1 && ny > 0 && ny < 1 && nz > 0 && nz < 1) lb.mc.addBall(nx, ny, nz, str, 12);
   }
   lb.mc.update();
+}
+
+// ── GPU blob - raymarched SDF surface for the live blob ────────────────────
+// A fullscreen pass sphere-traces the analytic smooth-union (polynomial smin)
+// of the source SDFs each frame. Infinite-resolution smoothness (the blend is
+// evaluated per PIXEL, not on a voxel grid), per-source colour blending, and
+// real depth compositing: gl_FragDepth is written from the hit point, so scene
+// meshes occlude / intersect the blob correctly. Shading approximates the
+// tool's liquid look (hemi + key + fill lights, glossy spec, fresnel env) and
+// runs through the renderer's ACES tonemapping + sRGB output via the chunks.
+const MAXB = 24;            // uniform-array budget; plenty for hand-made blobs
+let blobK = 0.35;           // smooth-union width (world units) - the Blend knob
+const __blobGPU = { mesh: null, mat: null, failed: false };
+const BLOB_VERT = /* glsl */`
+varying vec2 vNdc;
+void main() { vNdc = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`;
+const BLOB_FRAG = /* glsl */`
+varying vec2 vNdc;
+uniform mat4 uPV, uInvPV;
+uniform int uCount;
+uniform vec4 uPosR[${MAXB}];   // xyz = centre, w = scale s
+uniform vec4 uPrm[${MAXB}];    // xyz = unit-space params, w = shape (0 sph / 1 box / 2 cyl / 3 cone / 4 torus)
+uniform vec3 uCol[${MAXB}];
+uniform float uK;
+uniform vec4 uBound;           // xyz = centre, w = radius (bounding sphere of all sources)
+uniform vec3 uKeyDir, uKeyCol, uFillDir, uFillCol, uSky, uGnd, uBg;
+uniform float uEnvI;
+// three injects its tonemapping/colorspace PARS (toneMapping(), the exposure
+// uniform, linearToOutputTexel()) into custom GLSL3 shaders, but NOT the
+// gl_FragColor alias - so declare our own output and call them ourselves.
+out vec4 outColor;
+float sdSrc(vec3 p, vec4 pr, vec4 prm) {
+  vec3 q = (p - pr.xyz) / pr.w;
+  int t = int(prm.w + 0.5);
+  float d;
+  if (t == 1) {          // rounded box
+    vec3 b = abs(q) - prm.xyz + 0.09;
+    d = length(max(b, 0.0)) + min(max(b.x, max(b.y, b.z)), 0.0) - 0.09;
+  } else if (t == 2) {   // capped cylinder
+    vec2 w = vec2(length(q.xz) - prm.x, abs(q.y) - prm.y);
+    d = min(max(w.x, w.y), 0.0) + length(max(w, 0.0));
+  } else if (t == 3) {   // capped cone, apex up (lateral term scaled conservative for sphere tracing)
+    float rr = prm.x * clamp(0.5 - 0.5 * q.y / prm.y, 0.0, 1.0);
+    vec2 w = vec2((length(q.xz) - rr) * prm.y / length(vec2(prm.x, prm.y)), abs(q.y) - prm.y);
+    d = min(max(w.x, w.y), 0.0) + length(max(w, 0.0));
+  } else if (t == 4) {   // torus around y
+    vec2 w = vec2(length(q.xz) - prm.x, q.y);
+    d = length(w) - prm.y;
+  } else {               // sphere
+    d = length(q) - 1.0;
+  }
+  return d * pr.w;
+}
+float map(vec3 p) {
+  float d = 100.0;   // sentinel must stay SMALL: seeding 1e9 makes fp32 mix() cancel to exactly 0
+  for (int i = 0; i < ${MAXB}; i++) {
+    if (i >= uCount) break;
+    float di = sdSrc(p, uPosR[i], uPrm[i]);
+    float h = clamp(0.5 + 0.5 * (d - di) / uK, 0.0, 1.0);
+    d = mix(d, di, h) - uK * h * (1.0 - h);
+  }
+  return d;
+}
+vec3 mapColor(vec3 p) {
+  float d = 100.0; vec3 c = vec3(1.0);
+  for (int i = 0; i < ${MAXB}; i++) {
+    if (i >= uCount) break;
+    float di = sdSrc(p, uPosR[i], uPrm[i]);
+    float h = clamp(0.5 + 0.5 * (d - di) / uK, 0.0, 1.0);
+    d = mix(d, di, h) - uK * h * (1.0 - h);
+    c = mix(c, uCol[i], h);
+  }
+  return c;
+}
+vec3 calcN(vec3 p) {
+  vec2 e = vec2(1.0, -1.0) * 0.0015;
+  return normalize(e.xyy * map(p + e.xyy) + e.yyx * map(p + e.yyx) + e.yxy * map(p + e.yxy) + e.xxx * map(p + e.xxx));
+}
+float calcAO(vec3 p, vec3 n) {
+  float occ = 0.0, sca = 1.0;
+  for (int i = 1; i <= 5; i++) { float h = 0.06 * float(i); occ += (h - map(p + n * h)) * sca; sca *= 0.6; }
+  return clamp(1.0 - 2.0 * occ, 0.0, 1.0);
+}
+void main() {
+  if (uCount == 0) discard;
+  vec4 a = uInvPV * vec4(vNdc, -1.0, 1.0); a /= a.w;
+  vec4 b = uInvPV * vec4(vNdc, 1.0, 1.0); b /= b.w;
+  vec3 ro = a.xyz, rd = normalize(b.xyz - a.xyz);
+  vec3 oc = ro - uBound.xyz;                     // ray vs bounding sphere - skip empty pixels
+  float bq = dot(oc, rd), cq = dot(oc, oc) - uBound.w * uBound.w;
+  float disc = bq * bq - cq;
+  if (disc < 0.0) discard;
+  float tF = -bq + sqrt(disc);
+  float t = max(-bq - sqrt(disc), 0.0);
+  bool hit = false;
+  for (int i = 0; i < 96; i++) {
+    float d = map(ro + rd * t);
+    if (d < max(0.001 * t, 0.0004)) { hit = true; break; }
+    t += d * 0.9;
+    if (t > tF) break;
+  }
+  if (!hit) discard;
+  vec3 p = ro + rd * t, n = calcN(p), alb = mapColor(p);
+  float ao = calcAO(p, n);
+  vec3 hemi = mix(uGnd, uSky, n.y * 0.5 + 0.5);
+  float dif = max(dot(n, uKeyDir), 0.0);
+  float dif2 = max(dot(n, uFillDir), 0.0);
+  vec3 hv = normalize(uKeyDir - rd);
+  float spec = pow(max(dot(n, hv), 0.0), 110.0) * (0.35 + 0.65 * dif);
+  float spec2 = pow(max(dot(n, hv), 0.0), 18.0) * 0.12;
+  float fres = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+  vec3 env = mix(uBg * 0.85, vec3(1.05), clamp(reflect(rd, n).y * 0.7 + 0.45, 0.0, 1.0)) * uEnvI;
+  vec3 col = alb * (hemi * 0.62 * ao + uKeyCol * dif * 0.95 + uFillCol * dif2 * 0.45)
+           + uKeyCol * (spec * 1.15 + spec2)
+           + env * fres * 0.55;
+  vec4 clip = uPV * vec4(p, 1.0);
+  gl_FragDepth = (clip.z / clip.w) * 0.5 + 0.5;
+  outColor = vec4(col, 1.0);
+  #if defined( TONE_MAPPING )
+  outColor.rgb = toneMapping(outColor.rgb);
+  #endif
+  outColor = linearToOutputTexel(outColor);
+}`;
+function ensureBlobGPU() {
+  if (__blobGPU.mesh || __blobGPU.failed) return __blobGPU;
+  const u = {
+    uPV: { value: new THREE.Matrix4() }, uInvPV: { value: new THREE.Matrix4() },
+    uCount: { value: 0 },
+    uPosR: { value: Array.from({ length: MAXB }, () => new THREE.Vector4()) },
+    uPrm: { value: Array.from({ length: MAXB }, () => new THREE.Vector4(1, 0, 0, 0)) },
+    uCol: { value: Array.from({ length: MAXB }, () => new THREE.Color('#8b93ff')) },
+    uK: { value: blobK }, uBound: { value: new THREE.Vector4(0, 0.8, 0, 1) },
+    uKeyDir: { value: new THREE.Vector3(0, 1, 0) }, uKeyCol: { value: new THREE.Color() },
+    uFillDir: { value: new THREE.Vector3(0, 1, 0) }, uFillCol: { value: new THREE.Color() },
+    uSky: { value: new THREE.Color() }, uGnd: { value: new THREE.Color() },
+    uBg: { value: new THREE.Color() }, uEnvI: { value: 1 },
+  };
+  const mat = new THREE.ShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: BLOB_VERT, fragmentShader: BLOB_FRAG, uniforms: u });
+  const geo = new THREE.BufferGeometry();   // one clip-space triangle covering the screen
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false; mesh.renderOrder = 2; mesh.visible = false;
+  scene.add(mesh);
+  __blobGPU.mesh = mesh; __blobGPU.mat = mat;
+  return __blobGPU;
+}
+// Shader-compile fallback: if OUR blob program fails (only ours - matched on a
+// uniform name), un-hide the MarchingCubes mesh so the blob still shows.
+renderer.debug.onShaderError = (gl, program, vs, fs) => {
+  const src = (fs && gl.getShaderSource(fs)) || '';
+  console.error('[spline3d] shader error', gl.getProgramInfoLog(program), fs && gl.getShaderInfoLog(fs));
+  if (src.indexOf('uBound') >= 0 && !__blobGPU.failed) {
+    __blobGPU.failed = true;
+    if (__blobGPU.mesh) __blobGPU.mesh.visible = false;
+    if (liveBlob) { liveBlob.mc.material.colorWrite = true; liveBlob.mc.material.depthWrite = true; }
+    flash('GPU blob unavailable - mesh fallback');
+  }
+};
+const _bgTmp = new THREE.Vector3();
+function updateBlobGPU() {
+  const lb = liveBlob;
+  if (!lb || !lb.sources.length || __blobGPU.failed) { if (__blobGPU.mesh) __blobGPU.mesh.visible = false; return; }
+  const g = ensureBlobGPU(); if (!g.mesh) return;
+  const u = g.mat.uniforms, n = Math.min(lb.sources.length, MAXB);
+  u.uCount.value = n; u.uK.value = blobK;
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < n; i++) { const p = lb.sources[i].dot.position; cx += p.x; cy += p.y; cz += p.z; }
+  cx /= n; cy /= n; cz /= n;
+  let R = 0;
+  for (let i = 0; i < n; i++) {
+    const dot = lb.sources[i].dot, p = dot.position, s = dot.userData.r || 1;
+    const prm = dot.userData.prm || [1, 0, 0];
+    u.uPosR.value[i].set(p.x, p.y, p.z, s);
+    u.uPrm.value[i].set(prm[0], prm[1], prm[2], dot.userData.shape || 0);
+    u.uCol.value[i].set(dot.userData.color || '#' + lb.color.getHexString());
+    const ext = s * Math.max(1, prm[0], prm[1], prm[2]);
+    R = Math.max(R, _bgTmp.set(p.x - cx, p.y - cy, p.z - cz).length() + ext + blobK + 0.3);
+  }
+  u.uBound.value.set(cx, cy, cz, R);
+  u.uPV.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  u.uInvPV.value.copy(u.uPV.value).invert();
+  u.uKeyDir.value.copy(key.position).normalize();
+  u.uKeyCol.value.copy(key.color).multiplyScalar(key.intensity * 0.5);
+  u.uFillDir.value.copy(fill.position).normalize();
+  u.uFillCol.value.copy(fill.color).multiplyScalar(fill.intensity);
+  u.uSky.value.copy(hemi.color).multiplyScalar(hemi.intensity);
+  u.uGnd.value.copy(hemi.groundColor).multiplyScalar(hemi.intensity);
+  u.uBg.value.set(bgHex); u.uEnvI.value = scene.environmentIntensity;
+  g.mesh.visible = true;
+}
+// CPU mirror of the shader field - used by the bake so the mesh matches the
+// GPU surface exactly (same primitives, same smin, same k).
+function jsSdSrc(x, y, z, sp) {
+  const s = sp.s, qx = (x - sp.x) / s, qy = (y - sp.y) / s, qz = (z - sp.z) / s;
+  const p = sp.prm; let d;
+  if (sp.shape === 1) {
+    const r0 = 0.09, bx = Math.abs(qx) - p[0] + r0, by = Math.abs(qy) - p[1] + r0, bz = Math.abs(qz) - p[2] + r0;
+    d = Math.hypot(Math.max(bx, 0), Math.max(by, 0), Math.max(bz, 0)) + Math.min(Math.max(bx, Math.max(by, bz)), 0) - r0;
+  } else if (sp.shape === 2) {
+    const wx = Math.hypot(qx, qz) - p[0], wy = Math.abs(qy) - p[1];
+    d = Math.min(Math.max(wx, wy), 0) + Math.hypot(Math.max(wx, 0), Math.max(wy, 0));
+  } else if (sp.shape === 3) {
+    const rr = p[0] * Math.min(Math.max(0.5 - 0.5 * qy / p[1], 0), 1);
+    const wx = (Math.hypot(qx, qz) - rr) * p[1] / Math.hypot(p[0], p[1]), wy = Math.abs(qy) - p[1];
+    d = Math.min(Math.max(wx, wy), 0) + Math.hypot(Math.max(wx, 0), Math.max(wy, 0));
+  } else if (sp.shape === 4) {
+    d = Math.hypot(Math.hypot(qx, qz) - p[0], qy) - p[1];
+  } else d = Math.hypot(qx, qy, qz) - 1;
+  return d * s;
+}
+function jsBlobField(x, y, z, srcs, k, colOut) {
+  let d = 100, cr = 1, cg = 1, cb = 1;   // same sentinel as the shader so bake == GPU surface
+  for (const sp of srcs) {
+    const di = jsSdSrc(x, y, z, sp);
+    const h = Math.min(Math.max(0.5 + 0.5 * (d - di) / k, 0), 1);
+    d = d + (di - d) * h - k * h * (1 - h);
+    if (colOut) { cr += (sp.col.r - cr) * h; cg += (sp.col.g - cg) * h; cb += (sp.col.b - cb) * h; }
+  }
+  if (colOut) { colOut.r = cr; colOut.g = cg; colOut.b = cb; }
+  return d;
+}
+// Bake the live blob into a real mesh (96³ one-shot polygonise of the SAME
+// analytic field, with per-vertex colours from the colour blend) - so it can
+// Export to .glb / take booleans. The live blob dissolves into the result.
+async function bakeLiveBlob() {
+  const lb = liveBlob;
+  if (!lb || !lb.sources.length) { flash('No live blob to bake'); return; }
+  flash('Baking blob to mesh…'); await new Promise(r => setTimeout(r, 30));
+  const srcs = lb.sources.map(({ dot }) => ({
+    x: dot.position.x, y: dot.position.y, z: dot.position.z,
+    s: dot.userData.r || 1, shape: dot.userData.shape || 0, prm: dot.userData.prm || [1, 0, 0],
+    col: new THREE.Color(dot.userData.color || '#' + lb.color.getHexString()),
+  }));
+  const box = new THREE.Box3();
+  for (const sp of srcs) {
+    const ext = sp.s * Math.max(1, sp.prm[0], sp.prm[1], sp.prm[2]) + blobK + 0.25;
+    box.expandByPoint(new THREE.Vector3(sp.x - ext, sp.y - ext, sp.z - ext));
+    box.expandByPoint(new THREE.Vector3(sp.x + ext, sp.y + ext, sp.z + ext));
+  }
+  const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const dim = Math.max(size.x, size.y, size.z) || 1;
+  const RES = 96, mc = new MarchingCubes(RES, new THREE.MeshBasicMaterial(), true, false, 800000);
+  const N = mc.size, field = mc.field;
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    field[x + y * N + z * N * N] = -jsBlobField(
+      center.x + (x / (N - 1) - 0.5) * dim,
+      center.y + (y / (N - 1) - 0.5) * dim,
+      center.z + (z / (N - 1) - 0.5) * dim, srcs, blobK, null);
+  }
+  mc.isolation = 0; mc.update();
+  const cnt = mc.count;
+  if (!cnt) { flash('Bake produced nothing'); return; }
+  const raw = mc.geometry.attributes.position.array;
+  const arr = new Float32Array(cnt * 3); arr.set(raw.subarray(0, cnt * 3));
+  let geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  geo.scale(dim / 2, dim / 2, dim / 2);
+  geo = mergeVertices(geo, 1e-4); geo.computeVertexNormals();
+  const vp = geo.attributes.position, vc = new Float32Array(vp.count * 3), cTmp = new THREE.Color();
+  for (let i = 0; i < vp.count; i++) {
+    jsBlobField(vp.getX(i) + center.x, vp.getY(i) + center.y, vp.getZ(i) + center.z, srcs, blobK, cTmp);
+    vc[i * 3] = cTmp.r; vc[i * 3 + 1] = cTmp.g; vc[i * 3 + 2] = cTmp.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(vc, 3));
+  const result = new Brush(geo, physicalMat('#ffffff'));
+  applyMode(result, 'liquid');
+  result.material.vertexColors = true; result.material.needsUpdate = true;
+  result.position.copy(center); result.castShadow = result.receiveShadow = true;
+  result.name = 'blob-bake'; result.userData.mode = 'liquid'; result.userData.vel = new THREE.Vector3();
+  for (const { dot } of lb.sources.slice()) { scene.remove(dot); const i = objects.indexOf(dot); if (i >= 0) objects.splice(i, 1); }
+  scene.remove(lb.mc); lb.mc.material.dispose();
+  const si = sims.findIndex(s => s.type === 'liveblob'); if (si >= 0) sims.splice(si, 1);
+  liveBlob = null; blobDirty = true;
+  if (__blobGPU.mesh) __blobGPU.mesh.visible = false;
+  scene.add(result); objects.push(result); select([result]);
+  flash('Blob baked to mesh · exportable'); refresh(); saveSoon();
 }
 
 // ── Parametric deformers (bend / twist / taper / inflate / noise) ──────────
@@ -1259,6 +1555,13 @@ document.querySelectorAll('[data-bool]').forEach(b => b.addEventListener('click'
 $('#b-smooth').addEventListener('input', e => { boolSmooth = parseInt(e.target.value); $('#b-smooth-v').textContent = boolSmooth; });
 $('#b-liveblob').addEventListener('click', liveBlobFromSelected);
 $('#b-addball').addEventListener('click', () => addBlobSource(new THREE.Vector3((Math.random()-0.5)*1.5, 0.8, (Math.random()-0.5)*1.5), 1));
+$('#b-blendk').addEventListener('input', e => { blobK = parseFloat(e.target.value); $('#b-blendk-v').textContent = blobK.toFixed(2); blobDirty = true; saveSoon(); });
+$('#b-ballr').addEventListener('input', e => {
+  const v = parseFloat(e.target.value); $('#b-ballr-v').textContent = v.toFixed(2);
+  let n = 0; selection.forEach(s => { if (s.userData.isBlobDot) { s.userData.r = v; n++; } });
+  if (n) { blobDirty = true; saveSoon(); } else flash('Select a blob dot first');
+});
+$('#b-bakeblob').addEventListener('click', () => bakeLiveBlob());
 $('#b-blob').addEventListener('click', () => blobMerge(selection.slice(), boolSmooth));
 $('#b-liquefy').addEventListener('click', () => { if (!selection.length) { flash('Select an object'); return; } selection.forEach(s => liquefy(s, boolSmooth || 6)); flash('Liquefied ×' + (boolSmooth || 6)); });
 $('#duplicate').addEventListener('click', duplicate);
@@ -1434,7 +1737,11 @@ sliders.forEach(([sel, prop, valSel]) => $(sel).addEventListener('input', e => {
   selection.forEach(s => { if (prop in s.material) { s.material[prop] = v; if (prop === 'transmission') s.material.transparent = false; s.material.needsUpdate = true; } });
   $(valSel).textContent = v.toFixed(2);
 }));
-$('#m-color').addEventListener('input', e => selection.forEach(s => { if (s.material.color) s.material.color.set(e.target.value); }));
+$('#m-color').addEventListener('input', e => selection.forEach(s => {
+  // Blob dots carry their own SDF colour - the handle shows a darkened tint.
+  if (s.userData.isBlobDot) { s.userData.color = e.target.value; s.material.color.set(e.target.value).multiplyScalar(0.4); blobDirty = true; saveSoon(); return; }
+  if (s.material.color) s.material.color.set(e.target.value);
+}));
 
 // Texture
 function applyTexture(brush, tex) { if ('map' in brush.material) { brush.material.map = tex; brush.material.needsUpdate = true; } }
@@ -1650,6 +1957,12 @@ function refresh() {
     if (m && m.color) $('#m-color').value = '#' + m.color.getHexString();
     const set = (sel, v) => { $(sel).value = v; $(sel + '-v').textContent = (+v).toFixed(2); };
     if (m) { set('#m-rough', m.roughness ?? 0.35); set('#m-metal', m.metalness ?? 0); set('#m-trans', m.transmission ?? 0); set('#m-ior', m.ior ?? 1.5); }
+    // Blob dot selected → colour picker shows the SOURCE colour (not the dark
+    // handle tint) and the Ball size slider tracks this dot.
+    if (s.userData.isBlobDot) {
+      $('#m-color').value = s.userData.color || '#8b93ff';
+      $('#b-ballr').value = s.userData.r || 1; $('#b-ballr-v').textContent = (+(s.userData.r || 1)).toFixed(2);
+    }
     // Sync PBR map slots (thumbnail + clear) to the selected material.
     document.querySelectorAll('#pbr-maps [data-k]').forEach(thumb => {
       const tex = m && m[thumb.dataset.k], src = tex && tex.userData && tex.userData.src;
@@ -1933,6 +2246,7 @@ function tick(now) {
   driveRig(dt);   // agent-authored rig: keyframe clip playback + IK chains
   for (const s of sims) s.update(dt);
   updateWiredPositionsDynamic();   // time-varying number/timeline drive on replicated clones
+  updateBlobGPU();                 // raymarched live-blob uniforms (no-op when no blob)
   orbit.update();
   renderer.render(scene, camera);
   applyWiredFX(now / 1000);   // ADDITIVE: wired post-process onto the overlay (no-op when none)
@@ -2018,7 +2332,8 @@ function serializeScene() {
     });
   }
   const blob = liveBlob && liveBlob.sources.length
-    ? { color: '#' + liveBlob.mc.material.color.getHexString(), sources: liveBlob.sources.map(s => ({ p: s.dot.position.toArray(), r: s.dot.userData.r })) }
+    ? { color: '#' + liveBlob.color.getHexString(), k: blobK,
+        sources: liveBlob.sources.map(s => ({ p: s.dot.position.toArray(), r: s.dot.userData.r, shape: s.dot.userData.shape || 0, prm: s.dot.userData.prm || [1, 0, 0], color: s.dot.userData.color || null })) }
     : null;
   return {
     v: 1,
@@ -2053,7 +2368,11 @@ function restoreScene(data) {
     if (d.deform) { o.userData.deform = d.deform; applyDeformers(o); }
     if (d.fur) buildFur(o, d.fur);
   }
-  if (data.blob && Array.isArray(data.blob.sources)) data.blob.sources.forEach(sp => addBlobSource(new THREE.Vector3().fromArray(sp.p), sp.r, data.blob.color));
+  if (data.blob && Array.isArray(data.blob.sources)) {
+    if (data.blob.k) { blobK = +data.blob.k; const el = $('#b-blendk'); if (el) { el.value = blobK; $('#b-blendk-v').textContent = blobK.toFixed(2); } }
+    // per-source shape/prm/color are v2 fields; old saves fall back to spheres in the base colour
+    data.blob.sources.forEach(sp => addBlobSource(new THREE.Vector3().fromArray(sp.p), sp.r, sp.color || data.blob.color, sp.shape || 0, sp.prm || [1, 0, 0]));
+  }
   // Agent-authored rig + animation (built after all parts exist so bind resolves).
   if (data.rig || data.anim) setRigSpec(data.rig, data.anim);
   select([]); return true;
@@ -2266,7 +2585,7 @@ const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPOR
   try { lastSaved = JSON.stringify(serializeScene()); lastSidecar = lastSaved; } catch (e) {}
 })();
 requestAnimationFrame(tick);
-window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, setRigSpec, buildRig, partByName, driveRig, get rigState(){ return rigState; }, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, get liveBlob(){ return liveBlob; } };
+window.__spline3d = { scene, objects, sims, addShape, addCloth, addLiquid, boolOp, blobMerge, liveBlobFromSelected, addBlobSource, bakeLiveBlob, liquefy, applyMode, toggleFur, updateFurDynamics, setDeform, resetDeform, importGLBfromURL, importGLBfromBuffer, addExtrudedSVG, select, setRigSpec, buildRig, partByName, driveRig, get rigState(){ return rigState; }, get selection() { return selection; }, setPhysics(v){ physicsOn = v; }, setBoolSmooth(v){ boolSmooth = v; }, setBlobBlend(v){ blobK = +v; blobDirty = true; }, get blobGPU(){ return __blobGPU; }, get liveBlob(){ return liveBlob; } };
 </script>
 </body>
 </html>
