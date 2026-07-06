@@ -35692,6 +35692,48 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }));
   }, [setData]);
 
+  // Keep prompt nodes' library links honest. The Library panel dispatches
+  // th:prompt-deleted (slug list) when a saved prompt's md is removed -
+  // linked nodes keep their text but drop promptRef so the pill stops
+  // claiming "linked" - and th:prompt-moved {from,to} when a move changes
+  // a slug, so linked nodes follow the file.
+  useEffect(() => {
+    const onDeleted = (e) => {
+      const slugs = new Set((e.detail && e.detail.slugs) || []);
+      if (!slugs.size) return;
+      setData(d => {
+        let changed = false;
+        const nodes = (d.nodes || []).map(n => {
+          if (n.kind !== "prompt" || !n.promptRef || !slugs.has(n.promptRef)) return n;
+          changed = true;
+          const { promptRef, ...rest } = n;
+          return rest;
+        });
+        return changed ? { ...d, nodes } : d;
+      });
+    };
+    const onMoved = (e) => {
+      const from = e.detail && e.detail.from;
+      const to = e.detail && e.detail.to;
+      if (!from || !to) return;
+      setData(d => {
+        let changed = false;
+        const nodes = (d.nodes || []).map(n => {
+          if (n.kind !== "prompt" || n.promptRef !== from) return n;
+          changed = true;
+          return { ...n, promptRef: to };
+        });
+        return changed ? { ...d, nodes } : d;
+      });
+    };
+    window.addEventListener("th:prompt-deleted", onDeleted);
+    window.addEventListener("th:prompt-moved", onMoved);
+    return () => {
+      window.removeEventListener("th:prompt-deleted", onDeleted);
+      window.removeEventListener("th:prompt-moved", onMoved);
+    };
+  }, [setData]);
+
   // ── Layering (send-to-back / bring-to-front) ──────────────────────────
   // Nodes paint by an explicit integer `z` (default 0); when z is equal the
   // existing render order is the tiebreak, so a graph that never touches
@@ -47907,25 +47949,32 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // the HTML pages library section.
   const deleteHtml = deleteAsset;
   const deletePrompt = async (slug) => {
-    if (!await uiConfirm(`Delete saved prompt "${slug}"?\nThis removes workflow/prompts/${slug}.md. Nodes referencing it stay as-is with their current text.`)) return;
+    if (!await uiConfirm(`Delete saved prompt "${slug}"?\nThis removes workflow/prompts/${slug}.md. Canvas nodes referencing it keep their text but lose the link.`)) return;
     try {
       const r = await fetch(apiUrl("/__prompts/delete"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slug }),
       });
       if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
+      window.dispatchEvent(new CustomEvent("th:prompt-deleted", { detail: { slugs: [slug] } }));
       reload();
     } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
   };
   const deletePromptFolder = async (folder, count) => {
     const inside = count > 0 ? `\nThe ${count} saved prompt${count === 1 ? "" : "s"} inside are deleted with it.` : "";
     if (!await uiConfirm(`Delete folder "${folder}"?${inside}`)) return;
+    // Collect the contained slugs BEFORE the reload wipes them, so linked
+    // canvas nodes can be unlinked.
+    const slugs = (savedPrompts || [])
+      .filter(p => (p.folder || "") === folder || (p.folder || "").startsWith(folder + "/"))
+      .map(p => p.slug);
     try {
       const r = await fetch(apiUrl("/__prompts/delete"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folder }),
       });
       if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
+      if (slugs.length) window.dispatchEvent(new CustomEvent("th:prompt-deleted", { detail: { slugs } }));
       reload();
     } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
   };
@@ -47938,7 +47987,12 @@ function WorkflowLibrary({ tab = "nodes" }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slug, folder }),
       });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Move failed: " + (j.error || r.status)); return; }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { uiAlert("Move failed: " + (j.error || r.status)); return; }
+      // Linked canvas nodes follow the file to its new slug.
+      if (j.slug && j.slug !== slug) {
+        window.dispatchEvent(new CustomEvent("th:prompt-moved", { detail: { from: slug, to: j.slug } }));
+      }
       reload();
     } catch (e) { uiAlert("Move failed: " + (e?.message || e)); }
   };

@@ -30373,12 +30373,19 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
    .is-prompt-drop. Late in the file on purpose - the depth padding must
    win over .workflow-library-item-deletable's flat 30px. */
 .workflow-library-prompt-row {
-  padding-left: calc(30px + var(--th-tree-depth, 0) * 14px);
+  padding-left: calc(12px + var(--th-tree-depth, 0) * 18px);
 }
 .workflow-library-prompt-folder {
   grid-template-columns: 12px 18px 1fr auto auto;
-  padding-left: calc(12px + var(--th-tree-depth, 0) * 14px);
+  padding-left: calc(12px + var(--th-tree-depth, 0) * 18px);
   cursor: pointer;
+}
+/* The folder svg rides the text baseline inside its glyph span and reads
+   as floated-up next to the label - flex-center it instead. */
+.workflow-library-prompt-folder .workflow-library-item-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .workflow-library-prompt-chev {
   display: flex;
