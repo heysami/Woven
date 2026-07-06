@@ -440,12 +440,8 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **constructivism** `[propaganda · bold-geometric · 1917-30-revival]` - Russian avant-garde diagonal red/black/white. → [`aesthetic-constructivism.md`](./design-library/aesthetic-constructivism.md)
 - **de-stijl-neoplasticism** `[art-historical · primary-color · 1917-31-revival]` - Mondrian primary RYB + black grid lines. → [`aesthetic-de-stijl.md`](./design-library/aesthetic-de-stijl.md)
 - **defi-cosmic** `[DeFi-native · dark + cosmic-photo + glass · 2023+]` - swap aggregator dark UI over actual planetary photography. → [`aesthetic-defi-cosmic.md`](./design-library/aesthetic-defi-cosmic.md)
-- **depin-hardware** `[crypto-infrastructure · dark-tech + 3D-render + token-yield · 2022+]` - decentralized physical-infrastructure marketing; hardware product hero with on-chain incentive copy. → [`aesthetic-depin-hardware.md`](./design-library/aesthetic-depin-hardware.md)
-- **anti-design-rams-orthodoxy** `[product-archive · austere · timeless]` - Dieter Rams pure-function with zero ornament. → [`aesthetic-anti-design.md`](./design-library/aesthetic-anti-design.md)
 - **op-art-moire** `[music/cultural · monochrome-optical · 1960s-revival]` - Bridget Riley monochrome optical illusion. → [`aesthetic-op-art.md`](./design-library/aesthetic-op-art.md)
 - **maximalism-considered** `[literary/fashion · period-layered · timeless]` - Wes Anderson + Gentlewoman considered abundance on strict grid. → [`aesthetic-maximalism.md`](./design-library/aesthetic-maximalism.md)
-- **web-brutalism-original** `[statement · edgy · 1990s-revival]` - the original brutalist web tradition. Suggests style: brutalist-raw-web. → [`aesthetic-web-brutalism.md`](./design-library/aesthetic-web-brutalism.md)
-
 **Y2K / Web 2.0 / 2000s graphics:**
 - **y2k-futurism** `[retro-OS · chrome-gel · 1999-2006 · needs-raster]` - Apple Aqua, Sega Dreamcast, Windows XP Luna. → [`aesthetic-y2k-futurism.md`](./design-library/aesthetic-y2k-futurism.md)
 - **y2k-memphis-loud** `[subcultural · maximalist · 1999-2006]` - clashing chroma + multiple display faces + sticker decoration. → [`aesthetic-y2k-memphis-loud.md`](./design-library/aesthetic-y2k-memphis-loud.md)
@@ -463,16 +459,12 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **vector-2000s-neovectorheart** `[fashion/sport · editorial-vector · 2018+]` - Cory Schmitz/SERXPHIS modern. → [`aesthetic-vector-neovectorheart.md`](./design-library/aesthetic-vector-neovectorheart.md)
 - **avantropop** `[electropop · CMYK-polygon · 2007-12]` - Justice/Ed Banger electropop graphic. → [`aesthetic-avantropop.md`](./design-library/aesthetic-avantropop.md)
 - **acid-design-rave-flyer** `[club/music · neon-rave · 90s-revival]` - David Rudnick/Boiler Room flyers. → [`aesthetic-acid-design.md`](./design-library/aesthetic-acid-design.md)
-- **acid-graphics-modern** `[rave/underground · neon-on-black · 2018-24]` - modern acid revival. → [`aesthetic-acid-graphics.md`](./design-library/aesthetic-acid-graphics.md)
-
 **Retro-futurism / "punks":**
 - **cyberpunk-synthwave** `[dystopian-sci-fi · neon-dark · 1980s+]` - Cyberpunk 2077, Tron, synthwave. → [`aesthetic-cyberpunk.md`](./design-library/aesthetic-cyberpunk.md)
 - **vaporwave** `[music/aesthetic · purple-marble · 2010s+ · needs-raster]` - Macintosh Plus, marble busts, Times New Roman. → [`aesthetic-vaporwave.md`](./design-library/aesthetic-vaporwave.md)
 - **cassette-futurism** `[retro-sci-fi · cool-corporate · 1970s-80s-revival · needs-raster]` - Severance, Alien, CRT phosphor. → [`aesthetic-cassette-futurism.md`](./design-library/aesthetic-cassette-futurism.md)
 - **atompunk** `[retro-futurism · midcentury-optimism · 1950s-60s · needs-raster]` - Fallout, NASA worm, Tomorrowland. → [`aesthetic-atompunk.md`](./design-library/aesthetic-atompunk.md)
 - **solarpunk** `[eco-tech · warm-optimistic · 2010s+]` - biomimicry, plants integrated with tech. → [`aesthetic-solarpunk.md`](./design-library/aesthetic-solarpunk.md)
-- **steampunk** `[fantasy-game · brass-victorian · niche]` - Bioshock Infinite brass + gears + Victorian. → [`aesthetic-steampunk.md`](./design-library/aesthetic-steampunk.md)
-- **dieselpunk-decopunk** `[retro-industrial · oxblood-bronze · interwar-revival]` - Bioshock 1-2, Sky Captain interwar. → [`aesthetic-dieselpunk.md`](./design-library/aesthetic-dieselpunk.md)
 
 **Cinematic / photoreal registers (2025-26 showcase wave - most need raster):**
 - **cosmic-horizon** `[orbital-frontier tech · planet-limb glow · 2024+ · needs-raster]` - photoreal planet horizon + satellites under clean dark UI; NASA-operational, not crypto-mystic (that's defi-cosmic). → [`aesthetic-cosmic-horizon.md`](./design-library/aesthetic-cosmic-horizon.md)
@@ -498,7 +490,18 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 - **craft-sketchbook** `[architecture/atelier · hand-drawn chrome on woven paper · needs-raster]` - the page as a professional's working sketchbook: every graphic element hand-drawn and self-drawing in, cream paper substrate, one vivid printed accent. → [`aesthetic-craft-sketchbook.md`](./design-library/aesthetic-craft-sketchbook.md)
 - **zine-type-wall** `[archive/culture · colliding-type hero · enumeration-dense]` - type-dominant maximal editorial: full-viewport wall of orthogonally colliding text blocks at 20:1 scale contrast, one-off marker frames per item, candy solids on a strict ink field. → [`aesthetic-zine-type-wall.md`](./design-library/aesthetic-zine-type-wall.md)
 
+**Anime / game-UI / metaverse registers (character art carries identity - most need raster):**
+- **arknights-endfield-industrial** `[game-UI · clean-industrial techwear · needs-raster]` - Arknights: Endfield's highly-industrial-but-clean lane; techwear operators + Talos-II architecture, threads between dieselpunk-grit and sterile-corporate. → [`aesthetic-arknights-endfield-industrial.md`](./design-library/aesthetic-arknights-endfield-industrial.md)
+- **honkai-star-rail-polished-sf** `[game-UI · polished sci-fantasy · needs-raster]` - HoYoverse's most-quoted modern game-UI grammar; ornate frame corners + high-fidelity character art on dark cosmic fields, flavor without noise. → [`aesthetic-honkai-star-rail-polished-sf.md`](./design-library/aesthetic-honkai-star-rail-polished-sf.md)
+- **zenless-zone-zero-retrofuture** `[game-UI · gritty-neon-urban · needs-raster]` - ZZZ, HoYoverse's counter-pole to Star Rail; 90s street culture + VHS noise + CRT scanlines + graffiti + cassette labels. → [`aesthetic-zenless-zone-zero-retrofuture.md`](./design-library/aesthetic-zenless-zone-zero-retrofuture.md)
+- **persona-5-heist-pop** `[game-UI · kinetic-red heist · needs-raster]` - Atlus P5; ransom-note typography + chamfered corners + halftone silhouettes + diagonal-slash motion, strict red/black/paper. → [`aesthetic-persona-5-heist-pop.md`](./design-library/aesthetic-persona-5-heist-pop.md)
+- **persona-3-water-noir** `[game-UI · melancholic-cyan · needs-raster]` - the P5 sibling inverted; flowing cyan, water-surface texture, melancholic register (never mix with P5). → [`aesthetic-persona-3-water-noir.md`](./design-library/aesthetic-persona-3-water-noir.md)
+- **summer-wars-oz-clean-vr** `[metaverse · clean-white virtual world · needs-raster]` - Hosoda's OZ, THE canonical clean-white metaverse; mascot avatars on infinite white carry the whole identity. → [`aesthetic-summer-wars-oz-clean-vr.md`](./design-library/aesthetic-summer-wars-oz-clean-vr.md)
+- **belle-u-painterly-vr** `[metaverse · painterly-sublime VR · needs-raster]` - Belle's U, the 2021 darker/mature evolution of OZ; painted volumetric backgrounds + Disney-Renaissance character art. → [`aesthetic-belle-u-painterly-vr.md`](./design-library/aesthetic-belle-u-painterly-vr.md)
+- **chinese-curated-modernist** `[editorial · photography + strict geometry · needs-raster]` - the Guizang (op7418) lineage; imported modernist traditions constrained rigorously, photography-driven. → [`aesthetic-chinese-curated-modernist.md`](./design-library/aesthetic-chinese-curated-modernist.md)
+
 **Pixel-art eras (each suggests style: pixel-grid-bitmap):**
+- **8-bit-generic** `[pixel-indie · console-honest + Lospec · 1983-revival]` - generic 8-bit console-pixel register (NES / Game Boy / SNES / PICO-8) extended into the 2010s itch.io / Lospec indie revival. → [`aesthetic-8-bit-generic.md`](./design-library/aesthetic-8-bit-generic.md)
 - **pixel-arcade-1978-85** `[arcade-history · 8x8-monochrome · 1978-85]` - Space Invaders, Pac-Man, Donkey Kong. → [`aesthetic-pixel-arcade.md`](./design-library/aesthetic-pixel-arcade.md)
 - **pixel-nes-mario-1985-93** `[NES · 4-color-sprite · 1985-93]` - Super Mario Bros, Mega Man 2 era. → [`aesthetic-pixel-nes-mario.md`](./design-library/aesthetic-pixel-nes-mario.md)
 - **pixel-game-boy-mono-1989-96** `[Game-Boy · DMG-palette · 1989-96]` - Pokemon Red/Blue, Tetris GB. → [`aesthetic-pixel-game-boy-mono.md`](./design-library/aesthetic-pixel-game-boy-mono.md)
@@ -510,24 +513,22 @@ The aesthetic is the cultural identity: which era, which movement, which subcult
 **Kids / playful / nostalgia:**
 - **positivity-kawaii** `[wellness/kids · pastel-mascot · 2010s+ · needs-raster]` - Pusheen, Sanrio, Headspace. → [`aesthetic-positivity-kawaii.md`](./design-library/aesthetic-positivity-kawaii.md)
 - **wacky-pomo** `[kids-90s · Nickelodeon-splat · 1989-98]` - Nickelodeon Studios, Saved by the Bell, Memphis Milano. → [`aesthetic-wacky-pomo.md`](./design-library/aesthetic-wacky-pomo.md)
-- **curly-girly** `[tween-girls · rainbow-glitter · 90s-00s · needs-raster]` - Lisa Frank, Bratz, Claire's. → [`aesthetic-curly-girly.md`](./design-library/aesthetic-curly-girly.md)
-
 **Hip-hop / urban / brand / gaming:**
 - **urbling** `[hip-hop/bling · diamond-gold · 1997-2005 · needs-raster]` - Juvenile, Master P, Pen & Pixel album covers. → [`aesthetic-urbling.md`](./design-library/aesthetic-urbling.md)
 - **corporate-memphis** `[SaaS-marketing · noodle-people · 2017-22 · needs-raster]` - Slack/Facebook noodle-people illustration. → [`aesthetic-corporate-memphis.md`](./design-library/aesthetic-corporate-memphis.md)
-- **crypto-degen** `[meme-coin/casino · dark + acid-neon · 2024+]` - irreverent on-chain trading culture; emoji-as-CTA, lowercase-defiant voice. → [`aesthetic-crypto-degen.md`](./design-library/aesthetic-crypto-degen.md)
 - **corporate-grunge** `[1990s-corporate-ads · distressed-photocopy · 1993-2005 · needs-raster]` - OK Soda, Ray Gun, Nike. → [`aesthetic-corporate-grunge.md`](./design-library/aesthetic-corporate-grunge.md)
 - **neubrutalism-cultural** `[product-launch/dev-tools · saturated-flat · 2021+]` - Gumroad/Figma Config 2021. Suggests style: neubrutalism-saturated. → [`aesthetic-neubrutalism.md`](./design-library/aesthetic-neubrutalism.md)
+- **soft-neubrutalism** `[product/creator · warm-pastel + rounded · 2024-26]` - the warm refinement of harsh neubrutalism; pastel grounds, rounded corners, softened shadows. → [`aesthetic-soft-neubrutalism.md`](./design-library/aesthetic-soft-neubrutalism.md)
+- **kawaii-brutalism** `[creator/social · maximalist sticker-fusion · 2020s]` - neubrutalism gone glitter-MySpace; sticker chaos and decoration-maximalism over the blunt bones. → [`aesthetic-kawaii-brutalism.md`](./design-library/aesthetic-kawaii-brutalism.md)
+- **neubrutalism-monochrome-editorial** `[boutique-publication · premium-restrained · needs-raster]` - the premium-restrained evolution; monochrome chassis with ONE bold brand-carrying photo per page. → [`aesthetic-neubrutalism-monochrome-editorial.md`](./design-library/aesthetic-neubrutalism-monochrome-editorial.md)
 - **rgb-gamer** `[gaming-hardware · neon-on-black · 2010s+]` - Razer, ASUS ROG, NZXT. → [`aesthetic-rgb-gamer.md`](./design-library/aesthetic-rgb-gamer.md)
 
 **Internet aesthetics (commonly paired with scrapbook-substrate shell + raster-cutout-collage style):**
 - **cottagecore** `[lifestyle-blog · pressed-flowers · cream-warm · 2018+]` - pressed wildflowers, vintage cookbooks, country domesticity. → [`aesthetic-cottagecore.md`](./design-library/aesthetic-cottagecore.md)
 - **dark-academia** `[literary-blog · leather-keys · oxblood-sepia · 2018+]` - leather books, brass keys, oxidized ivy, daguerreotypes. → [`aesthetic-dark-academia.md`](./design-library/aesthetic-dark-academia.md)
-- **goblincore** `[forest-blog · mushrooms-mossy · forest-floor · 2019+]` - mushrooms, tarnished silver, mossy stones. → [`aesthetic-goblincore.md`](./design-library/aesthetic-goblincore.md)
 - **coastal-grandmother** `[lifestyle-blog · sand-dollar-linen · Nantucket-cool · 2022+]` - sand dollars, sea glass, hydrangea. → [`aesthetic-coastal-grandmother.md`](./design-library/aesthetic-coastal-grandmother.md)
 - **cluttercore** `[lifestyle-blog · keepsake-chaos · saturated-warm · 2020+]` - 30-50 keepsake cutouts on kraft. → [`aesthetic-cluttercore.md`](./design-library/aesthetic-cluttercore.md)
 - **dreamcore** `[liminal-blog · liminal-VHS · off-register-pastel · 2019+]` - liminal spaces, VHS degradation, dim hallways. → [`aesthetic-dreamcore.md`](./design-library/aesthetic-dreamcore.md)
-- **cottagegoth** `[gothic-blog · nightshade-ravens · dark-floral · 2019+]` - black-rose, raven, apothecary, mourning. → [`aesthetic-cottagegoth.md`](./design-library/aesthetic-cottagegoth.md)
 - **angelcore** `[religious-blog · cherub-gilt · Marian-blue · 2019+]` - Renaissance cherubs, gilt fragments, Marian blue. → [`aesthetic-angelcore.md`](./design-library/aesthetic-angelcore.md)
 - **y2k-myspace** `[nostalgia-blog · glitter-GIFs · neon-clash · 2003-08]` - glitter GIFs, AIM stickers, MySpace pages. → [`aesthetic-y2k-myspace.md`](./design-library/aesthetic-y2k-myspace.md)
 
@@ -554,6 +555,7 @@ When the brief matches a familiar shipped-product type, pick one of these recipe
 - **recipe-warm-restraint-apothecary** `[wellness/skincare · warm · adult-premium]` = centered-narrow-column + cream-humanist-serif + (no aesthetic) + gentle-imperative voice → [`recipe-warm-restraint.md`](./design-library/recipe-warm-restraint.md)
 - **recipe-jp-corporate-recruit** `[recruiting/employer-brand · white-pop · systematized]` = hero-stack + flat-design + two-register-heading + aesthetic-jp-recruit-pop + aspirational-declarative voice → [`recipe-jp-corporate-recruit.md`](./design-library/recipe-jp-corporate-recruit.md)
 - **recipe-brand-story-journey** `[VI/anniversary explainer · scroll film · scene-led]` = scroll-journey-scene + restrained-hairline + paper-construction (or brief-dictated hero material) + curatorial narration-in-scene voice → [`recipe-brand-story-journey.md`](./design-library/recipe-brand-story-journey.md)
+- **recipe-object-stage-hero** `[brand/product hero · Spline-grade 3D object + UI in the quiet zone]` = canvas-floating (or hero-stack) + restrained-hairline + ONE lead material (glass/chrome/acrylic) + ambient idle + damped pointer → [`recipe-object-stage-hero.md`](./design-library/recipe-object-stage-hero.md)
 
 ## Scene-based addendum - when drawing must become rendering
 

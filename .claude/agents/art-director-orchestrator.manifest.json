@@ -29,8 +29,8 @@
     "generate-image"
   ],
   "nodeKinds": {
-    "container": [
-      "art-direction"
+    "asset": [
+      "image"
     ],
     "agent_overrides": [
       "ad_plate_*",
