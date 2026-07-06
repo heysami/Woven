@@ -6221,6 +6221,19 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   visibility: visible;
   width: 4px;
 }
+/* Fullscreen beats every left-panel grid variant. Without this, the
+   proto+chat rule above (equal specificity, LATER in the file than the base
+   fullscreen collapse) out-cascades it and the chat column keeps its width -
+   fullscreen preview with the chat open only filled the right part of the
+   screen. Same for the drag handle the proto+chat rule re-shows. */
+.workflow-root[data-fullscreen="true"] .workflow-body[data-left-panel],
+.workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="chat"] {
+  grid-template-columns: 0 0 0 1fr;
+}
+.workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="chat"] .workflow-resize-handle-lib {
+  visibility: hidden;
+  width: 0;
+}
 /* Floating left chat panel for the standalone views (User testing /
    Development) that mount RightRailDock - the mirror of the floating right
    dock, pinned to the LEFT edge. Same z tier as .right-rail-dock-host
