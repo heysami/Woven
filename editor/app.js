@@ -20596,11 +20596,13 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
   // dispatch families on/off, see which are limited by the keys set in step 2).
   // Step 5 is its own dedicated celebration so the user can press ← Back to
   // review the earlier steps instead of being trapped on a completion view.
-  // Initial step = first unmet REQUIRED requirement on FIRST mount only (the
-  // two optional steps - Asset keys, Orchestrators - never gate). After that,
-  // navigation is user-driven (no surprise auto-jumps).
+  // Always open on Step 1: even when a CLI is already on PATH, a first-run
+  // user walks the wizard from the start (asset keys + orchestrators are
+  // only ever seen here). Steps already satisfied show a ✓ pip and Next is
+  // always free, so a set-up user just clicks through. Navigation stays
+  // user-driven after mount (no surprise auto-jumps).
   const DONE_STEP = 5;
-  const [step, setStep] = useState(() => !modelOk ? 1 : !skillsOk ? 4 : DONE_STEP);
+  const [step, setStep] = useState(1);
   const [installOpen, setInstallOpen] = useState(false);
 
   const pips = [
