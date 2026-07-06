@@ -9393,6 +9393,47 @@ absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
 """
 
 
+# Argv-runtime (codex / opencode) variant of WORKSPACE_LAYOUT_PROMPT. Neither
+# CLI has an --add-dir flag, and their file tools take LITERAL paths with no
+# env-var expansion - so naming only `$TH_PROTOCOL_ROOT` forces the model to
+# GUESS the absolute path. A real opencode run (tokyocar) guessed wrong: it
+# shortened an install root whose name contains spaces, the out-of-sandbox
+# read raised an external_directory permission ask, non-interactive
+# `opencode run` auto-rejected it, and the run ended with zero output. Bake
+# the literal INSTALL_ROOT into the text so there is nothing to guess.
+WORKSPACE_LAYOUT_PROMPT_ARGV = f"""
+
+## Workspace layout
+
+Your cwd is the active project's root. Project-scoped artifacts live here \
+and you read/write them via relative paths:
+
+- `source/` - prototype source (HTML, CSS, JS, prototype.json, …)
+- `editor/data.js` - editor data file for this project (window.EDITOR_DATA)
+- `DESIGN.md`, `NOTES.md`, `edits.json` - per-project docs and ephemeral \
+handoff files
+
+The **agent protocol** - the shared playbook every project follows - is \
+read-only and lives at EXACTLY this absolute path (also exported as \
+`TH_PROTOCOL_ROOT`):
+
+    {INSTALL_ROOT}
+
+Use that path VERBATIM in file reads - it may contain spaces; never shorten \
+or "normalize" it. Reads outside the workspace tree can be rejected by your \
+sandbox, and the correct path never needs that. Read these files from there; \
+do NOT copy them into the project:
+
+- `AGENTS.md` - entry point + workflow index
+- `PROTOTYPE.md` - design skill
+- `docs/agents/**` - workflows, subagents, orchestrator, conventions, data-schema
+
+Useful env vars set on every spawn: `TH_PROJECT_ROOT` (your cwd as an \
+absolute path), `TH_PROTOCOL_ROOT` (the shared protocol mount), \
+`TH_PROJECT_ID` (the workspace id of the active project).
+"""
+
+
 # Appended to the system prompt when AGENT_MCP_CONFIG is wired in. Tells the
 # agent the routing policy: built-in WebFetch / WebSearch are primary; the
 # MCP servers are escalation paths. Without this guidance the agent reaches
@@ -9528,7 +9569,9 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
     _write_tool = "apply_patch" if agent_id == "codex" else "the write/edit tool"
     bits = [QUESTION_FORM_SYSTEM_PROMPT]
     if WORKSPACE_DIR and project_root != INSTALL_ROOT:
-        bits.append(WORKSPACE_LAYOUT_PROMPT)
+        # ARGV variant: codex/opencode need the literal protocol-root path
+        # (no --add-dir, no env expansion in file tools - see the constant).
+        bits.append(WORKSPACE_LAYOUT_PROMPT_ARGV)
     if branch and branch != "main":
         bits.append(
             "\n## Active prototype scope\n\n"
@@ -12009,7 +12052,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         # so the subagent knows where AGENTS.md / PROTOTYPE.md live.
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT
         if WORKSPACE_DIR and project_root != INSTALL_ROOT:
-            sys_prompt += WORKSPACE_LAYOUT_PROMPT
+            # claude reaches the protocol root via --add-dir + env expansion;
+            # codex/opencode need the literal path baked in (see the ARGV
+            # constant for the tokyocar failure this prevents).
+            sys_prompt += (WORKSPACE_LAYOUT_PROMPT if agent_id == "claude"
+                           else WORKSPACE_LAYOUT_PROMPT_ARGV)
         if agent_id == "claude" and _mcp_config_spawn_args():
             sys_prompt += _mcp_routing_prompt()
         # bake the capabilities catalog into the preamble so the
