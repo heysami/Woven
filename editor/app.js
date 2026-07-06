@@ -20355,7 +20355,7 @@ function OnboardingLocalToolRow({ pkg, autoInstall }) {
         <div className="onboarding-tool-required-reason">Installing automatically - this can take 1-3 minutes${pkg.id === "shader-verify" ? " (downloads a Chromium)" : pkg.id === "rembg" ? " (downloads the model on first use)" : ""}. You can keep going; the row flips green when it lands.</div>
       `}
       ${missingPrereq && html`
-        <div className="onboarding-tool-required-reason">Auto-install skipped - ${status.needsBrew ? html`this installs via Homebrew; get it from <a href="https://brew.sh" target="_blank" rel="noopener">brew.sh</a>` : html`this needs Node.js; get it from <a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>`} first, then hit Re-check.</div>
+        <div className="onboarding-tool-required-reason">Auto-install skipped - ${status.needsBrew ? html`<span>this installs via Homebrew; get it from <a href="https://brew.sh" target="_blank" rel="noopener">brew.sh</a></span>` : html`<span>this needs Node.js; get it from <a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a></span>`} first, then hit Re-check.</div>
       `}
       ${missingRequired && pkg.requiredReason && !busy && !missingPrereq && html`
         <div className="onboarding-tool-required-reason">${pkg.requiredReason}</div>
@@ -20616,7 +20616,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
       <div className="model-setup-wizard-header">
         <div className="model-setup-wizard-steps" role="tablist" aria-label="Onboarding steps">
           ${pips.map((p, i) => html`
-            ${i > 0 && html`<span className="model-setup-wizard-line" data-done=${pips[i-1].done && p.done}/>`}
+            ${i > 0 && html`<span key=${`line-${p.n}`} className="model-setup-wizard-line" data-done=${pips[i-1].done && p.done}/>`}
             <button
               key=${p.n}
               role="tab"
@@ -80945,10 +80945,10 @@ function WorkflowLocalPackageRow({ pkg }) {
       `}
       <div className="workflow-settings-hint">
         ${pkg.installKind === "brew"
-          ? html`Installs via Homebrew: <code>${"brew install " + pkg.id}</code> (needs Homebrew - brew.sh).`
+          ? html`<span>Installs via Homebrew: <code>${"brew install " + pkg.id}</code> (needs Homebrew - brew.sh).</span>`
           : pkg.installKind === "npm"
-          ? html`Installs Playwright + a Chromium build into <code>editor/tools</code> (needs Node.js - nodejs.org). ~150 MB browser download.`
-          : html`Installs to your user-site (no sudo) via <code>${"pip install --user " + pkg.id}</code>.`}${" "}
+          ? html`<span>Installs Playwright + a Chromium build into <code>editor/tools</code> (needs Node.js - nodejs.org). ~150 MB browser download.</span>`
+          : html`<span>Installs to your user-site (no sudo) via <code>${"pip install --user " + pkg.id}</code>.</span>`}${" "}
         Docs: <a href=${pkg.docsUrl} target="_blank" rel="noopener">${pkg.docsUrl.replace(/^https?:\/\//, "")}</a>.
       </div>
     </div>

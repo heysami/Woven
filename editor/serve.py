@@ -10529,6 +10529,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         if parts[:2] == ["editor", "branches"]:
             return os.path.join(project_root, *parts)
         if parts == ["editor", "data.js"]:
+            # Projects landing / fresh install: index.html document.writes
+            # data.js unconditionally, but without ?project= there is no
+            # project context to resolve (a fresh install has no projects at
+            # all). Serve the comment-only stub instead of 404ing - app.js
+            # already stubs window.EDITOR_DATA itself when ?project= is
+            # absent, so the 404 bought nothing but a red console error on
+            # every landing load.
+            if WORKSPACE_DIR and not _qs_get(qs, "project"):
+                return os.path.join(INSTALL_ROOT, "editor", "landing-stub.js")
             # lazy migration: if editor/data.js is the old bootstrap
             # shim (defines EDITOR_BRANCHES + document.write's branches/main.js)
             # and editor/branches/main.js exists, replace data.js with that
@@ -10560,6 +10569,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # /__layout, loaded by index.html before app.js so positions + grid
         # meta survive reload.
         if len(parts) == 2 and parts[0] == "editor" and parts[1].endswith(".layout.js"):
+            # Same landing case as data.js above - index.html loads
+            # <slug>.layout.js unconditionally too.
+            if WORKSPACE_DIR and not _qs_get(qs, "project"):
+                return os.path.join(INSTALL_ROOT, "editor", "landing-stub.js")
             return os.path.join(project_root, *parts)
         # Editor binary (shared).
         if parts[:1] == ["editor"]:
@@ -14682,8 +14695,22 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _ds_bootstrap(self, qs):
         try:
             project_root = resolve_project_root(qs)
-        except ValueError as e:
-            return self._reply(400, {"error": str(e)})
+        except ValueError:
+            # No project context - the projects landing (and a fresh install
+            # with zero projects) loads index.html without ?project=, and
+            # index.html includes this script unconditionally. An empty
+            # registry is the correct answer here, not a 400: the red console
+            # error on every landing load read as breakage to new users.
+            body = ("// /__ds_bootstrap - no project context (projects landing)\n"
+                    "window.EDITOR_DS_REGISTRY = [];\n").encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         # The canonical design-systems/<id>/ folders are the source of truth.
         # We emit a window.EDITOR_DS_<id> for every canonical DS by reading its
         # trio + meta straight off disk, so a DS shows up in the picker the
