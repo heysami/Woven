@@ -9667,7 +9667,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onOpenTas
 
   const tileBody = (w) => {
     if (w.kind === "thread")   return renderThread(w);
-    if (w.kind === "subagent") return html`<${SubagentPanel} agent=${w.agent} runTitle=${w.runTitle} />`;
+    if (w.kind === "subagent") return html`<${SubagentPanel} agent=${w.agent} runId=${w.runId} runTitle=${w.runTitle} />`;
     if (w.kind === "task")     return html`<${TaskPanel} task=${w.task} runTitle=${w.runTitle} />`;
     if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} onOpenTask=${onOpenTask} />`;
     if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
@@ -9964,8 +9964,8 @@ function RightRailDock({ mode }) {
       } else if (desc.kind === "subagent") {
         const wid = "w_sub_" + (desc.agent?.id || "x");
         const at = prev.findIndex(w => w.id === wid);
-        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
-        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runId: desc.runId ?? next[at].runId, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runId: desc.runId, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else if (desc.kind !== "thread") {
         const idx = prev.findIndex(w => w.kind === desc.kind);
         if (idx >= 0) next = prev.filter((_, i) => i !== idx);
@@ -9981,6 +9981,7 @@ function RightRailDock({ mode }) {
       return next;
     });
   }, []);
+  useOpenSubagentEvent(openWindow);
   const closeWindow = useCallback((id, run) => {
     setDockWindows(prev => {
       const next = prev.filter(w => w.id !== id);
@@ -10270,7 +10271,7 @@ function RightRailDock({ mode }) {
       onRowResize=${startDockSplit("row")}
       onStartChatWithPrompt=${spawnChat}
       onOpenRun=${reopenRun}
-      onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+      onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runId: run?.runId, runTitle: run?.title || run?.kind })}
       onOpenTask=${(task, run) => openWindow({ kind: "task", task, runTitle: run?.title || run?.kind })}
       renderThread=${(w) => html`<${ChatDrawer}
         key=${w.id}
@@ -10725,8 +10726,43 @@ function TaskPanel({ task, runTitle }) {
   `;
 }
 
-function SubagentPanel({ agent, runTitle }) {
-  const a = agent || {};
+/* useOpenSubagentEvent - the ChatDrawer's live-subagent strip has no handle on
+   its host's dock, so a chip click dispatches th:open-subagent instead. Every
+   dock host installs this listener next to its openWindow and opens the detail
+   tile, exactly like a Tasks & subagents row click. */
+function useOpenSubagentEvent(openWindow) {
+  useEffect(() => {
+    const onOpen = (e) => {
+      const d = e?.detail || {};
+      if (d.agent) openWindow({ kind: "subagent", agent: d.agent, runId: d.runId, runTitle: d.runTitle });
+    };
+    window.addEventListener("th:open-subagent", onOpen);
+    return () => window.removeEventListener("th:open-subagent", onOpen);
+  }, [openWindow]);
+}
+
+function SubagentPanel({ agent, runId, runTitle }) {
+  // The dock stores a click-time snapshot; Refresh re-reads chat.jsonl and
+  // swaps in the subagent's current state (new activity lines, the result once
+  // it lands) without closing the pane. `live` overrides the frozen prop until
+  // the pane is reopened on a different subagent.
+  const [live, setLive] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => { setLive(null); }, [agent?.id]);
+  const refresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const resp = await fetch(apiUrl("/__chat"));
+      const j = resp.ok ? await resp.json() : { events: [] };
+      const rows = (Array.isArray(j.events) ? j.events : [])
+        .filter(r => !runId || r?.runId === runId);
+      const found = extractRunSubagents(chatRowsToEvents(rows)).find(s => s.id === agent?.id);
+      if (found) setLive(found);
+    } catch {}
+    setRefreshing(false);
+  };
+  const a = live || agent || {};
   const state = a.error ? "failed" : a.done ? "done" : "running";
   const dot   = a.error ? "fail"   : a.done ? "done" : "live";
   // Prompt collapses by default so the task history (activity + result) is what
@@ -10742,6 +10778,9 @@ function SubagentPanel({ agent, runTitle }) {
           <span className="th-subagent-head-label">${a.label || "Subagent"}</span>
         </span>
         <span className="th-tasks-row-state">${state}</span>
+        <button className="th-icon-btn th-subagent-refresh" title="Refresh this subagent's detail"
+          aria-label="Refresh subagent detail" disabled=${refreshing} data-busy=${refreshing}
+          onClick=${refresh}><${Icon.Refresh}/></button>
       </div>
       <div className="th-rail-panel-body th-subagent-body">
         ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
@@ -10770,7 +10809,7 @@ function SubagentPanel({ agent, runTitle }) {
               <div className="th-tasks-agent-sec-h">Result</div>
               <pre className="th-tasks-agent-pre th-subagent-pre" data-error=${a.error}>${a.result}</pre>
             </div>`
-          : html`<div className="th-tasks-agent-empty">Still running - no result yet. Close and reopen to refresh.</div>`}
+          : html`<div className="th-tasks-agent-empty">Still running - no result yet. Use the refresh button above to check again.</div>`}
       </div>
     </div>
   `;
@@ -13312,11 +13351,20 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}>
             ${eff === "agents"
               ? activeAgents.map(a => html`
-                <div className="chat-active-agent" key=${a.id} title=${`${a.type} - ${a.task}`}>
+                <button type="button" className="chat-active-agent chat-active-agent-btn" key=${a.id}
+                  title=${`${a.type} - ${a.task}\nOpen this subagent's details`}
+                  onClick=${() => {
+                    // Snapshot the subagent from this run's events (same shape a
+                    // Tasks & subagents row carries) and ask the dock host to
+                    // tile its detail pane - the drawer has no dock handle.
+                    const snap = extractRunSubagents(events).find(s => s.id === a.id);
+                    if (!snap) return;
+                    try { window.dispatchEvent(new CustomEvent("th:open-subagent", { detail: { agent: snap, runId: run?.runId, runTitle: run?.title || run?.kind } })); } catch {}
+                  }}>
                   <span className="chat-active-agent-spin" aria-hidden="true"/>
                   <span className="chat-active-agent-type">${a.type}</span>
                   <span className="chat-active-agent-task">${a.task}</span>
-                </div>`)
+                </button>`)
               : tasks.map(t => html`
                 <div className="chat-active-agent" key=${t.id} data-status=${t.status} title=${t.subject}>
                   ${t.status === "in_progress"
@@ -13518,6 +13566,36 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [slashQuery, setSlashQuery] = useState("");
   const [slashSkills, setSlashSkills] = useState(() => __slashSkillCache || []);
   const [slashIndex, setSlashIndex] = useState(0);
+  // Viewport-fixed anchor for the slash menu portal. The composer lives
+  // inside overflow:hidden panel columns (workflow library col, .app-left-
+  // chat), so an absolutely-positioned popover wider than the panel gets
+  // CLIPPED at the panel edge. Instead the menu portals to document.body
+  // (the share-menu pattern) and this rect pins it above the input wrap.
+  // Re-measured while open on every text change (the textarea autogrows,
+  // moving the anchor top) and on window resize.
+  const wrapRef = useRef(null);
+  const [slashPos, setSlashPos] = useState(null);
+  useLayoutEffect(() => {
+    if (!slashOpen) { setSlashPos(null); return; }
+    const measure = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      // Clamp left so the menu's max width (620px, or viewport minus margins
+      // on narrow screens) always fits - it grows rightward from the
+      // composer into the page interior, never off the right edge.
+      const maxW = Math.min(620, window.innerWidth - 32);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - 16 - maxW));
+      setSlashPos({
+        left: Math.round(left),
+        bottom: Math.round(window.innerHeight - r.top + 6),
+        minWidth: Math.round(Math.min(r.width, maxW)),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [slashOpen, text]);
   // Send-key preference (Enter-sends vs ⌘/Ctrl+Enter-sends), read live so a
   // change in onboarding/Settings takes effect without remounting the composer.
   const [sendOnEnter, setSendOnEnter] = useState(() => loadSendOnEnter());
@@ -14255,7 +14333,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         }}
       />
       ${targetBar}
-      <div className="chat-composer-input-wrap" style=${{ position: "relative", minWidth: 0 }}>
+      <div ref=${wrapRef} className="chat-composer-input-wrap" style=${{ position: "relative", minWidth: 0 }}>
         <textarea
           ref=${taRef}
           className="chat-composer-input"
@@ -14271,7 +14349,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             setTimeout(() => setSlashOpen(false), 120);
           }}
         />
-        ${slashOpen && filteredSlashSkills.length > 0 && (() => {
+        ${slashOpen && slashPos && filteredSlashSkills.length > 0 && (() => {
           // The list is just tokens, anchor-colored per kind. The detail pane
           // shows the active row's name + type badge + ≤2-line description.
           // `activeIdx` clamps slashIndex in case filtering shrank the list
@@ -14284,8 +14362,11 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           : sk.kind === "orchestrator" ? "orchestrator"
           : sk.kind === "library"      ? (sk.libraryGroup || "library")
           : sk.kind;
-          return html`
-            <div className="chat-slash-menu" role="listbox" aria-label="Skills, orchestrators, and design library">
+          // Portal to document.body so the panel columns' overflow:hidden
+          // can't crop the menu (it grows wider than the chat column).
+          return createPortal(html`
+            <div className="chat-slash-menu" role="listbox" aria-label="Skills, orchestrators, and design library"
+              style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
               <div className="chat-slash-head">
                 <span className="chat-slash-head-title">Skills · orchestrators · design library</span>
                 <span className="chat-slash-head-meta">${filteredSlashSkills.length} of ${slashSkills.length} - ↑↓ navigate, ↵ insert, Esc close</span>
@@ -14336,13 +14417,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                 ` : html`<div className="chat-slash-detail-empty">Highlight an item to see details.</div>`}
               </div>
             </div>
-          `;
+          `, document.body);
         })()}
-        ${slashOpen && filteredSlashSkills.length === 0 && slashSkills.length > 0 && html`
-          <div className="chat-slash-menu chat-slash-menu-empty">
+        ${slashOpen && slashPos && filteredSlashSkills.length === 0 && slashSkills.length > 0 && createPortal(html`
+          <div className="chat-slash-menu chat-slash-menu-empty"
+            style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
             <div className="chat-slash-empty">No skill, orchestrator, or library entry matches “${slashQuery}”. Esc to dismiss.</div>
           </div>
-        `}
+        `, document.body)}
         <div className="chat-composer-inbox-actions">
           ${!isNew && (runStatus === "streaming" || runStatus === "connecting") && onStop && html`
             <button
@@ -24713,8 +24795,8 @@ function WorkflowCanvas() {
         // own pane; reopening the same one refreshes its frozen snapshot.
         const wid = "w_sub_" + (desc.agent?.id || "x");
         const at = prev.findIndex(w => w.id === wid);
-        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
-        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runId: desc.runId ?? next[at].runId, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runId: desc.runId, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else if (desc.kind !== "thread") {
         const idx = prev.findIndex(w => w.kind === desc.kind);
         if (idx >= 0) next = prev.filter((_, i) => i !== idx);
@@ -24735,6 +24817,7 @@ function WorkflowCanvas() {
       return next;
     });
   }, []);
+  useOpenSubagentEvent(openWindow);
   const closeWindow = useCallback((id, run) => {
     setDockWindows(prev => {
       const next = prev.filter(w => w.id !== id);
@@ -26086,7 +26169,7 @@ function WorkflowCanvas() {
       onRowResize=${startDockSplit("row")}
       onStartChatWithPrompt=${spawnWorkflowChat}
       onOpenRun=${reopenWorkflowRun}
-      onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+      onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runId: run?.runId, runTitle: run?.title || run?.kind })}
       onOpenTask=${(task, run) => openWindow({ kind: "task", task, runTitle: run?.title || run?.kind })}
       renderThread=${(w) => html`<${ChatDrawer}
         key=${w.id}
@@ -84740,8 +84823,8 @@ function App() {
         // own pane; reopening the same one refreshes its frozen snapshot.
         const wid = "w_sub_" + (desc.agent?.id || "x");
         const at = prev.findIndex(w => w.id === wid);
-        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runTitle: desc.runTitle }; }
-        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+        if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], agent: desc.agent, runId: desc.runId ?? next[at].runId, runTitle: desc.runTitle }; }
+        else { const w = { id: wid, kind: "subagent", agent: desc.agent, runId: desc.runId, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else if (desc.kind !== "thread") {
         const idx = prev.findIndex(w => w.kind === desc.kind);
         if (idx >= 0) next = prev.filter((_, i) => i !== idx);          // toggle off
@@ -84763,6 +84846,7 @@ function App() {
     });
   }, []);
 
+  useOpenSubagentEvent(openWindow);
   const closeWindow = useCallback((id, run) => {
     setDockWindows(prev => {
       const next = prev.filter(w => w.id !== id);
@@ -85610,7 +85694,7 @@ function App() {
             saveSettings({ lastRunId: run.runId });
           }
         }}
-        onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runTitle: run?.title || run?.kind })}
+        onOpenSubagent=${(agent, run) => openWindow({ kind: "subagent", agent, runId: run?.runId, runTitle: run?.title || run?.kind })}
       onOpenTask=${(task, run) => openWindow({ kind: "task", task, runTitle: run?.title || run?.kind })}
         renderThread=${(w) => html`<${ChatDrawer}
           key=${w.id}

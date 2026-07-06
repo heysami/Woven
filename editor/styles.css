@@ -4934,6 +4934,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.th-subagent-head .th-subagent-refresh { flex: 0 0 auto; }
+.th-subagent-refresh[data-busy="true"] svg { animation: chat-active-agent-spin 0.7s linear infinite; }
 .th-subagent-body { gap: 10px; padding: 10px 12px; }
 .th-subagent-run {
   font-size: 11px;
@@ -12937,23 +12939,21 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   gap: 6px;
 }
 /* Two-pane: head spans the top; list (left) + detail card (right) below.
-   Anchored to the composer's bottom-left so the popover can grow rightward
-   past the textarea on narrow drawers without re-flowing the chat layout. */
+   PORTALED to document.body with position:fixed (left/bottom/min-width come
+   inline from the measured composer rect - see ChatComposer's slashPos) so
+   the overflow:hidden panel columns hosting the composer can't crop it: the
+   chat lives in the LEFT panel on every surface, so a popover wider than
+   the composer grows RIGHTWARD into the page interior past the panel edge. */
 .chat-slash-menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  /* Anchor to the LEFT of the composer - the chat lives in the LEFT panel on
-     every surface now, so a popover wider than the composer must grow
-     RIGHTWARD into the page interior, not leftward off the viewport. */
-  left: 0;
-  right: auto;
+  position: fixed;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
-  z-index: 50;
+  /* Above every chat host surface: floating chat panels sit at z-9550 and
+     the standalone-view chrome at z-9600; this is a transient type-ahead. */
+  z-index: 9650;
   width: max-content;
-  min-width: 100%;
   max-width: min(620px, calc(100vw - 32px));
   max-height: 380px;
   display: grid;
@@ -22103,6 +22103,20 @@ body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: no
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The strip rows are buttons now - clicking one opens that subagent's detail
+   pane in the right dock (same tile a Tasks & subagents row opens). Reset the
+   button chrome so the row reads unchanged; hint clickability on hover. */
+button.chat-active-agent-btn {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+}
+button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text); }
 /* v3.13 - the strip now carries two lists (harness Tasks + running Agents).
    Same row appearance for both; a small tab row switches between them, shown
    only when both lists are non-empty. */
