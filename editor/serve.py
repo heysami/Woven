@@ -10751,7 +10751,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._asset_pin_current(qs)
             if parsed.path == "/__prompts":
                 return self._prompt_save(qs)
-            m = re.match(r"^/__prompts/([a-z0-9][a-z0-9-]{0,60})/delete$", parsed.path)
+            if parsed.path == "/__prompts/delete":
+                return self._prompt_delete_v2(qs)
+            if parsed.path == "/__prompts/mkdir":
+                return self._prompt_mkdir(qs)
+            if parsed.path == "/__prompts/move":
+                return self._prompt_move(qs)
+            m = re.match(r"^/__prompts/((?:[a-z0-9][a-z0-9-]{0,60}/)*[a-z0-9][a-z0-9-]{0,60})/delete$", parsed.path)
             if m:
                 return self._prompt_delete(qs, m.group(1))
             if parsed.path == "/__groups":
@@ -11048,7 +11054,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._assets_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__prompts":
             return self._prompts_list(urllib.parse.parse_qs(parsed.query))
-        m = re.match(r"^/__prompts/([a-z0-9][a-z0-9-]{0,60})$", url_path)
+        m = re.match(r"^/__prompts/((?:[a-z0-9][a-z0-9-]{0,60}/)*[a-z0-9][a-z0-9-]{0,60})$", url_path)
         if m:
             return self._prompt_get(urllib.parse.parse_qs(parsed.query), m.group(1))
         if url_path == "/__groups":
@@ -21406,90 +21412,136 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "path": rel})
 
     # ── Phase 4c - library: saved prompts (markdown "skills") ──────────
-    # Stored at <project>/workflow/prompts/<slug>.md. Filename is the slug;
-    # first markdown H1 line is the human title. Used by the prompt-node
-    # "Save" button and surfaced as draggable items in the Library →
-    # Prompts section.
+    # Stored at <project>/workflow/prompts/<slug>.md - the FILESYSTEM is the
+    # library. `slug` is the md's path relative to workflow/prompts/ without
+    # the extension, so "landing/hero-copy" lives in a landing/ subfolder;
+    # folders nest and render as a tree in Library → Local library. First
+    # markdown H1 line is the human title. Any .md dropped into the folder
+    # by hand (or written by an agent) shows up on the next list: slugs WE
+    # mint (save / mkdir / move destinations) are strict kebab segments, but
+    # listing only requires traversal-safe names (_prompt_rel_ok), so a
+    # hand-dropped "My Notes.md" still appears and can be dragged/moved/
+    # deleted like any saved prompt.
     _PROMPT_SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
+    _PROMPT_DEPTH_MAX = 6
 
     def _prompts_dir(self, project_root):
         return os.path.join(project_root, "workflow", "prompts")
+
+    def _prompt_path_ok(self, slug):
+        """Strict check for paths we mint: 1-6 kebab slug segments."""
+        parts = (slug or "").split("/")
+        if not parts or len(parts) > self._PROMPT_DEPTH_MAX: return False
+        return all(self._PROMPT_SLUG_OK.match(p) for p in parts)
+
+    def _prompt_rel_ok(self, rel):
+        """Loose check for paths we merely list/serve: no hidden segments,
+        no traversal, no separators smuggled inside a segment."""
+        parts = (rel or "").split("/")
+        if not parts or len(parts) > self._PROMPT_DEPTH_MAX: return False
+        for p in parts:
+            if not p or len(p) > 120 or p.startswith("."): return False
+            if "\\" in p or p != p.strip(): return False
+        return True
+
+    def _prompt_file(self, project_root, slug):
+        """Validated absolute path for a slug (rel path, no extension).
+        Raises ValueError on anything unsafe."""
+        rel = (slug or "") + ".md"
+        if not self._prompt_rel_ok(rel):
+            raise ValueError("invalid slug")
+        d = os.path.abspath(self._prompts_dir(project_root))
+        return _safe_join(d, *rel.split("/"))
+
+    @staticmethod
+    def _prompt_split_title(body_text):
+        """(title, text) from a saved md. An H1 first line is the title and
+        is stripped from the body; otherwise title is '' and body passes
+        through untouched."""
+        first_line = (body_text.split("\n", 1)[0] if body_text else "").strip()
+        title = first_line.lstrip("# ").strip()
+        if first_line.startswith("# "):
+            rest = body_text.split("\n", 2)
+            text = rest[2] if len(rest) >= 3 else ""
+            return title, text.lstrip("\n")
+        return title, body_text
+
+    def _prompts_body(self):
+        """Read + parse this POST's JSON body. Returns (dict, None) or
+        (None, error-reply)."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return None, self._reply(413, {"error": "payload too large"})
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8")), None
+        except Exception as e:
+            return None, self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
 
     def _prompts_list(self, qs):
         try: project_root = resolve_project_root(qs)
         except ValueError as e: return self._reply(400, {"error": str(e)})
         d = self._prompts_dir(project_root)
-        items = []
+        items, folders = [], []
         if os.path.isdir(d):
-            for fname in sorted(os.listdir(d)):
-                if not fname.lower().endswith(".md"): continue
-                slug = fname[:-3]
-                if not self._PROMPT_SLUG_OK.match(slug): continue
-                fpath = os.path.join(d, fname)
-                try: st = os.stat(fpath)
-                except Exception: continue
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        body_text = f.read()
-                except Exception:
-                    body_text = ""
-                first_line = (body_text.split("\n", 1)[0] if body_text else "").strip()
-                title = first_line.lstrip("# ").strip() or slug
-                # Strip the H1 title line out of body for the preview; what
-                # the user typed is everything after the title + blank line.
-                if first_line.startswith("# "):
-                    rest = body_text.split("\n", 2)
-                    text = rest[2] if len(rest) >= 3 else ""
-                    text = text.lstrip("\n")
-                else:
-                    text = body_text
-                items.append({
-                    "slug": slug, "title": title, "body": text,
-                    "size": st.st_size,
-                    "mtime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime)),
-                })
+            for dirpath, dirnames, filenames in os.walk(d):
+                dirnames[:] = sorted(x for x in dirnames if not x.startswith("."))
+                reldir = os.path.relpath(dirpath, d).replace(os.sep, "/")
+                if reldir == ".": reldir = ""
+                if reldir:
+                    if not self._prompt_rel_ok(reldir):
+                        dirnames[:] = []
+                        continue
+                    folders.append(reldir)
+                for fname in sorted(filenames):
+                    if not fname.lower().endswith(".md"): continue
+                    rel = (reldir + "/" + fname) if reldir else fname
+                    if not self._prompt_rel_ok(rel): continue
+                    slug = rel[:-3]
+                    fpath = os.path.join(dirpath, fname)
+                    try: st = os.stat(fpath)
+                    except Exception: continue
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            body_text = f.read()
+                    except Exception:
+                        body_text = ""
+                    title, text = self._prompt_split_title(body_text)
+                    items.append({
+                        "slug": slug, "title": title or slug.split("/")[-1],
+                        "body": text, "folder": reldir,
+                        "size": st.st_size,
+                        "mtime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(st.st_mtime)),
+                    })
         items.sort(key=lambda x: x["mtime"], reverse=True)
-        return self._reply(200, {"items": items})
+        return self._reply(200, {"items": items, "folders": sorted(folders)})
 
     def _prompt_get(self, qs, slug):
         try: project_root = resolve_project_root(qs)
         except ValueError as e: return self._reply(400, {"error": str(e)})
-        if not self._PROMPT_SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid slug"})
-        fpath = os.path.join(self._prompts_dir(project_root), slug + ".md")
+        try: fpath = self._prompt_file(project_root, slug)
+        except ValueError: return self._reply(400, {"error": "invalid slug"})
         if not os.path.isfile(fpath):
             return self._reply(404, {"error": "not found"})
         try:
             with open(fpath, "r", encoding="utf-8") as f: body = f.read()
         except Exception as e: return self._reply(500, {"error": f"read failed: {e}"})
-        first_line = (body.split("\n", 1)[0] if body else "").strip()
-        title = first_line.lstrip("# ").strip() or slug
-        if first_line.startswith("# "):
-            rest = body.split("\n", 2)
-            text = rest[2] if len(rest) >= 3 else ""
-            text = text.lstrip("\n")
-        else:
-            text = body
-        return self._reply(200, {"slug": slug, "title": title, "body": text, "raw": body})
+        title, text = self._prompt_split_title(body)
+        return self._reply(200, {"slug": slug, "title": title or slug.split("/")[-1], "body": text, "raw": body})
 
     def _prompt_save(self, qs):
         try: project_root = resolve_project_root(qs)
         except ValueError as e: return self._reply(400, {"error": str(e)})
-        length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0 or length > MAX_BYTES:
-            return self._reply(413, {"error": "payload too large"})
-        try: body = json.loads(self.rfile.read(length).decode("utf-8"))
-        except Exception as e: return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
-        slug = (body.get("slug") or "").strip().lower()
-        if not self._PROMPT_SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid slug (lowercase letters/digits/hyphens, 1-60 chars, starting with letter or digit)"})
-        title = (body.get("title") or slug).strip()
+        body, err = self._prompts_body()
+        if err is not None: return err
+        slug = (body.get("slug") or "").strip().lower().strip("/")
+        if not self._prompt_path_ok(slug):
+            return self._reply(400, {"error": "invalid slug (kebab segments of lowercase letters/digits/hyphens; use folder/name to file it in a folder)"})
+        title = (body.get("title") or slug.split("/")[-1]).strip()
         text  = body.get("body") if isinstance(body.get("body"), str) else (body.get("text") or "")
         if not isinstance(text, str): text = str(text)
-        d = self._prompts_dir(project_root)
-        try: os.makedirs(d, exist_ok=True)
+        fpath = self._prompt_file(project_root, slug)
+        try: os.makedirs(os.path.dirname(fpath), exist_ok=True)
         except Exception as e: return self._reply(500, {"error": f"mkdir failed: {e}"})
-        fpath = os.path.join(d, slug + ".md")
         md = f"# {title}\n\n{text}\n"
         try:
             with open(fpath, "w", encoding="utf-8") as f: f.write(md)
@@ -21497,16 +21549,91 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "slug": slug, "title": title})
 
     def _prompt_delete(self, qs, slug):
+        # Legacy flat route (/__prompts/<slug>/delete). New callers POST
+        # /__prompts/delete with a JSON body so nested + loose slugs work.
         try: project_root = resolve_project_root(qs)
         except ValueError as e: return self._reply(400, {"error": str(e)})
-        if not self._PROMPT_SLUG_OK.match(slug):
-            return self._reply(400, {"error": "invalid slug"})
-        fpath = os.path.join(self._prompts_dir(project_root), slug + ".md")
+        return self._prompt_delete_slug(project_root, slug)
+
+    def _prompt_delete_slug(self, project_root, slug):
+        try: fpath = self._prompt_file(project_root, slug)
+        except ValueError: return self._reply(400, {"error": "invalid slug"})
         if not os.path.isfile(fpath):
             return self._reply(404, {"error": "not found"})
         try: os.remove(fpath)
         except Exception as e: return self._reply(500, {"error": f"delete failed: {e}"})
         return self._reply(200, {"ok": True, "slug": slug})
+
+    def _prompt_delete_v2(self, qs):
+        """POST /__prompts/delete {slug} deletes one saved prompt;
+        {folder} deletes a folder AND everything inside it (the client
+        confirms with the contained count first)."""
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        body, err = self._prompts_body()
+        if err is not None: return err
+        slug = (body.get("slug") or "").strip().strip("/")
+        folder = (body.get("folder") or "").strip().strip("/")
+        if slug:
+            return self._prompt_delete_slug(project_root, slug)
+        if not folder or not self._prompt_rel_ok(folder):
+            return self._reply(400, {"error": "invalid folder"})
+        d = os.path.abspath(self._prompts_dir(project_root))
+        try: fdir = _safe_join(d, *folder.split("/"))
+        except ValueError: return self._reply(400, {"error": "invalid folder"})
+        if not os.path.isdir(fdir):
+            return self._reply(404, {"error": "not found"})
+        try: shutil.rmtree(fdir)
+        except Exception as e: return self._reply(500, {"error": f"delete failed: {e}"})
+        return self._reply(200, {"ok": True, "folder": folder})
+
+    def _prompt_mkdir(self, qs):
+        """POST /__prompts/mkdir {folder} - create a (possibly nested)
+        folder under workflow/prompts/ so the tree can show it before any
+        prompt is filed into it."""
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        body, err = self._prompts_body()
+        if err is not None: return err
+        folder = (body.get("folder") or "").strip().lower().strip("/")
+        if not self._prompt_path_ok(folder):
+            return self._reply(400, {"error": "invalid folder name (kebab segments of lowercase letters/digits/hyphens; nest with folder/subfolder)"})
+        d = os.path.abspath(self._prompts_dir(project_root))
+        try: fdir = _safe_join(d, *folder.split("/"))
+        except ValueError: return self._reply(400, {"error": "invalid folder"})
+        try: os.makedirs(fdir, exist_ok=True)
+        except Exception as e: return self._reply(500, {"error": f"mkdir failed: {e}"})
+        return self._reply(200, {"ok": True, "folder": folder})
+
+    def _prompt_move(self, qs):
+        """POST /__prompts/move {slug, folder} - move a saved prompt into
+        `folder` ('' = the prompts root). Keeps the filename; refuses to
+        overwrite an existing file at the destination."""
+        try: project_root = resolve_project_root(qs)
+        except ValueError as e: return self._reply(400, {"error": str(e)})
+        body, err = self._prompts_body()
+        if err is not None: return err
+        slug = (body.get("slug") or "").strip().strip("/")
+        folder = (body.get("folder") or "").strip().strip("/")
+        try: src = self._prompt_file(project_root, slug)
+        except ValueError: return self._reply(400, {"error": "invalid slug"})
+        if not os.path.isfile(src):
+            return self._reply(404, {"error": "not found"})
+        if folder and not self._prompt_rel_ok(folder):
+            return self._reply(400, {"error": "invalid folder"})
+        base = slug.split("/")[-1]
+        new_slug = (folder + "/" + base) if folder else base
+        try: dst = self._prompt_file(project_root, new_slug)
+        except ValueError: return self._reply(400, {"error": "invalid destination"})
+        if os.path.abspath(dst) == os.path.abspath(src):
+            return self._reply(200, {"ok": True, "slug": slug})
+        if os.path.exists(dst):
+            return self._reply(409, {"error": f"'{base}' already exists in that folder"})
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.rename(src, dst)
+        except Exception as e: return self._reply(500, {"error": f"move failed: {e}"})
+        return self._reply(200, {"ok": True, "slug": new_slug, "from": slug})
 
     # ── Node groups (Local Library) ──────────────────────────────────────
     # A saved group is a snapshot of a multi-node selection - its nodes plus

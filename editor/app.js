@@ -27037,10 +27037,17 @@ function wbArrowHeadD(x, y, fromX, fromY, size) {
 // Defaults mirror the library drag-drop payloads exactly; onCanvasDrop now
 // routes through this map so the two creation paths can't drift.
 const WORKFLOW_NODE_FACTORY = {
-  "prompt": (p) => ({
-    kind: "prompt", w: 280, h: 200,
-    text: p.text || "", title: p.title || "",
-  }),
+  "prompt": (p) => {
+    const node = {
+      kind: "prompt", w: 280, h: 200,
+      text: p.text || "", title: p.title || "",
+    };
+    // A drop from Library → Saved prompts stays LINKED to its md file
+    // (workflow/prompts/<slug>.md) - the node's save button writes back to
+    // the same file, like an asset node writes back to its file.
+    if (p.slug) node.promptRef = p.slug;
+    return node;
+  },
   "folder": (p) => ({
     kind: "folder", w: 320, h: 340,
     path: p.path || "", title: p.title || "",
@@ -47563,6 +47570,15 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
 function WorkflowLibrary({ tab = "nodes" }) {
   const [assets, setAssets] = useState([]);
   const [savedPrompts, setSavedPrompts] = useState([]);
+  // Saved-prompt FOLDERS - workflow/prompts/ subdirectories reported by the
+  // daemon (including empty ones, so a freshly created folder shows before
+  // anything is filed into it). Rendered as a collapsible tree; collapsed
+  // paths are session state only.
+  const [promptFolders, setPromptFolders] = useState([]);
+  const [promptCollapsed, setPromptCollapsed] = useState(() => new Set());
+  // Folder path currently hovered by a prompt drag ("" = the section root),
+  // or null. Drives the drop-target highlight.
+  const [promptDropTarget, setPromptDropTarget] = useState(null);
   // Saved node groups (Local library). Each is a snapshot of a
   // multi-node selection persisted server-side under workflow/groups/; the
   // canvas re-instantiates one when its card is dragged in (kind:node-group).
@@ -47694,6 +47710,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
       ]);
       setAssets((a && a.items) || []);
       setSavedPrompts((p && p.items) || []);
+      setPromptFolders((p && p.folders) || []);
       setSavedGroups((gr && gr.items) || []);
       setExtraProtos(((pr && pr.prototypes) || []));
       setHtmlPagesRaw((hp && hp.htmls) || []);
@@ -47890,12 +47907,79 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // the HTML pages library section.
   const deleteHtml = deleteAsset;
   const deletePrompt = async (slug) => {
-    if (!await uiConfirm(`Delete saved prompt "${slug}"?\nNodes referencing it stay as-is with their current text.`)) return;
+    if (!await uiConfirm(`Delete saved prompt "${slug}"?\nThis removes workflow/prompts/${slug}.md. Nodes referencing it stay as-is with their current text.`)) return;
     try {
-      const r = await fetch(apiUrl(`/__prompts/${encodeURIComponent(slug)}/delete`), { method: "POST" });
+      const r = await fetch(apiUrl("/__prompts/delete"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
       if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
       reload();
     } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
+  };
+  const deletePromptFolder = async (folder, count) => {
+    const inside = count > 0 ? `\nThe ${count} saved prompt${count === 1 ? "" : "s"} inside are deleted with it.` : "";
+    if (!await uiConfirm(`Delete folder "${folder}"?${inside}`)) return;
+    try {
+      const r = await fetch(apiUrl("/__prompts/delete"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
+      reload();
+    } catch (e) { uiAlert("Delete failed: " + (e?.message || e)); }
+  };
+  const movePrompt = async (slug, folder) => {
+    // No-op guard: dropping a prompt onto the folder it's already in.
+    const cur = slug.includes("/") ? slug.slice(0, slug.lastIndexOf("/")) : "";
+    if (cur === folder) return;
+    try {
+      const r = await fetch(apiUrl("/__prompts/move"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, folder }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Move failed: " + (j.error || r.status)); return; }
+      reload();
+    } catch (e) { uiAlert("Move failed: " + (e?.message || e)); }
+  };
+  const newPromptFolder = async () => {
+    const name = await uiPrompt("New folder name (lowercase, letters/digits/hyphens; nest with folder/subfolder):", "");
+    if (!name) return;
+    const folder = name.trim().toLowerCase().replace(/\s+/g, "-").replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+    if (!folder) return;
+    try {
+      const r = await fetch(apiUrl("/__prompts/mkdir"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Create failed: " + (j.error || r.status)); return; }
+      reload();
+    } catch (e) { uiAlert("Create failed: " + (e?.message || e)); }
+  };
+  // Folder tree for the Saved prompts section. Folders come from the daemon
+  // (so empty ones show); each prompt hangs off its `folder` path ("" =
+  // root). Rendered depth-first: subfolders (alphabetical) above the
+  // folder's own prompts (mtime order, same as the flat list before).
+  const promptTree = useMemo(() => {
+    const root = { path: "", name: "", folders: new Map(), prompts: [] };
+    const ensure = (path) => {
+      if (!path) return root;
+      let cur = root;
+      for (const seg of path.split("/")) {
+        const p = cur.path ? cur.path + "/" + seg : seg;
+        if (!cur.folders.has(p)) cur.folders.set(p, { path: p, name: seg, folders: new Map(), prompts: [] });
+        cur = cur.folders.get(p);
+      }
+      return cur;
+    };
+    for (const f of (promptFolders || [])) ensure(f);
+    for (const p of (savedPrompts || [])) ensure(p.folder || "").prompts.push(p);
+    return root;
+  }, [savedPrompts, promptFolders]);
+  const countPromptsIn = (dir) => {
+    let n = dir.prompts.length;
+    for (const sub of dir.folders.values()) n += countPromptsIn(sub);
+    return n;
   };
   const deleteGroup = async (slug) => {
     if (!await uiConfirm(`Delete saved node group "${slug}"?\nGroups already placed on a canvas are unaffected.`)) return;
@@ -48973,33 +49057,103 @@ function WorkflowLibrary({ tab = "nodes" }) {
       ` : null}
       ${tab === "library" ? html`
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Saved prompts</div>
-        ${savedPrompts.length === 0
-          ? html`<div className="workflow-library-empty">No saved prompts yet. Click <strong>save</strong> on any text node's title bar to store it as a reusable <code>.md</code> under <code>workflow/prompts/</code>.</div>`
+        <div
+          className=${"workflow-library-section-head" + (promptDropTarget === "" ? " is-prompt-drop" : "")}
+          onDragOver=${(e) => {
+            if (!e.dataTransfer.types.includes("application/x-th-workflow")) return;
+            e.preventDefault(); e.dataTransfer.dropEffect = "move";
+            setPromptDropTarget("");
+          }}
+          onDragLeave=${() => setPromptDropTarget(t => (t === "" ? null : t))}
+          onDrop=${(e) => {
+            e.preventDefault(); setPromptDropTarget(null);
+            let pl; try { pl = JSON.parse(e.dataTransfer.getData("application/x-th-workflow")); } catch { return; }
+            if (pl && pl.kind === "prompt" && pl.slug) movePrompt(pl.slug, "");
+          }}
+          title="Saved prompts live as .md files under workflow/prompts/. Drop a prompt here to move it back to the root."
+        >
+          <span>Saved prompts</span>
+          <button
+            className="workflow-library-head-btn"
+            title="Create a folder under workflow/prompts/ to organise saved prompts. Nest with folder/subfolder."
+            onClick=${newPromptFolder}
+          ><${Icon.Folder}/> new folder</button>
+        </div>
+        ${savedPrompts.length === 0 && promptFolders.length === 0
+          ? html`<div className="workflow-library-empty">No saved prompts yet. Click <strong>save</strong> on any text node's title bar to store it as a reusable <code>.md</code> under <code>workflow/prompts/</code> - or drop <code>.md</code> files (and folders of them) straight into that directory; whatever is on disk is what you see here.</div>`
           : html`<div className="workflow-library-list">
-              ${savedPrompts.map(p => html`
-                <div
-                  key=${p.slug}
-                  className="workflow-library-item workflow-library-item-deletable"
-                  draggable=${true}
-                  onDragStart=${(e) => {
-                    e.dataTransfer.effectAllowed = "copy";
-                    e.dataTransfer.setData("application/x-th-workflow",
-                      JSON.stringify({ kind: "prompt", title: p.title, text: p.body || "" }));
-                  }}
-                  title=${"Drag onto canvas - saved prompt \"" + p.title + "\""}
-                >
-                  <span className="workflow-library-item-glyph">¶</span>
-                  <span className="workflow-library-item-label">${p.title}</span>
-                  <span className="workflow-library-item-id">${p.slug}</span>
-                  <button
-                    className="workflow-library-item-del"
-                    title=${"Delete saved prompt " + p.slug}
-                    onClick=${(ev) => { ev.stopPropagation(); deletePrompt(p.slug); }}
-                    onMouseDown=${(ev) => ev.stopPropagation()}
-                  >×</button>
-                </div>
-              `)}
+              ${(function renderPromptDir(dir, depth) {
+                const rows = [];
+                const subs = [...dir.folders.values()].sort((a, b) => a.name.localeCompare(b.name));
+                for (const sub of subs) {
+                  const collapsed = promptCollapsed.has(sub.path);
+                  const n = countPromptsIn(sub);
+                  rows.push(html`
+                    <div
+                      key=${"pf-" + sub.path}
+                      className=${"workflow-library-item workflow-library-prompt-folder" + (promptDropTarget === sub.path ? " is-prompt-drop" : "")}
+                      style=${{ "--th-tree-depth": depth }}
+                      onClick=${() => setPromptCollapsed(prev => {
+                        const nx = new Set(prev);
+                        if (nx.has(sub.path)) nx.delete(sub.path); else nx.add(sub.path);
+                        return nx;
+                      })}
+                      onDragOver=${(e) => {
+                        if (!e.dataTransfer.types.includes("application/x-th-workflow")) return;
+                        e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move";
+                        setPromptDropTarget(sub.path);
+                      }}
+                      onDragLeave=${() => setPromptDropTarget(t => (t === sub.path ? null : t))}
+                      onDrop=${(e) => {
+                        e.preventDefault(); e.stopPropagation(); setPromptDropTarget(null);
+                        let pl; try { pl = JSON.parse(e.dataTransfer.getData("application/x-th-workflow")); } catch { return; }
+                        if (pl && pl.kind === "prompt" && pl.slug) movePrompt(pl.slug, sub.path);
+                      }}
+                      title=${"workflow/prompts/" + sub.path + "/ - click to " + (collapsed ? "expand" : "collapse") + ". Drop a saved prompt here to move it into this folder."}
+                    >
+                      <span className="workflow-library-prompt-chev" data-collapsed=${collapsed ? "true" : "false"}><${Icon.Chev}/></span>
+                      <span className="workflow-library-item-glyph"><${Icon.Folder}/></span>
+                      <span className="workflow-library-item-label">${sub.name}</span>
+                      <span className="workflow-library-prompt-count">${n}</span>
+                      <button
+                        className="workflow-library-item-del"
+                        title=${"Delete folder " + sub.path + (n ? " and the " + n + " prompt" + (n === 1 ? "" : "s") + " inside" : "")}
+                        onClick=${(ev) => { ev.stopPropagation(); deletePromptFolder(sub.path, n); }}
+                        onMouseDown=${(ev) => ev.stopPropagation()}
+                      >×</button>
+                    </div>
+                  `);
+                  if (!collapsed) rows.push(...renderPromptDir(sub, depth + 1));
+                }
+                for (const p of dir.prompts) {
+                  rows.push(html`
+                    <div
+                      key=${p.slug}
+                      className="workflow-library-item workflow-library-item-deletable workflow-library-prompt-row"
+                      style=${{ "--th-tree-depth": depth }}
+                      draggable=${true}
+                      onDragStart=${(e) => {
+                        e.dataTransfer.effectAllowed = "copyMove";
+                        e.dataTransfer.setData("application/x-th-workflow",
+                          JSON.stringify({ kind: "prompt", title: p.title, text: p.body || "", slug: p.slug }));
+                      }}
+                      onDragEnd=${() => setPromptDropTarget(null)}
+                      title=${"Drag onto canvas - saved prompt \"" + p.title + "\" (workflow/prompts/" + p.slug + ".md). Drop onto a folder here to move it instead."}
+                    >
+                      <span className="workflow-library-item-glyph">¶</span>
+                      <span className="workflow-library-item-label">${p.title}</span>
+                      <span className="workflow-library-item-id">${p.slug}</span>
+                      <button
+                        className="workflow-library-item-del"
+                        title=${"Delete saved prompt " + p.slug}
+                        onClick=${(ev) => { ev.stopPropagation(); deletePrompt(p.slug); }}
+                        onMouseDown=${(ev) => ev.stopPropagation()}
+                      >×</button>
+                    </div>
+                  `);
+                }
+                return rows;
+              })(promptTree, 0)}
             </div>`}
       </div>
       <div className="workflow-library-section">
@@ -60564,28 +60718,42 @@ function WorkflowPromptNode({ node, zoom, selected, onSelect, onMove, onResize, 
         >${headerTitle}<//>
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}
-          className="workflow-node-prompt-save"
-          tip="Save this text as a reusable .md under workflow/prompts/. Shows up in Library → Text on every project session."
-          ariaLabel="Save text to library"
+          className=${"workflow-node-prompt-save" + (node.promptRef ? " is-linked" : "")}
+          tip=${node.promptRef
+            ? "Linked to workflow/prompts/" + node.promptRef + ".md - click to update the file with this text."
+            : "Save this text as a reusable .md under workflow/prompts/. Shows up in Library → Local library on every project session; use folder/name to file it in a folder."}
+          ariaLabel=${node.promptRef ? "Update linked library prompt" : "Save text to library"}
           onClick=${async (e) => {
             e.stopPropagation();
             const fl = (text || "").split("\n").map(l => l.trim()).find(l => l) || "";
-            const defaultSlug = (fl.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50)) || "untitled";
-            const slug = await uiPrompt("Save as slug (lowercase, letters/digits/hyphens):", defaultSlug);
-            if (!slug) return;
-            const title = await uiPrompt("Title (shown in Library):", fl.slice(0, 60) || slug) || slug;
+            let slug = node.promptRef || "";
+            let title;
+            if (slug) {
+              // Linked node - write straight back to its md, no dialogs
+              // (same gesture as an asset node overwriting its file).
+              title = (node.title || "").trim() || fl.slice(0, 60) || slug.split("/").pop();
+            } else {
+              const defaultSlug = (fl.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50)) || "untitled";
+              slug = await uiPrompt("Save as slug (lowercase, letters/digits/hyphens; use folder/name to file it in a folder):", defaultSlug);
+              if (!slug) return;
+              slug = slug.trim().toLowerCase();
+              title = await uiPrompt("Title (shown in Library):", fl.slice(0, 60) || slug.split("/").pop()) || slug.split("/").pop();
+            }
             fetch(apiUrl("/__prompts"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ slug: slug.trim().toLowerCase(), title, body: text }),
+              body: JSON.stringify({ slug, title, body: text }),
             }).then(async r => {
               const j = await r.json().catch(() => ({}));
               if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+              // First save links the node to its md so the next click is a
+              // one-gesture update of the same file.
+              if (!node.promptRef) onChange({ promptRef: j.slug || slug, title });
               window.dispatchEvent(new CustomEvent("th:library-refresh"));
             }).catch(err => uiAlert("Save failed: " + (err.message || err)));
           }}
           onMouseDown=${(e) => e.stopPropagation()}
-        >save<//>
+        >${node.promptRef ? "linked" : "save"}<//>
         ${node.promptDebug && html`
           <${HoverTip}
             className="workflow-node-action workflow-node-action-prompt"
