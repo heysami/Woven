@@ -17905,6 +17905,12 @@ a.ds-badge:hover, button.ds-badge:hover {
   top: calc(var(--toolbar-h, 44px) / 2);
   left: 50%;
   transform: translate(-50%, -50%);
+  /* The centering transform makes the pill a stacking context, so the ⋯
+     overflow menu (which hangs BELOW the 44px bar) can't out-z the surface
+     content that follows the bar in the DOM (canvas, proto iframe). Lift the
+     whole pill above surface content but WELL below the z-9000+ modal scrims,
+     preserving the sits-behind-any-scrim behaviour noted above. */
+  z-index: 500;
   display: inline-flex;
   align-items: center;
   gap: 2px;
