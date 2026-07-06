@@ -4324,10 +4324,31 @@ select.sysadd-input {
 .th-right-rail-status .daemon-indicator,
 .th-right-rail-status .cli-indicator {
   padding: 0;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   justify-content: center;
   border-radius: 50%;
+}
+/* Compact (rail) indicators swap the dot for a role icon - server rack for
+   the daemon, brain for the CLI - tinted by the same state palette the dots
+   used: green up, amber missing/needs-login, red down, faint checking. */
+.cli-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  color: var(--text-faint);
+}
+.daemon-indicator-ok .cli-state-icon,
+.cli-indicator-ok .cli-state-icon {
+  color: var(--ok, #16a34a);
+}
+.daemon-indicator-down .cli-state-icon {
+  color: var(--danger, #dc2626);
+}
+.cli-indicator-missing .cli-state-icon,
+.cli-indicator-needs-login .cli-state-icon {
+  color: var(--warn, #b45309);
 }
 /* Inline .tab-tip chips fly LEFT of the anchor here - the default
    below-the-anchor chip would clip at the viewport bottom. */

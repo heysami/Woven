@@ -636,6 +636,11 @@ const Icon = {
   Block:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 8h11M8 2.5v11"/></svg>`,
   Library:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 3v10M6 3v10M10 4l3 9M9.5 4l3-1"/></svg>`,
   Comment:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v6a1 1 0 01-1 1H7l-3 3v-3a1 1 0 01-1-1z"/></svg>`,
+  // Server rack (daemon status) - two stacked units with an LED each.
+  Server:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="4.4" rx="1.2"/><rect x="2.5" y="8.6" width="11" height="4.4" rx="1.2"/><circle cx="5.1" cy="5.2" r=".8" fill="currentColor" stroke="none"/><circle cx="5.1" cy="10.8" r=".8" fill="currentColor" stroke="none"/></svg>`,
+  // Two-lobe brain (CLI/model status) - Lucide's brain silhouette scaled to
+  // the 16 grid.
+  Brain:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 3.3a2 2 0 1 0-4 .09 2.67 2.67 0 0 0-1.68 3.85 2.67 2.67 0 0 0 .37 4.39A2.67 2.67 0 1 0 8 12Z"/><path d="M8 3.3a2 2 0 1 1 4 .09 2.67 2.67 0 0 1 1.68 3.85 2.67 2.67 0 0 1-.37 4.39A2.67 2.67 0 1 1 8 12Z"/></svg>`,
   // Round speech bubble whose tail is the sharp bottom-right corner (miter
   // join on purpose - the rest of the set rounds joins) + ellipsis dots.
   CommentDots: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path strokeLinejoin="miter" d="M13.4 9A5.5 5.5 0 1 0 9 13.4L13.6 13.6Z"/><circle cx="5.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="10.5" cy="8" r=".9" fill="currentColor" stroke="none"/></svg>`,
@@ -8931,7 +8936,9 @@ function DaemonIndicator({ compact }) {
     "aria-live": "polite",
   };
   const body = html`<${React.Fragment}>
-    <span className="cli-dot"/>
+    ${compact
+      ? html`<span className="cli-state-icon"><${Icon.Server}/></span>`
+      : html`<span className="cli-dot"/>`}
     ${!compact && html`<span className="cli-label">${label}</span>`}
     <span className="tab-tip">${tipShort}</span>
   <//>`;
@@ -8974,7 +8981,9 @@ function CliIndicator({ compact }) {
   }, [usageOpen]);
   if (!loaded) {
     return html`<span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true">
-      <span className="cli-dot"/>
+      ${compact
+        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span>`
+        : html`<span className="cli-dot"/>`}
       ${!compact && html`<span className="cli-label">CLI…</span>`}
       <span className="tab-tip">Checking CLI…</span>
     </span>`;
@@ -9057,7 +9066,9 @@ function CliIndicator({ compact }) {
       onClick=${() => setUsageOpen(o => !o)}
       onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUsageOpen(o => !o); } }}
     >
-      <span className="cli-dot"/>
+      ${compact
+        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span>`
+        : html`<span className="cli-dot"/>`}
       ${!compact && html`<span className="cli-label">${labelText}</span>`}
       <span className="tab-tip">${tipShort}</span>
     </span>
