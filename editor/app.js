@@ -83939,7 +83939,10 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
             ? "An agent run is active - wait for it to finish before triggering Update from source"
             : "Update from source - re-derive frames / primitives / entities from source/. Dispatches Workflow 1 (regenerate); streams in the chat drawer."}
         >
-          <${Icon.Refresh}/>
+          ${/* Spark = agent dispatch (same glyph as the frame-view node's
+              "Run agent" action). Was Icon.Refresh, which read as a passive
+              reload - but this button runs Workflow 1, an agent. */ ""}
+          <${Icon.Spark}/>
           <span className="tab-tip">${runActive ? "Run active" : "Update from source"}</span>
         </button>
         <${PublishButton}/>
