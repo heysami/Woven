@@ -9804,6 +9804,12 @@ function RightRailDock({ mode }) {
   const [chatRunFinished, setChatRunFinished] = useState(false);
   const [permissionMode, setPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
   const onPermissionModeChange = useCallback((m) => { setPermissionMode(m); saveSettings({ permissionMode: m }); }, []);
+  // Rail-bottom status cluster (history clock + daemon + CLI icons) - the
+  // same trio the editor/workflow rails carry, so the standalone views
+  // (User testing, Development) read identically. useHistory is project-
+  // scoped via apiUrl, which these views always have.
+  const history = useHistory();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // ── Right tiling dock (same model as the editor App / workflow canvas) ──
   const [dockWindows, setDockWindows]   = useState([]);
@@ -10095,7 +10101,13 @@ function RightRailDock({ mode }) {
       onOpenRun=${reopenRun}
       onOpenWindow=${openWindow}
       openKinds=${openKinds}
+      statusArea=${html`<${React.Fragment}>
+        ${history && html`<${HistoryClockButton} history=${history} open=${historyOpen} onOpen=${() => { history.refresh(); setHistoryOpen(true); }} onClose=${() => setHistoryOpen(false)}/>`}
+        <${DaemonIndicator} compact=${true}/>
+        <${CliIndicator} compact=${true}/>
+      <//>`}
     />
+    ${historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
     <${RightDock}
       floating
       windows=${dockWindows}
