@@ -44883,7 +44883,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           title="Exit fullscreen (Esc or ⌘.)"
           aria-label="Exit fullscreen"
           onClick=${() => setFullscreen(false)}
-        >⛶ Exit fullscreen</button>
+        ><span aria-hidden="true">⛶</span><span>Exit fullscreen</span></button>
       `}
       ${settingsOpen && html`<${WorkflowSettingsDialog} onClose=${() => setSettingsOpen(false)}/>`}
       ${replacePickerForAssetId && html`<${WorkflowReplaceAssetChooser}

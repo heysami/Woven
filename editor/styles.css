@@ -6163,6 +6163,9 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   top: 12px;
   right: 12px;
   z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   appearance: none;
   border: 1px solid var(--border);
   background: var(--surface);
