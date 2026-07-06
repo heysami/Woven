@@ -41787,10 +41787,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       const ctx = _assistantCollectText(ups);
       const assets = _assistantCollectAssets(ups);
+      // A wired PROTOTYPE resolves to nothing upstream (its source-read port
+      // is a folder provide with no resolve strategy), but for testing a
+      // prototype IS a browsable app - default it to its served index.html so
+      // testers open the real thing.
+      const protoUrls = (data.edges || [])
+        .filter(e => { const t = workflowParseEdgeRef(e.to || ""); return t && t.node === nodeId; })
+        .map(e => { const f = workflowParseEdgeRef(e.from || ""); return f && (data.nodes || []).find(n => n.id === f.node); })
+        .filter(n => n && n.kind === "prototype")
+        .map(n => { const slug = prototypeSlugForNode(n); return slug ? apiUrl("/source/" + slug + "/index.html") : ""; })
+        .filter(Boolean);
       // Resolve wired assets to absolute http(s) URLs a browser subagent could
       // navigate to. data:/blob: inlines drop out.
-      const browseUrls = assets
-        .map(a => { const u = a.url || (a.path ? apiUrl("/" + a.path) : ""); if (!u) return ""; try { return new URL(u, location.href).href; } catch (e) { return u; } })
+      const browseUrls = [
+        ...assets.map(a => a.url || (a.path ? apiUrl("/" + a.path) : "")),
+        ...protoUrls,
+      ]
+        .map(u => { if (!u) return ""; try { return new URL(u, location.href).href; } catch (e) { return u; } })
         .filter(u => /^https?:/i.test(u));
       const useBrowser = browseUrls.length > 0;
       const interactive = assets.some(a => (a.assetKind || "") === "html") || browseUrls.some(u => /\.html?($|\?)/i.test(u));
