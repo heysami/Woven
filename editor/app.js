@@ -9121,6 +9121,11 @@ function CliUsagePopover({ usage, credits, onClose }) {
   const creditRows = (credits && credits.rows) || [];
   const ocCredits = creditRows.filter(r => r.via === "opencode");
   const byok = creditRows.filter(r => r.via === "byok");
+  // Keys tab ordering: providers with a real reading first, the
+  // dashboard-only / probe-failed ones below a subtle divider - the numbers
+  // are what the user opens this for; the "no API" notes are footnotes.
+  const byokLive = byok.filter(r => r.ok === true);
+  const byokQuiet = byok.filter(r => r.ok !== true);
   const empty = usage.loaded && rows.length === 0 && !usage.loading;
   return html`<div className="cli-usage-pop" role="dialog" aria-label="Usage & credits">
     <div className="cli-usage-head">
@@ -9145,7 +9150,9 @@ function CliUsagePopover({ usage, credits, onClose }) {
       ${credits && !credits.loaded && html`<div className="cli-usage-msg">Reading balances…</div>`}
       ${credits && credits.loading && html`<div className="cli-usage-msg">Fetching from providers…</div>`}
       ${credits && credits.loaded && byok.length === 0 && !credits.loading && html`<div className="cli-usage-msg">No provider API keys configured. Add keys in Settings → API keys to see balances here.</div>`}
-      ${byok.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
+      ${byokLive.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
+      ${byokLive.length > 0 && byokQuiet.length > 0 && html`<div className="cli-usage-sep" role="separator"/>`}
+      ${byokQuiet.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
       ${credits && credits.stale && byok.length > 0 && html`<div className="cli-usage-foot">Refreshing…</div>`}
     <//>`}
   </div>`;
@@ -9185,7 +9192,7 @@ function CreditUsageCard({ row }) {
         <span className="cli-usage-line-val">${row.balance.usd != null ? "$" + Number(row.balance.usd).toFixed(2) : (row.balance.credits != null ? row.balance.credits + " credits" : "")}</span>
       </div>`}
     ${(row.windows || []).map(w => html`<${UsageMeter} key=${w.key} w=${w}/>`)}
-    ${row.note && html`<div className="cli-usage-note">${row.note}</div>`}
+    ${row.note && html`<div className="cli-usage-note" data-quiet=${row.ok === null ? "true" : "false"}>${row.note}</div>`}
   </div>`;
 }
 

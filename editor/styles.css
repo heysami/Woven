@@ -15514,6 +15514,16 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: color-mix(in oklab, var(--warn, #b45309) 75%, var(--text-muted));
   line-height: 1.4;
 }
+/* "Key present, provider has no balance API" - an informational footnote,
+   not a warning: plain grey. Real probe failures keep the warn tint above. */
+.cli-usage-note[data-quiet="true"] { color: var(--text-muted); }
+/* Divider between the live-balance cards and the no-API footnote cards on
+   the API-keys tab. */
+.cli-usage-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 2px;
+}
 .cli-usage-meter { display: flex; flex-direction: column; gap: 3px; }
 .cli-usage-meter-top {
   display: flex;
