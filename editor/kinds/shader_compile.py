@@ -33,7 +33,16 @@ _PLACEHOLDERS = ["COLOR_OUT", "COL_OUT", "FRAG_OUT", "OUTPUT_COLOR"]
 
 
 def find_glslang() -> Optional[str]:
-    """`glslangValidator` on PATH or the usual Homebrew prefixes."""
+    """`glslangValidator` from our own tools/bin/ (direct-download install)
+    FIRST, then PATH, then the usual Homebrew prefixes. tools/bin/ is checked
+    first so a machine with no Homebrew still resolves the daemon's own copy."""
+    # editor/tools/bin/ - two dirs up from this file (editor/kinds/ → editor/).
+    tools_bin = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "tools", "bin")
+    for ext in ("", ".exe"):
+        cand = os.path.join(tools_bin, "glslangValidator" + ext)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
     p = shutil.which("glslangValidator")
     if p:
         return p

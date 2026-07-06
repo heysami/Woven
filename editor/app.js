@@ -80698,26 +80698,28 @@ const LOCAL_PACKAGES = [
   {
     id: "cloudflared",
     label: "cloudflared",
-    installKind: "brew",   // binary via Homebrew - flips the install-hint line + server branch
-    hint: "Cloudflare quick tunnels for Share mode · installed via Homebrew · no Cloudflare account needed",
+    installKind: "direct",   // pinned official release downloaded into tools/bin - no Homebrew needed
+    hint: "Cloudflare quick tunnels for Share mode · direct download (no Homebrew) · no Cloudflare account needed",
     skills: "Share prototypes for review",
     docsUrl: "https://github.com/cloudflare/cloudflared",
-    // Marked required. Installs via Homebrew; onboarding blocks
-    // until present (needs Homebrew on the machine). The Shares tab +
-    // prototype-node comments dock still degrade gracefully at runtime.
+    // Marked required. Auto-installs via a checksum-verified direct download of
+    // the official release into editor/tools/bin (Homebrew fallback only where
+    // no direct build exists). The Shares tab + prototype-node comments dock
+    // still degrade gracefully at runtime.
     required: true,
     requiredReason: "Cloudflare quick tunnel for Share mode - publishing prototypes for review and hosting multiplayer sessions both need it.",
   },
   {
     id: "glslang",
     label: "glslang",
-    installKind: "brew",   // glslangValidator binary via Homebrew
-    hint: "GLSL reference compiler · brew install glslang · real shader compile errors (any shader, no browser)",
+    installKind: "direct",   // glslangValidator downloaded into tools/bin - no Homebrew needed
+    hint: "GLSL reference compiler · direct download (no Homebrew) · real shader compile errors (any shader, no browser)",
     skills: "Shader compile-check",
     docsUrl: "https://github.com/KhronosGroup/glslang",
-    // Marked required. Installs via Homebrew; onboarding blocks until
-    // present. When present, the post-run shader lint compile-checks every
-    // <script type=x-shader> block instead of falling back to the static lint.
+    // Marked required. Auto-installs via a checksum-verified direct download of
+    // the Khronos release into editor/tools/bin (Homebrew fallback only where
+    // no direct build exists). When present, the post-run shader lint
+    // compile-checks every <script type=x-shader> block instead of the static lint.
     required: true,
     requiredReason: "GLSL reference compiler - the post-run shader lint needs it to catch real compile errors in every shader block.",
   },
@@ -80946,7 +80948,9 @@ function WorkflowLocalPackageRow({ pkg }) {
         </div>
       `}
       <div className="workflow-settings-hint">
-        ${pkg.installKind === "brew"
+        ${pkg.installKind === "direct"
+          ? html`<span>Downloads the pinned official release (checksum-verified) into <code>editor/tools/bin</code> - no Homebrew or package manager needed. Homebrew is used only as a fallback where no direct build exists.</span>`
+          : pkg.installKind === "brew"
           ? html`<span>Installs via Homebrew: <code>${"brew install " + pkg.id}</code> (needs Homebrew - brew.sh).</span>`
           : pkg.installKind === "npm"
           ? html`<span>Installs Playwright + a Chromium build into <code>editor/tools</code> (needs Node.js - nodejs.org). ~150 MB browser download.</span>`

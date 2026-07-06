@@ -42,20 +42,20 @@ There are **three things to launch the editor**, plus **four local skills** the 
 | **A modern browser** | Chrome / Edge / Safari / Firefox, last ~2 years | Renders the editor UI. The daemon serves it; the browser is just the front-end. | (no command, just open it)            |
 | **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
 
-The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). But the four required local skills below bring their own tooling: two install via **Homebrew** and one via **npm**, so for a complete setup you also need **[Homebrew](https://brew.sh)** (macOS/Linux) and **[Node.js](https://nodejs.org)** on your machine.
+The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). Of the four required local skills below, three install with **no package manager at all** (a pinned, checksum-verified direct download or a `pip --user` into your user-site). Only **shader-verify** needs **[Node.js](https://nodejs.org)** on your machine - so that is the one extra tool to have ready for a complete setup. **Homebrew is not required** (it's used only as a fallback where a direct build doesn't exist, and by the optional voice-transcription tool in User Testing mode).
 
 ### Local skills the wizard installs (Step 4)
 
-On first run the onboarding wizard installs four local skills the asset / sharing / shader pipelines depend on. **All four are required gates**: the **+ New project** button stays disabled until every one is present. The wizard installs them **automatically** when its Step 4 opens - each row shows live install progress; a skill whose prerequisite is missing (Homebrew / Node.js) waits with a hint and a manual Install button instead.
+On first run the onboarding wizard installs four local skills the asset / sharing / shader pipelines depend on. **All four are required gates**: the **+ New project** button stays disabled until every one is present. The wizard installs them **automatically** when its Step 4 opens - each row shows live install progress; a skill whose prerequisite is missing (only shader-verify has one - Node.js) waits with a hint and a manual Install button instead.
 
-| Skill            | Installs via                          | Prereq    | Covers                                                                 |
-| ---------------- | ------------------------------------- | --------- | --------------------------------------------------------------------- |
-| **rembg**        | pip (`pip3 install --user rembg`)     | Python    | background removal in the `raster-foreground` pipeline; ~170 MB model on first use |
-| **cloudflared**  | Homebrew (`brew install cloudflared`) | Homebrew  | Share-mode quick tunnels (publish a prototype for review / multiplayer) |
-| **glslang**      | Homebrew (`brew install glslang`)     | Homebrew  | GLSL compile-check for the post-run shader lint                       |
-| **shader-verify**| npm + a Chromium download             | Node.js   | headless render-check (shader compiles AND isn't blank); ~150 MB Chromium |
+| Skill            | Installs via                                   | Prereq    | Covers                                                                 |
+| ---------------- | ---------------------------------------------- | --------- | --------------------------------------------------------------------- |
+| **rembg**        | pip (`pip3 install --user rembg`)              | Python    | background removal in the `raster-foreground` pipeline; ~170 MB model on first use |
+| **cloudflared**  | direct download into `editor/tools/bin`        | none      | Share-mode quick tunnels (publish a prototype for review / multiplayer) |
+| **glslang**      | direct download into `editor/tools/bin`        | none      | GLSL compile-check for the post-run shader lint                       |
+| **shader-verify**| npm + a Chromium download                      | Node.js   | headless render-check (shader compiles AND isn't blank); ~150 MB Chromium |
 
-On Windows (no Homebrew), install `cloudflared` and `glslang` from their own releases (winget / scoop / the project download pages) before finishing onboarding.
+The direct-download skills (cloudflared, glslang) pull the official pinned release, verify its SHA-256, and drop the binary under `editor/tools/bin/` - no Homebrew, no `sudo`, works the same on macOS, Linux, and Windows.
 
 ### If your Python is too old (below 3.9)
 
@@ -77,30 +77,39 @@ Then launch the daemon with the newer interpreter explicitly if `python3` still 
 
 ## 2. Install
 
+### Step 1 · Get the editor (download the zip - do NOT clone)
+
+**Download the latest release zip** from the [Releases page](https://github.com/heysami/Woven/releases/latest) and unpack it wherever you like:
+
 ```bash
-# 1. Clone (or download a zip and unpack)
-git clone https://github.com/heysami/Woven.git
-cd Woven
+# Download "Source code (zip)" from the Releases page, then:
+unzip Woven-*.zip
+cd Woven-*        # the unpacked folder
+```
 
-# 2. (Optional) install one of the supported CLIs.
-#    Pick ONE. You only need one connection path to a model.
-npm install -g @anthropic-ai/claude-code   # Claude Code
-# or
-npm install -g @openai/codex               # Codex
-# or
-brew install sst/tap/opencode              # opencode (multi-provider) - or: npm i -g opencode-ai
+> **Don't `git clone` to install.** The repository's full history is over 1 GB, so a clone is slow and huge. The release zip is a flat snapshot of the code with none of that weight - it's the right way to *install*. Clone only if you intend to *contribute* to Woven itself (`git clone https://github.com/heysami/Woven.git`).
 
-# 3. Sign in once so the CLI has a session
-claude login         # (if you installed Claude Code)
-# or
-codex login          # (if you installed Codex)
-# or
-opencode auth login  # (if you installed opencode - then `opencode models` to pick a default)
+### Step 2 · (Optional) install one of the supported model CLIs
+
+Pick **ONE** - you only need one connection path to a model. A CLI is the recommended path (it powers agentic workflows; a pasted API key alone runs only single-shot "simple prompt" nodes).
+
+```bash
+# Claude Code - native installer, no npm required (recommended):
+curl -fsSL https://claude.ai/install.sh | bash
+claude login
+
+# or Codex:
+npm install -g @openai/codex
+codex login
+
+# or opencode (multi-provider):
+curl -fsSL https://opencode.ai/install | bash      # or: npm i -g opencode-ai
+opencode auth login                                # then `opencode models` to pick a default
 ```
 
 opencode is a multi-provider harness: it manages its own auth and default model, so after `opencode auth login` you connect any provider it supports (Anthropic, OpenAI, etc.) and Woven shells out to it for text-output runs.
 
-If you'd rather paste an API key instead of installing a CLI, skip the `npm install` step; you'll paste the key in the onboarding UI in [Step 1](#5-step-1--connect-a-model). Note that a key alone runs **simple prompt** nodes only - agentic workflows (node runs, chat, orchestrators) still need a CLI.
+If you'd rather paste an API key instead of installing a CLI, skip this step; you'll paste the key in the onboarding UI in [Step 1](#5-step-1--connect-a-model). Note that a key alone runs **simple prompt** nodes only - agentic workflows (node runs, chat, orchestrators) still need a CLI.
 
 ---
 
@@ -205,16 +214,16 @@ Rows whose pipeline depends on a key you haven't set in Step 2 (photography and 
 
 The wizard's **Step 4 · Local skills** lists on-demand tools the daemon installs for you. **Four are required gates** (each shows a red **REQUIRED** badge until present) and the **+ New project** button stays disabled until all four are installed:
 
-| Skill            | Auto-install runs                | Needs    | What breaks without it                                          |
-| ---------------- | -------------------------------- | -------- | -------------------------------------------------------------- |
-| **rembg**        | `pip3 install --user rembg`      | Python   | foreground asset generation falls over at the cutout stage (~170 MB model first run) |
-| **cloudflared**  | `brew install cloudflared`       | Homebrew | Share mode can't open a public review tunnel                   |
-| **glslang**      | `brew install glslang`           | Homebrew | the shader lint can't catch real GLSL compile errors          |
-| **shader-verify**| npm install + Chromium download  | Node.js  | no headless render-check for compiles-but-blank shaders (~150 MB Chromium) |
+| Skill            | Auto-install runs                     | Needs    | What breaks without it                                          |
+| ---------------- | ------------------------------------- | -------- | -------------------------------------------------------------- |
+| **rembg**        | `pip3 install --user rembg`           | Python   | foreground asset generation falls over at the cutout stage (~170 MB model first run) |
+| **cloudflared**  | direct download → `editor/tools/bin`  | none     | Share mode can't open a public review tunnel                   |
+| **glslang**      | direct download → `editor/tools/bin`  | none     | the shader lint can't catch real GLSL compile errors          |
+| **shader-verify**| npm install + Chromium download       | Node.js  | no headless render-check for compiles-but-blank shaders (~150 MB Chromium) |
 
 ![Onboarding · Step 4 · Local skills](docs/screenshots/03b-onboarding-local-skills.png)
 
-Opening Step 4 **starts the installs automatically** - each row shows a spinner and flips green as it lands (`shader-verify` is the slowest, it pulls a Chromium; give it a minute or three). The commands above are exactly what runs under the hood. The two Homebrew skills need **[Homebrew](https://brew.sh)** and `shader-verify` needs **[Node.js](https://nodejs.org)** already on your machine; a row whose prerequisite is missing skips auto-install and shows a hint + manual **Install** button - install the prereq, then hit **Re-check**.
+Opening Step 4 **starts the installs automatically** - each row shows a spinner and flips green as it lands (`shader-verify` is the slowest, it pulls a Chromium; give it a minute or three). **cloudflared** and **glslang** need no package manager: the daemon downloads the official pinned release, verifies its SHA-256, and drops the binary under `editor/tools/bin/` (Homebrew is used only as a fallback where no direct build exists for your platform). Only **shader-verify** has a prerequisite - **[Node.js](https://nodejs.org)** on your machine; if it's missing that one row skips auto-install and shows a hint + manual **Install** button - install Node, then hit **Re-check**.
 
 A fifth skill, **whisper-cpp** (offline transcription for User Testing), is **optional**, install it later from the gear icon → Settings if you use that feature.
 

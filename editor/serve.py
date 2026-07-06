@@ -128,6 +128,12 @@ _GIT_INFLIGHT_TTL = 600   # seconds; a flag older than this is considered stale
 # project-name-neutral on purpose; the per-project copy gets its own meta.
 DEFAULT_DS_DIR = os.path.join(EDITOR_DIR, "default-design-system")
 
+# On-demand direct-download binaries (cloudflared, glslangValidator) land here.
+# This is the FIRST place _find_local_binary looks, so a self-contained download
+# beats a system/Homebrew copy and lets a machine with no package manager still
+# clear the onboarding gate. Gitignored (editor/tools/.gitignore) - never synced.
+TOOLS_BIN_DIR = os.path.join(EDITOR_DIR, "tools", "bin")
+
 _workspace_env = os.environ.get("TH_WORKSPACE_DIR")
 _single_env = (os.environ.get("TH_SINGLE_PROJECT") or "").strip().lower()
 _single_optout = _single_env in {"1", "true", "yes", "on"}
@@ -17539,11 +17545,15 @@ class H(http.server.SimpleHTTPRequestHandler):
     # kind defaults to "pip" for back-compat with older entries.
     _LOCAL_PACKAGES = {
         "rembg":       {"kind": "pip", "packages": ["rembg", "onnxruntime"], "import": "rembg"},
-        "cloudflared": {"kind": "binary", "bin": "cloudflared", "brew": "cloudflared"},
+        # cloudflared + glslang install via DIRECT DOWNLOAD of the official
+        # pinned release into tools/bin/ (see _DIRECT_DOWNLOADS) - no Homebrew
+        # needed, so a machine with no package manager clears the gate. brew is
+        # kept only as a fallback when no direct build exists for the platform.
+        "cloudflared": {"kind": "binary", "bin": "cloudflared", "brew": "cloudflared", "direct": True},
         # Shader validators (optional). glslang = real GLSL compile errors via
         # the Khronos reference compiler; shader-verify = headless Playwright
         # render check (compile + blank). Both feed the post-run shader lint.
-        "glslang":     {"kind": "binary", "bin": "glslangValidator", "brew": "glslang"},
+        "glslang":     {"kind": "binary", "bin": "glslangValidator", "brew": "glslang", "direct": True},
         "shader-verify": {"kind": "npm", "npm": ["playwright", "pngjs"], "browser": "chromium",
                           "probe": "playwright"},
         # User Testing transcription. Binary via Homebrew (whisper-cli), then a
@@ -17551,6 +17561,180 @@ class H(http.server.SimpleHTTPRequestHandler):
         # _local_install handles the model step (whisper.cpp ships no model).
         "whisper-cpp": {"kind": "whisper", "bin": "whisper-cli", "brew": "whisper-cpp"},
     }
+
+    # Pinned direct-download release manifest for the "binary" packages that
+    # support it (spec.direct == True). Keyed by package id → (sys.platform key,
+    # machine-arch key) → download spec. This lets the onboarding gate install
+    # cloudflared + glslang on a machine with NO Homebrew / NO package manager:
+    # we fetch the official release, verify its sha256, and drop the binary into
+    # tools/bin/. Same trust model as the Playwright Chromium download already in
+    # use - pinned URL, pinned checksum, self-contained, no sudo. Bump the version
+    # + sha256 pairs to update. `member` = path of the binary inside a tgz/zip
+    # archive; omit for a raw single-file download.
+    #
+    # arch keys: "x64" (x86_64 / amd64), "arm64" (aarch64). platform keys match
+    # sys.platform prefixes: "darwin", "linux", "win".
+    _DIRECT_DOWNLOADS = {
+        "cloudflared": {
+            "version": "2026.6.1",
+            "targets": {
+                ("darwin", "arm64"): {
+                    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-darwin-arm64.tgz",
+                    "sha256": "f6d4c439c6c782b83264951d327989ce5e23373acc5942b872411601fedb020d",
+                    "archive": "tgz", "member": "cloudflared", "out": "cloudflared",
+                },
+                ("darwin", "x64"): {
+                    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-darwin-amd64.tgz",
+                    "sha256": "d7a66b525fe76820da6e5406611b61e48b40de682368ac00454d9158f085be4b",
+                    "archive": "tgz", "member": "cloudflared", "out": "cloudflared",
+                },
+                ("linux", "x64"): {
+                    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-linux-amd64",
+                    "sha256": "5861a10a438fe8ddcfebb3b830f83966cbf193edafce0fe2eeb198fbae1f7a22",
+                    "archive": "raw", "out": "cloudflared",
+                },
+                ("linux", "arm64"): {
+                    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-linux-arm64",
+                    "sha256": "59816ce9b16db71f5bc2a86d59b3632a96c8c3ee934bde2bc8641ee83a6070eb",
+                    "archive": "raw", "out": "cloudflared",
+                },
+                ("win", "x64"): {
+                    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-windows-amd64.exe",
+                    "sha256": "5253e66f1f493c4e13539749f1aa86fd0c61e3072900fec29a44ba046a6d97e2",
+                    "archive": "raw", "out": "cloudflared.exe",
+                },
+            },
+        },
+        # glslang ships fat universal macOS binaries (x86_64 + arm64) and per-arch
+        # linux/windows builds under the rolling "main-tot" tag. The macOS build is
+        # one asset for both arches.
+        "glslang": {
+            "version": "main-tot",
+            "targets": {
+                ("darwin", "arm64"): {
+                    "url": "https://github.com/KhronosGroup/glslang/releases/download/main-tot/glslang-main-osx-Release.zip",
+                    "sha256": "ec79f38e729271f8e01505842a88163ba433c2653a1cf600c88c5d3b5d3622c2",
+                    "archive": "zip", "member": "bin/glslangValidator", "out": "glslangValidator",
+                },
+                ("darwin", "x64"): {
+                    "url": "https://github.com/KhronosGroup/glslang/releases/download/main-tot/glslang-main-osx-Release.zip",
+                    "sha256": "ec79f38e729271f8e01505842a88163ba433c2653a1cf600c88c5d3b5d3622c2",
+                    "archive": "zip", "member": "bin/glslangValidator", "out": "glslangValidator",
+                },
+                ("linux", "x64"): {
+                    "url": "https://github.com/KhronosGroup/glslang/releases/download/main-tot/glslang-main-linux-Release.zip",
+                    "sha256": "bfc25213f8a3dfdfea80759536f2960181082c1625bfbbde8e7f9a61a114cb28",
+                    "archive": "zip", "member": "bin/glslangValidator", "out": "glslangValidator",
+                },
+                ("win", "x64"): {
+                    "url": "https://github.com/KhronosGroup/glslang/releases/download/main-tot/glslang-master-windows-Release.zip",
+                    "sha256": "02ea1d8c7fc4485233144c624ea7aa62335531c24680aaa1bc148b30bef3db82",
+                    "archive": "zip", "member": "bin/glslangValidator.exe", "out": "glslangValidator.exe",
+                },
+            },
+        },
+    }
+
+    @staticmethod
+    def _platform_arch_key():
+        """(platform, arch) tuple matching _DIRECT_DOWNLOADS target keys.
+        platform ∈ {darwin, linux, win, other}; arch ∈ {x64, arm64, other}."""
+        plat = sys.platform
+        pkey = ("darwin" if plat.startswith("darwin")
+                else "linux" if plat.startswith("linux")
+                else "win" if plat.startswith("win")
+                else "other")
+        import platform as _pf
+        m = (_pf.machine() or "").lower()
+        akey = ("arm64" if m in ("arm64", "aarch64")
+                else "x64" if m in ("x86_64", "amd64", "x64")
+                else "other")
+        return (pkey, akey)
+
+    @classmethod
+    def _direct_download_target(cls, pkg):
+        """The direct-download spec for pkg on THIS platform/arch, or None if
+        pkg has no direct build for this machine (caller falls back to brew)."""
+        manifest = cls._DIRECT_DOWNLOADS.get(pkg)
+        if not manifest:
+            return None
+        return manifest["targets"].get(cls._platform_arch_key())
+
+    @classmethod
+    def _install_direct_binary(cls, pkg, target):
+        """Download the pinned official release for `target`, verify its sha256,
+        extract the wanted binary into tools/bin/, chmod +x. No sudo, no package
+        manager, no arbitrary code run - just fetch + checksum + place. Returns
+        (bin_path, log) on success or (None, log) on failure. Same trust posture
+        as the Playwright Chromium download already shipped."""
+        log = []
+        os.makedirs(TOOLS_BIN_DIR, exist_ok=True)
+        url = target["url"]
+        want_sha = (target.get("sha256") or "").lower()
+        out_name = target["out"]
+        out_path = os.path.join(TOOLS_BIN_DIR, out_name)
+        log.append(f"downloading {url}")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Woven-editor"})
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                blob = resp.read()
+        except Exception as e:
+            log.append(f"download failed: {e}")
+            return None, "\n".join(log)
+        got_sha = hashlib.sha256(blob).hexdigest()
+        if want_sha and got_sha != want_sha:
+            log.append(f"sha256 mismatch: expected {want_sha}, got {got_sha}")
+            return None, "\n".join(log)
+        log.append(f"sha256 ok ({got_sha[:12]}…), {len(blob)} bytes")
+        archive = target.get("archive", "raw")
+        try:
+            if archive == "raw":
+                with open(out_path, "wb") as fh:
+                    fh.write(blob)
+            elif archive == "tgz":
+                import tarfile, io
+                member = target["member"]
+                with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+                    src = tf.extractfile(member)
+                    if src is None:
+                        log.append(f"member {member} not found in archive")
+                        return None, "\n".join(log)
+                    with open(out_path, "wb") as fh:
+                        fh.write(src.read())
+            elif archive == "zip":
+                import zipfile, io
+                member = target["member"]
+                with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+                    # Zip roots vary; match by suffix so a leading dir doesn't matter.
+                    names = zf.namelist()
+                    pick = next((n for n in names if n == member or n.endswith("/" + member)
+                                 or n.endswith(member)), None)
+                    if pick is None:
+                        log.append(f"member {member} not found in zip; had {names[:8]}")
+                        return None, "\n".join(log)
+                    with zf.open(pick) as src, open(out_path, "wb") as fh:
+                        fh.write(src.read())
+            else:
+                log.append(f"unknown archive kind: {archive}")
+                return None, "\n".join(log)
+        except Exception as e:
+            log.append(f"extract failed: {e}")
+            return None, "\n".join(log)
+        try:
+            st = os.stat(out_path)
+            os.chmod(out_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except Exception as e:
+            log.append(f"chmod failed: {e}")
+        # macOS quarantines downloads; strip the flag so Gatekeeper doesn't block
+        # the first exec. Best-effort - xattr may be absent, that's fine.
+        if sys.platform.startswith("darwin"):
+            try:
+                subprocess.run(["xattr", "-d", "com.apple.quarantine", out_path],
+                               capture_output=True, timeout=10, check=False)
+            except Exception:
+                pass
+        log.append(f"installed → {out_path}")
+        return out_path, "\n".join(log)
 
     # Class-level memo of POSITIVE probe results, keyed by package id. Probing
     # rembg means spawning `python -c "import rembg"`, which loads onnxruntime's
@@ -17564,9 +17748,15 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     @staticmethod
     def _find_local_binary(name):
-        """PATH first, then the usual Homebrew prefixes (Apple Silicon /
-        Intel) and /usr/bin - the daemon may have been launched from a GUI
-        context whose PATH lacks the brew prefix."""
+        """Our own tools/bin/ (direct-download installs) FIRST, then PATH, then
+        the usual Homebrew prefixes (Apple Silicon / Intel) and /usr/bin - the
+        daemon may have been launched from a GUI context whose PATH lacks the
+        brew prefix. tools/bin/ wins so a self-contained download is preferred
+        over an ambient/stale system copy and works with no package manager."""
+        for ext in ("", ".exe"):
+            cand = os.path.join(TOOLS_BIN_DIR, name + ext)
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return cand
         p = shutil.which(name)
         if p:
             return p
@@ -21232,10 +21422,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "version": self._binary_version(bin_path) if bin_path else None,
                 "path": bin_path,
             }
-            # Prereq signal for the onboarding auto-installer: a brew-installed
-            # binary can't auto-install without Homebrew on the machine.
+            # Prereq signal for the onboarding auto-installer. A direct-download
+            # binary auto-installs with no package manager, so it NEVER needs
+            # brew - only fall back to the brew-prereq signal when this platform
+            # has no direct build AND brew isn't present.
             if not bin_path and spec.get("brew"):
-                result["needsBrew"] = not bool(self._find_local_binary("brew"))
+                has_direct = spec.get("direct") and bool(self._direct_download_target(pkg))
+                if not has_direct:
+                    result["needsBrew"] = not bool(self._find_local_binary("brew"))
             if bin_path:
                 type(self)._LOCAL_STATUS_CACHE[pkg] = result
             return self._reply(200, result)
@@ -21286,9 +21480,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # User Testing whisper.cpp: brew binary + a model file download.
         if spec.get("kind") == "whisper":
             return self._install_whisper(spec)
-        # Binary packages install via Homebrew (`brew install <formula>`).
-        # No Homebrew → clean error with the manual path; we never sudo or
-        # download arbitrary binaries ourselves.
+        # Binary packages: prefer a DIRECT DOWNLOAD of the pinned official
+        # release into tools/bin/ (checksum-verified, no package manager). Fall
+        # back to Homebrew only when this platform has no direct build. This is
+        # what lets a machine with no Homebrew clear the onboarding gate.
         if spec.get("kind") == "binary":
             already = self._find_local_binary(spec["bin"])
             if already:
@@ -21297,13 +21492,41 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "version": self._binary_version(already), "path": already,
                     "stdout": "already installed", "stderr": "",
                 })
+            # 1) Direct download path (no Homebrew required).
+            if spec.get("direct"):
+                target = self._direct_download_target(pkg)
+                if target:
+                    bin_path, dl_log = self._install_direct_binary(pkg, target)
+                    installed = bool(bin_path)
+                    if installed:
+                        type(self)._LOCAL_STATUS_CACHE[pkg] = {
+                            "package": pkg, "installed": True,
+                            "version": self._binary_version(bin_path), "path": bin_path,
+                        }
+                        return self._reply(200, {
+                            "ok": True, "package": pkg, "method": "direct",
+                            "version": self._binary_version(bin_path), "path": bin_path,
+                            "stdout": dl_log, "stderr": "",
+                        })
+                    # Direct download failed - fall through to brew if present,
+                    # otherwise return the download log so the failure is legible.
+                    brew_fallback = self._find_local_binary("brew")
+                    if not brew_fallback:
+                        return self._reply(502, {
+                            "ok": False, "package": pkg, "method": "direct",
+                            "error": f"direct download of {spec['bin']} failed",
+                            "stdout": dl_log, "stderr": "",
+                        })
+            # 2) Homebrew fallback (no direct build for this platform, or the
+            #    direct download failed but brew is available).
             brew = self._find_local_binary("brew")
             if not brew:
                 return self._reply(502, {
                     "ok": False, "package": pkg,
-                    "error": (f"Homebrew not found - install {spec['bin']} manually "
-                              f"(e.g. download from the project's releases page) or install "
-                              f"Homebrew first (https://brew.sh), then retry."),
+                    "error": (f"No direct build for this platform and Homebrew not "
+                              f"found - install {spec['bin']} manually (e.g. download "
+                              f"from the project's releases page) or install Homebrew "
+                              f"first (https://brew.sh), then retry."),
                 })
             try:
                 r = subprocess.run([brew, "install", spec["brew"]],

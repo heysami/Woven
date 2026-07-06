@@ -277,8 +277,16 @@ def share_thumbnail_abspath(project_root, prototype):
 # ═════════════════════════════════════════════════════════════════════════
 
 def find_cloudflared():
-    """Locate the cloudflared binary. PATH first, then the usual install
-    spots (brew on Apple Silicon / Intel, manual /usr/local)."""
+    """Locate the cloudflared binary. Our own tools/bin/ (direct-download
+    install) FIRST, then PATH, then the usual install spots (brew on Apple
+    Silicon / Intel, manual /usr/local). tools/bin/ is checked first so a
+    machine with no Homebrew still resolves the daemon's own copy."""
+    # editor/tools/bin/ - this file lives in editor/.
+    tools_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "bin")
+    for ext in ("", ".exe"):
+        cand = os.path.join(tools_bin, "cloudflared" + ext)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
     p = shutil.which("cloudflared")
     if p:
         return p
