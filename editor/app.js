@@ -314,11 +314,19 @@ const _qsFromLocation = () => {
   try { return new URL(window.location.href).searchParams; } catch { return null; }
 };
 const withProjectQuery = (rawPath, extraQuery) => {
-  if (!rawPath || /^(?:https?:)?\/\//.test(rawPath)) return rawPath + (extraQuery || "");
+  // Callers pass extraQuery as a bare "k=v" (no ?/&) - join it with the right
+  // separator. Naive `rawPath + extraQuery` glued them into "login.htmlt=..."
+  // (a 404 → blank frame) whenever the project-append branch below was skipped.
+  const joinExtra = (path) => {
+    if (!extraQuery) return path;
+    if (!path) return path;
+    return path + (path.includes("?") ? "&" : "?") + extraQuery.replace(/^[?&]/, "");
+  };
+  if (!rawPath || /^(?:https?:)?\/\//.test(rawPath)) return joinExtra(rawPath);
   const params = _qsFromLocation();
   const proj = params && params.get("project");
   // No active project (single-project mode) → leave the URL untouched.
-  if (!proj) return rawPath + (extraQuery || "");
+  if (!proj) return joinExtra(rawPath);
   // Split path from any existing query inside `rawPath`.
   const qIdx = rawPath.indexOf("?");
   const base = qIdx >= 0 ? rawPath.slice(0, qIdx) : rawPath;
@@ -84766,11 +84774,16 @@ function App() {
   // thread tiles are NOT restored into the dock anymore - chat lives in the
   // LEFT panel now, and the existing lastRunId restore re-seeds chatRun
   // (which opens that panel) on its own.
+  // NEVER in embed mode: the embed (?embed=1 frame-view node) shares
+  // localStorage with the outer editor but renders no RightDock, so
+  // rehydrating here only reserves a dead dock column in the .app grid -
+  // a white strip eating half of every Canvas/Flow/IA/Timeline view node.
   useEffect(() => {
+    if (embedMode) return;
     const saved = loadDock().windows;
     if (!Array.isArray(saved) || !saved.length) return;
     saved.filter(w => w && w.kind && w.kind !== "thread").forEach(w => openWindow({ kind: w.kind }));
-  }, [openWindow]);
+  }, [embedMode, openWindow]);
 
   // Route the focused chat into the LEFT chat panel (first option on the
   // editor's left rail) instead of tiling a dock thread window. The dock
@@ -84790,12 +84803,14 @@ function App() {
   }, []);
 
   // Publish dock geometry as CSS custom properties for the .app grid + dock.
+  // Embed mode pins the dock track to 0: RightDock never renders there, so a
+  // non-zero width would just carve an empty column out of the view.
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--th-dock-w", dockWindows.length ? dockWidth + "px" : "0px");
+    root.style.setProperty("--th-dock-w", (!embedMode && dockWindows.length) ? dockWidth + "px" : "0px");
     root.style.setProperty("--dock-col-split", dockColSplit + "%");
     root.style.setProperty("--dock-row-split", dockRowSplit + "%");
-  }, [dockWindows.length, dockWidth, dockColSplit, dockRowSplit]);
+  }, [embedMode, dockWindows.length, dockWidth, dockColSplit, dockRowSplit]);
 
   const openKinds = dockWindows.filter(w => w.kind !== "thread").map(w => w.kind);
 

@@ -17904,11 +17904,17 @@ a.ds-badge:hover, button.ds-badge:hover {
 .canvas-view {
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;   /* panel (auto) + canvas (1fr); auto = 0 when no panel (embed) */
+  grid-template-columns: auto 1fr;   /* panel (auto) + canvas (1fr) */
   min-height: 0;
   min-width: 0;
   background: var(--bg);
 }
+/* Pin the canvas to the 1fr track explicitly. In embed mode (?embed=1) the
+   tools panel isn't rendered, and auto-placement would drop .canvas-wrap into
+   the first `auto` track - which sizes to the wrap's intrinsic width of 0 (all
+   its children are position:absolute), clipping the whole canvas invisible. */
+.canvas-view > .canvas-wrap { grid-column: 2; }
+.canvas-view > .canvas-tools-panel { grid-column: 1; }
 .canvas-tools-panel {
   display: flex;
   flex-direction: column;
