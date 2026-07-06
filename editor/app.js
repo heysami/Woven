@@ -8721,6 +8721,30 @@ function useUsage(enable) {
   return { ...state, reload };
 }
 
+/* Lazy BYOK credit/quota rows for the usage popover's API-keys tab (and the
+   opencode-nested credit rows on the CLI tab). Same contract as useUsage -
+   dormant until `enable`, then served from the daemon's 10-min cache. */
+function useCredits(enable) {
+  const [state, setState] = useState({ rows: [], stale: false, loading: false, loaded: false });
+  const reload = useCallback(async (force) => {
+    try {
+      const r = await fetch(apiUrl("/__usage_credits" + (force ? "?force=1" : "")));
+      if (!r.ok) throw new Error("credits endpoint unavailable");
+      const j = await r.json();
+      setState({ rows: j.rows || [], stale: !!j.stale, loading: !!j.loading, loaded: true });
+    } catch {
+      setState(s => ({ ...s, loaded: true }));
+    }
+  }, []);
+  useEffect(() => {
+    if (!enable) return;
+    reload();
+    const t = setInterval(() => reload(false), 60000);
+    return () => clearInterval(t);
+  }, [enable, reload]);
+  return { ...state, reload };
+}
+
 /* Compact reset-countdown label for a usage window (epoch-ms resetsAt). */
 function fmtUsageReset(ms) {
   if (!ms) return "";
@@ -8973,6 +8997,7 @@ function CliIndicator({ compact }) {
   const [usageOpen, setUsageOpen] = useState(false);
   const usageRef = useRef(null);
   const usage = useUsage(usageOpen);
+  const credits = useCredits(usageOpen);
   useEffect(() => {
     if (!usageOpen) return;
     const off = (e) => { if (usageRef.current && !usageRef.current.contains(e.target)) setUsageOpen(false); };
@@ -9072,7 +9097,7 @@ function CliIndicator({ compact }) {
       ${!compact && html`<span className="cli-label">${labelText}</span>`}
       <span className="tab-tip">${tipShort}</span>
     </span>
-    ${usageOpen && html`<${CliUsagePopover} usage=${usage} onClose=${() => setUsageOpen(false)}/>`}
+    ${usageOpen && html`<${CliUsagePopover} usage=${usage} credits=${credits} onClose=${() => setUsageOpen(false)}/>`}
   </span>`;
 }
 
@@ -9082,23 +9107,80 @@ function CliIndicator({ compact }) {
    cards). Each shows the session (5h) + weekly bars, any per-model or extra
    rows, and a live reset countdown. Purely a read-out of /__usage; the daemon
    does the reading. Mirrors the AgentPicker popover idiom. */
-function CliUsagePopover({ usage, onClose }) {
+function CliUsagePopover({ usage, credits, onClose }) {
+  // Two tabs: CLI (plan windows per signed-in CLI, with opencode's own BYOK
+  // provider credits nested beneath) and API keys (credit / quota per
+  // configured media-config or TH_* env key).
+  const [tab, setTab] = useState("cli");
   const rows = usage.rows || [];
+  const creditRows = (credits && credits.rows) || [];
+  const ocCredits = creditRows.filter(r => r.via === "opencode");
+  const byok = creditRows.filter(r => r.via === "byok");
   const empty = usage.loaded && rows.length === 0 && !usage.loading;
-  return html`<div className="cli-usage-pop" role="dialog" aria-label="Subscription usage">
+  return html`<div className="cli-usage-pop" role="dialog" aria-label="Usage & credits">
     <div className="cli-usage-head">
-      <span className="cli-usage-title">Subscription usage</span>
+      <div className="cli-usage-tabs" role="tablist" aria-label="Usage tabs">
+        <button role="tab" data-active=${tab === "cli"} aria-selected=${tab === "cli"} onClick=${(e) => { e.stopPropagation(); setTab("cli"); }}>CLI</button>
+        <button role="tab" data-active=${tab === "keys"} aria-selected=${tab === "keys"} onClick=${(e) => { e.stopPropagation(); setTab("keys"); }}>API keys</button>
+      </div>
       <button
         className="cli-usage-refresh"
         title="Refresh from providers"
-        onClick=${(e) => { e.stopPropagation(); usage.reload(true); }}
+        onClick=${(e) => { e.stopPropagation(); usage.reload(true); credits && credits.reload(true); }}
       >${Icon.Refresh ? html`<${Icon.Refresh}/>` : "Refresh"}</button>
     </div>
-    ${!usage.loaded && html`<div className="cli-usage-msg">Reading usage…</div>`}
-    ${usage.loading && html`<div className="cli-usage-msg">Fetching from providers…</div>`}
-    ${empty && html`<div className="cli-usage-msg">No signed-in subscriptions detected. Sign in to a CLI (claude / codex / opencode) to see plan usage here.</div>`}
-    ${rows.map(row => html`<${CliUsageCard} key=${row.id} row=${row}/>`)}
-    ${usage.stale && rows.length > 0 && html`<div className="cli-usage-foot">Refreshing…</div>`}
+    ${tab === "cli" ? html`<${React.Fragment}>
+      ${!usage.loaded && html`<div className="cli-usage-msg">Reading usage…</div>`}
+      ${usage.loading && html`<div className="cli-usage-msg">Fetching from providers…</div>`}
+      ${empty && html`<div className="cli-usage-msg">No signed-in subscriptions detected. Sign in to a CLI (claude / codex / opencode) to see plan usage here.</div>`}
+      ${rows.map(row => html`<${CliUsageCard} key=${row.id} row=${row}/>`)}
+      ${ocCredits.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
+      ${usage.stale && rows.length > 0 && html`<div className="cli-usage-foot">Refreshing…</div>`}
+    <//>` : html`<${React.Fragment}>
+      ${credits && !credits.loaded && html`<div className="cli-usage-msg">Reading balances…</div>`}
+      ${credits && credits.loading && html`<div className="cli-usage-msg">Fetching from providers…</div>`}
+      ${credits && credits.loaded && byok.length === 0 && !credits.loading && html`<div className="cli-usage-msg">No provider API keys configured. Add keys in Settings → API keys to see balances here.</div>`}
+      ${byok.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
+      ${credits && credits.stale && byok.length > 0 && html`<div className="cli-usage-foot">Refreshing…</div>`}
+    <//>`}
+  </div>`;
+}
+
+/* Display label for a credit row's provider - the media catalog's label when
+   the provider is wired there, a small fallback map for CLI-side providers
+   (e.g. opencode BYOK entries) the catalog doesn't know. */
+function providerCreditLabel(pid) {
+  try {
+    const p = window.TH_MEDIA && window.TH_MEDIA.providers && window.TH_MEDIA.providers[pid];
+    if (p && p.label) return p.label;
+  } catch {}
+  const M = { zai: "Z.AI", fal: "fal.ai", openai: "OpenAI", anthropic: "Anthropic",
+              elevenlabs: "ElevenLabs", meshy: "Meshy", exa: "Exa", quiver: "Quiver AI",
+              higgsfield: "Higgsfield", xai: "xAI", bfl: "BFL", recraft: "Recraft",
+              leonardo: "Leonardo", volcengine: "Volcengine", nanobanana: "Gemini",
+              imagerouter: "ImageRouter", worldlabs: "World Labs", google: "Google",
+              openrouter: "OpenRouter", groq: "Groq", mistral: "Mistral" };
+  return M[pid] || pid;
+}
+
+/* One BYOK credit/quota card. `ok` is tri-state: true = live number, null =
+   key present but the provider has no balance API (neutral dot), false =
+   probe failed / nothing to read (grey dot + note). */
+function CreditUsageCard({ row }) {
+  return html`<div className="cli-usage-card" data-runtime="credit">
+    <div className="cli-usage-card-head">
+      <span className="cli-usage-dot" data-ok=${row.ok === true ? "1" : row.ok === null ? "na" : "0"}/>
+      <span className="cli-usage-runtime">${providerCreditLabel(row.provider)}</span>
+      ${row.via === "opencode" && html`<span className="cli-usage-plan">via opencode</span>`}
+      ${row.plan && html`<span className="cli-usage-plan">${row.plan}</span>`}
+    </div>
+    ${row.balance && html`
+      <div className="cli-usage-line">
+        <span className="cli-usage-line-label">${row.balance.label || "Balance"}</span>
+        <span className="cli-usage-line-val">${row.balance.usd != null ? "$" + Number(row.balance.usd).toFixed(2) : (row.balance.credits != null ? row.balance.credits + " credits" : "")}</span>
+      </div>`}
+    ${(row.windows || []).map(w => html`<${UsageMeter} key=${w.key} w=${w}/>`)}
+    ${row.note && html`<div className="cli-usage-note">${row.note}</div>`}
   </div>`;
 }
 

@@ -8151,6 +8151,190 @@ def _subscription_usage(force: bool = False) -> dict:
     return {"rows": cached, "stale": not fresh, "loading": bool(cached == [] and not fresh)}
 
 
+# ── BYOK credit / quota probes (the usage popover's "API keys" tab) ─────────
+# Each configured provider key gets a row; providers with a real balance /
+# quota API get live numbers, the rest get an honest note. opencode's own
+# BYOK entries (type=="api" in its auth.json) are probed too and grouped
+# under the CLI tab's opencode card (via="opencode").
+_CREDIT_TTL_S = 600          # balances move slower than plan windows
+_credit_cache = {"at": 0.0, "rows": [], "refreshing": False}
+_credit_lock = threading.Lock()
+
+
+def _credit_fetch_fal(key):
+    # Undocumented-but-stable dashboard endpoint; returns the remaining
+    # prepaid balance as a bare JSON number (verified live).
+    status, raw, _ = _usage_http(
+        "GET", "https://rest.alpha.fal.ai/billing/user_balance",
+        {"Authorization": "Key " + key})
+    j = _usage_json(raw)
+    if status and 200 <= status < 300 and isinstance(j, (int, float)):
+        return {"ok": True, "balance": {"usd": round(float(j), 2), "label": "Balance remaining"}}
+    if status and 200 <= status < 300 and isinstance(j, dict) and isinstance(j.get("balance"), (int, float)):
+        return {"ok": True, "balance": {"usd": round(float(j["balance"]), 2), "label": "Balance remaining"}}
+    return {"ok": False, "note": "Balance unavailable (HTTP %s)" % (status or "timeout")}
+
+
+def _credit_fetch_meshy(key):
+    status, raw, _ = _usage_http(
+        "GET", "https://api.meshy.ai/openapi/v1/balance",
+        {"Authorization": "Bearer " + key})
+    j = _usage_json(raw)
+    if status and 200 <= status < 300 and isinstance(j, dict) and isinstance(j.get("balance"), (int, float)):
+        return {"ok": True, "balance": {"credits": int(j["balance"]), "label": "Credits remaining"}}
+    return {"ok": False, "note": "Balance unavailable (HTTP %s)" % (status or "timeout")}
+
+
+def _credit_fetch_elevenlabs(key):
+    status, raw, _ = _usage_http(
+        "GET", "https://api.elevenlabs.io/v1/user/subscription",
+        {"xi-api-key": key})
+    j = _usage_json(raw)
+    if status and 200 <= status < 300 and isinstance(j, dict) and isinstance(j.get("character_limit"), (int, float)):
+        used, limit = float(j.get("character_count") or 0), float(j["character_limit"])
+        row = {"ok": True, "plan": j.get("tier"), "windows": [{
+            "key": "chars", "label": "Characters (this cycle)",
+            "usedPct": round(used / limit * 100, 1) if limit else 0,
+            "resetsAt": _reset_to_ms(j.get("next_character_count_reset_unix"), int(time.time() * 1000)),
+        }]}
+        return row
+    return {"ok": False, "note": "Quota unavailable (HTTP %s)" % (status or "timeout")}
+
+
+def _credit_fetch_zai(key):
+    # Z.AI coding-plan quota. Keys without a coding plan get a code-500
+    # success=false body - report that honestly instead of failing.
+    status, raw, _ = _usage_http(
+        "GET", "https://api.z.ai/api/monitor/usage/quota/limit",
+        {"Authorization": "Bearer " + key})
+    j = _usage_json(raw)
+    if status and 200 <= status < 300 and isinstance(j, dict):
+        if j.get("success") and isinstance(j.get("data"), dict):
+            windows = []
+            for lim in (j["data"].get("limits") or []):
+                if not isinstance(lim, dict):
+                    continue
+                pct = lim.get("percentage")
+                if isinstance(pct, (int, float)):
+                    windows.append({
+                        "key": str(lim.get("type") or "quota"),
+                        "label": str(lim.get("type") or "quota").replace("_", " ").title(),
+                        "usedPct": round(float(pct), 1),
+                        "resetsAt": _reset_to_ms(lim.get("nextResetTime"), int(time.time() * 1000)),
+                    })
+            if windows:
+                return {"ok": True, "windows": windows}
+            return {"ok": True, "note": "Coding plan active - quota shape unrecognised"}
+        return {"ok": False, "note": "No coding plan on this key - Z.AI doesn't expose pay-as-you-go balance"}
+    return {"ok": False, "note": "Quota unavailable (HTTP %s)" % (status or "timeout")}
+
+
+_CREDIT_DRIVERS = {
+    "fal": _credit_fetch_fal,
+    "meshy": _credit_fetch_meshy,
+    "elevenlabs": _credit_fetch_elevenlabs,
+    "zai": _credit_fetch_zai,
+}
+# Providers whose billing surface is dashboard-only: skip the network call and
+# say so, instead of a misleading "unavailable" error.
+_CREDIT_STATIC_NOTES = {
+    "openai":    "OpenAI doesn't expose billing to API keys - see platform.openai.com/usage",
+    "anthropic": "Anthropic exposes spend to admin keys only - see console.anthropic.com",
+    "exa":       "Exa doesn't expose balance via API - see dashboard.exa.ai",
+    "quiver":    "Quiver doesn't expose balance via API",
+    "higgsfield": "Higgsfield doesn't expose balance via API",
+}
+
+
+def _byok_credit_sources() -> list:
+    """Every provider with a configured key: media-config / TH_* env first
+    (via='byok'), then opencode's own BYOK entries (via='opencode')."""
+    out = []
+    cfg = _media_config_load()
+    pids = set(_PROVIDER_ENV_KEYS.keys())
+    if isinstance(cfg, dict):
+        pids.update(k for k, v in cfg.items() if isinstance(v, dict))
+    for pid in sorted(pids):
+        env_name = _PROVIDER_ENV_KEYS.get(pid)
+        k = (os.environ.get(env_name) or "").strip() if env_name else ""
+        if not k and isinstance(cfg, dict):
+            p = cfg.get(pid)
+            k = (p.get("api_key") or "").strip() if isinstance(p, dict) else ""
+        if k:
+            out.append({"provider": pid, "key": k, "via": "byok"})
+    home = os.path.expanduser("~")
+    xdg = (os.environ.get("XDG_DATA_HOME") or "").strip() or os.path.join(home, ".local", "share")
+    blob = _read_json_file(os.path.join(xdg, "opencode", "auth.json"))
+    if isinstance(blob, dict):
+        for pid, entry in sorted(blob.items()):
+            if isinstance(entry, dict) and entry.get("type") == "api" and (entry.get("key") or "").strip():
+                out.append({"provider": pid, "key": entry["key"].strip(), "via": "opencode"})
+    return out
+
+
+def _compute_credit_rows() -> list:
+    srcs = _byok_credit_sources()
+    rows = [None] * len(srcs)
+
+    def _run(i, src):
+        pid = src["provider"]
+        base = {"id": "%s:%s" % (src["via"], pid), "provider": pid, "via": src["via"], "ok": False}
+        try:
+            if pid in _CREDIT_DRIVERS:
+                base.update(_CREDIT_DRIVERS[pid](src["key"]) or {})
+            else:
+                base["note"] = _CREDIT_STATIC_NOTES.get(
+                    pid, "Provider doesn't expose balance/credits via its API")
+                base["ok"] = None   # "key present, nothing to read" - not an error
+        except Exception:
+            base["note"] = "Balance probe failed"
+        rows[i] = base
+
+    threads = []
+    for i, src in enumerate(srcs):
+        t = threading.Thread(target=_run, args=(i, src), daemon=True)
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join(timeout=20)
+    return [r for r in rows if r]
+
+
+def _credit_usage(force: bool = False) -> dict:
+    """Stale-while-revalidate twin of _subscription_usage for BYOK credits."""
+    now = time.time()
+    with _credit_lock:
+        cached = list(_credit_cache["rows"])
+        age = now - _credit_cache["at"]
+        refreshing = _credit_cache["refreshing"]
+        fresh = age < _CREDIT_TTL_S and _credit_cache["at"] > 0
+
+    if force or (not fresh and not cached):
+        rows = _compute_credit_rows()
+        with _credit_lock:
+            _credit_cache["rows"] = rows
+            _credit_cache["at"] = time.time()
+        return {"rows": rows, "stale": False, "loading": False}
+
+    if not fresh and not refreshing:
+        with _credit_lock:
+            _credit_cache["refreshing"] = True
+
+        def _bg():
+            try:
+                rows = _compute_credit_rows()
+                with _credit_lock:
+                    _credit_cache["rows"] = rows
+                    _credit_cache["at"] = time.time()
+            finally:
+                with _credit_lock:
+                    _credit_cache["refreshing"] = False
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+    return {"rows": cached, "stale": not fresh, "loading": bool(cached == [] and not fresh)}
+
+
 # ── stream-json normaliser ──────────────────────────────────────────────────
 # Claude Code's --output-format=stream-json emits one JSON object per line, of
 # shape (paraphrased):
@@ -10696,6 +10880,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._agents_list()
         if url_path == "/__usage":
             return self._usage_list(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__usage_credits":
+            return self._usage_credits_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__healthz":
             return self._healthz()
         # web-browser node endpoints (probe / proxy / text-extract).
@@ -23774,6 +23960,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         force = (_qs_get(qs, "force") or "").strip() in ("1", "true", "yes")
         try:
             payload = _subscription_usage(force=force)
+        except Exception as e:
+            return self._reply(200, {"rows": [], "stale": False,
+                                     "loading": False, "error": str(e)})
+        return self._reply(200, payload)
+
+    def _usage_credits_list(self, qs):
+        """BYOK credit/quota rows for the usage popover's API-keys tab (plus
+        the via='opencode' rows the CLI tab nests under opencode). Cached like
+        /__usage; ?force=1 refreshes synchronously."""
+        force = (_qs_get(qs, "force") or "").strip() in ("1", "true", "yes")
+        try:
+            payload = _credit_usage(force=force)
         except Exception as e:
             return self._reply(200, {"rows": [], "stale": False,
                                      "loading": False, "error": str(e)})

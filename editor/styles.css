@@ -15425,6 +15425,36 @@ a.ds-badge:hover, button.ds-badge:hover {
   flex: 0 0 7px;
 }
 .cli-usage-dot[data-ok="1"] { background: var(--ok, #16a34a); }
+/* Tri-state for credit cards: "na" = key present, provider has no balance
+   API - neutral, not an error. */
+.cli-usage-dot[data-ok="na"] { background: var(--border-strong); }
+/* CLI / API-keys tab switch in the popover head. */
+.cli-usage-tabs {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+.cli-usage-tabs button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.cli-usage-tabs button[data-active="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
 .cli-usage-runtime {
   font-size: 12px;
   font-weight: 600;
