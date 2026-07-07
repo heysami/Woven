@@ -1,0 +1,3 @@
+# Keep the Release zip (git archive HEAD) equal to what zip-flow users need.
+# The mac app is distributed separately as Woven-macos.zip from macapp/build.sh.
+macapp/ export-ignore
