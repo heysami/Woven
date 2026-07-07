@@ -22,6 +22,9 @@ final class WebWindowController: NSWindowController, WKUIDelegate, WKNavigationD
 
     private var webView: WKWebView!
     private let isMain: Bool
+    /// True while the last main-frame load failed (daemon down); openMain
+    /// uses it to reload instead of focusing a dead page.
+    private var provisionalFailed = false
 
     // MARK: - Shared configuration
     // (No WKProcessPool wrangling: since macOS 12 all WKWebViews share one
@@ -39,6 +42,12 @@ final class WebWindowController: NSWindowController, WKUIDelegate, WKNavigationD
     static func openMain(url: URL) {
         NSLog("[woven] openMain: \(url)")
         if let existing = main {
+            // Recover a dead page: after a daemon crash + restart the window
+            // is showing a connection error; reload instead of just focusing.
+            if existing.provisionalFailed || existing.webView.url == nil {
+                existing.provisionalFailed = false
+                existing.webView.load(URLRequest(url: url))
+            }
             existing.showWindow(nil)
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -237,6 +246,7 @@ final class WebWindowController: NSWindowController, WKUIDelegate, WKNavigationD
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         NSLog("[woven] provisional navigation failed: \(error)")
+        provisionalFailed = true
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -245,6 +255,7 @@ final class WebWindowController: NSWindowController, WKUIDelegate, WKNavigationD
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         NSLog("[woven] navigation finished: \(webView.url?.absoluteString ?? "?")")
+        provisionalFailed = false
     }
 
     // MARK: - NSWindowDelegate
