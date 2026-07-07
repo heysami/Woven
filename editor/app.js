@@ -23595,7 +23595,11 @@ function ProjectsHousekeeping({ onClose }) {
     }
   };
 
-  return html`
+  // Portal to <body>: rendered inside .landing-main (a z-index stacking
+  // context), a bare overlay is trapped BELOW the sibling .landing-header
+  // (z-index 4) which then paints over the modal's top. Its sibling landing
+  // modals (NewProjectWizard, CloneFromGithubDialog) portal for the same reason.
+  return createPortal(html`
     <div className="newproj-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
       <div className="newproj-card hk-card">
         <header className="newproj-card-head">
@@ -23639,7 +23643,7 @@ function ProjectsHousekeeping({ onClose }) {
         </footer>
       </div>
     </div>
-  `;
+  `, document.body);
 }
 
 function ProjectsLanding({ info, projects, onReload }) {
