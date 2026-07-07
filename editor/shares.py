@@ -782,18 +782,56 @@ def _woven_heartbeat_loop(t):
             pass
 
 
+def _woven_foreign_connector_pids():
+    """PIDs of cloudflared connectors for THIS install's named tunnel that were
+    NOT spawned by this daemon. The named tunnel is a machine-global singleton
+    (one stable hostname routing to ONE gate port): when a second daemon starts
+    its own connector, Cloudflare balances the hostname across both and every
+    share minted by the first daemon 404s as "unknown or revoked" on the gate
+    of the second. First daemon wins; later daemons must skip - and must NOT
+    rewrite ~/.woven/config.yml to their own gate port."""
+    cfg = os.path.join(WOVEN_DIR, "config.yml")
+    own = None
+    if _WOVEN is not None and _WOVEN.proc.poll() is None:
+        own = _WOVEN.proc.pid
+    try:
+        out = subprocess.run(["pgrep", "-f", cfg],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return []
+    pids = []
+    for line in out.splitlines():
+        line = line.strip()
+        if line.isdigit():
+            pid = int(line)
+            if pid not in (own, os.getpid()):
+                pids.append(pid)
+    return pids
+
+
 def _woven_tunnel_start():
     """Ensure the single shared named tunnel is running (idempotent).
-    Provisions credentials on first use. Raises on cloudflared/broker failure."""
+    Provisions credentials on first use. Raises on cloudflared/broker failure,
+    and when another daemon on this machine already owns the tunnel."""
+    global _WOVEN
     if GATE_PORT is None:
         raise RuntimeError("share gate server not started")
     binary = find_cloudflared()
     if not binary:
         raise RuntimeError("cloudflared not found - install it (macOS: brew install cloudflared)")
+    with _WOVEN_LOCK:
+        ours = _WOVEN is not None and _WOVEN.proc.poll() is None
+    if not ours:
+        foreign = _woven_foreign_connector_pids()
+        if foreign:
+            raise RuntimeError(
+                "another Woven daemon on this machine already runs the stable share "
+                f"tunnel (cloudflared pid {foreign[0]}); the stable hostname can only "
+                "route to one daemon at a time. Manage woven links from that daemon, "
+                "or use the quick link here.")
     state = _woven_ensure_credentials()          # may call the broker (first run only)
     cfg = _woven_write_config(state)
     with _WOVEN_LOCK:
-        global _WOVEN
         if _WOVEN is not None and _WOVEN.proc.poll() is None:
             return _WOVEN
         proc = subprocess.Popen(
