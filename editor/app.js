@@ -109,12 +109,13 @@ const D = window.EDITOR_DATA;
 
 // Read the prototype slug off a workflow node, accepting both the
 // `prototype` field and the legacy `branch` field (older nodes on disk
-// carry `branch`; new nodes write `prototype`). Falls back to "main" so
+// carry `branch`; new nodes write `prototype`). Falls back to the project
+// default slug (activePrototypeSlug) so
 // call sites can skip null-checks. This is the canonical reader - every
 // `(node.branch || "main")` site in the codebase should route through here.
 function nodePrototype(node) {
-  if (!node) return "main";
-  return node.prototype || node.branch || "main";
+  if (!node) return activePrototypeSlug();
+  return node.prototype || node.branch || activePrototypeSlug();
 }
 
 // True when the editor is mounted inside a read-only workflow view node
@@ -150,7 +151,7 @@ function activePrototypeSlug() {
 // prototype). The agent has fs access, so we hand it the slug + the daemon's
 // rule and let it pick (or create) the right file.
 function editorDataTargetInstruction(slug) {
-  const s = (slug || "main").trim();
+  const s = (slug || activePrototypeSlug()).trim();
   return [
     `Target editor data file (window.EDITOR_DATA) for prototype \`${s}\` - resolve it the SAME way the daemon serves it back for ?prototype=${s}:`,
     `  • If \`editor/${s}.data.js\` exists → write THAT (multi-prototype project).`,
@@ -9932,7 +9933,7 @@ function takePendingChatRun() {
    Mirrors the floating-dock wiring used by WorkflowCanvas. `mode` only steers
    the chat preamble (editor vs workflow context). */
 function RightRailDock({ mode }) {
-  const branch = "main";
+  const branch = activePrototypeSlug();
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
   const [permissionMode, setPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
@@ -10121,7 +10122,7 @@ function RightRailDock({ mode }) {
   // normal.) The old setup thread is NOT killed - it stays reopenable; this just
   // makes the new working thread the active one.
   const openScopedChat = useCallback((prototype) => {
-    const slug = prototype || branch || "main";
+    const slug = prototype || branch || activePrototypeSlug();
     pendingScopedRef.current = { tier: "normal", branch: slug };
     setChatRun({ runId: null, isNew: true, title: "Continue", kind: "freeform", branch: slug, tier: "normal", agentId: pickAgentIdForChat() });
     setChatRunFinished(false);
@@ -18937,10 +18938,26 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const [exportFolder, setExportFolder] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const [useDefaultDs, setUseDefaultDs] = useState(false);
+  // DS seed choice: "none" | "template" (customizer step 2) | "global"
+  // (verbatim import of a promoted workspace-level DS, linked for push/pull).
+  const [dsMode, setDsMode] = useState("none");
+  const useDefaultDs = dsMode === "template";
+  const [globalDsList, setGlobalDsList] = useState(null); // null = not loaded
+  const [globalDsId, setGlobalDsId] = useState("");
   const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
   const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+
+  // Global DS library - the option row only renders when the workspace has
+  // promoted design systems (single-project daemons 400 → empty list).
+  useEffect(() => {
+    let dead = false;
+    fetch("/__global_ds")
+      .then(r => (r.ok ? r.json() : { items: [] }))
+      .then(j => { if (!dead) setGlobalDsList((j && j.items) || []); })
+      .catch(() => { if (!dead) setGlobalDsList([]); });
+    return () => { dead = true; };
+  }, []);
 
   const existingIds = useMemo(
     () => new Set((workspaceProjects || []).map(p => (p.id || "").toLowerCase())),
@@ -18967,7 +18984,8 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   }, [name]);
 
   const collision = !!slugId && existingIds.has(slugId);
-  const canSubmit = !busy && slugId.length > 0 && !collision;
+  const canSubmit = !busy && slugId.length > 0 && !collision &&
+    (dsMode !== "global" || !!globalDsId);
 
   const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
 
@@ -18991,6 +19009,8 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
       if (useDefaultDs) {
         const dsLabel = name.trim() ? (name.trim() + " - design system") : "Template Design System";
         Object.assign(payload, dsBuildBakePayload(dsSettings, dsCustom, dsLabel));
+      } else if (dsMode === "global" && globalDsId) {
+        payload.globalDsId = globalDsId;
       }
       const r = await fetch(apiUrl("/__projects/new"), {
         method: "POST",
@@ -19111,7 +19131,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
           <button
             type="button"
             className=${"newproj-ds-toggle" + (useDefaultDs ? " is-on" : "")}
-            onClick=${() => setUseDefaultDs(v => !v)}
+            onClick=${() => setDsMode(m => (m === "template" ? "none" : "template"))}
             disabled=${busy}
             aria-pressed=${useDefaultDs}>
             <span className=${"newproj-ds-check" + (useDefaultDs ? " is-on" : "")} aria-hidden="true">
@@ -19122,6 +19142,53 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
               <span className="newproj-ds-toggle-sub">Seed a tokenized component library you can recolour, round, and retype in the next step.</span>
             </span>
           </button>
+
+          ${!!(globalDsList && globalDsList.length) && html`
+            <button
+              type="button"
+              className=${"newproj-ds-toggle" + (dsMode === "global" ? " is-on" : "")}
+              onClick=${() => setDsMode(m => (m === "global" ? "none" : "global"))}
+              disabled=${busy}
+              aria-pressed=${dsMode === "global"}>
+              <span className=${"newproj-ds-check" + (dsMode === "global" ? " is-on" : "")} aria-hidden="true">
+                ${dsMode === "global" ? html`<${Icon.Check}/>` : null}
+              </span>
+              <span className="newproj-ds-toggle-text">
+                <span className="newproj-ds-toggle-title">Start from a global design system</span>
+                <span className="newproj-ds-toggle-sub">Import a promoted workspace design system verbatim, linked so you can push and pull changes later.</span>
+              </span>
+            </button>
+          `}
+
+          ${dsMode === "global" && !!(globalDsList && globalDsList.length) && html`
+            <div className="newproj-gds-picker">
+              <div className="newproj-gds-list" role="listbox">
+                ${globalDsList.map(g => html`
+                  <button
+                    type="button"
+                    key=${g.id}
+                    role="option"
+                    aria-selected=${globalDsId === g.id}
+                    className=${"newproj-gds-item" + (globalDsId === g.id ? " is-selected" : "")}
+                    onClick=${() => setGlobalDsId(g.id)}
+                    disabled=${busy}>
+                    <span className="newproj-gds-item-label">${g.label || g.id}</span>
+                    ${g.genre && html`<span className="newproj-gds-item-genre" title=${g.genre}>${g.genre}</span>`}
+                    <span className="newproj-gds-item-meta">
+                      ${g.version ? g.version.slice(0, 7) : ""}${g.updatedAt ? " · " + g.updatedAt.slice(0, 10) : ""}
+                    </span>
+                  </button>
+                `)}
+              </div>
+              ${globalDsId && html`
+                <iframe
+                  className="newproj-gds-preview"
+                  title="Design system gallery preview"
+                  src=${"/__global_ds/" + encodeURIComponent(globalDsId) + "/gallery.html"}
+                  sandbox="allow-scripts allow-same-origin"></iframe>
+              `}
+            </div>
+          `}
 
           ${err && html`<div className="newproj-error">${err}</div>`}
         </div>
@@ -24519,7 +24586,7 @@ function cameFromWorkflow() {
    (?project=) resolves source/<branch>/ to the active project's tree. */
 function PrototypeDoor() {
   const params = new URL(window.location.href).searchParams;
-  const branch = params.get("prototype") || params.get("branch") || "main";
+  const branch = params.get("prototype") || params.get("branch") || activePrototypeSlug();
   const project = params.get("project") || "";
   // Slug may be nested ("main/sketches") - encode each segment so the
   // path-separator survives the URL but everything else gets escaped.
@@ -24775,7 +24842,7 @@ function WorkflowCanvas() {
   // single prompt/skill/asset node - this one is the "talk about the whole
   // canvas" entry point.
   const branch = useMemo(
-    () => ("main"),
+    () => (activePrototypeSlug()),
     [],
   );
   const [chatRun, setChatRun] = useState(null);
@@ -27268,7 +27335,7 @@ const WORKFLOW_NODE_FACTORY = {
     return node;
   },
   "asset": (p) => {
-    const branch = "main";
+    const branch = activePrototypeSlug();
     const ak = p.assetKind || null;
     const akExt = ak === "image" ? "png"
                 : ak === "vector" || ak === "svg" ? "svg"
@@ -27316,7 +27383,7 @@ const WORKFLOW_NODE_FACTORY = {
     if (p.preset)       node.preset       = p.preset;
     if (p.systemPreset) node.systemPreset = p.systemPreset;
     if (p.outputMode)   node.outputMode   = p.outputMode;
-    if (p.outputPath)   node.outputPath   = p.outputPath.replace(/\{\{branch\}\}/g, "main");
+    if (p.outputPath)   node.outputPath   = p.outputPath.replace(/\{\{branch\}\}/g, activePrototypeSlug());
     return node;
   },
   "ds-brainstorm": (p) => ({
@@ -27567,7 +27634,7 @@ const WORKFLOW_NODE_FACTORY = {
   "prototype": (p) => {
     const node = {
       kind: "prototype", w: 720, h: 480,
-      prototype: p.prototype || p.branch || "main",
+      prototype: p.prototype || p.branch || activePrototypeSlug(),
     };
     if (p.lockedState) node.lockedState = p.lockedState;
     return node;
@@ -28198,7 +28265,7 @@ const WORKFLOW_CONNECT_BUNDLES = [
     appliesTo: (node) => node.kind === "prototype",
     build(anchor, h) {
       const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
-      const slug = anchor.prototype || "main";
+      const slug = anchor.prototype || activePrototypeSlug();
       const agentBody  = h.make("agent",  { name: "Build " + slug });
       const promptBody = h.make("prompt", { title: "Build brief", text: "" });
       const agentId = h.newId(), promptId = h.newId();
@@ -28224,7 +28291,7 @@ const WORKFLOW_CONNECT_BUNDLES = [
     appliesTo: (node) => node.kind === "prototype",
     build(anchor, h) {
       const gap = WORKFLOW_CONNECT_BUNDLE_GAP;
-      const slug = anchor.prototype || "main";
+      const slug = anchor.prototype || activePrototypeSlug();
       const agentBody = h.make("agent", { name: "Iterate on " + slug });
       const agentId = h.newId();
       const aSpot = h.findFreeSpot(anchor.x + (anchor.w || 720) + gap, anchor.y, agentBody.w, agentBody.h);
@@ -28648,7 +28715,7 @@ async function runScreenshotJob(job, { setView }) {
     if (!job.file) return { ok: false, error: "job.file missing" };
     // Build a hidden iframe pointed at the daemon's source/ route. apiUrl
     // injects `?project=` so workspace mode resolves the right project.
-    const branch = job.branch || "main";
+    const branch = job.branch || activePrototypeSlug();
     const url = apiUrl(`/source/${encodeURIComponent(branch)}/${job.file}`);
     const iframe = document.createElement("iframe");
     iframe.setAttribute("aria-hidden", "true");
@@ -33898,7 +33965,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const protos = (j && j.prototypes) || [];
         if (cancelled) return;
         if (protos.length) {
-          const main = protos.find(p => p.id === "main") || protos[0];
+          const main = protos.find(p => p.id === activePrototypeSlug()) || protos[0];
           window.dispatchEvent(new CustomEvent("th:proto-open-tab", {
             detail: { path: main.path, label: main.label || main.id },
           }));
@@ -34480,7 +34547,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const openZoomForViewerTab = useCallback((tab) => {
     if (!tab || !tab.path) return;
     const m = (tab.path || "").match(/^source\/([^/]+)\//);
-    const branch = (m && m[1]) || "main";
+    const branch = (m && m[1]) || activePrototypeSlug();
     const protoNode = (data.nodes || []).find(n =>
       n.kind === "prototype" && nodePrototype(n) === branch);
     openZoomAt(tab.path, branch, protoNode ? protoNode.id : null);
@@ -34670,7 +34737,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!node.path || node.path.startsWith("inline:")) return;
     const branch = (() => {
       const m = (node.path || "").match(/^source\/([^/]+)\//);
-      return (m && m[1]) || "main";
+      return (m && m[1]) || activePrototypeSlug();
     })();
     openZoomAt(node.path, branch, node.id);
   }, [openZoomAt]);
@@ -36416,7 +36483,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       r.onerror = () => rej(r.error || new Error("read failed"));
       r.readAsDataURL(file);
     });
-    const branch = "main";
+    const branch = activePrototypeSlug();
     const resp = await fetch(apiUrl("/__attachment"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -36691,10 +36758,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             return;
           }
           // Non-image supported files → multipart /__upload (no base64 tax,
-          // 50MB cap) → source/main/uploads/<name> → asset node.
+          // 50MB cap) → source/<branch>/uploads/<name> → asset node.
           const fd = new FormData();
           fd.append("file0", file, file.name);
-          const resp = await fetch(apiUrl("/__upload?branch=main"), { method: "POST", body: fd });
+          const resp = await fetch(apiUrl("/__upload?branch=" + encodeURIComponent(activePrototypeSlug())), { method: "POST", body: fd });
           const j = await resp.json().catch(() => ({}));
           if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
           const rel = j.files && j.files[0] && j.files[0].path;
@@ -39890,7 +39957,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const w = 220, h = 170;
       const offsetX = (sk.w || 280) + 60;
       const offsetY = ((sk.h || 200) - h) / 2;
-      const branch = "main";
+      const branch = activePrototypeSlug();
       const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
       const newId = workflowNewNodeId();
       // Mirror the skill's declared output extension + kind via
@@ -39937,7 +40004,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!origin) return d;
       newId = workflowNewNodeId();
       const offsetX = (origin.w || 280) + 60;
-      const branch = "main";
+      const branch = activePrototypeSlug();
       let nextNode;
       if (kind === "prompt") {
         nextNode = {
@@ -40008,7 +40075,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           x: Math.round(origin.x + offsetX),
           y: Math.round(origin.y),
           w: opt.w || 720, h: opt.h || 480,
-          prototype: opt.prototype || opt.branch || "main",
+          prototype: opt.prototype || opt.branch || activePrototypeSlug(),
           instanceId: newId,
         };
       } else {
@@ -40033,7 +40100,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // (runSkill, triggerRun, /__asset_generate) instead of duplicating it.
   const runRepeater = useCallback(async (repeaterId, variantIdx = null) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    const branch = "main";
+    const branch = activePrototypeSlug();
     update(repeaterId, { status: "loading", error: null });
     // see Bug A in runRemix. Hoist the spawned-card id map out of
     // the try so the outer catch can sweep any cards still "pending" when
@@ -40851,7 +40918,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
   const runRemix = useCallback(async (remixId, variantIdx = null) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    const branch = "main";
+    const branch = activePrototypeSlug();
     update(remixId, { status: "loading", error: null });
     // spawned-card ids are hoisted OUT of the try-block so the
     // outer catch can sweep any cards still stuck on runStatus:"pending"
@@ -41305,7 +41372,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // (outputKind:text). Auto-spawn the output card.
   const runBlend = useCallback(async (blendId) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
-    const branch = "main";
+    const branch = activePrototypeSlug();
     update(blendId, { status: "loading", error: null });
     try {
       const cur = data;
@@ -42238,7 +42305,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const runSkill = useCallback(async (clickedId) => {
     const update = (id, state) => setRunStates(s => ({ ...s, [id]: { ...(s[id] || {}), ...state } }));
     const allSkills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
-    const branch = "main";
+    const branch = activePrototypeSlug();
     // Typed temp path for skill→skill auto-chaining (no bridge asset). The
     // extension MUST match the producer's real output kind - a hardcoded .png
     // broke every non-image chain (a 3d-gen → editor chain wrote .glb bytes to
@@ -43716,7 +43783,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         // Build the new target path: same directory + filename stem, but
         // with the SOURCE's extension. e.g. `images/foo.png` → `images/foo.svg`.
         const newTargetPath = targetNode.path.replace(/\.[a-z0-9]+$/i, "." + srcExt);
-        const branch = "main";
+        const branch = activePrototypeSlug();
         const promptMsg = kindChanged
           ? `Kind change detected (${dstKind} → ${srcKind}).\n\n` +
             `Will:\n` +
@@ -43835,7 +43902,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
 
     if (targetIsExposedSvg) {
-      const branch = "main";
+      const branch = activePrototypeSlug();
       const protoNode = (data.nodes || []).find(n => n.id === targetNode.boundTo.node);
       const ok = (typeof window !== "undefined" && window.confirm)
         ? await uiConfirm(
@@ -44437,7 +44504,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return;
     }
 
-    const branch = "main";
+    const branch = activePrototypeSlug();
     const slugify = (s) => String(s || "asset").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "asset";
 
     // Build the target list - ONLY HTML outputs. Any imagery the agent
@@ -46109,7 +46176,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     const _dio = workflowKindIo(down.kind);
                     const _edit = _dio && (_dio.accepts || []).find(a => a.ingest === "editTarget");
                     if (_edit && _edit.canonical) {
-                      let b = "main";
+                      let b = activePrototypeSlug();
                       for (const pe of (data.edges || [])) {
                         if ((pe.to || "").split(".", 1)[0] !== down.id) continue;
                         const pu = (data.nodes || []).find(x => x.id === (pe.from || "").split(".", 1)[0]);
@@ -46970,7 +47037,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             try {
               window.dispatchEvent(new CustomEvent("th:proto-open-tab", { detail: { path: filePath, label: null } }));
             } catch {}
-            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || "main" }));
+            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || activePrototypeSlug() }));
           }}
         />
       `}
@@ -47630,7 +47697,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
         const j = r.ok ? await r.json() : null;
         const protos = (j && j.prototypes) || [];
         if (cancelled || !protos.length) return;
-        const main = protos.find(p => p.id === "main") || protos[0];
+        const main = protos.find(p => p.id === activePrototypeSlug()) || protos[0];
         addTab(main.path, main.label || main.id);
       } catch {}
     })();
@@ -48761,7 +48828,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
               e.dataTransfer.effectAllowed = "copy";
               // Default new DS id = active branch slug, so the per-branch
               // convention is preserved (one DS per branch unless inheriting).
-              const branch = "main";
+              const branch = activePrototypeSlug();
               e.dataTransfer.setData("application/x-th-workflow",
                 JSON.stringify({ kind: "design-system", dsId: branch }));
             }}
@@ -49287,7 +49354,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
               draggable=${true}
               onDragStart=${(e) => {
                 e.dataTransfer.effectAllowed = "copy";
-                const branch = "main";
+                const branch = activePrototypeSlug();
                 const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
                 const path = `source/${branch}/images/asset-${stamp}.png`;
                 e.dataTransfer.setData("application/x-th-workflow",
@@ -49308,7 +49375,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
               draggable=${true}
               onDragStart=${(e) => {
                 e.dataTransfer.effectAllowed = "copy";
-                const branch = "main";
+                const branch = activePrototypeSlug();
                 const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
                 const path = `source/${branch}/images/asset-${stamp}.png`;
                 e.dataTransfer.setData("application/x-th-workflow",
@@ -52579,7 +52646,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           if (!await uiConfirm("You have unsaved changes. Discard and drill into this component?")) return;
         }
         const m = path.match(/^source\/([^/]+)\//);
-        const nextBranch = (m && m[1]) || branch || "main";
+        const nextBranch = (m && m[1]) || branch || activePrototypeSlug();
         onSwitchTarget(path, nextBranch);
       };
     })();
@@ -52912,7 +52979,7 @@ function thFindNeedle(text, needle) {
 // { found, path }. A network/parse failure resolves to found:false so a
 // double-click still falls through to inline editing rather than dying. */
 async function thDetectDataText(branch, needle) {
-  const path = `source/${(branch || "main").split("/").map(encodeURIComponent).join("/")}/data.js`;
+  const path = `source/${(branch || activePrototypeSlug()).split("/").map(encodeURIComponent).join("/")}/data.js`;
   const n = thNormText(needle);
   if (n.length < 2) return { found: false, path };
   let src = "";
@@ -53867,7 +53934,7 @@ function UserTestingScreen({ slug, onClose, info }) {
 
   const newSession = async () => {
     let useSlug = slug;
-    if (!useSlug) { useSlug = await uiPrompt("Prototype to test (slug, e.g. main):", "main"); if (!useSlug) return; }
+    if (!useSlug) { useSlug = await uiPrompt("Prototype to test (slug):", activePrototypeSlug()); if (!useSlug) return; }
     const label = await uiPrompt("Name this session:", "Usability round 1");
     if (label === null) return;
     const j = await op({ op: "create", prototype: useSlug, label: label || undefined });
@@ -57101,7 +57168,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
   // by Remix / Blend, just scaled across N files instead of one.
   const runDsAudit = useCallback(async () => {
     if (!linkedDsRef) return;
-    if (branch === "main") return;   // main goes through DS_PROPOSAL.md, never auto-patched
+    if (branch === activePrototypeSlug()) return;   // the default prototype goes through DS_PROPOSAL.md, never auto-patched
     setAuditing(true);
     setAuditResult(null);
     setAuditOpen(true);
@@ -58512,7 +58579,7 @@ function NodeVersioningChrome({ node, allNodes, allEdges, onChange }) {
       // screenshot of the daemon's error page. The branch slug drives both
       // the iframe src and the snapshot path, so the same convention
       // applies here.
-      const branchSlug = (node.branch || "").trim() || "main";
+      const branchSlug = (nodePrototype(node) || "").trim();
       const entry = (node.sourceEntry || "index.html").replace(/^\/+/, "");
       path = `source/${branchSlug}/${entry}`;
       captureKind = "html";
@@ -61800,7 +61867,7 @@ function useAgentEditTarget(node, allNodes, allEdges, { path, serialize, apply, 
       const up = (allNodes || []).find(n => n.id === f);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
   const canonicalPath = path(branch, node.id);
   const selfWriteRef = useRef("  ");   // sentinel ≠ any real serialization
@@ -62036,7 +62103,7 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       const up = (allNodes || []).find(n => n.id === upId);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
 
   // Single-call sprite-sheet prompt: the model draws the WHOLE cycle at once on
@@ -63921,7 +63988,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       const up = (allNodes || []).find(n => n.id === f);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
   const composerSidecarPath = `source/${bakeBranch}/composer-${node.id}.json`;
   // The exact bytes we last wrote ourselves, so our own bake's asset-changed
@@ -65259,7 +65326,7 @@ function WorkflowVectorEditorNode({
       const peer = (allNodes || []).find(n => n.id === (f === node.id ? t : f));
       if (peer && peer.kind === "prototype") { const s = peer.prototype || peer.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes, node.id]);
   const vectorSidecarPath = `source/${vecBranch}/svg/vector-${node.id}.json`;
   const selfWriteRef = useRef("");
@@ -68580,7 +68647,7 @@ function WorkflowFormattedTextNode({ node, zoom, selected, onSelect, onMove, onR
           const up = (allNodes || []).find(n => n.id === f);
           if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
         }
-        return "main";
+        return activePrototypeSlug();
       })();
       const outPath = `source/${branch}/fmttext-${node.id}.html`;
       const cssFamilies = [];
@@ -68786,7 +68853,7 @@ function WorkflowSpline3DNode({ node, zoom, selected, onSelect, onDeselect, onMo
       const up = (allNodes || []).find(n => n.id === f);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
   const sidecarPath = `source/${branch}/spline-${node.id}.scene.json`;
 
@@ -69496,7 +69563,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
       const up = (allNodes || []).find(n => n.id === f);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
   const canonicalPath = cfg.canonical(branch, node.id);
   const bakedPathTarget = cfg.baked(branch, node.id);
@@ -69995,7 +70062,7 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
       const up = (allNodes || []).find(n => n.id === f);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
 
   // The single external input wired to our left port (replaces the captured
@@ -72815,7 +72882,7 @@ function WorkflowSpecNode({ node, zoom, selected, onSelect, onMove, onResize, on
       const up = (allNodes || []).find(n => n.id === f);
       if (up && up.kind === "prototype") { const s = up.prototype || up.branch; if (s) return s; }
     }
-    return "main";
+    return activePrototypeSlug();
   }, [allEdges, allNodes]);
   const canonicalPath = cfg.canonical(branch, node.id);
   const sourcePath = cfg.source(branch, node.id);
@@ -74733,7 +74800,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // attachment metadata so the LLM/agent can decide per-item how to use it.
   const onPickFiles = async (filesList) => {
     if (!filesList || !filesList.length) return;
-    const branch = "main";
+    const branch = activePrototypeSlug();
     setAttachError(null);
     setAttaching(true);
     const newOnes = [];
@@ -74807,7 +74874,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     }
     setBuilding(true);
     try {
-      const branch = "main";
+      const branch = activePrototypeSlug();
       const agentIdForRun = pickAgentIdForChat();
       const permissionMode = (loadSettings().permissionMode) || "bypassPermissions";
       const projectId = activeProjectId();
@@ -77784,7 +77851,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   // it to an MCP tool. Multiple files supported by iterating the picker.
   const onPickFiles = async (filesList) => {
     if (!filesList || !filesList.length) return;
-    const branch = "main";
+    const branch = activePrototypeSlug();
     setAttachError(null);
     setAttaching(true);
     const newOnes = [];
@@ -78089,12 +78156,12 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
           runStatus: building ? "pending" : null,
           conversation: [],
           outputMode: "folder",
-          outputPath: "source/" + ("main") + "/ds-brainstorm/",
+          outputPath: "source/" + (activePrototypeSlug()) + "/ds-brainstorm/",
         }}
-        wiredSystem=${"You are iterating on the in-progress DS brainstorm. The brainstorm node already dispatched a build that writes ONE sample HTML page + a DS-samples one-pager into source/" + ("main") + "/ds-brainstorm/. When the user sends a follow-up brief, treat it as a refinement directive: tweak the existing files in place rather than starting over. Preserve everything not touched verbatim. End each turn with a one-line summary of what changed."}
+        wiredSystem=${"You are iterating on the in-progress DS brainstorm. The brainstorm node already dispatched a build that writes ONE sample HTML page + a DS-samples one-pager into source/" + (activePrototypeSlug()) + "/ds-brainstorm/. When the user sends a follow-up brief, treat it as a refinement directive: tweak the existing files in place rather than starting over. Preserve everything not touched verbatim. End each turn with a one-line summary of what changed."}
         wiredInputs=${[]}
-        wiredReadRoot=${"source/" + ("main") + "/ds-brainstorm/"}
-        wiredWriteRoot=${"source/" + ("main") + "/ds-brainstorm/"}
+        wiredReadRoot=${"source/" + (activePrototypeSlug()) + "/ds-brainstorm/"}
+        wiredWriteRoot=${"source/" + (activePrototypeSlug()) + "/ds-brainstorm/"}
         wiredFileOut=${""}
         onClose=${() => setChatOpen(false)}
         onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ lastRunId: patch.runId }); }}
@@ -81724,7 +81791,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         };
         const { w: guessedW, h: guessedH } = guessSize();
         const m = probeTarget.match(/^source\/([^/]+)\/(.*)$/);
-        const branchSeg = m ? m[1] : "main";
+        const branchSeg = m ? m[1] : activePrototypeSlug();
         const sub = m ? m[2] : "";
         const isAtBranchRoot = sub === "index.html";
         const upgrade = {
@@ -81799,7 +81866,7 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
         if (r.status === 404) {
           // Run is gone - treat as DONE.
           if (node.runStatus === "pending" || (node.pendingOutputIds || []).length) {
-            await settleTargets("done", "main");
+            await settleTargets("done", activePrototypeSlug());
             window.dispatchEvent(new CustomEvent("th:workflow-reload"));
           }
           return;
@@ -82254,12 +82321,12 @@ function WorkflowAgentNode({ node, zoom, selected, onSelect, onMove, onResize, o
                 // ([a-z0-9-_]+) - Claude Code's /__run rejects anything
                 // else with "invalid branch slug" and the run dies before
                 // it starts. When the user's chosen folder isn't slug-safe
-                // (e.g. "new 2"), fall back to "main" as the spawn cwd -
+                // (e.g. "new 2"), fall back to the default prototype slug as the spawn cwd -
                 // the agent still writes to the user's outputPath because
                 // that's baked into the prompt scope. Folder operations
                 // happen via relative paths the agent reads in the prompt.
                 const isSlug = (s) => /^[a-z0-9][a-z0-9_-]*$/.test(s || "");
-                let branch = "main";
+                let branch = activePrototypeSlug();
                 const wiredM = (derivedSummary?.folderRead || derivedSummary?.folderWrite || "").match(/^source\/([^/]+)\/?/);
                 if (wiredM && isSlug(wiredM[1])) branch = wiredM[1];
                 else if (outMode === "folder" && (node.outputPath || "").startsWith("source/")) {
@@ -82790,7 +82857,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
   // read-root is wired, fall back to "main" so the agent at least has a cwd.
   const branch = (() => {
     const m = (wiredReadRoot || wiredWriteRoot || "").match(/^source\/([^/]+)\/?/);
-    return (m && m[1]) || "main";
+    return (m && m[1]) || activePrototypeSlug();
   })();
 
   // Permission mode mirrors the daemon default (bypassPermissions). User can
@@ -84392,7 +84459,7 @@ function PublishModal({ onClose, onStarted }) {
         "Dispatch the publish-orchestrator. FIRST detect current state: is my GitHub linked, is a repo already connected for this project, and is there an existing publish.json? If I already published, UPDATE the existing repo / site rather than creating a new one. " +
         "Host: GitHub Pages for the static front end. Database backend (only if the app stores data): " + dbProvider + " (supabase = Postgres + auth + storage; cloudflare = D1 SQL + R2 files). If the app stores data, CLASSIFY first by reading this prototype's data model (source/<branch>/prototype.json: entities, fields, links/arrows): a simple website gets the BASIC shape (auth + a profile/preferences/files set, but TAILORED to this app's actual fields + content, never a blind template); a real multi-entity app gets a schema DERIVED from its OWN entities with the screens wired to real reads/writes so interactions persist. Both are derived from the prototype - do not blindly default to basic when it already has a rich entity graph. Use the connected " + dbProvider + " account (token host-side via /__providers); do not ask for a token in chat. " +
         "Follow the simple-DB MVP path. Run M1 (static deploy) and, only if the prototype stores user data, M2 (Supabase).";
-      const run = await triggerRun({ branch: "main", agentId: pickAgentIdForChat(), kind: "freeform",
+      const run = await triggerRun({ branch: activePrototypeSlug(), agentId: pickAgentIdForChat(), kind: "freeform",
         prompt, title: mode === "collaborative" ? "Publish (work together)" : "Publish prototype" });
       if (onStarted) onStarted(run);
     } catch (e) {
@@ -85138,7 +85205,7 @@ function App() {
   // active branch the bootstrap stamped onto D.meta, falling back to
   // "main" for legacy / single-prototype projects. This way the chat
   // panel tags new turns with whichever prototype the user is editing.
-  const activeBranchIdForChat = (D.meta.activeBranch || "main");
+  const activeBranchIdForChat = activePrototypeSlug();
   const openNewChat = useCallback(() => {
     setChatRun({
       runId: null,
@@ -85677,7 +85744,7 @@ function App() {
       />`}
       ${!embedMode && historyOpen && html`<${HistoryPanel} history=${history} onClose=${() => setHistoryOpen(false)}/>`}
       ${!embedMode && html`<${ScreenshotWorker}
-        branchId=${"main"}
+        branchId=${activePrototypeSlug()}
         setView=${setView}
       />`}
       ${view === "canvas"    && html`<${CanvasView} model=${model} tool=${tool} setTool=${setTool} edits=${edits} setEdits=${setEdits} layoutEdits=${layoutEdits} setLayoutEdits=${setLayoutEdits} strokes=${strokes} onAddStroke=${addStroke} selectionRef=${editorSelectionRef} onSelectionCountChange=${setEditorSelectionCount}/>`}

@@ -13002,8 +13002,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # context about wired inputs. Returns the runId immediately;
                 # the canvas node flips to "done" / "error" automatically
                 # when the subprocess exits via _drain_stdout's hook.
-                branch = _qs_prototype(qs) if hasattr(qs, "get") else "main"
-                # Resolve the prototype slug - prefer the project's active one, else "main".
+                branch = (_qs_prototype(qs, default=None) if hasattr(qs, "get") else None) \
+                    or self._default_prototype_slug(project_root) or "main"
+                # Resolve the prototype slug - prefer the explicit ?prototype=
+                # param, else the project's default prototype (editor/data.js
+                # sourceRoot slug: "prototype" for new projects, "main" legacy).
                 try:
                     ws_json = os.path.join(project_root, "..", "..", "workspace.json")
                     if os.path.isfile(ws_json):
@@ -23496,7 +23499,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"projects": _list_projects()})
 
     # POST /__projects/new  body: { id, label? }
-    # Scaffolds <WORKSPACE_DIR>/projects/<id>/{source/main/, editor/data.js}.
+    # Scaffolds <WORKSPACE_DIR>/projects/<id>/{source/prototype/, editor/data.js}.
+    # The default prototype slug is "prototype" (NOT "main" - that read as the
+    # git branch and confused users); legacy projects keep their "main" slug.
     # Only valid in workspace mode. Onboarding is deliberately cut - no scope,
     # no intent, no reference, no PRD upload, no DS ref, no .onboarding-pending
     # marker, no workflow.json scaffold. The user drops into an empty editor
@@ -23521,7 +23526,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         ds_ref = None       # set when the user opted into the bundled DS
         ds_warning = None   # non-fatal DS-bake issue surfaced in the response
         try:
-            os.makedirs(os.path.join(dest, "source", "main"), exist_ok=False)
+            os.makedirs(os.path.join(dest, "source", "prototype"), exist_ok=False)
             os.makedirs(os.path.join(dest, "editor"), exist_ok=True)
             # Optional: seed design-systems/default/ from the bundled starter DS
             # with the customizer's colour / radius / type / spacing tweaks
@@ -23533,7 +23538,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     ds_warning = f"default design system not seeded: {type(e).__name__}: {e}"
             meta_inner = (
-                f'project: {json.dumps(label)}, sourceRoot: "../source/main/", sourceEntry: "index.html"'
+                f'project: {json.dumps(label)}, sourceRoot: "../source/prototype/", sourceEntry: "index.html"'
             )
             if ds_ref:
                 meta_inner += ", dsRef: " + json.dumps(ds_ref)
@@ -25542,13 +25547,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         # the user picks a starred prototype and the chat dispatcher forwards
         # it as `branch` in the body. Validate against the same alphabet
         # _starred_prototypes_toggle accepts (one or two path segments, each
-        # [A-Za-z0-9_.-]); malformed slugs silently fall back to "main" so
-        # the agent always gets a usable scope.
-        _raw_branch = (body.get("branch") or "main").strip()
+        # [A-Za-z0-9_.-]); malformed/absent slugs silently fall back to the
+        # project's DEFAULT prototype (the slug editor/data.js's sourceRoot
+        # points at - "prototype" for new projects, "main" for legacy ones)
+        # so the agent always gets a usable scope.
+        _default_branch = self._default_prototype_slug(project_root) or "main"
+        _raw_branch = (body.get("branch") or _default_branch).strip()
         if re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", _raw_branch):
             branch = _raw_branch
         else:
-            branch = "main"
+            branch = _default_branch
         kind = (body.get("kind") or "freeform").strip()
         user_prompt = (body.get("prompt") or "").strip()
         if kind == "freeform" and not user_prompt:

@@ -671,7 +671,7 @@ You need the full routing rules ONLY IF the user now asks to do one of these - a
   - start a NEW prototype from scratch (a different `source/<slug>/`).
 If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP and fetch them first:
   `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
-returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build.)"""
+returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)"""
 
 
 def _normal_general_stub() -> str:
@@ -695,6 +695,7 @@ Two ledger fields shape HOW you drive:
 
 ### Role B - no locked plan (or it is complete) AND the user asks to build a NEW `source/*` artefact from scratch: you are the DECIDE thread
 "New build" = a website / app / page / dashboard, OR a game / simulation / interactive or reactive experience / narrative piece (a game or simulation is a prototype too, NOT a page). Your job here is ONLY to DECIDE, never to build:
+  - the new prototype's slug (`source/<slug>/`): if the user named the thing, slugify their name; otherwise use the project's default prototype slug when it is still empty, else the next free `prototype<N>` under `source/` (`prototype`, `prototype2`, `prototype3`, ...). NEVER `main` - it reads as the git branch and confuses users.
   - fetch the routing catalog once - `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID` - and follow `PROTOTYPE.md` (it owns the workflow, starting with the Step -1 direction pick),
   - run the Step -1 `<direction-options>` direction pick, then the orchestration roster gate,
   - keep the roster gate OPEN through discussion. A prose reply is often a DISCUSSION, not a decision - a question ("why art-director?"), a tweak to weigh ("what if we drop visual?"), thinking out loud. Do NOT treat merely naming orchestrators as a commit: answer, keep the gate open, and do NOT lock or hand off. If you are unsure whether a prose reply is a decision or a discussion, ASK before locking - never assume a commit.
