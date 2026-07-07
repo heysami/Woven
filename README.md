@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/woven-mark.svg?v=2" alt="Woven" width="280" />
+  <img src="docs/woven-mark.svg?v=3" alt="Woven" width="120" />
   <hr width="720" />
   <p>
     <img alt="requirement: macOS" src="https://img.shields.io/badge/requirement-macOS-000000?logo=apple&logoColor=white" />
@@ -29,26 +29,25 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 1. [What you need before starting](#1-what-you-need-before-starting)
 2. [Install](#2-install)
 3. [Start the editor](#3-start-the-editor)
-4. [Install a supported model CLI](#4-install-a-supported-model-cli)
-5. [Step 1 · connect a model](#5-step-1--connect-a-model)
-6. [Step 2 · add asset-provider keys (image · video · SVG)](#6-step-2--add-asset-provider-keys-image--video--svg)
-7. [Step 3 · review orchestrators](#7-step-3--review-orchestrators)
-8. [Step 5 · finish onboarding](#8-step-5--finish-onboarding)
-9. [Create your first project](#9-create-your-first-project)
-10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
-11. [The final prototype](#11-the-final-prototype)
+4. [Step 1 · connect a model](#4-step-1--connect-a-model)
+5. [Step 2 · add asset-provider keys (image · video · SVG)](#5-step-2--add-asset-provider-keys-image--video--svg)
+6. [Step 3 · review orchestrators](#6-step-3--review-orchestrators)
+7. [Step 5 · finish onboarding](#7-step-5--finish-onboarding)
+8. [Create your first project](#8-create-your-first-project)
+9. [Open the workflow and send your first prompt](#9-open-the-workflow-and-send-your-first-prompt)
+10. [The final prototype](#10-the-final-prototype)
 
 ---
 
 ## 1. What you need before starting
 
-Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Step 4](#8-step-5--finish-onboarding)), so there's nothing to install by hand there.
+Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Step 4](#7-step-5--finish-onboarding)), so there's nothing to install by hand there.
 
 | Requirement      | Minimum                                              | Why                                                                          | How to check                          |
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **macOS**        | a recent version                                     | Woven is macOS-only. The daemon, launch scripts, and setup tooling assume a Mac. | `sw_vers`                             |
 | **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
-| **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
+| **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#4-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
 | **Homebrew**     | any recent ([brew.sh](https://brew.sh))             | Package manager used to install a model CLI and other tools.                 | `brew --version`                      |
 | **Node.js**      | **18 or newer** ([nodejs.org](https://nodejs.org)) | Runs the headless shader render-check the daemon installs on first launch (Playwright needs Node 18+; npm ships with Node). | `node --version`                      |
 
@@ -96,9 +95,17 @@ TH_WORKSPACE_DIR="$HOME/my-prototypes" python3 editor/serve.py
 
 ---
 
-## 4. Install a supported model CLI
+## 4. Step 1 · connect a model
 
-Pick **ONE** - you only need one connection path to a model. A CLI is the recommended path (it powers agentic workflows; a pasted API key alone runs only single-shot "simple prompt" nodes).
+On first launch the **Projects** page shows a setup card that walks you through connecting a model, adding asset keys, and reviewing orchestrators. Until a model is connected the top-right pill reads **No model configured** and the **+ New project** button stays disabled. It opens on **Step 1**:
+
+![Onboarding · Step 1 · agent model](docs/screenshots/01-onboarding-step1.png)
+
+Step 1 wires up the model the agent runs on. There are two paths, and they are **not** equivalent:
+
+### 4a · Install a CLI (required for agents)
+
+A **Claude Code, Codex, or opencode CLI on your `PATH` is the required backend.** The agent loop, file tools, and context compaction all live in the CLI harness, so node runs, chat, and orchestrators only work once a CLI is connected. Pick **ONE**:
 
 ```bash
 # Claude Code - native installer, no npm required (recommended):
@@ -116,29 +123,11 @@ opencode auth login                                # then `opencode models` to p
 
 opencode is a multi-provider harness: it manages its own auth and default model, so after `opencode auth login` you connect any provider it supports (Anthropic, OpenAI, etc.) and Woven shells out to it for text-output runs.
 
-You'll link this to Woven in the app on first launch (see [Step 1 · connect a model](#5-step-1--connect-a-model)). If you'd rather paste an API key than install a CLI, skip this and paste the key in that same step - but a key alone runs **simple prompt** nodes only; agentic workflows (node runs, chat, orchestrators) still need a CLI.
-
----
-
-## 5. Step 1 · connect a model
-
-On first launch the **Projects** page shows a setup card that walks you through connecting a model, adding asset keys, and reviewing orchestrators. Until a model is connected the top-right pill reads **No model configured** and the **+ New project** button stays disabled. It opens on **Step 1**:
-
-![Onboarding · Step 1 · agent model](docs/screenshots/01-onboarding-step1.png)
-
-Step 1 wires up the model the agent runs on. There are two paths, and they are **not** equivalent:
-
-### 5a · Install a CLI (required for agents)
-
-A **Claude Code, Codex, or opencode CLI on your `PATH` is the required backend.** The agent loop, file tools, and context compaction all live in the CLI harness, so node runs, chat, and orchestrators only work once a CLI is connected.
-
-Click **Install a CLI** to open the **Install a model CLI** popup. It lists all three supported binaries (Claude Code, Codex, opencode) with copy-paste install + login commands:
+In the app you can click **Install a CLI** to open the **Install a model CLI** popup (it lists the same commands); once you've run them, click **I've installed it · refresh** (or **I've already set one up · refresh**) and the status dot flips to green.
 
 ![Onboarding · Step 1 · install-a-CLI popup](docs/screenshots/02-onboarding-cli-picker.png)
 
-Run the commands, then click **I've installed it · refresh** (or **I've already set one up · refresh** on the step itself). The status dot flips to green.
-
-### 5b · Paste an API key (simple prompts only)
+### 4b · Paste an API key (simple prompts only)
 
 Click **Paste an API key** to drop in an Anthropic or OpenAI key via Settings. The key is stored locally at `~/.test-harness/media-config.json` (file mode `0600`, never sent anywhere except the provider's own API).
 
@@ -146,7 +135,7 @@ A key on its own runs **single-shot "simple prompt" nodes** only - it does **not
 
 ---
 
-## 6. Step 2 · add asset-provider keys (image · video · SVG)
+## 5. Step 2 · add asset-provider keys (image · video · SVG)
 
 Step 1 only covers the **agent's text model**. To unlock image generation, video, vector SVG, audio, etc., add the relevant provider keys in **Step 2**:
 
@@ -168,7 +157,7 @@ These are **optional**. Projects can still be created without them; you just won
 
 ---
 
-## 7. Step 3 · review orchestrators
+## 6. Step 3 · review orchestrators
 
 **Step 3** is an optional review step. Orchestrators dispatch whole families of subagents for richer artefacts. The editor ships **17** of them, auto-discovered from their manifests, so the list stays current as new ones land:
 
@@ -185,7 +174,7 @@ Rows whose pipeline depends on a key you haven't set in Step 2 (photography and 
 
 ---
 
-## 8. Step 5 · finish onboarding
+## 7. Step 5 · finish onboarding
 
 **Step 4 · Local skills** installs a handful of on-demand tools (background removal, share tunnels, shader lint + render-check) automatically in the background - each row shows live progress and flips green as it lands. You don't need to do anything there beyond letting it finish.
 
@@ -195,7 +184,7 @@ Once the required steps are satisfied, **Step 5 · Done** confirms you're set (*
 
 ---
 
-## 9. Create your first project
+## 8. Create your first project
 
 Once a model is configured, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
 
@@ -217,7 +206,7 @@ With the toggle **on**, the button reads **Customize →** and advances to a wid
 
 ---
 
-## 10. Open the workflow and send your first prompt
+## 9. Open the workflow and send your first prompt
 
 The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (basic tools, asset generators, iterators, and more…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it. No menus to open, no drawers to expand.
 
@@ -233,7 +222,7 @@ Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work, gener
 
 ---
 
-## 11. The final prototype
+## 10. The final prototype
 
 After the run finishes (marked **Done** at 28 turns), the workflow canvas holds every step that produced the app: a column of **Generate image** nodes (one per painted asset: Totoro under the camphor tree, the pantry shelf, the ambient leaf borders, each food cutout…), with **Remove background** nodes cleaning the food sprites into transparent PNGs, all feeding the live phone-mockup of **Totoro's Wood** on the right. The chat drawer records how it was built and can be reopened to continue the same session.
 
@@ -263,7 +252,7 @@ The fourth tab, **Feed**, is the playable loop: drag a food from your pantry ont
 | **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `curl -fsSL https://claude.ai/install.sh \| bash` then `claude login`. (Shows **Codex CLI missing** or **opencode CLI missing** if that's your preferred CLI, install via `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` / `curl -fsSL https://opencode.ai/install \| bash` then its login command.) |
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the unpacked folder.   |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
-| Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#6-step-2--add-asset-provider-keys-image--video--svg)). |
+| Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#5-step-2--add-asset-provider-keys-image--video--svg)). |
 
 ---
 
