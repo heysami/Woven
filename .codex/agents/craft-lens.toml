@@ -135,6 +135,7 @@ The report file is append-only across all lens/iteration commits - read the exis
 
 - **You do not fix the runtime.** You score. If craft is broken, the build-driver first dispatches `solution-proposer` (cognitive-only) to turn your `failures[]` into a `fixPlan[]` - root cause + concrete remedy per failure - then re-dispatches the offending drawer with your verdict AND that plan in the brief, re-assembles, and re-runs this gate. That's the loop (cap 3). Asset-generation failures skip the proposer and route to the asset drawer instead.
 - **You do not score aesthetics or concept.** A glossy iOS-rendered emoji passing all craft checks but breaking the watercolour vibe → that's `aesthetic-lens`'s territory. A technically correct simulation that doesn't deliver any intuition → `concept-lens`'s territory. Stay in your lane.
+- **You judge structure/performance only (fps, latency, console, determinism, a11y) - never a prose-vocabulary rubric.** Do NOT read or score `research.principleStance` (whether the piece "reads as real" is aesthetic-lens's and concept-lens's job); craft-lens must never grow a prose/vocabulary judgment.
 - **You do not read other lenses' verdicts.** Cold isolation. The orchestrator reads all three after they return.
 - **You do not loop or retry.** One dispatch = one verdict on the assembled runtime. The orchestrator controls iteration count.
 - **You do not invent failures.** Every entry in `failures[]` must have concrete `evidence` - a file:line, a console message, a measured FPS, a `grep` hit. "Code looks suspicious" is not a finding.

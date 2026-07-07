@@ -15,14 +15,16 @@ curl -fsS "$TH_DAEMON_URL/__capabilities?project=$TH_PROJECT_ID" | python3 -c "i
 
 Your envelope (in this node's `text`) carries: `msId`, `prototype`, `binding` hint, `assetPolicy` hint, `sceneCountHint`, `successFeel`, the user brief verbatim, the project creative brief, and a provider-availability paste. The library index is your only technique vocabulary - **never fabricate a techniqueId**; if the index file is missing, commit `runStatus: error` telling the user to run `python3 scripts/build-library-indexes.py`.
 
-## 1. What you commit (the six decisions)
+## 1. What you commit (the seven decisions)
 
 1. **Binding** - validate the hint. `self` (iframe owns wheel/swipe stepping; full-page pieces, motionsites register) vs `host-scroll` (host forwards scroll progress; sections inside a longer page, Apple register). If the slot is a section among siblings on a scrolling page, host-scroll is almost always right; a standalone full-page piece is self.
 2. **assetPolicy** - `video-first` requires a wired video-capable provider (a `✓ KEY` video row, e.g. fal). If none: commit `raster-first` and name the per-scene degradation (raster-sequence for scrub techniques, raster + CSS transform for ambient ones). Never commit video-first on hope. **Also commit `hyperframesEligible: yes|no`** - the Hyperframes `motion` piece (HTML/GSAP vector + type animation) is the LAST ladder rung and only enters when the committed aesthetic is vector-native (flat / typographic / editorial-loud / neubrutalist / diagrammatic / terminal / Memphis-Y2K-graphic). Immersive or photorealistic registers (cinematic product film, photographic hero, atmospheric environment) get `no` - vector animation breaks the spell there, and the degradation floor is a CSS-animated still instead.
 3. **Scene count** - 2-6. Presentation-first: one idea per scene. Respect `sceneCountHint` unless the brief clearly implies otherwise; say why if you deviate.
 4. **Per-scene technique candidates** - for each sketched scene, 1-3 candidate techniqueIds from the index. Use `decisionTree[<committed prototype slug>]` when the project has a committed genre; filter by `entries[id].role` (hero/product/background/transition/...), `category`, and `notForUseWhen`. EVERY scene also gets one composition technique (`quiet-zone-headline` or `subject-offset-ui-counterweight`) - composition is a layer, not an alternative.
 5. **Transition register** - one of `seamless-cinematic` (crossfade/match-cut, restrained registers), `staged-theatrical` (wipes, zoom-through, expressive registers), `kinetic-snap` (hard cuts on beat, brutalist/Y2K). Must agree with the project's committed aesthetic.
-6. **Multi-draft recommendation** - opt-in, ambiguity-justified ONLY (the simulation-orchestrator §5.3 policy verbatim). Axes available: storyboard scene-split (fewer-longer vs more-shorter vs single-scene-with-holds), concept layout (counterweight vs monumental-center vs cinema-band - fires when the brief's layout identity is genuinely open), motion transition-register, runtime pacing. A clear brief gets `No` on all four.
+6. **Build register** (`registerDirective` + `principleStance`) - two prose fields, DERIVED from the committed `transitionRegister` + each scene's technique + the committed aesthetic, keyed to the committed medium. `registerDirective` phrases the scene briefs in the vocabulary film work actually uses for what each scene *does* (shot, coverage, the grade, cut, match-cut, hold beat, quiet zone) - the words fall out of what the scene is doing, never a fixed house vocabulary. `principleStance` is prose of what "real" means, phrased for holistic lens judgment (like `successFeel`), never a checklist. This is method, not dictionary: prose only, no word arrays; illustrative examples marked non-binding.
+
+7. **Multi-draft recommendation** - opt-in, ambiguity-justified ONLY (the simulation-orchestrator §5.3 policy verbatim). Axes available: storyboard scene-split (fewer-longer vs more-shorter vs single-scene-with-holds), concept layout (counterweight vs monumental-center vs cinema-band - fires when the brief's layout identity is genuinely open), motion transition-register, runtime pacing. A clear brief gets `No` on all four.
 
 ## 2. research.md - the canonical artefact
 
@@ -37,6 +39,10 @@ assetPolicy: <video-first|raster-first> - <provider evidence>
 hyperframesEligible: <yes|no> - <register rationale: vector-native vs immersive/photoreal>
 sceneCount: <N>
 transitionRegister: <register> - <one-line why vs the committed aesthetic>
+
+registerDirective: <prose - write scene briefs in the vocabulary film work actually uses for WHAT EACH SCENE DOES, derived from the committed transitionRegister + that scene's technique, not a house word-bag. The words come from what the scene is doing: a scrub-rotation scene is coverage of the subject that the scroll pulls through; a crossfade between two heroes is a cut that lands on a beat; a hold-then-reveal is a quiet zone the headline settles into; a match-cut carries the eye from one shape to the next (illustrative, non-binding - derive per project, never paste this list). Only fire this register for the committed medium.>
+
+principleStance: <prose of what "real" means here, phrased for holistic lens judgment, NOT a checklist: the cut lands on a beat rather than on a timer; a scroll-entrance plays once and holds instead of looping; the transition reads as the committed register (seamless-cinematic breathes, kinetic-snap hits); the frame is never dead - there is always ambient motion. Written the way successFeel is written - a stance the lens weighs whole, not items it ticks off.>
 
 ## Scene sketch
 | # | sceneId | purpose | technique candidates | composition technique | asset medium |

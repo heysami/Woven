@@ -106,10 +106,15 @@ Keep it ≤5-6; if more, merge or push back. Routing rule: plan as the existing 
     "routeNote": "<the real implementation detail s3d-subsystem-author draws - geometry, sim model, params>",
     "materialIds": ["<design-library id>", ...],       // [] if pure shader/particle
     "handles": ["<entityId>", ...],            // objects exposed for host-driven callers / interaction
+    "registerDirective": "<prose: write THIS subsystem's build brief in the vocabulary 3D work actually uses FOR WHAT THIS SUBSYSTEM DOES - geometry, light direction+softness, material response, mass, depth, camera - DERIVED from the committed plate/aesthetic + this entry's renderer/material config, never a house 3D word-bag>",
+    "principleStance": "<prose: what 'real' means for THIS subsystem, phrased for a lens to judge holistically, not a checklist>",
     "lensGates": ["craft","aesthetic"]         // +"concept" iff role==lead
   }
 ]
 ```
+**`registerDirective` (per subsystem, prose - a METHOD, not a dictionary).** A single prose directive telling the drawer to phrase its build brief in the words 3D work actually uses *for what this subsystem is doing* - geometry, light direction + softness, material response, mass, depth, camera - and to DERIVE those words from the committed plate/aesthetic + this subsystem's own renderer (§2) and material (`materialIds`) config, not from a fixed house vocabulary. A smoke-and-candlelight subsystem and a chrome-product subsystem do not share a vocabulary; a caustics-projector and a cloth-verlet do not either. Emit prose directives only - NEVER a fixed word array; any example words you name are marked `(illustrative, non-binding)`. This fires only for the committed 3D medium; it never overrides the routing in §1/§10.
+
+**`principleStance` (per subsystem, prose - a HOLISTIC bar, not a checklist).** A prose statement of what "real" means for THIS subsystem, derived from its actual behaviour: light has direction + softness; surfaces respond through spec / roughness / fresnel; mass casts shadow and occludes; depth reads through occlusion / parallax; idle settles rather than snapping. Phrase it so a lens judges it holistically - "does it read as real light-and-mass?" - the way `successFeel` is judged, NOT as an enumerated tick-list. This is a prose-lane stance the lens weighs, never a diffed comparison target.
 Decomposition cookbook (route + recipe live in `3D_CAPABILITIES.md`): hero/product object → `3d` + physical material ·
 grass/vegetation → instanced `3d` · cloth/fabric → verlet on `particle-gl` or vertex-shader sim · water → `shader`
 (gerstner/FBM) or `particle-gl` · smoke/fluid/dense field → `particle-gl` (GPGPU) · volumetric light → billboard shafts (`3d`/`shader`).

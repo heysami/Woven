@@ -244,6 +244,8 @@ If you stall at step 5 (one input builder errors), only that one node shows `err
 | `paradigm` (container only) | yes | The game paradigm committed by research. |
 | `juiceRegister` (container only) | yes | The juice register committed by research. |
 
+**Voice of the brief** - phrase the interpretive portion of each drawer envelope in `research.registerDirective` at `buildRegister.cadence`, deriving the actual words from what this drawer's slice of the game actually does, not a house vocabulary. State `research.principleStance` as the quality bar. Do NOT name a profession or write "imagine you are". Keep structural spec (files, primitives, lens gates, paths) literal. Fire the register only for the committed medium.
+
 ```jsonc
 // In workflow/workflow.json, add to nodes[] (idempotent - update in place if id exists).
 // Note: `name` + `text` are LOAD-BEARING - they make the canvas card show the right title

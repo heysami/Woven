@@ -56,6 +56,8 @@ Banned as final copy: instruction-echo, meta-narration ("This section showcasesâ
 
 **When an `art-direction-contract.json` exists, its `voice` block is authoritative** - write `voice.audience` in `voice.toneWords`, obey `voice.addressPrinciple`, and treat `voice.copyAntiPatterns` as hard bans. The genre voice table above is the fallback when no contract is present.
 
+**Guard - `buildRegister` must NOT bleed into user-facing copy.** The contract may also carry a top-level `buildRegister` block; that governs the LANGUAGE of the build BRIEFS (naming the craft's own model of a thing), and it is a different register from the copy the reader sees. User copy continues to derive ONLY from `voice` (`voice.audience` / `voice.toneWords` / `voice.addressPrinciple`) - never phrase a shipped string in the build register. Two lanes: `buildRegister` for briefs, `voice` for copy.
+
 ### Specificity at every leaf
 
 - **Named entities, not "Item 1".** Real-sounding people, projects, branches, IDs, slugs.

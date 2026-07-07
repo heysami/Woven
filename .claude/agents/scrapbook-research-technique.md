@@ -107,6 +107,16 @@ Match register to core aesthetic:
 - `internetcore` / `aggressive-vaporwave-anchor` → `aggressive-vaporwave` (sustained pulse)
 - `dreamcore` / `weirdcore` → `drifting-ambient` with longer periods (slower, more unsettling)
 
+### 2.3b - BUILD REGISTER (register + stance, DERIVED not catalogued)
+
+The downstream drawers build in the vocabulary of the craft, not "images arranged on a page." Scrapbook is paste-up / collage work, so the briefs those drawers receive should speak in the register a collage artist actually uses for THIS committed aesthetic. Commit two prose fields into `research.md`. Both are DERIVED - you write them fresh from what you just committed above (`coreAesthetic` + `compositionIdiom` + `motionRegister`), never copied from a house word-list. The words a vaporwave paste-up uses and the words a cottagecore pressed-flower page uses do not overlap; derive per project.
+
+- **`registerDirective`** - a short prose directive telling the drawers to phrase their interpretive work in the paste-up / collage vocabulary that fits THIS committed aesthetic: the family of moves is cutout, tape, layer, overlap, drift, scatter, affix, the paper itself - but the exact words come from the core you committed, not a generic scrapbook word-bag. A vaporwave `layered-depth` piece reaches for chrome cutouts floated on a receding grid, holographic tape, a z-stack that drifts (illustrative, non-binding). A cottagecore `flat-scatter` piece reaches for pressed sprigs, washi-taped corners, deckle-edged scraps that barely overlap (illustrative, non-binding). A zine `dense-paste-up` piece reaches for photocopied cut-ups, gaffer tape, hard overlap with no breathing room (illustrative, non-binding). Write it as the register the drawers compose IN, keyed to the committed medium (raster cutouts, not CSS boxes). Do NOT emit a word array; prose only.
+
+- **`principleStance`** - prose of what a "real" version of this page IS, phrased for the aesthetic lens to judge HOLISTICALLY (the way it already judges `successFeel`), never as a checklist the drawers tick. Say it in principle: the committed density register is HELD across the page (not thinning toward a tidy grid); overlap and rotation read as freeform hand-placement, not grid-aligned auto-layout; the maximalist paste-up unmistakably reads as the NAMED core aesthetic (a vaporwave page reads vaporwave, a cottagecore page reads cottagecore) rather than as a generic collage of arranged images. This is a felt bar, not a count - write it so a lens can weigh the whole composition against it.
+
+Both fields fire ONLY for the committed scrapbook medium; they describe how to compose raster cutouts, and carry no meaning for a CSS-grid build.
+
 ### 2.4 - INTERACTION PRIMITIVE
 
 | Primitive | When |
@@ -346,6 +356,7 @@ The orchestrator reads this and only flags drawers as multi-draft when you said 
 4. **Write `inventory.json`** per §2.5.
 5. **Commit** via `POST /__workflow/node/sb_research_<sbId>/commit` with `runStatus: done`. Include in `outputs`:
    - `coreAesthetic`, `compositionIdiom`, `density`, `motionRegister`, `interactionPrimitive`
+   - `registerDirective`, `principleStance` (the §2.3b build-register prose - derived from the committed core, not a word-list)
    - `inventoryCount` (total assets across `imageInventory[]` + `pngSequenceList[]`'s total frames)
    - `multiDraftCruxes[]` (the drawers you flagged)
    - `expectedVisualOrchestratorSubDispatches` (= inventoryCount + total sequence frames)

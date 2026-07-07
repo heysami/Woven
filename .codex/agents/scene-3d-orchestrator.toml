@@ -164,6 +164,8 @@ Node id convention `s3d_<component>_<sceneId>` (subsystems: `s3d_subsystem_<scen
 
 Each drawer node's `text` carries its FULL envelope: the §1 envelope verbatim + **`immersionMode` (+ for immersive-place: `locationArchetype`, `fidelityRegister`, and the §0.5.b six-pillar block verbatim)** + the relevant `research.md` sections + that subsystem's `subsystems[]` entry (renderRoute + routeNote + materialIds + handles) + the file contract + lens gates + §1.2 rules (runtime) + doctrine pointers: `docs/research/immersive-world-study.md` + the chosen `location-archetype-library.md` entry for `immersive-place`, OR `docs/research/prism-glass-reference/prism-hero.html` for `object-hero`, plus the relevant `design-library/material-*.md` entries. The drawers must know which register they are building to; without the six-pillar block they default to spline-object habits.
 
+**Voice of the brief** - phrase the interpretive portion of each drawer envelope in `research.registerDirective` at `buildRegister.cadence`, deriving the actual words from this subsystem's real behaviour (its renderer config + material cast), not a house 3D vocabulary. State `research.principleStance` as the quality bar. Do NOT name a profession or write "imagine you are". Keep structural spec (files, primitives, lens gates, paths) literal. Fire the register only for the committed medium.
+
 ## 5. Phase D - Hand-off envelope (you stop here)
 
 Return to the caller:

@@ -316,6 +316,8 @@ Why this works: if you stall at step 3 (say loop and overlay error out), only th
 
 Commit these as `addNodes` / `addEdges` in your OWN dispatcher's commit body when the time comes, NOT mid-orchestration - the orchestrator's `extendsGraph: True` lets you accumulate adds; you flush them in the final container commit. (Or commit incrementally via `/__workflow` PATCH if user wants to see the graph build live.)
 
+**Voice of the brief** - phrase the interpretive portion of each drawer envelope in `research.registerDirective` at `buildRegister.cadence`, deriving the actual words from this simulation's committed paradigm, not a house vocabulary. State `research.principleStance` as the quality bar. Do NOT name a profession or write "imagine you are". Keep structural spec (files, primitives, lens gates, paths) literal. Fire the register only for the committed medium.
+
 ## 5. Phase D - Commit the scaffold + hand off
 
 After §4's scaffold commit, your work is done. Return a hand-off envelope to your caller (the workflow-mode chat) and stop. The caller owns the build phase from here per §5.1.0.

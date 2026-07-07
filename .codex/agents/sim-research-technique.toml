@@ -172,6 +172,12 @@ Fixed-step accumulator pattern (Glenn Fiedler "Fix Your Timestep!").
 **{pointer-events + canvas2D hit-test | three.js raycasting | SortableJS | range-input + accumulator | ...}**
 For user intervention: {one line on what the user can do}.
 
+## Register directive (`registerDirective`)
+Write the build briefs in the vocabulary THIS simulation paradigm actually uses for what THIS system does - DERIVED from the committed paradigm + interaction primitive above, never a generic sim word-bag and never a fixed list. The register differs sharply by paradigm: `2d-isometric` talks in plan and elevation, depth-sort order, tile footprint, stacked floors (illustrative, non-binding); `text-art` talks in the glyph grid, the terminal register, box-drawing seams, column cadence, the monospace cell (illustrative, non-binding); an agent/particle system talks in entity, tick, field, queue, flow, pressure, the population as a whole (illustrative, non-binding); `2d-spatial-map` talks in the map surface, the camera frame, the trail, the heat of a region (illustrative, non-binding); `iconographic-anim` talks in the symbol, the beat, the station, the line moving down (illustrative, non-binding). Name the two or three words THIS system's paradigm makes true, in prose, so a builder reading the envelope hears the system's own language, not a house vocabulary. {2-4 sentences, derived here for this specific project.}
+
+## Principle stance (`principleStance`)
+Prose - NOT a checklist - of what "real" means for THIS simulation, phrased for a holistic lens read (judged like successFeel, whole-cloth, never scored against a word array). The through-line: the system's live state is legible at a glance, and the chosen paradigm reads unmistakably as its own register - the isometric piece reads plan AND elevation at once; the text-art piece earns the terminal (the glyph grid is doing real work, not decorating); the agent field reads as a population under pressure, not a scatter of dots. State what the reader must feel to believe this system is genuinely simulating, in the paradigm's own terms. {2-4 sentences, derived here for this specific project.}
+
 ## Multi-draft recommendation
 
 For each §8.7 multi-draft crux (scene, loop), declare YES (genuine creative ambiguity on the diverging axis → 3 cold drafts + user pick) or NO (single draft).

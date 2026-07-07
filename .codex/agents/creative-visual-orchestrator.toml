@@ -73,7 +73,7 @@ explicitPromotions:  {<slotId>: "<promotionType>", ...}    # OR empty if no user
 For each identified promotion candidate:
 
 1. **Decide the promotionType** (per §1.1 table). Some slots support multiple - pick ONE primary.
-2. **Read the photography + illustration libraries.** If the promotion changes the asset's role (e.g. a photographic hero is being cut into letters), the underlying asset may need to be REGENERATED with a style that fits the new composition. Consult the library decision trees to pick a replacement style if needed.
+2. **Read the photography + illustration libraries.** If the promotion changes the asset's role (e.g. a photographic hero is being cut into letters), the underlying asset may need to be REGENERATED with a style that fits the new composition. Consult the library decision trees to pick a replacement style if needed. When `workflow/art-direction-contract.json` carries `buildRegister`, phrase your promotion + replacement-style briefs in that register (derived per project for the medium being promoted, never a fixed word list, never user copy) so the project's craft-language stays coherent.
 3. **Plan the structural rewrite.** What does the HTML look like after promotion? SVG mask? CSS clip-path? Pseudo-element layer? Inline SVG with `<text>` + `<image>`?
 4. **Identify whether the existing asset can be reused.** If yes, no new generation needed. If no (the promotion requires a differently-styled asset), commit a re-dispatch instruction for visual-orchestrator (with the new prompt from the library).
 

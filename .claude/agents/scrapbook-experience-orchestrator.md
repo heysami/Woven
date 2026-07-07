@@ -176,6 +176,8 @@ Passes **commit on file-existence**; quality is judged once at the final QA+lens
 
 **Each scaffolded agent node MUST set** `id`, `kind: "agent"`, `name` (the subagent type), `title`, `sbId`, `branch`, `text` (the per-dispatch envelope). Missing `name`/`text` = "Untitled agent" card.
 
+**Voice of the brief** - phrase the interpretive portion of each drawer envelope in `research.registerDirective` at `buildRegister.cadence`, deriving the actual words from the committed aesthetic and what this drawer composes, not a house vocabulary. State `research.principleStance` as the quality bar. Do NOT name a profession or write "imagine you are". Keep structural spec (files, primitives, lens gates, paths) literal. Fire the register only for the committed medium.
+
 ```jsonc
 { "id": "sb_composition_<sbId>", "kind": "agent",
   "name": "scrapbook-composition-author",

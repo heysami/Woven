@@ -151,6 +151,12 @@ _Tech-stack pick for the interactive piece. All downstream drawers (input / mapp
 **{direct | accumulative | threshold-triggered | chaotic}**
 Why: {1-2 sentences anchored in the intent's surprise / successFeel}
 
+## Register directive (`registerDirective`)
+Prose, not a word-list. Write the briefs for this piece's builders in the vocabulary interaction-design work actually uses to describe WHAT THIS PIECE DOES - the input→mapping→output chain as a designer of motion and interaction would name it: how the input maps to the response, the latency budget the response has to hit, whether the response pursues its target with critical damping or snaps to it, the gesture that drives it, the weight and momentum the response carries, the settle after release. DERIVE the actual terms from the committed `mappingStyle` + the committed input/output modalities + the latency targets in this project - do NOT reach for a fixed house vocabulary. The point is that "the cursor drags a damped trail that overshoots then settles" carries the bar in a way "things move when you move the mouse" never can *(illustrative, non-binding: the exact words must come from what THIS chain does)*. This is a prose lane, judged holistically at the lens gate - never a checklist, never diffed against a target string.
+
+## Principle stance (`principleStance`)
+Prose of what "real" means for this specific piece, phrased for holistic lens judgment rather than as a checklist. State the bar in its own terms: the response lands within the committed latency budget so the piece feels connected to the hand, not laggy; the motion is damped rather than snapped where the committed mappingStyle calls for weight; the mapping is non-trivial against the brief (it does something more than a linear pass-through when the successFeel demands surprise); and the whole feel matches the committed `successFeel`. Keep it a paragraph of intent the lens reads and judges as a whole *(illustrative, non-binding)* - it is NOT a pass/fail rubric and is never diffed line by line.
+
 ## Permission flow
 Two-gate pattern: in-iframe Start gate + batched `getUserMedia({...})` on click.
 Degradation paths:

@@ -39,6 +39,7 @@ runtimeUrl:     "http://.../..."             # LIVE render URL of the running as
 creativeBrief:  "<verbatim contents of workflow/creative-brief.json>"
 slotIntent:     "<one-line from PRD slot table>"
 successFeel:    "<verbatim prose from PRD's slot row - the load-bearing description of 'this hit the bar'>"
+principleStance: "<verbatim prose from research.principleStance, OR null>"   # the family's statement of what 'real' reads as (e.g. game: "bounce reads as restitution+squash+settle"). Judge it HOLISTICALLY, the SAME way as successFeel - verbatim prose, whole-artefact, never a rubric of tokens. NEVER read/diff research.buildRegister / registerDirective (prose-lane build language, not a comparison target).
 prdSubject:     "<verbatim subject field from PRD: e.g. 'warehouse stock + pick paths'>"
 prdParadigm:    "2d-spatial-map" | "3d-environment" | "iconographic-anim" | "hybrid"  (sim only)
 prdConcept:     "<one-line creative brief from PRD: e.g. 'voice + camera control a generative shader'>"  (interactive only)
@@ -68,6 +69,7 @@ Score the assembled runtime against the table. **`intuitionScore < 0.6` → fail
 | **Paradigm fit** | Does the rendered output match `prdParadigm`? If the PRD said `2d-spatial-map` and the runtime is a bar chart - paradigm violation. If `3d-environment` and the scene is a flat top-down - violation. Binary pass/fail, but counted as a block-failure on fail. | `paradigmFit` |
 | **Subject literacy** | After running for 5 seconds, can you (the lens) describe what happened in one sentence using the PRD's `prdSubject` language? "I see 12 pickers moving along bin paths fetching items toward the staging area" = pass. "I see things moving on a grid" = fail. | `subjectLiteracy` |
 | **successFeel match** | Quote the `successFeel` verbatim. Does the runtime, in its first 10 seconds of operation, deliver on that prose? `successFeel: "a one-look gut sense of warehouse rhythm - busy or calm, jammed or fluid, where the bottlenecks are"` → does the visual actually convey rhythm-and-bottleneck-ness? | `successFeelMatch` (0-1) |
+| **principleStance match** (when `principleStance` present) | Judged the SAME way as `successFeel`. Quote the `principleStance` verbatim - the family's prose statement of what "real" reads as - and judge the whole assembled runtime against it HOLISTICALLY: does the piece, taken as one artefact, actually read as real per the committed stance? Never a rubric of tokens, never "contains X and Y and Z"; a single whole-artefact perceptual call. (Skip when `principleStance` is null; NEVER read `buildRegister` / `registerDirective`.) | `principleStanceMatch` (0-1) |
 | **No conceptual contradiction** | The runtime doesn't depict something OTHER than what the slot promised. A warehouse sim that renders a forest = contradiction = block. | block on fail |
 
 ### Interactive rubric
@@ -78,6 +80,7 @@ Score the assembled runtime against the table. **`intuitionScore < 0.6` → fail
 | **Surprise / non-triviality** | When you drive the input, does the output do something MORE than echo? Direct mapping (`input.x → output.x`) = low surprise. Mapping that exhibits accumulation, threshold, distortion, transformation = high surprise. | `surpriseScore` (0-1) |
 | **Concept literacy** | Does the runtime's behaviour, after 15 seconds of you driving inputs, match the `prdConcept` brief? "voice + camera control a generative shader" should actually have voice + camera AS the inputs and a shader as the output, not a mouse-driven gradient. | `conceptLiteracy` |
 | **successFeel match** | Same as simulation. The brief promised a feeling; does the runtime deliver it? Quote the verbatim `successFeel` and judge against. | `successFeelMatch` (0-1) |
+| **principleStance match** (when `principleStance` present) | Same as simulation. Quote the verbatim `principleStance` - the family's prose of what "real" reads as - and judge the whole runtime against it HOLISTICALLY, never as a token rubric. Skip when null; NEVER read `buildRegister` / `registerDirective`. | `principleStanceMatch` (0-1) |
 | **TouchDesigner-grade test** | Optional bonus check: would this piece feel out of place next to a real TouchDesigner / Casey Reas / Robert Hodgin piece? If it would obviously read as "AI-default creative-coding demo," that's a quality-ceiling miss - flag as warn. | warn on fail |
 | **No conceptual contradiction** | If the runtime depicts something OTHER than the concept brief - block. | block on fail |
 

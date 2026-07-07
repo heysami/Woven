@@ -1047,6 +1047,21 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     else:
         mcp_inventory_block = ""
 
+    # ── Build-register discipline (FULL tier only) ────────────────────────────
+    # Dispatch-capable spawns (main chat loop + orchestrators) phrase the
+    # interpretive part of a drawer brief in the project's committed build
+    # register. Kept OUT of slim/leaf: a leaf receives its brief already phrased,
+    # it does not author sibling briefs, so this doctrine is dead weight there
+    # (and the leaf router stub owns the leaf's framing). Empty string on every
+    # non-full tier so the strip is unconditional.
+    if tier == "full":
+        build_register_block = """
+
+**Build-register discipline (how you PHRASE a drawer brief, not what the product SAYS).** When `workflow/art-direction-contract.json` carries a top-level `buildRegister` block ({ deriveFrom, cadence, antiVoice }), phrase the *interpretive* portion of every drawer/orchestrator brief in that register: name the craft's own model of the thing (its "sphere / light / mass", its "grain / bleed / register" - whatever `buildRegister` derives for THIS project) rather than the flat default word ("ball", "photo"). The register is DERIVED per project from `deriveFrom`; there is no fixed word list to reach for, and inventing one is the failure. This governs BUILD-BRIEF language only - it is NOT user-facing copy (that stays governed by the contract's separate `voice` block per Step 8) and it is never diffed against shipped strings.
+"""
+    else:
+        build_register_block = ""
+
     # ── Workflow node kinds, grouped by whether the AGENT can author them ──────
     # Registry-driven (KINDS ∪ KIND_IO) so newly-added app-node editors and
     # building blocks surface automatically - no hand-maintained list to drift.
@@ -1166,7 +1181,7 @@ Read the `verdict`: `pass` (only now may you say it is done) · `blank` (page re
 To judge content (not just "did it move / render"), add `judge=<plain-English expected result>` - a vision LLM looks at the captured frames and says whether the RIGHT thing rendered. And to see it with your own eyes, the report's `outDir` holds every captured PNG (and `judge.stripPath` a labeled montage) - `Read` one of those frame paths. Fail-soft: a missing Playwright/Chrome reports a clear setup message, never a false pass. Do NOT substitute reading a baked `.html` snapshot or the runtime source for this - those are frozen/partial; RUN the QA against the live render. (For interactive *logic-graph* pieces specifically, `GET /__logic_guide?section=verify` has the deeper protocol.)
 
 {node_kinds_block}
-{custom_skills_block}{mcp_inventory_block}
+{build_register_block}{custom_skills_block}{mcp_inventory_block}
 
 ## Local font library - check it BEFORE proposing typography
 

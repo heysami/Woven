@@ -47,7 +47,7 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"
 === END ENVELOPE ===
 ```
 
-**When `artContract` is non-null** every stack MUST hit `crossSurfaceContract.imageryRegister` and pull palette from `crossSurfaceContract.sharedPaletteHexes` (bake the hexes into the stack's `paletteHint` + the unifier's `gradient-map` hues, and the light model into `godrays`/`water-caustics` choices) so the shader field lands in the same world as the chrome. If null, behave from the bare aesthetic slug.
+**When `artContract` is non-null** every stack MUST hit `crossSurfaceContract.imageryRegister` and pull palette from `crossSurfaceContract.sharedPaletteHexes` (bake the hexes into the stack's `paletteHint` + the unifier's `gradient-map` hues, and the light model into `godrays`/`water-caustics` choices) so the shader field lands in the same world as the chrome. When `artContract` carries `buildRegister`, phrase your stack/palette/register/motion enrichment briefs in that register (derived per project for the shader medium, never a fixed word list, never user copy) so the project's craft-language stays coherent. If null, behave from the bare aesthetic slug.
 
 **`surface: "app-node"`** - when the shader slot is a live composer/app-node (not a prototype `<canvas>`), the stack maps to LIVE fx-engine effect ids (`editor/tools/_shared/fx.js`; 22 of the 32 library ids are live built-ins). The enrichment then carries a `fxStack` the app-node author wires as a layer/comp effect stack rather than a `promptForShader`. See `editor/prompts/logic/runtime.md` "Illustrative shaders" for the live ids + params.
 

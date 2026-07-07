@@ -204,6 +204,22 @@ The contract has two halves and the split is load-bearing:
     ]
   },
 
+  "buildRegister": {
+    // prose-lane, not diffed; governs the language of BUILD BRIEFS, NOT shipped copy (that is `voice`).
+    // The register in which downstream build briefs are WRITTEN - each slot named in the craft's real
+    // vocabulary (the model, not the appearance: "sphere / volume / light / mass" not "ball";
+    // "bounce = restitution + squash + settle" not "moves up and down"). DERIVED per project from the
+    // committed plate + each slot's actual behaviour, never picked from a catalogue. Example words are
+    // illustrative, non-binding - do NOT ship a fixed word list; ship the derivation method.
+    "deriveFrom": "<derive the vocabulary from the committed plate + each downstream slot's ACTUAL behaviour: name each thing by its underlying model/craft, never by its surface look (illustrative, non-binding: a physics slot earns 'restitution / squash / settle', a type slot earns 'axis / weight / optical size', a light slot earns 'key / fill / falloff') - never impose these, read what THIS plate and THESE slots actually are>",
+    "cadence": "<the brief-writing cadence the plate implies - e.g. terse imperative spec-note, one behaviour per line, no scene-setting (illustrative, non-binding)>",
+    "antiVoice": [
+      "no 'imagine you are a...'",
+      "no adjective-decoration",
+      "no reaching for a house vocabulary the project didn't earn"
+    ]
+  },
+
   "itemReferences": [
     // LEAVE THIS [] IN PHASE B. It is populated only in the mode=finalize dispatch, AFTER the
     // pick, by the §4.5 crop pass (crop FIRST, then author this contract from the crops in §4.6).
@@ -251,7 +267,8 @@ The contract has two halves and the split is load-bearing:
   "bindingRules": {
     "inheritFromPlate": ["colour ratios", "value structure", "composition logic", "material logic", "type rhythm", "motion character"],
     "doNotReplicate": ["the plate's literal subject", "its exact layout / coordinates", "its specific copy", "any single-screen framing - the app has many screens"],
-    "principleNotPixels": "The build inherits the plate's design DNA. If a build step is reproducing the plate's content rather than its principles, it is wrong."
+    "principleNotPixels": "The build inherits the plate's design DNA. If a build step is reproducing the plate's content rather than its principles, it is wrong.",
+    "buildRegister": "buildRegister obeys aesthetic-authority - translate the committed vibe into a register, never default to a generic 'creative' voice."
   }
 }
 ```
@@ -351,7 +368,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "C
 
 ## 4.6 Phase C.6 - (mode: finalize) author + write the contract, GROUNDED in the §4.5 crops
 
-Now author the full contract (the §3 schema) from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. Write `workflow/art-direction-contract.json` ONCE, fully populated (no later patch step). Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
+Now author the full contract (the §3 schema) from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Also author `buildRegister` here from the CHOSEN plate, same derivation discipline as the rest of the contract: derive the build-brief vocabulary from the plate + each downstream slot's actual behaviour (name each thing by its craft/model, not its look), set the `cadence` the plate implies, and keep the `antiVoice` guards - ship the METHOD, never a fixed word list. This governs the language of build briefs, NOT shipped copy (that is `voice`). Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. Write `workflow/art-direction-contract.json` ONCE, fully populated (no later patch step). Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
 
 Downstream consumption is by `role`: entries with a non-empty `matchesSlots` (subject / item / recurring decoration) are i2i references - the illustration/photography enrichers copy `refPath` into the matched slot's `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`. The `role: "ui"` entry has no `matchesSlots`; the build's component/layout step and the aesthetic-lens read it as the composition ground-truth. No new plumbing.
 

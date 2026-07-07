@@ -207,6 +207,27 @@ NEVER pick `raster-sprite` for a world whose entities are abstract shapes (a pin
 ## Juice register
 **<restrained / paced / juicy / juice-overload>** - <one sentence>
 
+## Register directive (`registerDirective`)
+<!-- Prose, not a word list. Write the briefs the downstream drawers will read in the
+     vocabulary game-feel work ACTUALLY uses for WHAT THIS GAME DOES - the specific
+     physics + feel terms named by THIS game's committed physicsEngine + juiceRegister +
+     objectiveShape. Derive the words from the piece, never a house word-bag. E.g. for a
+     bouncing-toy build you might reach for "mass, restitution, friction, impulse, settle";
+     for a chase build "the chase, pursuit gap, near-miss, catch-up impulse, screen-shake"
+     (illustrative, non-binding - the actual words come from THIS game). One short prose
+     paragraph directing the register the drawer envelopes should speak in; no dictionary. -->
+<one prose paragraph>
+
+## Principle stance (`principleStance`)
+<!-- Prose of what "real" MEANS for this piece, phrased for HOLISTIC lens judgment (a
+     quality bar in the shape of successFeel, never a ticked checklist). Derive it from the
+     committed physics + juice + objective: e.g. "a bounce must read as restitution +
+     squash-and-stretch + settle, not a teleport; every action lands weighted feedback; the
+     loop stays goal-directed at the committed juice register" (illustrative, non-binding).
+     Frame the bar as a question the lens can hold the whole runtime against - "does it feel
+     alive and weighted?" - not a list of features to tick. -->
+<one prose paragraph>
+
 ## Chrome strategy
 **<minimal-peek | slice9>** - <one sentence>
 <!-- if slice9: --> s9Skin: <8bit | snes | scifi | cozy | ornate:brief>

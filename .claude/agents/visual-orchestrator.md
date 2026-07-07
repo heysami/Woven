@@ -180,6 +180,8 @@ ASSET: <this asset's one-line intent>
 
 This is the v3.2 fix for "main asset matches the vibe but other assets are random". Without the STYLE prefix, each drawer only sees the asset's local intent ("hero illustration", "search icon") and picks a default aesthetic - Ghibli for the hero, generic Tabler for the icon, Apple Color Emoji for whatever you forgot to slot. With the STYLE prefix verbatim in every prompt node, every drawer gets the same project-wide style brief regardless of which slot it was dispatched for.
 
+When `art-direction-contract.json` carries `buildRegister`, keep the STYLE cue verbatim but phrase the `ASSET:` intent line (and any interpretive wording you add) in that register - derived per slot for the medium actually being produced, never a fixed word list, never shipped user copy - so every prompt node speaks the project's committed craft-language.
+
 Also write the committed style cue to `workflow/visual-plan.json` at the top level as `styleCue: "<verbatim>"` so future visual-orchestrator runs can read it on subsequent dispatches and stay consistent across spawn boundaries.
 
 ## Step 1 - Audit every visual element against the committed style cue

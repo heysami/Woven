@@ -173,6 +173,8 @@ Append (idempotently) - node id convention `<family>_<component>_<assetId>`:
 // edges - fanout from research → inputs[]; inputs[] → mapping; mapping → outputs[]; everything → runtime → container
 ```
 
+**Voice of the brief.** Phrase the interpretive portion of each drawer envelope in `research.registerDirective` at `buildRegister.cadence`, deriving the actual words from what this drawer actually does, not a house vocabulary. State `research.principleStance` as the quality bar. Do NOT name a profession or write "imagine you are". Keep structural spec (files, primitives, lens gates, paths) literal. Fire the register only for the committed medium.
+
 ## 5. Phase D - Commit the scaffold + hand off
 
 After §4's scaffold commit, your work is done. Return a hand-off envelope to your caller (the workflow-mode chat) and stop. The caller owns the build phase from here, following the shared build model in `editor/kinds/capabilities.py` ("Three contracts of the orchestrator family" + "Build tier").

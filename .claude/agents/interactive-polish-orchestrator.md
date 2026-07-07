@@ -80,6 +80,7 @@ scope:               "whole project" | "page:source/main/index.html" | "section:
 # The committed genre / aesthetic - drives what polish FITS
 genre:               "<from editor/branches/<branchSlug>.js line-1 // GENRE: comment, OR active DS meta.json.genre, OR creativeBrief.styleCue>"
 styleCue:            "<verbatim styleCue if available>"
+# When workflow/art-direction-contract.json carries buildRegister, phrase your polish-register + per-site enrichment briefs in that register (derived per project for the medium being polished, never a fixed word list, never user copy) so the project's craft-language stays coherent.
 
 # What primary orchestrators already ran (so you don't duplicate work)
 priorOrchestrators:       ["simulation-orchestrator", "visual-orchestrator"]   # or empty

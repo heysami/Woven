@@ -113,6 +113,7 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"   # prese
 # full sharedPaletteHexes - do not force every photo to carry all the brand colours.
 # The per-slot colour SUBSET + weight (small→accent, large→dominant/neutral) is
 # assigned later by visual-orchestrator step 3.5, which knows each slot's geometry.
+# When artContract carries buildRegister, phrase your film-stock/lens/lighting/mood briefs in that register (derived per project for the photographic medium, never a fixed word list, never user copy) so the project's craft-language stays coherent.
 # If null, behave exactly as before.
 #
 # Item-reference binding: when artContract.itemReferences[] is present, check each

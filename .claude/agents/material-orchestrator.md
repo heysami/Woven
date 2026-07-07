@@ -94,7 +94,9 @@ artContract:         "<workflow/art-direction-contract.json, OR null>"  # presen
 # extracted.materialRead.reactiveBudget overrides the default reactiveBudget.
 # Apply that directive so the chrome's material register matches the imagery's
 # - this is the literal mechanism that makes "the glass/iridescence/paper feels
-# like one world" true across chrome AND generated art. If null, behave as before.
+# like one world" true across chrome AND generated art.
+# When artContract carries buildRegister, phrase your material-fidelity briefs in that register (derived per project for the material actually being produced, never a fixed word list, never user copy) so the project's craft-language stays coherent.
+# If null, behave as before.
 ```
 
 `reactiveBudget`:
