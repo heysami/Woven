@@ -3,9 +3,9 @@
   <p>
     <img alt="requirement: macOS" src="https://img.shields.io/badge/requirement-macOS-000000?logo=apple&logoColor=white" />
     <img alt="requirement: Python 3.9+" src="https://img.shields.io/badge/requirement-Python%203.9%2B-3776AB?logo=python&logoColor=white" />
-    <img alt="requirement: npm" src="https://img.shields.io/badge/requirement-npm-CB3837?logo=npm&logoColor=white" />
+    <img alt="requirement: Node.js 18+" src="https://img.shields.io/badge/requirement-Node.js%2018%2B-339933?logo=nodedotjs&logoColor=white" />
     <img alt="requirement: Homebrew" src="https://img.shields.io/badge/requirement-Homebrew-FBB040?logo=homebrew&logoColor=white" />
-    <img alt="requirement: Claude · Codex · opencode" src="https://img.shields.io/badge/requirement-Claude%20%C2%B7%20Codex%20%C2%B7%20opencode-8A63D2" />
+    <img alt="supported: Claude · Codex · opencode" src="https://img.shields.io/badge/supported-Claude%20%C2%B7%20Codex%20%C2%B7%20opencode-8A63D2" />
   </p>
 </div>
 
@@ -49,7 +49,7 @@ Here's what you need before launching the editor. On first run the wizard also i
 | **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
 | **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
 | **Homebrew**     | any recent ([brew.sh](https://brew.sh))             | Package manager used to install a model CLI and other tools.                 | `brew --version`                      |
-| **Node.js**      | current LTS ([nodejs.org](https://nodejs.org))      | Runs the headless shader render-check the daemon installs on first launch.    | `node --version`                      |
+| **Node.js**      | **18 or newer** ([nodejs.org](https://nodejs.org)) | Runs the headless shader render-check the daemon installs on first launch (Playwright needs Node 18+; npm ships with Node). | `node --version`                      |
 
 The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). [Homebrew](https://brew.sh) and [Node.js](https://nodejs.org) are used by tools the daemon installs for you on first launch (background removal and a headless shader render-check), so have both ready for a complete setup.
 
