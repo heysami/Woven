@@ -2,10 +2,10 @@
   <img src="docs/woven-mark.svg?v=3" alt="Woven" width="120" />
   <hr width="720" />
   <p>
-    <img alt="requirement: macOS" src="https://img.shields.io/badge/requirement-macOS-000000?logo=apple&logoColor=white" />
-    <img alt="requirement: Python 3.9+" src="https://img.shields.io/badge/requirement-Python%203.9%2B-3776AB?logo=python&logoColor=white" />
-    <img alt="requirement: Node.js 18+" src="https://img.shields.io/badge/requirement-Node.js%2018%2B-339933?logo=nodedotjs&logoColor=white" />
-    <img alt="requirement: Homebrew" src="https://img.shields.io/badge/requirement-Homebrew-FBB040?logo=homebrew&logoColor=white" />
+    <img alt="required: macOS" src="https://img.shields.io/badge/required-macOS-000000?logo=apple&logoColor=white" />
+    <img alt="required: Python 3.9+" src="https://img.shields.io/badge/required-Python%203.9%2B-3776AB?logo=python&logoColor=white" />
+    <img alt="required: Node.js 18+" src="https://img.shields.io/badge/required-Node.js%2018%2B-339933?logo=nodedotjs&logoColor=white" />
+    <img alt="required: Homebrew" src="https://img.shields.io/badge/required-Homebrew-FBB040?logo=homebrew&logoColor=white" />
     <img alt="supported: Claude · Codex · opencode" src="https://img.shields.io/badge/supported-Claude%20%C2%B7%20Codex%20%C2%B7%20opencode-8A63D2" />
   </p>
 </div>
