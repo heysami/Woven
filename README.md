@@ -32,7 +32,7 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 4. [Connect a model](#4-connect-a-model)
 5. [Add asset-provider keys (image · video · SVG)](#5-add-asset-provider-keys-image--video--svg)
 6. [Review orchestrators](#6-review-orchestrators)
-7. [Local skills](#7-local-skills)
+7. [Local services](#7-local-services)
 8. [Finish onboarding](#8-finish-onboarding)
 9. [Create your first project](#9-create-your-first-project)
 10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
@@ -42,7 +42,7 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 
 ## 1. What you need before starting
 
-Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Local skills](#7-local-skills)), so there's nothing to install by hand there.
+Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Local services](#7-local-services)), so there's nothing to install by hand there.
 
 | Requirement      | Minimum                                              | Why                                                                          | How to check                          |
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
@@ -163,13 +163,13 @@ Rows whose pipeline depends on a key you haven't added under asset keys (photogr
 
 ---
 
-## 7. Local skills
+## 7. Local services
 
-The **Local skills** step installs a handful of on-demand tools the asset / sharing / shader pipelines depend on - background removal (rembg), share tunnels (cloudflared), and the shader lint + headless render-check (glslang + shader-verify). They install **automatically** when the step opens: each row shows live progress and flips green as it lands (the render-check pulls a Chromium, so it's the slowest - give it a minute or three).
+The **Local services** step installs a handful of on-demand tools the asset / sharing / shader pipelines depend on - background removal (rembg), share tunnels (cloudflared), and the shader lint + headless render-check (glslang + shader-verify). They install **automatically** when the step opens: each row shows live progress and flips green as it lands (the render-check pulls a Chromium, so it's the slowest - give it a minute or three).
 
 You don't have to run anything by hand, but do glance over this step before moving on: if a row stalls or shows an error (for example shader-verify when Node.js is missing), it surfaces a hint and a manual **Install** button - fix the prerequisite, hit **Re-check**, and wait for green.
 
-![Onboarding · local skills](docs/screenshots/03b-onboarding-local-skills.png)
+![Onboarding · local services](docs/screenshots/03b-onboarding-local-skills.png)
 
 ---
 

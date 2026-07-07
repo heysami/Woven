@@ -11208,14 +11208,14 @@ function ShareMenuButton() {
                 <button className="go-live-cta" disabled=${cfMissing || !!busy.mp}
                   title=${cfMissing ? "Install cloudflared first" : "Start a project multiplayer session on its own tunnel"}
                   onClick=${() => mpOp("start")}><${Icon.Globe}/> ${busy.mp ? "Going live…" : "Go Live"}</button>
-                ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local skills) to host a session.</div>`}
+                ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local services) to host a session.</div>`}
               `}
             `}
           </div>
         `}
         ${tab === "protos" && html`
           <div className="share-menu-section">
-            ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local skills) to publish links.</div>`}
+            ${cfMissing && html`<div className="th-live-hint">cloudflared isn't installed - install it (Settings ⚙ → Local services) to publish links.</div>`}
             ${protoNodes.length === 0 && html`<div className="runs-empty">No prototypes or HTML assets in this project yet.</div>`}
             ${protoNodes.map(n => {
               const slug = shareSlugForNode(n);
@@ -20397,7 +20397,7 @@ function OnboardingLocalToolsSection({ headless, autoInstall } = {}) {
     <div className=${"onboarding-local-tools" + (hasRequired ? " has-required" : "")}>
       ${!headless && html`
         <div className="onboarding-section-head">
-          <div className="onboarding-section-eyebrow">Step 3 · ${hasRequired ? "Required" : "Optional"} · Local skills</div>
+          <div className="onboarding-section-eyebrow">Step 3 · ${hasRequired ? "Required" : "Optional"} · Local services</div>
           <div className="onboarding-section-title">Install on-demand local tools</div>
           <div className="onboarding-section-desc">
             ${hasRequired
@@ -20570,7 +20570,7 @@ function OnboardingOrchestratorsSection({ mediaCfg }) {
 
 /* Onboarding wizard, simplified.
    One step visible at a time, pips at the top show the steps
-   (Agent model · Asset keys · Orchestrators · Local skills · Done). The body
+   (Agent model · Asset keys · Orchestrators · Local services · Done). The body
    for each step is just the section content - no big headlines, no paragraph
    blurbs, no nested heads. Footer is Back/Next, both always free to click;
    the actual gate ("+ New project" disabled) is enforced on the landing,
@@ -20609,7 +20609,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
     { n: 1, label: "Agent model",   done: modelOk },
     { n: 2, label: "Asset keys",    done: false },
     { n: 3, label: "Orchestrators", done: false },
-    { n: 4, label: "Local skills",  done: skillsOk },
+    { n: 4, label: "Local services",  done: skillsOk },
     { n: 5, label: "Done",          done: allOk   },
   ];
 
@@ -20673,7 +20673,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
               : canFinish ? "Ready for simple prompts"
               : "Almost there"}</div>
             <div className="model-setup-allset-sub">${
-              allOk ? "Agent CLI connected and required local skills installed."
+              allOk ? "Agent CLI connected and required local services installed."
               : canFinish ? "You can create projects and run simple prompt nodes - but agentic workflows stay disabled until you install a Claude Code, Codex, or opencode CLI."
               : "Finish the required steps to enable + New project."}</div>
             <div className="model-setup-extras">
@@ -23048,7 +23048,7 @@ function SharesLanding({ onCountChange }) {
       ${cfMissing && html`
         <div className="shares-cf-hint">
           <b>cloudflared is not installed.</b> Shares publish through Cloudflare quick
-          tunnels - install it once via <b>Settings ⚙ → Local skills → Install cloudflared</b>
+          tunnels - install it once via <b>Settings ⚙ → Local services → Install cloudflared</b>
           (or <code>brew install cloudflared</code>), then Start any share.
         </div>
       `}
@@ -54387,7 +54387,7 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
           ${!publishBase && html`
             <div className="workflow-ut-hint">
               Publish this prototype first so links resolve. Use the Share panel (a stable getwoven.design URL is recommended for tests that run over days).
-              ${!cloudflaredFound && html`<span> cloudflared not installed - set it up via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>).</span>`}
+              ${!cloudflaredFound && html`<span> cloudflared not installed - set it up via Settings ⚙ → Local services (or <code>brew install cloudflared</code>).</span>`}
             </div>
           `}
 
@@ -54875,7 +54875,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
               : "cloudflared not installed - brew install cloudflared, then retry"}
             onClick=${shareCreate}
           ><${Icon.Globe}/> ${shareBusy ? "Publishing…" : "Share via tunnel"}</button>
-          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">cloudflared not installed - set it up via Settings ⚙ → Local skills (or <code>brew install cloudflared</code>)</div>`}
+          ${!cloudflared && html`<div key="hint" className="workflow-comments-share-hint">cloudflared not installed - set it up via Settings ⚙ → Local services (or <code>brew install cloudflared</code>)</div>`}
           ${err && html`<div className="workflow-comments-err">${err}</div>`}
         </div>
       `}
@@ -80674,7 +80674,7 @@ function WorkflowSendKeySection() {
   `;
 }
 
-/* Phase 4c - Local skills catalog. Single source of truth for Python
+/* Phase 4c - Local services catalog. Single source of truth for Python
    packages the daemon can install on demand. Shared between the Settings
    dialog's "Things to install" tab (renders WorkflowLocalPackageRow per entry)
    and the projects-landing onboarding card (`OnboardingLocalToolsSection`) so

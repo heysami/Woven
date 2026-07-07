@@ -2122,7 +2122,7 @@ def _local_rembg(input_abs_path, model_name, options):
         stderr = (result.stderr or b"").decode("utf-8", "replace")
         if "No module named 'rembg'" in stderr or "No module named rembg" in stderr:
             raise RuntimeError(
-                "rembg is not installed. Open Settings (⚙) → Local skills → click Install rembg.",
+                "rembg is not installed. Open Settings (⚙) → Local services → click Install rembg.",
             )
         raise RuntimeError(f"rembg failed: {stderr.strip()[:500]}")
     return result.stdout
